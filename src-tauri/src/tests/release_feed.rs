@@ -1,3 +1,4 @@
+use super::support::*;
 use super::*;
 use crate::release_feed::*;
 use std::io::{Read, Write};
@@ -178,7 +179,9 @@ fn the_feed_is_read_through_the_api_and_the_sign_in_never_leaves_it() {
     let source = ReleaseFeedSource { api: &origin, download_origins: &origins, repository: REPOSITORY, public_key: &public_key };
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
 
-    let manifest = runtime.block_on(fetch_release_feed(&no_redirects(), &source, Some("gho_test"))).unwrap();
+    let manifest = runtime
+        .block_on(fetch_release_feed(&no_redirects(), &source, Some("gho_test"), UpdateChannel::Stable))
+        .unwrap();
     assert_eq!(manifest.version, "0.3.200");
     // The DMG is downloaded through the API address of the same release's file.
     assert_eq!(manifest.assets["darwin-aarch64"].url, format!("{origin}/repos/{REPOSITORY}/releases/assets/2"));
@@ -210,9 +213,13 @@ fn a_private_feed_asks_for_a_sign_in_and_a_stray_download_is_refused() {
     let source = ReleaseFeedSource { api: &origin, download_origins: &origins, repository: REPOSITORY, public_key: &public_key };
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
 
-    let signed_out = runtime.block_on(fetch_release_feed(&no_redirects(), &source, None)).unwrap_err();
+    let signed_out = runtime
+        .block_on(fetch_release_feed(&no_redirects(), &source, None, UpdateChannel::Stable))
+        .unwrap_err();
     assert!(signed_out.contains("gh auth login"), "{signed_out}");
-    let no_access = runtime.block_on(fetch_release_feed(&no_redirects(), &source, Some("gho_test"))).unwrap_err();
+    let no_access = runtime
+        .block_on(fetch_release_feed(&no_redirects(), &source, Some("gho_test"), UpdateChannel::Stable))
+        .unwrap_err();
     assert!(no_access.contains("can't see"), "{no_access}");
 
     let asset = format!("{origin}/repos/{REPOSITORY}/releases/assets/9");
@@ -222,3 +229,72 @@ fn a_private_feed_asks_for_a_sign_in_and_a_stray_download_is_refused() {
     assert!(stray.contains("somewhere unexpected"), "{stray}");
 }
 
+
+#[test]
+fn the_nightly_channel_takes_the_highest_version_among_arbors_own_releases() {
+    let (public_key, feed) = fixture();
+    let signed = signed_bytes(&feed);
+    let feed_size = signed.len();
+    let origin_cell = Arc::new(Mutex::new(String::new()));
+    let origin_for_route = origin_cell.clone();
+    let (origin, seen) = serve_github(
+        Box::new(move |path| {
+            let origin = origin_for_route.lock().unwrap().clone();
+            let bare = |tag: &str, draft: bool| serde_json::json!({ "tag_name": tag, "draft": draft, "assets": [] });
+            match path {
+                "/repos/aaronvanston/arbor/releases?per_page=30" => {
+                    let stable = serde_json::from_slice::<serde_json::Value>(&release_json(&origin, feed_size)).unwrap();
+                    // The nightly that 0.3.200 was promoted from is older than it, a draft doesn't count yet, and the
+                    // `v*` tags are upstream's.
+                    let page = serde_json::json!([
+                        bare("arbor-v0.3.300", true),
+                        bare("v0.3.400", false),
+                        bare("arbor-v0.3.200-nightly.20261001.2", false),
+                        stable,
+                        bare("arbor-v0.3.199", false),
+                    ]);
+                    (200, Vec::new(), serde_json::to_vec(&page).unwrap())
+                }
+                "/repos/aaronvanston/arbor/releases/assets/1" => {
+                    (302, vec![("Location".into(), format!("{origin}/storage/feed?signed=1"))], Vec::new())
+                }
+                "/storage/feed?signed=1" => (200, Vec::new(), signed.clone()),
+                _ => (404, Vec::new(), b"not found".to_vec()),
+            }
+        }),
+        3,
+    );
+    *origin_cell.lock().unwrap() = origin.clone();
+    let origins = [origin.as_str()];
+    let source = ReleaseFeedSource { api: &origin, download_origins: &origins, repository: REPOSITORY, public_key: &public_key };
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+
+    let manifest = runtime
+        .block_on(fetch_release_feed(&no_redirects(), &source, None, UpdateChannel::Nightly))
+        .unwrap();
+    assert_eq!(manifest.version, "0.3.200");
+    assert_eq!(
+        seen.lock().unwrap().first().map(|(path, _)| path.as_str()),
+        Some("/repos/aaronvanston/arbor/releases?per_page=30")
+    );
+}
+
+#[test]
+fn the_channel_is_saved_and_one_this_version_doesnt_know_reads_as_stable() {
+    let root = agent_test_home("update-channel");
+    let path = root.join("config.toml");
+    let config = GuiConfigFile {
+        auth_dir: path_to_string(&root.join("auth")),
+        management_secret_key: "test-secret".to_string(),
+        update_channel: UpdateChannel::Nightly,
+        ..GuiConfigFile::default()
+    };
+    write_gui_config_to_path(&config, &path).unwrap();
+    let saved = fs::read_to_string(&path).unwrap();
+    assert_eq!(toml::from_str::<GuiConfigFile>(&saved).unwrap().update_channel, UpdateChannel::Nightly);
+
+    let read = |text: &str| toml::from_str::<GuiConfigFile>(text).unwrap().update_channel;
+    assert_eq!(read("update-channel = \"preview\"\nzoom-step = 2\n"), UpdateChannel::Stable);
+    assert_eq!(read("zoom-step = 2\n"), UpdateChannel::Stable);
+    fs::remove_dir_all(root).unwrap();
+}

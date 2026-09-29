@@ -169,6 +169,7 @@
  * a minute after the page loads, so an update waiting for idle agents goes ahead two minutes after that;
  * `?install=fail` to have core installs fail, `?appupdate=fail` to have Arbor's download fail after it starts, or
  *   `?appupdate=gone` for the update gone from the feed by the time Install runs its fresh check;
+ * `?channel=nightly` for Settings › Updates on the nightly channel, offered a nightly build;
  * `?appnotes=none` for an Arbor update whose feed carries no release notes (the pill keeps its plain tooltip), or
  *   `?appnotes=long` for eight releases on offer (0.3.208), more than the pill's card shows, one with a very long line;
  * `?corenotes=none` for a core update without release notes, or `?corenotes=long` for four core releases (v8.0.8),

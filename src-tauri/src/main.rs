@@ -421,6 +421,9 @@ struct GuiConfigFile {
     plugins_enabled: bool,
     routing_strategy: String,
     proxy_url: String,
+    /// Which releases Arbor updates to.
+    #[serde(deserialize_with = "release_feed::deserialize_update_channel")]
+    update_channel: release_feed::UpdateChannel,
     routing_session_affinity: bool,
     routing_session_affinity_ttl: String,
     disable_cooling: bool,
@@ -522,6 +525,7 @@ impl Default for GuiConfigFile {
             plugins_enabled: false,
             routing_strategy: "round-robin".to_string(),
             proxy_url: String::new(),
+            update_channel: release_feed::UpdateChannel::Stable,
             routing_session_affinity: false,
             routing_session_affinity_ttl: String::new(),
             disable_cooling: DEFAULT_DISABLE_COOLING,
@@ -1777,6 +1781,8 @@ fn main() {
             open_oauth_url,
             open_external_url,
             check_app_update,
+            get_update_channel,
+            set_update_channel,
             get_app_update_task,
             start_app_update,
             cancel_app_update,

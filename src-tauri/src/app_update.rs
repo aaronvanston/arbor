@@ -23,6 +23,25 @@ pub(crate) async fn check_app_update(
     Ok(info)
 }
 
+#[tauri::command]
+pub(crate) fn get_update_channel(
+    gui_config_state: tauri::State<'_, GuiConfigState>,
+) -> Result<crate::release_feed::UpdateChannel, String> {
+    Ok(gui_config_state.snapshot()?.update_channel)
+}
+
+#[tauri::command]
+pub(crate) fn set_update_channel(
+    gui_config_state: tauri::State<'_, GuiConfigState>,
+    channel: crate::release_feed::UpdateChannel,
+) -> Result<crate::release_feed::UpdateChannel, String> {
+    let config = gui_config_state.update(|config| {
+        config.update_channel = channel;
+        Ok(())
+    })?;
+    Ok(config.update_channel)
+}
+
 /// Reads the update feed: what's on offer, and what to download when this build can install it itself.
 async fn resolve_app_update(
     gui_config_state: &GuiConfigState,
@@ -40,8 +59,13 @@ async fn resolve_app_update(
             "Failed to create version check client",
         )?;
         let github_token = crate::release_feed::github_cli_token().await;
-        crate::release_feed::fetch_release_feed(&client, &crate::release_feed::ARBOR_RELEASE_FEED, github_token.as_deref())
-            .await?
+        crate::release_feed::fetch_release_feed(
+            &client,
+            &crate::release_feed::ARBOR_RELEASE_FEED,
+            github_token.as_deref(),
+            config.update_channel,
+        )
+        .await?
     };
     let latest_version = normalize_version(&manifest.version);
     let current_version = normalize_version(env!("CARGO_PKG_VERSION"));

@@ -24,9 +24,10 @@ import { Button } from '../components/ui/button';
 import { AlertDialog, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
 import { Progress } from '../components/ui/progress';
 import { RefreshIcon } from '../components/ui/refresh-icon';
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
-import type { CoreInstallResult, CoreInstallTask } from '../native/types';
+import type { CoreInstallResult, CoreInstallTask, UpdateChannel } from '../native/types';
 
 export type MessageType = 'info' | 'success' | 'error';
 const recordVersionManagementVisit = createVersionManagementVisitTracker();
@@ -64,6 +65,8 @@ export function VersionManagementPage() {
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
   const [cancelingInstall, setCancelingInstall] = useState(false);
 
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannel | null>(null);
+  const [updateChannelSaving, setUpdateChannelSaving] = useState(false);
   const feedback = useAppNotice();
   const { showNotice } = feedback;
 
@@ -124,6 +127,20 @@ export function VersionManagementPage() {
       const task = await invokeCommand('get_core_install_task');
       applyInstallTask(task, false, false);
     } catch {}
+  };
+
+  const changeUpdateChannel = async (channel: UpdateChannel) => {
+    setUpdateChannelSaving(true);
+    try {
+      const saved = await invokeCommand('set_update_channel', { channel });
+      setUpdateChannel(saved);
+      showNotice({ key: saved === 'nightly' ? 'appUpdate.channelNowNightly' : 'appUpdate.channelNowStable' }, 'info');
+      void checkAppUpdate();
+    } catch (error) {
+      showNotice({ key: 'appUpdate.channelSaveFailed', variables: { error: String(error) } }, 'error');
+    } finally {
+      setUpdateChannelSaving(false);
+    }
   };
 
   const installVersion = async (version: string) => {
@@ -214,6 +231,14 @@ export function VersionManagementPage() {
       showNotice({ key: 'kernel.error.openUpdate', variables: { error: String(error) } }, 'error');
     }
   };
+
+  useEffect(() => {
+    let disposed = false;
+    invokeCommand('get_update_channel')
+      .then((channel) => { if (!disposed) setUpdateChannel(channel); })
+      .catch(() => { if (!disposed) setUpdateChannel('stable'); });
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     if (!recordVersionManagementVisit(pageVisitRef.current)) return;
@@ -436,6 +461,26 @@ export function VersionManagementPage() {
               </Alert>
             </SettingsBlock>
           ) : null}
+          <SettingsRow
+            settingId="updates.channel"
+            title={t('appUpdate.channel')}
+            description={t('appUpdate.channelDescription')}
+            control={
+              <Select
+                value={updateChannel ?? 'stable'}
+                disabled={updateChannel === null || updateChannelSaving || appUpdateTask.running}
+                onValueChange={(value) => { if (value && value !== updateChannel) void changeUpdateChannel(value as UpdateChannel); }}
+              >
+                <SelectTrigger size="sm" className="w-36" aria-label={t('appUpdate.channel')}>
+                  <SelectValue>{updateChannel === 'nightly' ? t('appUpdate.channel.nightly') : t('appUpdate.channel.stable')}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="stable">{t('appUpdate.channel.stable')}</SelectItem>
+                  <SelectItem value="nightly">{t('appUpdate.channel.nightly')}</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
         </SettingsSection>
 
         <SettingsSection

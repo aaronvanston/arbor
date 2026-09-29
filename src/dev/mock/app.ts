@@ -4,7 +4,7 @@ import { PHONE_ALERT_SECRETS } from '../../services/phoneAlerts';
 import { QUIT_GUARD_ARMED_EVENT, QUIT_GUARD_WINDOW_MS, pressQuit } from '../../services/quitGuard';
 import { nearestZoomStep, ZOOM_CHANGED_EVENT, zoomLevelAt } from '../../services/zoom';
 import type { AppCommands } from '../../native/app';
-import type { PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, ZoomLevel } from '../../native/types';
+import type { PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, UpdateChannel, ZoomLevel } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { configSettings, coreStatus } from './core';
 import { freshInstall, mockLog, params } from './scenario';
@@ -98,8 +98,13 @@ const PHONE_SECRETS_UNREADABLE =
 const phoneSecretStatus = () =>
   Object.fromEntries(PHONE_ALERT_SECRETS.map((secret) => [secret, Boolean(phoneSecrets[secret])])) as Record<PhoneAlertSecret, boolean>;
 
+let updateChannel: UpdateChannel = params.get('channel') === 'nightly' ? 'nightly' : 'stable';
+
 // Release notes as the update feed gives them, newest first.
 function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[] } {
+  if (updateChannel === 'nightly') {
+    return { latestVersion: '0.3.202-nightly.20260930.4', releases: [{ version: '0.3.202-nightly.20260930.4', summary: 'A nightly build of what’s next.', changes: [] }] };
+  }
   const scenario = params.get('appnotes');
   if (scenario === 'none') return { latestVersion: '0.3.201', releases: [] };
   if (scenario === 'long') {
@@ -153,6 +158,8 @@ export const appAnswers: CommandAnswers<AppCommands> = {
     return null;
   },
   check_app_update: () => { mockLog('check_app_update', null); return { currentVersion: '0.3.200', updateAvailable: true, releaseUrl: 'https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.3.201', autoUpdateSupported: true, downloadSizeBytes: 48_120_000, unsupportedReason: null, bundledCoreVersion: '8.0.4', ...mockAppReleases() }; },
+  get_update_channel: () => updateChannel,
+  set_update_channel: ({ channel }) => { mockLog('set_update_channel', channel); updateChannel = channel; return updateChannel; },
   get_app_update_task: () => ({ running: false, cancelable: false, phase: 'idle', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null }),
   start_app_update: () => {
     mockLog('start_app_update', null);

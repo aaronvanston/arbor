@@ -1244,6 +1244,7 @@ fn startup_leaves_an_existing_config_yaml_as_it_is_apart_from_the_management_key
         max_retry_credentials: 2,
         max_retry_interval: 5,
         streaming_bootstrap_retries: 1,
+        update_channel: crate::release_feed::UpdateChannel::Stable,
     };
     let merged = merge_core_config_yaml(template, Some(current), &config).unwrap();
     let mut expected = serde_norway::from_str::<serde_norway::Value>(current).unwrap();

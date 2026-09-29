@@ -13,6 +13,7 @@ import type {
   SoftwareSettings,
   SoftwareSettingsInput,
   SystemLocale,
+  UpdateChannel,
   ZoomLevel,
 } from './types';
 
@@ -40,6 +41,8 @@ export type AppCommands = {
   set_tray_waiting: { args: { count: number }; result: void };
 
   check_app_update: { result: AppUpdateInfo };
+  get_update_channel: { result: UpdateChannel };
+  set_update_channel: { args: { channel: UpdateChannel }; result: UpdateChannel };
   start_app_update: { result: void };
   cancel_app_update: { result: void };
   get_app_update_task: { result: AppUpdateTask };

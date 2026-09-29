@@ -1582,6 +1582,7 @@ pub(crate) fn write_gui_config_to_path(
             "management-secret-key",
             value(config.management_secret_key.as_str()),
         ),
+        ("update-channel", value(config.update_channel.as_str())),
     ] {
         set_codex_table_item(root, key, item);
     }

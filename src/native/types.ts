@@ -3846,6 +3846,12 @@ export type TranscriptCompaction = {
 };
 
 /**
+ * Which releases the app updates to. Stable is the release GitHub marks as the latest. Nightly also takes the
+ * prereleases built from main, `X.Y.Z-nightly.YYYYMMDD.N`, and moves to a stable release once one is newer.
+ */
+export type UpdateChannel = "stable" | "nightly";
+
+/**
  * A range's requests by the credential that served them, found by the auth index each carries, so the Breakdown can
  * name each one with its account's profile: two credentials with one email (a Claude and a Codex sign-in) stay apart.
  * Requests with no index are counted under their source, as that's all there is to name them by.

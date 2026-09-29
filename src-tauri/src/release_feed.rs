@@ -1,4 +1,5 @@
-//! Arbor's own update feed on macOS: the newest release on Arbor's GitHub repository. Each release carries its update
+//! Arbor's own update feed on macOS: the newest release on Arbor's GitHub repository, stable or, on the nightly channel,
+//! whichever is newer of that and the prereleases built from main. Each release carries its update
 //! list signed with a key kept on the Mac that publishes releases (scripts/release-signing.mjs), and nothing is offered
 //! or downloaded unless that signature checks out, so write access to the releases alone can't ship an update. When
 //! the repository is private, requests to GitHub's API carry the GitHub CLI's sign-in; a public one needs none. The
@@ -13,6 +14,38 @@ pub(crate) const SIGNED_FEED_ASSET: &str = "arbor-update-darwin.json";
 const FEED_SIGNING_CONTEXT: &[u8] = b"Arbor update feed v1\n";
 const SIGNED_FEED_MAX_BYTES: u64 = 1024 * 1024;
 const GH_TOKEN_TIMEOUT: Duration = Duration::from_secs(5);
+/// How many of the newest releases the nightly channel looks through; nightlies come at most every half hour.
+const NIGHTLY_RELEASES_PAGE: usize = 30;
+
+/// Which releases the app updates to. Stable is the release GitHub marks as the latest. Nightly also takes the
+/// prereleases built from main, `X.Y.Z-nightly.YYYYMMDD.N`, and moves to a stable release once one is newer.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum UpdateChannel {
+    #[default]
+    Stable,
+    Nightly,
+}
+
+impl UpdateChannel {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Nightly => "nightly",
+        }
+    }
+}
+
+/// config.toml's channel. A value this version doesn't know, as from a newer version an update rolled back from, reads
+/// as stable rather than failing the whole file.
+pub(crate) fn deserialize_update_channel<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<UpdateChannel, D::Error> {
+    Ok(match String::deserialize(deserializer)?.trim() {
+        "nightly" => UpdateChannel::Nightly,
+        _ => UpdateChannel::Stable,
+    })
+}
 
 /// Where Arbor's releases are and which key signs their update lists. Tests point one at a loopback server.
 pub(crate) struct ReleaseFeedSource<'a> {
@@ -35,6 +68,8 @@ pub(crate) const ARBOR_RELEASE_FEED: ReleaseFeedSource<'static> = ReleaseFeedSou
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
     tag_name: String,
+    #[serde(default)]
+    draft: bool,
     assets: Vec<GithubReleaseAsset>,
 }
 
@@ -75,25 +110,25 @@ pub(crate) async fn github_cli_token() -> Option<String> {
     (!token.is_empty() && token.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')).then_some(token)
 }
 
-/// The newest release's update list, once its signature and contents check out, with each DMG's `url` swapped for the
-/// API address that serves that file in the same release.
+/// The newest release's update list on `channel`, once its signature and contents check out, with each DMG's `url`
+/// swapped for the API address that serves that file in the same release.
 pub(crate) async fn fetch_release_feed(
     client: &reqwest::Client,
     source: &ReleaseFeedSource<'_>,
     token: Option<&str>,
+    channel: UpdateChannel,
 ) -> Result<PortableUpdateManifest, String> {
-    let latest = format!("{}/repos/{}/releases/latest", source.api, source.repository);
-    let response = api_request(client, &latest, token, "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|error| format!("Couldn't reach GitHub to check for updates: {error}"))?;
-    if !response.status().is_success() {
-        return Err(api_status_error(response.status(), token.is_some(), source.repository));
-    }
-    let release = response
-        .json::<GithubRelease>()
-        .await
-        .map_err(|error| format!("Couldn't read Arbor's newest release: {error}"))?;
+    let release = match channel {
+        UpdateChannel::Stable => {
+            let latest = format!("{}/repos/{}/releases/latest", source.api, source.repository);
+            fetch_api_json::<GithubRelease>(client, source, token, &latest).await?
+        }
+        UpdateChannel::Nightly => {
+            let page = format!("{}/repos/{}/releases?per_page={NIGHTLY_RELEASES_PAGE}", source.api, source.repository);
+            newest_release(fetch_api_json::<Vec<GithubRelease>>(client, source, token, &page).await?)
+                .ok_or_else(|| "Arbor has no releases yet".to_string())?
+        }
+    };
     let feed_asset = release
         .assets
         .iter()
@@ -118,6 +153,38 @@ pub(crate) async fn fetch_release_feed(
         asset.url = served.url.clone();
     }
     Ok(manifest)
+}
+
+async fn fetch_api_json<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    source: &ReleaseFeedSource<'_>,
+    token: Option<&str>,
+    url: &str,
+) -> Result<T, String> {
+    let response = api_request(client, url, token, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|error| format!("Couldn't reach GitHub to check for updates: {error}"))?;
+    if !response.status().is_success() {
+        return Err(api_status_error(response.status(), token.is_some(), source.repository));
+    }
+    response
+        .json::<T>()
+        .await
+        .map_err(|error| format!("Couldn't read Arbor's newest release: {error}"))
+}
+
+/// The release with the highest version among Arbor's own tags, stable or nightly. Drafts and other tags don't count.
+fn newest_release(releases: Vec<GithubRelease>) -> Option<GithubRelease> {
+    releases
+        .into_iter()
+        .filter(|release| !release.draft)
+        .filter_map(|release| {
+            let version = semver::Version::parse(release.tag_name.strip_prefix("arbor-v")?).ok()?;
+            Some((version, release))
+        })
+        .max_by(|(left, _), (right, _)| left.cmp(right))
+        .map(|(_, release)| release)
 }
 
 /// The manifest inside a signed update list, when it's signed by `public_key`.
