@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // eslint's core rules are always on; these add React, TypeScript, unicorn and oxc's own checks.
+  "plugins": ["react", "typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    // Filed under "pedantic" in oxlint, but a hook called conditionally is a real bug.
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    // Omitting a key by destructuring it next to a rest element (`{ [id]: _, ...rest }`) is the point, and a
+    // `_`-prefixed parameter is one a signature needs but the body ignores on purpose.
+    "eslint/no-unused-vars": ["error", { "ignoreRestSiblings": true, "argsIgnorePattern": "^_" }],
+
+    // React Compiler rules. Arbor doesn't run the compiler, and these flag patterns it uses on purpose:
+    // a "latest value" ref written during render, Date.now() for relative times, setState in effects
+    // that sync with Tauri events, functions declared below the effect that calls them, and the
+    // module-level locale that non-React code reads. The last two only check how the compiler would treat
+    // hand-written memos.
+    "react/refs": "off",
+    "react/purity": "off",
+    "react/set-state-in-effect": "off",
+    "react/immutability": "off",
+    "react/globals": "off",
+    "react/preserve-manual-memoization": "off",
+    "react/use-memo": "off"
+  },
+  // Each worktree under .claude/worktrees carries its own copy of this file. The .gitignore entry for that folder
+  // keeps oxlint out of them; `bun run lint` passing --disable-nested-config and the .claude/** ignore below are a
+  // second guard in case that entry ever goes missing.
+  "ignorePatterns": ["dist/**", "src-tauri/target/**", "src-tauri/gen/**", ".claude/**"]
+}

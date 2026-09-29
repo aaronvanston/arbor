@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (() => {
+        let savedTheme;
+        try {
+          savedTheme = localStorage.getItem('easy-cli-proxy-api.theme');
+        } catch {
+          // Blocked storage follows the system; the app applies the theme again during initialization.
+        }
+        // An explicit light or dark choice wins; 'system' and no saved choice follow the OS.
+        const theme = savedTheme === 'light' || savedTheme === 'dark'
+          ? savedTheme
+          : window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        // The --background token from styles.css, shared with WINDOW_BACKGROUND in theme.ts.
+        document.documentElement.style.backgroundColor = theme === 'dark' ? '#0a0a0a' : '#fcfcfc';
+        // Arbor's color from the saved preferences, as services/appColor.ts's applyAppColor puts it (Summer has none).
+        try {
+          const color = JSON.parse(localStorage.getItem('cpa-gui.preferences.v1') ?? '{}').appColor;
+          if (color === 'early-autumn' || color === 'autumn') document.documentElement.dataset.appColor = color;
+        } catch {
+          // Damaged or blocked storage keeps Summer; the app applies the color again when it starts.
+        }
+      })();
+    </script>
+    <title>Arbor</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

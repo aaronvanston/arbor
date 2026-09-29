@@ -1,0 +1,632 @@
+[
+  {
+    "version": "0.3.199",
+    "summary": "Ready for the source to go public: license notices, fuller credits, and usage data sent only by official releases.",
+    "changes": [
+      "Open source licenses listed in About",
+      "A note on first launch about usage data",
+      "Code views highlight fewer languages, for a smaller app"
+    ]
+  },
+  {
+    "version": "0.3.198",
+    "summary": "Sync: add a missing Codex marketplace when bringing a machine in line with the setup repo.",
+    "changes": []
+  },
+  {
+    "version": "0.3.197",
+    "summary": "Sync: list Codex plugins in the setup repo and bring each machine in line with it.",
+    "changes": []
+  },
+  {
+    "version": "0.3.196",
+    "summary": "Arbor now uses US English spelling throughout.",
+    "changes": []
+  },
+  {
+    "version": "0.3.194",
+    "summary": "Sync: install, remove and turn Codex plugins on or off.",
+    "changes": []
+  },
+  {
+    "version": "0.3.193",
+    "summary": "Bundles the latest proxy, and updates now finish even when macOS is still checking the downloaded disk image.",
+    "changes": [
+      "An update that can't read your settings puts the previous version back.",
+      "The session TTL setting refuses values the proxy can't read.",
+      "Open log folder opens the folder the proxy really writes its logs to."
+    ]
+  },
+  {
+    "version": "0.3.191",
+    "summary": "Sync: keep Codex's hooks in step with the setup repo too.",
+    "changes": []
+  },
+  {
+    "version": "0.3.189",
+    "summary": "The app sheds code for other platforms and a download mirror that never worked in Arbor.",
+    "changes": [
+      "The language setting left over from before Arbor was English only is gone."
+    ]
+  },
+  {
+    "version": "0.3.188",
+    "summary": "Sync: keep hooks in the setup repo and bring each machine's in step.",
+    "changes": []
+  },
+  {
+    "version": "0.3.187",
+    "summary": "Saved preferences are checked as they load, so a damaged one goes back to its default instead of breaking a page.",
+    "changes": [
+      "Large screens are split into smaller parts, with no change to how they look or work."
+    ]
+  },
+  {
+    "version": "0.3.186",
+    "summary": "Settings saved while the proxy updates are no longer lost, and updates download only from Arbor's own releases.",
+    "changes": []
+  },
+  {
+    "version": "0.3.185",
+    "summary": "Removing a setting or model alias no longer shifts the comment after it in the proxy's settings file.",
+    "changes": []
+  },
+  {
+    "version": "0.3.184",
+    "summary": "Extra models in Settings now adds new Codex models too, suggested from the list ChatGPT gives your account, and any other provider's by ID.",
+    "changes": []
+  },
+  {
+    "version": "0.3.183",
+    "summary": "Sync now shows each machine's Codex plugins beside Claude Code's.",
+    "changes": []
+  },
+  {
+    "version": "0.3.182",
+    "summary": "Add new Claude models the proxy doesn't know yet, from Extra models in Settings.",
+    "changes": []
+  },
+  {
+    "version": "0.3.181",
+    "summary": "Shorter, high-level release notes.",
+    "changes": [
+      "New API keys start without a machine; pick one on the key.",
+      "The session archive asks where to keep its folder."
+    ]
+  },
+  {
+    "version": "0.3.180",
+    "summary": "Open a session in an outside checker from its checks.",
+    "changes": []
+  },
+  {
+    "version": "0.3.179",
+    "summary": "Updates now come from GitHub, signed.",
+    "changes": []
+  },
+  {
+    "version": "0.3.178",
+    "summary": "Fixes for saving model aliases.",
+    "changes": []
+  },
+  {
+    "version": "0.3.177",
+    "summary": "Fixes proxy settings reverting to old values.",
+    "changes": []
+  },
+  {
+    "version": "0.3.176",
+    "summary": "Warns when a proxy settings change hasn't taken effect.",
+    "changes": []
+  },
+  {
+    "version": "0.3.175",
+    "summary": "Sync: keep rules, subagents and commands per machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.174",
+    "summary": "Sync: open a plugin to see it across every machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.173",
+    "summary": "Sync: remove a rule, subagent or command from every machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.172",
+    "summary": "Sync: remove a skill from every machine, or put it back.",
+    "changes": []
+  },
+  {
+    "version": "0.3.171",
+    "summary": "Sync: clean up leftover settings from removed plugins.",
+    "changes": []
+  },
+  {
+    "version": "0.3.170",
+    "summary": "Seasonal color themes.",
+    "changes": []
+  },
+  {
+    "version": "0.3.169",
+    "summary": "Sync: install and choose the Node version on each machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.168",
+    "summary": "Sync: remove an MCP server everywhere, or keep it off one machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.167",
+    "summary": "Sync: skills show what differs between machines first.",
+    "changes": []
+  },
+  {
+    "version": "0.3.166",
+    "summary": "Sync: MCP servers in a machine-by-machine grid.",
+    "changes": []
+  },
+  {
+    "version": "0.3.165",
+    "summary": "Warns when proxy settings stop Arbor working, with a one-click fix.",
+    "changes": []
+  },
+  {
+    "version": "0.3.164",
+    "summary": "Sync: changes you pick stay in one tray as you move between pages.",
+    "changes": []
+  },
+  {
+    "version": "0.3.163",
+    "summary": "Proxy updates keep your settings as they are.",
+    "changes": []
+  },
+  {
+    "version": "0.3.162",
+    "summary": "Sync: plugins by machine, and remove plugins and marketplaces.",
+    "changes": []
+  },
+  {
+    "version": "0.3.161",
+    "summary": "A smaller sidebar artwork in the light theme.",
+    "changes": []
+  },
+  {
+    "version": "0.3.160",
+    "summary": "Sidebar artwork polish for the light theme.",
+    "changes": []
+  },
+  {
+    "version": "0.3.159",
+    "summary": "New sidebar artwork for the light theme.",
+    "changes": []
+  },
+  {
+    "version": "0.3.158",
+    "summary": "New projects show up in project settings without a restart.",
+    "changes": []
+  },
+  {
+    "version": "0.3.157",
+    "summary": "All-time usage now counts more agent apps.",
+    "changes": []
+  },
+  {
+    "version": "0.3.156",
+    "summary": "All-time usage now includes Codex history it had missed.",
+    "changes": []
+  },
+  {
+    "version": "0.3.155",
+    "summary": "Updated app icon, menu bar icon and installer.",
+    "changes": []
+  },
+  {
+    "version": "0.3.154",
+    "summary": "Sync: give a project its own agent instructions.",
+    "changes": []
+  },
+  {
+    "version": "0.3.152",
+    "summary": "Taller sidebar artwork.",
+    "changes": []
+  },
+  {
+    "version": "0.3.151",
+    "summary": "Machine pills in sentences, pickers, alerts and dialogs.",
+    "changes": []
+  },
+  {
+    "version": "0.3.150",
+    "summary": "Consistent model names with provider marks everywhere.",
+    "changes": []
+  },
+  {
+    "version": "0.3.149",
+    "summary": "Sync: turn an MCP server on or off for one project.",
+    "changes": []
+  },
+  {
+    "version": "0.3.147",
+    "summary": "The leaf canopy is now the default sidebar artwork, with a soft fade.",
+    "changes": []
+  },
+  {
+    "version": "0.3.146",
+    "summary": "Add accounts from the Sign-ins page.",
+    "changes": []
+  },
+  {
+    "version": "0.3.144",
+    "summary": "New leaf canopy sidebar artwork.",
+    "changes": []
+  },
+  {
+    "version": "0.3.143",
+    "summary": "All-time usage now shows Claude Code's own count for missing days.",
+    "changes": []
+  },
+  {
+    "version": "0.3.142",
+    "summary": "Sync: choose a project and machine at the top of skills and MCP.",
+    "changes": []
+  },
+  {
+    "version": "0.3.140",
+    "summary": "Usage broken down by account.",
+    "changes": []
+  },
+  {
+    "version": "0.3.139",
+    "summary": "Rename a machine from its pill.",
+    "changes": []
+  },
+  {
+    "version": "0.3.137",
+    "summary": "Sync: turn a skill on or off for one project.",
+    "changes": []
+  },
+  {
+    "version": "0.3.134",
+    "summary": "Machine pills on more pages.",
+    "changes": []
+  },
+  {
+    "version": "0.3.133",
+    "summary": "A Sign-ins page, and an option to hide email addresses.",
+    "changes": []
+  },
+  {
+    "version": "0.3.132",
+    "summary": "Machine pages now open at the top without a flicker.",
+    "changes": []
+  },
+  {
+    "version": "0.3.131",
+    "summary": "Color and fill picker for accounts, and more readable pills.",
+    "changes": []
+  },
+  {
+    "version": "0.3.130",
+    "summary": "Machine health in one card, and provider marks fixed in dark mode.",
+    "changes": []
+  },
+  {
+    "version": "0.3.129",
+    "summary": "Sync: turn a plugin on or off per machine or per project.",
+    "changes": []
+  },
+  {
+    "version": "0.3.128",
+    "summary": "The session archive now keeps sessions from more agent apps.",
+    "changes": []
+  },
+  {
+    "version": "0.3.127",
+    "summary": "Settings regrouped with plainer names, and prices moved to Usage.",
+    "changes": []
+  },
+  {
+    "version": "0.3.126",
+    "summary": "Requests remember their sort order, and each can be copied.",
+    "changes": []
+  },
+  {
+    "version": "0.3.125",
+    "summary": "Failed requests now appear in the main requests grid.",
+    "changes": []
+  },
+  {
+    "version": "0.3.124",
+    "summary": "Rounded account avatars, shown wherever an account is named.",
+    "changes": []
+  },
+  {
+    "version": "0.3.123",
+    "summary": "Request details in a side sheet, and sort requests by any column.",
+    "changes": []
+  },
+  {
+    "version": "0.3.122",
+    "summary": "Improved crash reporting.",
+    "changes": []
+  },
+  {
+    "version": "0.3.120",
+    "summary": "Choose which projects' sessions the archive keeps.",
+    "changes": []
+  },
+  {
+    "version": "0.3.119",
+    "summary": "Alert settings per project.",
+    "changes": []
+  },
+  {
+    "version": "0.3.118",
+    "summary": "Fixes accounts not loading in some setups, and bundles a newer proxy.",
+    "changes": []
+  },
+  {
+    "version": "0.3.117",
+    "summary": "Anonymous usage data now covers feature use and slow or failed actions.",
+    "changes": []
+  },
+  {
+    "version": "0.3.116",
+    "summary": "Every machine gets its own page, and more pill colors.",
+    "changes": []
+  },
+  {
+    "version": "0.3.115",
+    "summary": "The rest of the tables move to the shared table style.",
+    "changes": []
+  },
+  {
+    "version": "0.3.113",
+    "summary": "Smoother loading on the live board and weekly view.",
+    "changes": []
+  },
+  {
+    "version": "0.3.111",
+    "summary": "Anonymous usage data and crash reports, with switches to turn them off.",
+    "changes": []
+  },
+  {
+    "version": "0.3.110",
+    "summary": "Anonymous usage data and crash reports, with switches to turn them off.",
+    "changes": []
+  },
+  {
+    "version": "0.3.108",
+    "summary": "New icon set across the app.",
+    "changes": []
+  },
+  {
+    "version": "0.3.107",
+    "summary": "A choice of sidebar artwork scenes, moving or still.",
+    "changes": []
+  },
+  {
+    "version": "0.3.106",
+    "summary": "Per-machine choices for skills and for the session archive.",
+    "changes": []
+  },
+  {
+    "version": "0.3.105",
+    "summary": "Crisper sidebar aurora artwork.",
+    "changes": []
+  },
+  {
+    "version": "0.3.104",
+    "summary": "A redesigned Home built around your accounts and machines.",
+    "changes": []
+  },
+  {
+    "version": "0.3.103",
+    "summary": "Cleaner Claude model names in the requests list.",
+    "changes": []
+  },
+  {
+    "version": "0.3.100",
+    "summary": "Proxy updates keep it running until the final switch.",
+    "changes": []
+  },
+  {
+    "version": "0.3.99",
+    "summary": "Alert settings per machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.98",
+    "summary": "The requests list fills the window, and tables share one look.",
+    "changes": []
+  },
+  {
+    "version": "0.3.96",
+    "summary": "Arbor updates no longer interrupt your agents.",
+    "changes": []
+  },
+  {
+    "version": "0.3.95",
+    "summary": "Calmer cards, tables and text across the app.",
+    "changes": []
+  },
+  {
+    "version": "0.3.94",
+    "summary": "Simpler sidebar artwork: a soft aurora, or none.",
+    "changes": []
+  },
+  {
+    "version": "0.3.93",
+    "summary": "Fixes for the new proxy version.",
+    "changes": []
+  },
+  {
+    "version": "0.3.92",
+    "summary": "Moving sidebar artwork scenes.",
+    "changes": []
+  },
+  {
+    "version": "0.3.91",
+    "summary": "A new sidebar tree, and Setup is now called Sync.",
+    "changes": []
+  },
+  {
+    "version": "0.3.90",
+    "summary": "Fixes a false session archive warning.",
+    "changes": []
+  },
+  {
+    "version": "0.3.89",
+    "summary": "Less background work while idle.",
+    "changes": []
+  },
+  {
+    "version": "0.3.88",
+    "summary": "Faster start-up and smoother pages.",
+    "changes": []
+  },
+  {
+    "version": "0.3.87",
+    "summary": "Faster pages under heavy proxy traffic.",
+    "changes": []
+  },
+  {
+    "version": "0.3.86",
+    "summary": "Fixes a hang in usage history.",
+    "changes": []
+  },
+  {
+    "version": "0.3.85",
+    "summary": "Faster weekly view, failure list and long sessions.",
+    "changes": []
+  },
+  {
+    "version": "0.3.84",
+    "summary": "New app icon, loading animation and installer window.",
+    "changes": []
+  },
+  {
+    "version": "0.3.83",
+    "summary": "Long usage ranges load faster.",
+    "changes": []
+  },
+  {
+    "version": "0.3.82",
+    "summary": "Usage pages open faster on a long history.",
+    "changes": []
+  },
+  {
+    "version": "0.3.81",
+    "summary": "Zoom the whole window in and out.",
+    "changes": []
+  },
+  {
+    "version": "0.3.80",
+    "summary": "Reliability improvements.",
+    "changes": []
+  },
+  {
+    "version": "0.3.79",
+    "summary": "A new sidebar and top bar design.",
+    "changes": []
+  },
+  {
+    "version": "0.3.78",
+    "summary": "Reliability improvements.",
+    "changes": []
+  },
+  {
+    "version": "0.3.77",
+    "summary": "Reliability improvements.",
+    "changes": []
+  },
+  {
+    "version": "0.3.76",
+    "summary": "Reliability improvements.",
+    "changes": []
+  },
+  {
+    "version": "0.3.75",
+    "summary": "A calmer session header.",
+    "changes": []
+  },
+  {
+    "version": "0.3.74",
+    "summary": "Requests become a data grid with movable, resizable columns.",
+    "changes": []
+  },
+  {
+    "version": "0.3.73",
+    "summary": "Reliability improvements.",
+    "changes": []
+  },
+  {
+    "version": "0.3.72",
+    "summary": "Colors and icons for machines, and pills for machines and providers.",
+    "changes": []
+  },
+  {
+    "version": "0.3.71",
+    "summary": "A more compact Accounts page.",
+    "changes": []
+  },
+  {
+    "version": "0.3.70",
+    "summary": "Reliability improvements.",
+    "changes": []
+  },
+  {
+    "version": "0.3.69",
+    "summary": "The session archive now keeps sessions from every machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.68",
+    "summary": "Failed proxy updates now show as failed, not canceled.",
+    "changes": []
+  },
+  {
+    "version": "0.3.67",
+    "summary": "Reliability fixes for usage history.",
+    "changes": []
+  },
+  {
+    "version": "0.3.66",
+    "summary": "Import session backups from more sources.",
+    "changes": []
+  },
+  {
+    "version": "0.3.65",
+    "summary": "Undo any file change Arbor made on a machine.",
+    "changes": []
+  },
+  {
+    "version": "0.3.64",
+    "summary": "Import old session backups into the archive.",
+    "changes": []
+  },
+  {
+    "version": "0.3.63",
+    "summary": "Reliability fixes for machine scans.",
+    "changes": []
+  },
+  {
+    "version": "0.3.62",
+    "summary": "An all-time usage total from the session archive.",
+    "changes": []
+  },
+  {
+    "version": "0.3.61",
+    "summary": "Session compaction counts now match on every screen.",
+    "changes": []
+  },
+  {
+    "version": "0.3.60",
+    "summary": "See what each update changes before installing.",
+    "changes": []
+  }
+]

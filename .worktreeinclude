@@ -1,0 +1,3 @@
+# Gitignored files copied into new worktrees (Claude Code reads this). .env holds HUGEICONS_LICENSE_KEY,
+# which bun install needs for the Hugeicons Pro icons; T3 Code worktrees copy it with a project script instead.
+.env

@@ -1,0 +1,23 @@
+node_modules/
+dist/
+src-tauri/gen/
+src-tauri/target/
+bin-work/
+cpa-core/
+/portable-app.json
+
+agent_docs/
+.codex/
+# Agent worktrees the main checkout keeps; .claude/CLAUDE.md itself is tracked.
+.claude/worktrees/
+
+*.log
+*.tmp
+misc/
+
+# Local secrets: HUGEICONS_LICENSE_KEY for the Hugeicons Pro registry (.npmrc)
+.env
+.env.*
+
+# Core plugins build on their own.
+core-plugins/*/target/

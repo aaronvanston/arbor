@@ -1,0 +1,95 @@
+import { useEffect, useRef } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { useAppPreferences } from '../appPreferences';
+import { loadFleetSources, useFleetBoard, waitingCount } from '../services/fleetBoard';
+import { setT3ThreadsEnabled, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
+
+/** New events from a machine's reporter, and new requests, which can end a wait or start work. */
+const SOURCE_EVENTS = [T3_THREADS_UPDATED_EVENT, 'agent-attention-updated', 'usage-records-updated'];
+const CHECK_THROTTLE_MS = 5_000;
+/** Work goes quiet and turns go stale with nothing arriving, so the board is read on a timer too. */
+const CHECK_INTERVAL_MS = 15_000;
+
+/**
+ * Headless: keeps the live board fresh for Sessions › Live and Home, and the number of sessions waiting on you beside
+ * the tray icon. It keeps reading while the window is hidden, since then the tray is all that shows. It tells the
+ * backend whether to read T3 Code's threads, which it does nothing about until told.
+ */
+export function FleetMonitor() {
+  const { fleetT3Threads } = useAppPreferences();
+  const { board } = useFleetBoard();
+  const checkRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    let disposed = false;
+    let running = false;
+    let lastCheckMs = 0;
+    let pending: number | undefined;
+    const stops: (() => void)[] = [];
+    const schedule = () => {
+      if (pending !== undefined) return;
+      pending = window.setTimeout(() => {
+        pending = undefined;
+        void check();
+      }, Math.max(0, lastCheckMs + CHECK_THROTTLE_MS - Date.now()));
+    };
+    const check = async () => {
+      if (disposed) return;
+      if (running) {
+        schedule();
+        return;
+      }
+      running = true;
+      lastCheckMs = Date.now();
+      try {
+        await loadFleetSources();
+      } finally {
+        running = false;
+      }
+    };
+    checkRef.current = () => void check();
+    for (const event of SOURCE_EVENTS) {
+      listen(event, schedule)
+        .then((unlisten) => {
+          if (disposed) unlisten();
+          else stops.push(unlisten);
+        })
+        .catch(() => undefined);
+    }
+    const timer = window.setInterval(schedule, CHECK_INTERVAL_MS);
+    return () => {
+      disposed = true;
+      checkRef.current = () => undefined;
+      stops.forEach((stop) => stop());
+      window.clearInterval(timer);
+      if (pending !== undefined) window.clearTimeout(pending);
+    };
+  }, []);
+
+  // Told first, then read at once: switching it off drops what was read, and on reads it again.
+  useEffect(() => {
+    let stale = false;
+    setT3ThreadsEnabled(fleetT3Threads)
+      .catch((error) => console.warn('Failed to turn reading T3 Code threads on or off', error))
+      .finally(() => {
+        if (!stale) checkRef.current();
+      });
+    return () => {
+      stale = true;
+    };
+  }, [fleetT3Threads]);
+
+  // Snoozing, seeing a row and time passing change the count as much as a new read does.
+  const waiting = board ? waitingCount(board) : null;
+  const sentRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (waiting === null || waiting === sentRef.current) return;
+    sentRef.current = waiting;
+    setTrayWaiting(waiting).catch((error) => {
+      sentRef.current = null;
+      console.warn('Failed to show the sessions waiting on you on the tray icon', error);
+    });
+  }, [waiting]);
+
+  return null;
+}

@@ -1,0 +1,602 @@
+@import "tailwindcss";
+
+/* The app stores the theme on <html data-theme="light|dark"> (see theme.ts and
+   the inline bootstrap script in index.html). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@theme inline {
+  /* Two steps below text-xs (12px) for dense UI: metadata rows, badges, counters and table headers. 2xs is 11px,
+     3xs is 10px and the floor of the scale. Registered with tailwind-merge in lib/utils.ts so cn() treats them as
+     font sizes, not colors. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: calc(1 / 0.6875);
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: calc(0.875 / 0.625);
+  /* No 13px step between text-xs and text-sm: 14px for what a row says, 12px for what explains it. */
+
+  /* Letter spacing for headings. Labels are in sentence case, so there's no wide step for capitals. */
+  --tracking-title: -0.01em;
+
+  /* Neutral surfaces, zinc and neutral grays; the teal lives only in --primary. zinc-25, a step above
+     Tailwind's zinc-50, is the light page and the sidebar's hover row. The page color (zinc-25 light,
+     neutral-950 dark) is mirrored in sRGB by index.html's pre-paint script, WINDOW_BACKGROUND in theme.ts
+     and main_window.rs. */
+  --color-zinc-25: oklch(0.992 0 0);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-placeholder: var(--placeholder);
+  --color-icon-muted: var(--icon-muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-surface: var(--error-surface);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-surface: var(--warning-surface);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-row-hover: var(--sidebar-row-hover);
+  --color-sidebar-row-active: var(--sidebar-row-active);
+  --color-sidebar-row-selected: var(--sidebar-row-selected);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  /* The decorative loops (spinners, pulses, skeletons) take their play state from
+     --decorative-animation-state, which pauses them while the window is hidden. */
+  --animate-spin: spin 1s linear infinite var(--decorative-animation-state, running);
+  --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite var(--decorative-animation-state, running);
+  --animate-skeleton: skeleton 2.4s infinite var(--decorative-animation-state, running);
+  --animate-status-pulse: status-pulse 2s infinite var(--decorative-animation-state, running);
+  --animate-dot-wave: dot-wave 1.2s ease-in-out infinite var(--decorative-animation-state, running);
+
+  @keyframes skeleton {
+    0%, 42% { opacity: 1; animation-timing-function: steps(4); }
+    50%, 92% { opacity: 0.55; animation-timing-function: steps(4); }
+    100% { opacity: 1; }
+  }
+  @keyframes status-pulse {
+    0%, 40% { opacity: 1; animation-timing-function: steps(6); }
+    50%, 90% { opacity: 0.5; animation-timing-function: steps(6); }
+    100% { opacity: 1; }
+  }
+  @keyframes dot-wave {
+    0%, 100% { opacity: 0.2; }
+    30% { opacity: 1; }
+  }
+}
+
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --control-radius: 0.5rem;
+  --sidebar-width: 16rem;
+  /* The window's zoom factor, which src/services/zoom.ts sets here from the native side's level. Everything grows
+     with it except what the Mac window buttons pin in points, which divides by it: the buttons don't zoom. */
+  --zoom: 1;
+  /* The workspace chrome: a title row 52pt tall on screen at every zoom, so the window buttons stay centered on it,
+     and the 28px controls in it, which grow with the zoom (40pt at 144%). Where they start is the shell's
+     ([data-app-shell] below). */
+  --workspace-topbar-height: calc(52px / var(--zoom));
+  --workspace-titlebar-control-size: 1.75rem;
+  --app-scrollbar-width: 6px;
+  --app-scrollbar-thumb: rgb(217 217 217);
+  --app-scrollbar-thumb-hover: rgb(191 191 191);
+  --glass-blur: 12px;
+  --glass-opacity: 80%;
+  --glass-saturation: 1.14;
+
+  --background: var(--color-zinc-25);
+  --foreground: var(--color-zinc-800);
+  --card: var(--color-white);
+  --card-foreground: var(--color-zinc-800);
+  --popover: var(--color-white);
+  --popover-foreground: var(--color-zinc-800);
+  --primary: oklch(0.5 0.1 180);
+  --primary-foreground: var(--color-white);
+  --secondary: var(--color-zinc-50);
+  --secondary-foreground: var(--color-zinc-800);
+  --muted: var(--color-zinc-50);
+  /* Text meant to be read clears 4.5:1 on every surface it sits on, hover rows included
+     (tests/tokenContrast.test.ts). Plain zinc-500 falls just short on zinc-100, so it leans a
+     little toward zinc-600. Fade it with an opacity modifier only for decoration: icons,
+     separators and dashes (the same test holds text to that). */
+  --muted-foreground: color-mix(in srgb, var(--color-zinc-500) 80%, var(--color-zinc-600));
+  --placeholder: var(--muted-foreground);
+  --icon-muted: var(--color-zinc-500);
+  --accent: var(--color-zinc-100);
+  --accent-foreground: var(--color-zinc-900);
+  --border: var(--color-zinc-200);
+  --input: var(--color-zinc-300);
+  --ring: var(--primary);
+  --error: var(--color-red-500);
+  --error-foreground: var(--color-red-700);
+  --error-surface: color-mix(in srgb, var(--error) 8%, transparent);
+  --destructive: var(--error);
+  --destructive-foreground: var(--error-foreground);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-700);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-700);
+  --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-700);
+  /* A row brought into view (from the search palette) is tinted for a moment; see row-highlight. */
+  --highlight: color-mix(in srgb, var(--primary) 10%, transparent);
+
+  /* Categorical chart colors, in the order a chart assigns them. Checked for color-blind
+     separation and 3:1 against the light and the dark surface, so one set serves both themes. */
+  --chart-1: var(--color-sky-600);
+  --chart-2: var(--color-violet-500);
+  --chart-3: var(--color-amber-600);
+  --chart-4: var(--color-emerald-600);
+  --chart-5: var(--color-pink-600);
+  --chart-6: var(--color-orange-600);
+
+  --sidebar: var(--color-zinc-50);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-row-hover: var(--color-zinc-25);
+  --sidebar-row-active: var(--color-white);
+  --sidebar-row-selected: var(--color-white);
+  /* Dimmed sidebar icons, kept at 3:1 on the sidebar since several buttons are an icon alone: 75% of the muted
+     color here, 60% on the black dark sidebar. */
+  --sidebar-icon-color: color-mix(in srgb, var(--sidebar-muted-foreground) 75%, var(--sidebar));
+
+  --surface-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  --surface-grain-size: 256px 256px;
+
+  @variant dark {
+    color-scheme: dark;
+    --app-scrollbar-thumb: rgb(255 255 255 / 8%);
+    --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);
+    --glass-blur: 16px;
+    --glass-saturation: 1.08;
+
+    --background: var(--color-neutral-950);
+    --foreground: var(--color-neutral-100);
+    --card: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    --card-foreground: var(--color-neutral-100);
+    --popover: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    --popover-foreground: var(--color-neutral-100);
+    --primary: oklch(0.76 0.12 172);
+    --primary-foreground: oklch(0.22 0.04 180);
+    --secondary: --alpha(var(--color-white) / 3%);
+    --secondary-foreground: var(--color-neutral-100);
+    --muted: --alpha(var(--color-white) / 3%);
+    /* Mixed well toward white, since Arbor's cards and hover rows sit far above black. */
+    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 75%, var(--color-white));
+    --icon-muted: var(--muted-foreground);
+    --accent: --alpha(var(--color-white) / 4%);
+    --accent-foreground: var(--color-neutral-100);
+    --border: --alpha(var(--color-white) / 6%);
+    --input: --alpha(var(--color-white) / 8%);
+    --error: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+    --error-foreground: var(--color-red-400);
+    --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
+    --success-foreground: var(--color-emerald-400);
+    --warning-foreground: var(--color-amber-400);
+    --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
+    --info-foreground: var(--color-blue-400);
+    --highlight: color-mix(in srgb, var(--primary) 14%, transparent);
+
+    /* A black sidebar, darker than the page, with its own ink and hairline, and row washes: 8% of
+       the foreground on hover, 11% while pressed and 7% on the current page, whose label also turns from
+       muted to the foreground color. */
+    --sidebar: var(--color-black);
+    --sidebar-foreground: #f1f3f7;
+    --sidebar-muted-foreground: #a3a3a3;
+    --sidebar-border: --alpha(var(--color-white) / 8%);
+    --sidebar-row-hover: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
+    --sidebar-row-active: color-mix(in srgb, var(--sidebar-foreground) 11%, transparent);
+    --sidebar-row-selected: color-mix(in srgb, var(--sidebar-foreground) 7%, transparent);
+    --sidebar-icon-color: color-mix(in srgb, var(--sidebar-muted-foreground) 60%, var(--sidebar));
+    --surface-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 128 128' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02745'/%3E%3C/svg%3E");
+    --surface-grain-size: 128px 128px;
+  }
+}
+
+/* Arbor's seasons, chosen in Settings › Appearance (services/appColor.ts, which sets data-app-color; Summer is
+   :root's own teal): Early autumn's gold, Autumn's rust. Buttons, switches, links, badges and the open page's icon take
+   --primary, and the focus ring, the row highlight and the selection follow it. Each holds the teal's contrast
+   (tests/tokenContrast.test.ts): white on the light one, the dark one's ink on the dark, and the color as text on the
+   page and on its own tint. */
+:root[data-app-color='early-autumn'] {
+  --primary: oklch(0.52 0.105 85);
+
+  @variant dark {
+    --primary: oklch(0.84 0.14 88);
+    --primary-foreground: oklch(0.25 0.05 88);
+  }
+}
+
+:root[data-app-color='autumn'] {
+  --primary: oklch(0.52 0.14 45);
+
+  @variant dark {
+    --primary: oklch(0.75 0.15 48);
+    --primary-foreground: oklch(0.22 0.05 45);
+  }
+}
+
+@utility surface-grain {
+  background-image: var(--surface-grain);
+  background-repeat: repeat;
+  background-size: var(--surface-grain-size);
+}
+
+/*
+ * A halo in the sidebar's own color for the wordmark and sidebar button over the sidebar's artwork, which runs at
+ * full strength behind them: it keeps them readable without clearing a bar across the art.
+ */
+@utility art-halo {
+  /* The deep shade a scene lays under the title row (the light canopy's), else the sidebar. */
+  --halo: var(--art-halo, var(--sidebar));
+  text-shadow: 0 0 1px var(--halo), 0 0 2px var(--halo), 0 0 4px var(--halo), 0 0 8px var(--halo);
+
+  & svg {
+    filter: drop-shadow(0 0 1px var(--halo)) drop-shadow(0 0 2px var(--halo)) drop-shadow(0 0 4px var(--halo));
+  }
+}
+
+@utility dialog-glass {
+  background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
+
+  @variant dark {
+    border-color: color-mix(in srgb, var(--color-white) 8%, transparent);
+    box-shadow: inset 0 1px rgb(255 255 255 / 4%), 0 24px 72px -20px rgb(0 0 0 / 90%);
+  }
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--popover) !important;
+  }
+}
+
+@utility dialog-backdrop {
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+
+  @variant dark {
+    background: color-mix(in srgb, var(--background) 64%, transparent);
+  }
+}
+
+@utility dropdown-glass {
+  background: color-mix(in srgb, var(--popover) 18%, color-mix(in srgb, var(--popover) var(--glass-opacity), transparent));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: var(--popover) !important;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+/* Account chips mix their tint and ink from the account's one color (--account-color, set
+   inline from accountProfiles.ts), so every color reads the same way. */
+@utility account-chip {
+  background-color: color-mix(in srgb, var(--account-color) 15%, transparent);
+  color: color-mix(in srgb, var(--account-color) 45%, var(--foreground));
+
+  @variant dark {
+    background-color: color-mix(in srgb, var(--account-color) 22%, transparent);
+    color: color-mix(in srgb, var(--account-color) 55%, var(--foreground));
+  }
+}
+
+/* An account's avatar (AccountAvatar.tsx) filled the way its profile says (data-fill, from accountProfiles.ts), as a
+   machine's pill is: soft is the account chip's tint it sits on, solid the color itself (a shade deeper under white
+   letters, or as it is under dark ones for a light color, data-ink), outline a ring over nothing, and neutral a gray
+   tile with only its letters colored. Kept apart from account-chip, which the palette's swatches share. The ring
+   takes the squircle's own shape (--squircle, from the squircle utility on the same avatar): a box's ring would be
+   cut off at the corners by the mask. */
+@utility account-fill {
+  &[data-fill='solid'] {
+    background-color: color-mix(in oklab, var(--account-color) 82%, black);
+    color: white;
+  }
+  &[data-fill='solid'][data-ink='dark'] {
+    background-color: var(--account-color);
+    color: color-mix(in oklab, var(--account-color) 22%, black);
+  }
+  &[data-fill='outline'] {
+    position: relative;
+    background-color: transparent;
+  }
+  &[data-fill='outline']::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: color-mix(in srgb, var(--account-color) 55%, transparent);
+    mask:
+      var(--squircle) center / 100% 100% no-repeat,
+      var(--squircle) center / calc(100% - 2px) calc(100% - 2px) no-repeat;
+    mask-composite: exclude;
+  }
+  &[data-fill='neutral'] {
+    background-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+  }
+}
+
+/* A machine's pill (identity/Identity.tsx), filled the way that machine's look says (data-fill, from
+   machineLook.ts) in its one color (--machine-color): soft is the account chip's tint, solid the
+   color itself (a shade deeper under white words, or as it is under dark ones for a light color,
+   data-ink), outline a ring over nothing, and neutral a gray pill with only its icon colored.
+   A pill that opens something rings in its own ink on hover. */
+@utility machine-pill {
+  --machine-ink: color-mix(in srgb, var(--machine-color) 45%, var(--foreground));
+  background-color: color-mix(in srgb, var(--machine-color) 15%, transparent);
+  color: var(--machine-ink);
+
+  /* Alerts and buttons tint and nudge every icon inside them; a pill's icon keeps its own ink and place. */
+  & [data-machine-icon] {
+    color: inherit;
+    margin-inline: 0;
+  }
+
+  @variant dark {
+    --machine-ink: color-mix(in srgb, var(--machine-color) 55%, var(--foreground));
+    background-color: color-mix(in srgb, var(--machine-color) 22%, transparent);
+  }
+
+  &[data-fill='solid'] {
+    background-color: color-mix(in oklab, var(--machine-color) 82%, black);
+    color: white;
+  }
+  &[data-fill='solid'][data-ink='dark'] {
+    background-color: var(--machine-color);
+    color: color-mix(in oklab, var(--machine-color) 22%, black);
+  }
+  &[data-fill='outline'] {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--machine-color) 55%, transparent);
+  }
+  &[data-fill='neutral'] {
+    background-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+    color: var(--foreground);
+
+    & [data-machine-icon] {
+      color: var(--machine-color);
+    }
+  }
+  &[data-interactive]:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 40%, transparent);
+  }
+  &[data-fill='outline'][data-interactive]:hover {
+    box-shadow: inset 0 0 0 1px var(--machine-color);
+  }
+}
+
+/* A squircle: a superellipse (|x|^4 + |y|^4 = 1) filling the box, the shape of an account's avatar. Its sides run
+   straight longer and its corners round more gently than a rounded square's. A mask, since WebKit has no CSS
+   corner-shape. The shape is kept in --squircle so an outline avatar can cut its ring from it (account-fill). */
+@utility squircle {
+  --squircle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50L99.9 64.76L99.62 70.84L99.14 75.44L98.47 79.24L97.6 82.5L96.53 85.36L95.25 87.87L93.76 90.09L92.04 92.04L90.09 93.76L87.87 95.25L85.36 96.53L82.5 97.6L79.24 98.47L75.44 99.14L70.84 99.62L64.76 99.9L50 100L35.24 99.9L29.16 99.62L24.56 99.14L20.76 98.47L17.5 97.6L14.64 96.53L12.13 95.25L9.91 93.76L7.96 92.04L6.24 90.09L4.75 87.87L3.47 85.36L2.4 82.5L1.53 79.24L0.86 75.44L0.38 70.84L0.1 64.76L0 50L0.1 35.24L0.38 29.16L0.86 24.56L1.53 20.76L2.4 17.5L3.47 14.64L4.75 12.13L6.24 9.91L7.96 7.96L9.91 6.24L12.13 4.75L14.64 3.47L17.5 2.4L20.76 1.53L24.56 0.86L29.16 0.38L35.24 0.1L50 0L64.76 0.1L70.84 0.38L75.44 0.86L79.24 1.53L82.5 2.4L85.36 3.47L87.87 4.75L90.09 6.24L92.04 7.96L93.76 9.91L95.25 12.13L96.53 14.64L97.6 17.5L98.47 20.76L99.14 24.56L99.62 29.16L99.9 35.24Z'/%3E%3C/svg%3E");
+  mask: var(--squircle) center / 100% 100% no-repeat;
+}
+
+/* The one highlight for a row brought into view: the tint holds, then fades back to the row's own
+   background. Pages keep the row marked for 1.6s, so with reduced motion it holds the tint
+   that long instead of fading. */
+@keyframes highlight {
+  0%, 40% { background-color: var(--highlight); }
+}
+
+@utility row-highlight {
+  animation: highlight 1.6s ease-out;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background-color: var(--highlight);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overscroll-behavior: none;
+  }
+
+  body {
+    overflow: hidden;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--foreground);
+    background: var(--background);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  button, input, select, textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  code, kbd, pre, samp {
+    font-family: var(--font-mono);
+  }
+
+  ::-webkit-scrollbar {
+    width: var(--app-scrollbar-width);
+    height: var(--app-scrollbar-width);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--app-scrollbar-thumb);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--app-scrollbar-thumb-hover);
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+}
+
+/* Disabled auth files dim their content but keep the action buttons fully
+   legible. */
+/* A turned-off credential fades, all but its actions: Enable, the row's one button then, reads at full strength. */
+.real-auth-file-row.disabled > :not(.auth-file-row-head),
+.real-auth-file-row.disabled > .auth-file-row-head > :not(.auth-file-actions) {
+  opacity: 0.68;
+}
+
+/* Content scrolling under the page top bar fades out instead of cutting off at a hard edge. The fade
+   grows over the first 1.5rem of scroll, so a page at rest is never
+   masked, and the scrollbar lane stays opaque. Without scroll timelines the edge stays hard. A fill body (a page that
+   is one table) never scrolls, so it has no fade, and no mask: a masked ancestor stops anything inside it, like the
+   request sheet over Requests, from blurring what's behind it. */
+@property --page-scroll-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes page-scroll-fade {
+  to { --page-scroll-fade: 1.5rem; }
+}
+
+@supports (animation-timeline: scroll()) {
+  [data-slot='page-scroll']:not([data-fill]) {
+    animation: page-scroll-fade linear both;
+    animation-timeline: scroll(self);
+    animation-range: 0 1.5rem;
+    mask-image:
+      linear-gradient(
+        to bottom,
+        transparent,
+        rgb(0 0 0 / 30%) calc(var(--page-scroll-fade) * 0.25),
+        rgb(0 0 0 / 82%) calc(var(--page-scroll-fade) * 0.6),
+        black var(--page-scroll-fade)
+      ),
+      linear-gradient(black, black);
+    mask-position: left top, right top;
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%, var(--app-scrollbar-width) 100%;
+  }
+}
+
+/* A hidden window (minimized, closed to the tray, on another Space) pauses the decorative loops,
+   which read this through their --animate-* tokens. Nothing waits on them, so they carry on where
+   they left off when it's shown. windowVisibility.ts sets the attribute. */
+:root[data-window-hidden] {
+  --decorative-animation-state: paused;
+}
+
+/* Where the title-row controls start: 12px in, or 90pt from the window's edge past the Mac window buttons
+   (trafficLightPosition in tauri.conf.json), which stays 90pt on screen at any zoom. The title content (the wordmark,
+   and page top bars while the sidebar is hidden) starts 12px past the sidebar button, so it moves out as the button
+   grows: 130pt at actual size. Declared together on the shell, since a custom property's var() resolves where it's
+   declared. */
+[data-app-shell] {
+  --workspace-controls-left: 0.75rem;
+  --workspace-titlebar-content-left: calc(var(--workspace-controls-left) + var(--workspace-titlebar-control-size) + 0.75rem);
+}
+
+[data-app-shell][data-mac-title-bar] {
+  --workspace-controls-left: calc(90px / var(--zoom));
+}
+
+/* The sidebar's state dots (a page's badge, the Core button's, a provider's status) are 6px and often the only sign of
+   the state, so they clear 3:1 on the sidebar and its rows. On the light zinc-50 sidebar amber-500 and emerald-500
+   don't, so they take the 600s there; the black dark sidebar keeps the 500s. */
+[data-app-sidebar] {
+  --warning: var(--color-amber-600);
+  --success: var(--color-emerald-600);
+
+  @variant dark {
+    --warning: var(--color-amber-500);
+    --success: var(--color-emerald-500);
+  }
+}
+
+/* While the sidebar's edge is dragged, the pointer keeps the resize cursor over whatever it crosses,
+   buttons and links included, and nothing it passes gets selected. SidebarResizeHandle sets it. */
+:root[data-sidebar-resizing],
+:root[data-sidebar-resizing] * {
+  cursor: col-resize !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+/* Suppress all transitions during theme changes. The page scroll is left out: its fade runs on a
+   scroll timeline, where a 0s duration would pin it fully faded even at the top. */
+.no-transitions,
+.no-transitions *:not([data-slot='page-scroll']),
+.no-transitions *::before,
+.no-transitions *::after {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

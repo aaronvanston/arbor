@@ -1,0 +1,9 @@
+{
+  "comment": "Signed with a throwaway test key, not the release key; tests in TypeScript and Rust both check it.",
+  "publicKey": "BRkjvVrqFquaVNQz8OgbKbC4gE1J0u7phpvOScnKp3Q=",
+  "feed": {
+    "schemaVersion": 1,
+    "manifest": "{\n  \"schemaVersion\": 1,\n  \"version\": \"0.3.200\",\n  \"publishedAt\": \"2026-09-29T00:00:00Z\",\n  \"coreVersion\": \"8.0.3\",\n  \"releaseUrl\": \"https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.3.200\",\n  \"assets\": {\n    \"darwin-aarch64\": {\n      \"url\": \"https://github.com/aaronvanston/arbor/releases/download/arbor-v0.3.200/Arbor-v0.3.200-Darwin-aarch64.dmg\",\n      \"sha256\": \"abababababababababababababababababababababababababababababababab\",\n      \"sizeBytes\": 36000000\n    }\n  },\n  \"releases\": [\n    {\n      \"version\": \"0.3.200\",\n      \"summary\": \"Updates come from GitHub.\",\n      \"changes\": [\n        \"Read updates from GitHub releases\"\n      ]\n    }\n  ]\n}\n",
+    "signature": "v9VjdRjzVlU97wCQNFyAXZheAg+hAwg7XpZMWmsCpRIF4VZHDCrRu6zAJ+bZgw5+7E8ASs4S+XmI02HvpBSMAQ=="
+  }
+}
