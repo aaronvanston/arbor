@@ -1,0 +1,115 @@
+# Arbor's releases. Every half hour, a nightly from main when main has changed since the last one: a prerelease,
+# X.Y.Z-nightly.YYYYMMDD.N, that apps on the nightly channel take. A stable release is run by hand (Run workflow with
+# channel stable) after a `Release Arbor X.Y.Z` commit on main (scripts/release-commit.sh), and becomes the release
+# every app updates to. GitHub bills a private repository's macOS minutes, so scheduled runs wait until it's public.
+#
+# Secrets: ARBOR_RELEASE_SIGNING_KEY signs the update list, and only the publish job, which runs nothing from the
+# build, sees it. HUGEICONS_LICENSE_KEY installs the Pro icons, ARBOR_POSTHOG_KEY builds in usage data and crash
+# reports, and POSTHOG_CLI_API_KEY, if set, sends the source maps.
+name: Release
+
+on:
+  schedule:
+    - cron: '8,38 * * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: >-
+      github.repository == 'aaronvanston/arbor'
+      && (github.event_name == 'workflow_dispatch' || github.event.repository.visibility == 'public')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        env:
+          ARBOR_RELEASE_CHANNEL: ${{ inputs.channel || 'nightly' }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-plan.mjs
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.version != ''
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # uvx runs dmgbuild, which lays out the DMG's installer window.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            src-tauri
+            core-plugins/arbor-models
+      - name: Install
+        env:
+          HUGEICONS_LICENSE_KEY: ${{ secrets.HUGEICONS_LICENSE_KEY }}
+        run: bun install --frozen-lockfile
+      # An official build has the Pro icons and sends usage data, like one from the release Mac.
+      - name: Check the release secrets
+        env:
+          ARBOR_POSTHOG_KEY: ${{ secrets.ARBOR_POSTHOG_KEY }}
+        run: |
+          [[ -d node_modules/@hugeicons-pro/core-duotone-rounded ]] || { echo "::error::Hugeicons Pro didn't install; is HUGEICONS_LICENSE_KEY set?"; exit 1; }
+          [[ -n "$ARBOR_POSTHOG_KEY" ]] || { echo "::error::ARBOR_POSTHOG_KEY isn't set."; exit 1; }
+      - run: bun run verify
+      - run: bun run verify:rust
+      - name: Check the third-party notices
+        run: bun scripts/third-party-notices.mjs --check
+      - name: Build
+        env:
+          ARBOR_POSTHOG_KEY: ${{ secrets.ARBOR_POSTHOG_KEY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+        run: ./scripts/build-release.sh "$VERSION" "$RUNNER_TEMP/release/Arbor-v$VERSION-Darwin-aarch64.dmg"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dmg
+          path: ${{ runner.temp }}/release/Arbor-v${{ needs.plan.outputs.version }}-Darwin-aarch64.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the release and its tag
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dmg
+          path: ${{ runner.temp }}/release
+      - name: Publish
+        env:
+          ARBOR_RELEASE_SIGNING_KEY: ${{ secrets.ARBOR_RELEASE_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-workflow-release.sh "$VERSION" "$GITHUB_SHA" "$RUNNER_TEMP/release/Arbor-v$VERSION-Darwin-aarch64.dmg"

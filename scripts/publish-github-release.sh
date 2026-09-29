@@ -64,14 +64,15 @@ read -r recorded_version recorded_sha recorded_commit < <(node -e '
 [[ "$recorded_sha" == "$asset_sha" ]] || fail "$asset_name has changed since it was published; another build may have overwritten it."
 [[ "$recorded_commit" == "$(git rev-parse "$release_commit^")" ]] || fail "$asset_name was built from $recorded_commit, not from the commit before \"Release Arbor $version\"."
 
-# Mark this one Latest only when no newer release is on GitHub: apps read the Latest release.
+# Mark this one Latest only when no newer release is on GitHub: apps read the Latest release. Nightlies are
+# prereleases, never Latest, so only X.Y.Z tags count.
 newer_exists=0
 while read -r released; do
   [[ -n "$released" && "$released" != "$version" ]] || continue
   if [[ "$(printf '%s\n%s\n' "$released" "$version" | sort -V | head -n1)" != "$released" ]]; then
     newer_exists=1
   fi
-done < <(git ls-remote --tags --refs origin 'refs/tags/arbor-v*' | sed 's#.*refs/tags/arbor-v##' | sort -V)
+done < <(git ls-remote --tags --refs origin 'refs/tags/arbor-v*' | sed 's#.*refs/tags/arbor-v##' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/arbor-github-release.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT

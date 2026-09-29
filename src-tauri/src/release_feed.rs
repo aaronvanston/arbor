@@ -1,6 +1,6 @@
 //! Arbor's own update feed on macOS: the newest release on Arbor's GitHub repository, stable or, on the nightly channel,
 //! whichever is newer of that and the prereleases built from main. Each release carries its update
-//! list signed with a key kept on the Mac that publishes releases (scripts/release-signing.mjs), and nothing is offered
+//! list signed with Arbor's release key (scripts/release-signing.mjs), and nothing is offered
 //! or downloaded unless that signature checks out, so write access to the releases alone can't ship an update. When
 //! the repository is private, requests to GitHub's API carry the GitHub CLI's sign-in; a public one needs none. The
 //! sign-in goes to the API only, never to the storage host a download is redirected to.

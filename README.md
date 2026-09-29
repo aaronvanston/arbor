@@ -117,10 +117,11 @@ off too. A build from source sends nothing: the project key is only built into o
 
 ## Releases
 
-Releases are built and signed by the maintainer with `scripts/publish-local-update.sh` and published as
-`arbor-vX.Y.Z` GitHub releases by `scripts/publish-github-release.sh`. Each carries a DMG and an update list signed
-with Ed25519 (`src-tauri/release-signing.pub`); the app only installs what that list names. Release notes are kept in
-`release-notes.json`.
+Stable releases are published as `arbor-vX.Y.Z` GitHub releases. Nightlies, `X.Y.Z-nightly.YYYYMMDD.N`, are built
+from main when it changes, at most every half hour, and published as prereleases; Settings › Updates moves an install
+to them. GitHub Actions builds both (`.github/workflows/arbor-release.yml`), with the same `scripts/build-release.sh`
+the maintainer's Mac uses. Each carries a DMG and an update list signed with Ed25519 (`src-tauri/release-signing.pub`);
+the app only installs what that list names. Release notes are kept in `release-notes.json`.
 
 ## Layout
 

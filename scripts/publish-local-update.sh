@@ -9,8 +9,6 @@ fi
 requested_version="$1"
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 feed_dir="$HOME/Library/Application Support/Arbor Updates"
-work_dir="$(mktemp -d "${TMPDIR:-/tmp}/easycli-local-update.XXXXXX")"
-trap 'rm -rf "$work_dir"' EXIT
 
 case "$(uname -m)" in
   arm64) update_arch="aarch64" ;;
@@ -110,7 +108,7 @@ if ! mkdir "$claim" 2>/dev/null; then
     exit 1
   fi
 fi
-trap 'rm -rf "$work_dir"; [[ $published == 1 ]] || rm -rf "$claim"' EXIT
+trap '[[ $published == 1 ]] || rm -rf "$claim"' EXIT
 echo "$$" > "$claim/pid"
 echo "$repo_dir at $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$claim/by"
 if [[ -e "$feed_dir/Arbor-v${requested_version}-Darwin-${update_arch}.dmg" ]]; then
@@ -150,110 +148,13 @@ if ! bun scripts/third-party-notices.mjs --check; then
   exit 1
 fi
 
-# Bundle the official core release pinned in core-version.txt. The app installs it on a Mac
-# with no core yet, or over an older core after an update, and every core start needs the
-# config.example.yaml the archive carries.
-# checksums.txt is verified here but not bundled: upstream's CI release build re-signed the core
-# binary inside the archive, so the upstream checksum wouldn't match a DMG built there.
-core_version="$(tr -d '[:space:]' < core-version.txt)"
-core_version="${core_version#v}"
-core_asset="CLIProxyAPI_${core_version}_darwin_${update_arch}.tar.gz"
-core_release_url="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${core_version}"
-
-core_archive_verified() {
-  local archive="$1" checksums="$2" expected actual
-  [[ -f "$archive" && -f "$checksums" ]] || return 1
-  expected="$(awk -v name="$core_asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print tolower($1); exit } }' "$checksums")"
-  [[ -n "$expected" ]] || return 1
-  actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
-  [[ "$actual" == "$expected" ]]
-}
-
-mkdir -p cpa-core "$feed_dir"
-if core_archive_verified "cpa-core/$core_asset" cpa-core/checksums.txt; then
-  echo "Using cached core $core_asset"
-else
-  core_download="$work_dir/core"
-  mkdir -p "$core_download"
-  curl -fsSL --retry 3 -o "$core_download/$core_asset" "$core_release_url/$core_asset"
-  curl -fsSL --retry 3 -o "$core_download/checksums.txt" "$core_release_url/checksums.txt"
-  if ! core_archive_verified "$core_download/$core_asset" "$core_download/checksums.txt"; then
-    echo "SHA-256 verification failed for $core_asset" >&2
-    exit 1
-  fi
-  mv "$core_download/$core_asset" "cpa-core/$core_asset"
-  mv "$core_download/checksums.txt" cpa-core/checksums.txt
-fi
-
-core_entries="$(tar -tzf "cpa-core/$core_asset")"
-for required_entry in cli-proxy-api config.example.yaml; do
-  if ! grep -Eq "(^|/)${required_entry//./\\.}\$" <<< "$core_entries"; then
-    echo "$core_asset is missing $required_entry" >&2
-    exit 1
-  fi
-done
-
-# The DMG bundles every cpa-core/CLIProxyAPI_* file, so drop archives from earlier core versions.
-find cpa-core -maxdepth 1 -type f -name 'CLIProxyAPI_*' ! -name "$core_asset" -delete
-
-node scripts/set-version.mjs "$requested_version"
-node scripts/release-notes.mjs add --version "$requested_version"
-
-cat > portable-app.json <<JSON
-{
-  "schemaVersion": 1,
-  "application": "EasyCLIProxyAPI",
-  "version": "$requested_version",
-  "platform": "darwin",
-  "arch": "$update_arch",
-  "autoUpdate": true
-}
-JSON
-
-# Rust keeps source paths for panic messages, and a dependency's is under ~/.cargo, which names the build machine's
-# user; the build writes each as ~ instead, and this checkout's (generated code included) as arbor. The last match
-# wins.
-release_rustflags="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$HOME=~ --remap-path-prefix=$repo_dir=arbor"
-
-# The core plugin behind Settings › Extra models (core-plugins/arbor-models) ships beside the core archive, and Arbor
-# puts it in the core's plugins folder.
-RUSTFLAGS="$release_rustflags" cargo build --quiet --release --locked --manifest-path core-plugins/arbor-models/Cargo.toml
-mkdir -p cpa-core/plugins
-cp core-plugins/arbor-models/target/release/libarbor_models.dylib cpa-core/plugins/arbor-models.dylib
-
-RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json
-
-app_path="$repo_dir/src-tauri/target/release/bundle/macos/Arbor.app"
-# Anyone can read the app's strings, so a build that still names the build machine's home folder isn't published. The
-# bytes are searched whole: `strings` skips a library's load commands, where the linker writes the path it was built at.
-if LC_ALL=C grep -aFq "$HOME/" "$app_path/Contents/MacOS/"* "$app_path/Contents/Resources/cpa-core/plugins/"* || grep -rFlq "$HOME/" dist; then
-  echo "The build still contains $HOME, which names this Mac's user; not publishing it." >&2
-  exit 1
-fi
-codesign --force --deep --sign - "$app_path"
-codesign --verify --deep --strict "$app_path"
-
-dmg_stage="$work_dir/dmg"
-mkdir -p "$dmg_stage"
-ditto "$app_path" "$dmg_stage/Arbor.app"
-ln -s /Applications "$dmg_stage/Applications"
-
+mkdir -p "$feed_dir"
 asset_name="Arbor-v${requested_version}-Darwin-${update_arch}.dmg"
 asset_path="$feed_dir/$asset_name"
-# The window someone sees when they open the DMG: the installer background with the app and Applications in its
-# clearings, laid out by dmgbuild (scripts/dmg/settings.py). The app's updater only needs Arbor.app at the top of the
-# image, so if uv or dmgbuild isn't there, or fails, this falls back to a plain DMG.
-if command -v uvx >/dev/null 2>&1 \
-  && uvx --quiet dmgbuild@1.6.7 -s "$repo_dir/scripts/dmg/settings.py" -D app="$app_path" \
-    -D background="$repo_dir/scripts/dmg/background.tiff" "Arbor" "$asset_path" >"$work_dir/dmgbuild.log" 2>&1; then
-  echo "Built the DMG with its installer window"
-else
-  echo "dmgbuild didn't build the DMG, so it's a plain one:" >&2
-  tail -n 5 "$work_dir/dmgbuild.log" >&2 2>/dev/null || true
-  rm -f "$asset_path"
-  hdiutil create -volname "Arbor" -srcfolder "$dmg_stage" -format UDZO -ov "$asset_path" >/dev/null
-fi
-codesign --force --sign - "$asset_path"
+"$repo_dir/scripts/build-release.sh" "$requested_version" "$asset_path"
+node scripts/release-notes.mjs add --version "$requested_version"
+core_version="$(tr -d '[:space:]' < core-version.txt)"
+core_version="${core_version#v}"
 
 asset_sha="$(shasum -a 256 "$asset_path" | awk '{print $1}')"
 asset_size="$(stat -f %z "$asset_path")"

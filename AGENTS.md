@@ -108,8 +108,11 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   `stats-cache.json` copies it keeps, shown apart for days whose transcripts are gone.
 - `tests/`: `bun:test` suites (`*.test.ts` and `*.test.tsx`).
 - `scripts/`: the local update feed (`publish-local-update.sh`,
-  `install-local-update-server.sh`), the GitHub record of each release
-  (`publish-github-release.sh`, which is also the app's update feed), the public
+  `install-local-update-server.sh`), the release build it and the Release workflow
+  share (`build-release.sh`), the GitHub record of each release
+  (`publish-github-release.sh`, which is also the app's update feed), the Release
+  workflow's plan and publish steps (`release-plan.mjs`, `publish-workflow-release.sh`)
+  and the commit a stable release starts from (`release-commit.sh`), the public
   release notes in `release-notes.json` (`release-notes.mjs`), the update list's
   signing key (`release-signing.mjs`), disk cleanup (`clean-dev-disk.sh`, which removes idle
   worktrees' Rust build folders, worktrees whose work is on origin/main, and
@@ -376,6 +379,28 @@ The maintainer runs releases, or an agent the maintainer has told to release.
    this release built. The app updates from the newest GitHub release, so no Mac is
    offered the release until this runs. `--dry-run` shows what it would do.
 
+### From GitHub Actions
+
+`.github/workflows/arbor-release.yml` builds releases on GitHub's Macs, with
+`scripts/build-release.sh` (the local script's build) after `bun run verify` and
+`bun run verify:rust`, and publishes them with `scripts/publish-workflow-release.sh`.
+GitHub bills a private repository's macOS minutes, so while this one is private it
+only runs when started by hand.
+
+- Nightly: every half hour, when main has moved since the last nightly or release.
+  Its version is `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the next release
+  (`scripts/release-plan.mjs`), with fixed notes, and nothing is committed for it.
+  Only apps on the nightly channel (Settings › Updates) take it.
+- Stable: `ARBOR_RELEASE_SUMMARY="…" ./scripts/release-commit.sh <X.Y.Z>` commits
+  `Release Arbor X.Y.Z` (the version and its notes) without building. Push it to main,
+  then run `gh workflow run arbor-release.yml --repo aaronvanston/arbor --ref main -f channel=stable`.
+  The release becomes the latest, which every app reads.
+
+Its secrets are `ARBOR_RELEASE_SIGNING_KEY` (the Keychain's signing key as base64
+PKCS#8, which only the publish job sees), `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY`
+and, for source maps, `POSTHOG_CLI_API_KEY`. `.github/workflows/arbor-checks.yml` runs
+the same checks on pull requests and pushes to main once the repository is public.
+
 ### Release notes
 
 The notes are public: the GitHub release, the app's update card, and anything that
@@ -388,7 +413,8 @@ internals, usage figures, other apps' names, machines, people, emails or paths;
 checks them all, and `ARBOR_RELEASE_SUMMARY="…" node scripts/release-notes.mjs preview
 --pending <X.Y.Z>` shows what the next release will say.
 
-Arbor's tags are `arbor-vX.Y.Z`, made only by that script. The `v*` tags are
+Arbor's tags are `arbor-vX.Y.Z` and `arbor-vX.Y.Z-nightly.YYYYMMDD.N`, made only by the
+GitHub script and the Release workflow. The `v*` tags are
 upstream's, and pushing one starts upstream's release workflow, so never push tags
 yourself (`git push --tags` included).
 

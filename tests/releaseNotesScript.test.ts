@@ -8,7 +8,9 @@ import {
   readReleaseNotes,
   releaseCommitMessage,
   releaseEntry,
+  releaseNotesFor,
   releasesUpTo,
+  NIGHTLY_SUMMARY,
   RELEASE_LIMITS,
   withRelease,
 } from '../scripts/release-notes.mjs';
@@ -81,6 +83,17 @@ describe('release-notes.json', () => {
     expect(shown).toHaveLength(RELEASE_LIMITS.versions);
     expect(itemAt(shown, 0).version).toBe('0.3.195');
     expect(() => releasesUpTo(releases, '0.4.0')).toThrow('no notes');
+  });
+
+  test("a nightly's notes say what it is, then the releases before it", () => {
+    const releases = [release('1.0.0'), release('0.3.199')];
+    const nightly = { version: '1.0.1-nightly.20261001.7', summary: NIGHTLY_SUMMARY, changes: [] };
+    expect(releaseNotesFor(releases, '1.0.1-nightly.20261001.7')).toEqual([nightly, ...releases]);
+    // 1.0.0's nightlies come before 1.0.0.
+    expect(releaseNotesFor(releases, '1.0.0-nightly.20260930.3').map((entry) => entry.version)).toEqual(['1.0.0-nightly.20260930.3', '0.3.199']);
+    expect(releaseNotesFor(releases, '1.0.0')).toEqual(releases);
+    expect(() => releaseNotesFor(releases, '1.0.1-beta.1')).toThrow('no notes');
+    expect(releaseEntry(nightly, [])).toEqual(nightly);
   });
 
   test('is read as committed at a release', () => {

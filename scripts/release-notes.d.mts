@@ -13,6 +13,9 @@ export function releaseEntry(release: { version: string; summary?: string; chang
 export function parseReleaseNotes(text: string): Release[];
 export function withRelease(releases: Release[], entry: Release): Release[];
 export function releasesUpTo(releases: Release[], version: string): Release[];
+export const NIGHTLY_SUMMARY: string;
+export function isNightly(version: string): boolean;
+export function releaseNotesFor(releases: Release[], version: string): Release[];
 export function feedManifest(options: {
   feed?: 'local' | 'github';
   version: string;

@@ -114,6 +114,23 @@ export function releasesUpTo(releases, version) {
   return releases.slice(at, at + RELEASE_LIMITS.versions);
 }
 
+export const NIGHTLY_SUMMARY = 'A nightly build of what’s next.';
+
+/** Whether `version` is a nightly, `X.Y.Z-nightly.YYYYMMDD.N`, built from main by the Release workflow. */
+export function isNightly(version) {
+  return /^\d+\.\d+\.\d+-nightly\.\d{8}\.\d+$/.test(version);
+}
+
+/**
+ * The notes a release carries. A nightly has none written for it, so it says what it is, followed by the releases
+ * before it; X.Y.Z-nightly comes before X.Y.Z.
+ */
+export function releaseNotesFor(releases, version) {
+  if (!isNightly(version)) return releasesUpTo(releases, version);
+  const earlier = releases.filter((release) => compareVersions(release.version, version) < 0);
+  return [{ version, summary: NIGHTLY_SUMMARY, changes: [] }, ...earlier].slice(0, RELEASE_LIMITS.versions);
+}
+
 function assetName(version, arch) {
   return `Arbor-v${version}-Darwin-${arch}.dmg`;
 }
@@ -238,7 +255,8 @@ async function main([command, ...argv]) {
       // is pushed, from the notes as committed there.
       const github = command === 'github-manifest';
       const version = validateAppVersion(required(values, 'version'));
-      const releases = releasesUpTo(readReleaseNotes({ ref: github ? required(values, 'ref') : values.ref }), version);
+      const notes = readReleaseNotes({ ref: github ? required(values, 'ref') : values.ref });
+      const releases = github ? releaseNotesFor(notes, version) : releasesUpTo(notes, version);
       const manifest = feedManifest({
         feed: github ? 'github' : 'local',
         version,
@@ -254,7 +272,7 @@ async function main([command, ...argv]) {
     }
     case 'github-body': {
       const version = validateAppVersion(required(values, 'version'));
-      const [release] = releasesUpTo(readReleaseNotes({ ref: values.ref }), version);
+      const [release] = releaseNotesFor(readReleaseNotes({ ref: values.ref }), version);
       process.stdout.write(githubReleaseBody({ release: releaseEntry(release), asset: values.asset, sha256: values.sha256 }));
       return;
     }
