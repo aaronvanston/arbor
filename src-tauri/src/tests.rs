@@ -2,6 +2,7 @@ use super::*;
 
 mod agent_configuration;
 mod agent_state;
+mod app_identity;
 mod alias_delete;
 mod alias_save;
 mod app_settings;

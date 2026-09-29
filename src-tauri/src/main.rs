@@ -1,4 +1,5 @@
 mod agents;
+mod app_identity;
 mod app_settings;
 mod app_update;
 mod bindings;
@@ -1477,6 +1478,8 @@ fn main() {
             return;
         }
     };
+
+    app_identity::move_legacy_data_at_launch();
 
     let portable_update_ack = portable_update_ack_argument();
     let gui_config = match load_or_create_gui_config() {

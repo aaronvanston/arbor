@@ -1307,10 +1307,7 @@ pub(crate) fn core_base_dir() -> Result<PathBuf, String> {
         let home_dir = env::var_os("HOME")
             .map(PathBuf::from)
             .ok_or_else(|| "Cannot determine the macOS user directory".to_string())?;
-        return Ok(home_dir
-            .join("Library")
-            .join("Application Support")
-            .join("com.cpa.gui"));
+        return Ok(crate::app_identity::macos_data_dir(&home_dir));
     }
     Ok(executable_dir)
 }

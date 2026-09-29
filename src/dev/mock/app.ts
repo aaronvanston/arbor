@@ -64,7 +64,7 @@ function emulatePageZoom(factor: number) {
 }
 
 /** What zoom.rs hands back when the settings file can't take the new level (`?zoomsave=fail`). */
-const ZOOM_UNSAVED = 'Failed to write configuration directly /Users/owner/Library/Application Support/com.cpa.gui/config.toml: Permission denied (os error 13)';
+const ZOOM_UNSAVED = 'Failed to write configuration directly /Users/casey/Library/Application Support/onl.arbor.app/config.toml: Permission denied (os error 13)';
 
 function setMockZoom(step: number): ZoomLevel {
   // As in zoom.rs, the level is saved first and only then put on the window, so a refused save leaves it where it was.

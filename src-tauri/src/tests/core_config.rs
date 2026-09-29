@@ -340,7 +340,7 @@ fn packaged_macos_auth_directory_is_copied_before_config_is_repointed() {
     let persistent_root = root
         .join("Library")
         .join("Application Support")
-        .join("com.cpa.gui");
+        .join("onl.arbor.app");
     let destination = persistent_root.join(OAUTH_DIR_NAME);
     let install_dir = persistent_root.join("cpa-core");
     fs::create_dir_all(source.join("nested")).unwrap();

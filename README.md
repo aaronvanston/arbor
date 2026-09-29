@@ -60,7 +60,7 @@ bun tauri build --bundles app      # build Arbor.app into src-tauri/target/relea
 commercially licensed icon set that only official builds include. Without it the free Hugeicons set is used.
 
 A development build keeps its data in `src-tauri/target/debug`, away from an installed Arbor's. The app itself keeps
-its config, sign-ins and usage history in `~/Library/Application Support/com.cpa.gui`.
+its config, sign-ins and usage history in `~/Library/Application Support/onl.arbor.app`.
 
 ### The browser mock
 

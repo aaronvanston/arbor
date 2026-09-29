@@ -14,8 +14,10 @@ EasyCLIProxyAPI, MIT licensed (see `LICENSE` and `THIRD_PARTY_NOTICES.md`).
 
 Stack: Tauri 2, React 19, TypeScript, Tailwind CSS v4 and Base UI (`@base-ui/react`)
 in the webview; Rust in `src-tauri/`; Bun is the package manager and test runner.
-The bundle id is still `com.cpa.gui`, so the real app's data lives in
-`~/Library/Application Support/com.cpa.gui`. Leave that folder alone. The session
+The bundle id is `onl.arbor.app`, so the real app's data lives in
+`~/Library/Application Support/onl.arbor.app`. Earlier versions ran as `com.cpa.gui`,
+EasyCLIProxyAPI's id; `app_identity.rs` moves their folder across once and leaves a link
+at the old path. Leave both alone. The session
 archive is real data too: its index is in `session-archive/` inside that folder, and
 its store is on the drive chosen in Settings › Session Archive. Leave those alone as well.
 

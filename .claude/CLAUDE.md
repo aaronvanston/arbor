@@ -17,8 +17,10 @@ licensed; `THIRD_PARTY_NOTICES.md` (`bun run notices`) has what it includes.
   Hugeicons (`src/components/ui/icons.tsx`).
 - Native side: Rust in `src-tauri/`, with SQLite through `rusqlite`.
 - Tooling: Bun installs packages and runs the tests.
-- The bundle id is still `com.cpa.gui`. The real app keeps its config, credentials
-  and usage history in `~/Library/Application Support/com.cpa.gui`; don't go there.
+- The bundle id is `onl.arbor.app`. The real app keeps its config, credentials and
+  usage history in `~/Library/Application Support/onl.arbor.app`; don't go there, nor to
+  `com.cpa.gui` beside it, the old id's folder, which `app_identity.rs` moves across
+  on the first launch and leaves as a link.
   The session archive is live data as well: its index sits in `session-archive/` in
   that folder and its store on the drive chosen in Settings › Session Archive. Don't open
   or change either.
