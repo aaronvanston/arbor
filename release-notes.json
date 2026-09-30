@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.3.202",
+    "summary": "Arbor has its own app identity now; your settings, sign-ins and history move across on the first launch.",
+    "changes": [
+      "macOS sees a new app, so it may ask again to send notifications and to reach your archive drive.",
+      "Open at login, your running proxy and your agents carry on as before."
+    ]
+  },
+  {
     "version": "0.3.201",
     "summary": "Agent homes: Arbor finds where each machine's agents keep their homes, and you can add or switch any of them.",
     "changes": [
