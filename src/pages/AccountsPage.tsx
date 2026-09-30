@@ -32,11 +32,11 @@ import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { LimitSparkline } from '../components/LimitSparkline';
 import { useLimitsHistory } from '../services/limitsHistory';
 import { formatResetCountdown } from '../services/providerLimits';
-import { countsTowardCap, useAccountReserves, useReserveFailures, type PausedAccount } from '../services/accountReserves';
+import { capForRow, capOf, useAccountReserves, useReserveFailures, type AccountCap, type PausedAccount } from '../services/accountReserves';
 import { resumeAccount } from '../services/accountPause';
 import { useShortcut } from '../hooks/useShortcuts';
 import { WithShortcut } from '../components/ShortcutKbd';
-import { ReserveMenu } from '../components/ReserveMenu';
+import { ReserveChip } from '../components/ReserveControl';
 import { planLabel, planVariant } from '../services/planCosts';
 import { AccountProfileDialog, type ProfileTarget } from '../components/AccountProfileDialog';
 import { LimitUsageDialog, type LimitUsageTarget } from '../components/LimitUsageDialog';
@@ -489,7 +489,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                         warnings={warnings.filter((warning) => warning.account === account)}
                         headline={headline.label}
                         flash={flash === account.key}
-                        cap={isOAuthCredentialFile(account.file) ? reserves.caps[account.key] ?? null : undefined}
+                        cap={isOAuthCredentialFile(account.file) ? capOf(reserves, account.key) : undefined}
                         availability={availabilityOf(account.file)}
                         commands={commands}
                         reordering={reordering === provider}
@@ -568,7 +568,7 @@ function PausedBlock({ items, failures, flash }: { items: Paused[]; failures: Re
                 </span>
                 {failure ? <span className="block truncate text-warning-foreground" title={failure}>{t('reserves.failed', { error: failure })}</span> : null}
               </span>
-              <ReserveMenu accountKey={item.key} name={item.name} paused={item.paused} always />
+              <ReserveChip accountKey={item.key} name={item.name} provider={item.paused.provider} paused={item.paused} always />
               <Button variant="outline" size="xs" disabled={busy !== null} focusableWhenDisabled onClick={() => void resume(item)} title={t('reserves.paused.resumeHint', { window })}>
                 {busy === item.key ? <Spinner className="size-3" /> : <Play />}
                 {t('reserves.paused.resume')}
@@ -892,7 +892,7 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
   flash?: boolean;
   headline: string | null;
   /** How much of each limit the proxy may use, null without a cap, or undefined when the account can't be paused. */
-  cap?: number | null;
+  cap?: AccountCap | null;
   /** How the core has the credential now: signed in and ready, resting, or needing a new sign-in. */
   availability: AuthFileAvailability;
   commands: AuthFileCommands;
@@ -946,7 +946,7 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
         <strong className={cn('min-w-0 shrink truncate text-sm font-medium text-foreground', !profile.custom && 'font-mono')} title={account.fileName}>{name}</strong>
         {quota.plan ? <Badge variant={planVariant(quota.plan)}>{planLabel(quota.plan)}</Badge> : null}
         {!reordering ? <ResetCreditsChip quota={quota} claude={claude} blocked={resetBlocked} onReset={onReset} /> : null}
-        {!reordering && cap !== undefined ? <ReserveMenu accountKey={account.key} name={name} /> : null}
+        {!reordering && cap !== undefined ? <ReserveChip accountKey={account.key} name={name} provider={providerForFile(account.file)} /> : null}
         {!reordering && status ? (
           <span className={cn('min-w-0 truncate', quota.status !== 'error' ? 'text-muted-foreground' : stale ? 'text-warning-foreground' : 'text-error-foreground')} title={stale ? quota.error : undefined}>
             {status}
@@ -1089,15 +1089,16 @@ function WindowRow({ row, headline, warning, cap, now, className, style, onExpla
   headline: string | null;
   /** The headline window this one runs out before, when it will. */
   warning?: string;
-  cap: number | null;
+  cap: AccountCap | null;
   now: number;
   className?: string;
   style?: CSSProperties;
   onExplain?: (row: QuotaRow, scope: LimitScope) => void;
 }) {
   const { t } = useI18n();
-  // Where the account gets paused, in the bar's terms of what's left.
-  const marker = cap !== null && countsTowardCap(row) ? 100 - cap : null;
+  // Where the account gets paused, in the bar's terms of what's left; an easing cap moves it left as the reset nears.
+  const capped = cap !== null ? capForRow(row, cap, now) : null;
+  const marker = capped ? 100 - capped.percent : null;
   // Where the fill would sit had the window been spent evenly so far.
   const pace = evenPace(row.remainingPercent, row.resetAtMs, row.windowMs, now);
   const reset = formatQuotaReset(row.resetAtMs, row.reset, now);
@@ -1112,7 +1113,7 @@ function WindowRow({ row, headline, warning, cap, now, className, style, onExpla
     reset ? t('accounts.window.resets', { time: reset }) : '',
     row.detail ?? '',
     pace ? t('accounts.pace.even', { percent: Math.round(pace.evenPercent) }) : '',
-    marker !== null ? t('reserves.marker', { percent: marker }) : '',
+    marker !== null ? t(capped?.eased ? 'reserves.markerEased' : 'reserves.marker', { percent: Math.round(marker) }) : '',
   ].filter(Boolean);
   const content = (
     <>

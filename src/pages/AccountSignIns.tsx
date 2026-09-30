@@ -7,6 +7,7 @@ import { AccountsEmpty } from '../components/AccountsEmpty';
 import { AddAccountDialog, type AddAccountTarget } from '../components/AddAccountDialog';
 import { AuthFileFix, AuthFileMenuItems, AuthFileStatus, authFileProviderKey, authFileProviderName, useAuthFileCommands, type AuthFileCommands } from '../components/AuthFileCommands';
 import { ProviderMark } from '../components/identity/Identity';
+import { capLabel } from '../components/ReserveControl';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -28,7 +29,7 @@ import { displayRows, useAccountLimitPrefs } from '../services/accountLimits';
 import { sortByOrder, useAccountOrder } from '../services/accountOrder';
 import { resumeAccount } from '../services/accountPause';
 import { fileProfile, useAccountProfiles, type ResolvedProfile } from '../services/accountProfiles';
-import { useAccountReserves, type PausedAccount } from '../services/accountReserves';
+import { capOf, useAccountReserves, type AccountCap, type PausedAccount } from '../services/accountReserves';
 import { accountsGap, ensureAccountsLoaded, setAccountsError, useLiveAccounts } from '../services/accountsStore';
 import { authFileAvailability, isAuthFileGoneFromDisk, isRuntimeOnlyAuthFile, parseAuthFilePriority, type AuthFileAvailability } from '../services/authFiles';
 import { useShownIdentity } from '../services/emailPrivacy';
@@ -262,7 +263,7 @@ export function AccountSignInsPage({ onNavigate }: { onNavigate?: (view: AppView
                     signIn={signIn}
                     profile={fileProfile(signIn.file, profiles)}
                     email={shown(readString(signIn.file, 'email', 'account', 'label'), { email: readString(signIn.file, 'email') })}
-                    cap={reserves.caps[signIn.key]}
+                    cap={capOf(reserves, signIn.key)}
                     hidden={hiddenWindows[providerForFile(signIn.file) ?? ''] ?? []}
                     commands={commands}
                     onEdit={() => editProfile(signIn.file)}
@@ -333,7 +334,7 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
   profile: ResolvedProfile;
   /** The account's email as it's shown: hidden while the setting is on. */
   email: string;
-  cap: number | undefined;
+  cap: AccountCap | null;
   /** The provider's windows hidden on Limits, which are left out here too. */
   hidden: readonly string[];
   commands: AuthFileCommands;
@@ -353,7 +354,7 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
   const facts = [
     email,
     priority ? t('accounts.routing.priority', { priority }) : '',
-    cap ? t('reserves.cap', { percent: cap }) : '',
+    cap ? capLabel(t, cap) : '',
     resets ? t(claude
       ? resets === 1 ? 'accounts.resets.banked.one' : 'accounts.resets.banked.other'
       : resets === 1 ? 'accounts.resets.manual.one' : 'accounts.resets.manual.other', { count: resets }) : '',

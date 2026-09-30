@@ -5,6 +5,7 @@ import { getAccountLimitPrefs, useAccountLimitPrefs } from '../services/accountL
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import {
   applyReserveSteps,
+  capOf,
   getAccountReserves,
   RESERVE_WATCH_INTERVAL_MS,
   reserveNotifications,
@@ -73,7 +74,8 @@ export function AccountReservesMonitor({ coreReady }: { coreReady: boolean }) {
   useEffect(() => {
     if (!coreReady) return;
     const timer = window.setInterval(() => {
-      const { caps, paused, skipUntil } = getAccountReserves();
+      const state = getAccountReserves();
+      const { caps, paused, skipUntil } = state;
       if (!Object.keys(caps).length) return;
       const nowMs = Date.now();
       const snapshot = getQuotaCacheSnapshot();
@@ -81,8 +83,8 @@ export function AccountReservesMonitor({ coreReady }: { coreReady: boolean }) {
       const due = getAccountsSnapshot().files.filter((file) => {
         const key = quotaKey(file);
         const provider = providerForFile(file);
-        const cap = caps[key];
-        return cap !== undefined && provider !== null && !paused[key] && (skipUntil[key] ?? 0) <= nowMs
+        const cap = capOf(state, key);
+        return cap !== null && provider !== null && !paused[key] && (skipUntil[key] ?? 0) <= nowMs
           && reserveReadingDue(snapshot[key], cap, hiddenNow[provider] ?? [], nowMs);
       });
       if (due.length) void refreshAccountQuotas(due);

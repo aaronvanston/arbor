@@ -3,7 +3,7 @@ import { AlertCircle, Check, Copy, Layers, LogIn, Pencil, Power, PowerOff, Searc
 import { useConfirmation } from './ConfirmationDialog';
 import { AuthFileModelsDialog } from './AuthFileModelsDialog';
 import { AuthReauthDialog, type ReauthTarget } from './AuthReauthDialog';
-import { ReserveSubmenu } from './ReserveMenu';
+import { ReserveDialog, ReserveMenuItem, type ReserveTarget } from './ReserveControl';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
@@ -23,6 +23,7 @@ import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { translate, useI18n } from '../i18n';
 import type { MessageKey, MessageVariables } from '../i18n/resources';
 import { cn } from '../lib/utils';
+import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import type { PausedAccount } from '../services/accountReserves';
 import { loadAccountFiles, setAccountsError } from '../services/accountsStore';
 import { authFileActions, type AuthFileAction } from '../services/authFileActions';
@@ -43,7 +44,7 @@ import { reauthProviderForFile, type ReauthOutcome } from '../services/authReaut
 import { managementApi, readBoolean, readString } from '../services/managementApi';
 import { modelMatchesRule, normalizeOAuthExcludedRules, openOAuthModelNames, setOAuthModelsExcluded, type OAuthModelDefinition } from '../services/oauthModels';
 import { loadOAuthModelSettings, saveOAuthModelSettings, type OAuthModelSettings, type OAuthModelTarget } from '../services/oauthModelSettings';
-import { quotaKey, type AuthFile } from '../services/quotaService';
+import { fileName, providerForFile, quotaKey, type AuthFile } from '../services/quotaService';
 import { formatQuotaReset } from '../services/quotaTime';
 
 /**
@@ -195,7 +196,10 @@ export function AuthFileStatus({ availability, now, removed = false, paused, rea
       break;
     case 'disabled': {
       if (!paused) break;
-      details = [t('reserves.authFiles.hint', { cap: paused.cap, window: paused.window.charAt(0).toLowerCase() + paused.window.slice(1) })];
+      const window = paused.window.charAt(0).toLowerCase() + paused.window.slice(1);
+      details = [paused.easedCap !== undefined
+        ? t('reserves.authFiles.hintEased', { cap: paused.cap, eased: paused.easedCap, window })
+        : t('reserves.authFiles.hint', { cap: paused.cap, window })];
       const time = upcoming(paused.resumeAtMs);
       aside = time ? t('reserves.authFiles.back', { time }) : null;
       break;
@@ -228,6 +232,8 @@ export function useAuthFileCommands(listing: AuthFile[]) {
   const [reauthTarget, setReauthTarget] = useState<ReauthTarget | null>(null);
   const [modelViewName, setModelViewName] = useState<string | null>(null);
   const [modelsTarget, setModelsTarget] = useState<OAuthModelTarget | null>(null);
+  const [capTarget, setCapTarget] = useState<ReserveTarget | null>(null);
+  const profiles = useAccountProfiles();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Provider-wide exclusions only apply to OAuth credential files, so runtime entries and API keys add no provider.
   const modelsProviders: ModelsProvider[] = useMemo(() => oauthModelProvidersFromAuthFiles(listing)
@@ -372,6 +378,12 @@ export function useAuthFileCommands(listing: AuthFile[]) {
 
   const copyName = (file: AuthFile) => void copy(authFileName(file), { label: t('authFiles.nameCopied') });
 
+  /** Opens an account's cap, with what paused it when Arbor has it paused. */
+  const editCap = (file: AuthFile, paused?: PausedAccount) => {
+    const key = quotaKey(file);
+    setCapTarget({ key, name: resolveAccountProfile(key, fileName(file), profiles[key]).name, provider: providerForFile(file), paused });
+  };
+
   const dialogs = (
     <>
       <input ref={fileInputRef} type="file" accept=".json,application/json" multiple hidden onChange={(event) => void upload(event)} />
@@ -387,6 +399,7 @@ export function useAuthFileCommands(listing: AuthFile[]) {
       {modelViewName ? <AuthFileModelsDialog name={modelViewName} onClose={() => setModelViewName(null)} /> : null}
       <AuthReauthDialog target={reauthTarget} onClose={() => setReauthTarget(null)} onCompleted={reauthCompleted} />
       <ExcludedModelsDialog target={modelsTarget} providers={modelsProviders} onTarget={setModelsTarget} onClose={() => setModelsTarget(null)} />
+      <ReserveDialog target={capTarget} onClose={() => setCapTarget(null)} />
     </>
   );
 
@@ -405,6 +418,7 @@ export function useAuthFileCommands(listing: AuthFile[]) {
     excludeModels,
     providerModels,
     copyName,
+    editCap,
     dialogs,
   };
 }
@@ -435,7 +449,7 @@ export function AuthFileMenuItems({ file, availability, commands, paused }: {
           </MenuItem>
         );
       case 'cap':
-        return <ReserveSubmenu key={action.id} accountKey={quotaKey(file)} paused={paused} />;
+        return <ReserveMenuItem key={action.id} accountKey={quotaKey(file)} onOpen={() => commands.editCap(file, paused)} />;
       case 'models':
         return (
           <MenuItem key={action.id} disabledReason={reason} onClick={() => commands.viewModels(file)}>

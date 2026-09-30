@@ -44,6 +44,10 @@
  * or `?quota=error` to have one Claude and one Codex account fail to read their limits;
  * `?caps=new` to have Claude report caps Arbor has no fixed label for (a 7-day Omelette window, a Haiku weekly limit);
  * `?pace=ahead` to have the Claude Fable and Codex weekly limits spent well ahead of an even pace;
+ * `?reserves=eased` for caps on two accounts: codex-backup up to 50% easing toward each reset (its bars' ticks sit
+ * further along than half) and codex-casey up to 80% held flat; `?reserves=paused` also caps claude-max at 50% easing,
+ * which Arbor pauses as the page loads (its Sonnet week is past the 71% the cap has eased to), back in under three days
+ * rather than at that week's reset;
  * `?codexreset=already`, `nothing` or `none` to have Codex answer a reset as already redeemed, nothing to
  * reset or no credit left; `?codexreset=lost` to lose the first reset's reply after it went through;
  * `?codexreset=clear-fails` to have the core refuse to clear an account's cooldown after a reset;
@@ -533,6 +537,15 @@ export function installTauriMock() {
     const oldPicks = ['page:main:setup:context', 'page:main:setup:projects', 'page:main:usage:telemetry', 'page:main:setup:overview', 'page:main:setup:history'];
     window.localStorage.setItem('cpa-gui.palette.recent.v1', JSON.stringify(oldPicks));
     window.localStorage.setItem('cpa-gui.setup.tab.v1', 'context');
+  }
+  const reservesScenario = params.get('reserves');
+  if (reservesScenario === 'eased' || reservesScenario === 'paused') {
+    window.localStorage.setItem('cpa-gui.account-reserves.v1', JSON.stringify({
+      caps: { 'codex-backup.json::codex-3': 50, 'codex-casey.json::codex-1': 80, ...(reservesScenario === 'paused' ? { 'claude-max.json::claude-1': 50 } : {}) },
+      easing: { 'codex-backup.json::codex-3': true, ...(reservesScenario === 'paused' ? { 'claude-max.json::claude-1': true } : {}) },
+      paused: {},
+      skipUntil: {},
+    }));
   }
   if (params.get('recent') === 'seed') {
     window.localStorage.setItem('cpa-gui.palette.recent.v1', JSON.stringify(['page:settings:auth-files', 'action:pause-account', 'page:main:setup', 'action:theme-dark']));
