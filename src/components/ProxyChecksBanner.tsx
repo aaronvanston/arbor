@@ -44,6 +44,8 @@ function ProxyProblemAlert({ problem, onNavigate }: { problem: ProxyProblem; onN
   const variables = proxyProblemVariables(problem);
   const { kind } = problem;
   const network = kind === 'openToNetwork';
+  // Like a network warning, a guessable key is a risk to fix rather than something broken.
+  const warning = network || kind === 'defaultClientKey';
 
   const openSetting = onNavigate && kind !== 'settingsNotLoaded' ? () => {
     requestFocus('setting', PROXY_PROBLEM_SETTING[kind]);
@@ -77,8 +79,8 @@ function ProxyProblemAlert({ problem, onNavigate }: { problem: ProxyProblem; onN
       : openSetting ? <Button variant="outline" size="xs" onClick={openSetting}>{t('proxyChecks.openSetting')}</Button> : null;
   return (
     <Alert
-      variant={network ? 'warning' : 'error'}
-      icon={network ? <TriangleAlert /> : <ServerCog />}
+      variant={warning ? 'warning' : 'error'}
+      icon={warning ? <TriangleAlert /> : <ServerCog />}
       action={
         <div className="flex items-center gap-1">
           {action}

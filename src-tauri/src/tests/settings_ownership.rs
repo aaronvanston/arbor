@@ -63,11 +63,11 @@ fn an_old_config_toml_takes_the_core_settings_from_config_yaml_and_keeps_its_key
 #[test]
 fn the_default_keys_first_name_does_not_stand_in_for_the_one_the_owner_gave_it() {
     let names = client_key_names_to_keep(
-        &[GuiApiKeyEntry { key: DEFAULT_API_KEY.to_string(), remark: "Office".to_string() }],
+        &[GuiApiKeyEntry { key: LEGACY_DEFAULT_API_KEY.to_string(), remark: "Office".to_string() }],
         &[],
     );
     let mut config = GuiConfigFile { client_key_names: names, ..GuiConfigFile::default() };
-    let yaml = format!("port: 8317\napi-keys:\n  - '{DEFAULT_API_KEY}'\n");
+    let yaml = format!("port: 8317\napi-keys:\n  - '{LEGACY_DEFAULT_API_KEY}'\n");
     take_core_settings_at_load(&mut config, false, &core_settings(&yaml));
     assert_eq!(config.api_keys[0].remark, "Office");
 }

@@ -3027,6 +3027,8 @@ export const en = {
   'proxyChecks.usageOff.body': 'Usage statistics are off in the core, so new requests don’t reach Usage, Sessions or account limits.',
   'proxyChecks.noClientKeys.title': 'The proxy has no authentication keys',
   'proxyChecks.noClientKeys.body': 'Anyone who can reach it can use your accounts. Add a key to close it.',
+  'proxyChecks.defaultClientKey.title': 'The proxy still uses the key 123456',
+  'proxyChecks.defaultClientKey.body': 'Older versions of Arbor started every proxy with it, so anyone can guess it. Replace it with a new key, then give your agents the new one.',
   'proxyChecks.openToNetwork.title': 'The proxy is open to your network',
   'proxyChecks.openToNetwork.body': 'It listens on {host}, so other devices on your network can reach it. Set the listen IP to 127.0.0.1 unless you share it on purpose.',
   'proxyChecks.turnOn': 'Turn on',

@@ -2378,7 +2378,7 @@ export type ProxyProblem = {
   detail: string | null,
 };
 
-export type ProxyProblemKind = "managementRefused" | "usageOff" | "noClientKeys" | "settingsNotLoaded" | "openToNetwork";
+export type ProxyProblemKind = "managementRefused" | "usageOff" | "noClientKeys" | "defaultClientKey" | "settingsNotLoaded" | "openToNetwork";
 
 /**
  * The checks on a pull request's latest commit: check runs and commit

@@ -1137,6 +1137,8 @@ pub(crate) fn load_or_create_gui_config() -> Result<GuiConfigFile, String> {
             }
             Err(error) => eprintln!("Showing Arbor's last known core settings, as config.yaml can't be read: {error}"),
         }
+    } else {
+        changed |= ensure_first_client_key(&mut config)?;
     }
     if presence.management_secret_key.is_none()
         && (had_existing_gui_config || core_config_path.is_file())
@@ -1244,24 +1246,39 @@ pub(crate) fn import_core_settings_to_gui_config(
     apply_core_settings_to_gui_config(config, core_settings, None);
 }
 
-pub(crate) fn default_api_key_entry() -> GuiApiKeyEntry {
-    GuiApiKeyEntry {
-        key: DEFAULT_API_KEY.to_string(),
-        remark: DEFAULT_API_KEY_INITIAL_REMARK.to_string(),
+/// A new install's first client key: random, like the management key, so nobody can guess it.
+pub(crate) fn new_default_api_key_entry() -> Result<GuiApiKeyEntry, String> {
+    let mut random = [0_u8; 24];
+    getrandom::fill(&mut random).map_err(|error| format!("Failed to generate a client key: {error}"))?;
+    let hex: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(GuiApiKeyEntry { key: format!("sk-{hex}"), remark: DEFAULT_API_KEY_INITIAL_REMARK.to_string() })
+}
+
+/// Gives settings with no client key a random one, for a config.yaml the first start writes from them: with no key
+/// the proxy would take requests from anyone who can reach it. Only for when there's no config.yaml yet, whose keys
+/// are otherwise the ones that count.
+pub(crate) fn ensure_first_client_key(config: &mut GuiConfigFile) -> Result<bool, String> {
+    if !config.api_keys.is_empty() {
+        return Ok(false);
     }
+    let entry = new_default_api_key_entry()?;
+    config.client_key_names = client_key_names_to_keep(std::slice::from_ref(&entry), &config.client_key_names);
+    config.api_keys = vec![entry];
+    Ok(true)
 }
 
 pub(crate) fn gui_api_key_values(entries: &[GuiApiKeyEntry]) -> Vec<String> {
     entries.iter().map(|entry| entry.key.clone()).collect()
 }
 
+/// The key Arbor asks its own proxy with. With no keys the proxy takes any, so the old default does as well as any.
 pub(crate) fn effective_agent_api_key(config: &GuiConfigFile) -> &str {
     config
         .api_keys
         .iter()
         .map(|entry| entry.key.trim())
         .find(|key| !key.is_empty())
-        .unwrap_or(DEFAULT_API_KEY)
+        .unwrap_or(LEGACY_DEFAULT_API_KEY)
 }
 
 pub(crate) fn merge_core_api_keys_with_gui_metadata(

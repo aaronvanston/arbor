@@ -66,6 +66,7 @@ const PROXY_PROBLEM_TEXT: Record<ProxyProblemKind, { title: MessageKey; body: Me
   settingsNotLoaded: { title: 'proxyChecks.settingsNotLoaded.title', body: 'proxyChecks.settingsNotLoaded.body' },
   usageOff: { title: 'proxyChecks.usageOff.title', body: 'proxyChecks.usageOff.body' },
   noClientKeys: { title: 'proxyChecks.noClientKeys.title', body: 'proxyChecks.noClientKeys.body' },
+  defaultClientKey: { title: 'proxyChecks.defaultClientKey.title', body: 'proxyChecks.defaultClientKey.body' },
   openToNetwork: { title: 'proxyChecks.openToNetwork.title', body: 'proxyChecks.openToNetwork.body' },
 };
 
@@ -85,6 +86,7 @@ export const PROXY_PROBLEM_SETTING: Record<Exclude<ProxyProblemKind, 'settingsNo
   managementRefused: 'general.webui-key',
   usageOff: 'general.usage-statistics',
   noClientKeys: 'general.api-keys',
+  defaultClientKey: 'general.api-keys',
   openToNetwork: 'general.host',
 };
 

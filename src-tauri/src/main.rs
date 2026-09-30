@@ -102,7 +102,9 @@ const LEGACY_DEFAULT_MAIN_WINDOW_WIDTH: u32 = 1531;
 const LEGACY_DEFAULT_MAIN_WINDOW_HEIGHT: u32 = 891;
 const OAUTH_DIR_NAME: &str = "oauth";
 const DEFAULT_AUTH_DIR: &str = "../oauth";
-const DEFAULT_API_KEY: &str = "123456";
+/// The client key every install started with before new ones got a random key. The proxy checks warn while it's
+/// still in use, since anyone can guess it.
+const LEGACY_DEFAULT_API_KEY: &str = "123456";
 const DEFAULT_API_KEY_INITIAL_REMARK: &str = "Default key";
 const DEFAULT_REQUEST_RETRY: u32 = 3;
 const DEFAULT_MAX_RETRY_CREDENTIALS: u32 = 0;
@@ -675,9 +677,10 @@ impl Default for GuiConfigFile {
             window_height: Some(DEFAULT_MAIN_WINDOW_HEIGHT),
             zoom_step: 0,
             auth_dir: DEFAULT_AUTH_DIR.to_string(),
-            api_keys: vec![default_api_key_entry()],
+            // config.yaml has the client keys. A first start writes one made by `ensure_first_client_key`.
+            api_keys: Vec::new(),
             paused_api_keys: Vec::new(),
-            client_key_names: client_key_names_to_keep(&[default_api_key_entry()], &[]),
+            client_key_names: Vec::new(),
             api_access_remarks: Vec::new(),
             // Populated with an OS-generated secret while loading the GUI
             // configuration. Core hashes the value written into config.yaml.
@@ -1711,6 +1714,12 @@ fn main() {
             }
             if let Err(sanitize_error) = sanitize_gui_config(&mut config) {
                 eprintln!("Failed to initialize fixed credentials directory: {sanitize_error}");
+            }
+            let no_core_config = core_install_dir().is_ok_and(|dir| !dir.join(CORE_CONFIG_FILE).is_file());
+            if no_core_config {
+                if let Err(key_error) = ensure_first_client_key(&mut config) {
+                    eprintln!("Failed to create a client key: {key_error}");
+                }
             }
             config
         }

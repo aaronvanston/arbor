@@ -122,6 +122,7 @@ function mockProxyChecks(): ProxyChecks {
       ...(proxyScenario.has('not-loaded') ? [{ kind: 'settingsNotLoaded' as const, detail: '153' }] : []),
       ...(proxyScenario.has('usage-off') ? [{ kind: 'usageOff' as const, detail: null }] : []),
       ...(proxyScenario.has('no-keys') ? [{ kind: 'noClientKeys' as const, detail: null }] : []),
+      ...(proxyScenario.has('default-key') ? [{ kind: 'defaultClientKey' as const, detail: null }] : []),
       ...(proxyScenario.has('network') ? [{ kind: 'openToNetwork' as const, detail: '0.0.0.0' }] : []),
     ],
   };

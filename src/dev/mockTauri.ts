@@ -62,9 +62,10 @@
  * `?machines=unhosted` for no machine with a host yet, so Machines lists them waiting for one and Sync › Agents has
  * no agents to list and offers Add hosts;
  * `?phone=fail` to have phone alerts refused, `?phone=unreadable` for a damaged phone alert secrets file;
- * `?proxy=usage-off`, `no-keys`, `refused`, `network` or `not-loaded` (several joined by commas) for the proxy checks
- * finding usage statistics off, no authentication keys, the management API answering 404, the proxy listening on
- * 0.0.0.0, or the proxy not having loaded config.yaml (it couldn't read line 153);
+ * `?proxy=usage-off`, `no-keys`, `default-key`, `refused`, `network` or `not-loaded` (several joined by commas) for the
+ * proxy checks finding usage statistics off, no authentication keys, the old default key 123456 still in use, the
+ * management API answering 404, the proxy listening on 0.0.0.0, or the proxy not having loaded config.yaml (it
+ * couldn't read line 153);
  * `?save=not-loaded` for a settings save that the running proxy doesn't pick up, which then shows in the proxy checks;
  * `?agents=fail` to have agent updates fail;
  * `?duplicate=claude` or `?duplicate=codex` for an older copy of that agent further along casey-mbp's PATH, which

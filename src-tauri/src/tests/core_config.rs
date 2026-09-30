@@ -65,7 +65,7 @@ fn a_config_saved_with_a_language_setting_still_loads() {
 #[test]
 fn api_key_remarks_follow_matching_core_keys() {
     let existing = vec![
-        default_api_key_entry(),
+        new_default_api_key_entry().unwrap(),
         GuiApiKeyEntry {
             key: "custom-key".to_string(),
             remark: "Development".to_string(),
@@ -107,7 +107,7 @@ fn a_key_a_command_just_added_keeps_its_remark_when_the_core_settings_come_back(
 
 #[test]
 fn explicit_empty_api_key_list_stays_empty() {
-    let existing = vec![default_api_key_entry()];
+    let existing = vec![new_default_api_key_entry().unwrap()];
     assert!(merge_core_api_keys_with_gui_metadata(&existing, &[], None).is_empty());
 
     let mut config = GuiConfigFile {
@@ -124,9 +124,9 @@ fn explicit_empty_api_key_list_stays_empty() {
 
 #[test]
 fn initial_default_api_key_can_be_edited_and_deleted() {
-    let mut api_keys = vec![DEFAULT_API_KEY.to_string()];
+    let mut api_keys = vec![LEGACY_DEFAULT_API_KEY.to_string()];
 
-    replace_core_api_key_value(&mut api_keys, DEFAULT_API_KEY, "custom-key".to_string()).unwrap();
+    replace_core_api_key_value(&mut api_keys, LEGACY_DEFAULT_API_KEY, "custom-key".to_string()).unwrap();
     assert_eq!(api_keys, vec!["custom-key"]);
 
     remove_core_api_key_value(&mut api_keys, "custom-key").unwrap();
@@ -134,12 +134,32 @@ fn initial_default_api_key_can_be_edited_and_deleted() {
 }
 
 #[test]
+fn a_new_install_gets_its_own_random_client_key_and_an_existing_list_is_left_alone() {
+    let (mut first, mut second) = (GuiConfigFile::default(), GuiConfigFile::default());
+    assert!(ensure_first_client_key(&mut first).unwrap());
+    assert!(ensure_first_client_key(&mut second).unwrap());
+    let key = &first.api_keys[0].key;
+    assert!(key.starts_with("sk-") && key.len() == 51, "{key}");
+    assert_ne!(key, LEGACY_DEFAULT_API_KEY);
+    assert_ne!(key, &second.api_keys[0].key);
+    assert_eq!(first.client_key_names, client_key_names_to_keep(&first.api_keys, &[]));
+
+    let mut existing = GuiConfigFile {
+        api_keys: vec![GuiApiKeyEntry { key: "desk-key".to_string(), remark: String::new() }],
+        ..GuiConfigFile::default()
+    };
+    assert!(!ensure_first_client_key(&mut existing).unwrap());
+    assert_eq!(existing.api_keys[0].key, "desk-key");
+}
+
+#[test]
 fn core_config_view_exposes_api_key_metadata_for_the_webview() {
     let mut config = GuiConfigFile::default();
     ensure_strong_management_secret(&mut config).unwrap();
+    ensure_first_client_key(&mut config).unwrap();
     let view = serde_json::to_value(CoreConfigView::from(&config)).unwrap();
 
-    assert_eq!(view["apiKeys"][0]["apiKey"], DEFAULT_API_KEY);
+    assert_eq!(view["apiKeys"][0]["apiKey"], config.api_keys[0].key.as_str());
     assert_eq!(view["apiKeys"][0]["remark"], DEFAULT_API_KEY_INITIAL_REMARK);
     assert!(view["apiKeys"][0].get("builtIn").is_none());
     assert_eq!(view["managementSecretConfigured"], true);
@@ -846,13 +866,13 @@ fn yaml_edit_runtime_patch_adds_api_keys_to_core_style_config() {
 fn yaml_edit_runtime_patch_updates_existing_real_core_config() {
     let input = "host: 0.0.0.0\nremote-management:\n# nested comment\n  allow-remote: false\nauth-dir: /tmp/oauth\n# API keys for authentication\napi-keys:\n  - '123456'\n# Enable debug logging\ndebug: false\n\n# payload:\n#   filter:\n#     - models:\n#         - name: gemini\n";
     let rendered =
-        patch_core_api_keys_yaml(input, &[DEFAULT_API_KEY.to_string(), "new-key".to_string()])
+        patch_core_api_keys_yaml(input, &[LEGACY_DEFAULT_API_KEY.to_string(), "new-key".to_string()])
             .unwrap();
     let parsed = serde_norway::from_str::<serde_norway::Value>(&rendered)
         .unwrap_or_else(|error| panic!("invalid YAML: {error}\n{rendered}"));
     assert_eq!(
         core_config_settings_from_value(&parsed).unwrap().api_keys,
-        vec![DEFAULT_API_KEY, "new-key"]
+        vec![LEGACY_DEFAULT_API_KEY, "new-key"]
     );
 }
 
@@ -860,18 +880,18 @@ fn yaml_edit_runtime_patch_updates_existing_real_core_config() {
 fn runtime_api_key_patch_replaces_indentationless_core_sequence() {
     let input =
         "host: 0.0.0.0\nport: 8317\nauth-dir: /tmp/oauth\napi-keys:\n- '123456'\ndebug: false\n";
-    let rendered = patch_core_api_keys_yaml(input, &[DEFAULT_API_KEY.to_string()])
+    let rendered = patch_core_api_keys_yaml(input, &[LEGACY_DEFAULT_API_KEY.to_string()])
         .unwrap_or_else(|error| panic!("patch failed: {error}"));
     let parsed = serde_norway::from_str::<serde_norway::Value>(&rendered)
         .unwrap_or_else(|error| panic!("invalid YAML: {error}\n{rendered}"));
 
     assert_eq!(
         core_config_settings_from_value(&parsed).unwrap().api_keys,
-        vec![DEFAULT_API_KEY]
+        vec![LEGACY_DEFAULT_API_KEY]
     );
     // The old top-level list moves to access.api-keys, in the same edit.
     assert!(!rendered.contains("- '123456'"), "{rendered}");
-    assert_eq!(parsed["access"]["api-keys"][0], DEFAULT_API_KEY, "{rendered}");
+    assert_eq!(parsed["access"]["api-keys"][0], LEGACY_DEFAULT_API_KEY, "{rendered}");
     assert!(rendered.contains("debug: false"), "{rendered}");
 }
 
@@ -1195,7 +1215,7 @@ fn startup_leaves_an_existing_config_yaml_as_it_is_apart_from_the_management_key
         zoom_step: 0,
         auth_dir: path_to_string(&fixed_oauth_dir().unwrap()),
         api_keys: vec![
-            default_api_key_entry(),
+            new_default_api_key_entry().unwrap(),
             GuiApiKeyEntry {
                 key: "gui-key".to_string(),
                 remark: "Test key".to_string(),
@@ -1270,12 +1290,13 @@ fn startup_starts_an_empty_config_yaml_over_from_the_template() {
     let template = "# Template\nhost: \"\"\nport: 9000\napi-keys:\n  - template-key\n";
     let mut config = GuiConfigFile::default();
     ensure_strong_management_secret(&mut config).unwrap();
+    ensure_first_client_key(&mut config).unwrap();
     for empty in ["", "\n", "# nothing here yet\n"] {
         let merged = merge_core_config_yaml(template, Some(empty), &config).unwrap();
         let document = serde_norway::from_str::<serde_norway::Value>(&merged).unwrap();
         assert!(merged.contains("# Template"), "{empty:?}");
         assert_eq!(document["server"]["host"], "127.0.0.1", "{empty:?}");
-        assert_eq!(document["access"]["api-keys"][0], DEFAULT_API_KEY, "{empty:?}");
+        assert_eq!(document["access"]["api-keys"][0], config.api_keys[0].key.as_str(), "{empty:?}");
     }
 }
 
@@ -1317,13 +1338,14 @@ fn startup_merge_without_current_config_uses_gui_defaults() {
     let template = "# Template\nhost: \"\"\nport: 9000\napi-keys:\n  - template-key\nplugins:\n  enabled: true\nrouting:\n  strategy: fill-first\ndebug: false\n";
     let mut config = GuiConfigFile::default();
     ensure_strong_management_secret(&mut config).unwrap();
+    ensure_first_client_key(&mut config).unwrap();
     let merged = merge_core_config_yaml(template, None, &config).unwrap();
     let document = serde_norway::from_str::<serde_norway::Value>(&merged).unwrap();
 
     assert!(merged.contains("# Template"));
     assert_eq!(document["server"]["host"], "127.0.0.1");
     assert_eq!(document["server"]["port"], 8317);
-    assert_eq!(document["access"]["api-keys"][0], DEFAULT_API_KEY, "{merged}");
+    assert_eq!(document["access"]["api-keys"][0], config.api_keys[0].key.as_str(), "{merged}");
     assert_eq!(document["plugins"]["enabled"], false);
     assert_eq!(document["routing"]["strategy"], "round-robin");
     assert_eq!(document["server"]["commercial-mode"], false);
@@ -1347,11 +1369,12 @@ fn startup_merge_can_shrink_template_api_key_sequence() {
     let template = "host: \"\"\nport: 8317\nremote-management:\n  secret-key: \"\"\nauth-dir: ~/.cli-proxy-api\napi-keys:\n  - template-one\n  - template-two\n  - template-three\ndebug: false\nplugins:\n  enabled: false\nrouting:\n  strategy: round-robin\n";
     let mut config = GuiConfigFile::default();
     ensure_strong_management_secret(&mut config).unwrap();
+    ensure_first_client_key(&mut config).unwrap();
     let merged = merge_core_config_yaml(template, None, &config).unwrap();
     let document = serde_norway::from_str::<serde_norway::Value>(&merged)
         .unwrap_or_else(|error| panic!("invalid YAML: {error}\n{merged}"));
 
-    assert_eq!(document["access"]["api-keys"][0], DEFAULT_API_KEY);
+    assert_eq!(document["access"]["api-keys"][0], config.api_keys[0].key.as_str());
     assert_eq!(document["access"]["api-keys"].as_sequence().unwrap().len(), 1);
     assert!(document.get("api-keys").is_none(), "{merged}");
     assert_eq!(document["observability"]["logs"]["debug"], false);

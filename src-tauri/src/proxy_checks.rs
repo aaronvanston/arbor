@@ -8,7 +8,7 @@ use ts_rs::TS;
 use crate::command_error::CommandError;
 use crate::management_api::{management_authorization, management_endpoint, management_http_client, send_management};
 use crate::settings_in_effect::{core_config_changed_within, core_standing, LiveCoreSetting, RunningSettings, Standing};
-use crate::{current_core_status, is_loopback_host, CoreProcessState, GuiConfigState};
+use crate::{current_core_status, is_loopback_host, CoreProcessState, GuiConfigFile, GuiConfigState, LEGACY_DEFAULT_API_KEY};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +19,8 @@ pub(crate) enum ProxyProblemKind {
     UsageOff,
     /// No client API keys, so anyone who can reach the proxy can use its accounts.
     NoClientKeys,
+    /// A client key is still `123456`, the one installs used to start with, which anyone can guess.
+    DefaultClientKey,
     /// The core runs settings other than its config.yaml's: a value it couldn't read made it skip the reload.
     SettingsNotLoaded,
     /// The proxy listens beyond this Mac.
@@ -68,6 +70,7 @@ impl<T> CoreAnswer<T> {
 pub(crate) fn proxy_problems(
     usage: CoreAnswer<bool>,
     client_keys: CoreAnswer<usize>,
+    default_key: bool,
     host: &str,
     standing: Standing,
 ) -> ProxyChecks {
@@ -95,6 +98,8 @@ pub(crate) fn proxy_problems(
         }
         if client_keys == CoreAnswer::Value(0) && !stale.contains(&LiveCoreSetting::ClientKeys) {
             problems.push(ProxyProblem { kind: ProxyProblemKind::NoClientKeys, detail: None });
+        } else if default_key {
+            problems.push(ProxyProblem { kind: ProxyProblemKind::DefaultClientKey, detail: None });
         }
     }
     if !is_loopback_host(host) {
@@ -144,7 +149,7 @@ pub(crate) async fn check_proxy_settings(
     }
     // Without a plaintext key there's nothing to ask with, which is the management API turning Arbor away.
     if management_authorization(&config).is_err() {
-        return Ok(proxy_problems(CoreAnswer::Refused(401), CoreAnswer::Refused(401), &config.host, Standing::InStep));
+        return Ok(proxy_problems(CoreAnswer::Refused(401), CoreAnswer::Refused(401), false, &config.host, Standing::InStep));
     }
     let mut running = read_core(&config, "config", |running: RunningSettings| running).await?;
     // A core that's just restarted, or a key being changed, can turn one request away; asked again, a refusal that
@@ -163,9 +168,15 @@ pub(crate) async fn check_proxy_settings(
     Ok(proxy_problems(
         running.pick(RunningSettings::usage_statistics_enabled),
         running.pick(RunningSettings::client_key_count),
+        has_default_client_key(&config),
         &config.host,
         standing,
     ))
+}
+
+/// Whether config.yaml still lists the old default key. Only whether: the keys themselves never leave Rust.
+fn has_default_client_key(config: &GuiConfigFile) -> bool {
+    config.api_keys.iter().any(|entry| entry.key.trim() == LEGACY_DEFAULT_API_KEY)
 }
 
 #[cfg(test)]
@@ -182,10 +193,7 @@ mod tests {
 
     #[test]
     fn a_file_the_core_did_not_load_comes_first_with_its_line() {
-        let checks = proxy_problems(
-            CoreAnswer::Value(true),
-            CoreAnswer::Value(2),
-            "127.0.0.1",
+        let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(2), false, "127.0.0.1",
             not_loaded(&[LiveCoreSetting::RequestRetry], Some(153)),
         );
         assert_eq!(
@@ -197,25 +205,43 @@ mod tests {
     #[test]
     fn usage_off_or_no_keys_only_because_the_file_was_not_loaded_are_not_offered_a_fix() {
         let stale = not_loaded(&[LiveCoreSetting::UsageStatistics, LiveCoreSetting::ClientKeys], None);
-        let checks = proxy_problems(CoreAnswer::Value(false), CoreAnswer::Value(0), "127.0.0.1", stale);
+        let checks = proxy_problems(CoreAnswer::Value(false), CoreAnswer::Value(0), false, "127.0.0.1", stale);
         assert_eq!(kinds(&checks), [ProxyProblemKind::SettingsNotLoaded]);
 
         // Off in the file as well: turning it on is the fix, whatever else didn't load.
         let other = not_loaded(&[LiveCoreSetting::RequestRetry], None);
-        let checks = proxy_problems(CoreAnswer::Value(false), CoreAnswer::Value(2), "127.0.0.1", other);
+        let checks = proxy_problems(CoreAnswer::Value(false), CoreAnswer::Value(2), false, "127.0.0.1", other);
         assert_eq!(kinds(&checks), [ProxyProblemKind::SettingsNotLoaded, ProxyProblemKind::UsageOff]);
     }
 
     #[test]
     fn a_healthy_proxy_on_this_mac_has_no_problems() {
-        let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(2), "127.0.0.1", Standing::InStep);
+        let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(2), false, "127.0.0.1", Standing::InStep);
         assert_eq!(checks, ProxyChecks { checked: true, problems: Vec::new() });
     }
 
     #[test]
     fn usage_off_and_no_client_keys_are_each_a_problem() {
-        let checks = proxy_problems(CoreAnswer::Value(false), CoreAnswer::Value(0), "localhost", Standing::InStep);
+        let checks = proxy_problems(CoreAnswer::Value(false), CoreAnswer::Value(0), false, "localhost", Standing::InStep);
         assert_eq!(kinds(&checks), [ProxyProblemKind::UsageOff, ProxyProblemKind::NoClientKeys]);
+    }
+
+    #[test]
+    fn the_old_default_key_is_a_problem_while_the_proxy_has_keys() {
+        let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(2), true, "127.0.0.1", Standing::InStep);
+        assert_eq!(kinds(&checks), [ProxyProblemKind::DefaultClientKey]);
+        // With no keys at all, adding one is the fix; a refused API hides it like the rest.
+        let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(0), true, "127.0.0.1", Standing::InStep);
+        assert_eq!(kinds(&checks), [ProxyProblemKind::NoClientKeys]);
+        let checks = proxy_problems(CoreAnswer::Refused(401), CoreAnswer::Refused(401), true, "127.0.0.1", Standing::InStep);
+        assert_eq!(kinds(&checks), [ProxyProblemKind::ManagementRefused]);
+
+        let config = |key: &str| GuiConfigFile {
+            api_keys: vec![crate::GuiApiKeyEntry { key: key.to_string(), remark: String::new() }],
+            ..GuiConfigFile::default()
+        };
+        assert!(has_default_client_key(&config(" 123456 ")));
+        assert!(!has_default_client_key(&config("sk-1234567")));
     }
 
     #[test]
@@ -225,7 +251,7 @@ mod tests {
             (CoreAnswer::Value(false), CoreAnswer::Refused(404)),
             (CoreAnswer::Refused(404), CoreAnswer::Value(0)),
         ] {
-            let checks = proxy_problems(usage, keys, "127.0.0.1", not_loaded(&[], Some(3)));
+            let checks = proxy_problems(usage, keys, false, "127.0.0.1", not_loaded(&[], Some(3)));
             assert_eq!(
                 checks.problems,
                 [ProxyProblem { kind: ProxyProblemKind::ManagementRefused, detail: Some("404".into()) }]
@@ -236,20 +262,20 @@ mod tests {
     #[test]
     fn listening_beyond_this_mac_names_the_address() {
         for host in ["0.0.0.0", "", "::", "192.168.1.20"] {
-            let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(1), host, Standing::InStep);
+            let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(1), false, host, Standing::InStep);
             assert_eq!(
                 checks.problems,
                 [ProxyProblem { kind: ProxyProblemKind::OpenToNetwork, detail: Some(host.to_string()) }],
                 "{host:?}"
             );
         }
-        let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(1), "::1", Standing::InStep);
+        let checks = proxy_problems(CoreAnswer::Value(true), CoreAnswer::Value(1), false, "::1", Standing::InStep);
         assert!(checks.problems.is_empty());
     }
 
     #[test]
     fn a_core_that_stops_answering_is_not_checked() {
-        let checks = proxy_problems(CoreAnswer::Unreachable, CoreAnswer::Value(0), "0.0.0.0", not_loaded(&[], None));
+        let checks = proxy_problems(CoreAnswer::Unreachable, CoreAnswer::Value(0), false, "0.0.0.0", not_loaded(&[], None));
         assert_eq!(checks, ProxyChecks { checked: false, problems: Vec::new() });
     }
 }
