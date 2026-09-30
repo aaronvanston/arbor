@@ -86,16 +86,23 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   a file on a machine goes through `usage/machine_health/guarded_writes.rs`
   (`edit_start`, `edit_call` for each file, `edit_finish`): it writes only while the
   file is still as Arbor read it, backs it up first in `~/.arbor/setup-backups`, and
-  lands on Sync › Arbor's changes, the one list where any of them can be undone;
+  lands on Sync › Arbor's changes, the one list where any of them can be undone.
+  Where a machine's agents keep their files comes from one list,
+  `usage/machine_health/agent_homes.rs`: the standard Claude Code, Codex and Pi homes,
+  the ones a scan found and the ones the user added in Settings › Agent homes, each
+  with a Sessions and a Sync switch. Every script that looks in an agent home loops
+  over its generated `agent_homes` shell function (`shell_function`) instead of
+  naming folders of its own;
   `app_update.rs` checks for and installs app updates; `phone_alerts.rs`,
   `digest_export.rs`, `quit_guard.rs` and `tray.rs` do what they say. Rust tests are
   in `tests.rs`, `tests/` and inline `#[cfg(test)]` modules.
 - `src-tauri/src/usage/machine_health/archive.rs` and `archive/`: the session archive.
-  Byte-for-byte copies of transcripts go into a store on another drive, with the index
+  Byte-for-byte copies of transcripts go into a store in a folder the user picks,
+  usually on another drive (this Mac's own disk works, with a warning), with the index
   in `archive.db`. Settings › Session Archive is its page. This Mac's homes are read
   from disk, and each other machine's over SSH by `archive/remote.rs`, after this
   Mac's. `archive/imports.rs` takes in
-  old backups of agent homes the maintainer picks there, `archive/layouts.rs` finds and lists
+  old backups of agent homes the user picks there, `archive/layouts.rs` finds and lists
   backups in other shapes (OpenClaw, Claude's desktop app), and `archive/tokens.rs` counts the tokens in what it keeps for Usage ›
   All time. `archive/recovered.rs` reads Claude Code's own daily totals from the
   `stats-cache.json` copies it keeps, shown apart for days whose transcripts are gone.
@@ -186,7 +193,9 @@ it (`app.ts`, `core.ts`, `usage.ts`, `machines.ts`, `setup.ts`, `archive.ts`) wi
 answers and its made-up data, typed with the generated types; `scenario.ts` has the
 query string and the clock they share.
 
-Scenarios are query-string flags, for example `http://127.0.0.1:1420/?core=stopped`.
+Scenarios are query-string flags, for example `http://127.0.0.1:1420/?core=stopped`,
+or `?fresh=1` for Arbor on the day it's installed: no key, accounts, machines or
+history yet.
 The list is the comment at the top of `src/dev/mockTauri.ts`; a few more are
 described where they're read (search for `params.get(`). Read it there rather than
 guessing. When you add a Tauri command, add its answer to the domain's map; when the
@@ -291,6 +300,12 @@ flag at the top of the mock.
 - Configuration belongs in Settings. Main pages stay compact and show state. Give a
   new `SettingsRow` a `settingId` and an entry in `src/services/settingsIndex.ts`,
   which Settings search and ⌘K read; a test checks the two match.
+- Arbor runs on anyone's Macs, so nothing in it is shaped around one person's setup.
+  Don't build in a folder, file or name from a particular tool, machine, drive or
+  account. A location Arbor needs comes from the agent homes list or a setting, and
+  anything tied to a named app (T3 Code's threads, the Antiburn row) stays hidden
+  until that app is found. Test and mock data use made-up names: `casey-mbp`,
+  `~/.agent-app/homes/…`, `/Volumes/Backup`.
 - Comments explain why, not what.
 
 ## Safety rules
@@ -322,9 +337,10 @@ flag at the top of the mock.
   The archive's SECRET tests prove this; extend them for every new archive command.
 - Never delete or rewrite anything in a store's `chunks/`, except to replace a file
   proven corrupt with a verified copy of the same hash. Superseded tails stay.
-- Archive tests never touch `/Volumes/Archive`, the app's `session-archive/` folder or real
-  agent homes. They build stores and homes in temp dirs, and run the lister under both
-  `sh` and `dash` against a temp HOME.
+- Archive tests never touch a real store (the folder chosen in Settings › Session
+  Archive), the app's `session-archive/` folder or real agent homes. They build
+  stores and homes in temp dirs, and run the lister under both `sh` and `dash`
+  against a temp HOME.
 
 ## Releases
 

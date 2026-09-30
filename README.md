@@ -44,6 +44,26 @@ It's for your own accounts on your own machines. It isn't built for sharing acco
 
 Signed downloads for macOS are coming soon. Until then, build it from source (below).
 
+## First run
+
+Home's Get started card takes you through it:
+
+<p align="center">
+  <img src="docs/screenshots/first-run.webp" width="900" alt="Home on a new install: a warning that the proxy has no key with a Make a key button, the Get started card, and Add this Mac">
+</p>
+
+1. **Add an account.** Sign in to each Claude, ChatGPT or other provider account once, in your browser. The sign-in
+   stays on this Mac.
+2. **Make a key.** A new install's proxy has no key, so it takes any request that reaches it. It listens only on this
+   Mac until you change that in Settings › Proxy, and the warning on Home makes a key in one press.
+3. **Connect an agent.** Arbor shows the lines to add to Claude Code's and Codex's settings, on this Mac or another
+   machine. It doesn't edit those files for you.
+4. **Add a machine.** This Mac is offered first. Other Macs and Linux machines are reached over SSH: Arbor lists the
+   hosts in your `~/.ssh` config and known hosts, and never reads keys.
+
+Settings › Agent homes lists where each machine's agents keep their files: `~/.claude`, `~/.codex` and Pi's sessions
+as standard, plus any other homes a scan finds or you add.
+
 ## Build from source
 
 You need macOS on Apple silicon, [Bun](https://bun.sh), Rust (stable) and the Xcode command-line tools.
@@ -69,7 +89,8 @@ browser without the core or any accounts:
 bunx vite --host 127.0.0.1 --port 1420 --strictPort   # then open http://127.0.0.1:1420
 ```
 
-The comment at the top of `mockTauri.ts` lists its scenario flags (`?usagedata=new`, `?limit=claude`, and more).
+The comment at the top of `mockTauri.ts` lists its scenario flags: `?fresh=1` for a new install with nothing set up,
+`?usagedata=new`, `?limit=claude`, and more.
 
 ### Checks
 
@@ -85,7 +106,7 @@ bun run notices       # regenerate THIRD_PARTY_NOTICES.md after changing depende
 
 Official releases send anonymous usage data (which pages are opened) and crash reports to PostHog, with a random id
 for the install. They never send account, machine or project names, paths, or anything from your sessions. The first
-launch says so, and both can be turned off in Settings › Software; `DO_NOT_TRACK=1` or `ARBOR_TELEMETRY=0` turns them
+launch says so, and both can be turned off in Settings › App; `DO_NOT_TRACK=1` or `ARBOR_TELEMETRY=0` turns them
 off too. A build from source sends nothing: the project key is only built into official releases.
 
 ## Privacy
