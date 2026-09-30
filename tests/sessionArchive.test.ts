@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   ARCHIVE_ALERT_AFTER_MS,
   ARCHIVE_REMIND_EVERY_MS,
+  archiveKeepsMachine,
   archiveNotification,
   archiveTrouble,
   compression,
@@ -55,6 +56,17 @@ describe('the session archive', () => {
       const verdict = folderVerdict(check(kind), null);
       expect(verdict.action).toBeNull();
     }
+  });
+
+  it('keeps this Mac always, and another machine by its own value or else All machines’', () => {
+    const mac = { machine: 'mac-mini', local: true };
+    const ci = { machine: 'ci-01', local: false };
+    expect([archiveKeepsMachine(null, mac), archiveKeepsMachine(status({ state: 'off' }), mac)]).toEqual([false, false]);
+    expect([archiveKeepsMachine(status(), mac), archiveKeepsMachine(status(), ci)]).toEqual([true, true]);
+    const onlyThisMac = status({ otherMachines: false });
+    expect([archiveKeepsMachine(onlyThisMac, mac), archiveKeepsMachine(onlyThisMac, ci)]).toEqual([true, false]);
+    expect(archiveKeepsMachine(status({ otherMachines: false, machineOverrides: { ci01: true } }), ci)).toBe(true);
+    expect(archiveKeepsMachine(status({ machineOverrides: { ci01: false } }), ci)).toBe(false);
   });
 
   it('says how much smaller the store is, once there is one', () => {

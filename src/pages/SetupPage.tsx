@@ -28,6 +28,7 @@ import type { ViewChange } from '../services/viewHistory';
 import { formatBytes } from '../services/machineHealth';
 import { formatAgo } from '../lib/format';
 import { itemProblem, setupChecks, type SetupCheck, type SetupCheckSubject } from '../services/setupChecks';
+import { archiveKeepsMachine, getSessionArchiveStatus } from '../services/sessionArchive';
 import {
   buildMatrix,
   differingRows,
@@ -58,7 +59,7 @@ import { SetupHooks } from './SetupHooks';
 import { SetupToolchain } from './SetupToolchain';
 import { SetupSkills } from './SetupSkills';
 import { useSetupInventory } from '../hooks/useSetupInventory';
-import type { SetupItem, SetupMachine } from '../native/types';
+import type { ArchiveStatus, SetupItem, SetupMachine } from '../native/types';
 import { useNow } from '../hooks/useNow';
 
 const REFERENCE_KEY = 'cpa-gui.setup.reference.v1';
@@ -367,7 +368,14 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   const shownCount = shown.reduce((sum, group) => sum + group.rows.length, 0);
   const scanning = machines.some((machine) => machine.scanning);
   const firstScan = machines.length > 0 && machines.every((machine) => machine.scannedAt === null && !machine.homes.length);
-  const checks = useMemo(() => setupChecks(machines), [machines]);
+  // Which machines the archive keeps, whose Claude Code deleting old sessions loses nothing.
+  const [archive, setArchive] = useState<ArchiveStatus | null>(null);
+  useEffect(() => {
+    let current = true;
+    getSessionArchiveStatus().then((status) => { if (current) setArchive(status); }, () => undefined);
+    return () => { current = false; };
+  }, []);
+  const checks = useMemo(() => setupChecks(machines, (machine) => archiveKeepsMachine(archive, machine)), [machines, archive]);
   const scanned = machines.filter((machine) => machine.scannedAt !== null || machine.homes.length).map((machine) => machine.machine);
 
   /** Another of the page's views, as a step of its own, so Back returns to the one it was on. */

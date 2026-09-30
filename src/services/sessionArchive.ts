@@ -1,6 +1,7 @@
 import { invokeCommand } from '../native/commands';
 import type { MessageKey, MessageVariables } from '../i18n/resources';
 import { formatWhen } from '../lib/format';
+import { machineLookKey } from './machineLook';
 import type { SystemNotification } from './notify';
 import type {
   ArchiveCondition,
@@ -75,6 +76,16 @@ export function folderVerdict(check: FolderCheck, archiveId: string | null): Fol
     case 'missing': return { action: null, key: 'sessionArchive.folder.missing' };
     case 'not-writable': return { action: null, key: 'sessionArchive.folder.notWritable' };
   }
+}
+
+/**
+ * Whether the archive keeps a machine's sessions: this Mac's always, another's by its own value or else All machines'.
+ * False with no archive, or before its status is read.
+ */
+export function archiveKeepsMachine(status: ArchiveStatus | null, machine: { machine: string; local: boolean }): boolean {
+  if (!status || status.state === 'off') return false;
+  if (machine.local) return true;
+  return status.machineOverrides[machineLookKey(machine.machine)] ?? status.otherMachines;
 }
 
 /** How many times smaller the store is than what it holds, to one decimal, or null before anything's kept. */

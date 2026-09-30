@@ -1320,7 +1320,7 @@ export const en = {
   'setup.check.unreadable.detail': 'What’s in it isn’t in the table until Arbor can read it.',
   'setup.check.sessionCleanup.title.one': 'Claude Code deletes sessions here after {count} day',
   'setup.check.sessionCleanup.title.other': 'Claude Code deletes sessions here after {count} days',
-  'setup.check.sessionCleanup.detail': 'Each time it starts with this home, Claude Code deletes the transcripts, subagents, tool results and file history of sessions nobody has touched for that long. cleanupPeriodDays in {home}/settings.json sets how long.',
+  'setup.check.sessionCleanup.detail': 'Each time it starts with this home, Claude Code deletes the transcripts, subagents, tool results and file history of sessions nobody has touched for that long. cleanupPeriodDays in {home}/settings.json sets how long. The session archive keeps a copy of each, once it’s set up for this machine.',
   'setup.check.sessionCleanup.keep': 'Keep sessions',
   'setup.check.sessionCleanup.confirm.title': 'Keep this home’s sessions?',
   'setup.check.sessionCleanup.confirm.message': 'Arbor sets cleanupPeriodDays to {days} in {file}, so Claude Code stops deleting old sessions. Nothing else in the file changes, and the copy before is kept beside it as settings.json.arbor-backup.',

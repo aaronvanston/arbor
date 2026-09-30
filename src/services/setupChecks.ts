@@ -74,7 +74,8 @@ const LEVEL: Record<SetupCheckKind, SetupCheckLevel> = {
   scanFailed: 'warning',
   unreadable: 'warning',
   policyUnreadable: 'warning',
-  sessionCleanup: 'warning',
+  // 30 days is Claude Code's own choice, and the session archive keeps a copy of each, so it's only worth knowing.
+  sessionCleanup: 'note',
   brokenImport: 'problem',
   deepImport: 'problem',
   brokenLink: 'problem',
@@ -208,7 +209,11 @@ function sameNames(skills: { item: SetupItem; home: string }[], home: string): S
 }
 
 /** Every check on every machine scanned, problems first, then by machine in the order given. */
-export function setupChecks(machines: SetupMachine[]): SetupCheck[] {
+/**
+ * What each machine's scan turned up. `keptByArchive` says which machines the session archive keeps, whose Claude Code
+ * deleting old sessions loses nothing.
+ */
+export function setupChecks(machines: SetupMachine[], keptByArchive: (machine: SetupMachine) => boolean = () => false): SetupCheck[] {
   const checks: SetupCheck[] = [];
   machines.forEach((machine) => {
     const add = (kind: SetupCheckKind, home: string | null, subjects: SetupCheckSubject[], facts: Record<string, string | number> = {}) => {
@@ -297,7 +302,7 @@ export function setupChecks(machines: SetupMachine[]): SetupCheck[] {
 
       if (home.agent === 'claude') {
         // What the policy sets for cleanupPeriodDays isn't read, and it isn't the home's to change.
-        const days = policySets(machine, 'setting', 'cleanupPeriodDays') ? null : cleanupDays(items);
+        const days = policySets(machine, 'setting', 'cleanupPeriodDays') || keptByArchive(machine) ? null : cleanupDays(items);
         if (days !== null) add('sessionCleanup', key, [], { count: days, home: home.path });
 
         // Claude Code reads personal skills from the home it runs with, not ~/.claude, when that's another.

@@ -1,7 +1,7 @@
 //! Claude Code deletes a home's sessions once nobody has touched them for
 //! cleanupPeriodDays, 30 by default: every time it starts, it removes the
 //! transcripts, subagents, tool results and file history older than that. A
-//! home that doesn't set it (T3 Code's provider homes, a fresh machine) loses
+//! home that doesn't set it (an app's own home, a fresh machine) loses
 //! its history a month at a time, before anything can keep a copy.
 //!
 //! Keeping a home's sessions sets cleanupPeriodDays in its settings.json, the

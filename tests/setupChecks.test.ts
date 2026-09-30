@@ -168,7 +168,10 @@ describe('session cleanup', () => {
       ['claude:~/.agent-app/homes/claude-proxy', { count: 30, home: '~/.agent-app/homes/claude-proxy' }],
       ['claude:~/.agent-tool/profiles/work2', { count: 90, home: '~/.agent-tool/profiles/work2' }],
     ]);
-    expect(find(checks, 'sessionCleanup')[0]!.level).toBe('warning');
+    expect(find(checks, 'sessionCleanup')[0]!.level).toBe('note');
+    // A machine the session archive keeps loses nothing when they go.
+    const kept = setupChecks([machine('mac', [home('claude', '~/.claude', [])])], (scanned) => scanned.machine === 'mac');
+    expect(find(kept, 'sessionCleanup')).toEqual([]);
   });
 
   it('counts 0, and anything that isn’t a whole number, as Claude Code’s 30 days', () => {
@@ -262,11 +265,11 @@ describe('the fleet’s checks', () => {
       'problem mac brokenImport',
       'problem ci-01 brokenLink',
       'warning mac unreadable',
-      'warning mac sessionCleanup',
       'warning mac duplicateInstall',
       'warning ci-01 scanFailed',
+      'note mac sessionCleanup',
     ]);
-    expect(checkCounts(checks)).toEqual({ problem: 2, warning: 4, note: 0 });
+    expect(checkCounts(checks)).toEqual({ problem: 2, warning: 3, note: 1 });
     expect(new Set(checks.map((check) => check.id)).size).toBe(checks.length);
     expect(setupChecks([mac, ci]).map((check) => check.id)).toEqual(checks.map((check) => check.id));
   });
