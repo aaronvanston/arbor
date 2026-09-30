@@ -1349,7 +1349,7 @@ pub(crate) fn set_yaml_edit_nested_value(
 pub(crate) fn read_core_config_document() -> Result<(PathBuf, yaml_serde_edit::YamlValue), String> {
     let config_path = core_install_dir()?.join(CORE_CONFIG_FILE);
     if !config_path.is_file() {
-        return Err("Core configuration has not been generated; start the CPA core first".to_string());
+        return Err("The core's config.yaml hasn't been made yet. Start the core first.".to_string());
     }
 
     let content = fs::read_to_string(&config_path)

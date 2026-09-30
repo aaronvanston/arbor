@@ -75,8 +75,8 @@ describe('Settings search', () => {
     const tray = present(index.find((setting) => setting.entry.id === 'appearance.tray-limits'));
     const theme = present(index.find((setting) => setting.entry.id === 'appearance.theme'));
     expect(settingScore(theme, 'theme')).toBe(0);
-    expect(settingScore(tray, 'tray')).toBe(1);
-    expect(settingScore(tray, 'ray')).toBe(2);
+    expect(settingScore(tray, 'menu')).toBe(1);
+    expect(settingScore(tray, 'enu')).toBe(2);
     expect(settingScore(tray, 'sidebar')).toBe(3);
     expect(settingScore(theme, 'dark mode')).toBe(4);
     expect(settingScore(theme, 'nothing like it')).toBeNull();

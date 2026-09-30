@@ -251,7 +251,7 @@ pub(super) async fn usage_collector_loop(app: tauri::AppHandle, token: Cancellat
                 Ok(next_subscription) => {
                     subscription = Some(next_subscription);
                     subscription_config = Some((config.port, config.management_secret_key.clone()));
-                    set_collector_status(&app, CollectorState::Collecting, "Connected to CPA usage live subscription", None);
+                    set_collector_status(&app, CollectorState::Collecting, "Connected to the core's live usage feed", None);
                     match backfill_usage_queue(&root, &config).await {
                         Ok(saved) => {
                             publish_collected_records(
@@ -319,7 +319,7 @@ pub(super) async fn usage_collector_loop(app: tauri::AppHandle, token: Cancellat
                     continue;
                 }
                 Err(_) => {
-                    set_collector_status(&app, CollectorState::Collecting, "Collecting from CPA usage live subscription", None);
+                    set_collector_status(&app, CollectorState::Collecting, "Collecting from the core's live usage feed", None);
                     retry_seconds = 1;
                     continue;
                 }
@@ -420,21 +420,21 @@ pub(super) async fn fetch_usage_queue(config: &GuiConfigFile) -> Result<Vec<Valu
             .query(&[("count", USAGE_QUEUE_BATCH_SIZE)]),
     )
     .await
-    .map_err(|error| format_management_request_error("Failed to read CPA usage queue", &error))?;
+    .map_err(|error| format_management_request_error("Failed to read core usage queue", &error))?;
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|error| format_management_request_error("Failed to read CPA usage response", &error))?;
+        .map_err(|error| format_management_request_error("Failed to read core usage response", &error))?;
     if !status.is_success() {
         return Err(format!(
-            "CPA usage queue returned HTTP {}: {}",
+            "Core usage queue returned HTTP {}: {}",
             status.as_u16(),
             text.trim()
         ));
     }
     serde_json::from_str::<Vec<Value>>(&text)
-        .map_err(|error| format!("Failed to parse CPA usage records: {error}"))
+        .map_err(|error| format!("Failed to parse core usage records: {error}"))
 }
 
 pub(super) fn set_collector_error(app: &tauri::AppHandle, error: String) {
@@ -490,7 +490,7 @@ pub(super) fn enqueue_usage_queue_items(
         .into_iter()
         .map(|item| {
             serde_json::to_string(&item)
-                .map_err(|error| format!("Failed to serialize CPA usage records: {error}"))
+                .map_err(|error| format!("Failed to serialize core usage records: {error}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
     enqueue_usage_raw_messages(connection, source, messages)
@@ -915,10 +915,10 @@ pub(super) fn insert_usage_records_in_transaction(
 pub(super) fn normalize_usage_record(value: Value, config: &GuiConfigFile) -> Result<UsageRecord, String> {
     let object = value
         .as_object()
-        .ok_or_else(|| "CPA usage record must be a JSON object".to_string())?;
+        .ok_or_else(|| "Core usage record must be a JSON object".to_string())?;
     let timestamp = usage_record_timestamp(object).unwrap_or_else(|| Local::now().to_rfc3339());
     let request_id = string_field(object, "request_id")
-        .ok_or_else(|| "CPA usage record must contain request_id".to_string())?;
+        .ok_or_else(|| "Core usage record must contain request_id".to_string())?;
     let api_key = string_field(object, "api_key").unwrap_or_default();
     let api_key_hash = hash_text(&api_key);
     let api_key_remark = config

@@ -1652,9 +1652,9 @@ fn main() {
                 }
 
                 match auto_install_bundled_core_if_needed(&core_app) {
-                    Ok(true) => eprintln!("Installed the CPA core bundled with this version of Arbor"),
+                    Ok(true) => eprintln!("Installed the core bundled with this version of Arbor"),
                     Ok(false) => {}
-                    Err(error) => eprintln!("Failed to automatically install CPA offline core: {error}"),
+                    Err(error) => eprintln!("Failed to install the bundled core: {error}"),
                 }
                 match install_bundled_core_plugins() {
                     Ok(true) => eprintln!("Updated the core plugins to the ones bundled with this version of Arbor"),
@@ -1666,13 +1666,13 @@ fn main() {
                 {
                     Ok(process_ids) => process_ids,
                     Err(error) => {
-                        eprintln!("Failed to scan and adopt CPA core in the current directory: {error}");
+                        eprintln!("Failed to look for a core already running from the install folder: {error}");
                         Vec::new()
                     }
                 };
                 if !adopted_process_ids.is_empty() {
                     eprintln!(
-                        "Adopted the CPA core running in the current directory: PID {}",
+                        "Adopted the core already running from the install folder: PID {}",
                         adopted_process_ids
                             .iter()
                             .map(u32::to_string)
@@ -1689,7 +1689,7 @@ fn main() {
                     }
                 } else if should_start_core_on_launch(&config) {
                     if let Err(error) = start_core_process_inner(process_state.inner(), &config) {
-                        eprintln!("Failed to automatically start CPA core: {error}");
+                        eprintln!("Failed to start the core at launch: {error}");
                     }
                 }
 

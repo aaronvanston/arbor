@@ -1172,7 +1172,7 @@ pub(crate) fn load_or_create_gui_config() -> Result<GuiConfigFile, String> {
     }
     if management_secret_rotated {
         if let Err(error) = patch_core_management_secret_key(&config.management_secret_key) {
-            eprintln!("Failed to update legacy CPA WebUI key; will retry on next core startup: {error}");
+            eprintln!("Failed to replace the old default management key; will retry on next core startup: {error}");
         }
     }
     if !config.auth_dir.trim().is_empty() {

@@ -6,7 +6,7 @@ pub(crate) static CORE_OPERATION_LOCK: Mutex<()> = Mutex::new(());
 pub(crate) fn spawn_core_child(mut command: Command) -> Result<Child, String> {
     command
         .spawn()
-        .map_err(|error| format!("Failed to start CPA core: {error}"))
+        .map_err(|error| format!("Couldn't start the core: {error}"))
 }
 
 async fn run_core_command(
@@ -106,7 +106,7 @@ pub(crate) fn auto_install_bundled_core_if_needed(app: &tauri::AppHandle) -> Res
     let (info, archive_path) = match bundled_core_archive()? {
         Some(bundled) => bundled,
         None if find_core_binary(&install_dir).is_some() => return Ok(false),
-        None => return Err("No CPA core detected, and this release package has no matching offline core".to_string()),
+        None => return Err("The core isn't installed, and this version of Arbor has none bundled for this Mac".to_string()),
     };
     if !core_needs_bundled_install(&install_dir, &info.version) {
         remember_bundled_core_when_up_to_date(&install_dir, &info.version)?;
@@ -232,7 +232,7 @@ fn swap_in_staged_core_with_runtime_restore(
             was_running,
             core_install_dir().and_then(|install_dir| {
                 if current_core_status(None, None)?.running {
-                    return Err("The CPA core is still running, so the new core wasn't swapped in".to_string());
+                    return Err("The core is still running, so the new version wasn't swapped in".to_string());
                 }
                 swap_in_staged_core(&install_dir, &core_staging_dir()?, staged)
             }),
@@ -431,7 +431,7 @@ pub(crate) async fn stage_core_version(
     ensure_not_canceled(&token, Some(&archive_path))?;
 
     let binary_path = find_core_binary(&staging_dir)
-        .ok_or_else(|| "CPA core binary not found after extraction".to_string())?;
+        .ok_or_else(|| "The core's program wasn't in the download".to_string())?;
     let binary_relative_path = binary_path
         .strip_prefix(&staging_dir)
         .map_err(|err| format!("Failed to determine core binary relative path: {err}"))?
@@ -488,7 +488,7 @@ pub(crate) fn stage_bundled_core(
     }
 
     let binary_path = find_core_binary(&staging_dir)
-        .ok_or_else(|| "Bundled archive does not contain a CPA core binary".to_string())?;
+        .ok_or_else(|| "The core bundled with Arbor is missing its program".to_string())?;
     let binary_relative_path = binary_path
         .strip_prefix(&staging_dir)
         .map_err(|error| format!("Failed to determine bundled core binary path: {error}"))?
@@ -903,13 +903,13 @@ pub(crate) fn current_core_status(
     let current_version = read_core_metadata(&install_dir).map(|metadata| metadata.version);
 
     let message = if starting {
-        "CPA core is starting".to_string()
+        "The core is starting".to_string()
     } else if !installed {
-        "CPA core is not installed; please install the latest version first".to_string()
+        "The core isn't installed yet. Install it first.".to_string()
     } else if running {
-        "CPA core is running".to_string()
+        "The core is running".to_string()
     } else {
-        "CPA core is installed and currently stopped".to_string()
+        "The core is installed and stopped".to_string()
     };
 
     Ok(CoreStatus {
@@ -980,11 +980,11 @@ impl CoreStartupFailure {
 impl std::fmt::Display for CoreStartupFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Exited(status) => write!(formatter, "CPA core exited immediately after startup: {status}"),
+            Self::Exited(status) => write!(formatter, "The core quit as soon as it started: {status}"),
             Self::Spawn(error) => formatter.write_str(error),
-            Self::StatusCheck(error) => write!(formatter, "Failed to check CPA core startup status: {error}"),
+            Self::StatusCheck(error) => write!(formatter, "Couldn't check whether the core started: {error}"),
             Self::TimedOut(port) => {
-                write!(formatter, "CPA core startup timed out: management port {port} was not listening within 10 seconds")
+                write!(formatter, "The core didn't start: nothing answered on port {port} within 10 seconds")
             }
         }
     }
@@ -1105,14 +1105,14 @@ pub(crate) fn start_core_process_inner(
             .map_err(|error| format!("Failed to create credentials directory {}: {error}", path_to_string(&auth_dir)))?;
     }
     let binary_path = find_core_binary(&install_dir)
-        .ok_or_else(|| "CPA core is not installed; please install the latest version first".to_string())?;
+        .ok_or_else(|| "The core isn't installed yet. Install it first.".to_string())?;
 
     let existing_process_ids = find_core_process_ids(&binary_path);
     if process_state.managed_pid().is_some() || !existing_process_ids.is_empty() {
         if !existing_process_ids.is_empty() {
             process_state.adopt_process_ids(&binary_path, existing_process_ids)?;
         }
-        return Err("CPA core is already running".to_string());
+        return Err("The core is already running".to_string());
     }
     let management_address = core_management_address(&gui_config.host, gui_config.port)?;
     if TcpStream::connect_timeout(&management_address, Duration::from_millis(250)).is_ok() {
@@ -1141,7 +1141,7 @@ pub(crate) fn start_core_process_inner(
             if let Err(heal_error) = rematerialize_core_binary(&binary_path) {
                 return Err(failure.message_with_detail(
                     &log_path,
-                    Some(&format!("Failed to automatically repair CPA core files: {heal_error}")),
+                    Some(&format!("Couldn't repair the core's files: {heal_error}")),
                 ));
             }
             match start_once() {
@@ -1149,7 +1149,7 @@ pub(crate) fn start_core_process_inner(
                 Err(failure) if failure.was_killed_by_sigkill() => {
                     return Err(failure.message_with_detail(
                         &log_path,
-                        Some("The system terminated the CPA core again; please reinstall the core and try again"),
+                        Some("macOS stopped the core again. Reinstall it and try again."),
                     ));
                 }
                 Err(failure) => return Err(failure.message(&log_path)),
@@ -1269,7 +1269,7 @@ pub(crate) fn stop_core_process_inner(process_state: &CoreProcessState) -> Resul
     } else if stopped_any {
         Ok(())
     } else {
-        Err("CPA core is currently stopped".to_string())
+        Err("The core is stopped".to_string())
     }
 }
 
@@ -1932,16 +1932,16 @@ pub(crate) fn terminate_child(child: &mut Child) -> Result<(), String> {
         match child.try_wait() {
             Ok(Some(_)) => return Ok(()),
             Ok(None) => thread::sleep(Duration::from_millis(100)),
-            Err(err) => return Err(format!("Failed to check CPA core process status: {err}")),
+            Err(err) => return Err(format!("Couldn't check the core's process: {err}")),
         }
     }
 
     child
         .kill()
-        .map_err(|err| format!("Failed to force-stop CPA core process: {err}"))?;
+        .map_err(|err| format!("Couldn't force the core to stop: {err}"))?;
     child
         .wait()
-        .map_err(|err| format!("Failed to wait for CPA core process to exit: {err}"))?;
+        .map_err(|err| format!("Couldn't wait for the core to stop: {err}"))?;
 
     Ok(())
 }
