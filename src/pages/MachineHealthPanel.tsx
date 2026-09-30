@@ -24,6 +24,7 @@ import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { FirstMachineActions } from '../components/FirstMachineActions';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot, StatusPill, type StatusTone } from '../components/ui/status-dot';
 import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
@@ -839,12 +840,7 @@ export function MachineHealthPanel({ onConfigure, onOpen }: {
           <EmptyMedia><Unplug /></EmptyMedia>
           <EmptyTitle>{t('machines.health.empty.title')}</EmptyTitle>
           <EmptyDescription>{t('machines.health.empty.description')}</EmptyDescription>
-          {onConfigure ? (
-            <Button variant="outline" size="sm" onClick={onConfigure}>
-              <Settings2 />
-              {t('machines.health.configure')}
-            </Button>
-          ) : null}
+          <FirstMachineActions onAdded={onOpen} />
         </Empty>
       ) : null}
       {machines.length ? (

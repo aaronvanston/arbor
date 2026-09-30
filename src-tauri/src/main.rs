@@ -1804,6 +1804,7 @@ fn main() {
             usage::limit_history::rename_limit_history_accounts,
             usage::machine_health::get_machine_health,
             usage::machine_health::get_machine_hosts,
+            usage::machine_health::get_this_mac,
             usage::machine_health::save_machine_hosts,
             usage::machine_health::discovery::discover_machine_hosts,
             usage::machine_health::agent_homes::get_agent_homes,

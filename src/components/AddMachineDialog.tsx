@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Check, Plus } from './ui/icons';
+import { Check, Laptop, Plus } from './ui/icons';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
 import { fetchMachineHosts, parsePort, saveMachineHosts } from '../services/machineHealth';
+import { getThisMac } from '../services/addMachine';
 import {
   discoverMachineHosts,
   newSuggestions,
@@ -22,13 +23,14 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { draftFromNumber, NumberField, numberFromDraft } from './ui/number-field';
 import { Spinner } from './ui/spinner';
-import type { DiscoveredHost, MachineHost } from '../native/types';
+import type { DiscoveredHost, MachineHost, ThisMac } from '../native/types';
 
 type Discovery = { state: 'loading' } | { state: 'failed'; error: string } | { state: 'ready'; found: DiscoveredHost[] };
 
 /**
- * Adds a machine to the machine list, which the Machines page and every Sync view read from. It offers the machines
- * this Mac already reaches, from its SSH config, its known hosts and its tailnet; picking one only fills the fields in.
+ * Adds a machine to the machine list, which the Machines page and every Sync view read from. It offers this Mac first
+ * while the list doesn't have it, then the machines this Mac already reaches, from its SSH config, its known hosts and
+ * its tailnet; picking one only fills the fields in.
  */
 export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: (machine: string) => void }) {
   const { t, tRich } = useI18n();
@@ -39,6 +41,7 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [discovery, setDiscovery] = useState<Discovery>({ state: 'loading' });
+  const [thisMac, setThisMac] = useState<ThisMac | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const discoveryRun = useRef(0);
   const foundId = useId();
@@ -62,7 +65,9 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
     setPort('22');
     setError(null);
     setHosts(null);
+    setThisMac(null);
     fetchMachineHosts().then(setHosts).catch(() => setHosts([]));
+    getThisMac().then(setThisMac).catch(() => undefined);
     discover();
   }, [open, discover]);
 
@@ -95,6 +100,14 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
     // an earlier pick put there.
     if (suggestions.some((other) => fieldsFor(other).name === machine)) setName('');
     nameRef.current?.focus();
+  };
+
+  const thisMacOffered = thisMac && !thisMac.listed ? thisMac : null;
+  const thisMacPicked = host === 'localhost';
+  const pickThisMac = (mac: ThisMac) => {
+    setName(mac.name);
+    setEndpoint('localhost');
+    setPort('22');
   };
 
   const save = async () => {
@@ -130,6 +143,24 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
           <DialogPanel className="flex flex-col gap-4">
             <section className="flex flex-col gap-1.5" aria-labelledby={foundId} data-slot="machine-suggestions">
               <p id={foundId} className="text-sm font-medium text-foreground">{t('machines.discovery.title')}</p>
+              {thisMacOffered ? (
+                <button
+                  type="button"
+                  aria-pressed={thisMacPicked}
+                  onClick={() => pickThisMac(thisMacOffered)}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:bg-input/10 dark:hover:bg-input/24',
+                    thisMacPicked && 'bg-accent dark:bg-input/32',
+                  )}
+                >
+                  <Laptop className="size-4 shrink-0 text-icon-muted" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-foreground">{t('machines.discovery.thisMac')}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{t('machines.discovery.thisMacHint', { name: thisMacOffered.name })}</span>
+                  </span>
+                  <Check className={cn('size-4 shrink-0 text-primary', !thisMacPicked && 'invisible')} aria-hidden="true" />
+                </button>
+              ) : null}
               {discovery.state === 'loading' ? (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status"><Spinner />{t('machines.discovery.loading')}</p>
               ) : discovery.state === 'failed' ? (
@@ -191,10 +222,14 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
                 <NumberField id="add-machine-port" font="mono" min={1} max={65535} value={numberFromDraft(port)} onValueChange={(next) => setPort(draftFromNumber(next))} />
               </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <p className="text-xs text-muted-foreground">{t('setup.checklist.addDialog.hostHint')}</p>
-              <CommandLine command={`ssh${parsedPort && parsedPort !== 22 ? ` -p ${parsedPort}` : ''} ${host && !hostProblem ? shellWord(host) : t('setup.checklist.addDialog.hostWord')} true`} />
-            </div>
+            {thisMacPicked ? (
+              <p className="text-xs text-muted-foreground">{t('machines.discovery.thisMacLocal')}</p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs text-muted-foreground">{t('setup.checklist.addDialog.hostHint')}</p>
+                <CommandLine command={`ssh${parsedPort && parsedPort !== 22 ? ` -p ${parsedPort}` : ''} ${host && !hostProblem ? shellWord(host) : t('setup.checklist.addDialog.hostWord')} true`} />
+              </div>
+            )}
             {problem ? <p className="text-sm text-error-foreground" role="alert">{problem}</p> : null}
             {error ? <p className="text-sm text-error-foreground" role="alert">{error}</p> : null}
           </DialogPanel>

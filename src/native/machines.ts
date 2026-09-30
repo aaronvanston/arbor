@@ -17,11 +17,13 @@ import type {
   TelemetryBreakdown,
   TelemetrySetup,
   TelemetryStatus,
+  ThisMac,
 } from './types';
 
 /** The machines: their list and health, the agents on them, what the agents report back, and each script run on one. */
 export type MachineCommands = {
   get_machine_hosts: { result: MachineHost[] };
+  get_this_mac: { result: ThisMac };
   save_machine_hosts: { args: { hosts: MachineHost[] }; result: MachineHost[] };
   discover_machine_hosts: { result: DiscoveredHost[] };
   get_agent_homes: { result: AgentHomesView };

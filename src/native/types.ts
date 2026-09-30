@@ -3747,6 +3747,20 @@ export type ThinkingAliasSource = {
 };
 
 /**
+ * This Mac as the machine list names it, or would once it's added, and whether it's there yet.
+ */
+export type ThisMac = {
+  /**
+   * The name its sessions and setup are filed under.
+   */
+  name: string,
+  /**
+   * The machine list has it, under `name`.
+   */
+  listed: boolean,
+};
+
+/**
  * Claude Code's estimate of some tokens, rounded as it prints them.
  */
 export type TokenEstimate = {

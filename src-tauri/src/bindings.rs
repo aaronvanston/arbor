@@ -95,6 +95,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::transcripts::PullRequestLink>();
         // Machines
         types.visit::<crate::usage::machine_health::MachineHost>();
+        types.visit::<crate::usage::machine_health::ThisMac>();
         types.visit::<crate::usage::machine_health::MachineHealthSnapshot>();
         types.visit::<crate::usage::machine_health::discovery::DiscoveredHost>();
         types.visit::<crate::usage::machine_health::agent_homes::AgentHome>();

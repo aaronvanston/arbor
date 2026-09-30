@@ -5,6 +5,12 @@ export type Json = Record<string, unknown>;
 /** The scenario switches, from the page's query string; each is listed at the top of `src/dev/mockTauri.ts`. */
 export const params = new URLSearchParams(window.location.search);
 
+/**
+ * `?fresh=1`: Arbor on the day it's installed. No machines, no requests or sessions yet, no archive and no other apps,
+ * with the proxy running and its key made. Each domain empties its own answers for it.
+ */
+export const freshInstall = params.get('fresh') === '1';
+
 /** When the page loaded; the mock's times are set from it. */
 export const now = Date.now();
 

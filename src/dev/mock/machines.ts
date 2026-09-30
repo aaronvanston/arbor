@@ -35,7 +35,7 @@ import type {
 import { homePathProblem } from '../../services/agentHomes';
 import type { CommandAnswers } from './answers';
 import { configSettings } from './core';
-import { later, mockLog, now, params } from './scenario';
+import { freshInstall, later, mockLog, now, params } from './scenario';
 import { joinSetupMachine, leaveToPolicy, recordEditMock, scanSetupMock, setupItem, setupMachines } from './setup';
 import { reporterInstalled, setMockT3Enabled } from './usage';
 
@@ -113,6 +113,10 @@ if (params.get('machines') === 'many') {
 }
 // `?machines=unhosted` has no machine with a host yet, so nothing checks any machine's health or agents.
 if (params.get('machines') === 'unhosted') for (const host of healthHosts) host.endpoint = '';
+// A fresh install lists no machine at all, this Mac included.
+if (freshInstall) healthHosts.length = 0;
+/** This Mac's name in the mock, the one it's listed under by default. */
+const MOCK_THIS_MAC = 'casey-mbp';
 
 const healthPoint = (name: string, t: number): HealthPoint => {
   const phase = t / 60_000;
@@ -574,6 +578,10 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     return healthScenario === 'slow' ? later(4_000, snapshot) : snapshot();
   },
   get_machine_hosts: () => healthHosts,
+  get_this_mac: () => {
+    const listed = healthHosts.find((host) => host.endpoint === 'localhost');
+    return { name: listed?.machine ?? MOCK_THIS_MAC, listed: Boolean(listed) };
+  },
   get_agent_homes: () => agentHomesView(),
   save_agent_home: ({ home }) => {
     mockLog('save_agent_home', home);

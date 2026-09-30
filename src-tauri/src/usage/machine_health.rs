@@ -1462,6 +1462,31 @@ pub(crate) async fn get_machine_health(
     Ok(build_snapshot(&inner, now, since, window_ms.unwrap_or(HISTORY_MS)))
 }
 
+/// This Mac as the machine list names it, or would once it's added, and whether it's there yet.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ThisMac {
+    /// The name its sessions and setup are filed under.
+    name: String,
+    /// The machine list has it, under `name`.
+    listed: bool,
+}
+
+fn this_mac(hosts: &[MachineHost], local_names: &[String]) -> ThisMac {
+    match hosts.iter().find(|host| is_local_endpoint(&host.endpoint, local_names)) {
+        Some(host) => ThisMac { name: host.machine.clone(), listed: true },
+        None => ThisMac { name: local_names.first().cloned().unwrap_or_else(|| "localhost".into()), listed: false },
+    }
+}
+
+/// Read from the saved list rather than the sampler's, which catches up with a save a moment later.
+#[tauri::command]
+pub(crate) async fn get_this_mac(state: tauri::State<'_, MachineHealthState>) -> Result<ThisMac, String> {
+    let hosts = run_usage_task(|| load_hosts(&open_usage_database()?)).await?;
+    let local_names = state.lock().local_names.clone();
+    Ok(this_mac(&hosts, &local_names))
+}
+
 #[tauri::command]
 pub(crate) async fn get_machine_hosts() -> Result<Vec<MachineHost>, String> {
     run_usage_task(|| load_hosts(&open_usage_database()?)).await
@@ -1485,6 +1510,16 @@ pub(crate) async fn save_machine_hosts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn this_mac_is_the_listed_local_host_or_else_the_name_its_things_are_filed_under() {
+        let host = |machine: &str, endpoint: &str| MachineHost { machine: machine.into(), endpoint: endpoint.into(), port: 22, enabled: true, source: String::new() };
+        let names = vec!["studio-mac".to_string(), "studio-mac.local".to_string()];
+        assert_eq!(this_mac(&[host("cedar-01", "cedar-01.lan")], &names), ThisMac { name: "studio-mac".into(), listed: false });
+        assert_eq!(this_mac(&[host("cedar-01", "cedar-01.lan"), host("desk", "localhost")], &names), ThisMac { name: "desk".into(), listed: true });
+        assert_eq!(this_mac(&[host("desk", "studio-mac.local")], &names), ThisMac { name: "desk".into(), listed: true });
+        assert_eq!(this_mac(&[], &[]), ThisMac { name: "localhost".into(), listed: false });
+    }
 
     const LINUX_SAMPLE: &str = "hostname=cedar-01\nos=Linux\narch=x86_64\ncores=24\nload1=0.5\nload5=0.4\nload15=0.3\nmem_total_kb=64308204\nmem_available_kb=58275816\ndisk_total_kb=982292956\ndisk_used_kb=222783264\nnet_rx_bytes=1000\nnet_tx_bytes=2000\ncpu_pct=4.6\ncpu_total_jiffies=1000\ncpu_idle_jiffies=900\nchip=12th Gen Intel(R) Core(TM) i9-12900K\nmodel=MS-7D25\ngpu_name=NVIDIA Corporation GA102 [GeForce RTX 3080]\nos_version=Ubuntu 26.04 LTS\nswap_total_kb=33554424\nswap_used_kb=1576564\ncpu_temp_c=26.0\nuptime_s=860270\n";
 

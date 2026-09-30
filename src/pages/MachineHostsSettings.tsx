@@ -16,6 +16,7 @@ import { draftFromNumber, NumberField, numberFromDraft } from '../components/ui/
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
 import { TableEmpty } from '../components/ui/data-table';
+import { FirstMachineActions } from '../components/FirstMachineActions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import type { MachineHost } from '../native/types';
 import { machineName } from '../services/machineNames';
@@ -150,7 +151,12 @@ export function MachineHostsSettings() {
           <span className="inline-flex items-center gap-2"><Spinner />{t('machines.hosts.loading')}</span>
         </TableEmpty>
       ) : rows.length === 0 ? (
-        <TableEmpty>{t('machines.hosts.empty')}</TableEmpty>
+        <TableEmpty>
+          <span className="flex flex-col items-center gap-3">
+            {t('machines.hosts.empty')}
+            <FirstMachineActions onAdded={() => void load()} />
+          </span>
+        </TableEmpty>
       ) : (
         <Table>
           <TableHeader>

@@ -14,7 +14,8 @@ import { unreachableReason } from '../services/machineAlerts';
 import { fetchMachineHealth } from '../services/machineHealth';
 import { machineIdentity, osLabel } from '../services/machineIdentity';
 import { MachinePill } from './identity/Identity';
-import { SettingsSection } from './layout/settings';
+import { FirstMachineActions } from './FirstMachineActions';
+import { SettingsBlock, SettingsSection } from './layout/settings';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Skeleton } from './ui/skeleton';
@@ -140,6 +141,15 @@ export function HomeMachines({ machines, onNavigate }: { machines: HomeMachine[]
             <Skeleton className="h-8 w-full" />
           </div>
         ))
+        : machines.length === 0 ? (
+          <SettingsBlock className="col-span-full flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/70 py-6 text-center">
+            <span>
+              <span className="block text-sm font-medium text-foreground">{t('home.machines.empty.title')}</span>
+              <span className="block text-xs text-muted-foreground">{t('home.machines.empty.description')}</span>
+            </span>
+            <FirstMachineActions onAdded={onNavigate ? (machine) => onNavigate(machinesView(machine)) : undefined} />
+          </SettingsBlock>
+        )
         : machines.map((item) => (
           <MachineCard key={item.machine} item={item} onOpen={onNavigate ? () => onNavigate(machinesView(item.machine)) : undefined} />
         ))}

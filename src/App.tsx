@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
+import { onAddMachineRequest } from './services/addMachine';
 import { Activity, Archive, BellRing, Database, FolderSearch, Info, Monitor, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
 import { CoreRuntimeProvider, useCoreRuntime } from './coreRuntime';
 import { CoreUpdateProvider, useCoreUpdate } from './coreUpdate';
@@ -295,6 +296,7 @@ function AppContent() {
   const [addingMachine, setAddingMachine] = useState(false);
   // Stable, so the memoized page doesn't render again for it.
   const addMachine = useCallback(() => setAddingMachine(true), []);
+  useEffect(() => onAddMachineRequest(addMachine), [addMachine]);
   const appliedTheme = useAppliedTheme();
   const sidebarArt = sidebarArtChoice(preferences.sidebarArt);
   const appColor = appColorChoice(preferences.appColor);
