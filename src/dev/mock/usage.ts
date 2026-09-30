@@ -388,10 +388,10 @@ const sessionAgents = {
   claudeCode: 'claude-cli/2.1.280 (external, cli)',
   agentSdk: 'claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.276)',
   claudePrint: 'claude-cli/2.1.280 (external, sdk-cli)',
-  codexOrca: 'codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 Orca/1.4.205',
+  codexHosted: 'codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 AcmeDesk/1.4.205',
   codexExec: 'codex_exec/0.156.0 (Mac OS 26.0.0; arm64) dumb',
   codexApp: 'Codex Desktop/0.156.0 (Mac OS 26.0.0; arm64)',
-  claudeOrca: 'claude-cli/2.1.280 (external, cli) Orca/1.4.205',
+  claudeHosted: 'claude-cli/2.1.280 (external, cli) AcmeDesk/1.4.205',
 };
 
 // Blended USD per million tokens, most of them read from cache.
@@ -448,16 +448,16 @@ const usageSessions: UsageSession[] = [
   ...(heavyScenario ? [
     {
       ...mockSession('9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e', [
-        { ...sessionThread('9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e', null, 0, 'claude-opus-5-5', sessionAgents.claudeOrca, 58, 58, 4_100), estimatedCost: 744.2 },
-        { ...sessionThread('4b5c6d7e-8f90-4a1b-9c2d-3e4f5a6b7c8d', '9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e', 1, 'claude-haiku-4-5', sessionAgents.claudeOrca, 40, 40, 2_690), estimatedCost: 24.9 },
+        { ...sessionThread('9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e', null, 0, 'claude-opus-5-5', sessionAgents.claudeHosted, 58, 58, 4_100), estimatedCost: 744.2 },
+        { ...sessionThread('4b5c6d7e-8f90-4a1b-9c2d-3e4f5a6b7c8d', '9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e', 1, 'claude-haiku-4-5', sessionAgents.claudeHosted, 40, 40, 2_690), estimatedCost: 24.9 },
       ], 'Cedar 01'),
-      pool: 'Cedar', apiKeyHash: 'hash-orca-cedar',
+      pool: 'Cedar', apiKeyHash: 'hash-desk-cedar',
     },
     {
       ...mockSession('2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f', [
-        sessionThread('2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f', null, 0, 'claude-opus-5-5', sessionAgents.claudeOrca, 30, 25, 48),
+        sessionThread('2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f', null, 0, 'claude-opus-5-5', sessionAgents.claudeHosted, 30, 25, 48),
       ], 'Cedar 01'),
-      pool: 'Cedar', apiKeyHash: 'hash-orca-cedar',
+      pool: 'Cedar', apiKeyHash: 'hash-desk-cedar',
     },
   ] : []),
   mockSession('a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', [
@@ -467,7 +467,7 @@ const usageSessions: UsageSession[] = [
     sessionThread('d0a47c93-18e5-4b2f-a7c1-5c6d7e8f9012', 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', 1, 'claude-sonnet-5', sessionAgents.claudeCode, 35, 12, 116),
   ], 'casey-mbp'),
   mockSession('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', [
-    sessionThread('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', null, 0, 'gpt-6-sol', sessionAgents.codexOrca, 70, 45, 240),
+    sessionThread('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', null, 0, 'gpt-6-sol', sessionAgents.codexHosted, 70, 45, 240),
   ], 'casey-mbp'),
   mockSession('6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', [
     sessionThread('6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', null, 0, 'claude-opus-5-5', sessionAgents.claudeCode, 320, 50, 310),

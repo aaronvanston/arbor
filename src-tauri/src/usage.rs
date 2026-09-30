@@ -295,7 +295,7 @@ pub(crate) struct UsageQuery {
     #[serde(default)]
     branch: Option<String>,
     /// Sessions only: the client, as the Sessions page names it without its
-    /// version, like "Claude Code" or "Codex CLI · Orca".
+    /// version, like "Claude Code" or "Codex CLI · AcmeDesk".
     #[serde(default)]
     client: Option<String>,
     /// Sessions only: "with" for sessions that opened or worked on a pull
@@ -5018,7 +5018,7 @@ mod tests {
                 ..session_row(CLAUDE_AGENT_A, Some(CLAUDE_MAIN), SESSION_T0 + 1_000)
             },
             SessionRow {
-                user_agent: Some("codex-tui/0.156.0 (Mac OS 26.0.0; arm64) Orca/1.4.205"),
+                user_agent: Some("codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 AcmeDesk/1.4.205"),
                 model: "gpt-5.5-codex",
                 provider: "codex",
                 ..session_row(CODEX_ROOT, None, SESSION_T0 + 2_000)
@@ -5145,7 +5145,7 @@ mod tests {
         assert_eq!(facets["clients"], serde_json::json!([{ "value": "Claude Code", "sessions": 1 }]));
         assert_eq!(
             narrowed(UsageQuery {
-                client: Some("Codex CLI · Orca".into()),
+                client: Some("Codex CLI · AcmeDesk".into()),
                 ..UsageQuery::default()
             }),
             [CODEX_ROOT]

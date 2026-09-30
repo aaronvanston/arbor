@@ -23,7 +23,7 @@ import type {
 import { coreReply, type CommandAnswers } from './answers';
 import { iso, mockLog, params, type Json } from './scenario';
 
-// With `?heavy=1`, an Orca session on Cedar 01 has used 258M tokens in the last hour.
+// With `?heavy=1`, a session on Cedar 01 has used 258M tokens in the last hour.
 export const heavyScenario = params.get('heavy') === '1';
 export const coreScenario = params.get('core') ?? 'running';
 const limitScenario = params.get('limit');
@@ -147,7 +147,7 @@ export const configSettings: CoreConfigView = {
   apiKeys: params.get('apikey') === 'none' ? [] : [
     { apiKey: 'sk-4f1e9c2b7a8d4e6f9b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a', apiKeyHash: 'hash-casey', remark: 'Casey laptop' },
     { apiKey: 'sk-9b2d4f6a8c0e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e2a4c6e8a0c2e4a6c8e0a2c', apiKeyHash: 'hash-ci', remark: 'CI runner' },
-    ...(heavyScenario ? [{ apiKey: 'sk-0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d', apiKeyHash: 'hash-orca-cedar', remark: 'orca-cedar-01' }] : []),
+    ...(heavyScenario ? [{ apiKey: 'sk-0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d', apiKeyHash: 'hash-desk-cedar', remark: 'desk-cedar-01' }] : []),
   ],
   pausedApiKeys: [],
   managementSecretConfigured: true,

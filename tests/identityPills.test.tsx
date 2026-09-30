@@ -119,9 +119,9 @@ describe('identity pills', () => {
   });
 
   it('names the client from its User-Agent, with its version and what it ran in', () => {
-    const t3 = render(<ClientPill userAgent="claude-cli/2.1.283 (external, sdk-ts, agent-sdk/0.3.276) t3code" />);
-    expect(text(t3)).toBe('Claude Agent SDK 0.3.276 · T3 Code');
-    expect(t3).toContain('claude');
+    const hosted = render(<ClientPill userAgent="claude-cli/2.1.283 (external, sdk-ts, agent-sdk/0.3.276) AcmeDesk/1.4.205" />);
+    expect(text(hosted)).toBe('Claude Agent SDK 0.3.276 · AcmeDesk');
+    expect(hosted).toContain('claude');
     expect(text(render(<ClientPill userAgent="codex_cli_rs/0.149.1 (Mac OS 26.5.2; arm64)" version={false} />))).toBe('Codex CLI');
     expect(text(render(<ClientPill userAgent={null} />))).toBe('Unknown client');
   });

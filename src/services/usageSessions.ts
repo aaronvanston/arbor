@@ -11,26 +11,51 @@ export type SessionClient = { name: string; version?: string; host?: string };
 /**
  * Names the client behind a session from its User-Agent. Claude Code reports how it was started in brackets
  * (`cli`, `sdk-cli` for `claude -p`, or the Agent SDK); Codex names its surface in the product token.
+ *
+ * The app hosting it is whatever the User-Agent itself names, never a list of known apps: a `Name/version` token after
+ * Claude Code's brackets or Codex's terminal, the client app the Agent SDK lists after its own version, or the client
+ * in the brackets Codex ends with when another app starts it.
  */
 export function sessionClient(userAgent: string | null | undefined): SessionClient | null {
   const agent = userAgent?.trim();
   if (!agent) return null;
-  const host = /\bOrca\//i.test(agent) ? 'Orca' : /t3code/i.test(agent) ? 'T3 Code' : undefined;
-  const claude = /^claude-cli\/(\S+)(?:\s*\(([^)]*)\))?/i.exec(agent);
+  const claude = /^claude-cli\/(\S+)(?:\s*\(([^)]*)\))?(.*)$/i.exec(agent);
   if (claude) {
-    const parts = (claude[2] ?? '').split(',').map((part) => part.trim().toLowerCase());
-    const sdk = parts.find((part) => part.startsWith('agent-sdk/'));
+    const parts = (claude[2] ?? '').split(',').map((part) => part.trim());
+    const sdkAt = parts.findIndex((part) => part.toLowerCase().startsWith('agent-sdk/'));
+    const host = hostToken(claude[3] ?? '') ?? (sdkAt >= 0 ? parts[sdkAt + 1] || undefined : undefined);
+    const sdk = parts[sdkAt];
     if (sdk) return { name: 'Claude Agent SDK', version: sdk.slice('agent-sdk/'.length), host };
-    return { name: parts.includes('sdk-cli') ? 'claude -p' : 'Claude Code', version: claude[1], host };
+    const started = parts.map((part) => part.toLowerCase());
+    return { name: started.includes('sdk-cli') ? 'claude -p' : 'Claude Code', version: claude[1], host };
   }
-  const codex = /^(codex_exec|codex[-_]tui|codex_cli_rs|codex desktop|codex[-_][\w-]+)\/(\S+)/i.exec(agent);
+  const codex = /^(codex_exec|codex[-_]tui|codex_cli_rs|codex desktop|codex[-_][\w-]+)\/(\S+)(.*)$/i.exec(agent);
   if (codex) {
     const surface = codex[1]!.toLowerCase();
     const name = surface === 'codex_exec' ? 'codex exec' : surface === 'codex desktop' ? 'Codex app' : 'Codex CLI';
-    return { name, version: codex[2], host };
+    return { name, version: codex[2], host: codexHost(codex[3] ?? '', surface) };
   }
   const product = /^([^\s/]+)\/(\S+)/.exec(agent);
-  return product ? { name: product[1]!, version: product[2], host } : { name: agent.split(/\s/)[0]!, host };
+  return product ? { name: product[1]!, version: product[2], host: undefined } : { name: agent.split(/\s/)[0]!, host: undefined };
+}
+
+/** The name in the first `Name/version` token of `rest`, outside brackets. */
+function hostToken(rest: string): string | undefined {
+  const token = rest.replace(/\([^)]*\)/g, ' ').split(/\s+/).find((word) => /^[^\s/]+\/\S/.test(word));
+  return token?.split('/')[0];
+}
+
+/**
+ * Codex follows its platform with the terminal, then anything the app running it adds: a `Name/version` token, or
+ * `(client; version)` brackets naming the client, which are Codex's own words when it's `codex exec`.
+ */
+function codexHost(rest: string, surface: string): string | undefined {
+  const afterPlatform = rest.replace(/^\s*\([^)]*\)/, '');
+  const [, ...afterTerminal] = afterPlatform.replace(/\([^)]*\)/g, ' ').trim().split(/\s+/);
+  const token = hostToken(afterTerminal.join(' '));
+  if (token) return token;
+  const client = /\(([^;()]+);[^()]*\)\s*$/.exec(afterPlatform)?.[1]?.trim();
+  return client && client.toLowerCase() !== surface ? client : undefined;
 }
 
 /** A session id short enough for a table: the first block of the UUID. */

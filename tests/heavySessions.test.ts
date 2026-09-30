@@ -9,11 +9,11 @@ const t = (key: Parameters<typeof translate>[0], variables?: Record<string, stri
 
 const session = (id: string, totalTokens: number, fields: Partial<UsageSession> = {}): UsageSession => ({
   id, parentId: null, depth: 0, models: ['claude-fable-5-1'], providers: ['claude'],
-  userAgent: 'claude-cli/2.1.280 (external, cli) Orca/1.4.205',
+  userAgent: 'claude-cli/2.1.280 (external, cli) AcmeDesk/1.4.205',
   startedAtMs: 0, lastActiveAtMs: 0, requests: 100, failures: 0, canceled: 0,
   inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
   totalTokens, estimatedCost: 84.2, pricedRequests: 100, peakContext: 0, compactions: 0,
-  provider: 'claude', machine: 'Cedar 01', pool: 'Cedar', apiKeyHash: 'orca-cedar', active: true, hasOwnRequests: true, subagents: 0, threads: [], transcript: null,
+  provider: 'claude', machine: 'Cedar 01', pool: 'Cedar', apiKeyHash: 'desk-cedar', active: true, hasOwnRequests: true, subagents: 0, threads: [], transcript: null,
   ...fields,
 });
 const page = (items: UsageSession[]): UsageSessionPage => ({
@@ -21,7 +21,7 @@ const page = (items: UsageSession[]): UsageSessionPage => ({
   summary: { sessions: items.length, subagentThreads: 0, active: 0, requests: 0, totalTokens: 0, estimatedCost: 0, pricedRequests: 0, untrackedRequests: 0 },
 });
 const heavy = (id: string, fields: Partial<HeavySession> = {}): HeavySession => ({
-  id, client: 'Claude Code', host: 'Orca', machine: 'Cedar 01', apiKeyHash: 'orca-cedar', tokens: 130 * M, requests: 100, cost: 84.2, otherKeySessions: 0, ...fields,
+  id, client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', apiKeyHash: 'desk-cedar', tokens: 130 * M, requests: 100, cost: 84.2, otherKeySessions: 0, ...fields,
 });
 
 describe('heavy sessions', () => {
@@ -35,7 +35,7 @@ describe('heavy sessions', () => {
     const items = heavySessions(hour, 100 * M);
     expect(items.map((item) => item.id)).toEqual(['heavier', 'heavy']);
     expect(items[1]).toEqual({
-      id: 'heavy', client: 'Claude Code', host: 'Orca', machine: 'Cedar 01', apiKeyHash: 'orca-cedar',
+      id: 'heavy', client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', apiKeyHash: 'desk-cedar',
       tokens: 130 * M, requests: 100, cost: 84.2,
       // The quiet session and the one after it used the same key.
       otherKeySessions: 2,
@@ -70,7 +70,7 @@ describe('heavy sessions', () => {
   it('says where the session runs, what it used and what that would cost', () => {
     expect(heavySessionText(heavy('a'), t)).toEqual({
       title: 'Heavy session on Cedar 01',
-      body: 'Claude Code in Orca used 130M tokens in the last hour, about $84.20 at API prices.',
+      body: 'Claude Code in AcmeDesk used 130M tokens in the last hour, about $84.20 at API prices.',
     });
     expect(heavySessionText(heavy('a', { machine: '', client: null, host: null, cost: null, tokens: 1_400 * M }), t)).toEqual({
       title: 'Heavy session',

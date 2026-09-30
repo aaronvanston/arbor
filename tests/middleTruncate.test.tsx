@@ -30,7 +30,7 @@ describe('where a long path or branch is cut', () => {
     expect(splitForMiddleTruncate('Casey laptop key')).toBeNull();
     for (const value of [
       'Claude Sonnet 4.5',
-      'orca cedar 01 laptop',
+      'studio cedar 01 laptop',
       'Gemini  2.5  Flash  Lite',
       '~/Library/Mobile Documents/com~apple~CloudDocs/Project notes for the offsite.md',
       '/Volumes/Archive/Arbor backups/setup backups 2026 09 26',

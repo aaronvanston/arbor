@@ -2686,7 +2686,7 @@ export type SessionFacets = {
    */
   branches: Array<FacetCount>,
   /**
-   * Clients as the list names them without their version, like "Claude Code" or "Codex CLI · Orca".
+   * Clients as the list names them without their version, like "Claude Code" or "Codex CLI · AcmeDesk".
    */
   clients: Array<FacetCount>,
   /**
@@ -3915,7 +3915,7 @@ export type UsageQuery = {
   branch?: string,
   /**
    * Sessions only: the client, as the Sessions page names it without its
-   * version, like "Claude Code" or "Codex CLI · Orca".
+   * version, like "Claude Code" or "Codex CLI · AcmeDesk".
    */
   client?: string,
   /**

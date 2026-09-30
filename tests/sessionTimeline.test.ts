@@ -279,9 +279,11 @@ describe('session totals and checks', () => {
 
 describe('reading the machine from a User-Agent', () => {
   it('finds the OS, CPU and terminal Codex reports', () => {
-    expect(sessionPlatform('codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 Orca/1.4.205')).toEqual({ os: 'macOS 26', arch: 'arm64', terminal: 'iTerm' });
+    expect(sessionPlatform('codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 AcmeDesk/1.4.205')).toEqual({ os: 'macOS 26', arch: 'arm64', terminal: 'iTerm' });
     expect(sessionPlatform('codex_exec/0.156.0 (Mac OS 27.0.0; arm64) unknown (codex_exec; 0.156.0)')).toEqual({ os: 'macOS 27', arch: 'arm64', terminal: undefined });
-    expect(sessionPlatform('t3code_desktop/0.156.0 (Ubuntu 26.4.0; x86_64) Orca/0.0.0-dev (t3code_desktop; 0.0.42)')).toEqual({ os: 'Ubuntu 26.4', arch: 'x86_64', terminal: undefined });
+    expect(sessionPlatform('acme_desktop/0.156.0 (Ubuntu 26.4.0; x86_64) dumb (acme_desktop; 0.0.42)')).toEqual({ os: 'Ubuntu 26.4', arch: 'x86_64', terminal: undefined });
+    // An app that runs Codex in its own terminal is that terminal.
+    expect(sessionPlatform('codex-tui/0.156.0 (Mac OS 26.0.0; arm64) AcmeDesk/0.0.0-dev')).toEqual({ os: 'macOS 26', arch: 'arm64', terminal: 'AcmeDesk' });
     expect(sessionPlatform('Codex Desktop/0.156.0 (Mac OS 26.0.0; arm64)')).toEqual({ os: 'macOS 26', arch: 'arm64', terminal: undefined });
   });
 

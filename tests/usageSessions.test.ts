@@ -23,10 +23,14 @@ describe('naming the client behind a session', () => {
 
   it('names the Codex surface and the app hosting it', () => {
     expect(sessionClient('codex_exec/0.156.0 (Mac OS 26.0.0; arm64) dumb')).toEqual({ name: 'codex exec', version: '0.156.0', host: undefined });
-    expect(sessionClient('codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 Orca/1.4.205'))
-      .toEqual({ name: 'Codex CLI', version: '0.156.0', host: 'Orca' });
+    expect(sessionClient('codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 AcmeDesk/1.4.205'))
+      .toEqual({ name: 'Codex CLI', version: '0.156.0', host: 'AcmeDesk' });
     expect(sessionClient('Codex Desktop/0.156.0 (Mac OS 26.0.0; arm64)')).toEqual({ name: 'Codex app', version: '0.156.0', host: undefined });
-    expect(sessionClient('codex_cli_rs/0.150.0 (Mac OS 15.5.0; arm64) t3code/1.2.0')).toEqual({ name: 'Codex CLI', version: '0.150.0', host: 'T3 Code' });
+    // An app that starts Codex itself names itself in the brackets at the end; `codex exec` puts its own name there.
+    expect(sessionClient('codex_cli_rs/0.150.0 (Mac OS 15.5.0; arm64) unknown (acme_desktop; 0.0.42)')).toEqual({ name: 'Codex CLI', version: '0.150.0', host: 'acme_desktop' });
+    expect(sessionClient('codex_exec/0.156.0 (Mac OS 27.0.0; arm64) unknown (codex_exec; 0.156.0)')).toEqual({ name: 'codex exec', version: '0.156.0', host: undefined });
+    // The terminal right after the platform isn't a host.
+    expect(sessionClient('codex_cli_rs/0.150.0 (Mac OS 15.5.0; arm64) WezTerm/20240203')).toEqual({ name: 'Codex CLI', version: '0.150.0', host: undefined });
   });
 
   it('falls back to the product token, and to nothing without a User-Agent', () => {
@@ -84,16 +88,17 @@ describe('the names the Sessions filters match on', () => {
       ['claude-cli/2.1.280 (external, cli)', 'Claude Code'],
       ['claude-cli/2.1.280 (external, sdk-cli)', 'claude -p'],
       ['claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.276)', 'Claude Agent SDK'],
-      ['claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.276, t3code)', 'Claude Agent SDK · T3 Code'],
-      ['claude-cli/2.1.280 (external, cli) Orca/1.4.205', 'Claude Code · Orca'],
-      ['codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 Orca/1.4.205', 'Codex CLI · Orca'],
+      ['claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.276, acmedesk)', 'Claude Agent SDK · acmedesk'],
+      ['claude-cli/2.1.280 (external, cli) AcmeDesk/1.4.205', 'Claude Code · AcmeDesk'],
+      ['codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 AcmeDesk/1.4.205', 'Codex CLI · AcmeDesk'],
+      ['codex_cli_rs/0.156.0 (Mac OS 26.0.0; arm64) unknown (acme_desktop; 0.0.42)', 'Codex CLI · acme_desktop'],
       ['codex_exec/0.156.0 (Mac OS 26.0.0; arm64) dumb', 'codex exec'],
       ['Codex_Exec/0.156.0', 'codex exec'],
       ['codex_cli_rs/0.156.0 (Mac OS 26.0.0; arm64)', 'Codex CLI'],
       ['Codex Desktop/0.156.0 (Mac OS 26.0.0; arm64)', 'Codex app'],
       ['codex_exec_beta/1.0', 'Codex CLI'],
       ['python-requests/2.32', 'python-requests'],
-      ['TinyOrca/1.0 curl', 'TinyOrca'],
+      ['TinyAgent/1.0 curl', 'TinyAgent'],
       ['claude-cli/ (cli)', 'claude-cli/'],
       ['curl', 'curl'],
       ['   ', null],

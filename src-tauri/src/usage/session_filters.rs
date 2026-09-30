@@ -60,7 +60,7 @@ pub(super) struct SessionFacets {
     projects: Vec<FacetCount>,
     /// The chosen project's branches; none until a project is chosen.
     branches: Vec<FacetCount>,
-    /// Clients as the list names them without their version, like "Claude Code" or "Codex CLI · Orca".
+    /// Clients as the list names them without their version, like "Claude Code" or "Codex CLI · AcmeDesk".
     clients: Vec<FacetCount>,
     /// Where sessions ran: their key's machine, else the one their transcript is on.
     machines: Vec<FacetCount>,
@@ -256,7 +256,7 @@ fn ranked(counts: HashMap<&str, usize>) -> Vec<FacetCount> {
 }
 
 /// The client behind a session, as the Sessions page names it but without its
-/// version: "Claude Code", "codex exec", "Claude Agent SDK · T3 Code". Follows
+/// version: "Claude Code", "codex exec", "Claude Code · AcmeDesk". Follows
 /// `sessionClient` in usageSessions.ts.
 pub(super) fn session_client_label(user_agent: &str) -> Option<String> {
     let agent = user_agent.trim();
@@ -265,27 +265,91 @@ pub(super) fn session_client_label(user_agent: &str) -> Option<String> {
     }
     // ASCII only, so positions in it are positions in `agent`.
     let lower = agent.to_ascii_lowercase();
-    let host = if has_orca_token(&lower) {
-        Some("Orca")
-    } else if lower.contains("t3code") {
-        Some("T3 Code")
-    } else {
-        None
-    };
     let name = client_name(agent, &lower);
-    Some(match host {
+    Some(match client_host(agent, &lower) {
         Some(host) => format!("{name} · {host}"),
         None => name,
     })
 }
 
-/// "Orca/" at the start of a word.
-fn has_orca_token(lower: &str) -> bool {
-    lower.match_indices("orca/").any(|(index, _)| {
-        lower[..index]
-            .chars()
-            .next_back()
-            .is_none_or(|before| !(before.is_ascii_alphanumeric() || before == '_'))
+/// The app hosting the client, as the User-Agent itself names it, never from a list of known apps: a `Name/version`
+/// token after Claude Code's brackets or Codex's terminal, the client app the Agent SDK lists after its own version,
+/// or the client in the brackets Codex ends with when another app starts it.
+fn client_host(agent: &str, lower: &str) -> Option<String> {
+    let (surface, rest) = product_and_rest(agent, lower)?;
+    if surface == "claude-cli" {
+        let trimmed = rest.trim_start();
+        let (inside, after) = trimmed
+            .strip_prefix('(')
+            .and_then(|inner| inner.split_once(')'))
+            .unwrap_or(("", rest));
+        if let Some(host) = host_token(after) {
+            return Some(host);
+        }
+        let parts = inside.split(',').map(str::trim).collect::<Vec<_>>();
+        let sdk_at = parts.iter().position(|part| part.to_ascii_lowercase().starts_with("agent-sdk/"))?;
+        return parts.get(sdk_at + 1).filter(|part| !part.is_empty()).map(|part| part.to_string());
+    }
+    let is_codex = surface == "codex desktop"
+        || surface
+            .strip_prefix("codex")
+            .and_then(|tail| tail.strip_prefix(&['-', '_'][..]))
+            .is_some_and(|tail| !tail.is_empty() && tail.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'));
+    if !is_codex {
+        return None;
+    }
+    // Codex follows its platform with the terminal, then anything the app running it adds.
+    let trimmed = rest.trim_start();
+    let after_platform = trimmed
+        .strip_prefix('(')
+        .and_then(|inner| inner.split_once(')'))
+        .map_or(rest, |(_, after)| after);
+    let words = without_brackets(after_platform);
+    let after_terminal = words.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
+    if let Some(host) = host_token(&after_terminal) {
+        return Some(host);
+    }
+    // `(client; version)` at the end names the client, which is Codex's own name for `codex exec`.
+    let inner = after_platform.trim_end().strip_suffix(')')?;
+    let open = inner.rfind('(')?;
+    let (client, _) = inner[open + 1..].split_once(';')?;
+    let client = client.trim();
+    (!client.is_empty() && !client.contains(')') && client.to_ascii_lowercase() != surface).then(|| client.to_string())
+}
+
+/// The product token in lower case (`claude-cli`, `codex_exec`) and what follows its version, for a User-Agent that
+/// starts `product/version`.
+fn product_and_rest<'a>(agent: &'a str, lower: &'a str) -> Option<(&'a str, &'a str)> {
+    let slash = lower.find('/')?;
+    let after = &agent[slash + 1..];
+    let version_end = after.find(char::is_whitespace).unwrap_or(after.len());
+    (version_end > 0).then(|| (&lower[..slash], &after[version_end..]))
+}
+
+/// `text` with each bracketed group taken out.
+fn without_brackets(text: &str) -> String {
+    let mut depth = 0_usize;
+    text.chars()
+        .map(|c| match c {
+            '(' => {
+                depth += 1;
+                ' '
+            }
+            ')' => {
+                depth = depth.saturating_sub(1);
+                ' '
+            }
+            _ if depth > 0 => ' ',
+            _ => c,
+        })
+        .collect()
+}
+
+/// The name in the first `Name/version` token of `text`, outside brackets.
+fn host_token(text: &str) -> Option<String> {
+    without_brackets(text).split_whitespace().find_map(|word| {
+        let (name, version) = word.split_once('/')?;
+        (!name.is_empty() && !version.is_empty()).then(|| name.to_string())
     })
 }
 
@@ -354,16 +418,17 @@ mod tests {
             ("claude-cli/2.1.280 (external, cli)", Some("Claude Code")),
             ("claude-cli/2.1.280 (external, sdk-cli)", Some("claude -p")),
             ("claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.276)", Some("Claude Agent SDK")),
-            ("claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.276, t3code)", Some("Claude Agent SDK · T3 Code")),
-            ("claude-cli/2.1.280 (external, cli) Orca/1.4.205", Some("Claude Code · Orca")),
-            ("codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 Orca/1.4.205", Some("Codex CLI · Orca")),
+            ("claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.276, acmedesk)", Some("Claude Agent SDK · acmedesk")),
+            ("claude-cli/2.1.280 (external, cli) AcmeDesk/1.4.205", Some("Claude Code · AcmeDesk")),
+            ("codex-tui/0.156.0 (Mac OS 26.0.0; arm64) iTerm.app/3.6.1 AcmeDesk/1.4.205", Some("Codex CLI · AcmeDesk")),
+            ("codex_cli_rs/0.156.0 (Mac OS 26.0.0; arm64) unknown (acme_desktop; 0.0.42)", Some("Codex CLI · acme_desktop")),
             ("codex_exec/0.156.0 (Mac OS 26.0.0; arm64) dumb", Some("codex exec")),
             ("Codex_Exec/0.156.0", Some("codex exec")),
             ("codex_cli_rs/0.156.0 (Mac OS 26.0.0; arm64)", Some("Codex CLI")),
             ("Codex Desktop/0.156.0 (Mac OS 26.0.0; arm64)", Some("Codex app")),
             ("codex_exec_beta/1.0", Some("Codex CLI")),
             ("python-requests/2.32", Some("python-requests")),
-            ("TinyOrca/1.0 curl", Some("TinyOrca")),
+            ("TinyAgent/1.0 curl", Some("TinyAgent")),
             ("claude-cli/ (cli)", Some("claude-cli/")),
             ("curl", Some("curl")),
             ("   ", None),

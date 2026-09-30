@@ -376,8 +376,8 @@ export function threadNames(session: UsageSession | null): Map<string, { main: b
 
 export type SessionPlatform = { os?: string; arch?: string; terminal?: string };
 
-// Tokens after the platform that name the app hosting the client, or no terminal at all.
-const HOST_TOKENS = /^(?:orca|t3code|unknown|dumb)(?![a-z0-9])/i;
+// Codex's words for no terminal at all.
+const NO_TERMINAL = /^(?:unknown|dumb)(?![a-z0-9])/i;
 
 /**
  * The machine details a client puts in its User-Agent. Codex sends the OS, CPU and terminal, as in
@@ -389,7 +389,7 @@ export function sessionPlatform(userAgent: string | null | undefined): SessionPl
   const [, rawOs = '', arch = '', terminalToken = ''] = match;
   const mac = /^Mac OS (\d+)/i.exec(rawOs.trim());
   const os = mac ? `macOS ${mac[1]}` : rawOs.trim().replace(/(\.0)+$/, '');
-  const terminal = terminalToken && !terminalToken.startsWith('(') && !HOST_TOKENS.test(terminalToken)
+  const terminal = terminalToken && !terminalToken.startsWith('(') && !NO_TERMINAL.test(terminalToken)
     ? terminalToken.split('/')[0]!.replace(/\.app$/i, '')
     : undefined;
   return { os: os || undefined, arch: arch.trim() || undefined, terminal };
