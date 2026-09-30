@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.3.203",
+    "summary": "Accounts: set a usage cap at any percent, and let it ease toward each limit's reset.",
+    "changes": [
+      "Pick a cap with a slider, or type any percent from 1 to 99.",
+      "An easing cap keeps back less as a limit nears its reset, so a paused account comes back sooner."
+    ]
+  },
+  {
     "version": "0.3.202",
     "summary": "Arbor has its own app identity now; your settings, sign-ins and history move across on the first launch.",
     "changes": [
