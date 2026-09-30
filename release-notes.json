@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.3.205",
+    "summary": "Sync: a home whose files are links into another home now says so plainly.",
+    "changes": []
+  },
+  {
     "version": "0.3.204",
     "summary": "First run: add this Mac, connect your agents and make the proxy's key from Home.",
     "changes": [
