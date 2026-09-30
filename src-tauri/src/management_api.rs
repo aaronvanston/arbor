@@ -517,7 +517,7 @@ mod tests {
     #[test]
     fn core_logs_follow_the_default_auth_directory() {
         let base_dir = PathBuf::from("test-base");
-        let install_dir = base_dir.join("cpa-core");
+        let install_dir = base_dir.join("core");
 
         assert_eq!(
             core_logs_dir_path("../oauth", &install_dir),
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn core_logs_follow_a_custom_auth_directory() {
-        let install_dir = PathBuf::from("test-base").join("cpa-core");
+        let install_dir = PathBuf::from("test-base").join("core");
         let auth_dir = PathBuf::from("custom-auth");
 
         assert_eq!(
@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn the_logs_folder_is_the_one_the_core_writes_its_own_logs_to() {
         let base_dir = std::env::temp_dir().join(format!("arbor-core-logs-{}", std::process::id()));
-        let install_dir = base_dir.join("cpa-core");
+        let install_dir = base_dir.join("core");
         fs::create_dir_all(&install_dir).unwrap();
 
         // With no logs folder beside it, the core writes beside its credentials, and asking doesn't make one.

@@ -1094,7 +1094,7 @@ pub(crate) fn nested_yaml_value_for_path(
 pub(crate) fn yaml_edit_node_from_value(
     value: &serde_norway::Value,
 ) -> Result<yaml_edit::YamlNode, String> {
-    const WRAPPER_KEY: &str = "__cpa_gui_value__";
+    const WRAPPER_KEY: &str = "__arbor_value__";
     let value =
         serde_json::to_string(value).map_err(|err| format!("Failed to serialize core configuration value: {err}"))?;
     let serialized = format!("{WRAPPER_KEY}: {value}\n");

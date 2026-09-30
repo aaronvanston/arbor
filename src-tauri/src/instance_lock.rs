@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
-const APP_INSTANCE_LOCK_PREFIX: &str = "EasyCLIProxyAPI-instance";
+const APP_INSTANCE_LOCK_PREFIX: &str = "Arbor-instance";
 
 pub(crate) struct AppInstanceGuard {
     _file: fs::File,

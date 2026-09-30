@@ -442,7 +442,7 @@ mod tests {
 
     fn test_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
-            "cpa-gui-usage-storage-{name}-{}-{}",
+            "arbor-usage-storage-{name}-{}-{}",
             std::process::id(),
             unique_file_stamp()
         ));

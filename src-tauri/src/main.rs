@@ -84,7 +84,8 @@ const PORTABLE_APP_MANIFEST_FILE: &str = "portable-app.json";
 const CORE_INSTALL_PROGRESS_EVENT: &str = "core-install-progress";
 const CORE_STATUS_EVENT: &str = "core-status-changed";
 const CONFIG_FILES_CHANGED_EVENT: &str = "config-files-changed";
-const CORE_METADATA_FILE: &str = "cpa-gui-meta.json";
+const CORE_METADATA_FILE: &str = "core-metadata.json";
+const LEGACY_CORE_METADATA_FILE: &str = "cpa-gui-meta.json";
 const CORE_CONFIG_FILE: &str = "config.yaml";
 const CORE_EXAMPLE_CONFIG_FILE: &str = "config.example.yaml";
 const CORE_VERSION_FILE: &str = "core-version.txt";
@@ -1484,6 +1485,7 @@ fn main() {
     };
 
     app_identity::move_legacy_data_at_launch();
+    move_legacy_core_folder_at_launch();
 
     let portable_update_ack = portable_update_ack_argument();
     let gui_config = match load_or_create_gui_config() {
@@ -1601,6 +1603,7 @@ fn main() {
 
     let app = app
         .setup(move |app| {
+            repoint_legacy_login_item(app.handle());
             if let Err(error) = restore_main_window_size(app.handle()) {
                 eprintln!("{error}");
             }

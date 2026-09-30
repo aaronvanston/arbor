@@ -1,5 +1,5 @@
 [package]
-name = "cpa-gui"
+name = "arbor"
 # Single source of truth for the desktop app version.
 version = "1.0.0"
 description = "Arbor desktop management shell"

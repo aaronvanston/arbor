@@ -52,7 +52,7 @@ export async function applyAppVersion(requestedVersion, {
   const nextContents = setCargoPackageVersion(contents, version, manifest);
   const nextLockContents = setCargoLockPackageVersion(
     lockContents,
-    'cpa-gui',
+    'arbor',
     version,
     lockfile,
   );

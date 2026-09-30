@@ -154,8 +154,11 @@ fn sha256_file_hashes_exact_portable_asset_bytes() {
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_update_descriptor_is_confined_to_the_app_and_temp_directories() {
+    // Versions up to 1.0 named their work folder after the upstream app and ran as cpa-gui; the update they hand over
+    // to must still accept both.
+    for work_dir_name in ["Arbor-update-1.2.3-1-1", "EasyCLIProxyAPI-update-1.2.3-1-1"] {
     let root = agent_test_home("portable-macos-descriptor");
-    let work_dir = root.join("EasyCLIProxyAPI-update-1.2.3-1-1");
+    let work_dir = root.join(work_dir_name);
     let current_app = root
         .join("Applications")
         .join("Arbor.app");
@@ -189,12 +192,13 @@ fn macos_update_descriptor_is_confined_to_the_app_and_temp_directories() {
         serde_json::to_vec_pretty(&descriptor).unwrap(),
     )
     .unwrap();
-    assert!(validate_macos_update_descriptor(&descriptor_path, &descriptor).is_ok());
+    assert!(validate_macos_update_descriptor(&descriptor_path, &descriptor).is_ok(), "{work_dir_name}");
     assert_eq!(
         macos_application_bundle_from_executable(&current_exe).unwrap(),
         current_app
     );
     fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(target_os = "macos")]

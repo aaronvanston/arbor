@@ -301,7 +301,7 @@ fn the_plugin_counts_as_loaded_only_when_the_core_runs_it() {
 #[test]
 fn the_bundled_plugin_is_installed_only_when_it_changed() {
     let home = agent_test_home("extra-models-plugin-install");
-    let plugins_dir = home.join("cpa-core").join("plugins");
+    let plugins_dir = home.join("core").join("plugins");
     let missing = home.join("missing.dylib");
     let bundled = home.join("bundled.dylib");
     let file = EXTRA_MODELS_PLUGIN_FILE;
@@ -327,14 +327,14 @@ fn the_app_bundles_plugin_comes_before_a_source_tree_build() {
     let executable_dir = Path::new("/Applications/Arbor.app/Contents/MacOS");
     assert_eq!(
         bundled_core_plugin_locations(executable_dir),
-        vec![PathBuf::from("/Applications/Arbor.app/Contents/Resources/cpa-core/plugins/arbor-models.dylib")]
+        vec![PathBuf::from("/Applications/Arbor.app/Contents/Resources/core/plugins/arbor-models.dylib")]
     );
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let locations = bundled_core_plugin_locations(&project_root.join("src-tauri").join("target").join("debug"));
     assert_eq!(
         locations,
         vec![
-            project_root.join("cpa-core/plugins/arbor-models.dylib"),
+            project_root.join("bundled-core/plugins/arbor-models.dylib"),
             project_root.join("core-plugins/arbor-models/target/release/libarbor_models.dylib"),
         ]
     );
@@ -430,7 +430,7 @@ fn the_providers_are_the_ones_with_an_account_switched_on() {
 #[test]
 fn an_arbor_update_refreshes_every_providers_copy_already_there() {
     let home = agent_test_home("extra-models-plugin-refresh");
-    let plugins_dir = home.join("cpa-core").join("plugins");
+    let plugins_dir = home.join("core").join("plugins");
     let bundled = home.join("bundled.dylib");
     fs::write(&bundled, b"plugin two").unwrap();
     // Nothing installed yet: a provider's copy arrives with its first extra model.

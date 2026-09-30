@@ -10,8 +10,8 @@ const coreStatus = (overrides: Partial<CoreStatus>): CoreStatus => ({
   managed: true,
   processId: null,
   currentVersion: '7.3.13',
-  installDir: '/tmp/cpa-core',
-  binaryPath: '/tmp/cpa-core/cli-proxy-api',
+  installDir: '/tmp/core',
+  binaryPath: '/tmp/core/cli-proxy-api',
   message: '',
   ...overrides,
 });

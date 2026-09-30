@@ -11,7 +11,7 @@ describe('app version', () => {
   it('reads the version from the package section', () => {
     expect(parseCargoPackageVersion(`
 [package]
-name = "cpa-gui"
+name = "arbor"
 version = "1.2.3-beta.1+build.7"
 
 [dependencies]
@@ -20,7 +20,7 @@ example = "9.9.9"
   });
 
   it('rejects a missing package version', () => {
-    expect(() => parseCargoPackageVersion('[package]\nname = "cpa-gui"\n'))
+    expect(() => parseCargoPackageVersion('[package]\nname = "arbor"\n'))
       .toThrow('Missing package version');
   });
 
@@ -31,7 +31,7 @@ example = "9.9.9"
 
   it('updates only the package version', () => {
     const manifest = `[package]
-name = "cpa-gui"
+name = "arbor"
 version = "1.2.3"
 
 [dependencies]
@@ -49,7 +49,7 @@ example = "9.9.9"
 
   it('updates only the local app entry in Cargo.lock', () => {
     const lockfile = `[[package]]
-name = "cpa-gui"
+name = "arbor"
 version = "1.2.3"
 
 [[package]]
@@ -57,15 +57,15 @@ name = "dependency"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 `;
-    const updated = setCargoLockPackageVersion(lockfile, 'cpa-gui', '2.0.0');
-    expect(updated).toContain('name = "cpa-gui"\nversion = "2.0.0"');
+    const updated = setCargoLockPackageVersion(lockfile, 'arbor', '2.0.0');
+    expect(updated).toContain('name = "arbor"\nversion = "2.0.0"');
     expect(updated).toContain('name = "dependency"\nversion = "1.2.3"');
   });
 
   it('repairs a stale lockfile even when Cargo.toml already has the requested version', async () => {
     const files = new Map<string, string>([
-      ['Cargo.toml', '[package]\nname = "cpa-gui"\nversion = "2.0.0"\n'],
-      ['Cargo.lock', '[[package]]\nname = "cpa-gui"\nversion = "1.0.0"\n'],
+      ['Cargo.toml', '[package]\nname = "arbor"\nversion = "2.0.0"\n'],
+      ['Cargo.lock', '[[package]]\nname = "arbor"\nversion = "1.0.0"\n'],
     ]);
     const writes: string[] = [];
 
@@ -88,8 +88,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
   });
 
   it('restores both files when cargo metadata validation fails', async () => {
-    const originalManifest = '[package]\nname = "cpa-gui"\nversion = "1.0.0"\n';
-    const originalLockfile = '[[package]]\nname = "cpa-gui"\nversion = "1.0.0"\n';
+    const originalManifest = '[package]\nname = "arbor"\nversion = "1.0.0"\n';
+    const originalLockfile = '[[package]]\nname = "arbor"\nversion = "1.0.0"\n';
     const files = new Map<string, string>([
       ['Cargo.toml', originalManifest],
       ['Cargo.lock', originalLockfile],
@@ -111,8 +111,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
   });
 
   it('restores the manifest when writing the lockfile fails', async () => {
-    const originalManifest = '[package]\nname = "cpa-gui"\nversion = "1.0.0"\n';
-    const originalLockfile = '[[package]]\nname = "cpa-gui"\nversion = "1.0.0"\n';
+    const originalManifest = '[package]\nname = "arbor"\nversion = "1.0.0"\n';
+    const originalLockfile = '[[package]]\nname = "arbor"\nversion = "1.0.0"\n';
     const files = new Map<string, string>([
       ['Cargo.toml', originalManifest],
       ['Cargo.lock', originalLockfile],

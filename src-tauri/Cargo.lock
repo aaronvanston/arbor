@@ -69,6 +69,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbor"
+version = "1.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "getrandom 0.3.4",
+ "libc",
+ "memchr",
+ "muda",
+ "notify",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "reqwest 0.12.28",
+ "ring",
+ "rusqlite",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_norway",
+ "serde_yaml",
+ "sha1",
+ "sha2",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tokio",
+ "tokio-util",
+ "toml 0.8.2",
+ "toml_edit 0.20.2",
+ "ts-rs",
+ "yaml-edit",
+ "yaml-serde-edit",
+ "zip",
+ "zstd",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -592,50 +636,6 @@ name = "countme"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7704b5fdd17b18ae31c4c1da5a2e0305a2bf17b5249300a9ee9ed7b72114c636"
-
-[[package]]
-name = "cpa-gui"
-version = "1.0.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "flate2",
- "futures-util",
- "getrandom 0.3.4",
- "libc",
- "memchr",
- "muda",
- "notify",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "reqwest 0.12.28",
- "ring",
- "rusqlite",
- "semver",
- "serde",
- "serde_json",
- "serde_norway",
- "serde_yaml",
- "sha1",
- "sha2",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tokio",
- "tokio-util",
- "toml 0.8.2",
- "toml_edit 0.20.2",
- "ts-rs",
- "yaml-edit",
- "yaml-serde-edit",
- "zip",
- "zstd",
-]
 
 [[package]]
 name = "cpufeatures"

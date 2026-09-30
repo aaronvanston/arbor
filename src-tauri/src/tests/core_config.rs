@@ -312,7 +312,7 @@ fn custom_auth_directory_is_preserved_and_written_to_core_config() {
 #[test]
 fn default_auth_directory_is_relative_and_legacy_absolute_value_is_migrated() {
     let base_dir = agent_test_home("relative-default-auth-dir");
-    let install_dir = base_dir.join("cpa-core");
+    let install_dir = base_dir.join("core");
     assert_eq!(
         auth_dir_path_for_core(DEFAULT_AUTH_DIR, &install_dir),
         base_dir.join(OAUTH_DIR_NAME)
@@ -342,7 +342,7 @@ fn packaged_macos_auth_directory_is_copied_before_config_is_repointed() {
         .join("Application Support")
         .join("onl.arbor.app");
     let destination = persistent_root.join(OAUTH_DIR_NAME);
-    let install_dir = persistent_root.join("cpa-core");
+    let install_dir = persistent_root.join("core");
     fs::create_dir_all(source.join("nested")).unwrap();
     fs::write(source.join("account.json"), b"oauth-account").unwrap();
     fs::write(source.join("nested").join("token.json"), b"oauth-token").unwrap();
@@ -388,7 +388,7 @@ fn packaged_macos_auth_migration_does_not_overwrite_conflicting_credentials() {
         .join("oauth");
     let persistent_root = root.join("persistent");
     let destination = persistent_root.join(OAUTH_DIR_NAME);
-    let install_dir = persistent_root.join("cpa-core");
+    let install_dir = persistent_root.join("core");
     fs::create_dir_all(&source).unwrap();
     fs::create_dir_all(&destination).unwrap();
     fs::write(source.join("account.json"), b"old-app-credential").unwrap();
@@ -421,7 +421,7 @@ fn missing_packaged_macos_auth_directory_is_repointed_to_persistent_storage() {
         .join("oauth");
     let persistent_root = root.join("persistent");
     let destination = persistent_root.join(OAUTH_DIR_NAME);
-    let install_dir = persistent_root.join("cpa-core");
+    let install_dir = persistent_root.join("core");
     let mut config = GuiConfigFile {
         auth_dir: path_to_string(&source),
         ..GuiConfigFile::default()
@@ -439,7 +439,7 @@ fn missing_packaged_macos_auth_directory_is_repointed_to_persistent_storage() {
 #[test]
 fn external_custom_auth_directory_is_not_migrated() {
     let root = agent_test_home("external-custom-auth");
-    let install_dir = root.join("cpa-core");
+    let install_dir = root.join("core");
     let destination = root.join(OAUTH_DIR_NAME);
     let custom = root.join("custom-auth");
     let mut config = GuiConfigFile {
@@ -1183,7 +1183,7 @@ fn core_config_validates_keys_and_routing_strategy() {
 #[test]
 fn unchanged_yaml_is_not_written_again() {
     let path = std::env::temp_dir().join(format!(
-        "cpa-gui-unchanged-yaml-{}-{}.yaml",
+        "arbor-unchanged-yaml-{}-{}.yaml",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1790,7 +1790,7 @@ fn legacy_sections_in_a_v8_file_are_edited_where_they_are() {
 /// Arbor's folders under one data root: the core beside `oauth`, which holds the credentials.
 fn oauth_layout(name: &str) -> (PathBuf, PathBuf, PathBuf) {
     let root = agent_test_home(name);
-    let install_dir = root.join("cpa-core");
+    let install_dir = root.join("core");
     let persistent = root.join(OAUTH_DIR_NAME);
     fs::create_dir_all(&install_dir).unwrap();
     fs::create_dir_all(&persistent).unwrap();
@@ -1801,7 +1801,7 @@ fn oauth_layout(name: &str) -> (PathBuf, PathBuf, PathBuf) {
 #[test]
 fn relative_oauth_dir_recovers_existing_persistent_credentials() {
     let (root, install_dir, persistent) = oauth_layout("oauth-recover-relative");
-    for spelling in ["oauth", "./oauth", "oauth/./", "../cpa-core/oauth"] {
+    for spelling in ["oauth", "./oauth", "oauth/./", "../core/oauth"] {
         let mut config = GuiConfigFile { auth_dir: spelling.to_string(), ..GuiConfigFile::default() };
         assert!(recover_relative_oauth_dir(&mut config, &install_dir, &persistent).unwrap(), "{spelling}");
         assert_eq!(config.auth_dir, DEFAULT_AUTH_DIR);

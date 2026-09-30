@@ -213,7 +213,7 @@ pub(crate) struct StagedCore {
 }
 
 fn core_staging_dir() -> Result<PathBuf, String> {
-    Ok(core_base_dir()?.join("cpa-core.staging"))
+    Ok(core_base_dir()?.join("core.staging"))
 }
 
 /// Swaps a staged core in. The running core stops only for the swap and starts again straight after, so agents lose
@@ -388,7 +388,7 @@ pub(crate) async fn stage_core_version(
 
     let install_dir = core_install_dir()?;
     let staging_dir = core_staging_dir()?;
-    let download_dir = core_base_dir()?.join("cpa-core.download");
+    let download_dir = core_base_dir()?.join("core.download");
 
     reset_dir(&staging_dir)?;
     reset_dir(&download_dir)?;
@@ -1273,8 +1273,57 @@ pub(crate) fn stop_core_process_inner(process_state: &CoreProcessState) -> Resul
     }
 }
 
+/// The core's own folder in the data folder, named `core`.
+const CORE_FOLDER: &str = "core";
+/// The core folder's name up to Arbor 1.0.
+const LEGACY_CORE_FOLDER: &str = "cpa-core";
+
 pub(crate) fn core_install_dir() -> Result<PathBuf, String> {
-    Ok(core_base_dir()?.join("cpa-core"))
+    Ok(core_install_dir_in(&core_base_dir()?))
+}
+
+/// The core's folder in `base_dir`: `core`, or `cpa-core` while a folder from an earlier version is still there under
+/// that name (see `move_legacy_core_folder`).
+pub(crate) fn core_install_dir_in(base_dir: &Path) -> PathBuf {
+    let current = base_dir.join(CORE_FOLDER);
+    let legacy = base_dir.join(LEGACY_CORE_FOLDER);
+    if !current.exists() && legacy.is_dir() {
+        legacy
+    } else {
+        current
+    }
+}
+
+/// Moves the core's folder from its name up to Arbor 1.0 to `core`, at launch, before anything reads or watches it.
+pub(crate) fn move_legacy_core_folder_at_launch() {
+    let Ok(base_dir) = core_base_dir() else {
+        return;
+    };
+    match move_legacy_core_folder(&base_dir, is_core_running) {
+        Ok(true) => eprintln!("Moved the core's folder from {LEGACY_CORE_FOLDER} to {CORE_FOLDER}"),
+        Ok(false) => {}
+        Err(error) => eprintln!("Couldn't move the core's folder to {CORE_FOLDER}: {error}"),
+    }
+}
+
+/// Renames `cpa-core` in `base_dir` to `core` and leaves a link at the old name, so an older version and any path
+/// saved with the old name still reach it. Only while no core runs from it: one kept running through an app update
+/// has its config and logs open there, so it moves at a later launch that finds it stopped, like the first after the
+/// Mac restarts. Says whether it moved.
+pub(crate) fn move_legacy_core_folder(base_dir: &Path, is_running: impl Fn(&Path) -> bool) -> Result<bool, String> {
+    let legacy = base_dir.join(LEGACY_CORE_FOLDER);
+    let current = base_dir.join(CORE_FOLDER);
+    let legacy_is_folder = fs::symlink_metadata(&legacy).is_ok_and(|metadata| metadata.is_dir());
+    if !legacy_is_folder || fs::symlink_metadata(&current).is_ok() {
+        return Ok(false);
+    }
+    if find_core_binary(&legacy).is_some_and(|binary| is_running(&binary)) {
+        return Ok(false);
+    }
+    fs::rename(&legacy, &current).map_err(|error| format!("Failed to rename {}: {error}", path_to_string(&legacy)))?;
+    std::os::unix::fs::symlink(CORE_FOLDER, &legacy)
+        .map_err(|error| format!("Moved the folder, but couldn't leave a link at {}: {error}", path_to_string(&legacy)))?;
+    Ok(true)
 }
 
 pub(crate) fn executable_dir() -> Result<PathBuf, String> {
@@ -1312,6 +1361,9 @@ pub(crate) fn core_base_dir() -> Result<PathBuf, String> {
     Ok(executable_dir)
 }
 
+/// Where scripts/build-release.sh puts the core it bundles, in a source checkout.
+const SOURCE_BUNDLED_CORE_FOLDER: &str = "bundled-core";
+
 pub(crate) fn bundled_core_locations(
     base_dir: &Path,
     executable_dir: &Path,
@@ -1322,15 +1374,15 @@ pub(crate) fn bundled_core_locations(
     if let Some(resources_dir) = macos_app_resources_dir(executable_dir) {
         locations.push((
             resources_dir.join(CORE_VERSION_FILE),
-            resources_dir.join("cpa-core"),
+            resources_dir.join(CORE_FOLDER),
         ));
     }
-    locations.push((base_dir.join(CORE_VERSION_FILE), base_dir.join("cpa-core")));
+    locations.push((base_dir.join(CORE_VERSION_FILE), core_install_dir_in(base_dir)));
     if let Some(project_root) = source_project_root(executable_dir) {
         if project_root != base_dir {
             locations.push((
                 project_root.join(CORE_VERSION_FILE),
-                project_root.join("cpa-core"),
+                project_root.join(SOURCE_BUNDLED_CORE_FOLDER),
             ));
         }
     }
@@ -1444,10 +1496,10 @@ pub(crate) const EXTRA_MODELS_PLUGIN_FILE: &str = "arbor-models.dylib";
 pub(crate) fn bundled_core_plugin_locations(executable_dir: &Path) -> Vec<PathBuf> {
     let mut locations = Vec::new();
     if let Some(resources_dir) = macos_app_resources_dir(executable_dir) {
-        locations.push(resources_dir.join("cpa-core").join("plugins").join(EXTRA_MODELS_PLUGIN_FILE));
+        locations.push(resources_dir.join(CORE_FOLDER).join("plugins").join(EXTRA_MODELS_PLUGIN_FILE));
     }
     if let Some(project_root) = source_project_root(executable_dir) {
-        locations.push(project_root.join("cpa-core").join("plugins").join(EXTRA_MODELS_PLUGIN_FILE));
+        locations.push(project_root.join(SOURCE_BUNDLED_CORE_FOLDER).join("plugins").join(EXTRA_MODELS_PLUGIN_FILE));
         locations.push(
             project_root
                 .join("core-plugins")
@@ -1686,9 +1738,11 @@ pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
 }
 
 pub(crate) fn read_core_metadata(install_dir: &Path) -> Option<CoreMetadata> {
-    let metadata_path = install_dir.join(CORE_METADATA_FILE);
-    let content = fs::read_to_string(metadata_path).ok()?;
-    serde_json::from_str(&content).ok()
+    // Up to Arbor 1.0 the file had another name; the next write replaces it.
+    [CORE_METADATA_FILE, LEGACY_CORE_METADATA_FILE].iter().find_map(|name| {
+        let content = fs::read_to_string(install_dir.join(name)).ok()?;
+        serde_json::from_str(&content).ok()
+    })
 }
 
 pub(crate) fn write_core_metadata(
@@ -1698,7 +1752,9 @@ pub(crate) fn write_core_metadata(
     let metadata_path = install_dir.join(CORE_METADATA_FILE);
     let content = serde_json::to_string_pretty(metadata)
         .map_err(|err| format!("Failed to generate core metadata: {err}"))?;
-    fs::write(metadata_path, content).map_err(|err| format!("Failed to write core metadata: {err}"))
+    fs::write(metadata_path, content).map_err(|err| format!("Failed to write core metadata: {err}"))?;
+    let _ = fs::remove_file(install_dir.join(LEGACY_CORE_METADATA_FILE));
+    Ok(())
 }
 
 pub(crate) fn validate_downloaded_asset(
@@ -1795,7 +1851,8 @@ pub(crate) fn cleanup_core_work_dirs() -> Result<(), String> {
     let base_dir = core_base_dir()?;
     let mut last_error = None;
 
-    for name in ["cpa-core.staging", "cpa-core.download"] {
+    // With the ones earlier versions left under the core folder's old name.
+    for name in ["core.staging", "core.download", "cpa-core.staging", "cpa-core.download"] {
         let path = base_dir.join(name);
         if path.exists() {
             if let Err(err) = fs::remove_dir_all(&path) {
@@ -2077,7 +2134,7 @@ pub(crate) fn copy_core_file_replace(source_path: &Path, target_path: &Path) -> 
     let file_name = target_path
         .file_name()
         .map(|name| name.to_string_lossy())
-        .unwrap_or_else(|| "cpa-core".into());
+        .unwrap_or_else(|| "core".into());
     let temporary_path = parent.join(format!(
         ".{file_name}.replace.{}.{}",
         std::process::id(),

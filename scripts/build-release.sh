@@ -45,8 +45,12 @@ core_archive_verified() {
   [[ "$actual" == "$expected" ]]
 }
 
-mkdir -p cpa-core
-if core_archive_verified "cpa-core/$core_asset" cpa-core/checksums.txt; then
+# Earlier builds kept the download in cpa-core/; reuse it rather than downloading the core again.
+if [[ -d cpa-core && ! -e bundled-core ]]; then
+  mv cpa-core bundled-core
+fi
+mkdir -p bundled-core
+if core_archive_verified "bundled-core/$core_asset" bundled-core/checksums.txt; then
   echo "Using cached core $core_asset"
 else
   core_download="$work_dir/core"
@@ -57,11 +61,11 @@ else
     echo "SHA-256 verification failed for $core_asset" >&2
     exit 1
   fi
-  mv "$core_download/$core_asset" "cpa-core/$core_asset"
-  mv "$core_download/checksums.txt" cpa-core/checksums.txt
+  mv "$core_download/$core_asset" "bundled-core/$core_asset"
+  mv "$core_download/checksums.txt" bundled-core/checksums.txt
 fi
 
-core_entries="$(tar -tzf "cpa-core/$core_asset")"
+core_entries="$(tar -tzf "bundled-core/$core_asset")"
 for required_entry in cli-proxy-api config.example.yaml; do
   if ! grep -Eq "(^|/)${required_entry//./\\.}\$" <<< "$core_entries"; then
     echo "$core_asset is missing $required_entry" >&2
@@ -69,11 +73,13 @@ for required_entry in cli-proxy-api config.example.yaml; do
   fi
 done
 
-# The DMG bundles every cpa-core/CLIProxyAPI_* file, so drop archives from earlier core versions.
-find cpa-core -maxdepth 1 -type f -name 'CLIProxyAPI_*' ! -name "$core_asset" -delete
+# The DMG bundles every bundled-core/CLIProxyAPI_* file, so drop archives from earlier core versions.
+find bundled-core -maxdepth 1 -type f -name 'CLIProxyAPI_*' ! -name "$core_asset" -delete
 
 node scripts/set-version.mjs "$version"
 
+# Versions up to 1.0 install an update only when this marker names EasyCLIProxyAPI, the app Arbor was forked from, so
+# every build keeps that name here, where nobody sees it.
 cat > portable-app.json <<JSON
 {
   "schemaVersion": 1,
@@ -93,15 +99,22 @@ release_rustflags="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$HOME=~ --remap-
 # The core plugin behind Settings › Extra models (core-plugins/arbor-models) ships beside the core archive, and Arbor
 # puts it in the core's plugins folder.
 RUSTFLAGS="$release_rustflags" cargo build --quiet --release --locked --manifest-path core-plugins/arbor-models/Cargo.toml
-mkdir -p cpa-core/plugins
-cp core-plugins/arbor-models/target/release/libarbor_models.dylib cpa-core/plugins/arbor-models.dylib
+mkdir -p bundled-core/plugins
+cp core-plugins/arbor-models/target/release/libarbor_models.dylib bundled-core/plugins/arbor-models.dylib
 
 RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json
 
 app_path="$repo_dir/src-tauri/target/release/bundle/macos/Arbor.app"
+# Versions up to 1.0 ran as Contents/MacOS/cpa-gui. Their updater installs a new version only when it has that file, and
+# starts it by that path, and their open-at-login item runs it too, so it stays as a link to Arbor, the app's executable.
+if [[ "$(plutil -extract CFBundleExecutable raw "$app_path/Contents/Info.plist")" != "Arbor" ]]; then
+  echo "The app's executable isn't Contents/MacOS/Arbor; check mainBinaryName in src-tauri/tauri.conf.json." >&2
+  exit 1
+fi
+ln -sfn Arbor "$app_path/Contents/MacOS/cpa-gui"
 # Anyone can read the app's strings, so a build that still names the build machine's home folder isn't published. The
 # bytes are searched whole: `strings` skips a library's load commands, where the linker writes the path it was built at.
-if LC_ALL=C grep -aFq "$HOME/" "$app_path/Contents/MacOS/"* "$app_path/Contents/Resources/cpa-core/plugins/"* || grep -rFlq "$HOME/" dist; then
+if LC_ALL=C grep -aFq "$HOME/" "$app_path/Contents/MacOS/"* "$app_path/Contents/Resources/core/plugins/"* || grep -rFlq "$HOME/" dist; then
   echo "The build still contains $HOME, which names this Mac's user; not publishing it." >&2
   exit 1
 fi

@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Arbor",
+  "mainBinaryName": "Arbor",
   "identifier": "onl.arbor.app",
   "build": {
     "beforeDevCommand": "bun run dev",

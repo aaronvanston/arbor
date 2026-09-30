@@ -4,8 +4,8 @@ use super::*;
 #[test]
 fn executable_path_matching_keeps_core_instances_directory_scoped() {
     let root = agent_test_home("core-process-path-scope");
-    let first_dir = root.join("first").join("cpa-core");
-    let second_dir = root.join("second").join("cpa-core");
+    let first_dir = root.join("first").join("core");
+    let second_dir = root.join("second").join("core");
     fs::create_dir_all(&first_dir).unwrap();
     fs::create_dir_all(&second_dir).unwrap();
     let first_binary = first_dir.join(core_binary_name());
@@ -73,8 +73,8 @@ fn core_child_survives_blocking_runtime_shutdown() {
 #[test]
 fn running_core_process_discovery_ignores_the_same_binary_name_in_another_directory() {
     let root = agent_test_home("running-core-process-scope");
-    let first_dir = root.join("first").join("cpa-core");
-    let second_dir = root.join("second").join("cpa-core");
+    let first_dir = root.join("first").join("core");
+    let second_dir = root.join("second").join("core");
     fs::create_dir_all(&first_dir).unwrap();
     fs::create_dir_all(&second_dir).unwrap();
     let first_binary = first_dir.join(core_binary_name());
@@ -290,8 +290,8 @@ fn overlaying_a_core_updates_packaged_files_and_preserves_plugins() {
     use std::os::unix::fs::MetadataExt;
 
     let root = agent_test_home("core-overlay-preserves-plugins");
-    let install_dir = root.join("cpa-core");
-    let staging_dir = root.join("cpa-core.staging");
+    let install_dir = root.join("core");
+    let staging_dir = root.join("core.staging");
     fs::create_dir_all(install_dir.join("plugins/custom-router")).unwrap();
     fs::create_dir_all(staging_dir.join("plugins/bundled-router")).unwrap();
     fs::create_dir_all(staging_dir.join("runtime")).unwrap();
@@ -357,8 +357,8 @@ fn overlaying_a_core_updates_packaged_files_and_preserves_plugins() {
 #[test]
 fn installing_a_core_into_a_missing_directory_moves_the_complete_staging_tree() {
     let root = agent_test_home("core-overlay-first-install");
-    let install_dir = root.join("cpa-core");
-    let staging_dir = root.join("cpa-core.staging");
+    let install_dir = root.join("core");
+    let staging_dir = root.join("core.staging");
     fs::create_dir_all(&staging_dir).unwrap();
     fs::write(staging_dir.join(core_binary_name()), b"new core").unwrap();
     fs::write(staging_dir.join(CORE_EXAMPLE_CONFIG_FILE), b"port: 8317\n").unwrap();
@@ -400,9 +400,9 @@ fn replacing_a_core_keeps_the_config_exactly_as_it_is() {
 #[test]
 fn swapping_in_a_staged_core_keeps_config_changes_made_while_it_waited() {
     let root = agent_test_home("core-staged-swap");
-    let install_dir = root.join("cpa-core");
-    let staging_dir = root.join("cpa-core.staging");
-    let download_dir = root.join("cpa-core.download");
+    let install_dir = root.join("core");
+    let staging_dir = root.join("core.staging");
+    let download_dir = root.join("core.download");
     for dir in [&install_dir, &staging_dir, &download_dir] {
         fs::create_dir_all(dir).unwrap();
     }
@@ -580,7 +580,7 @@ fn replacing_a_core_without_a_config_leaves_the_staged_files_alone() {
 #[test]
 fn bundled_core_install_handles_missing_and_unversioned_binaries() {
     let root = agent_test_home("bundled-bootstrap-detection");
-    let install_dir = root.join("cpa-core");
+    let install_dir = root.join("core");
 
     assert!(core_needs_bundled_install(&install_dir, "v7.3.17"));
 
@@ -602,9 +602,57 @@ fn installed_core(install_dir: &Path, version: &str) {
 }
 
 #[test]
+fn a_core_folder_from_1_0_moves_to_core_once_its_core_is_stopped_and_keeps_its_old_name_as_a_link() {
+    let root = agent_test_home("legacy-core-folder");
+    let legacy = root.join("cpa-core");
+    let current = root.join("core");
+    fs::create_dir_all(&legacy).unwrap();
+    fs::write(legacy.join(core_binary_name()), b"installed core").unwrap();
+    fs::write(legacy.join("cpa-gui-meta.json"), r#"{"version":"v7.3.17","assetName":"a.zip","installedAtUnix":0}"#).unwrap();
+
+    // Until it moves, everything uses the old folder, and reads the version file under its old name.
+    assert_eq!(core_install_dir_in(&root), legacy);
+    assert_eq!(read_core_metadata(&legacy).map(|metadata| metadata.version), Some("v7.3.17".to_string()));
+
+    // A core kept running through the app update has its files open there, so the folder waits.
+    let running = legacy.join(core_binary_name());
+    assert_eq!(move_legacy_core_folder(&root, |binary| binary == running), Ok(false));
+    assert!(fs::symlink_metadata(&legacy).unwrap().is_dir());
+
+    assert_eq!(move_legacy_core_folder(&root, |_| false), Ok(true));
+    assert_eq!(core_install_dir_in(&root), current);
+    assert_eq!(fs::read_link(&legacy).unwrap(), Path::new("core"));
+    // Paths saved with the old name, in config.yaml or by an older version, still reach it.
+    assert_eq!(fs::read(legacy.join(core_binary_name())).unwrap(), b"installed core");
+    assert_eq!(move_legacy_core_folder(&root, |_| false), Ok(false));
+
+    // The next write gives the version file its new name.
+    installed_core(&current, "v7.3.18");
+    assert!(!current.join("cpa-gui-meta.json").exists());
+    assert_eq!(read_core_metadata(&current).map(|metadata| metadata.version), Some("v7.3.18".to_string()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn only_a_lone_core_folder_from_1_0_moves() {
+    let root = agent_test_home("legacy-core-folder-left");
+    // A new install has neither.
+    assert_eq!(move_legacy_core_folder(&root, |_| false), Ok(false));
+    assert_eq!(core_install_dir_in(&root), root.join("core"));
+
+    // Beside a `core` folder the old one is left as it is.
+    fs::create_dir_all(root.join("core")).unwrap();
+    fs::create_dir_all(root.join("cpa-core")).unwrap();
+    assert_eq!(move_legacy_core_folder(&root, |_| false), Ok(false));
+    assert_eq!(core_install_dir_in(&root), root.join("core"));
+    assert!(root.join("cpa-core").is_dir() && fs::read_link(root.join("cpa-core")).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_newer_bundled_core_replaces_an_older_install_but_never_downgrades() {
     let root = agent_test_home("bundled-upgrade-detection");
-    let install_dir = root.join("cpa-core");
+    let install_dir = root.join("core");
     fs::create_dir_all(&install_dir).unwrap();
     fs::write(install_dir.join(core_binary_name()), b"installed core").unwrap();
 
@@ -629,7 +677,7 @@ fn a_newer_bundled_core_replaces_an_older_install_but_never_downgrades() {
 #[test]
 fn a_core_rolled_back_by_hand_stays_put_on_the_next_launch() {
     let root = agent_test_home("bundled-manual-rollback");
-    let install_dir = root.join("cpa-core");
+    let install_dir = root.join("core");
     fs::create_dir_all(&install_dir).unwrap();
     let binary = install_dir.join(core_binary_name());
     fs::write(&binary, b"installed core").unwrap();
@@ -653,7 +701,7 @@ fn a_core_rolled_back_by_hand_stays_put_on_the_next_launch() {
 #[test]
 fn a_core_already_newer_than_the_bundle_counts_as_dealing_with_it() {
     let root = agent_test_home("bundled-newer-manual-rollback");
-    let install_dir = root.join("cpa-core");
+    let install_dir = root.join("core");
     fs::create_dir_all(&install_dir).unwrap();
     fs::write(install_dir.join(core_binary_name()), b"installed core").unwrap();
     installed_core(&install_dir, "v7.3.18");
@@ -669,13 +717,13 @@ fn a_core_already_newer_than_the_bundle_counts_as_dealing_with_it() {
 #[test]
 fn bundled_core_locations_include_macos_app_resources() {
     let contents_dir = agent_test_home("bundled-macos-resources")
-        .join("EasyCLIProxyAPI.app")
+        .join("Arbor.app")
         .join("Contents");
     let executable_dir = contents_dir.join("MacOS");
     let base_dir = agent_test_home("bundled-macos-data");
     let resource_location = (
         contents_dir.join("Resources").join(CORE_VERSION_FILE),
-        contents_dir.join("Resources").join("cpa-core"),
+        contents_dir.join("Resources").join("core"),
     );
 
     assert_eq!(

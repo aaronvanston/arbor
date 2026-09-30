@@ -178,6 +178,18 @@ pub(crate) fn portable_update_target() -> Option<(&'static str, &'static str)> {
     }
 }
 
+/// The name the version marker inside the app gives it. Versions up to 1.0 install an update only when the marker names
+/// EasyCLIProxyAPI, the app Arbor was forked from, so builds keep that name there (scripts/build-release.sh).
+const PORTABLE_APP_NAME: &str = "EasyCLIProxyAPI";
+/// An update's working folder in the temporary folder. Versions up to 1.0 named theirs with the legacy prefix, and the
+/// version they install is started with an acknowledgement file in there, so both are accepted.
+const UPDATE_WORK_DIR_PREFIX: &str = "Arbor-update-";
+const LEGACY_UPDATE_WORK_DIR_PREFIX: &str = "EasyCLIProxyAPI-update-";
+
+fn is_update_work_dir_name(name: &str) -> bool {
+    name.starts_with(UPDATE_WORK_DIR_PREFIX) || name.starts_with(LEGACY_UPDATE_WORK_DIR_PREFIX)
+}
+
 pub(crate) fn portable_update_platform_key() -> Option<&'static str> {
     match env::consts::OS {
         "macos" => Some("darwin"),
@@ -204,7 +216,7 @@ pub(crate) fn validate_local_portable_app_manifest(expected_arch: &str) -> Resul
     let manifest = serde_json::from_str::<PortableAppManifest>(&contents)
         .map_err(|error| format!("Failed to parse portable version marker: {error}"))?;
     Ok(manifest.schema_version == 1
-        && manifest.application == "EasyCLIProxyAPI"
+        && manifest.application == PORTABLE_APP_NAME
         && Some(manifest.platform.as_str()) == portable_update_platform_key()
         && manifest.arch == expected_arch
         && manifest.auto_update
@@ -368,7 +380,7 @@ pub(crate) async fn download_and_stage_portable_app_update(
 
 fn portable_update_work_dir(version: &str) -> PathBuf {
     env::temp_dir().join(format!(
-        "EasyCLIProxyAPI-update-{}-{}-{}",
+        "{UPDATE_WORK_DIR_PREFIX}{}-{}-{}",
         version,
         std::process::id(),
         SystemTime::now()
@@ -810,7 +822,7 @@ pub(crate) fn validate_macos_staged_application(
     let manifest = serde_json::from_str::<PortableAppManifest>(&contents)
         .map_err(|error| format!("Failed to parse new macOS auto-update marker: {error}"))?;
     if manifest.schema_version != 1
-        || manifest.application != "EasyCLIProxyAPI"
+        || manifest.application != PORTABLE_APP_NAME
         || manifest.platform != "darwin"
         || manifest.arch != pending.arch
         || !manifest.auto_update
@@ -849,7 +861,7 @@ pub(crate) fn preflight_macos_update_directory(current_app: &Path) -> Result<(),
         .parent()
         .ok_or_else(|| "The macOS application bundle has no parent directory".to_string())?;
     let probe = app_parent.join(format!(
-        ".easycliproxy-update-write-test-{}",
+        ".arbor-update-write-test-{}",
         std::process::id()
     ));
     fs::write(&probe, b"update-write-test")
@@ -897,7 +909,7 @@ pub(crate) fn validate_macos_update_descriptor(
         || !canonical_work_dir
             .file_name()
             .and_then(|value| value.to_str())
-            .is_some_and(|value| value.starts_with("EasyCLIProxyAPI-update-"))
+            .is_some_and(is_update_work_dir_name)
     {
         return Err("Invalid application update working directory".to_string());
     }
@@ -955,11 +967,14 @@ pub(crate) fn replace_macos_application(descriptor: &MacosUpdateDescriptor) -> R
         .current_app
         .parent()
         .ok_or_else(|| "Invalid macOS application update target path".to_string())?;
-    let replacement_app = app_parent.join(".EasyCLIProxyAPI-update-new.app");
-    let legacy_replacement_app = app_parent.join(".EasyCLIProxyAPI.app.update-new");
-    if legacy_replacement_app.exists() {
-        fs::remove_dir_all(&legacy_replacement_app)
-            .map_err(|error| format!("Failed to clean up legacy macOS update staging: {error}"))?;
+    let replacement_app = app_parent.join(".Arbor-update-new.app");
+    // Earlier versions staged the new app under these names; one left by an update that stopped halfway goes.
+    for legacy_name in [".EasyCLIProxyAPI-update-new.app", ".EasyCLIProxyAPI.app.update-new"] {
+        let legacy_replacement_app = app_parent.join(legacy_name);
+        if legacy_replacement_app.exists() {
+            fs::remove_dir_all(&legacy_replacement_app)
+                .map_err(|error| format!("Failed to clean up legacy macOS update staging: {error}"))?;
+        }
     }
     if replacement_app.exists() {
         fs::remove_dir_all(&replacement_app)
@@ -1087,7 +1102,7 @@ pub(crate) fn portable_update_ack_argument() -> Option<PathBuf> {
                 && parent
                     .file_name()
                     .and_then(|value| value.to_str())
-                    .is_some_and(|value| value.starts_with("EasyCLIProxyAPI-update-"));
+                    .is_some_and(is_update_work_dir_name);
             return (valid_name && valid_parent).then_some(path);
         }
     }

@@ -47,6 +47,32 @@ pub(crate) fn set_app_autostart_enabled(
     }
 }
 
+/// Versions up to 1.0 ran as Contents/MacOS/cpa-gui, and an open-at-login item they made starts the app by that name,
+/// which later versions keep only as a link to Arbor. Writing the item again points it at Arbor itself, the name Login
+/// Items then shows. Only an item that starts this copy of the app through the old name is rewritten.
+pub(crate) fn repoint_legacy_login_item(app: &tauri::AppHandle) {
+    let Ok(executable) = env::current_exe().and_then(fs::canonicalize) else {
+        return;
+    };
+    let (Some(macos_dir), Some(home)) = (executable.parent(), env::var_os("HOME")) else {
+        return;
+    };
+    let item = PathBuf::from(home)
+        .join("Library")
+        .join("LaunchAgents")
+        .join(format!("{}.plist", app.package_info().name));
+    let Ok(contents) = fs::read_to_string(&item) else {
+        return;
+    };
+    // The autostart plugin writes each of the item's arguments as a plain <string>, the program first.
+    let legacy_program = format!("<string>{}</string>", macos_dir.join("cpa-gui").display());
+    if contents.contains(&legacy_program) {
+        if let Err(error) = set_app_autostart_enabled(app, true) {
+            eprintln!("Couldn't point the open-at-login item at Arbor: {error}");
+        }
+    }
+}
+
 pub(crate) fn software_settings(
     app: &tauri::AppHandle,
     config: &GuiConfigFile,

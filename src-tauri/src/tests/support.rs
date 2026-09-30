@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) fn agent_test_home(name: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!(
-        "cpa-gui-agent-{name}-{}-{}",
+        "arbor-agent-{name}-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

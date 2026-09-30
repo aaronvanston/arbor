@@ -2,7 +2,7 @@
 # Checks the arbor-models core plugin against a real core in a scratch folder: turning plugins on in a running core
 # loads it, even one that arrived after the core started, an extra model is listed, reaches a Claude account instead of "unknown provider", can't override a
 # built-in model, and follows config edits without a restart. A second copy serves Codex the way Arbor installs one per
-# provider, and each copy has to keep its own models. It uses the core release in core-version.txt (the archive in cpa-core/ if the release script left one,
+# provider, and each copy has to keep its own models. It uses the core release in core-version.txt (the archive in bundled-core/ if the release script left one,
 # otherwise a download checked against the release's checksums), fake Claude and Codex accounts, and a proxy on a closed local
 # port, so no request leaves the machine with a credential. It never touches the app's data folder.
 set -euo pipefail
@@ -36,8 +36,8 @@ install_name="$(otool -D "$plugin_lib" | tail -n 1)"
 
 core_dir="$work_dir/core"
 mkdir -p "$core_dir/plugins" "$work_dir/auths"
-if [[ -f "cpa-core/$core_asset" ]]; then
-  tar -xzf "cpa-core/$core_asset" -C "$core_dir"
+if [[ -f "bundled-core/$core_asset" ]]; then
+  tar -xzf "bundled-core/$core_asset" -C "$core_dir"
 else
   echo "Downloading core $core_version"
   release_url="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${core_version}"
