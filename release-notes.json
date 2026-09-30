@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.0.0",
+    "summary": "Arbor 1.0: choose between stable releases and nightly builds of what's next.",
+    "changes": [
+      "Stable updates only to tested releases; nightly also takes builds of the latest changes, which may be rough.",
+      "Moving back to stable keeps a newer nightly until a release passes it."
+    ]
+  },
+  {
     "version": "0.3.206",
     "summary": "Sync: change skills, MCP servers, plugins and hooks in agent homes kept outside your home folder.",
     "changes": []
