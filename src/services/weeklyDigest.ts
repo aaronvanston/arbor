@@ -337,6 +337,9 @@ export const percentText = (share: number) => `${share < 0.1 && share > 0 ? (sha
 /** What requests were worth over what they cost, like "6.5×". */
 export const formatRatio = (ratio: number) => `${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}×`;
 
+/** Whether the week's spend is known: some of its requests had a price, or it had none, so it cost nothing. */
+export const spendKnown = (digest: WeeklyDigest) => digest.priced || digest.requests === 0;
+
 /** Whether GitHub couldn't be asked about the pull requests, so none merging says nothing. */
 export const githubUnavailable = (digest: WeeklyDigest) =>
   digest.github.last === 'missing' || digest.github.last === 'signedOut' || digest.github.last === 'failed';

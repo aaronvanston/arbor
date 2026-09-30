@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { newClientKey } from '../src/services/clientKeys';
 import { agentSetup, listensOnlyHere, proxyOrigin } from '../src/services/connectAgent';
 
 describe('connecting an agent', () => {
@@ -23,5 +24,10 @@ describe('connecting an agent', () => {
     expect(setup.codex).toContain('wire_api = "responses"');
     expect(setup.codex).toContain('env_key = "ARBOR_API_KEY"');
     expect(setup.codexKey).toBe('export ARBOR_API_KEY="sk-test"');
+  });
+
+  it('makes a key from 24 random bytes, written as hex after sk-', () => {
+    const counting = (bytes: Uint8Array) => bytes.map((_, index) => index * 11);
+    expect(newClientKey(counting)).toBe('sk-000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2fd');
   });
 });

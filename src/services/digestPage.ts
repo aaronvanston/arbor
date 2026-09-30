@@ -13,6 +13,7 @@ import {
   noMergedText,
   percentText,
   SAME_CHANGE,
+  spendKnown,
   weekDays,
   type DigestWeek,
   type WeeklyDigest,
@@ -144,8 +145,8 @@ export function digestPage(digest: WeeklyDigest, { t, nowMs }: { t: Translate; n
   const stats = html`<div class="stats">${[
     stat(
       t('usage.digest.stat.spend'),
-      digest.priced ? html`${money(digest.cost)}${moved(digest.cost, digest.previousCost)}` : formatUnpriced(),
-      digest.priced ? before(money(digest.previousCost)) : t('usage.digest.stat.noPrices'),
+      spendKnown(digest) ? html`${money(digest.cost)}${moved(digest.cost, digest.previousCost)}` : formatUnpriced(),
+      spendKnown(digest) ? before(money(digest.previousCost)) : t('usage.digest.stat.noPrices'),
     ),
     stat(t('usage.digest.stat.sessions'), html`${number(digest.sessions)}${moved(digest.sessions, digest.previousSessions)}`, before(number(digest.previousSessions))),
     stat(t('usage.digest.stat.merged'), number(digest.merged.length), mergedHint(digest, t)),

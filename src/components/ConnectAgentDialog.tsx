@@ -5,7 +5,7 @@ import { invokeCommand } from '../native/commands';
 import type { CoreApiKeyView } from '../native/types';
 import type { AppView } from '../navigation';
 import { getThisMac } from '../services/addMachine';
-import { clientKeyName, maskApiKey } from '../services/clientKeys';
+import { addNewClientKey, clientKeyName, maskApiKey } from '../services/clientKeys';
 import { agentSetup, listensOnlyHere, proxyOrigin, type AgentOrigin, type ProxyListen } from '../services/connectAgent';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
@@ -33,6 +33,8 @@ export function ConnectAgentDialog({ open, onClose, from = 'here', onNavigate }:
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyIndex, setKeyIndex] = useState(0);
+  const [making, setMaking] = useState(false);
+  const [makeError, setMakeError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +42,7 @@ export function ConnectAgentDialog({ open, onClose, from = 'here', onNavigate }:
     setWhere(from);
     setKeyIndex(0);
     setError(null);
+    setMakeError(null);
     Promise.all([
       invokeCommand('get_gui_settings'),
       invokeCommand('get_core_tls_settings').catch(() => ({ enabled: false })),
@@ -58,6 +61,23 @@ export function ConnectAgentDialog({ open, onClose, from = 'here', onNavigate }:
   const real = key ? agentSetup(origin, key.apiKey) : null;
   const shown = key ? agentSetup(origin, maskApiKey(key.apiKey)) : null;
   const unreachable = where === 'other' && loaded !== null && listensOnlyHere(loaded.listen);
+
+  // A new install's proxy has no key, since the core's example ones are left out. One made here is named for this Mac
+  // when its agents are the ones connecting, so their requests are told apart from another machine's.
+  const makeKey = async () => {
+    if (!loaded) return;
+    setMaking(true);
+    setMakeError(null);
+    try {
+      const keys = await addNewClientKey(where === 'here' ? loaded.thisMac : '');
+      setLoaded((current) => current && { ...current, keys });
+      setKeyIndex(Math.max(0, keys.length - 1));
+    } catch (failure) {
+      setMakeError(String(failure));
+    } finally {
+      setMaking(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
@@ -95,7 +115,15 @@ export function ConnectAgentDialog({ open, onClose, from = 'here', onNavigate }:
           ) : !loaded ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner />{t('common.loading')}</p>
           ) : !real || !shown ? (
-            <Alert variant="warning" icon={<AlertCircle />}><AlertDescription>{t('connectAgent.noKey')}</AlertDescription></Alert>
+            <Alert variant="warning" icon={<AlertCircle />}>
+              <AlertDescription className="flex flex-col items-start gap-2">
+                {t('connectAgent.noKey')}
+                <Button variant="outline" size="xs" onClick={() => void makeKey()} disabled={making}>
+                  {making ? <Spinner /> : null}{t('connectAgent.makeKey')}
+                </Button>
+                {makeError ? <span className="text-error-foreground">{t('connectAgent.makeKeyFailed', { error: makeError })}</span> : null}
+              </AlertDescription>
+            </Alert>
           ) : (
             <>
               {unreachable ? (

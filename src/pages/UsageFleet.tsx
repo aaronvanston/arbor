@@ -1,4 +1,5 @@
 import { ArrowUpRight, Monitor } from '../components/ui/icons';
+import { useNothingRecorded } from '../hooks/useCollectorStatus';
 import { useI18n } from '../i18n';
 import { MachinePill } from '../components/identity/Identity';
 import { formatCount, formatNumber, formatWhen } from '../lib/format';
@@ -17,6 +18,7 @@ export function UsageFleet({ items, live, onInspect, onAssign }: {
   onAssign: () => void;
 }) {
   const { t } = useI18n();
+  const nothingYet = useNothingRecorded();
   const byMachine = new Map<string, MachineUsage>();
   for (const item of items) {
     const prior = byMachine.get(item.machine) ?? emptyUsage(item.machine);
@@ -44,7 +46,7 @@ export function UsageFleet({ items, live, onInspect, onAssign }: {
       }
     >
       {machines.length === 0 ? (
-        <SettingsBlock className="text-sm text-muted-foreground">{t('usage.fleet.empty')}</SettingsBlock>
+        <SettingsBlock className="text-sm text-muted-foreground">{t(nothingYet ? 'usage.fleet.emptyYet' : 'usage.fleet.empty')}</SettingsBlock>
       ) : (
         <>
           <div className="grid gap-px bg-border/50 sm:grid-cols-2 xl:grid-cols-3 [&>*]:bg-card">

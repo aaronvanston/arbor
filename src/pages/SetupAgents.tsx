@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FirstMachineActions } from '../components/FirstMachineActions';
 import { SettingsSection } from '../components/layout/settings';
 import { MachinePill } from '../components/identity/Identity';
 import { Badge } from '../components/ui/badge';
@@ -61,7 +62,9 @@ export function SetupAgents({ onNavigate }: { onNavigate: (view: AppView) => voi
       <AgentRolloutSection />
       <AgentVersionsSection
         rows={rows}
+        noMachines={machines?.length === 0}
         error={error}
+        onMachineAdded={() => void load()}
         onOpen={(machine) => {
           // Picked while its page is already open, the page goes back to its top, as the sidebar's machine leaves do.
           requestFocus('machine', machine);
@@ -74,10 +77,13 @@ export function SetupAgents({ onNavigate }: { onNavigate: (view: AppView) => voi
 }
 
 /** Each machine's Claude Code and Codex, which one is behind, and how many run there now. */
-export function AgentVersionsSection({ rows, error, onOpen, onConfigure }: {
+export function AgentVersionsSection({ rows, noMachines = false, error, onOpen, onConfigure, onMachineAdded }: {
   /** Null until the machines are first read. */
   rows: AgentVersionRow[] | null;
+  /** No machine is listed at all, as on a new install, rather than listed without a host. */
+  noMachines?: boolean;
   error: string | null;
+  onMachineAdded?: () => void;
   onOpen: (machine: string) => void;
   onConfigure: () => void;
 }) {
@@ -95,6 +101,8 @@ export function AgentVersionsSection({ rows, error, onOpen, onConfigure }: {
             </span>
           </TableEmpty>
         )
+      ) : !rows.length && noMachines ? (
+        <TableEmpty action={<FirstMachineActions onAdded={onMachineAdded} />}>{t('setup.agents.versions.noMachines')}</TableEmpty>
       ) : !rows.length ? (
         <TableEmpty action={<Button variant="outline" size="sm" onClick={onConfigure}>{t('setup.agents.versions.configure')}</Button>}>
           {t('setup.agents.versions.empty')}

@@ -1,4 +1,5 @@
 import { MessagesSquare } from '../components/ui/icons';
+import { useNothingRecorded } from '../hooks/useCollectorStatus';
 import { useI18n } from '../i18n';
 import { formatAgo, formatCount, formatDateTime, formatMoney, formatTokens } from '../lib/format';
 import { DEEP_CONTEXT_TOKENS } from '../services/sessionTimeline';
@@ -51,6 +52,7 @@ export function SessionsView({
   onSortChange: (sort: UsageSessionSort) => void;
 }) {
   const { t } = useI18n();
+  const nothingYet = useNothingRecorded();
   const { summary } = sessions;
   const now = Date.now();
   const startRecordNum = sessions.total > 0 ? (sessions.page - 1) * sessions.pageSize + 1 : 0;
@@ -150,7 +152,7 @@ export function SessionsView({
         ) : (
           <Empty size="sm">
             <EmptyMedia><MessagesSquare /></EmptyMedia>
-            <EmptyDescription>{search ? t('usage.sessions.emptySearch', { search }) : t('usage.sessions.empty')}</EmptyDescription>
+            <EmptyDescription>{search ? t('usage.sessions.emptySearch', { search }) : t(nothingYet ? 'usage.sessions.emptyYet' : 'usage.sessions.empty')}</EmptyDescription>
           </Empty>
         )}
       </TableCard>

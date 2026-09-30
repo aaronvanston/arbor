@@ -26,6 +26,7 @@ import {
   percentText,
   reloadDigestPullRequests,
   SAME_CHANGE,
+  spendKnown,
   weekDays,
   weeklyDigest,
   type DigestLimit,
@@ -283,8 +284,8 @@ function Digest({ digest, onOpenSession }: { digest: WeeklyDigest; onOpenSession
       <StatsGrid columns={4}>
         <StatBlock
           label={t('usage.digest.stat.spend')}
-          value={digest.priced ? <>{money(digest.cost)}<Change current={digest.cost} previous={digest.previousCost} /></> : formatUnpriced()}
-          hint={digest.priced ? before(money(digest.previousCost)) : t('usage.digest.stat.noPrices')}
+          value={spendKnown(digest) ? <>{money(digest.cost)}<Change current={digest.cost} previous={digest.previousCost} /></> : formatUnpriced()}
+          hint={spendKnown(digest) ? before(money(digest.previousCost)) : t('usage.digest.stat.noPrices')}
         />
         <StatBlock
           label={t('usage.digest.stat.sessions')}

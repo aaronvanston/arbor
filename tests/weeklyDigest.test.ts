@@ -244,6 +244,15 @@ describe('weekly digest', () => {
     expect(digestNotification(digest, t).title).toBe('Your week, 25 – 31 Dec');
   });
 
+  test('a week with no requests at all spent nothing, rather than an unknown amount', () => {
+    const digest = weeklyDigest(digestData({
+      overview: overview({ estimatedCost: 0, pricedRequests: 0, successCount: 0, failureCount: 0, totalRequests: 0 }),
+      previousOverview: overview({ estimatedCost: 0, pricedRequests: 0, successCount: 0, failureCount: 0, totalRequests: 0 }),
+    }), [], NOW);
+    const page = digestPage(digest, { t, nowMs: NOW }).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    expect(page).toContain('Spend $0.00 $0.00 by this time last week');
+  });
+
   test('with nothing priced, merged pull requests have no cost rather than $0.00 each', () => {
     const lastWeek = digestWeek(1, NOW);
     const unpriced = digestData().pullRequests.map((pullRequest) => ({ ...pullRequest, estimatedCost: 0, pricedRequests: 0 }));

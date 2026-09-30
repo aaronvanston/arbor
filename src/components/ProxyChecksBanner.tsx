@@ -4,6 +4,8 @@ import { useI18n } from '../i18n';
 import { invokeCommand } from '../native/commands';
 import type { ProxyProblem } from '../native/types';
 import type { AppView } from '../navigation';
+import { getThisMac } from '../services/addMachine';
+import { addNewClientKey } from '../services/clientKeys';
 import {
   dismissNetworkWarning,
   PROXY_PROBLEM_SETTING,
@@ -18,6 +20,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
 import { ServerCog, TriangleAlert, X } from './ui/icons';
+import { toast } from './ui/toast';
 
 /**
  * What's wrong with the proxy settings Arbor depends on, on Home and the Usage pages, each with its fix: usage
@@ -63,6 +66,22 @@ function ProxyProblemAlert({ problem, onNavigate }: { problem: ProxyProblem; onN
       setBusy(false);
     }
   };
+  // A new install starts with no key, so this is usually the first thing it shows; one press closes it, with the key
+  // named for this Mac, whose agents are the first to connect.
+  const makeKey = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const { name } = await getThisMac().catch(() => ({ name: '' }));
+      await addNewClientKey(name);
+      toast({ kind: 'success', title: t('proxyChecks.keyMade') });
+      await refreshProxyChecks();
+    } catch (reason) {
+      setError(t('connectAgent.makeKeyFailed', { error: String(reason) }));
+    } finally {
+      setBusy(false);
+    }
+  };
   const showFile = async () => {
     setError('');
     try {
@@ -72,11 +91,14 @@ function ProxyProblemAlert({ problem, onNavigate }: { problem: ProxyProblem; onN
     }
   };
 
+  const settingButton = openSetting ? <Button variant="outline" size="xs" onClick={openSetting}>{t('proxyChecks.openSetting')}</Button> : null;
   const action = kind === 'usageOff'
     ? <Button variant="outline" size="xs" disabled={busy} onClick={() => void turnOn()}>{t('proxyChecks.turnOn')}</Button>
+    : kind === 'noClientKeys'
+      ? <><Button variant="outline" size="xs" disabled={busy} onClick={() => void makeKey()}>{t('connectAgent.makeKey')}</Button>{settingButton}</>
     : kind === 'settingsNotLoaded'
       ? <Button variant="outline" size="xs" onClick={() => void showFile()}>{t('proxyChecks.showFile')}</Button>
-      : openSetting ? <Button variant="outline" size="xs" onClick={openSetting}>{t('proxyChecks.openSetting')}</Button> : null;
+      : settingButton;
   return (
     <Alert
       variant={warning ? 'warning' : 'error'}

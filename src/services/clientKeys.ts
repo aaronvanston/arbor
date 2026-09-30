@@ -14,6 +14,16 @@ export function maskApiKey(apiKey: string) {
   return `${value.slice(0, visible)}${'*'.repeat(Math.max(6, 10 - visible * 2))}${value.slice(-visible)}`;
 }
 
+/** A new client key: `sk-` and 48 random hex digits. */
+export function newClientKey(random: (bytes: Uint8Array) => Uint8Array = (bytes) => crypto.getRandomValues(bytes)) {
+  return `sk-${Array.from(random(new Uint8Array(24)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Adds a new key to the proxy, named `remark`, and gives back the keys it then accepts. */
+export async function addNewClientKey(remark: string) {
+  return (await invokeCommand('add_core_api_key', { apiKey: newClientKey(), remark })).apiKeys;
+}
+
 /** A key by its remark, or masked when it has none. */
 export const clientKeyName = (key: CoreApiKeyView) => key.remark || maskApiKey(key.apiKey);
 

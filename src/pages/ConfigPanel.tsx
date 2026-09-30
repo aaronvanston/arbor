@@ -9,7 +9,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { InlineNotice, useAppNotice } from '../appNotice';
 import { webUiManagementUrl } from '../services/clientAccess';
-import { clientKeyName, maskApiKey } from '../services/clientKeys';
+import { clientKeyName, maskApiKey, newClientKey } from '../services/clientKeys';
 import { useUnsavedChanges } from '../services/unsavedChanges';
 import { CORE_CONFIG_DEFAULTS as CORE, changedFromDefaults, onOffLabel, resetOffer } from '../services/settingDefaults';
 import { confirmSettingsInEffect, notLoadedNotice } from '../services/settingsInEffect';
@@ -340,10 +340,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
   };
 
   const generateApiKey = () => {
-    const bytes = new Uint8Array(24);
-    crypto.getRandomValues(bytes);
-    const value = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-    setNewApiKey(`sk-${value}`);
+    setNewApiKey(newClientKey());
     setShowApiKey(true);
     setFormError('');
   };

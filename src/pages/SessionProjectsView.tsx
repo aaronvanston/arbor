@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { ChevronDown, ChevronRight, GitBranch } from '../components/ui/icons';
+import { useNothingRecorded } from '../hooks/useCollectorStatus';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { formatAgo, formatCount, formatDate, formatDateTime, formatMoney } from '../lib/format';
@@ -213,6 +214,7 @@ function TotalsCells({ totals, pullRequests, now, onOpenSessions }: {
 
 function ProjectsSection({ report, onOpenSessions }: { report: SessionProjectsReport; onOpenSessions: OpenSessions }) {
   const { t } = useI18n();
+  const nothingYet = useNothingRecorded();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const now = Date.now();
   const { unplaced } = report;
@@ -309,7 +311,7 @@ function ProjectsSection({ report, onOpenSessions }: { report: SessionProjectsRe
           </TableBody>
         </Table>
       ) : (
-        <TableEmpty>{t('usage.projects.empty')}</TableEmpty>
+        <TableEmpty>{t(nothingYet ? 'usage.sessions.emptyYet' : 'usage.projects.empty')}</TableEmpty>
       )}
     </SettingsSection>
   );

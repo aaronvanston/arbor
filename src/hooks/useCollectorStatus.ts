@@ -37,3 +37,12 @@ export function useCollectorStatus(refreshMs: number) {
 
   return { status, loadError, checkedAt };
 }
+
+/**
+ * Whether the proxy hasn't recorded a single request yet, as on a new install, so an empty view can say so rather than
+ * blame its filters. Null until the collector has answered.
+ */
+export function useNothingRecorded() {
+  const { status } = useCollectorStatus(30_000);
+  return status ? status.totalRecords === 0 : null;
+}
