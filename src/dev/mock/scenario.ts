@@ -6,8 +6,8 @@ export type Json = Record<string, unknown>;
 export const params = new URLSearchParams(window.location.search);
 
 /**
- * `?fresh=1`: Arbor on the day it's installed. No machines, no requests or sessions yet, no archive and no other apps,
- * with the proxy running and its key made. Each domain empties its own answers for it.
+ * `?fresh=1`: Arbor on the day it's installed. No machines, accounts, requests or sessions yet, no archive and no other
+ * apps, with the proxy running but no key made. Each domain empties its own answers for it.
  */
 export const freshInstall = params.get('fresh') === '1';
 

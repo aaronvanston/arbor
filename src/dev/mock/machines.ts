@@ -40,7 +40,7 @@ import { joinSetupMachine, leaveToPolicy, recordEditMock, scanSetupMock, setupIt
 import { reporterInstalled, setMockT3Enabled } from './usage';
 
 // Settings › Diagnostics: Arbor's calls to machines and the core, by `?diagnostics=` (listed at the top).
-const diagnosticsScenario = params.get('diagnostics') ?? 'mixed';
+const diagnosticsScenario = params.get('diagnostics') ?? (freshInstall ? 'empty' : 'mixed');
 
 function mockCalls(scenario: string): DiagnosticCall[] {
   if (scenario === 'empty') return [];
@@ -172,7 +172,8 @@ const reporterPlan = (machine: string, enabled: boolean): ReporterSetup => ({
 
 // Claude Code's telemetry: the receiver is on and this Mac and cedar-02 send to it; ci-01 isn't set up. See the
 // `?telemetry=` flags in the header.
-const telemetryScenario = params.get('telemetry');
+// A new install has the receiver off, as Rust's default does.
+const telemetryScenario = params.get('telemetry') ?? (freshInstall ? 'off' : null);
 
 // Each machine sending, with the port it sends to, which is stale once the receiver moves.
 type SendingMachine = Omit<MachineTelemetry, 'stalePort'> & { port: number };
@@ -510,7 +511,7 @@ const lookedHomes = (machine: string) => firstLooks[machine] ?? { homes: [], sug
 
 const homeScans: Record<string, { at: number; error: string | null; suggested: FoundHome[] }> = {};
 let savedHomes: AgentHome[] = [];
-if (homesScenario !== 'fresh') {
+if (homesScenario !== 'fresh' && !freshInstall) {
   for (const [machine, looked] of Object.entries(firstLooks)) {
     savedHomes.push(...looked.homes);
     homeScans[machine] = { at: now - 2 * 86_400_000, error: null, suggested: homesScenario === 'none' ? [] : looked.suggested };

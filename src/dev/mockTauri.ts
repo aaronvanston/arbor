@@ -5,7 +5,11 @@
  * production builds or inside the desktop app. Each command's answer sits in its
  * domain's map in `./mock/`, typed against the command list.
  *
- * Scenario switches via query string: `?core=stopped`, `?core=missing`,
+ * Scenario switches via query string: `?fresh=1` for Arbor on the day it's installed: the proxy running with no key and
+ * no accounts (`&accounts=kept` keeps them, as after the first sign-ins), no machines, requests, sessions, archive,
+ * telemetry or other apps yet, Sync with this Mac alone and nothing scanned, the usage data note showing (unless
+ * `&usagedata=seen`), and nothing saved in the window (each load starts again; the other switches still apply on
+ * top); `?core=stopped`, `?core=missing`,
  * `?core=unready` (process up, management port not answering yet), `?core=unreadable` (its status can't be read, so
  * pages that need it say so and offer Check again), `?core=stops` (running, then stopping eight seconds after load, so
  * a page that needs it, like Accounts or Settings › Auth Files, locks in place; Start core brings it back there);
@@ -314,7 +318,7 @@ import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/
 import { archiveAnswers } from './mock/archive';
 import { coreAnswers, coreScenario, stopCoreLater } from './mock/core';
 import { machinesAnswers } from './mock/machines';
-import { iso, mockLog, now, params, type Json } from './mock/scenario';
+import { freshInstall, iso, mockLog, now, params, type Json } from './mock/scenario';
 import { MOCK_REPO, setupAnswers } from './mock/setup';
 import { setMachineOverride, setScopedOverride, setSettingsProject, setSettingsScope } from '../services/machineSettings';
 import { fleetScenario, usageAnswers } from './mock/usage';
@@ -463,6 +467,8 @@ function seedAlerts() {
 }
 
 export function installTauriMock() {
+  // A first launch has nothing saved in the window yet; the stores read it lazily, so this comes before any of them.
+  if (freshInstall) window.localStorage.clear();
   // The notification plugin falls back to the Web Notification API outside Tauri; capture it so tests can see it.
   Object.defineProperty(window, 'Notification', { value: MockNotification, configurable: true, writable: true });
   // Answer the status pages locally so the dev shell works offline and can show incidents on demand.

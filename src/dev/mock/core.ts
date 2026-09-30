@@ -21,7 +21,7 @@ import type {
   ThinkingAliasSource,
 } from '../../native/types';
 import { coreReply, type CommandAnswers } from './answers';
-import { iso, mockLog, params, type Json } from './scenario';
+import { freshInstall, iso, mockLog, params, type Json } from './scenario';
 
 // With `?heavy=1`, a session on Cedar 01 has used 258M tokens in the last hour.
 export const heavyScenario = params.get('heavy') === '1';
@@ -121,7 +121,7 @@ function mockProxyChecks(): ProxyChecks {
     problems: [
       ...(proxyScenario.has('not-loaded') ? [{ kind: 'settingsNotLoaded' as const, detail: '153' }] : []),
       ...(proxyScenario.has('usage-off') ? [{ kind: 'usageOff' as const, detail: null }] : []),
-      ...(proxyScenario.has('no-keys') ? [{ kind: 'noClientKeys' as const, detail: null }] : []),
+      ...(proxyScenario.has('no-keys') || !configSettings.apiKeys.length ? [{ kind: 'noClientKeys' as const, detail: null }] : []),
       ...(proxyScenario.has('default-key') ? [{ kind: 'defaultClientKey' as const, detail: null }] : []),
       ...(proxyScenario.has('network') ? [{ kind: 'openToNetwork' as const, detail: '0.0.0.0' }] : []),
     ],
@@ -144,7 +144,8 @@ export let coreStatus: CoreStatus = {
 };
 
 export const configSettings: CoreConfigView = {
-  apiKeys: params.get('apikey') === 'none' ? [] : [
+  // A new install has no client key: the core's example keys are left out of the config it starts with.
+  apiKeys: params.get('apikey') === 'none' || freshInstall ? [] : [
     { apiKey: 'sk-4f1e9c2b7a8d4e6f9b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a', apiKeyHash: 'hash-casey', remark: 'Casey laptop' },
     { apiKey: 'sk-9b2d4f6a8c0e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e2a4c6e8a0c2e4a6c8e0a2c', apiKeyHash: 'hash-ci', remark: 'CI runner' },
     ...(heavyScenario ? [{ apiKey: 'sk-0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d', apiKeyHash: 'hash-desk-cedar', remark: 'desk-cedar-01' }] : []),
@@ -260,7 +261,8 @@ if (fleetAccounts) {
 }
 
 // With `?accounts=none`, the core lists no credentials at all: Accounts, Home's limits and the sidebar offer Add account.
-if (params.get('accounts') === 'none') authFiles.length = 0;
+// A new install has none either, unless `?fresh=1&accounts=kept` keeps them, as after its first sign-ins.
+if (params.get('accounts') === 'none' || (freshInstall && params.get('accounts') !== 'kept')) authFiles.length = 0;
 // With `?accounts=off`, every credential is turned off, as if by hand on Auth Files.
 if (params.get('accounts') === 'off') authFiles.forEach((file) => Object.assign(file, { disabled: true, status: 'disabled' }));
 
@@ -622,6 +624,8 @@ export const coreAnswers: CommandAnswers<CoreCommands> = {
   get_core_tls_settings: () => tlsSettings,
   add_core_api_key: (args) => {
     configSettings.apiKeys.push({ apiKey: args.apiKey, apiKeyHash: `hash-${Date.now()}`, remark: args.remark });
+    // The file watcher tells the open pages, as it does for any change to config.yaml.
+    void emit('config-files-changed', null);
     return configSettings;
   },
   update_core_api_key: (args) => {

@@ -17,16 +17,17 @@ import type {
   MonthRow,
 } from '../../native/types';
 import type { CommandAnswers } from './answers';
-import { later, mockLog, now, params } from './scenario';
+import { freshInstall, later, mockLog, now, params } from './scenario';
 
-const archiveScenario = params.get('archive') ?? 'ok';
+// A new install has no archive, and so no other machines, backups or counts in one.
+const archiveScenario = params.get('archive') ?? (freshInstall ? 'off' : 'ok');
 
 const archiveRoot = '/Volumes/Archive/arbor-session-archive.noindex';
 // `?archive=own-disk`: kept on this Mac's own disk.
 const OWN_DISK_ROOT = '/Users/casey/Arbor Session Archive.noindex';
 
 // The other machines kept over SSH, by `?archiveMachines=` (listed at the top).
-const archiveMachinesScenario = params.get('archiveMachines') ?? 'some';
+const archiveMachinesScenario = params.get('archiveMachines') ?? (freshInstall ? 'none' : 'some');
 const archiveProjectsScenario = params.get('archiveProjects');
 
 const fleetRuns = (share: number): ArchiveMachineRun[] => {
@@ -62,7 +63,7 @@ const archiveTotals = (share: number): ArchiveTotals => ({
 });
 
 // Old backups taken into the archive, by `?imports=` (listed at the top).
-const importsScenario = params.get('imports') ?? 'some';
+const importsScenario = params.get('imports') ?? (freshInstall ? 'none' : 'some');
 
 const importPreviewScenario = params.get('importPreview') ?? 'found';
 
@@ -185,7 +186,7 @@ let archiveStatus = mockArchiveStatus(archiveScenario);
 const tokensScenario = params.get('tokens') ?? 'done';
 
 // Claude Code's own count on days whose transcripts are gone, by `?recovered=` (listed at the top).
-const recoveredScenario = params.get('recovered') ?? 'some';
+const recoveredScenario = params.get('recovered') ?? (freshInstall ? 'none' : 'some');
 
 /**
  * cedar-02 and casey-mbp have a stretch six weeks back whose transcripts were cleared before the archive

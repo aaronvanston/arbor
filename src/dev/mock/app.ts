@@ -7,7 +7,7 @@ import type { AppCommands } from '../../native/app';
 import type { PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, ZoomLevel } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { configSettings, coreStatus } from './core';
-import { mockLog, params } from './scenario';
+import { freshInstall, mockLog, params } from './scenario';
 
 const softwareSettings: SoftwareSettings = {
   closeBehavior: 'ask',
@@ -23,7 +23,7 @@ const softwareSettings: SoftwareSettings = {
 let productAnalytics: ProductAnalyticsSettings = {
   usage: params.get('usagedata') !== 'off',
   crashReports: params.get('usagedata') !== 'off',
-  noticeShown: params.get('usagedata') !== 'new',
+  noticeShown: params.has('usagedata') ? params.get('usagedata') !== 'new' : !freshInstall,
   blockedByEnv: params.get('usagedata') === 'env',
   available: params.get('usagedata') !== 'source',
 };

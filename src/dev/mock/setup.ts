@@ -76,11 +76,11 @@ import type {
 } from '../../native/types';
 import { syncKind } from '../../services/setupSync';
 import type { CommandAnswers } from './answers';
-import { hours, later, mockLog, params } from './scenario';
+import { freshInstall, hours, later, mockLog, params } from './scenario';
 
 // Sync › Cost's starting context: sessions' first requests over the last four weeks, from each machine's homes. See
 // `?context=`.
-const contextScenario = params.get('context');
+const contextScenario = params.get('context') ?? (freshInstall ? 'none' : null);
 
 const CONTEXT_HOMES: { machine: string; agent: AgentKind; home: string; tokens: number; perDay: number; model: string; repos: string[] }[] = [
   { machine: 'casey-mbp', agent: 'claude', home: '~/.claude', tokens: 38_400, perDay: 3, model: 'claude-opus-5-5', repos: ['/Users/casey/src/arbor', '/Users/casey/src/proxy', ''] },
@@ -287,6 +287,16 @@ export const setupMachines: SetupMachine[] = [
     ],
   },
 ];
+
+/** `?fresh=1`: only this Mac, which isn't listed as a machine yet, as the scan finds it anyway. */
+const keepThisMacOnly = <T extends { machine: string }>(entries: T[]) => {
+  if (!freshInstall) return;
+  const kept = entries.filter((entry) => entry.machine === 'casey-mbp');
+  entries.splice(0, entries.length, ...kept);
+};
+keepThisMacOnly(setupMachines);
+// Its own homes, without the other apps' ones a first look at the machine would add.
+for (const entry of freshInstall ? setupMachines : []) entry.homes = entry.homes.filter((home) => !home.path.startsWith('~/.agent-app/'));
 
 // With `?pluginrepo=sample`, ci-01 has agency from its own marketplace, which the repo has removed everywhere, and
 // cedar-02's settings still name a plugin that's gone, which the grid counts rather than lists.
@@ -829,7 +839,7 @@ export const recordEditMock = (machine: string, what: ChangeKind, files: { path:
   };
   setupBackups[machine] = [backup, ...(setupBackups[machine] ?? [])].sort((a, b) => b.atMs - a.atMs).slice(0, 20);
 };
-if (params.get('changes') !== 'none') {
+if (params.get('changes') !== 'none' && !freshInstall) {
   recordEditMock('casey-mbp', 'reporter', [{ path: '~/.claude/settings.json', added: false }, { path: '~/.codex/config.toml', added: false }], Date.now() - 3 * 86_400_000);
   recordEditMock('casey-mbp', 'keepSessions', [{ path: '~/.agent-app/homes/claude-proxy/settings.json', added: true }], Date.now() - 26 * 3_600_000);
 }
@@ -1426,7 +1436,7 @@ const applyMcpMock = (entry: SetupMachine, changes: McpChange[]): McpResult[] =>
 // versions of its .claude/CLAUDE.md (ci-01 has B) and no AGENTS.md on cedar-02; the Mac has a T3 Code worktree
 // that's merged, a Claude Code one whose upstream was deleted, one with changes and one never merged. Sums stand in
 // for the checksums the backend compares.
-const projectsScenario = params.get('projects');
+const projectsScenario = params.get('projects') ?? (freshInstall ? 'fresh' : null);
 
 const mockWorktree = (path: string, branch: string | null, extra: Partial<ProjectWorktree> = {}): ProjectWorktree => ({
   path, main: false, head: `${path.length.toString(16)}a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9`, branch, locked: false, prunable: false,
@@ -1531,6 +1541,7 @@ const projectsState: MachineProjects[] = Object.entries(projectRepos).map(([mach
   partial: projectsScenario === 'partial' && machine === 'casey-mbp', fetchedAt: null, measuredAt: null, scanning: false, measuring: false,
   removing: false, error: null, repos: projectsScenario === 'fresh' || projectsScenario === 'none' ? [] : structuredClone(repos),
 }));
+keepThisMacOnly(projectsState);
 
 const projectTexts: Record<string, string> = {
   'arbor-a': '# Working on Arbor\n\nArbor is a Tauri 2 desktop app for macOS.\n\n## Running things\n\n```sh\nbun run verify\nbun run build\n```\n\n## Hard rules\n\n- The real app and its live data are off limits.\n- Claim, reset and redeem calls are only ever mocked.\n',
@@ -1636,7 +1647,7 @@ const removeWorktreesMock = (machine: string, removals: WorktreeRemoval[]) => {
 // which ci-01 lacks (and its zod is a release behind package.json); proxy's Go pin is newer than ci-01's Go, which
 // fetches it itself; notes pins Python 3.11, which mise keeps on the Mac. react is 19.1.1 on the Mac and cedar-02
 // but 19.1.0 on ci-01, and billing is still on React 18.
-const toolchainScenario = params.get('toolchain');
+const toolchainScenario = params.get('toolchain') ?? (freshInstall ? 'fresh' : null);
 
 const toolNeed = (tool: string, wants: string, kind: ToolNeed['kind'], file: string, field: string | null = null): ToolNeed => ({ tool, wants, kind, file, field });
 
@@ -1756,6 +1767,7 @@ const toolchainReply = (machine: string, entry: (typeof toolchainMachines)[strin
 
 const toolchainState: MachineToolchain[] = Object.entries(toolchainMachines).map(([machine, entry]) =>
   toolchainReply(machine, entry, toolchainScenario === 'fresh' ? null : Date.now() - 12 * 60_000));
+keepThisMacOnly(toolchainState);
 
 // `?nodechange=fail` has every install fail to download, as it does off the network.
 const changeNodeMock = (machine: string, changes: NodeChange[]) => {

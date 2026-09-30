@@ -41,7 +41,7 @@ import type { UsageCommands } from '../../native/usage';
 import { sessionClient, sessionPlace } from '../../services/usageSessions';
 import type { CommandAnswers } from './answers';
 import { coreStatus, heavyScenario } from './core';
-import { iso, later, mockLog, now, params } from './scenario';
+import { freshInstall, iso, later, mockLog, now, params } from './scenario';
 
 // With `?prices=none`, no model has a price, so no request, session or machine has a known cost.
 const noPrices = params.get('prices') === 'none';
@@ -89,6 +89,8 @@ const usageHistory = Array.from({ length: HISTORY_HOURS }, (_, index) => {
     },
   };
 }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+// `?fresh=1`: nothing has gone through the proxy yet, so every usage view starts empty.
+if (freshInstall) usageHistory.length = 0;
 
 type TimelinePoint = (typeof usageHistory)[number]['point'];
 
@@ -116,6 +118,7 @@ const machines = [
   machineShare('ci-01', 'ci', 0.251, 0.017, 0, iso(-900_000)),
   machineShare('', '', 0.023, 0, 0, iso(-5_400_000)),
 ];
+if (freshInstall) machines.length = 0;
 
 // Each machine's last minute, as twelve five-second buckets of tokens.
 const liveTokens = (seed: number) => Array.from({ length: 12 }, (_, i) => Math.round(100_000 + 90_000 * Math.abs(Math.sin(i / 2.2 + seed)))) as MachineLive['tokens'];
@@ -125,7 +128,7 @@ const usageOverview: UsageOverview = {
   successCount: totals.requests - totals.failure - totals.canceled,
   failureCount: totals.failure,
   canceledCount: totals.canceled,
-  successRate: ((totals.requests - totals.failure - totals.canceled) / totals.requests) * 100,
+  successRate: totals.requests ? ((totals.requests - totals.failure - totals.canceled) / totals.requests) * 100 : 0,
   inputTokens: Math.round(totals.tokens * 0.045),
   outputTokens: Math.round(totals.tokens * 0.011),
   reasoningTokens: Math.round(totals.tokens * 0.004),
@@ -144,6 +147,7 @@ const usageOverview: UsageOverview = {
   machines,
   machineLive: machines.map((machine) => ({ machine: machine.machine, requests: Math.max(1, Math.round(machine.requests / 800)), tokens: liveTokens(machine.requests) })),
 };
+if (freshInstall) Object.assign(usageOverview, { rpm: 0, tpm: 0, tps: 0, tpsSampleCount: 0, averageLatencyMs: 0, cacheHitRate: 0, estimatedCost: 0, pricedRequests: 0 });
 
 /** The overview for a range: counts come from its timeline, the rest scales with the last 24 hours. */
 const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
@@ -168,7 +172,7 @@ const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
   };
 };
 
-export const reporterInstalled: Record<string, boolean> = { 'casey-mbp': true, 'ci-01': false, 'cedar-02': true };
+export const reporterInstalled: Record<string, boolean> = freshInstall ? {} : { 'casey-mbp': true, 'ci-01': false, 'cedar-02': true };
 
 /** A breakdown row with `share` of the last 24 hours' requests and tokens. */
 const category = (key: string, label: string, share: number, failureRate: number) => {
@@ -204,6 +208,7 @@ const usageAnalysis = {
   ],
   apiKeys: [category('a1b2', 'Casey laptop', 0.73, 0.025), category('c3d4', 'CI runner', 0.27, 0.016)],
 };
+if (freshInstall) Object.values(usageAnalysis).forEach((rows) => { rows.length = 0; });
 
 /**
  * One request's tokens: a little new input and output on top of the conversation's cached context. Input counts the
@@ -260,6 +265,7 @@ const usageRecords = Array.from({ length: 25 }, (_, index): UsageRecord => {
     tokens: requestTokens(index, claude),
   };
 });
+if (freshInstall) usageRecords.length = 0;
 
 const priceFor = (model: string, prompt: number, completion: number): ModelPrice => ({
   model, prompt, completion, cache: prompt / 10, cacheRead: prompt / 10, cacheCreation: prompt * 1.25,
@@ -279,6 +285,7 @@ const usagePricing: UsagePricing = {
   pricedRequests: totals.requests - 990,
   savedPrices: 2,
 };
+if (freshInstall) Object.assign(usagePricing, { rows: [], totalCost: 0, pricedRequests: 0, savedPrices: 0 });
 
 // Capacity report: a month of value at API prices per credential, and twelve
 // days of limit readings. `codex-backup` never ran its weekly window, so the
@@ -292,6 +299,7 @@ const capacityValues = [
   // A credential that has since been removed.
   { authIndex: 'claude-old', provider: 'claude', perMonth: 2_700, requests: 13_100, firstSeenDays: 50 },
 ];
+if (freshInstall) capacityValues.length = 0;
 
 // Each cycle: when its first reading was, when it resets, and the share left at its first and last reading.
 type MockCycle = { firstDays: number; resetDays: number; from: number; to: number };
@@ -303,6 +311,7 @@ const capacityHistory: Record<string, { provider: 'claude' | 'codex'; watchedDay
   'codex-team.json::codex-2': { provider: 'codex', watchedDays: 12, cycles: [{ firstDays: -12, resetDays: -4, from: 55, to: 0 }, { firstDays: -3.9, resetDays: 3, from: 100, to: 30 }] },
   'codex-backup.json::codex-3': { provider: 'codex', watchedDays: 12, cycles: [] },
 };
+if (freshInstall) Object.keys(capacityHistory).forEach((account) => { delete capacityHistory[account]; });
 
 function capacityReportFor(query: CapacityQuery): CapacityReport {
   const current = Date.now();
@@ -337,7 +346,7 @@ function capacityReportFor(query: CapacityQuery): CapacityReport {
       });
     });
   });
-  return { startMs, endMs, accounts, coverage, cycles, historySinceMs: current - 12 * DAY_MS };
+  return { startMs, endMs, accounts, coverage, cycles, historySinceMs: freshInstall ? null : current - 12 * DAY_MS };
 }
 
 // An account's earlier limit windows, as get_limit_cycles reads them from the limit history: the weekly
@@ -372,6 +381,7 @@ const usageStorage = {
   recordCount: 18_420,
   oldestTimestamp: iso(-212 * DAY_MS) as string | null,
 };
+if (freshInstall) Object.assign(usageStorage, { fileBytes: 229_376, walBytes: 0, freeBytes: 0, recordCount: 0, oldestTimestamp: null });
 
 const usageRecordBytes = (usageStorage.fileBytes - usageStorage.freeBytes) / usageStorage.recordCount;
 
@@ -491,6 +501,7 @@ const usageSessions: UsageSession[] = [
     sessionThread('7b6c5d4e-3f2a-4b1c-8d9e-1f2a3b4c5d6e', 'e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a8b', 1, 'claude-haiku-4-5', sessionAgents.claudeCode, 2_880, 10, 40),
   ], 'casey-mbp'),
 ];
+if (freshInstall) usageSessions.length = 0;
 
 // Which account each mock session's requests went through: Claude sessions on the Max account, Codex ones on the team's.
 const sessionAccount = (session: UsageSession) => (session.provider === 'claude' ? 'claude-1' : 'codex-2');
@@ -947,7 +958,7 @@ export const setMockT3Enabled = (enabled: boolean) => {
 };
 
 // `?fleet=not3`: no machine has T3 Code, so neither the board nor Settings mentions it.
-const mockT3Found = fleetScenario !== 'not3';
+const mockT3Found = fleetScenario !== 'not3' && !freshInstall;
 
 let fleetReads = 0;
 
@@ -1220,7 +1231,7 @@ const mockProjectsReport = (sessions: UsageSession[], answered: boolean): Omit<S
 };
 
 export const usageAnswers: CommandAnswers<UsageCommands> = {
-  get_usage_machine_assignments: () => [
+  get_usage_machine_assignments: () => freshInstall ? [] : [
     { api_key_hash: 'a1b2', label: 'Casey laptop', machine: 'casey-mbp', pool: 'dev' },
     { api_key_hash: 'c3d4', label: 'CI runner', machine: 'ci-01', pool: 'ci' },
   ],
@@ -1230,7 +1241,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   get_limit_cycles: (args) => limitCyclesFor(args.account, args.window),
   get_capacity_report: (args) => capacityReportFor(args.query),
   get_usage_collector_status: () => {
-    if (collectorError) return { state: 'error', message: 'CPA usage queue returned HTTP 401: invalid management key', lastCollectedAt: iso(-42 * 60_000), totalRecords: usageStorage.recordCount };
+    if (collectorError) return { state: 'error', message: 'The core’s usage queue returned HTTP 401: invalid management key', lastCollectedAt: iso(-42 * 60_000), totalRecords: usageStorage.recordCount };
     return { state: coreStatus.ready ? 'collecting' : 'waiting-core', message: coreStatus.ready ? 'Collecting from 127.0.0.1:8317' : 'Waiting for the core to start', lastCollectedAt: iso(-5_000), totalRecords: usageStorage.recordCount };
   },
   get_usage_overview: (args) => usageOverviewFor(timelineBetween(args.query.start, args.query.end)),
@@ -1252,7 +1263,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
       summary: {
         sessions: pool.length, subagentThreads: total('subagents'), active: pool.filter((item) => item.active).length,
         requests: total('requests'), totalTokens: total('totalTokens'), estimatedCost: total('estimatedCost'), pricedRequests: total('pricedRequests'),
-        untrackedRequests: query.session || narrowed ? 0 : query.auth_index ? (pool.length ? 3 : 0) : query.machine ? 96 : 1_284,
+        untrackedRequests: query.session || narrowed || freshInstall ? 0 : query.auth_index ? (pool.length ? 3 : 0) : query.machine ? 96 : 1_284,
       },
       ...(query.facets ? { facets: sessionFacets(query, inRequests) } : {}),
     };
@@ -1344,7 +1355,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   get_live_sessions: () => mockLiveSessions(),
   get_fleet_sources: () => mockFleetSources(),
   // ?antiburn=missing: a Mac without Antiburn.
-  get_antiburn: () => ({ installed: params.get('antiburn') !== 'missing', thisMachine: 'casey-mbp' }),
+  get_antiburn: () => ({ installed: params.get('antiburn') !== 'missing' && !freshInstall, thisMachine: 'casey-mbp' }),
   open_antiburn: () => { mockLog('open_antiburn', null); return null; },
   get_machine_sessions: (args) => mockMachineSessions(args.query),
   get_cache_misses: ({ query }) => {
