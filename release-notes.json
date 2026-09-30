@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.3.201",
+    "summary": "Agent homes: Arbor finds where each machine's agents keep their homes, and you can add or switch any of them.",
+    "changes": [
+      "The first look at each machine adds the agent homes it finds; later looks suggest new ones.",
+      "Add a home for one machine or every machine, and choose whether Arbor reads its sessions or syncs its settings.",
+      "Sessions, the archive, Sync and alerts all read the same list of homes."
+    ]
+  },
+  {
     "version": "0.3.200",
     "summary": "Safer defaults: each new install gets its own proxy key, and the proxy core downloads only from GitHub.",
     "changes": [
