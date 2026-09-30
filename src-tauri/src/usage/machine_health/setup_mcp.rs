@@ -28,7 +28,7 @@ use ts_rs::TS;
 use super::shell::shell_quote;
 use super::setup::{covered_machine, file_name, home_agent, mcp_sum, normalized_mcp, rescan, scanned_machines, url_host, HomeAgent, MachineSetup, EMIT_FUNCTIONS, HELPERS};
 use super::setup_plugins::message;
-use super::setup_skills::home_relative;
+use super::setup_skills::{home_place, place_words};
 use super::guarded_writes::{cksum, edit_call, edit_finish, edit_outcomes, edit_start, new_stamp, run_on, ChangeKind, Edit, EditFile, EditOutcome};
 use super::setup_sync::{git, git_out, is_commit, repo_file, take_into_repo, GIT_TIMEOUT};
 use super::*;
@@ -926,10 +926,10 @@ fn read_server(name: &str, entry: &Value) -> Server {
             "homes" => {
                 let homes: Option<Vec<String>> = value
                     .as_array()
-                    .and_then(|homes| homes.iter().map(|home| home.as_str().filter(|home| home_relative(home).is_some()).map(str::to_string)).collect());
+                    .and_then(|homes| homes.iter().map(|home| home.as_str().filter(|home| home_place(home).is_some()).map(str::to_string)).collect());
                 match homes {
                     Some(homes) => server.homes = Some(homes),
-                    None => server.problems.push("homes should list homes in the machine's home folder, like \"~/.claude\"".into()),
+                    None => server.problems.push("homes should list agent homes, like \"~/.claude\" or \"/srv/agents/claude\"".into()),
                 }
             }
             "machines" => {
@@ -1020,8 +1020,6 @@ pub(crate) enum RegistryState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum RegistryBlock {
-    /// The home isn't in the machine's home folder.
-    Outside,
     /// Its name has more in it than the agents' commands take.
     Name,
     /// The repo's definition of it has problems.
@@ -1031,7 +1029,6 @@ pub(crate) enum RegistryBlock {
 impl RegistryBlock {
     fn message(self) -> &'static str {
         match self {
-            Self::Outside => "Arbor only changes homes in the machine's home folder",
             Self::Name => "Arbor only changes servers named with letters, digits, - and _",
             Self::Broken => "Fix the repo's definition of it first",
         }
@@ -1061,11 +1058,8 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
             continue;
         }
         let present = setup.home_servers(home);
-        let outside = home_relative(home).is_none();
         let mut cell = |name: &str, state: RegistryState, own: bool, broken: bool| {
-            let blocked = if outside {
-                Some(RegistryBlock::Outside)
-            } else if !is_server_name(name) {
+            let blocked = if !is_server_name(name) {
                 Some(RegistryBlock::Name)
             } else if broken {
                 Some(RegistryBlock::Broken)
@@ -1292,7 +1286,7 @@ pub(super) fn read_blocks(stdout: &str) -> Result<BTreeMap<usize, Vec<u8>>, Stri
 async fn read_homes(machine: &Machine, homes: &[(HomeAgent, String)]) -> Result<BTreeMap<usize, Vec<u8>>, String> {
     let mut script = format!("set -u\nexport LC_ALL=C\n{HELPERS}{EMIT_FUNCTIONS}");
     for (index, (agent, rel)) in homes.iter().enumerate() {
-        let dir = format!("\"$HOME\"/{}", shell_quote(rel));
+        let dir = place_words(rel, "");
         script.push_str(&format!("printf 'N\\t{index}\\n'\n"));
         match agent {
             HomeAgent::Claude => script.push_str(&format!("claude_mcp {dir}\n")),
@@ -1519,7 +1513,7 @@ fn plan(registry: &Registry, machine: &str, setup: &MachineSetup, changes: Vec<M
         if let Some(blocked) = cell.and_then(|cell| cell.blocked) {
             return Err(format!("{what}: {}", blocked.message()));
         }
-        let (Some(agent), Some(rel)) = (home_agent(setup, &change.home), home_relative(&change.home).map(str::to_string)) else {
+        let (Some(agent), Some(rel)) = (home_agent(setup, &change.home), home_place(&change.home).map(str::to_string)) else {
             return Err(format!("{} isn't a home Arbor changes on this machine", change.home));
         };
         let definition = match change.action {
@@ -1548,8 +1542,8 @@ err=$(mktemp "${TMPDIR:-/tmp}/arbor-mcp.XXXXXX") || { rm -f "$out"; exit 3; }
 trap 'rm -f "$out" "$err"' EXIT
 "##;
 
-// `claude_run dir words…` runs Claude Code for the home at $HOME/dir, or for
-// ~/.claude with an empty dir, and gives its exit code and the last line it
+// `claude_run dir words…` runs Claude Code for the home at $HOME/dir (or at dir
+// when it's a whole path), or for ~/.claude with an empty dir, and gives its exit code and the last line it
 // printed, or for a command that failed, the last it printed as an error.
 // `said n stage` gives both as the result of change n: `add` or `remove`, or
 // `taken` once a server's out to be replaced and `readd` for setting it up again.
@@ -1567,8 +1561,9 @@ fi
 claude_run() {
   dir=$1; shift
   if [ -z "$dir" ] && [ -f "$HOME/.claude/.claude.json" ]; then dir=.claude; fi
+  case $dir in /* | '') ;; *) dir=$HOME/$dir ;; esac
   if [ -n "$dir" ]; then
-    CLAUDE_CONFIG_DIR="$HOME/$dir" "$claude" "$@" </dev/null >"$out" 2>"$err"
+    CLAUDE_CONFIG_DIR="$dir" "$claude" "$@" </dev/null >"$out" 2>"$err"
   else
     "$claude" "$@" </dev/null >"$out" 2>"$err"
   fi
@@ -1585,7 +1580,7 @@ said() {
 "##;
 
 // `codex_reads n dir name` asks Codex to show server `name` for the home at
-// $HOME/dir, which it can only do once it has read the whole of config.toml.
+// $HOME/dir (or at dir when it's a whole path), which it can only do once it has read the whole of config.toml.
 // If it can't, edit n goes back (see guarded_writes).
 const CODEX_FUNCTIONS: &str = r##"codex=$(command -v codex 2>/dev/null || true)
 case "$codex" in
@@ -1598,7 +1593,8 @@ if ! "$codex" mcp --help </dev/null 2>/dev/null | grep -Eq '^[[:space:]]+get([[:
 fi
 codex_reads() {
   [ -n "$3" ] || return 0
-  CODEX_HOME="$HOME/$2" "$codex" mcp get "$3" </dev/null >/dev/null 2>&1 || put_back "$1"
+  case $2 in /*) at=$2 ;; *) at=$HOME/$2 ;; esac
+  CODEX_HOME="$at" "$codex" mcp get "$3" </dev/null >/dev/null 2>&1 || put_back "$1"
 }
 "##;
 
@@ -1640,7 +1636,7 @@ fn apply_script(stamp: &str, planned: &[Planned], writes: &[CodexWrite]) -> Stri
     }
     for (index, write) in writes.iter().enumerate() {
         let edit = Edit {
-            file: EditFile::InHome(format!("{}/config.toml", write.rel)),
+            file: EditFile::in_home(&write.rel, "config.toml"),
             before: write.before.clone(),
             content: write.content.as_bytes().to_vec(),
         };
@@ -1996,7 +1992,7 @@ pub(crate) async fn take_mcp_server(
         let inner = state.lock();
         let (target, setup) = covered_machine(&inner, &machine)?;
         let agent = home_agent(setup, &home).filter(|agent| *agent != HomeAgent::Shared);
-        let (Some(agent), Some(rel)) = (agent, home_relative(&home)) else {
+        let (Some(agent), Some(rel)) = (agent, home_place(&home)) else {
             return Err(format!("{home} isn't a home Arbor changes on this machine"));
         };
         if !setup.home_servers(&home).contains_key(name.as_str()) {
@@ -2508,7 +2504,7 @@ if grep -q broken "$CODEX_HOME/config.toml" 2>/dev/null; then echo 'Error loadin
 exit 0"#;
 
         fn planned(agent: HomeAgent, home: &str, name: &str, action: McpAction, definition: Option<Value>) -> Planned {
-            Planned { home: home.into(), agent, rel: home_relative(home).unwrap().into(), name: name.into(), action, definition, seen: None }
+            Planned { home: home.into(), agent, rel: home_place(home).unwrap().into(), name: name.into(), action, definition, seen: None }
         }
 
         #[test]
@@ -2588,7 +2584,10 @@ exit 0"#;
             let home = temp_home(&format!("codex-{shell}"));
             fake(&home, "codex", CODEX);
             let codex = home.join(".codex");
-            let proxy = home.join(".agent-app/homes/codex-proxy");
+            // A second home kept outside the home folder, named whole.
+            let outside = temp_home(&format!("codex-{shell}-srv"));
+            let proxy = outside.join("agents/codex");
+            let proxy_home = proxy.display().to_string();
             let other = home.join(".codex-other");
             for dir in [&codex, &proxy, &other] {
                 fs::create_dir_all(dir).unwrap();
@@ -2601,12 +2600,12 @@ exit 0"#;
             let context7 = json!({ "command": "npx", "args": ["-y", "@upstash/context7-mcp"] });
             let planned = vec![
                 planned(HomeAgent::Codex, "~/.codex", "context7", McpAction::Add, Some(context7.clone())),
-                planned(HomeAgent::Codex, "~/.agent-app/homes/codex-proxy", "context7", McpAction::Add, Some(context7.clone())),
+                planned(HomeAgent::Codex, &proxy_home, "context7", McpAction::Add, Some(context7.clone())),
                 planned(HomeAgent::Codex, "~/.codex-other", "context7", McpAction::Add, Some(json!({ "command": "broken" }))),
             ];
             let homes = vec![
                 (HomeAgent::Codex, ".codex".to_string()),
-                (HomeAgent::Codex, ".agent-app/homes/codex-proxy".to_string()),
+                (HomeAgent::Codex, proxy_home.clone()),
                 (HomeAgent::Codex, ".codex-other".to_string()),
             ];
             let mut files = BTreeMap::new();
@@ -2648,6 +2647,7 @@ exit 0"#;
             assert_eq!(fs::read_to_string(home.join(".arbor/setup-backups/20260926T010204Z-00bb/edits/0")).unwrap(), before);
             assert_eq!(fs::metadata(codex.join("config.toml")).unwrap().permissions().mode() & 0o777, 0o640);
             let _ = fs::remove_dir_all(&home);
+            let _ = fs::remove_dir_all(&outside);
         }
 
         #[test]

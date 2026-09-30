@@ -13,7 +13,7 @@ use super::agents::{strip_terminal_codes, AGENT_ENV};
 use ts_rs::TS;
 use super::shell::shell_quote;
 use super::setup::{covered_machine, home_agent, home_extensions, rescan, HomeAgent, ItemKind, MachineSetup};
-use super::setup_skills::home_relative;
+use super::setup_skills::home_place;
 use super::*;
 use std::collections::BTreeSet;
 
@@ -151,14 +151,14 @@ fn is_github_repo(value: &str) -> bool {
         && repo.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-/// The home's folder to give Claude Code, or None for its own ~/.claude.
+/// The home's folder to give Claude Code, as `home_place` has it, or None for its own ~/.claude.
 fn config_dir(home: &str) -> Option<String> {
-    home_relative(home).filter(|rel| *rel != ".claude").map(str::to_string)
+    home_place(home).filter(|place| *place != ".claude").map(str::to_string)
 }
 
 /// A Claude Code home the machine's last scan found.
 fn claude_home(setup: &MachineSetup, home: &str) -> Result<(), String> {
-    match (home_relative(home), home_agent(setup, home)) {
+    match (home_place(home), home_agent(setup, home)) {
         (Some(_), Some(HomeAgent::Claude)) => Ok(()),
         _ => Err(format!("{home} isn't a Claude Code home on this machine")),
     }
@@ -292,7 +292,7 @@ fn plan(setup: &MachineSetup, changes: Vec<PluginChange>, checkouts: &[String]) 
 // are, and never with a terminal to ask on, so it can't be waiting on a person
 // or take the change's words as a prompt: one too old to have these commands is
 // refused before anything runs. `change` runs one change: its number, its home's
-// folder under $HOME (empty for ~/.claude), then the words for Claude Code. It
+// folder under $HOME or whole (empty for ~/.claude), then the words for Claude Code. It
 // gives the last line Claude Code printed, which with --json is the result, or
 // for a command that failed without one, the last it printed as an error.
 const APPLY_FUNCTIONS: &str = r##"export GIT_TERMINAL_PROMPT=0 DISABLE_AUTOUPDATER=1
@@ -315,8 +315,9 @@ err=$(mktemp "${TMPDIR:-/tmp}/arbor-plugins.XXXXXX") || { rm -f "$out"; exit 3; 
 trap 'rm -f "$out" "$err"' EXIT
 change() {
   n=$1; dir=$2; shift 2
+  case $dir in /* | '') ;; *) dir=$HOME/$dir ;; esac
   if [ -n "$dir" ]; then
-    CLAUDE_CONFIG_DIR="$HOME/$dir" "$bin" "$@" </dev/null >"$out" 2>"$err"
+    CLAUDE_CONFIG_DIR="$dir" "$bin" "$@" </dev/null >"$out" 2>"$err"
   else
     "$bin" "$@" </dev/null >"$out" 2>"$err"
   fi
@@ -530,11 +531,12 @@ pub(crate) struct McpHealth {
     servers: Vec<McpServerHealth>,
 }
 
-// Follows AGENT_ENV and `dir`, the home's folder under $HOME (empty for
+// Follows AGENT_ENV and `dir`, the home's folder under $HOME or whole (empty for
 // ~/.claude). What `claude mcp list` prints goes straight into awk on the
 // machine, which keeps each server's name and a word for how it answered.
 const HEALTH_SCRIPT: &str = r##"unset CLAUDE_CONFIG_DIR
-if [ -n "$dir" ]; then CLAUDE_CONFIG_DIR="$HOME/$dir"; export CLAUDE_CONFIG_DIR; fi
+case $dir in /* | '') ;; *) dir=$HOME/$dir ;; esac
+if [ -n "$dir" ]; then CLAUDE_CONFIG_DIR=$dir; export CLAUDE_CONFIG_DIR; fi
 bin=$(command -v claude 2>/dev/null || true)
 case "$bin" in
   /*) ;;
@@ -667,7 +669,8 @@ pub(crate) struct PluginCosts {
 // into awk on the machine, which keeps the numbers and the components' names,
 // never the plugin's description or anything its MCP servers run.
 const COST_SCRIPT: &str = r##"unset CLAUDE_CONFIG_DIR
-if [ -n "$dir" ]; then CLAUDE_CONFIG_DIR="$HOME/$dir"; export CLAUDE_CONFIG_DIR; fi
+case $dir in /* | '') ;; *) dir=$HOME/$dir ;; esac
+if [ -n "$dir" ]; then CLAUDE_CONFIG_DIR=$dir; export CLAUDE_CONFIG_DIR; fi
 bin=$(command -v claude 2>/dev/null || true)
 case "$bin" in
   /*) ;;
@@ -934,8 +937,8 @@ fn codex_plan(setup: &MachineSetup, changes: Vec<CodexPluginChange>) -> Result<V
     let adding: BTreeSet<(String, String)> =
         changes.iter().filter(|change| change.action == PluginAction::AddMarketplace).map(|change| (change.home.clone(), change.target.clone())).collect();
     for change in changes {
-        let rel = match (home_relative(&change.home), home_agent(setup, &change.home)) {
-            (Some(rel), Some(HomeAgent::Codex)) => rel.to_string(),
+        let rel = match (home_place(&change.home), home_agent(setup, &change.home)) {
+            (Some(place), Some(HomeAgent::Codex)) => place.to_string(),
             _ => return Err(format!("{} isn't a Codex home on this machine", change.home)),
         };
         let what = format!("{} in {}", change.target, change.home);
@@ -995,7 +998,7 @@ fn codex_plan(setup: &MachineSetup, changes: Vec<CodexPluginChange>) -> Result<V
 }
 
 // Follows AGENT_ENV. Codex runs away from any project and without a terminal. One too old to install with --json is
-// refused before anything runs. `change` runs one change: its number, its home's folder under $HOME (empty for
+// refused before anything runs. `change` runs one change: its number, its home's folder under $HOME or whole (empty for
 // ~/.codex), then the words for Codex. It gives what Codex printed on one line: the result with --json, or the last
 // line it printed as an error.
 const CODEX_APPLY_FUNCTIONS: &str = r##"export GIT_TERMINAL_PROMPT=0
@@ -1017,8 +1020,9 @@ err=$(mktemp "${TMPDIR:-/tmp}/arbor-plugins.XXXXXX") || { rm -f "$out"; exit 3; 
 trap 'rm -f "$out" "$err"' EXIT
 change() {
   n=$1; dir=$2; shift 2
+  case $dir in /* | '') ;; *) dir=$HOME/$dir ;; esac
   if [ -n "$dir" ]; then
-    CODEX_HOME="$HOME/$dir" "$bin" "$@" </dev/null >"$out" 2>"$err"
+    CODEX_HOME="$dir" "$bin" "$@" </dev/null >"$out" 2>"$err"
   else
     "$bin" "$@" </dev/null >"$out" 2>"$err"
   fi
@@ -1609,11 +1613,12 @@ esac"#;
 
         #[test]
         fn codex_changes_each_home_it_is_pointed_at_and_an_old_codex_is_never_given_them() {
-            let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/codex")])
+            // The second home is kept outside the home folder, so it's given whole.
+            let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "/srv/agents/codex")])
                 .with_item("~/.codex", ItemKind::Plugin, "lint@tools", None, Some(true))
-                .with_item("~/.agent-app/codex", ItemKind::Marketplace, "tools", None, None);
+                .with_item("/srv/agents/codex", ItemKind::Marketplace, "tools", None, None);
             let planned = codex_plan(&setup, vec![
-                CodexPluginChange { home: "~/.agent-app/codex".into(), action: PluginAction::Install, target: "lint@tools".into(), source: None },
+                CodexPluginChange { home: "/srv/agents/codex".into(), action: PluginAction::Install, target: "lint@tools".into(), source: None },
                 CodexPluginChange { home: "~/.codex".into(), action: PluginAction::Uninstall, target: "lint@tools".into(), source: None },
                 CodexPluginChange { home: "~/.codex".into(), action: PluginAction::AddMarketplace, target: "team".into(), source: Some("acme/team".into()) },
             ])
@@ -1643,8 +1648,7 @@ esac"#,
                 assert_eq!(heard(lines[1]).0, PluginOutcome::Done, "{shell}");
                 assert_eq!(heard(lines[2]), (PluginOutcome::Failed, "plugin `lint` is busy".into()), "{shell}");
                 let calls = fs::read_to_string(home.join("calls")).unwrap();
-                let home_text = home.display().to_string();
-                assert!(calls.contains(&format!("{home_text}/.agent-app/codex|plugin add lint@tools --json")), "{shell}: {calls}");
+                assert!(calls.contains("/srv/agents/codex|plugin add lint@tools --json"), "{shell}: {calls}");
                 assert!(calls.contains("\n|plugin remove lint@tools --json"), "~/.codex is Codex's own default: {calls}");
                 assert!(calls.contains("\n|plugin marketplace add acme/team --json"), "{calls}");
 
@@ -1704,6 +1708,9 @@ esac"#,
             let output = run(shell, &home, &health_script(Some(".agent-app/homes/claude-proxy")));
             assert!(output.status.success());
             assert_eq!(fs::read_to_string(home.join("where")).unwrap(), format!("/|{}\n", home.join(".agent-app/homes/claude-proxy").display()));
+            let output = run(shell, &home, &health_script(config_dir("/srv/agents/claude").as_deref()));
+            assert!(output.status.success());
+            assert_eq!(fs::read_to_string(home.join("where")).unwrap(), "/|/srv/agents/claude\n", "a home kept elsewhere is given whole");
             let _ = fs::remove_dir_all(&home);
         }
 

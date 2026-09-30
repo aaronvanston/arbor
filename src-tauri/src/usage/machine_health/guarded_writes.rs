@@ -309,6 +309,16 @@ pub(super) enum EditFile {
 }
 
 impl EditFile {
+    /// A file within a home as `setup_skills::home_place` gives it: in the home folder, or whole for one kept elsewhere.
+    pub(super) fn in_home(place: &str, within: &str) -> Self {
+        let path = format!("{place}/{within}");
+        if place.starts_with('/') {
+            Self::Path(path)
+        } else {
+            Self::InHome(path)
+        }
+    }
+
     fn shell(&self) -> String {
         match self {
             Self::Path(path) => shell_quote(path),

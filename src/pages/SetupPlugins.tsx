@@ -122,7 +122,6 @@ const MCP_ACTION_LABEL: Record<McpAction, MessageKey> = {
 };
 
 const BLOCKED_TEXT: Record<RegistryBlock, MessageKey> = {
-  outside: 'setup.mcp.blocked.outside',
   name: 'setup.mcp.blocked.name',
   broken: 'setup.mcp.blocked.broken',
 };

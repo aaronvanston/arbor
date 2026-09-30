@@ -89,9 +89,28 @@ pub(super) fn is_skill_name(name: &str) -> bool {
 
 /// A home under the machine's home folder, as a path in it: `.claude`.
 pub(super) fn home_relative(home: &str) -> Option<&str> {
-    home.strip_prefix("~/").filter(|rel| {
-        !rel.split('/').any(|part| part.is_empty() || part == "." || part == "..") && !rel.chars().any(|c| c == '\\' || c.is_control())
-    })
+    home.strip_prefix("~/").filter(|rel| plain_path(rel))
+}
+
+/// A home as scripts take it: a path in the machine's home folder (`.claude`), or the whole path of a home kept
+/// elsewhere (`/srv/agents/claude`). Scripts tell the two apart by the leading slash.
+pub(super) fn home_place(home: &str) -> Option<&str> {
+    home_relative(home).or_else(|| home.strip_prefix('/').filter(|rest| plain_path(rest)).map(|_| home))
+}
+
+/// A path within a home from `home_place`, as shell words: from $HOME for a home in the home folder, else whole.
+pub(super) fn place_words(place: &str, within: &str) -> String {
+    let path = if within.is_empty() { place.to_string() } else { format!("{place}/{within}") };
+    if place.starts_with('/') {
+        shell_quote(&path)
+    } else {
+        format!("\"$HOME/\"{}", shell_quote(&path))
+    }
+}
+
+/// Folder names joined by slashes, with none empty and none that could lead out of where they say.
+fn plain_path(path: &str) -> bool {
+    !path.split('/').any(|part| part.is_empty() || part == "." || part == "..") && !path.chars().any(|c| c == '\\' || c.is_control())
 }
 
 /// How a place can stand before a change: nothing, a skill folder's fingerprint, or where a link leads.
@@ -117,8 +136,9 @@ impl BackupSkill {
         let ["S", action, agent, home, name, home_before, store_before] = fields else {
             return None;
         };
-        let home = format!("~/{home}");
-        if home_relative(&home).is_none() || !is_skill_name(name) || !is_state(home_before) || !is_state(store_before) {
+        // A home kept outside the home folder is listed whole; one in it, from there.
+        let home = if home.starts_with('/') { home.to_string() } else { format!("~/{home}") };
+        if home_place(&home).is_none() || !is_skill_name(name) || !is_state(home_before) || !is_state(store_before) {
             return None;
         }
         let claude = match *agent {
@@ -141,20 +161,25 @@ impl BackupSkill {
             "S\t{}\t{}\t{}\t{}\t{}\t{}\n",
             self.action.as_str(),
             if self.claude { "claude" } else { "codex" },
-            home_relative(&self.home).unwrap_or_default(),
+            home_place(&self.home).unwrap_or_default(),
             self.name,
             self.home_before,
             self.store_before
         )
     }
 
-    /// Where the skill sits in its home, as the machine has it, and as a path from the machine's home folder.
+    /// Where the skill sits in its home, as the machine has it, and as the page names it: from the machine's home
+    /// folder, or whole for a home kept elsewhere.
     fn entry(&self) -> String {
-        format!("\"$home/\"{}", shell_quote(&format!("{}/skills/{}", home_relative(&self.home).unwrap_or_default(), self.name)))
+        in_home(&self.within())
     }
 
     fn rel(&self) -> String {
-        shell_quote(&format!("{}/skills/{}", home_relative(&self.home).unwrap_or_default(), self.name))
+        shell_quote(&self.within())
+    }
+
+    fn within(&self) -> String {
+        format!("{}/skills/{}", home_place(&self.home).unwrap_or_default(), self.name)
     }
 
     fn in_store(&self) -> String {
@@ -167,14 +192,23 @@ impl BackupSkill {
     }
 }
 
+/// A path from `home_place` on, as shell words for the skill functions: under $home, or whole when it starts with /.
+fn in_home(path: &str) -> String {
+    if path.starts_with('/') {
+        shell_quote(path)
+    } else {
+        format!("\"$home/\"{}", shell_quote(path))
+    }
+}
+
 /// Checks each home's skills folder is its own, once each.
 fn own_folders(skills: &[BackupSkill]) -> String {
-    let homes: BTreeSet<&str> = skills.iter().filter_map(|skill| home_relative(&skill.home)).collect();
+    let homes: BTreeSet<&str> = skills.iter().filter_map(|skill| home_place(&skill.home)).collect();
     homes
         .into_iter()
         .map(|home| {
-            let folder = shell_quote(&format!("{home}/skills"));
-            format!("own_folder \"$home/\"{folder} {folder}\n")
+            let folder = format!("{home}/skills");
+            format!("own_folder {} {}\n", in_home(&folder), shell_quote(&folder))
         })
         .collect()
 }
@@ -196,7 +230,7 @@ fn plan(setup: &setup::MachineSetup, changes: Vec<SkillChange>) -> Result<Vec<Ba
     let mut planned = Vec::with_capacity(changes.len());
     for change in changes {
         let where_ = format!("{}/skills/{}", change.home, change.name);
-        if home_relative(&change.home).is_none() || !is_skill_name(&change.name) {
+        if home_place(&change.home).is_none() || !is_skill_name(&change.name) {
             return Err(format!("Arbor doesn't change skills at {where_}"));
         }
         let claude = match home_agent(setup, &change.home) {
@@ -434,9 +468,10 @@ mod tests {
         for bad in ["", ".hidden", "..", "a/b", "a\\b", "a\tb", "a\nb"] {
             assert!(!is_skill_name(bad), "{bad:?}");
         }
-        assert_eq!(home_relative("~/.agent-app/homes/claude-proxy"), Some(".agent-app/homes/claude-proxy"));
-        for bad in ["/opt/claude", "~/../x", "~/.claude/", "~//x", "~"] {
-            assert!(home_relative(bad).is_none(), "{bad}");
+        assert_eq!(home_place("~/.agent-app/homes/claude-proxy"), Some(".agent-app/homes/claude-proxy"));
+        assert_eq!(home_place("/srv/agents/claude"), Some("/srv/agents/claude"), "a home kept elsewhere is taken whole");
+        for bad in ["~/../x", "~/.claude/", "~//x", "~", "/", "/srv/../etc", "/srv//x", "srv/agents", "/srv/a\nb"] {
+            assert!(home_place(bad).is_none(), "{bad:?}");
         }
         for good in ["-", SUM, "Dc123-45", "L~/.agents/skills/pdf", "L/opt/skills/pdf"] {
             assert!(is_state(good), "{good}");
@@ -487,9 +522,9 @@ mod tests {
             (parse_outcome(&String::from_utf8_lossy(&output.stdout)), String::from_utf8_lossy(&output.stderr).into_owned())
         }
 
-        /// How a place stands, as the scan and the checks give it.
+        /// How a place stands, as the scan and the checks give it: in the home folder, or whole.
         fn place(shell: &str, home: &Path, path: &str) -> String {
-            let script = format!("set -u\nexport LC_ALL=C\n{HELPERS}{SKILL_FUNCTIONS}place \"$home/\"{}\n", shell_quote(path));
+            let script = format!("set -u\nexport LC_ALL=C\n{HELPERS}{SKILL_FUNCTIONS}place {}\n", in_home(path));
             let mut command = std::process::Command::new(shell);
             let output = command.env_clear().env("HOME", home).env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin").arg("-c").arg(script).output().unwrap();
             String::from_utf8_lossy(&output.stdout).into_owned()
@@ -559,7 +594,11 @@ mod tests {
                     sum(".codex/skills/codex-only"),
                 );
                 let gone = "L~/src/elsewhere".to_string();
-                let second = "~/.agent-app/homes/claude-proxy";
+                // A second Claude Code home kept outside the home folder.
+                let outside = temp_home(&format!("apply-{shell}-srv"));
+                let second = format!("{}/agents/claude", outside.display());
+                let second_notes = format!("{second}/skills/notes");
+                let second = second.as_str();
                 let skills = [
                     // Adopting goes first, so the link after it can lead to the store's copy.
                     planned("~/.claude", "notes", SkillAction::Adopt, true, &notes, "-"),
@@ -590,7 +629,7 @@ mod tests {
                 assert_eq!(place(shell, &home, ".codex/skills/codex-only"), "-", "{shell}: Codex loads it from the store");
                 assert_eq!(place(shell, &home, ".agents/skills/codex-only"), codex_only, "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/pdf"), store("pdf"), "{shell}");
-                assert_eq!(place(shell, &home, ".agent-app/homes/claude-proxy/skills/notes"), store("notes"), "{shell}");
+                assert_eq!(place(shell, &home, &second_notes), store("notes"), "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/gone"), "-", "{shell}");
                 let kept = at(".arbor/setup-backups/20260925T090000Z-0002");
                 assert_eq!(folder_sum(&kept.join("skills/1/store")), design, "{shell}: the store's copy is kept");
@@ -601,14 +640,14 @@ mod tests {
                 assert_eq!(listed[0].skills, skills.to_vec(), "{shell}: the list reads back as it was made");
 
                 // Undoing waits until every skill is as the change left it.
-                fs::remove_file(at(".agent-app/homes/claude-proxy/skills/notes")).unwrap();
-                skill(&at(".agent-app/homes/claude-proxy/skills/notes"), "Edited since.");
+                fs::remove_file(&second_notes).unwrap();
+                skill(Path::new(&second_notes), "Edited since.");
                 let (blocked, _) = run_in(shell, &home, &setup_sync::undo_script(&listed[0]));
-                assert_eq!(blocked.failed.iter().map(|failure| failure.path.as_str()).collect::<Vec<_>>(), ["~/.agent-app/homes/claude-proxy/skills/notes"]);
+                assert_eq!(blocked.failed.iter().map(|failure| failure.path.as_str()).collect::<Vec<_>>(), [second_notes.as_str()]);
                 assert_eq!(place(shell, &home, ".claude/skills/pdf"), store("pdf"), "{shell}: nothing undone");
 
-                fs::remove_dir_all(at(".agent-app/homes/claude-proxy/skills/notes")).unwrap();
-                symlink(at(".agents/skills/notes"), at(".agent-app/homes/claude-proxy/skills/notes")).unwrap();
+                fs::remove_dir_all(&second_notes).unwrap();
+                symlink(at(".agents/skills/notes"), &second_notes).unwrap();
                 let (undone, _) = run_in(shell, &home, &setup_sync::undo_script(&listed[0]));
                 assert!(undone.failed.is_empty(), "{shell}: {:?}", undone.failed);
                 assert_eq!(place(shell, &home, ".claude/skills/notes"), notes, "{shell}");
@@ -618,10 +657,11 @@ mod tests {
                 assert_eq!(place(shell, &home, ".codex/skills/codex-only"), codex_only, "{shell}");
                 assert_eq!(place(shell, &home, ".agents/skills/codex-only"), "-", "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/pdf"), pdf, "{shell}");
-                assert_eq!(place(shell, &home, ".agent-app/homes/claude-proxy/skills/notes"), "-", "{shell}");
+                assert_eq!(place(shell, &home, &second_notes), "-", "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/gone"), format!("L{}/src/elsewhere", home.display()), "{shell}");
                 assert!(backups_in(shell, &home)[0].undone_at_ms.is_some(), "{shell}");
                 let _ = fs::remove_dir_all(&home);
+                let _ = fs::remove_dir_all(&outside);
             }
         }
 

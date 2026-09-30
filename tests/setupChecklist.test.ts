@@ -271,7 +271,7 @@ describe('MCP servers from the repo', () => {
   });
 
   it('plans the servers to add and update on this machine, and counts ones it can’t', () => {
-    const found = registry([cell('linear', 'add'), cell('sentry', 'same'), cell('bad', 'add', 'outside')]);
+    const found = registry([cell('linear', 'add'), cell('sentry', 'same'), cell('bad', 'add', 'broken')]);
     const step = mcpStep(fresh, '/repo', found, null, withRegistry(extensionsView(machines, {}, NOW), found));
     expect(step.plan.map((change) => [change.name, change.action])).toEqual([['linear', 'add']]);
     expect(step).toMatchObject({ state: 'todo', blocked: 1 });

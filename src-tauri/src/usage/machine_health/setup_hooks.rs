@@ -26,9 +26,8 @@ use super::guarded_writes::run_on;
 use super::setup::{covered_machine, home_agent, rescan, hook_script, hook_sum, is_script_name, read_text, scanned_item, scanned_machines, HomeAgent, ItemKind, MachineSetup, EMIT_FUNCTIONS, HELPERS, HOOK_RUNNERS};
 use super::agents::AgentKind;
 use super::setup_mcp::{holds_secret, read_blocks};
-use super::setup_skills::home_relative;
+use super::setup_skills::{home_place, place_words};
 use super::setup_sync::{git, git_out, is_commit, repo_file, take_into_repo, GIT_TIMEOUT};
-use super::shell::shell_quote;
 use super::*;
 use std::collections::BTreeSet;
 use ts_rs::TS;
@@ -193,10 +192,10 @@ fn read_hook(name: &str, entry: &Value, scripts: &BTreeSet<String>) -> Hook {
             "homes" => {
                 let homes: Option<Vec<String>> = value
                     .as_array()
-                    .and_then(|homes| homes.iter().map(|home| home.as_str().filter(|home| home_relative(home).is_some()).map(str::to_string)).collect());
+                    .and_then(|homes| homes.iter().map(|home| home.as_str().filter(|home| home_place(home).is_some()).map(str::to_string)).collect());
                 match homes {
                     Some(homes) => hook.homes = Some(homes),
-                    None => hook.problems.push("homes should list homes in the machine's home folder, like \"~/.claude\"".into()),
+                    None => hook.problems.push("homes should list agent homes, like \"~/.claude\" or \"/srv/agents/claude\"".into()),
                 }
             }
             "removed" => match value.as_bool() {
@@ -295,8 +294,6 @@ pub(crate) enum HookState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum HookBlock {
-    /// The home isn't in the machine's home folder.
-    Outside,
     /// The repo's hook has problems.
     Broken,
 }
@@ -333,7 +330,6 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
     for (agent, home) in setup.agent_homes() {
         let Some(agent) = hook_agent(agent) else { continue };
         let found = setup.home_hooks(home);
-        let outside = home_relative(home).is_none();
         for hook in &registry.hooks {
             let Some(script) = hook.script() else { continue };
             let there: Vec<&str> = found.iter().filter(|found| found.event == hook.event && found.script == script).map(|found| found.sum.as_str()).collect();
@@ -344,13 +340,7 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
                 (false, []) => continue,
                 (false, _) => HookState::Extra,
             };
-            let blocked = if outside {
-                Some(HookBlock::Outside)
-            } else if !hook.problems.is_empty() {
-                Some(HookBlock::Broken)
-            } else {
-                None
-            };
+            let blocked = (!hook.problems.is_empty()).then_some(HookBlock::Broken);
             cells.push(HookCell { machine: machine.to_string(), agent, home: home.to_string(), name: Some(hook.name.clone()), event: hook.event.clone(), script: script.to_string(), state, blocked });
         }
         let mut listed = BTreeSet::new();
@@ -367,7 +357,7 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
                 event: found.event.clone(),
                 script: found.script.clone(),
                 state: HookState::Extra,
-                blocked: outside.then_some(HookBlock::Outside),
+                blocked: None,
             });
         }
     }
@@ -677,7 +667,7 @@ pub(crate) async fn take_hook(
     let (target, agent, rel, home_dir) = {
         let inner = state.lock();
         let (target, setup) = covered_machine(&inner, &machine)?;
-        let (Some(agent), Some(rel)) = (home_agent(setup, &home).and_then(hook_agent), home_relative(&home)) else {
+        let (Some(agent), Some(rel)) = (home_agent(setup, &home).and_then(hook_agent), home_place(&home)) else {
             return Err(format!("{home} isn't a Claude Code or Codex home Arbor changes on this machine"));
         };
         if !setup.home_hooks(&home).iter().any(|found| found.event == event && found.script == script) {
@@ -689,7 +679,7 @@ pub(crate) async fn take_hook(
         AgentKind::Claude => (MachineOp::ClaudeSettingsRead, "settings.json"),
         AgentKind::Codex => (MachineOp::CodexSettingsRead, "hooks.json"),
     };
-    let read = format!("set -u\nexport LC_ALL=C\n{HELPERS}{EMIT_FUNCTIONS}printf 'N\\t0\\n'\nemit_data settings \"$HOME\"/{}/{file_name}\nprintf 'E\\n'\n", shell_quote(&rel));
+    let read = format!("set -u\nexport LC_ALL=C\n{HELPERS}{EMIT_FUNCTIONS}printf 'N\\t0\\n'\nemit_data settings {}\nprintf 'E\\n'\n", place_words(&rel, file_name));
     let files = read_blocks(&run_on(&target, op, &read).await?)?;
     let settings = files.get(&0).and_then(|bytes| serde_json::from_slice::<Value>(bytes).ok()).ok_or_else(|| format!("Arbor couldn't read {home}/{file_name} on {machine}"))?;
     let (matcher, handler) = find_handler(&settings, &event, &script, &home_dir).ok_or_else(|| format!("That hook isn't in {home} on {machine} any more. Scan again."))?;
@@ -757,7 +747,7 @@ fn machine_plan(registry: &Registry, machine: &str, setup: &MachineSetup) -> Res
     let mut homes = Vec::new();
     for (agent, home) in setup.agent_homes() {
         let Some(agent) = hook_agent(agent) else { continue };
-        if home_relative(home).is_none() {
+        if home_place(home).is_none() {
             continue;
         }
         if cells.iter().filter(|cell| cell.home == home).all(|cell| cell.state == HookState::Same) {

@@ -2208,7 +2208,6 @@ export const en = {
   'setup.mcp.cell.extraHint': 'The repo doesn’t have it in this home.',
   'setup.mcp.cell.own': 'Own',
   'setup.mcp.cell.ownHint': 'As the repo defines it for {machine} alone.',
-  'setup.mcp.blocked.outside': 'Arbor only changes homes in the machine’s home folder.',
   'setup.mcp.blocked.name': 'Arbor only changes servers named with letters, digits, - and _.',
   'setup.mcp.blocked.broken': 'Fix the repo’s definition of it first.',
   'setup.mcp.action.add': 'Set up from the repo',

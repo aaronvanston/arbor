@@ -1174,7 +1174,7 @@ export type HomeAgent = "claude" | "codex" | "shared";
 /**
  * Why Arbor won't change a home's hook.
  */
-export type HookBlock = "outside" | "broken";
+export type HookBlock = "broken";
 
 export type HookCell = {
   machine: string,
@@ -2559,7 +2559,7 @@ export type RecoveredOverlap = {
 /**
  * Why Arbor won't change a home's server.
  */
-export type RegistryBlock = "outside" | "name" | "broken";
+export type RegistryBlock = "name" | "broken";
 
 export type RegistryCell = {
   machine: string,

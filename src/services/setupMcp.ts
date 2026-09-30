@@ -94,7 +94,6 @@ export const canTake = (cell: McpCell) =>
       && cell.item
       && cell.repo
       && (cell.repo.state === 'update' || cell.repo.state === 'extra')
-      && cell.repo.blocked !== 'outside'
       && cell.repo.blocked !== 'name',
   );
 
