@@ -1185,48 +1185,48 @@ mod tests {
 
     #[test]
     fn a_codex_change_fits_the_home_as_scanned_and_leaves_the_apps_own_plugins_alone() {
-        let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.t3/codex"), (HomeAgent::Claude, "~/.claude")])
+        let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/codex"), (HomeAgent::Claude, "~/.claude")])
             .with_item("~/.codex", ItemKind::Marketplace, "tools", None, None)
             .with_item("~/.codex", ItemKind::Marketplace, "openai-bundled", None, None)
             .with_item("~/.codex", ItemKind::Plugin, "lint@tools", None, Some(true))
             .with_item("~/.codex", ItemKind::Plugin, "paper@tools", None, Some(false))
             .with_item("~/.codex", ItemKind::Plugin, "chrome@openai-bundled", None, Some(true))
-            .with_item("~/.t3/codex", ItemKind::Marketplace, "tools", None, None);
+            .with_item("~/.agent-app/codex", ItemKind::Marketplace, "tools", None, None);
         let change = |home: &str, action: PluginAction, target: &str| CodexPluginChange { home: home.into(), action, target: target.into(), source: None };
         let planned = codex_plan(&setup, vec![
             change("~/.codex", PluginAction::Enable, "paper@tools"),
-            change("~/.t3/codex", PluginAction::Install, "lint@tools"),
+            change("~/.agent-app/codex", PluginAction::Install, "lint@tools"),
             change("~/.codex", PluginAction::Uninstall, "lint@tools"),
         ])
         .unwrap();
         // Codex's own command runs first; turning on is a config edit after it.
         assert_eq!(
             planned.iter().map(|change| (change.action, change.codex_home.as_deref())).collect::<Vec<_>>(),
-            [(PluginAction::Install, Some(".t3/codex")), (PluginAction::Uninstall, None), (PluginAction::Enable, None)]
+            [(PluginAction::Install, Some(".agent-app/codex")), (PluginAction::Uninstall, None), (PluginAction::Enable, None)]
         );
         let script = codex_apply_script(&planned);
-        assert!(script.contains("change 0 '.t3/codex' plugin add 'lint@tools' --json") && script.contains("change 1 '' plugin remove 'lint@tools' --json"));
+        assert!(script.contains("change 0 '.agent-app/codex' plugin add 'lint@tools' --json") && script.contains("change 1 '' plugin remove 'lint@tools' --json"));
         assert!(!script.contains("paper"), "turning on isn't a command");
 
         let refused = |action: PluginAction, home: &str, target: &str| codex_plan(&setup, vec![change(home, action, target)]).unwrap_err();
         assert!(refused(PluginAction::Disable, "~/.codex", "chrome@openai-bundled").contains("app's own"));
         assert!(refused(PluginAction::Install, "~/.codex", "lint@tools").contains("can't install"));
         assert!(refused(PluginAction::Enable, "~/.codex", "lint@tools").contains("can't turn on"));
-        assert!(refused(PluginAction::Install, "~/.t3/codex", "x@elsewhere").contains("can't install"));
+        assert!(refused(PluginAction::Install, "~/.agent-app/codex", "x@elsewhere").contains("can't install"));
         assert!(refused(PluginAction::Update, "~/.codex", "lint@tools").contains("can't update"));
         assert!(refused(PluginAction::Uninstall, "~/.claude", "lint@tools").contains("isn't a Codex home"));
         assert!(codex_plan(&setup, vec![change("~/.codex", PluginAction::Disable, "lint@tools"), change("~/.codex", PluginAction::Uninstall, "lint@tools")]).unwrap_err().contains("twice"));
 
         // A home without the marketplace gets it first, from its GitHub repository, then the plugin from it.
         let add = |home: &str, name: &str, source: Option<&str>| CodexPluginChange { home: home.into(), action: PluginAction::AddMarketplace, target: name.into(), source: source.map(Into::into) };
-        let planned = codex_plan(&setup, vec![change("~/.t3/codex", PluginAction::Install, "sketch@team"), add("~/.t3/codex", "team", Some("acme/codex-plugins"))]).unwrap();
+        let planned = codex_plan(&setup, vec![change("~/.agent-app/codex", PluginAction::Install, "sketch@team"), add("~/.agent-app/codex", "team", Some("acme/codex-plugins"))]).unwrap();
         assert_eq!(planned.iter().map(|change| change.action).collect::<Vec<_>>(), [PluginAction::AddMarketplace, PluginAction::Install]);
-        assert!(codex_apply_script(&planned).contains("change 0 '.t3/codex' plugin marketplace add 'acme/codex-plugins' --json\nchange 1 '.t3/codex' plugin add 'sketch@team' --json"));
+        assert!(codex_apply_script(&planned).contains("change 0 '.agent-app/codex' plugin marketplace add 'acme/codex-plugins' --json\nchange 1 '.agent-app/codex' plugin add 'sketch@team' --json"));
         assert!(codex_plan(&setup, vec![add("~/.codex", "tools", Some("acme/tools"))]).unwrap_err().contains("there already"));
-        assert!(codex_plan(&setup, vec![add("~/.t3/codex", "team", Some("https://example.com/x.git"))]).unwrap_err().contains("GitHub"));
-        assert!(codex_plan(&setup, vec![add("~/.t3/codex", "team", None)]).unwrap_err().contains("GitHub"));
-        assert!(codex_plan(&setup, vec![add("~/.t3/codex", "openai-bundled", Some("acme/x"))]).unwrap_err().contains("app's own"));
-        assert!(codex_plan(&setup, vec![add("~/.t3/codex", "-x", Some("acme/x"))]).is_err());
+        assert!(codex_plan(&setup, vec![add("~/.agent-app/codex", "team", Some("https://example.com/x.git"))]).unwrap_err().contains("GitHub"));
+        assert!(codex_plan(&setup, vec![add("~/.agent-app/codex", "team", None)]).unwrap_err().contains("GitHub"));
+        assert!(codex_plan(&setup, vec![add("~/.agent-app/codex", "openai-bundled", Some("acme/x"))]).unwrap_err().contains("app's own"));
+        assert!(codex_plan(&setup, vec![add("~/.agent-app/codex", "-x", Some("acme/x"))]).is_err());
     }
 
     #[test]
@@ -1609,11 +1609,11 @@ esac"#;
 
         #[test]
         fn codex_changes_each_home_it_is_pointed_at_and_an_old_codex_is_never_given_them() {
-            let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.t3/codex")])
+            let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/codex")])
                 .with_item("~/.codex", ItemKind::Plugin, "lint@tools", None, Some(true))
-                .with_item("~/.t3/codex", ItemKind::Marketplace, "tools", None, None);
+                .with_item("~/.agent-app/codex", ItemKind::Marketplace, "tools", None, None);
             let planned = codex_plan(&setup, vec![
-                CodexPluginChange { home: "~/.t3/codex".into(), action: PluginAction::Install, target: "lint@tools".into(), source: None },
+                CodexPluginChange { home: "~/.agent-app/codex".into(), action: PluginAction::Install, target: "lint@tools".into(), source: None },
                 CodexPluginChange { home: "~/.codex".into(), action: PluginAction::Uninstall, target: "lint@tools".into(), source: None },
                 CodexPluginChange { home: "~/.codex".into(), action: PluginAction::AddMarketplace, target: "team".into(), source: Some("acme/team".into()) },
             ])
@@ -1644,7 +1644,7 @@ esac"#,
                 assert_eq!(heard(lines[2]), (PluginOutcome::Failed, "plugin `lint` is busy".into()), "{shell}");
                 let calls = fs::read_to_string(home.join("calls")).unwrap();
                 let home_text = home.display().to_string();
-                assert!(calls.contains(&format!("{home_text}/.t3/codex|plugin add lint@tools --json")), "{shell}: {calls}");
+                assert!(calls.contains(&format!("{home_text}/.agent-app/codex|plugin add lint@tools --json")), "{shell}: {calls}");
                 assert!(calls.contains("\n|plugin remove lint@tools --json"), "~/.codex is Codex's own default: {calls}");
                 assert!(calls.contains("\n|plugin marketplace add acme/team --json"), "{calls}");
 
@@ -1701,9 +1701,9 @@ esac"#,
             );
             assert_eq!(fs::read_to_string(home.join("where")).unwrap(), "/|\n", "run for ~/.claude, away from any project");
 
-            let output = run(shell, &home, &health_script(Some(".t3/provider-homes/claude-proxy")));
+            let output = run(shell, &home, &health_script(Some(".agent-app/homes/claude-proxy")));
             assert!(output.status.success());
-            assert_eq!(fs::read_to_string(home.join("where")).unwrap(), format!("/|{}\n", home.join(".t3/provider-homes/claude-proxy").display()));
+            assert_eq!(fs::read_to_string(home.join("where")).unwrap(), format!("/|{}\n", home.join(".agent-app/homes/claude-proxy").display()));
             let _ = fs::remove_dir_all(&home);
         }
 

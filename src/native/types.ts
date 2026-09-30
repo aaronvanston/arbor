@@ -2908,7 +2908,7 @@ export type SessionTranscript = {
    */
   home: string,
   /**
-   * The agent home the transcript is in, under ~ as Setup writes homes: `~/.claude`, or a T3 Code provider home.
+   * The agent home the transcript is in, under ~ as Setup writes homes: `~/.claude`, or another home on the machine's agent homes list.
    * Empty until a scan has said.
    */
   agentHome: string,

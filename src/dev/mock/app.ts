@@ -94,19 +94,19 @@ export function pressMockZoom(key: '=' | '-' | '0') {
 const phoneSecrets: Record<PhoneAlertSecret, string> = { ntfyToken: '', pushoverUserKey: '', pushoverAppToken: '', telegramBotToken: '', webhookUrl: '' };
 
 const PHONE_SECRETS_UNREADABLE =
-  "The saved alert secrets in /Users/casey/Library/Application Support/EasyCLIProxyAPI/phone-alert-secrets.json can't be read. Delete the file and enter them again.";
+  "The saved alert secrets in /Users/casey/Library/Application Support/onl.arbor.app/phone-alert-secrets.json can't be read. Delete the file and enter them again.";
 const phoneSecretStatus = () =>
   Object.fromEntries(PHONE_ALERT_SECRETS.map((secret) => [secret, Boolean(phoneSecrets[secret])])) as Record<PhoneAlertSecret, boolean>;
 
 // Release notes as the update feed gives them, newest first.
 function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[] } {
   const scenario = params.get('appnotes');
-  if (scenario === 'none') return { latestVersion: '0.2.81', releases: [] };
+  if (scenario === 'none') return { latestVersion: '0.3.201', releases: [] };
   if (scenario === 'long') {
     return {
-      latestVersion: '0.2.88',
+      latestVersion: '0.3.208',
       releases: Array.from({ length: 9 }, (_, index) => {
-        const version = `0.2.${88 - index}`;
+        const version = `0.3.${208 - index}`;
         const changes = Array.from({ length: index === 0 ? 11 : 3 }, (__, change) => `Change ${change + 1} in ${version}`);
         if (index === 1) changes.unshift(`Keep every account’s limits readable when a provider sends a reset time far in the future, a window Arbor hasn’t seen before and a plan name it doesn’t recognize, so the Accounts page, the sidebar limits and the capacity report all agree instead of showing three different answers for the same account`);
         return { version, changes };
@@ -114,10 +114,10 @@ function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[] } 
     };
   }
   return {
-    latestVersion: '0.2.81',
+    latestVersion: '0.3.201',
     releases: [
       {
-        version: '0.2.81',
+        version: '0.3.201',
         summary: 'Updates now show what they change.',
         changes: [
           'Show what an update changes beside the update pill',
@@ -125,15 +125,15 @@ function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[] } 
           'Record each release on GitHub with its DMG',
           'Install the update the feed has now, not the one from the last check',
           'Install the newer core an Arbor update brings',
-          'Bundle core 7.3.17',
+          'Bundle core 8.0.5',
           'Name a session’s state the same way everywhere on Home and Sessions',
           'Keep a plan ready on the board until it’s acted on',
           'Wake a snoozed thread when it asks for another approval',
           'Say when a stopped thread was last active',
         ],
       },
-      { version: '0.2.80', changes: ['Already installed, so not shown'] },
-      { version: '0.2.79', changes: ['Older still'] },
+      { version: '0.3.200', changes: ['Already installed, so not shown'] },
+      { version: '0.3.199', changes: ['Older still'] },
     ],
   };
 }
@@ -152,7 +152,7 @@ export const appAnswers: CommandAnswers<AppCommands> = {
     mockLog('open_external_url', args.url);
     return null;
   },
-  check_app_update: () => { mockLog('check_app_update', null); return { currentVersion: '0.2.80', updateAvailable: true, releaseUrl: 'https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.2.80', autoUpdateSupported: true, downloadSizeBytes: 48_120_000, unsupportedReason: null, bundledCoreVersion: '6.8.21', ...mockAppReleases() }; },
+  check_app_update: () => { mockLog('check_app_update', null); return { currentVersion: '0.3.200', updateAvailable: true, releaseUrl: 'https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.3.201', autoUpdateSupported: true, downloadSizeBytes: 48_120_000, unsupportedReason: null, bundledCoreVersion: '8.0.4', ...mockAppReleases() }; },
   get_app_update_task: () => ({ running: false, cancelable: false, phase: 'idle', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null }),
   start_app_update: () => {
     mockLog('start_app_update', null);
@@ -164,7 +164,7 @@ export const appAnswers: CommandAnswers<AppCommands> = {
       window.setTimeout(() => void emit('app-update-progress', { ...checking, running: false, cancelable: false, phase: 'failed', message: 'There’s no update to install anymore; check for updates again' }), 1_200);
     } else if (params.get('appupdate') === 'fail') {
       const task = (phase: string, message: string | null = null) => ({
-        running: phase !== 'failed', cancelable: phase === 'downloading', phase, targetVersion: '0.2.81',
+        running: phase !== 'failed', cancelable: phase === 'downloading', phase, targetVersion: '0.3.201',
         downloadedBytes: 12_000_000, totalBytes: 48_120_000, percent: 25, message,
       });
       window.setTimeout(() => void emit('app-update-progress', checking), 100);

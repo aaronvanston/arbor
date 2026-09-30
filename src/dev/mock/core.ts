@@ -137,9 +137,9 @@ export let coreStatus: CoreStatus = {
   starting: false,
   managed: true,
   processId: coreProcessUp ? 48213 : null,
-  currentVersion: coreScenario === 'missing' ? null : 'v6.8.21',
-  installDir: '/Users/casey/Library/Application Support/EasyCLIProxyAPI/core',
-  binaryPath: coreScenario === 'missing' ? null : '/Users/casey/Library/Application Support/EasyCLIProxyAPI/core/cli-proxy-api',
+  currentVersion: coreScenario === 'missing' ? null : 'v8.0.4',
+  installDir: '/Users/casey/Library/Application Support/onl.arbor.app/core',
+  binaryPath: coreScenario === 'missing' ? null : '/Users/casey/Library/Application Support/onl.arbor.app/core/cli-proxy-api',
   message: '',
 };
 
@@ -200,7 +200,7 @@ let oauthLogin: { provider: string; polls: number } | null = null;
  */
 const signInScenario = params.get('signin');
 
-const authDir = '/Users/casey/Library/Application Support/EasyCLIProxyAPI/auths';
+const authDir = '/Users/casey/Library/Application Support/onl.arbor.app/auths';
 
 /** A credential file as the core lists it: on disk, OAuth, with a path. */
 const fileEntry = (name: string, fields: Json): Json => ({
@@ -569,26 +569,26 @@ function managementRequest(request: ManagementRequest): unknown {
 // Release notes as GitHub's releases feed gives them, newest first.
 function mockCoreReleases(): { version: string; releases: ReleaseNotes[] } {
   const scenario = params.get('corenotes');
-  if (scenario === 'none') return { version: 'v6.8.22', releases: [] };
+  if (scenario === 'none') return { version: 'v8.0.5', releases: [] };
   const release = (version: string, changes: string[]) => ({ version, changes });
-  const newest = release('v6.8.22', [
+  const newest = release('v8.0.5', [
     'fix(codex): send the ChatGPT routing hint native Codex sends',
     'fix(claude): align 2.1.280 fingerprint & thinking visibility (#6096)',
     'fix(api): immediately close connections on stop and guard state access',
   ]);
   if (scenario === 'long') {
     return {
-      version: 'v6.8.25',
+      version: 'v8.0.8',
       releases: [
-        release('v6.8.25', ['feat(executor): support resolved thinking for xAI responses']),
-        release('v6.8.24', ['fix(registry): keep request context active until the body is read', 'fix(translator): sanitize tool names for Claude']),
-        release('v6.8.23', ['fix(auth): reduce stream rewrite log noise']),
+        release('v8.0.8', ['feat(executor): support resolved thinking for xAI responses']),
+        release('v8.0.7', ['fix(registry): keep request context active until the body is read', 'fix(translator): sanitize tool names for Claude']),
+        release('v8.0.6', ['fix(auth): reduce stream rewrite log noise']),
         newest,
-        release('v6.8.21', ['Already installed, so not shown']),
+        release('v8.0.4', ['Already installed, so not shown']),
       ],
     };
   }
-  return { version: 'v6.8.22', releases: [newest, release('v6.8.21', ['Already installed, so not shown'])] };
+  return { version: 'v8.0.5', releases: [newest, release('v8.0.4', ['Already installed, so not shown'])] };
 }
 
 // With `?corecmd=fail`, starting, stopping and restarting the core fail.
@@ -690,7 +690,7 @@ export const coreAnswers: CommandAnswers<CoreCommands> = {
   get_core_install_task: () => installTask,
   install_core_version: (args) => {
     mockLog('install_core_version', args);
-    const version = args.version ?? 'v6.8.22';
+    const version = args.version ?? 'v8.0.5';
     installTask = { running: true, cancelable: true, phase: 'downloading', percent: 42, downloaded: 20_000_000, total: 48_000_000, message: null, result: null };
     if (params.get('install') === 'fail') {
       return new Promise((_, reject) => window.setTimeout(() => {

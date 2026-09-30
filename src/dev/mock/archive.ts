@@ -22,7 +22,7 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
 // A new install has no archive, and so no other machines, backups or counts in one.
 const archiveScenario = params.get('archive') ?? (freshInstall ? 'off' : 'ok');
 
-const archiveRoot = '/Volumes/Archive/arbor-session-archive.noindex';
+const archiveRoot = '/Volumes/Backup/arbor-session-archive.noindex';
 // `?archive=own-disk`: kept on this Mac's own disk.
 const OWN_DISK_ROOT = '/Users/casey/Arbor Session Archive.noindex';
 
@@ -72,12 +72,12 @@ function mockArchiveImports(scenario: string): ArchiveImport[] {
   const started = now - 3 * 86_400_000;
   return [
     {
-      id: 3, path: '/Volumes/Archive/Codex Backups/old-mac', machine: 'mac-mini', machines: ['mac-mini'], homes: 5,
+      id: 3, path: '/Volumes/Backup/Mac backups/old-mac', machine: 'mac-mini', machines: ['mac-mini'], homes: 5,
       files: importsScenario === 'starting' ? 0 : 9_034, kept: importsScenario === 'starting' ? 0 : 3_702, sessions: importsScenario === 'starting' ? 0 : 1_880,
       addedAt: now - 20 * 60_000, finishedAt: null, connected: importsScenario !== 'away', failures: 0, error: null,
     },
     {
-      id: 2, path: '/Volumes/Archive/Old files/dot-claude', machine: 'mac-mini', machines: ['mac-mini'], homes: 1,
+      id: 2, path: '/Volumes/Backup/Old files/dot-claude', machine: 'mac-mini', machines: ['mac-mini'], homes: 1,
       files: 12_480, kept: importsScenario === 'failed' ? 12_477 : 12_480, sessions: 1_618, addedAt: started, finishedAt: started + 41 * 60_000, connected: true,
       failures: importsScenario === 'failed' ? 3 : 0, error: importsScenario === 'failed' ? 'Couldn’t read a session file: Permission denied (os error 13)' : null,
     },
@@ -138,7 +138,7 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
     archiveId: 'mock-archive',
     main: scenario === 'own-disk'
       ? { root: OWN_DISK_ROOT, connected, mountPoint: '/', freeBytes: 212_000_000_000, noowners: false, lastSeenAt }
-      : { root: archiveRoot, connected, mountPoint: connected ? '/Volumes/Archive' : null, freeBytes: connected ? 1_240_000_000_000 : null, noowners: scenario === 'noowners', lastSeenAt },
+      : { root: archiveRoot, connected, mountPoint: connected ? '/Volumes/Backup' : null, freeBytes: connected ? 1_240_000_000_000 : null, noowners: scenario === 'noowners', lastSeenAt },
     sources: archiveHomes(share),
     machines: fleetRuns(share),
     imports: mockArchiveImports(scenario),
@@ -166,14 +166,14 @@ function mockFolderCheck(path: string): FolderCheck {
   const ownDisk = path.startsWith('/Users') || path.startsWith('/Library');
   const kind = path.includes('existing') || path.includes('moved') ? 'archive'
     : path.includes('photos') ? 'not-empty'
-    : ownDisk || path.startsWith('/Volumes/Archive/') ? 'empty'
+    : ownDisk || path.startsWith('/Volumes/Backup/') ? 'empty'
     : 'missing';
   const onDrive = kind === 'empty' || kind === 'archive' || kind === 'not-empty';
   return {
     kind,
     ownDisk,
     freeBytes: !onDrive ? null : ownDisk ? 212_000_000_000 : 1_240_000_000_000,
-    mountPoint: !onDrive ? null : ownDisk ? '/' : '/Volumes/Archive',
+    mountPoint: !onDrive ? null : ownDisk ? '/' : '/Volumes/Backup',
     noowners: onDrive && !ownDisk,
     archiveId: kind !== 'archive' ? null : path.includes('moved') ? String(archiveStatus.archiveId ?? 'another-archive') : 'another-archive',
   };
@@ -221,7 +221,7 @@ function mockLifetimeTokens(): LifetimeTokens {
     { home: '~/.codex', agent: 'codex', model: 'gpt-6-sol', weight: 0.24, from: '2026-07' },
     { home: '~/.codex', agent: 'codex', model: '', weight: 0.004 },
     // An OpenClaw agent's own calls, from an old backup.
-    { home: '/Volumes/Archive/Old files/openclaw-agents/main', agent: 'openclaw', model: 'gpt-5.5', weight: 0.01, from: '2026-04', until: '2026-06' },
+    { home: '/Volumes/Backup/Old files/openclaw-agents/main', agent: 'openclaw', model: 'gpt-5.5', weight: 0.01, from: '2026-04', until: '2026-06' },
   ];
   const months = new Map<string, MonthRow>();
   const days: DayRow[] = [];

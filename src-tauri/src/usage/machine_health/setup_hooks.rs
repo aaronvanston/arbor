@@ -942,13 +942,13 @@ mod tests {
             "guard": { "event": "PreToolUse", "matcher": "Bash", "command": "~/.agents/hooks/guard.sh" },
             "ping": { "event": "Stop", "command": "python3 ~/.agents/hooks/notify.py", "homes": ["~/.claude"] },
         } }));
-        let homes = [(HomeAgent::Claude, "~/.claude"), (HomeAgent::Claude, "~/.t3/claude"), (HomeAgent::Shared, "~/.agents")];
+        let homes = [(HomeAgent::Claude, "~/.claude"), (HomeAgent::Claude, "~/.agent-app/claude"), (HomeAgent::Shared, "~/.agents")];
         let setup = MachineSetup::with_homes(&homes).with_home_dir("/Users/a");
         assert!(machine_plan(&read, "mac", &setup).unwrap_err().contains("~/.agents/hooks/guard.sh, ~/.agents/hooks/notify.py"));
         let setup = setup.with_hook_script("guard.sh").with_hook_script("notify.py");
         let plan = machine_plan(&read, "mac", &setup).unwrap();
         let events = |home: &str| -> Vec<String> { plan.iter().find(|(_, path, _)| path == home).unwrap().2.iter().map(|(event, _, _)| event.clone()).collect() };
-        assert_eq!((events("~/.claude"), events("~/.t3/claude")), (vec!["PreToolUse".to_string(), "Stop".to_string()], vec!["PreToolUse".to_string()]));
+        assert_eq!((events("~/.claude"), events("~/.agent-app/claude")), (vec!["PreToolUse".to_string(), "Stop".to_string()], vec!["PreToolUse".to_string()]));
         // Kept off, it's nothing to do while no home has it.
         let mut off = registry(json!({ "version": 1, "hooks": { "guard": { "event": "PreToolUse", "command": "~/.agents/hooks/guard.sh", "machines": { "mac": "off" } } } }));
         assert!(machine_plan(&off, "mac", &setup).unwrap().is_empty());

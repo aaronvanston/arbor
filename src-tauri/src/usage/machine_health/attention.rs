@@ -14,9 +14,9 @@
 //!
 //! Setting the reporter up changes the agents' settings on the machine: the
 //! hooks in Claude Code's settings.json and `notify` in Codex's config.toml, in
-//! each home found (the defaults, and the ones T3 Code keeps for its
-//! providers). The files are read, changed here and written back whole, only
-//! if nothing else changed them in between, with the copy before kept as a
+//! each of the machine's agent homes with Sync on (agent_homes). The files
+//! are read, changed here and written back whole, only if nothing else
+//! changed them in between, with the copy before kept as a
 //! change on the Setup page's list, which can undo it (guarded_writes). A
 //! `notify` that was already set keeps working: the reporter runs it once it
 //! has recorded the turn. Taking the reporter away undoes all of it.

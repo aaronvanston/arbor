@@ -10,7 +10,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '
 const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   state: 'ok',
   archiveId: 'a1',
-  main: { root: '/Volumes/Archive/arbor-session-archive.noindex', connected: true, mountPoint: '/Volumes/Archive', freeBytes: 1.24e12, noowners: false, lastSeenAt: Date.now() - 3 * 60_000 },
+  main: { root: '/Volumes/Backup/arbor-session-archive.noindex', connected: true, mountPoint: '/Volumes/Backup', freeBytes: 1.24e12, noowners: false, lastSeenAt: Date.now() - 3 * 60_000 },
   sources: [
     { machine: 'mini', label: '~/.claude', agent: 'claude', files: 5210, kept: 5210, gone: 214, retentionDays: 36_500 },
     { machine: 'mini', label: '~/.agent-app/homes/claude-proxy', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: null },
@@ -48,7 +48,7 @@ describe('Settings › Session archive', () => {
     expect(shown).toContain('Up to date');
     // The page's clock ticks by the minute, so it may be a minute behind.
     expect(shown).toMatch(/Checked [23]m ago/);
-    expect(shown).toContain('/Volumes/Archive/arbor-session-archive.noindex');
+    expect(shown).toContain('/Volumes/Backup/arbor-session-archive.noindex');
     expect(shown).toContain('1.1 TB free on the drive');
     expect(shown).toContain('3,120');
     expect(shown).toContain('6 still growing');
@@ -113,7 +113,7 @@ describe('Settings › Session archive', () => {
   });
 
   it('says what to do in every state', () => {
-    const missing = overview({ state: 'main-missing', main: { root: '/Volumes/Archive/a.noindex', connected: false, mountPoint: null, freeBytes: null, noowners: false, lastSeenAt: null } });
+    const missing = overview({ state: 'main-missing', main: { root: '/Volumes/Backup/a.noindex', connected: false, mountPoint: null, freeBytes: null, noowners: false, lastSeenAt: null } });
     expect(missing).toContain('Connect the archive’s drive and Arbor carries on where it left off.');
     expect(missing).toContain('The drive isn’t connected.');
     // A moved archive can be found again; there's nothing to show in Finder until it is.
@@ -126,15 +126,15 @@ describe('Settings › Session archive', () => {
     expect(overview({ state: 'error', lastError: 'Couldn’t list the agent homes' })).toContain('Having trouble');
     expect(overview({ state: 'error', lastError: 'Couldn’t list the agent homes' })).toContain('Couldn’t list the agent homes');
     expect(overview({ running: true })).toContain('Checking now…');
-    const noowners = overview({ warnings: ['noowners'], main: { root: '/Volumes/Archive/a.noindex', connected: true, mountPoint: '/Volumes/Archive', freeBytes: 1e12, noowners: true, lastSeenAt: null } });
+    const noowners = overview({ warnings: ['noowners'], main: { root: '/Volumes/Backup/a.noindex', connected: true, mountPoint: '/Volumes/Backup', freeBytes: 1e12, noowners: true, lastSeenAt: null } });
     expect(noowners).toContain('Anyone on this Mac can read it');
-    expect(noowners).toContain('sudo diskutil enableOwnership /Volumes/Archive');
+    expect(noowners).toContain('sudo diskutil enableOwnership /Volumes/Backup');
   });
 
   it('puts a banner on Sessions only while sessions aren’t being archived', () => {
     const banner = (fields: Partial<ArchiveStatus>) => text(renderToStaticMarkup(<I18nProvider><ArchiveBannerView status={status(fields)} onOpen={() => undefined} /></I18nProvider>));
     for (const state of ['off', 'ok', 'catching-up', 'paused'] as const) expect(banner({ state })).toBe('');
-    const away = banner({ state: 'main-missing', main: { root: '/Volumes/Archive/a.noindex', connected: false, mountPoint: null, freeBytes: null, noowners: false, lastSeenAt: Date.now() - 26 * 60 * 60_000 } });
+    const away = banner({ state: 'main-missing', main: { root: '/Volumes/Backup/a.noindex', connected: false, mountPoint: null, freeBytes: null, noowners: false, lastSeenAt: Date.now() - 26 * 60 * 60_000 } });
     expect(away).toContain('Sessions aren’t being archived');
     expect(away).toContain('The archive’s drive hasn’t been connected since');
     expect(away).toContain('Open session archive');

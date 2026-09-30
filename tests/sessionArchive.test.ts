@@ -18,14 +18,14 @@ import { itemAt } from './support/items';
 import type { MessageKey, MessageVariables } from '../src/i18n/resources';
 import type { ArchiveSource, ArchiveStatus, FolderCheck } from '../src/native/types';
 
-const check = (kind: FolderCheck['kind'], archiveId: string | null = null): FolderCheck => ({ kind, ownDisk: false, freeBytes: 1e12, mountPoint: '/Volumes/Archive', noowners: false, archiveId });
+const check = (kind: FolderCheck['kind'], archiveId: string | null = null): FolderCheck => ({ kind, ownDisk: false, freeBytes: 1e12, mountPoint: '/Volumes/Backup', noowners: false, archiveId });
 const source = (fields: Partial<ArchiveSource>): ArchiveSource => ({ machine: 'mini', label: '~/.claude', agent: 'claude', files: 10, kept: 10, gone: 0, retentionDays: 36_500, ...fields });
 const t = (key: MessageKey, variables?: MessageVariables) => translate(key, variables);
 const HOUR = 60 * 60_000;
 const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   state: 'ok',
   archiveId: 'a1',
-  main: { root: '/Volumes/Archive/arbor-session-archive.noindex', connected: true, mountPoint: '/Volumes/Archive', freeBytes: 1e12, noowners: false, lastSeenAt: 1_000 },
+  main: { root: '/Volumes/Backup/arbor-session-archive.noindex', connected: true, mountPoint: '/Volumes/Backup', freeBytes: 1e12, noowners: false, lastSeenAt: 1_000 },
   sources: [],
   machines: [],
   imports: [],

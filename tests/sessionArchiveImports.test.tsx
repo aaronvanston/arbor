@@ -8,7 +8,7 @@ import type { ArchiveImport, ArchiveStatus, ImportPreview } from '../src/native/
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const item = (fields: Partial<ArchiveImport> = {}): ArchiveImport => ({
   id: 1,
-  path: '/Volumes/Archive/Codex Backups/old-mac',
+  path: '/Volumes/Backup/Mac backups/old-mac',
   machine: 'mini',
   machines: ['mini'],
   homes: 5,
@@ -23,11 +23,11 @@ const item = (fields: Partial<ArchiveImport> = {}): ArchiveImport => ({
   ...fields,
 });
 const preview = (fields: Partial<ImportPreview> = {}): ImportPreview => ({
-  path: '/Volumes/Archive/Codex Backups',
+  path: '/Volumes/Backup/Mac backups',
   homes: [
-    { agent: 'codex', root: '/Volumes/Archive/Codex Backups/b1/filesystem/Users/me/.codex', layout: 'home', state: 'new', files: 4_517, bytes: 3.1e9, sessions: 4_517 },
+    { agent: 'codex', root: '/Volumes/Backup/Mac backups/b1/filesystem/Users/me/.codex', layout: 'home', state: 'new', files: 4_517, bytes: 3.1e9, sessions: 4_517 },
     { agent: 'claude', root: '/Users/me/.claude', layout: 'home', state: 'live', files: 0, bytes: 0, sessions: 0 },
-    { agent: 'claude', root: '/Volumes/Archive/Codex Backups/dot-claude', layout: 'home', state: 'imported', files: 0, bytes: 0, sessions: 0 },
+    { agent: 'claude', root: '/Volumes/Backup/Mac backups/dot-claude', layout: 'home', state: 'imported', files: 0, bytes: 0, sessions: 0 },
   ],
   sessions: 4_517,
   newSessions: 4_100,
@@ -89,7 +89,7 @@ describe('Session archive › Old backups', () => {
     expect(shown).toMatch(/Session files last changed (6 Jan – 1 Jul|Jan 6 – Jul 1)/);
     // Homes are named from inside the folder chosen; ones kept already say so and aren't counted.
     expect(shown).toContain('b1/filesystem/Users/me/ .codex');
-    expect(shown).not.toContain('Codex Backups/b1');
+    expect(shown).not.toContain('Mac backups/b1');
     expect(shown).toContain('One of this Mac’s homes, kept already');
     expect(shown).toContain('Imported already');
     expect(shown).toContain('Came from');
@@ -109,10 +109,10 @@ describe('Session archive › Old backups', () => {
 
   it('names the other kinds of backup it finds', () => {
     const others = preview({
-      path: '/Volumes/Archive/Moved',
+      path: '/Volumes/Backup/Moved',
       homes: [
-        { agent: 'openclaw', root: '/Volumes/Archive/Moved/openclaw-agents/main', layout: 'openclaw', state: 'new', files: 14_000, bytes: 1.7e9, sessions: 7_000 },
-        { agent: 'claude-desktop', root: '/Volumes/Archive/Moved/local-agent-mode-sessions/a/b', layout: 'claude-desktop', state: 'new', files: 915, bytes: 3e8, sessions: 915 },
+        { agent: 'openclaw', root: '/Volumes/Backup/Moved/openclaw-agents/main', layout: 'openclaw', state: 'new', files: 14_000, bytes: 1.7e9, sessions: 7_000 },
+        { agent: 'claude-desktop', root: '/Volumes/Backup/Moved/local-agent-mode-sessions/a/b', layout: 'claude-desktop', state: 'new', files: 915, bytes: 3e8, sessions: 915 },
       ],
     });
     const shown = bodyOf(others);
@@ -122,10 +122,10 @@ describe('Session archive › Old backups', () => {
   });
 
   it('names a home from the folder it was found in', () => {
-    expect(importHomeName('/Volumes/Archive/b/.codex', '/Volumes/Archive/b')).toBe('.codex');
-    expect(importHomeName('/Volumes/Archive/dot-claude', '/Volumes/Archive/dot-claude')).toBe('dot-claude');
+    expect(importHomeName('/Volumes/Backup/b/.codex', '/Volumes/Backup/b')).toBe('.codex');
+    expect(importHomeName('/Volumes/Backup/dot-claude', '/Volumes/Backup/dot-claude')).toBe('dot-claude');
     // Found above the folder chosen (its projects/ was chosen): the whole path.
-    expect(importHomeName('/Volumes/Archive/dot-claude', '/Volumes/Archive/dot-claude/projects')).toBe('/Volumes/Archive/dot-claude');
-    expect(importHomeName('/Volumes/Archive/bb', '/Volumes/Archive/b')).toBe('/Volumes/Archive/bb');
+    expect(importHomeName('/Volumes/Backup/dot-claude', '/Volumes/Backup/dot-claude/projects')).toBe('/Volumes/Backup/dot-claude');
+    expect(importHomeName('/Volumes/Backup/bb', '/Volumes/Backup/b')).toBe('/Volumes/Backup/bb');
   });
 });

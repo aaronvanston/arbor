@@ -539,10 +539,10 @@ mod tests {
                 let list = [
                     Edit { file: EditFile::Path(settings.display().to_string()), before: cksum(&fs::read(&settings).unwrap()), content: b"{}\n".to_vec() },
                     Edit { file: EditFile::InHome(".codex/config.toml".into()), before: cksum(b"model = \"o3\"\n"), content: b"model = \"o4\"\n".to_vec() },
-                    Edit { file: EditFile::InHome(".t3/claude/settings.json".into()), before: "-".into(), content: b"{\"a\":1}".to_vec() },
+                    Edit { file: EditFile::InHome(".agent-app/claude/settings.json".into()), before: "-".into(), content: b"{\"a\":1}".to_vec() },
                     Edit { file: EditFile::InHome(".claude.json".into()), before: "c1-1".into(), content: b"{}".to_vec() },
                 ];
-                fs::create_dir_all(home.join(".t3/claude")).unwrap();
+                fs::create_dir_all(home.join(".agent-app/claude")).unwrap();
                 let stdout = run_in(shell, &home, &edits("20260926T010203Z-00aa", &list));
                 let outcomes = edit_outcomes(&stdout);
                 assert_eq!(
@@ -555,7 +555,7 @@ mod tests {
                 assert_eq!(fs::metadata(&settings).unwrap().permissions().mode() & 0o777, 0o640, "{shell}: the file keeps its mode");
                 assert!(fs::symlink_metadata(home.join(".codex/config.toml")).unwrap().file_type().is_symlink(), "{shell}: the link stays");
                 assert_eq!(fs::read_to_string(&kept).unwrap(), "model = \"o4\"\n");
-                let created = home.join(".t3/claude/settings.json");
+                let created = home.join(".agent-app/claude/settings.json");
                 assert_eq!(fs::metadata(&created).unwrap().permissions().mode() & 0o777, 0o600, "{shell}");
                 assert!(!home.join(".claude.json").exists(), "{shell}: a file that changed since isn't written");
 

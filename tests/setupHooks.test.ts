@@ -14,12 +14,12 @@ const registry: HookRegistry = {
   hooks: [view('guard'), view('notify', { off: ['ci-01'] }), view('gone', { removed: true })],
   cells: [
     cell('mac', '~/.claude', 'guard', 'guard.sh', 'same'),
-    cell('mac', '~/.t3/claude', 'guard', 'guard.sh', 'add'),
+    cell('mac', '~/.agent-app/claude', 'guard', 'guard.sh', 'add'),
     cell('ci-01', '~/.claude', 'guard', 'guard.sh', 'same'),
     cell('mac', '~/.claude', 'notify', 'notify.sh', 'same'),
     // A script the repo hasn't got, run from two homes: one row.
     cell('ci-01', '~/.claude', null, 'old.sh', 'extra'),
-    cell('ci-01', '~/.t3/claude', null, 'old.sh', 'extra'),
+    cell('ci-01', '~/.agent-app/claude', null, 'old.sh', 'extra'),
   ],
 };
 

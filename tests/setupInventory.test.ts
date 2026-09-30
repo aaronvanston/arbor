@@ -168,7 +168,7 @@ describe('a managed settings policy', () => {
   });
 });
 
-describe('a T3 Code shadow home', () => {
+describe('a shadow home', () => {
   const codex = home('codex', '~/.codex', [
     { ...item('instructions', 'AGENTS.md', 'a1'), path: '~/.codex/AGENTS.md' },
     { ...item('skill', 'pdf', 'p1'), path: '~/.codex/skills/pdf' },

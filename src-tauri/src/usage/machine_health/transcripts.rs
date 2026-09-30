@@ -2,9 +2,8 @@
 //! Codex's own transcripts on the machine that ran it: the folder, its git
 //! worktree and branch, the session's title, the pull requests it opened, the
 //! lines it changed, each compaction with what set it off, how often it called
-//! each tool, and which skills Claude Code called for by name. Both agents'
-//! default homes are looked in, and the separate home T3 Code keeps for each
-//! provider it runs.
+//! each tool, and which skills Claude Code called for by name. The homes looked
+//! in are the machine's agent homes with Sessions on (agent_homes).
 //!
 //! Every few minutes, each machine that answered its last health sample is
 //! asked, over the same shell or SSH connection, about the sessions Arbor has
@@ -918,7 +917,7 @@ pub(crate) struct SessionTranscript {
     agent: String,
     /// That machine's home directory, so the page can shorten paths under it.
     home: String,
-    /// The agent home the transcript is in, under ~ as Setup writes homes: `~/.claude`, or a T3 Code provider home.
+    /// The agent home the transcript is in, under ~ as Setup writes homes: `~/.claude`, or another home on the machine's agent homes list.
     /// Empty until a scan has said.
     agent_home: String,
     /// The folder the session was last working in.
@@ -2236,7 +2235,7 @@ mod tests {
                 &home.join(format!(".codex/sessions/2026/09/24/rollout-2026-09-24T02-00-00-{CODEX_ID}.jsonl")),
                 &codex_rollout(CODEX_ID, &api),
             );
-            // T3 Code gives each provider a home of its own.
+            // A second Claude Code and Codex home, each with its own sessions.
             let proxied_claude = "b2c3d4e5-6f70-4a81-9b2c-3d4e5f6a7b8c";
             let proxied_codex = "0199a2b3-c4d5-7e6f-8a7b-8c9d0e1f2a3b";
             // Another app's homes, on the list with Sessions on.

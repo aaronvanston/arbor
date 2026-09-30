@@ -112,7 +112,7 @@ describe('fileEstimate', () => {
     expect(fileEstimate(machine([codex, shared]), 'codex', '~/.codex')).toEqual({ instructions: 100, skills: 260, total: 360 });
   });
 
-  it('counts what a T3 Code shadow home loads through its links into the home it shares', () => {
+  it('counts what a shadow home loads through its links into the home it shares', () => {
     const codex = home('codex', '~/.codex', [
       item('instructions', 'AGENTS.md', { path: '~/.codex/AGENTS.md', size: 1_200 }),
       item('rule', 'default.rules', { path: '~/.codex/rules/default.rules', size: 400 }),

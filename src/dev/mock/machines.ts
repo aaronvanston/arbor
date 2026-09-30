@@ -142,8 +142,8 @@ const healthPoint = (name: string, t: number): HealthPoint => {
   };
 };
 
-// Arbor's reporter on each machine, as the agents check finds it: casey-mbp reports from its own homes and T3 Code's,
-// cedar-02 from Claude Code's, and ci-01 hasn't been set up. ?reporter=partial has a T3 Code home that stopped
+// Arbor's reporter on each machine, as the agents check finds it: casey-mbp reports from its own homes and a second pair,
+// cedar-02 from Claude Code's, and ci-01 hasn't been set up. ?reporter=partial has a second Codex home that stopped
 // reporting; ?reporter=fail makes a change fail.
 const reporterHomes: Record<string, ReporterHome[]> = {
   'casey-mbp': [

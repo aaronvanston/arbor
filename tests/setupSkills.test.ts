@@ -84,7 +84,7 @@ describe('where each skill stands', () => {
     expect(view.store?.path).toBe(STORE);
   });
 
-  it('leaves out a T3 Code shadow Codex home whose skills are another home’s', () => {
+  it('leaves out a shadow Codex home whose skills are another home’s', () => {
     const shadow = home('codex', '~/.agent-app/homes/codex-proxy', [], '~/.codex/skills', { shares: { home: CODEX, entries: ['config.toml', 'skills'] } });
     const shared = skillsView({ ...machine, homes: [...machine.homes, shadow] });
     expect(shared.homes.map((entry) => entry.path)).toEqual(view.homes.map((entry) => entry.path));
@@ -226,7 +226,7 @@ describe('suggestions', () => {
     expect(found('intoStore')).toEqual([['legacy', CODEX, 'adopt'], ['mine', CLAUDE, 'adopt'], ['mine', PROXY, 'useStore']]);
   });
 
-  it('turns on in T3 Code’s home what ~/.claude has on, but not in one whose folder is a link', () => {
+  it('turns on in a second Claude home what ~/.claude has on, but not in one whose folder is a link', () => {
     expect(suggestions.filter((entry) => entry.kind === 'match').map((entry) => entry.home)).toEqual([PROXY]);
     expect(found('match')).toEqual([['pdf', PROXY, 'link']]);
   });
@@ -253,7 +253,7 @@ describe('suggestions', () => {
 
 describe('skills Claude Code’s settings override', () => {
   const override = (name: string, state: SkillOverride['state'], file = `${PROXY}/settings.json`): SkillOverride => ({ name, state, source: 'settings', file });
-  // T3 Code's home turns pdf off (the store has it, and ~/.claude has it on) and design, its copy, off; ~/.claude
+  // The second home turns pdf off (the store has it, and ~/.claude has it on) and design, its copy, off; ~/.claude
   // lists mine by name only.
   const overridden = skillsView({
     ...machine,

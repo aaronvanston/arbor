@@ -1317,7 +1317,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     return { items, total: pool.length, page, pageSize, totalPages: Math.ceil(pool.length / pageSize) };
   },
   get_usage_pricing: () => usagePricing,
-  repair_usage_cache_records: () => ({ scanned: 18_420, repaired: 12, deleted: 3, backupPath: '/Users/casey/Library/Application Support/EasyCLIProxyAPI/usage.backup.db' }),
+  repair_usage_cache_records: () => ({ scanned: 18_420, repaired: 12, deleted: 3, backupPath: '/Users/casey/Library/Application Support/onl.arbor.app/usage.backup.db' }),
   get_usage_storage_info: () => ({ ...usageStorage }),
   set_usage_retention: (args) => {
     const retentionDays = Number(args.retentionDays);

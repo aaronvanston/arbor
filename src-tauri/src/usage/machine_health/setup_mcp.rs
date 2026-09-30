@@ -2196,7 +2196,7 @@ mod tests {
         assert_eq!(linear.wanted("mac", HomeAgent::Claude, "~/.claude").map(|(definition, own)| (definition["type"].clone(), own)), Some((json!("http"), false)));
         assert_eq!(linear.wanted("cedar", HomeAgent::Claude, "~/.claude").map(|(definition, own)| (definition["type"].clone(), own)), Some((json!("sse"), true)));
         assert!(linear.wanted("ci-01", HomeAgent::Claude, "~/.claude").is_none());
-        assert!(linear.wanted("mac", HomeAgent::Claude, "~/.t3/provider-homes/claude-proxy").is_none(), "kept to its homes");
+        assert!(linear.wanted("mac", HomeAgent::Claude, "~/.agent-app/homes/claude-proxy").is_none(), "kept to its homes");
         assert!(linear.wanted("mac", HomeAgent::Codex, "~/.codex").is_none(), "it has no Codex definition");
         let leaky = read.server("leaky").unwrap();
         assert_eq!(leaky.problems.len(), 2);
@@ -2213,7 +2213,7 @@ mod tests {
     fn machine() -> MachineSetup {
         MachineSetup::with_homes(&[
             (HomeAgent::Claude, "~/.claude"),
-            (HomeAgent::Claude, "~/.t3/provider-homes/claude-proxy"),
+            (HomeAgent::Claude, "~/.agent-app/homes/claude-proxy"),
             (HomeAgent::Codex, "~/.codex"),
             (HomeAgent::Shared, "~/.agents"),
         ])
@@ -2251,9 +2251,9 @@ mod tests {
                 ("~/.claude", "context7", RegistryState::Same, None),
                 ("~/.claude", "linear", RegistryState::Update, None),
                 ("~/.claude", "playwright", RegistryState::Extra, None),
-                ("~/.t3/provider-homes/claude-proxy", "broken", RegistryState::Add, Some(RegistryBlock::Broken)),
-                ("~/.t3/provider-homes/claude-proxy", "context7", RegistryState::Add, None),
-                ("~/.t3/provider-homes/claude-proxy", "linear", RegistryState::Add, None),
+                ("~/.agent-app/homes/claude-proxy", "broken", RegistryState::Add, Some(RegistryBlock::Broken)),
+                ("~/.agent-app/homes/claude-proxy", "context7", RegistryState::Add, None),
+                ("~/.agent-app/homes/claude-proxy", "linear", RegistryState::Add, None),
                 ("~/.codex", "context7", RegistryState::Same, None),
                 ("~/.codex", "linear", RegistryState::Add, None),
                 ("~/.codex", "odd.name", RegistryState::Extra, Some(RegistryBlock::Name)),
@@ -2266,7 +2266,7 @@ mod tests {
         own["servers"]["context7"]["homes"] = json!(["~/.claude", "~/.codex"]);
         let cells = machine_cells(&registry(own), "mac", &machine());
         let linear: Vec<(&str, RegistryState, bool)> = cells.iter().filter(|cell| cell.name == "linear").map(|cell| (cell.home.as_str(), cell.state, cell.own)).collect();
-        assert_eq!(linear, [("~/.claude", RegistryState::Same, true), ("~/.t3/provider-homes/claude-proxy", RegistryState::Add, true)]);
+        assert_eq!(linear, [("~/.claude", RegistryState::Same, true), ("~/.agent-app/homes/claude-proxy", RegistryState::Add, true)]);
         assert!(!cells.iter().any(|cell| cell.name == "context7" && cell.home.starts_with("~/.t3")), "kept to its homes");
 
         // A machine's entry Arbor can't read isn't taken to keep the server off it.
@@ -2282,13 +2282,13 @@ mod tests {
 
     #[test]
     fn a_shadow_home_leaves_its_servers_to_the_home_it_shares() {
-        let shadow = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.t3/provider-homes/codex-proxy")])
+        let shadow = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/homes/codex-proxy")])
             .with_home_dir("/Users/casey")
-            .with_shared("~/.t3/provider-homes/codex-proxy", "~/.codex", &["config.toml", "skills"]);
+            .with_shared("~/.agent-app/homes/codex-proxy", "~/.codex", &["config.toml", "skills"]);
         let cells = machine_cells(&registry(file()), "mac", &shadow);
         assert!(!cells.is_empty() && cells.iter().all(|cell| cell.home == "~/.codex"), "{:?}", states(&cells));
-        let add = McpChange { home: "~/.t3/provider-homes/codex-proxy".into(), name: "linear".into(), action: McpAction::Add };
-        assert_eq!(plan(&registry(file()), "mac", &shadow, vec![add]).unwrap_err(), "Arbor can't set up linear in ~/.t3/provider-homes/codex-proxy as it is");
+        let add = McpChange { home: "~/.agent-app/homes/codex-proxy".into(), name: "linear".into(), action: McpAction::Add };
+        assert_eq!(plan(&registry(file()), "mac", &shadow, vec![add]).unwrap_err(), "Arbor can't set up linear in ~/.agent-app/homes/codex-proxy as it is");
     }
 
     #[test]
@@ -2426,7 +2426,7 @@ mod tests {
             vec![
                 change("~/.claude", "linear", McpAction::Update),
                 change("~/.claude", "playwright", McpAction::Remove),
-                change("~/.t3/provider-homes/claude-proxy", "context7", McpAction::Add),
+                change("~/.agent-app/homes/claude-proxy", "context7", McpAction::Add),
                 change("~/.codex", "linear", McpAction::Add),
             ],
         )
@@ -2519,7 +2519,7 @@ exit 0"#;
                 let context7 = json!({ "type": "stdio", "command": "npx", "args": ["-y", "it's"] });
                 let planned = vec![
                     planned(HomeAgent::Claude, "~/.claude", "context7", McpAction::Add, Some(context7.clone())),
-                    planned(HomeAgent::Claude, "~/.t3/provider-homes/claude-proxy", "linear", McpAction::Update, Some(json!({ "type": "http", "url": "https://mcp.linear.app/mcp" }))),
+                    planned(HomeAgent::Claude, "~/.agent-app/homes/claude-proxy", "linear", McpAction::Update, Some(json!({ "type": "http", "url": "https://mcp.linear.app/mcp" }))),
                     planned(HomeAgent::Claude, "~/.claude", "playwright", McpAction::Remove, None),
                     planned(HomeAgent::Claude, "~/.claude", "flaky", McpAction::Update, Some(json!({ "type": "stdio", "command": "x" }))),
                 ];
@@ -2537,7 +2537,7 @@ exit 0"#;
                     ],
                     "{shell}"
                 );
-                let proxy = home.join(".t3/provider-homes/claude-proxy").display().to_string();
+                let proxy = home.join(".agent-app/homes/claude-proxy").display().to_string();
                 let calls = fs::read_to_string(home.join("calls")).unwrap();
                 assert_eq!(
                     calls.lines().collect::<Vec<_>>(),
@@ -2588,7 +2588,7 @@ exit 0"#;
             let home = temp_home(&format!("codex-{shell}"));
             fake(&home, "codex", CODEX);
             let codex = home.join(".codex");
-            let proxy = home.join(".t3/provider-homes/codex-proxy");
+            let proxy = home.join(".agent-app/homes/codex-proxy");
             let other = home.join(".codex-other");
             for dir in [&codex, &proxy, &other] {
                 fs::create_dir_all(dir).unwrap();
@@ -2601,12 +2601,12 @@ exit 0"#;
             let context7 = json!({ "command": "npx", "args": ["-y", "@upstash/context7-mcp"] });
             let planned = vec![
                 planned(HomeAgent::Codex, "~/.codex", "context7", McpAction::Add, Some(context7.clone())),
-                planned(HomeAgent::Codex, "~/.t3/provider-homes/codex-proxy", "context7", McpAction::Add, Some(context7.clone())),
+                planned(HomeAgent::Codex, "~/.agent-app/homes/codex-proxy", "context7", McpAction::Add, Some(context7.clone())),
                 planned(HomeAgent::Codex, "~/.codex-other", "context7", McpAction::Add, Some(json!({ "command": "broken" }))),
             ];
             let homes = vec![
                 (HomeAgent::Codex, ".codex".to_string()),
-                (HomeAgent::Codex, ".t3/provider-homes/codex-proxy".to_string()),
+                (HomeAgent::Codex, ".agent-app/homes/codex-proxy".to_string()),
                 (HomeAgent::Codex, ".codex-other".to_string()),
             ];
             let mut files = BTreeMap::new();
@@ -2764,10 +2764,10 @@ exit 0"#;
                 assert!(status.success());
             };
             commit("By hand");
-            block(record_server(&folder, "fs", HomeAgent::Claude, "ci", "~/.t3/provider-homes/claude-proxy", false, json!({ "type": "stdio", "command": "b" }), &IDENTITY)).unwrap();
+            block(record_server(&folder, "fs", HomeAgent::Claude, "ci", "~/.agent-app/homes/claude-proxy", false, json!({ "type": "stdio", "command": "b" }), &IDENTITY)).unwrap();
             let file: Value = serde_json::from_str(&fs::read_to_string(folder.join(MCP_FILE)).unwrap()).unwrap();
             assert_eq!(file["servers"]["fs"]["machines"], json!({ "ci": { "codex": null } }));
-            assert_eq!(file["servers"]["fs"]["homes"], json!(["~/.claude", "~/.t3/provider-homes/claude-proxy"]));
+            assert_eq!(file["servers"]["fs"]["homes"], json!(["~/.claude", "~/.agent-app/homes/claude-proxy"]));
             assert_eq!(file["servers"]["fs"]["claude"]["command"], "b");
 
             fs::write(folder.join(MCP_FILE), "{ not json").unwrap();

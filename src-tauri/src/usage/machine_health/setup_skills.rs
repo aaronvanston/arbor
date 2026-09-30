@@ -434,7 +434,7 @@ mod tests {
         for bad in ["", ".hidden", "..", "a/b", "a\\b", "a\tb", "a\nb"] {
             assert!(!is_skill_name(bad), "{bad:?}");
         }
-        assert_eq!(home_relative("~/.t3/provider-homes/claude-proxy"), Some(".t3/provider-homes/claude-proxy"));
+        assert_eq!(home_relative("~/.agent-app/homes/claude-proxy"), Some(".agent-app/homes/claude-proxy"));
         for bad in ["/opt/claude", "~/../x", "~/.claude/", "~//x", "~"] {
             assert!(home_relative(bad).is_none(), "{bad}");
         }
@@ -559,14 +559,14 @@ mod tests {
                     sum(".codex/skills/codex-only"),
                 );
                 let gone = "L~/src/elsewhere".to_string();
-                let t3 = "~/.t3/provider-homes/claude-proxy";
+                let second = "~/.agent-app/homes/claude-proxy";
                 let skills = [
                     // Adopting goes first, so the link after it can lead to the store's copy.
                     planned("~/.claude", "notes", SkillAction::Adopt, true, &notes, "-"),
                     planned("~/.claude", "design", SkillAction::Adopt, true, &my_design, &design),
                     planned("~/.codex", "codex-only", SkillAction::Adopt, false, &codex_only, "-"),
                     planned("~/.claude", "pdf", SkillAction::UseStore, true, &pdf, &pdf),
-                    planned(t3, "notes", SkillAction::Link, true, "-", "-"),
+                    planned(second, "notes", SkillAction::Link, true, "-", "-"),
                     planned("~/.claude", "gone", SkillAction::Remove, true, &gone, "-"),
                 ];
 
@@ -590,7 +590,7 @@ mod tests {
                 assert_eq!(place(shell, &home, ".codex/skills/codex-only"), "-", "{shell}: Codex loads it from the store");
                 assert_eq!(place(shell, &home, ".agents/skills/codex-only"), codex_only, "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/pdf"), store("pdf"), "{shell}");
-                assert_eq!(place(shell, &home, ".t3/provider-homes/claude-proxy/skills/notes"), store("notes"), "{shell}");
+                assert_eq!(place(shell, &home, ".agent-app/homes/claude-proxy/skills/notes"), store("notes"), "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/gone"), "-", "{shell}");
                 let kept = at(".arbor/setup-backups/20260925T090000Z-0002");
                 assert_eq!(folder_sum(&kept.join("skills/1/store")), design, "{shell}: the store's copy is kept");
@@ -601,14 +601,14 @@ mod tests {
                 assert_eq!(listed[0].skills, skills.to_vec(), "{shell}: the list reads back as it was made");
 
                 // Undoing waits until every skill is as the change left it.
-                fs::remove_file(at(".t3/provider-homes/claude-proxy/skills/notes")).unwrap();
-                skill(&at(".t3/provider-homes/claude-proxy/skills/notes"), "Edited since.");
+                fs::remove_file(at(".agent-app/homes/claude-proxy/skills/notes")).unwrap();
+                skill(&at(".agent-app/homes/claude-proxy/skills/notes"), "Edited since.");
                 let (blocked, _) = run_in(shell, &home, &setup_sync::undo_script(&listed[0]));
-                assert_eq!(blocked.failed.iter().map(|failure| failure.path.as_str()).collect::<Vec<_>>(), ["~/.t3/provider-homes/claude-proxy/skills/notes"]);
+                assert_eq!(blocked.failed.iter().map(|failure| failure.path.as_str()).collect::<Vec<_>>(), ["~/.agent-app/homes/claude-proxy/skills/notes"]);
                 assert_eq!(place(shell, &home, ".claude/skills/pdf"), store("pdf"), "{shell}: nothing undone");
 
-                fs::remove_dir_all(at(".t3/provider-homes/claude-proxy/skills/notes")).unwrap();
-                symlink(at(".agents/skills/notes"), at(".t3/provider-homes/claude-proxy/skills/notes")).unwrap();
+                fs::remove_dir_all(at(".agent-app/homes/claude-proxy/skills/notes")).unwrap();
+                symlink(at(".agents/skills/notes"), at(".agent-app/homes/claude-proxy/skills/notes")).unwrap();
                 let (undone, _) = run_in(shell, &home, &setup_sync::undo_script(&listed[0]));
                 assert!(undone.failed.is_empty(), "{shell}: {:?}", undone.failed);
                 assert_eq!(place(shell, &home, ".claude/skills/notes"), notes, "{shell}");
@@ -618,7 +618,7 @@ mod tests {
                 assert_eq!(place(shell, &home, ".codex/skills/codex-only"), codex_only, "{shell}");
                 assert_eq!(place(shell, &home, ".agents/skills/codex-only"), "-", "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/pdf"), pdf, "{shell}");
-                assert_eq!(place(shell, &home, ".t3/provider-homes/claude-proxy/skills/notes"), "-", "{shell}");
+                assert_eq!(place(shell, &home, ".agent-app/homes/claude-proxy/skills/notes"), "-", "{shell}");
                 assert_eq!(place(shell, &home, ".claude/skills/gone"), format!("L{}/src/elsewhere", home.display()), "{shell}");
                 assert!(backups_in(shell, &home)[0].undone_at_ms.is_some(), "{shell}");
                 let _ = fs::remove_dir_all(&home);
@@ -630,16 +630,16 @@ mod tests {
             for shell in shells() {
                 let home = temp_home(&format!("partial-{shell}"));
                 skill(&home.join(".agents/skills/pdf"), "Read PDFs.");
-                // A file where the T3 home's skills folder goes, so nothing can be linked in it.
-                write(&home.join(".t3/provider-homes/claude-proxy/skills"), "not a folder\n");
+                // A file where the second home's skills folder goes, so nothing can be linked in it.
+                write(&home.join(".agent-app/homes/claude-proxy/skills"), "not a folder\n");
                 let pdf = folder_sum(&home.join(".agents/skills/pdf"));
                 let skills = [
                     planned("~/.claude", "pdf", SkillAction::Link, true, "-", &pdf),
-                    planned("~/.t3/provider-homes/claude-proxy", "pdf", SkillAction::Link, true, "-", &pdf),
+                    planned("~/.agent-app/homes/claude-proxy", "pdf", SkillAction::Link, true, "-", &pdf),
                 ];
                 let (applied, _) = run_in(shell, &home, &apply_script("20260925T100000Z-0001", &skills));
                 assert_eq!(applied.done, ["~/.claude/skills/pdf"], "{shell}");
-                assert_eq!(applied.failed.iter().map(|failure| (failure.path.as_str(), failure.reason)).collect::<Vec<_>>(), [("~/.t3/provider-homes/claude-proxy/skills/pdf", "failed")]);
+                assert_eq!(applied.failed.iter().map(|failure| (failure.path.as_str(), failure.reason)).collect::<Vec<_>>(), [("~/.agent-app/homes/claude-proxy/skills/pdf", "failed")]);
                 let listed = backups_in(shell, &home);
                 let (undone, _) = run_in(shell, &home, &setup_sync::undo_script(&listed[0]));
                 assert_eq!((undone.done.as_slice(), undone.failed.len()), (&["~/.claude/skills/pdf".to_string()][..], 0), "{shell}");
@@ -708,16 +708,16 @@ mod tests {
         assert!(plan(&setup, vec![change("~/.claude", "pdf", SkillAction::UseStore, SUM, "L~/src/pdf")]).is_ok(), "the store's link to a skill will do");
         assert!(refused(vec![change("~/.claude", "pdf", SkillAction::Adopt, SUM, "L~/src/pdf")]).contains("can't adopt"), "but isn't put aside for another");
         // Copies that match: one moves into the store, and the other gives way to a link to it.
-        let t3 = setup::MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude"), (HomeAgent::Claude, "~/.t3/provider-homes/claude-proxy")]);
-        let both = plan(&t3, vec![
-            change("~/.t3/provider-homes/claude-proxy", "pdf", SkillAction::UseStore, SUM, "-"),
+        let second = setup::MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude"), (HomeAgent::Claude, "~/.agent-app/homes/claude-proxy")]);
+        let both = plan(&second, vec![
+            change("~/.agent-app/homes/claude-proxy", "pdf", SkillAction::UseStore, SUM, "-"),
             change("~/.claude", "pdf", SkillAction::Adopt, SUM, "-"),
         ])
         .unwrap();
         assert_eq!(both.iter().map(|skill| skill.action).collect::<Vec<_>>(), [SkillAction::Adopt, SkillAction::UseStore]);
         assert!(refused(vec![change("~/.codex", "pdf", SkillAction::Link, "-", SUM)]).contains("can't link"), "Codex loads the store itself");
         assert!(refused(vec![change("~/.agents", "pdf", SkillAction::Remove, SUM, "-")]).contains("isn't a Claude Code or Codex home"));
-        assert!(refused(vec![change("~/.t3/provider-homes/other", "pdf", SkillAction::Remove, SUM, "-")]).contains("isn't a Claude Code or Codex home"));
+        assert!(refused(vec![change("~/.agent-app/homes/other", "pdf", SkillAction::Remove, SUM, "-")]).contains("isn't a Claude Code or Codex home"));
         assert!(refused(vec![change("~/.claude", "../x", SkillAction::Remove, SUM, "-")]).contains("doesn't change skills"));
         assert!(refused(vec![change("~/.claude", "pdf", SkillAction::Remove, "SUM", "-")]).contains("can't tell"));
         assert!(refused(vec![change("~/.claude", "pdf", SkillAction::Remove, "-", "-")]).contains("can't remove"));

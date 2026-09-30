@@ -1241,7 +1241,7 @@ mod tests {
             ".claude/rules/../CLAUDE.md",
             ".claude//CLAUDE.md",
             "/.claude/CLAUDE.md",
-            ".t3/provider-homes/x/CLAUDE.md",
+            ".agent-app/homes/x/CLAUDE.md",
         ] {
             assert_eq!(managed(other), None, "{other}");
         }
@@ -1344,7 +1344,7 @@ mod tests {
                 let settings = home.join(".claude/settings.json");
                 let before = b"{\"env\":{\"TOKEN\":\"sk-SECRET\"}}\n";
                 write(&settings, before);
-                let created = home.join(".t3/provider-homes/claude/settings.json");
+                let created = home.join(".agent-app/homes/claude/settings.json");
                 fs::create_dir_all(created.parent().unwrap()).unwrap();
                 let edits = [
                     Edit { file: EditFile::Path(settings.display().to_string()), before: cksum(before), content: b"{}\n".to_vec() },
@@ -1368,20 +1368,20 @@ mod tests {
                     shown["files"],
                     serde_json::json!([
                         { "path": "~/.claude/settings.json", "change": "changed", "skill": false },
-                        { "path": "~/.t3/provider-homes/claude/settings.json", "change": "added", "skill": false },
+                        { "path": "~/.agent-app/homes/claude/settings.json", "change": "added", "skill": false },
                     ])
                 );
 
                 // Nothing is put back while a file isn't as the change left it.
                 write(&created, b"{\"b\":2}\n");
                 let blocked = parse_outcome(&String::from_utf8_lossy(&run_in(shell, &home, &undo_script(backup)).stdout));
-                assert_eq!(blocked.failed, [SyncFailure { path: "~/.t3/provider-homes/claude/settings.json".into(), reason: "changed" }], "{shell}");
+                assert_eq!(blocked.failed, [SyncFailure { path: "~/.agent-app/homes/claude/settings.json".into(), reason: "changed" }], "{shell}");
                 assert_eq!(fs::read(&settings).unwrap(), b"{}\n");
 
                 write(&created, b"{\"a\":1}\n");
                 let undone = parse_outcome(&String::from_utf8_lossy(&run_in(shell, &home, &undo_script(backup)).stdout));
                 assert!(undone.failed.is_empty(), "{shell}: {undone:?}");
-                assert_eq!(undone.done, ["~/.claude/settings.json", "~/.t3/provider-homes/claude/settings.json"]);
+                assert_eq!(undone.done, ["~/.claude/settings.json", "~/.agent-app/homes/claude/settings.json"]);
                 assert_eq!(fs::read(&settings).unwrap(), before);
                 assert!(!created.exists(), "{shell}: a file the change made goes");
                 let listed = run_in(shell, &home, &format!("set -u\n{BACKUPS_SCRIPT}"));

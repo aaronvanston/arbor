@@ -92,9 +92,9 @@
  * installed that way, so Machines names it and an update shows and runs its command (by default Claude Code is from
  * its own installer and Codex from npm);
  * `?setup=fail` to have ci-01's setup scan fail; `?setup=overrides` for skills Claude Code's skillOverrides turn off or
- * list by name only on this Mac and ci-01, and a T3 Code home whose overrides Claude Code ignores; `?setup=policy` for
+ * list by name only on this Mac and ci-01, and a second Claude home whose overrides Claude Code ignores; `?setup=policy` for
  * a managed-settings policy that sets settings, env, a hook and a plugin and turns a skill off on this Mac, one ci-01
- * can't read, and one on cedar-02 whose skill overrides Claude Code ignores; `?setup=shadow` for a T3 Code shadow
+ * can't read, and one on cedar-02 whose skill overrides Claude Code ignores; `?setup=shadow` for a shadow
  * Codex home on this Mac whose config.toml, AGENTS.md and skills are links into ~/.codex;
  * `?repo=fail` or `?repo=dirty` for a setup repo Arbor can't read, or with changes not committed;
  * `?sync=changed` or `?sync=fail` to have bringing a machine in step refused, or a file fail to write;
@@ -111,7 +111,7 @@
  * Sync › Arbor’s changes lists casey-mbp's changes, two settings edits to start with (`?changes=none` for none, which says
  * Arbor hasn't changed anything there, or `?changes=fail` for the list failing to load); the reporter, keeping
  * sessions, telemetry and Codex's MCP servers each add one when they change a file;
- * `?archive=off` (no session archive yet: `/Volumes/Archive/…` is empty, `/Users/…` is empty on this Mac's own disk, a path with
+ * `?archive=off` (no session archive yet: `/Volumes/Backup/…` is empty, `/Users/…` is empty on this Mac's own disk, a path with
  * `existing` holds another archive, one with `photos` isn't empty), `empty` (just made, nothing kept yet),
  * `catching-up`, `ok` (the default), `missing` (its drive unplugged since yesterday), `foreign` (another archive
  * where it was, for 3 hours), `noowners` (a drive that doesn't enforce permissions), `own-disk` (kept on this Mac's own
@@ -124,7 +124,7 @@
  * other machines, `new` for ci-01 tried but never reached, or `off` for keeping other machines turned off, or `own` for ci-01 left out on its own;
  * `?archiveProjects=sample` leaves casey/billing out everywhere and casey/arbor out on ci-01 (pick them with `?project=`);
  * Import a backup… finds five homes in
- * `/Volumes/Archive/Codex Backups`, or with `?importPreview=none` nothing, `kept` only homes kept already, `partial` stops
+ * `/Volumes/Backup/Mac backups`, or with `?importPreview=none` nothing, `kept` only homes kept already, `partial` stops
  * looking partway, `fail` has the folder gone, `slow` takes 4s, and `others` OpenClaw and Claude desktop sessions;
  * Usage › All time (`?page=usage&tab=lifetime`) counts a year of the archive's sessions; `?tokens=counting` has files
  * still to count, `?tokens=failed` one that couldn't be read, and `?tokens=waiting` nothing counted yet (as do
@@ -170,8 +170,8 @@
  * `?install=fail` to have core installs fail, `?appupdate=fail` to have Arbor's download fail after it starts, or
  *   `?appupdate=gone` for the update gone from the feed by the time Install runs its fresh check;
  * `?appnotes=none` for an Arbor update whose feed carries no release notes (the pill keeps its plain tooltip), or
- *   `?appnotes=long` for eight releases on offer (0.2.88), more than the pill's card shows, one with a very long line;
- * `?corenotes=none` for a core update without release notes, or `?corenotes=long` for four core releases (v6.8.25),
+ *   `?appnotes=long` for eight releases on offer (0.3.208), more than the pill's card shows, one with a very long line;
+ * `?corenotes=none` for a core update without release notes, or `?corenotes=long` for four core releases (v8.0.8),
  *   more than Settings › Updates shows;
  * `?software=fail` to have Settings › Software refuse each change (the switch goes back and says why);
  * `?coresave=fail` to have the core refuse to save its logging, retry and TLS settings (the folded groups on General
@@ -358,11 +358,11 @@ function drawTrafficLights() {
 /** Commands of Tauri's own plugins, which the webview reaches through their APIs. */
 const pluginAnswers: Record<string, (args: Json) => unknown> = {
   // The app's own version, the same one the update check reports.
-  'plugin:app|version': () => '0.2.80',
+  'plugin:app|version': () => '0.3.200',
   'plugin:dialog|open': (args) => {
     const title = String((args.options as Json | undefined)?.title ?? '');
-    if (title.includes('backup')) return '/Volumes/Archive/Codex Backups';
-    if (title.includes('archive')) return title.includes('folder for') ? '/Volumes/Archive/arbor-session-archive.noindex' : '/Volumes/Archive/arbor-session-archive-moved.noindex';
+    if (title.includes('backup')) return '/Volumes/Backup/Mac backups';
+    if (title.includes('archive')) return title.includes('folder for') ? '/Volumes/Backup/arbor-session-archive.noindex' : '/Volumes/Backup/arbor-session-archive-moved.noindex';
     return title.includes('new') ? '/Users/casey/src/new-setup' : MOCK_REPO;
   },
   'plugin:window|is_fullscreen': () => windowFullscreen,

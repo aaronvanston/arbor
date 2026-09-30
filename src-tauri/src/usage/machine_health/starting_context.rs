@@ -178,7 +178,7 @@ mod tests {
         let unplaced = "aaaaaaaa-0000-4000-8000-000000000004";
         let failed = "aaaaaaaa-0000-4000-8000-000000000005";
         session(&connection, a, "mbp", "~/.claude", "/Users/a/src/arbor", &[(NOW - 2 * DAY, "claude-opus-5-5", 24_000, false), (NOW - 2 * DAY + 1, "claude-opus-5-5", 26_000, false)]);
-        session(&connection, b, "cedar", "~/.t3/provider-homes/claude-proxy", "", &[(NOW - DAY, "claude-haiku-4-5", 1_500, false), (NOW - DAY + 1, "claude-opus-5-5", 41_000, false)]);
+        session(&connection, b, "cedar", "~/.agent-app/homes/claude-proxy", "", &[(NOW - DAY, "claude-haiku-4-5", 1_500, false), (NOW - DAY + 1, "claude-opus-5-5", 41_000, false)]);
         session(&connection, early, "mbp", "~/.claude", "", &[(NOW - 40 * DAY, "claude-opus-5-5", 22_000, false), (NOW - DAY, "claude-opus-5-5", 90_000, false)]);
         session(&connection, unplaced, "mbp", "", "", &[(NOW - DAY, "claude-opus-5-5", 30_000, false)]);
         // A failed first try sent nothing counted; the retry is the start.
@@ -186,7 +186,7 @@ mod tests {
 
         let context = starting_context(&connection, NOW - 28 * DAY, NOW).unwrap();
         let starts: Vec<(&str, &str, i64)> = context.sessions.iter().map(|start| (start.session_id.as_str(), start.home.as_str(), start.tokens)).collect();
-        assert_eq!(starts, [(a, "~/.claude", 24_000), (b, "~/.t3/provider-homes/claude-proxy", 41_000), (failed, "~/.claude", 27_000)]);
+        assert_eq!(starts, [(a, "~/.claude", 24_000), (b, "~/.agent-app/homes/claude-proxy", 41_000), (failed, "~/.claude", 27_000)]);
         assert_eq!(context.sessions[0].repo, "/Users/a/src/arbor");
         assert_eq!(context.sessions[1].model, "claude-opus-5-5");
         assert_eq!(context.unplaced, 1);

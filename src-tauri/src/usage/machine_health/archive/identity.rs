@@ -343,6 +343,6 @@ mod tests {
     fn homes_are_named_from_the_home_folder() {
         assert_eq!(home_label("/Users/me/.claude", Some("/Users/me")), "~/.claude");
         assert_eq!(home_label("/Users/meg/.claude", Some("/Users/me")), "/Users/meg/.claude");
-        assert_eq!(home_label("/Volumes/Archive/codex", Some("/Users/me")), "/Volumes/Archive/codex");
+        assert_eq!(home_label("/Volumes/Backup/codex", Some("/Users/me")), "/Volumes/Backup/codex");
     }
 }

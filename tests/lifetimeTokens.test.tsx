@@ -157,7 +157,7 @@ describe('all-time tokens', () => {
     expect(shown).toContain('By month');
     expect(shown).not.toContain('Counting');
     // Homes from old backups count too, and the line says so.
-    const backups = render(lifetime({ sources: [...lifetime().sources, { machine: 'mini', home: '/Volumes/Archive/dot-claude', agent: 'claude', kind: 'import' }] }));
+    const backups = render(lifetime({ sources: [...lifetime().sources, { machine: 'mini', home: '/Volumes/Backup/dot-claude', agent: 'claude', kind: 'import' }] }));
     expect(backups).toContain('from agent homes on mini and old backups');
   });
 

@@ -16,11 +16,11 @@ const machine = (name: string, homes: SetupHome[], reachable = true): SetupMachi
   machine: name, local: name === 'mini', reachable, homes, installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
 });
 
-const T3 = '~/.agent-app/homes/claude-proxy';
+const SECOND = '~/.agent-app/homes/claude-proxy';
 const machines = [
   machine('mini', [
     home('~/.claude', [plugin('context7@official', '1.2.0'), plugin('superpowers@official', '4.1.0'), market('official', 'anthropics/official')]),
-    home(T3, [plugin('context7@official', '1.2.0'), plugin('superpowers@official', '4.1.0', false), market('official', 'anthropics/official')]),
+    home(SECOND, [plugin('context7@official', '1.2.0'), plugin('superpowers@official', '4.1.0', false), market('official', 'anthropics/official')]),
   ]),
   machine('air', [home('~/.claude', [
     plugin('context7@official', '1.2.0'),
@@ -39,7 +39,7 @@ const column = (name: string) => columns.find((entry) => entry.machine === name)
 describe('the plugin grid', () => {
   it('puts each machine’s homes in one column', () => {
     expect(columns.map((entry) => [entry.machine, entry.homes.map((found) => found.path)])).toEqual([
-      ['mini', ['~/.claude', T3]],
+      ['mini', ['~/.claude', SECOND]],
       ['air', ['~/.claude']],
       ['dev', ['~/.claude']],
     ]);
@@ -69,12 +69,12 @@ describe('the plugin grid', () => {
   it('cleans up leftovers by machine, leaving out machines it can’t reach and what a policy names', () => {
     const leftovers = [
       { machine: 'dev', home: '~/.claude', plugin: 'old@official', reachable: true, policy: false },
-      { machine: 'dev', home: '~/.t3', plugin: 'old@official', reachable: true, policy: false },
+      { machine: 'dev', home: '~/.agent-app', plugin: 'old@official', reachable: true, policy: false },
       { machine: 'air', home: '~/.claude', plugin: 'gone@official', reachable: false, policy: false },
       { machine: 'mini', home: '~/.claude', plugin: 'kept@official', reachable: true, policy: true },
     ];
     expect([...leftoversByMachine(leftovers)]).toEqual([
-      ['dev', [{ home: '~/.claude', plugin: 'old@official' }, { home: '~/.t3', plugin: 'old@official' }]],
+      ['dev', [{ home: '~/.claude', plugin: 'old@official' }, { home: '~/.agent-app', plugin: 'old@official' }]],
     ]);
   });
 

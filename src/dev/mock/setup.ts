@@ -320,7 +320,7 @@ if (hooksSample) {
 
 // With `?setup=overrides`, Claude Code's skillOverrides turn skills off or change how they're offered: this Mac's
 // ~/.claude turns release-notes off and lists pdf by name only, ci-01's turns browser-check off (so it isn't counted
-// missing there), and the T3 Code home's settings.json has a value Claude Code doesn't know, so it ignores them all.
+// missing there), and the second Claude home's settings.json has a value Claude Code doesn't know, so it ignores them all.
 const setupScenario = params.get('setup');
 if (setupScenario === 'overrides') {
   const homeOf = (machine: string, path: string) => setupMachines.find((entry) => entry.machine === machine)?.homes.find((home) => home.path === path);
@@ -329,8 +329,8 @@ if (setupScenario === 'overrides') {
   if (mac) mac.skillOverrides = [override('pdf', 'nameOnly'), override('release-notes', 'off')];
   const ci = homeOf('ci-01', '~/.claude');
   if (ci) ci.skillOverrides = [override('browser-check', 'off')];
-  const t3 = homeOf('casey-mbp', '~/.agent-app/homes/claude-proxy');
-  if (t3) t3.ignoredOverrides = ['~/.agent-app/homes/claude-proxy/settings.json'];
+  const second = homeOf('casey-mbp', '~/.agent-app/homes/claude-proxy');
+  if (second) second.ignoredOverrides = ['~/.agent-app/homes/claude-proxy/settings.json'];
 }
 // With `?setup=policy`, Claude Code's managed-settings policy on this Mac sets how long sessions are kept, the model,
 // a deny list, its telemetry, a hook and a plugin, and turns frontend-design off in every Claude Code home; ci-01's
@@ -355,7 +355,7 @@ if (setupScenario === 'policy') {
   const cedar = machineOf('cedar-02');
   if (cedar) cedar.policy = { file: ciFile, keys: [{ kind: 'setting', name: 'forceLoginMethod' }], problem: null, ignoredOverrides: true };
 }
-// With `?setup=shadow`, this Mac has a T3 Code shadow Codex home whose entries link into ~/.codex, so what it shares
+// With `?setup=shadow`, this Mac has a shadow Codex home whose entries link into ~/.codex, so what it shares
 // shows under Codex and the shadow home has nothing of its own to compare.
 if (setupScenario === 'shadow') {
   const mac = setupMachines.find((entry) => entry.machine === 'casey-mbp');

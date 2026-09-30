@@ -5,7 +5,7 @@ import { splitForMiddleTruncate } from '../src/lib/middleTruncate';
 
 describe('where a long path or branch is cut', () => {
   it('keeps a path’s last segment when it is short', () => {
-    expect(splitForMiddleTruncate('~/.t3/worktrees/EasyCLIProxyAPI/t3code-5c8a4774')).toEqual({ head: '~/.t3/worktrees/EasyCLIProxyAPI/', tail: 't3code-5c8a4774' });
+    expect(splitForMiddleTruncate('~/.t3/worktrees/arbor/t3code-5c8a4774')).toEqual({ head: '~/.t3/worktrees/arbor/', tail: 't3code-5c8a4774' });
     expect(splitForMiddleTruncate('.claude/skills/review/SKILL.md')).toEqual({ head: '.claude/skills/review/', tail: 'SKILL.md' });
   });
 
@@ -33,7 +33,7 @@ describe('where a long path or branch is cut', () => {
       'studio cedar 01 laptop',
       'Gemini  2.5  Flash  Lite',
       '~/Library/Mobile Documents/com~apple~CloudDocs/Project notes for the offsite.md',
-      '/Volumes/Archive/Arbor backups/setup backups 2026 09 26',
+      '/Volumes/Backup/Arbor backups/setup backups 2026 09 26',
     ]) {
       const split = splitForMiddleTruncate(value);
       if (!split) continue;

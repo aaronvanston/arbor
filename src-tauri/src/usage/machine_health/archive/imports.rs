@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// How deep in the chosen folder homes are looked for: deep enough for one in a snapshot of a
-/// whole machine (backups/b1/filesystem/Users/me/.skipper/profiles/x) chosen from the drive it's on.
+/// whole machine (backups/b1/filesystem/Users/me/.agent-profiles/x) chosen from the drive it's on.
 const FIND_DEPTH: usize = 9;
 /// Folders looked in, and for how long, before giving up, so choosing a whole drive can't take forever.
 const FIND_MAX_DIRS: usize = 50_000;
@@ -587,11 +587,11 @@ mod tests {
         let base = temp_dir("imports-find");
         let base = fs::canonicalize(&base).unwrap();
         write(&base.join(format!("Moved/dot-claude/projects/-Users-me-app/{SID}.jsonl")), "{}\n");
-        let user = base.join("Codex Backups/b1/filesystem/Users/me");
+        let user = base.join("Mac backups/b1/filesystem/Users/me");
         write(&user.join(format!(".codex/sessions/2026/01/02/rollout-2026-01-02T00-00-00-{THREAD}.jsonl")), "{}\n");
         write(&user.join(format!(".codex-2/archived_sessions/rollout-2026-01-02T00-00-00-{THREAD}.jsonl.zst")), "x");
-        write(&user.join(format!(".t3/provider-homes/claude-proxy/projects/-x/{SID}.jsonl")), "{}\n");
-        write(&user.join(format!(".skipper/profiles/work2/projects/-y/{SID}.jsonl")), "{}\n");
+        write(&user.join(format!(".agent-app/homes/claude-proxy/projects/-x/{SID}.jsonl")), "{}\n");
+        write(&user.join(format!(".agent-profiles/work2/projects/-y/{SID}.jsonl")), "{}\n");
         write(&base.join(format!("orca/sessions/2026/07/rollout-2026-07-01T00-00-00-{THREAD}.jsonl")), "{}\n");
         // A projects folder that isn't Claude Code's, and homes where nobody keeps one.
         write(&base.join("notes/projects/readme.md"), "x");
@@ -607,10 +607,10 @@ mod tests {
             [
                 ("codex", "orca".to_string()),
                 ("claude", "Moved/dot-claude".to_string()),
-                ("codex", "Codex Backups/b1/filesystem/Users/me/.codex".to_string()),
-                ("codex", "Codex Backups/b1/filesystem/Users/me/.codex-2".to_string()),
-                ("claude", "Codex Backups/b1/filesystem/Users/me/.skipper/profiles/work2".to_string()),
-                ("claude", "Codex Backups/b1/filesystem/Users/me/.t3/provider-homes/claude-proxy".to_string()),
+                ("codex", "Mac backups/b1/filesystem/Users/me/.codex".to_string()),
+                ("codex", "Mac backups/b1/filesystem/Users/me/.codex-2".to_string()),
+                ("claude", "Mac backups/b1/filesystem/Users/me/.agent-profiles/work2".to_string()),
+                ("claude", "Mac backups/b1/filesystem/Users/me/.agent-app/homes/claude-proxy".to_string()),
             ]
         );
         // A folder chosen inside a home means the home.

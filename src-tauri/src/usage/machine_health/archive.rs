@@ -1082,7 +1082,7 @@ mod tests {
         assert!(!settings.keeps("ci-01"));
         assert!(settings.keeps("lab-box"));
         // An archive saved before machines had values of their own reads as none.
-        let old: Settings = serde_json::from_str(r#"{"root":"/Volumes/Archive","skipOtherMachines":true}"#).unwrap();
+        let old: Settings = serde_json::from_str(r#"{"root":"/Volumes/Backup","skipOtherMachines":true}"#).unwrap();
         assert!(old.machines.is_empty() && !old.keeps("ci-01"));
     }
 
@@ -1114,7 +1114,7 @@ mod tests {
         assert!(cedar.keeps(Some("a1")) && !cedar.keeps(Some("b1")) && !cedar.keeps(Some("unknown")) && !cedar.keeps(None));
 
         // Saved settings from before projects had values read as none.
-        let old: Settings = serde_json::from_str(r#"{"root":"/Volumes/Archive","machines":{"ci01":false}}"#).unwrap();
+        let old: Settings = serde_json::from_str(r#"{"root":"/Volumes/Backup","machines":{"ci01":false}}"#).unwrap();
         assert!(old.projects.is_empty());
     }
 

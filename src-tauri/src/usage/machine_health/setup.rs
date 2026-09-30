@@ -2515,10 +2515,10 @@ mod tests {
         // One value Claude Code doesn't know, or a boolean, and it ignores every override in the file.
         for odd in [r#"{ "pdf": "off", "deploy": "disabled" }"#, r#"{ "pdf": false }"#, r#"["pdf"]"#] {
             let settings = format!(r#"{{ "skillOverrides": {odd} }}"#);
-            let stdout = format!("H\t/h\nA\tclaude\t/h/.t3/provider-homes/claude-proxy\n{}", data("settings", "/h/.t3/provider-homes/claude-proxy/settings.json", &settings));
+            let stdout = format!("H\t/h\nA\tclaude\t/h/.agent-app/homes/claude-proxy\n{}", data("settings", "/h/.agent-app/homes/claude-proxy/settings.json", &settings));
             let home = &parse_scan(&stdout, SALT).unwrap().homes[0];
             assert!(home.skill_overrides.is_empty(), "{odd}");
-            assert_eq!(home.ignored_overrides, ["~/.t3/provider-homes/claude-proxy/settings.json"], "{odd}");
+            assert_eq!(home.ignored_overrides, ["~/.agent-app/homes/claude-proxy/settings.json"], "{odd}");
             assert!(home.problems.is_empty(), "the file itself reads fine");
         }
     }
@@ -2597,7 +2597,7 @@ mod tests {
     #[test]
     fn a_shadow_homes_links_leave_what_they_hold_to_the_home_it_shares() {
         let codex = "/h/.codex";
-        let shadow = "/h/.t3/provider-homes/codex-proxy";
+        let shadow = "/h/.agent-app/homes/codex-proxy";
         let lines = [
             format!("H\t/h"),
             format!("A\tcodex\t{codex}"),
@@ -2632,17 +2632,17 @@ mod tests {
         let items: Vec<(ItemKind, &str)> = t3.items.iter().map(|item| (item.kind, item.name.as_str())).collect();
         assert_eq!(items, [(ItemKind::Command, "ship"), (ItemKind::Profile, "fast")], "only what it doesn't share is its own");
         assert_eq!(t3.skills_link.as_deref(), Some("~/.codex/skills"), "its skills folder still reads as a link, so nothing changes skills through it");
-        assert_eq!(t3.problems, ["~/.t3/provider-homes/codex-proxy/hooks.json isn't JSON Arbor can read"], "a file of its own is still read");
+        assert_eq!(t3.problems, ["~/.agent-app/homes/codex-proxy/hooks.json isn't JSON Arbor can read"], "a file of its own is still read");
 
         // A Codex home that links into one Arbor didn't find is read as it is, and Claude Code homes never share.
         let alone = format!("H\t/h\nA\tcodex\t{shadow}\nK\tconfig.toml\t{codex}/config.toml\nA\tclaude\t/h/.claude\nK\tskills\t{codex}/skills\n");
         let scan = parse_scan(&alone, SALT).unwrap();
         assert!(scan.homes.iter().all(|home| home.shares.is_none()));
 
-        let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.t3/provider-homes/codex-proxy")])
-            .with_shared("~/.t3/provider-homes/codex-proxy", "~/.codex", &["config.toml"]);
-        assert!(setup.shares("~/.t3/provider-homes/codex-proxy", "config.toml"));
-        assert!(!setup.shares("~/.t3/provider-homes/codex-proxy", "skills"));
+        let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/homes/codex-proxy")])
+            .with_shared("~/.agent-app/homes/codex-proxy", "~/.codex", &["config.toml"]);
+        assert!(setup.shares("~/.agent-app/homes/codex-proxy", "config.toml"));
+        assert!(!setup.shares("~/.agent-app/homes/codex-proxy", "skills"));
         assert!(!setup.shares("~/.codex", "config.toml"));
     }
 

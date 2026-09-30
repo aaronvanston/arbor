@@ -60,8 +60,8 @@ describe('Claude Code checks', () => {
     skill('design', 'd-shared', {}, null, '~/.agents/skills'),
     skill('notes', 'n-same', {}, null, '~/.agents/skills'),
   ]);
-  const t3 = home('claude', '~/.agent-app/homes/claude-proxy', [item('plugin', 'superpowers@market', 'p')]);
-  const checks = setupChecks([machine('mac', [claude, shared, t3])]);
+  const second = home('claude', '~/.agent-app/homes/claude-proxy', [item('plugin', 'superpowers@market', 'p')]);
+  const checks = setupChecks([machine('mac', [claude, shared, second])]);
   const at = 'claude:~/.claude';
 
   it('finds @imports that lead nowhere, and ones too deep to be followed', () => {
@@ -134,7 +134,7 @@ describe('Claude Code checks', () => {
 
   it('names what a machine’s policy sets, says when it can’t be read, and leaves its session setting alone', () => {
     const file = '/Library/Application Support/ClaudeCode/managed-settings.json';
-    const ruled = machine('mac', [claude, t3], {
+    const ruled = machine('mac', [claude, second], {
       policy: { file, keys: [{ kind: 'setting', name: 'cleanupPeriodDays' }, { kind: 'env', name: 'CLAUDE_CODE_ENABLE_TELEMETRY' }], problem: null, ignoredOverrides: true },
     });
     const found = setupChecks([ruled]);
