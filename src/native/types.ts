@@ -297,9 +297,10 @@ export type ArchiveStatus = {
    */
   projectOverrides: { [key in string]: ArchiveProjectKeep },
   /**
-   * noowners: the drive doesn't enforce who can read the archive.
+   * noowners: the drive doesn't enforce who can read the archive. own-disk: it's on this Mac's own disk, so it
+   * doesn't outlive the disk it backs up.
    */
-  warnings: Array<string>,
+  warnings: Array<"noowners" | "own-disk">,
 };
 
 export type ArchiveStore = {
@@ -1041,13 +1042,17 @@ export type FleetSources = {
  */
 export type FolderCheck = {
   kind: FolderKind,
+  /**
+   * On this Mac's own disk, where Arbor keeps the index: an archive there doesn't outlive the disk it backs up.
+   */
+  ownDisk: boolean,
   freeBytes: number | null,
   mountPoint: string | null,
   noowners: boolean,
   archiveId: string | null,
 };
 
-export type FolderKind = "empty" | "archive" | "not-empty" | "missing" | "same-disk" | "not-writable";
+export type FolderKind = "empty" | "archive" | "not-empty" | "missing" | "not-writable";
 
 /**
  * A folder the last scan found that the list doesn't cover, or siblings of one kind folded into a `*`.

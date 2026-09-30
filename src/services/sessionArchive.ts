@@ -73,7 +73,6 @@ export function folderVerdict(check: FolderCheck, archiveId: string | null): Fol
         : { action: 'use', key: archiveId ? 'sessionArchive.folder.ours' : 'sessionArchive.folder.archive' };
     case 'not-empty': return { action: null, key: 'sessionArchive.folder.notEmpty' };
     case 'missing': return { action: null, key: 'sessionArchive.folder.missing' };
-    case 'same-disk': return { action: null, key: 'sessionArchive.folder.sameDisk' };
     case 'not-writable': return { action: null, key: 'sessionArchive.folder.notWritable' };
   }
 }

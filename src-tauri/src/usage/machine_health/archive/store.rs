@@ -71,6 +71,8 @@ pub(crate) struct Codec {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FolderCheck {
     pub(crate) kind: FolderKind,
+    /// On this Mac's own disk, where Arbor keeps the index: an archive there doesn't outlive the disk it backs up.
+    pub(crate) own_disk: bool,
     pub(crate) free_bytes: Option<u64>,
     pub(crate) mount_point: Option<String>,
     pub(crate) noowners: bool,
@@ -88,8 +90,6 @@ pub(crate) enum FolderKind {
     NotEmpty,
     /// Neither it nor the folder it would go in is there.
     Missing,
-    /// On this Mac's own disk, where Arbor keeps the index.
-    SameDisk,
     NotWritable,
 }
 
@@ -155,10 +155,11 @@ fn read_info(root: &Path) -> Option<Result<StoreInfo, String>> {
 }
 
 /// Says what `root` is. `index_dev` is the disk Arbor keeps its index on; a store there
-/// wouldn't survive the disk it's meant to back up.
+/// wouldn't survive the disk it's meant to back up, which the check says so the user can choose.
 pub(crate) fn check_folder(root: &Path, index_dev: Option<u64>) -> FolderCheck {
     let on = existing_ancestor(root).map(volume).unwrap_or_default();
-    let mut check = FolderCheck { kind: FolderKind::Missing, free_bytes: on.free_bytes, mount_point: on.mount_point.clone(), noowners: on.noowners, archive_id: None };
+    let own_disk = index_dev.is_some() && on.dev == index_dev;
+    let mut check = FolderCheck { kind: FolderKind::Missing, own_disk, free_bytes: on.free_bytes, mount_point: on.mount_point.clone(), noowners: on.noowners, archive_id: None };
     if !root.is_absolute() {
         return check;
     }
@@ -185,12 +186,8 @@ pub(crate) fn check_folder(root: &Path, index_dev: Option<u64>) -> FolderCheck {
     } else {
         FolderKind::Missing
     };
-    if check.kind == FolderKind::Empty {
-        if index_dev.is_some() && on.dev == index_dev {
-            check.kind = FolderKind::SameDisk;
-        } else if !writable(existing_ancestor(root).unwrap_or(root)) {
-            check.kind = FolderKind::NotWritable;
-        }
+    if check.kind == FolderKind::Empty && !writable(existing_ancestor(root).unwrap_or(root)) {
+        check.kind = FolderKind::NotWritable;
     }
     check
 }
@@ -289,7 +286,6 @@ impl Store {
             FolderKind::Archive => return Err("There's already an archive there. Use it instead.".into()),
             FolderKind::NotEmpty => return Err("That folder has other things in it. Choose an empty one.".into()),
             FolderKind::Missing => return Err("That folder isn't there.".into()),
-            FolderKind::SameDisk => return Err("That folder is on this Mac's own disk. Choose one on another drive.".into()),
             FolderKind::NotWritable => return Err("Arbor can't write to that folder.".into()),
         }
         make_dir(root)?;
@@ -585,9 +581,10 @@ pub(crate) mod tests {
         assert_eq!(check_folder(&root, None).kind, FolderKind::Empty);
         assert_eq!(check_folder(&base.join("no/such/place"), None).kind, FolderKind::Missing);
         assert_eq!(check_folder(Path::new("relative"), None).kind, FolderKind::Missing);
-        // A folder on the disk the index is on is refused.
-        assert_eq!(check_folder(&root, device(&base)).kind, FolderKind::SameDisk);
-        assert!(Store::create(&root, "a1", "mac", device(&base)).is_err());
+        // A folder on the disk the index is on can hold one, and the check says where it is.
+        let own = check_folder(&root, device(&base));
+        assert_eq!((own.kind, own.own_disk), (FolderKind::Empty, true));
+        assert!(!check_folder(&root, None).own_disk);
 
         let store = Store::create(&root, "a1", "mac", None).unwrap();
         assert_eq!(store.info().archive_id, "a1");

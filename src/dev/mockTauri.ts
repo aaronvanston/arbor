@@ -107,10 +107,11 @@
  * Sync › Arbor’s changes lists casey-mbp's changes, two settings edits to start with (`?changes=none` for none, which says
  * Arbor hasn't changed anything there, or `?changes=fail` for the list failing to load); the reporter, keeping
  * sessions, telemetry and Codex's MCP servers each add one when they change a file;
- * `?archive=off` (no session archive yet: `/Volumes/Archive/…` is empty, `/Users/…` is this Mac's disk, a path with
+ * `?archive=off` (no session archive yet: `/Volumes/Archive/…` is empty, `/Users/…` is empty on this Mac's own disk, a path with
  * `existing` holds another archive, one with `photos` isn't empty), `empty` (just made, nothing kept yet),
  * `catching-up`, `ok` (the default), `missing` (its drive unplugged since yesterday), `foreign` (another archive
- * where it was, for 3 hours), `noowners` (a drive that doesn't enforce permissions), `error` (failing for 2 hours) or
+ * where it was, for 3 hours), `noowners` (a drive that doesn't enforce permissions), `own-disk` (kept on this Mac's own
+ * disk), `error` (failing for 2 hours) or
  * `paused`; `missing`, `foreign` and `error` show the Sessions page's archive banner and, two minutes in, its alert;
  * its Old backups section has one backup imported and one partway, or `?imports=none` for none, `starting` for the
  * second not listed yet, `away` for its drive unplugged, or `failed` for the first finished with 3 files it couldn't

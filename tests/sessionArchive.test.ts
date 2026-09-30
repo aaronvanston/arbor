@@ -17,7 +17,7 @@ import { itemAt } from './support/items';
 import type { MessageKey, MessageVariables } from '../src/i18n/resources';
 import type { ArchiveSource, ArchiveStatus, FolderCheck } from '../src/native/types';
 
-const check = (kind: FolderCheck['kind'], archiveId: string | null = null): FolderCheck => ({ kind, freeBytes: 1e12, mountPoint: '/Volumes/Archive', noowners: false, archiveId });
+const check = (kind: FolderCheck['kind'], archiveId: string | null = null): FolderCheck => ({ kind, ownDisk: false, freeBytes: 1e12, mountPoint: '/Volumes/Archive', noowners: false, archiveId });
 const source = (fields: Partial<ArchiveSource>): ArchiveSource => ({ machine: 'mini', label: '~/.claude', agent: 'claude', files: 10, kept: 10, gone: 0, retentionDays: 36_500, ...fields });
 const t = (key: MessageKey, variables?: MessageVariables) => translate(key, variables);
 const HOUR = 60 * 60_000;
@@ -51,7 +51,7 @@ describe('the session archive', () => {
     expect(folderVerdict(check('archive', 'ours'), 'ours')).toEqual({ action: 'use', key: 'sessionArchive.folder.ours' });
     expect(folderVerdict(check('archive', 'found'), null)).toEqual({ action: 'use', key: 'sessionArchive.folder.archive' });
     expect(folderVerdict(check('archive', 'other'), 'ours')).toEqual({ action: null, key: 'sessionArchive.folder.otherArchive' });
-    for (const kind of ['not-empty', 'missing', 'same-disk', 'not-writable'] as const) {
+    for (const kind of ['not-empty', 'missing', 'not-writable'] as const) {
       const verdict = folderVerdict(check(kind), null);
       expect(verdict.action).toBeNull();
     }

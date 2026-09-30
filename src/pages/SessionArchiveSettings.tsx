@@ -191,6 +191,7 @@ export function ArchiveSetup({ status, onStatus }: { status: ArchiveStatus; onSt
             {t('sessionArchive.setup.choose')}
           </Button>
         </div>
+        {check?.ownDisk && verdict?.action ? <p className="pt-2 text-xs text-warning-foreground">{t('sessionArchive.ownDisk.short')}</p> : null}
         {check?.noowners && verdict?.action ? <p className="pt-2 text-xs text-muted-foreground">{t('sessionArchive.noowners.short')}</p> : null}
       </SettingsRow>
     </SettingsSection>
@@ -365,6 +366,13 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
             )
           }
         />
+        {status.warnings.includes('own-disk') && main ? (
+          <SettingsRow
+            title={t('sessionArchive.ownDisk.title')}
+            description={t('sessionArchive.ownDisk.description')}
+            control={<Badge variant="warning">{t('sessionArchive.ownDisk.badge')}</Badge>}
+          />
+        ) : null}
         {status.warnings.includes('noowners') && main ? (
           <SettingsRow
             title={t('sessionArchive.noowners.title')}

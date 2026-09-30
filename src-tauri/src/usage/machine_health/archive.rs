@@ -60,6 +60,9 @@ const RUNS_KEPT_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 struct Settings {
     root: Option<String>,
     mount_point: Option<String>,
+    /// The archive was put on this Mac's own disk, where the index is, on purpose. Otherwise finding it there means
+    /// its drive is gone and something else took its place.
+    own_disk: bool,
     paused: bool,
     gentle: bool,
     /// Only this Mac's homes are kept, not the other machines': the All machines value, which a
@@ -222,7 +225,7 @@ enum Away {
 }
 
 /// Opens the store Arbor was set up with, after checking it is that store: the same archive,
-/// on the same mount point, and not on the disk the index is on.
+/// on the same mount point, and not on the disk the index is on unless it was put there.
 fn open_main(settings: &Settings, archive_id: &str, index_dev: Option<u64>) -> Result<Store, (Away, String)> {
     let root = settings.root.as_deref().map(PathBuf::from).ok_or((Away::Missing, "No archive folder is set".to_string()))?;
     let check = check_folder(&root, index_dev);
@@ -234,7 +237,7 @@ fn open_main(settings: &Settings, archive_id: &str, index_dev: Option<u64>) -> R
     if settings.mount_point.is_some() && check.mount_point != settings.mount_point {
         return Err((Away::Foreign, "A different drive is where the archive's drive was".into()));
     }
-    if index_dev.is_some() && device(&root) == index_dev {
+    if !settings.own_disk && index_dev.is_some() && device(&root) == index_dev {
         return Err((Away::Foreign, "The archive folder is on this Mac's own disk".into()));
     }
     Store::open(&root, archive_id).map_err(|error| (Away::Foreign, error))
@@ -354,7 +357,9 @@ pub(crate) struct ArchiveStatus {
     machine_overrides: BTreeMap<String, bool>,
     /// Projects with a value of their own, by lowercase `owner/name`.
     project_overrides: BTreeMap<String, ArchiveProjectKeep>,
-    /// noowners: the drive doesn't enforce who can read the archive.
+    /// noowners: the drive doesn't enforce who can read the archive. own-disk: it's on this Mac's own disk, so it
+    /// doesn't outlive the disk it backs up.
+    #[ts(type = "Array<\"noowners\" | \"own-disk\">")]
     warnings: Vec<&'static str>,
 }
 
@@ -463,7 +468,13 @@ fn status_from(db: &Connection, runtime: &Runtime, index_dev: Option<u64>) -> Re
         _ if !runtime.last_complete => ArchiveCondition::CatchingUp,
         _ => ArchiveCondition::Ok,
     };
-    let warnings = if main.as_ref().is_some_and(|main| main.noowners) { vec!["noowners"] } else { Vec::new() };
+    let mut warnings = Vec::new();
+    if main.as_ref().is_some_and(|main| main.noowners) {
+        warnings.push("noowners");
+    }
+    if main.is_some() && settings.own_disk {
+        warnings.push("own-disk");
+    }
     Ok(ArchiveStatus {
         state,
         archive_id,
@@ -498,7 +509,7 @@ fn open_main_check(settings: &Settings, archive_id: &str, index_dev: Option<u64>
     if settings.mount_point.is_some() && check.mount_point != settings.mount_point {
         return Some(Away::Foreign);
     }
-    (index_dev.is_some() && device(&root) == index_dev).then_some(Away::Foreign)
+    (!settings.own_disk && index_dev.is_some() && device(&root) == index_dev).then_some(Away::Foreign)
 }
 
 async fn blocking<T: Send + 'static>(task: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
@@ -595,8 +606,8 @@ pub(crate) async fn check_session_archive_folder(path: String) -> Result<FolderC
     blocking(move || Ok(check_folder(Path::new(path.trim()), device(&index_dir()?)))).await
 }
 
-/// Makes a new archive in an empty folder on another drive, for an index that has none yet.
-/// `index_dev` is the disk the index is on, where an archive isn't allowed.
+/// Makes a new archive in an empty folder, for an index that has none yet. `index_dev` is the disk the index is on,
+/// which the archive notes when it's put there too.
 fn create_in(dir: &Path, root: &Path, machine: &str, index_dev: Option<u64>) -> Result<(), String> {
     let db = open_index(dir)?;
     if index::get_meta(&db, "archiveId")?.is_some() {
@@ -604,7 +615,7 @@ fn create_in(dir: &Path, root: &Path, machine: &str, index_dev: Option<u64>) -> 
     }
     let archive_id = store::random_id();
     let store = Store::create(root, &archive_id, machine, index_dev)?;
-    register(&db, &store, &archive_id, machine)
+    register(&db, &store, &archive_id, machine, index_dev)
 }
 
 /// Points the index at an archive that's already there: the one it was using, moved, or one
@@ -618,14 +629,11 @@ fn use_in(dir: &Path, root: &Path, machine: &str, index_dev: Option<u64>) -> Res
     if index::get_meta(&db, "archiveId")?.is_some_and(|ours| ours != archive_id) {
         return Err("That's a different archive from the one this Mac keeps.".into());
     }
-    if index_dev.is_some() && device(root) == index_dev {
-        return Err("That folder is on this Mac's own disk. Choose one on another drive.".into());
-    }
     let store = Store::open(root, &archive_id)?;
-    register(&db, &store, &archive_id, machine)
+    register(&db, &store, &archive_id, machine, index_dev)
 }
 
-fn register(db: &Connection, store: &Store, archive_id: &str, machine: &str) -> Result<(), String> {
+fn register(db: &Connection, store: &Store, archive_id: &str, machine: &str, index_dev: Option<u64>) -> Result<(), String> {
     let volume = store::volume(store.root());
     let root = store.root().to_string_lossy().into_owned();
     let now = index::now_ms();
@@ -646,6 +654,7 @@ fn register(db: &Connection, store: &Store, archive_id: &str, machine: &str) -> 
     }
     let mut settings = settings(db)?;
     settings.root = Some(root);
+    settings.own_disk = index_dev.is_some() && volume.dev == index_dev;
     settings.mount_point = volume.mount_point;
     save_settings(db, &settings)?;
     journal::flush(db, store)?;
@@ -1139,8 +1148,6 @@ mod tests {
         let foreign = base.join("drive/foreign.noindex");
         create_in(&foreign_dir, &foreign, "air", None).unwrap();
         assert!(use_in(&dir, &foreign, "mini", None).is_err());
-        // Nor one on the index's own disk.
-        assert!(use_in(&dir, &moved, "mini", device(&dir)).is_err());
         // Away: the folder gone is a missing drive; another archive in its place is foreign.
         let mut away = settings(&db).unwrap();
         away.root = Some(base.join("unplugged/archive.noindex").to_string_lossy().into_owned());
@@ -1150,9 +1157,13 @@ mod tests {
         away.root = Some(moved.to_string_lossy().into_owned());
         away.mount_point = Some("/Volumes/somewhere-else".into());
         assert_eq!(open_main_check(&away, &archive_id, None), Some(Away::Foreign));
-        // On the index's own disk, it's refused.
+        // Found on the index's own disk when it was put on another drive, it's refused; put there on purpose, it's used.
         away.mount_point = None;
         assert_eq!(open_main_check(&away, &archive_id, device(&dir)), Some(Away::Foreign));
+        use_in(&dir, &moved, "mini", device(&dir)).unwrap();
+        let own = settings(&db).unwrap();
+        assert!(own.own_disk);
+        assert_eq!(open_main_check(&own, &archive_id, device(&dir)), None);
         let _ = fs::remove_dir_all(&base);
     }
 
@@ -1171,6 +1182,15 @@ mod tests {
         assert!(catching_up.main.as_ref().unwrap().connected);
         let ok = status_from(&db, &Runtime { last_complete: true, ..Runtime::default() }, None).unwrap();
         assert_eq!(ok.state, ArchiveCondition::Ok);
+        assert!(!ok.warnings.contains(&"own-disk"));
+        // Put on this Mac's own disk on purpose, it keeps working and says so.
+        let mut own = settings(&db).unwrap();
+        own.own_disk = true;
+        save_settings(&db, &own).unwrap();
+        let on_own_disk = status_from(&db, &Runtime { last_complete: true, ..Runtime::default() }, device(&dir)).unwrap();
+        assert_eq!((on_own_disk.state, on_own_disk.warnings.contains(&"own-disk")), (ArchiveCondition::Ok, true));
+        own.own_disk = false;
+        save_settings(&db, &own).unwrap();
         let failing = status_from(&db, &Runtime { last_complete: true, last_error: Some("x".into()), ..Runtime::default() }, None).unwrap();
         assert_eq!(failing.state, ArchiveCondition::Error);
         let mut paused = settings(&db).unwrap();

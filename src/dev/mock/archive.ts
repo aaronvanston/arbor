@@ -22,6 +22,8 @@ import { later, mockLog, now, params } from './scenario';
 const archiveScenario = params.get('archive') ?? 'ok';
 
 const archiveRoot = '/Volumes/Archive/arbor-session-archive.noindex';
+// `?archive=own-disk`: kept on this Mac's own disk.
+const OWN_DISK_ROOT = '/Users/casey/Arbor Session Archive.noindex';
 
 // The other machines kept over SSH, by `?archiveMachines=` (listed at the top).
 const archiveMachinesScenario = params.get('archiveMachines') ?? 'some';
@@ -133,7 +135,9 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
   return {
     state,
     archiveId: 'mock-archive',
-    main: { root: archiveRoot, connected, mountPoint: connected ? '/Volumes/Archive' : null, freeBytes: connected ? 1_240_000_000_000 : null, noowners: scenario === 'noowners', lastSeenAt },
+    main: scenario === 'own-disk'
+      ? { root: OWN_DISK_ROOT, connected, mountPoint: '/', freeBytes: 212_000_000_000, noowners: false, lastSeenAt }
+      : { root: archiveRoot, connected, mountPoint: connected ? '/Volumes/Archive' : null, freeBytes: connected ? 1_240_000_000_000 : null, noowners: scenario === 'noowners', lastSeenAt },
     sources: archiveHomes(share),
     machines: fleetRuns(share),
     imports: mockArchiveImports(scenario),
@@ -152,18 +156,26 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
     projectOverrides: archiveProjectsScenario === 'sample'
       ? { 'casey/billing': { all: false, machines: {} }, 'casey/arbor': { all: null, machines: { ci01: false } } }
       : {},
-    warnings: scenario === 'noowners' ? ['noowners'] : [],
+    warnings: scenario === 'noowners' ? ['noowners'] : scenario === 'own-disk' ? ['own-disk'] : [],
   };
 }
 
 function mockFolderCheck(path: string): FolderCheck {
-  const kind = path.startsWith('/Users') || path.startsWith('/Library') ? 'same-disk'
-    : path.includes('existing') || path.includes('moved') ? 'archive'
+  // `/Users/…` and `/Library/…` are on this Mac's own disk, which can hold an archive but says so.
+  const ownDisk = path.startsWith('/Users') || path.startsWith('/Library');
+  const kind = path.includes('existing') || path.includes('moved') ? 'archive'
     : path.includes('photos') ? 'not-empty'
-    : path.startsWith('/Volumes/Archive/') ? 'empty'
+    : ownDisk || path.startsWith('/Volumes/Archive/') ? 'empty'
     : 'missing';
   const onDrive = kind === 'empty' || kind === 'archive' || kind === 'not-empty';
-  return { kind, freeBytes: onDrive ? 1_240_000_000_000 : null, mountPoint: onDrive ? '/Volumes/Archive' : null, noowners: onDrive, archiveId: kind !== 'archive' ? null : path.includes('moved') ? String(archiveStatus.archiveId ?? 'another-archive') : 'another-archive' };
+  return {
+    kind,
+    ownDisk,
+    freeBytes: !onDrive ? null : ownDisk ? 212_000_000_000 : 1_240_000_000_000,
+    mountPoint: !onDrive ? null : ownDisk ? '/' : '/Volumes/Archive',
+    noowners: onDrive && !ownDisk,
+    archiveId: kind !== 'archive' ? null : path.includes('moved') ? String(archiveStatus.archiveId ?? 'another-archive') : 'another-archive',
+  };
 }
 
 // Built after `now`, which the archive's pass times are measured from.
@@ -267,7 +279,12 @@ const openArchive = (command: 'create_session_archive' | 'use_session_archive', 
     if (command === 'create_session_archive' && check.kind !== 'empty') throw 'That folder has other things in it. Choose an empty one.';
     // Finding a moved archive carries on with what it holds; a new or adopted one starts catching up.
     const found = archiveStatus.archiveId !== null ? 'ok' : 'empty';
-    archiveStatus = { ...mockArchiveStatus(found), main: { root: path, connected: true, mountPoint: '/Volumes/Archive', freeBytes: 1_240_000_000_000, noowners: true, lastSeenAt: Date.now() }, warnings: ['noowners'] };
+    const { mountPoint, freeBytes, noowners, ownDisk } = check;
+    archiveStatus = {
+      ...mockArchiveStatus(found),
+      main: { root: path, connected: true, mountPoint, freeBytes, noowners, lastSeenAt: Date.now() },
+      warnings: [...(noowners ? ['noowners' as const] : []), ...(ownDisk ? ['own-disk' as const] : [])],
+    };
     return archiveStatus;
   });
 };
