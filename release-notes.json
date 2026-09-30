@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.0.1",
+    "summary": "Arbor now shows under its own name everywhere on your Mac, including Login Items.",
+    "changes": [
+      "Settings, history and open at login carry over from earlier versions."
+    ]
+  },
+  {
     "version": "1.0.0",
     "summary": "Arbor 1.0: choose between stable releases and nightly builds of what's next.",
     "changes": [
