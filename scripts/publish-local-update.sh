@@ -20,6 +20,17 @@ esac
 
 cd "$repo_dir"
 
+# The keys a release needs (PostHog's, and Hugeicons' for bun install) live in the untracked .env, which a new worktree
+# doesn't have. Link the main checkout's in, so a key changed there reaches every worktree, and bun, which loads .env
+# itself for the source map upload, finds it too.
+if [[ ! -e .env ]]; then
+  main_env="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.env"
+  if [[ -f "$main_env" ]]; then
+    ln -s "$main_env" .env
+    echo "Linked .env to the main checkout's."
+  fi
+fi
+
 node scripts/version.mjs "$requested_version" >/dev/null
 
 # The release notes come from git history, and the release commit holds only the Cargo files, so what's built has to
@@ -64,18 +75,19 @@ fi
 # A worktree without the Hugeicons key builds with the free icons: selected sidebar rows lose their duotone drawing.
 # ARBOR_ALLOW_FREE_ICONS=1 publishes that way on purpose.
 if [[ ! -d node_modules/@hugeicons-pro/core-duotone-rounded && "${ARBOR_ALLOW_FREE_ICONS:-}" != "1" ]]; then
-  echo "Hugeicons Pro isn't installed, so this build would use the free icons. Copy .env (HUGEICONS_LICENSE_KEY) from" >&2
-  echo "the main checkout and run bun install, or set ARBOR_ALLOW_FREE_ICONS=1 to publish with the free set." >&2
+  echo "Hugeicons Pro isn't installed, so this build would use the free icons. Put HUGEICONS_LICENSE_KEY in .env and run" >&2
+  echo "bun install, or set ARBOR_ALLOW_FREE_ICONS=1 to publish with the free set." >&2
   exit 1
 fi
 
 # Official releases send usage data and crash reports (src-tauri/src/product_analytics.rs). PostHog's project key is
 # built in only here, from ARBOR_POSTHOG_KEY in the environment or .env, so a build from source sends nothing.
-# ARBOR_ALLOW_NO_ANALYTICS=1 publishes a build that sends nothing on purpose.
-posthog_key="${ARBOR_POSTHOG_KEY:-$(sed -n 's/^ARBOR_POSTHOG_KEY=//p' .env 2>/dev/null | tail -1)}"
+# ARBOR_ALLOW_NO_ANALYTICS=1 publishes a build that sends nothing on purpose. Without a .env at all, sed's failure
+# would end the script under pipefail before it could say why, hence the `|| true`.
+posthog_key="${ARBOR_POSTHOG_KEY:-$( { sed -n 's/^ARBOR_POSTHOG_KEY=//p' .env 2>/dev/null || true; } | tail -1)}"
 if [[ -z "$posthog_key" && "${ARBOR_ALLOW_NO_ANALYTICS:-}" != "1" ]]; then
-  echo "ARBOR_POSTHOG_KEY isn't set, so this build would send no usage data or crash reports. Copy .env from the main" >&2
-  echo "checkout, or set ARBOR_ALLOW_NO_ANALYTICS=1 to publish a build that sends nothing." >&2
+  echo "ARBOR_POSTHOG_KEY isn't set here or in .env, so this build would send no usage data or crash reports. Add it" >&2
+  echo "to .env, or set ARBOR_ALLOW_NO_ANALYTICS=1 to publish a build that sends nothing." >&2
   exit 1
 fi
 export ARBOR_POSTHOG_KEY="$posthog_key"

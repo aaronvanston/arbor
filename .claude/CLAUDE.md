@@ -231,7 +231,8 @@ Releases are the maintainer's job, or yours only when the maintainer has said to
    `ARBOR_RELEASE_CHANGES` can add up to three high-level changes, one a line. It
    won't start with uncommitted changes or off `origin/main`, and it claims the
    number in the feed before anything else (`.claims/X.Y.Z` there), so it refuses a
-   number another run is publishing or has published. It prints the notes,
+   number another run is publishing or has published. A worktree with no `.env` gets
+   a link to the main checkout's, where the keys a release needs are. It prints the notes,
    runs `bun run verify` and `bun run verify:rust` (see Running things), writes the
    version into `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`, builds and signs the
    app, and puts the DMG and a manifest (notes included) in

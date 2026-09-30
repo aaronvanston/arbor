@@ -333,7 +333,8 @@ The maintainer runs releases, or an agent the maintainer has told to release.
 2. `ARBOR_RELEASE_SUMMARY="…" ./scripts/publish-local-update.sh <X.Y.Z>`. The
    summary is required: one line saying at a feature level what the release adds or
    changes (see Release notes below). `ARBOR_RELEASE_CHANGES` can add up to three
-   high-level changes, one a line. It stops on uncommitted changes or a HEAD that isn't on top of `origin/main`. Its
+   high-level changes, one a line. It stops on uncommitted changes or a HEAD that isn't on top of `origin/main`. In a
+   worktree without `.env`, it links the main checkout's, which holds the keys a release needs. Its
    first step is to claim the version in the feed folder (`.claims/X.Y.Z`), which fails
    if another run got there first or the number is already out, and a run that
    stops early lets go of its claim. It then checks and prints
