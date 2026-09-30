@@ -49,8 +49,8 @@ const DESKTOP = '~/Library/Application Support/Claude/local-agent-mode-sessions'
 const archiveHomes = (share: number): ArchiveSource[] => [
   { machine: 'mac-mini', label: '~/.claude', agent: 'claude', files: 5210, kept: Math.round(5210 * share), gone: share > 0 ? 214 : 0, retentionDays: 36_500 },
   { machine: 'mac-mini', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null },
-  { machine: 'mac-mini', label: '~/.t3/provider-homes/claude-proxy', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
-  { machine: 'mac-mini', label: '~/Library/Application Support/@posthog/posthog-code/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
+  { machine: 'mac-mini', label: '~/.agent-app/homes/claude-proxy', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
+  { machine: 'mac-mini', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
   ...fleetHomes(share),
 ];
 
@@ -97,8 +97,8 @@ function mockImportPreview(path: string): ImportPreview {
         home('codex', `${path}/old-codex/.codex`, 1_240, 1_238),
         home('codex', `${user}/.codex`, 4_517, 4_517),
         home('codex', `${user}/.codex-2`, 210, 210),
-        home('claude', `${user}/.skipper/profiles/work2`, 2_925, 331),
-        home('claude', `${user}/.t3/provider-homes/claude-proxy`, 9_312, 1_024),
+        home('claude', `${user}/.agent-tool/profiles/work2`, 2_925, 331),
+        home('claude', `${user}/.agent-app/homes/claude-proxy`, 9_312, 1_024),
       ];
   const fresh = homes.filter((entry) => entry.state === 'new');
   return {
@@ -203,7 +203,7 @@ function mockLifetimeTokens(): LifetimeTokens {
     { home: '~/.claude', agent: 'claude', model: 'claude-opus-4-6', weight: 0.46, until: '2026-05' },
     { home: '~/.claude', agent: 'claude', model: 'claude-opus-5-5', weight: 0.5, from: '2026-05' },
     { home: '~/.claude', agent: 'claude', model: 'claude-haiku-4-5-20251001', weight: 0.03 },
-    { home: '~/.t3/provider-homes/claude-proxy', agent: 'claude', model: 'claude-sonnet-5', weight: 0.14, from: '2026-02' },
+    { home: '~/.agent-app/homes/claude-proxy', agent: 'claude', model: 'claude-sonnet-5', weight: 0.14, from: '2026-02' },
     { home: '~/.codex', agent: 'codex', model: 'gpt-5.5-codex', weight: 0.2, until: '2026-07' },
     { home: '~/.codex', agent: 'codex', model: 'gpt-6-sol', weight: 0.24, from: '2026-07' },
     { home: '~/.codex', agent: 'codex', model: '', weight: 0.004 },

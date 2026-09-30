@@ -124,14 +124,13 @@ export function rememberSetupComparison({ reference, home }: { reference?: strin
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
-/** An agent home as Sync names it: Claude Code's, Codex's, a shared one or a T3 Code provider's, else its path. */
+/** An agent home as Sync names it: Claude Code's, Codex's or the shared one, else its path. */
 export function homeLabel(key: string, t: Translate) {
   const look = homeLook(key);
   switch (look.id) {
     case 'claude': return t('setup.home.claude');
     case 'codex': return t('setup.home.codex');
     case 'shared': return t('setup.home.shared');
-    case 't3': return t(look.agent === 'codex' ? 'setup.home.t3Codex' : 'setup.home.t3Claude', { provider: look.provider ?? '' });
     default: return look.path;
   }
 }

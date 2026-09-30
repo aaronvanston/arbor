@@ -723,7 +723,7 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
     toolUsage: toolUsage({ Bash: 58, Read: 31, Edit: 12, Agent: 1, Skill: 3 }, { Read: 22, Grep: 9 }, { Explore: 1 }, { pdf: 2, 'superpowers:brainstorming': 1 }, ['release-notes']),
   }),
   'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7': mockTranscript({
-    agentHome: '~/.t3/provider-homes/claude-proxy', cwd: '/Users/casey/.t3/worktrees/arbor/login-loop', repoRoot: '/Users/casey/.t3/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor',
+    agentHome: '~/.agent-app/homes/claude-proxy', cwd: '/Users/casey/.t3/worktrees/arbor/login-loop', repoRoot: '/Users/casey/.t3/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor',
     branch: 'fix/login-loop', title: 'Fix the login redirect loop', titleSource: 'ai',
     pullRequests: [
       { number: 412, url: 'https://github.com/acme/arbor/pull/412', repository: 'acme/arbor' },

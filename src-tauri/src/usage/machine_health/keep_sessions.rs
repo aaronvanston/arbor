@@ -118,16 +118,20 @@ mod tests {
         fn each_home_asked_for_is_kept_with_the_file_before_in_the_list_of_changes() {
             let home = temp_home("homes");
             let claude = home.join(".claude");
-            let proxy = home.join(".t3/provider-homes/claude-proxy");
+            agent_homes::tests::save_on_this_thread(vec![
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, true),
+            ]);
+            let proxy = home.join(".agent-app/homes/claude-proxy");
             fs::create_dir_all(&claude).unwrap();
             fs::create_dir_all(proxy.join("projects")).unwrap();
             fs::create_dir_all(home.join(".codex")).unwrap();
             let before = "{\n  \"hooks\": {}\n}\n";
             fs::write(proxy.join("settings.json"), before).unwrap();
 
-            let edits = keep(&home, &["~/.claude", "~/.t3/provider-homes/claude-proxy"]).unwrap();
+            let edits = keep(&home, &["~/.claude", "~/.agent-app/homes/claude-proxy"]).unwrap();
             let changes: Vec<(&str, FileChange, bool)> = edits.iter().map(|edit| (edit.home.as_str(), edit.change, edit.written)).collect();
-            assert_eq!(changes, [("~/.claude", FileChange::Create, true), ("~/.t3/provider-homes/claude-proxy", FileChange::Edit, true)]);
+            assert_eq!(changes, [("~/.claude", FileChange::Create, true), ("~/.agent-app/homes/claude-proxy", FileChange::Edit, true)]);
             assert_eq!(fs::read_to_string(claude.join("settings.json")).unwrap(), "{\n  \"cleanupPeriodDays\": 36500\n}\n");
             assert_eq!(fs::read_to_string(proxy.join("settings.json")).unwrap(), "{\n  \"hooks\": {},\n  \"cleanupPeriodDays\": 36500\n}\n");
             let backups = home.join(".arbor/setup-backups");
@@ -137,7 +141,7 @@ mod tests {
             assert!(!home.join(".codex/config.toml").exists(), "Codex's home isn't touched");
 
             // Asking again changes nothing.
-            let again = keep(&home, &["~/.t3/provider-homes/claude-proxy"]).unwrap();
+            let again = keep(&home, &["~/.agent-app/homes/claude-proxy"]).unwrap();
             assert_eq!(again.iter().map(|edit| (edit.change, edit.written)).collect::<Vec<_>>(), [(FileChange::Unchanged, false)]);
             let _ = fs::remove_dir_all(&home);
         }
@@ -150,7 +154,7 @@ mod tests {
             let edits = keep(&home, &["~/.claude"]).unwrap();
             assert!(edits[0].error.as_deref().is_some_and(|error| error.contains("isn't valid JSON")), "{edits:?}");
             assert_eq!(fs::read_to_string(home.join(".claude/settings.json")).unwrap(), "{ broken");
-            assert!(keep(&home, &["~/.t3/provider-homes/claude-proxy"]).is_err());
+            assert!(keep(&home, &["~/.agent-app/homes/claude-proxy"]).is_err());
             let _ = fs::remove_dir_all(&home);
         }
     }

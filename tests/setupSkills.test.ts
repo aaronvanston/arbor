@@ -32,8 +32,8 @@ const home = (agent: SetupHome['agent'], path: string, items: SetupItem[], skill
 });
 
 const CLAUDE = '~/.claude';
-const PROXY = '~/.t3/provider-homes/claude-proxy';
-const LINKED = '~/.t3/provider-homes/claude-linked';
+const PROXY = '~/.agent-app/homes/claude-proxy';
+const LINKED = '~/.agent-app/homes/claude-linked';
 const CODEX = '~/.codex';
 const STORE = '~/.agents';
 
@@ -85,10 +85,10 @@ describe('where each skill stands', () => {
   });
 
   it('leaves out a T3 Code shadow Codex home whose skills are another home’s', () => {
-    const shadow = home('codex', '~/.t3/provider-homes/codex-proxy', [], '~/.codex/skills', { shares: { home: CODEX, entries: ['config.toml', 'skills'] } });
+    const shadow = home('codex', '~/.agent-app/homes/codex-proxy', [], '~/.codex/skills', { shares: { home: CODEX, entries: ['config.toml', 'skills'] } });
     const shared = skillsView({ ...machine, homes: [...machine.homes, shadow] });
     expect(shared.homes.map((entry) => entry.path)).toEqual(view.homes.map((entry) => entry.path));
-    expect(shared.sharing).toEqual([{ path: '~/.t3/provider-homes/codex-proxy', home: CODEX }]);
+    expect(shared.sharing).toEqual([{ path: '~/.agent-app/homes/codex-proxy', home: CODEX }]);
     expect(view.sharing).toEqual([]);
   });
 

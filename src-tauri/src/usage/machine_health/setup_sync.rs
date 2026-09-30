@@ -894,7 +894,7 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
         backup.what = made_by.unwrap_or(if backup.skills.is_empty() { ChangeKind::Sync } else { ChangeKind::Skills });
         // Listed after the files, whose places undoing a skill's folder goes by.
         let edited = backup.edits.iter().map(|edit| BackupFile {
-            path: attention::tilde(&edit.path, home),
+            path: agent_homes::tilde(&edit.path, home),
             change: if edit.before == "-" { "added" } else { "changed" },
             skill: false,
             edit: true,

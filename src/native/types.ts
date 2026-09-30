@@ -37,6 +37,49 @@ export type AgentCopy = {
   version: string | null,
 };
 
+export type AgentHome = {
+  /**
+   * The machine it's on, by name, or empty for every machine.
+   */
+  machine: string,
+  agent: AgentHomeKind,
+  /**
+   * From `~/` or `/`, where a `*` in a folder's name stands for any characters in it; for a standard home, an
+   * environment variable the agent reads its home from, like `$CLAUDE_CONFIG_DIR`.
+   */
+  path: string,
+  source: AgentHomeSource,
+  /**
+   * Its sessions are read for the Sessions pages and kept by the archive.
+   */
+  sessions: boolean,
+  /**
+   * Its settings are read and changed: the Sync page, the needs-you reporter, telemetry, how long sessions are kept.
+   */
+  sync: boolean,
+};
+
+/**
+ * What a home belongs to, by the name the archive files its sessions under.
+ */
+export type AgentHomeKind = "claude" | "codex" | "pi" | "claude-desktop";
+
+/**
+ * Where a home on the list came from.
+ */
+export type AgentHomeSource = "standard" | "found" | "added";
+
+/**
+ * Each machine's homes, as Settings › Agent homes shows them.
+ */
+export type AgentHomesView = {
+  /**
+   * The homes on every machine: the standard ones and those saved for every machine.
+   */
+  everywhere: Array<AgentHome>,
+  machines: Array<MachineAgentHomes>,
+};
+
 /**
  * One agent's install on a machine.
  */
@@ -1007,6 +1050,18 @@ export type FolderCheck = {
 export type FolderKind = "empty" | "archive" | "not-empty" | "missing" | "same-disk" | "not-writable";
 
 /**
+ * A folder the last scan found that the list doesn't cover, or siblings of one kind folded into a `*`.
+ */
+export type FoundHome = {
+  agent: AgentHomeKind,
+  path: string,
+  /**
+   * How many folders it stands for.
+   */
+  folders: number,
+};
+
+/**
  * How the checks with GitHub are going, for the Projects view.
  */
 export type GithubStatus = {
@@ -1489,6 +1544,23 @@ export type LiveSessionsReport = {
  * How a checkout has one of those files.
  */
 export type LocalFileState = "none" | "seen" | "own" | "arbor";
+
+export type MachineAgentHomes = {
+  machine: string,
+  /**
+   * Its homes as its scripts read them, those for every machine included.
+   */
+  homes: Array<AgentHome>,
+  scannedAtMs: number | null,
+  /**
+   * Why its last scan failed.
+   */
+  error: string | null,
+  /**
+   * What its last scan found that no home on the list covers.
+   */
+  suggested: Array<FoundHome>,
+};
 
 /**
  * What the checks found on a machine. A failed check keeps what the last good one found.

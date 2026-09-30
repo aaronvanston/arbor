@@ -2,6 +2,9 @@
 import { emit } from '@tauri-apps/api/event';
 import type { MachineCommands } from '../../native/machines';
 import type {
+  AgentHome,
+  AgentHomeKind,
+  AgentHomesView,
   AgentInstall,
   AgentKind,
   AgentUpdate,
@@ -10,6 +13,7 @@ import type {
   ClientVersions,
   DiagnosticCall,
   DiscoveredHost,
+  FoundHome,
   HealthPoint,
   MachineAgents,
   MachineFacts,
@@ -28,6 +32,7 @@ import type {
   TelemetrySetup,
   TelemetryStatus,
 } from '../../native/types';
+import { homePathProblem } from '../../services/agentHomes';
 import type { CommandAnswers } from './answers';
 import { configSettings } from './core';
 import { later, mockLog, now, params } from './scenario';
@@ -140,8 +145,8 @@ const reporterHomes: Record<string, ReporterHome[]> = {
   'casey-mbp': [
     { agent: 'claude', home: '~/.claude', reporting: true },
     { agent: 'codex', home: '~/.codex', reporting: true },
-    { agent: 'claude', home: '~/.t3/provider-homes/claude-proxy', reporting: true },
-    { agent: 'codex', home: '~/.t3/provider-homes/codex-proxy', reporting: params.get('reporter') !== 'partial' },
+    { agent: 'claude', home: '~/.agent-app/homes/claude-proxy', reporting: true },
+    { agent: 'codex', home: '~/.agent-app/homes/codex-proxy', reporting: params.get('reporter') !== 'partial' },
   ],
   'ci-01': [{ agent: 'claude', home: '~/.claude', reporting: false }, { agent: 'codex', home: '~/.codex', reporting: false }],
   'cedar-02': [{ agent: 'claude', home: '~/.claude', reporting: true }],
@@ -466,6 +471,96 @@ if (params.get('machine') === 'new') {
   joinMockMachine('cedar-03', true);
 }
 
+// Settings › Agent homes: each machine's list of agent homes, as the first look at it filled it in. `?homes=fresh` for no
+// machine looked at yet, so the list is only the standard homes until Look again; `?homes=fail` for cedar-02's last
+// look failing (and failing again); `?homes=none` for looks that found nothing more to suggest.
+const homesScenario = params.get('homes') ?? '';
+
+const STANDARD_HOMES: readonly (readonly [AgentHomeKind, string])[] = [
+  ['claude', '$CLAUDE_CONFIG_DIR'], ['claude', '~/.claude'], ['codex', '$CODEX_HOME'], ['codex', '~/.codex'],
+  ['pi', '$PI_CODING_AGENT_SESSION_DIR'], ['pi', '~/.pi/agent/sessions'],
+];
+const standardHome = (agent: AgentHomeKind, path: string) => STANDARD_HOMES.some(([kind, standard]) => kind === agent && standard === path);
+const hasHomeSettings = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex';
+const DESKTOP_HOMES = '~/Library/Application Support/Claude/local-agent-mode-sessions/*/*';
+const savedHome = (machine: string, agent: AgentHomeKind, path: string, sync: boolean): AgentHome => ({ machine, agent, path, source: 'found', sessions: true, sync });
+
+// What each machine's first look found, which it added to the list, and what it found beside that.
+const firstLooks: Record<string, { homes: AgentHome[]; suggested: FoundHome[] }> = {
+  'casey-mbp': {
+    homes: [
+      savedHome('casey-mbp', 'claude', '~/.agent-app/homes/*', true),
+      savedHome('casey-mbp', 'codex', '~/.agent-app/homes/*', true),
+      savedHome('casey-mbp', 'claude-desktop', DESKTOP_HOMES, false),
+      savedHome('casey-mbp', 'claude', `${DESKTOP_HOMES}/local_*/.claude`, false),
+    ],
+    suggested: [{ agent: 'claude', path: '~/Library/Application Support/AcmeCode/claude', folders: 1 }],
+  },
+  'cedar-02': {
+    homes: [savedHome('cedar-02', 'claude', '~/.agent-tool/profiles/*', false)],
+    suggested: [{ agent: 'codex', path: '~/sandbox/*/.codex', folders: 3 }],
+  },
+  'ci-01': { homes: [], suggested: [] },
+};
+const lookedHomes = (machine: string) => firstLooks[machine] ?? { homes: [], suggested: [] };
+
+const homeScans: Record<string, { at: number; error: string | null; suggested: FoundHome[] }> = {};
+let savedHomes: AgentHome[] = [];
+if (homesScenario !== 'fresh') {
+  for (const [machine, looked] of Object.entries(firstLooks)) {
+    savedHomes.push(...looked.homes);
+    homeScans[machine] = { at: now - 2 * 86_400_000, error: null, suggested: homesScenario === 'none' ? [] : looked.suggested };
+  }
+  // One added by hand for every machine, and a standard home switched off on one machine.
+  savedHomes.push({ machine: '', agent: 'codex', path: '/srv/agents/codex', source: 'added', sessions: true, sync: true });
+  savedHomes.push({ machine: 'ci-01', agent: 'pi', path: '~/.pi/agent/sessions', source: 'standard', sessions: false, sync: false });
+  if (homesScenario === 'fail') homeScans['cedar-02'] = { ...homeScans['cedar-02']!, at: now - 40 * 60_000, error: 'ssh: connect to host cedar-02 port 22: Operation timed out' };
+}
+
+/** The machines homes are listed for: those scripts run on. */
+const homeMachines = () => healthHosts.filter((host) => host.enabled && host.endpoint.trim()).map((host) => host.machine);
+
+/** A machine's homes as its scripts read them: the standard ones, then every machine's, then its own, each taking the place of the same home before it. */
+function homesOn(machine: string): AgentHome[] {
+  const homes: AgentHome[] = STANDARD_HOMES.map(([agent, path]) => ({ machine: '', agent, path, source: 'standard', sessions: true, sync: hasHomeSettings(agent) }));
+  for (const scope of machine ? ['', machine] : ['']) {
+    for (const home of savedHomes.filter((entry) => entry.machine === scope)) {
+      const at = homes.findIndex((listed) => listed.agent === home.agent && listed.path === home.path);
+      if (at >= 0) homes[at] = { ...homes[at]!, machine: home.machine, sessions: home.sessions, sync: home.sync };
+      else homes.push(home);
+    }
+  }
+  return homes;
+}
+
+const agentHomesView = (): AgentHomesView => ({
+  everywhere: homesOn(''),
+  machines: homeMachines().map((machine) => {
+    const scan = homeScans[machine];
+    const homes = homesOn(machine);
+    return {
+      machine,
+      homes,
+      scannedAtMs: scan?.at ?? null,
+      error: scan?.error ?? null,
+      suggested: scan?.suggested.filter((found) => !homes.some((home) => home.agent === found.agent && home.path === found.path)) ?? [],
+    };
+  }),
+});
+
+/** A look at one machine: the first fills its list, and each keeps what it found beside it. */
+function lookForHomes(machine: string) {
+  if (homesScenario === 'fail' && machine === 'cedar-02') {
+    homeScans[machine] = { at: Date.now(), error: 'ssh: connect to host cedar-02 port 22: Operation timed out', suggested: homeScans[machine]?.suggested ?? [] };
+    return;
+  }
+  const looked = lookedHomes(machine);
+  if (!homeScans[machine] || homeScans[machine]!.error === null && !savedHomes.some((home) => home.machine === machine)) {
+    for (const home of looked.homes) if (!savedHomes.some((saved) => saved.machine === home.machine && saved.agent === home.agent && saved.path === home.path)) savedHomes.push(home);
+  }
+  homeScans[machine] = { at: Date.now(), error: null, suggested: homesScenario === 'none' ? [] : looked.suggested };
+}
+
 /** The machines: their health, agents, reporters and telemetry. */
 export const machinesAnswers: CommandAnswers<MachineCommands> = {
   get_machine_health: (args) => {
@@ -479,6 +574,33 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     return healthScenario === 'slow' ? later(4_000, snapshot) : snapshot();
   },
   get_machine_hosts: () => healthHosts,
+  get_agent_homes: () => agentHomesView(),
+  save_agent_home: ({ home }) => {
+    mockLog('save_agent_home', home);
+    const problem = homePathProblem(home.path);
+    if (!standardHome(home.agent, home.path) && problem) throw new Error('A home’s folder starts with ~/ or /');
+    const path = home.path.trim().replace(/\/+$/, '');
+    const saved: AgentHome = { ...home, path, source: standardHome(home.agent, path) ? 'standard' : home.source === 'standard' ? 'added' : home.source, sync: home.sync && hasHomeSettings(home.agent) };
+    savedHomes = [...savedHomes.filter((entry) => !(entry.machine === saved.machine && entry.agent === saved.agent && entry.path === saved.path)), saved];
+    return agentHomesView();
+  },
+  remove_agent_home: ({ machine, agent, path }) => {
+    mockLog('remove_agent_home', { machine, agent, path });
+    savedHomes = savedHomes.filter((entry) => !(entry.machine === machine && entry.agent === agent && entry.path === path));
+    return agentHomesView();
+  },
+  scan_agent_homes: ({ machine }) => later(1_500, () => {
+    mockLog('scan_agent_homes', { machine });
+    for (const name of machine ? [machine] : homeMachines()) lookForHomes(name);
+    void emit('agent-homes-updated', Date.now());
+    return agentHomesView();
+  }),
+  preview_agent_home: ({ machine, agent, path }) => later(600, () => {
+    mockLog('preview_agent_home', { machine, agent, path });
+    if (path.includes('missing')) return [];
+    if (!path.includes('*')) return [path.trim()];
+    return [`${agent}-proxy`, `${agent}-work`].map((name) => path.trim().replace('*', name).split('*').join('local_1'));
+  }),
   // npm's latest is what an update brings; `?npm=fail` is npm not answering, which the pages treat as unknown.
   get_t3_compatibility: () => mockT3Policies(),
   get_agent_latest_versions: () => params.get('npm') === 'fail' ? { claude: null, codex: null } : { ...latestAgent },

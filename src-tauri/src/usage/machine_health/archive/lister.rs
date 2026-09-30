@@ -17,7 +17,8 @@
 //! Rust keeps only paths the allowlist below says are sessions, so a bug in
 //! the script can never bring in settings or credentials.
 
-use super::super::attention::{shell_quote, AGENT_HOMES};
+use super::super::agent_homes::{self, HomeUse};
+use super::super::attention::shell_quote;
 
 pub(crate) const LIST_BODY: &str = r##"set -u
 export LC_ALL=C
@@ -54,10 +55,7 @@ subs() {
     *) echo "." ;;
   esac
 }
-{
-  own_homes
-  extra_roots
-} | awk -F"$tab" '!seen[$2]++' > "$work/homes"
+list_homes | awk -F"$tab" '!seen[$2]++' > "$work/homes"
 i=0
 while IFS=$tab read -r agent home; do
   i=$((i + 1))
@@ -69,42 +67,24 @@ done < "$work/homes"
 printf 'E\n'
 "##;
 
-/// A machine's own agent homes: those every Arbor script knows, Skipper's profiles, Claude's
-/// desktop app's local sessions (each an audit log and a Claude Code home of its own), the
-/// Claude Code home PostHog Code runs its agent in, and Pi's sessions folder.
-const OWN_HOMES: &str = r##"own_homes() {
-  agent_homes
-  for d in "${PI_CODING_AGENT_SESSION_DIR:-}" "$HOME/.pi/agent/sessions"; do
-    d=${d%/}
-    if [ -n "$d" ] && [ -d "$d" ]; then printf 'pi\t%s\n' "$d"; fi
-  done
-  for d in "$HOME"/.skipper/profiles/*; do if [ -d "$d/projects" ]; then printf 'claude\t%s\n' "$d"; fi; done
-  for d in "$HOME/Library/Application Support/Claude/local-agent-mode-sessions"/*/*; do
-    for a in "$d"/local_*/audit.jsonl; do if [ -f "$a" ]; then printf 'claude-desktop\t%s\n' "$d"; break; fi; done
-    for c in "$d"/local_*/.claude; do if [ -d "$c/projects" ]; then printf 'claude\t%s\n' "$c"; fi; done
-  done
-  d="$HOME/Library/Application Support/@posthog/posthog-code/claude"
-  if [ -d "$d/projects" ]; then printf 'claude\t%s\n' "$d"; fi
-}
-"##;
-
-/// The whole script, with more homes to list from settings (agent and path each).
-pub(crate) fn list_script(extra_roots: &[(String, String)]) -> String {
-    script(OWN_HOMES, extra_roots)
+/// The script for `machine`'s agent homes with Sessions on.
+pub(crate) fn list_script(machine: &str) -> String {
+    homes_script(&agent_homes::shell_function(machine, HomeUse::Archive))
 }
 
-/// The script for the given homes and no others, such as the homes in an old backup.
+/// The script for the homes an `agent_homes` shell function lists.
+fn homes_script(agent_homes: &str) -> String {
+    format!("{agent_homes}list_homes() {{\n  agent_homes\n}}\n{LIST_BODY}")
+}
+
+/// The script for the given homes (agent and path each) and no others, such as the homes in an old backup.
 pub(crate) fn roots_script(roots: &[(String, String)]) -> String {
-    script("own_homes() {\n  :\n}\n", roots)
-}
-
-fn script(own_homes: &str, extra_roots: &[(String, String)]) -> String {
-    let mut extra = String::from("extra_roots() {\n  :\n");
-    for (agent, path) in extra_roots {
-        extra.push_str(&format!("  [ -d {path} ] && printf '%s\\t%s\\n' {agent} {path}\n", path = shell_quote(path), agent = shell_quote(agent)));
+    let mut homes = String::from("list_homes() {\n  :\n");
+    for (agent, path) in roots {
+        homes.push_str(&format!("  [ -d {path} ] && printf '%s\\t%s\\n' {agent} {path}\n", path = shell_quote(path), agent = shell_quote(agent)));
     }
-    extra.push_str("}\n");
-    format!("{AGENT_HOMES}{own_homes}{extra}{LIST_BODY}")
+    homes.push_str("}\n");
+    format!("{}{homes}{LIST_BODY}", agent_homes::helpers())
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -257,6 +237,7 @@ pub(crate) fn allowed(agent: &str, rel_path: &str) -> bool {
 pub(crate) mod tests {
     use super::super::ingest::tests::SECRET_TEXT;
     use super::super::store::tests::temp_dir;
+    use super::super::super::agent_homes::{AgentHome, AgentHomeKind};
     use super::*;
     use std::fs;
     use std::path::Path;
@@ -278,6 +259,26 @@ pub(crate) mod tests {
             .unwrap();
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         String::from_utf8(output.stdout).unwrap()
+    }
+
+    /// The script for these homes, as though the list held them.
+    pub(crate) fn list_script_with(saved: &[AgentHome]) -> String {
+        homes_script(&agent_homes::shell_function_for(saved, "", HomeUse::Archive))
+    }
+
+    /// Homes a scan would have added: another app's homes for each agent, a desktop app's local sessions with a
+    /// Claude Code home in each, and a third app's Claude Code home.
+    pub(crate) fn scanned_homes() -> Vec<AgentHome> {
+        use agent_homes::tests::home;
+        use agent_homes::AgentHomeKind::{Claude, ClaudeDesktop, Codex};
+        let desktop = "~/Library/Application Support/Claude/local-agent-mode-sessions/*/*";
+        vec![
+            home("", Claude, "~/.agent-app/homes/*", true, false),
+            home("", Codex, "~/.agent-app/homes/*", true, false),
+            home("", ClaudeDesktop, desktop, true, false),
+            home("", Claude, &format!("{desktop}/local_*/.claude"), true, false),
+            home("", Claude, "~/Library/Application Support/AcmeCode/claude", true, false),
+        ]
     }
 
     fn shells() -> Vec<&'static str> {
@@ -303,8 +304,10 @@ pub(crate) mod tests {
         write(&home.join(".claude/shell-snapshots/snap.sh"), "export X=1\n");
         write(&home.join(".codex/sessions/2026/09/25/rollout-2026-09-25T10-00-00-thread1.jsonl"), "{}\n");
         write(&home.join(".codex/auth.json"), "{}");
-        write(&home.join(".t3/provider-homes/claude-proxy/projects/-x/b.jsonl"), "{}\n");
-        write(&home.join(".skipper/profiles/work2/projects/-y/c.jsonl"), "{}\n");
+        write(&home.join(".agent-app/homes/claude-proxy/projects/-x/b.jsonl"), "{}\n");
+        write(&home.join(".agent-tool/profiles/work2/projects/-y/c.jsonl"), "{}\n");
+        // A folder a pattern matches that doesn't look like a home isn't one.
+        write(&home.join(".agent-tool/profiles/notes/todo.md"), "- x\n");
         write(&home.join(".pi/agent/sessions/--Users-me-src-app--/2026-07-19T07-00-00-000Z_s1.jsonl"), "{}\n");
         write(&home.join(".pi/agent/auth.json"), "{}");
         // A rollout moved to another disk and linked back, and a link to one that's gone.
@@ -314,7 +317,10 @@ pub(crate) mod tests {
         std::os::unix::fs::symlink(elsewhere.join("rollout-2026-01-01T00-00-00-moved.jsonl"), day.join("rollout-2026-01-01T00-00-00-moved.jsonl")).unwrap();
         std::os::unix::fs::symlink(elsewhere.join("gone.jsonl"), day.join("rollout-2026-01-01T00-00-00-gone.jsonl")).unwrap();
 
-        let script = list_script(&[("claude".into(), elsewhere.to_string_lossy().into_owned())]);
+        let mut homes = scanned_homes();
+        homes.push(agent_homes::tests::home("", AgentHomeKind::Claude, "~/.agent-tool/profiles/*", true, false));
+        homes.push(agent_homes::tests::home("", AgentHomeKind::Claude, &elsewhere.to_string_lossy(), true, false));
+        let script = list_script_with(&homes);
         let mut outputs = Vec::new();
         for shell in shells() {
             let stdout = run_list(shell, &home, &script);
@@ -337,9 +343,9 @@ pub(crate) mod tests {
             [
                 ("claude", format!("{home_text}/.claude").as_str()),
                 ("codex", format!("{home_text}/.codex").as_str()),
-                ("claude", format!("{home_text}/.t3/provider-homes/claude-proxy").as_str()),
                 ("pi", format!("{home_text}/.pi/agent/sessions").as_str()),
-                ("claude", format!("{home_text}/.skipper/profiles/work2").as_str()),
+                ("claude", format!("{home_text}/.agent-app/homes/claude-proxy").as_str()),
+                ("claude", format!("{home_text}/.agent-tool/profiles/work2").as_str()),
                 ("claude", elsewhere.to_string_lossy().as_ref()),
             ]
         );
@@ -367,7 +373,7 @@ pub(crate) mod tests {
         assert!(codex.complete, "a link that leads nowhere doesn't make the listing partial");
         assert!(codex.files.iter().all(|file| allowed("codex", &file.rel_path)));
         // Pi's home is its sessions folder, so its sign-ins beside it aren't listed.
-        let pi: Vec<&str> = listing.roots[3].files.iter().map(|file| file.rel_path.as_str()).collect();
+        let pi: Vec<&str> = listing.roots[2].files.iter().map(|file| file.rel_path.as_str()).collect();
         assert_eq!(pi, ["--Users-me-src-app--/2026-07-19T07-00-00-000Z_s1.jsonl"]);
         assert!(allowed("pi", pi[0]) && !allowed("pi", "auth.json") && !allowed("pi", "--a--/notes.md"));
         let _ = fs::remove_dir_all(&home);
@@ -375,7 +381,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn lists_the_desktop_apps_local_sessions_and_posthog_codes_home() {
+    fn lists_a_desktop_apps_local_sessions_and_the_homes_in_them() {
         let home = temp_dir("lister-desktop");
         let local = "local_0f8b5c2e-1111-4222-8333-444455556666";
         let sid = "1a2b3c4d-1111-4222-8333-444455556666";
@@ -389,10 +395,10 @@ pub(crate) mod tests {
         // A session the app hasn't written an audit log for yet, and an account with no sessions.
         write(&org.join("local_2b2b3c4d-1111-4222-8333-444455556666/.claude/settings.json"), "{}\n");
         fs::create_dir_all(org.parent().unwrap().parent().unwrap().join("empty/org")).unwrap();
-        let posthog = home.join("Library/Application Support/@posthog/posthog-code/claude");
-        write(&posthog.join(format!("projects/-Users-me-app/{sid}.jsonl")), "{}\n");
+        let other = home.join("Library/Application Support/AcmeCode/claude");
+        write(&other.join(format!("projects/-Users-me-app/{sid}.jsonl")), "{}\n");
 
-        let script = list_script(&[]);
+        let script = list_script_with(&scanned_homes());
         let outputs: Vec<String> = shells().into_iter().map(|shell| run_list(shell, &home, &script)).collect();
         for stdout in &outputs {
             assert!(!stdout.contains(SECRET_TEXT) && !stdout.contains(".audit-key") && !stdout.contains("report.py"), "only audit logs are listed beside the sessions");
@@ -405,7 +411,7 @@ pub(crate) mod tests {
             [
                 ("claude-desktop", org_text.as_ref()),
                 ("claude", format!("{org_text}/{local}/.claude").as_str()),
-                ("claude", posthog.to_string_lossy().as_ref()),
+                ("claude", other.to_string_lossy().as_ref()),
             ]
         );
         let names = |index: usize| -> Vec<String> { listing.roots[index].files.iter().map(|file| file.rel_path.clone()).collect() };

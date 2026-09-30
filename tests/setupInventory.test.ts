@@ -31,25 +31,25 @@ const machine = (name: string, homes: SetupHome[], fields: Partial<SetupMachine>
 });
 
 describe('setup homes', () => {
-  it('reads each home as an agent’s own, the shared skills, or one T3 Code keeps', () => {
-    expect(homeLook('claude:~/.claude')).toMatchObject({ id: 'claude', provider: null });
+  it('reads each home as an agent’s own, the shared skills, or another on the list', () => {
+    expect(homeLook('claude:~/.claude')).toMatchObject({ id: 'claude' });
     expect(homeLook('codex:~/.codex')).toMatchObject({ id: 'codex' });
     expect(homeLook('shared:~/.agents')).toMatchObject({ id: 'shared' });
-    expect(homeLook('claude:~/.t3/provider-homes/claude-proxy')).toMatchObject({ id: 't3', agent: 'claude', provider: 'claude-proxy' });
+    expect(homeLook('claude:~/.agent-app/homes/claude-proxy')).toMatchObject({ id: 'other', agent: 'claude' });
     expect(homeLook('claude:/opt/claude')).toMatchObject({ id: 'other', path: '/opt/claude' });
   });
 
   it('lists the agents’ own homes first, then the shared skills, then the rest', () => {
     const fleet = [
-      machine('a', [home('claude', '~/.t3/provider-homes/claude-proxy', []), home('shared', '~/.agents', []), home('codex', '~/.codex', [])]),
-      machine('b', [home('claude', '~/.claude', []), home('codex', '~/.t3/provider-homes/codex-proxy', [])]),
+      machine('a', [home('claude', '~/.agent-app/homes/claude-proxy', []), home('shared', '~/.agents', []), home('codex', '~/.codex', [])]),
+      machine('b', [home('claude', '~/.claude', []), home('codex', '~/.agent-app/homes/codex-proxy', [])]),
     ];
     expect(homeKeys(fleet)).toEqual([
       'claude:~/.claude',
       'codex:~/.codex',
       'shared:~/.agents',
-      'claude:~/.t3/provider-homes/claude-proxy',
-      'codex:~/.t3/provider-homes/codex-proxy',
+      'claude:~/.agent-app/homes/claude-proxy',
+      'codex:~/.agent-app/homes/codex-proxy',
     ]);
   });
 
@@ -175,7 +175,7 @@ describe('a T3 Code shadow home', () => {
     { ...item('rule', 'default.rules', 'r1'), path: '~/.codex/rules/default.rules' },
     item('setting', 'model', 'm1'),
   ]);
-  const shadow = { ...home('codex', '~/.t3/provider-homes/codex-proxy', []), shares: { home: '~/.codex', entries: ['sessions', 'skills', 'fast.config.toml', 'config.toml', 'AGENTS.md', 'sqlite'] } };
+  const shadow = { ...home('codex', '~/.agent-app/homes/codex-proxy', []), shares: { home: '~/.codex', entries: ['sessions', 'skills', 'fast.config.toml', 'config.toml', 'AGENTS.md', 'sqlite'] } };
   const mac = machine('mac', [codex, shadow]);
 
   it('loads what’s in the entries it links, from the home it shares', () => {
@@ -185,7 +185,7 @@ describe('a T3 Code shadow home', () => {
 
   it('names only the shared entries Setup reads, in the order it reads them', () => {
     expect(sharedSetupEntries(shadow.shares)).toEqual(['AGENTS.md', 'config.toml', 'skills', 'fast.config.toml']);
-    expect(sharingMachines([mac, machine('ci-01', [codex])], 'codex:~/.t3/provider-homes/codex-proxy')).toEqual([{ machine: 'mac', shares: shadow.shares }]);
+    expect(sharingMachines([mac, machine('ci-01', [codex])], 'codex:~/.agent-app/homes/codex-proxy')).toEqual([{ machine: 'mac', shares: shadow.shares }]);
   });
 });
 

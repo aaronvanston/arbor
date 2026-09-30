@@ -61,6 +61,9 @@
  * date), or `slow` for each read taking four seconds (Sync › Agents says it's reading);
  * `?machines=unhosted` for no machine with a host yet, so Machines lists them waiting for one and Sync › Agents has
  * no agents to list and offers Add hosts;
+ * `?homes=fresh` for no machine looked at for agent homes yet (Settings › Agent homes lists only the standard homes
+ * until Look again fills each machine's list), `?homes=fail` for cedar-02's last look failing, and `?homes=none` for
+ * looks that found nothing more to suggest;
  * `?phone=fail` to have phone alerts refused, `?phone=unreadable` for a damaged phone alert secrets file;
  * `?proxy=usage-off`, `no-keys`, `default-key`, `refused`, `network` or `not-loaded` (several joined by commas) for the
  * proxy checks finding usage statistics off, no authentication keys, the old default key 123456 still in use, the

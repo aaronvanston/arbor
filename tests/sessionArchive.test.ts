@@ -81,7 +81,7 @@ describe('the session archive', () => {
     expect(tried.map((group) => [group.machine, group.sources.length, group.run?.error ?? null])).toEqual([['mini', 1, null], ['air', 1, 'ssh: timed out'], ['cedar', 0, 'ssh: no route']]);
   });
 
-  it('shows the desktop app’s local sessions as the one folder they’re in', () => {
+  it('folds the homes of a desktop app’s local sessions into the folder of logs they’re in', () => {
     const desktop = '~/Library/Application Support/Claude/local-agent-mode-sessions';
     const groups = sourcesByMachine([
       source({ machine: 'air', label: '~/.claude' }),
@@ -93,7 +93,7 @@ describe('the session archive', () => {
     const rows = itemAt(groups, 0).sources;
     expect(rows.map((row) => [row.label, row.agent, row.files, row.kept, row.gone])).toEqual([
       ['~/.claude', 'claude', 10, 10, 0],
-      [desktop, 'claude-desktop', 9, 7, 1],
+      [`${desktop}/acct/org`, 'claude-desktop', 9, 7, 1],
       ['~/.codex', 'codex', 10, 10, 0],
     ]);
     // Claude Code's 30-day cleanup isn't what removes them, so no warning says it is.

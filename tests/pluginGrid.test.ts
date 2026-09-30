@@ -16,7 +16,7 @@ const machine = (name: string, homes: SetupHome[], reachable = true): SetupMachi
   machine: name, local: name === 'mini', reachable, homes, installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
 });
 
-const T3 = '~/.t3/provider-homes/claude-proxy';
+const T3 = '~/.agent-app/homes/claude-proxy';
 const machines = [
   machine('mini', [
     home('~/.claude', [plugin('context7@official', '1.2.0'), plugin('superpowers@official', '4.1.0'), market('official', 'anthropics/official')]),

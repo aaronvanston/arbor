@@ -1121,7 +1121,7 @@ pub(crate) mod tests {
         let main = format!(".claude/projects/-Users-me-app/{SID}.jsonl");
         fixture.write(&main, &claude_session(&[("msg_1", 1), ("msg_2", 20)]));
         // The same session in another home, and a subagent that repeats one of its messages.
-        fixture.write(&format!(".t3/provider-homes/claude-proxy/projects/-Users-me-app/{SID}.jsonl"), &claude_session(&[("msg_1", 1), ("msg_2", 20)]));
+        fixture.write(&format!(".agent-app/homes/claude-proxy/projects/-Users-me-app/{SID}.jsonl"), &claude_session(&[("msg_1", 1), ("msg_2", 20)]));
         fixture.write(&format!(".claude/projects/-Users-me-app/{SID}/subagents/agent-a1.jsonl"), &claude_session(&[("msg_2", 20), ("msg_3", 5)]));
         fixture.write(&format!(".codex/sessions/2026/09/21/rollout-2026-09-21T01-00-00-{THREAD}.jsonl"), &codex_session(THREAD, &["resp_1", "resp_2"]));
         // A fork carries its parent's calls over, then makes its own.

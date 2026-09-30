@@ -96,29 +96,29 @@ export function deletesAfterDays(source: ArchiveSource): number | null {
 
 export type MachineGroup = { machine: string; sources: ArchiveSource[]; run: ArchiveMachineRun | null };
 
-/** Where Claude's desktop app keeps its local sessions, each an audit log and a Claude Code home of its own. */
-const DESKTOP_SESSIONS = '/Library/Application Support/Claude/local-agent-mode-sessions';
-
 /**
- * A machine's homes with the desktop app's local sessions, which can run to a hundred homes,
- * shown as the one folder they're in.
+ * A machine's homes with the Claude Code homes a desktop app keeps for its local sessions, which can run to a hundred,
+ * folded into the row of the folder of session logs they're in.
  */
 function foldDesktopSessions(sources: ArchiveSource[]): ArchiveSource[] {
+  const folders = sources.filter((source) => source.agent === 'claude-desktop').map((source) => source.label);
+  const folded = new Map<string, ArchiveSource>();
   const rows: ArchiveSource[] = [];
-  let desktop: ArchiveSource | null = null;
   for (const source of sources) {
-    const at = source.label.indexOf(DESKTOP_SESSIONS);
-    if (at < 0) {
+    const folder = source.agent === 'claude-desktop' ? source.label : folders.find((label) => source.label.startsWith(`${label}/`));
+    if (folder === undefined) {
       rows.push(source);
       continue;
     }
-    if (desktop === null) {
-      desktop = { ...source, label: source.label.slice(0, at + DESKTOP_SESSIONS.length), agent: 'claude-desktop', files: 0, kept: 0, gone: 0, retentionDays: null };
-      rows.push(desktop);
+    let row = folded.get(folder);
+    if (!row) {
+      row = { ...source, label: folder, agent: 'claude-desktop', files: 0, kept: 0, gone: 0, retentionDays: null };
+      folded.set(folder, row);
+      rows.push(row);
     }
-    desktop.files += source.files;
-    desktop.kept += source.kept;
-    desktop.gone += source.gone;
+    row.files += source.files;
+    row.kept += source.kept;
+    row.gone += source.gone;
   }
   return rows;
 }

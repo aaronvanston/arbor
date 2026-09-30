@@ -21,6 +21,7 @@
 //! `notify` that was already set keeps working: the reporter runs it once it
 //! has recorded the turn. Taking the reporter away undoes all of it.
 
+use super::agent_homes::{self, tilde, HomeUse};
 use super::agents::AgentKind;
 use super::guarded_writes::{edit_call, edit_finish, edit_outcomes, edit_start, new_stamp, ChangeKind, Edit, EditFile, EditOutcome};
 use super::*;
@@ -113,34 +114,7 @@ esac
 exit 0
 "##;
 
-/// Defines `agent_homes`, which prints "agent<TAB>home" for each agent home on
-/// the machine (where the environment points, the default, and each home T3
-/// Code keeps for a provider), and `settings_file agent home`. The agents
-/// check uses them too, to say which homes run the reporter.
-pub(super) const AGENT_HOMES: &str = r##"agent_homes() {
-  {
-    for dir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; do
-      dir=${dir%/}
-      if [ -n "$dir" ] && [ -d "$dir" ]; then printf 'claude\t%s\n' "$dir"; fi
-    done
-    for dir in "${CODEX_HOME:-}" "$HOME/.codex"; do
-      dir=${dir%/}
-      if [ -n "$dir" ] && [ -d "$dir" ]; then printf 'codex\t%s\n' "$dir"; fi
-    done
-    for dir in "$HOME"/.t3/provider-homes/*; do
-      if [ -d "$dir/projects" ] || [ -f "$dir/.claude.json" ]; then printf 'claude\t%s\n' "$dir"
-      elif [ -f "$dir/config.toml" ] || [ -d "$dir/sessions" ]; then printf 'codex\t%s\n' "$dir"
-      fi
-    done
-  } | awk '!seen[$0]++'
-}
-settings_file() {
-  case "$1" in claude) printf '%s/settings.json' "$2" ;; *) printf '%s/config.toml' "$2" ;; esac
-}
-tab=$(printf '\t')
-"##;
-
-/// Follows AGENT_HOMES in the agents check: whether the reporter is there, and
+/// Follows `agent_homes::shell_function` in the agents check: whether the reporter is there, and
 /// which homes' settings run it.
 pub(super) const REPORTER_CHECK: &str = r##"printf 'home=%s\n' "$HOME"
 if [ -x "$HOME/.arbor/bin/arbor-agent-event" ]; then printf 'reporter=1\n'; fi
@@ -150,7 +124,7 @@ agent_homes | while IFS=$tab read -r agent home; do
 done
 "##;
 
-// Follows AGENT_HOMES. Lines out:
+// Follows `agent_homes::shell_function`. Lines out:
 //   H home                   the machine's home directory
 //   F agent home file sum    a settings file: `sum` is what cksum says, or - when there's no file,
 //   ...                      then its content in base64 when there is one,
@@ -719,13 +693,6 @@ impl Change {
     }
 }
 
-pub(super) fn tilde(path: &str, home: &str) -> String {
-    match path.strip_prefix(home) {
-        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with('/')) => format!("~{rest}"),
-        _ => path.to_string(),
-    }
-}
-
 /// Works out each file's change from what the read script found.
 fn plan(read: &ReadOutput, install: bool) -> (ReporterSetup, Vec<Change>) {
     let reporter = format!("{}{REPORTER_MARK}", read.home);
@@ -846,8 +813,9 @@ fn apply_write_output(setup: &mut ReporterSetup, changes: &[Change], stdout: &st
     outcomes.len() == changes.len()
 }
 
-fn script_with_homes(body: &str) -> String {
-    format!("set -u\nexport LC_ALL=C\n{AGENT_HOMES}{body}")
+/// `body` after the homes whose settings Arbor reads on `machine`.
+fn script_with_homes(machine: &str, body: &str) -> String {
+    format!("set -u\nexport LC_ALL=C\n{}{body}", agent_homes::shell_function(machine, HomeUse::Sync))
 }
 
 /// Reads each agent home's settings with `run` and, unless it's only a plan,
@@ -857,7 +825,9 @@ where
     F: Fn() -> C,
     C: Into<MachineCommand>,
 {
-    let read = parse_read(&run_checked(run(), MachineOp::ReporterCheck, &script_with_homes(READ_SCRIPT), SETUP_TIMEOUT).await?)?;
+    let command: MachineCommand = run().into();
+    let script = script_with_homes(command.machine_name(), READ_SCRIPT);
+    let read = parse_read(&run_checked(command, MachineOp::ReporterCheck, &script, SETUP_TIMEOUT).await?)?;
     if install && read.files.is_empty() {
         return Err("Neither Claude Code nor Codex has been run on this machine yet.".into());
     }
@@ -945,13 +915,17 @@ where
     C: Into<MachineCommand>,
     E: Fn(Option<&str>) -> Result<Option<String>, String>,
 {
+    let command: MachineCommand = run().into();
+    let machine = command.machine_name();
     let (agent, read_op, write_op, script, named) = match file {
-        HomeFile::ClaudeSettings => (AgentKind::Claude, MachineOp::ClaudeSettingsRead, MachineOp::ClaudeSettingsWrite, script_with_homes(READ_SCRIPT), "Claude Code"),
+        HomeFile::ClaudeSettings => (AgentKind::Claude, MachineOp::ClaudeSettingsRead, MachineOp::ClaudeSettingsWrite, script_with_homes(machine, READ_SCRIPT), "Claude Code"),
         // READ_SCRIPT's own settings file for a Codex home is its config.toml.
-        HomeFile::CodexConfig => (AgentKind::Codex, MachineOp::CodexSettingsRead, MachineOp::CodexSettingsWrite, script_with_homes(READ_SCRIPT), "Codex"),
-        HomeFile::CodexHooks => (AgentKind::Codex, MachineOp::CodexSettingsRead, MachineOp::CodexSettingsWrite, script_with_homes(&format!("{CODEX_HOOKS_FILE}{READ_SCRIPT}")), "Codex"),
+        HomeFile::CodexConfig => (AgentKind::Codex, MachineOp::CodexSettingsRead, MachineOp::CodexSettingsWrite, script_with_homes(machine, READ_SCRIPT), "Codex"),
+        HomeFile::CodexHooks => {
+            (AgentKind::Codex, MachineOp::CodexSettingsRead, MachineOp::CodexSettingsWrite, script_with_homes(machine, &format!("{CODEX_HOOKS_FILE}{READ_SCRIPT}")), "Codex")
+        }
     };
-    let read = parse_read(&run_checked(run(), read_op, &script, SETUP_TIMEOUT).await?)?;
+    let read = parse_read(&run_checked(command, read_op, &script, SETUP_TIMEOUT).await?)?;
     let mut edits = Vec::new();
     let mut changes = Vec::new();
     let mut seen = HashSet::new();
@@ -1732,14 +1706,14 @@ trust_level = "trusted"
     fn the_agents_check_says_where_the_reporter_runs() {
         let status = parse_status(
             "claude_path=/usr/local/bin/claude\nhome=/home/casey\nreporter=1\nreporter_home=claude\t1\t/home/casey/.claude\n\
-             reporter_home=codex\t0\t/home/casey/.t3/provider-homes/codex proxy\nreporter_home=gemini\t1\t/x\n",
+             reporter_home=codex\t0\t/home/casey/.agent-app/homes/codex proxy\nreporter_home=gemini\t1\t/x\n",
         );
         assert!(status.installed());
         assert_eq!(
             status.homes,
             [
                 ReporterHome { agent: AgentKind::Claude, home: "~/.claude".into(), reporting: true },
-                ReporterHome { agent: AgentKind::Codex, home: "~/.t3/provider-homes/codex proxy".into(), reporting: false },
+                ReporterHome { agent: AgentKind::Codex, home: "~/.agent-app/homes/codex proxy".into(), reporting: false },
             ],
         );
         assert_eq!(parse_status(""), ReporterStatus::default());
@@ -1830,12 +1804,16 @@ trust_level = "trusted"
             write(&claude, CLAUDE_SETTINGS);
             write(&codex, CODEX_CONFIG);
             fs::set_permissions(&codex, fs::Permissions::from_mode(0o600)).unwrap();
-            // T3 Code's homes: one for Claude Code without settings yet, one for Codex.
-            fs::create_dir_all(home.join(".t3/provider-homes/claude-proxy/projects")).unwrap();
-            fs::create_dir_all(home.join(".t3/provider-homes/codex-proxy/sessions")).unwrap();
+            // Another app's homes, on the list with Sync on: one for Claude Code without settings yet, one for Codex.
+            agent_homes::tests::save_on_this_thread(vec![
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, true),
+            ]);
+            fs::create_dir_all(home.join(".agent-app/homes/claude-proxy/projects")).unwrap();
+            fs::create_dir_all(home.join(".agent-app/homes/codex-proxy/sessions")).unwrap();
             // A home whose settings link to the default's is edited once, through the link.
-            fs::create_dir_all(home.join(".t3/provider-homes/claude-linked/projects")).unwrap();
-            std::os::unix::fs::symlink(&claude, home.join(".t3/provider-homes/claude-linked/settings.json")).unwrap();
+            fs::create_dir_all(home.join(".agent-app/homes/claude-linked/projects")).unwrap();
+            std::os::unix::fs::symlink(&claude, home.join(".agent-app/homes/claude-linked/settings.json")).unwrap();
 
             let planned = block_on(set_up(|| shell(&home), true, false)).unwrap();
             let summary: Vec<(&str, FileChange, bool)> = planned.files.iter().map(|file| (file.path.as_str(), file.change, file.chained)).collect();
@@ -1844,8 +1822,8 @@ trust_level = "trusted"
                 [
                     ("~/.claude/settings.json", FileChange::Edit, false),
                     ("~/.codex/config.toml", FileChange::Edit, true),
-                    ("~/.t3/provider-homes/claude-proxy/settings.json", FileChange::Create, false),
-                    ("~/.t3/provider-homes/codex-proxy/config.toml", FileChange::Create, false),
+                    ("~/.agent-app/homes/claude-proxy/settings.json", FileChange::Create, false),
+                    ("~/.agent-app/homes/codex-proxy/config.toml", FileChange::Create, false),
                 ],
             );
             assert!(!home.join(".arbor").exists(), "a plan changes nothing");
@@ -1856,15 +1834,15 @@ trust_level = "trusted"
             let reporter = home.join(".arbor/bin/arbor-agent-event");
             assert_eq!(fs::metadata(&reporter).unwrap().permissions().mode() & 0o777, 0o755);
             assert_eq!(claude_commands(&fs::read_to_string(&claude).unwrap(), "Stop"), ["~/.local/bin/other-tool stop", CLAUDE_COMMAND]);
-            assert!(fs::symlink_metadata(home.join(".t3/provider-homes/claude-linked/settings.json")).unwrap().file_type().is_symlink());
+            assert!(fs::symlink_metadata(home.join(".agent-app/homes/claude-linked/settings.json")).unwrap().file_type().is_symlink());
             assert!(!claude.with_extension("json.arbor-backup").exists(), "the copy before goes into the list of changes");
             assert_eq!(fs::metadata(&codex).unwrap().permissions().mode() & 0o777, 0o600, "a file keeps its mode");
-            let created = home.join(".t3/provider-homes/codex-proxy/config.toml");
+            let created = home.join(".agent-app/homes/codex-proxy/config.toml");
             assert_eq!(fs::read_to_string(&created).unwrap(), format!("notify = [\"{}\", \"codex\"]\n", reporter.display()));
             assert_eq!(fs::metadata(&created).unwrap().permissions().mode() & 0o777, 0o600);
 
             // The agents check sees it.
-            let output = block_on(run_script(shell(&home), &script_with_homes(REPORTER_CHECK), Duration::from_secs(10))).unwrap();
+            let output = block_on(run_script(shell(&home), &script_with_homes("", REPORTER_CHECK), Duration::from_secs(10))).unwrap();
             let status = parse_status(&String::from_utf8_lossy(&output.stdout));
             assert!(status.installed());
             assert_eq!(status.homes.len(), 5);
@@ -1877,7 +1855,7 @@ trust_level = "trusted"
             assert!(removed.reporter_changed);
             assert_eq!(fs::read_to_string(&claude).unwrap(), CLAUDE_SETTINGS);
             assert_eq!(fs::read_to_string(&codex).unwrap(), CODEX_CONFIG);
-            assert_eq!(fs::read_to_string(home.join(".t3/provider-homes/claude-proxy/settings.json")).unwrap(), "{}\n");
+            assert_eq!(fs::read_to_string(home.join(".agent-app/homes/claude-proxy/settings.json")).unwrap(), "{}\n");
             assert_eq!(fs::read_to_string(&created).unwrap(), "");
             assert!(!home.join(".arbor/bin").exists() && !home.join(".arbor/agent-events").exists(), "the reporter and its events go too");
             // Setting it up and taking it away are each a change on the list, which can undo them.
@@ -1907,7 +1885,7 @@ trust_level = "trusted"
             let home = temp_home("race");
             let claude = home.join(".claude/settings.json");
             write(&claude, CLAUDE_SETTINGS);
-            let output = block_on(run_script(shell(&home), &script_with_homes(READ_SCRIPT), Duration::from_secs(10))).unwrap();
+            let output = block_on(run_script(shell(&home), &script_with_homes("", READ_SCRIPT), Duration::from_secs(10))).unwrap();
             let read = parse_read(&String::from_utf8_lossy(&output.stdout)).unwrap();
             let (mut setup, changes) = plan(&read, true);
             write(&claude, "{\"model\": \"sonnet\"}\n");

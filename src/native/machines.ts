@@ -1,4 +1,7 @@
 import type {
+  AgentHome,
+  AgentHomeKind,
+  AgentHomesView,
   AgentKind,
   AgentUpdate,
   CallDiagnostics,
@@ -21,6 +24,11 @@ export type MachineCommands = {
   get_machine_hosts: { result: MachineHost[] };
   save_machine_hosts: { args: { hosts: MachineHost[] }; result: MachineHost[] };
   discover_machine_hosts: { result: DiscoveredHost[] };
+  get_agent_homes: { result: AgentHomesView };
+  save_agent_home: { args: { home: AgentHome }; result: AgentHomesView };
+  remove_agent_home: { args: { machine: string; agent: AgentHomeKind; path: string }; result: AgentHomesView };
+  scan_agent_homes: { args: { machine?: string | null }; result: AgentHomesView };
+  preview_agent_home: { args: { machine: string; agent: AgentHomeKind; path: string }; result: string[] };
   get_machine_health: {
     args: { since?: number | null; windowMs?: number | null; passive?: boolean | null };
     result: MachineHealthSnapshot;

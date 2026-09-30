@@ -28,6 +28,7 @@
 //! added, are found in `discovery`. T3 Code's threads, for the fleet board, are
 //! read from its database on each machine that has one, in `t3_threads`.
 
+pub(crate) mod agent_homes;
 pub(crate) mod agent_install;
 pub(crate) mod agent_releases;
 pub(crate) mod agents;
@@ -1188,7 +1189,15 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
             inner.reload_hosts || hosts_loaded_at.is_none_or(|at| at.elapsed() >= HOSTS_REFRESH)
         };
         if reload {
-            match run_usage_task(|| load_hosts(&open_usage_database()?)).await {
+            let loaded = run_usage_task(|| {
+                let connection = open_usage_database()?;
+                if let Err(error) = agent_homes::reload(&connection) {
+                    eprintln!("Failed to read the agent homes: {error}");
+                }
+                load_hosts(&connection)
+            })
+            .await;
+            match loaded {
                 Ok(hosts) => {
                     apply_hosts(&state, hosts);
                     resolve_ping_targets(&state, &mut ping_targets_resolved).await;
@@ -1232,6 +1241,7 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
         }
         agents::check_due(&app, &state, at_ms);
         transcripts::scan_due(&app, &state, at_ms);
+        agent_homes::scan_due(&app, &state, at_ms);
         let interval = if state.is_active() { ACTIVE_INTERVAL } else { IDLE_INTERVAL };
         let seq = {
             let mut inner = state.lock();

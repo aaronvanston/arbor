@@ -959,7 +959,13 @@ async fn run_once(app: &tauri::AppHandle, token: &CancellationToken) -> Result<O
     let Some(settings) = ready else {
         return Ok(None);
     };
-    let listing = list_with(&machine, &lister::list_script(&[])).await?;
+    let this_mac = agent_homes::this_mac_name(&app.state::<MachineHealthState>().lock());
+    // Until Arbor has looked for this Mac's homes, a pass would miss the ones it's about to find.
+    if !agent_homes::looked_at(&this_mac) {
+        return Ok(None);
+    }
+    let script = lister::list_script(&this_mac);
+    let listing = list_with(&machine, &script).await?;
     let fleet = if settings.keeps_any() { other_machines_listed(app, &settings).await } else { Vec::new() };
     // A backup whose drive is unplugged waits for it.
     let pending = blocking(|| imports::pending(&open_index(&index_dir()?)?)).await?;
@@ -990,16 +996,13 @@ async fn other_machines_listed(app: &tauri::AppHandle, settings: &Settings) -> V
             .series
             .values()
             .filter(|series| !series.local && shell::runs_scripts(series) && settings.lists(&series.host.machine))
+            .filter(|series| agent_homes::looked_at(&series.host.machine))
             .map(Machine::listed)
             .collect()
     };
-    let script = lister::list_script(&[]);
-    futures_util::future::join_all(machines.into_iter().map(|machine| {
-        let script = &script;
-        async move {
-            let listing = list_on(&machine, script).await;
-            (machine, listing)
-        }
+    futures_util::future::join_all(machines.into_iter().map(|machine| async move {
+        let listing = list_on(&machine, &lister::list_script(machine.name())).await;
+        (machine, listing)
     }))
     .await
 }
@@ -1197,7 +1200,7 @@ mod tests {
         let fixture = Fixture::new("fleet");
         fixture.write(&format!(".claude/projects/-home-me-app/{SID}.jsonl"), &format!("{{\"sessionId\":\"{SID}\",\"text\":\"{SECRET_TEXT}\"}}\n"));
         index::set_meta(&fixture.db, "thisMachine", "mini").unwrap();
-        let listing = parse(&run_list("sh", &fixture.home, &list_script(&[])));
+        let listing = parse(&run_list("sh", &fixture.home, &list_script("")));
         assert!(!listing.roots.is_empty());
         let options = PassOptions {
             machine: "mini".into(),

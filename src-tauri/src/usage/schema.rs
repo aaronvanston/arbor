@@ -36,6 +36,7 @@ const STEPS: &[Step] = &[
     Step { version: 13, name: "diagnostics", apply: diagnostics },
     Step { version: 14, name: "credential index", apply: credential_index },
     Step { version: 15, name: "failures index", apply: failures_index },
+    Step { version: 16, name: "agent homes", apply: agent_homes },
 ];
 
 /// The version of a database that has had every step.
@@ -1094,6 +1095,31 @@ fn failures_index(connection: &mut Connection, _: &Path) -> Result<(), String> {
     connection
         .execute_batch("CREATE INDEX IF NOT EXISTS idx_usage_events_failures ON usage_events(timestamp_ms DESC, id DESC) WHERE failed != 0")
         .map_err(|error| format!("Failed to index failed requests: {error}"))
+}
+
+/// Where each machine's agents keep their homes, beyond the standard ones, and what each machine's last look for
+/// homes found.
+fn agent_homes(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS usage_agent_homes (
+                machine TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                path TEXT NOT NULL,
+                source TEXT NOT NULL,
+                sessions INTEGER NOT NULL DEFAULT 1,
+                sync INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY (machine, agent, path)
+            );
+            CREATE TABLE IF NOT EXISTS usage_agent_home_scans (
+                machine TEXT PRIMARY KEY NOT NULL,
+                scanned_at_ms INTEGER NOT NULL,
+                found TEXT NOT NULL DEFAULT '[]',
+                error TEXT NOT NULL DEFAULT '',
+                filled INTEGER NOT NULL DEFAULT 0
+            )",
+        )
+        .map_err(|error| format!("Failed to prepare the agent homes tables: {error}"))
 }
 
 // ---------------------------------------------------------------------------

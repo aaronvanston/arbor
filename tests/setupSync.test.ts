@@ -99,7 +99,7 @@ const ci01 = machine([
     item('setting', 'model', 's1', { path: null, value: 'opus' }),
   ]),
   // Only the default homes are synced.
-  home('claude', '~/.t3/provider-homes/claude-proxy', [item('instructions', '~/.t3/provider-homes/claude-proxy/CLAUDE.md', sha('2'))]),
+  home('claude', '~/.agent-app/homes/claude-proxy', [item('instructions', '~/.agent-app/homes/claude-proxy/CLAUDE.md', sha('2'))]),
 ]);
 const plan = syncPlan(synced, ci01);
 

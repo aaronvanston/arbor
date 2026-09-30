@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
-import { Activity, Archive, BellRing, Database, Info, Monitor, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
+import { Activity, Archive, BellRing, Database, FolderSearch, Info, Monitor, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
 import { CoreRuntimeProvider, useCoreRuntime } from './coreRuntime';
 import { CoreUpdateProvider, useCoreUpdate } from './coreUpdate';
 import { HomePage } from './pages/HomePage';
@@ -86,6 +86,7 @@ const settingsGroups: { id: string; labelKey: MessageKey; pages: { id: SettingsP
     labelKey: 'settings.group.fleet',
     pages: [
       { id: 'machines', icon: Monitor },
+      { id: 'agent-homes', icon: FolderSearch },
       { id: 'session-archive', icon: Archive },
     ],
   },
@@ -123,6 +124,7 @@ const pageModules = {
   modelRouting: () => import('./pages/ModelRoutingPage'),
   extraModels: () => import('./pages/ExtraModelsPage'),
   settings: () => import('./pages/SettingsPages'),
+  agentHomes: () => import('./pages/AgentHomesSettings'),
   appearance: () => import('./pages/AppearanceSettingsPage'),
   notifications: () => import('./pages/NotificationsSettingsPage'),
   sessionArchive: () => import('./pages/SessionArchiveSettings'),
@@ -139,6 +141,7 @@ const ConfigPanelPage = lazy(() => pageModules.config().then((module) => ({ defa
 const ModelRoutingPage = lazy(() => pageModules.modelRouting().then((module) => ({ default: module.ModelRoutingPage })));
 const ExtraModelsPage = lazy(() => pageModules.extraModels().then((module) => ({ default: module.ExtraModelsPage })));
 const MachineAssignmentsSettingsPage = lazy(() => pageModules.settings().then((module) => ({ default: module.MachineAssignmentsSettingsPage })));
+const AgentHomesSettingsPage = lazy(() => pageModules.agentHomes().then((module) => ({ default: module.AgentHomesSettingsPage })));
 const AppearanceSettingsPage = lazy(() => pageModules.appearance().then((module) => ({ default: module.AppearanceSettingsPage })));
 const NotificationsSettingsPage = lazy(() => pageModules.notifications().then((module) => ({ default: module.NotificationsSettingsPage })));
 const SessionArchiveSettingsPage = lazy(() => pageModules.sessionArchive().then((module) => ({ default: module.SessionArchiveSettingsPage })));
@@ -194,6 +197,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
     case 'overrides': return <ModelRoutingPage />;
     case 'extra-models': return <ExtraModelsPage />;
     case 'machines': return <MachineAssignmentsSettingsPage onNavigate={onNavigate} />;
+    case 'agent-homes': return <AgentHomesSettingsPage />;
     case 'data': return <UsageDataSettingsPage />;
     case 'session-archive': return <SessionArchiveSettingsPage />;
     case 'appearance': return <AppearanceSettingsPage theme={theme} onThemeChange={onThemeChange} />;

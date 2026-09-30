@@ -131,12 +131,12 @@ describe('the reporter on a machine', () => {
   test('the row says where the reporter runs, and which homes stopped', () => {
     const homes = [
       { agent: 'claude' as const, home: '~/.claude', reporting: true },
-      { agent: 'claude' as const, home: '~/.t3/provider-homes/claude-proxy', reporting: true },
+      { agent: 'claude' as const, home: '~/.agent-app/homes/claude-proxy', reporting: true },
       { agent: 'codex' as const, home: '~/.codex', reporting: true },
     ];
     expect(reporterHomesText({ installed: true, homes }, t)).toBe('Claude Code (2 homes) · Codex (1 home)');
     expect(row({ installed: true, homes })).toBe('Alerts Claude Code (2 homes) · Codex (1 home) Remove');
-    const stopped = [...homes, { agent: 'codex' as const, home: '~/.t3/provider-homes/codex-proxy', reporting: false }];
+    const stopped = [...homes, { agent: 'codex' as const, home: '~/.agent-app/homes/codex-proxy', reporting: false }];
     expect(row({ installed: true, homes: stopped })).toBe('Alerts Claude Code (2 homes) · Codex (1 home) · 1 home isn’t reporting Set up again Remove');
     expect(row({ installed: false, homes: homes.map((home) => ({ ...home, reporting: false })) }))
       .toBe('Alerts Off. Set up Arbor’s reporter to hear when an agent here needs you. Set up');

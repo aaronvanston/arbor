@@ -3,7 +3,7 @@
 //!
 //! A read-only script goes to each machine over the same shell or SSH
 //! connection the health samples use. For every agent home (see
-//! `attention::AGENT_HOMES`), and for the skills the machine shares in
+//! `agent_homes`: those with Sync on), and for the skills the machine shares in
 //! ~/.agents, it reports:
 //! - the instructions file (Claude Code's CLAUDE.md, Codex's AGENTS.md) and
 //!   the files it pulls in with @imports;
@@ -32,7 +32,8 @@
 
 use super::agents::{parse_version, AgentKind, AGENT_ENV};
 use ts_rs::TS;
-use super::attention::{tilde, AGENT_HOMES, REPORTER_MARK};
+use super::agent_homes::{self, tilde, HomeUse};
+use super::attention::REPORTER_MARK;
 use super::shell::shell_quote;
 use super::*;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -53,7 +54,7 @@ static SALT: LazyLock<[u8; 16]> = LazyLock::new(|| {
     salt
 });
 
-// Every setup script starts with these, after AGENT_HOMES.
+// Every setup script starts with these, after the agent homes' own helpers.
 //   sum_in       the fingerprint of what comes in: a SHA-256 where the machine
 //                has a tool for that, a checksum marked with a c where not
 //   hash_each    the same for each file named on its input, NUL-separated
@@ -1707,17 +1708,18 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
     Ok(scan)
 }
 
-/// The scan, with `policy` setting where the managed-settings policy is looked for and ending
+/// The scan of `machine`'s homes, with `policy` setting where the managed-settings policy is looked for and ending
 /// with `installs`, the line that lists the agents' installs.
-fn scan_script_with(policy: &str, installs: &str) -> String {
-    format!("set -u\nexport LC_ALL=C\n{AGENT_HOMES}{HELPERS}{EMIT_FUNCTIONS}{policy}{SCAN_SCRIPT}{INSTALLS_SCRIPT}{installs}")
+fn scan_script_with(machine: &str, policy: &str, installs: &str) -> String {
+    let homes = agent_homes::shell_function(machine, HomeUse::Sync);
+    format!("set -u\nexport LC_ALL=C\n{homes}{HELPERS}{EMIT_FUNCTIONS}{policy}{SCAN_SCRIPT}{INSTALLS_SCRIPT}{installs}")
 }
 
 /// Installs are looked for along the PATH the agents check uses, which puts the
 /// installers' directories first the way a login shell would. It's set in a
 /// subshell, so the rest of the scan runs with the machine's own.
-fn scan_script() -> String {
-    scan_script_with(POLICY_FILE, &format!("(\n{AGENT_ENV}emit_installs \"$PATH\"\n)\n"))
+fn scan_script(machine: &str) -> String {
+    scan_script_with(machine, POLICY_FILE, &format!("(\n{AGENT_ENV}emit_installs \"$PATH\"\n)\n"))
 }
 
 // ---------------------------------------------------------------------------
@@ -1809,7 +1811,7 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
 }
 
 async fn scan(machine: &Machine) -> Result<Scan, String> {
-    parse_scan(&run_checked(machine, MachineOp::SetupScan, &scan_script(), SCAN_TIMEOUT).await?, SALT.as_slice())
+    parse_scan(&run_checked(machine, MachineOp::SetupScan, &scan_script(machine.name()), SCAN_TIMEOUT).await?, SALT.as_slice())
 }
 
 // ---------------------------------------------------------------------------
@@ -2271,10 +2273,7 @@ pub(crate) async fn read_setup_skill(
     path: String,
 ) -> Result<Vec<SetupSkillFile>, String> {
     let (target, absolute) = scanned_item(&state.lock(), &machine, &path, &[ItemKind::Skill])?;
-    let script = format!(
-        "set -u\nexport LC_ALL=C\n{AGENT_HOMES}{HELPERS}d={}\n{READ_SKILL_SCRIPT}",
-        shell_quote(&absolute)
-    );
+    let script = format!("set -u\nexport LC_ALL=C\n{}{HELPERS}d={}\n{READ_SKILL_SCRIPT}", agent_homes::helpers(), shell_quote(&absolute));
     parse_skill(&run_checked(&target, MachineOp::SkillRead, &script, READ_TIMEOUT).await?)
 }
 
@@ -3047,7 +3046,7 @@ notifications = true
         }
 
         fn check_scan(shell: &str, home: &Path, instructions: &str) {
-            let script = scan_script_with("policy=\"$HOME/no policy/managed-settings.json\"\n", "emit_installs \"$HOME/bin-a:bin-a:$HOME/bin-b:$HOME/bin-c:$HOME/bin-a\"\n");
+            let script = scan_script_with("", "policy=\"$HOME/no policy/managed-settings.json\"\n", "emit_installs \"$HOME/bin-a:bin-a:$HOME/bin-b:$HOME/bin-c:$HOME/bin-a\"\n");
             let output = run_in(shell, home, &script);
             assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -3114,15 +3113,19 @@ notifications = true
         }
 
         #[test]
-        fn a_t3_code_shadow_home_is_read_as_sharing_the_codex_home_it_links_to() {
+        fn a_shadow_home_is_read_as_sharing_the_codex_home_it_links_to() {
             let home = temp_home("shadow");
             let codex = home.join(".codex");
             write(&codex.join("AGENTS.md"), "Codex rules.\n");
             write(&codex.join("config.toml"), "model = \"gpt-5.5\"\n");
             write(&codex.join("skills/pdf/SKILL.md"), "---\nname: pdf\ndescription: PDFs.\n---\n");
             fs::create_dir_all(codex.join("sessions")).unwrap();
-            // As T3 Code builds one: a link for each entry, and its own sign-in and scratch folders.
-            let shadow = home.join(".t3/provider-homes/codex-proxy");
+            // As an agent app builds one: a link for each entry, and its own sign-in and scratch folders.
+            agent_homes::tests::save_on_this_thread(vec![
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, true),
+            ]);
+            let shadow = home.join(".agent-app/homes/codex-proxy");
             fs::create_dir_all(&shadow).unwrap();
             for entry in ["AGENTS.md", "config.toml", "skills", "sessions"] {
                 symlink(codex.join(entry), shadow.join(entry)).unwrap();
@@ -3130,18 +3133,18 @@ notifications = true
             write(&shadow.join("auth.json"), &format!("{{ \"token\": \"{PRIVATE}\" }}"));
             fs::create_dir_all(shadow.join("tmp")).unwrap();
             for shell in shells() {
-                let output = run_in(shell, &home, &scan_script_with("policy=\"$HOME/no policy\"\n", ""));
+                let output = run_in(shell, &home, &scan_script_with("", "policy=\"$HOME/no policy\"\n", ""));
                 assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 assert!(!stdout.contains(PRIVATE), "{shell}");
                 let scan = parse_scan(&stdout, SALT).unwrap();
                 let main = scan.homes.iter().find(|found| found.path == "~/.codex").unwrap();
                 assert_eq!((names(main, ItemKind::Instructions), names(main, ItemKind::Skill)), (vec!["AGENTS.md"], vec!["pdf"]), "{shell}");
-                let t3 = scan.homes.iter().find(|found| found.path == "~/.t3/provider-homes/codex-proxy").unwrap();
-                let shared = t3.shares.as_ref().unwrap();
+                let shadow = scan.homes.iter().find(|found| found.path == "~/.agent-app/homes/codex-proxy").unwrap();
+                let shared = shadow.shares.as_ref().unwrap();
                 assert_eq!((shared.home.as_str(), shared.entries.as_slice()), ("~/.codex", &["AGENTS.md".to_string(), "config.toml".into(), "sessions".into(), "skills".into()][..]), "{shell}");
-                assert!(t3.items.is_empty() && t3.problems.is_empty(), "{shell}: {:?}", t3.items);
-                assert_eq!(t3.skills_link.as_deref(), Some("~/.codex/skills"), "{shell}");
+                assert!(shadow.items.is_empty() && shadow.problems.is_empty(), "{shell}: {:?}", shadow.items);
+                assert_eq!(shadow.skills_link.as_deref(), Some("~/.codex/skills"), "{shell}");
             }
             let _ = fs::remove_dir_all(&home);
         }
@@ -3157,10 +3160,14 @@ notifications = true
                 ),
             );
             write(&home.join(".claude/settings.json"), r#"{ "skillOverrides": { "pdf": "on", "web": "name-only" } }"#);
-            write(&home.join(".t3/provider-homes/claude-proxy/.claude.json"), "{}");
+            agent_homes::tests::save_on_this_thread(vec![
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, true),
+            ]);
+            write(&home.join(".agent-app/homes/claude-proxy/.claude.json"), "{}");
             let policy = "policy=\"$HOME/Application Support/ClaudeCode/managed-settings.json\"\n";
             for shell in shells() {
-                let output = run_in(shell, &home, &scan_script_with(policy, ""));
+                let output = run_in(shell, &home, &scan_script_with("", policy, ""));
                 assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
                 let scan = parse_scan(&String::from_utf8_lossy(&output.stdout), SALT).unwrap();
                 let found = scan.policy.as_ref().unwrap();
@@ -3170,7 +3177,7 @@ notifications = true
                 let shown = serde_json::to_string(&(&scan.policy, &scan.homes)).unwrap();
                 assert!(!shown.contains(SECRET) && !shown.contains(PRIVATE) && !shown.contains("curl"), "{shell}: {shown}");
                 // The policy's override wins over the home's own, in every Claude Code home.
-                for path in ["~/.claude", "~/.t3/provider-homes/claude-proxy"] {
+                for path in ["~/.claude", "~/.agent-app/homes/claude-proxy"] {
                     let claude = scan.homes.iter().find(|found| found.path == path).unwrap();
                     let overrides: Vec<_> = claude.skill_overrides.iter().map(|entry| (entry.name.as_str(), entry.state, entry.source)).collect();
                     let mut expected = vec![("pdf", OverrideState::Off, OverrideSource::Policy)];
@@ -3185,7 +3192,7 @@ notifications = true
             fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
             if fs::read(&file).is_err() {
                 for shell in shells() {
-                    let output = run_in(shell, &home, &scan_script_with(policy, ""));
+                    let output = run_in(shell, &home, &scan_script_with("", policy, ""));
                     let scan = parse_scan(&String::from_utf8_lossy(&output.stdout), SALT).unwrap();
                     let found = scan.policy.unwrap();
                     assert!(found.problem.as_deref().is_some_and(|problem| problem.contains("can't read it")), "{shell}: {found:?}");
@@ -3203,7 +3210,7 @@ notifications = true
                 command.arg("-n").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
                 let output = tokio::runtime::Runtime::new()
                     .unwrap()
-                    .block_on(run_script(command, &scan_script(), Duration::from_secs(30)))
+                    .block_on(run_script(command, &scan_script(""), Duration::from_secs(30)))
                     .unwrap();
                 assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
             }
@@ -3216,10 +3223,8 @@ notifications = true
             write(&skill.join("SKILL.md"), "---\nname: pdf\n---\nBody\n");
             write(&skill.join(".env"), &format!("KEY={SECRET}\n"));
             write(&skill.join("scripts/fill.py"), "print('hi')\n");
-            let script = format!(
-                "set -u\nexport LC_ALL=C\n{AGENT_HOMES}{HELPERS}d={}\n{READ_SKILL_SCRIPT}",
-                shell_quote(&skill.display().to_string())
-            );
+            let script =
+                format!("set -u\nexport LC_ALL=C\n{}{HELPERS}d={}\n{READ_SKILL_SCRIPT}", agent_homes::helpers(), shell_quote(&skill.display().to_string()));
             let output = run(&home, &script);
             assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
             let stdout = String::from_utf8_lossy(&output.stdout);

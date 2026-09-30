@@ -17,6 +17,7 @@
 //! that hasn't grown since it was last read is skipped, so after the first
 //! scan each one costs little.
 
+use super::agent_homes::{self, tilde, HomeUse};
 use super::*;
 use ts_rs::TS;
 use std::collections::BTreeSet;
@@ -73,16 +74,10 @@ const SCRIPT_BODY: &str = r##"ARBOR_WANTED
 : > "$work/cwds"
 printf 'H\t%s\n' "$HOME"
 
-# Where each agent keeps its files: where the environment says, the default,
-# and the home T3 Code gives each provider it runs.
-{
-  printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "$HOME/.claude"
-  for dir in "$HOME"/.t3/provider-homes/*; do [ -d "$dir/projects" ] && printf '%s\n' "$dir"; done
-} | awk '!seen[$0]++' > "$work/claude-homes"
-{
-  printf '%s\n' "${CODEX_HOME:-$HOME/.codex}" "$HOME/.codex"
-  for dir in "$HOME"/.t3/provider-homes/*; do [ -d "$dir/sessions" ] && printf '%s\n' "$dir"; done
-} | awk '!seen[$0]++' > "$work/codex-homes"
+# Where each agent keeps its files: the homes on the machine's list with Sessions on.
+agent_homes > "$work/homes"
+awk -F"$tab" '$1 == "claude" { print $2 }' "$work/homes" > "$work/claude-homes"
+awk -F"$tab" '$1 == "codex" { print $2 }' "$work/homes" > "$work/codex-homes"
 
 # Keeps a folder to look up, unless its JSON has escapes in it.
 remember() {
@@ -1212,8 +1207,11 @@ fn re_reads(count: usize, per_scan: usize, now_ms: i64) -> Vec<usize> {
     (0..per_scan).map(|offset| (start + offset) % count).collect()
 }
 
-fn scan_script(wanted: &[(String, u64)]) -> String {
-    let mut script = String::with_capacity(SCRIPT_HEAD.len() + SCRIPT_BODY.len() + wanted.len() * 48);
+/// The scan of `machine`'s homes, for the sessions in `wanted`.
+fn scan_script(machine: &str, wanted: &[(String, u64)]) -> String {
+    let homes = agent_homes::shell_function(machine, HomeUse::Sessions);
+    let mut script = String::with_capacity(homes.len() + SCRIPT_HEAD.len() + SCRIPT_BODY.len() + wanted.len() * 48);
+    script.push_str(&homes);
     script.push_str(SCRIPT_HEAD);
     for (id, size) in wanted {
         script.push_str(id);
@@ -1260,7 +1258,7 @@ fn store_scan(connection: &mut Connection, machine: &str, scan: &ScanOutput, now
     // Every transcript found says which agent home it's in, whether it was read or not, and that isn't a change
     // anyone is told about. Written after the rows above, which a read replaces whole.
     for (id, agent_home) in &scan.agent_homes {
-        let agent_home = tilde_path(agent_home, &scan.home);
+        let agent_home = tilde(agent_home, &scan.home);
         transaction
             .execute(
                 "UPDATE usage_session_transcripts SET agent_home = ?2 WHERE session_id = ?1 AND machine = ?3 AND agent_home <> ?2",
@@ -1298,15 +1296,6 @@ fn store_scan(connection: &mut Connection, machine: &str, scan: &ScanOutput, now
         .commit()
         .map_err(|error| format!("Failed to store session transcripts: {error}"))?;
     Ok(changed)
-}
-
-/// A path with the machine's home as ~, as Setup writes homes.
-fn tilde_path(path: &str, home: &str) -> String {
-    let home = home.trim_end_matches('/');
-    match path.strip_prefix(home) {
-        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with('/')) => format!("~{rest}"),
-        _ => path.to_string(),
-    }
 }
 
 fn same_except_read_time(previous: &SessionTranscript, next: &SessionTranscript) -> bool {
@@ -1364,7 +1353,7 @@ fn merge_transcript(
         agent: file.agent.as_str().to_string(),
         home: keep(home, |previous| &previous.home),
         agent_home: keep(
-            &scan.agent_homes.get(&file.session_id).map(|agent_home| tilde_path(agent_home, &scan.home)).unwrap_or_default(),
+            &scan.agent_homes.get(&file.session_id).map(|agent_home| tilde(agent_home, &scan.home)).unwrap_or_default(),
             |previous| &previous.agent_home,
         ),
         cwd: keep(&file.cwd, |previous| &previous.cwd),
@@ -1502,7 +1491,7 @@ async fn scan_machine(target: &Machine, scanned: Vec<String>, now_ms: i64) -> Re
     if wanted.is_empty() {
         return Ok(0);
     }
-    let scan = parse_scan(&run_checked(target, MachineOp::TranscriptScan, &scan_script(&wanted), SCAN_TIMEOUT).await?);
+    let scan = parse_scan(&run_checked(target, MachineOp::TranscriptScan, &scan_script(machine, &wanted), SCAN_TIMEOUT).await?);
     let machine = machine.to_string();
     run_usage_task(move || {
         let _write_guard = lock_usage_writes();
@@ -1771,21 +1760,21 @@ mod tests {
         let mut connection = database();
         let now = 100 * 86_400_000;
         let mut scan = scan_of(vec![claude_read(52_000)]);
-        scan.agent_homes.insert(CLAUDE_ID.into(), "/home/casey/.t3/provider-homes/claude-proxy".into());
+        scan.agent_homes.insert(CLAUDE_ID.into(), "/home/casey/.agent-app/homes/claude-proxy".into());
         store_scan(&mut connection, "mini", &scan, now).unwrap();
         let home = |connection: &Connection| -> String {
             connection.query_row("SELECT agent_home FROM usage_session_transcripts WHERE session_id = ?1", params![CLAUDE_ID], |row| row.get(0)).unwrap()
         };
-        assert_eq!(home(&connection), "~/.t3/provider-homes/claude-proxy");
+        assert_eq!(home(&connection), "~/.agent-app/homes/claude-proxy");
         // A later scan that doesn't read it again still moves it, and another machine can't.
         let mut moved = scan_of(Vec::new());
         moved.agent_homes.insert(CLAUDE_ID.into(), "/home/casey/.claude".into());
         store_scan(&mut connection, "cedar", &moved, now + 1).unwrap();
-        assert_eq!(home(&connection), "~/.t3/provider-homes/claude-proxy");
+        assert_eq!(home(&connection), "~/.agent-app/homes/claude-proxy");
         store_scan(&mut connection, "mini", &moved, now + 1).unwrap();
         assert_eq!(home(&connection), "~/.claude");
-        assert_eq!(tilde_path("/opt/claude", "/home/casey"), "/opt/claude");
-        assert_eq!(tilde_path("/home/caseyr/.claude", "/home/casey"), "/home/caseyr/.claude");
+        assert_eq!(tilde("/opt/claude", "/home/casey"), "/opt/claude");
+        assert_eq!(tilde("/home/caseyr/.claude", "/home/casey"), "/home/caseyr/.claude");
     }
 
     #[test]
@@ -2109,7 +2098,7 @@ mod tests {
                 .kill_on_drop(true);
             let output = tokio::runtime::Runtime::new()
                 .unwrap()
-                .block_on(run_script(command, &scan_script(wanted), Duration::from_secs(20)))
+                .block_on(run_script(command, &scan_script("", wanted), Duration::from_secs(20)))
                 .unwrap();
             assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
             String::from_utf8(output.stdout).unwrap()
@@ -2250,7 +2239,12 @@ mod tests {
             // T3 Code gives each provider a home of its own.
             let proxied_claude = "b2c3d4e5-6f70-4a81-9b2c-3d4e5f6a7b8c";
             let proxied_codex = "0199a2b3-c4d5-7e6f-8a7b-8c9d0e1f2a3b";
-            let homes = home.join(".t3/provider-homes");
+            // Another app's homes, on the list with Sessions on.
+            agent_homes::tests::save_on_this_thread(vec![
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, false),
+                agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, false),
+            ]);
+            let homes = home.join(".agent-app/homes");
             write(&homes.join(format!("claude-proxy/projects/-home-casey-src-api/{proxied_claude}.jsonl")), &claude_transcript(proxied_claude, &api));
             write(
                 &homes.join(format!("codex-proxy/sessions/2026/09/24/rollout-2026-09-24T04-00-00-{proxied_codex}.jsonl")),
@@ -2273,11 +2267,11 @@ mod tests {
             let scan = parse_scan(&stdout);
             assert_eq!(scan.home, home.display().to_string());
             assert_eq!(scan.files.len(), 4, "{stdout}");
-            let agent_home = |id: &str| scan.agent_homes.get(id).map(|path| tilde_path(path, &scan.home));
+            let agent_home = |id: &str| scan.agent_homes.get(id).map(|path| tilde(path, &scan.home));
             assert_eq!(agent_home(CLAUDE_ID).as_deref(), Some("~/.claude"));
             assert_eq!(agent_home(CODEX_ID).as_deref(), Some("~/.codex"));
-            assert_eq!(agent_home(proxied_claude).as_deref(), Some("~/.t3/provider-homes/claude-proxy"));
-            assert_eq!(agent_home(proxied_codex).as_deref(), Some("~/.t3/provider-homes/codex-proxy"));
+            assert_eq!(agent_home(proxied_claude).as_deref(), Some("~/.agent-app/homes/claude-proxy"));
+            assert_eq!(agent_home(proxied_codex).as_deref(), Some("~/.agent-app/homes/codex-proxy"));
             assert_eq!(scan.agent_homes.len(), 4, "only the sessions asked for");
             for id in [proxied_claude, proxied_codex] {
                 let file = scan.files.iter().find(|file| file.session_id == id).expect("found in T3 Code's home");

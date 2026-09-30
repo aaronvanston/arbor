@@ -117,9 +117,9 @@ describe('fileEstimate', () => {
       item('instructions', 'AGENTS.md', { path: '~/.codex/AGENTS.md', size: 1_200 }),
       item('rule', 'default.rules', { path: '~/.codex/rules/default.rules', size: 400 }),
     ]);
-    const shadow = { ...home('codex', '~/.t3/provider-homes/codex-proxy', []), shares: { home: '~/.codex', entries: ['AGENTS.md', 'sessions'] } };
+    const shadow = { ...home('codex', '~/.agent-app/homes/codex-proxy', []), shares: { home: '~/.codex', entries: ['AGENTS.md', 'sessions'] } };
     // Its AGENTS.md is ~/.codex's; the rules folder isn't linked, so ~/.codex's rules aren't its.
-    expect(fileEstimate(machine([codex, shadow]), 'codex', '~/.t3/provider-homes/codex-proxy')).toEqual({ instructions: 300, skills: 0, total: 300 });
+    expect(fileEstimate(machine([codex, shadow]), 'codex', '~/.agent-app/homes/codex-proxy')).toEqual({ instructions: 300, skills: 0, total: 300 });
   });
 
   it('knows nothing of a home Setup hasn’t seen', () => {

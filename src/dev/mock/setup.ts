@@ -84,7 +84,7 @@ const contextScenario = params.get('context');
 
 const CONTEXT_HOMES: { machine: string; agent: AgentKind; home: string; tokens: number; perDay: number; model: string; repos: string[] }[] = [
   { machine: 'casey-mbp', agent: 'claude', home: '~/.claude', tokens: 38_400, perDay: 3, model: 'claude-opus-5-5', repos: ['/Users/casey/src/arbor', '/Users/casey/src/proxy', ''] },
-  { machine: 'casey-mbp', agent: 'claude', home: '~/.t3/provider-homes/claude-proxy', tokens: 24_100, perDay: 2, model: 'claude-opus-5-5', repos: ['/Users/casey/src/arbor'] },
+  { machine: 'casey-mbp', agent: 'claude', home: '~/.agent-app/homes/claude-proxy', tokens: 24_100, perDay: 2, model: 'claude-opus-5-5', repos: ['/Users/casey/src/arbor'] },
   { machine: 'casey-mbp', agent: 'codex', home: '~/.codex', tokens: 17_900, perDay: 2, model: 'gpt-6-sol', repos: ['/Users/casey/src/api', '/Users/casey/src/arbor'] },
   { machine: 'cedar-02', agent: 'claude', home: '~/.claude', tokens: 52_300, perDay: 1.5, model: 'claude-opus-5-5', repos: ['/home/casey/src/arbor', '/home/casey/src/infra'] },
   { machine: 'ci-01', agent: 'claude', home: '~/.claude', tokens: 29_800, perDay: 0.5, model: 'claude-sonnet-5', repos: ['/home/ci/work/arbor'] },
@@ -217,7 +217,7 @@ export const setupMachines: SetupMachine[] = [
       setupHome('claude', '~/.claude', [...claudeItems, setupSkill('frontend-design', '~/.claude/skills/frontend-design', 'q3-mine', 3)]),
       setupHome('codex', '~/.codex', codexItems),
       setupHome('shared', '~/.agents', sharedItems),
-      setupHome('claude', '~/.t3/provider-homes/claude-proxy', [
+      setupHome('claude', '~/.agent-app/homes/claude-proxy', [
         setupItem('plugin', 'superpowers@superpowers-marketplace', 'p1', { value: '4.1.0', enabled: true, note: mockAgo(3) }),
         setupItem('plugin', 'context7@claude-plugins-official', 'pg', { value: null, enabled: true }),
         setupItem('marketplace', 'superpowers-marketplace', 'mk1', { note: 'obra/superpowers-marketplace', value: mockAgo(3) }),
@@ -319,8 +319,8 @@ if (setupScenario === 'overrides') {
   if (mac) mac.skillOverrides = [override('pdf', 'nameOnly'), override('release-notes', 'off')];
   const ci = homeOf('ci-01', '~/.claude');
   if (ci) ci.skillOverrides = [override('browser-check', 'off')];
-  const t3 = homeOf('casey-mbp', '~/.t3/provider-homes/claude-proxy');
-  if (t3) t3.ignoredOverrides = ['~/.t3/provider-homes/claude-proxy/settings.json'];
+  const t3 = homeOf('casey-mbp', '~/.agent-app/homes/claude-proxy');
+  if (t3) t3.ignoredOverrides = ['~/.agent-app/homes/claude-proxy/settings.json'];
 }
 // With `?setup=policy`, Claude Code's managed-settings policy on this Mac sets how long sessions are kept, the model,
 // a deny list, its telemetry, a hook and a plugin, and turns frontend-design off in every Claude Code home; ci-01's
@@ -350,7 +350,7 @@ if (setupScenario === 'policy') {
 if (setupScenario === 'shadow') {
   const mac = setupMachines.find((entry) => entry.machine === 'casey-mbp');
   if (mac) {
-    const shadow = setupHome('codex', '~/.t3/provider-homes/codex-proxy', [], [], '~/.codex/skills');
+    const shadow = setupHome('codex', '~/.agent-app/homes/codex-proxy', [], [], '~/.codex/skills');
     shadow.shares = { home: '~/.codex', entries: ['AGENTS.md', 'archived_sessions', 'config.toml', 'prompts', 'rules', 'sessions', 'skills', 'sqlite'] };
     mac.homes.push(shadow);
   }
@@ -831,7 +831,7 @@ export const recordEditMock = (machine: string, what: ChangeKind, files: { path:
 };
 if (params.get('changes') !== 'none') {
   recordEditMock('casey-mbp', 'reporter', [{ path: '~/.claude/settings.json', added: false }, { path: '~/.codex/config.toml', added: false }], Date.now() - 3 * 86_400_000);
-  recordEditMock('casey-mbp', 'keepSessions', [{ path: '~/.t3/provider-homes/claude-proxy/settings.json', added: true }], Date.now() - 26 * 3_600_000);
+  recordEditMock('casey-mbp', 'keepSessions', [{ path: '~/.agent-app/homes/claude-proxy/settings.json', added: true }], Date.now() - 26 * 3_600_000);
 }
 
 const applySetupMock = (entry: SetupMachine, commit: MockRepoCommit, changes: SyncChange[]): SyncOutcome => {

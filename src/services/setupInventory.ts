@@ -113,22 +113,20 @@ export const overrideWords = (override: SkillOverride): [MessageKey, Record<stri
   [override.source === 'policy' ? 'setup.override.policy' : 'setup.override.settings', { file: override.file }],
 ];
 
-/** How a home reads: one of the agents' own, the shared skills, or one T3 Code keeps for a provider. */
-export type HomeLook = { id: 'claude' | 'codex' | 'shared' | 't3' | 'other'; agent: HomeAgent; path: string; provider: string | null };
+/** How a home reads: one of the agents' own, the shared skills, or another on the machine's list of agent homes. */
+export type HomeLook = { id: 'claude' | 'codex' | 'shared' | 'other'; agent: HomeAgent; path: string };
 
 export function homeLook(key: string): HomeLook {
   const at = key.indexOf(':');
   const agent = key.slice(0, at) as HomeAgent;
   const path = key.slice(at + 1);
-  const provider = /^~\/\.t3\/provider-homes\/([^/]+)$/.exec(path)?.[1] ?? null;
-  if (provider) return { id: 't3', agent, path, provider };
-  if (agent === 'claude' && path === '~/.claude') return { id: 'claude', agent, path, provider: null };
-  if (agent === 'codex' && path === '~/.codex') return { id: 'codex', agent, path, provider: null };
-  if (agent === 'shared') return { id: 'shared', agent, path, provider: null };
-  return { id: 'other', agent, path, provider: null };
+  if (agent === 'claude' && path === '~/.claude') return { id: 'claude', agent, path };
+  if (agent === 'codex' && path === '~/.codex') return { id: 'codex', agent, path };
+  if (agent === 'shared') return { id: 'shared', agent, path };
+  return { id: 'other', agent, path };
 }
 
-const HOME_ORDER: Record<HomeLook['id'], number> = { claude: 0, codex: 1, shared: 2, t3: 3, other: 4 };
+const HOME_ORDER: Record<HomeLook['id'], number> = { claude: 0, codex: 1, shared: 2, other: 3 };
 
 /** Every home found on any machine: Claude Code's, Codex's, the shared skills, then the rest by path. */
 export function homeKeys(machines: SetupMachine[]): string[] {

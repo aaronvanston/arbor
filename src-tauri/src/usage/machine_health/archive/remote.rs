@@ -752,7 +752,7 @@ pub(crate) mod tests {
         assert!(lines(30).len() > 1500);
         let runtime = runtime();
         let pass = |shell: &'static str| {
-            let listing = parse(&run_list("sh", &fixture.home, &list_script(&[])));
+            let listing = parse(&run_list("sh", &fixture.home, &list_script("")));
             let mut fetch = shell_fetch(shell, &["gzip"], runtime.handle().clone());
             let mut files = RemoteFiles::new(&mut fetch, sizes, 1 << 40);
             let options = PassOptions { machine: "cedar".into(), user_home: listing.home.clone(), limits, bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), import: false, sessions: SessionFilter::everything() };
@@ -790,7 +790,7 @@ pub(crate) mod tests {
         for n in 0..3 {
             fixture.write(&format!(".claude/projects/-a/0f8b5c2e-1111-4222-8333-44445555666{n}.jsonl"), "{}\n");
         }
-        let listing = parse(&run_list("sh", &fixture.home, &list_script(&[])));
+        let listing = parse(&run_list("sh", &fixture.home, &list_script("")));
         let mut table = Table { files: HashMap::new(), asked: Vec::new(), down: true };
         let mut files = RemoteFiles::new(&mut table, SIZES, 1 << 40);
         let options = PassOptions { machine: "cedar".into(), user_home: listing.home.clone(), limits: SMALL, bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), import: false, sessions: SessionFilter::everything() };

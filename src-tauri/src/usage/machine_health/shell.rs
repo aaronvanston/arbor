@@ -119,6 +119,11 @@ pub(in crate::usage) struct MachineCommand {
 }
 
 impl MachineCommand {
+    /// The machine it runs on, or empty for a bare shell command, which reads the homes every machine has.
+    pub(in crate::usage) fn machine_name(&self) -> &str {
+        self.machine.as_deref().unwrap_or_default()
+    }
+
     #[cfg(test)]
     pub(in crate::usage) fn named(command: tokio::process::Command, machine: &str) -> Self {
         Self { command, machine: Some(machine.to_string()) }

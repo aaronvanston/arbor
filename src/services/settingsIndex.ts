@@ -31,6 +31,7 @@ export const SETTINGS_PAGE_LABEL: Record<SettingsPageId, MessageKey> = {
   aliases: 'settings.nav.aliases',
   'extra-models': 'settings.nav.extraModels',
   machines: 'settings.nav.machines',
+  'agent-homes': 'settings.nav.agentHomes',
   'session-archive': 'settings.nav.sessionArchive',
   data: 'settings.nav.data',
   diagnostics: 'settings.nav.diagnostics',
@@ -104,6 +105,8 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('machines', 'telemetry', 'telemetry.settings.title', 'telemetry.settings.receive', { description: 'telemetry.settings.receiveHint' }),
   row('machines', 'telemetry-port', 'telemetry.settings.title', 'telemetry.settings.port', { description: 'telemetry.settings.portHint' }),
   row('machines', 'telemetry-machines', 'telemetry.settings.title', 'telemetry.settings.machines'),
+
+  section('agent-homes', 'everywhere', 'agentHomes.everywhere.title', { description: 'agentHomes.everywhere.description', keywords: 'settingsSearch.keywords.agentHomes' }),
 
   row('session-archive', 'folder', 'sessionArchive.title', 'sessionArchive.folder.title', { description: 'sessionArchive.setup.folderDescription' }),
   row('session-archive', 'status', 'sessionArchive.title', 'sessionArchive.status.title', { fallback: 'session-archive.folder' }),

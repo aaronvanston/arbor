@@ -13,7 +13,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   main: { root: '/Volumes/Archive/arbor-session-archive.noindex', connected: true, mountPoint: '/Volumes/Archive', freeBytes: 1.24e12, noowners: false, lastSeenAt: Date.now() - 3 * 60_000 },
   sources: [
     { machine: 'mini', label: '~/.claude', agent: 'claude', files: 5210, kept: 5210, gone: 214, retentionDays: 36_500 },
-    { machine: 'mini', label: '~/.t3/provider-homes/claude-proxy', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: null },
+    { machine: 'mini', label: '~/.agent-app/homes/claude-proxy', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: null },
   ],
   machines: [],
   imports: [],

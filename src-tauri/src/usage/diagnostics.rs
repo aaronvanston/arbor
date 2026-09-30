@@ -148,6 +148,8 @@ pub(crate) enum MachineOp {
     NodeChange,
     ArchiveList,
     ArchiveRead,
+    AgentHomesScan,
+    AgentHomeCheck,
 }
 
 impl MachineOp {
@@ -187,6 +189,8 @@ impl MachineOp {
             Self::NodeChange => "Node versions",
             Self::ArchiveList => "archive list",
             Self::ArchiveRead => "archive read",
+            Self::AgentHomesScan => "agent homes scan",
+            Self::AgentHomeCheck => "agent home check",
         }
     }
 
@@ -207,7 +211,8 @@ impl MachineOp {
             | Self::ToolchainScan
             | Self::PackageScan
             | Self::ArchiveList
-            | Self::ArchiveRead => MACHINE_SCAN_SLOW_MS,
+            | Self::ArchiveRead
+            | Self::AgentHomesScan => MACHINE_SCAN_SLOW_MS,
             _ => MACHINE_SLOW_MS,
         }
     }

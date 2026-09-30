@@ -553,7 +553,7 @@ fn settle_idle(db: &Connection, places: &Places, now: i64, limits: Limits) -> Re
 #[cfg(test)]
 pub(crate) mod tests {
     use super::super::classify::tests::SMALL;
-    use super::super::lister::{list_script, parse, tests::run_list};
+    use super::super::lister::{parse, tests::{list_script_with, run_list, scanned_homes}};
     use super::super::store::tests::temp_dir;
     use super::super::{index, journal};
     use super::*;
@@ -594,7 +594,7 @@ pub(crate) mod tests {
         }
 
         fn list(&self) -> (String, Listing) {
-            let stdout = run_list("sh", &self.home, &list_script(&[]));
+            let stdout = run_list("sh", &self.home, &list_script_with(&scanned_homes()));
             let listing = parse(&stdout);
             (stdout, listing)
         }
@@ -668,7 +668,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn keeps_the_desktop_apps_local_sessions_and_posthog_codes_but_not_the_sign_ins_beside_them() {
+    fn keeps_a_desktop_apps_local_sessions_but_not_the_sign_ins_beside_them() {
         let fixture = Fixture::new("desktop");
         let org = "Library/Application Support/Claude/local-agent-mode-sessions/acct/org";
         let local = format!("local_{THREAD}");
@@ -678,7 +678,7 @@ pub(crate) mod tests {
         fixture.write(&format!("{org}/{local}/.claude/.credentials.json"), SECRET_TEXT);
         fixture.write(&format!("{org}/{local}/.claude/projects/-sessions-x/{SID}.jsonl"), &format!("{{\"type\":\"user\",\"sessionId\":\"{SID}\"}}\n"));
         let other = "1a2b3c4d-1111-4222-8333-444455556666";
-        fixture.write(&format!("Library/Application Support/@posthog/posthog-code/claude/projects/-Users-me-app/{other}.jsonl"), &format!("{{\"type\":\"user\",\"sessionId\":\"{other}\"}}\n"));
+        fixture.write(&format!("Library/Application Support/AcmeCode/claude/projects/-Users-me-app/{other}.jsonl"), &format!("{{\"type\":\"user\",\"sessionId\":\"{other}\"}}\n"));
 
         let report = fixture.pass();
         assert!(report.complete, "{report:?}");
@@ -702,7 +702,7 @@ pub(crate) mod tests {
         let main = format!(".claude/projects/-Users-me-app/{SID}.jsonl");
         fixture.write(&main, &claude_lines(3));
         // The same session in a second home is the same session, stored once.
-        fixture.write(&format!(".t3/provider-homes/claude-proxy/projects/-Users-me-app/{SID}.jsonl"), &claude_lines(3));
+        fixture.write(&format!(".agent-app/homes/claude-proxy/projects/-Users-me-app/{SID}.jsonl"), &claude_lines(3));
         fixture.write(&format!(".claude/projects/-Users-me-app/{SID}/subagents/agent-a1.jsonl"), &claude_lines(1));
         fixture.write(".claude/history.jsonl", &format!("{{\"display\":\"{SECRET_TEXT}\"}}\n"));
         fixture.write(".claude/settings.json", "{\"env\":{\"TOKEN\":\"not-a-session\"}}");

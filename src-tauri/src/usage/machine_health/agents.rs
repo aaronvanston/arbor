@@ -8,6 +8,7 @@
 //! Arbor's reporter is set up there, and which agent homes run it (see
 //! `attention`), and whether T3 Code keeps its home there.
 
+use super::agent_homes::HomeUse;
 use super::agent_install::{self, InstallMethod, Probes, UpdatePlan};
 use ts_rs::TS;
 use super::*;
@@ -315,8 +316,8 @@ fn parse_check(stdout: &str) -> AgentCheck {
     }
 }
 
-fn check_script() -> String {
-    format!("{AGENT_ENV}{CHECK_SCRIPT}{}{}", attention::AGENT_HOMES, attention::REPORTER_CHECK)
+fn check_script(machine: &str) -> String {
+    format!("{AGENT_ENV}{CHECK_SCRIPT}{}{}", agent_homes::shell_function(machine, HomeUse::Sync), attention::REPORTER_CHECK)
 }
 
 fn update_script(agent: AgentKind, plan: &UpdatePlan) -> String {
@@ -324,7 +325,7 @@ fn update_script(agent: AgentKind, plan: &UpdatePlan) -> String {
 }
 
 async fn check(machine: &Machine) -> Result<AgentCheck, String> {
-    Ok(parse_check(&run_checked(machine, MachineOp::AgentVersions, &check_script(), CHECK_TIMEOUT).await?))
+    Ok(parse_check(&run_checked(machine, MachineOp::AgentVersions, &check_script(machine.name()), CHECK_TIMEOUT).await?))
 }
 
 /// Stores a check's result, unless the machine has since been pointed somewhere else.
@@ -743,8 +744,8 @@ mod tests {
         /// /Applications, so whatever this Mac has installed there can't be found.
         fn home_check_script() -> String {
             let apps = "for app in /Applications/T3\\ Code*.app ";
-            assert!(check_script().contains(apps));
-            home_only(&check_script()).replace(apps, "for app in ")
+            assert!(check_script("").contains(apps));
+            home_only(&check_script("")).replace(apps, "for app in ")
         }
 
         /// A script with the system's Homebrew directories left off its PATH.
