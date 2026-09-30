@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.3.204",
+    "summary": "First run: add this Mac, connect your agents and make the proxy's key from Home.",
+    "changes": [
+      "Connect an agent shows the lines to add, for this Mac or another machine.",
+      "The session archive can be kept on the Mac's own disk.",
+      "Empty pages say when nothing has been recorded yet, and settings say menu bar instead of tray."
+    ]
+  },
+  {
     "version": "0.3.203",
     "summary": "Accounts: set a usage cap at any percent, and let it ease toward each limit's reset.",
     "changes": [

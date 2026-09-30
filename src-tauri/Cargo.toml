@@ -1,7 +1,7 @@
 [package]
 name = "cpa-gui"
 # Single source of truth for the desktop app version.
-version = "0.3.203"
+version = "0.3.204"
 description = "Arbor desktop management shell"
 authors = ["Aaron Vanston"]
 edition = "2021"
