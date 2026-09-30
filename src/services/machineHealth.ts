@@ -17,6 +17,8 @@ export const fetchMachineHealth = (since: number | null, windowMs: number, passi
 
 export const fetchMachineHosts = () => invokeCommand('get_machine_hosts');
 export const saveMachineHosts = (hosts: MachineHost[]) => tracked('machines-saved', invokeCommand('save_machine_hosts', { hosts }), { count: hosts.length });
+/** Takes a machine off the list; its history stays, and saving it again brings it back. */
+export const removeMachineHost = (machine: string) => invokeCommand('remove_machine_host', { machine });
 
 /** An SSH port typed into the hosts table: whole digits from 1 to 65535, otherwise null. */
 export function parsePort(text: string): number | null {

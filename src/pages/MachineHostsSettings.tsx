@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import { AlertCircle, Plus, Server } from '../components/ui/icons';
+import { AlertCircle, Plus, Server, Trash2 } from '../components/ui/icons';
 import { useI18n } from '../i18n';
-import { fetchMachineHosts, parsePort, saveMachineHosts } from '../services/machineHealth';
+import { fetchMachineHosts, parsePort, removeMachineHost, saveMachineHosts } from '../services/machineHealth';
 import { useUnsavedChanges } from '../services/unsavedChanges';
 import { AddMachineDialog } from '../components/AddMachineDialog';
 import { MachinePill, MachinePills } from '../components/identity/Identity';
@@ -9,7 +9,6 @@ import { MachineLookPicker } from '../components/identity/MachineLookPicker';
 import { toast } from '../components/ui/toast';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { draftFromNumber, NumberField, numberFromDraft } from '../components/ui/number-field';
@@ -23,7 +22,8 @@ import { machineName } from '../services/machineNames';
 
 /**
  * Where each machine is sampled from. Rows are seeded from API-key
- * assignments; edits here take precedence and survive re-seeding.
+ * assignments; edits here take precedence and survive re-seeding, and a
+ * removed machine stays off until it's added again.
  */
 export function MachineHostsSettings() {
   const { t, tRich } = useI18n();
@@ -55,6 +55,29 @@ export function MachineHostsSettings() {
     setAdding(false);
     toast({ kind: 'success', title: tRich('machines.hosts.added', { machine: <MachinePill name={machine} size="md" /> }) });
     void load();
+  };
+  // Straight away with an Undo, since saving the same host again puts it back as it was.
+  const remove = async (host: MachineHost) => {
+    setError('');
+    try {
+      setHosts(await removeMachineHost(host.machine));
+      toast({
+        kind: 'success',
+        title: tRich('machines.hosts.removed', { machine: <MachinePill name={host.machine} size="md" /> }),
+        description: t('machines.hosts.removedDescription'),
+        action: {
+          label: t('common.undo'),
+          onClick: () => {
+            saveMachineHosts([host])
+              .then(setHosts)
+              .catch((requestError: unknown) => setError(String(requestError)));
+          },
+        },
+        focusAction: true,
+      });
+    } catch (requestError) {
+      setError(String(requestError));
+    }
   };
 
   const change = (index: number, patch: Partial<MachineHost>) => {
@@ -110,8 +133,6 @@ export function MachineHostsSettings() {
       {draft ? <MachinePill name={machine} /> : <MachineLookPicker name={machine} />}
     </span>
   );
-  const sourceLabel = (source: string) =>
-    source === 'manual' ? t('machines.hosts.source.manual') : t('machines.hosts.source.seed');
 
   return (
     <SettingsSection
@@ -164,8 +185,8 @@ export function MachineHostsSettings() {
               <TableHead>{t('machines.hosts.column.machine')}</TableHead>
               <TableHead>{t('machines.hosts.column.endpoint')}</TableHead>
               <TableHead className="w-24">{t('machines.hosts.column.port')}</TableHead>
-              <TableHead className="w-28">{t('machines.hosts.column.source')}</TableHead>
               <TableHead className="w-24 text-end">{t('machines.hosts.column.enabled')}</TableHead>
+              <TableHead className="w-12"><span className="sr-only">{t('machines.hosts.column.actions')}</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -197,9 +218,21 @@ export function MachineHostsSettings() {
                     <span className="tabular-nums">{row.port}</span>
                   )}
                 </TableCell>
-                <TableCell><Badge variant="muted" size="sm">{sourceLabel(row.source)}</Badge></TableCell>
                 <TableCell className="text-end">
                   <Switch size="sm" checked={row.enabled} disabled={!draft} onCheckedChange={(checked) => change(index, { enabled: checked })} aria-label={t('machines.hosts.column.enabled')} />
+                </TableCell>
+                <TableCell className="text-end">
+                  {draft ? null : (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => void remove(row)}
+                      aria-label={t('machines.hosts.remove', { machine: machineName(row.machine) })}
+                      title={t('machines.hosts.remove', { machine: machineName(row.machine) })}
+                    >
+                      <Trash2 />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

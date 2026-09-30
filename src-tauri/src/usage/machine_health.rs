@@ -1286,7 +1286,7 @@ pub(super) fn normalize_machine_name(name: &str) -> String {
 }
 
 /// Seed a host for every machine an API key is assigned to, with no endpoint yet. Existing rows are never
-/// overwritten, so user edits survive re-seeding.
+/// overwritten, so user edits survive re-seeding, and a removed machine's row keeps it from coming back.
 pub(super) fn seed_hosts(connection: &Connection) -> Result<(), String> {
     let mut assignment_machines: Vec<String> = machines::read_assignments(connection)?
         .into_iter()
@@ -1306,7 +1306,7 @@ pub(super) fn seed_hosts(connection: &Connection) -> Result<(), String> {
 
 pub(super) fn read_hosts(connection: &Connection) -> Result<Vec<MachineHost>, String> {
     let mut statement = connection
-        .prepare("SELECT machine, endpoint, port, enabled, source FROM usage_machine_hosts ORDER BY machine")
+        .prepare("SELECT machine, endpoint, port, enabled, source FROM usage_machine_hosts WHERE source != 'removed' ORDER BY machine")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -1354,6 +1354,21 @@ pub(super) fn save_hosts(connection: &mut Connection, hosts: &[MachineHost]) -> 
             .map_err(|error| error.to_string())?;
     }
     transaction.commit().map_err(|error| error.to_string())
+}
+
+/// Takes a machine off the list. Its row stays, marked removed, so an API key still assigned to it doesn't seed it
+/// back; saving the machine again brings it back. Its sessions and usage are kept under its name.
+pub(super) fn remove_host(connection: &Connection, machine: &str) -> Result<(), String> {
+    let removed = connection
+        .execute(
+            "UPDATE usage_machine_hosts SET source = 'removed' WHERE machine = ?1 AND source != 'removed'",
+            params![machine],
+        )
+        .map_err(|error| error.to_string())?;
+    if removed == 0 {
+        return Err(format!("No machine called {machine} is on the list"));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1505,6 +1520,21 @@ pub(crate) async fn save_machine_hosts(
     .await?;
     state.request_reload();
     Ok(saved)
+}
+
+#[tauri::command]
+pub(crate) async fn remove_machine_host(
+    state: tauri::State<'_, MachineHealthState>,
+    machine: String,
+) -> Result<Vec<MachineHost>, String> {
+    let hosts = run_usage_task(move || {
+        let connection = open_usage_database()?;
+        remove_host(&connection, &machine)?;
+        read_hosts(&connection)
+    })
+    .await?;
+    state.request_reload();
+    Ok(hosts)
 }
 
 #[cfg(test)]
@@ -1668,6 +1698,30 @@ mod tests {
         assert!(save_hosts(&mut connection, &[bad]).is_err());
         let spaced = MachineHost { machine: "x".into(), endpoint: "host name".into(), port: 22, enabled: true, source: String::new() };
         assert!(save_hosts(&mut connection, &[spaced]).is_err());
+    }
+
+    #[test]
+    fn a_removed_machine_stays_off_the_list_until_it_is_saved_again() {
+        let mut connection = schema::test_database();
+        connection
+            .execute("INSERT INTO usage_machine_assignments VALUES ('a','one','Cedar 01','')", [])
+            .unwrap();
+        let names = |connection: &Connection| read_hosts(connection).unwrap().into_iter().map(|host| host.machine).collect::<Vec<_>>();
+        let desk = MachineHost { machine: "desk".into(), endpoint: "localhost".into(), port: 22, enabled: true, source: String::new() };
+        save_hosts(&mut connection, std::slice::from_ref(&desk)).unwrap();
+        assert_eq!(load_hosts(&connection).unwrap().len(), 2);
+
+        remove_host(&connection, "Cedar 01").unwrap();
+        remove_host(&connection, "desk").unwrap();
+        // The API key is still assigned to Cedar 01, and the next load seeds again.
+        assert!(load_hosts(&connection).unwrap().is_empty());
+        assert!(remove_host(&connection, "desk").is_err(), "already removed");
+        assert!(remove_host(&connection, "nowhere").is_err());
+
+        save_hosts(&mut connection, &[desk]).unwrap();
+        let back = read_hosts(&connection).unwrap();
+        assert_eq!(names(&connection), ["desk"]);
+        assert_eq!((back[0].endpoint.as_str(), back[0].source.as_str()), ("localhost", "manual"));
     }
 
     #[test]

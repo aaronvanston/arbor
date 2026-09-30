@@ -653,6 +653,13 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     }
     return healthHosts;
   },
+  remove_machine_host: ({ machine }) => {
+    const index = healthHosts.findIndex((host) => host.machine === machine);
+    if (index < 0) throw new Error(`No machine called ${machine} is on the list`);
+    healthHosts.splice(index, 1);
+    // A new list, as the native side sends, so the page sees the change.
+    return [...healthHosts];
+  },
   set_t3_threads_enabled: (args) => {
     setMockT3Enabled(args.enabled);
     mockLog('t3_threads_enabled', args.enabled);
