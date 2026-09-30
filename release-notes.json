@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.3.200",
+    "summary": "Safer defaults: each new install gets its own proxy key, and the proxy core downloads only from GitHub.",
+    "changes": [
+      "New installs start with a random proxy key, and the proxy checks warn while the old default key is in use.",
+      "The proxy core and app updates download only from GitHub, checked against each release's checksums.",
+      "Sessions name the app an agent ran in, and optional integrations show only once installed."
+    ]
+  },
+  {
     "version": "0.3.199",
     "summary": "Ready for the source to go public: license notices, fuller credits, and usage data sent only by official releases.",
     "changes": [
