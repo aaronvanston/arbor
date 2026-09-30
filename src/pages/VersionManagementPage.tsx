@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
-import { AlertCircle, Download, ExternalLink, Info, Plus, RotateCcw, Trash2 } from '../components/ui/icons';
+import { AlertCircle, Download, ExternalLink, Info, RotateCcw } from '../components/ui/icons';
 import { useCoreRuntime } from '../coreRuntime';
 import { useCoreUpdate } from '../coreUpdate';
 import { useI18n } from '../i18n';
@@ -22,36 +22,13 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge, type BadgeProps } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { AlertDialog, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
-import { Input } from '../components/ui/input';
 import { Progress } from '../components/ui/progress';
 import { RefreshIcon } from '../components/ui/refresh-icon';
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
-import type { CoreInstallResult, CoreInstallTask, VersionSourceSettings } from '../native/types';
-
-export type VersionDownloadSource = string;
-
-function downloadSourceLabel(source: VersionDownloadSource, t: ReturnType<typeof useI18n>['t']) {
-  const keys: Record<string, Parameters<typeof t>[0]> = {
-    github: 'kernel.versions.source.github',
-    'gh-proxy': 'kernel.versions.source.ghProxy',
-    'gh-fast': 'kernel.versions.source.ghFast',
-  };
-  if (source.startsWith('custom:')) {
-    const url = source.slice('custom:'.length);
-    try {
-      return `${t('kernel.versions.source.custom')} · ${new URL(url).host}`;
-    } catch {
-      return t('kernel.versions.source.custom');
-    }
-  }
-  return t(keys[source] ?? 'kernel.versions.source.github');
-}
+import type { CoreInstallResult, CoreInstallTask } from '../native/types';
 
 export type MessageType = 'info' | 'success' | 'error';
-const APP_RELEASE_URL = 'https://github.com/router-for-me/EasyCLIProxyAPI/releases/latest';
-export const DEFAULT_VERSION_DOWNLOAD_SOURCE = 'github';
 const recordVersionManagementVisit = createVersionManagementVisitTracker();
 
 export function VersionManagementPage() {
@@ -77,7 +54,6 @@ export function VersionManagementPage() {
     checking: checkingLatest,
     hasUpdate: coreHasUpdate,
     check: checkLatest,
-    reset: resetLatest,
   } = useCoreUpdate();
 
   const [installedAppVersion, setInstalledAppVersion] = useState('');
@@ -87,12 +63,6 @@ export function VersionManagementPage() {
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
   const [cancelingInstall, setCancelingInstall] = useState(false);
-
-  const [versionSource, setVersionSource] = useState<VersionSourceSettings | null>(null);
-  const [versionSourceSaving, setVersionSourceSaving] = useState(false);
-  const [versionSourceError, setVersionSourceError] = useState('');
-  const [customMirrorDraft, setCustomMirrorDraft] = useState('');
-  const [customMirrorDialogOpen, setCustomMirrorDialogOpen] = useState(false);
 
   const feedback = useAppNotice();
   const { showNotice } = feedback;
@@ -149,83 +119,11 @@ export function VersionManagementPage() {
     }
   };
 
-  const loadVersionSourceSettings = async () => {
-    try {
-      const settings = await invokeCommand('get_version_source_settings');
-      setVersionSource(settings);
-      setVersionSourceError('');
-    } catch (error) {
-      setVersionSourceError(String(error));
-    }
-  };
-
   const loadInstallTask = async () => {
     try {
       const task = await invokeCommand('get_core_install_task');
       applyInstallTask(task, false, false);
     } catch {}
-  };
-
-  const updateVersionSource = async (source: VersionDownloadSource) => {
-    setVersionSourceSaving(true);
-    setVersionSourceError('');
-    try {
-      const settings = await invokeCommand('set_download_source', { source });
-      setVersionSource(settings);
-      resetLatest();
-      showNotice({ key: 'kernel.versions.sourceSwitched', variables: {
-        source: downloadSourceLabel(settings.source, t),
-      } }, 'info');
-    } catch (error) {
-      await loadVersionSourceSettings();
-      setVersionSourceError(t('kernel.versions.sourceSaveFailed', { error: String(error) }));
-      showNotice({ key: 'kernel.versions.sourceSaveFailed', variables: { error: String(error) } }, 'error');
-    } finally {
-      setVersionSourceSaving(false);
-    }
-  };
-
-  const addCustomMirror = async () => {
-    const url = customMirrorDraft.trim();
-    if (!url) return;
-    setVersionSourceSaving(true);
-    setVersionSourceError('');
-    try {
-      const settings = await invokeCommand('add_custom_download_mirror', { url });
-      setVersionSource(settings);
-      setCustomMirrorDraft('');
-      setCustomMirrorDialogOpen(false);
-      resetLatest();
-      showNotice({ key: 'kernel.versions.customMirrorAdded' }, 'success');
-    } catch (error) {
-      const message = t('kernel.versions.customMirrorAddFailed', { error: String(error) });
-      setVersionSourceError(message);
-      showNotice(message, 'error');
-    } finally {
-      setVersionSourceSaving(false);
-    }
-  };
-
-  const removeCustomMirror = async (url: string) => {
-    const wasSelected = versionSource?.source === `custom:${url}`;
-    setVersionSourceSaving(true);
-    setVersionSourceError('');
-    try {
-      const settings = await invokeCommand('remove_custom_download_mirror', {
-        url,
-      });
-      setVersionSource(settings);
-      showNotice({ key: 'kernel.versions.customMirrorRemoved' }, 'success');
-      if (wasSelected) {
-        resetLatest();
-      }
-    } catch (error) {
-      const message = t('kernel.versions.customMirrorRemoveFailed', { error: String(error) });
-      setVersionSourceError(message);
-      showNotice(message, 'error');
-    } finally {
-      setVersionSourceSaving(false);
-    }
   };
 
   const installVersion = async (version: string) => {
@@ -331,7 +229,6 @@ export function VersionManagementPage() {
     let disposed = false;
     let unlisten: (() => void) | null = null;
     let unlistenConfig: (() => void) | null = null;
-    let unlistenVersionSource: (() => void) | null = null;
 
     listen<CoreInstallTask>('core-install-progress', (event) => {
       const showTaskUi = manualInstallInProgressRef.current;
@@ -348,27 +245,13 @@ export function VersionManagementPage() {
 
     void listen('config-files-changed', () => {
       if (disposed) return;
-      void loadVersionSourceSettings();
       void refreshStatus();
     }).then((stop) => {
       if (disposed) stop();
       else unlistenConfig = stop;
     });
 
-    void listen<VersionSourceSettings>('version-download-source-changed', (event) => {
-      if (disposed) return;
-      setVersionSource(event.payload);
-      setVersionSourceError('');
-      showNotice({ key: 'kernel.versions.sourceAutoSwitched', variables: {
-        source: downloadSourceLabel(event.payload.source, t),
-      } }, 'info');
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlistenVersionSource = stop;
-    });
-
     loadInstallTask();
-    void loadVersionSourceSettings();
 
     void getVersion()
       .then((version) => {
@@ -380,7 +263,6 @@ export function VersionManagementPage() {
       disposed = true;
       unlisten?.();
       unlistenConfig?.();
-      unlistenVersionSource?.();
     };
     // Mount-only: the listeners and first loads are set up once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -493,16 +375,6 @@ export function VersionManagementPage() {
 
   const installDialogActionDisabled = installRunning && (cancelingInstall || !progress?.cancelable);
 
-  const sourceControlsDisabled = !versionSource || versionSourceSaving || appUpdateTask.running || installing;
-  const selectedSource = versionSource?.source ?? DEFAULT_VERSION_DOWNLOAD_SOURCE;
-
-  const closeCustomMirrorDialog = () => {
-    if (versionSourceSaving) return;
-    setCustomMirrorDialogOpen(false);
-    setCustomMirrorDraft('');
-    setVersionSourceError('');
-  };
-
   return (
     <Page>
       <PageTopbar>
@@ -591,7 +463,7 @@ export function VersionManagementPage() {
           <SettingsRow
             settingId="updates.core"
             title={t('kernel.versions.updateStatus')}
-            description={t('kernel.versions.downloadSourceHint')}
+            description={t('kernel.versions.coreSourceHint')}
             control={
               <>
                 <Button variant="outline" size="sm" disabled={busy} onClick={() => void checkLatest(true)}>
@@ -640,114 +512,7 @@ export function VersionManagementPage() {
             </SettingsBlock>
           ) : null}
         </SettingsSection>
-
-        <SettingsSection title={t('kernel.versions.downloadSource')}>
-          <SettingsRow
-            settingId="updates.source"
-            title={t('kernel.versions.activeSource')}
-            description={t('kernel.versions.activeSourceDescription')}
-            control={
-              <>
-                <Select value={selectedSource} disabled={sourceControlsDisabled} onValueChange={(value) => { if (value && value !== selectedSource) void updateVersionSource(value as VersionDownloadSource); }}>
-                  <SelectTrigger size="sm" className="w-56" aria-label={t('kernel.versions.downloadSource')}>
-                    <SelectValue>{downloadSourceLabel(selectedSource, t)}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup>
-                    <SelectItem value="github">{t('kernel.versions.source.github')}</SelectItem>
-                    <SelectItem value="gh-proxy">{t('kernel.versions.source.ghProxy')}</SelectItem>
-                    <SelectItem value="gh-fast">{t('kernel.versions.source.ghFast')}</SelectItem>
-                    {versionSource?.customMirrors.map((url) => (
-                      <SelectItem key={url} value={`custom:${url}`}>{downloadSourceLabel(`custom:${url}`, t)}</SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={versionSourceSaving || appUpdateTask.running || installing}
-                  onClick={() => {
-                    setVersionSourceError('');
-                    setCustomMirrorDialogOpen(true);
-                  }}
-                >
-                  <Plus />
-                  {t('kernel.versions.customMirrorAdd')}
-                </Button>
-              </>
-            }
-          />
-          {versionSourceError && !customMirrorDialogOpen ? (
-            <SettingsBlock>
-              <Alert variant="error" icon={<AlertCircle />}>
-                <AlertDescription>{versionSourceError}</AlertDescription>
-              </Alert>
-            </SettingsBlock>
-          ) : null}
-        </SettingsSection>
       </PageBody>
-
-      <Dialog open={customMirrorDialogOpen} onOpenChange={(next) => { if (!next) closeCustomMirrorDialog(); }}>
-        <DialogPopup className="max-w-md">
-          <form
-            className="contents"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void addCustomMirror();
-            }}
-          >
-            <DialogHeader>
-              <span className="text-xs font-medium text-muted-foreground">{t('kernel.versions.downloadSource')}</span>
-              <DialogTitle>{t('kernel.versions.customMirrorDialogTitle')}</DialogTitle>
-              <DialogDescription>{t('kernel.versions.customMirrorDialogDescription')}</DialogDescription>
-            </DialogHeader>
-            <DialogPanel className="flex flex-col gap-4">
-              <Input
-                type="url"
-                autoFocus
-                value={customMirrorDraft}
-                disabled={versionSourceSaving}
-                placeholder={t('kernel.versions.customMirrorPlaceholder')}
-                aria-label={t('kernel.versions.customMirrorPlaceholder')}
-                onChange={(event) => setCustomMirrorDraft(event.currentTarget.value)}
-              />
-              {versionSourceError ? (
-                <Alert variant="error" icon={<AlertCircle />}>
-                  <AlertDescription>{versionSourceError}</AlertDescription>
-                </Alert>
-              ) : null}
-              {versionSource?.customMirrors.length ? (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">{t('kernel.versions.customMirrorSaved')}</span>
-                  <ul className="overflow-hidden rounded-lg border border-border/60 text-sm [&>li+li]:border-t [&>li+li]:border-border/50">
-                    {versionSource.customMirrors.map((url) => (
-                      <li key={url} className="flex items-center justify-between gap-3 py-1 pe-1 ps-3">
-                        <span className="min-w-0 truncate font-mono text-sm" title={url}>{url}</span>
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={<Button variant="ghost-muted" size="icon-sm" disabled={versionSourceSaving} focusableWhenDisabled aria-label={t('kernel.versions.customMirrorRemove')} onClick={() => void removeCustomMirror(url)} />}
-                          >
-                            <Trash2 />
-                          </TooltipTrigger>
-                          <TooltipPopup>{t('kernel.versions.customMirrorRemove')}</TooltipPopup>
-                        </Tooltip>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </DialogPanel>
-            <DialogFooter>
-              <Button type="button" variant="outline" disabled={versionSourceSaving} onClick={closeCustomMirrorDialog}>
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" disabled={!customMirrorDraft.trim() || versionSourceSaving}>
-                {versionSourceSaving ? <Spinner /> : null}
-                {t('kernel.versions.customMirrorConfirm')}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogPopup>
-      </Dialog>
 
       <AlertDialog open={confirmUpdateOpen} onOpenChange={setConfirmUpdateOpen}>
         <DialogPopup className="max-w-md">

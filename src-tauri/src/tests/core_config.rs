@@ -21,28 +21,29 @@ fn legacy_string_api_keys_keep_custom_keys_without_special_protection() {
 }
 
 #[test]
-fn a_config_saved_with_the_gitcode_mirror_loads_with_github() {
-    let legacy = "download-source = \"gitcode\"\nprefer-gitcode-downloads = true\nsilent-start = true\nmanagement-secret-key = \"custom-secret\"\n";
-    let config = toml::from_str::<GuiConfigFile>(legacy).unwrap();
-    assert_eq!(config.download_source, VersionDownloadSource::Github);
-    assert_eq!(
-        config.selected_download_candidate(),
-        VersionDownloadCandidate::builtin(VersionDownloadSource::Github)
-    );
-    // The rest of the file still loads.
-    assert!(config.silent_start);
-    let presence = toml::from_str::<GuiConfigPresence>(legacy).unwrap();
-    assert_eq!(presence.download_source, Some(VersionDownloadSource::Github));
-    assert_eq!(presence.prefer_gitcode_downloads, Some(true));
+fn a_config_saved_with_download_mirrors_loads_and_is_written_again_without_them() {
+    for legacy in [
+        "download-source = \"custom\"\ncustom-download-mirrors = [\"https://mirror.example.com/\"]\nactive-custom-download-mirror = \"https://mirror.example.com/\"\nsilent-start = true\nmanagement-secret-key = \"custom-secret\"\n",
+        "download-source = \"gitcode\"\nprefer-gitcode-downloads = true\nsilent-start = true\nmanagement-secret-key = \"custom-secret\"\n",
+    ] {
+        // The rest of the file still loads, and loading marks it to be written again.
+        let config = toml::from_str::<GuiConfigFile>(legacy).unwrap();
+        assert!(config.silent_start);
+        assert!(toml::from_str::<GuiConfigPresence>(legacy).unwrap().has_retired_download_settings());
 
-    let home = agent_test_home("gitcode-config");
-    let path = home.join("config.toml");
-    fs::write(&path, legacy).unwrap();
-    write_gui_config_to_path(&config, &path).unwrap();
-    let content = fs::read_to_string(&path).unwrap();
-    assert!(content.contains("download-source = \"github\""), "{content}");
-    assert!(!content.contains("gitcode"), "{content}");
-    fs::remove_dir_all(home).unwrap();
+        let home = agent_test_home("download-mirror-config");
+        let path = home.join("config.toml");
+        fs::write(&path, legacy).unwrap();
+        write_gui_config_to_path(&config, &path).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        for key in ["download-source", "custom-download-mirrors", "active-custom-download-mirror", "gitcode", "mirror"] {
+            assert!(!content.contains(key), "{key}: {content}");
+        }
+        assert!(content.contains("silent-start = true"), "{content}");
+        // So the next load leaves it alone.
+        assert!(!toml::from_str::<GuiConfigPresence>(&content).unwrap().has_retired_download_settings());
+        fs::remove_dir_all(home).unwrap();
+    }
 }
 
 #[test]
@@ -1236,9 +1237,6 @@ fn startup_leaves_an_existing_config_yaml_as_it_is_apart_from_the_management_key
         plugins_enabled: true,
         routing_strategy: "fill-first".to_string(),
         proxy_url: "socks5://127.0.0.1:7890".to_string(),
-        download_source: VersionDownloadSource::Github,
-        custom_download_mirrors: Vec::new(),
-        active_custom_download_mirror: String::new(),
         routing_session_affinity: true,
         routing_session_affinity_ttl: "1h".to_string(),
         disable_cooling: true,

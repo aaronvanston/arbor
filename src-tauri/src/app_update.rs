@@ -4,96 +4,6 @@ pub(crate) const PORTABLE_UPDATE_HELPER_ACK_FILE: &str = "update-helper-started.
 const PORTABLE_UPDATE_HELPER_START_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tauri::command]
-pub(crate) fn get_version_source_settings(
-    gui_config_state: tauri::State<'_, GuiConfigState>,
-) -> Result<VersionSourceSettings, String> {
-    let config = gui_config_state.snapshot()?;
-    Ok(version_source_settings(&config))
-}
-
-fn version_source_settings(config: &GuiConfigFile) -> VersionSourceSettings {
-    VersionSourceSettings {
-        source: config.selected_download_candidate().key(),
-        custom_mirrors: config.custom_download_mirrors.clone(),
-    }
-}
-
-#[tauri::command]
-pub(crate) fn set_download_source(
-    gui_config_state: tauri::State<'_, GuiConfigState>,
-    source: String,
-) -> Result<VersionSourceSettings, String> {
-    let candidate = if let Some(url) = source.strip_prefix("custom:") {
-        VersionDownloadCandidate::custom(&normalize_custom_download_mirror_url(url)?)
-    } else {
-        VersionDownloadCandidate::builtin(
-            VersionDownloadSource::from_str(&source)
-                .filter(|source| *source != VersionDownloadSource::Custom)
-                .ok_or_else(|| "Unsupported download source".to_string())?,
-        )
-    };
-    let config = gui_config_state.set_download_candidate(candidate)?;
-    Ok(version_source_settings(&config))
-}
-
-#[tauri::command]
-pub(crate) fn add_custom_download_mirror(
-    gui_config_state: tauri::State<'_, GuiConfigState>,
-    url: String,
-) -> Result<VersionSourceSettings, String> {
-    let url = normalize_custom_download_mirror_url(&url)?;
-    let config = gui_config_state.update(|config| {
-        if !config.custom_download_mirrors.contains(&url) {
-            if config.custom_download_mirrors.len() >= 12 {
-                return Err("A maximum of 12 custom mirrors can be added".to_string());
-            }
-            config.custom_download_mirrors.push(url.clone());
-        }
-        config.download_source = VersionDownloadSource::Custom;
-        config.active_custom_download_mirror = url.clone();
-        Ok(())
-    })?;
-    Ok(version_source_settings(&config))
-}
-
-#[tauri::command]
-pub(crate) fn remove_custom_download_mirror(
-    gui_config_state: tauri::State<'_, GuiConfigState>,
-    url: String,
-) -> Result<VersionSourceSettings, String> {
-    let url = normalize_custom_download_mirror_url(&url)?;
-    let config = gui_config_state.update(|config| {
-        config.custom_download_mirrors.retain(|item| item != &url);
-        if config.download_source == VersionDownloadSource::Custom
-            && config.active_custom_download_mirror == url
-        {
-            config.download_source = VersionDownloadSource::Github;
-            config.active_custom_download_mirror.clear();
-        }
-        Ok(())
-    })?;
-    Ok(version_source_settings(&config))
-}
-
-pub(crate) fn persist_automatic_download_source_switch(
-    app: &tauri::AppHandle,
-    gui_config_state: &GuiConfigState,
-    requested_source: &VersionDownloadCandidate,
-    resolved_source: &VersionDownloadCandidate,
-) -> Result<(), String> {
-    let Some(config) =
-        gui_config_state.switch_download_source_after_failure(requested_source, resolved_source)?
-    else {
-        return Ok(());
-    };
-    app.emit(
-        VERSION_DOWNLOAD_SOURCE_CHANGED_EVENT,
-        version_source_settings(&config),
-    )
-    .map_err(|error| format!("Failed to notify automatic download source switch: {error}"))
-}
-
-#[tauri::command]
 pub(crate) fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     open_external_url_inner(&app, &url)
 }
@@ -117,7 +27,6 @@ pub(crate) async fn check_app_update(
 async fn resolve_app_update(
     gui_config_state: &GuiConfigState,
 ) -> Result<(AppUpdateInfo, Option<PendingAppUpdate>), String> {
-    let _detection_guard = VERSION_SOURCE_DETECTION_LOCK.lock().await;
     // Arbor's own releases on GitHub; each asset's url is where the API serves that DMG.
     let manifest = {
         let config = gui_config_state.snapshot()?;
@@ -183,39 +92,26 @@ async fn resolve_app_update(
     Ok((info, pending))
 }
 
-pub(crate) fn release_https_redirect_policy_with_mirrors(
-    custom_mirrors: &[String],
-) -> reqwest::redirect::Policy {
-    let custom_hosts = custom_mirrors
-        .iter()
-        .filter_map(|value| reqwest::Url::parse(value).ok())
-        .filter_map(|url| url.host_str().map(str::to_string))
-        .collect::<HashSet<_>>();
-    reqwest::redirect::Policy::custom(move |attempt| {
-        let url = attempt.url();
-        let trusted_host = matches!(
-            url.host_str(),
-            Some(
-                "github.com"
-                    | "objects.githubusercontent.com"
-                    | "release-assets.githubusercontent.com"
-                    | "gh-proxy.com"
-                    | "ghfast.top"
-            )
-        ) || url
-            .host_str()
-            .is_some_and(|host| custom_hosts.contains(host));
-        if url.scheme() == "https"
-            && url.port().is_none()
-            && url.username().is_empty()
-            && url.password().is_none()
-            && trusted_host
-        {
+/// Follows a release download's redirects only to GitHub's own hosts, so nothing else can serve the file.
+pub(crate) fn github_release_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if is_github_release_redirect(attempt.url()) {
             attempt.follow()
         } else {
             attempt.stop()
         }
     })
+}
+
+pub(crate) fn is_github_release_redirect(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && matches!(
+            url.host_str(),
+            Some("github.com" | "objects.githubusercontent.com" | "release-assets.githubusercontent.com")
+        )
 }
 
 pub(crate) fn validate_portable_update_asset(asset: &PortableUpdateAsset) -> Result<(), String> {
@@ -342,7 +238,6 @@ pub(crate) async fn start_app_update(
                 &pending,
                 &token,
                 &config.proxy_url,
-                config.selected_download_candidate(),
             )
             .await
         }
@@ -388,7 +283,6 @@ pub(crate) async fn download_and_stage_portable_app_update(
     pending: &PendingAppUpdate,
     token: &CancellationToken,
     proxy_url: &str,
-    download_source: VersionDownloadCandidate,
 ) -> Result<(), String> {
     validate_portable_update_asset(&pending.asset)?;
     let work_dir = portable_update_work_dir(&pending.version);
@@ -396,15 +290,7 @@ pub(crate) async fn download_and_stage_portable_app_update(
         .map_err(|error| format!("Failed to create application update temporary directory: {error}"))?;
     let archive_path = work_dir.join("update.dmg");
     let result = async {
-        download_portable_update_archive(
-            app,
-            pending,
-            token,
-            &archive_path,
-            proxy_url,
-            &download_source,
-        )
-        .await?;
+        download_portable_update_archive(app, pending, token, &archive_path, proxy_url).await?;
         ensure_portable_update_download(token, &archive_path, pending)?;
         update_app_task(app, |task| {
             task.cancelable = false;
@@ -575,16 +461,9 @@ pub(crate) async fn download_portable_update_archive(
     token: &CancellationToken,
     destination: &Path,
     proxy_url: &str,
-    download_source: &VersionDownloadCandidate,
 ) -> Result<(), String> {
     let client_builder = reqwest::Client::builder()
-            .redirect(release_https_redirect_policy_with_mirrors(
-                &download_source
-                    .custom_url
-                    .clone()
-                    .into_iter()
-                    .collect::<Vec<_>>(),
-            ))
+            .redirect(github_release_redirect_policy())
             .connect_timeout(Duration::from_secs(15))
             .read_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(15 * 60));
@@ -612,7 +491,7 @@ pub(crate) async fn download_portable_update_archive(
         proxy_url,
         "Failed to create application update download client",
     )?;
-    let urls = portable_update_download_urls(&pending.asset, download_source);
+    let urls = portable_update_download_urls(&pending.asset);
     let mut failures = Vec::new();
     for (index, url) in urls.iter().enumerate() {
         update_app_task(app, |task| {
@@ -636,23 +515,11 @@ pub(crate) async fn download_portable_update_archive(
     Err(format!("All application update download sources failed: {}", failures.join("; ")))
 }
 
-pub(crate) fn portable_update_download_urls(
-    asset: &PortableUpdateAsset,
-    source: &VersionDownloadCandidate,
-) -> Vec<String> {
+pub(crate) fn portable_update_download_urls(asset: &PortableUpdateAsset) -> Vec<String> {
     let mut urls = std::iter::once(asset.url.as_str())
         .chain(asset.fallback_urls.iter().map(String::as_str))
         .map(str::to_string)
         .collect::<Vec<_>>();
-    if source.proxy_prefix().is_some() {
-        if let Some(github_url) = urls
-            .iter()
-            .find(|url| update_download_source_name(url) == "GitHub")
-            .cloned()
-        {
-            urls.insert(0, version_source_url(source, &github_url));
-        }
-    }
     urls.dedup();
     urls
 }
@@ -662,8 +529,6 @@ pub(crate) fn update_download_source_name(url: &str) -> String {
         .ok()
         .and_then(|url| url.host_str().map(str::to_string));
     match host.as_deref() {
-        Some("gh-proxy.com") => "gh-proxy.com".to_string(),
-        Some("ghfast.top") => "ghfast.top".to_string(),
         Some(
             "github.com" | "objects.githubusercontent.com" | "release-assets.githubusercontent.com",
         ) => "GitHub".to_string(),

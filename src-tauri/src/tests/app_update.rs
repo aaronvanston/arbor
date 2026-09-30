@@ -37,95 +37,6 @@ fn portable_update_test_asset(version: &str, arch: &str) -> PortableUpdateAsset 
 }
 
 #[test]
-fn portable_update_downloads_try_the_chosen_mirror_before_github() {
-    let asset = portable_update_test_asset("1.2.3", "amd64");
-    let source_names = |urls: Vec<String>| {
-        urls.iter()
-            .map(|url| update_download_source_name(url))
-            .collect::<Vec<_>>()
-    };
-
-    let github_only = portable_update_download_urls(
-        &asset,
-        &VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-    );
-    assert_eq!(source_names(github_only), ["GitHub"]);
-
-    let mirror_first = portable_update_download_urls(
-        &asset,
-        &VersionDownloadCandidate::builtin(VersionDownloadSource::GhProxy),
-    );
-    assert_eq!(source_names(mirror_first), ["gh-proxy.com", "GitHub"]);
-}
-
-#[test]
-fn version_detection_candidates_try_every_available_source_once() {
-    assert_eq!(
-        version_download_source_candidates(
-            VersionDownloadCandidate::builtin(VersionDownloadSource::GhFast),
-            &[],
-        ),
-        [
-            VersionDownloadCandidate::builtin(VersionDownloadSource::GhFast),
-            VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-            VersionDownloadCandidate::builtin(VersionDownloadSource::GhProxy),
-        ]
-    );
-    assert_eq!(
-        version_download_source_candidates(
-            VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-            &[],
-        ),
-        [
-            VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-            VersionDownloadCandidate::builtin(VersionDownloadSource::GhProxy),
-            VersionDownloadCandidate::builtin(VersionDownloadSource::GhFast),
-        ]
-    );
-}
-
-#[test]
-fn custom_mirror_urls_are_normalized_and_join_the_fallback_chain() {
-    assert_eq!(
-        normalize_custom_download_mirror_url(" https://mirror.example.com/base ").unwrap(),
-        "https://mirror.example.com/base/"
-    );
-    assert!(normalize_custom_download_mirror_url("http://mirror.example.com/").is_err());
-    assert!(normalize_custom_download_mirror_url("https://mirror.example.com/?token=x").is_err());
-
-    let mirrors = vec![
-        "https://first.example.com/".to_string(),
-        "https://second.example.com/".to_string(),
-    ];
-    let candidates = version_download_source_candidates(
-        VersionDownloadCandidate::custom(&mirrors[1]),
-        &mirrors,
-    );
-    assert_eq!(candidates[0], VersionDownloadCandidate::custom(&mirrors[1]));
-    assert_eq!(
-        candidates.last(),
-        Some(&VersionDownloadCandidate::custom(&mirrors[0]))
-    );
-    assert_eq!(
-        candidates
-            .iter()
-            .filter(|candidate| candidate.custom_url.is_some())
-            .count(),
-        2
-    );
-}
-
-#[test]
-fn custom_mirror_is_used_for_portable_update_downloads() {
-    let asset = portable_update_test_asset("1.2.3", "amd64");
-    let source = VersionDownloadCandidate::custom("https://mirror.example.com/");
-    let urls = portable_update_download_urls(&asset, &source);
-    assert!(urls[0].starts_with("https://mirror.example.com/https://github.com/"));
-    assert_eq!(update_download_source_name(&urls[0]), "mirror.example.com");
-    assert_eq!(update_download_source_name(&urls[1]), "GitHub");
-}
-
-#[test]
 fn portable_update_state_supports_cancellation_and_snapshot_recovery() {
     let state = AppUpdateState::default();
     let pending = PendingAppUpdate {
@@ -419,83 +330,34 @@ fn synthetic_release_uses_official_asset_names_and_urls() {
             asset.browser_download_url,
             "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.80/CLIProxyAPI_7.2.80_linux_amd64.tar.gz"
         );
-}
-
-#[test]
-fn github_proxy_core_release_uses_proxy_then_official() {
-    let release = release_from_tag_for_source(
-        "v7.2.80",
-        &VersionDownloadCandidate::builtin(VersionDownloadSource::GhFast),
-    );
-    let platform = CorePlatform {
-        os: "windows".to_string(),
-        arch: "x86_64".to_string(),
-        asset_os: "windows".to_string(),
-        asset_arch: "amd64".to_string(),
-        archive_kind: "zip".to_string(),
-    };
-    let asset = select_release_asset(&release, &platform).unwrap();
-
+    // The checksums come from the same GitHub release, never from where else the archive might be served.
     assert_eq!(
-        core_download_source_name(&asset.browser_download_url),
-        "ghfast.top"
-    );
-    assert_eq!(
-        asset
-            .fallback_download_urls
-            .iter()
-            .map(|url| core_download_source_name(url))
-            .collect::<Vec<_>>(),
-        ["GitHub"]
+        release_checksum_url("7.2.80"),
+        "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.80/checksums.txt"
     );
 }
 
 #[test]
-fn core_download_candidates_follow_the_complete_fallback_chain() {
-    let release = release_from_tag_for_source(
-        "v7.2.80",
-        &VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-    );
-    let platform = CorePlatform {
-        os: "windows".to_string(),
-        arch: "x86_64".to_string(),
-        asset_os: "windows".to_string(),
-        asset_arch: "amd64".to_string(),
-        archive_kind: "zip".to_string(),
-    };
-    let asset = select_release_asset(&release, &platform).unwrap();
-    let custom_mirrors = vec!["https://mirror.example.com/".to_string()];
-    let candidates = core_download_candidates(
-        &release.tag_name,
-        asset,
-        VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-        &custom_mirrors,
-    );
-
-    assert_eq!(
-        candidates
-            .iter()
-            .map(|(candidate, _)| candidate.key())
-            .collect::<Vec<_>>(),
-        [
-            "github",
-            "gh-proxy",
-            "gh-fast",
-            "custom:https://mirror.example.com/",
-        ]
-    );
-    assert_eq!(
-        candidates
-            .iter()
-            .map(|(_, url)| core_download_source_name(url))
-            .collect::<Vec<_>>(),
-        [
-            "GitHub",
-            "gh-proxy.com",
-            "ghfast.top",
-            "mirror.example.com",
-        ]
-    );
+fn release_downloads_follow_redirects_only_to_github_over_https() {
+    let follows = |url: &str| is_github_release_redirect(&reqwest::Url::parse(url).unwrap());
+    for trusted in [
+        "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.80/checksums.txt",
+        "https://objects.githubusercontent.com/github-production-release-asset/1",
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1",
+    ] {
+        assert!(follows(trusted), "{trusted}");
+    }
+    for untrusted in [
+        // The third-party mirrors older versions fell back to.
+        "https://gh-proxy.com/https://github.com/router-for-me/CLIProxyAPI/releases/latest",
+        "https://ghfast.top/https://github.com/router-for-me/CLIProxyAPI/releases/latest",
+        "https://github.com.example.com/releases/latest",
+        "http://github.com/router-for-me/CLIProxyAPI/releases/latest",
+        "https://github.com:8443/router-for-me/CLIProxyAPI/releases/latest",
+        "https://user:secret@github.com/router-for-me/CLIProxyAPI/releases/latest",
+    ] {
+        assert!(!follows(untrusted), "{untrusted}");
+    }
 }
 
 #[test]
@@ -538,46 +400,6 @@ fn release_checksum_reads_the_archive_line_from_checksums_txt() {
     }
 }
 
-#[test]
-fn release_checksums_are_read_from_github_before_the_download_mirror() {
-    let custom_mirrors = vec!["https://mirror.example.com/".to_string()];
-    let urls = release_checksum_urls(
-        "7.3.14",
-        VersionDownloadCandidate::builtin(VersionDownloadSource::GhFast),
-        &custom_mirrors,
-    );
-
-    assert_eq!(
-        urls[0],
-        "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.3.14/checksums.txt"
-    );
-    assert_eq!(
-        urls.iter()
-            .map(|url| core_download_source_name(url))
-            .collect::<Vec<_>>(),
-        [
-            "GitHub",
-            "ghfast.top",
-            "gh-proxy.com",
-            "mirror.example.com",
-        ]
-    );
-    assert!(urls.iter().all(|url| url.contains("checksums.txt")), "{urls:?}");
-
-    let github_only = release_checksum_urls(
-        "v7.3.14",
-        VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-        &[],
-    );
-    assert_eq!(
-        github_only
-            .iter()
-            .filter(|url| core_download_source_name(url) == "GitHub")
-            .count(),
-        1
-    );
-}
-
 /// Serves fixed bodies by path on a loopback port until `requests` connections have been answered.
 fn serve_release_files(files: Vec<(&'static str, u16, Vec<u8>)>, requests: usize) -> u16 {
     use std::io::{Read, Write};
@@ -614,7 +436,7 @@ fn serve_release_files(files: Vec<(&'static str, u16, Vec<u8>)>, requests: usize
 }
 
 #[test]
-fn release_checksum_fetch_uses_the_first_readable_checksum_file() {
+fn release_checksum_fetch_needs_a_readable_checksum_file_that_lists_the_archive() {
     let asset = "CLIProxyAPI_7.3.14_darwin_aarch64.tar.gz";
     let digest = "c".repeat(64);
     let other = format!("{}  CLIProxyAPI_7.3.14_linux_amd64.tar.gz\n", "d".repeat(64));
@@ -622,10 +444,9 @@ fn release_checksum_fetch_uses_the_first_readable_checksum_file() {
     let unlisted = other.into_bytes();
     let port = serve_release_files(
         vec![
-            ("/listed", 200, listed.clone()),
+            ("/listed", 200, listed),
             ("/unlisted", 200, unlisted),
             ("/huge", 200, vec![b'a'; 300 * 1024]),
-            ("/listed-again", 200, listed),
         ],
         4,
     );
@@ -635,7 +456,6 @@ fn release_checksum_fetch_uses_the_first_readable_checksum_file() {
         .local_addr()
         .unwrap()
         .port();
-    let closed_url = format!("http://127.0.0.1:{closed}/checksums.txt");
     let url = |path: &str| format!("http://127.0.0.1:{port}{path}");
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let token = CancellationToken::new();
@@ -644,23 +464,22 @@ fn release_checksum_fetch_uses_the_first_readable_checksum_file() {
         .build()
         .unwrap();
 
-    // Unreachable, missing and oversized files fall through to the next source.
-    let urls = [closed_url.clone(), url("/missing"), url("/huge"), url("/listed")];
     assert_eq!(
-        runtime.block_on(fetch_release_checksum(&client, &urls, asset, &token)),
+        runtime.block_on(fetch_release_checksum(&client, &url("/listed"), asset, &token)),
         Ok(digest)
     );
 
-    // A readable file that doesn't list the archive decides; a later mirror can't vouch for it.
-    let urls = [url("/unlisted"), url("/listed-again")];
+    // A file that doesn't list the archive can't vouch for it.
     let error = runtime
-        .block_on(fetch_release_checksum(&client, &urls, asset, &token))
+        .block_on(fetch_release_checksum(&client, &url("/unlisted"), asset, &token))
         .unwrap_err();
     assert!(error.contains("has no SHA-256"), "{error}");
 
-    // No readable file at all fails too, naming each source.
-    let error = runtime
-        .block_on(fetch_release_checksum(&client, &[closed_url], asset, &token))
-        .unwrap_err();
-    assert!(error.contains("couldn't fetch"), "{error}");
+    // Unreachable, missing and oversized files leave the download unverified too.
+    for unreadable in [format!("http://127.0.0.1:{closed}/checksums.txt"), url("/missing"), url("/huge")] {
+        let error = runtime
+            .block_on(fetch_release_checksum(&client, &unreadable, asset, &token))
+            .unwrap_err();
+        assert!(error.contains("couldn't fetch"), "{unreadable}: {error}");
+    }
 }

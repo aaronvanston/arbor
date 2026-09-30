@@ -13,7 +13,6 @@ import type {
   SoftwareSettings,
   SoftwareSettingsInput,
   SystemLocale,
-  VersionSourceSettings,
   ZoomLevel,
 } from './types';
 
@@ -44,10 +43,6 @@ export type AppCommands = {
   start_app_update: { result: void };
   cancel_app_update: { result: void };
   get_app_update_task: { result: AppUpdateTask };
-  get_version_source_settings: { result: VersionSourceSettings };
-  set_download_source: { args: { source: string }; result: VersionSourceSettings };
-  add_custom_download_mirror: { args: { url: string }; result: VersionSourceSettings };
-  remove_custom_download_mirror: { args: { url: string }; result: VersionSourceSettings };
 
   get_phone_alert_secrets: { result: PhoneAlertSecretStatus };
   set_phone_alert_secret: { args: { secret: PhoneAlertSecret; value: string }; result: PhoneAlertSecretStatus };

@@ -25,7 +25,6 @@ type CoreUpdateContextValue = {
   checking: boolean;
   hasUpdate: boolean;
   check: (force?: boolean) => Promise<void>;
-  reset: () => void;
 };
 
 let latestAutoCheckStarted = false;
@@ -165,17 +164,6 @@ export function CoreUpdateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const reset = useCallback(() => {
-    latestRequestEpoch += 1;
-    latestCheckPromise = null;
-    cachedLatest = null;
-    cachedLatestError = '';
-    checkEpochRef.current += 1;
-    setLatest(null);
-    setError('');
-    setChecking(false);
-  }, []);
-
   useEffect(() => {
     if (!latestAutoCheckStarted) {
       latestAutoCheckStarted = true;
@@ -218,8 +206,7 @@ export function CoreUpdateProvider({ children }: { children: ReactNode }) {
     checking,
     hasUpdate: coreUpdateAvailable(status?.currentVersion, latest?.version),
     check,
-    reset,
-  }), [check, checking, error, latest, reset, status?.currentVersion]);
+  }), [check, checking, error, latest, status?.currentVersion]);
 
   return <CoreUpdateContext.Provider value={value}>{children}</CoreUpdateContext.Provider>;
 }

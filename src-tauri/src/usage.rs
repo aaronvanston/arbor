@@ -23,8 +23,6 @@ mod session_read;
 pub(crate) mod storage;
 
 use super::executable_dir;
-#[cfg(test)]
-use super::VersionDownloadSource;
 use super::{
     apply_configured_proxy, core_base_dir, current_core_status, format_management_request_error,
     management_authorization, management_endpoint, management_http_client, send_management,
@@ -2740,9 +2738,6 @@ mod tests {
             plugins_enabled: false,
             routing_strategy: "round-robin".to_string(),
             proxy_url: String::new(),
-            download_source: VersionDownloadSource::Github,
-            custom_download_mirrors: Vec::new(),
-            active_custom_download_mirror: String::new(),
             routing_session_affinity: false,
             routing_session_affinity_ttl: String::new(),
             disable_cooling: crate::DEFAULT_DISABLE_COOLING,

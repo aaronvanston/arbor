@@ -30,28 +30,12 @@ async fn run_core_command(
 
 #[tauri::command]
 pub(crate) async fn check_latest_core(
-    app: tauri::AppHandle,
     gui_config_state: tauri::State<'_, GuiConfigState>,
 ) -> Result<CoreLatest, String> {
-    let _detection_guard = VERSION_SOURCE_DETECTION_LOCK.lock().await;
     let platform = current_core_platform()?;
     let config = gui_config_state.snapshot()?;
-    let proxy_url = config.proxy_url.clone();
-    let client = http_client(&proxy_url, &config.custom_download_mirrors)?;
-    let requested_source = config.selected_download_candidate();
-    let (release, resolved_source) = fetch_release(
-        &client,
-        None,
-        requested_source.clone(),
-        &config.custom_download_mirrors,
-    )
-    .await?;
-    persist_automatic_download_source_switch(
-        &app,
-        gui_config_state.inner(),
-        &requested_source,
-        &resolved_source,
-    )?;
+    let client = http_client(&config.proxy_url)?;
+    let release = fetch_release(&client, None).await?;
     let asset_name = select_release_asset(&release, &platform)?.name.clone();
 
     Ok(CoreLatest {
@@ -175,22 +159,16 @@ pub(crate) async fn install_core_version(
             .map_err(|_| "The core is performing another operation; please try again later".to_string())?;
         let state = app.state::<CoreDownloadState>();
         let process_state = app.state::<CoreProcessState>();
-        let gui_config_state = app.state::<GuiConfigState>();
-        let config = gui_config_state.snapshot()?;
-        let proxy_url = config.proxy_url.clone();
+        let config = app.state::<GuiConfigState>().snapshot()?;
         let token = CancellationToken::new();
         let stopped = token.clone();
         state.start(token.clone(), version.clone())?;
         let result = tauri::async_runtime::block_on(stage_core_version(
-            &app,
             &window,
             state.inner(),
-            gui_config_state.inner(),
             token,
             version,
-            &proxy_url,
-            config.selected_download_candidate(),
-            config.custom_download_mirrors.clone(),
+            &config.proxy_url,
         ))
         .and_then(|staged| {
             swap_in_staged_core_with_runtime_restore(
@@ -396,35 +374,17 @@ pub(crate) fn restart_core_process_with_state(
 }
 
 pub(crate) async fn stage_core_version(
-    app: &tauri::AppHandle,
     window: &tauri::Window,
     state: &CoreDownloadState,
-    gui_config_state: &GuiConfigState,
     token: CancellationToken,
     version: Option<String>,
     proxy_url: &str,
-    download_source: VersionDownloadCandidate,
-    custom_mirrors: Vec<String>,
 ) -> Result<StagedCore, String> {
     let platform = current_core_platform()?;
-    let client = http_client(proxy_url, &custom_mirrors)?;
+    let client = http_client(proxy_url)?;
     state.progress(window, "preparing-download", 0, None, true);
-    let requested_source = download_source.clone();
-    let (release, resolved_source) = fetch_release_cancelable(
-        &client,
-        version.as_deref(),
-        &token,
-        download_source,
-        &custom_mirrors,
-    )
-    .await?;
+    let release = fetch_release_cancelable(&client, version.as_deref(), &token).await?;
     let asset = select_release_asset(&release, &platform)?;
-    let download_candidates = core_download_candidates(
-        &release.tag_name,
-        asset,
-        resolved_source,
-        &custom_mirrors,
-    );
 
     let install_dir = core_install_dir()?;
     let staging_dir = core_staging_dir()?;
@@ -439,27 +399,13 @@ pub(crate) async fn stage_core_version(
         .ok_or_else(|| format!("Invalid asset filename: {}", asset.name))?;
     let archive_path = download_dir.join(archive_file_name);
 
-    let (downloaded, successful_source) = download_asset(
-        &client,
-        asset,
-        &download_candidates,
-        &archive_path,
-        window,
-        state,
-        &token,
-    )
-    .await?;
+    let downloaded = download_asset(&client, asset, &archive_path, window, state, &token).await?;
     validate_downloaded_asset(asset, &downloaded)?;
-    // The archive is about to be unpacked and run, so it has to match the release's published
-    // checksum. Release lookups carry no digest, and a failed GitHub download falls back to
-    // third-party mirrors.
+    // The archive is about to be unpacked and run, so it has to match the checksum the release
+    // publishes on GitHub. Release lookups carry no digest of their own.
     state.progress(window, "verifying", downloaded.size, Some(downloaded.size), true);
-    let checksum_urls = release_checksum_urls(
-        &release.tag_name,
-        successful_source.clone(),
-        &custom_mirrors,
-    );
-    let verified = fetch_release_checksum(&client, &checksum_urls, &asset.name, &token)
+    let checksum_url = release_checksum_url(&release.tag_name);
+    let verified = fetch_release_checksum(&client, &checksum_url, &asset.name, &token)
         .await
         .and_then(|expected| {
             validate_download_metadata(downloaded.size, None, &downloaded.sha256, Some(&expected))
@@ -468,12 +414,6 @@ pub(crate) async fn stage_core_version(
         let _ = fs::remove_file(&archive_path);
         return Err(error);
     }
-    persist_automatic_download_source_switch(
-        app,
-        gui_config_state,
-        &requested_source,
-        &successful_source,
-    )?;
 
     ensure_not_canceled(&token, Some(&archive_path))?;
     state.progress(
@@ -578,30 +518,18 @@ pub(crate) fn stage_bundled_core(
 pub(crate) async fn fetch_release(
     client: &reqwest::Client,
     version: Option<&str>,
-    source: VersionDownloadCandidate,
-    custom_mirrors: &[String],
-) -> Result<(GithubRelease, VersionDownloadCandidate), String> {
-    if let Some(version) = version {
-        return Ok((release_from_tag_for_source(version, &source), source));
+) -> Result<GithubRelease, String> {
+    match version {
+        Some(version) => Ok(release_from_tag(version)),
+        None => fetch_release_from_github(client).await,
     }
-    let mut failures = Vec::new();
-    for candidate in version_download_source_candidates(source, custom_mirrors) {
-        match fetch_release_from_github(client, &candidate).await {
-            Ok(release) => return Ok((release, candidate)),
-            Err(error) => failures.push(format!("{}: {error}", candidate.display_name())),
-        }
-    }
-    Err(format!("All core version check sources failed: {}", failures.join("；")))
 }
 
-pub(crate) async fn fetch_release_from_github(
-    client: &reqwest::Client,
-    source: &VersionDownloadCandidate,
-) -> Result<GithubRelease, String> {
-    let atom_result = fetch_release_from_atom(client, source).await;
+pub(crate) async fn fetch_release_from_github(client: &reqwest::Client) -> Result<GithubRelease, String> {
+    let atom_result = fetch_release_from_atom(client).await;
     match atom_result {
         Ok(release) => Ok(release),
-        Err(atom_error) => fetch_release_from_page(client, source)
+        Err(atom_error) => fetch_release_from_page(client)
             .await
             .map_err(|page_error| {
                 format!("GitHub release feed request failed: {atom_error}; release page request failed: {page_error}")
@@ -609,13 +537,9 @@ pub(crate) async fn fetch_release_from_github(
     }
 }
 
-pub(crate) async fn fetch_release_from_page(
-    client: &reqwest::Client,
-    source: &VersionDownloadCandidate,
-) -> Result<GithubRelease, String> {
-    let release_page_url = version_source_url(source, RELEASE_PAGE_URL);
+pub(crate) async fn fetch_release_from_page(client: &reqwest::Client) -> Result<GithubRelease, String> {
     let response = client
-        .get(release_page_url)
+        .get(RELEASE_PAGE_URL)
         .header(reqwest::header::ACCEPT, "text/html,application/xhtml+xml")
         .header(reqwest::header::USER_AGENT, USER_AGENT)
         .send()
@@ -633,16 +557,12 @@ pub(crate) async fn fetch_release_from_page(
 
     let tag = release_tag_from_url(&final_url)
         .ok_or_else(|| "GitHub release page did not return a version tag".to_string())?;
-    Ok(release_from_tag_for_source(&tag, source))
+    Ok(release_from_tag(&tag))
 }
 
-pub(crate) async fn fetch_release_from_atom(
-    client: &reqwest::Client,
-    source: &VersionDownloadCandidate,
-) -> Result<GithubRelease, String> {
-    let release_atom_url = version_source_url(source, RELEASE_ATOM_URL);
+pub(crate) async fn fetch_release_from_atom(client: &reqwest::Client) -> Result<GithubRelease, String> {
     let response = client
-        .get(release_atom_url)
+        .get(RELEASE_ATOM_URL)
         .header(
             reqwest::header::ACCEPT,
             "application/atom+xml,application/xml,text/xml",
@@ -661,7 +581,7 @@ pub(crate) async fn fetch_release_from_atom(
     }
     let tag = release_tag_from_atom(&body)
         .ok_or_else(|| "GitHub Atom feed did not return a version tag".to_string())?;
-    let mut release = release_from_tag_for_source(&tag, source);
+    let mut release = release_from_tag(&tag);
     release.release_notes = release_notes_from_atom(&body);
     Ok(release)
 }
@@ -691,18 +611,7 @@ pub(crate) fn atom_entry_tag(entry: &str) -> Option<String> {
     (!title.is_empty()).then(|| normalize_version(title))
 }
 
-#[cfg(test)]
 pub(crate) fn release_from_tag(tag: &str) -> GithubRelease {
-    release_from_tag_for_source(
-        tag,
-        &VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-    )
-}
-
-pub(crate) fn release_from_tag_for_source(
-    tag: &str,
-    source: &VersionDownloadCandidate,
-) -> GithubRelease {
     let tag = normalize_version(tag);
     let version = tag.trim_start_matches('v');
     let assets = [
@@ -716,18 +625,8 @@ pub(crate) fn release_from_tag_for_source(
     .into_iter()
     .map(|(os, arch, extension)| {
         let name = format!("CLIProxyAPI_{version}_{os}_{arch}.{extension}");
-        let github_url = format!("{RELEASE_DOWNLOAD_PREFIX}{tag}/{name}");
-        let (browser_download_url, fallback_download_urls) = match source.source {
-            VersionDownloadSource::Github => (github_url, Vec::new()),
-            VersionDownloadSource::GhProxy
-            | VersionDownloadSource::GhFast
-            | VersionDownloadSource::Custom => {
-                (version_source_url(source, &github_url), vec![github_url])
-            }
-        };
         GithubAsset {
-            browser_download_url,
-            fallback_download_urls,
+            browser_download_url: format!("{RELEASE_DOWNLOAD_PREFIX}{tag}/{name}"),
             name,
             size: None,
             digest: None,
@@ -739,36 +638,6 @@ pub(crate) fn release_from_tag_for_source(
         assets,
         release_notes: Vec::new(),
     }
-}
-
-pub(crate) fn core_download_candidates(
-    tag: &str,
-    asset: &GithubAsset,
-    preferred: VersionDownloadCandidate,
-    custom_mirrors: &[String],
-) -> Vec<(VersionDownloadCandidate, String)> {
-    let tag = normalize_version(tag);
-    let generated_github_url = format!("{RELEASE_DOWNLOAD_PREFIX}{tag}/{}", asset.name);
-    let provided_urls = std::iter::once(&asset.browser_download_url)
-        .chain(asset.fallback_download_urls.iter())
-        .collect::<Vec<_>>();
-    let github_url = provided_urls
-        .iter()
-        .find(|url| core_download_source_name(url) == "GitHub")
-        .map(|url| (*url).clone())
-        .unwrap_or(generated_github_url);
-    version_download_source_candidates(preferred, custom_mirrors)
-        .into_iter()
-        .map(|candidate| {
-            let url = match candidate.source {
-                VersionDownloadSource::Github => github_url.clone(),
-                VersionDownloadSource::GhProxy
-                | VersionDownloadSource::GhFast
-                | VersionDownloadSource::Custom => version_source_url(&candidate, &github_url),
-            };
-            (candidate, url)
-        })
-        .collect()
 }
 
 pub(crate) fn release_tag_from_url(url: &reqwest::Url) -> Option<String> {
@@ -807,11 +676,9 @@ pub(crate) async fn fetch_release_cancelable(
     client: &reqwest::Client,
     version: Option<&str>,
     token: &CancellationToken,
-    source: VersionDownloadCandidate,
-    custom_mirrors: &[String],
-) -> Result<(GithubRelease, VersionDownloadCandidate), String> {
+) -> Result<GithubRelease, String> {
     tokio::select! {
-        result = fetch_release(client, version, source, custom_mirrors) => result,
+        result = fetch_release(client, version) => result,
         _ = token.cancelled() => Err("Download canceled".to_string()),
     }
 }
@@ -840,13 +707,10 @@ pub(crate) fn build_http_client_with_proxy(
         .map_err(|error| format!("{error_prefix}: {error}"))
 }
 
-pub(crate) fn http_client(
-    proxy_url: &str,
-    custom_mirrors: &[String],
-) -> Result<reqwest::Client, String> {
+pub(crate) fn http_client(proxy_url: &str) -> Result<reqwest::Client, String> {
     build_http_client_with_proxy(
         reqwest::Client::builder()
-            .redirect(release_https_redirect_policy_with_mirrors(custom_mirrors))
+            .redirect(github_release_redirect_policy())
             .connect_timeout(Duration::from_secs(15))
             .read_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(600)),
@@ -884,71 +748,30 @@ pub(crate) fn core_release_asset_name(version: &str, platform: &CorePlatform) ->
     )
 }
 
-// Download progress and cancellation require the complete transfer context here.
-#[allow(clippy::too_many_arguments)]
+/// Downloads the release archive from GitHub. Nothing half-written is left behind when it fails or is canceled.
 pub(crate) async fn download_asset(
     client: &reqwest::Client,
     asset: &GithubAsset,
-    download_candidates: &[(VersionDownloadCandidate, String)],
     archive_path: &Path,
     window: &tauri::Window,
     state: &CoreDownloadState,
     token: &CancellationToken,
-) -> Result<(DownloadedArchive, VersionDownloadCandidate), String> {
-    let mut failures = Vec::new();
-    for (index, (candidate, url)) in download_candidates.iter().enumerate() {
-        if index > 0 {
-            state.progress(
-                window,
-                &format!("Download failed, switching to {}", candidate.display_name()),
-                0,
-                asset.size,
-                true,
-            );
-        }
-        let result = download_asset_inner(
-            client,
-            url,
-            archive_path,
-            asset.size,
-            asset.digest.as_deref(),
-            window,
-            state,
-            token,
-        )
-        .await;
-        match result {
-            Ok(downloaded) => return Ok((downloaded, candidate.clone())),
-            Err(error) if token.is_cancelled() => {
-                let _ = fs::remove_file(archive_path);
-                return Err(error);
-            }
-            Err(error) => {
-                let _ = fs::remove_file(archive_path);
-                failures.push(error);
-            }
-        }
-    }
-    if failures.is_empty() {
+) -> Result<DownloadedArchive, String> {
+    let result = download_asset_inner(
+        client,
+        &asset.browser_download_url,
+        archive_path,
+        asset.size,
+        asset.digest.as_deref(),
+        window,
+        state,
+        token,
+    )
+    .await;
+    if result.is_err() {
         let _ = fs::remove_file(archive_path);
-        return Err("Core release has no available download URL".to_string());
     }
-    Err(format!("All core download sources failed: {}", failures.join("；")))
-}
-
-pub(crate) fn core_download_source_name(url: &str) -> String {
-    let host = reqwest::Url::parse(url)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_string));
-    match host.as_deref() {
-        Some("gh-proxy.com") => "gh-proxy.com".to_string(),
-        Some("ghfast.top") => "ghfast.top".to_string(),
-        Some(
-            "github.com" | "objects.githubusercontent.com" | "release-assets.githubusercontent.com",
-        ) => "GitHub".to_string(),
-        Some(host) => host.to_string(),
-        None => "GitHub".to_string(),
-    }
+    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1893,70 +1716,32 @@ pub(crate) fn validate_downloaded_asset(
     )
 }
 
-/// Where to read a release's `checksums.txt`. GitHub always comes first, even when the archive came
-/// from a mirror, so a mirror never vouches for its own download. The mirrors follow in download
-/// order for when GitHub can't be reached; a checksum from them still catches a damaged download.
-pub(crate) fn release_checksum_urls(
-    tag: &str,
-    download_source: VersionDownloadCandidate,
-    custom_mirrors: &[String],
-) -> Vec<String> {
-    let tag = normalize_version(tag);
-    let checksums = GithubAsset {
-        browser_download_url: format!("{RELEASE_DOWNLOAD_PREFIX}{tag}/{CORE_CHECKSUMS_FILE}"),
-        fallback_download_urls: Vec::new(),
-        name: CORE_CHECKSUMS_FILE.to_string(),
-        size: None,
-        digest: None,
-    };
-    let mut urls = vec![checksums.browser_download_url.clone()];
-    for (_, url) in core_download_candidates(
-        &tag,
-        &checksums,
-        download_source,
-        custom_mirrors,
-    ) {
-        if !urls.contains(&url) {
-            urls.push(url);
-        }
-    }
-    urls
+/// Where the release publishes its `checksums.txt` on GitHub, the same place the archive comes from.
+pub(crate) fn release_checksum_url(tag: &str) -> String {
+    format!("{RELEASE_DOWNLOAD_PREFIX}{}/{CORE_CHECKSUMS_FILE}", normalize_version(tag))
 }
 
 /// A release lists a few dozen archives, so anything bigger isn't its checksum file.
 const MAX_RELEASE_CHECKSUMS_BYTES: usize = 256 * 1024;
 
-/// The SHA-256 the release publishes for `asset_name`. The first checksum file that can be read
-/// decides; a file without the archive fails rather than falling through to a mirror.
+/// The SHA-256 the release publishes for `asset_name`. A checksum file that can't be read, or doesn't list the
+/// archive, fails the install: nothing unverified is unpacked.
 pub(crate) async fn fetch_release_checksum(
     client: &reqwest::Client,
-    urls: &[String],
+    url: &str,
     asset_name: &str,
     token: &CancellationToken,
 ) -> Result<String, String> {
-    let mut failures = Vec::new();
-    for url in urls {
-        let result = tokio::select! {
-            result = fetch_release_checksums_text(client, url) => result,
-            _ = token.cancelled() => return Err("Download canceled".to_string()),
-        };
-        match result {
-            Ok(checksums) => {
-                return release_checksum_for(&checksums, asset_name).ok_or_else(|| {
-                    format!(
-                        "Core download not verified: {} from {} has no SHA-256 for {asset_name}",
-                        CORE_CHECKSUMS_FILE,
-                        core_download_source_name(url)
-                    )
-                });
-            }
-            Err(error) => failures.push(format!("{}: {error}", core_download_source_name(url))),
-        }
+    let checksums = tokio::select! {
+        result = fetch_release_checksums_text(client, url) => result,
+        _ = token.cancelled() => return Err("Download canceled".to_string()),
     }
-    Err(format!(
-        "Core download not verified: couldn't fetch the release's {CORE_CHECKSUMS_FILE} ({})",
-        failures.join("; ")
-    ))
+    .map_err(|error| {
+        format!("Core download not verified: couldn't fetch the release's {CORE_CHECKSUMS_FILE} ({error})")
+    })?;
+    release_checksum_for(&checksums, asset_name).ok_or_else(|| {
+        format!("Core download not verified: the release's {CORE_CHECKSUMS_FILE} has no SHA-256 for {asset_name}")
+    })
 }
 
 async fn fetch_release_checksums_text(client: &reqwest::Client, url: &str) -> Result<String, String> {

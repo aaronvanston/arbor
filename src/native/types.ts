@@ -4154,11 +4154,6 @@ export type UsageTokenStats = {
   total_tokens: number,
 };
 
-export type VersionSourceSettings = {
-  source: string,
-  customMirrors: Array<string>,
-};
-
 export type WaitKind = "permission" | "question" | "waiting";
 
 /**

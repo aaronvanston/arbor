@@ -4,7 +4,7 @@ import { PHONE_ALERT_SECRETS } from '../../services/phoneAlerts';
 import { QUIT_GUARD_ARMED_EVENT, QUIT_GUARD_WINDOW_MS, pressQuit } from '../../services/quitGuard';
 import { nearestZoomStep, ZOOM_CHANGED_EVENT, zoomLevelAt } from '../../services/zoom';
 import type { AppCommands } from '../../native/app';
-import type { PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, VersionSourceSettings, ZoomLevel } from '../../native/types';
+import type { PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, ZoomLevel } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { configSettings, coreStatus } from './core';
 import { mockLog, params } from './scenario';
@@ -28,7 +28,6 @@ let productAnalytics: ProductAnalyticsSettings = {
   available: params.get('usagedata') !== 'source',
 };
 
-let versionSource: VersionSourceSettings = { source: 'github', customMirrors: ['https://mirror.example.com/ghproxy'] };
 let quitGuard: { enabled: boolean; armedAt: number | null } = { enabled: true, armedAt: null };
 
 /**
@@ -175,10 +174,6 @@ export const appAnswers: CommandAnswers<AppCommands> = {
     return null;
   },
   cancel_app_update: () => null,
-  get_version_source_settings: () => versionSource,
-  set_download_source: (args) => { versionSource = { ...versionSource, source: args.source }; return versionSource; },
-  add_custom_download_mirror: (args) => { versionSource = { ...versionSource, customMirrors: [...versionSource.customMirrors, args.url] }; return versionSource; },
-  remove_custom_download_mirror: (args) => { versionSource = { ...versionSource, customMirrors: versionSource.customMirrors.filter((url) => url !== args.url) }; return versionSource; },
   set_tray_lines: (args) => { mockLog('tray', { section: args.section, lines: args.lines }); return null; },
   set_tray_status: (args) => { mockLog('tray_status', args.indicator); return null; },
   frontend_ready: (args) => { mockLog('frontend_ready', args); return null; },

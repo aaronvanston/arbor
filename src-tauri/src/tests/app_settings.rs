@@ -112,7 +112,6 @@ fn gui_field_edit_preserves_comments_and_unknown_configuration() {
         management_secret_key: "custom-secret".to_string(),
         usage_statistics_enabled: false,
         disable_cooling: true,
-        download_source: VersionDownloadSource::GhFast,
         ..GuiConfigFile::default()
     };
 
@@ -123,7 +122,6 @@ fn gui_field_edit_preserves_comments_and_unknown_configuration() {
     assert!(content.contains("[third-party]"));
     assert!(content.contains("silent-start = true"));
     assert!(content.contains("management-secret-key = \"custom-secret\""));
-    assert!(content.contains("download-source = \"gh-fast\""));
     assert!(!content.contains("prefer-gitcode-downloads"));
     assert!(!content.contains("codex-session-repair-on-launch"));
     assert!(!content.contains("claude-code-working-directory"));

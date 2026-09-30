@@ -54,7 +54,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
 use std::{
-    collections::HashSet,
     env, fs,
     fs::File,
     io::{self, Read, Seek, SeekFrom, Write},
@@ -84,8 +83,6 @@ const PORTABLE_APP_MANIFEST_FILE: &str = "portable-app.json";
 const CORE_INSTALL_PROGRESS_EVENT: &str = "core-install-progress";
 const CORE_STATUS_EVENT: &str = "core-status-changed";
 const CONFIG_FILES_CHANGED_EVENT: &str = "config-files-changed";
-const VERSION_DOWNLOAD_SOURCE_CHANGED_EVENT: &str = "version-download-source-changed";
-static VERSION_SOURCE_DETECTION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 const CORE_METADATA_FILE: &str = "cpa-gui-meta.json";
 const CORE_CONFIG_FILE: &str = "config.yaml";
 const CORE_EXAMPLE_CONFIG_FILE: &str = "config.example.yaml";
@@ -431,9 +428,6 @@ struct GuiConfigFile {
     plugins_enabled: bool,
     routing_strategy: String,
     proxy_url: String,
-    download_source: VersionDownloadSource,
-    custom_download_mirrors: Vec<String>,
-    active_custom_download_mirror: String,
     routing_session_affinity: bool,
     routing_session_affinity_ttl: String,
     disable_cooling: bool,
@@ -441,167 +435,6 @@ struct GuiConfigFile {
     max_retry_credentials: u32,
     max_retry_interval: u32,
     streaming_bootstrap_retries: u32,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum VersionDownloadSource {
-    /// Versions that offered the GitCode mirror saved it as "gitcode". That mirror is gone, so it reads as GitHub,
-    /// the source it always fell back to.
-    #[default]
-    #[serde(alias = "gitcode")]
-    Github,
-    GhProxy,
-    GhFast,
-    Custom,
-}
-
-impl VersionDownloadSource {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Github => "github",
-            Self::GhProxy => "gh-proxy",
-            Self::GhFast => "gh-fast",
-            Self::Custom => "custom",
-        }
-    }
-
-    fn from_str(value: &str) -> Option<Self> {
-        match value.trim() {
-            "github" => Some(Self::Github),
-            "gh-proxy" => Some(Self::GhProxy),
-            "gh-fast" => Some(Self::GhFast),
-            "custom" => Some(Self::Custom),
-            _ => None,
-        }
-    }
-
-    fn display_name(self) -> &'static str {
-        match self {
-            Self::Github => "GitHub",
-            Self::GhProxy => "gh-proxy.com",
-            Self::GhFast => "ghfast.top",
-            Self::Custom => "Custom mirror",
-        }
-    }
-
-    fn github_proxy_prefix(self) -> Option<&'static str> {
-        match self {
-            Self::GhProxy => Some("https://gh-proxy.com/"),
-            Self::GhFast => Some("https://ghfast.top/"),
-            Self::Custom => None,
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct VersionDownloadCandidate {
-    source: VersionDownloadSource,
-    custom_url: Option<String>,
-}
-
-impl VersionDownloadCandidate {
-    fn builtin(source: VersionDownloadSource) -> Self {
-        Self {
-            source,
-            custom_url: None,
-        }
-    }
-
-    fn custom(url: &str) -> Self {
-        Self {
-            source: VersionDownloadSource::Custom,
-            custom_url: Some(url.to_string()),
-        }
-    }
-
-    fn key(&self) -> String {
-        self.custom_url
-            .as_ref()
-            .map(|url| format!("custom:{url}"))
-            .unwrap_or_else(|| self.source.as_str().to_string())
-    }
-
-    fn display_name(&self) -> String {
-        self.custom_url
-            .as_ref()
-            .and_then(|url| reqwest::Url::parse(url).ok())
-            .and_then(|url| url.host_str().map(str::to_string))
-            .unwrap_or_else(|| self.source.display_name().to_string())
-    }
-
-    fn proxy_prefix(&self) -> Option<&str> {
-        self.custom_url
-            .as_deref()
-            .or_else(|| self.source.github_proxy_prefix())
-    }
-}
-
-fn version_source_url(source: &VersionDownloadCandidate, github_url: &str) -> String {
-    source
-        .proxy_prefix()
-        .map(|prefix| format!("{prefix}{github_url}"))
-        .unwrap_or_else(|| github_url.to_string())
-}
-
-fn version_download_source_candidates(
-    preferred: VersionDownloadCandidate,
-    custom_mirrors: &[String],
-) -> Vec<VersionDownloadCandidate> {
-    let mut candidates = vec![
-        preferred,
-        VersionDownloadCandidate::builtin(VersionDownloadSource::Github),
-        VersionDownloadCandidate::builtin(VersionDownloadSource::GhProxy),
-        VersionDownloadCandidate::builtin(VersionDownloadSource::GhFast),
-    ];
-    candidates.extend(
-        custom_mirrors
-            .iter()
-            .map(|url| VersionDownloadCandidate::custom(url)),
-    );
-    candidates
-        .into_iter()
-        .fold(Vec::new(), |mut sources, source| {
-            if !sources.contains(&source) {
-                sources.push(source);
-            }
-            sources
-        })
-}
-
-fn normalize_custom_download_mirror_url(value: &str) -> Result<String, String> {
-    let mut url =
-        reqwest::Url::parse(value.trim()).map_err(|error| format!("Invalid mirror URL: {error}"))?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || url.port().is_some()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err("Mirror URL must use HTTPS without authentication, a port, query parameters, or a fragment".to_string());
-    }
-    if !url.path().ends_with('/') {
-        let path = format!("{}/", url.path());
-        url.set_path(&path);
-    }
-    Ok(url.to_string())
-}
-
-impl GuiConfigFile {
-    fn selected_download_candidate(&self) -> VersionDownloadCandidate {
-        if self.download_source == VersionDownloadSource::Custom
-            && self
-                .custom_download_mirrors
-                .contains(&self.active_custom_download_mirror)
-        {
-            VersionDownloadCandidate::custom(&self.active_custom_download_mirror)
-        } else {
-            VersionDownloadCandidate::builtin(self.download_source)
-        }
-    }
 }
 
 /// What the app does when its window is closed.
@@ -696,9 +529,6 @@ impl Default for GuiConfigFile {
             plugins_enabled: false,
             routing_strategy: "round-robin".to_string(),
             proxy_url: String::new(),
-            download_source: VersionDownloadSource::Github,
-            custom_download_mirrors: Vec::new(),
-            active_custom_download_mirror: String::new(),
             routing_session_affinity: false,
             routing_session_affinity_ttl: String::new(),
             disable_cooling: DEFAULT_DISABLE_COOLING,
@@ -719,11 +549,22 @@ struct GuiConfigPresence {
     close_behavior: Option<WindowsCloseBehavior>,
     start_core_on_launch: Option<bool>,
     silent_start: Option<bool>,
-    download_source: Option<VersionDownloadSource>,
-    custom_download_mirrors: Option<Vec<String>>,
-    active_custom_download_mirror: Option<String>,
+    /// Only versions that offered download mirrors wrote these, whatever their values; a file that has them is written
+    /// again without them, since the core and its checksums now come from GitHub alone.
+    download_source: Option<serde::de::IgnoredAny>,
+    custom_download_mirrors: Option<serde::de::IgnoredAny>,
+    active_custom_download_mirror: Option<serde::de::IgnoredAny>,
     /// Only versions that offered the GitCode mirror wrote this; a file that has it is written again without it.
     prefer_gitcode_downloads: Option<bool>,
+}
+
+impl GuiConfigPresence {
+    fn has_retired_download_settings(&self) -> bool {
+        self.download_source.is_some()
+            || self.custom_download_mirrors.is_some()
+            || self.active_custom_download_mirror.is_some()
+            || self.prefer_gitcode_downloads.is_some()
+    }
 }
 
 #[derive(Clone, Serialize, TS)]
@@ -734,13 +575,6 @@ struct GuiSettings {
     allow_lan: bool,
     run_on_startup: bool,
     close_behavior: WindowsCloseBehavior,
-}
-
-#[derive(Clone, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-struct VersionSourceSettings {
-    source: String,
-    custom_mirrors: Vec<String>,
 }
 
 /// Settings › Software: the app's own settings, kept by the desktop app and never by the core.
@@ -1435,48 +1269,6 @@ impl GuiConfigState {
         })
     }
 
-    fn set_download_candidate(
-        &self,
-        candidate: VersionDownloadCandidate,
-    ) -> Result<GuiConfigFile, String> {
-        self.update(|config| {
-            if let Some(url) = &candidate.custom_url {
-                if !config.custom_download_mirrors.contains(url) {
-                    return Err("Custom mirror does not exist".to_string());
-                }
-                config.active_custom_download_mirror = url.clone();
-            }
-            config.download_source = candidate.source;
-            Ok(())
-        })
-    }
-
-    fn switch_download_source_after_failure(
-        &self,
-        expected_source: &VersionDownloadCandidate,
-        fallback_source: &VersionDownloadCandidate,
-    ) -> Result<Option<GuiConfigFile>, String> {
-        let mut current = self
-            .inner
-            .lock()
-            .map_err(|_| "GUI configuration state lock is poisoned".to_string())?;
-        if current.selected_download_candidate() != *expected_source
-            || expected_source == fallback_source
-        {
-            return Ok(None);
-        }
-
-        let mut config = current.clone();
-        config.download_source = fallback_source.source;
-        if let Some(url) = &fallback_source.custom_url {
-            config.active_custom_download_mirror = url.clone();
-        }
-        sanitize_gui_config(&mut config)?;
-        write_gui_config(&config)?;
-        *current = config.clone();
-        Ok(Some(config))
-    }
-
     fn set_window_size(&self, size: SavedWindowSize) -> Result<GuiConfigFile, String> {
         self.update(|config| {
             config.window_width = Some(size.width);
@@ -1666,8 +1458,6 @@ struct GithubRelease {
 struct GithubAsset {
     name: String,
     browser_download_url: String,
-    #[serde(default)]
-    fallback_download_urls: Vec<String>,
     size: Option<u64>,
     digest: Option<String>,
 }
@@ -1991,10 +1781,6 @@ fn main() {
             list_oauth_browsers,
             open_oauth_url,
             open_external_url,
-            get_version_source_settings,
-            set_download_source,
-            add_custom_download_mirror,
-            remove_custom_download_mirror,
             check_app_update,
             get_app_update_task,
             start_app_update,

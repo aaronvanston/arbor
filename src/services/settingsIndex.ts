@@ -161,8 +161,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('software', 'crash-reports', 'usageData.title', 'usageData.crashes', { description: 'usageData.crashesDescription', keywords: 'settingsSearch.keywords.usageData' }),
 
   row('updates', 'app', 'kernel.versions.appCardTitle', 'appUpdate.status', { description: 'appUpdate.feed', keywords: 'settingsSearch.keywords.updates' }),
-  row('updates', 'core', 'kernel.versions.coreCardTitle', 'kernel.versions.updateStatus', { description: 'kernel.versions.downloadSourceHint', keywords: 'settingsSearch.keywords.updates' }),
-  row('updates', 'source', 'kernel.versions.downloadSource', 'kernel.versions.activeSource', { description: 'kernel.versions.activeSourceDescription' }),
+  row('updates', 'core', 'kernel.versions.coreCardTitle', 'kernel.versions.updateStatus', { description: 'kernel.versions.coreSourceHint', keywords: 'settingsSearch.keywords.updates' }),
 
   section('about', 'built-on', 'about.builtOn.title', { description: 'about.builtOn.description', keywords: 'settingsSearch.keywords.about' }),
   section('about', 'ideas', 'about.ideas.title', { description: 'about.ideas.description', keywords: 'settingsSearch.keywords.about' }),
