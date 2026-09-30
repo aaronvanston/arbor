@@ -1306,7 +1306,7 @@ export const en = {
   'setup.override.hint.off': 'Claude Code’s settings turn it off here, so it doesn’t load and isn’t counted as missing or different.',
   'setup.override.settings': 'Set in skillOverrides in {file}.',
   'setup.override.policy': 'Set in skillOverrides in the managed settings policy at {file}, which outranks every home’s settings.',
-  'setup.shares.note': 'On {machine}, T3 Code links this home’s {entries} to {home}, so they’re shown and compared there.',
+  'setup.shares.note': 'On {machine}, this home’s {entries} are links to {home}, so they’re shown and compared there.',
   'setup.skills.sharedHome': '{home} loads {target}’s skills through a link, so they’re shown there.',
   'setup.policy.cell': 'Set by policy',
   'setup.policy.badge': 'Policy',
