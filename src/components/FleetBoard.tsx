@@ -341,7 +341,7 @@ export function FleetBoardView({ board, failure, now, retrying = false, onRetry,
     <div className="flex flex-col gap-6">
       {error}
       <p className="px-1 text-xs text-muted-foreground" role="status">{fleetSummary(board, t)}</p>
-      {!board.t3Enabled ? (
+      {!board.t3Enabled && board.t3Found ? (
         <Alert
           variant="info"
           icon={<Radio />}

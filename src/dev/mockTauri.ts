@@ -173,8 +173,8 @@
  * CLI not installed, signed out, or failing to ask, so none show a state; `?gh=detailfail` for GitHub turning down the
  * part of the query about checks, reviews and merging, so only whether they merged comes back, with a note saying so.
  * A session's Checks end with Antiburn, installed on casey-mbp: it lists "Add a token bucket" (in ~/.claude) but not the
- * login-loop session (a T3 Code home) or Cedar 01's; `?antiburn=missing` for a Mac without it. `?session=<id>` starts on
- * that session's page, with the Sessions list one step back.
+ * login-loop session (another agent home) or Cedar 01's; `?antiburn=missing` for a Mac without it, which shows no row.
+ * `?session=<id>` starts on that session's page, with the Sessions list one step back.
  * `?alerts=sample` to start with a few alerts in the history when it's empty (it's kept in the browser's storage);
  * Sync › Cost (`?page=setup&tab=cost`) has the starting context, then Claude Code's spend over the span picked (a
  * week at first; the pick is kept in the browser's storage): `?context=none` for no sessions to measure, `unplaced`
@@ -225,6 +225,7 @@
  * the question and the working Codex thread snoozed on the board (so the tray counts one) and the plan snoozed in T3
  * Code itself, `many` for 40 T3 Code threads across four machines, `fail` for every read failing (the board says so
  * with Retry), or `failafter` for reads failing after the first (the board keeps the last read and says so).
+ * `?fleet=not3` for no machine with T3 Code, which hides T3 Code's switch in Settings › Machines and its notice here.
  * Turning T3 Code threads off in Settings › Machines takes T3 Code's threads off the board and shows the notice whose
  * Turn on switches them back; it's logged as `t3_threads_enabled`, and the waiting count the tray icon would show as
  * `tray_waiting`.

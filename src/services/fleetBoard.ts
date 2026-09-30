@@ -77,6 +77,8 @@ export type FleetMachine = {
 export type FleetBoard = {
   nowMs: number;
   t3Enabled: boolean;
+  /** Some machine has T3 Code. Without it the board never mentions T3 Code. */
+  t3Found: boolean;
   thisMachine: string;
   machines: FleetMachine[];
   /** Folded at the end, the soonest to wake first. */
@@ -516,6 +518,7 @@ export function buildFleetBoard(
   return {
     nowMs: now,
     t3Enabled: sources.t3Enabled,
+    t3Found: sources.t3Found,
     thisMachine: sources.thisMachine,
     machines: groupFleet(shown, sources.thisMachine, skipped),
     snoozed: rows.filter((row) => row.snoozedBy).sort((a, b) => (a.snoozedUntilMs ?? 0) - (b.snoozedUntilMs ?? 0) || a.key.localeCompare(b.key)),
@@ -761,6 +764,12 @@ export function useFleetBoard(): { board: FleetBoard | null; failure: string; no
   const { board, now } = sharedBoard(current, { snoozes, seen, asked }, clock);
   return useMemo(() => ({ board, failure: error, now }), [board, error, now]);
 }
+
+/** Whether some machine has T3 Code, so its threads' switch is worth showing. False before the first read. */
+export function useT3Found() {
+  return useSyncExternalStore(subscribeSources, getT3Found, getT3Found);
+}
+const getT3Found = () => sources?.t3Found ?? false;
 
 /**
  * The last board built, for every component showing it at once (a Sessions list asks once per row): it's built again

@@ -22,6 +22,8 @@ pub(crate) struct FleetSources {
     this_machine: String,
     /// T3 Code's threads are being read.
     t3_enabled: bool,
+    /// Some machine has T3 Code, so its threads could be read. Without it the board never mentions T3 Code.
+    t3_found: bool,
     t3: Vec<T3Channel>,
     attention: AgentAttentionReport,
     sessions: Vec<FleetProxySession>,
@@ -56,6 +58,7 @@ pub(crate) async fn get_fleet_sources(
             now_ms,
             this_machine: t3.this_machine,
             t3_enabled: t3.enabled,
+            t3_found: t3.found,
             t3: channels,
             attention,
             sessions,

@@ -36,13 +36,21 @@ export function tilde(path: string, homeDir: string): string {
   return path.startsWith(`${homeDir}/`) ? `~${path.slice(homeDir.length)}` : path;
 }
 
-/** Which app keeps a worktree, from where it is. */
+/**
+ * Where tools put the worktrees they make by default: a folder under the home, or one inside a checkout. A worktree
+ * anywhere else is shown as a plain worktree.
+ */
+const WORKTREE_FOLDERS: { owner: WorktreeOwner; folder: string; inHome: boolean }[] = [
+  { owner: 't3', folder: '/.t3/worktrees/', inHome: true },
+  { owner: 'codex', folder: '/.codex/worktrees/', inHome: true },
+  { owner: 'claude', folder: '/.claude/worktrees/', inHome: false },
+];
+
+/** Which tool keeps a worktree, from where it is. */
 export type WorktreeOwner = 't3' | 'claude' | 'codex';
 export function worktreeOwner(path: string, homeDir: string): WorktreeOwner | null {
-  if (homeDir && path.startsWith(`${homeDir}/.t3/worktrees/`)) return 't3';
-  if (homeDir && path.startsWith(`${homeDir}/.codex/worktrees/`)) return 'codex';
-  if (path.includes('/.claude/worktrees/')) return 'claude';
-  return null;
+  const match = WORKTREE_FOLDERS.find(({ folder, inHome }) => (inHome ? Boolean(homeDir) && path.startsWith(`${homeDir}${folder}`) : path.includes(folder)));
+  return match?.owner ?? null;
 }
 
 /** A remote on a host, as opposed to a folder on the machine, which only means something there. */

@@ -946,6 +946,9 @@ export const setMockT3Enabled = (enabled: boolean) => {
   mockT3Enabled = enabled;
 };
 
+// `?fleet=not3`: no machine has T3 Code, so neither the board nor Settings mentions it.
+const mockT3Found = fleetScenario !== 'not3';
+
 let fleetReads = 0;
 
 const skippedT3: Record<string, Skipped> = {
@@ -968,9 +971,9 @@ const mockFleetSources = (): FleetSources => {
   const nowMs = Date.now();
   const attention = mockAgentAttention();
   if (fleetScenario === 'empty') {
-    return { nowMs, thisMachine: 'casey-mbp', t3Enabled: mockT3Enabled, t3: [], attention: { items: [], reporting: attention.reporting }, sessions: [] };
+    return { nowMs, thisMachine: 'casey-mbp', t3Enabled: mockT3Enabled, t3Found: mockT3Found, t3: [], attention: { items: [], reporting: attention.reporting }, sessions: [] };
   }
-  const t3 = !mockT3Enabled ? [] : (fleetScenario === 'many' ? manyT3Channels() : defaultT3Channels()).map((channel): T3Channel => {
+  const t3 = !mockT3Enabled || !mockT3Found ? [] : (fleetScenario === 'many' ? manyT3Channels() : defaultT3Channels()).map((channel): T3Channel => {
     const { machine, threads } = channel;
     // T3 Code quit without cleaning up: its database still says running, but its process is gone.
     if (fleetScenario === 't3down') return { ...channel, serverRunning: false };
@@ -988,7 +991,7 @@ const mockFleetSources = (): FleetSources => {
     .filter((session) => session.lastActiveAtMs >= nowMs - 6 * 3_600_000)
     .sort((a, b) => b.lastActiveAtMs - a.lastActiveAtMs)
     .map((session) => ({ session, lastRequestFailed: session.id === '0199a0f4-6e21-7c3d-9a8b-1c2d3e4f5a6b' }));
-  return { nowMs, thisMachine: 'casey-mbp', t3Enabled: mockT3Enabled, t3, attention, sessions };
+  return { nowMs, thisMachine: 'casey-mbp', t3Enabled: mockT3Enabled, t3Found: mockT3Found, t3, attention, sessions };
 };
 
 // The sessions a query's requests belong to, and those the Sessions page's own filters leave.

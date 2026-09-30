@@ -285,13 +285,11 @@ fn remote_sql() -> String {
 // What's read
 // ---------------------------------------------------------------------------
 
-/// Where on a machine T3 Code keeps its state: the app's `~/.t3/userdata`, a development build's `~/.t3/dev`, or
-/// `$T3CODE_HOME/userdata`.
+/// Where on a machine T3 Code keeps its state: the app's `~/.t3/userdata`, or `$T3CODE_HOME/userdata`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum T3ChannelKind {
     Userdata,
-    Dev,
     Custom,
 }
 
@@ -299,7 +297,6 @@ impl T3ChannelKind {
     fn parse(value: &str) -> Option<Self> {
         match value {
             "userdata" => Some(Self::Userdata),
-            "dev" => Some(Self::Dev),
             "custom" => Some(Self::Custom),
             _ => None,
         }
@@ -744,7 +741,7 @@ struct LocalWatch {
 /// This Mac's state folders that could hold a database, each once.
 fn local_channels(home: &Path, t3_home: Option<&str>) -> Vec<(T3ChannelKind, PathBuf)> {
     let base = home.join(".t3");
-    let mut found = vec![(T3ChannelKind::Userdata, base.join("userdata")), (T3ChannelKind::Dev, base.join("dev"))];
+    let mut found = vec![(T3ChannelKind::Userdata, base.join("userdata"))];
     if let Some(custom) = t3_home.map(str::trim).filter(|value| !value.is_empty()) {
         let custom = if custom == "~" {
             home.to_path_buf()
@@ -1049,7 +1046,7 @@ async fn read_this_machine(state: &MachineHealthState, now_ms: i64) -> bool {
 // two halves. Lines out, tab-separated:
 //   now seconds             the machine's clock
 //   X sqlite3               there's a T3 Code database but no sqlite3 to read it with, and nothing else is printed
-//   D channel               a state folder with a database: userdata, dev or custom
+//   D channel               a state folder with a database: userdata or custom
 //   P pid alive start etime its runtime file's pid and start time (digits and ISO characters only), whether that pid
 //                           is running, and how long it has been
 //   R mode                  how it was read: readonly, immutable, or unreadable when no safe read could be made
@@ -1061,8 +1058,8 @@ const SCRIPT_HEAD: &str = r##"set -u
 export LC_ALL=C
 printf 'now\t%s\n' "$(date +%s)"
 tab=$(printf '\t')
-# T3 Code's state folders: the app's, a development build's and where T3CODE_HOME points, each once.
-dirs=$({ printf '%s\tuserdata\n%s\tdev\n' "$HOME/.t3/userdata" "$HOME/.t3/dev"
+# T3 Code's state folders: the app's and where T3CODE_HOME points, each once.
+dirs=$({ printf '%s\tuserdata\n' "$HOME/.t3/userdata"
   if [ -n "${T3CODE_HOME:-}" ]; then printf '%s\tcustom\n' "${T3CODE_HOME%/}/userdata"; fi; } | awk -F'\t' '!seen[$1]++')
 found=
 while IFS=$tab read -r dir channel; do
@@ -1415,9 +1412,11 @@ fn machine_name(inner: &Inner, target: Option<&LocalTarget>) -> String {
         .unwrap_or_else(|| "localhost".into())
 }
 
-/// What the fleet board gets of T3 Code: whether reading is on, this Mac's name and every database's last read.
+/// What the fleet board gets of T3 Code: whether reading is on, whether any machine has it, this Mac's name and every
+/// database's last read.
 pub(in crate::usage) struct T3Snapshot {
     pub(in crate::usage) enabled: bool,
+    pub(in crate::usage) found: bool,
     pub(in crate::usage) this_machine: String,
     pub(in crate::usage) channels: Vec<T3Channel>,
 }
@@ -1427,6 +1426,10 @@ pub(in crate::usage) fn snapshot(state: &MachineHealthState) -> T3Snapshot {
     let enabled = enabled();
     let target = local_target(&inner);
     let this_machine = machine_name(&inner, target.as_ref());
+    // A listed machine whose agents check found it, or this Mac with T3 Code's folder.
+    let found = inner.series.values().any(|series| series.host.enabled && series.agents.t3().is_some())
+        || std::env::var_os("T3CODE_HOME").is_some()
+        || std::env::var_os("HOME").is_some_and(|home| Path::new(&home).join(".t3").is_dir());
     let mut channels = Vec::new();
     if enabled {
         for series in inner.series.values().filter(|series| series.host.enabled) {
@@ -1438,7 +1441,7 @@ pub(in crate::usage) fn snapshot(state: &MachineHealthState) -> T3Snapshot {
             channels.extend(inner.local_t3.channels.iter().cloned());
         }
     }
-    T3Snapshot { enabled, this_machine, channels }
+    T3Snapshot { enabled, found, this_machine, channels }
 }
 
 #[cfg(test)]
@@ -2202,29 +2205,24 @@ mod tests {
             "T\t\"thread-4\"\n".into(),
             good.replace("\"thread-1\"", "{\"thread\""),
             "E\t0\n".into(),
-            "D\tdev\n".into(),
+            "D\tcustom\n".into(),
             "P\t\t0\t\t\n".into(),
             "R\timmutable\n".into(),
             probe_lines(57),
             good.replace("thread-1", "thread-9"),
             "E\t0\n".into(),
-            "D\tcustom\n".into(),
-            "P\t4243\t1\t2026-09-21T13:13:20.000Z\t01:00:05\n".into(),
-            "R\treadonly\n".into(),
-            "M\t54\n".into(),
-            "E\t1\n".into(),
         ]
         .concat();
         let read = parse_remote(&stdout).unwrap();
         assert_eq!(read.now_s, 1_790_000_000);
         assert!(!read.no_sqlite3);
-        assert_eq!(read.channels.len(), 3);
+        assert_eq!(read.channels.len(), 2);
 
         // 60s ahead of the machine.
         let at_ms = 1_790_000_000_000 + 60_000;
         let mut log = T3Log::default();
         assert!(apply_remote(&mut log, "cedar-02", read, at_ms));
-        let [userdata, dev, custom] = &log.channels[..] else { panic!() };
+        let [userdata, custom] = &log.channels[..] else { panic!() };
         assert_eq!(
             ids(userdata),
             ["thread-1", "thread-2", "thread-5", "thread-6", "thread-7"],
@@ -2245,18 +2243,15 @@ mod tests {
         assert!(!userdata.server_running, "the process started 20s before the machine's now, after the file's start time");
         assert_eq!(userdata.read_mode, ReadMode::Readonly);
 
-        assert_eq!(dev.skipped, Some(Skipped { reason: SkipReason::MigrationRange, migration: Some(57) }));
-        assert!(dev.threads.is_empty(), "no T line is taken from a database Arbor doesn't know");
-        assert_eq!(dev.read_mode, ReadMode::Immutable);
-        assert!(!dev.server_running);
-        assert_eq!(custom.skipped, Some(Skipped { reason: SkipReason::Schema, migration: Some(54) }));
-        assert!(custom.server_running, "started 5s before the file says, within the slack");
+        assert_eq!(custom.skipped, Some(Skipped { reason: SkipReason::MigrationRange, migration: Some(57) }));
+        assert!(custom.threads.is_empty(), "no T line is taken from a database Arbor doesn't know");
+        assert_eq!(custom.read_mode, ReadMode::Immutable);
+        assert!(!custom.server_running);
 
         // The next look, a moment later by a clock that ticked over: nothing moves.
         let again = stdout
             .replace("now\t1790000000", "now\t1790000031")
-            .replace("\t00:20\n", "\t00:51\n")
-            .replace("\t01:00:05\n", "\t01:00:36\n");
+            .replace("\t00:20\n", "\t00:51\n");
         let read = parse_remote(&again).unwrap();
         assert!(!apply_remote(&mut log, "cedar-02", read, at_ms + 30_500));
         assert_eq!(thread(&log.channels[0], "thread-1").updated_at_ms, updated_ms + 60_000);
@@ -2308,11 +2303,11 @@ mod tests {
     fn t3_code_s_state_folders_are_each_looked_in_once() {
         let home = temp_dir("channels");
         let kinds = |t3_home: Option<&str>| local_channels(&home, t3_home).into_iter().map(|(kind, _)| kind).collect::<Vec<_>>();
-        assert_eq!(kinds(None), [T3ChannelKind::Userdata, T3ChannelKind::Dev]);
-        assert_eq!(kinds(Some("~/.t3")), [T3ChannelKind::Userdata, T3ChannelKind::Dev], "the same folder");
-        assert_eq!(kinds(Some("/opt/t3")), [T3ChannelKind::Userdata, T3ChannelKind::Dev, T3ChannelKind::Custom]);
-        assert_eq!(kinds(Some("relative")), [T3ChannelKind::Userdata, T3ChannelKind::Dev]);
-        assert_eq!(local_channels(&home, Some("/opt/t3/"))[2].1, PathBuf::from("/opt/t3/userdata"));
+        assert_eq!(kinds(None), [T3ChannelKind::Userdata]);
+        assert_eq!(kinds(Some("~/.t3")), [T3ChannelKind::Userdata], "the same folder");
+        assert_eq!(kinds(Some("/opt/t3")), [T3ChannelKind::Userdata, T3ChannelKind::Custom]);
+        assert_eq!(kinds(Some("relative")), [T3ChannelKind::Userdata]);
+        assert_eq!(local_channels(&home, Some("/opt/t3/"))[1].1, PathBuf::from("/opt/t3/userdata"));
         assert_eq!(immutable_uri(Path::new("/a b/c?d#e%f")).unwrap(), "file:/a%20b/c%3Fd%23e%25f?immutable=1");
     }
 
@@ -2387,11 +2382,11 @@ mod tests {
                 return;
             }
             let home = temp_dir("script-57");
-            let writer = state_database(&home.join(".t3/dev"), &shape(57), now_ms());
+            let writer = state_database(&home.join(".t3/userdata"), &shape(57), now_ms());
             drop(writer);
             for shell in shells() {
                 let stdout = run(shell, &home, "/usr/bin:/bin", None);
-                assert!(stdout.contains("D\tdev\n") && stdout.contains("R\timmutable\n") && stdout.contains("M\t57\n"), "{shell}: {stdout}");
+                assert!(stdout.contains("D\tuserdata\n") && stdout.contains("R\timmutable\n") && stdout.contains("M\t57\n"), "{shell}: {stdout}");
                 assert!(!stdout.lines().any(|line| line.starts_with("T\t")), "{shell}: {stdout}");
                 assert!(!stdout.contains(SECRET));
                 let mut log = T3Log::default();
@@ -2399,7 +2394,7 @@ mod tests {
                 assert_eq!(log.channels[0].skipped, Some(Skipped { reason: SkipReason::MigrationRange, migration: Some(57) }));
                 assert!(log.channels[0].threads.is_empty());
             }
-            assert!(!home.join(".t3/dev").join(WAL_FILE).exists(), "the immutable read left nothing behind");
+            assert!(!home.join(".t3/userdata").join(WAL_FILE).exists(), "the immutable read left nothing behind");
         }
 
         #[test]

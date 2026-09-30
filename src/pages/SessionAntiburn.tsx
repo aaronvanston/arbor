@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { toast } from '../components/ui/toast';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
-import { ANTIBURN_URL, antiburnReach } from '../services/antiburn';
+import { antiburnReach } from '../services/antiburn';
 import { trackFeature } from '../services/productAnalytics';
 import type { AntiburnStatus, SessionTranscript } from '../native/types';
 
@@ -26,9 +26,9 @@ function AntiburnMark({ className }: { className?: string }) {
 }
 
 /**
- * The last row of a session's checks: Antiburn checks more than Arbor can see from the proxy, like skills and MCP
- * servers that go unused. It opens Antiburn when it's on this Mac, saying whether Antiburn lists this session, and
- * links to its site when it isn't.
+ * The last row of a session's checks when Antiburn is on this Mac: Antiburn checks more than Arbor can see from the
+ * proxy, like skills and MCP servers that go unused. It opens Antiburn, saying whether Antiburn lists this session.
+ * Without Antiburn there's no row.
  */
 export function SessionAntiburn({ transcript }: { transcript: SessionTranscript | null }) {
   const [status, setStatus] = useState<AntiburnStatus | null>(null);
@@ -45,7 +45,7 @@ export function SessionAntiburn({ transcript }: { transcript: SessionTranscript 
     };
   }, []);
 
-  return status ? <AntiburnRow status={status} transcript={transcript} /> : null;
+  return status?.installed ? <AntiburnRow status={status} transcript={transcript} /> : null;
 }
 
 /** The row itself, once Arbor knows whether Antiburn is on this Mac. */
@@ -53,20 +53,17 @@ export function AntiburnRow({ status, transcript }: { status: AntiburnStatus; tr
   const { t, tRich } = useI18n();
   const reach = antiburnReach(status, transcript);
   const body: ReactNode =
-    reach === 'missing'
-      ? t('sessions.antiburn.missing')
-      : reach === 'listed'
-        ? t('sessions.antiburn.listed')
-        : reach === 'otherHome'
-          ? t('sessions.antiburn.otherHome', { home: transcript?.agentHome ?? '' })
-          : reach === 'otherMachine'
-            ? tRich('sessions.antiburn.otherMachine', { machine: <MachinePill name={transcript?.machine} size="sm" /> })
-            : t('sessions.antiburn.unknown');
+    reach === 'listed'
+      ? t('sessions.antiburn.listed')
+      : reach === 'otherHome'
+        ? t('sessions.antiburn.otherHome', { home: transcript?.agentHome ?? '' })
+        : reach === 'otherMachine'
+          ? tRich('sessions.antiburn.otherMachine', { machine: <MachinePill name={transcript?.machine} size="sm" /> })
+          : t('sessions.antiburn.unknown');
 
   const open = () => {
-    const opened = reach === 'missing' ? invokeCommand('open_external_url', { url: ANTIBURN_URL }) : invokeCommand('open_antiburn');
-    opened
-      .then(() => trackFeature('antiburn-opened', { kind: reach === 'missing' ? 'site' : 'app' }))
+    invokeCommand('open_antiburn')
+      .then(() => trackFeature('antiburn-opened', { kind: 'app' }))
       .catch((error: unknown) => toast({ kind: 'error', title: t('about.openFailed', { name: 'Antiburn' }), description: String(error) }));
   };
 
@@ -78,7 +75,7 @@ export function AntiburnRow({ status, transcript }: { status: AntiburnStatus; tr
         <p className="mt-0.5 text-xs leading-[1.45] text-muted-foreground">{body}</p>
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <Button variant="outline" size="xs" onClick={open}>
-            {t(reach === 'missing' ? 'sessions.antiburn.get' : 'sessions.antiburn.open')}
+            {t('sessions.antiburn.open')}
             <ArrowUpRight />
           </Button>
           <span className="text-2xs text-muted-foreground">{t('sessions.antiburn.credit')}</span>

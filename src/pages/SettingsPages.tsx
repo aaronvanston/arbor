@@ -15,6 +15,7 @@ import { AgentTelemetrySettings } from './AgentTelemetrySettings';
 import { FleetWideNotice, SettingsScopeSentence } from '../components/layout/machineScope';
 import { MachinePill } from '../components/identity/Identity';
 import { useSettingsScope } from '../services/machineSettings';
+import { useT3Found } from '../services/fleetBoard';
 import { machinesView, type AppView } from '../navigation';
 import type { MachineAssignment } from '../native/types';
 
@@ -82,10 +83,15 @@ function OneMachineSettings({ machine, onNavigate }: { machine: string; onNaviga
   );
 }
 
-/** Settings › Machines: what the live board and the tray read from each machine besides the proxy and reporters. */
+/**
+ * Settings › Machines: what the live board and the tray read from each machine besides the proxy and reporters. It's
+ * only T3 Code's threads so far, so it shows once some machine has T3 Code.
+ */
 function LiveBoardSettings() {
   const { t } = useI18n();
   const preferences = useAppPreferences();
+  const t3Found = useT3Found();
+  if (!t3Found) return null;
   return (
     <SettingsSection title={t('fleet.settings.title')} description={t('fleet.settings.description')}>
       <SettingsRow

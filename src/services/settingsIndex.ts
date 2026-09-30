@@ -19,7 +19,7 @@ export type SettingEntry = {
   keywords?: MessageKey;
   /** The folded group that holds it. */
   fold?: SettingsFold;
-  /** Where search lands instead while the row isn't shown (TLS off, no phone service chosen). */
+  /** Where search lands instead while the row isn't shown (TLS off, no phone service chosen, no T3 Code). */
   fallback?: string;
 };
 
@@ -100,7 +100,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
 
   section('machines', 'assignments', 'usage.assignments.title', { description: 'usage.assignments.description' }),
   section('machines', 'hosts', 'machines.hosts.title', { description: 'machines.hosts.description', keywords: 'settingsSearch.keywords.ssh' }),
-  row('machines', 't3Threads', 'fleet.settings.title', 'fleet.settings.t3Threads', { description: 'fleet.settings.t3ThreadsHint', keywords: 'fleet.palette.keywords' }),
+  row('machines', 't3Threads', 'fleet.settings.title', 'fleet.settings.t3Threads', { description: 'fleet.settings.t3ThreadsHint', keywords: 'fleet.palette.keywords', fallback: 'machines.hosts' }),
   row('machines', 'telemetry', 'telemetry.settings.title', 'telemetry.settings.receive', { description: 'telemetry.settings.receiveHint' }),
   row('machines', 'telemetry-port', 'telemetry.settings.title', 'telemetry.settings.port', { description: 'telemetry.settings.portHint' }),
   row('machines', 'telemetry-machines', 'telemetry.settings.title', 'telemetry.settings.machines'),

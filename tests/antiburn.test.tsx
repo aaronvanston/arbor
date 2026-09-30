@@ -30,8 +30,8 @@ describe('what Antiburn can do for a session', () => {
     expect(antiburnReach(installed, transcript({ agent: 'codex', agentHome: '~/.codex' }))).toBe('listed');
   });
 
-  test('doesn’t list one from a T3 Code provider home, or from another machine', () => {
-    expect(antiburnReach(installed, transcript({ agentHome: '~/.t3/provider-homes/claude-proxy' }))).toBe('otherHome');
+  test('doesn’t list one from another agent home, or from another machine', () => {
+    expect(antiburnReach(installed, transcript({ agentHome: '~/work/.claude' }))).toBe('otherHome');
     expect(antiburnReach(installed, transcript({ machine: 'Cedar 01' }))).toBe('otherMachine');
   });
 
@@ -40,9 +40,6 @@ describe('what Antiburn can do for a session', () => {
     expect(antiburnReach(installed, transcript({ agentHome: '' }))).toBe('unknown');
   });
 
-  test('is missing on a Mac without it, whatever the session', () => {
-    expect(antiburnReach({ installed: false, thisMachine: 'casey-mbp' }, transcript())).toBe('missing');
-  });
 });
 
 describe('the Antiburn row', () => {
@@ -55,16 +52,9 @@ describe('the Antiburn row', () => {
   });
 
   test('says why Antiburn doesn’t list a session, and still opens it', () => {
-    const t3 = render(installed, transcript({ agentHome: '~/.t3/provider-homes/claude-proxy' }));
-    expect(t3).toContain('whose transcript is in ~/.t3/provider-homes/claude-proxy');
-    expect(t3).toContain('Open Antiburn');
+    const other = render(installed, transcript({ agentHome: '~/work/.claude' }));
+    expect(other).toContain('whose transcript is in ~/work/.claude');
+    expect(other).toContain('Open Antiburn');
     expect(render(installed, transcript({ machine: 'Cedar 01' }))).toContain('doesn’t list this session from Cedar 01');
-  });
-
-  test('offers to get Antiburn on a Mac without it', () => {
-    const html = render({ installed: false, thisMachine: 'casey-mbp' }, transcript());
-    expect(html).toContain('Antiburn is a free app');
-    expect(html).toContain('Get Antiburn');
-    expect(html).not.toContain('Open Antiburn');
   });
 });

@@ -81,7 +81,7 @@ const wait = (fields: Partial<AttentionItem> = {}): AttentionItem => ({
 });
 
 const sources = (fields: Partial<FleetSources> = {}): FleetSources => ({
-  nowMs: NOW, thisMachine: 'casey-mbp', t3Enabled: true, t3: [], attention: { items: [], reporting: ['casey-mbp'] }, sessions: [], ...fields,
+  nowMs: NOW, thisMachine: 'casey-mbp', t3Enabled: true, t3Found: true, t3: [], attention: { items: [], reporting: ['casey-mbp'] }, sessions: [], ...fields,
 });
 const board = (input: Partial<FleetSources>, options: { now?: number; snoozes?: FleetSnoozes; seen?: Record<string, number>; asked?: Record<string, number> } = {}) =>
   buildFleetBoard(sources(input), { now: NOW, ...options });
@@ -280,7 +280,7 @@ describe('merging the sources', () => {
     const built = board({
       t3: [
         channel('casey-mbp', [thread({ threadId: 'first', agentSessionId: CLAUDE_ID, arborSession: linked, turn: completed(30) })]),
-        channel('casey-mbp', [thread({ threadId: 'imported', agentSessionId: CLAUDE_ID, arborSession: linked, turn: completed(40) })], { channel: 'dev' }),
+        channel('casey-mbp', [thread({ threadId: 'imported', agentSessionId: CLAUDE_ID, arborSession: linked, turn: completed(40) })], { channel: 'custom' }),
       ],
       attention: { items: [wait()], reporting: ['casey-mbp'] },
       sessions: [{ session: proxied, lastRequestFailed: false }],

@@ -25,7 +25,7 @@ const wait = (fields: Partial<AttentionItem> = {}): AttentionItem => ({
   machine: 'cedar-02', agent: 'codex', sessionId: CODEX, kind: 'waiting', sinceMs: NOW - 41 * MINUTE, session: null, ...fields,
 });
 const sources = (fields: Partial<FleetSources> = {}): FleetSources => ({
-  nowMs: NOW, thisMachine: 'casey-mbp', t3Enabled: true, t3: [], attention: { items: [], reporting: [] }, sessions: [], ...fields,
+  nowMs: NOW, thisMachine: 'casey-mbp', t3Enabled: true, t3Found: true, t3: [], attention: { items: [], reporting: [] }, sessions: [], ...fields,
 });
 const busy = sources({
   t3: [
@@ -87,6 +87,7 @@ describe('the live board', () => {
     expect(view(null, 'database is locked', { onRetry: () => {} })).toBe('Couldn’t read the board: database is locked Retry');
     expect(view(buildFleetBoard(busy, { now: NOW }), 'database is locked')).toContain('Couldn’t refresh the board, so it shows the last read: database is locked');
     expect(view(buildFleetBoard(sources({ t3Enabled: false }), { now: NOW }))).toContain('T3 Code threads are off');
+    expect(view(buildFleetBoard(sources({ t3Enabled: false, t3Found: false }), { now: NOW }))).not.toContain('T3 Code');
   });
 
   test('folds snoozed sessions at the end, saying until when', () => {

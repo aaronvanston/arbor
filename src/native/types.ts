@@ -984,6 +984,10 @@ export type FleetSources = {
    * T3 Code's threads are being read.
    */
   t3Enabled: boolean,
+  /**
+   * Some machine has T3 Code, so its threads could be read. Without it the board never mentions T3 Code.
+   */
+  t3Found: boolean,
   t3: Array<T3Channel>,
   attention: AgentAttentionReport,
   sessions: Array<FleetProxySession>,
@@ -3513,10 +3517,9 @@ export type T3Channel = {
 };
 
 /**
- * Where on a machine T3 Code keeps its state: the app's `~/.t3/userdata`, a development build's `~/.t3/dev`, or
- * `$T3CODE_HOME/userdata`.
+ * Where on a machine T3 Code keeps its state: the app's `~/.t3/userdata`, or `$T3CODE_HOME/userdata`.
  */
-export type T3ChannelKind = "userdata" | "dev" | "custom";
+export type T3ChannelKind = "userdata" | "custom";
 
 /**
  * T3 Code on a machine: it keeps its home there.

@@ -1,5 +1,5 @@
 //! Antiburn, a desktop app for looking into agent sessions. It reads the transcripts on the Mac it runs on, so the
-//! session page offers it for a session whose transcript is here, and says where to get it when it isn't installed.
+//! session page offers it for a session whose transcript is here, and shows nothing when it isn't installed.
 //! Antiburn has no link to a session, so opening it opens the app.
 
 use super::machine_health::t3_threads;
