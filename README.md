@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="src/assets/arbor-icon.png" width="112" alt="Arbor logo">
+  <img src="docs/banner.png" width="900" alt="Arbor: the personal hub for your agent accounts and machines. Stop switching accounts, across all your machines.">
 </p>
-
-<h1 align="center">Arbor</h1>
 
 <p align="center">
   A Mac app that pools your Claude and Codex subscriptions behind one proxy and shares them with every machine you own.<br>
