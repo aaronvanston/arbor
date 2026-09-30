@@ -107,8 +107,11 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   signing key (`release-signing.mjs`), disk cleanup (`clean-dev-disk.sh`, which removes idle
   worktrees' Rust build folders, worktrees whose work is on origin/main, and
   feed DMGs GitHub also holds; the release script runs it when free space is
-  low, and `install-dev-disk-cleanup.sh` schedules it every 6 hours), version
-  helpers, and packaging scripts inherited from upstream.
+  low, and `install-dev-disk-cleanup.sh` schedules it every 6 hours), a new
+  worktree's copy of the gitignored files `.worktreeinclude` lists, `.env` among them
+  (`copy-worktree-includes.sh`; Claude Code copies them itself, and `t3.json` runs it
+  when T3 Code makes a worktree), version helpers, and packaging scripts inherited
+  from upstream.
 - `core-version.txt`: the core release the DMG bundles.
 
 ## Commands
