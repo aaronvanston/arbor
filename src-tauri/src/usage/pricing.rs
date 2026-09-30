@@ -1,5 +1,5 @@
-//! Model prices and what requests cost: the bundled catalog, prices synced from the upstream catalog and models.dev
-//! for the models it lacks, the user's own entries, and each group of requests' cost at them.
+//! Model prices and what requests cost: the bundled catalog, prices synced from the same catalog on Arbor's main branch
+//! and from models.dev for the models it lacks, the user's own entries, and each group of requests' cost at them.
 
 use super::*;
 
@@ -9,8 +9,10 @@ pub(super) const TOKENS_PER_PRICE_UNIT: f64 = 1_000_000.0;
 /// model; see `long_context_tier`.
 pub(super) const LONG_CONTEXT_THRESHOLDS: [u64; 2] = [200_000, 272_000];
 pub(super) const BUNDLED_MODEL_PRICE_CATALOG: &str = include_str!("../../resources/model_prices.json");
+/// The bundled catalog as it is on main now, so prices can change between releases. When it can't be read, sync uses
+/// the bundled one.
 pub(super) const MODEL_PRICE_SYNC_URL: &str =
-    "https://raw.githubusercontent.com/router-for-me/EasyCLIProxyAPI/main/src-tauri/resources/model_prices.json";
+    "https://raw.githubusercontent.com/aaronvanston/arbor/main/src-tauri/resources/model_prices.json";
 /// Sync fills in models the catalog above doesn't have yet from here. It lists
 /// resellers too, so only the labs' own prices are used.
 pub(super) const MODELS_DEV_CATALOG_URL: &str = "https://models.dev/api.json";

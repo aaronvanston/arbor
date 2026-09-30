@@ -14,7 +14,7 @@ import { readCommandError } from '../services/commandError';
 import { appUpdateRestartsProxy, settleIdleUpdate } from '../services/updateWhenIdle';
 import { IdleUpdateNotice, useIdleUpdateGuard } from '../components/UpdateWhenIdle';
 import { ReleaseNoteSections } from '../components/UpdateReleaseNotes';
-import { CORE_RELEASES_URL, NO_RELEASE_NOTES, coreReleaseUrl, releaseNotesToShow } from '../services/releaseNotes';
+import { ARBOR_RELEASES_URL, CORE_RELEASES_URL, NO_RELEASE_NOTES, coreReleaseUrl, releaseNotesToShow } from '../services/releaseNotes';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { StatBlock } from '../components/layout/stats';
@@ -209,7 +209,7 @@ export function VersionManagementPage() {
 
   const openAppRelease = async () => {
     try {
-      await invokeCommand('open_external_url', { url: appUpdate?.releaseUrl || APP_RELEASE_URL });
+      await invokeCommand('open_external_url', { url: appUpdate?.releaseUrl || ARBOR_RELEASES_URL });
     } catch (error) {
       showNotice({ key: 'kernel.error.openUpdate', variables: { error: String(error) } }, 'error');
     }

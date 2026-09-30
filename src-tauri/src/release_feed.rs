@@ -230,7 +230,7 @@ async fn download_small_asset(
     let location = release_asset_download_location(client, source, token, asset_url).await?;
     let mut response = client
         .get(&location)
-        .header(reqwest::header::USER_AGENT, APP_USER_AGENT)
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
         .send()
         .await
         .and_then(reqwest::Response::error_for_status)
@@ -253,7 +253,7 @@ fn api_request(client: &reqwest::Client, url: &str, token: Option<&str>, accept:
     let request = client
         .get(url)
         .header(reqwest::header::ACCEPT, accept)
-        .header(reqwest::header::USER_AGENT, APP_USER_AGENT)
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
         .header("X-GitHub-Api-Version", "2022-11-28");
     match token {
         Some(token) => request.bearer_auth(token),

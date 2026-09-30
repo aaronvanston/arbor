@@ -548,7 +548,7 @@ pub(crate) async fn download_portable_update_archive_url(
     let response = client
         .get(url)
         .header(reqwest::header::ACCEPT, "application/octet-stream")
-        .header(reqwest::header::USER_AGENT, APP_USER_AGENT)
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
         .send()
         .await
         .map_err(|error| format!("Failed to download application update: {error}"))?

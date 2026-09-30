@@ -118,16 +118,8 @@ const MODEL_ALIAS_CONFIG_SECTIONS: &[&str] = &[
     "claude-api-key",
     "gemini-api-key",
 ];
-const USER_AGENT: &str = concat!(
-    "CPA-GUI/",
-    env!("CARGO_PKG_VERSION"),
-    " (+https://github.com/router-for-me/CLIProxyAPI)"
-);
-const APP_USER_AGENT: &str = concat!(
-    "EasyCLIProxyAPI/",
-    env!("CARGO_PKG_VERSION"),
-    " (+https://github.com/router-for-me/EasyCLIProxyAPI)"
-);
+// What Arbor calls itself when it asks GitHub for core releases and its own updates.
+const USER_AGENT: &str = concat!("Arbor/", env!("CARGO_PKG_VERSION"), " (+https://github.com/aaronvanston/arbor)");
 static CORE_CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
 static CONFIG_WRITE_HASHES: LazyLock<Mutex<std::collections::HashMap<PathBuf, String>>> =
     LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));

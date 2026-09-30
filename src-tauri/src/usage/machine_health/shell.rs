@@ -94,8 +94,14 @@ fn control_socket_dir() -> Option<PathBuf> {
     // Unix sockets cap paths near 104 bytes, so the control directory has to
     // stay short: the app data directory under Application Support is too long.
     let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let dir = home.join(".cache").join("cpa-gui");
+    let dir = home.join(".cache").join("arbor");
     fs::create_dir_all(&dir).ok()?;
+    // Versions before 0.3.200 kept these sockets under the upstream app's name. Nothing reads the old folder now, and
+    // an SSH connection still using a socket there carries on until it times out.
+    static OLD_DIR_REMOVED: std::sync::Once = std::sync::Once::new();
+    OLD_DIR_REMOVED.call_once(|| {
+        let _ = fs::remove_dir_all(home.join(".cache").join("cpa-gui"));
+    });
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
