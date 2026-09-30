@@ -99,7 +99,7 @@ export function setHeavySessions(items: HeavySession[]) {
 const parseDismissed = (raw: string | null): Record<string, number> =>
   Object.fromEntries(Object.entries(storedRecord(raw)).filter((entry): entry is [string, number] => typeof entry[1] === 'number'));
 
-const dismissed = savedStore<Record<string, number>>({ key: 'cpa-gui.heavy-sessions-dismissed.v1', parse: parseDismissed, fallback: {} });
+const dismissed = savedStore<Record<string, number>>({ key: 'arbor.heavy-sessions-dismissed.v1', parse: parseDismissed, fallback: {} });
 
 /** Sessions whose banner was closed, by when; a dismissal is forgotten after a day. */
 export const useDismissedHeavySessions = dismissed.useValue;

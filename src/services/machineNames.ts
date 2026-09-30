@@ -28,7 +28,7 @@ function parseNames(raw: string | null): MachineNames {
   return kept;
 }
 
-const store = savedStore<MachineNames>({ key: 'cpa-gui.machine-names.v1', parse: parseNames, fallback: {} });
+const store = savedStore<MachineNames>({ key: 'arbor.machine-names.v1', parse: parseNames, fallback: {} });
 /** The names given here, for code outside React. */
 export const getMachineNames = store.get;
 

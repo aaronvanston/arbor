@@ -81,8 +81,8 @@ describe('requests grid', () => {
   it('moves the old saved columns and widths over', () => {
     const layout = legacyRequestsLayout(
       storage({
-        'cpa-gui.usage-events-visible-cols.v3': ['time', 'model', 'total', 'unknown'],
-        'cpa-gui.usage-events-col-widths.v1': { model: 260, total: 10, time: 164 },
+        'arbor.usage-events-visible-cols.v3': ['time', 'model', 'total', 'unknown'],
+        'arbor.usage-events-col-widths.v1': { model: 260, total: 10, time: 164 },
       }),
     );
     expect(layout.order.filter((id) => layout.visibility[id])).toEqual(['time', 'model', 'total']);
@@ -91,7 +91,7 @@ describe('requests grid', () => {
   });
 
   it('adds Machine and Client for someone coming from before they were columns', () => {
-    const layout = legacyRequestsLayout(storage({ 'cpa-gui.usage-events-visible-cols.v2': ['time', 'model'] }));
+    const layout = legacyRequestsLayout(storage({ 'arbor.usage-events-visible-cols.v2': ['time', 'model'] }));
     expect(layout.order.filter((id) => layout.visibility[id])).toEqual(['machine', 'client', 'time', 'model']);
   });
 
@@ -277,7 +277,7 @@ describe('request order', () => {
     expect(kept.size).toBe(0);
     expect(loadRequestOrder(store)).toBeNull();
     for (const bad of ['{"by":"speed","descending":true}', '{"by":"total"}', '{"by":"time","descending":true}', 'nope']) {
-      kept.set('cpa-gui.usage-requests-order.v1', bad);
+      kept.set('arbor.usage-requests-order.v1', bad);
       expect(loadRequestOrder(store)).toBeNull();
     }
   });

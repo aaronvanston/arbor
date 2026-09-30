@@ -105,12 +105,12 @@ import { OverviewView, BreakdownSection, FailureGlance } from './UsageOverviewVi
 type UsageTab = UsageTabId | SessionsTabId | 'pricing' | 'capacity';
 type UsageRange = '4h' | '24h' | 'today' | '7d' | '30d' | 'all' | 'custom';
 
-const TAB_KEY = 'cpa-gui.usage-records-tab.v1';
+const TAB_KEY = 'arbor.usage-records-tab.v1';
 /** The Sessions page's own view: the live board, its list, or its projects. */
-const SESSIONS_TAB_KEY = 'cpa-gui.sessions-tab.v1';
+const SESSIONS_TAB_KEY = 'arbor.sessions-tab.v1';
 /** Search waits for this long a pause in typing. */
 const SEARCH_DELAY_MS = 250;
-const RANGE_KEY = 'cpa-gui.usage-records-range.v1';
+const RANGE_KEY = 'arbor.usage-records-range.v1';
 const emptyAnalysis: UsageAnalysis = { models: [], providers: [], sources: [], accounts: [], apiKeys: [] };
 const OPTIONS_KEPT_MS = 60_000;
 

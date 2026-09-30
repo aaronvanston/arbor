@@ -325,7 +325,7 @@ const parseReserves = (raw: string | null): ReserveState => {
   return { caps: caps ?? {}, easing: easing ?? {}, paused: paused ?? {}, skipUntil: skipUntil ?? {} };
 };
 
-const reserves = savedStore<ReserveState>({ key: 'cpa-gui.account-reserves.v1', parse: parseReserves, fallback: EMPTY });
+const reserves = savedStore<ReserveState>({ key: 'arbor.account-reserves.v1', parse: parseReserves, fallback: EMPTY });
 /** Why Arbor couldn't pause or resume an account, by account key. Only for this run of the app. */
 const failures = sharedStore<Record<string, string>>({});
 const without = <T,>(record: Record<string, T>, key: string) => {

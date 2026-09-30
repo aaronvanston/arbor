@@ -87,7 +87,7 @@ const parsePreferences = (raw: string | null): AppPreferences =>
   raw ? { ...APP_PREFERENCE_DEFAULTS, ...(storedRecord(raw) as Partial<AppPreferences>) } : APP_PREFERENCE_DEFAULTS;
 
 /** What's saved: each change writes this, and only this. */
-const saved = savedStore<AppPreferences>({ key: 'cpa-gui.preferences.v1', parse: parsePreferences, fallback: APP_PREFERENCE_DEFAULTS });
+const saved = savedStore<AppPreferences>({ key: 'arbor.preferences.v1', parse: parsePreferences, fallback: APP_PREFERENCE_DEFAULTS });
 /** Set for this page load over what's saved (the browser mock's scenarios), and never written. */
 let previews: Partial<AppPreferences> = {};
 const shown = sharedStore<AppPreferences>(saved.get());

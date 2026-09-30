@@ -190,7 +190,7 @@ export async function deliverPhoneAlerts(
   return delivery;
 }
 
-const STORAGE_KEY = 'cpa-gui.phone-alerts.v1';
+const STORAGE_KEY = 'arbor.phone-alerts.v1';
 const defaults: PhoneAlertSettings = {
   service: 'off',
   ntfyServer: DEFAULT_NTFY_SERVER,

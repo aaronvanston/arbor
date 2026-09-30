@@ -31,10 +31,10 @@ import { useQuotaClock } from '../services/quotaTime';
 import { formatWhen } from '../lib/format';
 import { nextResetNotifications, type ResetReady } from '../services/resetReadiness';
 
-const NOTIFIED_KEY = 'cpa-gui.limits-notified.v1';
-const RESET_NOTIFIED_KEY = 'cpa-gui.reset-notified.v1';
-const EXPIRING_NOTIFIED_KEY = 'cpa-gui.expiring-notified.v1';
-const OUTAGE_NOTIFIED_KEY = 'cpa-gui.outage-notified.v1';
+const NOTIFIED_KEY = 'arbor.limits-notified.v1';
+const RESET_NOTIFIED_KEY = 'arbor.reset-notified.v1';
+const EXPIRING_NOTIFIED_KEY = 'arbor.expiring-notified.v1';
+const OUTAGE_NOTIFIED_KEY = 'arbor.outage-notified.v1';
 /** More at once would be noise; the banner names them all. */
 const MAX_OUTAGE_NOTIFICATIONS = 3;
 const TRAY_SUMMARY_MAX = 64;

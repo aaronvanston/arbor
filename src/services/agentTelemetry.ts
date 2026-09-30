@@ -95,7 +95,7 @@ export const parseTelemetrySpan = (raw: string | null): TelemetrySpan => {
   return isTelemetrySpan(saved) ? saved : DEFAULT_SPAN;
 };
 
-const span = savedStore<TelemetrySpan>({ key: 'cpa-gui.setup.cost-span.v1', parse: parseTelemetrySpan, fallback: DEFAULT_SPAN, serialize: String });
+const span = savedStore<TelemetrySpan>({ key: 'arbor.setup.cost-span.v1', parse: parseTelemetrySpan, fallback: DEFAULT_SPAN, serialize: String });
 
 export const useTelemetrySpan = span.useValue;
 export const setTelemetrySpan = span.set;

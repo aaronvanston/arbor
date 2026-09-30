@@ -13,7 +13,7 @@ import {
 import { fetchMachineHealth } from '../services/machineHealth';
 import { notify } from '../services/notify';
 
-const STATE_KEY = 'cpa-gui.machine-alerts.v1';
+const STATE_KEY = 'arbor.machine-alerts.v1';
 const HEALTH_UPDATED_EVENT = 'machine-health-updated';
 /** Rounds come every 5 seconds while the Machines page is open; machines are looked at no more often than this. */
 const CHECK_THROTTLE_MS = 30_000;

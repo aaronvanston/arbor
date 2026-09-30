@@ -158,7 +158,7 @@ export async function applyRoutingPlan(
 /** Providers whose suggested priorities are applied after every limit refresh. */
 const parseAuto = (raw: string | null): Record<string, boolean> =>
   Object.fromEntries(Object.entries(storedRecord(raw)).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
-const auto = savedStore<Record<string, boolean>>({ key: 'cpa-gui.routing-auto.v1', parse: parseAuto, fallback: {} });
+const auto = savedStore<Record<string, boolean>>({ key: 'arbor.routing-auto.v1', parse: parseAuto, fallback: {} });
 export const useRoutingAuto = auto.useValue;
 export function setRoutingAuto(provider: string, enabled: boolean) {
   auto.set({ ...auto.get(), [provider]: enabled });

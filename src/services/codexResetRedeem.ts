@@ -66,7 +66,7 @@ export type UnsettledCodexRedeem = { requestId: string; creditId?: string; atMs:
 
 /** How long an unconfirmed redemption is resent as it was, rather than started afresh. */
 export const CODEX_UNSETTLED_REDEEM_MS = 3_600_000;
-const STORAGE_KEY = 'cpa-gui.codex-unsettled-redeems.v1';
+const STORAGE_KEY = 'arbor.codex-unsettled-redeems.v1';
 let memory: Record<string, UnsettledCodexRedeem> = {};
 
 // Kept across restarts: quitting after a lost reply mustn't let the next try spend a second credit.

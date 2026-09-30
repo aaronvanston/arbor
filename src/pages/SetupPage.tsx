@@ -62,10 +62,10 @@ import { useSetupInventory } from '../hooks/useSetupInventory';
 import type { ArchiveStatus, SetupItem, SetupMachine } from '../native/types';
 import { useNow } from '../hooks/useNow';
 
-const REFERENCE_KEY = 'cpa-gui.setup.reference.v1';
-const HOME_KEY = 'cpa-gui.setup.home.v1';
+const REFERENCE_KEY = 'arbor.setup.reference.v1';
+const HOME_KEY = 'arbor.setup.home.v1';
 /** The view last open, which the page opens on when it's opened without naming one. */
-const TAB_KEY = 'cpa-gui.setup.tab.v1';
+const TAB_KEY = 'arbor.setup.tab.v1';
 
 type SetupTab = SetupTabId;
 

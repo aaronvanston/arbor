@@ -36,7 +36,7 @@ function parseChoices(raw: string | null): Record<string, MachineLookChoice> {
   return choices;
 }
 
-const store = savedStore<Record<string, MachineLookChoice>>({ key: 'cpa-gui.machine-looks.v1', parse: parseChoices, fallback: {} });
+const store = savedStore<Record<string, MachineLookChoice>>({ key: 'arbor.machine-looks.v1', parse: parseChoices, fallback: {} });
 
 export const useMachineLookChoices = store.useValue;
 

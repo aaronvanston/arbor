@@ -71,7 +71,7 @@ import type {
 import { MachinePill } from '../components/identity/Identity';
 import { useNow } from '../hooks/useNow';
 
-const REFERENCE_KEY = 'cpa-gui.setup.checklist.reference.v1';
+const REFERENCE_KEY = 'arbor.setup.checklist.reference.v1';
 /** How often the agents and the reporter are looked at again, which the Machines page checks on its own schedule. */
 const HEALTH_POLL_MS = 15_000;
 /** How often a machine that isn't answering yet, as one just added isn't, is looked for again. */

@@ -9,7 +9,7 @@ import { BackupList, outcomeText, undoMessage } from './SetupSync';
 import type { SetupBackup, SetupMachine } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
 
-const MACHINE_KEY = 'cpa-gui.setup.history.machine.v1';
+const MACHINE_KEY = 'arbor.setup.history.machine.v1';
 
 function readStored(): string | null {
   try {

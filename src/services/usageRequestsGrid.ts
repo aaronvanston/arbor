@@ -63,13 +63,13 @@ export const REQUEST_PRESETS: Record<RequestPresetId, RequestColumnId[]> = {
 
 export const REQUEST_PRESET_IDS = Object.keys(REQUEST_PRESETS) as RequestPresetId[];
 
-export const REQUESTS_GRID_KEY = 'cpa-gui.usage-requests-grid.v4';
+export const REQUESTS_GRID_KEY = 'arbor.usage-requests-grid.v4';
 /** Failed on keeps a layout of its own, which starts on the failure columns: what went wrong is what it's read for. */
-export const FAILED_REQUESTS_GRID_KEY = 'cpa-gui.usage-failed-requests-grid.v1';
-const VISIBLE_KEY = 'cpa-gui.usage-events-visible-cols.v3';
+export const FAILED_REQUESTS_GRID_KEY = 'arbor.usage-failed-requests-grid.v1';
+const VISIBLE_KEY = 'arbor.usage-events-visible-cols.v3';
 // Before Machine and Client were columns; they show for anyone moving on from it.
-const OLDER_VISIBLE_KEY = 'cpa-gui.usage-events-visible-cols.v2';
-const WIDTHS_KEY = 'cpa-gui.usage-events-col-widths.v1';
+const OLDER_VISIBLE_KEY = 'arbor.usage-events-visible-cols.v2';
+const WIDTHS_KEY = 'arbor.usage-events-col-widths.v1';
 
 const PINNED: RequestColumnId[] = ['time'];
 
@@ -176,7 +176,7 @@ export function failureSummary(body: string): string {
   }
 }
 
-const ORDER_KEY = 'cpa-gui.usage-requests-order.v1';
+const ORDER_KEY = 'arbor.usage-requests-order.v1';
 
 /** The sort picked on Requests last time, if it's one the server still takes; newest first otherwise. */
 export function loadRequestOrder(storage: Pick<Storage, 'getItem'>): UsageRequestOrder | null {

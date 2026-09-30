@@ -16,7 +16,7 @@ import { notify } from '../services/notify';
 import type { UsageSession } from '../native/types';
 import { sessionRepository, shortSessionId } from '../services/usageSessions';
 
-const SEEN_KEY = 'cpa-gui.heavy-sessions-seen.v1';
+const SEEN_KEY = 'arbor.heavy-sessions-seen.v1';
 const USAGE_UPDATED_EVENT = 'usage-records-updated';
 /** Records arrive every few seconds while agents run; sessions are checked at most this often. */
 const CHECK_THROTTLE_MS = 60_000;

@@ -9,7 +9,7 @@ import type { AttentionItem } from '../native/types';
 import { currentFleetBoard, currentFleetSources, onFleetSources, snoozedWaitIds } from '../services/fleetBoard';
 import { notify } from '../services/notify';
 
-const STATE_KEY = 'cpa-gui.attention-alerts.v1';
+const STATE_KEY = 'arbor.attention-alerts.v1';
 
 const readState = (): AttentionAlertState => {
   try {

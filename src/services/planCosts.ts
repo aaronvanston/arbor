@@ -14,7 +14,7 @@ const parseCosts = (raw: string | null): PlanCosts =>
     ),
   );
 
-const store = savedStore<PlanCosts>({ key: 'cpa-gui.plan-costs.v1', parse: parseCosts, fallback: {} });
+const store = savedStore<PlanCosts>({ key: 'arbor.plan-costs.v1', parse: parseCosts, fallback: {} });
 
 export const getPlanCosts = store.get;
 export const usePlanCosts = store.useValue;

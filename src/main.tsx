@@ -7,11 +7,15 @@ import { trackWindowVisibility } from './lib/windowVisibility';
 import { lastShownPageId } from './components/ErrorBoundaries';
 import { preparePhoneAlerts } from './services/phoneAlerts';
 import { reportUncaughtErrors } from './services/productAnalytics';
+import { renameLegacySavedKeys } from './services/savedKeys';
 import { loadSystemRegion } from './services/systemRegion';
 import { showWindowWhenPainted } from './services/windowChrome';
 import { loadZoom } from './services/zoom';
 import { initializeTheme } from './theme';
 import './styles.css';
+
+// Nothing reads saved state while modules load (savedStore waits until asked), so this still comes first.
+renameLegacySavedKeys();
 
 if (import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)) {
   const { installTauriMock } = await import('./dev/mockTauri');

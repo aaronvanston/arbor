@@ -641,9 +641,9 @@ export function snoozeOptions(now: number): SnoozeOption[] {
   return options;
 }
 
-const SNOOZES_KEY = 'cpa-gui.fleet-snoozes.v1';
-const SEEN_KEY = 'cpa-gui.fleet-seen.v1';
-const ASKED_KEY = 'cpa-gui.fleet-asked.v1';
+const SNOOZES_KEY = 'arbor.fleet-snoozes.v1';
+const SEEN_KEY = 'arbor.fleet-seen.v1';
+const ASKED_KEY = 'arbor.fleet-asked.v1';
 /** A snooze is kept a day past its time, so one that wakes early still knows when it was set; then it goes. */
 const SNOOZE_KEPT_MS = 24 * HOUR_MS;
 /** Seen marks outlast the board's six hours by plenty, then go. */

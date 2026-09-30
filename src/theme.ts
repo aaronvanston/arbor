@@ -6,7 +6,7 @@ import { createThemeController, type AppTheme, type ThemeEnvironment, type Theme
 
 export type { AppTheme, ThemePreference } from './themeController';
 
-const STORAGE_KEY = 'easy-cli-proxy-api.theme';
+const STORAGE_KEY = 'arbor.theme';
 /**
  * The `--background` token from styles.css in sRGB. The pre-paint script in
  * index.html uses the same values, so the native window, the first paint and

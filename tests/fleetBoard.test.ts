@@ -648,15 +648,15 @@ describe('the snooze and seen stores', () => {
     const now = Date.now();
     snoozeFleetSession(T3_KEY, now + HOUR, now);
     markFleetSeen(`claude:${CLAUDE_ID}`, now);
-    expect(JSON.parse(storage.values.get('cpa-gui.fleet-snoozes.v1') ?? '')).toEqual({ [T3_KEY]: { untilMs: now + HOUR, atMs: now } });
-    expect(JSON.parse(storage.values.get('cpa-gui.fleet-seen.v1') ?? '')).toEqual({ [`claude:${CLAUDE_ID}`]: now });
+    expect(JSON.parse(storage.values.get('arbor.fleet-snoozes.v1') ?? '')).toEqual({ [T3_KEY]: { untilMs: now + HOUR, atMs: now } });
+    expect(JSON.parse(storage.values.get('arbor.fleet-seen.v1') ?? '')).toEqual({ [`claude:${CLAUDE_ID}`]: now });
     unsnoozeFleetSession(T3_KEY);
-    expect(JSON.parse(storage.values.get('cpa-gui.fleet-snoozes.v1') ?? '')).toEqual({});
+    expect(JSON.parse(storage.values.get('arbor.fleet-snoozes.v1') ?? '')).toEqual({});
     // Each read keeps when a question was first seen, and nothing more.
     setFleetSources(sources({ nowMs: now, t3: [channel('casey-mbp', [thread({ pendingQuestions: 1, questionSeenAtMs: now - MINUTE })])] }));
-    expect(JSON.parse(storage.values.get('cpa-gui.fleet-asked.v1') ?? '')).toEqual({ [T3_KEY]: now - MINUTE });
+    expect(JSON.parse(storage.values.get('arbor.fleet-asked.v1') ?? '')).toEqual({ [T3_KEY]: now - MINUTE });
     setFleetSources(sources({ nowMs: now, t3: [channel('casey-mbp', [thread()])] }));
-    expect(JSON.parse(storage.values.get('cpa-gui.fleet-asked.v1') ?? '')).toEqual({});
+    expect(JSON.parse(storage.values.get('arbor.fleet-asked.v1') ?? '')).toEqual({});
     setFleetSources(sources());
 
     expect(pruneSnoozes({

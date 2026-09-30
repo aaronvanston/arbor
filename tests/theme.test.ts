@@ -309,6 +309,16 @@ describe('first paint', () => {
       expect(root.dataset.theme).toBe(expected);
     });
   }
+  test('the first launch after an update from 1.0 or earlier still paints the theme and color saved under the old names', () => {
+    const root = { dataset: {} as Record<string, string>, style: {} };
+    const saved: Record<string, string> = { 'easy-cli-proxy-api.theme': 'dark', 'cpa-gui.preferences.v1': '{"appColor":"autumn"}' };
+    runInNewContext(script, {
+      localStorage: { getItem: (key: string) => saved[key] ?? null },
+      window: { matchMedia: () => ({ matches: false }) },
+      document: { documentElement: root },
+    });
+    expect(root.dataset).toEqual({ theme: 'dark', appColor: 'autumn' });
+  });
   test('blocked storage still uses the system theme before React loads', () => {
     const root = { dataset: {} as Record<string, string>, style: {} };
     runInNewContext(script, {

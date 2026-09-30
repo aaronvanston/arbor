@@ -74,11 +74,11 @@ describe('naming a Codex reset redemption', () => {
     try {
       const redeem = { requestId: '7dd5be0d-85ab-5b8a-b7d1-94699d26dce2', creditId: 'rlrc_1', atMs: 1_000 };
       rememberCodexRedeem('acct-disk', redeem, 1_000);
-      expect(JSON.parse(saved.get('cpa-gui.codex-unsettled-redeems.v1')!)).toEqual({ 'acct-disk': redeem });
+      expect(JSON.parse(saved.get('arbor.codex-unsettled-redeems.v1')!)).toEqual({ 'acct-disk': redeem });
       expect(unsettledCodexRedeem('acct-disk', 1_000 + CODEX_UNSETTLED_REDEEM_MS - 1)).toEqual(redeem);
       expect(unsettledCodexRedeem('acct-disk', 1_000 + CODEX_UNSETTLED_REDEEM_MS)).toBeUndefined();
       // Anything else found there is not resent.
-      saved.set('cpa-gui.codex-unsettled-redeems.v1', JSON.stringify({ 'acct-disk': { requestId: 'not-a-uuid', atMs: 1_000 } }));
+      saved.set('arbor.codex-unsettled-redeems.v1', JSON.stringify({ 'acct-disk': { requestId: 'not-a-uuid', atMs: 1_000 } }));
       expect(unsettledCodexRedeem('acct-disk', 1_000)).toBeUndefined();
       rememberCodexRedeem('acct-disk', redeem, 1_000);
       settleCodexRedeem('acct-disk');

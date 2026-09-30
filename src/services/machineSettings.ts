@@ -166,7 +166,7 @@ export function sanitizeProjectOverrides(raw: unknown): ProjectOverrideMap {
 }
 
 const machineOverrides = savedStore<MachineOverrideMap>({
-  key: 'cpa-gui.machine-overrides.v1',
+  key: 'arbor.machine-overrides.v1',
   parse: (raw) => (raw ? sanitizeOverrides(JSON.parse(raw)) : {}),
   fallback: {},
 });
@@ -207,7 +207,7 @@ export function clearOverridesFor(key: MachineScopedKey) {
 }
 
 const projectOverrides = savedStore<ProjectOverrideMap>({
-  key: 'cpa-gui.project-overrides.v1',
+  key: 'arbor.project-overrides.v1',
   parse: (raw) => (raw ? sanitizeProjectOverrides(JSON.parse(raw)) : {}),
   fallback: {},
 });

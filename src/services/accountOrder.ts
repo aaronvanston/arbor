@@ -12,7 +12,7 @@ function parseOrder(raw: string | null): AccountOrder {
   return order;
 }
 
-const store = savedStore<AccountOrder>({ key: 'cpa-gui.accounts.order.v1', parse: parseOrder, fallback: {} });
+const store = savedStore<AccountOrder>({ key: 'arbor.accounts.order.v1', parse: parseOrder, fallback: {} });
 
 export const getAccountOrder = store.get;
 export const useAccountOrder = store.useValue;

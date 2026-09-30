@@ -11,7 +11,7 @@ const settings: PhoneAlertSettings = {
   mutedTopics: [],
 };
 const alert = (title: string): PhoneAlert => ({ title, body: `${title} body`, kind: 'test', urgent: false });
-const KEY = 'cpa-gui.phone-alerts.v1';
+const KEY = 'arbor.phone-alerts.v1';
 
 /** The window's storage, as a map. */
 function memoryStorage(initial?: Record<string, unknown>) {

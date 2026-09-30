@@ -30,8 +30,8 @@ function parseHidden(raw: string | null): Record<string, string[]> {
 const parseHeadline = (raw: string | null): Record<string, string> =>
   Object.fromEntries(Object.entries(storedRecord(raw)).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
 
-const hiddenWindows = savedStore({ key: 'cpa-gui.accounts.hidden-windows.v1', parse: parseHidden, fallback: {} });
-const headlineWindows = savedStore({ key: 'cpa-gui.accounts.headline-window.v1', parse: parseHeadline, fallback: {} });
+const hiddenWindows = savedStore({ key: 'arbor.accounts.hidden-windows.v1', parse: parseHidden, fallback: {} });
+const headlineWindows = savedStore({ key: 'arbor.accounts.headline-window.v1', parse: parseHeadline, fallback: {} });
 
 type LimitPrefs = { hidden: Record<string, string[]>; headline: Record<string, string> };
 /** Both kept apart as they always were, and handed out together so a page reads one value. */

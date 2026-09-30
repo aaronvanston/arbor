@@ -14,7 +14,7 @@ import { savedStore, sharedStore } from './savedStore';
 const latest = sharedStore<ProxyChecks | null>(null);
 /** The address the network warning was closed for, kept so listening there on purpose is only said once. */
 const dismissedHost = savedStore<string | null>({
-  key: 'cpa-gui.proxy-checks.network-dismissed.v1',
+  key: 'arbor.proxy-checks.network-dismissed.v1',
   parse: (raw) => raw || null,
   fallback: null,
   serialize: (host) => host ?? '',

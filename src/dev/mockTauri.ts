@@ -273,7 +273,7 @@
  * machine in the default health readings (red with `?health=down`), and Sync the default scan's problem count. Under
  * Machines it lists the four machines, or with `?machines=many` eighteen, so in a short window (640px tall) the other
  * open groups close from the bottom up and the list scrolls. Which groups are open is kept in the browser's storage
- * (`cpa-gui.sidebar.tree.v1`). Its footer's Core button follows `?core=`, with a Core stopped row and Start for
+ * (`arbor.sidebar.tree.v1`). Its footer's Core button follows `?core=`, with a Core stopped row and Start for
  * `stopped` or Install for `missing`.
  * For the search palette's actions: `?corecmd=fail` to have starting, stopping and restarting the core fail (Start
  * core on a locked page too);
@@ -531,24 +531,24 @@ export function installTauriMock() {
   if (fleetScenario === 'snoozed') {
     // Snoozed after each began, so neither wakes early: the question for an hour, the Codex work until tonight.
     const snoozedAt = Date.now() - 60_000;
-    window.localStorage.setItem('cpa-gui.fleet-snoozes.v1', JSON.stringify({
+    window.localStorage.setItem('arbor.fleet-snoozes.v1', JSON.stringify({
       't3:casey-mbp:userdata:2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d': { untilMs: Date.now() + 3_600_000, atMs: snoozedAt },
       't3:cedar-02:userdata:6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e': { untilMs: Date.now() + 5 * 3_600_000, atMs: snoozedAt },
     }));
   }
   if (params.get('oldviews') === 'seed') {
     const oldPicks = ['page:main:usage:capacity', 'page:main:usage:analysis', 'page:main:usage:failures', 'page:main:home'];
-    window.localStorage.setItem('cpa-gui.palette.recent.v1', JSON.stringify(oldPicks));
-    window.localStorage.setItem('cpa-gui.usage-records-tab.v1', 'failures');
+    window.localStorage.setItem('arbor.palette.recent.v1', JSON.stringify(oldPicks));
+    window.localStorage.setItem('arbor.usage-records-tab.v1', 'failures');
   }
   if (params.get('oldviews') === 'sync') {
     const oldPicks = ['page:main:setup:context', 'page:main:setup:projects', 'page:main:usage:telemetry', 'page:main:setup:overview', 'page:main:setup:history'];
-    window.localStorage.setItem('cpa-gui.palette.recent.v1', JSON.stringify(oldPicks));
-    window.localStorage.setItem('cpa-gui.setup.tab.v1', 'context');
+    window.localStorage.setItem('arbor.palette.recent.v1', JSON.stringify(oldPicks));
+    window.localStorage.setItem('arbor.setup.tab.v1', 'context');
   }
   const reservesScenario = params.get('reserves');
   if (reservesScenario === 'eased' || reservesScenario === 'paused') {
-    window.localStorage.setItem('cpa-gui.account-reserves.v1', JSON.stringify({
+    window.localStorage.setItem('arbor.account-reserves.v1', JSON.stringify({
       caps: { 'codex-backup.json::codex-3': 50, 'codex-casey.json::codex-1': 80, ...(reservesScenario === 'paused' ? { 'claude-max.json::claude-1': 50 } : {}) },
       easing: { 'codex-backup.json::codex-3': true, ...(reservesScenario === 'paused' ? { 'claude-max.json::claude-1': true } : {}) },
       paused: {},
@@ -556,7 +556,7 @@ export function installTauriMock() {
     }));
   }
   if (params.get('recent') === 'seed') {
-    window.localStorage.setItem('cpa-gui.palette.recent.v1', JSON.stringify(['page:settings:auth-files', 'action:pause-account', 'page:main:setup', 'action:theme-dark']));
+    window.localStorage.setItem('arbor.palette.recent.v1', JSON.stringify(['page:settings:auth-files', 'action:pause-account', 'page:main:setup', 'action:theme-dark']));
   }
   const historyScenario = params.get('history');
   if (historyScenario === 'back' || historyScenario === 'both') {

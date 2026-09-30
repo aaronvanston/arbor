@@ -56,7 +56,7 @@ export const checkSetupSkillSources = (repo: string, force: boolean) => invokeCo
 /** Replaces the repo's copy of a skill with its source's latest, as a commit. */
 export const updateSetupSkill = (repo: string, name: string) => invokeCommand('update_setup_skill', { repo, name });
 
-const REPO_KEY = 'cpa-gui.setup.repo.v1';
+const REPO_KEY = 'arbor.setup.repo.v1';
 
 /** The setup repo's folder, as the Repo tab remembers it. */
 export const storedSetupRepo = () => {

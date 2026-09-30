@@ -11,7 +11,7 @@ import { createThemeEnvironment, detectThemePreference, WINDOW_BACKGROUND } from
 import { createThemeController, type AppTheme, type ThemePreference } from '../src/themeController';
 import { present } from './support/items';
 
-const STORAGE_KEY = 'easy-cli-proxy-api.theme';
+const STORAGE_KEY = 'arbor.theme';
 const globals = globalThis as { window?: unknown; document?: unknown; isTauri?: boolean };
 
 afterEach(() => {

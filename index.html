@@ -7,7 +7,8 @@
       (() => {
         let savedTheme;
         try {
-          savedTheme = localStorage.getItem('easy-cli-proxy-api.theme');
+          // Versions up to 1.0 saved it under an older name, which the app renames once it loads (services/savedKeys.ts).
+          savedTheme = localStorage.getItem('arbor.theme') ?? localStorage.getItem('easy-cli-proxy-api.theme');
         } catch {
           // Blocked storage follows the system; the app applies the theme again during initialization.
         }
@@ -21,7 +22,8 @@
         document.documentElement.style.backgroundColor = theme === 'dark' ? '#0a0a0a' : '#fcfcfc';
         // Arbor's color from the saved preferences, as services/appColor.ts's applyAppColor puts it (Summer has none).
         try {
-          const color = JSON.parse(localStorage.getItem('cpa-gui.preferences.v1') ?? '{}').appColor;
+          const saved = localStorage.getItem('arbor.preferences.v1') ?? localStorage.getItem('cpa-gui.preferences.v1');
+          const color = JSON.parse(saved ?? '{}').appColor;
           if (color === 'early-autumn' || color === 'autumn') document.documentElement.dataset.appColor = color;
         } catch {
           // Damaged or blocked storage keeps Summer; the app applies the color again when it starts.

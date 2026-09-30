@@ -4,7 +4,7 @@ import { useI18n } from '../i18n';
 import { notify } from '../services/notify';
 import { nextProxyAlerts, proxyProblemNotification, refreshProxyChecks, useDismissedNetworkHost } from '../services/proxyChecks';
 
-const ALERTED_KEY = 'cpa-gui.proxy-checks.alerted.v1';
+const ALERTED_KEY = 'arbor.proxy-checks.alerted.v1';
 /** Usage statistics and keys change rarely, and a config file change asks again straight away. */
 const CHECK_INTERVAL_MS = 60_000;
 

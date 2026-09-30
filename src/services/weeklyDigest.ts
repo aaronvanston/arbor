@@ -421,7 +421,7 @@ export function dueDigestWeek(nowMs: number, sentWeekMs: number | null): DigestW
   return sentWeekMs !== null && sentWeekMs >= week.startMs ? null : week;
 }
 
-const SENT_KEY = 'cpa-gui.weekly-digest-sent.v1';
+const SENT_KEY = 'arbor.weekly-digest-sent.v1';
 
 /** The start of the last week whose digest went out, or null before the first. */
 export function lastDigestSent(): number | null {

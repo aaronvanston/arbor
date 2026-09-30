@@ -42,7 +42,7 @@ function parseProfiles(raw: string | null): ProfileMap {
   return kept;
 }
 
-const store = savedStore<ProfileMap>({ key: 'cpa-gui.account-profiles.v1', parse: parseProfiles, fallback: {} });
+const store = savedStore<ProfileMap>({ key: 'arbor.account-profiles.v1', parse: parseProfiles, fallback: {} });
 
 export const getAccountProfiles = store.get;
 

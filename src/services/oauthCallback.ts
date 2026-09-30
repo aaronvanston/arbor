@@ -6,7 +6,7 @@ export const isOAuthProvider = (value: string | null | undefined): value is OAut
   (OAUTH_PROVIDERS as readonly string[]).includes(value ?? '');
 
 export const XAI_CALLBACK_URL = 'http://127.0.0.1:56121/callback';
-export const OAUTH_BROWSER_STORAGE_KEY = 'easy-cli-proxy-api.oauth-browser.v3';
+export const OAUTH_BROWSER_STORAGE_KEY = 'arbor.oauth-browser.v3';
 export const NO_AUTO_OPEN_BROWSER_ID = 'none';
 export const OAUTH_POLL_INTERVAL_MS = 3000;
 

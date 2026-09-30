@@ -262,7 +262,7 @@ export function parseAlertHistory(raw: string | null): AlertHistory {
   }
 }
 
-const store = savedStore<AlertHistory>({ key: 'cpa-gui.alert-history.v1', parse: parseAlertHistory, fallback: { entries: [], seenAtMs: 0 } });
+const store = savedStore<AlertHistory>({ key: 'arbor.alert-history.v1', parse: parseAlertHistory, fallback: { entries: [], seenAtMs: 0 } });
 let sequence = 0;
 
 /** Whether the app has asked for the unread count on the tray icon, and the count it was last sent. */

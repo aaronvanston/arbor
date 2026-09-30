@@ -474,7 +474,7 @@ function SessionPlaceLine({ transcript }: { transcript: SessionTranscript }) {
   );
 }
 
-const DETAILS_KEY = 'cpa-gui.session-header-details.v1';
+const DETAILS_KEY = 'arbor.session-header-details.v1';
 
 const readDetailsOpen = () => {
   try {

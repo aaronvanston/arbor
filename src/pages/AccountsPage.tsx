@@ -94,7 +94,7 @@ import { cn } from '../lib/utils';
 const UsageRecordsPage = lazy(() => import('./UsageRecordsPage').then((module) => ({ default: module.UsageRecordsPage })));
 
 /** The view Accounts was last left on, for opening it without naming one. */
-const VIEW_KEY = 'cpa-gui.accounts.view.v1';
+const VIEW_KEY = 'arbor.accounts.view.v1';
 function savedView(): AccountsTabId {
   try {
     const saved = localStorage.getItem(VIEW_KEY);

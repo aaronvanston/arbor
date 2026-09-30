@@ -4,7 +4,7 @@ import { useI18n } from '../i18n';
 import { notify } from '../services/notify';
 import { archiveNotification, archiveTrouble, getSessionArchiveStatus, nextArchiveAlert, type ArchiveAlertState } from '../services/sessionArchive';
 
-const STATE_KEY = 'cpa-gui.archive-alerts.v1';
+const STATE_KEY = 'arbor.archive-alerts.v1';
 /** The archive's first pass runs a minute after Arbor starts; until then it can't say it's failing. */
 const FIRST_CHECK_AFTER_MS = 2 * 60_000;
 /** Passes run every five minutes, so the status changes no faster than this. */
