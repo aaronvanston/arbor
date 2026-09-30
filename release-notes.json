@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.3.206",
+    "summary": "Sync: change skills, MCP servers, plugins and hooks in agent homes kept outside your home folder.",
+    "changes": []
+  },
+  {
     "version": "0.3.205",
     "summary": "Sync: a home whose files are links into another home now says so plainly.",
     "changes": []
