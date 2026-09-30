@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
-import { ArrowUpRight, Monitor, Plus, TriangleAlert, Users } from './ui/icons';
+import { ArrowUpRight, Monitor, Plus, TerminalSquare, TriangleAlert, Users } from './ui/icons';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n';
 import { failedRequestsView, usageView, type AppView } from '../navigation';
@@ -15,6 +15,7 @@ import { NeedsYouSection } from './AgentAttention';
 import { HomeAccounts } from './HomeAccounts';
 import { HomeMachines, useHomeMachines } from './HomeMachines';
 import { HomeProxy } from './HomeProxy';
+import { ConnectAgentDialog } from './ConnectAgentDialog';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { Skeleton } from './ui/skeleton';
@@ -64,38 +65,52 @@ export function HomeDashboard({ coreReady, onNavigate, onAddMachine }: {
   );
 }
 
-/** The site's two steps, for a Home with no account yet: each one adds to what the other brings. */
+/** The steps that set Arbor up, for a Home with no account yet: an account, the agents on this Mac, the other machines. */
 function GetStarted({ onNavigate, onAddMachine }: { onNavigate?: (view: AppView) => void; onAddMachine?: () => void }) {
   const { t } = useI18n();
+  const [connecting, setConnecting] = useState(false);
   return (
-    <SettingsSection
-      title={t('home.start.title')}
-      description={t('home.start.description')}
-      contentClassName="grid overflow-visible sm:grid-cols-2 sm:divide-x sm:divide-border/50 [&>*+*]:border-t sm:[&>*+*]:border-t-0"
-    >
-      <StartStep
-        icon={<Users />}
-        title={t('home.start.account.title')}
-        description={t('home.start.account.description')}
-        action={onNavigate ? (
-          <Button size="sm" onClick={() => addAccount(onNavigate)}>
-            <Plus />
-            {t('accounts.add')}
-          </Button>
-        ) : null}
-      />
-      <StartStep
-        icon={<Monitor />}
-        title={t('home.start.machine.title')}
-        description={t('home.start.machine.description')}
-        action={onAddMachine ? (
-          <Button variant="outline" size="sm" onClick={onAddMachine}>
-            <Plus />
-            {t('machines.hosts.add')}
-          </Button>
-        ) : null}
-      />
-    </SettingsSection>
+    <>
+      <SettingsSection
+        title={t('home.start.title')}
+        description={t('home.start.description')}
+        contentClassName="grid overflow-visible sm:grid-cols-3 sm:divide-x sm:divide-border/50 [&>*+*]:border-t sm:[&>*+*]:border-t-0"
+      >
+        <StartStep
+          icon={<Users />}
+          title={t('home.start.account.title')}
+          description={t('home.start.account.description')}
+          action={onNavigate ? (
+            <Button size="sm" onClick={() => addAccount(onNavigate)}>
+              <Plus />
+              {t('accounts.add')}
+            </Button>
+          ) : null}
+        />
+        <StartStep
+          icon={<TerminalSquare />}
+          title={t('home.start.agent.title')}
+          description={t('home.start.agent.description')}
+          action={(
+            <Button variant="outline" size="sm" onClick={() => setConnecting(true)}>
+              {t('home.start.agent.action')}
+            </Button>
+          )}
+        />
+        <StartStep
+          icon={<Monitor />}
+          title={t('home.start.machine.title')}
+          description={t('home.start.machine.description')}
+          action={onAddMachine ? (
+            <Button variant="outline" size="sm" onClick={onAddMachine}>
+              <Plus />
+              {t('machines.hosts.add')}
+            </Button>
+          ) : null}
+        />
+      </SettingsSection>
+      <ConnectAgentDialog open={connecting} onClose={() => setConnecting(false)} onNavigate={onNavigate} />
+    </>
   );
 }
 

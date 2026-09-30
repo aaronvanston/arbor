@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
-import { ArrowRight, Check, Copy, Eye, EyeOff, Monitor, Play, RotateCcw, Square, Users } from './ui/icons';
+import { ArrowRight, Check, Copy, Eye, EyeOff, Monitor, Play, RotateCcw, Square, TerminalSquare, Users } from './ui/icons';
 import { invokeCommand } from '../native/commands';
 import { isCoreStarting, useCoreRuntime } from '../coreRuntime';
 import { useAppUpdate } from '../appUpdate';
@@ -19,6 +19,7 @@ import { proxyFlow, type HomeMachine } from '../services/homeOverview';
 import { useQuotaClock } from '../services/quotaTime';
 import { DetailRow, SettingsBlock, SettingsSection } from './layout/settings';
 import { WithShortcut } from './ShortcutKbd';
+import { ConnectAgentDialog } from './ConnectAgentDialog';
 import { useIdleUpdateGuard } from './UpdateWhenIdle';
 import { Button } from './ui/button';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from './ui/collapsible';
@@ -61,6 +62,7 @@ export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | 
   const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
   const [apiKeyError, setApiKeyError] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [tlsEnabled, setTlsEnabled] = useState(false);
   const { guard: guardRestart } = useIdleUpdateGuard();
   const disposed = useRef(false);
@@ -258,6 +260,11 @@ export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | 
             <span className="text-xs text-muted-foreground">{t('common.loading')}</span>
           )}
         </ConnectField>
+        <Button variant="outline" size="sm" className="ms-auto" onClick={() => setConnecting(true)}>
+          <TerminalSquare />
+          {t('home.start.agent.title')}
+        </Button>
+        <ConnectAgentDialog open={connecting} onClose={() => setConnecting(false)} onNavigate={onNavigate} />
       </SettingsBlock>
 
       <Collapsible>

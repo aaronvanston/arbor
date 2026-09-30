@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { listen } from '@tauri-apps/api/event';
 import { ArrowUpCircle, Check, ChevronDown, ListChecks, Plus } from '../components/ui/icons';
 import { CommandLine } from '../components/CommandLine';
+import { ConnectAgentDialog } from '../components/ConnectAgentDialog';
 import { Button } from '../components/ui/button';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Progress } from '../components/ui/progress';
@@ -353,6 +354,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   });
 
   const [addingThis, setAddingThis] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
   // Why this Mac couldn't be added is about the machine it was tried for.
   useEffect(() => setAddingThis(null), [target]);
   /** Lists this Mac, so its agents can be updated and the reporter set up from here. */
@@ -446,6 +448,9 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
               </>
             ) : null}
             <Actions>
+              {step.state !== 'done' ? (
+                <Button size="xs" onClick={() => setConnecting(true)}>{t('home.start.agent.action')}</Button>
+              ) : null}
               {step.why === 'noKey' ? (
                 <Button variant="outline" size="xs" onClick={() => onNavigate({ kind: 'settings', page: 'machines' })}>{t('setup.checklist.openMachines')}</Button>
               ) : null}
@@ -917,6 +922,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
         onClose={() => setReview(null)}
         onApplied={() => undefined}
       />
+      <ConnectAgentDialog open={connecting} onClose={() => setConnecting(false)} from={machine?.local === false ? 'other' : 'here'} onNavigate={onNavigate} />
     </div>
   );
 }
