@@ -13,6 +13,7 @@ import type {
   SyncFileKind,
 } from '../native/types';
 import { tracked } from './productAnalytics';
+import { savedStore } from './savedStore';
 
 /** The kinds of file the repo syncs, and skills. */
 export type SyncKind = SyncFileKind | 'skill';
@@ -49,24 +50,16 @@ export const checkSetupSkillSources = (repo: string, force: boolean) => invokeCo
 /** Replaces the repo's copy of a skill with its source's latest, as a commit. */
 export const updateSetupSkill = (repo: string, name: string) => invokeCommand('update_setup_skill', { repo, name });
 
-const REPO_KEY = 'arbor.setup.repo.v1';
+/** The setup repo's folder, as the Repo tab remembers it; a setting the app keeps, so `arbor sync` finds it too. */
+const setupRepo = savedStore<string | null>({
+  key: 'arbor.setup.repo.v1',
+  parse: (raw) => raw || null,
+  fallback: null,
+  serialize: (path) => path ?? '',
+});
 
-/** The setup repo's folder, as the Repo tab remembers it. */
-export const storedSetupRepo = () => {
-  try {
-    return localStorage.getItem(REPO_KEY);
-  } catch {
-    return null;
-  }
-};
-export const storeSetupRepo = (path: string | null) => {
-  try {
-    if (path) localStorage.setItem(REPO_KEY, path);
-    else localStorage.removeItem(REPO_KEY);
-  } catch {
-    // Remembered where storage allows.
-  }
-};
+export const storedSetupRepo = () => setupRepo.get();
+export const storeSetupRepo = (path: string | null) => setupRepo.set(path);
 
 /** A skill in a machine's store, as the scan names it. */
 export const isStoreSkill = (path: string) => /^~\/\.agents\/skills\/[^/.][^/]*$/.test(path);

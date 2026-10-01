@@ -17,6 +17,7 @@
     "verify": "bun run typecheck && bun run typecheck:tests && bun run lint && bun run knip && bun run test",
     "verify:rust": "cd src-tauri && cargo test && cargo test --manifest-path ../core-plugins/arbor-models/Cargo.toml",
     "bindings": "cd src-tauri && ARBOR_WRITE_BINDINGS=1 cargo test --quiet bindings::",
+    "cli-commands": "bun scripts/cli-commands.mjs",
     "notices": "bun scripts/third-party-notices.mjs"
   },
   "dependencies": {

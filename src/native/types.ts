@@ -578,6 +578,112 @@ export type ClearedCalls = {
 };
 
 /**
+ * What a command does, which decides whether it runs straight away.
+ */
+export type CliAccess = "read" | "write" | "confirm";
+
+/**
+ * One request from the command line.
+ */
+export type CliActivity = {
+  /**
+   * When it was asked, in ms since the epoch.
+   */
+  at: number,
+  /**
+   * `arbor` or `arbor mcp`.
+   */
+  client: "cli" | "mcp",
+  method: string,
+  /**
+   * What the method does; none when there was no such method.
+   */
+  access: CliAccess | null,
+  /**
+   * ok, plan (it needed confirming), or the failure's kind.
+   */
+  outcome: "ok" | "plan" | "failed" | "canceled" | "core" | "unsupported" | "unavailable",
+  ms: number,
+};
+
+export type CliInstall = {
+  state: CliInstallState,
+  /**
+   * Where the link goes.
+   */
+  linkPath: string,
+  /**
+   * What the link there runs now, when it's a link.
+   */
+  target: string | null,
+  /**
+   * The program a link should run: this copy of Arbor.
+   */
+  executable: string | null,
+};
+
+/**
+ * What `install_cli_link` did.
+ */
+export type CliInstallResult = {
+  install: CliInstall,
+};
+
+/**
+ * Where `arbor` stands on this Mac.
+ */
+export type CliInstallState = "installed" | "missing" | "elsewhere" | "taken" | "unavailable";
+
+/**
+ * Everything Settings › Software › Command line shows.
+ */
+export type CliOverview = {
+  settings: CliSettings,
+  install: CliInstall,
+  /**
+   * The latest requests, newest first.
+   */
+  activity: Array<CliActivity>,
+};
+
+export type CliSettings = {
+  /**
+   * Whether the app answers the command line at all.
+   */
+  enabled: boolean,
+  /**
+   * Whether it may change things, or only look.
+   */
+  changes: boolean,
+};
+
+/**
+ * An action the window answers for the command line.
+ */
+export type CliWindowAction = {
+  name: string,
+  access: CliAccess,
+  summary: string,
+  args: Array<CliWindowArg>,
+};
+
+/**
+ * One argument a window action takes.
+ */
+export type CliWindowArg = {
+  name: string,
+  tsType: string,
+  optional: boolean,
+};
+
+/**
+ * Why the window couldn't do what was asked.
+ */
+export type CliWindowError = {
+  message: string,
+};
+
+/**
  * One hour of one client's requests from one machine.
  */
 export type ClientHour = {
@@ -2802,6 +2908,22 @@ export type ReporterStatus = {
    * Each agent home found, and whether its settings run the reporter.
    */
   homes: Array<ReporterHome>,
+};
+
+/**
+ * One saved setting changed; `value` is none when it was removed.
+ */
+export type SavedStoreChange = {
+  name: string,
+  value: string | null,
+};
+
+/**
+ * Everything saved, for the window to read before it draws.
+ */
+export type SavedStoreSnapshot = {
+  values: { [key in string]: string },
+  migrated: boolean,
 };
 
 export type ServerView = {

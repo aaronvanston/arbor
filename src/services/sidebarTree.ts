@@ -253,7 +253,7 @@ export function arrivedChoices(choices: OpenChoices, page: MainPageId): OpenChoi
   return rest;
 }
 
-const choices = savedStore<OpenChoices>({ key: 'arbor.sidebar.tree.v1', parse: parseOpenChoices, fallback: {} });
+const choices = savedStore<OpenChoices>({ key: 'arbor.sidebar.tree.v1', parse: parseOpenChoices, fallback: {}, place: 'window' });
 
 export const useOpenChoices = choices.useValue;
 

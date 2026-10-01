@@ -120,6 +120,11 @@ if LC_ALL=C grep -aFq "$HOME/" "$app_path/Contents/MacOS/"* "$app_path/Contents/
 fi
 codesign --force --deep --sign - "$app_path"
 codesign --verify --deep --strict "$app_path"
+# `arbor` is this same program; it answers before the app starts anything, so a signed build that can't is caught here.
+if [[ "$("$app_path/Contents/MacOS/Arbor" cli version)" != arbor\ * ]]; then
+  echo "The built app doesn't answer 'Arbor cli version'." >&2
+  exit 1
+fi
 
 dmg_stage="$work_dir/dmg"
 mkdir -p "$dmg_stage"

@@ -20,7 +20,7 @@ function parseHistory(raw: string | null): LimitsHistory {
   return history;
 }
 
-const store = savedStore<LimitsHistory>({ key: 'arbor.limits-history.v1', parse: parseHistory, fallback: {} });
+const store = savedStore<LimitsHistory>({ key: 'arbor.limits-history.v1', parse: parseHistory, fallback: {}, place: 'window' });
 
 export const useLimitsHistory = store.useValue;
 

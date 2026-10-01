@@ -305,6 +305,10 @@
  * in, `notLoaded` for the proxy not having loaded Arbor's model plugin, `checkFails` for Anthropic turning the check
  * down, `codexFails` for ChatGPT doing the same, or `saveFails` for the proxy not loading the plugin after an add (the
  * change is taken back out). With `?core=stopped` the list is only saved, and there's nothing to check with.
+ * For Settings › Software's Command line: the arbor command is linked by default (not on a fresh install);
+ * `?cli=missing` for not linked yet, `elsewhere` for linked to an Arbor that has since moved, `taken` for something
+ * else at ~/.local/bin/arbor, `dev` for a development build that can't be linked, `off` for command line control off and
+ * `readonly` for changes from the command line off.
  */
 import { emit } from '@tauri-apps/api/event';
 import { clearMocks, mockWindows } from '@tauri-apps/api/mocks';
@@ -322,6 +326,7 @@ import type { Commands } from '../native/commands';
 import { mockCommands, type CommandAnswers } from './mock/answers';
 import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
 import { archiveAnswers } from './mock/archive';
+import { cliAnswers } from './mock/cli';
 import { coreAnswers, coreScenario, stopCoreLater } from './mock/core';
 import { machinesAnswers } from './mock/machines';
 import { freshInstall, iso, mockLog, now, params, type Json } from './mock/scenario';
@@ -377,7 +382,7 @@ const pluginAnswers: Record<string, (args: Json) => unknown> = {
   'plugin:notification|notify': (args) => { mockLog('notification', args); return null; },
 };
 
-const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers };
+const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers, ...cliAnswers };
 
 // Status page replies, shaped like status.claude.com (Statuspage) and status.openai.com (incident.io's own feed).
 const claudeStatusFeed = () => {

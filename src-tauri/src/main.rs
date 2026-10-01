@@ -3,6 +3,7 @@ mod app_identity;
 mod app_settings;
 mod app_update;
 mod bindings;
+mod cli;
 mod command_error;
 mod configuration_watcher;
 mod core_config;
@@ -19,6 +20,7 @@ mod proxy_checks;
 mod quit_guard;
 mod release_feed;
 mod release_notes;
+mod saved_store;
 mod settings_in_effect;
 mod system_locale;
 mod system_open;
@@ -1461,6 +1463,12 @@ struct GithubAsset {
 }
 
 fn main() {
+    // Run as `arbor`, the program is the command line instead of the app: it talks to the running app and never opens
+    // the app's files, takes the one-app lock or starts a window.
+    if let Some(arguments) = cli::command_line_arguments() {
+        std::process::exit(cli::run(arguments));
+    }
+
     let mut args = env::args_os();
     while let Some(argument) = args.next() {
         if argument == "--portable-update-helper" {
@@ -1541,7 +1549,9 @@ fn main() {
         .manage(GuiConfigState::new(gui_config))
         .manage(MainWindowSizeState::new(initial_window_size))
         .manage(LaunchShowState::default())
-        .manage(quit_guard::QuitGuardState::default());
+        .manage(quit_guard::QuitGuardState::default())
+        .manage(saved_store::SavedStoreState::default())
+        .manage(cli::bridge::BridgeState::default());
 
     // Arbor's own ⌘Q, so quitting can't stop the proxy for every machine by accident.
     #[cfg(target_os = "macos")]
@@ -1624,6 +1634,7 @@ fn main() {
             }
 
             product_analytics::start_flushing(app.handle().clone());
+            cli::server::start(app.handle().clone());
 
             let usage_app = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
@@ -1927,6 +1938,14 @@ fn main() {
             start_core_process,
             stop_core_process,
             restart_core_process,
+            saved_store::saved_store_snapshot,
+            saved_store::saved_store_set,
+            saved_store::saved_store_migrate,
+            cli::bridge::cli_bridge_ready,
+            cli::bridge::cli_respond,
+            cli::settings::get_cli_overview,
+            cli::settings::save_cli_settings,
+            cli::settings::install_cli_link,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build app");
@@ -1943,6 +1962,7 @@ fn main() {
             }
         }
         tauri::RunEvent::Exit => {
+            cli::server::stop();
             product_analytics::flush_on_quit(app_handle);
             usage::stop_usage_collector(app_handle);
             usage::machine_health::stop_machine_health_sampler(app_handle);

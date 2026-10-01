@@ -17,6 +17,7 @@ import { useConfirmation } from '../components/ConfirmationDialog';
 import { ThinkingAliasesPage } from './ThinkingAliasesPage';
 import { QuitGuardSettings } from './QuitGuardSettings';
 import { SoftwareSettingsSection } from './SoftwareSettings';
+import { CommandLineSettings } from './CommandLineSettings';
 import { UsageDataSettings } from './UsageDataSettings';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { FoldedSettingsSection, SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
@@ -1461,6 +1462,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
       ) : activeSubpage === 'software' ? (
         <PageBody>
           <SoftwareSettingsSection />
+          <CommandLineSettings />
           <QuitGuardSettings />
           <UsageDataSettings />
         </PageBody>

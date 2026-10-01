@@ -106,7 +106,7 @@ export const withNarrowWindow = <T extends SidebarVisibility>(state: T, narrow: 
   narrow === state.narrow ? state : { ...state, narrow, revealed: false };
 
 /** Only the width and whether it's hidden are kept: how narrow the window is and what ⌘B revealed in it are this run's. */
-const saved = savedStore<SidebarLayout>({ key: 'arbor.sidebar.v1', parse: parseSidebarLayout, fallback: DEFAULT_LAYOUT });
+const saved = savedStore<SidebarLayout>({ key: 'arbor.sidebar.v1', parse: parseSidebarLayout, fallback: DEFAULT_LAYOUT, place: 'window' });
 
 export type SidebarState = SidebarLayout & SidebarVisibility & { shown: boolean; overlay: boolean };
 

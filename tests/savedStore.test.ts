@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { savedStore } from '../src/services/savedStore';
+import { emit } from '@tauri-apps/api/event';
+import { clearMocks } from '@tauri-apps/api/mocks';
+import { mockCommands } from '../src/dev/mock/answers';
+import { loadSavedSettings, SAVED_STORE_CHANGED_EVENT, savedStore } from '../src/services/savedStore';
 
 const global = globalThis as { localStorage?: unknown };
 const previous = global.localStorage;
@@ -16,6 +19,7 @@ function storage(initial: Record<string, string> = {}, { failWrites = false } = 
       if (failWrites) throw new Error('full');
       values.set(key, value);
     },
+    removeItem: (key: string) => values.delete(key),
   };
   return values;
 }
@@ -66,5 +70,72 @@ describe('a saved store', () => {
     expect(() => store.set(3)).not.toThrow();
     expect(store.get()).toBe(3);
     expect(told).toBe(1);
+  });
+});
+
+describe('settings the app keeps', () => {
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  afterEach(async () => {
+    // An app that can't be reached puts every store back on the window's own storage, as before the app was asked.
+    mockCommands({ saved_store_snapshot: () => { throw 'gone'; } });
+    await loadSavedSettings();
+    clearMocks();
+    if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+    else Reflect.deleteProperty(globalThis, 'window');
+  });
+
+  it('move in from the window once, save to the app, and take changes made from the command line', async () => {
+    Object.defineProperty(globalThis, 'window', { value: { crypto: globalThis.crypto }, writable: true, configurable: true });
+    const values = storage({ 'arbor.test-count.v1': '5', 'arbor.test-layout.v1': '1' });
+    const store = savedStore({ key: 'arbor.test-count.v1', parse: parseCount, fallback: 0 });
+    savedStore({ key: 'arbor.test-layout.v1', parse: parseCount, fallback: 0, place: 'window' });
+    let moved: Record<string, string> = {};
+    const saved: [string, string | null | undefined][] = [];
+    mockCommands({
+      saved_store_snapshot: () => ({ values: {}, migrated: false }),
+      saved_store_migrate: (args) => {
+        moved = args.values;
+        return { values: { ...args.values }, migrated: true };
+      },
+      saved_store_set: (args) => {
+        saved.push([args.name, args.value]);
+        return null;
+      },
+    }, { events: true });
+
+    await loadSavedSettings();
+    expect(moved['arbor.test-count.v1']).toBe('5');
+    expect(moved).not.toHaveProperty('arbor.test-layout.v1');
+    expect(store.get()).toBe(5);
+
+    store.set(7);
+    await settle();
+    expect(saved).toContainEqual(['arbor.test-count.v1', '7']);
+
+    let told = 0;
+    store.subscribe(() => told++);
+    await emit(SAVED_STORE_CHANGED_EVENT, { name: 'arbor.test-count.v1', value: '9' });
+    await settle();
+    expect(store.get()).toBe(9);
+    expect(told).toBe(1);
+    expect(values.get('arbor.test-count.v1')).toBe('9');
+    expect(saved).toHaveLength(1);
+
+    // Its own save coming back is nothing new.
+    await emit(SAVED_STORE_CHANGED_EVENT, { name: 'arbor.test-count.v1', value: '9' });
+    await settle();
+    expect(told).toBe(1);
+  });
+
+  it('read what the app has over what the window kept, once it has moved', async () => {
+    Object.defineProperty(globalThis, 'window', { value: { crypto: globalThis.crypto }, writable: true, configurable: true });
+    storage({ 'arbor.test-name.v1': '1' });
+    const store = savedStore({ key: 'arbor.test-name.v1', parse: parseCount, fallback: 0 });
+    expect(store.get()).toBe(1);
+    mockCommands({ saved_store_snapshot: () => ({ values: { 'arbor.test-name.v1': '3' }, migrated: true }) }, { events: true });
+    await loadSavedSettings();
+    expect(store.get()).toBe(3);
   });
 });

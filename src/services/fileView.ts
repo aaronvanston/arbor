@@ -13,7 +13,7 @@ export const DEFAULT_DIFF_STYLE: DiffStyle = 'unified';
 /** The saved style; anything else, from an older version or a damaged entry, is the default. */
 export const parseDiffStyle = (raw: string | null | undefined): DiffStyle => (raw === 'split' || raw === 'unified' ? raw : DEFAULT_DIFF_STYLE);
 
-const store = savedStore<DiffStyle>({ key: 'arbor.diffStyle.v1', parse: parseDiffStyle, fallback: DEFAULT_DIFF_STYLE, serialize: (style) => style });
+const store = savedStore<DiffStyle>({ key: 'arbor.diffStyle.v1', parse: parseDiffStyle, fallback: DEFAULT_DIFF_STYLE, serialize: (style) => style, place: 'window' });
 
 export const setDiffStyle = store.set;
 

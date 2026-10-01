@@ -40,6 +40,14 @@ mod tests {
         types.visit::<crate::product_analytics::ProductEvent>();
         types.visit::<crate::product_analytics::Feature>();
         types.visit::<crate::product_analytics::ExceptionReport>();
+        // Command line
+        types.visit::<crate::saved_store::SavedStoreSnapshot>();
+        types.visit::<crate::saved_store::SavedStoreChange>();
+        types.visit::<crate::cli::bridge::CliWindowAction>();
+        types.visit::<crate::cli::bridge::CliWindowError>();
+        types.visit::<crate::cli::settings::CliOverview>();
+        types.visit::<crate::cli::settings::CliSettings>();
+        types.visit::<crate::cli::settings::CliInstallResult>();
         // Core
         types.visit::<crate::CoreStatus>();
         types.visit::<crate::CoreLatest>();

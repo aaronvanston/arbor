@@ -21,7 +21,7 @@ export function parseSyncScope(raw: string | null): SyncScope {
   }
 }
 
-const store = savedStore<SyncScope>({ key: 'arbor.sync.scope.v1', parse: parseSyncScope, fallback: EMPTY });
+const store = savedStore<SyncScope>({ key: 'arbor.sync.scope.v1', parse: parseSyncScope, fallback: EMPTY, place: 'window' });
 
 export const useSyncScope = store.useValue;
 

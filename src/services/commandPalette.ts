@@ -221,7 +221,7 @@ export function parseRecents(raw: string | null): string[] {
   return [...new Set(ids)].slice(0, RECENT_PICKS);
 }
 
-const recents = savedStore<string[]>({ key: 'arbor.palette.recent.v1', parse: parseRecents, fallback: [] });
+const recents = savedStore<string[]>({ key: 'arbor.palette.recent.v1', parse: parseRecents, fallback: [], place: 'window' });
 
 export const readRecents = recents.get;
 

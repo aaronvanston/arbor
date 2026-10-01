@@ -22,6 +22,7 @@ import { AgentAttentionMonitor } from './components/AgentAttentionMonitor';
 import { FleetMonitor } from './components/FleetMonitor';
 import { AlertCoordinator } from './components/AlertCoordinator';
 import { UpdateWhenIdleMonitor } from './components/UpdateWhenIdleMonitor';
+import { CliBridgeMonitor } from './components/CliBridgeMonitor';
 import { AddMachineDialog } from './components/AddMachineDialog';
 import { ARBOR_RELEASES_URL, NO_RELEASE_NOTES, arborReleaseUrl, releaseNotesToShow } from './services/releaseNotes';
 import { availableBesideWaiting, idleUpdatePillDetail, idleUpdateTitleKey, useIdleUpdates } from './services/updateWhenIdle';
@@ -475,6 +476,7 @@ function AppContent() {
       <MonitorBoundary name="FleetMonitor"><FleetMonitor /></MonitorBoundary>
       <MonitorBoundary name="AlertCoordinator"><AlertCoordinator coreReady={coreReady} onNavigate={navigate} /></MonitorBoundary>
       <MonitorBoundary name="UpdateWhenIdleMonitor"><UpdateWhenIdleMonitor /></MonitorBoundary>
+      <MonitorBoundary name="CliBridgeMonitor"><CliBridgeMonitor /></MonitorBoundary>
       <MonitorBoundary name="QuitGuard"><QuitGuard /></MonitorBoundary>
       {/* Closed on a crash so it doesn't pop back open by itself when it restarts. */}
       <MonitorBoundary name="CommandPalette" onCrash={() => setPaletteOpen(false)}>

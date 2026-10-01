@@ -8,6 +8,7 @@ import { lastShownPageId } from './components/ErrorBoundaries';
 import { preparePhoneAlerts } from './services/phoneAlerts';
 import { reportUncaughtErrors } from './services/productAnalytics';
 import { renameLegacySavedKeys } from './services/savedKeys';
+import { loadSavedSettings } from './services/savedStore';
 import { loadSystemRegion } from './services/systemRegion';
 import { showWindowWhenPainted } from './services/windowChrome';
 import { loadZoom } from './services/zoom';
@@ -34,11 +35,11 @@ function ShowWindowWhenPainted() {
   return null;
 }
 
-// Dates and numbers follow the Mac's region, and the Mac title row's size the window's zoom, so both
-// are read before anything is drawn. A promise rather than a top-level await: the build targets
+// Dates and numbers follow the Mac's region, the Mac title row's size the window's zoom, and every page the settings
+// the app keeps for the window, so all three are read before anything is drawn. A promise rather than a top-level await: the build targets
 // ES2020, which doesn't have one. The window stays hidden until this first render paints; the shell
 // shows it anyway if that never comes.
-void Promise.all([loadSystemRegion(), loadZoom()]).then(() => {
+void Promise.all([loadSystemRegion(), loadZoom(), loadSavedSettings()]).then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <I18nProvider>
