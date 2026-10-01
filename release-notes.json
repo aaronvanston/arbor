@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.0.20",
+    "summary": "Sync: a file's menu in the repo browser opens in full instead of being cut off.",
+    "changes": []
+  },
+  {
     "version": "1.0.19",
     "summary": "Sync: the setup repo's files stay in view, however many things are removed.",
     "changes": []
