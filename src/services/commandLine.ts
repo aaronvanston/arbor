@@ -32,25 +32,36 @@ const OUTCOME: Record<CliActivity['outcome'], { label: MessageKey; tone: 'succes
   unavailable: { label: 'cli.activity.outcome.unavailable', tone: 'warning' },
 };
 
-/** How many of the latest requests Settings lists. */
-const SHOWN = 8;
+const ACCESS: Record<CliActivity['access'] & string, MessageKey> = {
+  read: 'cli.activity.access.read',
+  write: 'cli.activity.access.write',
+  confirm: 'cli.activity.access.confirm',
+};
+
+/** How many of the latest requests the Settings section lists; the rest are behind Show all. */
+export const CLI_ACTIVITY_SHOWN = 8;
 
 export type CliActivityRow = {
   key: string;
   at: number;
   client: MessageKey;
   method: string;
+  /** Reads, changes or changes that ask first; none for a request that named no command, like the opening hello. */
+  access: MessageKey | null;
   outcome: MessageKey;
   tone: 'success' | 'warning' | 'error' | 'muted';
+  ms: number;
 };
 
-/** The latest requests as Settings lists them: when, from what, which command and how it went. */
-export const cliActivityRows = (activity: CliActivity[]): CliActivityRow[] =>
-  activity.slice(0, SHOWN).map((entry, index) => ({
+/** The latest requests as Settings lists them: when, from what, which command, what it does and how it went. */
+export const cliActivityRows = (activity: CliActivity[], limit = CLI_ACTIVITY_SHOWN): CliActivityRow[] =>
+  activity.slice(0, limit).map((entry, index) => ({
     key: `${entry.at}-${index}`,
     at: entry.at,
     client: entry.client === 'mcp' ? 'cli.activity.client.mcp' : 'cli.activity.client.cli',
     method: entry.method.replace(/_/g, '-'),
+    access: entry.access ? ACCESS[entry.access] : null,
     outcome: OUTCOME[entry.outcome].label,
     tone: OUTCOME[entry.outcome].tone,
+    ms: entry.ms,
   }));

@@ -6,7 +6,8 @@ import { freshInstall, hours, mockLog, params } from './scenario';
 /**
  * `?cli=` picks where the arbor command stands: `missing` (not linked yet, the default on a fresh install),
  * `elsewhere` (linked to an Arbor that has moved), `taken` (something else is at ~/.local/bin/arbor), `dev` (a
- * development build, which can't be linked), `off` (command line control turned off) or `readonly` (changes turned off).
+ * development build, which can't be linked), `off` (command line control turned off), `readonly` (changes turned off)
+ * or `busy` (linked, with a long history of requests, enough for Show all).
  */
 const cliScenario = params.get('cli') ?? (freshInstall ? 'missing' : 'installed');
 
@@ -27,7 +28,25 @@ const install = (): CliInstall => ({
   executable: installState === 'unavailable' ? null : EXECUTABLE,
 });
 
-const activity = (): CliActivity[] => (freshInstall || installState !== 'installed' ? [] : [
+/** A long run of requests for `?cli=busy`: an agent at work, a few plans it needed confirming and one failure. */
+const BUSY: Array<Omit<CliActivity, 'at'>> = [
+  { client: 'mcp', method: 'status.summary', access: 'read', outcome: 'ok', ms: 48 },
+  { client: 'mcp', method: 'get_machine_health', access: 'read', outcome: 'ok', ms: 3 },
+  { client: 'mcp', method: 'sync.plan', access: 'read', outcome: 'ok', ms: 912 },
+  { client: 'mcp', method: 'sync.apply', access: 'confirm', outcome: 'plan', ms: 1 },
+  { client: 'mcp', method: 'sync.apply', access: 'confirm', outcome: 'ok', ms: 6120 },
+  { client: 'cli', method: 'accounts.cap', access: 'write', outcome: 'ok', ms: 22 },
+  { client: 'cli', method: 'accounts.pause', access: 'confirm', outcome: 'failed', ms: 31 },
+  { client: 'cli', method: 'get_usage_overview', access: 'read', outcome: 'ok', ms: 140 },
+  { client: 'cli', method: 'restart_core_process', access: 'confirm', outcome: 'plan', ms: 1 },
+];
+
+const activity = (): CliActivity[] => (freshInstall || installState !== 'installed' ? [] : cliScenario === 'busy'
+  ? Array.from({ length: 50 }, (_, index) => index).flatMap((index) => {
+    const entry = BUSY[index % BUSY.length];
+    return entry ? [{ ...entry, at: hours(index * 0.15) }] : [];
+  })
+  : [
   { at: hours(0.05), client: 'mcp', method: 'get_live_sessions', access: 'read', outcome: 'ok', ms: 14 },
   { at: hours(0.1), client: 'mcp', method: 'stop_core_process', access: 'confirm', outcome: 'plan', ms: 2 },
   { at: hours(0.4), client: 'cli', method: 'accounts.list', access: 'read', outcome: 'ok', ms: 380 },

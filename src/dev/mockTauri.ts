@@ -309,7 +309,7 @@
  * For Settings › Software's Command line: the arbor command is linked by default (not on a fresh install);
  * `?cli=missing` for not linked yet, `elsewhere` for linked to an Arbor that has since moved, `taken` for something
  * else at ~/.local/bin/arbor, `dev` for a development build that can't be linked, `off` for command line control off and
- * `readonly` for changes from the command line off.
+ * `readonly` for changes from the command line off, and `busy` for 50 recent requests, enough for its Show all log.
  */
 import { emit } from '@tauri-apps/api/event';
 import { clearMocks, mockWindows } from '@tauri-apps/api/mocks';

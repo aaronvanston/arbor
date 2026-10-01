@@ -5,13 +5,19 @@ import { formatAgo } from '../lib/format';
 import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { TABLE_NUMERIC_CLASS } from '../components/ui/data-table';
+import { Dialog, DialogDescription, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Check, Copy } from '../components/ui/icons';
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
 import { toast } from '../components/ui/toast';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
-import { cliInstallNote, CLI_MCP_COMMAND, cliActivityRows } from '../services/commandLine';
+import { CLI_ACTIVITY_SHOWN, cliInstallNote, CLI_MCP_COMMAND, cliActivityRows, type CliActivityRow } from '../services/commandLine';
 import type { CliOverview, CliSettings } from '../native/types';
+
+/** How often the open log reads the activity again, so requests show up while someone watches. */
+const LOG_REFRESH_MS = 3000;
 
 /** Settings › Software › Command line: putting `arbor` on the PATH, what it may do, and what has asked lately. */
 export function CommandLineSettings() {
@@ -19,6 +25,7 @@ export function CommandLineSettings() {
   const [overview, setOverview] = useState<CliOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const { copy, copied } = useCopyToClipboard({ inline: true });
 
   const load = () =>
@@ -31,9 +38,17 @@ export function CommandLineSettings() {
 
   useEffect(() => {
     void load();
-    // Mount-only: the activity is read again after each change made here.
+    // Mount-only: the activity is read again after each change made here, and while the log is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!logOpen) return undefined;
+    void load();
+    const timer = setInterval(() => void load(), LOG_REFRESH_MS);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logOpen]);
 
   const save = async (next: CliSettings) => {
     if (!overview) return;
@@ -64,6 +79,7 @@ export function CommandLineSettings() {
   const settings = overview?.settings ?? null;
   const note = overview ? cliInstallNote(overview.install) : null;
   const rows = overview ? cliActivityRows(overview.activity) : [];
+  const allRows = overview ? cliActivityRows(overview.activity, overview.activity.length) : [];
   const latest = overview?.activity[0];
 
   return (
@@ -138,7 +154,14 @@ export function CommandLineSettings() {
         )}
       />
       <SettingsBlock>
-        <p className="mb-2 text-xs font-medium text-muted-foreground">{t('cli.activity.title')}</p>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-xs font-medium text-muted-foreground">{t('cli.activity.title')}</p>
+          {allRows.length > CLI_ACTIVITY_SHOWN ? (
+            <Button size="sm" variant="link" className="text-xs" onClick={() => setLogOpen(true)}>
+              {t('cli.activity.showAll', { count: allRows.length })}
+            </Button>
+          ) : null}
+        </div>
         {rows.length ? (
           <ul className="space-y-1 text-xs">
             {rows.map((row) => (
@@ -154,11 +177,52 @@ export function CommandLineSettings() {
           <p className="text-xs text-muted-foreground">{t('cli.activity.empty')}</p>
         )}
       </SettingsBlock>
+      <Dialog open={logOpen} onOpenChange={setLogOpen}>
+        <DialogPopup className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('cli.activity.dialog.title')}</DialogTitle>
+            <DialogDescription>{t('cli.activity.dialog.description', { count: allRows.length })}</DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <ActivityTable rows={allRows} />
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
       {error ? (
         <SettingsBlock>
           <p className="text-xs text-destructive-foreground">{error}</p>
         </SettingsBlock>
       ) : null}
     </SettingsSection>
+  );
+}
+
+function ActivityTable({ rows }: { rows: CliActivityRow[] }) {
+  const { t } = useI18n();
+  return (
+    <Table density="compact" stickyHeader>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t('cli.activity.column.when')}</TableHead>
+          <TableHead>{t('cli.activity.column.from')}</TableHead>
+          <TableHead className="w-full">{t('cli.activity.column.command')}</TableHead>
+          <TableHead>{t('cli.activity.column.does')}</TableHead>
+          <TableHead>{t('cli.activity.column.outcome')}</TableHead>
+          <TableHead className={TABLE_NUMERIC_CLASS}>{t('cli.activity.column.took')}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.key}>
+            <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">{formatAgo(row.at)}</TableCell>
+            <TableCell className="whitespace-nowrap text-muted-foreground">{t(row.client)}</TableCell>
+            <TableCell className="max-w-0 truncate font-mono" title={row.method}>{row.method}</TableCell>
+            <TableCell className="whitespace-nowrap text-muted-foreground">{row.access ? t(row.access) : '–'}</TableCell>
+            <TableCell><Badge variant={row.tone} size="sm">{t(row.outcome)}</Badge></TableCell>
+            <TableCell className={TABLE_NUMERIC_CLASS}>{t('cli.activity.took', { ms: row.ms })}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

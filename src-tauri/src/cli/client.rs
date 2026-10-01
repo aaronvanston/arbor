@@ -350,7 +350,7 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
         }
         ["accounts", "cap", account, percent] => {
             let percent = if *percent == "off" { Value::Null } else { serde_json::from_str(percent).map_err(|_| usage_error("The cap is a percent from 1 to 99, or off"))? };
-            window_action(options, "accounts.cap", json!({ "account": account, "percent": percent }), |_| format!("Saved {account}'s cap."))
+            window_action(options, "accounts.cap", json!({ "account": account, "percent": percent }), |_| if percent.is_null() { format!("Cleared {account}'s cap.") } else { format!("Capped {account} at {percent}%.") })
         }
         ["routing"] => window_action(options, "routing.auto", json!({}), pretty),
         ["routing", provider, state @ ("on" | "off")] => {

@@ -188,7 +188,8 @@ export const cliHandlers: CliHandlers = {
     },
   },
   'alerts.seen': {
-    access: 'write',
+    // Seen can't be made unread again, so like the other changes that can't be undone it asks first.
+    access: 'confirm',
     summary: 'Marks every alert as seen',
     run: async () => {
       markAlertsSeen();
