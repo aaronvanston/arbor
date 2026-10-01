@@ -5,7 +5,7 @@ import { authFileAvailability, parseAuthFilePriority } from './authFiles';
 import type { FleetBoard } from './fleetBoard';
 import { formatBytes, KIB } from './machineHealth';
 import { planLabel } from './planCosts';
-import type { ProviderLimit } from './providerLimits';
+import { formatResetCountdown, type ProviderLimit } from './providerLimits';
 import type { AuthFile } from './quotaService';
 
 /** Start of the local calendar day, so "today" matches the Usage page's Today range. */
@@ -102,6 +102,22 @@ export type HomeMachine = {
   /** Null when it made no request today. */
   today: MachineSessions | null;
 };
+
+/** Why the proxy skips an account, and when it's back where the core says, in place of when its limit resets. */
+export function accountSkippedText(state: HomeAccountState, now: number, t: (key: MessageKey, variables?: MessageVariables) => string): string | null {
+  switch (state.kind) {
+    case 'ready': return null;
+    case 'limit':
+    case 'retrying': {
+      const back = formatResetCountdown(state.backAtMs, now);
+      const prefix = t(state.kind === 'limit' ? 'home.accounts.skipped.limit' : 'home.accounts.skipped.retrying');
+      return back ? t('home.accounts.skipped.back', { reason: prefix, time: back }) : prefix;
+    }
+    case 'signin': return t('home.accounts.skipped.signin');
+    case 'off': return t('home.accounts.skipped.off');
+    case 'refused': return t('home.accounts.skipped.refused');
+  }
+}
 
 /**
  * Every machine using the proxy, this one first, then the rest in the order Machines lists them, then any only known

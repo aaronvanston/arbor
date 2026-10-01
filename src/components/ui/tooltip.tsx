@@ -18,6 +18,8 @@ const tooltipPopupVariants = cva(
       variant: {
         default: 'max-w-72 wrap-anywhere',
         code: 'max-w-120 wrap-anywhere font-mono text-2xs leading-relaxed',
+        // A few facts laid out as a small card (the sidebar's machines and limits): wider, with room between its parts.
+        card: 'w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg px-3 py-2.5 text-pretty',
       },
     },
     defaultVariants: { variant: 'default' },

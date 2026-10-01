@@ -9,6 +9,7 @@ import { HomePage } from './pages/HomePage';
 import { MachinePill } from './components/identity/Identity';
 import { SidebarLimits } from './components/SidebarLimits';
 import { LimitsMonitor } from './components/LimitsMonitor';
+import { FleetHealthMonitor } from './components/FleetHealthMonitor';
 import { AccountReservesMonitor } from './components/AccountReservesMonitor';
 import { ProxyChecksMonitor } from './components/ProxyChecksMonitor';
 import { SessionMonitor } from './components/SessionMonitor';
@@ -37,11 +38,12 @@ import { appColorChoice, applyAppColor } from './services/appColor';
 import { SIDEBAR_ID, SidebarResizeHandle, SidebarToggle } from './components/SidebarControls';
 import { SidebarHeader, SidebarRow, SidebarSearchGroup, SidebarSearchRow } from './components/sidebar/SidebarChrome';
 import { PAGE_ICONS, SidebarTree } from './components/sidebar/SidebarTree';
+import { SidebarGlance, SidebarMachines } from './components/sidebar/SidebarGlance';
 import { leafView, PALETTE_VIEWS, TREE_PAGES } from './services/sidebarTree';
 import { AlertsUtility, CoreDownRow, CoreUtility, SettingsBack, SettingsUtility, UpdateUtility } from './components/sidebar/SidebarFooter';
 import { useAppShortcuts } from './hooks/useAppShortcuts';
 import { useModifierHold } from './hooks/useShortcuts';
-import { SETTINGS_PAGE_LABEL, indexSettings, type SettingEntry } from './services/settingsIndex';
+import { SETTINGS_PAGE_LABEL, indexSettings, settingEntry, type SettingEntry } from './services/settingsIndex';
 import { requestFocus } from './focusRequests';
 import { focusReturnTarget } from './services/focusReturn';
 import { trackPageView, usageDataNoticeDue } from './services/productAnalytics';
@@ -466,6 +468,7 @@ function AppContent() {
       <MonitorBoundary name="LiveSessionsMonitor"><LiveSessionsMonitor /></MonitorBoundary>
       <MonitorBoundary name="WeeklyDigestMonitor"><WeeklyDigestMonitor /></MonitorBoundary>
       <MonitorBoundary name="MachineMonitor"><MachineMonitor /></MonitorBoundary>
+      <MonitorBoundary name="FleetHealthMonitor"><FleetHealthMonitor /></MonitorBoundary>
       <MonitorBoundary name="SetupChangeMonitor"><SetupChangeMonitor /></MonitorBoundary>
       <MonitorBoundary name="ArchiveMonitor"><ArchiveMonitor /></MonitorBoundary>
       <MonitorBoundary name="AgentAttentionMonitor"><AgentAttentionMonitor /></MonitorBoundary>
@@ -590,11 +593,16 @@ function AppContent() {
 
           <div className="flex shrink-0 flex-col gap-2 px-2 pt-1 pb-2" data-slot="sidebar-footer">
             {!inSettings && coreState.down ? <CoreDownRow state={coreState} onNavigate={navigate} /> : null}
-            {preferences.sidebarLimits && coreReady && !inSettings ? (
-              <div className="px-1">
-                <SidebarLimits onOpen={() => navigate(accountLimitsView())} onAddAccount={() => addAccount(navigate)} />
-              </div>
-            ) : null}
+            {inSettings ? null : (
+              <SidebarGlance
+                limits={preferences.sidebarLimits && coreReady ? <SidebarLimits onOpen={() => navigate(accountLimitsView())} onAddAccount={() => addAccount(navigate)} /> : null}
+                machines={preferences.sidebarMachines ? <SidebarMachines onOpen={(machine) => navigate(machinesView(machine))} /> : null}
+                onCustomize={() => {
+                  const entry = settingEntry('appearance.sidebar-limits');
+                  if (entry) openSetting(entry);
+                }}
+              />
+            )}
             <div className="flex items-center gap-0.5">
               {inSettings ? (
                 <SettingsBack onBack={leaveSettings} />

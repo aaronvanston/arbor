@@ -1,4 +1,4 @@
-import type { MessageKey } from '../i18n/resources';
+import type { MessageKey, MessageVariables } from '../i18n/resources';
 import type { MachineFacts, MachineHealth } from '../native/types';
 
 /** The shape a machine's icon draws. Anything that isn't a Mac is a server. */
@@ -120,3 +120,14 @@ export const osLabel = (os: string, version: string) => {
   const family = os === 'Darwin' ? 'macOS' : os;
   return version && version.toLowerCase().startsWith(family.toLowerCase()) ? version : [family, version].filter(Boolean).join(' ');
 };
+
+/**
+ * Where a machine is, in a line: a Mac says what it is and its macOS ("Mac mini · macOS 26.0"); anything else, its
+ * distribution, which already names the OS family. Empty before its first sample.
+ */
+export function machinePlace(facts: MachineFacts | null, t: (key: MessageKey, variables?: MessageVariables) => string): string {
+  if (!facts) return '';
+  if (facts.os !== 'Darwin') return facts.osVersion || facts.os;
+  const identity = machineIdentity(facts);
+  return [identity?.label ? t(identity.label) : null, osLabel(facts.os, facts.osVersion)].filter(Boolean).join(' · ');
+}

@@ -1,3 +1,4 @@
+import { ContextMenu as ContextMenuPrimitive } from '@base-ui/react/context-menu';
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Check, ChevronRight } from './icons';
 import { useId, type ReactNode } from 'react';
@@ -7,6 +8,16 @@ const Menu = MenuPrimitive.Root;
 
 function MenuTrigger(props: MenuPrimitive.Trigger.Props) {
   return <MenuPrimitive.Trigger data-slot="menu-trigger" {...props} />;
+}
+
+/**
+ * A menu a right-click opens over an area, at the pointer. It takes the same MenuPopup and items as Menu, since Base
+ * UI's context menu is built from the menu's own parts.
+ */
+const ContextMenu = ContextMenuPrimitive.Root;
+
+function ContextMenuTrigger(props: ContextMenuPrimitive.Trigger.Props) {
+  return <ContextMenuPrimitive.Trigger data-slot="context-menu-trigger" {...props} />;
 }
 
 function MenuPopup({
@@ -141,4 +152,4 @@ function MenuGroupLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props)
   return <MenuPrimitive.GroupLabel className={cn('px-2 py-1.5 text-xs font-medium text-muted-foreground', className)} data-slot="menu-group-label" {...props} />;
 }
 
-export { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSub, MenuSubTrigger, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuGroup, MenuGroupLabel };
+export { ContextMenu, ContextMenuTrigger, Menu, MenuTrigger, MenuPopup, MenuItem, MenuSub, MenuSubTrigger, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuGroup, MenuGroupLabel };

@@ -6,13 +6,13 @@ import type { MessageKey } from '../i18n/resources';
 import { formatCount, formatMoney } from '../lib/format';
 import { cn } from '../lib/utils';
 import { invokeCommand } from '../native/commands';
-import type { HealthStatus, MachineHealth, MachineSessions } from '../native/types';
+import type { HealthStatus, MachineSessions } from '../native/types';
 import { machinesView, type AppView } from '../navigation';
 import { useFleetBoard } from '../services/fleetBoard';
 import { healthReasonText, homeMachines, todayRange, type HomeMachine } from '../services/homeOverview';
 import { unreachableReason } from '../services/machineAlerts';
-import { fetchMachineHealth } from '../services/machineHealth';
-import { machineIdentity, osLabel } from '../services/machineIdentity';
+import { useFleetHealth } from '../services/fleetHealth';
+import { machinePlace } from '../services/machineIdentity';
 import { MachinePill } from './identity/Identity';
 import { FirstMachineActions } from './FirstMachineActions';
 import { SettingsBlock, SettingsSection } from './layout/settings';
@@ -46,34 +46,14 @@ const TONE_TEXT: Record<StatusTone, string> = {
   primary: 'text-muted-foreground',
 };
 
-/** Health changes slowly and its sampler runs every few seconds while Machines is open; Home reads it as the sidebar does. */
-const HEALTH_REFRESH_MS = 30_000;
-
 /**
  * Every machine using the proxy, with its health, what its agents are doing now and what it sent through today; null
  * until health has been read once. Home reads it once for its proxy card and its machine cards.
  */
 export function useHomeMachines(): HomeMachine[] | null {
-  const [health, setHealth] = useState<MachineHealth[] | null>(null);
+  const health = useFleetHealth();
   const [sessions, setSessions] = useState<MachineSessions[]>([]);
   const { board } = useFleetBoard();
-
-  useEffect(() => {
-    let disposed = false;
-    let readAt = 0;
-    const read = () => {
-      readAt = Date.now();
-      fetchMachineHealth(null, 1_000, true)
-        .then((snapshot) => { if (!disposed) setHealth(snapshot.machines); })
-        .catch(() => { if (!disposed) setHealth((current) => current ?? []); });
-    };
-    read();
-    const unlisten = listen('machine-health-updated', () => { if (Date.now() - readAt >= HEALTH_REFRESH_MS) read(); });
-    return () => {
-      disposed = true;
-      void unlisten.then((stop) => stop()).catch(() => undefined);
-    };
-  }, []);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -162,14 +142,7 @@ function MachineCard({ item, onOpen }: { item: HomeMachine; onOpen?: () => void 
   const { health, today } = item;
   const status = health?.status ?? null;
   const tone = status ? STATUS_TONE[status] : 'muted';
-  const identity = machineIdentity(health?.facts ?? null);
-  const facts = health?.facts ?? null;
-  // A Mac says what it is and its macOS; anything else, its distribution, which already names the OS family.
-  const place = facts
-    ? facts.os === 'Darwin'
-      ? [identity?.label ? t(identity.label) : null, osLabel(facts.os, facts.osVersion)].filter(Boolean).join(' · ')
-      : facts.osVersion || facts.os
-    : '';
+  const place = machinePlace(health?.facts ?? null, t);
   const hosted = health !== null && health.status !== 'unconfigured';
   const condition = !hosted
     ? t('home.machines.noHost')

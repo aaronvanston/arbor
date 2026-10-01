@@ -6,14 +6,14 @@ use objc2_foundation::{NSArray, NSString};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
 /// The lines the app shows in the tray menu under "Open Main Window", in
-/// sections that each end with a separator: the limits, then the sessions
-/// running now.
+/// sections that each end with a separator: the limits, then the machines,
+/// then the sessions running now.
 pub(crate) struct TrayLinesState {
     menu: Menu<tauri::Wry>,
     sections: Mutex<TraySections>,
 }
 
-const TRAY_SECTIONS: [&str; 2] = ["limits", "sessions"];
+const TRAY_SECTIONS: [&str; 3] = ["limits", "machines", "sessions"];
 
 #[derive(Default)]
 struct TraySections {

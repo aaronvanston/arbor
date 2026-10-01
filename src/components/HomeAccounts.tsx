@@ -9,7 +9,7 @@ import { resolveAccountProfile, useAccountProfiles, type AccountProfile, type Re
 import { useAccountOrder } from '../services/accountOrder';
 import { useAccountReserves, type PausedAccount } from '../services/accountReserves';
 import { accountsGap, ensureAccountsLoaded, getAccountsSnapshot, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
-import { homeAccounts, type HomeAccount, type HomeAccountState } from '../services/homeOverview';
+import { accountSkippedText, homeAccounts, type HomeAccount } from '../services/homeOverview';
 import { useLimitsHistory } from '../services/limitsHistory';
 import { formatResetCountdown, providerLabel, providerLimits, type ProviderLimit } from '../services/providerLimits';
 import { useQuotaCache } from '../services/quotaCache';
@@ -210,27 +210,11 @@ function ProviderAccounts({ limit, now, profiles, filesByKey, paused }: {
   );
 }
 
-/** Why the proxy skips an account, and when it's back where the core says, in place of when its limit resets. */
-function skippedText(state: HomeAccountState, now: number, t: ReturnType<typeof useI18n>['t']): string | null {
-  switch (state.kind) {
-    case 'ready': return null;
-    case 'limit':
-    case 'retrying': {
-      const back = formatResetCountdown(state.backAtMs, now);
-      const prefix = t(state.kind === 'limit' ? 'home.accounts.skipped.limit' : 'home.accounts.skipped.retrying');
-      return back ? t('home.accounts.skipped.back', { reason: prefix, time: back }) : prefix;
-    }
-    case 'signin': return t('home.accounts.skipped.signin');
-    case 'off': return t('home.accounts.skipped.off');
-    case 'refused': return t('home.accounts.skipped.refused');
-  }
-}
-
 function AccountRow({ account, profile, now, markTaking }: { account: HomeAccount; profile: ResolvedProfile; now: number; markTaking: boolean }) {
   const { t } = useI18n();
   const countdown = formatResetCountdown(account.resetAtMs, now);
   const unknown = account.percent === null;
-  const skipped = skippedText(account.state, now, t);
+  const skipped = accountSkippedText(account.state, now, t);
   return (
     <li className={cn('contents', skipped && '[&>*:not(:last-child)]:opacity-55')}>
       <AccountAvatar profile={profile} size="xs" />

@@ -19,6 +19,7 @@ import {
   zoomPercent,
   type ZoomFailure,
 } from '../services/zoom';
+import { MachinePicker, ProviderPicker } from '../components/GlancePicks';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Button } from '../components/ui/button';
 import { SettingsRow, SettingsSection } from '../components/layout/settings';
@@ -184,6 +185,19 @@ export function AppearanceSettingsPage({ theme, onThemeChange }: { theme: ThemeP
             }
           />
           <SettingsRow
+            settingId="appearance.sidebar-machines"
+            reset={preferenceReset(preferences, 'sidebarMachines', onOff)}
+            title={t('interface.sidebarMachines.title')}
+            description={t('interface.sidebarMachines.description')}
+            control={
+              <Switch
+                checked={preferences.sidebarMachines}
+                aria-label={t('interface.sidebarMachines.title')}
+                onCheckedChange={(checked) => setAppPreference('sidebarMachines', checked)}
+              />
+            }
+          />
+          <SettingsRow
             settingId="appearance.tray-limits"
             reset={preferenceReset(preferences, 'trayLimits', onOff)}
             title={t('interface.trayLimits.title')}
@@ -193,6 +207,19 @@ export function AppearanceSettingsPage({ theme, onThemeChange }: { theme: ThemeP
                 checked={preferences.trayLimits}
                 aria-label={t('interface.trayLimits.title')}
                 onCheckedChange={(checked) => setAppPreference('trayLimits', checked)}
+              />
+            }
+          />
+          <SettingsRow
+            settingId="appearance.tray-machines"
+            reset={preferenceReset(preferences, 'trayMachines', onOff)}
+            title={t('interface.trayMachines.title')}
+            description={t('interface.trayMachines.description')}
+            control={
+              <Switch
+                checked={preferences.trayMachines}
+                aria-label={t('interface.trayMachines.title')}
+                onCheckedChange={(checked) => setAppPreference('trayMachines', checked)}
               />
             }
           />
@@ -208,6 +235,18 @@ export function AppearanceSettingsPage({ theme, onThemeChange }: { theme: ThemeP
                 onCheckedChange={(checked) => setAppPreference('traySessions', checked)}
               />
             }
+          />
+          <SettingsRow
+            settingId="appearance.glance-providers"
+            title={t('interface.glanceProviders.title')}
+            description={t('interface.glanceProviders.description')}
+            control={<ProviderPicker label={t('interface.glanceProviders.title')} />}
+          />
+          <SettingsRow
+            settingId="appearance.glance-machines"
+            title={t('interface.glanceMachines.title')}
+            description={t('interface.glanceMachines.description')}
+            control={<MachinePicker label={t('interface.glanceMachines.title')} />}
           />
         </SettingsSection>
         <SettingsSection title={t('appearance.privacy.title')} description={t('appearance.privacy.description')}>

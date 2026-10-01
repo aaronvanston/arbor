@@ -4,6 +4,8 @@ import { DEFAULT_SIDEBAR_ART, DEFAULT_SIDEBAR_ART_MOTION, type SidebarArt, type 
 
 export type AppPreferences = {
   sidebarLimits: boolean;
+  /** Show a tile per machine at the foot of the sidebar, with its health and how many of its agents are working. */
+  sidebarMachines: boolean;
   /** Arbor's color: its buttons, highlights and sidebar artwork. Read it through appColorChoice, which turns anything unknown into green. */
   appColor: AppColor;
   /** The artwork behind the sidebar's title row. Read it through sidebarArtChoice, which turns anything unknown into the default. */
@@ -13,6 +15,8 @@ export type AppPreferences = {
   /** Minutes between background limit refreshes; 0 disables polling. */
   refreshIntervalMinutes: number;
   trayLimits: boolean;
+  /** Show a line per machine in the tray menu, with its health and what its agents are doing. */
+  trayMachines: boolean;
   /** Show the sessions running now in the tray menu. */
   traySessions: boolean;
   limitNotifications: boolean;
@@ -58,11 +62,13 @@ export const HEAVY_SESSION_TOKEN_OPTIONS = [0, 50_000_000, 100_000_000, 200_000_
 /** What each preference is until it's changed, and what Reset to default puts back. */
 export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   sidebarLimits: true,
+  sidebarMachines: true,
   appColor: DEFAULT_APP_COLOR,
   sidebarArt: DEFAULT_SIDEBAR_ART,
   sidebarArtMotion: DEFAULT_SIDEBAR_ART_MOTION,
   refreshIntervalMinutes: 15,
   trayLimits: true,
+  trayMachines: true,
   traySessions: true,
   limitNotifications: true,
   resetNotifications: true,

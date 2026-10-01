@@ -8,7 +8,7 @@ import { canOpenView, machinesView, mainView, type AppView, type MainPageId } fr
 import { requestFocus } from '../../focusRequests';
 import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
-import { fetchMachineHealth } from '../../services/machineHealth';
+import { useFleetHealth } from '../../services/fleetHealth';
 import { accountsBadge, machinesBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
 import { useQuotaClock } from '../../services/quotaTime';
 import { setupChecks } from '../../services/setupChecks';
@@ -69,9 +69,6 @@ const MACHINE_STATUS: Record<HealthStatus, MessageKey> = {
   unconfigured: 'machines.health.status.unconfigured',
 };
 
-/** A machine's status changes slowly, and the sampler's rounds come every 5 seconds while Machines is open. */
-const MACHINES_REFRESH_MS = 30_000;
-
 /**
  * What asks for you on each page (accounts to sign in again or turned off with an error or at their cap, a machine
  * degraded or down, Sync's problems), and the machines themselves, Machines' leaves. The machines and Sync's checks
@@ -81,31 +78,13 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
   const { files, disabled } = useAccountsStore();
   const { paused } = useAccountReserves();
   const now = useQuotaClock();
-  const [machines, setMachines] = useState<TreeMachine[]>([]);
+  const health = useFleetHealth();
+  const machines = useMemo<TreeMachine[]>(() => (health ?? []).map((machine) => ({ name: machine.machine, status: machine.status })), [health]);
   const [setup, setSetup] = useState<PageBadge | null>(null);
 
   useEffect(() => {
     if (coreReady) void ensureAccountsLoaded();
   }, [coreReady]);
-
-  useEffect(() => {
-    let disposed = false;
-    let readAt = 0;
-    const read = () => {
-      readAt = Date.now();
-      fetchMachineHealth(null, 1_000, true)
-        .then((snapshot) => {
-          if (!disposed) setMachines(snapshot.machines.map((machine) => ({ name: machine.machine, status: machine.status })));
-        })
-        .catch(() => undefined);
-    };
-    read();
-    const unlisten = listen('machine-health-updated', () => { if (Date.now() - readAt >= MACHINES_REFRESH_MS) read(); });
-    return () => {
-      disposed = true;
-      void unlisten.then((stop) => stop()).catch(() => undefined);
-    };
-  }, []);
 
   useEffect(() => {
     let disposed = false;

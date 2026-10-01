@@ -130,8 +130,12 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('appearance', 'sidebar-art-motion', 'appearance.window.title', 'appearance.sidebarArtMotion.title', { description: 'appearance.sidebarArtMotion.description', keywords: 'settingsSearch.keywords.sidebarArtMotion' }),
   row('appearance', 'zoom', 'appearance.window.title', 'appearance.zoom.title', { description: 'appearance.zoom.description', keywords: 'settingsSearch.keywords.zoom' }),
   row('appearance', 'sidebar-limits', 'appearance.sidebarTray.title', 'interface.sidebarLimits.title', { description: 'interface.sidebarLimits.description' }),
+  row('appearance', 'sidebar-machines', 'appearance.sidebarTray.title', 'interface.sidebarMachines.title', { description: 'interface.sidebarMachines.description' }),
   row('appearance', 'tray-limits', 'appearance.sidebarTray.title', 'interface.trayLimits.title', { description: 'interface.trayLimits.description', keywords: 'settingsSearch.keywords.tray' }),
+  row('appearance', 'tray-machines', 'appearance.sidebarTray.title', 'interface.trayMachines.title', { description: 'interface.trayMachines.description', keywords: 'settingsSearch.keywords.tray' }),
   row('appearance', 'tray-sessions', 'appearance.sidebarTray.title', 'interface.traySessions.title', { description: 'interface.traySessions.description', keywords: 'settingsSearch.keywords.tray' }),
+  row('appearance', 'glance-providers', 'appearance.sidebarTray.title', 'interface.glanceProviders.title', { description: 'interface.glanceProviders.description', keywords: 'settingsSearch.keywords.tray' }),
+  row('appearance', 'glance-machines', 'appearance.sidebarTray.title', 'interface.glanceMachines.title', { description: 'interface.glanceMachines.description', keywords: 'settingsSearch.keywords.tray' }),
   row('appearance', 'hide-emails', 'appearance.privacy.title', 'appearance.hideEmails.title', { description: 'appearance.hideEmails.description', keywords: 'settingsSearch.keywords.hideEmails' }),
   row('appearance', 'refresh-interval', 'appearance.limits.title', 'interface.refreshInterval.title', { description: 'interface.refreshInterval.description', keywords: 'settingsSearch.keywords.refresh' }),
 
