@@ -11,6 +11,7 @@ import { displayAppVersion } from '../appUpdateModel';
 import { InlineNotice, useAppNotice } from '../appNotice';
 import { createVersionManagementVisitTracker } from '../services/versionManagementVisits';
 import { readCommandError } from '../services/commandError';
+import { buildChannelLabel, useBuildChannel } from '../services/buildChannel';
 import { appUpdateRestartsProxy, settleIdleUpdate } from '../services/updateWhenIdle';
 import { IdleUpdateNotice, useIdleUpdateGuard } from '../components/UpdateWhenIdle';
 import { ReleaseNoteSections } from '../components/UpdateReleaseNotes';
@@ -34,6 +35,7 @@ const recordVersionManagementVisit = createVersionManagementVisitTracker();
 
 export function VersionManagementPage() {
   const { t } = useI18n();
+  const build = useBuildChannel();
   const {
     info: appUpdate,
     error: appUpdateError,
@@ -303,6 +305,7 @@ export function VersionManagementPage() {
   const installDisabled = busy || installing;
 
   const resolvedAppVersion = appUpdate?.currentVersion || installedAppVersion;
+  const buildLabel = buildChannelLabel(build);
   const currentAppVersion = resolvedAppVersion ? displayAppVersion(resolvedAppVersion) : t('common.detecting');
   const latestAppVersion = appUpdate?.latestVersion ? displayAppVersion(appUpdate.latestVersion) : '';
 
@@ -416,7 +419,7 @@ export function VersionManagementPage() {
           headerAction={<Badge variant={appVersionStatusVariant} size="lg" title={appUpdateError || appVersionStatusLabel}>{appVersionStatusLabel}</Badge>}
         >
           <div className="grid grid-cols-2 divide-x divide-border/50">
-            <StatBlock label={t('appUpdate.current')} value={currentAppVersion} />
+            <StatBlock label={t('appUpdate.current')} value={currentAppVersion} hint={buildLabel ? t(buildLabel) : undefined} />
             <StatBlock
               label={t('appUpdate.latest')}
               value={appUpdate ? (latestAppVersion || currentAppVersion) : (checkingAppUpdate ? t('appUpdate.checking') : t('common.detecting'))}

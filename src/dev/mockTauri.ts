@@ -314,6 +314,8 @@
  * `readonly` for changes from the command line off, and `busy` for 50 recent requests, enough for its Show all log.
  * Its Agent skill row: this Mac's agents have the skill by default (not on a fresh install); `?cliSkill=missing`,
  * `outdated` for an older Arbor's skill, or `failed` for adding it failing.
+ * `?build=nightly` or `?build=dev` to run as a nightly or dev build: the sidebar's wordmark, Settings › About and
+ * Settings › Updates mark it (a stable build, the default, has no mark).
  */
 import { emit } from '@tauri-apps/api/event';
 import { clearMocks, mockWindows } from '@tauri-apps/api/mocks';
@@ -371,10 +373,13 @@ function drawTrafficLights() {
   document.body.append(lights);
 }
 
+/** The version each kind of build reports, for `?build=`. */
+const MOCK_BUILD_VERSIONS: Record<string, string> = { nightly: '0.3.200-nightly.20261002.1', dev: '0.3.200-dev.20261002.1' };
+
 /** Commands of Tauri's own plugins, which the webview reaches through their APIs. */
 const pluginAnswers: Record<string, (args: Json) => unknown> = {
-  // The app's own version, the same one the update check reports.
-  'plugin:app|version': () => '0.3.200',
+  // The app's own version, the same one the update check reports, unless `?build=` asks for another kind of build.
+  'plugin:app|version': () => MOCK_BUILD_VERSIONS[params.get('build') ?? ''] ?? '0.3.200',
   'plugin:dialog|open': (args) => {
     const title = String((args.options as Json | undefined)?.title ?? '');
     if (title.includes('backup')) return '/Volumes/Backup/Mac backups';

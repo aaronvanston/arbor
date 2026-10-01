@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { accountSignInsView, canOpenView, type AppView } from '../../navigation';
 import { addAccount } from '../../services/addAccount';
+import { buildChannelLabel, useBuildChannel } from '../../services/buildChannel';
 import { typedPaletteQuery } from '../../services/commandPalette';
 import type { PageBadge } from '../../services/pageBadges';
 import type { ShortcutId } from '../../services/shortcuts';
@@ -11,6 +12,7 @@ import type { AppColor } from '../../services/appColor';
 import { sidebarArtInk, type SidebarArt as SidebarArtChoice } from '../../services/sidebarArt';
 import type { AppTheme } from '../../theme';
 import { ShortcutKbd, WithShortcut } from '../ShortcutKbd';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
 import { SidebarArt } from './SidebarArt';
@@ -22,6 +24,8 @@ import { SidebarArt } from './SidebarArt';
 export function SidebarHeader({ art, theme, color, macTitleBar, onHome }: { art: SidebarArtChoice; theme: AppTheme; color: AppColor; macTitleBar: boolean; onHome: () => void }) {
   const { t } = useI18n();
   const ink = sidebarArtInk(art, theme, color);
+  const build = useBuildChannel();
+  const buildLabel = buildChannelLabel(build);
   return (
     <div className="relative flex h-[var(--workspace-topbar-height)] shrink-0 items-center" data-tauri-drag-region={macTitleBar ? 'deep' : undefined}>
       <SidebarArt art={art} theme={theme} color={color} />
@@ -33,6 +37,15 @@ export function SidebarHeader({ art, theme, color, macTitleBar, onHome }: { art:
       >
         {t('app.brandName')}
       </button>
+      {buildLabel ? (
+        <Badge
+          variant={build === 'dev' ? 'info' : 'warning'}
+          className="relative z-10 ms-1.5 [-webkit-app-region:no-drag]"
+          title={t(build === 'dev' ? 'app.build.devHint' : 'app.build.nightlyHint')}
+        >
+          {t(buildLabel)}
+        </Badge>
+      ) : null}
     </div>
   );
 }

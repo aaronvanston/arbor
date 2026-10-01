@@ -8,6 +8,8 @@ import { SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Button } from '../components/ui/button';
 import { toast } from '../components/ui/toast';
 import { useI18n } from '../i18n';
+import { buildChannelLabel, useBuildChannel } from '../services/buildChannel';
+import { Badge } from '../components/ui/badge';
 import { requestFocus } from '../focusRequests';
 import type { AppView } from '../navigation';
 import type { ProductAnalyticsSettings } from '../native/types';
@@ -135,6 +137,8 @@ function PrivacySection({ onNavigate }: { onNavigate?: (view: AppView) => void }
 /** The app's name and icon, its version once it's read, and where it comes from. */
 export function AboutHeader({ version }: { version: string | null }) {
   const { t } = useI18n();
+  const build = useBuildChannel();
+  const buildLabel = buildChannelLabel(build);
   return (
     <div className="flex items-center gap-3 px-4">
       <img src={appLogo} alt="" className="size-10 shrink-0 rounded-[9px] shadow-xs/10" />
@@ -142,6 +146,7 @@ export function AboutHeader({ version }: { version: string | null }) {
         <h1 className="flex items-baseline gap-2 text-sm font-medium tracking-title text-foreground">
           {t('app.brandName')}
           {version ? <span className="font-normal text-muted-foreground tabular-nums">{t('about.version', { version })}</span> : null}
+          {buildLabel ? <Badge variant={build === 'dev' ? 'info' : 'warning'} className="self-center">{t(buildLabel)}</Badge> : null}
         </h1>
         <p className="text-xs leading-[1.45] text-muted-foreground">{t('about.tagline')}</p>
       </div>

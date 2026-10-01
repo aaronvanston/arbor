@@ -3,6 +3,7 @@ mod app_identity;
 mod app_settings;
 mod app_update;
 mod bindings;
+mod build_channel;
 mod cli;
 mod command_error;
 mod configuration_watcher;
@@ -1626,6 +1627,7 @@ fn main() {
             if let Err(error) = configure_initial_main_window(app.handle(), start_hidden) {
                 eprintln!("Failed to configure startup window state: {error}");
             }
+            build_channel::apply_dock_badge(app.handle());
 
             if let Err(error) =
                 configuration_watcher::start_configuration_file_watcher(app.handle().clone())
