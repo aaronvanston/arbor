@@ -1,7 +1,7 @@
 [package]
 name = "arbor"
 # Single source of truth for the desktop app version.
-version = "1.0.16"
+version = "1.0.18"
 description = "Arbor desktop management shell"
 authors = ["Aaron Vanston"]
 edition = "2021"
