@@ -296,5 +296,6 @@ fn the_channel_is_saved_and_one_this_version_doesnt_know_reads_as_stable() {
     let read = |text: &str| toml::from_str::<GuiConfigFile>(text).unwrap().update_channel;
     assert_eq!(read("update-channel = \"preview\"\nzoom-step = 2\n"), UpdateChannel::Stable);
     assert_eq!(read("zoom-step = 2\n"), UpdateChannel::Stable);
+    assert_eq!(read("update-channel = \"dev\"\n"), UpdateChannel::Dev);
     fs::remove_dir_all(root).unwrap();
 }

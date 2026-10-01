@@ -368,6 +368,18 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "get_dev_build_status",
+        access: Access::Read,
+        summary: "Whether this Mac builds main for the dev channel, and how its builds are going.",
+        args: &[],
+    },
+    CommandSpec {
+        name: "request_dev_build",
+        access: Access::Write,
+        summary: "Starts a build of main now, or right after the one running.",
+        args: &[],
+    },
+    CommandSpec {
         name: "get_update_channel",
         access: Access::Read,
         summary: "Get update channel",
@@ -1723,6 +1735,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "submit_oauth_callback" => async { done(Box::pin(crate::management_api::submit_oauth_callback(app.state(), arg(&args, "provider")?, arg(&args, "redirectUrl")?)).await) }.await,
         "list_oauth_browsers" => blocking(move || plain(crate::list_oauth_browsers())).await,
         "check_app_update" => done(Box::pin(crate::check_app_update(app.state(), app.state())).await),
+        "get_dev_build_status" => blocking(move || done(crate::dev_builds::get_dev_build_status())).await,
+        "request_dev_build" => blocking(move || done(crate::dev_builds::request_dev_build())).await,
         "get_update_channel" => {
             let app = app.clone();
             blocking(move || done(crate::get_update_channel(app.state()))).await

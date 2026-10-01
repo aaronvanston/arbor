@@ -36,6 +36,7 @@ mod tests {
         types.visit::<crate::AppUpdateInfo>();
         types.visit::<crate::AppUpdateTask>();
         types.visit::<crate::release_feed::UpdateChannel>();
+        types.visit::<crate::dev_builds::DevBuildStatus>();
         types.visit::<crate::zoom::ZoomLevel>();
         types.visit::<crate::product_analytics::ProductAnalyticsSettings>();
         types.visit::<crate::product_analytics::ProductAnalyticsInput>();

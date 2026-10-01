@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
-import { AlertCircle, Download, ExternalLink, Info, RotateCcw } from '../components/ui/icons';
+import { AlertCircle, Download, ExternalLink, FileCode, Info, RotateCcw } from '../components/ui/icons';
 import { useCoreRuntime } from '../coreRuntime';
 import { useCoreUpdate } from '../coreUpdate';
 import { useI18n } from '../i18n';
@@ -13,6 +13,7 @@ import { createVersionManagementVisitTracker } from '../services/versionManageme
 import { readCommandError } from '../services/commandError';
 import { buildChannelLabel, useBuildChannel } from '../services/buildChannel';
 import { appUpdateRestartsProxy, settleIdleUpdate } from '../services/updateWhenIdle';
+import { devBuildLine } from '../services/devBuild';
 import { IdleUpdateNotice, useIdleUpdateGuard } from '../components/UpdateWhenIdle';
 import { ReleaseNoteSections } from '../components/UpdateReleaseNotes';
 import { ARBOR_RELEASES_URL, CORE_RELEASES_URL, NO_RELEASE_NOTES, coreReleaseUrl, releaseNotesToShow } from '../services/releaseNotes';
@@ -28,7 +29,7 @@ import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
-import type { CoreInstallResult, CoreInstallTask, UpdateChannel } from '../native/types';
+import type { CoreInstallResult, CoreInstallTask, DevBuildStatus, UpdateChannel } from '../native/types';
 
 export type MessageType = 'info' | 'success' | 'error';
 const recordVersionManagementVisit = createVersionManagementVisitTracker();
@@ -69,6 +70,8 @@ export function VersionManagementPage() {
 
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel | null>(null);
   const [updateChannelSaving, setUpdateChannelSaving] = useState(false);
+  const [devBuild, setDevBuild] = useState<DevBuildStatus | null>(null);
+  const [devBuildStarting, setDevBuildStarting] = useState(false);
   const feedback = useAppNotice();
   const { showNotice } = feedback;
 
@@ -136,7 +139,7 @@ export function VersionManagementPage() {
     try {
       const saved = await invokeCommand('set_update_channel', { channel });
       setUpdateChannel(saved);
-      showNotice({ key: saved === 'nightly' ? 'appUpdate.channelNowNightly' : 'appUpdate.channelNowStable' }, 'info');
+      showNotice({ key: saved === 'dev' ? 'appUpdate.channelNowDev' : saved === 'nightly' ? 'appUpdate.channelNowNightly' : 'appUpdate.channelNowStable' }, 'info');
       void checkAppUpdate();
     } catch (error) {
       showNotice({ key: 'appUpdate.channelSaveFailed', variables: { error: String(error) } }, 'error');
@@ -226,6 +229,25 @@ export function VersionManagementPage() {
     setCancelingInstall(false);
   };
 
+  const buildLatestMain = async () => {
+    setDevBuildStarting(true);
+    try {
+      setDevBuild(await invokeCommand('request_dev_build'));
+    } catch (error) {
+      showNotice({ key: 'appUpdate.devBuild.buildNowFailed', variables: { error: String(error) } }, 'error');
+    } finally {
+      setDevBuildStarting(false);
+    }
+  };
+
+  const openDevBuildLog = async () => {
+    try {
+      await invokeCommand('open_dev_build_log');
+    } catch (error) {
+      showNotice({ key: 'appUpdate.devBuild.showLogFailed', variables: { error: String(error) } }, 'error');
+    }
+  };
+
   const openAppRelease = async () => {
     try {
       await invokeCommand('open_external_url', { url: appUpdate?.releaseUrl || ARBOR_RELEASES_URL });
@@ -241,6 +263,24 @@ export function VersionManagementPage() {
       .catch(() => { if (!disposed) setUpdateChannel('stable'); });
     return () => { disposed = true; };
   }, []);
+
+  // The builder's status, read again every ten seconds while a build is under way or asked for. When one finishes on
+  // the dev channel, the app checks for the build it made.
+  const devBuildActive = devBuild ? devBuildLine(devBuild).active : false;
+  const devBuildActiveRef = useRef(devBuildActive);
+  useEffect(() => {
+    let disposed = false;
+    const load = () => invokeCommand('get_dev_build_status')
+      .then((status) => { if (!disposed) setDevBuild(status); })
+      .catch(() => undefined);
+    void load();
+    const timer = devBuildActive ? window.setInterval(() => void load(), 10_000) : undefined;
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [devBuildActive]);
+  useEffect(() => {
+    if (devBuildActiveRef.current && !devBuildActive && updateChannel === 'dev') void checkAppUpdate();
+    devBuildActiveRef.current = devBuildActive;
+  }, [checkAppUpdate, devBuildActive, updateChannel]);
 
   useEffect(() => {
     if (!recordVersionManagementVisit(pageVisitRef.current)) return;
@@ -403,6 +443,13 @@ export function VersionManagementPage() {
 
   const installDialogActionDisabled = installRunning && (cancelingInstall || !progress?.cancelable);
 
+  // Dev is offered only on a Mac that builds main, or kept on view while it's the channel.
+  const offerDev = Boolean(devBuild?.installed) || updateChannel === 'dev';
+  const devLine = devBuild ? devBuildLine(devBuild) : null;
+  const channelLabel = updateChannel === 'dev'
+    ? t('appUpdate.channel.dev')
+    : updateChannel === 'nightly' ? t('appUpdate.channel.nightly') : t('appUpdate.channel.stable');
+
   return (
     <Page>
       <PageTopbar>
@@ -430,7 +477,7 @@ export function VersionManagementPage() {
           <SettingsRow
             settingId="updates.app"
             title={t('appUpdate.status')}
-            description={t('appUpdate.feed')}
+            description={updateChannel === 'dev' ? t('appUpdate.feedDev') : t('appUpdate.feed')}
             status={appUpdateError ? null : !appUpdate?.autoUpdateSupported ? t('appUpdate.manualFallback') : null}
             control={
               <>
@@ -475,15 +522,48 @@ export function VersionManagementPage() {
                 onValueChange={(value) => { if (value && value !== updateChannel) void changeUpdateChannel(value as UpdateChannel); }}
               >
                 <SelectTrigger size="sm" className="w-36" aria-label={t('appUpdate.channel')}>
-                  <SelectValue>{updateChannel === 'nightly' ? t('appUpdate.channel.nightly') : t('appUpdate.channel.stable')}</SelectValue>
+                  <SelectValue>{channelLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   <SelectItem value="stable">{t('appUpdate.channel.stable')}</SelectItem>
                   <SelectItem value="nightly">{t('appUpdate.channel.nightly')}</SelectItem>
+                  {offerDev ? <SelectItem value="dev">{t('appUpdate.channel.dev')}</SelectItem> : null}
                 </SelectPopup>
               </Select>
             }
           />
+          {offerDev && devBuild && devLine ? (
+            <SettingsRow
+              settingId="updates.dev-build"
+              title={t('appUpdate.devBuild')}
+              description={devBuild.installed ? t('appUpdate.devBuild.description') : t('appUpdate.channel.devUnavailable')}
+              status={
+                <span className={devLine.tone === 'error' ? 'text-error-foreground' : undefined} title={devBuild.error ?? undefined}>
+                  {t(devLine.key, { ...devLine.variables, ...(devLine.step ? { step: t(devLine.step) } : {}) })}
+                </span>
+              }
+              control={
+                <>
+                  {devBuild.hasLog ? (
+                    <Button variant="ghost-muted" size="sm" onClick={() => void openDevBuildLog()}>
+                      <FileCode />
+                      {t('appUpdate.devBuild.showLog')}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!devBuild.installed || devBuildStarting || devLine.active}
+                    disabledReason={!devBuild.installed ? t('appUpdate.channel.devUnavailable') : undefined}
+                    onClick={() => void buildLatestMain()}
+                  >
+                    <RefreshIcon refreshing={devBuildStarting || devLine.active} />
+                    {t('appUpdate.devBuild.buildNow')}
+                  </Button>
+                </>
+              }
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection

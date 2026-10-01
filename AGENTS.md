@@ -139,7 +139,8 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   (`publish-github-release.sh`, which is also the app's update feed), the Release
   workflow's plan and publish steps (`release-plan.mjs`, `publish-workflow-release.sh`),
   its runner (`install-release-runner.sh`) and how a stable release is started
-  (`release-stable.sh`), the public
+  (`release-stable.sh`), the dev channel's builds of main (`dev-build.sh`,
+  `dev-build.mjs`, set up by `install-dev-builds.sh`), the public
   release notes in `release-notes.json` (`release-notes.mjs`), the update list's
   signing key (`release-signing.mjs`), disk cleanup (`clean-dev-disk.sh`, which removes idle
   worktrees' Rust build folders, worktrees whose work is on origin/main, and
@@ -419,6 +420,25 @@ main, started by the schedule or by hand (`tests/releaseRunnerGuard.test.ts`). N
 point another workflow at the `arbor-release` label. When the repository goes public,
 also set Settings › Actions › "Approval for running fork pull request workflows" to
 all external contributors (GitHub only offers it on public repositories).
+
+### Dev channel
+
+Settings › Updates has a third channel, Dev, for the Mac that builds releases: it
+takes that Mac's own builds of main, built after each change instead of a few times a
+day. `scripts/install-dev-builds.sh` (`--uninstall` to stop) sets up a LaunchAgent
+running `scripts/dev-build.sh` every ten minutes. Once main has been still for five
+minutes, or when "Build latest main" leaves its `build-now` file, it builds origin/main
+in its own clone in `~/.arbor/dev-build` (a clone, not a worktree, so nothing tidies it
+away), runs `bun run verify` and `verify:rust`, builds with `scripts/build-release.sh`
+and signs the update list with the release key. The DMG, `arbor-update-dev.json`,
+`status.json` and the build logs sit in `~/Library/Application Support/Arbor Dev
+Builds`; `scripts/dev-build.mjs` writes the version (`X.Y.Z-dev.<main's commit count>`),
+the list and the status. The app reads only that folder on Dev
+(`src-tauri/src/dev_builds.rs`), checks the signature, and offers any build that isn't
+the one running, since `-dev` sorts below `-nightly`. A commit that failed isn't
+tried again until main moves or a build is asked for. Nothing is published, and a
+session never sets the builder up or switches a real app to Dev; that's the
+maintainer's to do.
 
 ### By hand, in an emergency
 

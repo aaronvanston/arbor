@@ -7,6 +7,7 @@ mod alias_delete;
 mod alias_save;
 mod app_settings;
 mod app_update;
+mod dev_builds;
 mod core_config;
 mod core_runtime;
 mod digest_export;

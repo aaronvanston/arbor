@@ -174,6 +174,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
 
   row('updates', 'app', 'kernel.versions.appCardTitle', 'appUpdate.status', { description: 'appUpdate.feed', keywords: 'settingsSearch.keywords.updates' }),
   row('updates', 'channel', 'kernel.versions.appCardTitle', 'appUpdate.channel', { description: 'appUpdate.channelDescription', keywords: 'settingsSearch.keywords.updateChannel' }),
+  row('updates', 'dev-build', 'kernel.versions.appCardTitle', 'appUpdate.devBuild', { description: 'appUpdate.devBuild.description', keywords: 'settingsSearch.keywords.devBuild' }),
   row('updates', 'core', 'kernel.versions.coreCardTitle', 'kernel.versions.updateStatus', { description: 'kernel.versions.coreSourceHint', keywords: 'settingsSearch.keywords.updates' }),
 
   section('about', 'built-on', 'about.builtOn.title', { description: 'about.builtOn.description', keywords: 'settingsSearch.keywords.about' }),

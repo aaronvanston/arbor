@@ -1,6 +1,7 @@
 import type {
   AppUpdateInfo,
   AppUpdateTask,
+  DevBuildStatus,
   ExceptionReport,
   GuiSettings,
   PhoneAlert,
@@ -48,6 +49,9 @@ export type AppCommands = {
   start_app_update: { result: void };
   cancel_app_update: { result: void };
   get_app_update_task: { result: AppUpdateTask };
+  get_dev_build_status: { result: DevBuildStatus };
+  request_dev_build: { result: DevBuildStatus };
+  open_dev_build_log: { result: void };
 
   get_phone_alert_secrets: { result: PhoneAlertSecretStatus };
   set_phone_alert_secret: { args: { secret: PhoneAlertSecret; value: string }; result: PhoneAlertSecretStatus };

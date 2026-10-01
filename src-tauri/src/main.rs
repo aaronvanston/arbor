@@ -9,6 +9,7 @@ mod command_error;
 mod configuration_watcher;
 mod core_config;
 mod core_runtime;
+mod dev_builds;
 mod digest_export;
 mod instance_lock;
 mod main_window;
@@ -299,6 +300,8 @@ struct PendingAppUpdate {
     version: String,
     asset: PortableUpdateAsset,
     arch: String,
+    /// A dev build in this Mac's builder folder, copied instead of downloaded.
+    local_file: Option<PathBuf>,
 }
 
 /// Where an app update is; the window shows its progress from this.
@@ -1797,6 +1800,9 @@ fn main() {
             open_oauth_url,
             open_external_url,
             check_app_update,
+            dev_builds::get_dev_build_status,
+            dev_builds::request_dev_build,
+            dev_builds::open_dev_build_log,
             get_update_channel,
             set_update_channel,
             get_app_update_task,

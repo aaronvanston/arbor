@@ -32,6 +32,7 @@ export const LEFT_OUT = {
   management_request: 'it passes any request to the core, resets and claims included',
   save_digest_page: 'it opens a save dialog on the Mac',
   open_saved_page: 'it opens a page on the Mac',
+  open_dev_build_log: 'it opens a file on the Mac',
   open_external_url: 'it opens any address on the Mac',
   open_fix_session: 'it opens a Terminal window on the Mac and starts an agent in it',
   open_oauth_url: 'it opens any address on the Mac',

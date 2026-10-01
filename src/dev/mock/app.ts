@@ -4,7 +4,7 @@ import { PHONE_ALERT_SECRETS } from '../../services/phoneAlerts';
 import { QUIT_GUARD_ARMED_EVENT, QUIT_GUARD_WINDOW_MS, pressQuit } from '../../services/quitGuard';
 import { nearestZoomStep, ZOOM_CHANGED_EVENT, zoomLevelAt } from '../../services/zoom';
 import type { AppCommands } from '../../native/app';
-import type { PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, UpdateChannel, ZoomLevel } from '../../native/types';
+import type { DevBuildStatus, PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, UpdateChannel, ZoomLevel } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { configSettings, coreStatus } from './core';
 import { freshInstall, mockLog, params } from './scenario';
@@ -98,10 +98,42 @@ const PHONE_SECRETS_UNREADABLE =
 const phoneSecretStatus = () =>
   Object.fromEntries(PHONE_ALERT_SECRETS.map((secret) => [secret, Boolean(phoneSecrets[secret])])) as Record<PhoneAlertSecret, boolean>;
 
-let updateChannel: UpdateChannel = params.get('channel') === 'nightly' ? 'nightly' : 'stable';
+const channelParam = params.get('channel');
+let updateChannel: UpdateChannel = channelParam === 'nightly' || channelParam === 'dev' ? channelParam : 'stable';
+
+const DEV_COMMIT = '7c41e2a9d03b5f68a1e4c2b7d9f0e3a6b5c8d1f2';
+const DEV_NEXT_COMMIT = 'e93b07d4a1c6f2e85b0d7a3c9e1f4b6a8d2c5e70';
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+/** This Mac's dev builder: set up and idle with a build of main ready, unless the scenario says otherwise. */
+function mockDevBuildStatus(): DevBuildStatus {
+  const scenario = params.get('devbuild');
+  const built = { builtVersion: '1.0.27-dev.4123', builtCommit: DEV_COMMIT, builtAt: minutesAgo(12) };
+  const base: DevBuildStatus = {
+    installed: true, state: 'idle', commit: DEV_COMMIT, step: null, startedAt: minutesAgo(21), finishedAt: minutesAgo(12),
+    error: null, hasLog: true, requested: false, ...built,
+  };
+  if (scenario === 'none') {
+    return { ...base, installed: false, commit: null, startedAt: null, finishedAt: null, hasLog: false, builtVersion: null, builtCommit: null, builtAt: null };
+  }
+  if (scenario === 'building') return { ...base, state: 'building', step: 'verifying', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(3), finishedAt: null };
+  if (scenario === 'waiting') return { ...base, state: 'waiting', commit: DEV_NEXT_COMMIT, startedAt: null, finishedAt: null };
+  if (scenario === 'failed') {
+    return { ...base, state: 'failed', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(9), finishedAt: minutesAgo(2), error: 'bun run verify failed: 2 tests failed in tests/sidebarTree.test.ts' };
+  }
+  return base;
+}
+let devBuildRequested = false;
 
 // Release notes as the update feed gives them, newest first.
-function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[] } {
+function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[]; releaseUrl?: string } {
+  if (updateChannel === 'dev') {
+    return {
+      latestVersion: '1.0.27-dev.4123',
+      releaseUrl: `https://github.com/aaronvanston/arbor/commit/${DEV_COMMIT}`,
+      releases: [{ version: '1.0.27-dev.4123', summary: 'Main at 7c41e2a.', changes: ['Show each account’s extra-usage credits on Sign-ins', 'Fix a machine’s warnings with an agent, from the warning itself'] }],
+    };
+  }
   if (updateChannel === 'nightly') {
     return { latestVersion: '0.3.202-nightly.20260930.4', releases: [{ version: '0.3.202-nightly.20260930.4', summary: 'A nightly build of what’s next.', changes: [] }] };
   }
@@ -181,6 +213,14 @@ export const appAnswers: CommandAnswers<AppCommands> = {
     return null;
   },
   cancel_app_update: () => null,
+  get_dev_build_status: () => ({ ...mockDevBuildStatus(), requested: devBuildRequested }),
+  request_dev_build: () => {
+    mockLog('request_dev_build', null);
+    if (!mockDevBuildStatus().installed) throw 'Dev builds aren’t set up on this Mac. Run scripts/install-dev-builds.sh from Arbor’s repository.';
+    devBuildRequested = true;
+    return { ...mockDevBuildStatus(), requested: true };
+  },
+  open_dev_build_log: () => { mockLog('open_dev_build_log', null); return null; },
   set_tray_rows: (args) => { mockLog('tray', { section: args.section, rows: args.rows }); return null; },
   set_tray_status: (args) => { mockLog('tray_status', args.indicator); return null; },
   frontend_ready: (args) => { mockLog('frontend_ready', args); return null; },

@@ -43,6 +43,7 @@ fn portable_update_state_supports_cancellation_and_snapshot_recovery() {
         version: "1.2.3".to_string(),
         asset: portable_update_test_asset("1.2.3", "amd64"),
         arch: "amd64".to_string(),
+        local_file: None,
     };
     state.set_available(AppUpdateTask {
         phase: AppUpdatePhase::Available,
@@ -73,6 +74,7 @@ fn pending_app_update(version: &str) -> PendingAppUpdate {
         version: format!("v{version}"),
         asset: portable_update_test_asset(version, "amd64"),
         arch: "amd64".to_string(),
+        local_file: None,
     }
 }
 

@@ -945,6 +945,52 @@ export type DefinitionView = {
 };
 
 /**
+ * What the builder is doing, as it writes it in status.json.
+ */
+export type DevBuildState = "idle" | "waiting" | "building" | "failed";
+
+/**
+ * Whether this Mac builds main for the dev channel, and how its builds are going.
+ */
+export type DevBuildStatus = {
+  /**
+   * The builder's LaunchAgent is set up (scripts/install-dev-builds.sh).
+   */
+  installed: boolean,
+  state: DevBuildState,
+  /**
+   * The commit of main being waited on or built.
+   */
+  commit: string | null,
+  step: DevBuildStep | null,
+  startedAt: string | null,
+  finishedAt: string | null,
+  /**
+   * Why the last build failed.
+   */
+  error: string | null,
+  /**
+   * The last build's log, when there is one to open.
+   */
+  hasLog: boolean,
+  /**
+   * "Build latest main" was asked for and the builder hasn't taken it yet.
+   */
+  requested: boolean,
+  /**
+   * The newest build that finished, which the dev channel offers.
+   */
+  builtVersion: string | null,
+  builtCommit: string | null,
+  builtAt: string | null,
+};
+
+/**
+ * The step a running build is on.
+ */
+export type DevBuildStep = "fetching" | "installing" | "verifying" | "building" | "signing";
+
+/**
  * One call, as Diagnostics keeps it.
  */
 export type DiagnosticCall = {
@@ -4088,9 +4134,10 @@ export type TraySection = "limits" | "machines" | "sessions";
 
 /**
  * Which releases the app updates to. Stable is the release GitHub marks as the latest. Nightly also takes the
- * prereleases built from main, `X.Y.Z-nightly.YYYYMMDD.N`, and moves to a stable release once one is newer.
+ * prereleases built from main, `X.Y.Z-nightly.YYYYMMDD.N`, and moves to a stable release once one is newer. Dev takes
+ * the builds this Mac makes of main itself (dev_builds.rs), never GitHub's.
  */
-export type UpdateChannel = "stable" | "nightly";
+export type UpdateChannel = "stable" | "nightly" | "dev";
 
 /**
  * A range's requests by the credential that served them, found by the auth index each carries, so the Breakdown can

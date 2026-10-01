@@ -46,8 +46,16 @@ pub(crate) fn set_update_channel(
 async fn resolve_app_update(
     gui_config_state: &GuiConfigState,
 ) -> Result<(AppUpdateInfo, Option<PendingAppUpdate>), String> {
-    // Arbor's own releases on GitHub; each asset's url is where the API serves that DMG.
-    let manifest = {
+    let channel = gui_config_state.snapshot()?.update_channel;
+    // On the dev channel, this Mac's own builds of main, each asset's url the DMG's path in the builder's folder;
+    // otherwise Arbor's releases on GitHub, each asset's url where the API serves that DMG.
+    let manifest = if channel == crate::release_feed::UpdateChannel::Dev {
+        crate::dev_builds::read_dev_feed(
+            &crate::dev_builds::dev_feed_dir()?,
+            crate::release_feed::ARBOR_RELEASE_FEED.public_key,
+            crate::release_feed::ARBOR_RELEASE_FEED.repository,
+        )?
+    } else {
         let config = gui_config_state.snapshot()?;
         let client = build_http_client_with_proxy(
             reqwest::Client::builder()
@@ -69,7 +77,11 @@ async fn resolve_app_update(
     };
     let latest_version = normalize_version(&manifest.version);
     let current_version = normalize_version(env!("CARGO_PKG_VERSION"));
-    let update_available = is_app_update_available(&current_version, &latest_version)?;
+    let update_available = if channel == crate::release_feed::UpdateChannel::Dev {
+        crate::dev_builds::is_dev_update_available(&current_version, &latest_version)?
+    } else {
+        is_app_update_available(&current_version, &latest_version)?
+    };
     let target = portable_update_target();
     let asset_catalog = manifest.full_assets.as_ref().unwrap_or(&manifest.assets);
     let asset = target.and_then(|(key, _)| asset_catalog.get(key)).cloned();
@@ -91,6 +103,8 @@ async fn resolve_app_update(
             version: latest_version.clone(),
             asset: asset.clone().expect("portable asset checked above"),
             arch: arch.to_string(),
+            local_file: (channel == crate::release_feed::UpdateChannel::Dev)
+                .then(|| PathBuf::from(&asset.as_ref().expect("portable asset checked above").url)),
         })
     } else {
         None
@@ -320,13 +334,19 @@ pub(crate) async fn download_and_stage_portable_app_update(
     token: &CancellationToken,
     proxy_url: &str,
 ) -> Result<(), String> {
-    validate_portable_update_asset(&pending.asset)?;
+    match &pending.local_file {
+        Some(_) => validate_portable_update_asset_digest(&pending.asset)?,
+        None => validate_portable_update_asset(&pending.asset)?,
+    }
     let work_dir = portable_update_work_dir(&pending.version);
     fs::create_dir_all(&work_dir)
         .map_err(|error| format!("Failed to create application update temporary directory: {error}"))?;
     let archive_path = work_dir.join("update.dmg");
     let result = async {
-        download_portable_update_archive(app, pending, token, &archive_path, proxy_url).await?;
+        match &pending.local_file {
+            Some(file) => crate::dev_builds::copy_dev_build(file, &archive_path, pending.asset.size_bytes)?,
+            None => download_portable_update_archive(app, pending, token, &archive_path, proxy_url).await?,
+        }
         ensure_portable_update_download(token, &archive_path, pending)?;
         update_app_task(app, |task| {
             task.cancelable = false;

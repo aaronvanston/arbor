@@ -12,19 +12,21 @@ use base64::Engine as _;
 pub(crate) const SIGNED_FEED_ASSET: &str = "arbor-update-darwin.json";
 /// Signed ahead of the list; scripts/release-signing.mjs signs the same bytes.
 const FEED_SIGNING_CONTEXT: &[u8] = b"Arbor update feed v1\n";
-const SIGNED_FEED_MAX_BYTES: u64 = 1024 * 1024;
+pub(crate) const SIGNED_FEED_MAX_BYTES: u64 = 1024 * 1024;
 const GH_TOKEN_TIMEOUT: Duration = Duration::from_secs(5);
 /// How many of the newest releases the nightly channel looks through; nightlies come at most every half hour.
 const NIGHTLY_RELEASES_PAGE: usize = 30;
 
 /// Which releases the app updates to. Stable is the release GitHub marks as the latest. Nightly also takes the
-/// prereleases built from main, `X.Y.Z-nightly.YYYYMMDD.N`, and moves to a stable release once one is newer.
+/// prereleases built from main, `X.Y.Z-nightly.YYYYMMDD.N`, and moves to a stable release once one is newer. Dev takes
+/// the builds this Mac makes of main itself (dev_builds.rs), never GitHub's.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum UpdateChannel {
     #[default]
     Stable,
     Nightly,
+    Dev,
 }
 
 impl UpdateChannel {
@@ -32,6 +34,7 @@ impl UpdateChannel {
         match self {
             Self::Stable => "stable",
             Self::Nightly => "nightly",
+            Self::Dev => "dev",
         }
     }
 }
@@ -43,6 +46,7 @@ pub(crate) fn deserialize_update_channel<'de, D: serde::Deserializer<'de>>(
 ) -> Result<UpdateChannel, D::Error> {
     Ok(match String::deserialize(deserializer)?.trim() {
         "nightly" => UpdateChannel::Nightly,
+        "dev" => UpdateChannel::Dev,
         _ => UpdateChannel::Stable,
     })
 }
@@ -123,7 +127,8 @@ pub(crate) async fn fetch_release_feed(
             let latest = format!("{}/repos/{}/releases/latest", source.api, source.repository);
             fetch_api_json::<GithubRelease>(client, source, token, &latest).await?
         }
-        UpdateChannel::Nightly => {
+        // The dev channel reads this Mac's own builds; resolve_app_update never sends it here.
+        UpdateChannel::Nightly | UpdateChannel::Dev => {
             let page = format!("{}/repos/{}/releases?per_page={NIGHTLY_RELEASES_PAGE}", source.api, source.repository);
             newest_release(fetch_api_json::<Vec<GithubRelease>>(client, source, token, &page).await?)
                 .ok_or_else(|| "Arbor has no releases yet".to_string())?
