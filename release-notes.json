@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.0.19",
+    "summary": "Sync: the setup repo's files stay in view, however many things are removed.",
+    "changes": []
+  },
+  {
     "version": "1.0.18",
     "summary": "Manage Arbor from the command line and from agents, with changes showing in the app at once.",
     "changes": [
