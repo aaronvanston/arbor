@@ -87,7 +87,7 @@ struct Hook {
     homes: Option<Vec<String>>,
     /// Taken off every machine: each home's copy is the repo's to remove.
     removed: bool,
-    /// Machines it's kept off.
+    /// Machines it's kept off, as the file spells them; names compare loosely, as plugins.json's do.
     off: BTreeSet<String>,
     problems: Vec<String>,
 }
@@ -106,10 +106,15 @@ impl Hook {
         handler
     }
 
+    fn is_off(&self, machine: &str) -> bool {
+        let key = normalize_machine_name(machine);
+        self.off.iter().any(|listed| normalize_machine_name(listed) == key)
+    }
+
     /// Whether `agent`'s home at `home` on `machine` should have it.
     fn wanted(&self, machine: &str, agent: AgentKind, home: &str) -> bool {
         !self.removed
-            && !self.off.contains(machine)
+            && !self.is_off(machine)
             && self.agents.contains(&agent)
             && self.homes.as_ref().is_none_or(|homes| homes.iter().any(|listed| listed == home))
     }
@@ -411,7 +416,15 @@ fn registry_view(commit: Option<String>, found: bool, uncommitted: bool, registr
             agents: hook.agents.clone(),
             homes: hook.homes.clone(),
             removed: hook.removed,
-            off: hook.off.iter().cloned().collect(),
+            // As the scan names them, so the page finds each machine's choice however the file spells it.
+            off: hook
+                .off
+                .iter()
+                .map(|listed| {
+                    let key = normalize_machine_name(listed);
+                    machines.iter().find(|(machine, _)| normalize_machine_name(machine) == key).map_or_else(|| listed.clone(), |(machine, _)| machine.clone())
+                })
+                .collect(),
             problems: hook.problems.clone(),
         })
         .collect();
@@ -546,10 +559,13 @@ fn set_wanted(file: &mut Value, name: &str, machine: Option<&str>, wanted: HookW
                 *machines = serde_json::json!({});
             }
             let machines = machines.as_object_mut().ok_or_else(unreadable)?;
+            // The file's own spelling of the machine stays, so a hand-written "eden-dev-01" isn't joined by "Eden dev 01".
+            let key = normalize_machine_name(machine);
+            let listed = machines.keys().find(|listed| normalize_machine_name(listed) == key).cloned();
             if wanted == HookWanted::Off {
-                machines.insert(machine.to_string(), Value::from("off"));
-            } else {
-                machines.remove(machine);
+                machines.insert(listed.unwrap_or_else(|| machine.to_string()), Value::from("off"));
+            } else if let Some(listed) = listed {
+                machines.remove(&listed);
             }
             if machines.is_empty() {
                 hook.remove("machines");
@@ -883,6 +899,13 @@ mod tests {
         assert_eq!(file["hooks"]["guard"]["machines"], json!({ "ci-01": "off" }));
         assert!(!registry(file.clone()).hook("guard").unwrap().wanted("ci-01", AgentKind::Claude, "~/.claude"));
         set_wanted(&mut file, "guard", Some("ci-01"), HookWanted::Default).unwrap();
+        assert!(file["hooks"]["guard"].get("machines").is_none());
+        // Machine names compare loosely, and the file keeps its own spelling.
+        file["hooks"]["guard"]["machines"] = json!({ "build-box": "off" });
+        assert!(!registry(file.clone()).hook("guard").unwrap().wanted("Build Box", AgentKind::Claude, "~/.claude"));
+        set_wanted(&mut file, "guard", Some("Build Box"), HookWanted::Off).unwrap();
+        assert_eq!(file["hooks"]["guard"]["machines"], json!({ "build-box": "off" }));
+        set_wanted(&mut file, "guard", Some("Build Box"), HookWanted::Default).unwrap();
         assert!(file["hooks"]["guard"].get("machines").is_none());
         set_wanted(&mut file, "guard", None, HookWanted::Removed).unwrap();
         assert!(!registry(file.clone()).hook("guard").unwrap().wanted("mac", AgentKind::Claude, "~/.claude"));
