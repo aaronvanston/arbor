@@ -635,7 +635,7 @@ export type CliInstallResult = {
 export type CliInstallState = "installed" | "missing" | "elsewhere" | "taken" | "unavailable";
 
 /**
- * Everything Settings › Software › Command line shows.
+ * Everything Settings › App › Command line shows.
  */
 export type CliOverview = {
   settings: CliSettings,
@@ -644,6 +644,10 @@ export type CliOverview = {
    * The latest requests, newest first.
    */
   activity: Array<CliActivity>,
+  /**
+   * Whether this Mac's skill store has the skill that teaches agents `arbor`.
+   */
+  skill: CliSkillState,
 };
 
 export type CliSettings = {
@@ -656,6 +660,23 @@ export type CliSettings = {
    */
   changes: boolean,
 };
+
+/**
+ * What installing the skill did, each place with the home folder as ~.
+ */
+export type CliSkillInstall = {
+  written: Array<string>,
+  /**
+   * Already the skill as this Arbor has it.
+   */
+  already: Array<string>,
+  failed: Array<string>,
+};
+
+/**
+ * Whether the store holds the skill, and whether it's this Arbor's.
+ */
+export type CliSkillState = "missing" | "current" | "outdated";
 
 /**
  * An action the window answers for the command line.

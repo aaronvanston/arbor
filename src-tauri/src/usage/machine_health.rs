@@ -35,6 +35,7 @@ pub(crate) mod agents;
 pub(crate) mod archive;
 pub(crate) mod attention;
 pub(crate) mod checkout_settings;
+pub(crate) mod cli_skill;
 pub(crate) mod client_versions;
 pub(crate) mod discovery;
 pub(crate) mod fix_session;

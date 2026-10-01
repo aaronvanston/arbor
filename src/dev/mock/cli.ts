@@ -1,5 +1,5 @@
 import type { CliCommands } from '../../native/cli';
-import type { CliActivity, CliInstall, CliInstallState, CliSettings, SavedStoreSnapshot } from '../../native/types';
+import type { CliActivity, CliInstall, CliInstallState, CliSettings, CliSkillState, SavedStoreSnapshot } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { freshInstall, hours, mockLog, params } from './scenario';
 
@@ -8,6 +8,9 @@ import { freshInstall, hours, mockLog, params } from './scenario';
  * `elsewhere` (linked to an Arbor that has moved), `taken` (something else is at ~/.local/bin/arbor), `dev` (a
  * development build, which can't be linked), `off` (command line control turned off), `readonly` (changes turned off)
  * or `busy` (linked, with a long history of requests, enough for Show all).
+ *
+ * `?cliSkill=` picks whether this Mac's agents have the arbor skill: `missing` (the default on a fresh install),
+ * `outdated` (an older Arbor's), `current` (the default otherwise) or `failed` (adding it fails).
  */
 const cliScenario = params.get('cli') ?? (freshInstall ? 'missing' : 'installed');
 
@@ -18,6 +21,9 @@ let installState: CliInstallState =
   cliScenario === 'missing' || cliScenario === 'elsewhere' || cliScenario === 'taken' ? cliScenario
     : cliScenario === 'dev' ? 'unavailable'
       : 'installed';
+
+const skillScenario = params.get('cliSkill') ?? (freshInstall ? 'missing' : 'current');
+let skillState: CliSkillState = skillScenario === 'outdated' ? 'outdated' : skillScenario === 'current' ? 'current' : 'missing';
 
 let cliSettings: CliSettings = { enabled: cliScenario !== 'off', changes: cliScenario !== 'readonly' };
 
@@ -75,7 +81,7 @@ export const cliAnswers: CommandAnswers<CliCommands> = {
   saved_store_migrate: savedSnapshot,
   cli_bridge_ready: ({ actions }) => { mockLog('cli_bridge_ready', actions.map((action) => action.name)); return null; },
   cli_respond: (args) => { mockLog('cli_respond', args); return null; },
-  get_cli_overview: () => ({ settings: cliSettings, install: install(), activity: activity() }),
+  get_cli_overview: () => ({ settings: cliSettings, install: install(), activity: activity(), skill: skillState }),
   save_cli_settings: ({ settings }) => {
     mockLog('save_cli_settings', settings);
     cliSettings = settings;
@@ -87,5 +93,15 @@ export const cliAnswers: CommandAnswers<CliCommands> = {
     mockLog('install_cli_link', LINK);
     installState = 'installed';
     return { install: install() };
+  },
+  install_cli_skill: () => {
+    if (skillScenario === 'failed') throw "Arbor couldn't write the skill anywhere on this Mac.";
+    mockLog('install_cli_skill', skillScenario);
+    skillState = 'current';
+    return {
+      written: ['~/.agents/skills/arbor/SKILL.md', '~/.claude/skills/arbor/SKILL.md'],
+      already: [],
+      failed: [],
+    };
   },
 };

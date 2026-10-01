@@ -25,6 +25,7 @@ export function CommandLineSettings() {
   const [overview, setOverview] = useState<CliOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [skillBusy, setSkillBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const { copy, copied } = useCopyToClipboard({ inline: true });
 
@@ -76,7 +77,22 @@ export function CommandLineSettings() {
     }
   };
 
+  const addSkill = async () => {
+    setSkillBusy(true);
+    try {
+      const result = await invokeCommand('install_cli_skill');
+      setOverview((current) => (current ? { ...current, skill: 'current' } : current));
+      setError(result.failed.length ? t('cli.skill.partial', { paths: result.failed.join(', ') }) : null);
+      if (result.written.length) toast({ kind: 'success', title: t('cli.skill.done'), description: t('cli.skill.doneDescription') });
+    } catch (skillError) {
+      setError(t('cli.skill.failed', { error: String(skillError) }));
+    } finally {
+      setSkillBusy(false);
+    }
+  };
+
   const settings = overview?.settings ?? null;
+  const skill = overview?.skill ?? null;
   const note = overview ? cliInstallNote(overview.install) : null;
   const rows = overview ? cliActivityRows(overview.activity) : [];
   const allRows = overview ? cliActivityRows(overview.activity, overview.activity.length) : [];
@@ -130,6 +146,17 @@ export function CommandLineSettings() {
             aria-label={t('cli.changes.title')}
             onCheckedChange={(changes) => settings && void save({ ...settings, changes })}
           />
+        )}
+      />
+      <SettingsRow
+        settingId="software.cli-skill"
+        title={t('cli.skill.title')}
+        description={t(skill === 'current' ? 'cli.skill.current' : skill === 'outdated' ? 'cli.skill.outdated' : 'cli.skill.description')}
+        control={skill === 'current' ? <Badge variant="success">{t('cli.skill.added')}</Badge> : (
+          <Button size="sm" variant="outline" disabled={!skill || skillBusy} onClick={() => void addSkill()}>
+            {skillBusy ? <Spinner /> : null}
+            {t(skill === 'outdated' ? 'cli.skill.update' : 'cli.skill.add')}
+          </Button>
         )}
       />
       <SettingsRow

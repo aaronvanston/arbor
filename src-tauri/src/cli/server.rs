@@ -139,7 +139,7 @@ async fn watch<R: AsyncRead + Unpin>(
     mut write: impl AsyncWrite + Unpin,
 ) -> std::io::Result<()> {
     if !super::settings::read().enabled {
-        let failure = protocol::unavailable("Command line control is off in Arbor's Settings › Software.");
+        let failure = protocol::unavailable("Command line control is off in Arbor's Settings › App.");
         return write_line(&mut write, &protocol::Response::error(&request.id, failure)).await;
     }
     let wanted: Vec<String> = request

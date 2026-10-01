@@ -1,4 +1,4 @@
-//! What the command line may do, and putting `arbor` on the PATH. Both are Settings › Software › Command line; the
+//! What the command line may do, and putting `arbor` on the PATH. Both are Settings › App › Command line; the
 //! switches are kept beside the socket in the app's data folder, and the command line can't change them itself.
 
 use super::audit;
@@ -7,6 +7,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+use crate::usage::machine_health::cli_skill::{skill_state, CliSkillState};
 use ts_rs::TS;
 
 const SETTINGS_FILE: &str = "settings.json";
@@ -141,7 +142,7 @@ fn home() -> Result<PathBuf, String> {
     std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| "Can't find your home folder".to_string())
 }
 
-/// Everything Settings › Software › Command line shows.
+/// Everything Settings › App › Command line shows.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CliOverview {
@@ -149,6 +150,8 @@ pub(crate) struct CliOverview {
     pub(crate) install: Install,
     /// The latest requests, newest first.
     pub(crate) activity: Vec<audit::Entry>,
+    /// Whether this Mac's skill store has the skill that teaches agents `arbor`.
+    pub(crate) skill: CliSkillState,
 }
 
 #[tauri::command]
@@ -158,6 +161,7 @@ pub(crate) fn get_cli_overview() -> Result<CliOverview, String> {
         settings: read_from(&dir),
         install: install_status(&home()?, linkable_executable().as_deref()),
         activity: audit::recent(&dir, audit::RECENT),
+        skill: skill_state(&home()?),
     })
 }
 

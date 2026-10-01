@@ -1,7 +1,7 @@
 //! `arbor` itself: finds the running app's socket (opening Arbor hidden when it isn't running), sends one request a
 //! line and prints the answers. It never opens the app's files; everything goes through the app.
 
-use super::{args, mcp, protocol, render, settings};
+use super::{args, help, mcp, protocol, render, settings};
 use serde_json::{json, Value};
 use std::{
     io::{BufRead, BufReader, Write},
@@ -75,7 +75,7 @@ impl Client {
         if theirs != u64::from(protocol::PROTOCOL) {
             return Err(Failure::new(
                 exit::PROTOCOL,
-                format!("This arbor speaks protocol {} and Arbor speaks {theirs}. Update Arbor, then reinstall the command from Settings › Software.", protocol::PROTOCOL),
+                format!("This arbor speaks protocol {} and Arbor speaks {theirs}. Update Arbor, then reinstall the command from Settings › App.", protocol::PROTOCOL),
             ));
         }
         client.hello = hello;
@@ -187,7 +187,7 @@ fn wait_for(path: &Path, timeout: Duration) -> Result<UnixStream, Failure> {
     }
 }
 
-const HELP: &str = "arbor: Arbor from the command line
+pub(super) const HELP: &str = "arbor: Arbor from the command line
 
 Usage: arbor [command] [flags]
 
@@ -212,9 +212,11 @@ Usage: arbor [command] [flags]
                                Call any command directly
   watch [event…]               Print Arbor's events as they happen
   mcp [--read-only]            Serve Arbor to an agent over MCP (stdio)
+  skill [install]              The skill that teaches agents arbor, or add it to this Mac's agent homes
   install                      Link arbor into ~/.local/bin
   doctor                       Check that arbor can reach Arbor
   version
+  help [command]               This list, or one command's usage with examples
 
 Flags:
   --json        Print Arbor's answer as JSON
@@ -237,8 +239,20 @@ pub(crate) fn run(arguments: Vec<String>) -> i32 {
             return exit::USAGE;
         }
     };
-    if options.help || options.words.first().is_some_and(|word| word == "help") {
-        print!("{HELP}");
+    let asked_help = options.words.first().is_some_and(|word| word == "help");
+    if options.help || asked_help {
+        // `arbor help sync` and `arbor sync --help` give that command's own help.
+        let command = options.words.get(usize::from(asked_help));
+        match command {
+            None => print!("{HELP}"),
+            Some(command) => match help::topic(command) {
+                Some(text) => print!("{text}"),
+                None => {
+                    eprintln!("arbor has no command called {command}. Run arbor help to see them.");
+                    return exit::USAGE;
+                }
+            },
+        }
         return exit::OK;
     }
     match run_command(&options) {
@@ -317,6 +331,17 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
             Ok(())
         }
         ["install"] => install(options),
+        // The skill is part of arbor itself, so printing it needs no app.
+        ["skill"] => {
+            print!("{}", super::SKILL);
+            Ok(())
+        }
+        ["skill", "install"] => {
+            let mut client = connect(options)?;
+            let installed = change(&mut client, options, "install_cli_skill", json!({}))?;
+            show(options, &installed, render::skill_install);
+            Ok(())
+        }
         ["doctor"] => doctor(options),
         ["mcp", rest @ ..] => {
             let read_only = rest.contains(&"--read-only");

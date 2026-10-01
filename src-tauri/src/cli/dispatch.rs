@@ -121,7 +121,7 @@ impl From<Result<Value, CommandError>> for Outcome {
 async fn answer(app: &tauri::AppHandle, request: protocol::Request) -> (Option<Access>, Outcome) {
     let allowed = settings::read();
     if !allowed.enabled {
-        return (None, Outcome::Error(protocol::unavailable("Command line control is off in Arbor's Settings › Software.")));
+        return (None, Outcome::Error(protocol::unavailable("Command line control is off in Arbor's Settings › App.")));
     }
     if request.method == protocol::HELLO {
         return (None, Outcome::Ok(protocol::hello(app)));
@@ -141,7 +141,7 @@ async fn answer(app: &tauri::AppHandle, request: protocol::Request) -> (Option<A
         Target::Window(action) => (action.access, action.summary.clone()),
     };
     if access != Access::Read && !allowed.changes {
-        let message = "Changes from the command line are off in Arbor's Settings › Software.";
+        let message = "Changes from the command line are off in Arbor's Settings › App.";
         return (Some(access), Outcome::Error(protocol::unsupported(message)));
     }
     if access == Access::Confirm && !request.confirm {

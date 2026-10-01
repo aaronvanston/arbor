@@ -696,7 +696,7 @@ pub(super) fn this_mac_name(inner: &Inner) -> String {
 }
 
 /// Every machine scripts run on: those the Machines page lists and can reach, and this Mac when it doesn't list it.
-fn machines_to_scan(inner: &Inner) -> Vec<Machine> {
+pub(super) fn machines_to_scan(inner: &Inner) -> Vec<Machine> {
     let mut machines: Vec<Machine> = inner.series.values().filter(|series| runs_scripts(series)).map(Machine::listed).collect();
     if let Some(name) = this_machine_name(inner) {
         machines.push(Machine::this_mac(&name));

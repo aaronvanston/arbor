@@ -16,6 +16,7 @@ pub(crate) mod audit;
 pub(crate) mod bridge;
 mod client;
 mod commands;
+mod help;
 pub(crate) mod dispatch;
 mod mcp;
 mod protocol;
@@ -27,6 +28,10 @@ pub(crate) mod settings;
 use std::path::PathBuf;
 
 /// Points `arbor` and the app at another socket, for a development build or a test.
+/// The skill that teaches agents `arbor`: `arbor skill` prints it, and Settings or `arbor skill install` puts it in
+/// this Mac's agent homes (`usage::machine_health::cli_skill`).
+pub(crate) const SKILL: &str = include_str!("skill.md");
+
 const SOCKET_ENV: &str = "ARBOR_CLI_SOCKET";
 const SOCKET_FILE: &str = "arbor.sock";
 /// A socket's path can't be longer than this on macOS (sun_path is 104 bytes, with room for the end).

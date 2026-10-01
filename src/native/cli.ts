@@ -2,6 +2,7 @@ import type {
   CliInstallResult,
   CliOverview,
   CliSettings,
+  CliSkillInstall,
   CliWindowAction,
   CliWindowError,
   JsonValue,
@@ -20,4 +21,5 @@ export type CliCommands = {
   get_cli_overview: { result: CliOverview };
   save_cli_settings: { args: { settings: CliSettings }; result: CliSettings };
   install_cli_link: { result: CliInstallResult };
+  install_cli_skill: { result: CliSkillInstall };
 };

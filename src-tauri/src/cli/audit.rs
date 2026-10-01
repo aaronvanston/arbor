@@ -1,4 +1,4 @@
-//! A record of what the command line and agents asked the app to do, shown in Settings › Software › Command line.
+//! A record of what the command line and agents asked the app to do, shown in Settings › App › Command line.
 //! It keeps the method, who asked and how it went; never the arguments, which can hold names, paths or text the
 //! person wouldn't want written down.
 

@@ -122,8 +122,12 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   what only it works out (limits, caps, routing, Sync's plan, alerts; the window's
   side is `src/services/cliHandlers.ts`), `redact.rs` hides secrets in every answer
   and event, and `audit.rs` keeps `cli/activity.jsonl` (method, client, outcome,
-  never arguments). On the other side `args.rs`, `client.rs`, `render.rs` and
-  `mcp.rs`. A command Arbor would confirm returns its plan and exits 10 until it gets
+  never arguments). On the other side `args.rs`, `client.rs`, `render.rs`,
+  `help.rs` (each command's own help, for `arbor help <command>`) and `mcp.rs`.
+  `skill.md` is the skill that teaches agents `arbor`: `arbor skill` prints it, and
+  Settings › App › Command line or `arbor skill install` put it in this Mac's store
+  and Claude Code homes through guarded writes (`usage/machine_health/cli_skill.rs`);
+  edit it when a command changes. A command Arbor would confirm returns its plan and exits 10 until it gets
   `--yes` (`confirm: true` over MCP). `management_request` and every claim, reset and
   redeem call are left out for good. Saved settings the CLI can change live in the
   app's `saved-store.json` (`saved_store.rs`); `savedStore.ts` keeps a store there

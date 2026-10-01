@@ -50,6 +50,8 @@ mod tests {
         types.visit::<crate::cli::settings::CliOverview>();
         types.visit::<crate::cli::settings::CliSettings>();
         types.visit::<crate::cli::settings::CliInstallResult>();
+        types.visit::<crate::usage::machine_health::cli_skill::CliSkillInstall>();
+        types.visit::<crate::usage::machine_health::cli_skill::CliSkillState>();
         // Core
         types.visit::<crate::CoreStatus>();
         types.visit::<crate::CoreLatest>();

@@ -166,6 +166,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('software', 'cli-install', 'cli.title', 'cli.install.title', { description: 'cli.description', keywords: 'settingsSearch.keywords.cli' }),
   row('software', 'cli-enabled', 'cli.title', 'cli.enabled.title', { description: 'cli.enabled.description', keywords: 'settingsSearch.keywords.cli' }),
   row('software', 'cli-changes', 'cli.title', 'cli.changes.title', { description: 'cli.changes.description', keywords: 'settingsSearch.keywords.cli' }),
+  row('software', 'cli-skill', 'cli.title', 'cli.skill.title', { description: 'cli.skill.description', keywords: 'settingsSearch.keywords.cli' }),
   row('software', 'cli-agents', 'cli.title', 'cli.agents.title', { description: 'cli.agents.description', keywords: 'settingsSearch.keywords.cli' }),
   row('software', 'quit-guard', 'config.quit.title', 'config.quit.guard', { description: 'config.quit.guardDescription', keywords: 'settingsSearch.keywords.quit' }),
   row('software', 'usage-data', 'usageData.title', 'usageData.usage', { description: 'usageData.usageDescription', keywords: 'settingsSearch.keywords.usageData' }),

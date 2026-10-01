@@ -308,10 +308,12 @@
  * in, `notLoaded` for the proxy not having loaded Arbor's model plugin, `checkFails` for Anthropic turning the check
  * down, `codexFails` for ChatGPT doing the same, or `saveFails` for the proxy not loading the plugin after an add (the
  * change is taken back out). With `?core=stopped` the list is only saved, and there's nothing to check with.
- * For Settings › Software's Command line: the arbor command is linked by default (not on a fresh install);
+ * For Settings › App's Command line: the arbor command is linked by default (not on a fresh install);
  * `?cli=missing` for not linked yet, `elsewhere` for linked to an Arbor that has since moved, `taken` for something
  * else at ~/.local/bin/arbor, `dev` for a development build that can't be linked, `off` for command line control off and
  * `readonly` for changes from the command line off, and `busy` for 50 recent requests, enough for its Show all log.
+ * Its Agent skill row: this Mac's agents have the skill by default (not on a fresh install); `?cliSkill=missing`,
+ * `outdated` for an older Arbor's skill, or `failed` for adding it failing.
  */
 import { emit } from '@tauri-apps/api/event';
 import { clearMocks, mockWindows } from '@tauri-apps/api/mocks';

@@ -287,6 +287,22 @@ pub(crate) fn plan(plan: &Value) -> String {
     out.join("\n")
 }
 
+/// Where `arbor skill install` put the skill, where it was already, and where it couldn't go.
+pub(crate) fn skill_install(answer: &Value) -> String {
+    let mut out = Vec::new();
+    for (label, field) in [("Added the arbor skill to", "written"), ("Already there", "already"), ("Couldn't write", "failed")] {
+        let places: Vec<String> = items(answer, field).iter().map(text).collect();
+        if !places.is_empty() {
+            out.push(format!("{label}:"));
+            out.extend(places.iter().map(|place| format!("  {place}")));
+        }
+    }
+    if !items(answer, "written").is_empty() {
+        out.push("Undo it in Sync › Arbor's changes.".into());
+    }
+    out.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

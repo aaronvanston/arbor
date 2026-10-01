@@ -1590,6 +1590,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         summary: "Puts `arbor` on the PATH, at ~/.local/bin/arbor.",
         args: &[],
     },
+    CommandSpec {
+        name: "install_cli_skill",
+        access: Access::Write,
+        summary: "Puts the skill in this Mac's store and its Claude Code homes, backed up so Sync › Arbor's changes can undo it.",
+        args: &[],
+    },
 ];
 
 /// Runs one command the way the window would, or None when there's no command by that name.
@@ -1898,6 +1904,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         }
         "get_cli_overview" => blocking(move || done(crate::cli::settings::get_cli_overview())).await,
         "install_cli_link" => blocking(move || done(crate::cli::settings::install_cli_link())).await,
+        "install_cli_skill" => done(Box::pin(crate::usage::machine_health::cli_skill::install_cli_skill(app.clone(), app.state())).await),
         _ => return None,
     };
     Some(result)
