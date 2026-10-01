@@ -349,7 +349,7 @@ function NewMenu({ onFile, onSkill, onInstructions }: { onFile: () => void; onSk
   );
 }
 
-/** A row's menu in the tree, drawn where the tree puts it. */
+/** What a row's menu in the tree offers; `RepoFileTree` opens it beside the row. */
 function TreeMenu({ item, entry, onNewFile, onRename, onDelete, onDiscard }: {
   item: ContextMenuItem;
   entry: RepoEntry | null;
@@ -360,18 +360,15 @@ function TreeMenu({ item, entry, onNewFile, onRename, onDelete, onDiscard }: {
 }) {
   const { t } = useI18n();
   const { copy } = useCopyToClipboard();
-  const row = 'flex min-h-7 w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-start text-sm text-foreground outline-none hover:bg-accent focus-visible:bg-accent [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground';
   return (
-    <div className="dropdown-glass flex min-w-48 flex-col rounded-lg p-1 shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)]" role="menu" data-file-tree-context-menu-root="true">
-      <button type="button" role="menuitem" className={row} onClick={onNewFile}><Plus />{t('repo.new.file')}</button>
-      <button type="button" role="menuitem" className={row} onClick={onRename}><Pencil />{t('repo.file.rename')}</button>
-      <button type="button" role="menuitem" className={row} onClick={() => void copy(item.path, { label: t('repo.file.copyPath') })}><Copy />{t('repo.file.copyPath')}</button>
-      {entry && entry.status !== 'same' ? (
-        <button type="button" role="menuitem" className={row} onClick={onDiscard}><RotateCcw />{t('repo.file.discard')}</button>
-      ) : null}
-      <div className="my-1 h-px bg-border/70" />
-      <button type="button" role="menuitem" className={cn(row, 'text-destructive-foreground [&>svg]:text-current')} onClick={onDelete}><Trash2 />{t('repo.file.delete')}</button>
-    </div>
+    <>
+      <MenuItem onClick={onNewFile}><Plus />{t('repo.new.file')}</MenuItem>
+      <MenuItem onClick={onRename}><Pencil />{t('repo.file.rename')}</MenuItem>
+      <MenuItem onClick={() => void copy(item.path, { label: t('repo.file.copyPath') })}><Copy />{t('repo.file.copyPath')}</MenuItem>
+      {entry && entry.status !== 'same' ? <MenuItem onClick={onDiscard}><RotateCcw />{t('repo.file.discard')}</MenuItem> : null}
+      <MenuSeparator />
+      <MenuItem variant="destructive" onClick={onDelete}><Trash2 />{t('repo.file.delete')}</MenuItem>
+    </>
   );
 }
 

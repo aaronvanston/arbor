@@ -26,15 +26,17 @@ function MenuPopup({
   sideOffset = 4,
   align = 'end',
   side = 'bottom',
+  anchor,
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props['align'];
   sideOffset?: MenuPrimitive.Positioner.Props['sideOffset'];
   side?: MenuPrimitive.Positioner.Props['side'];
+  anchor?: MenuPrimitive.Positioner.Props['anchor'];
 }) {
   return (
     <MenuPrimitive.Portal>
-      <MenuPrimitive.Positioner align={align} className="z-[130]" data-slot="menu-positioner" side={side} sideOffset={sideOffset}>
+      <MenuPrimitive.Positioner align={align} anchor={anchor} className="z-[130]" data-slot="menu-positioner" side={side} sideOffset={sideOffset}>
         <MenuPrimitive.Popup
           className={cn(
             'dropdown-glass relative flex min-w-40 origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity] duration-150 data-starting-style:scale-98 data-starting-style:opacity-0 data-ending-style:scale-98 data-ending-style:opacity-0 dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]',
