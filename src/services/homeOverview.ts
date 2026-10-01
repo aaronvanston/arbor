@@ -2,7 +2,7 @@ import type { MessageKey, MessageVariables } from '../i18n/resources';
 import type { HealthPoint, HealthReason, MachineHealth, MachineSessions } from '../native/types';
 import { isStaleQuota, rowWindowMs, usagePace, windowDurationMs, type PaceTone } from './accountLimits';
 import { authFileAvailability, parseAuthFilePriority } from './authFiles';
-import type { FleetBoard } from './fleetBoard';
+import type { FleetBoard, FleetSession } from './fleetBoard';
 import { formatBytes, KIB } from './machineHealth';
 import { planLabel } from './planCosts';
 import { formatResetCountdown, type ProviderLimit } from './providerLimits';
@@ -99,6 +99,8 @@ export type HomeMachine = {
   /** Sessions working now, and those asking for approval or an answer, from the live board. Snoozed ones aren't counted. */
   working: number;
   waiting: number;
+  /** The working sessions by agent: Claude (Code, the SDK or in T3 Code), Codex, and any other. */
+  workingAgents: Record<AgentFamily, number>;
   /** Null when it made no request today. */
   today: MachineSessions | null;
 };
@@ -124,6 +126,17 @@ export function accountSkippedText(state: HomeAccountState, now: number, t: (key
  * from today's sessions, and those with no host last. The order stays put while their activity changes, so a card
  * doesn't move under the pointer.
  */
+export type AgentFamily = 'claude' | 'codex' | 'other';
+
+/** Which agent a board session is, from its client or, for T3 Code's threads, its provider. */
+export function agentFamily(row: Pick<FleetSession, 'client' | 'agent'>): AgentFamily {
+  if (row.client === 'claudeCode' || row.client === 'claudeSdk') return 'claude';
+  if (row.client === 'codex') return 'codex';
+  if (row.agent?.toLowerCase().startsWith('claude')) return 'claude';
+  if (row.agent?.toLowerCase() === 'codex') return 'codex';
+  return 'other';
+}
+
 export function homeMachines(
   health: readonly MachineHealth[],
   sessions: readonly MachineSessions[],
@@ -132,14 +145,20 @@ export function homeMachines(
 ): HomeMachine[] {
   const today = new Map(sessions.filter((item) => item.machine).map((item) => [item.machine, item]));
   const rows = (board?.rows ?? []).filter((row) => row.machine && row.snoozedUntilMs === null);
-  const build = (machine: string, item: MachineHealth | null): HomeMachine => ({
-    machine,
-    thisMachine: machine === thisMachine || Boolean(item?.local),
-    health: item,
-    working: rows.filter((row) => row.machine === machine && row.status === 'working').length,
-    waiting: rows.filter((row) => row.machine === machine && row.countsAsWaiting).length,
-    today: today.get(machine) ?? null,
-  });
+  const build = (machine: string, item: MachineHealth | null): HomeMachine => {
+    const working = rows.filter((row) => row.machine === machine && row.status === 'working');
+    const workingAgents: Record<AgentFamily, number> = { claude: 0, codex: 0, other: 0 };
+    for (const row of working) workingAgents[agentFamily(row)] += 1;
+    return {
+      machine,
+      thisMachine: machine === thisMachine || Boolean(item?.local),
+      health: item,
+      working: working.length,
+      waiting: rows.filter((row) => row.machine === machine && row.countsAsWaiting).length,
+      workingAgents,
+      today: today.get(machine) ?? null,
+    };
+  };
   const listed = health.map((item) => build(item.machine, item));
   const known = new Set(listed.map((item) => item.machine));
   const extra = [...new Set([...today.keys(), ...rows.map((row) => row.machine)])]

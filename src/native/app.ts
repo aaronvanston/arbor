@@ -13,6 +13,8 @@ import type {
   SoftwareSettings,
   SoftwareSettingsInput,
   SystemLocale,
+  TrayRow,
+  TraySection,
   UpdateChannel,
   ZoomLevel,
 } from './types';
@@ -35,7 +37,7 @@ export type AppCommands = {
   track_event: { args: { event: ProductEvent }; result: void };
   report_exception: { args: { report: ExceptionReport }; result: void };
 
-  set_tray_lines: { args: { section: string; lines: string[] }; result: void };
+  set_tray_rows: { args: { section: TraySection; rows: TrayRow[] }; result: void };
   set_tray_status: { args: { indicator: string }; result: void };
   set_tray_unread: { args: { count: number }; result: void };
   set_tray_waiting: { args: { count: number }; result: void };

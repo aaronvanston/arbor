@@ -181,7 +181,7 @@ export const appAnswers: CommandAnswers<AppCommands> = {
     return null;
   },
   cancel_app_update: () => null,
-  set_tray_lines: (args) => { mockLog('tray', { section: args.section, lines: args.lines }); return null; },
+  set_tray_rows: (args) => { mockLog('tray', { section: args.section, rows: args.rows }); return null; },
   set_tray_status: (args) => { mockLog('tray_status', args.indicator); return null; },
   frontend_ready: (args) => { mockLog('frontend_ready', args); return null; },
   set_tray_unread: (args) => { mockLog('tray_unread', args.count); return null; },

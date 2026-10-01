@@ -55,6 +55,8 @@ pub(crate) struct LiveSessionsReport {
     /// Their requests in the hour, and those with a price. Without any, the cost isn't known.
     requests: u64,
     priced_requests: u64,
+    /// Every running session's User-Agent, empty when it sent none, so they can be counted by client.
+    clients: Vec<String>,
 }
 
 #[derive(Serialize, TS)]
@@ -178,6 +180,10 @@ pub(super) fn load_live_sessions(
         .iter()
         .map(|session| session.root.totals.priced_requests)
         .sum();
+    let clients = sessions
+        .iter()
+        .map(|session| session.root.user_agent.clone().unwrap_or_default())
+        .collect();
     sessions.truncate(LIVE_SESSION_LIMIT);
     let mut requests_by_thread = session_read::complete_sessions(connection, &mut sessions)?;
     let sessions = sessions
@@ -208,6 +214,7 @@ pub(super) fn load_live_sessions(
         cost_per_hour,
         requests,
         priced_requests,
+        clients,
     })
 }
 

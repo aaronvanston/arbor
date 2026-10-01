@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { translate } from '../src/i18n';
-import { compactionOutlook, contextShare, liveSessionName, liveTrayLines } from '../src/services/liveSessions';
+import { clientCountsText, compactionOutlook, contextShare, liveSessionName, liveTrayRows } from '../src/services/liveSessions';
 import type { LiveContext, LiveSession, LiveSessionsReport, SessionTranscript } from '../src/native/types';
 
 const MINUTE = 60_000;
@@ -30,7 +30,7 @@ const session = (id: string, fields: Partial<LiveSession> = {}): LiveSession => 
 
 const report = (sessions: LiveSession[], fields: Partial<LiveSessionsReport> = {}): LiveSessionsReport => ({
   sessions, running: sessions.length, costPerHour: sessions.reduce((sum, item) => sum + item.estimatedCost, 0),
-  requests: 100, pricedRequests: 100,
+  requests: 100, pricedRequests: 100, clients: sessions.map((item) => item.userAgent ?? ''),
   ...fields,
 });
 
@@ -57,29 +57,60 @@ describe('live context', () => {
   });
 });
 
-describe('tray lines', () => {
-  test('one for them all, then the costliest three with how full they are and what they spend', () => {
-    const lines = liveTrayLines(report([
+describe('tray rows', () => {
+  test('a line for them all and their clients, then the costliest three, and the rest in a sub-menu', () => {
+    const rows = liveTrayRows(report([
       session('a', { transcript: transcript({ title: 'Move the billing worker onto the new queue service' }), estimatedCost: 97.4 }),
       session('b', { context: context({ tokens: 341_000, compactsAt: 358_000, compactsInMs: 0 }), estimatedCost: 6.1 }),
       session('c', { context: context({ compactsAt: null, tokens: 96_300, compactsInMs: null }), estimatedCost: 0, pricedRequests: 0 }),
-      session('d', { estimatedCost: 1.2 }),
-    ]), t);
-    expect(lines).toEqual([
+      session('d', { estimatedCost: 1.2, context: context({ compactsInMs: null }) }),
+    ], { running: 6 }), [], t, { machineName: (machine) => (machine === 'casey-mbp' ? 'Casey MBP' : machine) });
+    expect(rows).toEqual([
       // Every amount shows cents, the $100-plus total included.
-      '4 sessions running · $104.70/h',
-      'Move the billing worker onto th… · 58% context · $97.40/h · compacts in ~19m',
-      'Claude Code · 95% context · $6.10/h · compacts any moment',
-      'Claude Code · 96.3K context',
+      { text: '6 sessions running · $104.70/h' },
+      { text: '4 Claude' },
+      // Close to compacting, or nearly full, is amber.
+      { text: 'Move the billing worker onto th… · 58% context · $97.40/h · compacts in ~19m', dot: 'amber' },
+      { text: 'Claude Code · 95% context · $6.10/h · compacts any moment', dot: 'amber' },
+      { text: 'Claude Code · 96.3K context', dot: 'blank' },
+      {
+        text: '3 more',
+        dot: 'blank',
+        children: [
+          { text: 'Claude Code · 58% context · $1.20/h · Casey MBP', dot: 'blank' },
+          // The report lists twelve at most; the rest are only counted.
+          { text: '…and 2 more' },
+        ],
+      },
     ]);
   });
 
-  test('a compaction far off stays out, and nothing running means no lines', () => {
-    const [header, line] = liveTrayLines(report([session('a', { context: context({ compactsInMs: 45 * MINUTE }) })]), t);
-    expect(header).toBe('1 session running · $12.40/h');
-    expect(line).toBe('Claude Code · 58% context · $12.40/h');
-    expect(liveTrayLines(report([session('a')], { pricedRequests: 0 }), t)[0]).toBe('1 session running');
-    expect(liveTrayLines(report([]), t)).toEqual([]);
-    expect(liveTrayLines(null, t)).toEqual([]);
+  test('sessions waiting on you come before the costliest, in amber', () => {
+    const rows = liveTrayRows(
+      report([session('a', { context: context({ compactsInMs: 45 * MINUTE }) })]),
+      [{ name: 'Fix the login loop', status: 'approval', machine: 'casey-mbp', sinceMs: 0 }],
+      t,
+      { nowMs: 4 * MINUTE },
+    );
+    expect(rows.map((row) => row.text)).toEqual([
+      '1 session running · $12.40/h',
+      '1 Claude',
+      'Waiting on you',
+      'Fix the login loop · Needs approval · casey-mbp · 4m',
+      'Costliest',
+      'Claude Code · 58% context · $12.40/h',
+    ]);
+    expect(rows[3]?.dot).toBe('amber');
+    // Waiting with nothing running through Arbor still lists the wait.
+    expect(liveTrayRows(report([]), [{ name: 'Fix the login loop', status: 'question', machine: '', sinceMs: 0 }], t, { nowMs: 2 * MINUTE }).map((row) => row.text))
+      .toEqual(['Waiting on you', 'Fix the login loop · Has a question · 2m']);
+  });
+
+  test('counts the running sessions by client, and leaves the cost out when nothing had a price', () => {
+    expect(clientCountsText(['claude-cli/2.1.280 (external, cli)', 'codex_cli_rs/0.158.0', 'codex_exec/0.158.0', 'curl/8.7.1', ''], t))
+      .toBe('1 Claude · 2 Codex · 2 other');
+    expect(liveTrayRows(report([session('a')], { pricedRequests: 0 }), [], t)[0]).toEqual({ text: '1 session running' });
+    expect(liveTrayRows(report([]), [], t)).toEqual([]);
+    expect(liveTrayRows(null, [], t)).toEqual([]);
   });
 });

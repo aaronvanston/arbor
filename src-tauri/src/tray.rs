@@ -3,82 +3,117 @@ use super::*;
 use objc2_app_kit::{NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSArray, NSString};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use std::collections::HashMap;
+use tauri::menu::{IconMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 
-/// The lines the app shows in the tray menu under "Open Main Window", in
-/// sections that each end with a separator: the limits, then the machines,
-/// then the sessions running now.
-pub(crate) struct TrayLinesState {
+/// Emitted with a `TrayAction` when one of the menu's actions is picked, after the window is shown.
+pub(crate) const TRAY_ACTION_EVENT: &str = "tray-action";
+
+/// The rows the app shows in the tray menu under "Open Main Window", in sections that each end with
+/// a separator: the limits, then the machines, then the sessions running now.
+pub(crate) struct TrayRowsState {
     menu: Menu<tauri::Wry>,
     sections: Mutex<TraySections>,
+    /// The action behind each menu item id that has one. Apart from `sections`, and only ever held for a moment,
+    /// because a rebuild holds `sections` while it waits on the main thread, where a click looks its action up.
+    actions: Mutex<HashMap<String, TrayAction>>,
 }
 
-const TRAY_SECTIONS: [&str; 3] = ["limits", "machines", "sessions"];
+#[derive(Clone, Copy, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum TraySection {
+    Limits,
+    Machines,
+    Sessions,
+}
+
+const TRAY_SECTION_COUNT: usize = 3;
+
+/// One row of the tray menu. A row with children opens them as a sub-menu, and one with empty text
+/// is a separator. Rows are shown dimmed unless they have an action.
+#[derive(Clone, PartialEq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TrayRow {
+    text: String,
+    #[serde(default)]
+    #[ts(optional)]
+    dot: Option<TrayDot>,
+    #[serde(default)]
+    #[ts(optional)]
+    action: Option<TrayAction>,
+    #[serde(default)]
+    #[ts(optional)]
+    children: Option<Vec<TrayRow>>,
+}
+
+/// The status dot drawn before a row, colored like the UI's status dots. `Blank` keeps a row's text
+/// in line with dotted rows beside it.
+#[derive(Clone, Copy, PartialEq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum TrayDot {
+    Green,
+    Amber,
+    Red,
+    Gray,
+    Blank,
+}
+
+/// What picking a row does once the window is shown; the window carries it out.
+#[derive(Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum TrayAction {
+    OpenMachine { machine: String },
+}
 
 #[derive(Default)]
 struct TraySections {
-    lines: [Vec<String>; TRAY_SECTIONS.len()],
-    items: Vec<MenuItem<tauri::Wry>>,
-    separators: Vec<PredefinedMenuItem<tauri::Wry>>,
+    rows: [Vec<TrayRow>; TRAY_SECTION_COUNT],
+    items: Vec<MenuItemKind<tauri::Wry>>,
 }
 
-impl TrayLinesState {
+impl TrayRowsState {
     fn new(menu: Menu<tauri::Wry>) -> Self {
         Self {
             menu,
             sections: Mutex::new(TraySections::default()),
+            actions: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn action(&self, id: &str) -> Option<TrayAction> {
+        self.actions.lock().ok()?.get(id).cloned()
     }
 }
 
 #[tauri::command]
-pub(crate) async fn set_tray_lines(
+pub(crate) async fn set_tray_rows(
     app: tauri::AppHandle,
-    section: String,
-    lines: Vec<String>,
+    section: TraySection,
+    rows: Vec<TrayRow>,
 ) -> Result<(), String> {
-    let Some(state) = app.try_state::<TrayLinesState>() else {
+    let Some(state) = app.try_state::<TrayRowsState>() else {
         return Ok(());
     };
-    let index = TRAY_SECTIONS
-        .iter()
-        .position(|name| *name == section)
-        .ok_or_else(|| format!("There is no tray menu section called {section}."))?;
+    let index = section as usize;
     let mut sections = state.sections.lock().map_err(|error| error.to_string())?;
-    if sections.lines[index] == lines {
+    if sections.rows[index] == rows {
         return Ok(());
     }
-    sections.lines[index] = lines;
+    sections.rows[index] = rows;
 
     // Every section moves when one above it changes length, so all are put back.
-    let TraySections {
-        lines,
-        items,
-        separators,
-    } = &mut *sections;
+    let TraySections { rows, items } = &mut *sections;
     for item in items.drain(..) {
         state.menu.remove(&item).map_err(|error| error.to_string())?;
     }
-    for separator in separators.drain(..) {
-        state
-            .menu
-            .remove(&separator)
-            .map_err(|error| error.to_string())?;
-    }
+    let mut actions = HashMap::new();
     let mut position = 1;
-    for (name, section_lines) in TRAY_SECTIONS.iter().zip(lines.iter()) {
-        if section_lines.is_empty() {
+    for section_rows in rows.iter() {
+        if section_rows.is_empty() {
             continue;
         }
-        for (line_index, line) in section_lines.iter().enumerate() {
-            let item = MenuItem::with_id(
-                &app,
-                format!("tray-{name}-{line_index}"),
-                line,
-                false,
-                None::<&str>,
-            )
-            .map_err(|error| error.to_string())?;
+        for row in section_rows {
+            let item = tray_item(&app, row, &mut actions)?;
             state
                 .menu
                 .insert(&item, position)
@@ -91,10 +126,105 @@ pub(crate) async fn set_tray_lines(
             .menu
             .insert(&separator, position)
             .map_err(|error| error.to_string())?;
-        separators.push(separator);
+        items.push(MenuItemKind::Predefined(separator));
         position += 1;
     }
+    if let Ok(mut current) = state.actions.lock() {
+        *current = actions;
+    }
     Ok(())
+}
+
+/// Builds a row's menu item, and its sub-menu's, noting the action behind each id.
+fn tray_item(
+    app: &tauri::AppHandle,
+    row: &TrayRow,
+    actions: &mut HashMap<String, TrayAction>,
+) -> Result<MenuItemKind<tauri::Wry>, String> {
+    let fail = |error: tauri::Error| error.to_string();
+    if row.text.is_empty() {
+        return Ok(MenuItemKind::Predefined(PredefinedMenuItem::separator(app).map_err(fail)?));
+    }
+    let id = format!("tray-row-{}", next_tray_item_id());
+    let icon = row.dot.map(tray_dot_image);
+    if let Some(children) = row.children.as_ref().filter(|children| !children.is_empty()) {
+        let submenu = Submenu::with_id(app, &id, &row.text, true).map_err(fail)?;
+        for child in children {
+            submenu.append(&tray_item(app, child, actions)?).map_err(fail)?;
+        }
+        if icon.is_some() {
+            submenu.set_icon(icon).map_err(fail)?;
+        }
+        return Ok(MenuItemKind::Submenu(submenu));
+    }
+    let enabled = row.action.is_some();
+    if let Some(action) = &row.action {
+        actions.insert(id.clone(), action.clone());
+    }
+    Ok(match icon {
+        Some(icon) => MenuItemKind::Icon(
+            IconMenuItem::with_id(app, id, &row.text, enabled, Some(icon), None::<&str>).map_err(fail)?,
+        ),
+        None => MenuItemKind::MenuItem(MenuItem::with_id(app, id, &row.text, enabled, None::<&str>).map_err(fail)?),
+    })
+}
+
+/// A new number on every call, so no two items the menu has held share an id.
+fn next_tray_item_id() -> usize {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Shows the window and hands it the action picked in the tray menu, if the item has one.
+pub(crate) fn run_tray_action(app_handle: &tauri::AppHandle, id: &str) {
+    let Some(action) = app_handle
+        .try_state::<TrayRowsState>()
+        .and_then(|state| state.action(id))
+    else {
+        return;
+    };
+    #[cfg(target_os = "macos")]
+    show_main_window(app_handle);
+    if let Err(error) = app_handle.emit(TRAY_ACTION_EVENT, action) {
+        eprintln!("Failed to pass on the tray menu action: {error}");
+    }
+}
+
+/// The dot image's size in pixels: drawn 18 pt high, which is how muda sizes every menu item image,
+/// so 36 px is sharp on a Retina screen, and narrower than tall so the text sits close.
+const TRAY_DOT_WIDTH: u32 = 24;
+const TRAY_DOT_HEIGHT: u32 = 36;
+const TRAY_DOT_RADIUS: f32 = 7.0;
+
+fn tray_dot_color(dot: TrayDot) -> Option<[u8; 3]> {
+    match dot {
+        TrayDot::Green => Some([0x00, 0xc9, 0x50]),
+        TrayDot::Amber => Some([0xfe, 0x9a, 0x00]),
+        TrayDot::Red => Some([0xfb, 0x2c, 0x36]),
+        TrayDot::Gray => Some([0x8e, 0x8e, 0x93]),
+        TrayDot::Blank => None,
+    }
+}
+
+/// A round dot on clear, anti-aliased by coverage; all clear for `Blank`.
+fn tray_dot_pixels(dot: TrayDot) -> Vec<u8> {
+    let color = tray_dot_color(dot);
+    let (center_x, center_y) = (TRAY_DOT_WIDTH as f32 / 2.0, TRAY_DOT_HEIGHT as f32 / 2.0);
+    (0..TRAY_DOT_HEIGHT)
+        .flat_map(|y| (0..TRAY_DOT_WIDTH).map(move |x| (x, y)))
+        .flat_map(|(x, y)| {
+            let Some([red, green, blue]) = color else {
+                return [0; 4];
+            };
+            let distance = (x as f32 + 0.5 - center_x).hypot(y as f32 + 0.5 - center_y);
+            let coverage = (TRAY_DOT_RADIUS - distance + 0.5).clamp(0.0, 1.0);
+            [red, green, blue, (coverage * 255.0).round() as u8]
+        })
+        .collect()
+}
+
+fn tray_dot_image(dot: TrayDot) -> tauri::image::Image<'static> {
+    tauri::image::Image::new_owned(tray_dot_pixels(dot), TRAY_DOT_WIDTH, TRAY_DOT_HEIGHT)
 }
 
 /// Dot radius and the transparent gap cut around it, as fractions of the icon's size.
@@ -409,7 +539,7 @@ pub(crate) fn setup_macos_tray(app: &mut tauri::App<tauri::Wry>) -> tauri::Resul
     )?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_main_window, &quit])?;
-    app.manage(TrayLinesState::new(menu.clone()));
+    app.manage(TrayRowsState::new(menu.clone()));
     let click_state = Arc::new(Mutex::new(MacosTrayClickState::default()));
     let double_click_interval = Duration::from_secs_f64(NSEvent::doubleClickInterval());
 
@@ -421,7 +551,7 @@ pub(crate) fn setup_macos_tray(app: &mut tauri::App<tauri::Wry>) -> tauri::Resul
         .on_menu_event(move |app_handle, event| match event.id().as_ref() {
             "open-main-window" => show_main_window(app_handle),
             "quit" => app_handle.exit(0),
-            _ => {}
+            id => run_tray_action(app_handle, id),
         })
         .on_tray_icon_event(move |tray, event| {
             if !matches!(
@@ -583,6 +713,33 @@ mod tests {
         assert_eq!(pixels[0][3], 0, "the corner is clear");
         let covered = pixels.iter().filter(|pixel| pixel[3] > 127).count();
         assert!((250..700).contains(&covered), "the mark covers {covered} of 1296 pixels");
+    }
+
+    #[test]
+    fn row_dots_are_round_and_centered_and_blank_is_clear() {
+        let green = tray_dot_pixels(TrayDot::Green);
+        assert_eq!(green.len(), (TRAY_DOT_WIDTH * TRAY_DOT_HEIGHT * 4) as usize);
+        assert_eq!(pixel_at(&green, TRAY_DOT_WIDTH, 12, 18), [0x00, 0xc9, 0x50, 255]);
+        assert_eq!(pixel_at(&green, TRAY_DOT_WIDTH, 0, 0)[3], 0);
+        assert_eq!(pixel_at(&green, TRAY_DOT_WIDTH, 12, 2)[3], 0, "the dot stays clear of the top");
+        assert!(green.chunks(4).any(|pixel| pixel[3] > 0 && pixel[3] < 255), "the dot's edge should be anti-aliased");
+        assert!(tray_dot_pixels(TrayDot::Blank).iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn rows_read_with_or_without_a_dot_action_or_sub_menu() {
+        let rows: Vec<TrayRow> = serde_json::from_str(
+            r#"[{"text":"Machines"},{"text":"lab","dot":"amber","children":[{"text":""},{"text":"Open machine page","action":{"kind":"openMachine","machine":"lab"}}]}]"#,
+        )
+        .unwrap();
+        assert!(rows[0].dot.is_none() && rows[0].action.is_none() && rows[0].children.is_none());
+        assert!(rows[1].dot == Some(TrayDot::Amber));
+        let children = rows[1].children.as_ref().unwrap();
+        assert!(children[1].action == Some(TrayAction::OpenMachine { machine: "lab".into() }));
+        assert_eq!(
+            serde_json::to_string(&TrayAction::OpenMachine { machine: "lab".into() }).unwrap(),
+            r#"{"kind":"openMachine","machine":"lab"}"#
+        );
     }
 
     #[test]

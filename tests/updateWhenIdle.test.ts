@@ -49,7 +49,7 @@ const session = (id: string, machine: string, transcriptMachine = ''): LiveSessi
 });
 
 const report = (sessions: LiveSession[], running = sessions.length): LiveSessionsReport => ({
-  sessions, running, costPerHour: 0, requests: 0, pricedRequests: 0,
+  sessions, running, costPerHour: 0, requests: 0, pricedRequests: 0, clients: [],
 });
 
 describe('what an update would cut', () => {

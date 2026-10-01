@@ -16,7 +16,7 @@ export const CLI_COMMANDS_FILE = 'src-tauri/src/cli/commands.rs';
  * the table, so every new one is a choice.
  */
 export const LEFT_OUT = {
-  set_tray_lines: 'the window draws the menu bar',
+  set_tray_rows: 'the window draws the menu bar',
   set_tray_status: 'the window draws the menu bar',
   set_tray_unread: 'the window draws the menu bar',
   set_tray_waiting: 'the window draws the menu bar',

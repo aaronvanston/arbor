@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { invokeCommand } from '../native/commands';
+import type { TrayRow } from '../native/types';
 import { listen } from '@tauri-apps/api/event';
 import { useAppPreferences } from '../appPreferences';
 import { useI18n } from '../i18n';
-import { liveTrayLines, setLiveSessions, useLiveSessions } from '../services/liveSessions';
+import { compareFleetRows, fleetSessionName, useFleetBoard } from '../services/fleetBoard';
+import { liveTrayRows, setLiveSessions, useLiveSessions, type TrayWaitingSession } from '../services/liveSessions';
+import { machineNameIn, useMachineNames } from '../services/machineNames';
+import { publishTrayRows } from '../services/trayMenu';
 
 const USAGE_UPDATED_EVENT = 'usage-records-updated';
 /** Records arrive every few seconds while agents run; the running sessions are checked at most this often. */
@@ -19,6 +23,8 @@ export function LiveSessionsMonitor() {
   const { t } = useI18n();
   const { traySessions } = useAppPreferences();
   const report = useLiveSessions();
+  const { board, now } = useFleetBoard();
+  const names = useMachineNames();
   const trayRef = useRef(traySessions);
   trayRef.current = traySessions;
 
@@ -73,10 +79,16 @@ export function LiveSessionsMonitor() {
     };
   }, []);
 
-  const trayKey = useMemo(() => (traySessions ? liveTrayLines(report, t).join('\n') : ''), [report, traySessions, t]);
+  const waiting = useMemo((): TrayWaitingSession[] => (board?.rows ?? [])
+    .filter((row) => row.countsAsWaiting && (row.status === 'approval' || row.status === 'question'))
+    .sort(compareFleetRows)
+    .map((row) => ({ name: fleetSessionName(row, t), status: row.status === 'approval' ? 'approval' : 'question', machine: row.machine, sinceMs: row.sinceMs })), [board, t]);
+  const trayKey = useMemo(
+    () => (traySessions ? JSON.stringify(liveTrayRows(report, waiting, t, { nowMs: now, machineName: (machine) => machineNameIn(names, machine) })) : '[]'),
+    [names, now, report, traySessions, waiting, t],
+  );
   useEffect(() => {
-    invokeCommand('set_tray_lines', { section: 'sessions', lines: trayKey ? trayKey.split('\n') : [] })
-      .catch((error) => console.warn('Failed to update the tray sessions', error));
+    publishTrayRows('sessions', JSON.parse(trayKey) as TrayRow[]);
   }, [trayKey]);
 
   return null;

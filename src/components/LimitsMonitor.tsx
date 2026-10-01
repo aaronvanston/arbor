@@ -21,6 +21,7 @@ import {
   STATUS_POLL_INTERVAL_MS,
   useProviderStatuses,
   worstIndicator,
+  type StatusIndicator,
   type StatusProvider,
 } from '../services/providerStatus';
 import { statusSummary } from '../services/providerStatusText';
@@ -29,6 +30,8 @@ import { applyRoutingPlan, routingCandidates, routingPlan, useRoutingAuto } from
 import { fileName, providerForFile, quotaKey, type QuotaProvider } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
 import { formatWhen } from '../lib/format';
+import type { TrayDot, TrayRow } from '../native/types';
+import { publishTrayRows } from '../services/trayMenu';
 import { nextResetNotifications, type ResetReady } from '../services/resetReadiness';
 
 const NOTIFIED_KEY = 'arbor.limits-notified.v1';
@@ -38,6 +41,8 @@ const OUTAGE_NOTIFIED_KEY = 'arbor.outage-notified.v1';
 /** More at once would be noise; the banner names them all. */
 const MAX_OUTAGE_NOTIFICATIONS = 3;
 const TRAY_SUMMARY_MAX = 64;
+/** A provider's status line in the tray takes the icon dot's color: red for an outage, amber for trouble, gray for maintenance. */
+const STATUS_DOT: Record<StatusIndicator, TrayDot> = { none: 'green', minor: 'amber', unknown: 'amber', major: 'red', critical: 'red', maintenance: 'gray' };
 const severity: Record<PaceTone, number> = { muted: 0, success: 1, warning: 2, error: 3 };
 
 const readStored = <T,>(key: string): Record<string, T> => {
@@ -196,26 +201,29 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
     void recordLimitReadings(readings);
   }, [files, quotas]);
 
-  // Tray menu lines. A provider mid-refresh keeps its last published line so the menu never shows a half-pooled figure.
-  const trayLineRef = useRef<Partial<Record<string, string>>>({});
-  const trayLines = useMemo(() => {
+  // Tray menu rows. A provider mid-refresh keeps its last published row so the menu never shows a half-pooled figure.
+  const trayRowRef = useRef<Partial<Record<string, TrayRow>>>({});
+  const trayRows = useMemo((): TrayRow[] => {
     if (!preferences.trayLimits) return [];
     return limits.flatMap((limit) => {
-      if (limit.loading) return trayLineRef.current[limit.provider] ? [trayLineRef.current[limit.provider]!] : [];
+      const held = trayRowRef.current[limit.provider];
+      if (limit.loading) return held ? [held] : [];
       if (limit.headline.percent === null) {
-        delete trayLineRef.current[limit.provider];
+        delete trayRowRef.current[limit.provider];
         return [];
       }
       const countdown = formatResetCountdown(limit.headline.nextResetMs, now);
-      const line = [
+      const text = [
         t('tray.limitLine', { provider: providerLabel[limit.provider], percent: Math.round(limit.headline.percent) }),
         partialHeadline(limit.headline) ? t('accounts.headline.reporting', { reporting: limit.headline.reporting, total: limit.headline.total }) : '',
         countdown ? t('tray.resetsIn', { time: countdown }) : '',
         limit.pace.tone === 'error' ? t('tray.pace.critical') : limit.pace.tone === 'warning' ? t('tray.pace.ahead') : '',
         limit.stale ? t('tray.asOf', { time: formatWhen(limit.stale.asOfMs, { now }) }) : '',
       ].filter(Boolean).join(' · ');
-      trayLineRef.current[limit.provider] = line;
-      return [line];
+      const dot: TrayDot = limit.stale ? 'gray' : limit.pace.tone === 'error' ? 'red' : limit.pace.tone === 'warning' ? 'amber' : 'green';
+      const row = { text, dot };
+      trayRowRef.current[limit.provider] = row;
+      return [row];
     });
   }, [limits, preferences.trayLimits, now, t]);
   const activeStatuses = useMemo(() => {
@@ -225,11 +233,13 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       return status ? [{ provider, status }] : [];
     });
   }, [preferences.providerStatus, statuses, now]);
-  const statusLines = activeStatuses.map(({ provider, status }) =>
-    t('tray.status', { provider: providerLabel[provider], summary: truncate(statusSummary(status, t), TRAY_SUMMARY_MAX) }));
-  const trayKey = [...trayLines, ...statusLines].join('\n');
+  const statusRows = activeStatuses.map(({ provider, status }): TrayRow => ({
+    text: t('tray.status', { provider: providerLabel[provider], summary: truncate(statusSummary(status, t), TRAY_SUMMARY_MAX) }),
+    dot: STATUS_DOT[status.indicator],
+  }));
+  const trayKey = JSON.stringify([...trayRows, ...statusRows]);
   useEffect(() => {
-    invokeCommand('set_tray_lines', { section: 'limits', lines: trayKey ? trayKey.split('\n') : [] }).catch((error) => console.warn('Failed to update tray limits', error));
+    publishTrayRows('limits', JSON.parse(trayKey) as TrayRow[]);
   }, [trayKey]);
   const trayIndicator = worstIndicator(activeStatuses.map(({ status }) => status.indicator));
   useEffect(() => {

@@ -1649,6 +1649,10 @@ export type LiveSessionsReport = {
    */
   requests: number,
   pricedRequests: number,
+  /**
+   * Every running session's User-Agent, empty when it sent none, so they can be counted by client.
+   */
+  clients: Array<string>,
 };
 
 /**
@@ -4033,6 +4037,33 @@ export type TranscriptCompaction = {
   postTokens: number | null,
   durationMs: number | null,
 };
+
+/**
+ * What picking a row does once the window is shown; the window carries it out.
+ */
+export type TrayAction = {
+  "kind": "openMachine",
+  machine: string,
+};
+
+/**
+ * The status dot drawn before a row, colored like the UI's status dots. `Blank` keeps a row's text
+ * in line with dotted rows beside it.
+ */
+export type TrayDot = "green" | "amber" | "red" | "gray" | "blank";
+
+/**
+ * One row of the tray menu. A row with children opens them as a sub-menu, and one with empty text
+ * is a separator. Rows are shown dimmed unless they have an action.
+ */
+export type TrayRow = {
+  text: string,
+  dot?: TrayDot,
+  action?: TrayAction,
+  children?: Array<TrayRow>,
+};
+
+export type TraySection = "limits" | "machines" | "sessions";
 
 /**
  * Which releases the app updates to. Stable is the release GitHub marks as the latest. Nightly also takes the

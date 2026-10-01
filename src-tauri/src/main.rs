@@ -1728,7 +1728,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            set_tray_lines,
+            set_tray_rows,
             set_tray_status,
             set_tray_unread,
             set_tray_waiting,

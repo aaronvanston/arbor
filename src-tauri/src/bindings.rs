@@ -27,6 +27,8 @@ mod tests {
         types.visit::<crate::SoftwareSettings>();
         types.visit::<crate::SoftwareSettingsInput>();
         types.visit::<crate::system_locale::SystemLocale>();
+        types.visit::<crate::tray::TraySection>();
+        types.visit::<crate::tray::TrayRow>();
         types.visit::<crate::phone_alerts::PhoneAlertSecretStatus>();
         types.visit::<crate::phone_alerts::PhoneAlertSecret>();
         types.visit::<crate::phone_alerts::PhoneAlertRoute>();

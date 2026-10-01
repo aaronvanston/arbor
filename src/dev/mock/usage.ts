@@ -825,7 +825,7 @@ const liveEndsAtMs = now + 60_000;
 
 const mockLiveSessions = (): LiveSessionsReport => {
   if (params.get('live') === 'none' || (params.get('live') === 'ends' && Date.now() >= liveEndsAtMs)) {
-    return { sessions: [], running: 0, costPerHour: 0, requests: 0, pricedRequests: 0 };
+    return { sessions: [], running: 0, costPerHour: 0, requests: 0, pricedRequests: 0, clients: [] };
   }
   const sessions = usageSessions
     .flatMap((session) => {
@@ -838,7 +838,10 @@ const mockLiveSessions = (): LiveSessionsReport => {
     })
     .sort((a, b) => b.estimatedCost - a.estimatedCost);
   const total = (key: 'estimatedCost' | 'requests' | 'pricedRequests') => sessions.reduce((sum, session) => sum + session[key], 0);
-  return { sessions, running: sessions.length, costPerHour: total('estimatedCost'), requests: total('requests'), pricedRequests: total('pricedRequests') };
+  return {
+    sessions, running: sessions.length, costPerHour: total('estimatedCost'), requests: total('requests'), pricedRequests: total('pricedRequests'),
+    clients: sessions.map((session) => session.userAgent ?? ''),
+  };
 };
 
 // The sessions waiting on their user, as the live board's sources read them from the reporters' events: a Claude Code
