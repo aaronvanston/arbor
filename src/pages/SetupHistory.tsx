@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useConfirmation } from '../components/ConfirmationDialog';
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
@@ -20,20 +19,41 @@ function readStored(): string | null {
 }
 
 /**
+ * The machine Arbor's changes shows: the one its view names, else the one last picked, else this Mac, else the first.
+ * It's always one machine, since each machine keeps its own backups.
+ */
+export function historyMachine(machines: readonly SetupMachine[], asked: string | undefined): string | null {
+  const chosen = asked || readStored();
+  return (machines.find((entry) => entry.machine === chosen) ?? machines.find((entry) => entry.local) ?? machines[0])?.machine ?? null;
+}
+
+/** Remembers the machine picked on Arbor's changes, for the next time it opens without naming one. */
+export function rememberHistoryMachine(machine: string) {
+  try {
+    localStorage.setItem(MACHINE_KEY, machine);
+  } catch {
+    // The choice lasts until the page closes.
+  }
+}
+
+/**
  * Sync › Arbor’s changes: every change Arbor made to files on one machine, newest first, each with Undo. Setup sync and the
  * Skills tab make changes here, and so do the features that change an agent's settings: the needs-you reporter,
  * keeping sessions, telemetry and MCP servers. Each was backed up on the machine first.
  */
-export function SetupHistory({ machines }: { machines: SetupMachine[] }) {
+export function SetupHistory({ machines, picked }: {
+  machines: SetupMachine[];
+  /** The machine the breadcrumb picked (`historyMachine`). */
+  picked: string | null;
+}) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
-  const [chosen, setChosen] = useState<string | null>(readStored);
   const [backups, setBackups] = useState<SetupBackup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [undoing, setUndoing] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: ReactNode } | null>(null);
 
-  const machine = machines.find((entry) => entry.machine === chosen) ?? machines.find((entry) => entry.local) ?? machines[0] ?? null;
+  const machine = machines.find((entry) => entry.machine === picked) ?? null;
   const name = machine?.machine ?? null;
 
   const load = useCallback(async (target: string) => {
@@ -51,15 +71,6 @@ export function SetupHistory({ machines }: { machines: SetupMachine[] }) {
     setNotice(null);
     if (name) void load(name);
   }, [name, load]);
-
-  const choose = (value: string) => {
-    setChosen(value);
-    try {
-      localStorage.setItem(MACHINE_KEY, value);
-    } catch {
-      // The choice lasts until the page closes.
-    }
-  };
 
   const undo = async (backup: SetupBackup) => {
     if (!machine) return;
@@ -86,16 +97,6 @@ export function SetupHistory({ machines }: { machines: SetupMachine[] }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="max-w-3xl text-xs leading-[1.5] text-muted-foreground">{t('setup.history.intro')}</p>
-      {machines.length > 1 && machine ? (
-        <Select value={machine.machine} onValueChange={(value) => { if (value) choose(String(value)); }}>
-          <SelectTrigger size="sm" className="w-auto min-w-44 self-start" aria-label={t('setup.history.machine.label')}>
-            <SelectValue>{tRich('setup.history.machine.value', { machine: <MachinePill name={machine.machine} /> })}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup>
-            {machines.map((entry) => <SelectItem key={entry.machine} value={entry.machine}><MachinePill name={entry.machine} /></SelectItem>)}
-          </SelectPopup>
-        </Select>
-      ) : null}
       {notice ? (
         <p className={cn('text-sm', notice.ok ? 'text-muted-foreground' : 'text-error-foreground')} role="status">{notice.text}</p>
       ) : null}

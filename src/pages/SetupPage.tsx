@@ -56,7 +56,7 @@ import { SetupChecks } from './SetupChecks';
 import { SetupRepoSection } from './SetupSync';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
 import { SetupPlugins } from './SetupPlugins';
-import { SetupHistory } from './SetupHistory';
+import { historyMachine, rememberHistoryMachine, SetupHistory } from './SetupHistory';
 import { SetupCost } from './SetupCost';
 import { SetupAgents } from './SetupAgents';
 import { SetupHooks } from './SetupHooks';
@@ -354,6 +354,8 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   const tableRef = useRef<HTMLDivElement>(null);
 
   const machines = useMemo(() => inventory?.machines ?? [], [inventory]);
+  // Arbor's changes shows one machine's backups at a time; the breadcrumb picks which.
+  const historyPick = tab === 'history' ? historyMachine(machines, params?.machine) : null;
   const keys = useMemo(() => homeKeys(machines), [machines]);
   const reference = resolveReference(machines, chosenReference);
   const activeHome = chosenHome && keys.includes(chosenHome) ? chosenHome : keys[0] ?? null;
@@ -483,6 +485,18 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             t('setup.title'),
             t(leafLabel('setup', tab) ?? 'setup.tab.overview'),
             // Cost is the one Sync view that's about spend rather than comparing machines, so it can be narrowed to one.
+            ...(tab === 'history' && historyPick ? [
+              <MachineCrumb
+                key="machine"
+                machine={historyPick}
+                machines={machines.map((entry) => entry.machine)}
+                all={false}
+                onChange={(machine) => {
+                  rememberHistoryMachine(machine);
+                  onViewChange?.(setupView({ tab: 'history', machine }));
+                }}
+              />,
+            ] : []),
             ...(tab === 'cost' ? [
               <MachineCrumb
                 key="machine"
@@ -543,7 +557,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             onNavigate={onNavigate}
           />
         ) : tab === 'history' ? (
-          <SetupHistory machines={machines} />
+          <SetupHistory machines={machines} picked={historyPick} />
         ) : (
           <>
             <p className="max-w-3xl text-xs leading-[1.5] text-muted-foreground">

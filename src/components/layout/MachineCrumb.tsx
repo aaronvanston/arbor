@@ -1,7 +1,10 @@
 import { MachinePill } from '../identity/Identity';
 import { ChevronDown } from '../ui/icons';
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from '../ui/menu';
+import { useMemo } from 'react';
 import { useI18n } from '../../i18n';
+import { useFleetHealth } from '../../services/fleetHealth';
+import { machineName } from '../../services/machineNames';
 
 /** What Arbor calls the sessions and requests no machine claims, as the view's `machine` holds it. */
 const UNASSIGNED = '__unassigned__';
@@ -11,11 +14,13 @@ const UNASSIGNED = '__unassigned__';
  * machines`): the machine it's narrowed to as its pill, or All machines, and a menu to pick another. `''` is all of
  * them. `unassigned` adds what no machine claims.
  */
-export function MachineCrumb({ machine, machines, unassigned = false, onChange }: {
+export function MachineCrumb({ machine, machines, unassigned = false, all = true, onChange }: {
   machine: string;
   /** The machines to pick from, in the order they're shown. */
   machines: readonly string[];
   unassigned?: boolean;
+  /** Offers All machines; a view that only ever shows one machine (Arbor's changes) leaves it out. */
+  all?: boolean;
   onChange: (machine: string) => void;
 }) {
   const { t } = useI18n();
@@ -36,8 +41,12 @@ export function MachineCrumb({ machine, machines, unassigned = false, onChange }
       </MenuTrigger>
       <MenuPopup align="start" className="min-w-48">
         <MenuRadioGroup value={machine} onValueChange={(next: string) => onChange(next)}>
-          <MenuRadioItem closeOnClick value="">{t('usage.filter.allMachines')}</MenuRadioItem>
-          {listed.length ? <MenuSeparator /> : null}
+          {all ? (
+            <>
+              <MenuRadioItem closeOnClick value="">{t('usage.filter.allMachines')}</MenuRadioItem>
+              {listed.length ? <MenuSeparator /> : null}
+            </>
+          ) : null}
           {listed.map((name) => (
             <MenuRadioItem closeOnClick key={name} value={name}><MachinePill name={name} /></MenuRadioItem>
           ))}
@@ -51,4 +60,21 @@ export function MachineCrumb({ machine, machines, unassigned = false, onChange }
       </MenuPopup>
     </Menu>
   );
+}
+
+/**
+ * The Machines page's picker: every machine with a host, as the sidebar lists them under Machines, and `known` (the
+ * ones with requests). Picking one opens its page; All machines is the fleet overview.
+ */
+export function FleetMachineCrumb({ machine, known, onChange }: {
+  machine: string;
+  known: readonly string[];
+  onChange: (machine: string) => void;
+}) {
+  const health = useFleetHealth();
+  const choices = useMemo(() => {
+    const hosts = (health ?? []).map((entry) => entry.machine).filter(Boolean);
+    return [...new Set([...hosts, ...known])].sort((left, right) => machineName(left).localeCompare(machineName(right)));
+  }, [health, known]);
+  return <MachineCrumb machine={machine} machines={choices} onChange={onChange} />;
 }

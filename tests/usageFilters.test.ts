@@ -50,13 +50,11 @@ describe('which filters a page offers', () => {
     expect(offeredUsageFilters('sessions', 'projects', filters({ project: 'arbor' })).slice(0, 3)).toEqual(['project', 'branch', 'machine']);
   });
 
-  test('Machines is about machine health, so it narrows by machine only', () => {
-    expect(offeredUsageFilters('machines', 'overview', filters())).toEqual(['machine']);
+  test('Machines picks its machine in the breadcrumb, which opens that machine’s page, so it offers no filters', () => {
+    expect(offeredUsageFilters('machines', 'overview', filters())).toEqual([]);
     // A request filter left over from elsewhere has no chip there.
     const leftover = filters({ model: 'grok-4', result: 'failed', machine: 'ci-01' });
-    expect(usageFilterChips(leftover, offeredUsageFilters('machines', 'overview', leftover), t)).toEqual([
-      { id: 'machine', label: 'Machine', value: 'ci-01' },
-    ]);
+    expect(usageFilterChips(leftover, offeredUsageFilters('machines', 'overview', leftover), t)).toEqual([]);
   });
 
   test('Pricing narrows requests like Usage, without a session', () => {
@@ -74,7 +72,7 @@ describe('what is set', () => {
   test('lists the set filters in the order they are offered, leaving out ones the tab does not offer', () => {
     const set = filters({ result: 'canceled', machine: 'casey-mbp', model: 'grok-4', client: 'Codex' });
     expect(activeUsageFilters(set, offeredUsageFilters('usage', 'events', set))).toEqual(['model', 'machine', 'result']);
-    expect(activeUsageFilters(set, offeredUsageFilters('machines', 'overview', set))).toEqual(['machine']);
+    expect(activeUsageFilters(set, offeredUsageFilters('machines', 'overview', set))).toEqual([]);
     expect(activeUsageFilters(set, offeredUsageFilters('sessions', 'sessions', set))).toEqual(['machine', 'client', 'model', 'result']);
   });
 

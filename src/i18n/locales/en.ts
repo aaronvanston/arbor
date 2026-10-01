@@ -1946,8 +1946,6 @@ export const en = {
   'setup.tab.cost': 'Cost',
   'setup.tab.history': 'Arbor’s changes',
   'setup.history.intro': 'Every change Arbor made to files on a machine: setup sync, skills, and the agent settings it changed for the needs-you reporter, keeping sessions, telemetry and MCP servers. Arbor backed each one up first, so you can undo it while the files are still as it left them.',
-  'setup.history.machine.label': 'Machine',
-  'setup.history.machine.value': 'Changes on {machine}',
   'setup.history.loading': 'Reading the changes Arbor made on {machine}',
   'setup.history.empty': 'Arbor hasn’t changed any files on {machine}.',
   'setup.history.undo.title': 'Undo this change?',

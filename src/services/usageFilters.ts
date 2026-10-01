@@ -59,7 +59,8 @@ const REQUEST_FILTERS: readonly UsageFilterId[] = ['model', 'provider', 'source'
  */
 export function offeredUsageFilters(page: UsageFilterPage, tab: UsageFilterTab, filters: Pick<UsageFilters, 'project'>): UsageFilterId[] {
   if (page === 'value' || tab === 'digest' || tab === 'lifetime') return [];
-  if (page === 'machines') return ['machine'];
+  // The breadcrumb picks the machine there: one opens its own page.
+  if (page === 'machines') return [];
   if (page === 'sessions') {
     return ['project', ...(filters.project ? ['branch' as const] : []), 'machine', 'client', 'pullRequests', ...REQUEST_FILTERS, 'result'];
   }

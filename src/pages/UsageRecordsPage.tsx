@@ -12,7 +12,7 @@ import { createRefreshScheduler } from '../services/refreshScheduler';
 import { usageViewScopeKey } from '../services/usageViewScope';
 import { formatCount } from '../lib/format';
 import { type SessionPullRequestFilter, type UsageSessionSort } from '../services/usageSessions';
-import { MachineCrumb } from '../components/layout/MachineCrumb';
+import { FleetMachineCrumb, MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -677,14 +677,8 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
     : [<MachineCrumb key="machine" machine={machine} machines={machineChoices} unassigned onChange={pickMachine} />];
   const breadcrumb =
     variant === 'machines'
-      ? selectedMachine
-        ? [
-            <button key="machines" type="button" className="cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNavigate?.(machinesView())}>
-              {t('app.nav.machines')}
-            </button>,
-            <MachinePill key="machine" name={selectedMachine} />,
-          ]
-        : [t('app.nav.machines')]
+      // The fleet, or one machine's page, picked the way the other views pick theirs.
+      ? [t('app.nav.machines'), <FleetMachineCrumb key="machine" machine={selectedMachine ?? ''} known={machineNames} onChange={(next) => onNavigate?.(machinesView(next || undefined))} />]
       : variant === 'value'
       ? [t('app.nav.accounts'), t('tree.accounts.value')]
       : variant === 'sessions'
