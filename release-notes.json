@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.0.8",
+    "summary": "Sync: browse and edit the setup repo, then commit the changes from Arbor.",
+    "changes": [
+      "See every file in the setup repo, and whether each machine has its latest version.",
+      "Edit, add, rename and delete files, then commit them together with a message.",
+      "Open a skill's files straight from the skills list."
+    ]
+  },
+  {
     "version": "1.0.7",
     "summary": "Dropdowns: the last option can be picked again when the window is zoomed in.",
     "changes": []
