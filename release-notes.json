@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.0.7",
+    "summary": "Dropdowns: the last option can be picked again when the window is zoomed in.",
+    "changes": []
+  },
+  {
     "version": "1.0.6",
     "summary": "Machines: remove a machine from Edit hosts, with a confirmation before it goes.",
     "changes": []
