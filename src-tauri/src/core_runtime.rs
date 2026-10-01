@@ -1328,6 +1328,9 @@ pub(crate) fn move_legacy_core_folder(base_dir: &Path, is_running: impl Fn(&Path
 
 pub(crate) fn executable_dir() -> Result<PathBuf, String> {
     let exe_path = env::current_exe().map_err(|err| format!("Failed to read current executable path: {err}"))?;
+    // Started through a link (`arbor` in ~/.local/bin), macOS gives the link's path; the app's folders are where the
+    // link points.
+    let exe_path = exe_path.canonicalize().unwrap_or(exe_path);
     exe_path
         .parent()
         .map(|path| path.to_path_buf())
