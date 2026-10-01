@@ -954,7 +954,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           {variant !== 'pricing' ? <ProxyChecksBanner onNavigate={onNavigate} /> : null}
           {variant !== 'pricing' ? <UsageCollectorBanner onOpenData={onNavigate ? () => onNavigate({ kind: 'settings', page: 'data' }) : undefined} /> : null}
           {variant === 'usage' || variant === 'value' ? <ProviderStatusBanner /> : null}
-          {variant === 'usage' || variant === 'sessions' ? <HeavySessionBanner onOpenSession={openSession} /> : null}
+          {variant === 'usage' || variant === 'sessions' ? <HeavySessionBanner machine={machineCrumb ? machine : ''} onOpenSession={openSession} /> : null}
           {variant === 'sessions' ? <ArchiveBanner onOpen={onNavigate ? () => onNavigate({ kind: 'settings', page: 'session-archive' }) : undefined} /> : null}
         </div>
 

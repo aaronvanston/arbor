@@ -4048,6 +4048,8 @@ export const en = {
   'usage.filter.machine': 'Machine',
   'usage.filter.allMachines': 'All machines',
   'machineCrumb.label': 'Machine to show',
+  'checkouts.notScanned.title': 'Not scanned yet',
+  'checkouts.notScanned.description': 'Sync hasn’t looked at the checkouts on {machine}. Add it on Settings › Machines so Sync can scan it, or pick another machine.',
   'usage.filter.unassigned': 'Unassigned',
   'usage.filter.search': 'Search sessions',
   'usage.filter.searchPlaceholder': 'Search titles, projects, branches, PRs…',

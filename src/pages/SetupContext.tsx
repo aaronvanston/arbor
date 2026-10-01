@@ -71,6 +71,8 @@ export function SetupContext({ machines, machine = null, homeLabel }: {
     [data, nowMs, machine],
   );
   const grown = homes.filter(startGrew);
+  // Sessions that couldn't be placed belong to no machine, so their count only reads true for every machine.
+  const unplaced = machine ? 0 : data?.unplaced ?? 0;
   const toggle = (key: string) => setOpen((current) => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -94,8 +96,8 @@ export function SetupContext({ machines, machine = null, homeLabel }: {
           <EmptyMedia><Gauge /></EmptyMedia>
           <EmptyTitle>{t('setup.context.empty.title')}</EmptyTitle>
           <EmptyDescription>
-            {data.unplaced
-              ? t(data.unplaced === 1 ? 'setup.context.empty.unplaced.one' : 'setup.context.empty.unplaced.other', { count: data.unplaced })
+            {unplaced
+              ? t(unplaced === 1 ? 'setup.context.empty.unplaced.one' : 'setup.context.empty.unplaced.other', { count: unplaced })
               : t('setup.context.empty.description', { days: STARTING_CONTEXT_DAYS })}
           </EmptyDescription>
         </Empty>
@@ -156,7 +158,7 @@ export function SetupContext({ machines, machine = null, homeLabel }: {
           </TableCard>
           <p className="max-w-3xl text-xs text-muted-foreground">
             {t('setup.context.note')}
-            {data.unplaced ? ` ${t(data.unplaced === 1 ? 'setup.context.unplaced.one' : 'setup.context.unplaced.other', { count: data.unplaced })}` : ''}
+            {unplaced ? ` ${t(unplaced === 1 ? 'setup.context.unplaced.one' : 'setup.context.unplaced.other', { count: unplaced })}` : ''}
             {data.truncated ? ` ${t('setup.context.truncated')}` : ''}
           </p>
         </>

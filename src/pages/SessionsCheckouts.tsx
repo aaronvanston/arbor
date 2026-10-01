@@ -1,5 +1,6 @@
 import { Layers, TriangleAlert } from '../components/ui/icons';
 import { projectsLensAction } from '../components/ProjectsLens';
+import { MachinePill } from '../components/identity/Identity';
 import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -25,11 +26,12 @@ export function SessionsCheckoutsPage({ params, onViewChange }: {
   params?: SessionsParams;
   onViewChange?: (view: AppView, how?: ViewChange) => void;
 }) {
-  const { t } = useI18n();
+  const { t, tRich } = useI18n();
   const { inventory, error } = useSetupInventory();
   const every = inventory?.machines ?? [];
-  // The machine the breadcrumb narrowed Projects to, or every machine.
-  const picked = params?.machine ?? '';
+  // The machine the breadcrumb narrowed Projects to, or every machine. Checkouts come from Sync's scans, which are each
+  // a machine's, so the sessions no machine claims (Unassigned, carried over from Activity) have none: every machine.
+  const picked = params?.machine && params.machine !== '__unassigned__' ? params.machine : '';
   const machines = picked ? every.filter((machine) => machine.machine === picked) : every;
   const scanning = machines.some((machine) => machine.scanning);
   // Every answering machine shown is looked at; a scan already running there is left to finish.
@@ -87,6 +89,13 @@ export function SessionsCheckoutsPage({ params, onViewChange }: {
             <EmptyMedia><Layers /></EmptyMedia>
             <EmptyTitle>{t('setup.empty.title')}</EmptyTitle>
             <EmptyDescription>{t('setup.empty.description')}</EmptyDescription>
+          </Empty>
+        ) : !machines.length ? (
+          // A machine Sync hasn't scanned, such as one only the proxy knows.
+          <Empty>
+            <EmptyMedia><Layers /></EmptyMedia>
+            <EmptyTitle>{t('checkouts.notScanned.title')}</EmptyTitle>
+            <EmptyDescription>{tRich('checkouts.notScanned.description', { machine: <MachinePill name={picked} /> })}</EmptyDescription>
           </Empty>
         ) : (
           <SetupProjects machines={machines} />

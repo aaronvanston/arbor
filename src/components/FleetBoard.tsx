@@ -425,5 +425,6 @@ export function LiveMachineCrumb({ machine, machines, onChange }: {
     const onBoard = board?.machines.map((group) => group.machine).filter(Boolean) ?? [];
     return [...new Set([...machines, ...onBoard])].sort((left, right) => machineName(left).localeCompare(machineName(right)));
   }, [board, machines]);
-  return <MachineCrumb machine={machine} machines={choices} onChange={onChange} />;
+  // The board has sessions no machine claims too, under the same Unassigned the Sessions list offers.
+  return <MachineCrumb machine={machine} machines={choices} unassigned onChange={onChange} />;
 }

@@ -18,6 +18,11 @@ export type HeavySession = {
   client: string | null;
   host: string | null;
   machine: string;
+  /**
+   * The machine the Sessions list puts it on: its key's, or else the one its transcript was found on. A page narrowed to
+   * a machine shows the sessions placed there.
+   */
+  placedOn: string;
   apiKeyHash: string;
   tokens: number;
   requests: number;
@@ -43,6 +48,7 @@ export function heavySessions(page: UsageSessionPage, thresholdTokens: number | 
         client: client?.name ?? null,
         host: client?.host ?? null,
         machine: session.machine,
+        placedOn: session.machine || session.transcript?.machine || '',
         apiKeyHash: session.apiKeyHash,
         tokens: session.totalTokens,
         requests: session.requests,
@@ -53,6 +59,13 @@ export function heavySessions(page: UsageSessionPage, thresholdTokens: number | 
       };
     })
     .sort((a, b) => b.tokens - a.tokens);
+}
+
+/** The heavy sessions on `machine`, as the breadcrumb picks it: `''` is every machine, `__unassigned__` the unplaced ones. */
+export function heavySessionsOn(sessions: readonly HeavySession[], machine: string): HeavySession[] {
+  if (!machine) return [...sessions];
+  const name = machine === '__unassigned__' ? '' : machine;
+  return sessions.filter((session) => session.placedOn === name);
 }
 
 /**

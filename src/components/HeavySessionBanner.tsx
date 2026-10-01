@@ -6,7 +6,7 @@ import { useAppPreferences } from '../appPreferences';
 import { raisedAnywhere, useMachineOverrides, useProjectOverrides } from '../services/machineSettings';
 import { clientKeyName, maskApiKey, useClientKeys } from '../services/clientKeys';
 import type { CoreApiKeyView } from '../native/types';
-import { dismissHeavySession, heavySessionText, useDismissedHeavySessions, useHeavySessions, type HeavySession } from '../services/heavySessions';
+import { dismissHeavySession, heavySessionsOn, heavySessionText, useDismissedHeavySessions, useHeavySessions, type HeavySession } from '../services/heavySessions';
 import { machineMentions } from '../services/machineMentions';
 import { shortSessionId } from '../services/usageSessions';
 import { useConfirmation } from './ConfirmationDialog';
@@ -21,14 +21,18 @@ import { Spinner } from './ui/spinner';
  * when its key can be spared, pausing that key. Closing one lasts until the session goes over again after
  * an hour under.
  */
-export function HeavySessionBanner({ onOpenSession }: { onOpenSession?: (id: string) => void }) {
+export function HeavySessionBanner({ machine = '', onOpenSession }: {
+  /** The machine the page is narrowed to; `''` is every machine. */
+  machine?: string;
+  onOpenSession?: (id: string) => void;
+}) {
   const { t } = useI18n();
   const preferences = useAppPreferences();
   const overrides = useMachineOverrides();
   const projects = useProjectOverrides();
   const sessions = useHeavySessions();
   const dismissed = useDismissedHeavySessions();
-  const shown = raisedAnywhere(preferences, overrides, 'heavySessionTokens', projects) ? sessions.filter((session) => dismissed[session.id] === undefined) : [];
+  const shown = raisedAnywhere(preferences, overrides, 'heavySessionTokens', projects) ? heavySessionsOn(sessions, machine).filter((session) => dismissed[session.id] === undefined) : [];
   const { keys, pause, resume } = useClientKeys(shown.length > 0);
   const { askConfirmation } = useConfirmation();
   const [busy, setBusy] = useState<string | null>(null);

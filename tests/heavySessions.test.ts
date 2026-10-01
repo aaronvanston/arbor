@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
-import { heavySessions, heavySessionText, nextHeavyNotifications, type HeavySession } from '../src/services/heavySessions';
+import { heavySessions, heavySessionsOn, heavySessionText, nextHeavyNotifications, type HeavySession } from '../src/services/heavySessions';
 import type { UsageSession, UsageSessionPage } from '../src/native/types';
 
 const HOUR = 3_600_000;
@@ -21,7 +21,7 @@ const page = (items: UsageSession[]): UsageSessionPage => ({
   summary: { sessions: items.length, subagentThreads: 0, active: 0, requests: 0, totalTokens: 0, estimatedCost: 0, pricedRequests: 0, untrackedRequests: 0 },
 });
 const heavy = (id: string, fields: Partial<HeavySession> = {}): HeavySession => ({
-  id, client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', apiKeyHash: 'desk-cedar', tokens: 130 * M, requests: 100, cost: 84.2, otherKeySessions: 0, ...fields,
+  id, client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', placedOn: 'Cedar 01', apiKeyHash: 'desk-cedar', tokens: 130 * M, requests: 100, cost: 84.2, otherKeySessions: 0, ...fields,
 });
 
 describe('heavy sessions', () => {
@@ -35,7 +35,7 @@ describe('heavy sessions', () => {
     const items = heavySessions(hour, 100 * M);
     expect(items.map((item) => item.id)).toEqual(['heavier', 'heavy']);
     expect(items[1]).toEqual({
-      id: 'heavy', client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', apiKeyHash: 'desk-cedar',
+      id: 'heavy', client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', placedOn: 'Cedar 01', apiKeyHash: 'desk-cedar',
       tokens: 130 * M, requests: 100, cost: 84.2,
       // The quiet session and the one after it used the same key.
       otherKeySessions: 2,
@@ -90,5 +90,21 @@ describe('heavy sessions per machine', () => {
     ]);
     const threshold = ({ machine }: { machine: string }) => ({ 'ci-01': 0, 'cedar-02': 500 * M })[machine] ?? 100 * M;
     expect(heavySessions(hour, threshold).map((item) => item.id)).toEqual(['laptop']);
+  });
+});
+
+describe('heavy sessions on one machine', () => {
+  it('places a session by its key, or else by where its transcript was found, as the Sessions list does', () => {
+    const transcript = { machine: 'lab-box' } as unknown as NonNullable<UsageSession['transcript']>;
+    const hour = page([
+      session('keyed', 130 * M),
+      session('found', 150 * M, { machine: '', transcript }),
+      session('nowhere', 140 * M, { machine: '' }),
+    ]);
+    const items = heavySessions(hour, 100 * M);
+    expect(heavySessionsOn(items, '').map((item) => item.id)).toEqual(['found', 'nowhere', 'keyed']);
+    expect(heavySessionsOn(items, 'Cedar 01').map((item) => item.id)).toEqual(['keyed']);
+    expect(heavySessionsOn(items, 'lab-box').map((item) => item.id)).toEqual(['found']);
+    expect(heavySessionsOn(items, '__unassigned__').map((item) => item.id)).toEqual(['nowhere']);
   });
 });
