@@ -105,7 +105,7 @@ export function SessionMonitor() {
             body: translate('notifications.heavySession.withSession', { text: text.body, id: shortSessionId(item.id) }),
             kind: 'heavySession',
             urgent: true,
-            subject: { session: item.id },
+            subject: { session: item.id, ...(item.placedOn ? { on: item.placedOn } : {}) },
           };
         }));
       } catch (error) {

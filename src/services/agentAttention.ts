@@ -80,6 +80,8 @@ export function attentionNotifications(due: AttentionItem[], t: Translate): Syst
       body: due.map((item) => t('attention.alert.body', { name: attentionName(item, t), machine: item.machine })).join('\n'),
       kind: pressing ? 'agentPermission' : 'agentWaiting',
       urgent: pressing,
+      // So narrowing Alerts to a machine still finds the waits on it.
+      subject: { machines: [...new Set(due.map((item) => item.machine).filter(Boolean))] },
     }];
   }
   return due.map((item) => ({

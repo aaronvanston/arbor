@@ -6,7 +6,8 @@ import { savedStore } from './savedStore';
 /**
  * What an alert is about, so the history can open it and tell a repeat from news: an account key, a machine, a
  * session id, a status page, or a provider whose limits it's about. One alert about several accounts or machines
- * names each of them in `accounts` or `machines`.
+ * names each of them in `accounts` or `machines`. `on` is the machine it happened on when that isn't what it's about
+ * (a session's), so narrowing Alerts to a machine finds it without making it about two things.
  */
 export type AlertSubject = {
   account?: string;
@@ -16,6 +17,7 @@ export type AlertSubject = {
   provider?: string;
   accounts?: string[];
   machines?: string[];
+  on?: string;
 };
 
 /** An alert as it fired, and how it got out. */
@@ -141,6 +143,17 @@ function aboutThings(subject: AlertSubject | undefined): string[] {
 function aboutOne(subject: AlertSubject | undefined) {
   const [thing, ...others] = aboutThings(subject);
   return thing !== undefined && !others.length ? thing : null;
+}
+
+/** The machines an alert names or happened on. */
+export function alertMachines(entry: Pick<AlertRecord, 'subject'>): string[] {
+  const subject = entry.subject;
+  return subject ? [...new Set(ids(subject.machine, subject.machines, subject.on))] : [];
+}
+
+/** The alerts on `machine`, as the breadcrumb picks it; `''` is all of them, and alerts that name no machine show only then. */
+export function alertsOn(entries: readonly AlertRecord[], machine: string): AlertRecord[] {
+  return machine ? entries.filter((entry) => alertMachines(entry).includes(machine)) : [...entries];
 }
 
 /** The history with one more alert, the entry that holds it, and whether it should go out to the Mac and phone. */
@@ -354,10 +367,10 @@ export function markAlertRead(id: string) {
 }
 
 /** Removes the alerts of one category, or all of them. Returns what it removed, for Undo. */
-export function clearAlertHistory(category: AlertCategory | null = null): ClearedAlerts {
+export function clearAlertHistory(category: AlertCategory | null = null, machine = ''): ClearedAlerts {
   const history = store.get();
   const order = history.entries.map((entry) => entry.id);
-  const entries = category === null ? history.entries : history.entries.filter((entry) => alertCategory(entry.kind) === category);
+  const entries = alertsOn(history.entries, machine).filter((entry) => category === null || alertCategory(entry.kind) === category);
   if (!entries.length) return { entries, order: [] };
   const gone = new Set(entries);
   save({ ...history, entries: history.entries.filter((entry) => !gone.has(entry)) });

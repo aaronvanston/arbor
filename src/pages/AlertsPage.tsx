@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArchiveX, Bell, CalendarRange, ChevronRight, CirclePause, CirclePlay, CloudAlert, ExternalLink, Flame, Gauge, HardDrive, Hourglass, Layers, MessageSquareMore, MonitorCheck, RotateCcw, Send, ServerCog, Settings2, ShieldQuestionMark, Smartphone, Trash2, TriangleAlert, Unplug, type AppIcon } from '../components/ui/icons';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { MachineText } from '../components/identity/MachineText';
+import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { SettingsSection } from '../components/layout/settings';
 import { Button } from '../components/ui/button';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
@@ -21,7 +22,9 @@ import {
   ALERT_HISTORY_DAYS,
   alertCategory,
   alertDestination,
+  alertMachines,
   alertsByDay,
+  alertsOn,
   clearAlertHistory,
   getAlertHistory,
   isUnreadAlert,
@@ -34,6 +37,7 @@ import {
   type AlertRecord,
 } from '../services/alertHistory';
 import { alertMentions } from '../services/machineMentions';
+import { machineName } from '../services/machineNames';
 import type { AlertKind } from '../services/phoneAlerts';
 import { useQuotaClock } from '../services/quotaTime';
 
@@ -81,6 +85,11 @@ export function AlertsPage({ coreReady, onNavigate }: { coreReady: boolean; onNa
   const history = useAlertHistory();
   const now = useQuotaClock();
   const [filter, setFilter] = useState<AlertCategory | 'all'>('all');
+  const [machine, setMachine] = useState('');
+  const machines = useMemo(
+    () => [...new Set(history.entries.flatMap(alertMachines))].sort((left, right) => machineName(left).localeCompare(machineName(right))),
+    [history.entries],
+  );
   // What was new when the page opened stays marked while it's open; the sidebar stops counting it straight away.
   const [seenBefore] = useState(() => getAlertHistory().seenAtMs);
   // Only once it's looked at: closed on this page, the window is only hidden, and what comes in meanwhile has to stay
@@ -88,8 +97,8 @@ export function AlertsPage({ coreReady, onNavigate }: { coreReady: boolean; onNa
   useEffect(() => whenWindowInFront(() => markAlertsSeen()), [history.entries]);
 
   const shown = useMemo(
-    () => (filter === 'all' ? history.entries : history.entries.filter((entry) => alertCategory(entry.kind) === filter)),
-    [history.entries, filter],
+    () => alertsOn(history.entries, machine).filter((entry) => filter === 'all' || alertCategory(entry.kind) === filter),
+    [history.entries, filter, machine],
   );
   const days = useMemo(() => alertsByDay(shown), [shown]);
   const today = startOfDay(now);
@@ -100,8 +109,8 @@ export function AlertsPage({ coreReady, onNavigate }: { coreReady: boolean; onNa
   const open = (destination: AlertDestination) => openAlertDestination(destination, onNavigate);
 
   // Nothing leaves the Mac or the phone, and Undo puts every alert back, so this doesn't ask first. It clears what the
-  // filter shows, as the button sits beside it. Clear goes once the list empties, so focus moves to Undo, and back to
-  // Clear after it.
+  // filter and the machine picked show, as the button sits beside them. Clear goes once the list empties, so focus
+  // moves to Undo, and back to Clear after it.
   const clearButton = useRef<HTMLButtonElement>(null);
   const refocusClear = useRef(false);
   useLayoutEffect(() => {
@@ -110,7 +119,7 @@ export function AlertsPage({ coreReady, onNavigate }: { coreReady: boolean; onNa
     clearButton.current?.focus();
   }, [history.entries]);
   const clear = () => {
-    const cleared = clearAlertHistory(filter === 'all' ? null : filter);
+    const cleared = clearAlertHistory(filter === 'all' ? null : filter, machine);
     const count = cleared.entries.length;
     if (!count) return;
     toast({
@@ -171,7 +180,10 @@ export function AlertsPage({ coreReady, onNavigate }: { coreReady: boolean; onNa
           } : null,
         ] : undefined}
       >
-        <PageBreadcrumb segments={[t('alerts.title')]} />
+        <PageBreadcrumb segments={history.entries.length
+          ? [t('alerts.title'), <MachineCrumb key="machine" machine={machine} machines={machines} onChange={setMachine} />]
+          : [t('alerts.title')]}
+        />
       </PageTopbar>
       <PageBody gap="gap-6">
         {!history.entries.length ? (

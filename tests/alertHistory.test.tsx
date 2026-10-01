@@ -11,7 +11,9 @@ import {
   ALERT_HISTORY_LIMIT,
   ALERT_REPEAT_WINDOW_MS,
   alertDestination,
+  alertMachines,
   alertsByDay,
+  alertsOn,
   clearAlertHistory,
   getAlertHistory,
   markAlertRead,
@@ -120,6 +122,33 @@ describe('the alert history', () => {
     expect(withRestoredAlerts(before, { entries: before.entries, order: [] })).toEqual(before);
     const many = Array.from({ length: ALERT_HISTORY_LIMIT }, (_, index) => record(`m${index}`, 2_000));
     expect(withRestoredAlerts({ entries: [record('new', 9_000)], seenAtMs: 0 }, { entries: many, order: [] }).entries).toHaveLength(ALERT_HISTORY_LIMIT);
+  });
+
+  it('narrows to the alerts on one machine, and clears only those', () => {
+    const heavy = record('heavy', 4_000, { kind: 'heavySession', subject: { session: 's-1', on: 'casey-mbp' } });
+    const down = record('down', 3_000, { subject: { machine: 'ci-01' } });
+    const both = record('both', 2_000, { subject: { machines: ['ci-01', 'casey-mbp'] } });
+    const none = record('none', 1_000, { kind: 'outage', subject: { url: 'https://status.example.com' } });
+    expect(alertMachines(heavy)).toEqual(['casey-mbp']);
+    expect(alertMachines(none)).toEqual([]);
+    const entries = [heavy, down, both, none];
+    expect(alertsOn(entries, '').map((entry) => entry.id)).toEqual(['heavy', 'down', 'both', 'none']);
+    expect(alertsOn(entries, 'casey-mbp').map((entry) => entry.id)).toEqual(['heavy', 'both']);
+    expect(alertsOn(entries, 'ci-01').map((entry) => entry.id)).toEqual(['down', 'both']);
+
+    resetAlertHistory({ seenAtMs: 0, entries });
+    const cleared = clearAlertHistory('machines', 'ci-01');
+    expect(cleared.entries.map((entry) => entry.id)).toEqual(['down', 'both']);
+    expect(getAlertHistory().entries.map((entry) => entry.id)).toEqual(['heavy', 'none']);
+    restoreAlerts(cleared);
+    expect(getAlertHistory().entries).toEqual(entries);
+  });
+
+  it('still folds a session alert that notes the machine it happened on', () => {
+    const first = withAlert({ entries: [], seenAtMs: 0 }, record('one', 1_000, { kind: 'heavySession', subject: { session: 's-1', on: 'casey-mbp' } }), 1_000);
+    const again = withAlert(first.history, record('two', 2_000, { kind: 'heavySession', subject: { session: 's-1', on: 'casey-mbp' } }), 2_000);
+    expect(again.history.entries).toHaveLength(1);
+    expect(itemAt(again.history.entries, 0).count).toBe(2);
   });
 
   it('opens the account, machine, session or status page an alert was about', () => {
