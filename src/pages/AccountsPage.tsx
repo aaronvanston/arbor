@@ -587,6 +587,7 @@ function PausedBlock({ items, columns, reserves, failures, flash }: {
                   </span>
                   {failure ? <span className="block truncate text-warning-foreground" title={failure}>{t('reserves.failed', { error: failure })}</span> : null}
                 </span>
+                <OffDetails file={item.file} quota={item.quota} now={now} />
                 <ReserveChip accountKey={item.key} name={item.name} provider={item.paused.provider} paused={item.paused} always />
                 <Button variant="outline" size="xs" disabled={busy !== null} focusableWhenDisabled onClick={() => void resume(item)} title={t('reserves.paused.resumeHint', { window })}>
                   {busy === item.key ? <Spinner className="size-3" /> : <Play />}
@@ -629,7 +630,10 @@ function OffBlock({ items, columns, availabilityOf, commands, flash }: {
             <li key={item.key} className={cn('-mx-2 flex flex-col gap-2 rounded-md px-2 py-0.5', flash === item.key && 'row-highlight')} data-account-key={item.key}>
               <div className="flex items-center gap-3">
                 <AccountAvatar profile={item.profile} size="sm" />
-                <strong className={cn('min-w-0 flex-1 truncate text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
+                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+                  <strong className={cn('min-w-0 shrink truncate text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
+                  <OffDetails file={item.file} quota={item.quota} now={now} />
+                </span>
                 <AuthFileFix file={item.file} availability={availability} commands={commands} />
                 <Menu>
                   <MenuTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label={t('accounts.actions', { name: item.name })} />}>
@@ -646,6 +650,41 @@ function OffBlock({ items, columns, availabilityOf, commands, flash }: {
         })}
       </ul>
     </SettingsBlock>
+  );
+}
+
+/**
+ * What a turned-off account still has, the same as an account in use shows beside its name: its plan, its banked or
+ * manual resets, and a refresh, since its limits keep running down and resetting while it's off.
+ */
+function OffDetails({ file, quota, now }: { file: AuthFile; quota: QuotaState; now: number }) {
+  const { t } = useI18n();
+  const loading = quota.status === 'loading';
+  const readAtMs = quota.fetchedAt ?? quota.staleSinceMs;
+  const checkedAt = readAtMs ? formatWhen(readAtMs, { now }) : '';
+  return (
+    <>
+      {quota.plan ? <Badge variant={planVariant(quota.plan)}>{planLabel(quota.plan)}</Badge> : null}
+      {/* No Reset here: the core won't spend a reset on a turned-off account, so the chip says to turn it on first. */}
+      <ResetCreditsChip quota={quota} claude={providerForFile(file) === 'claude'} note={t('accounts.resets.turnOnFirst')} />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              onClick={() => void refreshAccountQuotas([file])}
+              disabled={loading}
+              focusableWhenDisabled
+              aria-label={t('quota.refresh')}
+            />
+          }
+        >
+          <RefreshIcon refreshing={loading} />
+        </TooltipTrigger>
+        <TooltipPopup>{quota.status === 'success' && checkedAt ? t('accounts.refresh.checked', { time: checkedAt }) : t('quota.refresh')}</TooltipPopup>
+      </Tooltip>
+    </>
   );
 }
 
@@ -858,12 +897,14 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
  * An account's banked resets (Claude) or manual resets (Codex) as a counter beside its name. Hovering or focusing it
  * opens the details, with Reset Quota; the counter takes the accent while a reset can be used now.
  */
-function ResetCreditsChip({ quota, claude, blocked, onReset }: {
+function ResetCreditsChip({ quota, claude, blocked, onReset, note }: {
   quota: QuotaState;
   claude: boolean;
   /** Why a reset can't be used now, if it can't. */
   blocked?: string;
   onReset?: () => void;
+  /** Shown under the details while there are resets to use, for an account that can't use them from here. */
+  note?: string;
 }) {
   const { t } = useI18n();
   const count = quota.resetCredits;
@@ -909,6 +950,7 @@ function ResetCreditsChip({ quota, claude, blocked, onReset }: {
           </dl>
         ) : null}
         {quota.bankedReset?.blockedReason ? <p className="mt-2 text-xs text-muted-foreground">{quota.bankedReset.blockedReason}</p> : null}
+        {note && (count ?? 0) > 0 ? <p className="mt-2 text-xs text-muted-foreground">{note}</p> : null}
         {error ? <p className="mt-2 text-xs text-warning-foreground">{t(claude ? 'quota.bankedResetsWarning' : 'quota.resetCreditsWarning', { error })}</p> : null}
         {onReset && (count ?? 0) > 0 ? (
           <div className="mt-3 flex items-center justify-end gap-2">

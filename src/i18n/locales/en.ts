@@ -254,6 +254,7 @@ export const en = {
   'accounts.resets.applicable': 'Can use now',
   'accounts.resets.refills': 'Refills',
   'accounts.resets.subscription': 'Subscription ends',
+  'accounts.resets.turnOnFirst': 'Turn the account back on to use a reset.',
   'signIns.signIn': 'Sign in',
   'signIns.importAny': 'Import a credential file…',
   'signIns.offCount': '{count} off',
