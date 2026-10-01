@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.0.3",
+    "summary": "Accounts: turned-off and paused accounts show their usage, grayed out.",
+    "changes": [
+      "Their share counts toward each provider's total, shown hatched in the bar."
+    ]
+  },
+  {
     "version": "1.0.2",
     "summary": "Remove machines you no longer use from the machine list, with Undo.",
     "changes": [
