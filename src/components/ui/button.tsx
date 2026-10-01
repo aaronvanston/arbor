@@ -65,6 +65,8 @@ function Button(buttonProps: ButtonProps) {
   const defaultProps = {
     className: cn(buttonVariants({ className, size, variant })),
     'data-slot': 'button',
+    // What's inside can tell a filled button from the rest: a machine pill lays itself over the page there (styles.css).
+    'data-variant': variant ?? 'default',
     type: typeValue,
   };
   let ownProps: typeof props & { disabled?: boolean; children?: ReactNode } = { ...props, disabled, children };

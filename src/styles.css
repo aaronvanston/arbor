@@ -369,10 +369,12 @@
    machineLook.ts) in its one color (--machine-color): soft is the account chip's tint, solid the
    color itself (a shade deeper under white words, or as it is under dark ones for a light color,
    data-ink), outline a ring over nothing, and neutral a gray pill with only its icon colored.
+   The fill is kept in --machine-fill so a filled button can lay it over the page's surface.
    A pill that opens something rings in its own ink on hover. */
 @utility machine-pill {
   --machine-ink: color-mix(in srgb, var(--machine-color) 45%, var(--foreground));
-  background-color: color-mix(in srgb, var(--machine-color) 15%, transparent);
+  --machine-fill: color-mix(in srgb, var(--machine-color) 15%, transparent);
+  background-color: var(--machine-fill);
   color: var(--machine-ink);
 
   /* Alerts and buttons tint and nudge every icon inside them; a pill's icon keeps its own ink and place. */
@@ -383,28 +385,34 @@
 
   @variant dark {
     --machine-ink: color-mix(in srgb, var(--machine-color) 55%, var(--foreground));
-    background-color: color-mix(in srgb, var(--machine-color) 22%, transparent);
+    --machine-fill: color-mix(in srgb, var(--machine-color) 22%, transparent);
   }
 
   &[data-fill='solid'] {
-    background-color: color-mix(in oklab, var(--machine-color) 82%, black);
+    --machine-fill: color-mix(in oklab, var(--machine-color) 82%, black);
     color: white;
   }
   &[data-fill='solid'][data-ink='dark'] {
-    background-color: var(--machine-color);
+    --machine-fill: var(--machine-color);
     color: color-mix(in oklab, var(--machine-color) 22%, black);
   }
   &[data-fill='outline'] {
-    background-color: transparent;
+    --machine-fill: transparent;
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--machine-color) 55%, transparent);
   }
   &[data-fill='neutral'] {
-    background-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+    --machine-fill: color-mix(in srgb, var(--foreground) 6%, transparent);
     color: var(--foreground);
 
     & [data-machine-icon] {
       color: var(--machine-color);
     }
+  }
+  /* Its ink is set for the page's surface. A filled button's color would show through the tint and drown it (violet
+     words on teal), so there the pill is laid over the popover's surface and reads as it does anywhere else. */
+  [data-slot='button']:is([data-variant='default'], [data-variant='destructive']) & {
+    background-color: var(--popover);
+    background-image: linear-gradient(var(--machine-fill), var(--machine-fill));
   }
   &[data-interactive]:hover {
     box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 40%, transparent);
