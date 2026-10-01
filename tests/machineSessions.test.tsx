@@ -56,7 +56,8 @@ describe('a machine’s sessions', () => {
       lastActiveAtMs: Date.now() - 30_000,
       transcript: transcript({ title: 'Fix the login redirect loop' }),
     });
-    const older = session('6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', { lastActiveAtMs: Date.now() - 3 * 60 * MINUTE, pricedRequests: 0, estimatedCost: 0 });
+    // A few minutes past the hour: the page counts from the live board's clock, which can be a moment behind this one.
+    const older = session('6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', { lastActiveAtMs: Date.now() - (3 * 60 + 5) * MINUTE, pricedRequests: 0, estimatedCost: 0 });
     const html = text(render('casey-mbp', [
       machine('casey-mbp', [login, older], { sessions: 9, subagents: 3, running: 1, estimatedCost: 41.5 }),
       machine('ci-01', [session('0199a05d-91c2-7b4a-8e6f-2d3e4f5a6b7c', { machine: 'ci-01', transcript: transcript({ title: 'Someone else’s' }) })]),
