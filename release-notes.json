@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.0.14",
+    "summary": "Sync: skill changes happen straight away, in bulk, and can add or remove a skill on every machine at once.",
+    "changes": [
+      "Picks on a skill apply at once, with Undo.",
+      "Tick several skills to change them together, on one machine or all.",
+      "Add a skill to the setup repo and every machine in one step, or remove it everywhere."
+    ]
+  },
+  {
     "version": "1.0.11",
     "summary": "Sidebar: see each machine's health and agents at a glance, and choose which providers and machines show.",
     "changes": [
