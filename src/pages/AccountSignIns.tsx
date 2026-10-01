@@ -38,7 +38,7 @@ import { NO_AUTO_OPEN_BROWSER_ID, isOAuthProvider, loadOAuthBrowserPreference, s
 import { planLabel, planVariant } from '../services/planCosts';
 import { useQuotaCache } from '../services/quotaCache';
 import { fileName, idleQuota, providerForFile, quotaKey, type AuthFile, type QuotaRow, type QuotaState } from '../services/quotaService';
-import { useQuotaClock } from '../services/quotaTime';
+import { formatQuotaReset, resetCreditsExpiry, useQuotaClock } from '../services/quotaTime';
 
 /**
  * Accounts › Sign-ins: every credential the core has, by provider, with the name and avatar it goes by, its email, its
@@ -355,10 +355,12 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
     email,
     priority ? t('accounts.routing.priority', { priority }) : '',
     cap ? capLabel(t, cap) : '',
-    resets ? t(claude
-      ? resets === 1 ? 'accounts.resets.banked.one' : 'accounts.resets.banked.other'
-      : resets === 1 ? 'accounts.resets.manual.one' : 'accounts.resets.manual.other', { count: resets }) : '',
   ].filter(Boolean);
+  const resetsText = resets ? t(claude
+    ? resets === 1 ? 'accounts.resets.banked.one' : 'accounts.resets.banked.other'
+    : resets === 1 ? 'accounts.resets.manual.one' : 'accounts.resets.manual.other', { count: resets }) : '';
+  // Granted resets lapse when unused, so their first expiry sits beside the count and turns amber near the end.
+  const expiry = resetCreditsExpiry(quota, now);
   const resume = async () => {
     setResuming(true);
     setAccountsError('');
@@ -401,7 +403,19 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
             <AuthFileStatus availability={availability} now={now} readyPill={false} />
           ) : null}
         </div>
-        {facts.length ? <div className="mt-0.5 truncate text-xs text-muted-foreground">{facts.join(' · ')}</div> : null}
+        {facts.length || resetsText ? (
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+            {facts.join(' · ')}
+            {facts.length && resetsText ? ' · ' : null}
+            {resetsText ? (
+              <span className={cn(expiry?.soon && 'text-warning-foreground')} title={expiry ? formatQuotaReset(expiry.atMs, undefined, now) : undefined}>
+                {expiry
+                  ? t(resets === 1 ? 'signIns.resets.expires' : 'signIns.resets.firstExpires', { resets: resetsText, time: formatRelative(expiry.atMs, now) })
+                  : resetsText}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {/* The fix goes before the limit, so every row's limit lines up at the right. */}
       <div className="flex shrink-0 items-center empty:hidden">

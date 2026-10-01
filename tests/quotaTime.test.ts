@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { getFormatRegion, setFormatRegion } from '../src/lib/format';
-import { formatQuotaReset, quotaResetFor, quotaResetInstant } from '../src/services/quotaTime';
+import { formatQuotaReset, quotaResetFor, quotaResetInstant, resetCreditsExpiry } from '../src/services/quotaTime';
 import { formatQuotaTimestamp } from '../src/services/quotaService';
 
 const resetMs = Date.parse('2030-01-01T00:00:00Z');
@@ -48,5 +48,24 @@ describe('quota reset instants', () => {
     setFormatRegion({ locale: 'en-AU', hourCycle: 'h23' });
     expect(formatQuotaReset(reset, undefined, reset - 2 * 3_600_000)).toBe('29 Sep, 17:36 · in 2h');
     setFormatRegion(region);
+  });
+});
+
+describe('reset credits expiry', () => {
+  const day = 86_400_000;
+  const expiring = (msLeft: number, resetCredits = 2) =>
+    resetCreditsExpiry({ resetCredits, resetCreditsEarliestExpiry: new Date(resetMs).toISOString() }, resetMs - msLeft);
+
+  it('gives the first expiry while credits are left, flagging the last three days', () => {
+    expect(expiring(20 * day)).toEqual({ atMs: resetMs, soon: false });
+    expect(expiring(3 * day)).toEqual({ atMs: resetMs, soon: true });
+    expect(expiring(60_000)).toEqual({ atMs: resetMs, soon: true });
+  });
+
+  it('gives nothing with no credits, no date, or a date already passed', () => {
+    expect(expiring(20 * day, 0)).toBeUndefined();
+    expect(expiring(0)).toBeUndefined();
+    expect(resetCreditsExpiry({ resetCredits: 1 }, resetMs)).toBeUndefined();
+    expect(resetCreditsExpiry({ resetCredits: 1, resetCreditsEarliestExpiry: 'never' }, resetMs)).toBeUndefined();
   });
 });

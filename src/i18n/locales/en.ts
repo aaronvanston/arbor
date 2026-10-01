@@ -262,6 +262,8 @@ export const en = {
   'signIns.editProfile': 'Change the name and avatar of {name}',
   'signIns.menu.editProfile': 'Name and avatar',
   'signIns.limitsUnread': 'Limits not read',
+  'signIns.resets.expires': '{resets}, expires {time}',
+  'signIns.resets.firstExpires': '{resets}, first expires {time}',
   'signIns.openLimits': 'Click to open it on Limits',
   'signIns.hideEmails': 'Hide email addresses',
   'signIns.showEmails': 'Show email addresses',

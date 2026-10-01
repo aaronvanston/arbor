@@ -41,6 +41,23 @@ export const formatQuotaReset = (resetAtMs: number | undefined, fallback?: strin
   return `${absolute} · ${formatRelative(resetAtMs, nowMs)}`;
 };
 
+/** Under this long left, reset credits are flagged so they get used rather than lost. */
+const RESET_CREDITS_SOON_MS = 3 * 86_400_000;
+
+/**
+ * When an account's reset credits (Codex manual resets, Claude banked resets) first run out, if any are left and the
+ * provider gave a date. `soon` marks the last few days, when an unused one is about to be lost.
+ */
+export const resetCreditsExpiry = (
+  quota: { resetCredits?: number; resetCreditsEarliestExpiry?: string },
+  nowMs = Date.now(),
+): { atMs: number; soon: boolean } | undefined => {
+  if (!quota.resetCredits) return undefined;
+  const atMs = quotaResetInstant(quota.resetCreditsEarliestExpiry);
+  if (atMs === undefined || atMs <= nowMs) return undefined;
+  return { atMs, soon: atMs - nowMs <= RESET_CREDITS_SOON_MS };
+};
+
 // One clock shared by quota cards on both pages; no polling of upstream APIs.
 let now = Date.now();
 let timer: ReturnType<typeof setInterval> | undefined;
