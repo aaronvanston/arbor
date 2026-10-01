@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.0.23",
+    "summary": "Sessions, Usage and Sync: pick one machine or all from the top bar.",
+    "changes": []
+  },
+  {
     "version": "1.0.22",
     "summary": "Command line fixes: the arbor command now finds Arbor, and accounts and machines are easier to name.",
     "changes": []
