@@ -3,7 +3,8 @@
 # runner for aaronvanston/arbor, labeled arbor-release, run at login as a LaunchAgent. GitHub bills a private
 # repository's hosted minutes, so the nightly and stable builds run here instead. Needs gh signed in as the repository's
 # owner, and the build's tools on this Mac: node, cargo, uvx and git (the workflow installs bun itself). Run it again to
-# update the runner or pick up a tool that moved; it keeps the registration.
+# update the runner or pick up a tool that moved; it keeps the registration. Every job first passes
+# release-runner-guard.sh, which refuses anything but the Release workflow from main.
 set -euo pipefail
 
 fail() {
@@ -12,6 +13,7 @@ fail() {
 }
 
 repository="aaronvanston/arbor"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 install_dir="$HOME/.arbor/release-runner"
 [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] || fail "The release runner builds the Apple silicon DMG, so it runs on an Apple silicon Mac."
 
@@ -51,6 +53,9 @@ if [[ ! -f .runner ]]; then
 fi
 
 printf '%s\n' "$runner_path" > .path
+# Kept outside the repo, like the runner, so removing a worktree never takes the guard with it.
+install -m 755 "$script_dir/release-runner-guard.sh" job-started.sh
+printf 'ACTIONS_RUNNER_HOOK_JOB_STARTED=%s\n' "$install_dir/job-started.sh" > .env
 if ./svc.sh status 2>/dev/null | grep -q 'not installed'; then
   ./svc.sh install
 fi

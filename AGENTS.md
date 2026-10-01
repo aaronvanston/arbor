@@ -405,8 +405,16 @@ Its secrets are `ARBOR_RELEASE_SIGNING_KEY` (the Keychain's signing key as base6
 PKCS#8, which only the publish step sees), `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY`
 and, for source maps, `POSTHOG_CLI_API_KEY`. `.github/workflows/arbor-checks.yml` runs
 the checks on GitHub's Macs for pull requests and pushes to main once the repository
-is public. Before it goes public, think again about the self-hosted runner: a pull
-request from a fork can run its own workflow changes on it.
+is public.
+
+A pull request can change workflow files and ask for the runner by its labels, and
+GitHub can't tie a personal repository's runner to one workflow. So the runner checks
+each job itself: `scripts/release-runner-guard.sh`, installed as its job-started hook,
+fails any job before its first step unless it's `arbor-release.yml` as committed on
+main, started by the schedule or by hand (`tests/releaseRunnerGuard.test.ts`). Never
+point another workflow at the `arbor-release` label. When the repository goes public,
+also set Settings › Actions › "Approval for running fork pull request workflows" to
+all external contributors (GitHub only offers it on public repositories).
 
 ### By hand, in an emergency
 

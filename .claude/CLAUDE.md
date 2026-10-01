@@ -268,8 +268,16 @@ local script prints its own next steps.
 Its secrets are `ARBOR_RELEASE_SIGNING_KEY` (the Keychain key as base64 PKCS#8, seen only
 by the publish step), `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY` and optionally
 `POSTHOG_CLI_API_KEY`. `.github/workflows/arbor-checks.yml` runs the checks on GitHub's
-Macs for pull requests and pushes to main once the repository is public; going public
-also means rethinking the self-hosted runner, which a fork's pull request could use.
+Macs for pull requests and pushes to main once the repository is public.
+
+The runner guards itself, since GitHub won't limit a personal repository's runner to
+one workflow and any pull request (a fork's too) could name its labels: its job-started
+hook, `scripts/release-runner-guard.sh`, fails a job before it runs a step unless it's
+`arbor-release.yml` from main, on the schedule or started by hand. Tests are in
+`tests/releaseRunnerGuard.test.ts`. Keep every other workflow off the `arbor-release`
+label. On going public, also require approval for all external contributors' fork pull
+request workflows in the repository's Actions settings, which GitHub only allows once
+it's public.
 
 Versions are only ever changed by the workflow (or the emergency scripts), and tags
 only by the workflow and the GitHub script: `arbor-vX.Y.Z` and its nightlies, never
