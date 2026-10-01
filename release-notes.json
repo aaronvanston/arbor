@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.0.11",
+    "summary": "Sidebar: see each machine's health and agents at a glance, and choose which providers and machines show.",
+    "changes": [
+      "Machine chips at the foot of the sidebar show a health score and how many agents are working, with details on hover.",
+      "Hovering a provider's limit shows its pace and each account's share.",
+      "The menu bar menu can list each chosen machine with its health and what its agents are doing."
+    ]
+  },
+  {
     "version": "1.0.8",
     "summary": "Sync: browse and edit the setup repo, then commit the changes from Arbor.",
     "changes": [
