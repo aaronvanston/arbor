@@ -1356,10 +1356,16 @@ impl HomeParts {
                     for (name, marketplace) in value.as_object().into_iter().flatten() {
                         let Some(source) = marketplace.get("source").and_then(Value::as_str) else { continue };
                         let local = marketplace.get("source_type").and_then(Value::as_str) == Some("local");
-                        let github = source.split('/').count() == 2 && !source.contains(':') && !source.starts_with('.') && !source.starts_with('~');
+                        // Codex saves an `owner/repo` it was given as that repository's https URL, so both read as GitHub.
+                        let named = source
+                            .strip_prefix("https://github.com/")
+                            .map(|rest| rest.trim_end_matches('/').trim_end_matches(".git"))
+                            .filter(|rest| rest.split('/').count() == 2)
+                            .unwrap_or(source);
+                        let github = named.split('/').count() == 2 && !named.contains(':') && !named.starts_with('.') && !named.starts_with('~');
                         let place = match (local, github) {
                             (true, _) => serde_json::json!({ "path": source }),
-                            (false, true) => serde_json::json!({ "repo": source }),
+                            (false, true) => serde_json::json!({ "repo": named }),
                             (false, false) => serde_json::json!({ "url": source }),
                         };
                         self.marketplaces.insert(name.clone(), place);
@@ -2673,6 +2679,14 @@ source = "/Users/casey/.codex/.tmp/bundled-marketplaces/openai-bundled"
 source_type = "git"
 source = "acme/codex-plugins"
 
+[marketplaces.tools]
+source_type = "git"
+source = "https://github.com/acme/codex-tools.git"
+
+[marketplaces.elsewhere]
+source_type = "git"
+source = "https://git.example.com/acme/x.git"
+
 [plugins."chrome@openai-bundled"]
 enabled = true
 
@@ -2688,7 +2702,10 @@ enabled = false
         assert_eq!(item(home, ItemKind::Plugin, "chrome@openai-bundled").enabled, Some(true));
         assert_eq!(item(home, ItemKind::Plugin, "sketch@team").enabled, Some(false));
         assert_eq!(item(home, ItemKind::Plugin, "pdf@team").enabled, Some(true), "on unless it says otherwise");
-        assert_eq!(names(home, ItemKind::Marketplace), ["openai-bundled", "team"]);
+        assert_eq!(names(home, ItemKind::Marketplace), ["elsewhere", "openai-bundled", "team", "tools"]);
+        // A repository Codex was given as owner/repo, which it saves as its https URL.
+        assert_eq!(item(home, ItemKind::Marketplace, "tools").note.as_deref(), Some("acme/codex-tools"));
+        assert_eq!(item(home, ItemKind::Marketplace, "elsewhere").note.as_deref(), Some("git.example.com/acme/x.git"));
         assert_eq!(item(home, ItemKind::Marketplace, "openai-bundled").note.as_deref(), Some("~/.codex/.tmp/bundled-marketplaces/openai-bundled"));
         assert_eq!(item(home, ItemKind::Marketplace, "team").note.as_deref(), Some("acme/codex-plugins"));
         // They're read as plugins and marketplaces, not settings.
