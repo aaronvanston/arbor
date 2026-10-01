@@ -269,17 +269,76 @@ export function usagePace(percentLeft: number | null, resetAtMs: number | undefi
   return { tone, ratio, elapsed };
 }
 
-/** Pace for a pooled headline: the worst account decides the color. */
+type PoolAccount = { left: number; resetAtMs: number; windowMs: number };
+
+/**
+ * Whether the pool runs dry before refills catch up, spending at `rate` (percent of one account per ms).
+ * Spends the account that resets soonest first, as soonest-reset-first routing does, and refills each account to
+ * 100% at its reset, out to one full window, after which every account has refilled at least once.
+ */
+function poolRunsOut(accounts: PoolAccount[], untimedLeft: number, rate: number, nowMs: number): boolean {
+  if (rate <= 0) return false;
+  const pool = accounts.map((account) => ({ ...account }));
+  const horizon = nowMs + Math.max(...pool.map((account) => account.windowMs));
+  let spare = untimedLeft;
+  let time = nowMs;
+  while (time < horizon) {
+    pool.sort((a, b) => a.resetAtMs - b.resetAtMs);
+    const next = pool[0];
+    if (!next) return false;
+    const until = Math.min(next.resetAtMs, horizon);
+    let need = rate * (until - time);
+    for (const account of pool) {
+      const spent = Math.min(account.left, need);
+      account.left -= spent;
+      need -= spent;
+      if (need <= 0) break;
+    }
+    if (need > 0) {
+      const spent = Math.min(spare, need);
+      spare -= spent;
+      need -= spent;
+    }
+    if (need > 0) return true;
+    time = until;
+    next.left = 100;
+    next.resetAtMs += next.windowMs;
+  }
+  return false;
+}
+
+/**
+ * Pace for a pooled headline. The proxy moves to another account when one empties, so the pool only runs out when
+ * the whole of it does: every account's average spend since its window began is added up and played forward
+ * against what's left and each reset's refill. One nearly empty account doesn't make the pool critical.
+ */
 export function headlinePace(headline: Headline, nowMs = Date.now()): Pace {
   if (!headline.label || headline.percent === null) return { tone: 'muted', ratio: null, elapsed: null };
   const labelDuration = windowDurationMs(headline.label);
-  const order: PaceTone[] = ['muted', 'success', 'warning', 'error'];
-  let worst: Pace = { tone: 'muted', ratio: null, elapsed: null };
+  const timed: PoolAccount[] = [];
+  const untimed: number[] = [];
+  let rate = 0;
   headline.segments.forEach((segment) => {
-    // A turned-off account's pace can't run anything out, and one paused at its cap would always read as critical.
+    // A turned-off account can't run anything out or be spent, and one paused at its cap would always read as empty.
     if (segment.percent === null || segment.off) return;
-    const pace = usagePace(segment.percent, segment.row?.resetAtMs, segment.row ? rowWindowMs(segment.row) : labelDuration, nowMs);
-    if (order.indexOf(pace.tone) > order.indexOf(worst.tone)) worst = pace;
+    const left = Math.max(0, Math.min(100, segment.percent));
+    const resetAtMs = segment.row?.resetAtMs;
+    const windowMs = segment.row ? rowWindowMs(segment.row) : labelDuration;
+    if (resetAtMs === undefined || !Number.isFinite(resetAtMs) || resetAtMs <= nowMs || windowMs === null || windowMs <= 0) {
+      untimed.push(left);
+      return;
+    }
+    const elapsedMs = Math.max(MIN_ELAPSED * windowMs, Math.min(windowMs, windowMs - (resetAtMs - nowMs)));
+    rate += (100 - left) / elapsedMs;
+    timed.push({ left, resetAtMs, windowMs });
   });
-  return worst;
+  // With no account's reset known there's no clock to spend against, so the pooled figure gets plain thresholds.
+  if (!timed.length) return usagePace(untimed.reduce((sum, value) => sum + value, 0) / untimed.length, undefined, null, nowMs);
+  const untimedLeft = untimed.reduce((sum, value) => sum + value, 0);
+  // The single-account thresholds in pool terms: a pool that would still run dry spent 1.5× slower is being spent
+  // at least 1.5× faster than it can last.
+  const tone: PaceTone = poolRunsOut(timed, untimedLeft, rate / PACE_ERROR_RATIO, nowMs)
+    ? 'error'
+    : poolRunsOut(timed, untimedLeft, rate / PACE_WARNING_RATIO, nowMs) ? 'warning' : 'success';
+  return { tone, ratio: null, elapsed: null };
 }

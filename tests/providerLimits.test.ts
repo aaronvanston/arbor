@@ -35,18 +35,18 @@ describe('provider limits', () => {
     const [a, b] = files as [typeof files[0], typeof files[0]];
     const weekly = (left: number) => [{ label: 'Weekly limit', remainingPercent: left, resetAtMs: now + 3 * 24 * HOUR }];
     const quotas: Record<string, QuotaState> = {
-      [quotaKey(a)]: success(weekly(80)),
+      [quotaKey(a)]: success(weekly(50)),
       [quotaKey(b)]: { status: 'error', rows: weekly(4), error: 'Couldn’t reach chatgpt.com.', fetchedAt: now - HOUR, staleSinceMs: now - 10 * 60_000 },
     };
     const [shown] = providerLimits(files, quotas, {}, { hidden: {}, headline: {} }, now);
-    expect(shown!.headline.percent).toBe(42);
+    expect(shown!.headline.percent).toBe(27);
     expect(shown!.stale).toEqual({ accounts: 1, all: false, asOfMs: now - HOUR, latestSinceMs: now - 10 * 60_000, error: 'Couldn’t reach chatgpt.com.' });
-    // The stale account is nearly out; only the fresh one decides alerts, routing and history.
+    // With the stale account nearly out the pool won't last; only the fresh one decides alerts, routing and history.
     expect(shown!.pace.tone).toBe('error');
     const [fresh] = providerLimits(files, freshQuotas(quotas), {}, { hidden: {}, headline: {} }, now);
     expect(fresh!.stale).toBeNull();
-    expect(fresh!.headline.segments.map((segment) => segment.percent)).toEqual([80, null]);
-    expect(fresh!.pace.tone).not.toBe('error');
+    expect(fresh!.headline.segments.map((segment) => segment.percent)).toEqual([50, null]);
+    expect(fresh!.pace.tone).toBe('success');
   });
 
   test('stops marking a provider stale once an account whose checks keep failing no longer feeds its figure', () => {

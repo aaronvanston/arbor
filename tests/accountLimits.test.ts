@@ -140,11 +140,36 @@ describe('account limits', () => {
     expect(usagePace(25, undefined, null, now).tone).toBe('warning');
   });
 
-  test('headline pace takes the worst account', () => {
+  test('headline pace runs out only when the whole pool does', () => {
     const week = 7 * 86_400_000;
     const account = (name: string, left: number) => ({ name, quota: success([{ label: 'Weekly limit', remainingPercent: left, resetAtMs: week / 2 }]) });
-    expect(headlinePace(buildHeadline([account('a', 60), account('b', 20)], 'Weekly limit'), 0).tone).toBe('error');
+    // 125 points spent in half a week leaves 75 against 125 more before the shared reset: well over 1.5× too fast.
+    expect(headlinePace(buildHeadline([account('a', 60), account('b', 15)], 'Weekly limit'), 0).tone).toBe('error');
     expect(headlinePace(buildHeadline([account('a', 60), account('b', 55)], 'Weekly limit'), 0).tone).toBe('success');
+    // 90 points left against 110 more: faster than the pool can last, but not 1.5× faster.
+    expect(headlinePace(buildHeadline([account('a', 50), account('b', 40)], 'Weekly limit'), 0).tone).toBe('warning');
+  });
+
+  // The pools from a real Accounts page: one Claude account nearly spent among four nearly full ones, and Codex
+  // accounts drained days before their resets.
+  test('a nearly empty account among full ones leaves the pool on track', () => {
+    const hour = 3_600_000;
+    const week = 7 * 24 * hour;
+    const account = (name: string, left: number, resetInHours: number) => ({
+      name, quota: success([{ label: '7-day window', remainingPercent: left, resetAtMs: resetInHours * hour, windowMs: week }]),
+    });
+    const claudePool = buildHeadline([
+      account('p2', 94, 51), account('w1', 97, 62), account('p1', 100, 91), account('as', 100, 141), account('p3', 3, 15),
+    ], '7-day window');
+    expect(headlinePace(claudePool, 0).tone).toBe('success');
+    const codexPool = buildHeadline([account('w1', 25, 70), account('p3', 32, 101), account('p1', 0, 44), account('p2', 2, 48)], '7-day window');
+    expect(headlinePace(codexPool, 0).tone).toBe('error');
+  });
+
+  test('headline pace without any reset time falls back to plain thresholds on the pooled figure', () => {
+    const account = (name: string, left: number) => ({ name, quota: success([{ label: 'Quota', remainingPercent: left }]) });
+    expect(headlinePace(buildHeadline([account('a', 3), account('b', 90)], 'Quota'), 0).tone).toBe('success');
+    expect(headlinePace(buildHeadline([account('a', 3), account('b', 15)], 'Quota'), 0).tone).toBe('error');
   });
 
   test('pace times a window by the length the provider gave, before the one its label implies', () => {
