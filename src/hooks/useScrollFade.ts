@@ -2,10 +2,10 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { NO_SCROLL_EDGES, sameScrollEdges, scrollEdges, scrollFadeMask, scrollPosition, type ScrollAxis, type ScrollEdges } from '../lib/scrollFade';
 
 /**
- * Fades a scrolling element's edges while there's more to scroll that way. Returns a callback ref for
- * the element and the style to give it; the ref can move between elements (the sidebar swaps navs).
+ * Which edges of a scrolling element have more past them, kept up to date as it scrolls and resizes.
+ * Returns a callback ref for the element; the ref can move between elements (the sidebar swaps navs).
  */
-export function useScrollFade<T extends HTMLElement>(axis: ScrollAxis = 'y', size?: string): [(element: T | null) => void, CSSProperties | undefined] {
+export function useScrollEdges<T extends HTMLElement>(axis: ScrollAxis = 'y'): [(element: T | null) => void, ScrollEdges] {
   const [element, setElement] = useState<T | null>(null);
   const [edges, setEdges] = useState<ScrollEdges>(NO_SCROLL_EDGES);
 
@@ -30,6 +30,15 @@ export function useScrollFade<T extends HTMLElement>(axis: ScrollAxis = 'y', siz
     };
   }, [element, axis]);
 
+  return [setElement, edges];
+}
+
+/**
+ * Fades a scrolling element's edges while there's more to scroll that way. Returns a callback ref for
+ * the element and the style to give it.
+ */
+export function useScrollFade<T extends HTMLElement>(axis: ScrollAxis = 'y', size?: string): [(element: T | null) => void, CSSProperties | undefined] {
+  const [ref, edges] = useScrollEdges<T>(axis);
   const mask = scrollFadeMask(edges, axis, size);
-  return [setElement, mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined];
+  return [ref, mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined];
 }

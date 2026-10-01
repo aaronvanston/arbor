@@ -16,6 +16,8 @@ describe('scroll fade', () => {
   test('sub-pixel leftovers from zoom or fractional sizes don’t count as more to scroll', () => {
     expect(scrollEdges({ offset: 0.5, content: 400.6, view: 400 })).toEqual({ start: false, end: false });
     expect(scrollEdges({ offset: 239.4, content: 640, view: 400 })).toEqual({ start: true, end: false });
+    // WebKit reports whole pixels, so a two-option menu at 120% measures 65 tall in a 64 box.
+    expect(scrollEdges({ offset: 0, content: 65, view: 64 })).toEqual({ start: false, end: false });
   });
 
   test('each axis reads its own scroll position', () => {

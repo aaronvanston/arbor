@@ -1,6 +1,7 @@
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Check, ChevronDown, ChevronUp } from './icons';
+import { useScrollEdges } from '../../hooks/useScrollFade';
 import { cn } from '../../lib/utils';
 
 const Select = SelectPrimitive.Root;
@@ -59,6 +60,10 @@ function SelectPopup({
   align?: SelectPrimitive.Positioner.Props['align'];
   alignItemWithTrigger?: boolean;
 }) {
+  // Base UI shows a scroll arrow when the list is a single pixel taller than its box, which zoom's rounding alone
+  // does (two options at 120%). The arrow sits over the last option and takes its clicks, so each one also waits
+  // for more than a pixel to scroll its way.
+  const [listRef, listEdges] = useScrollEdges<HTMLDivElement>();
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner align={align} alignItemWithTrigger={alignItemWithTrigger} className="z-[130] select-none" data-slot="select-positioner" side={side} sideOffset={sideOffset}>
@@ -67,15 +72,15 @@ function SelectPopup({
           data-slot="select-popup"
           {...props}
         >
-          <SelectPrimitive.ScrollUpArrow className="top-0 z-50 flex h-6 w-full cursor-default items-center justify-center">
+          <SelectPrimitive.ScrollUpArrow className={cn('top-0 z-50 flex h-6 w-full cursor-default items-center justify-center', !listEdges.start && 'hidden')}>
             <ChevronUp className="size-4" />
           </SelectPrimitive.ScrollUpArrow>
           <div className="dropdown-glass relative min-w-(--anchor-width) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]">
-            <SelectPrimitive.List className={cn('max-h-(--available-height) overflow-y-auto p-1', className)} data-slot="select-list">
+            <SelectPrimitive.List ref={listRef} className={cn('max-h-(--available-height) overflow-y-auto p-1', className)} data-slot="select-list">
               {children}
             </SelectPrimitive.List>
           </div>
-          <SelectPrimitive.ScrollDownArrow className="bottom-0 z-50 flex h-6 w-full cursor-default items-center justify-center">
+          <SelectPrimitive.ScrollDownArrow className={cn('bottom-0 z-50 flex h-6 w-full cursor-default items-center justify-center', !listEdges.end && 'hidden')}>
             <ChevronDown className="size-4" />
           </SelectPrimitive.ScrollDownArrow>
         </SelectPrimitive.Popup>
