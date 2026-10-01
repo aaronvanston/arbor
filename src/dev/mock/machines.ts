@@ -636,6 +636,11 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
       resolve({ before, after, output: before === after ? `${agent} is up to date (${after})` : `Current version: ${before}\nUpdating to ${after}…\nSuccessfully updated from ${before} to version ${after}` });
     }, 1_500));
   },
+  // `?fix=fail` is Terminal not opening, which the Fix menu says in a toast.
+  open_fix_session: ({ machine, agent, onMachine, prompt }) => later(300, () => {
+    mockLog('open_fix_session', { machine, agent, onMachine, prompt });
+    if (params.get('fix') === 'fail') throw 'Couldn’t open Terminal: The application can’t be opened.';
+  }),
   discover_machine_hosts: () => {
     return new Promise<DiscoveredHost[]>((resolve, reject) => window.setTimeout(() => {
       if (discoverScenario === 'fail') reject('Couldn’t read /Users/casey/.ssh/config: Permission denied (os error 13)');

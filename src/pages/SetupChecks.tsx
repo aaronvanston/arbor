@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CircleAlert, CircleCheck, Info, TriangleAlert, type AppIcon } from '../components/ui/icons';
 import { useConfirmation } from '../components/ConfirmationDialog';
+import { FixMenu } from '../components/FixMenu';
 import { MetaLine } from '../components/MetaLine';
 import { MachinePill } from '../components/identity/Identity';
 import { SettingsSection } from '../components/layout/settings';
@@ -12,6 +13,7 @@ import { formatNumber } from '../lib/format';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { checkCounts, keepClaudeSessions, KEEP_DAYS, type SetupCheck, type SetupCheckKind, type SetupCheckLevel, type SetupCheckSubject } from '../services/setupChecks';
+import { setupCheckProblem } from '../services/fixPrompt';
 
 /** How many checks show before "Show all". */
 const COLLAPSED = 5;
@@ -182,6 +184,18 @@ function CheckRow({ check, homeLabel, onShow, onCompare }: {
     return key;
   };
   const title = t(pick(message.title), values);
+  const detail = t(pick(message.detail), values);
+  // A note is only worth knowing, and keeping a home's sessions has its own button.
+  const fixable = check.level !== 'note' && check.kind !== 'sessionCleanup';
+  const problem = fixable
+    ? setupCheckProblem({
+      title,
+      detail,
+      home: check.home ? homeLabel(check.home) : null,
+      subjects: check.subjects.map((subject) => (subject.value ? `${subject.name} (${subject.value})` : subject.name)),
+      error: typeof check.facts.error === 'string' ? check.facts.error : null,
+    }, t)
+    : null;
   return (
     <div className="flex items-start gap-3 px-4 py-3">
       <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background dark:bg-input/32 [&_svg]:size-3.5', look.className)}>
@@ -195,8 +209,9 @@ function CheckRow({ check, homeLabel, onShow, onCompare }: {
             className="ms-auto shrink-0 text-xs"
             parts={[<MachinePill key="machine" name={check.machine} size="sm" className="shrink-0" />, check.home ? homeLabel(check.home) : null]}
           />
+          {problem ? <FixMenu machine={check.machine} problem={problem} className="-my-1" /> : null}
         </div>
-        <p className="mt-0.5 text-xs leading-[1.45] text-muted-foreground">{t(pick(message.detail), values)}</p>
+        <p className="mt-0.5 text-xs leading-[1.45] text-muted-foreground">{detail}</p>
         {check.facts.error ? <p className="mt-1 break-all font-mono text-2xs text-muted-foreground">{check.facts.error}</p> : null}
         {check.kind === 'sessionCleanup' ? <KeepSessions check={check} homeName={check.home ? homeLabel(check.home) : null} /> : null}
         {check.subjects.length ? (

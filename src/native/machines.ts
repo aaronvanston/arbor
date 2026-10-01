@@ -40,6 +40,7 @@ export type MachineCommands = {
   get_t3_compatibility: { result: T3Policy[] | null };
   get_client_versions: { args: { fromMs: number; toMs: number }; result: ClientVersions };
   update_machine_agent: { args: { machine: string; agent: AgentKind; command?: string | null }; result: AgentUpdate };
+  open_fix_session: { args: { machine: string; agent: AgentKind; prompt: string; onMachine: boolean }; result: void };
   keep_claude_sessions: { args: { machine: string; homes: string[] }; result: SettingsEdit[] };
   set_t3_threads_enabled: { args: { enabled: boolean }; result: void };
 

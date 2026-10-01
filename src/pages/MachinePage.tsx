@@ -9,11 +9,13 @@ import { machineSessionsView, setupChecksView, setupView, type AppView } from '.
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { newestAgents } from '../services/agentVersions';
 import { useFleetBoard } from '../services/fleetBoard';
+import { healthProblem } from '../services/fixPrompt';
 import type { HealthWindowId } from '../services/machineHealth';
 import { checklistOnPage, machineUsageTotal, setupStanding } from '../services/machinePage';
 import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import { FleetMachineSection } from '../components/FleetBoard';
+import { FixMenu } from '../components/FixMenu';
 import { MachinePill } from '../components/identity/Identity';
 import { MachineLookPicker } from '../components/identity/MachineLookPicker';
 import { ProviderMark } from '../components/identity/Identity';
@@ -76,6 +78,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
   const [comparison, setComparison] = useState<Comparison | null>(null);
 
   const unconfigured = item?.status === 'unconfigured';
+  const problem = item ? healthProblem(item, t) : null;
   const checklist = checklistOnPage(item?.status ?? null, scanned, standing, inventory !== null, name);
   // A machine never scanned isn't in the inventory yet: the checklist starts from it known only by its name, and its
   // first step says why it isn't answering (no host, or not yet).
@@ -146,7 +149,10 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           </div>
           {/* With no host, the alert below says what the headline would. */}
           {item && !unconfigured ? (
-            <p className={cn('truncate text-sm', headlineClass(item.status))} title={item.error ?? undefined}>{machineHeadline(item, t)}</p>
+            <div className="flex min-w-0 items-center gap-2">
+              <p className={cn('truncate text-sm', headlineClass(item.status))} title={item.error ?? undefined}>{machineHeadline(item, t)}</p>
+              {problem ? <FixMenu machine={item.machine} item={item} problem={problem} className="-my-1" /> : null}
+            </div>
           ) : snapshot ? null : (
             <Skeleton className="h-4 w-56" />
           )}

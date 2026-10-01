@@ -33,6 +33,7 @@ export const LEFT_OUT = {
   save_digest_page: 'it opens a save dialog on the Mac',
   open_saved_page: 'it opens a page on the Mac',
   open_external_url: 'it opens any address on the Mac',
+  open_fix_session: 'it opens a Terminal window on the Mac and starts an agent in it',
   open_oauth_url: 'it opens any address on the Mac',
   install_core_version: 'it reports progress to the window; the command line asks the window to run it',
   set_phone_alert_secret: 'secrets only go in through the window',

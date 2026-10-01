@@ -25,12 +25,14 @@ import {
 } from '../services/fleetBoard';
 import { MachineCrumb } from './layout/MachineCrumb';
 import { machineName } from '../services/machineNames';
+import { skipProblem } from '../services/fixPrompt';
 import { SettingsBlock, SettingsSection } from './layout/settings';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from './ui/collapsible';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from './ui/empty';
+import { FixMenu } from './FixMenu';
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from './ui/menu';
 import { RefreshIcon } from './ui/refresh-icon';
 import { Skeleton } from './ui/skeleton';
@@ -268,11 +270,13 @@ export function FleetMachineSection({ group, now, onOpen, title, description, ac
     >
       {group.skipped.map((note) => {
         const { key, variables } = fleetSkipNote(note);
+        const problem = skipProblem(note, t);
         return (
           <SettingsBlock key={`${note.machine}:${note.channel}`} className="flex items-start gap-2 text-sm text-warning-foreground">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" />
             {/* The machine the note is about is its pill, as it is in the section's title. */}
-            <span>{tRich(key, { ...variables, machine: <MachinePill name={note.machine} /> })}</span>
+            <span className="min-w-0 flex-1">{tRich(key, { ...variables, machine: <MachinePill name={note.machine} /> })}</span>
+            {problem ? <FixMenu machine={note.machine} problem={problem} className="-my-0.5" /> : null}
           </SettingsBlock>
         );
       })}

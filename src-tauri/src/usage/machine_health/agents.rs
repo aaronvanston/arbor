@@ -243,6 +243,15 @@ impl MachineAgents {
     pub(super) fn t3(&self) -> Option<&T3Install> {
         self.t3.as_ref()
     }
+
+    /// Where the machine's PATH finds the agent, as its last check read it.
+    pub(super) fn path_of(&self, agent: AgentKind) -> Option<&str> {
+        let install = match agent {
+            AgentKind::Claude => self.claude.as_ref(),
+            AgentKind::Codex => self.codex.as_ref(),
+        };
+        install.map(|install| install.path.as_str())
+    }
 }
 
 /// The version in what `--version` printed: "2.1.281 (Claude Code)", "codex-cli 0.156.0".

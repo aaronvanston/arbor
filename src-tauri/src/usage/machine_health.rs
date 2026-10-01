@@ -37,6 +37,7 @@ pub(crate) mod attention;
 pub(crate) mod checkout_settings;
 pub(crate) mod client_versions;
 pub(crate) mod discovery;
+pub(crate) mod fix_session;
 pub(crate) mod guarded_writes;
 pub(crate) mod keep_sessions;
 pub(crate) mod project_instructions;

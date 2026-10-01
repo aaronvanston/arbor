@@ -15,6 +15,8 @@ import { useT3Compatibility } from '../services/agentReleases';
 import { agentsBehind, runningAgents, type AgentBehind, type NewestAgents } from '../services/agentVersions';
 import { AGENT_KINDS, updateMachineAgent } from '../services/machineHealth';
 import { t3Advisory, type T3Advisory } from '../services/t3Compat';
+import { agentBehindProblem, t3AdvisoryProblem } from '../services/fixPrompt';
+import { FixMenu } from '../components/FixMenu';
 import { MachineReporterRow } from './MachineReporter';
 import { MachineTelemetryRow } from './MachineTelemetry';
 import type { AgentInstall, AgentKind, AgentUpdate, InstallMethod, MachineHealth } from '../native/types';
@@ -281,6 +283,13 @@ export function MachineAgentsBlock({ item, newest, embedded = false }: { item: M
                   {count !== null && install ? (
                     <span className="text-2xs tabular-nums text-muted-foreground">{t('machines.agents.running', { count })}</span>
                   ) : null}
+                  {install && (lag || advisoryText) ? (
+                    <FixMenu
+                      machine={item.machine}
+                      item={item}
+                      problem={lag ? agentBehindProblem(lag, item, t) : t3AdvisoryProblem(agent, advisoryText ?? '', t)}
+                    />
+                  ) : null}
                   {install ? (
                     <Button
                       variant="outline"
@@ -296,6 +305,7 @@ export function MachineAgentsBlock({ item, newest, embedded = false }: { item: M
                 </span>
               </div>
               {advisoryText ? <p className="text-xs text-warning-foreground">{advisoryText}</p> : null}
+
               {install ? <AgentCopies agent={agent} install={install} /> : null}
               {outcome ? <UpdateOutcomeView outcome={outcome} /> : null}
             </div>
