@@ -227,6 +227,9 @@ Exit codes: 0 done, 1 failed, 2 usage, 10 needs --yes, 69 Arbor unavailable, 76 
 
 /// Runs `arbor` and gives its exit code.
 pub(crate) fn run(arguments: Vec<String>) -> i32 {
+    // Like any command line tool, stop quietly when what reads the output goes away (`arbor sessions | head`) instead
+    // of panicking on the broken pipe; Rust ignores SIGPIPE by default.
+    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
     let options = match args::parse(&arguments) {
         Ok(options) => options,
         Err(error) => {
@@ -247,6 +250,26 @@ pub(crate) fn run(arguments: Vec<String>) -> i32 {
             failure.code
         }
     }
+}
+
+/// The name Arbor keeps a machine under, from what someone typed: its name or its SSH host, in any case, with spaces,
+/// dashes or dots between words (`eden-dev-01` finds "Eden dev 01"). Anything else is passed on as typed.
+fn machine_name(client: &mut Client, typed: &str) -> Result<String, Failure> {
+    let hosts = client.read("get_machine_hosts", Value::Null)?;
+    Ok(matching_machine(&hosts, typed).unwrap_or_else(|| typed.to_string()))
+}
+
+fn matching_machine(hosts: &Value, typed: &str) -> Option<String> {
+    let loose = |text: &str| text.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect::<String>();
+    let wanted = loose(typed);
+    let hosts = hosts.as_array()?;
+    let machine = |host: &Value| render::field(host, "machine");
+    hosts
+        .iter()
+        .find(|host| machine(host) == typed)
+        .or_else(|| hosts.iter().find(|host| loose(&machine(host)) == wanted))
+        .or_else(|| hosts.iter().find(|host| loose(&render::field(host, "endpoint")) == wanted))
+        .map(machine)
 }
 
 fn connect(options: &args::Options) -> Result<Client, Failure> {
@@ -307,10 +330,11 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
         }
         ["machines", name] => {
             let mut client = connect(options)?;
+            let name = machine_name(&mut client, name)?;
             let snapshot = client.read("get_machine_health", json!({ "passive": true }))?;
             let machine = render::items(&snapshot, "machines")
                 .iter()
-                .find(|machine| render::field(machine, "machine") == *name)
+                .find(|machine| render::field(machine, "machine") == name)
                 .cloned()
                 .ok_or_else(|| Failure::new(exit::FAILED, format!("Arbor has no machine called {name}.")))?;
             print_json(&machine);
@@ -335,8 +359,14 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
         ["alerts"] => window_action(options, "alerts.list", json!({}), render::alerts),
         ["alerts", "seen"] => window_action(options, "alerts.seen", json!({}), |_| "Every alert is marked seen.".into()),
         ["sync"] => window_action(options, "sync.status", json!({}), render::sync_status),
-        ["sync", "apply", machine] => window_action(options, "sync.apply", json!({ "machine": machine }), pretty),
-        ["sync", machine] => window_action(options, "sync.plan", json!({ "machine": machine }), render::sync_plan),
+        ["sync", "apply", machine] => {
+            let machine = machine_name(&mut connect(options)?, machine)?;
+            window_action(options, "sync.apply", json!({ "machine": machine }), pretty)
+        }
+        ["sync", machine] => {
+            let machine = machine_name(&mut connect(options)?, machine)?;
+            window_action(options, "sync.plan", json!({ "machine": machine }), render::sync_plan)
+        }
         ["core"] | ["core", "status"] => {
             let mut client = connect(options)?;
             let status = client.read("get_core_status", Value::Null)?;
@@ -582,6 +612,19 @@ mod tests {
         assert_eq!(today.format("%H:%M").to_string(), "00:00");
         assert_eq!((today - range_start("7d").unwrap()).num_days(), 6);
         assert_eq!(range_start("forever").unwrap_err().code, exit::USAGE);
+    }
+
+    #[test]
+    fn a_machine_is_found_by_its_name_or_its_host_however_it_is_typed() {
+        let hosts = json!([
+            { "machine": "Casey dev 01", "endpoint": "casey-dev-01" },
+            { "machine": "studio", "endpoint": "casey-studio.local" },
+        ]);
+        assert_eq!(matching_machine(&hosts, "Casey dev 01").as_deref(), Some("Casey dev 01"));
+        assert_eq!(matching_machine(&hosts, "casey-dev-01").as_deref(), Some("Casey dev 01"));
+        assert_eq!(matching_machine(&hosts, "STUDIO").as_deref(), Some("studio"));
+        assert_eq!(matching_machine(&hosts, "casey-studio.local").as_deref(), Some("studio"));
+        assert_eq!(matching_machine(&hosts, "nowhere"), None);
     }
 
     #[test]

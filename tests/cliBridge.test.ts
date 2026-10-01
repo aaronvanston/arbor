@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { answerCliRequest, booleanArg, cliActions, textArg, type CliHandlers } from '../src/services/cliBridge';
-import { cliHandlers } from '../src/services/cliHandlers';
+import { accountId, cliHandlers } from '../src/services/cliHandlers';
 
 const handlers: CliHandlers = {
   'demo.read': { access: 'read', summary: 'Reads', run: async (args) => ({ got: args.name ?? null, skipped: undefined }) },
@@ -31,6 +31,13 @@ describe('the window’s answers to the command line', () => {
     expect(cliActions(handlers)[1]).toEqual({ name: 'demo.stop', access: 'confirm', summary: 'Stops', args: [] });
     const pause = cliActions(cliHandlers).find((action) => action.name === 'accounts.pause');
     expect(pause).toMatchObject({ access: 'confirm', args: [{ name: 'account', tsType: 'string', optional: false }] });
+  });
+
+  test('name each account by a short id that keeps its email out', () => {
+    const key = 'casey@example.com.json::7';
+    expect(accountId(key)).toMatch(/^a[0-9a-f]{6}$/);
+    expect(accountId(key)).toBe(accountId(key));
+    expect(accountId(key)).not.toBe(accountId('casey@example.com.json::8'));
   });
 
   test('read their arguments strictly', () => {

@@ -137,7 +137,7 @@ pub(crate) fn sessions(sessions: &[Value]) -> String {
 /// The totals from `get_usage_overview`.
 pub(crate) fn usage(overview: &Value, range: &str) -> String {
     let get = |name: &str| overview.get(name).unwrap_or(&Value::Null);
-    let rate = get("successRate").as_f64().map_or("–".into(), |rate| format!("{:.1}%", rate * 100.0));
+    let rate = get("successRate").as_f64().map_or("–".into(), |rate| format!("{rate:.1}%"));
     let mut out = vec![
         format!("Usage, {range}"),
         format!("  Requests      {} ({rate} succeeded)", count(get("totalRequests"))),
@@ -184,8 +184,10 @@ pub(crate) fn accounts(answer: &Value) -> String {
                     format!("{} {left}", field(limit, "label"))
                 })
                 .collect();
-            let cap = account.get("cap").and_then(Value::as_f64).map_or(String::new(), |cap| format!("{cap:.0}%"));
+            let easing = account.get("easing") == Some(&Value::Bool(true));
+            let cap = account.get("cap").and_then(Value::as_f64).map_or(String::new(), |cap| format!("{cap:.0}%{}", if easing { " easing" } else { "" }));
             vec![
+                field(account, "id"),
                 field(account, "name"),
                 field(account, "provider"),
                 field(account, "state"),
@@ -198,7 +200,7 @@ pub(crate) fn accounts(answer: &Value) -> String {
     if rows.is_empty() {
         return "No accounts yet. Add one in Arbor's Accounts › Sign-ins.".into();
     }
-    table(&["ACCOUNT", "PROVIDER", "STATE", "LIMITS LEFT", "CAP", "CHECKED"], &rows)
+    table(&["ID", "ACCOUNT", "PROVIDER", "STATE", "LIMITS LEFT", "CAP", "CHECKED"], &rows)
 }
 
 /// `alerts.list` from the window.
@@ -294,6 +296,12 @@ mod tests {
     fn a_table_lines_up_and_leaves_no_trailing_space() {
         let shown = table(&["A", "B"], &[vec!["long cell".into(), "x".into()], vec!["s".into(), "".into()]]);
         assert_eq!(shown, "A          B\nlong cell  x\ns");
+    }
+
+    #[test]
+    fn the_success_rate_arrives_as_a_percent() {
+        let shown = usage(&json!({ "successRate": 98.25, "totalRequests": 400 }), "today");
+        assert!(shown.contains("(98.2% succeeded)") || shown.contains("(98.3% succeeded)"), "{shown}");
     }
 
     #[test]

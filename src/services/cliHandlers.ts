@@ -37,13 +37,30 @@ async function accounts(): Promise<Account[]> {
 const accountName = ({ key, file }: Account) =>
   shownIdentity(resolveAccountProfile(key, fileName(file), getAccountProfiles()[key]).name, { fileName: fileName(file) });
 
-/** An account by its key, its file's name or the name it shows under. */
+/**
+ * A short id that names an account the same way every time without spelling out its email, since the key and file
+ * name carry it: what `arbor accounts` lists for scripts and agents to pass back, whatever Hide email addresses is set to.
+ */
+export function accountId(key: string): string {
+  let hash = 0x811c9dc5;
+  for (const char of key) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0;
+  return `a${hash.toString(16).padStart(8, '0').slice(0, 6)}`;
+}
+
+/** An account by its id, its key, its file's name or the name it shows under. */
 async function findAccount(args: CliArgs): Promise<Account> {
   const wanted = textArg(args, 'account');
   const all = await accounts();
-  const found = all.find((account) => account.key === wanted || fileName(account.file) === wanted || accountName(account) === wanted);
-  if (!found) throw new Error(`Arbor has no account called ${wanted}. arbor accounts lists them.`);
+  const found = all.find((account) => accountId(account.key) === wanted || account.key === wanted || fileName(account.file) === wanted)
+    ?? onlyOne(all.filter((account) => accountName(account) === wanted), wanted);
+  if (!found) throw new Error(`Arbor has no account called ${wanted}. arbor accounts lists them, with an id for each.`);
   return found;
+}
+
+/** Two accounts can show under the same hidden name; then only the id says which. */
+function onlyOne(matches: Account[], wanted: string): Account | undefined {
+  if (matches.length > 1) throw new Error(`More than one account shows as ${wanted}. Use its id from arbor accounts.`);
+  return matches[0];
 }
 
 function describeAccount(account: Account) {
@@ -51,11 +68,12 @@ function describeAccount(account: Account) {
   const reserves = getAccountReserves();
   const paused = reserves.paused[account.key];
   return {
-    key: account.key,
+    id: accountId(account.key),
     name: accountName(account),
     provider: providerForFile(account.file),
     state: account.on ? 'on' : paused ? 'paused' : 'off',
     cap: reserves.caps[account.key] ?? null,
+    easing: reserves.easing[account.key] ?? false,
     limits: (quota?.rows ?? []).map((row) => ({ label: row.label, remainingPercent: row.remainingPercent, resetAtMs: row.resetAtMs ?? null })),
     checkedAtMs: quota?.fetchedAt ?? null,
     error: quota?.error ?? null,
@@ -141,7 +159,11 @@ export const cliHandlers: CliHandlers = {
     args: [arg('provider', 'string', true), arg('on', 'boolean', true)],
     run: async (args) => {
       if (args.provider === undefined || args.provider === null) return { auto: getRoutingAuto() };
-      setRoutingAuto(textArg(args, 'provider'), booleanArg(args, 'on', true));
+      const provider = textArg(args, 'provider').toLowerCase();
+      // Only a provider someone has signed in to has an order to keep; anything else would just be saved and never used.
+      const known: string[] = [...new Set((await accounts()).flatMap((account) => providerForFile(account.file) ?? []))].sort();
+      if (!known.includes(provider)) throw new Error(`No account is signed in for ${provider}. Providers with accounts: ${known.join(', ') || 'none yet'}.`);
+      setRoutingAuto(provider, booleanArg(args, 'on', true));
       return { auto: getRoutingAuto() };
     },
   },
