@@ -44,13 +44,6 @@ export const takeSetupSkills = (repo: string, machine: string, paths: string[]) 
 export const readSetupRepoSkill = (repo: string, commit: string, name: string, ck: boolean) =>
   invokeCommand('read_setup_repo_skill', { repo, commit, name, ck });
 
-/**
- * How a skill in the repo stands against its source: its source's copy, `update` (its source changed since),
- * `changedHere` (the repo's copy was changed and its source wasn't), `gone` from its source, `unchecked` (not from
- * GitHub, or it doesn't say where there), or `error`.
- */
-export type SourceState = 'current' | 'update' | 'changedHere' | 'gone' | 'unchecked' | 'error';
-
 /** Asks GitHub about each skill with a recorded source; what it said in the last 15 minutes is used again, unless `force`. */
 export const checkSetupSkillSources = (repo: string, force: boolean) => invokeCommand('check_setup_skill_sources', { repo, force });
 /** Replaces the repo's copy of a skill with its source's latest, as a commit. */

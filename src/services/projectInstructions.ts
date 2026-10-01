@@ -65,14 +65,6 @@ export function instructionChanges(list: RepoInstructions[], checkouts: ProjectC
 export const instructionsChanges = (changes: CheckoutChange[]): CheckoutInstructionsChange[] =>
   changes.map((change) => ({ checkout: change.checkout, file: change.target as InstructionFile }));
 
-/** The project's text for every machine (`machine` null) or one, as the repo's last commit has it. */
-export const readProjectInstructions = (repo: string, project: string, machine: string | null) =>
-  invokeCommand('read_setup_project_instructions', { repo, project, machine });
-
-/** Saves the project's text for every machine or one, or with null takes it out; commits the one file. */
-export const setProjectInstructions = (repo: string, project: string, machine: string | null, text: string | null) =>
-  invokeCommand('set_setup_project_instructions', { repo, project, machine, text });
-
 /** Writes the project's text from the repo into its checkouts on a machine. */
 export const applyCheckoutInstructions = (repo: string, project: string, machine: string, changes: CheckoutInstructionsChange[]) =>
   tracked('sync-applied', invokeCommand('apply_checkout_instructions', { repo, project, machine, changes }), { kind: 'instructions', count: changes.length });

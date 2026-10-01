@@ -22,6 +22,7 @@ import { useShortcut } from '../hooks/useShortcuts';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
+import { requestFocus } from '../focusRequests';
 import { isSetupTab, savedSetupView, setupView, type AppView, type SetupParams, type SetupTabId } from '../navigation';
 import { leafLabel } from '../services/sidebarTree';
 import type { ViewChange } from '../services/viewHistory';
@@ -482,7 +483,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
           </Alert>
         ) : null}
         {/* The scope sentence, for the pages a project or a machine can have values of its own on. */}
-        {tab === 'skills' || tab === 'plugins' || tab === 'repo' ? <SyncScopeSentence /> : null}
+        {tab === 'skills' || tab === 'plugins' ? <SyncScopeSentence /> : null}
         {tab === 'agents' ? (
           // The fleet's agents come from the machines' health checks, not the setup scan, so they don't wait for it.
           <SetupAgents onNavigate={onNavigate} />
@@ -500,7 +501,15 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
         ) : tab === 'repo' ? (
           <SetupRepoSection machines={machines} />
         ) : tab === 'skills' ? (
-          <SetupSkills machines={machines} homeLabel={(key) => homeLabel(key, t)} onCompare={setComparison} />
+          <SetupSkills
+            machines={machines}
+            homeLabel={(key) => homeLabel(key, t)}
+            onCompare={setComparison}
+            onOpenInRepo={(path) => {
+              requestFocus('repo-file', path);
+              onNavigate(setupView({ tab: 'repo' }));
+            }}
+          />
         ) : tab === 'plugins' ? (
           <SetupPlugins machines={machines} homeLabel={(key) => homeLabel(key, t)} />
         ) : tab === 'hooks' ? (

@@ -24,11 +24,10 @@ use super::guarded_writes::{cksum, edit_call, edit_finish, edit_outcomes, edit_s
 use super::checkout_settings::CheckoutOutcome;
 use super::setup::covered_machine;
 use super::setup_projects::InstructionFile;
-use super::setup_sync::{git, git_out, read_repo, repo_file, sha256_hex, SetupRepo, GIT_TIMEOUT};
+use super::setup_sync::{git, git_out, repo_file, sha256_hex, GIT_TIMEOUT};
 use super::shell::shell_quote;
 use super::*;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use std::fs;
 use ts_rs::TS;
 
 /// Where the repo keeps projects' instructions.
@@ -139,70 +138,6 @@ async fn wanted_text(folder: &Path, project: &str, machine: &str) -> Result<Opti
         }
     }
     Ok(None)
-}
-
-/// A project's instructions for every machine (`machine` None) or one, as the repo's last commit has them.
-#[tauri::command]
-pub(crate) async fn read_setup_project_instructions(repo: String, project: String, machine: Option<String>) -> Result<Option<String>, String> {
-    if !super::setup_wanted::is_project(&project) {
-        return Err("That isn't a project Arbor knows".into());
-    }
-    let folder = Path::new(&repo);
-    let head = git(folder, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], GIT_TIMEOUT).await?;
-    if !head.status.success() {
-        return Ok(None);
-    }
-    let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
-    match repo_file(folder, &head, &instructions_rel(&project, machine.as_deref())).await {
-        Ok(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
-        Err(_) => Ok(None),
-    }
-}
-
-/// Saves a project's instructions for every machine (`machine` None) or one, or with `text` None takes them out, and
-/// commits that file alone.
-#[tauri::command]
-pub(crate) async fn set_setup_project_instructions(repo: String, project: String, machine: Option<String>, text: Option<String>) -> Result<SetupRepo, String> {
-    if !super::setup_wanted::is_project(&project) {
-        return Err("That isn't a project Arbor knows".into());
-    }
-    if machine.as_deref().is_some_and(|machine| normalize_machine_name(machine).is_empty()) {
-        return Err("That machine has no name to keep it under".into());
-    }
-    let folder = Path::new(&repo);
-    let rel = instructions_rel(&project, machine.as_deref());
-    let place = match &machine {
-        Some(machine) => format!("{project} on {machine}"),
-        None => project.clone(),
-    };
-    match text.map(|text| text.trim_end().to_string()).filter(|text| !text.trim().is_empty()) {
-        Some(text) => {
-            if text.len() > TEXT_MAX_BYTES {
-                return Err(format!("Keep a project's instructions under {} KB", TEXT_MAX_BYTES / 1024));
-            }
-            if text.contains('\0') {
-                return Err("The instructions have a character a text file can't hold".into());
-            }
-            super::setup_sync::take_into_repo(folder, &rel, format!("{text}\n").as_bytes(), &format!("Set {place}'s own instructions"), &[]).await?;
-        }
-        None => drop_from_repo(folder, &rel, &format!("Take out {place}'s own instructions")).await?,
-    }
-    read_repo(folder).await
-}
-
-/// Takes a file out of the repo and commits that alone; nothing when it isn't there.
-async fn drop_from_repo(folder: &Path, rel: &str, message: &str) -> Result<(), String> {
-    let pathspec = format!("./{rel}");
-    let changes = git_out(folder, &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", &pathspec]).await?;
-    if !changes.is_empty() {
-        return Err(format!("{rel} has changes in the repo that aren't committed. Commit or drop them, then try again."));
-    }
-    if fs::symlink_metadata(folder.join(rel)).is_err() {
-        return Ok(());
-    }
-    git_out(folder, &["rm", "--quiet", "--", &pathspec]).await?;
-    git_out(folder, &["commit", "--quiet", "-m", message, "--", &pathspec]).await?;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------

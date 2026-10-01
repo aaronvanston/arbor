@@ -19,7 +19,7 @@ const cssString = (text: string) => `"${text.replace(/[\\"]/g, '\\$&').replace(/
  * the syntax colors are the theme's. Each changed line's − or + is read out as a word, which a screen reader
  * wouldn't otherwise say, and a fold's control is ringed when it has focus.
  */
-const arborCSS = (t: Translate) => `
+export const arborCSS = (t: Translate) => `
 :host {
   --diffs-font-family: var(--font-mono);
   --diffs-header-font-family: var(--font-sans);
@@ -77,7 +77,7 @@ function openFoldFromKey(event: Event) {
  * and says the count in Arbor's words. A control that's redrawn after a key press gets focus back, or the next fold
  * does when that one opened all the way.
  */
-function labelFolds(host: HTMLElement, t: Translate) {
+export function labelFolds(host: HTMLElement, t: Translate) {
   const root = host.shadowRoot;
   if (!root) return;
   if (!keyed.has(root)) {
@@ -118,8 +118,8 @@ function labelFolds(host: HTMLElement, t: Translate) {
   }
 }
 
-const THEMES = { light: 'pierre-light', dark: 'pierre-dark' } as const;
-const HIGHLIGHTER = 'shiki-wasm';
+export const THEMES = { light: 'pierre-light', dark: 'pierre-dark' } as const;
+export const HIGHLIGHTER = 'shiki-wasm';
 const loading = new Map<string, Promise<void>>();
 
 /**
@@ -127,7 +127,7 @@ const loading = new Map<string, Promise<void>>();
  * for is dropped. So the viewer waits for the highlighter, both themes and the file's language first. A failed load
  * is forgotten, so opening the file again tries again.
  */
-function highlighterReady(path: string): Promise<void> {
+export function highlighterReady(path: string): Promise<void> {
   const lang = highlightLanguage(path);
   let ready = loading.get(lang);
   if (!ready) {
@@ -137,6 +137,22 @@ function highlighterReady(path: string): Promise<void> {
         throw error;
       });
     loading.set(lang, ready);
+  }
+  return ready;
+}
+
+const allLoading = new Map<string, Promise<void>>();
+
+/** The highlighter ready for every file's language at once, the same promise for the same languages each time. */
+export function highlightersReady(paths: readonly string[]): Promise<void> {
+  const key = [...new Set(paths.map(highlightLanguage))].sort().join(' ');
+  let ready = allLoading.get(key);
+  if (!ready) {
+    ready = Promise.all(paths.map(highlighterReady)).then(() => undefined, (error: unknown) => {
+      allLoading.delete(key);
+      throw error;
+    });
+    allLoading.set(key, ready);
   }
   return ready;
 }

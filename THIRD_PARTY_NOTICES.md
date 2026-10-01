@@ -290,7 +290,9 @@ Every npm package the app's frontend can bundle: the dependencies in package.jso
 | @hugeicons/react | 1.1.10 | MIT | https://github.com/hugeicons/hugeicons |
 | @pierre/diffs | 1.5.1 | apache-2.0 | https://www.npmjs.com/package/@pierre/diffs |
 | @pierre/theme | 2.0.0 | apache-2.0 | https://github.com/pierrecomputer/pierre |
+| @pierre/theming | 1.0.0 | apache-2.0 | https://www.npmjs.com/package/@pierre/theming |
 | @pierre/theming | 1.0.1 | apache-2.0 | https://www.npmjs.com/package/@pierre/theming |
+| @pierre/trees | 1.0.0-beta.6 | apache-2.0 | https://www.npmjs.com/package/@pierre/trees |
 | @shikijs/core | 4.4.3 | MIT | https://github.com/shikijs/shiki |
 | @shikijs/engine-javascript | 4.4.3 | MIT | https://github.com/shikijs/shiki |
 | @shikijs/engine-oniguruma | 4.4.3 | MIT | https://github.com/shikijs/shiki |
@@ -395,6 +397,8 @@ Every npm package the app's frontend can bundle: the dependencies in package.jso
 | oniguruma-parser | 0.12.2 | MIT | https://github.com/slevithan/oniguruma-parser |
 | oniguruma-to-es | 4.3.6 | MIT | https://github.com/slevithan/oniguruma-to-es |
 | parse-entities | 4.0.2 | MIT | https://github.com/wooorm/parse-entities |
+| preact | 11.0.0-beta.0 | MIT | https://github.com/preactjs/preact |
+| preact-render-to-string | 6.6.5 | MIT | https://github.com/preactjs/preact-render-to-string |
 | property-information | 7.2.0 | MIT | https://github.com/wooorm/property-information |
 | react | 19.2.7 | MIT | https://github.com/facebook/react |
 | react-dom | 19.2.7 | MIT | https://github.com/facebook/react |
@@ -433,13 +437,15 @@ Every npm package the app's frontend can bundle: the dependencies in package.jso
 
 #### Apache-2.0
 
-Used by @pierre/diffs 1.5.1, @pierre/theme 2.0.0, @pierre/theming 1.0.1, @tauri-apps/api 2.11.1, class-variance-authority 0.7.1.
+Used by @pierre/diffs 1.5.1, @pierre/theme 2.0.0, @pierre/theming 1.0.0, @pierre/theming 1.0.1, @pierre/trees 1.0.0-beta.6, @tauri-apps/api 2.11.1, class-variance-authority 0.7.1.
 
 Copyright lines in their copies of this license:
 
 - @pierre/diffs 1.5.1: Copyright 2025 Pierre Computer Company
 - @pierre/theme 2.0.0: Copyright 2025 Pierre Computer Company
+- @pierre/theming 1.0.0: Copyright 2025 Pierre Computer Company
 - @pierre/theming 1.0.1: Copyright 2025 Pierre Computer Company
+- @pierre/trees 1.0.0-beta.6: Copyright 2025 Pierre Computer Company
 - class-variance-authority 0.7.1: Copyright 2022 Joe Bell
 
 ```text
@@ -1514,6 +1520,62 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #### MIT
 
+Used by preact 11.0.0-beta.0.
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2015-present Jason Miller
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### MIT
+
+Used by preact-render-to-string 6.6.5.
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2015 Jason Miller
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### MIT
+
 Used by react 19.2.7, react-dom 19.2.7, scheduler 0.27.0, use-sync-external-store 1.6.0.
 
 ```text
@@ -1877,6 +1939,48 @@ in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+````
+
+#### Notice
+
+Used by @pierre/trees 1.0.0-beta.6.
+
+````text
+This project includes some code derived from
+[@headless-tree/core](https://github.com/lukasbach/headless-tree).
+
+The initial version of this project used `headless-tree` as the underlying tree
+implementation. We have since written our own core at `packages/path-store`, but
+many of the best ideas from `headless-tree` made their way to `path-store` and
+`trees`. It's hard to identify exactly which code this is at this point, but
+definitely things like the drag and drop implementation and the general list
+approach to rendering and I'm sure more. The work that `@lukasbach` has
+contributed to this space is greatly appreciated. `<3`
+
+Original license for `headless-tree/core`:
+
+```
+MIT License
+
+Copyright (c) 2023 Lukas Bach
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.

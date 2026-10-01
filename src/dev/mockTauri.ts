@@ -97,7 +97,10 @@
  * a managed-settings policy that sets settings, env, a hook and a plugin and turns a skill off on this Mac, one ci-01
  * can't read, and one on cedar-02 whose skill overrides Claude Code ignores; `?setup=shadow` for a shadow
  * Codex home on this Mac whose config.toml, AGENTS.md and skills are links into ~/.codex;
- * `?repo=fail` or `?repo=dirty` for a setup repo Arbor can't read, or with changes not committed;
+ * `?repo=fail` or `?repo=dirty` for a setup repo Arbor can't read, or with changes not committed (CLAUDE.md and pdf's
+ * SKILL.md edited and a new rule, which Sync › Repo's Changes lists); `?repotree=fail` or `?repotree=truncated` for
+ * the repo browser's file list failing to read, or cut short; `?repowrite=stale` to have every save there refused
+ * as the file changed outside Arbor;
  * `?sync=changed` or `?sync=fail` to have bringing a machine in step refused, or a file fail to write;
  * for the file viewers in Sync's comparisons and the setup sync review (open a differing CLAUDE.md or skill):
  * `?markdown=rich` for casey-mbp's CLAUDE.md with tables, task lists, links, an image, prompt tags and HTML that must

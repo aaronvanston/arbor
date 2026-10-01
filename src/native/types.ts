@@ -2603,11 +2603,48 @@ export type RemovalResult = {
   message: string,
 };
 
+/**
+ * A file's two copies; a missing side hasn't the file, or isn't shown when there's a problem.
+ */
+export type RepoChange = {
+  path: string,
+  status: RepoStatus,
+  before: string | null,
+  after: string | null,
+  problem: RepoFileProblem | null,
+};
+
 export type RepoCommit = {
   sha: string,
   subject: string,
   atMs: number,
 };
+
+/**
+ * A file in the setup repo's folder, as the browser lists it.
+ */
+export type RepoEntry = {
+  /**
+   * Within the folder: .claude/CLAUDE.md.
+   */
+  path: string,
+  role: RepoRole,
+  status: RepoStatus,
+  /**
+   * The folder's copy's size, or the last commit's for a file that's gone.
+   */
+  size: number,
+  /**
+   * Why Arbor won't open it, when it won't.
+   */
+  problem: RepoFileProblem | null,
+};
+
+/**
+ * Why Arbor doesn't show a file's text: its name says it may hold a secret, it's over 1 MB, it isn't text, or it's a
+ * link or a submodule.
+ */
+export type RepoFileProblem = "secret" | "large" | "binary" | "link";
 
 /**
  * A project's instructions in the repo: for every machine, or for one.
@@ -2664,7 +2701,37 @@ export type RepoProjectValue = {
   machines: { [key in string]: PluginWanted },
 };
 
+/**
+ * What a file in the repo is to Arbor.
+ */
+export type RepoRole = "instructions" | "rule" | "subagent" | "command" | "hookScript" | "skill" | "projectInstructions" | "record" | "other";
+
 export type RepoState = "ok" | "missing" | "notGit";
+
+/**
+ * How a file in the folder stands against the last commit.
+ */
+export type RepoStatus = "same" | "modified" | "added" | "deleted";
+
+/**
+ * A file's text, with its SHA-256 to save against; neither when there's no file there or Arbor doesn't show it.
+ */
+export type RepoText = {
+  content: string | null,
+  sum: string | null,
+  problem: RepoFileProblem | null,
+};
+
+/**
+ * Every file in the setup repo's folder, committed or not.
+ */
+export type RepoTree = {
+  entries: Array<RepoEntry>,
+  /**
+   * More files than the browser lists.
+   */
+  truncated: boolean,
+};
 
 export type RepoUpstream = {
   name: string,

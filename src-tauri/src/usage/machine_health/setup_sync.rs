@@ -281,7 +281,7 @@ pub(super) async fn blobs(folder: &Path, objects: &[&str]) -> Result<Vec<Vec<u8>
     Ok(contents)
 }
 
-fn parse_commit(line: &str) -> Option<RepoCommit> {
+pub(super) fn parse_commit(line: &str) -> Option<RepoCommit> {
     let mut fields = line.trim_end_matches('\n').split('\0');
     let sha = fields.next().filter(|sha| is_commit(sha))?.to_string();
     let subject = fields.next().unwrap_or_default().to_string();

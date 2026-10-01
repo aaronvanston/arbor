@@ -119,6 +119,9 @@ mod tests {
         types.visit::<crate::usage::machine_health::setup::SetupText>();
         types.visit::<crate::usage::machine_health::setup::SetupSkillFile>();
         types.visit::<crate::usage::machine_health::setup_sync::SetupRepo>();
+        types.visit::<crate::usage::machine_health::setup_repo_browse::RepoTree>();
+        types.visit::<crate::usage::machine_health::setup_repo_browse::RepoText>();
+        types.visit::<crate::usage::machine_health::setup_repo_browse::RepoChange>();
         types.visit::<crate::usage::machine_health::setup_wanted::SkillWanted>();
         types.visit::<crate::usage::machine_health::setup_wanted::PluginWanted>();
         types.visit::<crate::usage::machine_health::setup_sync::SyncChange>();

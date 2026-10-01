@@ -49,7 +49,13 @@ import type {
   RegistryCell,
   RegistryState,
   RemovalResult,
+  RepoChange,
   RepoCommit,
+  RepoEntry,
+  RepoFileProblem,
+  RepoRole,
+  RepoStatus,
+  RepoTree,
   RepoUpstream,
   SetupBackup,
   SetupHome,
@@ -74,6 +80,7 @@ import type {
   McpUsageReport,
   WorktreeRemoval,
 } from '../../native/types';
+import { projectOf, skillFolder, skillOf } from '../../services/repoBrowser';
 import { syncKind } from '../../services/setupSync';
 import type { CommandAnswers } from './answers';
 import { freshInstall, hours, later, mockLog, params } from './scenario';
@@ -767,7 +774,10 @@ const setupRepoReply = (path: string): SetupRepo => {
     branch: 'main',
     head: head ? { sha: head.sha, subject: head.subject, atMs: head.atMs } : null,
     upstream: repo.upstream,
-    uncommitted: params.get('repo') === 'dirty' ? ['~/.claude/CLAUDE.md', '~/.agents/skills/pdf'] : [],
+    uncommitted: [...new Set([...worktreeOf(path).keys()].flatMap((file) => {
+      const skill = skillOf(file);
+      return skill ? [`~/${skillFolder(skill)}`] : syncKind(`~/${file}`) ? [`~/${file}`] : [];
+    }))],
     files: head?.files ?? [],
     skills: head?.skills ?? [],
     ignored: repo.ignored,
@@ -1965,6 +1975,239 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
   return true;
 };
 
+// The repo browser's view of the mock repo: every file in its folder as each commit had it, and as the folder has it
+// now. A commit's synced files and skills come from its files and skills; the rest (the README, records, projects' own
+// instructions, files Arbor doesn't sync) from the browser's last commit before it, else from how the repo started.
+
+/** One file as a commit or the folder has it; `text` is null for one Arbor never opens. */
+type MockBlob = { text: string | null; sum: string; size: number; problem: RepoFileProblem | null };
+
+const textBlob = (text: string): MockBlob => ({ text, sum: instructionsHash(text), size: text.length, problem: null });
+
+const RECORDS = new Set(['.agents/machines.json', '.agents/plugins.json', '.agents/mcp-servers.json', '.agents/hooks.json', '.agents/skill-sources.json']);
+
+/** What a file in the repo is to Arbor, from its path, as the backend reads it. */
+const repoRole = (path: string): RepoRole => {
+  const kind = syncKind(`~/${path}`);
+  if (kind) return kind;
+  if (skillOf(path)) return 'skill';
+  if (projectOf(path)) return 'projectInstructions';
+  return RECORDS.has(path) ? 'record' : 'other';
+};
+
+/** Whether a path's text comes from a commit's synced files and skills, rather than the rest of the folder. */
+const fromSynced = (path: string) => repoRole(path) !== 'projectInstructions' && repoRole(path) !== 'record' && repoRole(path) !== 'other';
+
+/** Each repo skill's files, for skills the browser's commits made. */
+const committedSkillFiles = new WeakMap<SetupRepoSkill, SetupSkillFile[]>();
+
+const skillFilesOf = (skill: SetupRepoSkill): SetupSkillFile[] =>
+  committedSkillFiles.get(skill)
+  ?? (skill.sum ? repoSkillFiles[skill.sum] : undefined)
+  ?? setupSkills[skill.path]?.['casey-mbp']
+  ?? [skillFile('SKILL.md', `${skill.name}-doc`, `---\nname: ${skill.name}\ndescription: Kept in the setup repo.\n---\n\n# ${skill.name}\n`)];
+
+const hiddenBlob = (file: SetupSkillFile): MockBlob => ({ text: null, sum: file.sum, size: file.size, problem: file.hidden });
+
+/** Projects' own instructions as files, by their place in the repo. */
+const instructionFilesOf = (texts: Record<string, string>) => Object.fromEntries(Object.entries(texts).map(([key, text]) => {
+  const [project = '', machine = ''] = key.split('\u0000');
+  return [`.agents/projects/${project}/${machine ? `machines/${machine}.md` : 'instructions.md'}`, textBlob(text)];
+}));
+
+/** The rest of the folder as the repo started, kept from the first time it's read so later commits show what changed. */
+let startedOthers: Record<string, MockBlob> | null = null;
+
+const othersAtStart = () => {
+  startedOthers ??= {
+    'README.md': textBlob('# Agent setup\n\nThe agent files Arbor keeps the same on every machine.\n\n- `.claude/` and `.codex/` go to each machine\'s homes.\n- `.agents/skills/` holds the skills, a folder each.\n- `.agents/projects/` holds projects\' own instructions.\n'),
+    '.gitignore': textBlob('.DS_Store\n'),
+    '.agents/machines.json': textBlob(`${JSON.stringify({ skills: mockSkillMachines, files: mockFileMachines }, null, 2)}\n`),
+    '.claude/settings.json': textBlob('{\n  "permissions": {\n    "allow": ["Bash(bun test:*)"]\n  }\n}\n'),
+    '.agents/commands/review.md': textBlob('---\ndescription: Review the current branch\n---\n\nRead the diff and list what would break.\n'),
+    ...instructionFilesOf(mockInstructions),
+  };
+  return startedOthers;
+};
+
+/** The rest of the folder as the browser's commits left it, by commit. */
+const commitOthers = new Map<string, Record<string, MockBlob>>();
+
+/** Every file in a commit, by its path in the repo. */
+const commitSnapshot = (repo: MockRepo, at: number): Map<string, MockBlob> => {
+  const commit = repo.commits[at];
+  const files = new Map<string, MockBlob>();
+  if (!commit) return files;
+  let others = othersAtStart();
+  for (let back = at; back >= 0; back -= 1) {
+    const kept = commitOthers.get(repo.commits[back]?.sha ?? '');
+    if (kept) {
+      others = kept;
+      break;
+    }
+  }
+  for (const [path, blob] of Object.entries(others)) files.set(path, blob);
+  const sources = Object.fromEntries(commit.skills.flatMap((skill) => (skill.source ? [[skill.name, skill.source]] : [])));
+  if (Object.keys(sources).length && !commitOthers.has(commit.sha)) files.set('.agents/skill-sources.json', textBlob(`${JSON.stringify({ version: 1, skills: sources }, null, 2)}\n`));
+  for (const file of commit.files) files.set(file.path.slice(2), textBlob(setupTexts[file.sum] ?? ''));
+  for (const skill of commit.skills) {
+    for (const file of skillFilesOf(skill)) {
+      files.set(`${skillFolder(skill.name)}/${file.path}`, file.hidden || file.content === null ? hiddenBlob(file) : textBlob(file.content));
+    }
+  }
+  return files;
+};
+
+const headSnapshot = (repo: MockRepo) => commitSnapshot(repo, repo.commits.length - 1);
+
+/**
+ * Each repo's folder where it differs from the last commit: a file's new text, or null where it's gone. `?repo=dirty`
+ * starts with CLAUDE.md and pdf's SKILL.md edited and a new rule.
+ */
+const repoWorktrees: Record<string, Map<string, MockBlob | null>> = {};
+
+const worktreeOf = (path: string) => {
+  const repo = mockRepo(path);
+  let worktree = repoWorktrees[path];
+  if (!worktree) {
+    worktree = new Map();
+    repoWorktrees[path] = worktree;
+    if (params.get('repo') === 'dirty') {
+      const head = headSnapshot(repo);
+      const claude = head.get('.claude/CLAUDE.md')?.text ?? '';
+      worktree.set('.claude/CLAUDE.md', textBlob(claude.replace('- Push to the private remote.\n', '- Push to the private remote.\n- Write the release notes before the build.\n')));
+      const pdf = head.get('.agents/skills/pdf/SKILL.md')?.text ?? '';
+      worktree.set('.agents/skills/pdf/SKILL.md', textBlob(`${pdf}\nPrefer the text layer; only read pages as images when it's empty.\n`));
+      worktree.set('.claude/rules/naming.md', textBlob('# Naming\n\n- Name things for what they hold, not their type.\n- Spell words out; no abbreviations.\n'));
+    }
+  }
+  return worktree;
+};
+
+/** The folder as it is now. */
+const folderFiles = (path: string) => {
+  const files = headSnapshot(mockRepo(path));
+  for (const [file, blob] of worktreeOf(path)) {
+    if (blob) files.set(file, blob);
+    else files.delete(file);
+  }
+  return files;
+};
+
+const byPath = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+const repoTreeReply = (path: string): RepoTree => {
+  const head = headSnapshot(mockRepo(path));
+  const folder = folderFiles(path);
+  const paths = [...new Set([...head.keys(), ...folder.keys()])].sort(byPath);
+  return {
+    entries: paths.map((file): RepoEntry => {
+      const was = head.get(file);
+      const now = folder.get(file);
+      const blob = now ?? was;
+      const status: RepoStatus = !now ? 'deleted' : !was ? 'added' : was.sum === now.sum ? 'same' : 'modified';
+      return { path: file, role: repoRole(file), status, size: blob?.size ?? 0, problem: blob?.problem ?? null };
+    }),
+    truncated: false,
+  };
+};
+
+/** Refuses a path outside the folder or in git's own, as the backend does. */
+const checkRepoPath = (path: string) => {
+  const parts = path.split('/');
+  if (!path || path.startsWith('/') || path.includes('\\') || parts.some((part) => !part || part === '.' || part === '..')) throw `${path} isn't a path inside the repo`;
+  if (parts[0] === '.git') throw "Arbor doesn't change git's own files";
+};
+
+/** A file's two copies, as a change shows them; a file Arbor never opens shows neither. */
+const repoChange = (path: string, was: MockBlob | undefined, now: MockBlob | undefined): RepoChange => {
+  const problem = now?.problem ?? was?.problem ?? null;
+  const status: RepoStatus = !now ? 'deleted' : !was ? 'added' : 'modified';
+  return { path, status, before: problem ? null : was?.text ?? null, after: problem ? null : now?.text ?? null, problem };
+};
+
+const snapshotChanges = (was: Map<string, MockBlob>, now: Map<string, MockBlob>) =>
+  [...new Set([...was.keys(), ...now.keys()])].sort(byPath).flatMap((path) => {
+    const before = was.get(path);
+    const after = now.get(path);
+    return before?.sum === after?.sum ? [] : [repoChange(path, before, after)];
+  });
+
+/** The fingerprint a text goes by in the repo's files, made the first time it's committed. */
+const committedSum = (text: string) => {
+  const found = Object.entries(setupTexts).find(([, known]) => known === text)?.[0];
+  if (found) return found;
+  const sum = `t${instructionsHash(text)}`;
+  setupTexts[sum] = text;
+  return sum;
+};
+
+/** The folder's skill, from its files, reusing the commit's own when nothing in it changed. */
+const committedSkill = (name: string, files: [string, MockBlob][], was: SetupRepoSkill | undefined, wasFiles: Map<string, MockBlob>): SetupRepoSkill => {
+  const folder = `${skillFolder(name)}/`;
+  const same = was && files.length === [...wasFiles.keys()].filter((path) => path.startsWith(folder)).length
+    && files.every(([path, blob]) => wasFiles.get(path)?.sum === blob.sum);
+  if (was && same) return was;
+  const list = files.map(([path, blob]) => skillFile(path.slice(folder.length), blob.sum, blob.text, blob.problem === 'link' ? null : blob.problem));
+  const problem: SetupRepoSkill['problem'] = list.some((file) => file.hidden === 'secret') ? 'secret' : list.some((file) => file.path === 'SKILL.md') ? null : 'noDoc';
+  const sum = `s${instructionsHash(list.map((file) => `${file.path}:${file.sum}`).join('\n'))}`;
+  const skill = { ...repoSkill(name, sum, list.length, null, problem), source: was?.source ?? null };
+  committedSkillFiles.set(skill, list);
+  return skill;
+};
+
+const commitRepoMock = (path: string, paths: string[], message: string) => {
+  const repo = mockRepo(path);
+  const worktree = worktreeOf(path);
+  const subject = message.trim().split('\n')[0]?.trim() ?? '';
+  if (!subject) throw 'Write a message for the commit';
+  const chosen = paths.filter((file) => worktree.has(file));
+  if (!chosen.length) throw 'None of those files have changes to commit';
+  const head = repoHead(repo);
+  const was = headSnapshot(repo);
+  const next = new Map(was);
+  for (const file of chosen) {
+    const blob = worktree.get(file);
+    if (blob) next.set(file, blob);
+    else next.delete(file);
+  }
+  const files = [...next].flatMap(([file, blob]) => {
+    const kind = syncKind(`~/${file}`);
+    return kind && blob.text !== null ? [repoFile(kind, `~/${file}`, committedSum(blob.text))] : [];
+  });
+  const names = [...new Set([...next.keys()].map(skillOf).filter((name): name is string => name !== null))];
+  const skills = names.map((name) => committedSkill(name, [...next].filter(([file]) => file.startsWith(`${skillFolder(name)}/`)), head?.skills.find((skill) => skill.name === name), was));
+  const others = Object.fromEntries([...next].filter(([file]) => !fromSynced(file)));
+  const commit = repoCommit(subject, Date.now(), files, skills);
+  commitOthers.set(commit.sha, others);
+  repo.commits.push(commit);
+  if (repo.upstream) repo.upstream = { ...repo.upstream, ahead: repo.upstream.ahead + 1 };
+  for (const file of chosen) worktree.delete(file);
+  // A project's instructions committed here are what its checkouts are brought in line with.
+  for (const key of Object.keys(mockInstructions)) delete mockInstructions[key];
+  for (const [file, blob] of next) {
+    const found = projectOf(file);
+    if (found && blob.text !== null) mockInstructions[`${found.project}\u0000${found.machine ?? ''}`] = blob.text;
+  }
+  mockLog('commit_setup_repo', { repo: path, paths: chosen, subject });
+  return setupRepoReply(path);
+};
+
+/** Sets a file in the folder to `blob`, or deletes it, keeping only what differs from the last commit. */
+const setFolderFile = (path: string, file: string, blob: MockBlob | null) => {
+  const head = headSnapshot(mockRepo(path)).get(file);
+  const worktree = worktreeOf(path);
+  if (blob ? head?.sum === blob.sum : !head) worktree.delete(file);
+  else worktree.set(file, blob);
+};
+
+/** A name the backend never opens or makes, as its `looks_secret` reads one. */
+const secretName = (path: string) => {
+  const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
+  return name.startsWith('.env') || name.startsWith('id_rsa') || name.startsWith('id_ed25519') || name === 'auth.json' || name === '.netrc'
+    || ['.pem', '.key', '.p12', '.pfx'].some((end) => name.endsWith(end)) || ['credential', 'secret', 'token'].some((word) => name.includes(word));
+};
+
 /** Setup: each machine's agent files, the setup repo, skills, MCP servers, plugins, projects and toolchains. */
 export const setupAnswers: CommandAnswers<SetupCommands> = {
   get_starting_context: (args) => mockStartingContext(args.fromMs, args.toMs),
@@ -2121,16 +2364,6 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     else delete mockMcpProjects[args.server];
     return later(300, () => setupRepoReply(args.repo));
   },
-  read_setup_project_instructions: (args) => later(200, () => mockInstructions[`${args.project.toLowerCase()}\u0000${args.machine?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''}`] ?? null),
-  set_setup_project_instructions: (args) => {
-    mockLog('set_setup_project_instructions', { ...args, text: args.text === null ? null : `${args.text.length} characters` });
-    const key = `${args.project.toLowerCase()}\u0000${args.machine?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''}`;
-    const text = args.text?.trimEnd() ?? '';
-    if (text.length > 65_536) throw "Keep a project's instructions under 64 KB";
-    if (text.trim()) mockInstructions[key] = `${text}\n`;
-    else delete mockInstructions[key];
-    return later(300, () => setupRepoReply(args.repo));
-  },
   set_setup_plugin: (args) => {
     mockLog('set_setup_plugin', args);
     const at = mockRepoPlugins.findIndex((plugin) => plugin.id === args.plugin);
@@ -2234,6 +2467,88 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     const files = repoSkillFiles[skill.sum] ?? setupSkills[skill.path]?.['casey-mbp'] ?? [skillFile('SKILL.md', 'sk', '# Skill\n')];
     return later(400, () => files);
   },
+  list_setup_repo_tree: (args) => {
+    if (params.get('repotree') === 'fail') throw `git couldn't read ${args.repo}: the index is locked by another git process`;
+    const tree = repoTreeReply(args.repo);
+    return later(250, () => ({ ...tree, truncated: params.get('repotree') === 'truncated' }));
+  },
+  read_setup_repo_text: (args) => {
+    const { repo: path, commit } = args;
+    checkRepoPath(args.path);
+    const repo = mockRepo(path);
+    let blob: MockBlob | undefined;
+    if (commit) {
+      const at = repo.commits.findIndex((entry) => entry.sha === commit);
+      if (at < 0) throw `The repo has no commit ${commit.slice(0, 7)}`;
+      blob = commitSnapshot(repo, at).get(args.path);
+    } else {
+      blob = folderFiles(path).get(args.path);
+    }
+    const problem = blob?.problem ?? (secretName(args.path) ? 'secret' : null);
+    return later(200, () => ({ content: problem ? null : blob?.text ?? null, sum: problem ? null : blob?.sum ?? null, problem }));
+  },
+  write_setup_repo_text: (args) => {
+    const { repo: path, content, expected } = args;
+    checkRepoPath(args.path);
+    if (secretName(args.path)) throw `${args.path}'s name says it may hold a secret, so Arbor doesn't write it`;
+    if (content.length > 1_048_576) throw 'Keep a file in the repo under 1 MB';
+    const folder = folderFiles(path);
+    const now = folder.get(args.path);
+    if (now?.problem) throw `Arbor doesn't edit ${args.path}`;
+    if (params.get('repowrite') === 'stale' || (now?.sum ?? null) !== expected) {
+      throw now ? `${args.path} changed since Arbor read it. Read it again, then make the edit.` : `${args.path} is gone since Arbor read it`;
+    }
+    if (!now && [...folder.keys()].some((file) => file.startsWith(`${args.path}/`) || args.path.startsWith(`${file}/`))) throw `There's already something at ${args.path}`;
+    mockLog('write_setup_repo_text', { repo: path, path: args.path, size: content.length });
+    setFolderFile(path, args.path, textBlob(content));
+    return later(300, () => repoTreeReply(path));
+  },
+  move_setup_repo_path: (args) => {
+    const { repo: path, from, to } = args;
+    checkRepoPath(from);
+    checkRepoPath(to);
+    if (secretName(to)) throw `${to}'s name says it may hold a secret, so Arbor doesn't make it`;
+    if (to.startsWith(`${from}/`)) throw `Arbor can't move ${from} inside itself`;
+    const folder = folderFiles(path);
+    const moving = [...folder].filter(([file]) => file === from || file.startsWith(`${from}/`));
+    if (!moving.length) throw `The repo has no ${from}`;
+    if ([...folder.keys()].some((file) => file === to || file.startsWith(`${to}/`) || to.startsWith(`${file}/`))) throw `There's already something at ${to}`;
+    mockLog('move_setup_repo_path', { repo: path, from, to });
+    for (const [file, blob] of moving) {
+      setFolderFile(path, file, null);
+      setFolderFile(path, `${to}${file.slice(from.length)}`, blob);
+    }
+    return later(300, () => repoTreeReply(path));
+  },
+  delete_setup_repo_path: (args) => {
+    const { repo: path } = args;
+    checkRepoPath(args.path);
+    const going = [...folderFiles(path).keys()].filter((file) => file === args.path || file.startsWith(`${args.path}/`));
+    if (!going.length) throw `The repo has no ${args.path}`;
+    mockLog('delete_setup_repo_path', { repo: path, path: args.path, files: going.length });
+    for (const file of going) setFolderFile(path, file, null);
+    return later(300, () => repoTreeReply(path));
+  },
+  discard_setup_repo_changes: (args) => {
+    const { repo: path, paths } = args;
+    paths.forEach(checkRepoPath);
+    const worktree = worktreeOf(path);
+    mockLog('discard_setup_repo_changes', { repo: path, paths });
+    for (const file of worktree.keys()) {
+      if (paths.some((chosen) => file === chosen || file.startsWith(`${chosen}/`))) worktree.delete(file);
+    }
+    return later(300, () => repoTreeReply(path));
+  },
+  get_setup_repo_changes: (args) => {
+    const { repo: path, commit } = args;
+    const repo = mockRepo(path);
+    if (!commit) return later(300, () => snapshotChanges(headSnapshot(repo), folderFiles(path)));
+    const at = repo.commits.findIndex((entry) => entry.sha === commit);
+    if (at < 0) throw `The repo has no commit ${commit.slice(0, 7)}`;
+    return later(300, () => snapshotChanges(at ? commitSnapshot(repo, at - 1) : new Map(), commitSnapshot(repo, at)));
+  },
+  get_setup_repo_log: (args) => later(250, () => [...mockRepo(args.repo).commits].reverse().slice(0, args.limit).map(({ sha, subject, atMs }) => ({ sha, subject, atMs }))),
+  commit_setup_repo: (args) => later(700, () => commitRepoMock(args.repo, args.paths, args.message)),
   check_setup_skill_sources: (args) => {
     const repo = mockRepo(args.repo);
     const { force } = args;

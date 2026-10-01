@@ -20,6 +20,10 @@ import type {
   NodeChange,
   NodeResult,
   PluginLeftover,
+  RepoChange,
+  RepoCommit,
+  RepoText,
+  RepoTree,
   SettingsEdit,
   McpResult,
   McpUsageReport,
@@ -64,8 +68,6 @@ export type SetupCommands = {
     args: { repo: string; server: string; project: string; machine: string | null; wanted: PluginWanted | null };
     result: SetupRepo;
   };
-  read_setup_project_instructions: { args: { repo: string; project: string; machine: string | null }; result: string | null };
-  set_setup_project_instructions: { args: { repo: string; project: string; machine: string | null; text: string | null }; result: SetupRepo };
   set_setup_plugin: {
     args: { repo: string; plugin: string; source: string | null; project: string | null; machine: string | null; wanted: PluginWanted | null };
     result: SetupRepo;
@@ -79,6 +81,16 @@ export type SetupCommands = {
   };
   list_setup_backups: { args: { machine: string }; result: SetupBackup[] };
   undo_setup_sync: { args: { machine: string; backup: string }; result: SyncOutcome };
+
+  list_setup_repo_tree: { args: { repo: string }; result: RepoTree };
+  read_setup_repo_text: { args: { repo: string; path: string; commit: string | null }; result: RepoText };
+  write_setup_repo_text: { args: { repo: string; path: string; content: string; expected: string | null }; result: RepoTree };
+  move_setup_repo_path: { args: { repo: string; from: string; to: string }; result: RepoTree };
+  delete_setup_repo_path: { args: { repo: string; path: string }; result: RepoTree };
+  discard_setup_repo_changes: { args: { repo: string; paths: string[] }; result: RepoTree };
+  get_setup_repo_changes: { args: { repo: string; commit: string | null }; result: RepoChange[] };
+  get_setup_repo_log: { args: { repo: string; limit: number }; result: RepoCommit[] };
+  commit_setup_repo: { args: { repo: string; paths: string[]; message: string }; result: SetupRepo };
 
   take_setup_skills: { args: { repo: string; machine: string; paths: string[] }; result: SetupRepo };
   read_setup_repo_skill: { args: { repo: string; commit: string; name: string; ck: boolean }; result: SetupSkillFile[] };

@@ -49,6 +49,7 @@ import {
   type SkillSuggestion,
   type SkillsView,
 } from '../services/setupSkills';
+import { skillFolder } from '../services/repoBrowser';
 import { getSetupRepo, listSetupBackups, scanned, setSetupSkillRemoved, storedSetupRepo, undoSetupSync } from '../services/setupSync';
 import { toast } from '../components/ui/toast';
 import { setSyncMachine, useSyncScope } from '../services/syncScope';
@@ -153,10 +154,12 @@ function skillOutcome(outcome: SyncOutcome, machine: string, t: Translate, tRich
  * The Skills tab: one machine's store of skills against each of its Claude Code and Codex homes, what each home
  * loads, how much each skill was used lately, and changes to bring them in step, reviewed before they're made.
  */
-export function SetupSkills({ machines, homeLabel, onCompare }: {
+export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
   machines: SetupMachine[];
   homeLabel: (key: string) => string;
   onCompare: (comparison: Comparison) => void;
+  /** Opens a file in the setup repo's browser, by its path there. */
+  onOpenInRepo: (path: string) => void;
 }) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
@@ -296,6 +299,7 @@ export function SetupSkills({ machines, homeLabel, onCompare }: {
             usageError={usageError}
             homeLabel={homeLabel}
             onCompare={onCompare}
+            onOpenInRepo={onOpenInRepo}
           />
           <ProjectSkillsCard machines={machines} />
         </>
@@ -405,7 +409,7 @@ function Suggestions({ suggestions, homeLabel, onAdd }: {
  * Sync › Skills at All machines: every skill any machine has, and in how many of each machine's homes it loads. A
  * machine's column head opens that machine, where its skills can be changed.
  */
-function FleetSkillsCard({ machines, chosen, used, usage, usageError, homeLabel, onCompare }: {
+function FleetSkillsCard({ machines, chosen, used, usage, usageError, homeLabel, onCompare, onOpenInRepo }: {
   machines: SetupMachine[];
   chosen: Record<string, PendingSkills>;
   used: ReadonlyMap<string, SkillUsage>;
@@ -413,6 +417,7 @@ function FleetSkillsCard({ machines, chosen, used, usage, usageError, homeLabel,
   usageError: string | null;
   homeLabel: (key: string) => string;
   onCompare: (comparison: Comparison) => void;
+  onOpenInRepo: (path: string) => void;
 }) {
   const { t, tRich } = useI18n();
   // What's out of line comes first, as on the plugins' grid.
@@ -506,7 +511,19 @@ function FleetSkillsCard({ machines, chosen, used, usage, usageError, homeLabel,
               <TableRow key={row.name}>
                 <TableCell className="sticky left-0 z-10 max-w-72 bg-card">
                   <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="truncate font-mono text-xs text-foreground" title={row.name}>{row.name}</span>
+                    {repo && repoSkillState(repo, row.name) === 'synced' ? (
+                      // The repo's copy is the one every machine gets, so its name opens that copy's files.
+                      <button
+                        type="button"
+                        className="cursor-pointer truncate rounded-sm text-start font-mono text-xs text-foreground underline decoration-muted-foreground/50 underline-offset-4 outline-none ring-ring hover:decoration-foreground focus-visible:ring-2"
+                        title={t('setup.skills.fleet.openInRepo', { name: row.name })}
+                        onClick={() => onOpenInRepo(`${skillFolder(row.name)}/SKILL.md`)}
+                      >
+                        {row.name}
+                      </button>
+                    ) : (
+                      <span className="truncate font-mono text-xs text-foreground" title={row.name}>{row.name}</span>
+                    )}
                     {row.source ? <span className="truncate text-2xs text-muted-foreground">{row.source}</span> : null}
                   </div>
                 </TableCell>

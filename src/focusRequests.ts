@@ -2,11 +2,11 @@ import { useSyncExternalStore } from 'react';
 
 /**
  * Asks a page to bring one of its rows into view: a machine on the Machines page, an account on the Accounts page, a
- * setting (by its id in src/services/settingsIndex.ts) on its Settings page, or a provider on Add account, whose
- * sign-in it starts. Unlike what a view carries in its params, these reach a page that is already open, so it watches
- * for them.
+ * setting (by its id in src/services/settingsIndex.ts) on its Settings page, a provider on Add account, whose
+ * sign-in it starts, or a file (by its path in the setup repo) on Sync › Repo, which opens it. Unlike what a view
+ * carries in its params, these reach a page that is already open, so it watches for them.
  */
-export type FocusTarget = 'machine' | 'account' | 'setting' | 'sign-in';
+export type FocusTarget = 'machine' | 'account' | 'setting' | 'sign-in' | 'repo-file';
 
 let pending: Partial<Record<FocusTarget, string>> = {};
 const listeners = new Set<() => void>();

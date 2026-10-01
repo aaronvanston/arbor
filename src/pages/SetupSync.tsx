@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ProjectInstructionsCard } from './ProjectInstructionsCard';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, CircleCheck, FolderGit2, Layers, RotateCcw } from '../components/ui/icons';
+import { StatusDot } from '../components/ui/status-dot';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { ChangesHeader, FileChanges as FileChangesView, type CopyLabels } from '../components/FileChanges';
 import { SettingsSection } from '../components/layout/settings';
@@ -14,7 +14,6 @@ import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, Dia
 import { Spinner } from '../components/ui/spinner';
 import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { RefreshIcon } from '../components/ui/refresh-icon';
-import { toast } from '../components/ui/toast';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
@@ -25,14 +24,11 @@ import {
   fileWanted,
   removableKind,
   setSetupFileMachine,
-  setSetupFileRemoved,
   setSetupSkillMachine,
-  syncKind,
   skillName,
   skillWanted,
   applySetupSync,
   changeable,
-  checkSetupSkillSources,
   chosen,
   getSetupRepo,
   inStep,
@@ -53,8 +49,6 @@ import {
   takeSetupSkills,
   tally,
   undoSetupSync,
-  updateSetupSkill,
-  type SourceState,
   type SyncChoices,
   type SyncFile,
   type SyncState,
@@ -62,16 +56,15 @@ import {
 import { SkillFilesDiff } from './SetupCompare';
 import type {
   SkillWanted,
-  SyncFileKind,
   ChangeKind,
   SetupBackup,
   SetupMachine,
   SetupRepo,
   SetupSkillFile,
-  SourceCheck,
   SyncOutcome,
 } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
+import { RepoBrowser } from './SetupRepoBrowser';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 type TranslateRich = ReturnType<typeof useI18n>['tRich'];
@@ -295,9 +288,7 @@ export function SetupRepoSection({ machines }: { machines: SetupMachine[] }) {
           <>
             <RepoSummary path={path} repo={repo} error={error} onForget={forget} />
             {problem ? <p className="px-4 py-2.5 text-xs text-error-foreground" role="alert">{problem}</p> : null}
-            {repo?.head ? plans.map((plan) => (
-              <MachineRow key={plan.machine.machine} plan={plan} onReview={() => setReviewing(plan.machine.machine)} />
-            )) : null}
+            {repo?.head && plans.length ? <MachineStrip plans={plans} onReview={setReviewing} /> : null}
             {repo?.head && !plans.length ? <p className="px-4 py-3 text-xs text-muted-foreground">{t('setup.repo.noMachines')}</p> : null}
             {behind.length && !bulk?.running ? (
               <div className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -332,9 +323,7 @@ export function SetupRepoSection({ machines }: { machines: SetupMachine[] }) {
           onRepo={setRepo}
         />
       ) : null}
-      {repo?.head ? <ProjectInstructionsCard repo={repo} machines={machines} onRepo={setRepo} /> : null}
-      {repo?.head && (repo.files.some((file) => removableKind(file.kind)) || repo.removedFiles.length) ? <RepoFilesSection repo={repo} onRepo={setRepo} /> : null}
-      {repo?.head && repo.skills.length ? <SkillSourcesSection repo={repo} onRepo={setRepo} /> : null}
+      {repo ? <RepoBrowser repo={repo} machines={machines} onRepo={setRepo} onReview={setReviewing} /> : null}
     </>
   );
 }
@@ -345,15 +334,6 @@ function RepoSummary({ path, repo, error, onForget }: { path: string; repo: Setu
   const now = Date.now();
   const notes: { tone: 'warning' | 'muted'; text: string }[] = [];
   if (repo && !repo.head) notes.push({ tone: 'warning', text: t('setup.repo.noCommits') });
-  if (repo?.uncommitted.length) {
-    notes.push({
-      tone: 'warning',
-      text: t(repo.uncommitted.length === 1 ? 'setup.repo.uncommitted.one' : 'setup.repo.uncommitted.other', {
-        things: thingsText(repo.uncommitted, t),
-        files: repo.uncommitted.join(', '),
-      }),
-    });
-  }
   const blocked = repo?.skills.filter((skill) => skill.problem) ?? [];
   if (blocked.length) {
     const [only] = blocked;
@@ -362,16 +342,6 @@ function RepoSummary({ path, repo, error, onForget }: { path: string; repo: Setu
       text: blocked.length === 1 && only?.problem
         ? t('setup.repo.blocked.one', { name: only.name, reason: t(PROBLEM[only.problem]) })
         : t('setup.repo.blocked.other', { count: blocked.length, names: blocked.map((skill) => skill.name).join(', ') }),
-    });
-  }
-  if (repo?.ignored.length) {
-    const shown = repo.ignored.slice(0, 4).join(', ');
-    notes.push({
-      tone: 'muted',
-      text: t(repo.ignored.length === 1 ? 'setup.repo.ignored.one' : 'setup.repo.ignored.other', {
-        count: repo.ignored.length,
-        files: repo.ignored.length > 4 ? t('setup.repo.ignored.more', { files: shown, count: repo.ignored.length - 4 }) : shown,
-      }),
     });
   }
   return (
@@ -403,17 +373,27 @@ function RepoSummary({ path, repo, error, onForget }: { path: string; repo: Setu
   );
 }
 
-function MachineRow({ plan, onReview }: { plan: Plan; onReview: () => void }) {
+/** Each machine against the repo's last commit, in a line; a machine opens its review. */
+function MachineStrip({ plans, onReview }: { plans: Plan[]; onReview: (machine: string) => void }) {
   const { t } = useI18n();
-  const summary = planSummary(plan, t);
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
-      <span className="flex w-40 min-w-0"><MachinePill name={plan.machine.machine} /></span>
-      <span className={cn('flex min-w-0 flex-1 items-center gap-1.5 text-sm', summary.inStep ? 'text-muted-foreground' : 'text-warning-foreground')}>
-        {plan.machine.scanning ? <Spinner className="size-3.5" /> : summary.inStep ? <CircleCheck aria-hidden="true" className="size-3.5 shrink-0 text-success-foreground" /> : null}
-        <span className="truncate">{summary.text}</span>
-      </span>
-      <Button variant="outline" size="xs" onClick={onReview}>{t('setup.repo.review')}</Button>
+    <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+      {plans.map((plan) => {
+        const summary = planSummary(plan, t);
+        return (
+          <button
+            key={plan.machine.machine}
+            type="button"
+            className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-background px-2 py-1 text-xs hover:bg-accent dark:bg-input/24"
+            title={t('setup.repo.reviewTitle', { machine: plan.machine.machine })}
+            onClick={() => onReview(plan.machine.machine)}
+          >
+            {plan.machine.scanning ? <Spinner className="size-3" /> : <StatusDot tone={summary.inStep ? 'success' : 'warning'} />}
+            <MachinePill name={plan.machine.machine} size="sm" />
+            <span className={cn('truncate', summary.inStep ? 'text-muted-foreground' : 'text-warning-foreground')}>{summary.text}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -988,211 +968,5 @@ export function BackupList({ machine, backups, error, busy, undoing, onUndo, lim
         ))}
       </div>
     </section>
-  );
-}
-
-const SOURCE_LOOK: Record<SourceState, { key: MessageKey; variant: 'success' | 'info' | 'warning' | 'error' | 'muted' }> = {
-  current: { key: 'setup.sources.state.current', variant: 'success' },
-  update: { key: 'setup.sources.state.update', variant: 'info' },
-  changedHere: { key: 'setup.sources.state.changedHere', variant: 'warning' },
-  gone: { key: 'setup.sources.state.gone', variant: 'warning' },
-  unchecked: { key: 'setup.sources.state.unchecked', variant: 'muted' },
-  error: { key: 'setup.sources.state.error', variant: 'error' },
-};
-
-/**
- * Where the repo's skills came from, as `npx skills` recorded it, whether each has changed there since, and
- * updating one from there as a commit. Machines get an update once they're brought in step.
- */
-const FILE_KIND: Record<SyncFileKind, MessageKey> = {
-  instructions: 'setup.repo.files.kind.instructions',
-  rule: 'setup.repo.files.kind.rule',
-  subagent: 'setup.repo.files.kind.subagent',
-  command: 'setup.repo.files.kind.command',
-  hookScript: 'setup.repo.files.kind.hookScript',
-};
-
-/**
- * The rules, subagents and commands the repo gives every machine, each of which can be taken off them all: it leaves
- * the repo, and each machine's review removes its copy. One taken off is listed until it's put back.
- */
-function RepoFilesSection({ repo, onRepo }: { repo: SetupRepo; onRepo: (repo: SetupRepo) => void }) {
-  const { t } = useI18n();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const synced = repo.files.filter((file) => removableKind(file.kind));
-  const setRemoved = async (path: string, removed: boolean, undo = false) => {
-    setBusy(path);
-    setError(null);
-    try {
-      onRepo(await setSetupFileRemoved(repo.path, path, removed));
-      if (!undo) {
-        toast({
-          kind: 'success',
-          title: t(removed ? 'setup.repo.files.removedDone' : 'setup.repo.files.backDone', { path }),
-          description: removed ? t('setup.repo.files.removedNext') : undefined,
-          action: { label: t('common.undo'), onClick: () => void setRemoved(path, !removed, true) },
-        });
-      }
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setBusy(null);
-    }
-  };
-  const row = (path: string, kind: SyncFileKind, removed: boolean) => (
-    <div key={path} className="flex min-w-0 items-center gap-3 px-4 py-2">
-      <MiddleTruncate value={path} className={cn('flex-1 font-mono text-xs', removed ? 'text-muted-foreground line-through' : 'text-foreground')} />
-      <span className="w-24 shrink-0 text-xs text-muted-foreground">{t(FILE_KIND[kind])}</span>
-      {removed ? (
-        <>
-          <Badge variant="warning" size="sm">{t('setup.repo.files.removed')}</Badge>
-          <Button variant="ghost-muted" size="xs" disabled={busy !== null} onClick={() => void setRemoved(path, false)}>
-            {busy === path ? <Spinner /> : <RotateCcw />}
-            {t('setup.repo.files.putBack')}
-          </Button>
-        </>
-      ) : (
-        <Button variant="ghost-muted" size="xs" disabled={busy !== null} onClick={() => void setRemoved(path, true)} title={t('setup.repo.files.removeTitle', { path })}>
-          {busy === path ? <Spinner /> : null}
-          {t('setup.repo.files.remove')}
-        </Button>
-      )}
-    </div>
-  );
-  return (
-    <SettingsSection
-      title={t('setup.repo.files.title')}
-      description={t('setup.repo.files.intro')}
-      summary={repo.removedFiles.length ? t('setup.repo.files.summary', { count: synced.length, removed: repo.removedFiles.length }) : undefined}
-    >
-      {synced.map((file) => row(file.path, file.kind, false))}
-      {repo.removedFiles.map((path) => row(path, syncKind(path) ?? 'command', true))}
-      {error ? <p className="px-4 py-2.5 text-xs text-error-foreground" role="alert">{error}</p> : null}
-    </SettingsSection>
-  );
-}
-
-function SkillSourcesSection({ repo, onRepo }: { repo: SetupRepo; onRepo: (repo: SetupRepo) => void }) {
-  const { t } = useI18n();
-  const [checks, setChecks] = useState<SourceCheck[] | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [updating, setUpdating] = useState<string | null>(null);
-  // Asked in the row rather than a dialog, like the review's own confirmations.
-  const [pending, setPending] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
-  const head = repo.head?.sha ?? null;
-  const sourced = repo.skills.filter((skill) => skill.source);
-  const unsourced = repo.skills.filter((skill) => !skill.source).map((skill) => skill.name);
-  const anySourced = sourced.length > 0;
-
-  const check = useCallback(async (force: boolean) => {
-    setChecking(true);
-    try {
-      setChecks(await checkSetupSkillSources(repo.path, force));
-      setError(null);
-    } catch (checkError) {
-      setError(String(checkError));
-    } finally {
-      setChecking(false);
-    }
-  }, [repo.path]);
-
-  // Checked for each commit; what GitHub said in the last 15 minutes is used again, so this costs little.
-  useEffect(() => {
-    if (head && anySourced) void check(false);
-  }, [head, anySourced, check]);
-
-  const update = async (name: string, source: string) => {
-    setPending(null);
-    setUpdating(name);
-    setNotice(null);
-    try {
-      onRepo(await updateSetupSkill(repo.path, name));
-      setNotice({ ok: true, text: t('setup.sources.updated', { name, source }) });
-    } catch (updateError) {
-      setNotice({ ok: false, text: t('setup.sources.updateFailed', { name, error: String(updateError) }) });
-    } finally {
-      setUpdating(null);
-    }
-  };
-
-  const byName = new Map((checks ?? []).map((entry) => [entry.name, entry]));
-  // GitHub's limit running out fails every check the same way, which is said once.
-  const failures = (checks ?? []).filter((entry) => entry.state === 'error');
-  const sharedFailure = failures.length > 1 && failures.every((entry) => entry.detail === failures[0]!.detail) ? failures[0]!.detail : null;
-  const checkedTimes = (checks ?? []).flatMap((entry) => (entry.checkedAtMs === null ? [] : [entry.checkedAtMs]));
-  const checkedAt = checkedTimes.length ? Math.min(...checkedTimes) : null;
-
-  return (
-    <SettingsSection
-      title={t('setup.sources.title')}
-      description={t('setup.sources.intro')}
-      headerAction={anySourced ? (
-        <div className="flex items-center gap-2">
-          {checkedAt !== null && !checking ? (
-            <span className="text-xs text-muted-foreground">{t('setup.sources.checked', { time: formatAgo(checkedAt, Date.now()) })}</span>
-          ) : null}
-          <Button variant="ghost-muted" size="xs" disabled={checking || updating !== null} onClick={() => void check(true)} title={t('setup.sources.checkTitle')}>
-            <RefreshIcon refreshing={checking} />
-            {t('setup.sources.check')}
-          </Button>
-        </div>
-      ) : undefined}
-    >
-      {sourced.map((skill) => {
-        const source = skill.source!;
-        const found = byName.get(skill.name) ?? null;
-        const look = found ? SOURCE_LOOK[found.state] : null;
-        const detail = found?.state === 'changedHere'
-          ? t('setup.sources.changedHereNote')
-          : found?.state === 'gone'
-            ? t('setup.sources.goneNote', { source: source.source })
-            : found?.detail === sharedFailure ? null : found?.detail ?? null;
-        const from = source.ref ? `${source.source}@${source.ref}` : source.source;
-        return (
-          <div key={skill.name} className="flex flex-col">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
-              <span className="w-44 min-w-0 truncate font-mono text-xs text-foreground" title={skill.path}>{skill.name}</span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={[from, detail].filter(Boolean).join('\n')}>
-                {[from, detail].filter(Boolean).join(' · ')}
-              </span>
-              {look ? <Badge variant={look.variant} size="sm">{t(look.key)}</Badge> : checking ? <Spinner className="size-3.5" /> : null}
-              {found?.state === 'update' ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  disabled={updating !== null || checking || pending !== null}
-                  onClick={() => setPending(skill.name)}
-                  title={t('setup.sources.updateTitle', { source: source.source })}
-                >
-                  {updating === skill.name ? <Spinner /> : <ArrowDownToLine />}
-                  {t('setup.sources.update')}
-                </Button>
-              ) : null}
-            </div>
-            {pending === skill.name ? (
-              <div className="flex flex-wrap items-center gap-3 border-t border-border/50 bg-muted/20 px-4 py-2.5 dark:bg-input/8" role="status">
-                <p className="min-w-0 flex-1 text-sm text-foreground">{t('setup.sources.confirm', { name: skill.name, source: source.source })}</p>
-                <Button variant="outline" size="sm" onClick={() => setPending(null)}>{t('setup.sync.back')}</Button>
-                <Button size="sm" onClick={() => void update(skill.name, source.source)}>{t('setup.sources.update')}</Button>
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-      {unsourced.length ? (
-        <p className="px-4 py-2.5 text-xs text-muted-foreground">
-          {t(unsourced.length === 1 ? 'setup.sources.noSource.one' : 'setup.sources.noSource.other', { count: unsourced.length, names: unsourced.join(', ') })}
-        </p>
-      ) : null}
-      {error ?? sharedFailure ? (
-        <p className="px-4 py-2.5 text-xs text-error-foreground" role="alert">{t('setup.sources.failed', { error: error ?? sharedFailure ?? '' })}</p>
-      ) : null}
-      {notice ? (
-        <p className={cn('px-4 py-2.5 text-xs', notice.ok ? 'text-muted-foreground' : 'text-error-foreground')} role="status">{notice.text}</p>
-      ) : null}
-    </SettingsSection>
   );
 }
