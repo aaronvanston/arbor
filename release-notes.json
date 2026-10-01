@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.0.16",
+    "summary": "Sync: hooks kept off a machine now match it however the setup repo spells its name.",
+    "changes": []
+  },
+  {
     "version": "1.0.14",
     "summary": "Sync: skill changes happen straight away, in bulk, and can add or remove a skill on every machine at once.",
     "changes": [
