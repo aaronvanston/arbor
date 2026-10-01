@@ -183,7 +183,8 @@ export function useLiveAccounts() {
   useEffect(() => {
     void loadAccountFiles().then((files) => {
       const snapshot = getQuotaCacheSnapshot();
-      void refreshAccountQuotas(files.filter((file) => (snapshot[quotaKey(file)]?.status ?? 'idle') === 'idle'));
+      // Turned-off accounts too, which Accounts shows grayed out.
+      void refreshAccountQuotas([...files, ...state.disabled].filter((file) => (snapshot[quotaKey(file)]?.status ?? 'idle') === 'idle'));
     });
   }, []);
   useEffect(() => {

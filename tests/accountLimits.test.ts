@@ -79,6 +79,20 @@ describe('account limits', () => {
     expect(allFull.nextResetFallback).toBeUndefined();
   });
 
+  // A turned-off account counts toward the pooled figure, marked so the bar grays it out, but it can't run anything out
+  // or refill anything the proxy uses; one without a reading has nothing to show.
+  test('counts turned-off accounts that have a reading, kept out of the pace and the next refill', () => {
+    const weekly = (name: string, left: number, resetAtMs: number) => ({ name, quota: success([{ label: 'Weekly limit', remainingPercent: left, resetAtMs }]) });
+    const unread = { name: 'c', quota: { status: 'error', rows: [], error: 'HTTP 401' } as QuotaState };
+    const headline = buildHeadline([weekly('a', 80, 5_000)], 'Weekly limit', [weekly('b', 2, 1_000), unread]);
+    expect(headline.percent).toBe(41);
+    expect(headline.segments.map((segment) => [segment.account.name, segment.off ?? false, segment.width])).toEqual([['a', false, 40], ['b', true, 1]]);
+    expect([headline.reporting, headline.total, headline.off]).toEqual([2, 2, 1]);
+    expect(headline.nextResetMs).toBe(5_000);
+    // Nearly spent, the turned-off account alone would make the pace critical.
+    expect(headlinePace(headline, 0).tone).toBe('success');
+  });
+
   test('warns when another window will cap usage before the headline window', () => {
     const warnings = capWarnings([claude('a', 80, 12), claude('b', 30, 60)], '7-day Fable window', []);
     expect(warnings.map((warning) => [warning.account.name, warning.row.label])).toEqual([['a', '5-hour window']]);

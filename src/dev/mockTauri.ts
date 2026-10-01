@@ -15,7 +15,8 @@
  * a page that needs it, like Accounts or Settings › Auth Files, locks in place; Start core brings it back there);
  * `?accounts=none` for a core with no credentials, so Accounts, Home's limits card and the sidebar offer Add account;
  * `?accounts=fleet` for one person's accounts named with their email in the file name (Accounts › Sign-ins, and
- * Settings › Appearance's Hide email addresses); Add account's sign-in finishes after two checks, unless
+ * Settings › Appearance's Hide email addresses), with `&off=1` adding a Codex account turned off by hand, whose
+ * limits Accounts shows grayed out and counts in the total; Add account's sign-in finishes after two checks, unless
  * `?signin=wait` keeps it waiting, `?signin=link` has the browser not open (only the link shows) or `?signin=fail`
  * has the provider refuse it;
  * `?accounts=off` for every credential turned off, so Accounts and Home's limits card say so and point to Auth Files

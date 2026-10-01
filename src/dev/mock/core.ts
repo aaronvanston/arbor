@@ -243,7 +243,7 @@ const fleetUsage: Record<string, { fiveHour: number; week: number; fable?: numbe
   'cc-w1': { fiveHour: 7, week: 2, fable: 0, fiveHourResetH: 0.35, weekResetH: 161 },
   'cc-x': { fiveHour: 16, week: 48, fable: 0, fiveHourResetH: 1.9, weekResetH: 46 },
   'cx-p1': { fiveHour: 12, week: 8, fiveHourResetH: 2.1, weekResetH: 131 },
-  'cx-p2': { fiveHour: 0, week: 1, fiveHourResetH: 5, weekResetH: 133 },
+  'cx-p2': { fiveHour: 0, week: 1, fiveHourResetH: 5, weekResetH: 133 },  'cx-w1': { fiveHour: 0, week: 64, fiveHourResetH: 5, weekResetH: 52 },
 };
 if (fleetAccounts) {
   authFiles.length = 0;
@@ -256,6 +256,10 @@ if (fleetAccounts) {
     fileEntry('CX-P1-samrivera.json', { provider: 'codex', email: 'samrivera@example.com', account_id: 'acct-p1', status: 'active', auth_index: 'cx-p1', priority: 4, size: 4390, modtime: iso(-8_000_000) }),
     fileEntry('CX-P2-riverasam.json', { provider: 'codex', email: 'riverasam@example.com', account_id: 'acct-p2', status: 'active', auth_index: 'cx-p2', priority: 3, size: 4402, modtime: iso(-90_000_000) }),
     fileEntry('grok-sam.json', { provider: 'xai', email: 'samrivera@example.com', status: 'disabled', auth_index: 'xai-1', priority: 0, size: 908, modtime: iso(-172_800_000), disabled: true }),
+    // With `&off=1`, a Codex account turned off by hand, whose limits Accounts still shows grayed out.
+    ...(params.get('off') === '1'
+      ? [fileEntry('CX-W1-sam.json', { provider: 'codex', email: 'sam@northwind.dev', account_id: 'acct-w1', status: 'disabled', auth_index: 'cx-w1', priority: 0, size: 4380, modtime: iso(-30_000_000), disabled: true })]
+      : []),
     { name: 'gemini-api-key', provider: 'gemini', status: 'active', auth_index: 'gemini-1', runtime_only: true, source: 'memory', account_type: 'api_key', size: 0 },
   );
 }

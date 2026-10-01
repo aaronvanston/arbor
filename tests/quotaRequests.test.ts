@@ -74,6 +74,12 @@ describe('quota API compatibility', () => {
     expect(await loadQuota(codexFile)).toMatchObject({ status: 'success', resetCredits: 2 });
   });
 
+  // Accounts shows a turned-off account's limits grayed out, and the core still reads them for it.
+  it('reads a turned-off account’s limits like any other', async () => {
+    handler = (request) => success(request.url.endsWith('/usage') ? codexUsage : { credits: [] });
+    expect(await loadQuota({ ...codexFile, disabled: true })).toMatchObject({ status: 'success', resetCredits: 2 });
+  });
+
   it('Codex 详情返回坏数据时报告非致命错误而不是吞掉失败', async () => {
     handler = (request) => success(request.url.endsWith('/usage') ? codexUsage : { unexpected: true });
     const result = await loadQuota(codexFile);
@@ -122,9 +128,8 @@ describe('quota API compatibility', () => {
     expect(calls.find((request) => request.url.endsWith(':retrieveUserQuotaSummary'))?.data).toBe('{"project":"downloaded-project"}');
   });
 
-  it('缺少 auth-index 或禁用的凭据不发起请求', async () => {
+  it('makes no request without an auth index, nor to reset a turned-off account', async () => {
     expect((await loadQuota({ provider: 'kimi' })).status).toBe('error');
-    expect((await loadQuota({ ...codexFile, disabled: 'true' })).status).toBe('error');
     await expect(consumeCodexResetCredit({ ...codexFile, disabled: true })).rejects.toThrow();
     expect(post).not.toHaveBeenCalled();
   });

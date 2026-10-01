@@ -32,7 +32,7 @@ import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { LimitSparkline } from '../components/LimitSparkline';
 import { useLimitsHistory } from '../services/limitsHistory';
 import { formatResetCountdown } from '../services/providerLimits';
-import { capForRow, capOf, useAccountReserves, useReserveFailures, type AccountCap, type PausedAccount } from '../services/accountReserves';
+import { capForRow, capOf, useAccountReserves, useReserveFailures, type AccountCap, type PausedAccount, type ReserveState } from '../services/accountReserves';
 import { resumeAccount } from '../services/accountPause';
 import { useShortcut } from '../hooks/useShortcuts';
 import { WithShortcut } from '../components/ShortcutKbd';
@@ -141,7 +141,7 @@ const providerOrder: QuotaProvider[] = ['claude', 'codex', 'antigravity', 'xai',
 const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 });
 
 type Account = { file: AuthFile; quota: QuotaState; key: string; fileName: string; name: string; profile: ResolvedProfile };
-type Paused = { file: AuthFile; key: string; name: string; profile: ResolvedProfile; paused: PausedAccount };
+type Paused = { file: AuthFile; quota: QuotaState; key: string; name: string; profile: ResolvedProfile; paused: PausedAccount };
 /** An account turned off by hand. */
 type Off = Omit<Paused, 'paused'>;
 const percentTone = (percent: number | null) =>
@@ -151,6 +151,8 @@ const percentText = (percent: number | null) =>
 const paceBar: Record<PaceTone, string> = { success: 'bg-success', warning: 'bg-warning', error: 'bg-error', muted: 'bg-muted-foreground/30' };
 /** An account without a reading: hatched, so it reads as unknown rather than used. */
 const unknownBar = 'bg-[repeating-linear-gradient(-45deg,var(--color-muted-foreground)_0_1px,transparent_1px_5px)] opacity-45';
+/** A turned-off account's share: gray and densely hatched, so it reads as there but out of use. */
+const offBar = 'bg-muted-foreground/30 bg-[repeating-linear-gradient(-45deg,var(--color-muted-foreground)_0_1.5px,transparent_1.5px_4px)] opacity-70';
 /** Row actions stay hidden until the row is hovered or one of them has focus. */
 const hoverReveal = 'opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100';
 const paceText: Record<PaceTone, string> = { success: 'text-foreground', warning: 'text-warning-foreground', error: 'text-error-foreground', muted: 'text-muted-foreground' };
@@ -255,8 +257,9 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
       const provider = providerForFile(file);
       if (!provider) return;
       const profile = resolveAccountProfile(key, fileName(file), profiles[key]);
-      if (paused) pausedGroups.set(provider, [...(pausedGroups.get(provider) ?? []), { file, key, name: profile.name, profile, paused }]);
-      else offGroups.set(provider, [...(offGroups.get(provider) ?? []), { file, key, name: profile.name, profile }]);
+      const quota = quotas[key] ?? idleQuota();
+      if (paused) pausedGroups.set(provider, [...(pausedGroups.get(provider) ?? []), { file, quota, key, name: profile.name, profile, paused }]);
+      else offGroups.set(provider, [...(offGroups.get(provider) ?? []), { file, quota, key, name: profile.name, profile }]);
     });
     return providerOrder.flatMap((provider) => {
       const listed = groups.get(provider) ?? [];
@@ -264,7 +267,9 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
       const off = sortByOrder(offGroups.get(provider) ?? [], order[provider], (item) => item.key);
       if (!listed.length && !paused.length && !off.length) return [];
       const items = sortByOrder(listed, order[provider], (account) => account.key);
-      const labels = windowLabels(items);
+      // Turned-off accounts keep their windows' columns, and count toward the headline grayed out.
+      const turnedOff = [...paused, ...off];
+      const labels = windowLabels([...items, ...turnedOff]);
       const hidden = hiddenWindows[provider] ?? [];
       const headlineLabel = resolveHeadlineWindow(provider, labels.filter((label) => !hidden.includes(label)), headlineWindows[provider]);
       return [{
@@ -274,7 +279,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
         off,
         labels,
         hidden,
-        headline: buildHeadline(items, headlineLabel),
+        headline: buildHeadline(items, headlineLabel, turnedOff),
         warnings: capWarnings(items, headlineLabel, hidden),
       }];
     });
@@ -310,9 +315,11 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
     setAccountOrder(provider, moveKey(keys, String(active.id), String(over.id)));
   }, []);
 
-  const refreshDisabled = loading || refreshing || querying || files.length === 0;
+  // Turned-off accounts too, whose limits show grayed out.
+  const refreshAll = () => void refreshFiles([...files, ...disabled]);
+  const refreshDisabled = loading || refreshing || querying || files.length + disabled.length === 0;
   useShortcut('page.refresh', () => {
-    if (!refreshDisabled) void refreshFiles(files);
+    if (!refreshDisabled) refreshAll();
   });
 
   const gap = accountsGap({ loaded, error, files, disabled });
@@ -323,7 +330,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
         actions={
           <div className="flex items-center gap-2">
             <Tooltip>
-              <TooltipTrigger render={<Button variant="outline" size="sm" onClick={() => void refreshFiles(files)} disabled={refreshDisabled} focusableWhenDisabled />}>
+              <TooltipTrigger render={<Button variant="outline" size="sm" onClick={refreshAll} disabled={refreshDisabled} focusableWhenDisabled />}>
                 <RefreshIcon refreshing={refreshing || querying} />
                 {refreshing || querying ? t('accounts.refreshing') : t('accounts.refreshAll')}
               </TooltipTrigger>
@@ -437,7 +444,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                             {labels.filter((label) => !hidden.includes(label)).map((label) => (
                               <MenuRadioItem key={label} value={label}>
                                 <span className="min-w-0 flex-1 truncate">{label}</span>
-                                <span className="text-xs tabular-nums text-muted-foreground">{formatPooled(pooledPercent(accounts, label))}</span>
+                                <span className="text-xs tabular-nums text-muted-foreground">{formatPooled(pooledPercent([...accounts, ...paused, ...off], label))}</span>
                               </MenuRadioItem>
                             ))}
                           </MenuRadioGroup>
@@ -464,12 +471,12 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                   </div>
                 }
               >
-                {accounts.length ? (
+                {accounts.length || headline.off ? (
                   <HeadlineBlock
                     provider={provider}
                     headline={headline}
                     warnings={warnings}
-                    count={accounts.length}
+                    count={accounts.length + headline.off}
                     loading={accounts.some((account) => account.quota.status === 'loading')}
                     onJump={jumpTo}
                   />
@@ -510,8 +517,12 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                     ))}
                   </SortableContext>
                 </DndContext>
-                {paused.length && reordering !== provider ? <PausedBlock items={paused} failures={reserveFailures} flash={flash} /> : null}
-                {off.length && reordering !== provider ? <OffBlock items={off} availabilityOf={availabilityOf} commands={commands} flash={flash} /> : null}
+                {paused.length && reordering !== provider ? (
+                  <PausedBlock items={paused} columns={labels.filter((label) => !hidden.includes(label))} reserves={reserves} failures={reserveFailures} flash={flash} />
+                ) : null}
+                {off.length && reordering !== provider ? (
+                  <OffBlock items={off} columns={labels.filter((label) => !hidden.includes(label))} availabilityOf={availabilityOf} commands={commands} flash={flash} />
+                ) : null}
               </SettingsSection>
             ))}
           </>
@@ -525,8 +536,15 @@ const formatPooled = (percent: number | null) => (percent === null ? '—' : `${
 
 const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slice(1);
 
-/** Accounts Arbor turned off at their cap, when each comes back, and a way to bring one back now. */
-function PausedBlock({ items, failures, flash }: { items: Paused[]; failures: Record<string, string>; flash: string | null }) {
+/** Accounts Arbor turned off at their cap, when each comes back, a way to bring one back now, and their limits grayed out. */
+function PausedBlock({ items, columns, reserves, failures, flash }: {
+  items: Paused[];
+  /** The provider's windows being shown, so the grayed-out limits line up with the accounts in use. */
+  columns: string[];
+  reserves: ReserveState;
+  failures: Record<string, string>;
+  flash: string | null;
+}) {
   const { t } = useI18n();
   const now = useQuotaClock();
   const [busy, setBusy] = useState<string | null>(null);
@@ -550,29 +568,32 @@ function PausedBlock({ items, failures, flash }: { items: Paused[]; failures: Re
         </span>
         <span className="text-xs text-muted-foreground">{t('reserves.paused.description')}</span>
       </div>
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-3">
         {items.map((item) => {
           const window = lowerFirst(item.paused.window);
           const time = formatResetCountdown(item.paused.resumeAtMs, now);
           const failure = failures[item.key];
           return (
-            <li key={item.key} className={cn('-mx-2 flex items-center gap-3 rounded-md px-2 py-0.5', flash === item.key && 'row-highlight')} data-account-key={item.key}>
-              <AccountAvatar profile={item.profile} size="sm" />
-              <span className="min-w-0 flex-1 text-xs">
-                <span className="block truncate">
-                  <strong className={cn('text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
-                  <span className="text-muted-foreground">
-                    {` · ${t('reserves.paused.used', { percent: item.paused.percentUsed, window })} · `}
-                    {time ? t('reserves.paused.back', { time }) : t('reserves.paused.backSoon')}
+            <li key={item.key} className={cn('-mx-2 flex flex-col gap-2 rounded-md px-2 py-0.5', flash === item.key && 'row-highlight')} data-account-key={item.key}>
+              <div className="flex items-center gap-3">
+                <AccountAvatar profile={item.profile} size="sm" />
+                <span className="min-w-0 flex-1 text-xs">
+                  <span className="block truncate">
+                    <strong className={cn('text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
+                    <span className="text-muted-foreground">
+                      {` · ${t('reserves.paused.used', { percent: item.paused.percentUsed, window })} · `}
+                      {time ? t('reserves.paused.back', { time }) : t('reserves.paused.backSoon')}
+                    </span>
                   </span>
+                  {failure ? <span className="block truncate text-warning-foreground" title={failure}>{t('reserves.failed', { error: failure })}</span> : null}
                 </span>
-                {failure ? <span className="block truncate text-warning-foreground" title={failure}>{t('reserves.failed', { error: failure })}</span> : null}
-              </span>
-              <ReserveChip accountKey={item.key} name={item.name} provider={item.paused.provider} paused={item.paused} always />
-              <Button variant="outline" size="xs" disabled={busy !== null} focusableWhenDisabled onClick={() => void resume(item)} title={t('reserves.paused.resumeHint', { window })}>
-                {busy === item.key ? <Spinner className="size-3" /> : <Play />}
-                {t('reserves.paused.resume')}
-              </Button>
+                <ReserveChip accountKey={item.key} name={item.name} provider={item.paused.provider} paused={item.paused} always />
+                <Button variant="outline" size="xs" disabled={busy !== null} focusableWhenDisabled onClick={() => void resume(item)} title={t('reserves.paused.resumeHint', { window })}>
+                  {busy === item.key ? <Spinner className="size-3" /> : <Play />}
+                  {t('reserves.paused.resume')}
+                </Button>
+              </div>
+              <OffWindows quota={item.quota} columns={columns} cap={capOf(reserves, item.key)} now={now} />
             </li>
           );
         })}
@@ -582,13 +603,16 @@ function PausedBlock({ items, failures, flash }: { items: Paused[]; failures: Re
 }
 
 /** Accounts turned off by hand: Enable up front, and the rest of what each takes in its ⋯ menu. */
-function OffBlock({ items, availabilityOf, commands, flash }: {
+function OffBlock({ items, columns, availabilityOf, commands, flash }: {
   items: Off[];
+  /** The provider's windows being shown, so the grayed-out limits line up with the accounts in use. */
+  columns: string[];
   availabilityOf: (file: AuthFile) => AuthFileAvailability;
   commands: AuthFileCommands;
   flash: string | null;
 }) {
   const { t } = useI18n();
+  const now = useQuotaClock();
   return (
     <SettingsBlock className="flex flex-col gap-3 py-3">
       <div className="flex min-w-0 flex-col gap-0.5">
@@ -598,22 +622,25 @@ function OffBlock({ items, availabilityOf, commands, flash }: {
         </span>
         <span className="text-xs text-muted-foreground">{t('accounts.turnedOff.description')}</span>
       </div>
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-3">
         {items.map((item) => {
           const availability = availabilityOf(item.file);
           return (
-            <li key={item.key} className={cn('-mx-2 flex items-center gap-3 rounded-md px-2 py-0.5', flash === item.key && 'row-highlight')} data-account-key={item.key}>
-              <AccountAvatar profile={item.profile} size="sm" />
-              <strong className={cn('min-w-0 flex-1 truncate text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
-              <AuthFileFix file={item.file} availability={availability} commands={commands} />
-              <Menu>
-                <MenuTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label={t('accounts.actions', { name: item.name })} />}>
-                  <MoreHorizontal />
-                </MenuTrigger>
-                <MenuPopup className="w-64">
-                  <AuthFileMenuItems file={item.file} availability={availability} commands={commands} />
-                </MenuPopup>
-              </Menu>
+            <li key={item.key} className={cn('-mx-2 flex flex-col gap-2 rounded-md px-2 py-0.5', flash === item.key && 'row-highlight')} data-account-key={item.key}>
+              <div className="flex items-center gap-3">
+                <AccountAvatar profile={item.profile} size="sm" />
+                <strong className={cn('min-w-0 flex-1 truncate text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
+                <AuthFileFix file={item.file} availability={availability} commands={commands} />
+                <Menu>
+                  <MenuTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label={t('accounts.actions', { name: item.name })} />}>
+                    <MoreHorizontal />
+                  </MenuTrigger>
+                  <MenuPopup className="w-64">
+                    <AuthFileMenuItems file={item.file} availability={availability} commands={commands} />
+                  </MenuPopup>
+                </Menu>
+              </div>
+              <OffWindows quota={item.quota} columns={columns} cap={null} now={now} />
             </li>
           );
         })}
@@ -703,8 +730,13 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
       : t('accounts.segment.aria', { name: segment.account.name, percent: Math.round(segment.percent) })))
     .join(', ');
   // Accounts without a reading keep their slice, gathered at the far end so the empty track between reads as used.
+  // Turned-off accounts come after the ones in use, grayed out.
   const slice = headline.total ? 100 / headline.total : 0;
-  const bar = [...headline.segments.filter((segment) => segment.percent !== null), ...headline.segments.filter((segment) => segment.percent === null)];
+  const bar = [
+    ...headline.segments.filter((segment) => segment.percent !== null && !segment.off),
+    ...headline.segments.filter((segment) => segment.off),
+    ...headline.segments.filter((segment) => segment.percent === null),
+  ];
   if (!headline.label) {
     return (
       <SettingsBlock className="text-sm text-muted-foreground">
@@ -726,6 +758,12 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
           {partialHeadline(headline) ? (
             <span className="whitespace-nowrap text-xs text-muted-foreground" title={t('accounts.headline.reportingHint')}>
               {t('accounts.headline.reporting', { reporting: headline.reporting, total: headline.total })}
+            </span>
+          ) : null}
+          {headline.off ? (
+            <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground" title={t('accounts.headline.offHint')}>
+              <PowerOff className="size-3.5" aria-hidden="true" />
+              {t(headline.off === 1 ? 'accounts.headline.off.one' : 'accounts.headline.off.other', { count: headline.off })}
             </span>
           ) : null}
           {pace.tone === 'warning' || pace.tone === 'error' ? (
@@ -770,7 +808,7 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
                   <span
                     className={cn(
                       'block h-full shrink-0 cursor-default transition-[width,filter,opacity] duration-500 ease-out first:rounded-l-full last:rounded-r-full hover:brightness-110',
-                      unknown ? unknownBar : paceBar[segmentPace.tone],
+                      unknown ? unknownBar : segment.off ? offBar : paceBar[segmentPace.tone],
                       unknown && bar[index - 1]?.percent !== null && 'ms-auto',
                       !unknown && segmentStale && 'opacity-45',
                       !unknown && segment.width <= 0 && 'invisible',
@@ -791,9 +829,13 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
                     <span className="flex flex-col gap-0.5">
                       <span className="font-medium">{t('accounts.segment.aria', { name: account.name, percent: Math.round(segment.percent ?? 0) })}</span>
                       {segmentReset ? <span className="text-muted-foreground">{t('accounts.nextReset', { time: segmentReset })}</span> : null}
-                      <span className={cn(paceText[segmentPace.tone])}>
-                        {t(segmentPace.tone === 'error' ? 'accounts.pace.critical' : segmentPace.tone === 'warning' ? 'accounts.pace.ahead' : segmentPace.tone === 'success' ? 'accounts.pace.onTrack' : 'accounts.pace.unknown')}
-                      </span>
+                      {segment.off ? (
+                        <span className="text-muted-foreground">{t('paused' in account ? 'accounts.segment.paused' : 'accounts.segment.off')}</span>
+                      ) : (
+                        <span className={cn(paceText[segmentPace.tone])}>
+                          {t(segmentPace.tone === 'error' ? 'accounts.pace.critical' : segmentPace.tone === 'warning' ? 'accounts.pace.ahead' : segmentPace.tone === 'success' ? 'accounts.pace.onTrack' : 'accounts.pace.unknown')}
+                        </span>
+                      )}
                       {segmentStale && account.quota.fetchedAt ? (
                         <span className="max-w-64 text-warning-foreground">
                           {t('accounts.stale.asOf', { time: formatWhen(account.quota.fetchedAt, { now }) })}
@@ -1080,17 +1122,54 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
   );
 }
 
+/** A turned-off account's limits under its name, grayed out and lined up with the accounts in use. */
+function OffWindows({ quota, columns, cap, now }: { quota: QuotaState; columns: string[]; cap: AccountCap | null; now: number }) {
+  const { t } = useI18n();
+  const rows = displayRows(quota).filter((row) => columns.includes(row.label));
+  if (quota.status === 'error' && !rows.length) {
+    return <span className="text-xs text-muted-foreground" title={quota.error}>{t('accounts.status.error')}</span>;
+  }
+  if (!rows.length) return null;
+  const grid = windowGrid(columns);
+  return (
+    <div className="@container">
+      <div
+        className={cn('grid gap-x-6 gap-y-2.5 @lg:grid-cols-(--window-columns)', isStaleQuota(quota) && 'opacity-55')}
+        style={{ '--window-columns': `repeat(${grid.perLine}, minmax(0, 1fr))` } as CSSProperties}
+      >
+        {rows.map((row) => {
+          const place = grid.place(row.label);
+          return (
+            <WindowRow
+              key={row.label}
+              row={row}
+              headline={null}
+              cap={cap}
+              now={now}
+              muted
+              className="@lg:col-start-(--window-column) @lg:row-start-(--window-row)"
+              style={place ? { '--window-column': place.column, '--window-row': place.row } as CSSProperties : undefined}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
  * One limit window: its name, when it resets and how much is left on one line, the bar under it. The exact reset
  * time, the even pace and a warning are in its tooltip; opening it shows what used the window.
  */
-function WindowRow({ row, headline, warning, cap, now, className, style, onExplain }: {
+function WindowRow({ row, headline, warning, cap, now, muted = false, className, style, onExplain }: {
   row: QuotaRow;
   headline: string | null;
   /** The headline window this one runs out before, when it will. */
   warning?: string;
   cap: AccountCap | null;
   now: number;
+  /** A turned-off account's limit: grayed out, with no even-pace mark, since nothing is spending it through the proxy. */
+  muted?: boolean;
   className?: string;
   style?: CSSProperties;
   onExplain?: (row: QuotaRow, scope: LimitScope) => void;
@@ -1100,7 +1179,7 @@ function WindowRow({ row, headline, warning, cap, now, className, style, onExpla
   const capped = cap !== null ? capForRow(row, cap, now) : null;
   const marker = capped ? 100 - capped.percent : null;
   // Where the fill would sit had the window been spent evenly so far.
-  const pace = evenPace(row.remainingPercent, row.resetAtMs, row.windowMs, now);
+  const pace = muted ? null : evenPace(row.remainingPercent, row.resetAtMs, row.windowMs, now);
   const reset = formatQuotaReset(row.resetAtMs, row.reset, now);
   const relative = row.resetAtMs !== undefined && Number.isFinite(row.resetAtMs)
     ? row.resetAtMs > now ? formatRelative(row.resetAtMs, now) : t('quota.resetPassed')
@@ -1119,16 +1198,16 @@ function WindowRow({ row, headline, warning, cap, now, className, style, onExpla
     <>
       <span className="flex min-w-0 items-center gap-1.5 text-xs">
         {warning ? <TriangleAlert className="size-3.5 shrink-0 text-warning-foreground" aria-hidden="true" /> : null}
-        <span className={cn('min-w-0 truncate', row.label === headline ? 'font-medium text-foreground' : 'text-muted-foreground')}>{row.label}</span>
+        <span className={cn('min-w-0 truncate', row.label === headline && !muted ? 'font-medium text-foreground' : 'text-muted-foreground')}>{row.label}</span>
         {relative ? <span className="shrink-0 whitespace-nowrap text-muted-foreground tabular-nums">· {relative}</span> : null}
-        <strong className={cn('ms-auto shrink-0 ps-2 font-semibold tabular-nums', percentText(row.remainingPercent))}>
+        <strong className={cn('ms-auto shrink-0 ps-2 font-semibold tabular-nums', muted ? 'text-muted-foreground' : percentText(row.remainingPercent))}>
           {percent === null ? '—' : t('accounts.window.left', { percent })}
         </strong>
       </span>
       <span className="relative block">
         <span className="relative block h-1.5 w-full overflow-hidden rounded-full bg-input/60 dark:bg-input">
           <span
-            className={cn('block h-full rounded-full transition-[width] duration-500 ease-out', percentTone(row.remainingPercent))}
+            className={cn('block h-full rounded-full transition-[width] duration-500 ease-out', muted ? 'bg-muted-foreground/40' : percentTone(row.remainingPercent))}
             style={{ width: `${Math.max(0, Math.min(100, row.remainingPercent ?? 0))}%` }}
           />
           {marker !== null ? <span className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground/60" style={{ left: `${marker}%` }} /> : null}

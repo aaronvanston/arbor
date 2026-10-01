@@ -1100,7 +1100,7 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
     };
   }
   try {
-    if (booleanValue(file.disabled) === true) throw new Error(quotaText('quota.fileDisabled'));
+    // A turned-off account is read too: the core keeps its sign-in fresh, and Accounts shows its limits grayed out.
     const codexMetadata = provider === 'codex' ? codexMetadataFor(file) : undefined;
     const codexAccountId = codexMetadata?.accountId || '';
     const responseClock: { serverTimeOffsetMs?: number } = {};

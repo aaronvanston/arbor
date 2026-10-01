@@ -2,7 +2,8 @@ import type { QuotaProvider, QuotaRow, QuotaState } from './quotaService';
 import { savedStore, sharedStore, storedRecord } from './savedStore';
 
 export type AccountLike = { name: string; quota: QuotaState };
-export type StackedSegment = { account: AccountLike; row: QuotaRow | null; percent: number | null; width: number };
+/** `off`: the account is turned off, so the bar grays it out. */
+export type StackedSegment = { account: AccountLike; row: QuotaRow | null; percent: number | null; width: number; off?: boolean };
 export type Headline = {
   label: string | null;
   /** Average left across the accounts that report the window; null when none does. */
@@ -11,7 +12,9 @@ export type Headline = {
   /** Accounts with a reading of the window, and all of them. */
   reporting: number;
   total: number;
-  /** The soonest reset that restores something: a reporting account below 100%. */
+  /** Turned-off accounts among them: counted in `percent`, never in the pace or the next reset. */
+  off: number;
+  /** The soonest reset that restores something: a reporting account in use below 100%. */
   nextResetMs?: number;
   nextResetFallback?: string;
 };
@@ -155,27 +158,32 @@ const rowFor = (account: AccountLike, label: string | null): QuotaRow | null =>
  * Stacks every account's remaining share of the headline window left to right on a 0–100 bar.
  * Each account owns an equal slice of the bar. The percent averages only the accounts that
  * report the window: one that errored or hasn't loaded is unknown, not empty.
+ * Turned-off accounts (`off`) join the bar and the percent once they have a reading, marked so the bar grays them
+ * out; one without a reading is left out, since there's nothing of it to show.
  */
-export function buildHeadline(accounts: AccountLike[], label: string | null): Headline {
-  const slice = accounts.length ? 100 / accounts.length : 0;
+export function buildHeadline(accounts: AccountLike[], label: string | null, off: AccountLike[] = []): Headline {
+  const offRead = off.filter((account) => (rowFor(account, label)?.remainingPercent ?? null) !== null);
+  const slice = accounts.length + offRead.length ? 100 / (accounts.length + offRead.length) : 0;
   let nextResetMs: number | undefined;
   let nextResetFallback: string | undefined;
-  const segments = accounts.map((account): StackedSegment => {
+  const segment = (account: AccountLike, isOff: boolean): StackedSegment => {
     const row = rowFor(account, label);
     const percent = row?.remainingPercent ?? null;
-    // A full window's reset restores nothing, so it isn't the next refill.
-    const refills = percent !== null && percent < 100;
+    // A full window's reset restores nothing, so it isn't the next refill; nor is one the proxy can't use.
+    const refills = !isOff && percent !== null && percent < 100;
     if (refills && row?.resetAtMs !== undefined && (nextResetMs === undefined || row.resetAtMs < nextResetMs)) {
       nextResetMs = row.resetAtMs;
       nextResetFallback = row.reset;
     } else if (refills && nextResetMs === undefined && !nextResetFallback && row?.reset) {
       nextResetFallback = row.reset;
     }
-    return { account, row, percent, width: percent === null ? 0 : (Math.max(0, Math.min(100, percent)) * slice) / 100 };
-  });
-  const known = segments.filter((segment) => segment.percent !== null);
-  const percent = known.length ? known.reduce((sum, segment) => sum + (segment.percent ?? 0), 0) / known.length : null;
-  return { label, percent, segments, reporting: known.length, total: accounts.length, nextResetMs, nextResetFallback };
+    const width = percent === null ? 0 : (Math.max(0, Math.min(100, percent)) * slice) / 100;
+    return isOff ? { account, row, percent, width, off: true } : { account, row, percent, width };
+  };
+  const segments = [...accounts.map((account) => segment(account, false)), ...offRead.map((account) => segment(account, true))];
+  const known = segments.filter((item) => item.percent !== null);
+  const percent = known.length ? known.reduce((sum, item) => sum + (item.percent ?? 0), 0) / known.length : null;
+  return { label, percent, segments, reporting: known.length, total: segments.length, off: offRead.length, nextResetMs, nextResetFallback };
 }
 
 /** A headline figure that leaves some accounts out, so it should say how many it covers. */
@@ -268,7 +276,8 @@ export function headlinePace(headline: Headline, nowMs = Date.now()): Pace {
   const order: PaceTone[] = ['muted', 'success', 'warning', 'error'];
   let worst: Pace = { tone: 'muted', ratio: null, elapsed: null };
   headline.segments.forEach((segment) => {
-    if (segment.percent === null) return;
+    // A turned-off account's pace can't run anything out, and one paused at its cap would always read as critical.
+    if (segment.percent === null || segment.off) return;
     const pace = usagePace(segment.percent, segment.row?.resetAtMs, segment.row ? rowWindowMs(segment.row) : labelDuration, nowMs);
     if (order.indexOf(pace.tone) > order.indexOf(worst.tone)) worst = pace;
   });

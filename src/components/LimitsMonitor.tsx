@@ -145,7 +145,9 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
     const refresh = () => {
       if (document.visibilityState !== 'visible' && !pollWhileHidden) return;
       lastRefreshRef.current = Date.now();
-      void refreshAccountQuotas(getAccountsSnapshot().files);
+      const { files: listed, disabled } = getAccountsSnapshot();
+      // Turned-off accounts are only shown, never acted on, so they're read only while the window is.
+      void refreshAccountQuotas(document.visibilityState === 'visible' ? [...listed, ...disabled] : listed);
     };
     const onVisible = () => {
       if (document.visibilityState === 'visible' && Date.now() - lastRefreshRef.current >= intervalMs) refresh();
