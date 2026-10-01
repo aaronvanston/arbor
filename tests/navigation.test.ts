@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { accountSignInsView, canOpenView, mainView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
+import { accountSignInsView, canOpenView, hasMachineScope, keepMachineScope, mainView, setupView, sessionsView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
 
 describe('navigation', () => {
   test("pages that only read Arbor's own data open while the core is stopped, and the rest wait for it", () => {
@@ -27,5 +27,25 @@ describe('navigation', () => {
     expect(settingsPageIds).not.toContain('oauth');
     expect(settingsPageView('oauth')).toEqual(accountSignInsView());
     expect(settingsPageView('auth-files')).toEqual(accountSignInsView());
+  });
+
+  test('the views a machine narrows are Sessions’ Live, list and Projects, and Usage’s Overview, Requests and Prices', () => {
+    for (const tab of ['live', 'sessions', 'projects']) expect(hasMachineScope('sessions', tab)).toBe(true);
+    for (const tab of ['overview', 'events', 'prices']) expect(hasMachineScope('usage', tab)).toBe(true);
+    for (const tab of ['digest', 'lifetime']) expect(hasMachineScope('usage', tab)).toBe(false);
+    expect(hasMachineScope('setup', 'cost')).toBe(false);
+  });
+
+  test('another view of the same page keeps the machine it was narrowed to, and nothing else carries it', () => {
+    const live = sessionsView({ tab: 'live', machine: 'cedar-02' });
+    expect(keepMachineScope(live, sessionsView({ tab: 'sessions' }))).toEqual(sessionsView({ tab: 'sessions', machine: 'cedar-02' }));
+    // A view that names its own machine keeps it, and one that can't be narrowed isn't.
+    expect(keepMachineScope(live, sessionsView({ tab: 'projects', machine: 'studio' }))).toEqual(sessionsView({ tab: 'projects', machine: 'studio' }));
+    const requests = usageView({ tab: 'events', machine: 'cedar-02' });
+    expect(keepMachineScope(requests, usageView({ tab: 'digest' }))).toEqual(usageView({ tab: 'digest' }));
+    expect(keepMachineScope(requests, usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview', machine: 'cedar-02' }));
+    // Each page keeps its own choice.
+    expect(keepMachineScope(live, usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview' }));
+    expect(keepMachineScope(live, setupView({ tab: 'skills' }))).toEqual(setupView({ tab: 'skills' }));
   });
 });

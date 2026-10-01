@@ -29,7 +29,9 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   and Sync) and Spend (Accounts and Usage). Each page's views hang under it, and Alerts
   is the bell in the footer. Sync is still `setup` in ids and storage keys. Pages
   have no tabs of their own; the tree picks the view and the top bar's breadcrumb
-  names it. Everything else is in the Settings area. `navigation.ts` has the page
+  names it. A view that can be narrowed to one machine (`hasMachineScope`, plus
+  Checkouts and Sync › Cost) ends its breadcrumb with `MachineCrumb`, the machine
+  picker, which other views of the same page keep. Everything else is in the Settings area. `navigation.ts` has the page
   ids, in the tree's order that ⌘1–⌘6 follow, and `ViewContent` in `App.tsx` picks
   the page for each view. There's no URL routing. Open a page with a view that names
   its view and filters (`usageView`, `sessionsView`, `setupView`, `accountsView`,

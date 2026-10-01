@@ -113,6 +113,30 @@ export const machineRequestsView = (machine: string): AppView => usageView({ tab
 /** Usage's Requests with Failed on: the failed requests, with their statuses and what the provider said. */
 export const failedRequestsView = (): AppView => usageView({ tab: 'events', result: 'failed' });
 
+/**
+ * The views that can be looked at for one machine or all, which the breadcrumb's machine picker narrows: Sessions'
+ * Live, list and Projects, and Usage's Overview, Requests and Prices. Sync's Cost has its own; the rest compare machines
+ * or are fleet-wide.
+ */
+export function hasMachineScope(page: MainPageId, tab: string | undefined): boolean {
+  if (page === 'sessions') return tab === 'live' || tab === 'sessions' || tab === 'projects';
+  if (page === 'usage') return tab === 'overview' || tab === 'events' || tab === 'prices';
+  return false;
+}
+
+/**
+ * The view `next` opens as, picked while `current` is on screen: a view of the same page that can be narrowed to a
+ * machine keeps the machine the page is narrowed to, so moving between Sessions' views stays on that machine.
+ */
+export function keepMachineScope(current: AppView, next: AppView): AppView {
+  if (current.kind !== 'main' || next.kind !== 'main' || current.page !== next.page) return next;
+  if (next.page !== 'sessions' && next.page !== 'usage') return next;
+  const machine = current.params && 'machine' in current.params ? current.params.machine : undefined;
+  const tab = next.params?.tab;
+  if (!machine || !hasMachineScope(next.page, tab) || next.params?.machine !== undefined) return next;
+  return { ...next, params: { ...next.params, machine } } as AppView;
+}
+
 const usageTabIds: readonly string[] = ['overview', 'digest', 'lifetime', 'events', 'prices'] satisfies UsageTabId[];
 const sessionsTabIds: readonly string[] = ['live', 'sessions', 'projects'] satisfies SessionsTabId[];
 const setupTabIds: readonly string[] = ['overview', 'agents', 'repo', 'skills', 'plugins', 'hooks', 'toolchain', 'cost', 'history'] satisfies SetupTabId[];

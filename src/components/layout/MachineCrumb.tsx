@@ -1,0 +1,54 @@
+import { MachinePill } from '../identity/Identity';
+import { ChevronDown } from '../ui/icons';
+import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from '../ui/menu';
+import { useI18n } from '../../i18n';
+
+/** What Arbor calls the sessions and requests no machine claims, as the view's `machine` holds it. */
+const UNASSIGNED = '__unassigned__';
+
+/**
+ * The breadcrumb's last step on a view that can be looked at for one machine or all (`Sessions / Live / All
+ * machines`): the machine it's narrowed to as its pill, or All machines, and a menu to pick another. `''` is all of
+ * them. `unassigned` adds what no machine claims.
+ */
+export function MachineCrumb({ machine, machines, unassigned = false, onChange }: {
+  machine: string;
+  /** The machines to pick from, in the order they're shown. */
+  machines: readonly string[];
+  unassigned?: boolean;
+  onChange: (machine: string) => void;
+}) {
+  const { t } = useI18n();
+  // One picked that isn't listed (gone from this range, or opened from an old link) stays a choice, so it shows ticked.
+  const listed = machine && machine !== UNASSIGNED && !machines.includes(machine) ? [...machines, machine] : machines;
+  return (
+    <Menu>
+      <MenuTrigger
+        className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-accent"
+        aria-label={t('machineCrumb.label')}
+      >
+        {machine && machine !== UNASSIGNED ? (
+          <MachinePill name={machine} />
+        ) : (
+          <span className="truncate">{t(machine ? 'usage.filter.unassigned' : 'usage.filter.allMachines')}</span>
+        )}
+        <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+      </MenuTrigger>
+      <MenuPopup align="start" className="min-w-48">
+        <MenuRadioGroup value={machine} onValueChange={(next: string) => onChange(next)}>
+          <MenuRadioItem closeOnClick value="">{t('usage.filter.allMachines')}</MenuRadioItem>
+          {listed.length ? <MenuSeparator /> : null}
+          {listed.map((name) => (
+            <MenuRadioItem closeOnClick key={name} value={name}><MachinePill name={name} /></MenuRadioItem>
+          ))}
+          {unassigned ? (
+            <>
+              <MenuSeparator />
+              <MenuRadioItem closeOnClick value={UNASSIGNED}>{t('usage.filter.unassigned')}</MenuRadioItem>
+            </>
+          ) : null}
+        </MenuRadioGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}

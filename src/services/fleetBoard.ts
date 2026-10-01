@@ -527,6 +527,25 @@ export function buildFleetBoard(
   };
 }
 
+/**
+ * The board narrowed to one machine's sessions, its counts with it, for Sessions › Live picked to a machine. `''` is
+ * every machine, the board as it is; `__unassigned__` is the rows no machine claims.
+ */
+export function boardForMachine(board: FleetBoard, machine: string): FleetBoard {
+  if (!machine) return board;
+  const name = machine === '__unassigned__' ? '' : machine;
+  const rows = board.rows.filter((row) => row.machine === name);
+  const counts = Object.fromEntries(FLEET_STATUS_ORDER.map((status) => [status, 0])) as Record<FleetStatus, number>;
+  for (const row of rows) if (!row.snoozedBy) counts[row.status] += 1;
+  return {
+    ...board,
+    machines: board.machines.filter((group) => group.machine === name),
+    snoozed: board.snoozed.filter((row) => row.machine === name),
+    rows,
+    counts,
+  };
+}
+
 /** Sessions waiting on their user, for the tray: asking for approval or an answer, up to date and not snoozed. */
 export const waitingCount = (board: FleetBoard) => board.rows.filter((row) => row.countsAsWaiting).length;
 

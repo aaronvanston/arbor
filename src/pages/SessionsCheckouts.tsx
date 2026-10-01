@@ -1,5 +1,6 @@
 import { Layers, TriangleAlert } from '../components/ui/icons';
 import { projectsLensAction } from '../components/ProjectsLens';
+import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -26,9 +27,12 @@ export function SessionsCheckoutsPage({ params, onViewChange }: {
 }) {
   const { t } = useI18n();
   const { inventory, error } = useSetupInventory();
-  const machines = inventory?.machines ?? [];
+  const every = inventory?.machines ?? [];
+  // The machine the breadcrumb narrowed Projects to, or every machine.
+  const picked = params?.machine ?? '';
+  const machines = picked ? every.filter((machine) => machine.machine === picked) : every;
   const scanning = machines.some((machine) => machine.scanning);
-  // Every answering machine is looked at; a scan already running there is left to finish.
+  // Every answering machine shown is looked at; a scan already running there is left to finish.
   const scanAll = () => {
     for (const machine of machines) {
       if (machine.reachable) void scanProjects(machine.machine).catch(() => undefined);
@@ -54,7 +58,18 @@ export function SessionsCheckoutsPage({ params, onViewChange }: {
           </Tooltip>
         ) : undefined}
       >
-        <PageBreadcrumb segments={[t('app.nav.sessions'), t('usage.tab.projects')]} />
+        <PageBreadcrumb
+          segments={[
+            t('app.nav.sessions'),
+            t('usage.tab.projects'),
+            <MachineCrumb
+              key="machine"
+              machine={picked}
+              machines={every.map((machine) => machine.machine)}
+              onChange={(machine) => onViewChange?.(sessionsView({ ...params, tab: 'projects', lens: 'checkouts', machine }))}
+            />,
+          ]}
+        />
       </PageTopbar>
       <PageBody gap="gap-5">
         {error ? (
@@ -67,7 +82,7 @@ export function SessionsCheckoutsPage({ params, onViewChange }: {
             <Spinner />
             {t('setup.loading')}
           </p>
-        ) : !machines.length ? (
+        ) : !every.length ? (
           <Empty>
             <EmptyMedia><Layers /></EmptyMedia>
             <EmptyTitle>{t('setup.empty.title')}</EmptyTitle>

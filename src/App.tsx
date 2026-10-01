@@ -182,7 +182,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
       case 'accounts': return <AccountsPage params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       // Prices keeps its own page: a price list beside what each model was used for.
       case 'usage': return view.params?.tab === 'prices'
-        ? <UsageRecordsPage key="prices" variant="pricing" onNavigate={onNavigate} />
+        ? <UsageRecordsPage key="prices" variant="pricing" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />
         : <UsageRecordsPage key="usage" variant="usage" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       // Sessions opens a session, or Projects' Checkouts, in place of its list, so choosing it again goes back to the
       // list, and Back or Activity return to it as it was.

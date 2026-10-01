@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AlarmClock, AlertCircle, AlarmClockOff, Bot, Eye, FolderGit2, MoreHorizontal, Radio, TriangleAlert } from './ui/icons';
 import { setAppPreference } from '../appPreferences';
 import { useI18n } from '../i18n';
@@ -6,6 +6,7 @@ import type { MessageKey } from '../i18n/resources';
 import { formatAgo, formatDuration, formatTime, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
 import {
+  boardForMachine,
   fleetSessionName,
   fleetSkipNote,
   fleetSummary,
@@ -22,6 +23,8 @@ import {
   type SnoozeOptionId,
   type FleetSession,
 } from '../services/fleetBoard';
+import { MachineCrumb } from './layout/MachineCrumb';
+import { machineName } from '../services/machineNames';
 import { SettingsBlock, SettingsSection } from './layout/settings';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
@@ -374,9 +377,14 @@ export function FleetBoardView({ board, failure, now, retrying = false, onRetry,
 }
 
 /** Sessions › Live: the board from the monitor's latest read. */
-export function FleetBoard({ onOpenSession }: { onOpenSession?: (id: string) => void }) {
+export function FleetBoard({ machine = '', onOpenSession }: {
+  /** The machine the breadcrumb narrowed the board to; `''` is every machine. */
+  machine?: string;
+  onOpenSession?: (id: string) => void;
+}) {
   const { t } = useI18n();
-  const { board, failure, now } = useFleetBoard();
+  const { board: everything, failure, now } = useFleetBoard();
+  const board = useMemo(() => (everything ? boardForMachine(everything, machine) : null), [everything, machine]);
   const [retrying, setRetrying] = useState(false);
   const retry = () => {
     setRetrying(true);
@@ -397,4 +405,21 @@ export function FleetBoard({ onOpenSession }: { onOpenSession?: (id: string) => 
       }}
     />
   );
+}
+
+/**
+ * Sessions › Live's breadcrumb machine picker: `machines`, with the ones on the board too. It reads the board itself,
+ * so the page around it doesn't redraw on every read.
+ */
+export function LiveMachineCrumb({ machine, machines, onChange }: {
+  machine: string;
+  machines: readonly string[];
+  onChange: (machine: string) => void;
+}) {
+  const { board } = useFleetBoard();
+  const choices = useMemo(() => {
+    const onBoard = board?.machines.map((group) => group.machine).filter(Boolean) ?? [];
+    return [...new Set([...machines, ...onBoard])].sort((left, right) => machineName(left).localeCompare(machineName(right)));
+  }, [board, machines]);
+  return <MachineCrumb machine={machine} machines={choices} onChange={onChange} />;
 }

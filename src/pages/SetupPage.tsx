@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Layers, Search, TriangleAlert } from '../components/ui/icons';
+import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -474,7 +475,21 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
           </Tooltip>
         ) : undefined}
       >
-        <PageBreadcrumb segments={[t('setup.title'), t(leafLabel('setup', tab) ?? 'setup.tab.overview')]} />
+        <PageBreadcrumb
+          segments={[
+            t('setup.title'),
+            t(leafLabel('setup', tab) ?? 'setup.tab.overview'),
+            // Cost is the one Sync view that's about spend rather than comparing machines, so it can be narrowed to one.
+            ...(tab === 'cost' ? [
+              <MachineCrumb
+                key="machine"
+                machine={params?.machine ?? ''}
+                machines={machines.map((entry) => entry.machine)}
+                onChange={(machine) => onViewChange?.(setupView({ tab: 'cost', machine: machine || undefined }))}
+              />,
+            ] : []),
+          ]}
+        />
       </PageTopbar>
       <PageBody gap="gap-5">
         {loadError && tab !== 'agents' ? (
@@ -521,7 +536,6 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             machines={machines}
             homeLabel={(key) => homeLabel(key, t)}
             machine={params?.machine ?? null}
-            onMachineChange={(machine) => onViewChange?.(setupView({ tab: 'cost', machine: machine ?? undefined }))}
             reads={costReads}
             onNavigate={onNavigate}
           />

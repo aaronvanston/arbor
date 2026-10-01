@@ -36,7 +36,12 @@ const repoName = (repo: string) => repo.split('/').filter(Boolean).pop() ?? repo
  * from, beside what that home's own files add to it. Every session pays its start again, so a home that loads more
  * than it needs shows here. Cost titles it and says what it counts, over `STARTING_CONTEXT_DAYS`.
  */
-export function SetupContext({ machines, homeLabel }: { machines: SetupMachine[]; homeLabel: (key: string) => string }) {
+export function SetupContext({ machines, machine = null, homeLabel }: {
+  machines: SetupMachine[];
+  /** The machine the breadcrumb narrowed Cost to; null for every machine. */
+  machine?: string | null;
+  homeLabel: (key: string) => string;
+}) {
   const { t, tRich } = useI18n();
   const [data, setData] = useState<StartingContext | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +64,10 @@ export function SetupContext({ machines, homeLabel }: { machines: SetupMachine[]
     return () => { live = false; unlisten?.(); };
   }, [load]);
 
-  const homes = useMemo(() => (data ? homeStarts(data, nowMs) : []), [data, nowMs]);
+  const homes = useMemo(
+    () => (data ? homeStarts(data, nowMs).filter((start) => !machine || start.machine === machine) : []),
+    [data, nowMs, machine],
+  );
   const grown = homes.filter(startGrew);
   const toggle = (key: string) => setOpen((current) => {
     const next = new Set(current);

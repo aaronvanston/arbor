@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import {
+  boardForMachine,
   buildFleetBoard,
   effectiveSnooze,
   FLEET_STATUS_ORDER,
@@ -398,6 +399,44 @@ describe('grouping', () => {
     const unknown = only(board({ sessions: [{ session: session(CLAUDE_ID, { machine: '', lastActiveAtMs: NOW - MINUTE }), lastRequestFailed: false }] }));
     const grouped = groupFleet([unknown, t3Row({ sessionStatus: 'running', turn: running(1) })], 'casey-mbp');
     expect(grouped.map((group) => group.machine)).toEqual(['casey-mbp', '']);
+  });
+});
+
+describe('the board for one machine', () => {
+  const built = () => board({
+    t3: [
+      channel('casey-mbp', [
+        thread({ threadId: 'a1', workspaceRoot: '/Users/casey/src/arbor', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
+        thread({ threadId: 'a2', workspaceRoot: '/Users/casey/src/arbor', sessionStatus: 'running', turn: running(3) }),
+      ]),
+      channel('cedar-02', [thread({ threadId: 'e1', workspaceRoot: '/home/casey/src/billing', sessionStatus: 'running', turn: running(2) })]),
+    ],
+  });
+
+  it('keeps only that machine’s sessions, and counts only them', () => {
+    const cedar = boardForMachine(built(), 'cedar-02');
+    expect(cedar.machines.map((group) => group.machine)).toEqual(['cedar-02']);
+    expect(cedar.rows.map((row) => row.t3ThreadId)).toEqual(['e1']);
+    expect(cedar.counts).toEqual({ approval: 0, question: 0, working: 1, failed: 0, done: 0, idle: 0 });
+    expect(fleetSummary(cedar, t)).toBe(t('fleet.summary.working', { count: 1 }));
+  });
+
+  it('is the whole board for every machine, and empty for a machine with nothing on it', () => {
+    const all = built();
+    expect(boardForMachine(all, '')).toBe(all);
+    const none = boardForMachine(all, 'studio');
+    expect(none.machines).toEqual([]);
+    expect(none.rows).toEqual([]);
+    expect(waitingCount(none)).toBe(0);
+  });
+
+  it('leaves a machine’s snoozed sessions out of its counts but keeps them folded', () => {
+    const snoozed = board({ t3: [channel('casey-mbp', [thread({ threadId: 'a1', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE })])] }, {
+      snoozes: { 't3:casey-mbp:userdata:a1': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } },
+    });
+    const mac = boardForMachine(snoozed, 'casey-mbp');
+    expect(mac.snoozed.map((row) => row.t3ThreadId)).toEqual(['a1']);
+    expect(mac.counts.approval).toBe(0);
   });
 });
 

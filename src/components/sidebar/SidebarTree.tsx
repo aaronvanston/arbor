@@ -4,7 +4,7 @@ import { Bell, ChartNoAxesColumn, ChevronRight, House, Layers, Lock, MessagesSqu
 import { useI18n } from '../../i18n';
 import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
-import { canOpenView, machinesView, mainView, type AppView, type MainPageId } from '../../navigation';
+import { canOpenView, keepMachineScope, machinesView, mainView, type AppView, type MainPageId } from '../../navigation';
 import { requestFocus } from '../../focusRequests';
 import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
@@ -270,7 +270,8 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
                 leafLocked={(leaf) => !canOpenView(leafView(leaf), coreReady)}
                 lockedHint={lockedHint}
                 hint={hint}
-                onNavigate={onNavigate}
+                // Another view of the page on screen keeps the machine it's narrowed to.
+                onNavigate={(next) => onNavigate(keepMachineScope(view, next))}
                 onOpenGroup={openGroup}
               />
             ))}

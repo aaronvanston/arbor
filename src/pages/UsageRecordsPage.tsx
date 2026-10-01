@@ -12,6 +12,7 @@ import { createRefreshScheduler } from '../services/refreshScheduler';
 import { usageViewScopeKey } from '../services/usageViewScope';
 import { formatCount } from '../lib/format';
 import { type SessionPullRequestFilter, type UsageSessionSort } from '../services/usageSessions';
+import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -55,9 +56,10 @@ import {
 import { SessionProjectsView, type OpenSessions } from './SessionProjectsView';
 import { RequestsView } from './UsageRequestsGrid';
 import { loadRequestOrder, saveRequestOrder } from '../services/usageRequestsGrid';
-import { FleetBoard } from '../components/FleetBoard';
+import { FleetBoard, LiveMachineCrumb } from '../components/FleetBoard';
 import { loadFleetSources } from '../services/fleetBoard';
 import {
+  hasMachineScope,
   isSessionsTab,
   isUsageTab,
   machineRequestsView,
@@ -188,12 +190,14 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   // Usage and Sessions read these from their view, so Back and Forward bring them back. Machines and Pricing keep
   // their machine filter to themselves.
   const inView = variant === 'usage' || variant === 'sessions';
+  // Prices keeps only the machine the breadcrumb picked in its view, so moving between Usage's views keeps it.
+  const machineInView = inView || variant === 'pricing';
   const asked: { tab?: string; machine?: string; session?: string; project?: string; result?: UsageParams['result']; lens?: SessionsParams['lens'] } = params ?? {};
   // The machine whose own page Machines shows in place of the fleet: its leaf in the sidebar lights while it does.
   const selectedMachine = variant === 'machines' ? asked.machine || null : null;
   const [ownMachine, setOwnMachine] = useState('');
   // A machine's page reads the range's requests for that machine alone.
-  const machine = inView ? asked.machine ?? '' : selectedMachine ?? ownMachine;
+  const machine = machineInView ? asked.machine ?? '' : selectedMachine ?? ownMachine;
   // The session whose requests Usage lists, and the one Sessions has open in place of its list.
   const session = variant === 'usage' ? asked.session ?? '' : '';
   const openSessionId = variant === 'sessions' ? asked.session || null : null;
@@ -236,6 +240,9 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         machine: next.machine,
         project: next.project,
       }), how);
+    } else if (variant === 'pricing') {
+      if (change.machine !== undefined) onViewChange?.(usageView({ tab: 'prices', machine: next.machine || undefined }), how);
+      if (change.result !== undefined) setOwnResult(change.result);
     } else {
       if (change.machine !== undefined) setOwnMachine(change.machine);
       if (change.result !== undefined) setOwnResult(change.result);
@@ -558,7 +565,9 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   const filters: UsageFilters = { machine, session, project, branch, client, pullRequests, model, provider, source, apiKeyHash, result };
   // The filters this page and tab have, in the Filters popover and as chips when they're set.
   // A machine's page is about the one machine, so it has only the range to pick.
-  const offeredFilters = selectedMachine ? [] : offeredUsageFilters(variant, activeTab, filters);
+  // A view the breadcrumb narrows to a machine picks it there, so the Filters popover doesn't offer it twice.
+  const machineCrumb = variant === 'pricing' || ((variant === 'usage' || variant === 'sessions') && hasMachineScope(variant, activeTab));
+  const offeredFilters = selectedMachine ? [] : offeredUsageFilters(variant, activeTab, filters).filter((id) => !(machineCrumb && id === 'machine'));
   /**
    * Changes filters and starts over at the first page. Machine, session, project and Usage's result change the view;
    * the rest are the page's.
@@ -603,26 +612,6 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           (activeTab === 'capacity' && !capacity) ||
           (activeTab === 'pricing' && !pricing))));
 
-  // The section, then the view the tree has lit: `Usage / Requests`, `Sessions / Live`. The tree picks the view, so
-  // there are no tabs under the bar to name it.
-  const viewLabel = variant === 'usage' || variant === 'sessions' ? leafLabel(variant, activeTab) : undefined;
-  const breadcrumb =
-    variant === 'machines'
-      ? selectedMachine
-        ? [
-            <button key="machines" type="button" className="cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNavigate?.(machinesView())}>
-              {t('app.nav.machines')}
-            </button>,
-            <MachinePill key="machine" name={selectedMachine} />,
-          ]
-        : [t('app.nav.machines')]
-      : variant === 'value'
-      ? [t('app.nav.accounts'), t('tree.accounts.value')]
-      : variant === 'sessions'
-      ? [t('app.nav.sessions'), ...(viewLabel ? [t(viewLabel)] : [])]
-      : variant === 'pricing'
-      ? [t('app.nav.usageRecords'), t('usage.tab.prices')]
-      : [t('app.nav.usageRecords'), ...(viewLabel ? [t(viewLabel)] : [])];
   const openRequestsForMachine = (nextMachine: string) => {
     if (variant === 'usage') {
       show({ machine: nextMachine, tab: 'events' });
@@ -676,6 +665,33 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
     ? [...new Set([...machineNames, ...facets.machines.map((item) => item.value)])].sort(byShownName)
     : machineNames;
   const machineSessions = new Map(facets?.machines.map((item) => [item.value, item.sessions]));
+
+  // The section, then the view the tree has lit: `Usage / Requests`, `Sessions / Live`. The tree picks the view, so
+  // there are no tabs under the bar to name it.
+  const viewLabel = variant === 'usage' || variant === 'sessions' ? leafLabel(variant, activeTab) : undefined;
+  // Then, on a view that can be, the machine it's narrowed to, with every machine to pick from: the ones with requests
+  // or sessions, and on Live the ones on the board as well.
+  const pickMachine = (next: string) => changeFilters({ machine: next });
+  const crumbMachine = !machineCrumb ? []
+    : activeTab === 'live' ? [<LiveMachineCrumb key="machine" machine={machine} machines={machineChoices} onChange={pickMachine} />]
+    : [<MachineCrumb key="machine" machine={machine} machines={machineChoices} unassigned onChange={pickMachine} />];
+  const breadcrumb =
+    variant === 'machines'
+      ? selectedMachine
+        ? [
+            <button key="machines" type="button" className="cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNavigate?.(machinesView())}>
+              {t('app.nav.machines')}
+            </button>,
+            <MachinePill key="machine" name={selectedMachine} />,
+          ]
+        : [t('app.nav.machines')]
+      : variant === 'value'
+      ? [t('app.nav.accounts'), t('tree.accounts.value')]
+      : variant === 'sessions'
+      ? [t('app.nav.sessions'), ...(viewLabel ? [t(viewLabel)] : []), ...crumbMachine]
+      : variant === 'pricing'
+      ? [t('app.nav.usageRecords'), t('usage.tab.prices'), ...crumbMachine]
+      : [t('app.nav.usageRecords'), ...(viewLabel ? [t(viewLabel)] : []), ...crumbMachine];
 
   const filterNames = {
     model: optionsAnalysis.models,
@@ -871,7 +887,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           <FilterBar
             chips={filterChips}
             onRemove={(id) => changeFilters(clearUsageFilter(id))}
-            onClearAll={() => changeFilters(clearAllUsageFilters(failedOnly))}
+            onClearAll={() => changeFilters({ ...clearAllUsageFilters(failedOnly), ...(machineCrumb ? { machine } : {}) })}
           >
             {offeredFilters.filter(usageFilterHasMenu).map(filterMenuFor)}
           </FilterBar>
@@ -982,7 +998,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           />
         ) : null}
         {activeTab === 'live' && variant === 'sessions' ? (
-          <FleetBoard onOpenSession={openSession} />
+          <FleetBoard machine={machine} onOpenSession={openSession} />
         ) : null}
         {hasCurrentSnapshot && activeTab === 'overview' && overview && variant === 'usage' ? (
           <>

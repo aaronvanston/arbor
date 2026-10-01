@@ -79,14 +79,14 @@ describe('a machine’s sessions', () => {
     // What the Machines page's View All and the search palette open, for sessions Arbor couldn't place and for a
     // named machine.
     const unassigned = page(machineSessionsView('__unassigned__'));
-    expect(breadcrumb(unassigned)).toBe('Sessions / All sessions');
-    // The machine shows as a chip beside Filters, which counts it.
-    expect(text(unassigned)).toContain('Filters 1 Machine Unassigned Clear all');
-    expect(text(page(machineSessionsView('casey-mbp')))).toContain('Filters 1 Machine casey-mbp Clear all');
-    // A machine's requests are Usage's own filter, and the Sessions page's doesn't follow it there.
+    // The machine is the breadcrumb's last step, its picker, rather than a filter chip.
+    expect(breadcrumb(unassigned)).toBe('Sessions / All sessions / Unassigned');
+    expect(text(unassigned)).not.toContain('Clear all');
+    expect(breadcrumb(page(machineSessionsView('casey-mbp')))).toBe('Sessions / All sessions / casey-mbp');
+    // A machine's requests are Usage's own pick, and the Sessions page's doesn't follow it there.
     const requests = page(machineRequestsView('casey-mbp'));
-    expect(breadcrumb(requests)).toBe('Usage / Requests');
-    expect(text(requests)).toContain('Filters 1 Machine casey-mbp Clear all');
+    expect(breadcrumb(requests)).toBe('Usage / Requests / casey-mbp');
+    expect(text(requests)).not.toContain('Filters 1');
     const unfiltered = text(page(usageView({ tab: 'events' })));
     expect(unfiltered).toContain('Last 24 hours Filters');
     expect(unfiltered).not.toContain('Clear all');

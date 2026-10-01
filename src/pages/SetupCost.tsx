@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { TriangleAlert } from '../components/ui/icons';
 import { SectionAbout } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { useI18n } from '../i18n';
@@ -21,7 +20,6 @@ import { STARTING_CONTEXT_DAYS } from '../services/startingContext';
 import { SetupContext } from './SetupContext';
 import { TelemetryView } from './UsageTelemetryView';
 import type { SetupMachine, TelemetryBreakdown } from '../native/types';
-import { MachinePill } from '../components/identity/Identity';
 
 /** Claude Code sends once a minute while a session runs, so its spend is read again about as often. */
 const TELEMETRY_POLL_MS = 60_000;
@@ -35,14 +33,15 @@ const SPAN_LABEL: Record<TelemetrySpan, MessageKey> = {
 /**
  * Sync › Cost: what the agent setup itself costs. First what every session pays before it starts, each home's
  * starting context, then what Claude Code says its skills, plugins, MCP servers and subagents spent, on every machine
- * or the one picked. Both compare homes and machines, so they're on Sync.
+ * or the one the breadcrumb picked. Both compare homes and machines, so they're on Sync.
  */
-export function SetupCost({ machines, homeLabel, machine, onMachineChange, reads, onNavigate }: {
+export function SetupCost({ machines, homeLabel, machine, reads, onNavigate }: {
   machines: SetupMachine[];
   homeLabel: (key: string) => string;
-  /** The machine Claude Code's spend is narrowed to, from the view, so Back returns to it; null for every machine. */
+  /**
+   * The machine the breadcrumb narrowed the view to, from the view so Back returns to it; null for every machine.
+   */
   machine: string | null;
-  onMachineChange: (machine: string | null) => void;
   /** Goes up each time the page's refresh (Scan again, ⌘R) asks for the spend to be read again. */
   reads: number;
   onNavigate: (view: AppView) => void;
@@ -76,11 +75,6 @@ export function SetupCost({ machines, homeLabel, machine, onMachineChange, reads
 
   // Another span's or machine's numbers wait for their own read rather than showing under the new pick.
   const shown = telemetry?.span === span && telemetry.machine === machine ? telemetry.data : null;
-  // The machines Sync checks, and the one the view names even if it's no longer one of them.
-  const choices = machine && !machines.some((entry) => entry.machine === machine)
-    ? [...machines.map((entry) => entry.machine), machine]
-    : machines.map((entry) => entry.machine);
-
   return (
     <div className="flex flex-col gap-8">
       <CostPart
@@ -88,7 +82,8 @@ export function SetupCost({ machines, homeLabel, machine, onMachineChange, reads
         title={t('setup.cost.context.title')}
         description={t('setup.context.intro', { days: STARTING_CONTEXT_DAYS })}
       >
-        <SetupContext machines={machines} homeLabel={homeLabel} />
+        {/* The breadcrumb's machine narrows the starting context too, so the whole view is about it. */}
+        <SetupContext machines={machines} machine={machine} homeLabel={homeLabel} />
       </CostPart>
       <CostPart
         id="cost-telemetry"
@@ -96,17 +91,6 @@ export function SetupCost({ machines, homeLabel, machine, onMachineChange, reads
         description={t('setup.cost.telemetry.description')}
         action={(
           <div className="flex flex-wrap items-center gap-2">
-            {choices.length > 1 || machine ? (
-              <Select value={machine ?? ''} onValueChange={(value) => onMachineChange(value ? String(value) : null)}>
-                <SelectTrigger size="sm" className="w-auto min-w-36" aria-label={t('setup.cost.telemetry.machine')}>
-                  <SelectValue>{machine ? <MachinePill name={machine} /> : t('setup.cost.telemetry.allMachines')}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end">
-                  <SelectItem value="">{t('setup.cost.telemetry.allMachines')}</SelectItem>
-                  {choices.map((name) => <SelectItem key={name} value={name}><MachinePill name={name} /></SelectItem>)}
-                </SelectPopup>
-              </Select>
-            ) : null}
             <ToggleGroup
               value={[String(span)]}
               onValueChange={(value) => {

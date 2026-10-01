@@ -16,14 +16,14 @@ const paramsOf = (view: ReturnType<typeof usageView>): UsageParams => (view.kind
 describe('Usage’s Requests with Failed on or off', () => {
   test('has an All / Failed toggle in its filters, on All for every request', () => {
     const html = page({ tab: 'events' });
-    expect(breadcrumb(html)).toBe('Usage / Requests');
+    expect(breadcrumb(html)).toBe('Usage / Requests / All machines');
     expect(toggles(html)).toEqual([['All', true], ['Failed', false]]);
     expect(html).toMatch(/role="group"[^>]*aria-label="Requests to show"/);
   });
 
   test('opens on Failed from the old Failures view, which stays Requests in the top bar, with no Result chip beside it', () => {
     const html = page(paramsOf(failedRequestsView()));
-    expect(breadcrumb(html)).toBe('Usage / Requests');
+    expect(breadcrumb(html)).toBe('Usage / Requests / All machines');
     expect(toggles(html)).toEqual([['All', false], ['Failed', true]]);
     // The toggle says Failed; a chip saying Result: Failed as well would say it twice.
     expect(text(html)).not.toContain('Request result Failed');
