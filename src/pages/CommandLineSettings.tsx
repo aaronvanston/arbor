@@ -83,7 +83,7 @@ export function CommandLineSettings() {
           </>
         ) : undefined}
         control={note?.action ? (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void install()}>
+          <Button size="sm" variant={overview?.install.state === 'missing' ? 'default' : 'outline'} disabled={busy} onClick={() => void install()}>
             {busy ? <Spinner /> : null}
             {t(note.action)}
           </Button>
