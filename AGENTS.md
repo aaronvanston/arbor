@@ -133,8 +133,9 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   `install-local-update-server.sh`), the release build it and the Release workflow
   share (`build-release.sh`), the GitHub record of each release
   (`publish-github-release.sh`, which is also the app's update feed), the Release
-  workflow's plan and publish steps (`release-plan.mjs`, `publish-workflow-release.sh`)
-  and the commit a stable release starts from (`release-commit.sh`), the public
+  workflow's plan and publish steps (`release-plan.mjs`, `publish-workflow-release.sh`),
+  its runner (`install-release-runner.sh`) and how a stable release is started
+  (`release-stable.sh`), the public
   release notes in `release-notes.json` (`release-notes.mjs`), the update list's
   signing key (`release-signing.mjs`), disk cleanup (`clean-dev-disk.sh`, which removes idle
   worktrees' Rust build folders, worktrees whose work is on origin/main, and
@@ -194,8 +195,8 @@ either fails. `ARBOR_SKIP_VERIFY=1` skips both, with a loud warning; it's for an
 urgent build only, never to get past a failure you haven't looked at.
 
 Run `bun run verify` and `bun run build`, plus `verify:rust` if you touched Rust,
-before calling work done. The release script doesn't run `build` until
-`bun tauri build`, after it has bumped the version, so don't leave it to find a build
+before calling work done. A release doesn't run `build` until `bun tauri build`, at
+the end of the workflow's build, so don't push work that leaves it to find a build
 failure. Don't run `bun tauri dev` (it starts the real app) or `bun tauri build`
 (only the release script builds the app).
 
@@ -373,59 +374,51 @@ flag at the top of the mock.
 
 ## Releases
 
-The maintainer runs releases, or an agent the maintainer has told to release.
+Finished work goes to main, and the Release workflow
+(`.github/workflows/arbor-release.yml`) releases it; it follows how T3 Code ships.
+When your work is done and `bun run verify`, `bun run build` (and `verify:rust`
+after Rust changes) pass, commit it, `git fetch origin`, rebase onto `origin/main`
+and push to `main`. Don't bump the version, write release notes, build a DMG or
+publish a release yourself.
 
-1. `git fetch origin`. Rebase onto `origin/main` and take the next patch number
-   nobody has used yet; the current one is in `src-tauri/Cargo.toml` there. Someone
-   else may be releasing at the same time.
-2. `ARBOR_RELEASE_SUMMARY="…" ./scripts/publish-local-update.sh <X.Y.Z>`. The
-   summary is required: one line saying at a feature level what the release adds or
-   changes (see Release notes below). `ARBOR_RELEASE_CHANGES` can add up to three
-   high-level changes, one a line. It stops on uncommitted changes or a HEAD that isn't on top of `origin/main`. In a
-   worktree without `.env`, it links the main checkout's, which holds the keys a release needs. Its
-   first step is to claim the version in the feed folder (`.claims/X.Y.Z`), which fails
-   if another run got there first or the number is already out, and a run that
-   stops early lets go of its claim. It then checks and prints
-   the release notes, runs `bun run verify` and `bun run verify:rust` (see Commands),
-   sets the version in `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`, adds the notes
-   to `release-notes.json`, builds and signs the app (refusing a build that still
-   contains the builder's home folder), and writes the DMG to
-   `~/Library/Application Support/Arbor Updates`, with a manifest there for older apps
-   that read that local feed. It finishes by printing the next steps.
-3. Commit only those files with the message the script wrote:
-   `git commit -F <message file> -- src-tauri/Cargo.toml src-tauri/Cargo.lock release-notes.json`.
-   The subject is `Release Arbor X.Y.Z` and the body is the summary.
-4. `git fetch origin` again. If `origin/main` moved during the build, someone else
-   may have published the same number; rebase and publish again with the next one.
-5. Push to `origin`'s `main`.
-6. `./scripts/publish-github-release.sh <X.Y.Z>` publishes the release on
-   `aaronvanston/arbor`: an `arbor-vX.Y.Z` tag on the release commit, the notes, the
-   DMG and `arbor-update-darwin.json`, the update list signed with the "Arbor release
-   signing key" in the release Mac's Keychain, after checking the feed's DMG is still the one
-   this release built. The app updates from the newest GitHub release, so no Mac is
-   offered the release until this runs. `--dry-run` shows what it would do.
+The workflow runs every job on a self-hosted runner on the release Mac, labeled
+`arbor-release` (`scripts/install-release-runner.sh` sets it up, and rerunning it
+updates it), because GitHub bills a private repository's hosted minutes. Each
+release runs `bun run verify` and `bun run verify:rust`, builds with
+`scripts/build-release.sh` and publishes with `scripts/publish-workflow-release.sh`,
+in one job so the DMG stays on that Mac.
 
-### From GitHub Actions
-
-`.github/workflows/arbor-release.yml` builds releases on GitHub's Macs, with
-`scripts/build-release.sh` (the local script's build) after `bun run verify` and
-`bun run verify:rust`, and publishes them with `scripts/publish-workflow-release.sh`.
-GitHub bills a private repository's macOS minutes, so while this one is private it
-only runs when started by hand.
-
-- Nightly: every half hour, when main has moved since the last nightly or release.
-  Its version is `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the next release
-  (`scripts/release-plan.mjs`), with fixed notes, and nothing is committed for it.
-  Only apps on the nightly channel (Settings › Updates) take it.
-- Stable: `ARBOR_RELEASE_SUMMARY="…" ./scripts/release-commit.sh <X.Y.Z>` commits
-  `Release Arbor X.Y.Z` (the version and its notes) without building. Push it to main,
-  then run `gh workflow run arbor-release.yml --repo aaronvanston/arbor --ref main -f channel=stable`.
-  The release becomes the latest, which every app reads.
+- Nightly: checked every half hour and published once main has moved past the
+  newest build (release commits alone don't count) and six hours have passed since
+  the newest nightly (`scripts/release-plan.mjs`). Its version is
+  `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the patch after the newest release,
+  with fixed notes, and nothing is committed for it. Only apps on the nightly
+  channel (Settings › Updates) take it. Started by hand, a nightly skips both waits.
+- Stable: only when the maintainer asks.
+  `ARBOR_RELEASE_SUMMARY="…" [ARBOR_RELEASE_CHANGES=…] ./scripts/release-stable.sh`
+  checks the notes and starts the workflow, which promotes the newest nightly: the
+  same commit, built as X.Y.Z, so stable ships only what nightly users already run.
+  Once it's published, the workflow commits `Release Arbor X.Y.Z` (the version and
+  notes) to main. The release becomes the latest, which every app reads.
 
 Its secrets are `ARBOR_RELEASE_SIGNING_KEY` (the Keychain's signing key as base64
-PKCS#8, which only the publish job sees), `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY`
+PKCS#8, which only the publish step sees), `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY`
 and, for source maps, `POSTHOG_CLI_API_KEY`. `.github/workflows/arbor-checks.yml` runs
-the same checks on pull requests and pushes to main once the repository is public.
+the checks on GitHub's Macs for pull requests and pushes to main once the repository
+is public. Before it goes public, think again about the self-hosted runner: a pull
+request from a fork can run its own workflow changes on it.
+
+### By hand, in an emergency
+
+When the workflow can't run (the release Mac is off, GitHub is down) and the
+maintainer wants a release now, the old local path still works:
+`ARBOR_RELEASE_SUMMARY="…" ./scripts/publish-local-update.sh <X.Y.Z>` claims the
+number in the feed folder, checks the notes, runs both verify gates, sets the
+version, adds the notes, builds and signs, and prints its next steps: commit
+`src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and `release-notes.json` with the
+message it wrote, fetch and rebase again (take the next number if main moved), push,
+then `./scripts/publish-github-release.sh <X.Y.Z>`, which creates the GitHub release
+apps update from.
 
 ### Release notes
 
@@ -454,4 +447,5 @@ Never change version numbers by hand.
   for the user. The body says why.
 - Never use bare `git stash`: the stash is shared by every worktree. Park work in a
   WIP commit, or push a stash with a unique message and apply it by its SHA.
-- Don't push unless you are releasing or have been asked to.
+- When work is finished and checked, push it to `origin`'s `main` (see Releases);
+  don't push unfinished work unless you've been asked to.

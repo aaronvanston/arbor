@@ -40,7 +40,7 @@ licensed; `THIRD_PARTY_NOTICES.md` (`bun run notices`) has what it includes.
 | `src-tauri/src/` | `main.rs` (command registration), `core_runtime.rs` (core process and updates), `core_config/` (core config), `management_api.rs` (core management API), `usage.rs` + `usage/` (SQLite usage, machines, SSH health, setup scans, transcripts, capacity; every sessions screen reads through `usage/session_read.rs` so counts match; usage.db's tables come only from the ordered steps in `usage/schema.rs` (a new table or column is a new step at the end; tests use `schema::test_database()`), and record writes take `lock_usage_writes()` and report through `publish_record_changes`; every script on a machine runs through `usage/machine_health/shell.rs`, `find_machine` then `run_checked` (or `run_streaming`, with slots of its own, for output too big to hold), which caps concurrent runs and notes them in Diagnostics; every change to a file on a machine goes through `usage/machine_health/guarded_writes.rs`, which writes only if the file is as read, backs it up first and puts it on Sync › Arbor's changes to undo; which folders are a machine's agent homes comes only from `usage/machine_health/agent_homes.rs` (standard, found and added homes, each with Sessions and Sync switches, edited in Settings › Agent homes), and scripts loop over its generated `agent_homes` shell function), `app_update.rs`, `phone_alerts.rs`, `digest_export.rs`, `quit_guard.rs`, `tray.rs`. Tests: `tests.rs`, `tests/`, inline `#[cfg(test)]`. |
 | `src-tauri/src/cli/` | `arbor` and `arbor mcp`: the app's own program run through a link named `arbor` or as `Arbor cli …` (a dev build's `arbor` stays the app). It only talks to the running app over a private socket (`<data folder>/cli/arbor.sock`), which runs the window's own commands, so a change shows in the window at once. `commands.rs` is generated (`bun run cli-commands`; `scripts/cli-commands.mjs` holds the left-out list with reasons and the ones that need confirming); `bridge.rs` asks the window for what only it works out (`src/services/cliHandlers.ts`); `redact.rs` hides secrets; `audit.rs` logs method and outcome, never arguments. Confirmed commands print a plan and exit 10 without `--yes` (MCP: `confirm: true`). `management_request` and claim, reset and redeem calls are never reachable. Settings the CLI changes sit in the app's `saved-store.json` (`saved_store.rs`); a `savedStore` with `place: 'window'` stays in localStorage. |
 | `tests/` | `bun:test` files, `*.test.ts` and `*.test.tsx`. |
-| `scripts/` | `publish-local-update.sh` and `install-local-update-server.sh` for the local update feed, `build-release.sh` (the release build it shares with the Release workflow), `publish-github-release.sh` to publish a release on GitHub (the app's update feed), `release-plan.mjs` and `publish-workflow-release.sh` (the Release workflow's plan and publish steps), `release-commit.sh` (the commit a stable release starts from), `release-notes.mjs` (the public notes in `release-notes.json`), `release-signing.mjs` (the update list's signing key), `clean-dev-disk.sh` (clears idle worktrees' build folders, worktrees already on origin/main and feed DMGs GitHub also has; the release script runs it when the disk is low, and `install-dev-disk-cleanup.sh` runs it every 6 hours), `copy-worktree-includes.sh` (gives a new worktree the gitignored files `.worktreeinclude` names, like `.env`; Claude Code does that itself, and `t3.json` runs the script for T3 Code's worktrees), version helpers, upstream packaging. |
+| `scripts/` | `publish-local-update.sh` and `install-local-update-server.sh` for the local update feed, `build-release.sh` (the release build it shares with the Release workflow), `publish-github-release.sh` to publish a release on GitHub (the app's update feed), `release-plan.mjs` and `publish-workflow-release.sh` (the Release workflow's plan and publish steps), `install-release-runner.sh` (its self-hosted runner on the release Mac), `release-stable.sh` (starts a stable release), `release-notes.mjs` (the public notes in `release-notes.json`), `release-signing.mjs` (the update list's signing key), `clean-dev-disk.sh` (clears idle worktrees' build folders, worktrees already on origin/main and feed DMGs GitHub also has; the release script runs it when the disk is low, and `install-dev-disk-cleanup.sh` runs it every 6 hours), `copy-worktree-includes.sh` (gives a new worktree the gitignored files `.worktreeinclude` names, like `.env`; Claude Code does that itself, and `t3.json` runs the script for T3 Code's worktrees), version helpers, upstream packaging. |
 | `core-version.txt` | Core release pinned into the DMG. |
 
 ## Running things
@@ -79,9 +79,9 @@ Setting `ARBOR_SKIP_VERIFY=1` skips both and prints a warning. Save that for an
 urgent build, not for getting past a failure nobody has read.
 
 Finish with `bun run verify` and `bun run build` (and `bun run verify:rust` after
-Rust changes). The release script only reaches `bun run build` through
-`bun tauri build`, after it has already bumped the version, so a build failure has to
-be caught here. Never start `bun tauri dev`, which launches the real app, or
+Rust changes). A release only reaches `bun run build` through `bun tauri build`, at
+the end of the workflow's build, so a build failure pushed to main costs a nightly and
+has to be caught here. Never start `bun tauri dev`, which launches the real app, or
 `bun tauri build`, which only the release scripts run.
 
 ## Seeing the UI
@@ -231,56 +231,50 @@ webview no longer calls loses its answer with its list entry.
 
 ## Shipping a release
 
-Releases are the maintainer's job, or yours only when the maintainer has said to release.
+Sessions don't release. Arbor ships the way T3 Code does: work lands on main, and
+the Release workflow (`.github/workflows/arbor-release.yml`) turns main into releases
+on a timer.
 
-1. `git fetch origin`, rebase onto `origin/main`, and pick the next patch version
-   that no one has taken, counting up from `src-tauri/Cargo.toml` there (the repo's
-   `v*` tags belong to upstream). Someone else may be releasing too.
-2. Run `ARBOR_RELEASE_SUMMARY="…" ./scripts/publish-local-update.sh <X.Y.Z>`: the
-   summary is required, one feature-level line (see the notes rules below), and
-   `ARBOR_RELEASE_CHANGES` can add up to three high-level changes, one a line. It
-   won't start with uncommitted changes or off `origin/main`, and it claims the
-   number in the feed before anything else (`.claims/X.Y.Z` there), so it refuses a
-   number another run is publishing or has published. A worktree with no `.env` gets
-   a link to the main checkout's, where the keys a release needs are. It prints the notes,
-   runs `bun run verify` and `bun run verify:rust` (see Running things), writes the
-   version into `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`, builds and signs the
-   app, and puts the DMG and a manifest (notes included) in
-   `~/Library/Application Support/Arbor Updates` (the loopback feed there only
-   serves older apps). Then it prints what to run next.
-3. Commit just the Cargo files and the notes using the message file it wrote:
-   `git commit -F <file> -- src-tauri/Cargo.toml src-tauri/Cargo.lock release-notes.json`.
-   That gives the subject `Release Arbor X.Y.Z` with the summary as the body.
-4. `git fetch origin` once more. If `origin/main` moved while you built, the number
-   may be taken: rebase and publish the next one.
-5. Push to `main` on `origin`.
-6. Run `./scripts/publish-github-release.sh <X.Y.Z>`. It checks the feed's DMG is the
-   one this release built, then creates the `arbor-vX.Y.Z` release on
-   `aaronvanston/arbor` with the notes, the DMG and the signed update list
-   `arbor-update-darwin.json` attached (`--dry-run` to look first). Apps update from
-   the newest GitHub release, so none is offered this one until it runs. Signing needs
-   the "Arbor release signing key" in the release Mac's Keychain.
+1. When the work is finished and `bun run verify`, `bun run build` (and
+   `bun run verify:rust` after Rust changes) pass, commit it.
+2. `git fetch origin`, rebase onto `origin/main`, and push to `main` on `origin`.
+   Never force it; if main moved, rebase again.
+3. That's all. Leave the version, `release-notes.json`, DMGs and GitHub releases to
+   the workflow.
 
-The Release workflow (`.github/workflows/arbor-release.yml`) builds on GitHub's Macs
-with the same `scripts/build-release.sh`, after `bun run verify` and `bun run verify:rust`.
-While the repository is private it only runs when started by hand, since GitHub bills
-private macOS minutes.
+What the workflow does, all on the release Mac's self-hosted runner (label
+`arbor-release`, set up and updated by `scripts/install-release-runner.sh`), since
+GitHub bills a private repository's hosted minutes:
 
-- Nightlies run every half hour when main has moved since the last nightly or release:
-  `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the next release (`scripts/release-plan.mjs`),
-  with fixed notes and nothing committed. Only apps on the nightly channel take them.
-- A stable release starts with `ARBOR_RELEASE_SUMMARY="…" ./scripts/release-commit.sh <X.Y.Z>`,
-  which commits `Release Arbor X.Y.Z` without building. Push it to main, then
-  `gh workflow run arbor-release.yml --repo aaronvanston/arbor --ref main -f channel=stable`.
+- Every half hour it checks for a nightly (`scripts/release-plan.mjs`). One goes out
+  when main has something past the newest build besides release commits and the newest
+  nightly is at least six hours old: `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the
+  patch after the newest release, with fixed notes, nothing committed. Only apps on
+  the nightly channel take it. Run by hand (channel nightly), it skips both waits.
+- A stable release happens only when the maintainer asks:
+  `ARBOR_RELEASE_SUMMARY="…" ./scripts/release-stable.sh` (with `ARBOR_RELEASE_CHANGES`
+  for up to three changes) checks the notes and starts the workflow. It promotes the
+  newest nightly's commit as X.Y.Z, so stable is always a build nightly users already
+  ran, publishes it as the latest release, and then commits `Release Arbor X.Y.Z`
+  (version and notes) to main as github-actions.
+- Each run verifies, builds with `scripts/build-release.sh` and publishes with
+  `scripts/publish-workflow-release.sh` in one job, so the DMG never becomes a GitHub
+  artifact.
+
+`scripts/publish-local-update.sh` and `scripts/publish-github-release.sh` stay for an
+emergency only, when the maintainer wants a release and the workflow can't run; the
+local script prints its own next steps.
 
 Its secrets are `ARBOR_RELEASE_SIGNING_KEY` (the Keychain key as base64 PKCS#8, seen only
-by the publish job), `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY` and optionally
-`POSTHOG_CLI_API_KEY`. `.github/workflows/arbor-checks.yml` runs the checks on pull
-requests and pushes to main once the repository is public.
+by the publish step), `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY` and optionally
+`POSTHOG_CLI_API_KEY`. `.github/workflows/arbor-checks.yml` runs the checks on GitHub's
+Macs for pull requests and pushes to main once the repository is public; going public
+also means rethinking the self-hosted runner, which a fork's pull request could use.
 
-Versions are only ever changed by the scripts, and tags only by the GitHub script and
-the Release workflow: `arbor-vX.Y.Z` and its nightlies, never `v*`, which are upstream's and would set off upstream's release
-workflow. Never `git push --tags`.
+Versions are only ever changed by the workflow (or the emergency scripts), and tags
+only by the workflow and the GitHub script: `arbor-vX.Y.Z` and its nightlies, never
+`v*`, which are upstream's and would set off upstream's release workflow. Never
+`git push --tags`.
 
 Release notes are public and kept in `release-notes.json`: a short summary of what the
 release adds or changes at a feature level ("Sync: keep rules and commands per
@@ -297,4 +291,5 @@ checks the next release's notes, and `node scripts/release-notes.mjs check` chec
   the user gets and a short body on why.
 - No bare `git stash`: every worktree shares the stash. Use a WIP commit, or a named
   `git stash push -m <unique>` applied by SHA.
-- Push only when releasing or asked to.
+- Push finished, verified work to main (see Shipping a release); unfinished work only
+  when asked.
