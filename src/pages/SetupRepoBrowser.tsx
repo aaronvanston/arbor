@@ -5,6 +5,7 @@ import { FileViewToggle, ViewerSkeleton } from '../components/FileChanges';
 import { MachinePill } from '../components/identity/Identity';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
 import { Copy, History, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2 } from '../components/ui/icons';
 import { Input } from '../components/ui/input';
@@ -701,11 +702,15 @@ function RoleLine({ repo, machines, entry, sources, onRepo, onReview }: {
   );
 }
 
-/** Rules, subagents, commands and skills taken off every machine, each of which can be put back. */
+/**
+ * Rules, subagents, commands and skills taken off every machine, each of which can be put back. It folds to one row under
+ * the tree, and opened it scrolls in a capped height, so however many there are the tree keeps its room.
+ */
 function RemovedEverywhere({ repo, onRepo }: { repo: SetupRepo; onRepo: (repo: SetupRepo) => void }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState<string | null>(null);
-  const removed = [...repo.removedFiles.map((path) => ({ id: path, label: path, skill: null })), ...repo.removedSkills.map((name) => ({ id: name, label: `~/${skillFolder(name)}`, skill: name }))];
+  // A skill goes by its name, which is all its path would add to; a file by where it went on each machine.
+  const removed = [...repo.removedFiles.map((path) => ({ id: path, label: path, skill: null })), ...repo.removedSkills.map((name) => ({ id: name, label: name, skill: name }))];
   if (!removed.length) return null;
   const putBack = async (id: string, skill: string | null) => {
     setBusy(id);
@@ -718,18 +723,24 @@ function RemovedEverywhere({ repo, onRepo }: { repo: SetupRepo; onRepo: (repo: S
     }
   };
   return (
-    <div className="flex flex-col gap-1 border-t border-border/60 px-3 py-2">
-      <p className="text-xs font-medium text-muted-foreground">{t('repo.removed.title', { count: removed.length })}</p>
-      {removed.map((item) => (
-        <div key={item.id} className="flex min-w-0 items-center gap-2">
-          <MiddleTruncate value={item.label} className="min-w-0 flex-1 font-mono text-xs text-muted-foreground line-through" />
-          <Button variant="ghost-muted" size="xs" disabled={busy !== null} onClick={() => void putBack(item.id, item.skill)}>
-            {busy === item.id ? <Spinner /> : <RotateCcw />}
-            {t('setup.repo.files.putBack')}
-          </Button>
+    <Collapsible className="shrink-0 border-t border-border/60" data-slot="repo-removed">
+      <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-3 py-2 text-start text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground">
+        {t('repo.removed.title', { count: removed.length })}
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="flex max-h-64 flex-col gap-1 overflow-y-auto px-3 pb-2">
+          {removed.map((item) => (
+            <div key={item.id} className="flex min-w-0 items-center gap-2">
+              <MiddleTruncate value={item.label} className="min-w-0 flex-1 font-mono text-xs text-muted-foreground line-through" />
+              <Button variant="ghost-muted" size="xs" disabled={busy !== null} onClick={() => void putBack(item.id, item.skill)}>
+                {busy === item.id ? <Spinner /> : <RotateCcw />}
+                {t('setup.repo.files.putBack')}
+              </Button>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 

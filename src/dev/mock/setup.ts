@@ -2018,8 +2018,23 @@ const instructionFilesOf = (texts: Record<string, string>) => Object.fromEntries
 /** The rest of the folder as the repo started, kept from the first time it's read so later commits show what changed. */
 let startedOthers: Record<string, MockBlob> | null = null;
 
+/** `?repo=big`'s made-up skill names: two words each, enough for a repo the size people keep. */
+const BIG_WORDS = ['brand', 'motion', 'audio', 'slides', 'chart', 'report', 'launch', 'triage', 'schema', 'theme'];
+const bigSkillNames = (offset: number) => BIG_WORDS.flatMap((first) => BIG_WORDS.slice(offset, offset + 5).map((second) => `${first}-${second}-kit`));
+
+/** `?repo=big`: fifty skills' folders with a few files each, beside what every repo starts with. */
+const bigRepoFiles = (): Record<string, MockBlob> => params.get('repo') !== 'big' ? {} : Object.fromEntries(bigSkillNames(0).flatMap((name) => [
+  [`.agents/skills/${name}/SKILL.md`, textBlob(`---\nname: ${name}\ndescription: Makes a ${name.replace(/-/g, ' ')}.\n---\n\n# ${name}\n`)],
+  [`.agents/skills/${name}/references/guide.md`, textBlob(`# ${name} guide\n`)],
+  [`.agents/skills/${name}/scripts/run.sh`, textBlob('#!/bin/sh\necho done\n')],
+]));
+
+// `?repo=big` has fifty more skills taken off every machine, so the list of them is longer than the browser is tall.
+if (params.get('repo') === 'big') for (const name of bigSkillNames(5)) mockRemovedSkills.add(name);
+
 const othersAtStart = () => {
   startedOthers ??= {
+    ...bigRepoFiles(),
     'README.md': textBlob('# Agent setup\n\nThe agent files Arbor keeps the same on every machine.\n\n- `.claude/` and `.codex/` go to each machine\'s homes.\n- `.agents/skills/` holds the skills, a folder each.\n- `.agents/projects/` holds projects\' own instructions.\n'),
     '.gitignore': textBlob('.DS_Store\n'),
     '.agents/machines.json': textBlob(`${JSON.stringify({ skills: mockSkillMachines, files: mockFileMachines }, null, 2)}\n`),

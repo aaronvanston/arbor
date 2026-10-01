@@ -98,7 +98,8 @@
  * can't read, and one on cedar-02 whose skill overrides Claude Code ignores; `?setup=shadow` for a shadow
  * Codex home on this Mac whose config.toml, AGENTS.md and skills are links into ~/.codex;
  * `?repo=fail` or `?repo=dirty` for a setup repo Arbor can't read, or with changes not committed (CLAUDE.md and pdf's
- * SKILL.md edited and a new rule, which Sync › Repo's Changes lists); `?repotree=fail` or `?repotree=truncated` for
+ * SKILL.md edited and a new rule, which Sync › Repo's Changes lists), or `?repo=big` for one with fifty more skills'
+ * folders and fifty more skills removed everywhere than the browser is tall; `?repotree=fail` or `?repotree=truncated` for
  * the repo browser's file list failing to read, or cut short; `?repowrite=stale` to have every save there refused
  * as the file changed outside Arbor;
  * `?sync=changed` or `?sync=fail` to have bringing a machine in step refused, or a file fail to write;
