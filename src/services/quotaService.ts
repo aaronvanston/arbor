@@ -14,6 +14,7 @@ import {
 } from './codexResetRedeem';
 import { antigravityProjectFor, codexMetadataFor, isPaidXaiFile } from './quotaMetadata';
 import { quotaResetFor, quotaResetInstant } from './quotaTime';
+import { claudeUsageCreditsFor, codexUsageCreditsFor, type UsageCredits } from './usageCredits';
 import { translate } from '../i18n';
 import { formatDateTime, formatDuration, formatMoney } from '../lib/format';
 
@@ -59,6 +60,8 @@ export type QuotaState = {
   resetCreditsError?: string;
   resetCreditsEarliestExpiry?: string;
   bankedReset?: ClaudeBankedReset;
+  /** Credits for use past the plan's limits (Codex credits, Claude's prepaid usage credits), when the account has any. */
+  usageCredits?: UsageCredits;
   subscriptionActiveUntil?: string;
   serverTimeOffsetMs?: number;
   fetchedAt?: number;
@@ -88,6 +91,9 @@ const endpointByProvider: Record<QuotaProvider, string> = {
 };
 
 const CLAUDE_PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
+/** Claude Code's read of an organization's prepaid usage credits. */
+const claudePrepaidCreditsUrl = (organization: string) =>
+  `https://api.anthropic.com/api/oauth/organizations/${encodeURIComponent(organization)}/prepaid/credits`;
 /** Claude Code's read of banked resets (its `cedar_ember` program), alongside the usage windows. */
 const CLAUDE_BANKED_RESETS_URL = 'https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1';
 const claudeResetClaimUrl = (organization: string) =>
@@ -951,16 +957,28 @@ const resolveClaudePlan = (payload: unknown): string | undefined => {
   return undefined;
 };
 
-const loadClaudePlan = async (file: AuthFile): Promise<string | undefined> => {
+const loadClaudeAccount = async (file: AuthFile): Promise<{ plan?: string; usageCredits?: UsageCredits }> => {
   const authIndex = normalizeAuthIndex(file.auth_index ?? file.authIndex);
-  if (!authIndex) return undefined;
+  if (!authIndex) return {};
+  let profile: unknown;
   try {
-    return resolveClaudePlan(
-      await requestQuotaPayload(authIndex, CLAUDE_PROFILE_URL, headersByProvider.claude),
-    );
+    profile = await requestQuotaPayload(authIndex, CLAUDE_PROFILE_URL, headersByProvider.claude);
   } catch {
-    return undefined;
+    return {};
   }
+  const organization = readString(isRecord(profile) ? profile.organization : null, 'uuid');
+  // Most accounts hold no prepaid credits, so a failed read only leaves the balance out.
+  const usageCredits = /^[A-Za-z0-9_-]{1,64}$/.test(organization)
+    ? await requestQuotaPayload(
+      authIndex,
+      claudePrepaidCreditsUrl(organization),
+      { ...headersByProvider.claude, 'x-organization-uuid': organization },
+      'GET',
+      undefined,
+      8_000,
+    ).then(claudeUsageCreditsFor, () => undefined)
+    : undefined;
+  return { plan: resolveClaudePlan(profile), usageCredits };
 };
 
 const loadAntigravityPlan = async (file: AuthFile): Promise<string | undefined> => {
@@ -1107,11 +1125,8 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
     const payloadPromise = provider === 'xai'
       ? callXaiQuota(file)
       : callUpstreamQuota(file, provider, codexAccountId, responseClock);
-    const planPromise = provider === 'claude'
-      ? loadClaudePlan(file)
-      : provider === 'antigravity'
-        ? loadAntigravityPlan(file)
-        : Promise.resolve(undefined);
+    const claudeAccountPromise = provider === 'claude' ? loadClaudeAccount(file) : Promise.resolve(null);
+    const planPromise = provider === 'antigravity' ? loadAntigravityPlan(file) : Promise.resolve(undefined);
     let resetCreditsError: string | undefined;
     const resetCreditsPromise = provider === 'codex'
       ? callCodexResetCredits(file, codexAccountId).catch((error) => {
@@ -1126,12 +1141,14 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
         return null;
       })
       : Promise.resolve(null);
-    const [payload, detectedPlan, resetCreditDetails, bankedReset] = await Promise.all([
+    const [payload, antigravityPlan, claudeAccount, resetCreditDetails, bankedReset] = await Promise.all([
       payloadPromise,
       planPromise,
+      claudeAccountPromise,
       resetCreditsPromise,
       bankedResetPromise,
     ]);
+    const detectedPlan = claudeAccount?.plan ?? antigravityPlan;
     const rows = quotaRowsFor(provider, payload);
     if (rows.length === 0) {
       return {
@@ -1166,6 +1183,7 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
       resetCredits,
       resetCreditsEarliestExpiry: resetCreditDetails?.earliestExpiry ?? bankedReset?.resetCreditsEarliestExpiry,
       bankedReset: bankedReset?.bankedReset,
+      usageCredits: provider === 'codex' ? codexUsageCreditsFor(parseBody(payload)) : claudeAccount?.usageCredits,
       serverTimeOffsetMs: responseClock.serverTimeOffsetMs,
       fetchedAt: Date.now(),
     };

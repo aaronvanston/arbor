@@ -335,6 +335,16 @@ const claudeBankedResets: Record<string, { left: number; anytime: boolean }> = {
   'cc-x': { left: 1, anytime: false },
 };
 const codexResetScenario = params.get('codexreset');
+// Credits for use past the plan's limits: Codex credits (one account unlimited) and Claude's prepaid usage
+// credits. `?credits=none` leaves every account without any.
+const noUsageCredits = params.get('credits') === 'none';
+const codexUsageCredits: Record<string, Json> = {
+  'codex-1': { has_credits: true, unlimited: false, balance: '489.25' },
+  'codex-3': { has_credits: true, unlimited: true, balance: null },
+};
+const claudePrepaidCredits: Record<string, Json> = {
+  'claude-1': { amount: 4_250, currency: 'USD', auto_reload_settings: { enabled: false }, expiry_policy_months: 12 },
+};
 // Codex reset credits by auth index, the redemptions Codex has seen by request id, and
 // the accounts a reset refilled. The later credit doesn't apply to the account now, except
 // with `?codexreset=lost`, so a reset can be tried again after the lost reply.
@@ -407,6 +417,7 @@ function apiCall(body: Json): Json {
         available_count: credits.length,
         applicable_available_count: credits.filter((credit) => credit.applicable !== false).length,
       },
+      credits: (noUsageCredits ? undefined : codexUsageCredits[authIndex]) ?? { has_credits: false, unlimited: false, balance: '0' },
     });
   }
   if (url.endsWith('/rate-limit-reset-credits/consume')) {
@@ -476,6 +487,9 @@ function apiCall(body: Json): Json {
   }
   if (url.includes('api.anthropic.com/api/oauth/profile')) {
     return ok({ account: { has_claude_max: true, has_claude_pro: false }, organization: { uuid: '5f0c1a2e-8d7b-4c3a-9e21-0b6d4f8a7c11', organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_20x' } });
+  }
+  if (/api\.anthropic\.com\/api\/oauth\/organizations\/[^/]+\/prepaid\/credits$/.test(url)) {
+    return ok((noUsageCredits ? undefined : claudePrepaidCredits[authIndex]) ?? { amount: 0, currency: 'USD', auto_reload_settings: { enabled: false }, expiry_policy_months: 12 });
   }
   if (/api\.anthropic\.com\/api\/organizations\/[^/]+\/reset_rate_limits$/.test(url)) {
     const claim = JSON.parse(String(body.data ?? '{}')) as Json;

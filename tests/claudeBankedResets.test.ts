@@ -135,6 +135,7 @@ const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
 const BANKED_URL = 'https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1';
 const ORG = '5f0c1a2e-8d7b-4c3a-9e21-0b6d4f8a7c11';
 const CLAIM_URL = `https://api.anthropic.com/api/organizations/${ORG}/reset_rate_limits`;
+const PREPAID_URL = `https://api.anthropic.com/api/oauth/organizations/${ORG}/prepaid/credits`;
 const future = (ms: number) => new Date(Date.now() + ms).toISOString();
 const liveStatus = (overrides: Record<string, unknown> = {}, grants: unknown[] = [grant({ ends_at: future(86_400_000) })]) =>
   status({ weekly_resets_at: future(3 * 86_400_000), ...overrides }, grants);
@@ -144,6 +145,7 @@ let calls: Request[];
 let fileCount = 0;
 let bankedStatus: () => unknown;
 let claimReply: (request: Request) => unknown;
+let prepaidReply: () => unknown;
 
 const claudeFile = (): AuthFile => ({ name: `claude-banked-${++fileCount}.json`, provider: 'claude', auth_index: `cb-${fileCount}` });
 const claims = () => calls.filter((request) => request.url === CLAIM_URL);
@@ -152,6 +154,7 @@ beforeEach(() => {
   calls = [];
   bankedStatus = () => success(liveStatus());
   claimReply = () => success({ result: 'reset', resets_left: 1, cleared: ['five_hour'] });
+  prepaidReply = () => success({ amount: 0, currency: 'USD', expiry_policy_months: 12 });
   post = spyOn(managementApi, 'post').mockImplementation(async (path, body) => {
     expect(path).toBe('/api-call');
     const request = body as unknown as Request;
@@ -160,6 +163,7 @@ beforeEach(() => {
     if (request.url === PROFILE_URL) return success({ account: { has_claude_max: true }, organization: { uuid: ORG } }) as never;
     if (request.url === BANKED_URL) return bankedStatus() as never;
     if (request.url === CLAIM_URL) return claimReply(request) as never;
+    if (request.url === PREPAID_URL) return prepaidReply() as never;
     throw new Error('Unexpected API request ' + request.url);
   });
 });
@@ -173,7 +177,7 @@ describe('checking Claude banked resets with the quota', () => {
       bankedReset: { grantId: 'launch_week', refills: '5-hour window and 7-day window' },
     });
     expect(result.resetCreditsApplicable).toBeUndefined();
-    expect(calls.map((request) => request.url).sort()).toEqual([BANKED_URL, PROFILE_URL, USAGE_URL].sort());
+    expect(calls.map((request) => request.url).sort()).toEqual([BANKED_URL, PREPAID_URL, PROFILE_URL, USAGE_URL].sort());
     const banked = calls.find((request) => request.url === BANKED_URL)!;
     expect(banked.method).toBe('GET');
     expect(banked.header).toEqual({
@@ -183,6 +187,16 @@ describe('checking Claude banked resets with the quota', () => {
     expect(itemAt(post.mock.calls, calls.indexOf(banked))[2]).toEqual({ timeoutMs: 8000 });
     // The usual usage request is unchanged.
     expect(calls.find((request) => request.url === USAGE_URL)?.header['User-Agent']).toBeUndefined();
+  });
+
+  it('reads prepaid usage credits for the organization, and leaves them out when the read fails', async () => {
+    prepaidReply = () => success({ amount: 4250, currency: 'USD', expiry_policy_months: 12 });
+    expect((await loadQuota(claudeFile())).usageCredits).toEqual({ balance: 4250, currency: 'USD', expiryMonths: 12 });
+    const prepaid = present(calls.find((request) => request.url === PREPAID_URL));
+    expect(prepaid.method).toBe('GET');
+    expect(prepaid.header['x-organization-uuid']).toBe(ORG);
+    prepaidReply = () => ({ status_code: 404, body: 'not found' });
+    expect(await loadQuota(claudeFile())).toMatchObject({ status: 'success', plan: 'Max', usageCredits: undefined });
   });
 
   it('stays quiet about a failed check until the account has been offered banked resets', async () => {
@@ -221,7 +235,7 @@ describe('claiming a Claude banked reset', () => {
     // Checked the reset just before claiming it, then read the quota again.
     const claimAt = calls.indexOf(claim);
     expect(calls.slice(0, claimAt).map((request) => request.url).sort()).toEqual([BANKED_URL, PROFILE_URL].sort());
-    expect(calls.slice(claimAt + 1).map((request) => request.url).sort()).toEqual([BANKED_URL, PROFILE_URL, USAGE_URL].sort());
+    expect(calls.slice(claimAt + 1).map((request) => request.url).sort()).toEqual([BANKED_URL, PREPAID_URL, PROFILE_URL, USAGE_URL].sort());
   });
 
   it('claims nothing when the reset or the limits changed since the confirmation', async () => {

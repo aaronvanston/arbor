@@ -56,6 +56,7 @@
  * `?codexreset=already`, `nothing` or `none` to have Codex answer a reset as already redeemed, nothing to
  * reset or no credit left; `?codexreset=lost` to lose the first reset's reply after it went through;
  * `?codexreset=clear-fails` to have the core refuse to clear an account's cooldown after a reset;
+ * `?credits=none` to leave every Codex and Claude account without credits for use past its limits;
  * `?model=<id>` for casey-mbp reporting that model identifier and no product name: `Mac16,11` a Mac mini,
  * `Mac15,14` a Mac Studio, `iMac21,1`, `MacPro7,1`, `VirtualMac2,1`, or `Mac99,1` for one Arbor doesn't know (a Mac);
  * `?discover=none` for an Add machine dialog (Settings › Machines, the sidebar's +) that finds nothing in ~/.ssh or on

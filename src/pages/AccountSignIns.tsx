@@ -39,6 +39,7 @@ import { planLabel, planVariant } from '../services/planCosts';
 import { useQuotaCache } from '../services/quotaCache';
 import { fileName, idleQuota, providerForFile, quotaKey, type AuthFile, type QuotaRow, type QuotaState } from '../services/quotaService';
 import { formatQuotaReset, resetCreditsExpiry, useQuotaClock } from '../services/quotaTime';
+import { usageCreditsText } from '../services/usageCredits';
 
 /**
  * Accounts › Sign-ins: every credential the core has, by provider, with the name and avatar it goes by, its email, its
@@ -361,6 +362,7 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
     : resets === 1 ? 'accounts.resets.manual.one' : 'accounts.resets.manual.other', { count: resets }) : '';
   // Granted resets lapse when unused, so their first expiry sits beside the count and turns amber near the end.
   const expiry = resetCreditsExpiry(quota, now);
+  const credits = quota.usageCredits ? usageCreditsText(quota.usageCredits, t) : null;
   const resume = async () => {
     setResuming(true);
     setAccountsError('');
@@ -403,10 +405,12 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
             <AuthFileStatus availability={availability} now={now} readyPill={false} />
           ) : null}
         </div>
-        {facts.length || resetsText ? (
+        {facts.length || resetsText || credits ? (
           <div className="mt-0.5 truncate text-xs text-muted-foreground">
             {facts.join(' · ')}
-            {facts.length && resetsText ? ' · ' : null}
+            {facts.length && credits ? ' · ' : null}
+            {credits ? <span title={credits.detail}>{credits.label}</span> : null}
+            {(facts.length || credits) && resetsText ? ' · ' : null}
             {resetsText ? (
               <span className={cn(expiry?.soon && 'text-warning-foreground')} title={expiry ? formatQuotaReset(expiry.atMs, undefined, now) : undefined}>
                 {expiry
