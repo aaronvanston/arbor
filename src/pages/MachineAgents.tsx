@@ -15,7 +15,7 @@ import { useT3Compatibility } from '../services/agentReleases';
 import { agentsBehind, runningAgents, type AgentBehind, type NewestAgents } from '../services/agentVersions';
 import { AGENT_KINDS, updateMachineAgent } from '../services/machineHealth';
 import { t3Advisory, type T3Advisory } from '../services/t3Compat';
-import { agentBehindProblem, t3AdvisoryProblem } from '../services/fixPrompt';
+import { agentBehindProblem, agentCheckFailedProblem, agentUpdateFailedProblem, duplicateInstallProblem, t3AdvisoryProblem } from '../services/fixPrompt';
 import { FixMenu } from '../components/FixMenu';
 import { MachineReporterRow } from './MachineReporter';
 import { MachineTelemetryRow } from './MachineTelemetry';
@@ -134,11 +134,24 @@ export function useAgentUpdate(item: MachineHealth) {
 }
 
 /** What an update did, with the agent's own output a click away, or in full when it failed. */
-export function UpdateOutcomeView({ outcome }: { outcome: UpdateOutcome }) {
+export function UpdateOutcomeView({ outcome, fix }: {
+  outcome: UpdateOutcome;
+  /** The machine and agent, so a failed update can be handed to an agent to fix. */
+  fix?: { machine: string; agent: AgentKind; item?: MachineHealth | null };
+}) {
   const { t } = useI18n();
   return (
     <div className={cn('text-xs', outcome.ok ? 'text-muted-foreground' : 'text-error-foreground')} role="status">
-      <p>{outcome.text}</p>
+      <p className="flex flex-wrap items-center gap-2">
+        {outcome.text}
+        {fix && !outcome.ok ? (
+          <FixMenu
+            machine={fix.machine}
+            item={fix.item}
+            problem={agentUpdateFailedProblem({ agent: fix.agent, command: fix.item?.agents[fix.agent]?.updateCommand ?? null, output: outcome.output }, t)}
+          />
+        ) : null}
+      </p>
       {outcome.output ? (
         outcome.ok ? (
           <details className="mt-1">
@@ -172,13 +185,20 @@ export function t3AdvisoryText(
  * The same agent installed more than once on a machine: each copy's path and version, the one the shell finds first
  * at the top. Only that one is updated, so an older one elsewhere can still start from a shell with another PATH.
  */
-export function AgentCopies({ agent, install }: { agent: AgentKind; install: AgentInstall }) {
+export function AgentCopies({ agent, install, item }: { agent: AgentKind; install: AgentInstall; item?: MachineHealth }) {
   const { t } = useI18n();
   if (!install.copies.length) return null;
   const copies = [{ path: install.path, real: install.real, version: install.version }, ...install.copies];
+  const problem = duplicateInstallProblem({
+    agent,
+    copies: copies.map((copy) => `${copy.real && copy.real !== copy.path ? `${copy.path} → ${copy.real}` : copy.path} (${copy.version ?? '?'})`),
+  }, t);
   return (
     <Alert variant="warning" className="px-3 py-2 text-xs">
-      <AlertTitle>{t('machines.agents.copies.title', { agent: t(AGENT_NAME[agent]), count: copies.length })}</AlertTitle>
+      <AlertTitle className="flex flex-wrap items-center justify-between gap-2">
+        {t('machines.agents.copies.title', { agent: t(AGENT_NAME[agent]), count: copies.length })}
+        {item ? <FixMenu machine={item.machine} item={item} problem={problem} className="-my-1" /> : null}
+      </AlertTitle>
       <AlertDescription className="gap-1.5">
         <span>{t('machines.agents.copies.description')}</span>
         <ul className="flex flex-col gap-1">
@@ -231,8 +251,11 @@ export function MachineAgentsBlock({ item, newest, embedded = false }: { item: M
             {t('machines.agents.title')}
           </span>
         )}
-        <span className={cn('truncate text-2xs', agents.error ? 'text-warning-foreground' : 'text-muted-foreground')} title={agents.error ?? undefined}>
-          {status}
+        <span className="flex min-w-0 items-center gap-1">
+          <span className={cn('truncate text-2xs', agents.error ? 'text-warning-foreground' : 'text-muted-foreground')} title={agents.error ?? undefined}>
+            {status}
+          </span>
+          {agents.error ? <FixMenu compact machine={item.machine} item={item} problem={agentCheckFailedProblem(agents.error, t)} /> : null}
         </span>
       </div>
       <div className="flex flex-col divide-y divide-border/40">
@@ -306,8 +329,8 @@ export function MachineAgentsBlock({ item, newest, embedded = false }: { item: M
               </div>
               {advisoryText ? <p className="text-xs text-warning-foreground">{advisoryText}</p> : null}
 
-              {install ? <AgentCopies agent={agent} install={install} /> : null}
-              {outcome ? <UpdateOutcomeView outcome={outcome} /> : null}
+              {install ? <AgentCopies agent={agent} install={install} item={item} /> : null}
+              {outcome ? <UpdateOutcomeView outcome={outcome} fix={{ machine: item.machine, agent, item }} /> : null}
             </div>
           );
         })}

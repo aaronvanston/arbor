@@ -22,6 +22,8 @@ import {
   type HomeStart,
 } from '../services/startingContext';
 import type { SetupMachine, StartingContext } from '../native/types';
+import { FixMenu } from '../components/FixMenu';
+import { startingContextProblem } from '../services/fixPrompt';
 import { MachinePill, ModelName } from '../components/identity/Identity';
 import { MetaLine } from '../components/MetaLine';
 
@@ -189,6 +191,16 @@ function HomeRow({ start, estimate, label, open, onToggle }: {
             <span className="flex min-w-0 items-center gap-1.5">
               <span className="truncate text-sm font-medium text-foreground">{label}</span>
               {grew ? <Badge variant="warning" size="sm">{t('setup.context.row.grew')}</Badge> : null}
+              {grew ? (
+                // The row opens on a click; the menu's own clicks stay with the menu.
+                <span onClick={(event) => event.stopPropagation()}>
+                  <FixMenu
+                    compact
+                    machine={start.machine}
+                    problem={startingContextProblem({ agent: start.agent, home: start.home, median: formatTokens(start.median), change: formatTokens(start.change ?? 0), days: RECENT_DAYS }, t)}
+                  />
+                </span>
+              ) : null}
             </span>
             <MetaLine parts={[<MachinePill key="machine" name={start.machine} size="sm" />, <span key="home" className="min-w-0 truncate font-mono">{start.home}</span>]} title={start.home} />
           </div>

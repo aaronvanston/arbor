@@ -105,6 +105,8 @@ import type {
   PluginWanted,
   RepoPlugin,
 } from '../native/types';
+import { FixMenu } from '../components/FixMenu';
+import { mcpServerProblem } from '../services/fixPrompt';
 import { MachinePill, MachinePills } from '../components/identity/Identity';
 
 /** How far back use is counted. */
@@ -561,7 +563,7 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
   ) : null;
   const serverHome = (row: McpRow, cell: McpCell) => {
     const key = mcpKey(cell.home, row.name);
-    return (
+    const choosable = (
       <Choosable
         chosen={settledMcp[key] ?? null}
         options={mcpOptions(cell, found)}
@@ -573,6 +575,14 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
       >
         <McpCellView row={row} cell={cell} />
       </Choosable>
+    );
+    if (cell.health !== 'failed' && cell.health !== 'needsAuth') return choosable;
+    const problem = mcpServerProblem({ server: row.name, home: cell.home.path, status: cell.health, transport: cell.item?.value ?? '', plugin: row.plugin }, t);
+    return (
+      <span className="flex min-w-0 items-center gap-1">
+        {choosable}
+        <FixMenu compact machine={cell.home.machine} problem={problem} />
+      </span>
     );
   };
   const serverUsed = (row: McpRow) => (

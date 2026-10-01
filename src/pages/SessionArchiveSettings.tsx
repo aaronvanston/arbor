@@ -6,6 +6,8 @@ import type { MessageKey } from '../i18n/resources';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsRow, SettingsSection } from '../components/layout/settings';
 import { FleetWideNotice, projectLabel, SettingsScopeSentence, useFleetMachines, useFleetProjects, useScopedValue } from '../components/layout/machineScope';
+import { FixMenu } from '../components/FixMenu';
+import { archiveCollectionProblem, sessionRetentionProblem } from '../services/fixPrompt';
 import { MachinePill } from '../components/identity/Identity';
 import { projectSettingsKey, useSettingsProject, useSettingsScope } from '../services/machineSettings';
 import { machineLookKey } from '../services/machineLook';
@@ -438,6 +440,12 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
           key={group.machine}
           title={<span>{tRich('sessionArchive.homes.title', { machine: <MachinePill name={group.machine} /> })}</span>}
           description={t('sessionArchive.homes.description')}
+          headerAction={group.run?.error ? (
+            <FixMenu
+              machine={group.machine}
+              problem={archiveCollectionProblem({ error: group.run.error, lastOk: group.run.lastOkAt !== null ? formatAgo(group.run.lastOkAt, now) : null }, t)}
+            />
+          ) : undefined}
           summary={group.run?.error ? (
             <span className="text-error-foreground">
               {t('sessionArchive.homes.failed', { error: group.run.error })}{' '}
@@ -459,7 +467,12 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
                     {days !== null ? <span className="text-warning-foreground">{t('sessionArchive.homes.deletes', { days })}</span> : null}
                   </span>
                 }
-                control={source.kept < source.files && status.state !== 'paused' ? <Badge variant="info">{t('sessionArchive.homes.catchingUp')}</Badge> : null}
+                control={(
+                  <span className="flex items-center gap-2">
+                    {source.kept < source.files && status.state !== 'paused' ? <Badge variant="info">{t('sessionArchive.homes.catchingUp')}</Badge> : null}
+                    {days !== null ? <FixMenu machine={source.machine} problem={sessionRetentionProblem({ home: source.label, days }, t)} /> : null}
+                  </span>
+                )}
               />
             );
           })}

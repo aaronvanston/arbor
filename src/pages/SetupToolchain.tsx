@@ -19,7 +19,11 @@ import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { formatAgo } from '../lib/format';
 import { tilde } from '../services/setupProjects';
+import { scanFailedProblem, libraryLinesProblem, projectToolchainProblem, toolBehindProblem } from '../services/fixPrompt';
+import { FixMenu } from '../components/FixMenu';
 import {
+  actionable,
+  releaseLine,
   buildLibraries,
   buildToolchainProjects,
   buildToolRows,
@@ -342,7 +346,7 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {shownLibraries.map((row) => <LibraryRowView key={row.name} row={row} />)}
+                    {shownLibraries.map((row) => <LibraryRowView key={row.name} row={row} projects={rows} />)}
                   </TableBody>
                 </Table>
               ) : (
@@ -405,7 +409,12 @@ function MachineCard({ machine, toolchain, rows, error, now, onScan }: {
         <span className="truncate">{status}</span>
         {scanned && scanned.os ? <span className="truncate">· {scanned.os} {scanned.arch}</span> : null}
       </div>
-      {failure ? <p className="line-clamp-2 text-2xs text-muted-foreground" title={failure}>{failure}</p> : null}
+      {failure ? (
+        <div className="flex min-w-0 items-start gap-1">
+          <p className="line-clamp-2 min-w-0 flex-1 text-2xs text-muted-foreground" title={failure}>{failure}</p>
+          {busy ? null : <FixMenu compact machine={machine.machine} problem={scanFailedProblem({ scan: 'toolchain', error: failure }, t)} className="-mt-1" />}
+        </div>
+      ) : null}
       {scanned ? (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-foreground/85">
           <span>{t(scanned.tools.length === 1 ? 'setup.toolchain.machine.tools.one' : 'setup.toolchain.machine.tools.other', { count: scanned.tools.length })}</span>
@@ -433,10 +442,29 @@ function ToolRowView({ row, columns, homes }: { row: ToolRow; columns: string[];
       </TableCell>
       {columns.map((machine) => {
         const toolchain = homes.get(machine);
-        const cell = <ToolCellView cell={row.cells[machine] ?? null} machine={machine} homeDir={toolchain?.homeDir ?? ''} newest={row.newest} />;
+        const toolCell = row.cells[machine] ?? null;
+        const cell = <ToolCellView cell={toolCell} machine={machine} homeDir={toolchain?.homeDir ?? ''} newest={row.newest} />;
+        const found = toolCell?.found;
+        // Outside the Node cell's own button, which opens its versions.
+        const fix = toolCell?.behind && found?.version && row.newest ? (
+          <FixMenu
+            compact
+            machine={machine}
+            problem={toolBehindProblem({
+              tool: toolLabel(row.tool, t),
+              version: found.version,
+              newest: row.newest,
+              path: found.path,
+              kept: toolCell.kept.filter((entry) => entry.version !== found.version).map((entry) => `${entry.version} (${entry.manager})`),
+            }, t)}
+          />
+        ) : null;
         return (
           <TableCell key={machine} className="text-xs">
-            {row.tool === 'node' && toolchain ? <NodeVersionsCell toolchain={toolchain} label={t('setup.toolchain.node.open', { machine })}>{cell}</NodeVersionsCell> : cell}
+            <span className="flex min-w-0 items-center gap-1">
+              {row.tool === 'node' && toolchain ? <NodeVersionsCell toolchain={toolchain} label={t('setup.toolchain.node.open', { machine })}>{cell}</NodeVersionsCell> : cell}
+              {fix}
+            </span>
           </TableCell>
         );
       })}
@@ -686,8 +714,38 @@ function ProjectDetail({ row, columns }: { row: ToolchainRow; columns: string[] 
   const checkFor = (machine: string, id: string) => (row.places[machine] ?? []).flatMap((place) => place.checks).find((check) => needId(check.need) === id) ?? null;
   const problems = holders.flatMap((machine) => (row.places[machine] ?? []).map((place) => ({ machine, place })));
   const packageNotes = problems.filter(({ place }) => place.libraries.length || notInstalled(place.project).length || place.project.unread.length);
+  const fixes = problems.flatMap(({ machine, place }) => {
+    const needs = place.checks.filter((check) => actionable(check.state));
+    const bare = notInstalled(place.project);
+    if (!needs.length && !place.libraries.length && !bare.length) return [];
+    const path = tilde(place.project.path, place.homeDir);
+    return [{
+      machine,
+      path,
+      problem: projectToolchainProblem({
+        project: row.name,
+        path,
+        needs: needs.map((check) => `${needLabel(check.need, t)} (${needSource(check.need)}): ${checkText(check, t)}`),
+        packages: [
+          ...bare.map((entry) => t('setup.toolchain.detail.notInstalled', { dir: entry.dir || '.' })),
+          ...place.libraries.map(({ library, problem }) => `${library.dir ? `${library.dir}/${library.name}` : library.name}: ${problem === 'absent'
+            ? t('setup.toolchain.detail.absent', { wants: library.wants })
+            : t('setup.toolchain.detail.unmatched', { installed: library.installed ?? '', wants: library.wants })}`),
+        ],
+      }, t),
+    }];
+  });
   return (
     <div className="flex flex-col gap-4 px-4 py-3">
+      {fixes.length ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {fixes.map((fix) => (
+            <FixMenu key={`${fix.machine}\u0000${fix.path}`} machine={fix.machine} problem={fix.problem}>
+              {tRich('fix.menu.labelOn', { machine: <MachinePill name={fix.machine} size="sm" /> })}
+            </FixMenu>
+          ))}
+        </div>
+      ) : null}
       {needs.size ? (
         <section className="flex flex-col gap-1.5">
           <h4 className="text-xs font-medium text-muted-foreground">{t('setup.toolchain.detail.needs')}</h4>
@@ -789,15 +847,37 @@ function ProjectDetail({ row, columns }: { row: ToolchainRow; columns: string[] 
   );
 }
 
-function LibraryRowView({ row }: { row: LibraryRow }) {
+function LibraryRowView({ row, projects }: { row: LibraryRow; projects: ToolchainRow[] }) {
   const { t } = useI18n();
   const [newest] = row.uses;
+  // The checkouts on an older line, and the machine to fix them on: the one with most of them.
+  const behind = newest && row.lines > 1
+    ? row.uses.filter((use) => releaseLine(use.version) !== releaseLine(newest.version)).flatMap((use) => {
+      const project = projects.find((entry) => entry.key === use.key);
+      return Object.values(project?.places ?? {}).flat().filter((place) => !place.project.missing).map((place) => ({ use, place }));
+    })
+    : [];
+  const counts = new Map<string, number>();
+  for (const { place } of behind) counts.set(place.machine, (counts.get(place.machine) ?? 0) + 1);
+  const fixOn = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   return (
     <TableRow>
       <TableCell className="align-top">
         <span className="flex flex-col gap-0.5">
           <span className="font-mono text-xs text-foreground">{row.name}</span>
           {row.lines > 1 ? <span className="text-2xs text-warning-foreground">{t('setup.toolchain.libraries.lines', { count: row.lines })}</span> : null}
+          {fixOn && newest ? (
+            <FixMenu
+              machine={fixOn}
+              className="-ms-2 self-start"
+              problem={libraryLinesProblem({
+                library: row.name,
+                newest: newest.version,
+                uses: row.uses.map((use) => `${use.name} ${use.version}`),
+                behind: behind.map(({ use, place }) => t('fix.detail.checkoutOn', { project: use.name, version: use.version, path: tilde(place.project.path, place.homeDir), machine: place.machine })),
+              }, t)}
+            />
+          ) : null}
         </span>
       </TableCell>
       <TableCell>

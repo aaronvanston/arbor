@@ -2,6 +2,22 @@ import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import {
   agentBehindProblem,
+  agentCheckFailedProblem,
+  agentMissingProblem,
+  agentUpdateFailedProblem,
+  archiveCollectionProblem,
+  checkoutProblem,
+  duplicateInstallProblem,
+  libraryLinesProblem,
+  mcpServerProblem,
+  projectToolchainProblem,
+  projectsInLineProblem,
+  scanFailedProblem,
+  sessionRetentionProblem,
+  settingsInLineProblem,
+  startingContextProblem,
+  toolBehindProblem,
+  toolsInLineProblem,
   fixPrompt,
   fixSessions,
   healthProblem,
@@ -138,5 +154,40 @@ describe('fix prompts', () => {
     const item = machine({ agents: agents({ claude: { ...install('2.1.3', '/home/casey/.local/bin/claude'), updateCommand: 'claude update' } }) });
     const prompt = fixPrompt('cedar-02', item, present(healthProblem(item, t)), 'unknown', t);
     expect(prompt).not.toMatch(/token|api[_ -]?key|secret|password|Bearer/i);
+  });
+
+  it('words every other kind of problem with its facts', () => {
+    const tool = toolBehindProblem({ tool: 'Node', version: '20.11.0', newest: '22.4.0', path: '/usr/local/bin/node', kept: ['22.4.0 (nvm)'] }, t);
+    expect(tool.text).toBe('Node 20.11.0 here is a release behind 22.4.0, the newest on my machines.');
+    expect(tool.details).toEqual(['Path: /usr/local/bin/node', 'Also kept: 22.4.0 (nvm)']);
+
+    const project = projectToolchainProblem({ project: 'arbor', path: '~/src/arbor', needs: ['Node >=22: 20.11.0 here'], packages: ['react: 18 installed, wants ^19'] }, t);
+    expect(project.goal).toContain('In ~/src/arbor');
+    expect(project.details).toHaveLength(2);
+
+    const library = libraryLinesProblem({ library: 'zod', newest: '4.1.0', uses: ['arbor 4.1.0', 'proxy 3.22.0'], behind: ['proxy on 3.22.0 at ~/src/proxy on cedar-02'] }, t);
+    expect(library.text).toBe('My projects use zod on 2 different versions.');
+    expect(library.details).toContain('Behind: proxy on 3.22.0 at ~/src/proxy on cedar-02');
+
+    expect(toolsInLineProblem({ reference: 'casey-mbp', missing: ['Go'], behind: [] }, t).details).toEqual(['Missing, which casey-mbp has: Go']);
+    expect(settingsInLineProblem({ reference: 'casey-mbp', missing: ['model (Setting, Claude Code)'], different: [] }, t).goal).toContain('never copy a secret’s value');
+    expect(projectsInLineProblem({ reference: 'casey-mbp', clones: ['git clone git@github.com:acme/proxy.git ~/src/proxy'] }, t).text).toBe('casey-mbp has 1 projects checked out that this machine doesn’t.');
+    expect(agentMissingProblem({ agent: 'codex', command: 'npm install -g @openai/codex' }, t).goal).toContain('`npm install -g @openai/codex`');
+
+    const failed = agentUpdateFailedProblem({ agent: 'claude', command: 'claude update', output: 'x'.repeat(3_000) }, t);
+    expect(failed.details[0]).toBe('Command: claude update');
+    // Long output keeps its end, where the error is.
+    expect(failed.details[1]?.length).toBeLessThan(2_100);
+
+    expect(duplicateInstallProblem({ agent: 'claude', copies: ['/a/claude (2.1.3)', '/b/claude (2.0.1)'] }, t).details).toEqual(['First on PATH: /a/claude (2.1.3)', 'Also: /b/claude (2.0.1)']);
+    expect(agentCheckFailedProblem('sh: 1: claude: not found', t).details).toEqual(['Error: sh: 1: claude: not found']);
+    expect(checkoutProblem({ project: 'arbor', path: '~/src/arbor', remote: 'git@github.com:casey/arbor.git', defaultBranch: 'main', issues: ['Fetching didn’t work'] }, t).details)
+      .toEqual(['Remote: git@github.com:casey/arbor.git', 'Default branch: main', 'Fetching didn’t work']);
+    expect(mcpServerProblem({ server: 'docs', home: '~/.claude', status: 'needsAuth', transport: 'http', plugin: null }, t).text).toContain('waiting to be signed in to');
+    // Collecting and scanning run from this Mac, so their sessions start here.
+    expect(archiveCollectionProblem({ error: 'Permission denied (publickey)', lastOk: null }, t).from).toBe('thisMac');
+    expect(scanFailedProblem({ scan: 'toolchain', error: 'exit 2' }, t).from).toBe('thisMac');
+    expect(sessionRetentionProblem({ home: '~/.claude', days: 30 }, t).text).toBe('Claude Code deletes sessions in ~/.claude after 30 days.');
+    expect(startingContextProblem({ agent: 'claude', home: '~/.claude', median: '42K', change: '8K', days: 7 }, t).text).toContain('8K more tokens');
   });
 });

@@ -2,6 +2,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { listen } from '@tauri-apps/api/event';
 import { ArrowUpCircle, Check, ChevronDown, ListChecks, Plus } from '../components/ui/icons';
 import { CommandLine } from '../components/CommandLine';
+import { FixMenu } from '../components/FixMenu';
+import { agentMissingProblem, healthProblem, projectsInLineProblem, settingsInLineProblem, toolsInLineProblem } from '../services/fixPrompt';
 import { ConnectAgentDialog } from '../components/ConnectAgentDialog';
 import { Button } from '../components/ui/button';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '../components/ui/collapsible';
@@ -391,6 +393,10 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
               <>
                 <p className="text-muted-foreground">{t('setup.checklist.connect.hint')}</p>
                 {host?.endpoint ? <CommandLine command={`ssh${host.port !== 22 ? ` -p ${host.port}` : ''} ${shellWord(host.endpoint)} true`} /> : null}
+                {targetHealth && step.why === 'down' ? (() => {
+                  const problem = healthProblem(targetHealth, t);
+                  return problem ? <Actions><FixMenu machine={name} item={targetHealth} problem={problem} /></Actions> : null;
+                })() : null}
               </>
             ) : null}
             {!listed ? (
@@ -558,6 +564,10 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       }
       case 'settings': {
         const step = steps.settings;
+        const settingText = (diff: (typeof step.missing)[number]) => {
+          const kind = KIND_LABEL[diff.kind];
+          return `${diff.name} (${[kind ? t(kind) : diff.kind, homeLabel(diff.home)].join(', ')})`;
+        };
         const line = (diff: (typeof step.missing)[number]) => {
           const kind = KIND_LABEL[diff.kind];
           return (
@@ -587,6 +597,11 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
                 <Button variant="outline" size="xs" onClick={() => onCompareSettings(referenceName, (step.missing[0] ?? step.different[0])?.home ?? null)}>
                   {tRich('setup.checklist.settings.compare', { reference: ref })}
                 </Button>
+                <FixMenu
+                  machine={name}
+                  item={targetHealth}
+                  problem={settingsInLineProblem({ reference: referenceName, missing: step.missing.map(settingText), different: step.different.map(settingText) }, t)}
+                />
               </Actions>
             ) : null}
           </>
@@ -620,6 +635,17 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
                 {t('setup.checklist.lookAgain')}
               </Button>
               <Button variant="outline" size="xs" onClick={() => onOpenTab('toolchain', name)}>{t('setup.checklist.open.toolchain')}</Button>
+              {step.missing.length || step.behind.length ? (
+                <FixMenu
+                  machine={name}
+                  item={targetHealth}
+                  problem={toolsInLineProblem({
+                    reference: referenceName,
+                    missing: step.missing.map((tool) => toolLabel(tool, t)),
+                    behind: step.behind.map((entry) => t('setup.checklist.tools.behindItem', { tool: toolLabel(entry.tool, t), version: entry.version, newest: entry.newest })),
+                  }, t)}
+                />
+              ) : null}
             </Actions>
           </>
         );
@@ -652,6 +678,16 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
                 {t('setup.checklist.lookAgain')}
               </Button>
               <Button variant="outline" size="xs" onClick={() => onOpenTab('projects', name)}>{t('setup.checklist.open.projects')}</Button>
+              {step.missing.length && referenceName ? (
+                <FixMenu
+                  machine={name}
+                  item={targetHealth}
+                  problem={projectsInLineProblem({
+                    reference: referenceName,
+                    clones: step.missing.map((project) => project.command ?? t('setup.checklist.projects.alias', { remote: project.remote, path: project.path })),
+                  }, t)}
+                />
+              ) : null}
             </Actions>
           </>
         );
@@ -970,7 +1006,12 @@ function AgentLine({ fact, machine, health, listed }: { fact: AgentFact; machine
           health ? <AgentUpdate item={health} agent={fact.agent} /> : !listed ? <span className="text-xs text-muted-foreground">{t('setup.checklist.agents.needsList')}</span> : null
         ) : null}
       </div>
-      {fact.state === 'missing' ? <CommandLine command={fact.command} /> : null}
+      {fact.state === 'missing' ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1"><CommandLine command={fact.command} /></div>
+          <FixMenu machine={machine} item={health} problem={agentMissingProblem({ agent: fact.agent, command: fact.command }, t)} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -993,7 +1034,7 @@ function AgentUpdate({ item, agent }: { item: MachineHealth; agent: AgentKind })
         {busy(agent) ? <Spinner /> : <ArrowUpCircle />}
         {busy(agent) ? t('machines.agents.updating') : t('machines.agents.update')}
       </Button>
-      {outcome ? <div className="basis-full"><UpdateOutcomeView outcome={outcome} /></div> : null}
+      {outcome ? <div className="basis-full"><UpdateOutcomeView outcome={outcome} fix={{ machine: item.machine, agent, item }} /></div> : null}
     </>
   );
 }

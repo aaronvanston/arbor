@@ -367,7 +367,7 @@ export function RolloutRow({
           {run.results.map((result) => (
             <li key={result.machine} className="flex flex-col items-start gap-1">
               <MachinePill name={result.machine} />
-              <UpdateOutcomeView outcome={result} />
+              <UpdateOutcomeView outcome={result} fix={{ machine: result.machine, agent }} />
             </li>
           ))}
           {run.notTried ? (

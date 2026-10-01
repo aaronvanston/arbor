@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useI18n } from '../i18n';
 import { invokeCommand } from '../native/commands';
@@ -19,11 +19,15 @@ const AGENT_NAME = { claude: 'machines.agents.name.claude', codex: 'machines.age
  * already started on it, on the machine or on this Mac. The machines are read again as the menu opens, so the prompt
  * carries their latest details and each agent's item says where it would run.
  */
-export function FixMenu({ machine, problem, item = null, className }: {
+export function FixMenu({ machine, problem, item = null, compact = false, children, className }: {
   machine: string;
   problem: FixProblem;
   /** The machine as the page has it, used until the menu's own read comes back. */
   item?: MachineHealth | null;
+  /** Just the wrench, for a table cell. */
+  compact?: boolean;
+  /** The button's words in place of "Fix", such as "Fix on" a machine's pill. */
+  children?: ReactNode;
   className?: string;
 }) {
   const { t } = useI18n();
@@ -52,10 +56,18 @@ export function FixMenu({ machine, problem, item = null, className }: {
   return (
     <Menu onOpenChange={refresh}>
       <MenuTrigger
-        render={<Button variant="ghost" size="xs" className={cn('shrink-0', className)} aria-label={t('fix.menu.aria', { machine: shown })} />}
+        render={(
+          <Button
+            variant="ghost"
+            size={compact ? 'icon-xs' : 'xs'}
+            className={cn('shrink-0', className)}
+            aria-label={t('fix.menu.aria', { machine: shown })}
+            title={compact ? t('fix.menu.aria', { machine: shown }) : undefined}
+          />
+        )}
       >
         <Wrench />
-        {t('fix.menu.label')}
+        {compact ? null : children ?? t('fix.menu.label')}
       </MenuTrigger>
       <MenuPopup className="w-72">
         <MenuItem onClick={() => void copy(fixPrompt(machine, current, problem, current?.local ? 'machine' : 'unknown', t), { label: t('fix.menu.copied') })}>

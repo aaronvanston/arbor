@@ -179,3 +179,168 @@ export function fixPrompt(machine: string, item: MachineHealth | null, problem: 
     `${t('fix.prompt.rules')}\n${list([t('fix.prompt.rule.look'), t('fix.prompt.rule.ask'), t('fix.prompt.rule.done')])}`,
   ].join('\n\n');
 }
+
+/** A tool a release behind the newest the fleet has. `kept` lists the other versions version managers keep there. */
+export function toolBehindProblem(fields: { tool: string; version: string; newest: string; path: string; kept: string[] }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.toolBehind', { tool: fields.tool, version: fields.version, newest: fields.newest }),
+    goal: t('fix.goal.toolBehind', { tool: fields.tool, newest: fields.newest }),
+    details: [t('fix.detail.path', { path: fields.path }), ...fields.kept.map((entry) => t('fix.detail.kept', { value: entry }))],
+    from: 'machine',
+  };
+}
+
+/** A checkout missing what its project asks for: tool versions, and dependencies not installed as package.json asks. */
+export function projectToolchainProblem(fields: { project: string; path: string; needs: string[]; packages: string[] }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.projectToolchain', { project: fields.project, path: fields.path }),
+    goal: t('fix.goal.projectToolchain', { path: fields.path }),
+    details: [...fields.needs, ...fields.packages],
+    from: 'machine',
+  };
+}
+
+/** A library projects use on more than one release line; `behind` are the checkouts on older lines, with where they are. */
+export function libraryLinesProblem(fields: { library: string; newest: string; uses: string[]; behind: string[] }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.libraryLines', { library: fields.library, count: fields.uses.length }),
+    goal: t('fix.goal.libraryLines', { library: fields.library, newest: fields.newest }),
+    details: [...fields.uses.map((use) => t('fix.detail.uses', { value: use })), ...fields.behind.map((place) => t('fix.detail.checkout', { value: place }))],
+    from: 'machine',
+  };
+}
+
+/** Tools another machine has that this one lacks or has older; `reference` is the machine it's being brought in line with. */
+export function toolsInLineProblem(fields: { reference: string | null; missing: string[]; behind: string[] }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.toolsInLine'),
+    goal: t('fix.goal.toolsInLine'),
+    details: [
+      ...(fields.missing.length ? [t('fix.detail.missingTools', { tools: fields.missing.join(', '), reference: fields.reference ? machineName(fields.reference) : '?' })] : []),
+      ...fields.behind.map((entry) => t('fix.detail.behindTool', { value: entry })),
+    ],
+    from: 'machine',
+  };
+}
+
+/** Settings, env names, hooks or profiles the reference machine's agent homes have and this one's lack or set differently. */
+export function settingsInLineProblem(fields: { reference: string; missing: string[]; different: string[] }, t: Translate): FixProblem {
+  const reference = machineName(fields.reference);
+  return {
+    text: t('fix.text.settingsInLine', { reference }),
+    goal: t('fix.goal.settingsInLine', { reference }),
+    details: [
+      ...fields.missing.map((entry) => t('fix.detail.settingMissing', { value: entry })),
+      ...fields.different.map((entry) => t('fix.detail.settingDifferent', { value: entry })),
+    ],
+    from: 'machine',
+  };
+}
+
+/** Projects the reference machine has checked out that this one hasn't; each line is a clone command or remote and path. */
+export function projectsInLineProblem(fields: { reference: string; clones: string[] }, t: Translate): FixProblem {
+  const reference = machineName(fields.reference);
+  return {
+    text: t('fix.text.projectsInLine', { reference, count: fields.clones.length }),
+    goal: t('fix.goal.projectsInLine', { reference }),
+    details: fields.clones.map((entry) => t('fix.detail.clone', { value: entry })),
+    from: 'machine',
+  };
+}
+
+/** An agent another machine has and this one doesn't; `command` installs it the way that machine did. */
+export function agentMissingProblem(fields: { agent: AgentKind; command: string }, t: Translate): FixProblem {
+  const agent = t(AGENT_NAME[fields.agent]);
+  return { text: t('fix.text.agentMissing', { agent }), goal: t('fix.goal.agentMissing', { agent, command: fields.command }), details: [], from: 'machine' };
+}
+
+/** An agent update Arbor ran that failed; `output` is what the update printed. */
+export function agentUpdateFailedProblem(fields: { agent: AgentKind; command: string | null; output: string }, t: Translate): FixProblem {
+  const agent = t(AGENT_NAME[fields.agent]);
+  const output = fields.output.length > 2_000 ? `…${fields.output.slice(-2_000)}` : fields.output;
+  return {
+    text: t('fix.text.agentUpdateFailed', { agent }),
+    goal: t('fix.goal.agentUpdateFailed', { agent }),
+    details: [...(fields.command ? [t('fix.detail.command', { command: fields.command })] : []), ...(output ? [t('fix.detail.output', { output })] : [])],
+    from: 'machine',
+  };
+}
+
+/** The same agent installed more than once; `copies` are each copy's path and version, the one PATH finds first leading. */
+export function duplicateInstallProblem(fields: { agent: AgentKind; copies: string[] }, t: Translate): FixProblem {
+  const agent = t(AGENT_NAME[fields.agent]);
+  return {
+    text: t('fix.text.duplicateInstall', { agent, count: fields.copies.length }),
+    goal: t('fix.goal.duplicateInstall', { agent }),
+    details: fields.copies.map((copy, index) => t(index ? 'fix.detail.copy' : 'fix.detail.copyFirst', { value: copy })),
+    from: 'machine',
+  };
+}
+
+/** Arbor's check of the agents on a machine failing. */
+export function agentCheckFailedProblem(error: string, t: Translate): FixProblem {
+  return { text: t('fix.text.agentCheckFailed'), goal: t('fix.goal.agentCheckFailed'), details: [t('fix.detail.error', { error })], from: 'machine' };
+}
+
+/** A checkout on a machine that needs a look: `issues` are what the Checkouts table says about it and its worktrees. */
+export function checkoutProblem(fields: { project: string; path: string; remote: string | null; defaultBranch: string | null; issues: string[] }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.checkout', { project: fields.project, path: fields.path }),
+    goal: t('fix.goal.checkout', { path: fields.path }),
+    details: [
+      ...(fields.remote ? [t('fix.detail.remote', { value: fields.remote })] : []),
+      ...(fields.defaultBranch ? [t('fix.detail.defaultBranch', { value: fields.defaultBranch })] : []),
+      ...fields.issues,
+    ],
+    from: 'machine',
+  };
+}
+
+/** An MCP server Claude Code reports as failing to connect, or waiting to be signed in to. */
+export function mcpServerProblem(fields: { server: string; home: string; status: 'failed' | 'needsAuth'; transport: string; plugin: string | null }, t: Translate): FixProblem {
+  return {
+    text: t(fields.status === 'failed' ? 'fix.text.mcpFailed' : 'fix.text.mcpNeedsAuth', { server: fields.server, home: fields.home }),
+    goal: t(fields.status === 'failed' ? 'fix.goal.mcpFailed' : 'fix.goal.mcpNeedsAuth', { server: fields.server, home: fields.home }),
+    details: [
+      ...(fields.transport ? [t('fix.detail.transport', { value: fields.transport })] : []),
+      ...(fields.plugin ? [t('fix.detail.plugin', { value: fields.plugin })] : []),
+    ],
+    from: 'machine',
+  };
+}
+
+/** The session archive's last collection from a machine failing, so its agents' sessions aren't being kept. */
+export function archiveCollectionProblem(fields: { error: string; lastOk: string | null }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.archiveCollection'),
+    goal: t('fix.goal.archiveCollection'),
+    details: [t('fix.detail.error', { error: fields.error }), ...(fields.lastOk ? [t('fix.detail.lastKept', { time: fields.lastOk })] : [])],
+    from: 'thisMac',
+  };
+}
+
+/** A Claude Code home that deletes sessions after `days`, before the archive may have kept them. */
+export function sessionRetentionProblem(fields: { home: string; days: number }, t: Translate): FixProblem {
+  return { text: t('fix.text.sessionRetention', fields), goal: t('fix.goal.sessionRetention', fields), details: [], from: 'machine' };
+}
+
+/** An agent home whose sessions start with more context than they did, which every session then pays for. */
+export function startingContextProblem(fields: { agent: AgentKind; home: string; median: string; change: string; days: number }, t: Translate): FixProblem {
+  const agent = t(AGENT_NAME[fields.agent]);
+  return {
+    text: t('fix.text.startingContext', { agent, home: fields.home, change: fields.change, days: fields.days }),
+    goal: t('fix.goal.startingContext', { home: fields.home }),
+    details: [t('fix.detail.medianStart', { value: fields.median })],
+    from: 'machine',
+  };
+}
+
+/** One of Arbor's scans of a machine failing: `scan` says which, in words. */
+export function scanFailedProblem(fields: { scan: 'setup' | 'toolchain' | 'homes'; error: string }, t: Translate): FixProblem {
+  return {
+    text: t(`fix.text.scanFailed.${fields.scan}`),
+    goal: t('fix.goal.scanFailed'),
+    details: [t('fix.detail.error', { error: fields.error })],
+    from: 'thisMac',
+  };
+}

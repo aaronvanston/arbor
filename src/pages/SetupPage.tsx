@@ -16,6 +16,8 @@ import { Switch } from '../components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
+import { FixMenu } from '../components/FixMenu';
+import { scanFailedProblem } from '../services/fixPrompt';
 import { MachinePill } from '../components/identity/Identity';
 import { WithShortcut } from '../components/ShortcutKbd';
 import { ScopeSentence } from '../components/layout/machineScope';
@@ -304,6 +306,7 @@ function MachineSummary({ machine, reference, differences, onScan }: {
             <span className="truncate">{status}</span>
           </div>
           {comparison ? <span className="shrink-0">{comparison}</span> : null}
+          {machine.error && !machine.scanning ? <FixMenu compact machine={machine.machine} problem={scanFailedProblem({ scan: 'setup', error: machine.error }, t)} /> : null}
         </div>
       </div>
       <Button

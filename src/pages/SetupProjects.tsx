@@ -63,6 +63,8 @@ import type {
   SetupText,
 } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
+import { FixMenu } from '../components/FixMenu';
+import { checkoutProblem } from '../services/fixPrompt';
 import { useNow } from '../hooks/useNow';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -540,6 +542,26 @@ function PlaceDetail({ place, now, chosen, onChoose }: {
     repo.lastUsedMs !== null ? t('setup.projects.detail.used', { time: formatAgo(repo.lastUsedMs, now) }) : null,
   ].filter(Boolean);
   const stale = repo.fetchedAt !== null && now - repo.fetchedAt > FETCH_STALE_MS;
+  const worktreeIssues = repo.worktrees.flatMap((worktree) => {
+    const dirty = (worktree.changed ?? 0) + (worktree.untracked ?? 0);
+    const states = [
+      worktree.prunable ? t('setup.projects.worktree.folderGone') : null,
+      dirty ? t('setup.projects.worktree.dirty', { changed: worktree.changed ?? 0, untracked: worktree.untracked ?? 0 }) : null,
+      worktree.behind ? t('fix.detail.behindBy', { count: worktree.behind }) : null,
+    ].filter((state): state is string => state !== null);
+    return states.length
+      ? [t('fix.detail.worktree', { path: tilde(worktree.path, homeDir), branch: worktree.branch ?? t('setup.projects.cell.detached'), state: states.join(', ') })]
+      : [];
+  });
+  const issues = [
+    repo.state === 'missing' ? t('setup.projects.detail.missing') : repo.state !== 'ok' ? t('setup.projects.detail.notGit') : null,
+    repo.fetchFailed ? t('setup.projects.cell.fetchFailed') : null,
+    stale ? t('setup.projects.detail.stale') : null,
+    ...worktreeIssues,
+  ].filter((issue): issue is string => issue !== null);
+  const problem = issues.length
+    ? checkoutProblem({ project: tilde(repo.path, homeDir).split('/').pop() ?? repo.path, path: tilde(repo.path, homeDir), remote: repo.remote, defaultBranch: repo.defaultBranch, issues }, t)
+    : null;
   return (
     <section className="flex flex-col gap-1.5">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -548,6 +570,7 @@ function PlaceDetail({ place, now, chosen, onChoose }: {
         <span className="text-xs text-muted-foreground">{facts.join(' · ')}</span>
         {repo.fetchFailed ? <span className="text-xs text-warning-foreground">{t('setup.projects.cell.fetchFailed')}</span> : null}
         {stale ? <span className="text-xs text-warning-foreground">{t('setup.projects.detail.stale')}</span> : null}
+        {problem ? <FixMenu machine={machine} problem={problem} className="ms-auto -my-1" /> : null}
       </div>
       {repo.state !== 'ok' ? (
         <p className="text-xs text-warning-foreground">{t(repo.state === 'missing' ? 'setup.projects.detail.missing' : 'setup.projects.detail.notGit')}</p>

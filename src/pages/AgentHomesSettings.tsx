@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertCircle, FolderSearch, Plus, RotateCcw, Trash2 } from '../components/ui/icons';
+import { FixMenu } from '../components/FixMenu';
+import { scanFailedProblem } from '../services/fixPrompt';
 import { useI18n } from '../i18n';
 import { formatWhen } from '../lib/format';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
@@ -137,7 +139,12 @@ function MachineHomes({ view, machine, onAdd }: { view: AgentHomesView; machine:
     >
       {failure ?? machine.error ? (
         <SettingsBlock>
-          <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{t('agentHomes.machine.error', { error: failure ?? machine.error ?? '' })}</AlertDescription></Alert>
+          <Alert variant="error" icon={<AlertCircle />}>
+            <AlertDescription className="flex-row flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0">{t('agentHomes.machine.error', { error: failure ?? machine.error ?? '' })}</span>
+              <FixMenu machine={machine.machine} problem={scanFailedProblem({ scan: 'homes', error: failure ?? machine.error ?? '' }, t)} />
+            </AlertDescription>
+          </Alert>
         </SettingsBlock>
       ) : null}
       {own.length ? (
