@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.0.5",
+    "summary": "Machine names stay readable on colored buttons.",
+    "changes": []
+  },
+  {
     "version": "1.0.4",
     "summary": "Sync: recognize Codex marketplaces added from GitHub, so they can be added to other machines.",
     "changes": []
