@@ -1042,6 +1042,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "drop_setup_skills",
+        access: Access::Write,
+        summary: "Takes skills back out of the repo, undoing putting them in (see `drop_skills`).",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+            ArgSpec { name: "skills", ts_type: "Array<string>", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "set_setup_file_removed",
         access: Access::Write,
         summary: "Takes a rule, subagent or command off every machine in the repo, or puts it back, and commits it (see `remove_file`).",
@@ -1811,6 +1820,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "take_setup_file" => async { done(Box::pin(crate::usage::machine_health::setup_sync::take_setup_file(app.state(), arg(&args, "repo")?, arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "set_setup_skill_machine" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_skill_machine(arg(&args, "repo")?, arg(&args, "skill")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
         "set_setup_skill_removed" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::set_setup_skill_removed(arg(&args, "repo")?, arg(&args, "skill")?, arg(&args, "removed")?)).await) }.await,
+        "drop_setup_skills" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::drop_setup_skills(arg(&args, "repo")?, arg(&args, "skills")?)).await) }.await,
         "set_setup_file_removed" => async { done(Box::pin(crate::usage::machine_health::setup_sync::set_setup_file_removed(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "removed")?)).await) }.await,
         "set_setup_file_machine" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_file_machine(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
         "set_setup_plugin" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_plugin(arg(&args, "repo")?, arg(&args, "plugin")?, arg(&args, "source")?, arg(&args, "project")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
