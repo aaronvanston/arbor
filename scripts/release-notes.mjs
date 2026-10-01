@@ -251,11 +251,12 @@ async function main([command, ...argv]) {
       return;
     case 'feed-manifest':
     case 'github-manifest': {
-      // The local feed's is written while the release is built, after `add`; the GitHub one after the release commit
-      // is pushed, from the notes as committed there.
+      // The local feed's is written while the release is built, after `add`. The GitHub one is written after the
+      // release commit is pushed, from the notes as committed there (--ref), or by the Release workflow from its
+      // checkout, where a stable release's notes were just added.
       const github = command === 'github-manifest';
       const version = validateAppVersion(required(values, 'version'));
-      const notes = readReleaseNotes({ ref: github ? required(values, 'ref') : values.ref });
+      const notes = readReleaseNotes({ ref: values.ref });
       const releases = github ? releaseNotesFor(notes, version) : releasesUpTo(notes, version);
       const manifest = feedManifest({
         feed: github ? 'github' : 'local',

@@ -2,6 +2,7 @@
 # Publishes what the Release workflow (.github/workflows/arbor-release.yml) built: an `arbor-v<version>` release at the
 # commit it was built from, with its notes, the DMG and the signed update list the app reads. A nightly is a prerelease,
 # which only apps on the nightly channel look at; a stable release becomes the latest, which every app updates to.
+# The notes come from this checkout's release-notes.json, where the workflow adds a stable release's before building.
 # Signing needs ARBOR_RELEASE_SIGNING_KEY (scripts/release-signing.mjs), and gh needs GH_TOKEN.
 set -euo pipefail
 
@@ -42,7 +43,6 @@ feed_file="$work_dir/arbor-update-darwin.json"
 core_version="$(git show "$commit:core-version.txt" | tr -d '[:space:]')"
 node scripts/release-notes.mjs github-manifest \
   --version "$version" \
-  --ref "$commit" \
   --arch "$update_arch" \
   --sha256 "$asset_sha" \
   --size "$(wc -c < "$asset_path" | tr -d ' ')" \
@@ -52,7 +52,6 @@ node scripts/release-signing.mjs sign --manifest "$work_dir/manifest.json" --out
   || fail "Couldn't sign the update list; apps won't take this release without it."
 node scripts/release-notes.mjs github-body \
   --version "$version" \
-  --ref "$commit" \
   --asset "$asset_name" \
   --sha256 "$asset_sha" > "$work_dir/notes.md"
 

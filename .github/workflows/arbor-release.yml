@@ -1,15 +1,26 @@
-# Arbor's releases. Every half hour, a nightly from main when main has changed since the last one: a prerelease,
-# X.Y.Z-nightly.YYYYMMDD.N, that apps on the nightly channel take. A stable release is run by hand (Run workflow with
-# channel stable) after a `Release Arbor X.Y.Z` commit on main (scripts/release-commit.sh), and becomes the release
-# every app updates to. GitHub bills a private repository's macOS minutes, so scheduled runs wait until it's public.
+# Arbor's releases, modeled on T3 Code's. Sessions only push to main; this workflow does the releasing.
 #
-# Secrets: ARBOR_RELEASE_SIGNING_KEY signs the update list, and only the publish job, which runs nothing from the
-# build, sees it. HUGEICONS_LICENSE_KEY installs the Pro icons, ARBOR_POSTHOG_KEY builds in usage data and crash
-# reports, and POSTHOG_CLI_API_KEY, if set, sends the source maps.
+# Nightly: checked every half hour, and published as X.Y.Z-nightly.YYYYMMDD.N, a prerelease that apps on the nightly
+# channel take, once main has moved past the newest build and six hours have passed since the newest nightly
+# (scripts/release-plan.mjs). Nothing is committed for it.
+#
+# Stable: run by hand (scripts/release-stable.sh, or Run workflow with channel stable and the notes). It promotes the
+# newest nightly: the same commit, built as X.Y.Z, so stable only ships what nightly users already run. Once it's out,
+# the version and its notes are committed to main as `Release Arbor X.Y.Z`.
+#
+# Every job runs on the self-hosted runner on the release Mac (scripts/install-release-runner.sh), labeled
+# arbor-release: GitHub bills a private repository's hosted minutes, macOS ones tenfold. Building and publishing share a
+# job so the DMG never leaves the Mac as an artifact, which GitHub would also bill for storing. The build keeps
+# src-tauri/target between runs (checkout's clean: false), so Rust builds are incremental.
+#
+# Secrets: ARBOR_RELEASE_SIGNING_KEY signs the update list and is given only to the publish step. HUGEICONS_LICENSE_KEY
+# installs the Pro icons, ARBOR_POSTHOG_KEY builds in usage data and crash reports, and POSTHOG_CLI_API_KEY, if set,
+# sends the source maps.
 name: Release
 
 on:
   schedule:
+    # Avoids minute zero, when GitHub's scheduled jobs are busiest.
     - cron: '8,38 * * * *'
   workflow_dispatch:
     inputs:
@@ -18,58 +29,76 @@ on:
         type: choice
         options: [nightly, stable]
         default: nightly
+      summary:
+        description: "Stable only: the release's one-line summary (public)"
+        type: string
+        required: false
+      changes:
+        description: 'Stable only: up to three high-level changes, one a line'
+        type: string
+        required: false
 
 permissions:
   contents: read
 
+# Nightlies queue behind each other so two never build the same commit or publish out of order; a stable release has
+# its own group so a waiting nightly never holds it up. Nothing running is canceled.
 concurrency:
-  group: release
+  group: release-${{ inputs.channel == 'stable' && 'stable' || 'nightly' }}
   cancel-in-progress: false
 
 jobs:
   plan:
-    if: >-
-      github.repository == 'aaronvanston/arbor'
-      && (github.event_name == 'workflow_dispatch' || github.event.repository.visibility == 'public')
-    runs-on: ubuntu-latest
+    if: github.repository == 'aaronvanston/arbor'
+    runs-on: [self-hosted, arbor-release]
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.plan.outputs.version }}
+      ref: ${{ steps.plan.outputs.ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          clean: false
       - id: plan
         env:
           ARBOR_RELEASE_CHANNEL: ${{ inputs.channel || 'nightly' }}
+          ARBOR_RELEASE_SUMMARY: ${{ inputs.summary }}
+          ARBOR_RELEASE_CHANGES: ${{ inputs.changes }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-plan.mjs
 
-  build:
+  release:
     needs: plan
     if: needs.plan.outputs.version != ''
-    runs-on: macos-15
+    runs-on: [self-hosted, arbor-release]
     timeout-minutes: 120
+    permissions:
+      contents: write # creates the release and its tag
     env:
       VERSION: ${{ needs.plan.outputs.version }}
+      REF: ${{ needs.plan.outputs.ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.plan.outputs.ref }}
           persist-credentials: false
+          clean: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      # uvx runs dmgbuild, which lays out the DMG's installer window.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: |
-            src-tauri
-            core-plugins/arbor-models
+      # The commit being promoted predates its notes, so the build carries them from the run.
+      - name: Add the stable release's notes
+        if: inputs.channel == 'stable'
+        env:
+          ARBOR_RELEASE_SUMMARY: ${{ inputs.summary }}
+          ARBOR_RELEASE_CHANGES: ${{ inputs.changes }}
+        run: node scripts/release-notes.mjs add --version "$VERSION"
       - name: Install
         env:
           HUGEICONS_LICENSE_KEY: ${{ secrets.HUGEICONS_LICENSE_KEY }}
         run: bun install --frozen-lockfile
-      # An official build has the Pro icons and sends usage data, like one from the release Mac.
+      # An official build has the Pro icons and sends usage data.
       - name: Check the release secrets
         env:
           ARBOR_POSTHOG_KEY: ${{ secrets.ARBOR_POSTHOG_KEY }}
@@ -85,31 +114,48 @@ jobs:
           ARBOR_POSTHOG_KEY: ${{ secrets.ARBOR_POSTHOG_KEY }}
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
         run: ./scripts/build-release.sh "$VERSION" "$RUNNER_TEMP/release/Arbor-v$VERSION-Darwin-aarch64.dmg"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: dmg
-          path: ${{ runner.temp }}/release/Arbor-v${{ needs.plan.outputs.version }}-Darwin-aarch64.dmg
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
+      - name: Publish
+        env:
+          ARBOR_RELEASE_SIGNING_KEY: ${{ secrets.ARBOR_RELEASE_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-workflow-release.sh "$VERSION" "$REF" "$RUNNER_TEMP/release/Arbor-v$VERSION-Darwin-aarch64.dmg"
 
-  publish:
-    needs: [plan, build]
-    runs-on: ubuntu-latest
+  # After a stable release, main gets its version and notes, so the next nightly is a prerelease of the patch after it
+  # and the app's notes card has the summary.
+  finalize:
+    needs: [plan, release]
+    if: inputs.channel == 'stable' && needs.release.result == 'success'
+    runs-on: [self-hosted, arbor-release]
+    timeout-minutes: 10
     permissions:
-      contents: write # creates the release and its tag
+      contents: write # pushes the release commit to main
     env:
       VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: dmg
-          path: ${{ runner.temp }}/release
-      - name: Publish
+          ref: main
+          clean: false
+      - name: Commit the release to main
         env:
-          ARBOR_RELEASE_SIGNING_KEY: ${{ secrets.ARBOR_RELEASE_SIGNING_KEY }}
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/publish-workflow-release.sh "$VERSION" "$GITHUB_SHA" "$RUNNER_TEMP/release/Arbor-v$VERSION-Darwin-aarch64.dmg"
+          ARBOR_RELEASE_SUMMARY: ${{ inputs.summary }}
+          ARBOR_RELEASE_CHANGES: ${{ inputs.changes }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          message="$RUNNER_TEMP/release-message"
+          # Sessions push to main too, so a push that loses the race starts again from main's new head.
+          for attempt in 1 2 3; do
+            git fetch -q origin main
+            git reset -q --hard origin/main
+            node scripts/set-version.mjs "$VERSION"
+            node scripts/release-notes.mjs add --version "$VERSION"
+            node scripts/release-notes.mjs commit-message --version "$VERSION" --output "$message"
+            git commit -q -F "$message" -- src-tauri/Cargo.toml src-tauri/Cargo.lock release-notes.json
+            if git push -q origin HEAD:main; then
+              echo "Committed Release Arbor $VERSION to main."
+              exit 0
+            fi
+          done
+          echo "::error::Arbor $VERSION is out, but its release commit couldn't be pushed to main; commit it by hand."
+          exit 1

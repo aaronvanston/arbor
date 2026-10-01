@@ -2,14 +2,20 @@
 
 type Release = { version: string; summary: string; changes: string[] };
 
+export const NIGHTLY_GAP_MS: number;
 export function compareSemver(a: string, b: string): number;
 export function planRelease(options: {
   channel: string;
   cargoVersion: string;
   notes: Release[];
-  releases: { version: string; commit?: string }[];
+  releases: { version: string; commit?: string; publishedAt?: string }[];
   commit: string;
+  newCommits?: string[] | null;
+  pending?: { summary?: string; changes?: string[] };
   scheduled: boolean;
   date: string;
   run: string | number;
-}): { skip: string } | { version: string; tag: string; prerelease: boolean; skip?: undefined };
+  now: number;
+}):
+  | { skip: string }
+  | { version: string; tag: string; prerelease: boolean; ref: string; promotes?: string; skip?: undefined };

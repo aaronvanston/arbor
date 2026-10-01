@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds Arbor's DMG for a release from this checkout: the core release pinned in core-version.txt, the core plugin and
 # the app, signed ad hoc. It sets the version in the Cargo files and writes portable-app.json; checking the code first
-# is the caller's job. publish-local-update.sh runs it on the release Mac, and the Release workflow
-# (.github/workflows/arbor-release.yml) on GitHub's.
+# is the caller's job. The Release workflow (.github/workflows/arbor-release.yml) runs it on the release Mac's runner,
+# and publish-local-update.sh does in an emergency.
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then

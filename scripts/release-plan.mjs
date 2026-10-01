@@ -1,23 +1,32 @@
-// Plans a run of the Release workflow (.github/workflows/arbor-release.yml): the version it builds, or why it builds nothing.
+// Plans a run of the Release workflow (.github/workflows/arbor-release.yml): the version it builds and the commit it
+// builds it from, or why it builds nothing.
 //
-// A nightly is `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the next release: the version in Cargo.toml while that isn't
-// out yet (after a `Release Arbor X.Y.Z` commit), else the patch after the newest release. Nothing is committed for it.
-// A scheduled nightly is skipped when main is still where the newest nightly or release was built.
-// A stable release is the version in Cargo.toml, which needs its notes in release-notes.json and has to be newer than
-// every release out.
+// A nightly is `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the next release: the patch after the newest release, or the
+// version in Cargo.toml if that's newer. It's built from main, and nothing is committed for it. On the schedule it's
+// skipped until main has moved past the newest nightly or release with something besides release commits, and until
+// six hours have passed since the newest nightly, so a busy day gives a few nightlies, not one per push.
+// A stable release promotes the newest nightly: the same commit, as X.Y.Z, so it ships only what nightly users already
+// run. Its notes come with the run (ARBOR_RELEASE_SUMMARY, ARBOR_RELEASE_CHANGES), and the workflow commits them and
+// the version to main once it's out.
 //
 //   ARBOR_RELEASE_CHANNEL=nightly|stable node scripts/release-plan.mjs
 //
 // reads the commit, run number, event and repository from GitHub's variables, the releases with gh (GH_TOKEN), and
-// writes version, tag and prerelease, or skip, to $GITHUB_OUTPUT.
+// writes version, tag, prerelease and ref, or skip, to $GITHUB_OUTPUT.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { readReleaseNotes, releaseEntry, releasesUpTo } from './release-notes.mjs';
+import { isNightly, readReleaseNotes, releaseEntry, withRelease } from './release-notes.mjs';
 import { parseCargoPackageVersion, validateAppVersion } from './version.mjs';
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** The least time between scheduled nightlies. */
+export const NIGHTLY_GAP_MS = 6 * 60 * 60 * 1000;
+
+/** The subject of the commit a stable release leaves on main; commits with only this subject don't call for a nightly. */
+const RELEASE_COMMIT = /^Release Arbor \d+\.\d+\.\d+$/;
 
 function parts(version) {
   const [main, pre] = validateAppVersion(version).replace(/\+.*$/, '').split(/-(.*)/s);
@@ -50,34 +59,47 @@ function newest(releases) {
 }
 
 /**
- * What a run builds. `releases` are the published ones, `{ version, commit }`, where only the newest nightly's and the
- * newest release's commits matter; `date` is YYYYMMDD. Returns `{ skip }` when a scheduled nightly has nothing new, and
- * throws when a stable release can't go out.
+ * What a run builds. `releases` are the published ones, `{ version, commit, publishedAt }`, where only the newest
+ * nightly's and the newest release's commit and time matter. `commit` is main's; `newCommits` are the subjects of
+ * main's commits since the newest of those two was built (null when main isn't ahead of it); `pending` is a stable
+ * release's notes, `{ summary, changes }`; `date` is YYYYMMDD and `now` milliseconds. Returns `{ skip }` when a
+ * scheduled nightly isn't due, and throws when a stable release can't go out.
  */
-export function planRelease({ channel, cargoVersion, notes, releases, commit, scheduled, date, run }) {
+export function planRelease({ channel, cargoVersion, notes, releases, commit, newCommits, pending, scheduled, date, run, now }) {
   const stable = releases.filter((release) => isStable(release.version));
   const latest = newest(stable);
+  const nightly = newest(releases.filter((release) => isNightly(release.version)));
   if (channel === 'stable') {
-    const version = cargoVersion;
-    if (!isStable(version)) throw new Error(`Cargo.toml's version, ${version}, isn't a release version.`);
-    if (stable.some((release) => release.version === version)) {
-      throw new Error(`Arbor ${version} is already out. Commit "Release Arbor X.Y.Z" for the next version first.`);
+    if (!nightly) throw new Error('No nightly is out yet. A stable release promotes the newest nightly.');
+    const version = nightly.version.replace(/-.*$/, '');
+    if (latest && compareSemver(version, latest.version) <= 0) {
+      throw new Error(`Arbor ${latest.version} is out and no nightly has been built since. Wait for the next nightly.`);
     }
-    if (latest && compareSemver(version, latest.version) < 0) throw new Error(`Arbor ${latest.version} is out, which is newer than ${version}.`);
-    releaseEntry(releasesUpTo(notes, version)[0]);
-    return { version, tag: `arbor-v${version}`, prerelease: false };
+    if (!nightly.commit) throw new Error(`Couldn't find the commit Arbor ${nightly.version} was built from.`);
+    // Refuses notes missing a summary or naming what's never published, and a version release-notes.json already has.
+    withRelease(notes, releaseEntry({ version, summary: pending?.summary, changes: pending?.changes ?? [] }));
+    return { version, tag: `arbor-v${version}`, prerelease: false, ref: nightly.commit, promotes: nightly.version };
   }
   if (channel !== 'nightly') throw new Error(`Unknown channel: ${channel}`);
   if (scheduled) {
-    const built = [newest(releases.filter((release) => !isStable(release.version))), latest].find((release) => release?.commit === commit);
+    const built = [nightly, latest].find((release) => release?.commit === commit);
     if (built) return { skip: `main hasn't changed since Arbor ${built.version}` };
+    if (newCommits === null) return { skip: "main isn't ahead of the newest build" };
+    if (newCommits && newCommits.length > 0 && newCommits.every((subject) => RELEASE_COMMIT.test(subject))) {
+      return { skip: 'main has only release commits since the newest build' };
+    }
+    const since = nightly?.publishedAt ? now - Date.parse(nightly.publishedAt) : Infinity;
+    if (since < NIGHTLY_GAP_MS) {
+      const hours = Math.ceil((NIGHTLY_GAP_MS - since) / (60 * 60 * 1000));
+      return { skip: `Arbor ${nightly.version} came out less than six hours ago; the next nightly is due in about ${hours} h` };
+    }
   }
   const [major, minor, patch] = parts(cargoVersion).main;
   const base = !latest || compareSemver(cargoVersion, latest.version) > 0
     ? `${major}.${minor}.${patch}`
     : latest.version.replace(/\d+$/, (last) => String(Number(last) + 1));
   const version = validateAppVersion(`${base}-nightly.${date}.${run}`);
-  return { version, tag: `arbor-v${version}`, prerelease: true };
+  return { version, tag: `arbor-v${version}`, prerelease: true, ref: commit };
 }
 
 function gh(args) {
@@ -87,17 +109,27 @@ function gh(args) {
   return String(result.stdout).trim();
 }
 
-/** Arbor's published releases on GitHub: every `arbor-v` tag with a release that isn't a draft. */
+/** Arbor's published releases on GitHub: every `arbor-v` tag with a release that isn't a draft, and when it came out. */
 function publishedReleases(repository) {
-  const tags = gh(['--paginate', `repos/${repository}/releases?per_page=100`, '--jq', '.[] | select(.draft | not) | .tag_name']);
-  const versions = tags.split('\n').filter((tag) => tag.startsWith('arbor-v')).map((tag) => tag.slice('arbor-v'.length));
-  return [...new Set(versions)].filter((version) => {
+  const rows = gh(['--paginate', `repos/${repository}/releases?per_page=100`, '--jq', '.[] | select(.draft | not) | [.tag_name, .published_at] | @tsv']);
+  const releases = new Map();
+  for (const [tag = '', publishedAt] of rows.split('\n').map((row) => row.split('\t'))) {
+    if (!tag.startsWith('arbor-v')) continue;
+    const version = tag.slice('arbor-v'.length);
     try {
-      return Boolean(validateAppVersion(version));
+      validateAppVersion(version);
     } catch {
-      return false;
+      continue;
     }
-  });
+    releases.set(version, { version, publishedAt: publishedAt || undefined });
+  }
+  return [...releases.values()];
+}
+
+/** The subjects of the commits `head` has past `base`, or null when it isn't ahead of it. */
+function commitsSince(repository, base, head) {
+  const compare = JSON.parse(gh([`repos/${repository}/compare/${base}...${head}`, '--jq', '{status, subjects: [.commits[].commit.message | split("\n")[0]]}']));
+  return compare.status === 'ahead' ? compare.subjects : compare.status === 'identical' ? [] : null;
 }
 
 function main() {
@@ -106,24 +138,38 @@ function main() {
   const commit = env.GITHUB_SHA;
   if (!repository || !commit || !env.GITHUB_RUN_NUMBER) throw new Error('Run this in the Release workflow.');
   if (env.GITHUB_REF !== 'refs/heads/main') throw new Error(`Releases are built from main, not ${env.GITHUB_REF}.`);
-  const releases = publishedReleases(repository).map((version) => ({ version }));
-  // Only these two commits decide whether a scheduled nightly has anything new.
-  for (const release of [newest(releases.filter((item) => isStable(item.version))), newest(releases.filter((item) => !isStable(item.version)))]) {
+  const channel = env.ARBOR_RELEASE_CHANNEL;
+  const scheduled = env.GITHUB_EVENT_NAME === 'schedule';
+  const releases = publishedReleases(repository);
+  // Only the newest release's and the newest nightly's commits matter.
+  const latest = newest(releases.filter((item) => isStable(item.version)));
+  const nightly = newest(releases.filter((item) => isNightly(item.version)));
+  for (const release of [latest, nightly]) {
     if (release) release.commit = gh([`repos/${repository}/commits/arbor-v${release.version}`, '--jq', '.sha']);
   }
+  // A scheduled nightly looks at what main has gained since whichever of the two was built last.
+  const lastBuilt = [latest, nightly].filter(Boolean).sort((a, b) => Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? ''))[0];
+  const newCommits = scheduled && lastBuilt ? commitsSince(repository, lastBuilt.commit, commit) : undefined;
   const plan = planRelease({
-    channel: env.ARBOR_RELEASE_CHANNEL,
+    channel,
     cargoVersion: parseCargoPackageVersion(readFileSync(join(repoDir, 'src-tauri', 'Cargo.toml'), 'utf8')),
     notes: readReleaseNotes(),
     releases,
     commit,
-    scheduled: env.GITHUB_EVENT_NAME === 'schedule',
+    newCommits,
+    pending: { summary: env.ARBOR_RELEASE_SUMMARY, changes: (env.ARBOR_RELEASE_CHANGES ?? '').split('\n') },
+    scheduled,
     date: new Date().toISOString().slice(0, 10).replaceAll('-', ''),
     run: env.GITHUB_RUN_NUMBER,
+    now: Date.now(),
   });
+  // A stable release ships a commit main already has, so its notes and version can be committed on top.
+  if (!plan.skip && channel === 'stable' && commitsSince(repository, plan.ref, commit) === null) {
+    throw new Error(`Arbor ${plan.promotes} was built from ${plan.ref}, which isn't on main.`);
+  }
   const lines = plan.skip
     ? [`skip=${plan.skip}`]
-    : [`version=${plan.version}`, `tag=${plan.tag}`, `prerelease=${plan.prerelease}`];
+    : [`version=${plan.version}`, `tag=${plan.tag}`, `prerelease=${plan.prerelease}`, `ref=${plan.ref}`];
   console.log(lines.join('\n'));
   if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `${lines.join('\n')}\n`);
 }
