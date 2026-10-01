@@ -73,6 +73,8 @@ export const NEEDS_CONFIRMATION = new Set([
   'keep_claude_sessions',
   'apply_setup_sync',
   'undo_setup_sync',
+  'delete_setup_repo_path',
+  'discard_setup_repo_changes',
   'push_setup_repo',
   'apply_skill_changes',
   'apply_plugin_changes',
