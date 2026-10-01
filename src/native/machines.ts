@@ -24,8 +24,7 @@ import type {
 export type MachineCommands = {
   get_machine_hosts: { result: MachineHost[] };
   get_this_mac: { result: ThisMac };
-  save_machine_hosts: { args: { hosts: MachineHost[] }; result: MachineHost[] };
-  remove_machine_host: { args: { machine: string }; result: MachineHost[] };
+  save_machine_hosts: { args: { hosts: MachineHost[]; removed?: string[] | null }; result: MachineHost[] };
   discover_machine_hosts: { result: DiscoveredHost[] };
   get_agent_homes: { result: AgentHomesView };
   save_agent_home: { args: { home: AgentHome }; result: AgentHomesView };

@@ -643,6 +643,11 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     }, 700));
   },
   save_machine_hosts: (args) => {
+    for (const machine of args.removed ?? []) {
+      const index = healthHosts.findIndex((host) => host.machine === machine);
+      if (index < 0) throw new Error(`No machine called ${machine} is on the list`);
+      healthHosts.splice(index, 1);
+    }
     // Each host is added or updated by name, as the real list does; hosts not sent are left alone.
     for (const host of args.hosts) {
       const saved = { ...host, machine: host.machine.trim(), endpoint: host.endpoint.trim(), source: 'manual' };
@@ -651,12 +656,6 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
       else healthHosts.push(saved);
       if (saved.enabled && saved.endpoint && saved.endpoint !== 'localhost') joinMockMachine(saved.machine, false);
     }
-    return healthHosts;
-  },
-  remove_machine_host: ({ machine }) => {
-    const index = healthHosts.findIndex((host) => host.machine === machine);
-    if (index < 0) throw new Error(`No machine called ${machine} is on the list`);
-    healthHosts.splice(index, 1);
     // A new list, as the native side sends, so the page sees the change.
     return [...healthHosts];
   },

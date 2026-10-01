@@ -1328,8 +1328,13 @@ pub(super) fn load_hosts(connection: &Connection) -> Result<Vec<MachineHost>, St
     read_hosts(connection)
 }
 
-pub(super) fn save_hosts(connection: &mut Connection, hosts: &[MachineHost]) -> Result<(), String> {
+/// Saves `hosts` and takes `removed` off the list, in one go: a save that fails changes nothing. A machine in both
+/// stays, since saving a machine brings it back.
+pub(super) fn save_hosts(connection: &mut Connection, hosts: &[MachineHost], removed: &[String]) -> Result<(), String> {
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    for machine in removed {
+        remove_host(&transaction, machine)?;
+    }
     for host in hosts {
         let machine = host.machine.trim();
         let endpoint = host.endpoint.trim();
@@ -1358,7 +1363,7 @@ pub(super) fn save_hosts(connection: &mut Connection, hosts: &[MachineHost]) -> 
 
 /// Takes a machine off the list. Its row stays, marked removed, so an API key still assigned to it doesn't seed it
 /// back; saving the machine again brings it back. Its sessions and usage are kept under its name.
-pub(super) fn remove_host(connection: &Connection, machine: &str) -> Result<(), String> {
+fn remove_host(connection: &Connection, machine: &str) -> Result<(), String> {
     let removed = connection
         .execute(
             "UPDATE usage_machine_hosts SET source = 'removed' WHERE machine = ?1 AND source != 'removed'",
@@ -1507,34 +1512,21 @@ pub(crate) async fn get_machine_hosts() -> Result<Vec<MachineHost>, String> {
     run_usage_task(|| load_hosts(&open_usage_database()?)).await
 }
 
+/// `removed` names machines to take off the list, from Machine hosts' Edit hosts; the other callers only add or update.
 #[tauri::command]
 pub(crate) async fn save_machine_hosts(
     state: tauri::State<'_, MachineHealthState>,
     hosts: Vec<MachineHost>,
+    removed: Option<Vec<String>>,
 ) -> Result<Vec<MachineHost>, String> {
     let saved = run_usage_task(move || {
         let mut connection = open_usage_database()?;
-        save_hosts(&mut connection, &hosts)?;
+        save_hosts(&mut connection, &hosts, &removed.unwrap_or_default())?;
         read_hosts(&connection)
     })
     .await?;
     state.request_reload();
     Ok(saved)
-}
-
-#[tauri::command]
-pub(crate) async fn remove_machine_host(
-    state: tauri::State<'_, MachineHealthState>,
-    machine: String,
-) -> Result<Vec<MachineHost>, String> {
-    let hosts = run_usage_task(move || {
-        let connection = open_usage_database()?;
-        remove_host(&connection, &machine)?;
-        read_hosts(&connection)
-    })
-    .await?;
-    state.request_reload();
-    Ok(hosts)
 }
 
 #[cfg(test)]
@@ -1683,7 +1675,7 @@ mod tests {
         let mut edited = by_name["Mystery"].clone();
         edited.endpoint = "mystery.lan".into();
         edited.enabled = false;
-        save_hosts(&mut connection, std::slice::from_ref(&edited)).unwrap();
+        save_hosts(&mut connection, std::slice::from_ref(&edited), &[]).unwrap();
         seed_hosts(&connection).unwrap();
         let mystery = read_hosts(&connection)
             .unwrap()
@@ -1695,9 +1687,9 @@ mod tests {
         assert_eq!(mystery.source, "manual");
 
         let bad = MachineHost { machine: "x".into(), endpoint: "-oProxyCommand=evil".into(), port: 22, enabled: true, source: String::new() };
-        assert!(save_hosts(&mut connection, &[bad]).is_err());
+        assert!(save_hosts(&mut connection, &[bad], &[]).is_err());
         let spaced = MachineHost { machine: "x".into(), endpoint: "host name".into(), port: 22, enabled: true, source: String::new() };
-        assert!(save_hosts(&mut connection, &[spaced]).is_err());
+        assert!(save_hosts(&mut connection, &[spaced], &[]).is_err());
     }
 
     #[test]
@@ -1708,17 +1700,21 @@ mod tests {
             .unwrap();
         let names = |connection: &Connection| read_hosts(connection).unwrap().into_iter().map(|host| host.machine).collect::<Vec<_>>();
         let desk = MachineHost { machine: "desk".into(), endpoint: "localhost".into(), port: 22, enabled: true, source: String::new() };
-        save_hosts(&mut connection, std::slice::from_ref(&desk)).unwrap();
+        save_hosts(&mut connection, std::slice::from_ref(&desk), &[]).unwrap();
         assert_eq!(load_hosts(&connection).unwrap().len(), 2);
 
-        remove_host(&connection, "Cedar 01").unwrap();
-        remove_host(&connection, "desk").unwrap();
+        // A save that fails takes nothing off.
+        let bad = MachineHost { machine: "desk".into(), endpoint: "-oProxyCommand=evil".into(), ..desk.clone() };
+        assert!(save_hosts(&mut connection, &[bad], &["Cedar 01".into()]).is_err());
+        assert_eq!(names(&connection), ["Cedar 01", "desk"]);
+
+        save_hosts(&mut connection, &[], &["Cedar 01".into(), "desk".into()]).unwrap();
         // The API key is still assigned to Cedar 01, and the next load seeds again.
         assert!(load_hosts(&connection).unwrap().is_empty());
-        assert!(remove_host(&connection, "desk").is_err(), "already removed");
-        assert!(remove_host(&connection, "nowhere").is_err());
+        assert!(save_hosts(&mut connection, &[], &["desk".into()]).is_err(), "already removed");
+        assert!(save_hosts(&mut connection, &[], &["nowhere".into()]).is_err());
 
-        save_hosts(&mut connection, &[desk]).unwrap();
+        save_hosts(&mut connection, &[desk], &[]).unwrap();
         let back = read_hosts(&connection).unwrap();
         assert_eq!(names(&connection), ["desk"]);
         assert_eq!((back[0].endpoint.as_str(), back[0].source.as_str()), ("localhost", "manual"));
