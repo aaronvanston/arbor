@@ -16,6 +16,8 @@ import { formatAgo, formatElapsed, formatNumber, formatWhen } from '../lib/forma
 import { cn } from '../lib/utils';
 import {
   clearBlockedReason,
+  callsOn,
+  calledMachines,
   clearCallDiagnostics,
   getCallDiagnostics,
   problemGroups,
@@ -28,6 +30,8 @@ import {
 import { useQuotaClock } from '../services/quotaTime';
 import type { CallDiagnostics } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
+import { SettingsMachineCrumb } from '../components/layout/MachineCrumb';
+import { useSettingsScope } from '../services/machineSettings';
 
 const REFRESH_MS = 15_000;
 /** Shown while the first read is under way. */
@@ -93,13 +97,23 @@ export function DiagnosticsSettingsPage() {
     }
   };
 
-  const summary = data ? summarizeCalls(data.calls) : null;
-  const clearBlocked = clearBlockedReason(summary, loadError !== null);
+  // Clear empties every call, so whether there's anything to clear is about them all.
+  const clearBlocked = clearBlockedReason(data ? summarizeCalls(data.calls) : null, loadError !== null);
+  // The machine Settings is narrowed to shows its own calls; the core's are about no machine.
+  const scope = useSettingsScope();
+  const shown = data ? { ...data, calls: callsOn(data.calls, scope) } : null;
+  const summary = shown ? summarizeCalls(shown.calls) : null;
 
   return (
     <Page>
       <PageTopbar>
-        <PageBreadcrumb segments={[t('settings.title'), t('settings.nav.diagnostics')]} />
+        <PageBreadcrumb
+          segments={[
+            t('settings.title'),
+            t('settings.nav.diagnostics'),
+            <SettingsMachineCrumb key="machine" machines={[...(data ? calledMachines(data.calls) : []), ...(scope ? [scope] : [])]} />,
+          ]}
+        />
       </PageTopbar>
       <PageBody>
         <SettingsSection
@@ -140,7 +154,7 @@ export function DiagnosticsSettingsPage() {
             </div>
           }
         >
-          <CallStats data={data} summary={summary} loading={!data && !loadError} now={now} />
+          <CallStats data={shown} summary={summary} loading={!data && !loadError} now={now} />
           {loadError || clearError ? (
             <p className="px-4 py-3 text-sm text-error-foreground" role="alert">
               {clearError ?? t('diagnostics.loadFailed', { error: loadError ?? '' })}
@@ -149,7 +163,7 @@ export function DiagnosticsSettingsPage() {
         </SettingsSection>
 
         <SettingsSection settingId="diagnostics.problems" title={t('diagnostics.problems.title')} description={t('diagnostics.problems.description')}>
-          <Problems data={data} loadFailed={loadError !== null} now={now} />
+          <Problems data={shown} loadFailed={loadError !== null} now={now} />
         </SettingsSection>
       </PageBody>
     </Page>

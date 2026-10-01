@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { en } from '../src/i18n/locales/en';
 import {
+  calledMachines,
+  callsOn,
   clearBlockedReason,
   groupCalls,
   isProblem,
@@ -119,5 +121,20 @@ describe('call diagnostics', () => {
     expect(says([call()], false)).toBeNull();
     // A later refresh that fails leaves the calls already read to clear.
     expect(says([call()], true)).toBeNull();
+  });
+});
+
+describe('calls on one machine', () => {
+  it('keeps that machine’s calls and leaves the core’s out, and lists the machines called', () => {
+    const calls = [
+      call({ target: 'ci-01' }),
+      call({ target: 'cedar-02' }),
+      call({ kind: 'core', target: 'core', operation: 'GET /auth-files' }),
+      call({ target: 'ci-01', operation: 'setup scan' }),
+    ];
+    expect(callsOn(calls, null)).toEqual(calls);
+    expect(callsOn(calls, 'ci-01').map((item) => item.operation)).toEqual(['health check', 'setup scan']);
+    expect(callsOn(calls, 'lab-box')).toEqual([]);
+    expect(calledMachines(calls)).toEqual(['ci-01', 'cedar-02']);
   });
 });

@@ -6,7 +6,7 @@ import { useI18n } from '../i18n';
 import { formatWhen } from '../lib/format';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
-import { SettingsScopeSentence } from '../components/layout/machineScope';
+import { SettingsMachineCrumb } from '../components/layout/MachineCrumb';
 import { MachinePill } from '../components/identity/Identity';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -56,10 +56,16 @@ export function AgentHomesSettingsPage() {
   return (
     <Page>
       <PageTopbar>
-        <PageBreadcrumb segments={[t('settings.title'), t('settings.nav.agentHomes'), ...(scope ? [<MachinePill key="machine" name={scope} />] : [])]} />
+        <PageBreadcrumb
+          segments={[
+            t('settings.title'),
+            t('settings.nav.agentHomes'),
+            // A filter, not a setting per machine: each machine's homes are its own, so picking one shows just its.
+            <SettingsMachineCrumb key="machine" machines={view?.machines.map((entry) => entry.machine) ?? (scope ? [scope] : [])} />,
+          ]}
+        />
       </PageTopbar>
       <PageBody gap="gap-6">
-        <SettingsScopeSentence className="-mb-1" />
         {error ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{error}</AlertDescription></Alert> : null}
         {!view ? (
           error ? null : <p className="flex items-center gap-2 px-4 text-sm text-muted-foreground" role="status"><Spinner />{t('agentHomes.loading')}</p>

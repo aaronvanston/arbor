@@ -82,6 +82,18 @@ export function groupCalls(calls: readonly DiagnosticCall[]): CallGroup[] {
   });
 }
 
+/**
+ * The calls about `machine`, as Settings is narrowed to it: its own calls alone, the core's left out since they're
+ * about no machine. Null is every call.
+ */
+export function callsOn(calls: readonly DiagnosticCall[], machine: string | null): DiagnosticCall[] {
+  return machine ? calls.filter((call) => call.kind === 'machine' && call.target === machine) : [...calls];
+}
+
+/** The machines the calls were to, for the picker. */
+export const calledMachines = (calls: readonly DiagnosticCall[]) =>
+  [...new Set(calls.filter((call) => call.kind === 'machine').map((call) => call.target))];
+
 /** The groups with a failure or a slow call, the latest problem first. */
 export const problemGroups = (calls: readonly DiagnosticCall[]) => groupCalls(calls).filter((group) => group.lastProblem);
 

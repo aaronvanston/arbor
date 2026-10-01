@@ -4,6 +4,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrig
 import { useMemo } from 'react';
 import { useI18n } from '../../i18n';
 import { useFleetHealth } from '../../services/fleetHealth';
+import { setSettingsScope, useSettingsScope } from '../../services/machineSettings';
 import { machineName } from '../../services/machineNames';
 
 /** What Arbor calls the sessions and requests no machine claims, as the view's `machine` holds it. */
@@ -77,4 +78,14 @@ export function FleetMachineCrumb({ machine, known, onChange }: {
     return [...new Set([...hosts, ...known])].sort((left, right) => machineName(left).localeCompare(machineName(right)));
   }, [health, known]);
   return <MachineCrumb machine={machine} machines={choices} onChange={onChange} />;
+}
+
+/**
+ * The picker on a Settings page that only shows things per machine (Agent homes, Diagnostics): the machine Settings
+ * is on, which the pages with a scope sentence share, so moving between Settings pages keeps it.
+ */
+export function SettingsMachineCrumb({ machines }: { machines: readonly string[] }) {
+  const scope = useSettingsScope();
+  const sorted = useMemo(() => [...new Set(machines)].sort((left, right) => machineName(left).localeCompare(machineName(right))), [machines]);
+  return <MachineCrumb machine={scope ?? ''} machines={sorted} onChange={(next) => setSettingsScope(next || null)} />;
 }
