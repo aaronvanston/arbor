@@ -34,7 +34,8 @@ export type LifetimeDay = TokenCounts & {
   day: string;
 };
 
-export const getLifetimeTokens = () => invokeCommand('get_lifetime_tokens');
+/** Every machine's counts, or with `machine` only what was counted on it. */
+export const getLifetimeTokens = (machine = '') => invokeCommand('get_lifetime_tokens', { machine: machine || null });
 
 export const emptyCounts = (): TokenCounts => ({ calls: 0, input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: 0 });
 

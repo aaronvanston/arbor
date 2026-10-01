@@ -29,10 +29,11 @@ describe('navigation', () => {
     expect(settingsPageView('auth-files')).toEqual(accountSignInsView());
   });
 
-  test('the views a machine narrows are Sessions’ Live, list and Projects, and Usage’s Overview, Weekly, Requests and Prices', () => {
+  test('the views a machine narrows are every view of Sessions and Usage', () => {
     for (const tab of ['live', 'sessions', 'projects']) expect(hasMachineScope('sessions', tab)).toBe(true);
-    for (const tab of ['overview', 'digest', 'events', 'prices']) expect(hasMachineScope('usage', tab)).toBe(true);
-    for (const tab of ['lifetime']) expect(hasMachineScope('usage', tab)).toBe(false);
+    for (const tab of ['overview', 'digest', 'events', 'prices', 'lifetime']) expect(hasMachineScope('usage', tab)).toBe(true);
+    // Opening the page without naming a view isn't narrowed until the view is known.
+    expect(hasMachineScope('usage', undefined)).toBe(false);
     expect(hasMachineScope('setup', 'cost')).toBe(false);
   });
 
@@ -42,7 +43,8 @@ describe('navigation', () => {
     // A view that names its own machine keeps it, and one that can't be narrowed isn't.
     expect(keepMachineScope(live, sessionsView({ tab: 'projects', machine: 'studio' }))).toEqual(sessionsView({ tab: 'projects', machine: 'studio' }));
     const requests = usageView({ tab: 'events', machine: 'cedar-02' });
-    expect(keepMachineScope(requests, usageView({ tab: 'lifetime' }))).toEqual(usageView({ tab: 'lifetime' }));
+    expect(keepMachineScope(requests, usageView())).toEqual(usageView());
+    expect(keepMachineScope(requests, usageView({ tab: 'lifetime' }))).toEqual(usageView({ tab: 'lifetime', machine: 'cedar-02' }));
     expect(keepMachineScope(requests, usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview', machine: 'cedar-02' }));
     // Each page keeps its own choice.
     expect(keepMachineScope(live, usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview' }));

@@ -21,6 +21,15 @@ import type {
  */
 
 export const getSessionArchiveStatus = () => invokeCommand('get_session_archive_status');
+
+/** Every machine the archive files sessions under: its homes', the other machines' passes and its imports'. */
+export function archiveMachines(status: Pick<ArchiveStatus, 'sources' | 'machines' | 'imports'>): string[] {
+  return [...new Set([
+    ...status.sources.map((source) => source.machine),
+    ...status.machines.map((run) => run.machine),
+    ...status.imports.flatMap((entry) => [entry.machine, ...entry.machines]),
+  ].filter(Boolean))];
+}
 export const checkSessionArchiveFolder = (path: string) => invokeCommand('check_session_archive_folder', { path });
 export const createSessionArchive = (path: string) => invokeCommand('create_session_archive', { path });
 export const adoptSessionArchive = (path: string) => invokeCommand('use_session_archive', { path });

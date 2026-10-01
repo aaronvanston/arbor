@@ -845,17 +845,19 @@ fn counts(row: &rusqlite::Row<'_>, first: usize) -> rusqlite::Result<Counts> {
 
 const SUMS: &str = "SUM(d.calls), SUM(d.input), SUM(d.cache_write), SUM(d.cache_read), SUM(d.output), SUM(d.reasoning)";
 
-/// What's been counted so far, by month, machine, home, agent and model, and by day.
-pub(crate) fn lifetime(db: &Connection) -> Result<LifetimeTokens, String> {
+/// What's been counted so far, by month, machine, home, agent and model, and by day. With a machine, only what was
+/// counted on it; what's left to count stays the whole archive's, as it's counted for every machine at once.
+pub(crate) fn lifetime(db: &Connection, machine: Option<&str>) -> Result<LifetimeTokens, String> {
     let months = {
         let mut statement = db
             .prepare(&format!(
                 "SELECT d.day / 100, s.machine, s.label, d.agent, d.model, {SUMS} FROM token_days d JOIN sources s USING (source_id)
+                 WHERE ?1 IS NULL OR s.machine = ?1
                  GROUP BY d.day / 100, s.machine, s.label, d.agent, d.model ORDER BY d.day / 100, s.machine, s.label, d.agent, d.model"
             ))
             .map_err(db_error)?;
         let rows = statement
-            .query_map([], |row| {
+            .query_map([machine], |row| {
                 let month: i64 = row.get(0)?;
                 Ok(MonthRow {
                     month: format!("{:04}-{:02}", month / 100, month % 100),
@@ -870,9 +872,14 @@ pub(crate) fn lifetime(db: &Connection) -> Result<LifetimeTokens, String> {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?
     };
     let days = {
-        let mut statement = db.prepare(&format!("SELECT d.day, {SUMS} FROM token_days d GROUP BY d.day ORDER BY d.day")).map_err(db_error)?;
+        let mut statement = db
+            .prepare(&format!(
+                "SELECT d.day, {SUMS} FROM token_days d WHERE ?1 IS NULL OR d.source_id IN (SELECT source_id FROM sources WHERE machine = ?1)
+                 GROUP BY d.day ORDER BY d.day"
+            ))
+            .map_err(db_error)?;
         let rows = statement
-            .query_map([], |row| {
+            .query_map([machine], |row| {
                 let day: i64 = row.get(0)?;
                 Ok(DayRow { day: format!("{:04}-{:02}-{:02}", day / 10_000, day / 100 % 100, day % 100), counts: counts(row, 1)? })
             })
@@ -880,13 +887,18 @@ pub(crate) fn lifetime(db: &Connection) -> Result<LifetimeTokens, String> {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?
     };
     let sources = {
-        let mut statement = db.prepare("SELECT machine, label, agent, kind FROM sources WHERE agent IN ('claude', 'codex') OR source_id IN (SELECT source_id FROM token_days) ORDER BY machine, label").map_err(db_error)?;
-        let rows = statement.query_map([], |row| Ok(CountedSource { machine: row.get(0)?, home: row.get(1)?, agent: row.get(2)?, kind: row.get(3)? })).map_err(db_error)?;
+        let mut statement = db
+            .prepare(
+                "SELECT machine, label, agent, kind FROM sources WHERE (agent IN ('claude', 'codex') OR source_id IN (SELECT source_id FROM token_days))
+                 AND (?1 IS NULL OR machine = ?1) ORDER BY machine, label",
+            )
+            .map_err(db_error)?;
+        let rows = statement.query_map([machine], |row| Ok(CountedSource { machine: row.get(0)?, home: row.get(1)?, agent: row.get(2)?, kind: row.get(3)? })).map_err(db_error)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?
     };
     let (versions_left, bytes_left): (i64, Option<i64>) =
         db.query_row(&format!("SELECT COUNT(*), SUM(v.size - COALESCE(p.counted_len, 0)) {UNCOUNTED}"), [], |row| Ok((row.get(0)?, row.get(1)?))).map_err(db_error)?;
-    let (recovered, recovered_overlap) = recovered::days(db)?;
+    let (recovered, recovered_overlap) = recovered::days(db, machine)?;
     Ok(LifetimeTokens {
         archived: get_meta(db, "archiveId")?.is_some(),
         months,
@@ -1091,7 +1103,7 @@ pub(crate) mod tests {
 
     /// calls, and every token of every kind.
     fn totals(fixture: &Fixture) -> (u64, u64) {
-        let lifetime = lifetime(&fixture.db).unwrap();
+        let lifetime = lifetime(&fixture.db, None).unwrap();
         lifetime.months.iter().fold((0, 0), |(calls, tokens), row| (calls + row.counts.calls, tokens + row.counts.input + row.counts.cache_write + row.counts.cache_read + row.counts.output))
     }
 
@@ -1132,7 +1144,7 @@ pub(crate) mod tests {
         let claude_call = 10 + 100 + 1_000;
         let codex_call = 500 + 1_500 + 100;
         assert_eq!(totals(&fixture), (6, 3 * claude_call + 1 + 20 + 5 + 3 * codex_call));
-        let lifetime = lifetime(&fixture.db).unwrap();
+        let lifetime = lifetime(&fixture.db, None).unwrap();
         assert_eq!(lifetime.versions_left, 0);
         let models: std::collections::BTreeSet<&str> = lifetime.months.iter().map(|row| row.model.as_str()).collect();
         assert_eq!(models.into_iter().collect::<Vec<_>>(), ["claude-opus-5-5", "gpt-6-sol"]);
@@ -1177,7 +1189,7 @@ pub(crate) mod tests {
             if report.complete {
                 break;
             }
-            assert!(lifetime(&shares.db).unwrap().versions_left > 0);
+            assert!(lifetime(&shares.db, None).unwrap().versions_left > 0);
         }
         assert!(passes > 10, "{passes}");
         assert_eq!(totals(&shares), totals(&whole));
@@ -1277,7 +1289,7 @@ pub(crate) mod tests {
         assert_eq!(fixture.count("SELECT COUNT(*) FROM sessions WHERE agent = 'pi'"), 1);
         assert_eq!(fixture.count("SELECT COUNT(*) FROM files WHERE rel_path LIKE '%.json'"), 0);
         assert!(count(&fixture, &everything()).complete);
-        let lifetime = lifetime(&fixture.db).unwrap();
+        let lifetime = lifetime(&fixture.db, None).unwrap();
         let rows: Vec<(&str, &str, &str, u64)> = lifetime.months.iter().map(|row| (row.home.as_str(), row.agent.as_str(), row.model.as_str(), row.counts.calls)).collect();
         assert_eq!(rows, [("~/.pi/agent/sessions", "pi", "gpt-5.5", 1)]);
         assert_eq!(totals(&fixture), (1, 100 + 2 + 10 + 40));
@@ -1313,7 +1325,7 @@ pub(crate) mod tests {
         for path in walk(&fixture.places.store.root().join("journal")) {
             assert!(!contains(&fs::read(&path).unwrap()), "{}", path.display());
         }
-        let json = serde_json::to_string(&lifetime(&fixture.db).unwrap()).unwrap();
+        let json = serde_json::to_string(&lifetime(&fixture.db, None).unwrap()).unwrap();
         assert!(!json.contains(SECRET_TEXT) && !json.contains("msg_1") && !json.contains("resp_1"), "{json}");
         let _ = fs::remove_dir_all(&fixture.base);
     }

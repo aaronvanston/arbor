@@ -536,10 +536,10 @@ pub(crate) async fn get_session_archive_status(app: tauri::AppHandle) -> Result<
     current_status(&app).await
 }
 
-/// Every token counted in the kept transcripts so far.
+/// Every token counted in the kept transcripts so far, on every machine or on `machine`.
 #[tauri::command]
-pub(crate) async fn get_lifetime_tokens() -> Result<tokens::LifetimeTokens, String> {
-    blocking(|| tokens::lifetime(&open_index(&index_dir()?)?)).await
+pub(crate) async fn get_lifetime_tokens(machine: Option<String>) -> Result<tokens::LifetimeTokens, String> {
+    blocking(move || tokens::lifetime(&open_index(&index_dir()?)?, machine.as_deref())).await
 }
 
 /// The archive's own folders, which are never looked in for a backup to import.

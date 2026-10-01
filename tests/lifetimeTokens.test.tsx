@@ -66,8 +66,8 @@ const recovered = (): Pick<LifetimeTokens, 'recovered' | 'recoveredOverlap'> => 
 });
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-const render = (data: LifetimeTokens, onOpenArchive?: () => void) =>
-  text(renderToStaticMarkup(<I18nProvider><UsageLifetimeContent data={data} onOpenArchive={onOpenArchive} /></I18nProvider>));
+const render = (data: LifetimeTokens, onOpenArchive?: () => void, machine = '') =>
+  text(renderToStaticMarkup(<I18nProvider><UsageLifetimeContent data={data} machine={machine} onOpenArchive={onOpenArchive} /></I18nProvider>));
 
 describe('all-time tokens', () => {
   it('adds every kind of token, and keeps reasoning inside output', () => {
@@ -174,5 +174,10 @@ describe('all-time tokens', () => {
     const waiting = render(lifetime({ months: [], days: [] }));
     expect(waiting).toContain('Nothing counted yet');
     expect(waiting).not.toContain('Open session archive');
+    // Narrowed to a machine with nothing counted, it says so of that machine, not of the archive.
+    const elsewhere = render(lifetime({ months: [], days: [] }), () => {}, 'cedar');
+    expect(elsewhere).toContain('Nothing counted on this machine');
+    expect(elsewhere).toContain('cedar');
+    expect(elsewhere).not.toContain('Nothing counted yet');
   });
 });

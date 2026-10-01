@@ -120,7 +120,7 @@ export const failedRequestsView = (): AppView => usageView({ tab: 'events', resu
  */
 export function hasMachineScope(page: MainPageId, tab: string | undefined): boolean {
   if (page === 'sessions') return tab === 'live' || tab === 'sessions' || tab === 'projects';
-  if (page === 'usage') return tab === 'overview' || tab === 'digest' || tab === 'events' || tab === 'prices';
+  if (page === 'usage') return tab === 'overview' || tab === 'digest' || tab === 'events' || tab === 'prices' || tab === 'lifetime';
   return false;
 }
 

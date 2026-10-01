@@ -208,7 +208,8 @@ function mockRecovered(): Pick<LifetimeTokens, 'recovered' | 'recoveredOverlap'>
   return { recovered: recovered.sort((left, right) => left.day.localeCompare(right.day)), recoveredOverlap: { claudeCode: 176_400_000_000, transcripts: 100_200_000_000 } };
 }
 
-function mockLifetimeTokens(): LifetimeTokens {
+/** Every call is mac-mini's, so narrowing to another machine leaves its homes and Claude Code's own days. */
+function mockLifetimeTokens(machine = ''): LifetimeTokens {
   const archived = archiveScenario !== 'off';
   const counted = archived && archiveScenario !== 'empty' && tokensScenario !== 'waiting';
   // Who made the calls, and in which months: an older Claude model hands over to a newer one in May.
@@ -255,17 +256,21 @@ function mockLifetimeTokens(): LifetimeTokens {
     }
     days.push(today);
   }
+  const on = <T extends { machine: string }>(rows: T[]) => (machine ? rows.filter((row) => row.machine === machine) : rows);
+  const own = !machine || machine === 'mac-mini';
+  const recovered = counted ? mockRecovered() : { recovered: [], recoveredOverlap: { claudeCode: 0, transcripts: 0 } };
   return {
     archived,
-    months: counted ? [...months.values()] : [],
-    days: counted ? days : [],
-    sources: archived
+    months: counted ? on([...months.values()]) : [],
+    days: counted && own ? days : [],
+    sources: on(archived
       ? [
           ...archiveHomes(1).map((home) => ({ machine: home.machine, home: home.label, agent: home.agent, kind: 'home' })),
           ...mockArchiveImports(archiveScenario).filter((entry) => entry.finishedAt !== null).map((entry) => ({ machine: entry.machine, home: entry.path, agent: 'claude', kind: 'import' })),
         ]
-      : [],
-    ...(counted ? mockRecovered() : { recovered: [], recoveredOverlap: { claudeCode: 0, transcripts: 0 } }),
+      : []),
+    recovered: on(recovered.recovered),
+    recoveredOverlap: own ? recovered.recoveredOverlap : { claudeCode: 0, transcripts: 0 },
     versionsLeft: tokensScenario === 'counting' ? 214 : 0,
     bytesLeft: tokensScenario === 'counting' ? 3_240_000_000 : 0,
     lastError: tokensScenario === 'failed' ? 'Couldn’t read a kept chunk: No such file or directory (os error 2)' : null,
@@ -293,7 +298,7 @@ const openArchive = (command: 'create_session_archive' | 'use_session_archive', 
 /** The session archive, its imports and the tokens it counts. */
 export const archiveAnswers: CommandAnswers<ArchiveCommands> = {
   get_session_archive_status: () => archiveStatus,
-  get_lifetime_tokens: () => mockLifetimeTokens(),
+  get_lifetime_tokens: (args) => mockLifetimeTokens(args.machine ?? ''),
   check_session_archive_folder: (args) => later(200, () => mockFolderCheck(args.path)),
   create_session_archive: (args) => openArchive('create_session_archive', args.path),
   use_session_archive: (args) => openArchive('use_session_archive', args.path),

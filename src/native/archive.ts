@@ -17,5 +17,5 @@ export type ArchiveCommands = {
   add_session_import: { args: { path: string; machine: string }; result: ArchiveStatus };
   cancel_session_import: { args: { id: number }; result: ArchiveStatus };
 
-  get_lifetime_tokens: { result: LifetimeTokens };
+  get_lifetime_tokens: { args: { machine?: string | null }; result: LifetimeTokens };
 };

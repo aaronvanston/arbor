@@ -39,9 +39,9 @@ const AGENT_KEYS = { claude: 'usage.lifetime.agent.claude', codex: 'usage.lifeti
 /**
  * The Usage page's All time tab: every token in every session the archive keeps, from the
  * transcripts themselves rather than the proxy's records, so it reaches back past them.
- * `refreshKey` changes when the page's refresh button is pressed.
+ * `refreshKey` changes when the page's refresh button is pressed; `machine` narrows it to what was counted there.
  */
-export function UsageLifetimeView({ refreshKey, onOpenArchive }: { refreshKey: number; onOpenArchive?: () => void }) {
+export function UsageLifetimeView({ refreshKey, machine = '', onOpenArchive }: { refreshKey: number; machine?: string; onOpenArchive?: () => void }) {
   const { t } = useI18n();
   const [data, setData] = useState<LifetimeTokens | null>(null);
   const [error, setError] = useState('');
@@ -50,7 +50,7 @@ export function UsageLifetimeView({ refreshKey, onOpenArchive }: { refreshKey: n
     let disposed = false;
     let timer: number | undefined;
     const load = () =>
-      getLifetimeTokens().then(
+      getLifetimeTokens(machine).then(
         (next) => {
           if (disposed) return;
           setData(next);
@@ -74,7 +74,7 @@ export function UsageLifetimeView({ refreshKey, onOpenArchive }: { refreshKey: n
       disposed = true;
       window.clearTimeout(timer);
     };
-  }, [refreshKey]);
+  }, [refreshKey, machine]);
 
   if (!data) {
     return error ? (
@@ -86,10 +86,10 @@ export function UsageLifetimeView({ refreshKey, onOpenArchive }: { refreshKey: n
       </div>
     );
   }
-  return <UsageLifetimeContent data={data} onOpenArchive={onOpenArchive} />;
+  return <UsageLifetimeContent data={data} machine={machine} onOpenArchive={onOpenArchive} />;
 }
 
-export function UsageLifetimeContent({ data, onOpenArchive }: { data: LifetimeTokens; onOpenArchive?: () => void }) {
+export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { data: LifetimeTokens; machine?: string; onOpenArchive?: () => void }) {
   const { t, tRich } = useI18n();
   const state = countingState(data);
   const summary = useMemo(() => lifetimeSummary(data), [data]);
@@ -102,6 +102,19 @@ export function UsageLifetimeContent({ data, onOpenArchive }: { data: LifetimeTo
   const openArchive = onOpenArchive ? (
     <Button variant="outline" size="sm" className="mt-2" onClick={onOpenArchive}>{t('usage.lifetime.openArchive')}</Button>
   ) : null;
+
+  // Narrowed to a machine the archive counted nothing on, the rest of the archive may still have plenty.
+  if (state === 'waiting' && machine) {
+    return (
+      <SettingsSection title={t('usage.lifetime.title')}>
+        <Empty size="sm">
+          <EmptyMedia><Archive /></EmptyMedia>
+          <EmptyTitle>{t('usage.lifetime.noneOn.title')}</EmptyTitle>
+          <EmptyDescription>{tRich('usage.lifetime.noneOn.description', { machine: <MachinePill name={machine} /> })}</EmptyDescription>
+        </Empty>
+      </SettingsSection>
+    );
+  }
 
   if (state === 'off' || state === 'waiting') {
     return (

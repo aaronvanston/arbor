@@ -844,7 +844,7 @@ mod tests {
         let options = CountOptions { bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: std::time::Duration::from_secs(600) };
         let report = count_pass(&fixture.db, &fixture.places, &options, &|| false).unwrap();
         assert!(report.complete && report.failures == 0, "{report:?}");
-        let lifetime = serde_json::to_value(lifetime(&fixture.db).unwrap()).unwrap();
+        let lifetime = serde_json::to_value(lifetime(&fixture.db, None).unwrap()).unwrap();
         let months = lifetime["months"].as_array().unwrap();
         let rows: Vec<String> = months.iter().map(|row| format!("{} {} {} {} {}", row["machine"], row["agent"], row["model"], row["calls"], row["input"].as_u64().unwrap() + row["cacheRead"].as_u64().unwrap() + row["output"].as_u64().unwrap())).collect();
         assert_eq!(rows, ["\"mini\" \"openclaw\" \"gpt-5.5\" 1 960"]);

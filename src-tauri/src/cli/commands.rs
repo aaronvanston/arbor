@@ -767,8 +767,10 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "get_lifetime_tokens",
         access: Access::Read,
-        summary: "Every token counted in the kept transcripts so far.",
-        args: &[],
+        summary: "Every token counted in the kept transcripts so far, on every machine or on `machine`.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string | null", optional: true },
+        ],
     },
     CommandSpec {
         name: "preview_session_import",
@@ -1789,7 +1791,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_starting_context" => async { done(Box::pin(crate::usage::machine_health::starting_context::get_starting_context(arg(&args, "fromMs")?, arg(&args, "toMs")?)).await) }.await,
         "get_client_versions" => async { done(Box::pin(crate::usage::machine_health::client_versions::get_client_versions(arg(&args, "fromMs")?, arg(&args, "toMs")?)).await) }.await,
         "get_session_archive_status" => done(Box::pin(crate::usage::machine_health::archive::get_session_archive_status(app.clone())).await),
-        "get_lifetime_tokens" => done(Box::pin(crate::usage::machine_health::archive::get_lifetime_tokens()).await),
+        "get_lifetime_tokens" => async { done(Box::pin(crate::usage::machine_health::archive::get_lifetime_tokens(arg(&args, "machine")?)).await) }.await,
         "preview_session_import" => async { done(Box::pin(crate::usage::machine_health::archive::preview_session_import(app.clone(), arg(&args, "path")?)).await) }.await,
         "add_session_import" => async { done(Box::pin(crate::usage::machine_health::archive::add_session_import(app.clone(), arg(&args, "path")?, arg(&args, "machine")?)).await) }.await,
         "cancel_session_import" => async { done(Box::pin(crate::usage::machine_health::archive::cancel_session_import(app.clone(), arg(&args, "id")?)).await) }.await,

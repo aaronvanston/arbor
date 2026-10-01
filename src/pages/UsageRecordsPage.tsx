@@ -12,7 +12,7 @@ import { createRefreshScheduler } from '../services/refreshScheduler';
 import { usageViewScopeKey } from '../services/usageViewScope';
 import { formatCount } from '../lib/format';
 import { type SessionPullRequestFilter, type UsageSessionSort } from '../services/usageSessions';
-import { FleetMachineCrumb, MachineCrumb } from '../components/layout/MachineCrumb';
+import { ArchiveMachineCrumb, FleetMachineCrumb, MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -672,7 +672,10 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   // Then, on a view that can be, the machine it's narrowed to, with every machine to pick from: the ones with requests
   // or sessions, and on Live the ones on the board as well.
   const pickMachine = (next: string) => changeFilters({ machine: next });
+  // The archive files nothing under no machine, so All time has no Unassigned and shows everything for it.
+  const lifetimeMachine = machine === '__unassigned__' ? '' : machine;
   const crumbMachine = !machineCrumb ? []
+    : activeTab === 'lifetime' ? [<ArchiveMachineCrumb key="machine" machine={lifetimeMachine} known={machineChoices} onChange={pickMachine} />]
     : activeTab === 'live' ? [<LiveMachineCrumb key="machine" machine={machine} machines={machineChoices} onChange={pickMachine} />]
     : [<MachineCrumb key="machine" machine={machine} machines={machineChoices} unassigned onChange={pickMachine} />];
   const breadcrumb =
@@ -1002,7 +1005,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         ) : null}
         {activeTab === 'digest' && variant === 'usage' ? <UsageDigestView refreshKey={digestRefresh} machine={machine} onOpenSession={openSession} /> : null}
         {activeTab === 'lifetime' && variant === 'usage' ? (
-          <UsageLifetimeView refreshKey={lifetimeRefresh} onOpenArchive={onNavigate ? () => onNavigate({ kind: 'settings', page: 'session-archive' }) : undefined} />
+          <UsageLifetimeView key={lifetimeMachine} refreshKey={lifetimeRefresh} machine={lifetimeMachine} onOpenArchive={onNavigate ? () => onNavigate({ kind: 'settings', page: 'session-archive' }) : undefined} />
         ) : null}
         {hasCurrentSnapshot && activeTab === 'sessions' && sessions ? (
           <SessionsView

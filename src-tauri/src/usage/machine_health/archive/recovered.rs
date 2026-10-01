@@ -162,8 +162,8 @@ pub(crate) struct RecoveredOverlap {
     transcripts: u64,
 }
 
-/// Claude Code's days on each machine that no Claude transcript was counted for, oldest first.
-pub(crate) fn days(db: &Connection) -> Result<(Vec<RecoveredDay>, RecoveredOverlap), String> {
+/// Claude Code's days on each machine, or on `machine`, that no Claude transcript was counted for, oldest first.
+pub(crate) fn days(db: &Connection, machine: Option<&str>) -> Result<(Vec<RecoveredDay>, RecoveredOverlap), String> {
     let counted: HashMap<(String, i64), i64> = {
         let mut statement = db
             .prepare(
@@ -191,7 +191,7 @@ pub(crate) fn days(db: &Connection) -> Result<(Vec<RecoveredDay>, RecoveredOverl
     }
     let mut days = Vec::new();
     let mut overlap = RecoveredOverlap::default();
-    for ((day, machine), (tokens, sessions)) in own {
+    for ((day, machine), (tokens, sessions)) in own.into_iter().filter(|((_, on), _)| machine.is_none_or(|picked| picked == on)) {
         match counted.get(&(machine.clone(), day)).copied().filter(|counted| *counted > 0) {
             Some(counted) => {
                 if tokens > 0 {
@@ -245,7 +245,7 @@ mod tests {
     }
 
     fn recovered(fixture: &Fixture) -> (Vec<(String, u64, u64)>, RecoveredOverlap) {
-        let (days, overlap) = days(&fixture.db).unwrap();
+        let (days, overlap) = days(&fixture.db, None).unwrap();
         (days.into_iter().map(|day| (day.day, day.tokens, day.sessions)).collect(), overlap)
     }
 
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(days, [("2026-03-02".to_string(), 0, 4), ("2026-08-02".to_string(), 9_500, 3), ("2026-08-03".to_string(), 3_500, 1)]);
         assert_eq!(overlap, RecoveredOverlap { claude_code: 2_300, transcripts: 10 + 100 + 1_000 + 40 });
         // The transcripts' count is untouched by it.
-        let lifetime = serde_json::to_value(lifetime(&fixture.db).unwrap()).unwrap();
+        let lifetime = serde_json::to_value(lifetime(&fixture.db, None).unwrap()).unwrap();
         assert_eq!(lifetime["months"].as_array().map(Vec::len), Some(1));
         assert_eq!(lifetime["days"].as_array().map(Vec::len), Some(1));
         assert_eq!(lifetime["recovered"].as_array().map(Vec::len), Some(3));
@@ -318,6 +318,19 @@ mod tests {
         let (days, overlap) = recovered(&fixture);
         assert!(days.is_empty());
         assert_eq!(overlap, RecoveredOverlap { claude_code: 9_000, transcripts: 4_000 });
+
+        // Narrowed to a machine, each part counts only what was on it.
+        let on = |machine: &str| serde_json::to_value(lifetime(&fixture.db, Some(machine)).unwrap()).unwrap();
+        let cedar = on("cedar");
+        assert_eq!(cedar["months"].as_array().map(|rows| rows.iter().all(|row| row["machine"] == "cedar")), Some(true));
+        assert_eq!(cedar["days"][0]["cacheRead"], 5_000);
+        assert_eq!(cedar["sources"].as_array().map(Vec::len), Some(1));
+        assert_eq!(cedar["recoveredOverlap"]["claudeCode"], 0);
+        let mac = on("mac");
+        assert_eq!(mac["days"][0]["cacheRead"], 5_000 + 4_000);
+        assert_eq!(mac["recoveredOverlap"]["claudeCode"], 9_000);
+        assert!(mac["sources"].as_array().unwrap().iter().all(|source| source["machine"] == "mac"));
+        assert_eq!(on("nowhere")["days"].as_array().map(Vec::len), Some(0));
         let _ = fs::remove_dir_all(&fixture.base);
     }
 
@@ -350,7 +363,7 @@ mod tests {
         for path in walk(&fixture.places.store.root().join("journal")) {
             assert!(!contains(&fs::read(&path).unwrap()), "{}", path.display());
         }
-        let json = serde_json::to_string(&lifetime(&fixture.db).unwrap()).unwrap();
+        let json = serde_json::to_string(&lifetime(&fixture.db, None).unwrap()).unwrap();
         assert!(!json.contains(SECRET_TEXT) && !json.contains(SID), "{json}");
         let _ = fs::remove_dir_all(&fixture.base);
     }

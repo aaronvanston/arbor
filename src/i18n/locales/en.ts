@@ -3729,6 +3729,8 @@ export const en = {
   'usage.lifetime.openArchive': 'Open session archive',
   'usage.lifetime.off.title': 'Keep your sessions to count them',
   'usage.lifetime.off.description': 'The all-time total is counted from the sessions the archive keeps. Set up the archive and it counts every call in every session it keeps, each call once.',
+  'usage.lifetime.noneOn.title': 'Nothing counted on this machine',
+  'usage.lifetime.noneOn.description': 'The archive hasn’t counted any sessions from {machine}. Pick All machines in the breadcrumb to see the rest.',
   'usage.lifetime.waiting.title': 'Nothing counted yet',
   'usage.lifetime.waiting.description': 'The archive hasn’t kept any Claude Code or Codex sessions yet. Tokens are counted after it does.',
   'usage.lifetime.stat.total': 'Tokens',

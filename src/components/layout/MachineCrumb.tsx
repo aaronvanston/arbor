@@ -1,11 +1,12 @@
 import { MachinePill } from '../identity/Identity';
 import { ChevronDown } from '../ui/icons';
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from '../ui/menu';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { useFleetHealth } from '../../services/fleetHealth';
 import { setSettingsScope, useSettingsScope } from '../../services/machineSettings';
 import { machineName } from '../../services/machineNames';
+import { archiveMachines, getSessionArchiveStatus } from '../../services/sessionArchive';
 
 /** What Arbor calls the sessions and requests no machine claims, as the view's `machine` holds it. */
 const UNASSIGNED = '__unassigned__';
@@ -88,4 +89,26 @@ export function SettingsMachineCrumb({ machines }: { machines: readonly string[]
   const scope = useSettingsScope();
   const sorted = useMemo(() => [...new Set(machines)].sort((left, right) => machineName(left).localeCompare(machineName(right))), [machines]);
   return <MachineCrumb machine={scope ?? ''} machines={sorted} onChange={(next) => setSettingsScope(next || null)} />;
+}
+
+/**
+ * Usage › All time's picker: the fleet's machines, and every machine the session archive files sessions under, as an
+ * old backup's machine may no longer have a host.
+ */
+export function ArchiveMachineCrumb({ machine, known, onChange }: {
+  machine: string;
+  known: readonly string[];
+  onChange: (machine: string) => void;
+}) {
+  const [archived, setArchived] = useState<string[]>([]);
+  useEffect(() => {
+    let disposed = false;
+    // Without the archive's list the fleet's machines still offer, so a failure needs nothing shown.
+    getSessionArchiveStatus().then((status) => !disposed && setArchived(archiveMachines(status)), () => {});
+    return () => {
+      disposed = true;
+    };
+  }, []);
+  const all = useMemo(() => [...known, ...archived], [known, archived]);
+  return <FleetMachineCrumb machine={machine} known={all} onChange={onChange} />;
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   ARCHIVE_ALERT_AFTER_MS,
   ARCHIVE_REMIND_EVERY_MS,
+  archiveMachines,
   archiveKeepsMachine,
   archiveNotification,
   archiveTrouble,
@@ -45,6 +46,13 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
 });
 
 describe('the session archive', () => {
+  it('lists every machine it files sessions under once, for All time’s picker', () => {
+    const imports = [{ machine: 'old-mbp', machines: ['old-mbp', 'lab-box'] }] as unknown as ArchiveStatus['imports'];
+    const machines = [{ machine: 'cedar' }, { machine: '' }] as unknown as ArchiveStatus['machines'];
+    expect(archiveMachines(status({ sources: [source({}), source({ label: '~/.codex' })], machines, imports }))).toEqual(['mini', 'cedar', 'old-mbp', 'lab-box']);
+    expect(archiveMachines(status())).toEqual([]);
+  });
+
   it('makes an archive only in an empty folder, and uses only its own', () => {
     expect(folderVerdict(check('empty'), null)).toEqual({ action: 'create', key: 'sessionArchive.folder.empty' });
     // One archive per Mac: with one already kept, an empty folder isn't a place to start another.
