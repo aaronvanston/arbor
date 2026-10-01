@@ -199,6 +199,13 @@ fn session_facts(session: &UsageSession) -> SessionFacts {
 
 /// Where a session ran: its key's machine, else the one its transcript is on.
 /// Empty when neither says.
+/// Whether the Sessions list's machine filter keeps `session` at `machine`:
+/// the machine it's placed on, or none for `__unassigned__`.
+pub(super) fn on_machine(session: &UsageSession, machine: &str) -> bool {
+    let placed = session_machine(session);
+    if machine == UNASSIGNED_MACHINE { placed.is_empty() } else { placed == machine }
+}
+
 pub(super) fn session_machine(session: &UsageSession) -> &str {
     if session.machine.is_empty() {
         session.transcript.as_ref().map_or("", |transcript| transcript.machine())

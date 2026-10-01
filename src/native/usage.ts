@@ -54,7 +54,7 @@ export type UsageCommands = {
   get_usage_machine_assignments: { result: MachineAssignment[] };
   save_usage_machine_assignments: { args: { assignments: MachineAssignment[] }; result: void };
   get_session_projects: { args: { query: UsageQuery; checkNow?: boolean | null }; result: SessionProjectsReport };
-  get_merged_pull_requests: { args: { fromMs: number; toMs: number }; result: MergedPullRequests };
+  get_merged_pull_requests: { args: { fromMs: number; toMs: number; machine?: string | null }; result: MergedPullRequests };
   get_pull_request_states: { args: { pullRequests: PullRequestLink[] }; result: NamedPullRequests };
 
   get_capacity_report: { args: { query: CapacityQuery }; result: CapacityReport };

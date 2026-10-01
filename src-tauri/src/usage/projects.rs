@@ -191,12 +191,13 @@ impl MergedPullRequests {
 pub(crate) async fn get_merged_pull_requests(
     from_ms: i64,
     to_ms: i64,
+    machine: Option<String>,
     gui_config_state: tauri::State<'_, GuiConfigState>,
 ) -> Result<MergedPullRequests, String> {
     let config = gui_config_state.snapshot()?;
     let now_ms = Local::now().timestamp_millis();
     let mut merged = run_usage_task(move || {
-        load_merged_pull_requests(&open_usage_database()?, &config, from_ms, to_ms, now_ms)
+        load_merged_pull_requests(&open_usage_database()?, &config, from_ms, to_ms, machine.as_deref(), now_ms)
     })
     .await?;
     pull_requests::start_check(std::mem::take(&mut merged.due), false, now_ms);
@@ -208,12 +209,15 @@ pub(crate) async fn get_merged_pull_requests(
 /// of every session ever, it reads only those that can count toward them: the
 /// sessions that name them, those that name none and ran on their branches,
 /// and those naming any other pull request from those branches, which the
-/// unnamed ones are shared out with.
+/// unnamed ones are shared out with. With `machine`, only the sessions the
+/// Sessions list puts on it count, as the Projects view narrowed to it does
+/// (`__unassigned__` is those on none); what's asked of GitHub stays the fleet's.
 pub(super) fn load_merged_pull_requests(
     connection: &Connection,
     config: &GuiConfigFile,
     from_ms: i64,
     to_ms: i64,
+    machine: Option<&str>,
     now_ms: i64,
 ) -> Result<MergedPullRequests, String> {
     let states = pull_requests::load_states(connection)?;
@@ -249,7 +253,10 @@ pub(super) fn load_merged_pull_requests(
         .map(|(id, _)| id.clone())
         .collect::<Vec<_>>();
     roots.sort();
-    let sessions = session_read::select_session_trees(connection, config, now_ms, &roots)?;
+    let mut sessions = session_read::select_session_trees(connection, config, now_ms, &roots)?;
+    if let Some(machine) = machine.filter(|machine| !machine.is_empty()) {
+        sessions.retain(|session| session_filters::on_machine(session, machine));
+    }
     let pull_requests = projects_report(&sessions, &states, now_ms)
         .pull_requests
         .into_iter()

@@ -115,12 +115,12 @@ export const failedRequestsView = (): AppView => usageView({ tab: 'events', resu
 
 /**
  * The views that can be looked at for one machine or all, which the breadcrumb's machine picker narrows: Sessions'
- * Live, list and Projects, and Usage's Overview, Requests and Prices. Sync's Cost has its own; the rest compare machines
+ * Live, list and Projects, and Usage's Overview, Weekly, Requests and Prices. Sync's Cost has its own; the rest compare machines
  * or are fleet-wide.
  */
 export function hasMachineScope(page: MainPageId, tab: string | undefined): boolean {
   if (page === 'sessions') return tab === 'live' || tab === 'sessions' || tab === 'projects';
-  if (page === 'usage') return tab === 'overview' || tab === 'events' || tab === 'prices';
+  if (page === 'usage') return tab === 'overview' || tab === 'digest' || tab === 'events' || tab === 'prices';
   return false;
 }
 

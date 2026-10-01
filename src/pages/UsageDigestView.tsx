@@ -70,7 +70,12 @@ type Export = { state: 'idle' | 'saving' } | { state: 'saved'; path: string } | 
  * limits it used and what went to waste, against the week before.
  * `refreshKey` changes when the page's refresh button is pressed.
  */
-export function UsageDigestView({ refreshKey, onOpenSession }: { refreshKey: number; onOpenSession?: (id: string) => void }) {
+export function UsageDigestView({ refreshKey, machine = '', onOpenSession }: {
+  refreshKey: number;
+  /** The machine the breadcrumb narrowed the week to; `''` is every machine. */
+  machine?: string;
+  onOpenSession?: (id: string) => void;
+}) {
   const { t } = useI18n();
   const [offset, setOffset] = useState(0);
   const [data, setData] = useState<WeeklyDigestData | null>(null);
@@ -98,7 +103,7 @@ export function UsageDigestView({ refreshKey, onOpenSession }: { refreshKey: num
       try {
         const next = pullRequestsOnly && loaded
           ? await reloadDigestPullRequests(loaded)
-          : await loadWeeklyDigest(digestWeek(offset, Date.now()), windowsKey ? windowsKey.split('\n') : [], loaded);
+          : await loadWeeklyDigest(digestWeek(offset, Date.now()), windowsKey ? windowsKey.split('\n') : [], loaded, machine);
         if (disposed) return;
         loaded = next;
         setData(next);
@@ -123,9 +128,9 @@ export function UsageDigestView({ refreshKey, onOpenSession }: { refreshKey: num
       window.clearInterval(timer);
       window.clearTimeout(recheck);
     };
-  }, [offset, windowsKey, refreshKey]);
+  }, [offset, windowsKey, refreshKey, machine]);
 
-  const current = data?.week.offset === offset ? data : null;
+  const current = data?.week.offset === offset && data.machine === machine ? data : null;
   const digest = useMemo(() => {
     if (!current) return null;
     const nowMs = Date.now();
@@ -137,7 +142,7 @@ export function UsageDigestView({ refreshKey, onOpenSession }: { refreshKey: num
 
   // A saved page belongs to the week it was saved from.
   const [exported, setExported] = useState<Export>({ state: 'idle' });
-  useEffect(() => setExported({ state: 'idle' }), [offset]);
+  useEffect(() => setExported({ state: 'idle' }), [offset, machine]);
   const exportPage = async () => {
     if (!digest) return;
     setExported({ state: 'saving' });
@@ -304,7 +309,7 @@ function Digest({ digest, onOpenSession }: { digest: WeeklyDigest; onOpenSession
       <DoneSection digest={digest} />
       <ProjectsSection digest={digest} />
       {digest.costliest.length ? <SessionsSection digest={digest} onOpenSession={onOpenSession} /> : null}
-      <LimitsSection limits={digest.limits} />
+      <LimitsSection limits={digest.limits} machine={digest.machine} />
       <WasteSection digest={digest} />
     </>
   );
@@ -470,10 +475,14 @@ function SessionsSection({ digest, onOpenSession }: { digest: WeeklyDigest; onOp
   );
 }
 
-function LimitsSection({ limits }: { limits: DigestLimit[] }) {
+function LimitsSection({ limits, machine }: { limits: DigestLimit[]; machine: string }) {
   const { t } = useI18n();
   return (
-    <SettingsSection title={t('usage.digest.limits.title')} description={t('usage.digest.limits.description')}>
+    <SettingsSection
+      title={t('usage.digest.limits.title')}
+      // Limits are the accounts', which every machine shares, so they can't narrow to one.
+      description={machine ? `${t('usage.digest.limits.description')} ${t('usage.digest.limits.everyMachine')}` : t('usage.digest.limits.description')}
+    >
       {limits.length ? (
         limits.map((limit) => {
           const accounts = limit.measured === limit.accounts

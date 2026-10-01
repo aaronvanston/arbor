@@ -5424,7 +5424,7 @@ mod tests {
         );
 
         let config = GuiConfigFile::default();
-        let merged = projects::load_merged_pull_requests(&connection, &config, from_ms, to_ms, now_ms).unwrap();
+        let merged = projects::load_merged_pull_requests(&connection, &config, from_ms, to_ms, None, now_ms).unwrap();
         let all_time = projects::load_session_projects(&connection, &UsageQuery::default(), &config, now_ms).unwrap();
         let in_week = serde_json::to_value(&all_time).unwrap()["pullRequests"]
             .as_array()
@@ -5445,9 +5445,28 @@ mod tests {
         assert_eq!(merged.due_pull_requests(), [("acme/arbor", 415), ("acme/arbor", 414), ("acme/arbor", 413)]);
 
         // A week nothing merged in reads no sessions and still asks about the rest.
-        let quiet = projects::load_merged_pull_requests(&connection, &config, to_ms, to_ms + 7 * DAY, now_ms).unwrap();
+        let quiet = projects::load_merged_pull_requests(&connection, &config, to_ms, to_ms + 7 * DAY, None, now_ms).unwrap();
         assert_eq!(serde_json::to_value(&quiet).unwrap()["pullRequests"], serde_json::json!([]));
         assert_eq!(quiet.due_pull_requests(), all_time.due_pull_requests());
+
+        // Narrowed to a machine, a pull request counts that machine's sessions alone, as Projects narrowed to it does,
+        // and still asks GitHub about the fleet's.
+        for machine in ["Mac Mini", "lab-box", "__unassigned__"] {
+            let narrowed = projects::load_merged_pull_requests(&connection, &config, from_ms, to_ms, Some(machine), now_ms).unwrap();
+            let query = UsageQuery { machine: Some(machine.to_string()), ..UsageQuery::default() };
+            let projects_view = projects::load_session_projects(&connection, &query, &config, now_ms).unwrap();
+            let expected = serde_json::to_value(&projects_view).unwrap()["pullRequests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|pull_request| pull_request["number"] == 412)
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(serde_json::to_value(&narrowed).unwrap()["pullRequests"], Value::Array(expected), "{machine}");
+            assert_eq!(narrowed.due_pull_requests(), merged.due_pull_requests());
+        }
+        let elsewhere = projects::load_merged_pull_requests(&connection, &config, from_ms, to_ms, Some("lab-box"), now_ms).unwrap();
+        assert_eq!(serde_json::to_value(&elsewhere).unwrap()["pullRequests"], serde_json::json!([]));
     }
 
     #[test]

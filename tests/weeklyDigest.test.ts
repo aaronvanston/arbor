@@ -139,6 +139,7 @@ const projectsReport = (fields: Partial<SessionProjectsReport> = {}): SessionPro
 
 const digestData = (fields: Partial<WeeklyDigestData> = {}): WeeklyDigestData => ({
   week: digestWeek(0, NOW),
+  machine: '',
   overview: overview(),
   previousOverview: overview({ estimatedCost: 1_400, successCount: 950, failureCount: 50 }),
   sessions: {
@@ -360,5 +361,31 @@ describe('loading a week', () => {
     const rechecked = await reloadDigestPullRequests(first);
     expect(commands()).toEqual(['get_merged_pull_requests', 'get_session_projects']);
     expect(rechecked.overview).toBe(first.overview);
+  });
+
+  test('narrowed to a machine, reads that machine’s week and its own week before, with limits still every machine’s', async () => {
+    const data = digestData();
+    const calls = mockCommands({
+      get_usage_overview: () => ({ ...data.overview, canceledCount: 0, successRate: 100, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, rpm: 0, tpm: 0, tps: 0, tpsSampleCount: 0, averageLatencyMs: 0, cacheHitRate: 0, timeline: [], machines: [], machineLive: [] }),
+      get_usage_sessions: () => data.sessions,
+      get_session_projects: () => data.projects,
+      get_merged_pull_requests: () => ({ pullRequests: data.pullRequests }),
+      get_cache_misses: () => data.cacheMisses,
+      get_capacity_report: () => present(data.capacity, 'the capacity report'),
+    });
+    const fleet = await loadWeeklyDigest(data.week, []);
+    calls.splice(0);
+    const cedar = await loadWeeklyDigest(data.week, [], fleet, 'cedar-02');
+    expect(cedar.machine).toBe('cedar-02');
+    // Every machine's week before isn't this machine's, so it's read again.
+    expect(calls).toHaveLength(9);
+    const machineOf = (call: (typeof calls)[number]) => {
+      const args = call.args as { machine?: unknown; query?: { machine?: unknown } };
+      return args.machine ?? args.query?.machine;
+    };
+    for (const call of calls) expect([call.command, machineOf(call)]).toEqual([call.command, call.command === 'get_capacity_report' ? undefined : 'cedar-02']);
+    calls.splice(0);
+    await reloadDigestPullRequests(cedar);
+    expect(calls.map(machineOf)).toEqual(['cedar-02', 'cedar-02']);
   });
 });

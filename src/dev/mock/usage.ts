@@ -1283,7 +1283,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   },
   // The weekly digest's merged pull requests: the all-time Projects view's, merged in the window.
   get_merged_pull_requests: (args) => ({
-    pullRequests: mockProjectsReport(mockSessionsMatching({}).matching, mockGithubAnswered).pullRequests.filter((pullRequest) => {
+    pullRequests: mockProjectsReport(mockSessionsMatching(args.machine ? { machine: args.machine } : {}).matching, mockGithubAnswered).pullRequests.filter((pullRequest) => {
       const mergedAtMs = pullRequest.github?.state === 'merged' ? pullRequest.github.mergedAtMs : null;
       return mergedAtMs != null && mergedAtMs >= args.fromMs && mergedAtMs < args.toMs;
     }),

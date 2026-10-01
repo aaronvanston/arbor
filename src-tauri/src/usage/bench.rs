@@ -287,7 +287,7 @@ fn page_reads_at_volume() {
     time("projects, 7 days", || projects::load_session_projects(&open()?, &week, &config, now_ms));
     time("projects, all time", || projects::load_session_projects(&open()?, &all, &config, now_ms));
     time("merged pull requests, 7 days", || {
-        projects::load_merged_pull_requests(&open()?, &config, now_ms - 7 * DAY, now_ms, now_ms)
+        projects::load_merged_pull_requests(&open()?, &config, now_ms - 7 * DAY, now_ms, None, now_ms)
     });
     time("sessions, all time, with facets", || {
         load_usage_sessions(&open()?, &UsageQuery { facets: Some(true), ..all.clone() }, &config, now_ms)

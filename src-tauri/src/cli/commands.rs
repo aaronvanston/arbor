@@ -471,6 +471,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[
             ArgSpec { name: "fromMs", ts_type: "number", optional: false },
             ArgSpec { name: "toMs", ts_type: "number", optional: false },
+            ArgSpec { name: "machine", ts_type: "string | null", optional: true },
         ],
     },
     CommandSpec {
@@ -1750,7 +1751,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_usage_events" => async { done(Box::pin(crate::usage::get_usage_events(arg(&args, "query")?, app.state())).await) }.await,
         "get_usage_sessions" => async { done(Box::pin(crate::usage::get_usage_sessions(arg(&args, "query")?, app.state())).await) }.await,
         "get_session_projects" => async { done(Box::pin(crate::usage::projects::get_session_projects(arg(&args, "query")?, arg(&args, "checkNow")?, app.state())).await) }.await,
-        "get_merged_pull_requests" => async { done(Box::pin(crate::usage::projects::get_merged_pull_requests(arg(&args, "fromMs")?, arg(&args, "toMs")?, app.state())).await) }.await,
+        "get_merged_pull_requests" => async { done(Box::pin(crate::usage::projects::get_merged_pull_requests(arg(&args, "fromMs")?, arg(&args, "toMs")?, arg(&args, "machine")?, app.state())).await) }.await,
         "get_pull_request_states" => async { done(Box::pin(crate::usage::pull_requests::get_pull_request_states(arg(&args, "pullRequests")?)).await) }.await,
         "get_live_sessions" => done(Box::pin(crate::usage::live::get_live_sessions(app.state())).await),
         "get_machine_sessions" => async { done(Box::pin(crate::usage::machine_sessions::get_machine_sessions(arg(&args, "query")?, app.state())).await) }.await,

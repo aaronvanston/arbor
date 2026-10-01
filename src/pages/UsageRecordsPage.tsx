@@ -1000,7 +1000,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
             <BreakdownSection analysis={analysis} overview={overview} />
           </>
         ) : null}
-        {activeTab === 'digest' && variant === 'usage' ? <UsageDigestView refreshKey={digestRefresh} onOpenSession={openSession} /> : null}
+        {activeTab === 'digest' && variant === 'usage' ? <UsageDigestView refreshKey={digestRefresh} machine={machine} onOpenSession={openSession} /> : null}
         {activeTab === 'lifetime' && variant === 'usage' ? (
           <UsageLifetimeView refreshKey={lifetimeRefresh} onOpenArchive={onNavigate ? () => onNavigate({ kind: 'settings', page: 'session-archive' }) : undefined} />
         ) : null}

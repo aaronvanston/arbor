@@ -70,10 +70,14 @@ export function weekDays(week: DigestWeek, nowMs = Date.now()): string {
   return formatDateRange(week.startMs, Math.max(week.startMs, week.endMs - 1), { now: nowMs });
 }
 
-/** The usage query for a stretch of time. Both ends count, so it stops just short of the next stretch. */
-const rangeQuery = (startMs: number, endMs: number) => ({
+/**
+ * The usage query for a stretch of time on `machine` (`''` is every machine). Both ends count, so it stops just short of
+ * the next stretch.
+ */
+const rangeQuery = (startMs: number, endMs: number, machine = '') => ({
   start: new Date(startMs).toISOString(),
   end: new Date(Math.max(startMs, endMs - 1)).toISOString(),
+  ...(machine ? { machine } : {}),
 });
 
 /** What the digest uses of `get_usage_overview`. */
@@ -92,6 +96,8 @@ export const cacheMissCost = (misses: CacheMisses): number | null => (misses.pri
 
 export type WeeklyDigestData = {
   week: DigestWeek;
+  /** The machine it's about, `''` for every machine. Limits are the accounts', so they stay every machine's. */
+  machine: string;
   overview: DigestOverview;
   previousOverview: DigestOverview;
   /** The week's sessions, the costliest first. */
@@ -112,23 +118,26 @@ export type WeeklyDigestData = {
  * Projects view, this asks GitHub about pull requests it hasn't heard the last of. `before`, an earlier load, lends
  * its numbers for the week before when it compared against the same one: that week is over, so they don't change.
  */
-export async function loadWeeklyDigest(week: DigestWeek, windows: string[], before?: WeeklyDigestData | null): Promise<WeeklyDigestData> {
-  const query = rangeQuery(week.startMs, week.endMs);
-  const previous = rangeQuery(week.previousStartMs, week.previousEndMs);
-  const kept = before?.week.previousStartMs === week.previousStartMs && before.week.previousEndMs === week.previousEndMs ? before : null;
+export async function loadWeeklyDigest(week: DigestWeek, windows: string[], before?: WeeklyDigestData | null, machine = ''): Promise<WeeklyDigestData> {
+  const query = rangeQuery(week.startMs, week.endMs, machine);
+  const previous = rangeQuery(week.previousStartMs, week.previousEndMs, machine);
+  const kept = before?.machine === machine && before.week.previousStartMs === week.previousStartMs && before.week.previousEndMs === week.previousEndMs
+    ? before
+    : null;
   const [overview, previousOverview, sessions, previousSessions, projects, merged, cacheMisses, previousCacheMisses, capacity] = await Promise.all([
     invokeCommand('get_usage_overview', { query }),
     kept ? kept.previousOverview : invokeCommand('get_usage_overview', { query: previous }),
     invokeCommand('get_usage_sessions', { query: { ...query, sort: 'cost', page_size: 20 } }),
     kept ? kept.previousSessions : invokeCommand('get_usage_sessions', { query: { ...previous, page_size: 20 } }).then((page) => page.summary),
     invokeCommand('get_session_projects', { query }),
-    invokeCommand('get_merged_pull_requests', { fromMs: week.startMs, toMs: week.endMs }),
+    invokeCommand('get_merged_pull_requests', { fromMs: week.startMs, toMs: week.endMs, machine: machine || null }),
     invokeCommand('get_cache_misses', { query }),
     kept ? kept.previousCacheMisses : invokeCommand('get_cache_misses', { query: previous }),
-    invokeCommand('get_capacity_report', { query: { ...query, windows } }).catch(() => null),
+    invokeCommand('get_capacity_report', { query: { start: query.start, end: query.end, windows } }).catch(() => null),
   ]);
   return {
     week,
+    machine,
     overview,
     previousOverview,
     sessions,
@@ -143,10 +152,10 @@ export async function loadWeeklyDigest(week: DigestWeek, windows: string[], befo
 
 /** `data` with its pull requests read again, for what GitHub has said since; nothing else in it moves that fast. */
 export async function reloadDigestPullRequests(data: WeeklyDigestData): Promise<WeeklyDigestData> {
-  const { week } = data;
+  const { week, machine } = data;
   const [projects, merged] = await Promise.all([
-    invokeCommand('get_session_projects', { query: rangeQuery(week.startMs, week.endMs) }),
-    invokeCommand('get_merged_pull_requests', { fromMs: week.startMs, toMs: week.endMs }),
+    invokeCommand('get_session_projects', { query: rangeQuery(week.startMs, week.endMs, machine) }),
+    invokeCommand('get_merged_pull_requests', { fromMs: week.startMs, toMs: week.endMs, machine: machine || null }),
   ]);
   return { ...data, projects, pullRequests: merged.pullRequests };
 }
@@ -184,6 +193,8 @@ export type DigestLimit = {
 
 export type WeeklyDigest = {
   week: DigestWeek;
+  /** The machine it's about, `''` for every machine. */
+  machine: string;
   cost: number;
   previousCost: number;
   /** False when none of the week's requests had a price, so its cost isn't known. */
@@ -284,6 +295,7 @@ export function weeklyDigest(data: WeeklyDigestData, providers: CapacityProvider
   const totals = projectsTotals(projects);
   return {
     week,
+    machine: data.machine,
     cost: overview.estimatedCost,
     previousCost: previousOverview.estimatedCost,
     priced: overview.pricedRequests > 0,
