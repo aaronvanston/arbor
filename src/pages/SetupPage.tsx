@@ -663,10 +663,10 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
         )}
         <SyncTray
           onReview={(next) => {
-            // Plugin changes are reviewed with every machine showing; a machine's skills on that machine.
-            setSyncMachine(next.kind === 'skills' ? next.machine : null);
+            // Plugin changes are reviewed with every machine showing.
+            setSyncMachine(null);
             requestSyncReview(next);
-            chooseTab(next.kind === 'skills' ? 'skills' : 'plugins');
+            chooseTab('plugins');
           }}
         />
       </PageBody>
@@ -737,11 +737,11 @@ function SyncScopeSentence() {
 }
 
 /**
- * Every change chosen on Sync's pages and not yet made, at the foot of each of them. Each kind keeps its own review,
- * which makes its changes one machine at a time; the tray takes you to it.
+ * Every plugin and MCP change chosen on Sync's pages and not yet made, at the foot of each of them; the tray takes you
+ * to their review.
  */
 function SyncTray({ onReview }: { onReview: (review: SyncReview) => void }) {
-  const { t, tRich } = useI18n();
+  const { t } = useI18n();
   const counts = syncCounts(useSyncChanges());
   if (!counts.total) return null;
   return (
@@ -752,14 +752,7 @@ function SyncTray({ onReview }: { onReview: (review: SyncReview) => void }) {
           : t(counts.total === 1 ? 'setup.tray.one' : 'setup.tray.other', { count: counts.total })}
       </p>
       <Button variant="ghost-muted" size="sm" onClick={clearSyncChanges}>{t('setup.tray.clear')}</Button>
-      {counts.skills.map((entry) => (
-        <Button key={entry.machine} variant="outline" size="sm" onClick={() => onReview({ kind: 'skills', machine: entry.machine })}>
-          {tRich('setup.tray.skills', { count: entry.count, machine: <MachinePill name={entry.machine} size="sm" /> })}
-        </Button>
-      ))}
-      {counts.extensions ? (
-        <Button size="sm" onClick={() => onReview({ kind: 'plugins' })}>{t('setup.tray.extensions', { count: counts.extensions })}</Button>
-      ) : null}
+      <Button size="sm" onClick={() => onReview({ kind: 'plugins' })}>{t('setup.tray.extensions', { count: counts.total })}</Button>
     </div>
   );
 }

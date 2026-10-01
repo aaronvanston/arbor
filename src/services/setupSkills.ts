@@ -111,8 +111,11 @@ function storePlace(item: SetupItem | null): SkillPlace {
   return item.sum !== null ? 'store' : 'notSkill';
 }
 
-/** Every skill in a machine's store and in its Claude Code and Codex homes, and where each stands in each. */
-export function skillsView(machine: SetupMachine): SkillsView {
+/**
+ * Every skill in a machine's store and in its Claude Code and Codex homes, and where each stands in each. `also` adds
+ * rows for skills the machine hasn't got anywhere, for planning to put them there.
+ */
+export function skillsView(machine: SetupMachine, also: readonly string[] = []): SkillsView {
   const store = machine.homes.find((home) => home.agent === 'shared' && home.path === STORE_HOME) ?? null;
   const sharing = machine.homes
     .filter((home) => home.agent === 'codex' && sharesEntry(home, 'skills'))
@@ -126,7 +129,7 @@ export function skillsView(machine: SetupMachine): SkillsView {
   const setupHome = (home: SkillHome) => machine.homes.find((entry) => entry.path === home.path && entry.agent === home.agent);
   const held = new Map(homes.map((home) => [home.path, skillsIn(setupHome(home))]));
   const settings = new Map(homes.map((home) => [home.path, setupHome(home)]));
-  const names = new Set([...stored.keys(), ...[...held.values()].flatMap((items) => [...items.keys()])]);
+  const names = new Set([...stored.keys(), ...[...held.values()].flatMap((items) => [...items.keys()]), ...also]);
   const rows = [...names].sort((a, b) => a.localeCompare(b)).map((name): SkillRow => {
     const item = stored.get(name) ?? null;
     const cells = homes.map((home): SkillCell => {
@@ -376,13 +379,12 @@ export function fleetSkills(machines: SetupMachine[]): FleetSkills {
 const fleetState = (cell: FleetSkillCell | null | undefined) => (!cell ? 'none' : cell.loads ? 'loads' : 'off');
 
 /**
- * Whether a skill wants a look at All machines: a home somewhere needs one, a change is chosen for it, or the machines
- * don't all have it the same way.
+ * Whether a skill wants a look at All machines: a home somewhere needs one, the repo took it off every machine and one
+ * still has it, or the machines don't all have it the same way.
  */
-export function fleetNeedsLook(row: FleetSkillRow, machines: string[], chosen: Record<string, PendingSkills>, removed: ReadonlySet<string> = new Set()): boolean {
+export function fleetNeedsLook(row: FleetSkillRow, machines: string[], removed: ReadonlySet<string> = new Set()): boolean {
   if (machines.some((machine) => row.cells[machine]?.look)) return true;
   if (removed.has(row.name) && machines.some((machine) => row.cells[machine])) return true;
-  if (machines.some((machine) => Object.keys(chosen[machine] ?? {}).some((key) => key.endsWith(`\u0000${row.name}`)))) return true;
   return new Set(machines.map((machine) => fleetState(row.cells[machine]))).size > 1;
 }
 
@@ -391,27 +393,14 @@ export function fleetSkillGrid(
   fleet: FleetSkills,
   onlyLook: boolean,
   query: string,
-  chosen: Record<string, PendingSkills>,
   removed: ReadonlySet<string> = new Set(),
 ): { rows: FleetSkillRow[]; inLine: number } {
   const text = query.trim().toLowerCase();
   const found = fleet.rows.filter((row) => !text || row.name.toLowerCase().includes(text) || Boolean(row.source?.toLowerCase().includes(text)));
-  const look = found.filter((row) => fleetNeedsLook(row, fleet.machines, chosen, removed));
+  const look = found.filter((row) => fleetNeedsLook(row, fleet.machines, removed));
   return onlyLook
     ? { rows: look, inLine: found.length - look.length }
     : { rows: [...look, ...found.filter((row) => !look.includes(row))], inLine: 0 };
-}
-
-/**
- * What taking a skill the repo removed off one machine chooses: every home's link or copy goes. The store's own copy
- * isn't a home's to remove; the machine's repo review removes it, and a link left behind shows as leading nowhere.
- */
-export function removeFromMachine(cell: FleetSkillCell, pending: PendingSkills = {}): PlannedSkill[] {
-  return cell.row.cells.flatMap((home) =>
-    !pending[changeKey(home.home.path, cell.row.name)] && cellOptions(cell.row, home, pending).includes('remove')
-      ? [{ row: cell.row, cell: home, action: 'remove' as const }]
-      : [],
-  );
 }
 
 /** How the repo has a skill: synced to every machine, taken off them all, or not in it. */

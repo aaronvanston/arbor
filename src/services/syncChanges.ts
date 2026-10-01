@@ -1,26 +1,23 @@
 import { useSyncExternalStore } from 'react';
 import type { PendingMcp } from './setupMcp';
 import type { PendingPlugins } from './setupPlugins';
-import type { PendingSkills } from './setupSkills';
 
 /**
- * The changes chosen on Sync's pages and not yet made, kept together so they last from one page, and one machine, to
- * the next, and one tray at the foot of every Sync page can say what's waiting. Each kind is still reviewed and made
- * the way its page does it, one machine at a time; the tray opens the right review. Only for this run of the app:
- * a choice is made against what the last scan found, which a restart reads again.
+ * The plugin and MCP changes chosen on Sync's pages and not yet made, kept together so they last from one page, and one
+ * machine, to the next, and one tray at the foot of every Sync page can say what's waiting and open their review. Only
+ * for this run of the app: a choice is made against what the last scan found, which a restart reads again. Skills
+ * aren't here: a skill change is made as it's picked.
  */
 export type SyncChanges = {
   plugins: PendingPlugins;
   mcp: PendingMcp;
-  /** A machine's skill changes, by machine: skill changes are made on one machine at a time. */
-  skills: Record<string, PendingSkills>;
   /** A review the tray asked for, which the page it's on opens once it's showing. */
   review: SyncReview | null;
 };
 
-export type SyncReview = { kind: 'plugins' } | { kind: 'skills'; machine: string };
+export type SyncReview = { kind: 'plugins' };
 
-const EMPTY: SyncChanges = { plugins: {}, mcp: {}, skills: {}, review: null };
+const EMPTY: SyncChanges = { plugins: {}, mcp: {}, review: null };
 
 let changes: SyncChanges = EMPTY;
 const listeners = new Set<() => void>();
@@ -56,16 +53,6 @@ export function setSyncMcp(updater: Updater<PendingMcp>) {
   if (!same(next, changes.mcp)) update({ mcp: next });
 }
 
-export function setSyncSkills(machine: string, updater: Updater<PendingSkills>) {
-  const mine = changes.skills[machine] ?? {};
-  const next = resolve(updater, mine);
-  if (same(next, mine)) return;
-  const skills = { ...changes.skills };
-  if (Object.keys(next).length) skills[machine] = next;
-  else delete skills[machine];
-  update({ skills });
-}
-
 export const clearSyncChanges = () => update(EMPTY);
 
 /** Asks the page a review belongs to to open it once it's showing. */
@@ -91,25 +78,13 @@ export function withSettled<A extends string>(current: Record<string, A>, settle
   return { ...Object.fromEntries(elsewhere), ...settled };
 }
 
-/** What's waiting, for the tray: plugins and MCP servers together, since one review makes both, and skills by machine. */
+/** What's waiting, for the tray: plugins and MCP servers together, since one review makes both. */
 export type SyncCounts = {
   total: number;
   machines: number;
-  extensions: number;
-  skills: { machine: string; count: number }[];
 };
 
 export function syncCounts(state: SyncChanges): SyncCounts {
-  const extensionKeys = [...Object.keys(state.plugins), ...Object.keys(state.mcp)];
-  const skills = Object.entries(state.skills)
-    .map(([machine, pending]) => ({ machine, count: Object.keys(pending).length }))
-    .filter((entry) => entry.count > 0)
-    .sort((a, b) => a.machine.localeCompare(b.machine));
-  const machines = new Set([...extensionKeys.map(machineOf), ...skills.map((entry) => entry.machine)]);
-  return {
-    total: extensionKeys.length + skills.reduce((sum, entry) => sum + entry.count, 0),
-    machines: machines.size,
-    extensions: extensionKeys.length,
-    skills,
-  };
+  const keys = [...Object.keys(state.plugins), ...Object.keys(state.mcp)];
+  return { total: keys.length, machines: new Set(keys.map(machineOf)).size };
 }

@@ -2282,6 +2282,24 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
       return setupRepoReply(path);
     });
   },
+  drop_setup_skills: (args) => {
+    const { repo: path, skills: names } = args;
+    mockLog('drop_setup_skills', args);
+    const repo = mockRepo(path);
+    const head = repoHead(repo);
+    // `?skilldrop=fail`: a skill's folder has changes in the repo that aren't committed.
+    if (params.get('skilldrop') === 'fail') return later(500, () => { throw `The repo has changes to ${names.join(', ')} or .agents/skill-sources.json that aren't committed. Commit or drop them, then try again.`; });
+    return later(600, () => {
+      const skills = head?.skills ?? [];
+      const kept = skills.filter((skill) => !names.includes(skill.name));
+      if (kept.length !== skills.length) {
+        const subject = names.length === 1 ? `Take the ${names[0]} skill back out of the repo` : `Take ${names.length} skills back out of the repo`;
+        repo.commits.push(repoCommit(subject, Date.now(), head?.files ?? [], kept));
+        if (repo.upstream) repo.upstream = { ...repo.upstream, ahead: repo.upstream.ahead + 1 };
+      }
+      return setupRepoReply(path);
+    });
+  },
   set_setup_file_removed: (args) => {
     const { repo: path, path: file, removed } = args;
     mockLog('set_setup_file_removed', args);

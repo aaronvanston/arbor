@@ -644,8 +644,8 @@ pub(super) async fn commit_skills(
     Ok(())
 }
 
-/// The sources file without skill `name`, or None when it doesn't record one.
-fn sources_without(folder: &Path, name: &str) -> Result<Option<String>, String> {
+/// The sources file without skills `names`, or None when it records none of them.
+fn sources_without(folder: &Path, names: &[&str]) -> Result<Option<String>, String> {
     let path = folder.join(SOURCES_FILE);
     if fs::symlink_metadata(&path).is_ok_and(|meta| meta.file_type().is_symlink()) {
         return Err(format!("{SOURCES_FILE} is a link in the repo, so Arbor leaves it alone"));
@@ -660,7 +660,8 @@ fn sources_without(folder: &Path, name: &str) -> Result<Option<String>, String> 
         .filter(Value::is_object)
         .ok_or_else(|| format!("{SOURCES_FILE} isn't JSON Arbor can read. Fix it, then try again."))?;
     let Some(skills) = root.get_mut("skills").and_then(Value::as_object_mut) else { return Ok(None) };
-    if skills.remove(name).is_none() {
+    let gone = names.iter().filter(|name| skills.remove(**name).is_some()).count();
+    if gone == 0 {
         return Ok(None);
     }
     Ok(Some(format!("{}\n", serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?)))
@@ -699,7 +700,7 @@ pub(super) async fn remove_skill(folder: &Path, name: &str, removed: bool, git_c
     let tracked = run_git(folder, with_config(&[], &["--literal-pathspecs", "ls-files", "-z", "--", &skill_spec])).await?;
     let message;
     if removed {
-        let sources = sources_without(folder, name)?;
+        let sources = sources_without(folder, &[name])?;
         if !tracked.is_empty() {
             run_git(folder, with_config(git_config, &["rm", "-r", "-q", "--", &skill_spec])).await?;
             paths.push(skill_spec.clone());
@@ -742,6 +743,74 @@ pub(super) async fn remove_skill(folder: &Path, name: &str, removed: bool, git_c
     commit.extend(paths.iter().map(String::as_str));
     run_git(folder, with_config(git_config, &commit)).await?;
     Ok(())
+}
+
+/// Takes skills back out of the repo in one commit, as if they'd never been put in: their folders and where they came
+/// from go, and nothing is marked removed, so machines keep their copies. Undoes putting skills in the repo. Nothing is
+/// written while any of them has changes that aren't committed.
+pub(super) async fn drop_skills(folder: &Path, names: &[String], git_config: &[&str]) -> Result<(), String> {
+    if names.is_empty() {
+        return Err("There's nothing to take out".into());
+    }
+    if names.len() > 200 {
+        return Err("That's too many skills to take out at once".into());
+    }
+    let mut seen = BTreeSet::new();
+    for name in names {
+        if !is_skill_name(name) {
+            return Err("That isn't a skill's name".into());
+        }
+        if !seen.insert(name.as_str()) {
+            return Err(format!("{name} is in the list twice"));
+        }
+    }
+    for step in [".agents", SKILLS_DIR] {
+        if fs::symlink_metadata(folder.join(step)).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            return Err(format!("{step} is a link in the repo, so Arbor leaves it alone"));
+        }
+    }
+    let skill_specs: Vec<String> = names.iter().map(|name| format!("./{SKILLS_DIR}/{name}")).collect();
+    let sources_spec = format!("./{SOURCES_FILE}");
+    let mut status = vec!["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", sources_spec.as_str()];
+    status.extend(skill_specs.iter().map(String::as_str));
+    if !run_git(folder, with_config(&[], &status)).await?.is_empty() {
+        return Err(format!("The repo has changes to {} or {SOURCES_FILE} that aren't committed. Commit or drop them, then try again.", names.join(", ")));
+    }
+    // Read before anything's written, so a sources file Arbor can't read stops it all.
+    let listed: Vec<&str> = names.iter().map(String::as_str).collect();
+    let sources = sources_without(folder, &listed)?;
+    let mut paths = Vec::new();
+    for spec in &skill_specs {
+        if !run_git(folder, with_config(&[], &["--literal-pathspecs", "ls-files", "-z", "--", spec])).await?.is_empty() {
+            run_git(folder, with_config(git_config, &["rm", "-r", "-q", "--", spec])).await?;
+            paths.push(spec.clone());
+        }
+    }
+    if let Some(text) = sources {
+        fs::write(folder.join(SOURCES_FILE), text).map_err(|error| format!("Arbor couldn't write {SOURCES_FILE}: {error}"))?;
+        run_git(folder, with_config(git_config, &["add", "--", &sources_spec])).await?;
+        paths.push(sources_spec);
+    }
+    // Nothing to commit when the repo hasn't got any of them.
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let message = match names {
+        [name] => format!("Take the {name} skill back out of the repo"),
+        _ => format!("Take {} skills back out of the repo\n\n{}", names.len(), names.join("\n")),
+    };
+    let mut commit = vec!["commit", "--quiet", "-m", message.as_str(), "--"];
+    commit.extend(paths.iter().map(String::as_str));
+    run_git(folder, with_config(git_config, &commit)).await?;
+    Ok(())
+}
+
+/// Takes skills back out of the repo, undoing putting them in (see `drop_skills`).
+#[tauri::command]
+pub(crate) async fn drop_setup_skills(repo: String, skills: Vec<String>) -> Result<SetupRepo, String> {
+    let folder = Path::new(&repo);
+    drop_skills(folder, &skills, &[]).await?;
+    read_repo(folder).await
 }
 
 /// Takes a skill off every machine in the repo, or puts it back, and commits it (see `remove_skill`).
@@ -1905,6 +1974,41 @@ mod tests {
             let repo = serde_json::to_value(block_on(read_repo(&setup)).unwrap()).unwrap();
             assert_eq!(repo["removedSkills"], serde_json::json!(["loose"]));
             assert!(block_on(remove_skill(&setup, "../x", true, &IDENTITY)).is_err());
+            let _ = fs::remove_dir_all(&root);
+        }
+
+        #[test]
+        fn skills_put_in_the_repo_come_back_out_without_a_removed_mark() {
+            let root = temp_dir("dropped");
+            git_in(&root, &["init", "--quiet"]);
+            let setup = root.join("agents");
+            fs::create_dir_all(&setup).unwrap();
+            let source = SkillSource { source: "acme/skills".into(), source_type: "github".into(), ..SkillSource::default() };
+            let skills: Vec<(String, Vec<SkillFile>)> = vec![
+                ("pdf".into(), vec![file("SKILL.md", "pdf\n", false)]),
+                ("sketch".into(), vec![file("SKILL.md", "sketch\n", false)]),
+                ("notes".into(), vec![file("SKILL.md", "notes\n", false)]),
+            ];
+            block_on(commit_skills(&setup, &skills, &BTreeMap::from([("pdf".to_string(), source)]), "Take 3 skills", &IDENTITY)).unwrap();
+
+            block_on(drop_skills(&setup, &["pdf".into(), "sketch".into()], &IDENTITY)).unwrap();
+            assert_eq!(log(&setup)[0], "Take 2 skills back out of the repo");
+            assert!(committed(&setup, "pdf").is_empty() && committed(&setup, "sketch").is_empty());
+            assert_eq!(committed(&setup, "notes"), ["100644 SKILL.md"], "the rest stay");
+            assert!(parse_sources(&fs::read(setup.join(SOURCES_FILE)).unwrap()).is_empty(), "where it came from goes too");
+            let repo = serde_json::to_value(block_on(read_repo(&setup)).unwrap()).unwrap();
+            assert_eq!(repo["removedSkills"], serde_json::json!([]), "nothing is marked removed, so machines keep theirs");
+            assert!(git_in(&setup, &["status", "--porcelain"]).is_empty());
+            // One the repo hasn't got is nothing to commit.
+            block_on(drop_skills(&setup, &["pdf".into()], &IDENTITY)).unwrap();
+            assert_eq!(log(&setup).len(), 2);
+
+            write(&setup.join(".agents/skills/notes/SKILL.md"), b"edited\n");
+            assert!(block_on(drop_skills(&setup, &["notes".into()], &IDENTITY)).unwrap_err().contains("aren't committed"));
+            git_in(&setup, &["checkout", "--", "."]);
+            assert!(block_on(drop_skills(&setup, &["notes".into(), "notes".into()], &IDENTITY)).unwrap_err().contains("twice"));
+            assert!(block_on(drop_skills(&setup, &["../x".into()], &IDENTITY)).is_err());
+            assert!(block_on(drop_skills(&setup, &[], &IDENTITY)).is_err());
             let _ = fs::remove_dir_all(&root);
         }
 

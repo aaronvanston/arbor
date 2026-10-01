@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { changeKey, fleetSkillGrid, fleetSkills, removeFromMachine, repoSkillState } from '../src/services/setupSkills';
-import { present } from './support/items';
+import { fleetSkillGrid, fleetSkills, repoSkillState } from '../src/services/setupSkills';
 import { parseSyncScope } from '../src/services/syncScope';
 import type { SetupHome, SetupItem, SetupMachine } from '../src/native/types';
 
@@ -49,26 +48,18 @@ describe('Sync’s scope', () => {
     const store = home('shared', '~/.agents', [skill('~/.agents', 'pdf')]);
     const fleet = fleetSkills([machine('mac', [store, same('notes')]), machine('ci', [store, same('draft')])]);
     // notes and draft are each one machine's own copy; pdf loads everywhere.
-    const grid = fleetSkillGrid(fleet, true, '', {});
+    const grid = fleetSkillGrid(fleet, true, '');
     expect([grid.rows.map((row) => row.name), grid.inLine]).toEqual([['draft', 'notes'], 1]);
-    expect(fleetSkillGrid(fleet, false, '', {}).rows.map((row) => row.name)).toEqual(['draft', 'notes', 'pdf']);
-    expect(fleetSkillGrid(fleet, true, 'not', {}).rows.map((row) => row.name)).toEqual(['notes']);
-    // A change chosen for it keeps a row in view.
-    const chosen = { mac: { [changeKey('~/.claude', 'pdf')]: 'remove' as const } };
-    expect(fleetSkillGrid(fleet, true, '', chosen).rows.map((row) => row.name)).toEqual(['draft', 'notes', 'pdf']);
+    expect(fleetSkillGrid(fleet, false, '').rows.map((row) => row.name)).toEqual(['draft', 'notes', 'pdf']);
+    expect(fleetSkillGrid(fleet, true, 'not').rows.map((row) => row.name)).toEqual(['notes']);
   });
 
-  it('keeps a skill the repo removed in view, and takes it out of a machine’s homes, leaving the store to the repo review', () => {
+  it('keeps a skill the repo removed in view while a machine still has it', () => {
     const linked = home('claude', '~/.claude', [skill('~/.claude', 'pdf', { link: '~/.agents/skills/pdf' })]);
     const store = home('shared', '~/.agents', [skill('~/.agents', 'pdf')]);
     const fleet = fleetSkills([machine('mac', [store, linked]), machine('ci', [store, linked])]);
-    expect(fleetSkillGrid(fleet, true, '', {}).rows).toEqual([]);
-    const removed = new Set(['pdf']);
-    expect(fleetSkillGrid(fleet, true, '', {}, removed).rows.map((row) => row.name)).toEqual(['pdf']);
-    const cell = present(present(fleet.rows[0], 'pdf').cells.mac, 'pdf on mac');
-    expect(removeFromMachine(cell).map((change) => [change.cell.home.path, change.action])).toEqual([['~/.claude', 'remove']]);
-    // Chosen already, nothing more to add.
-    expect(removeFromMachine(cell, { [changeKey('~/.claude', 'pdf')]: 'remove' })).toEqual([]);
+    expect(fleetSkillGrid(fleet, true, '').rows).toEqual([]);
+    expect(fleetSkillGrid(fleet, true, '', new Set(['pdf'])).rows.map((row) => row.name)).toEqual(['pdf']);
     const repo = { skills: [], removedSkills: ['pdf'] };
     expect([repoSkillState(repo, 'pdf'), repoSkillState(repo, 'notes')]).toEqual(['removed', 'absent']);
   });

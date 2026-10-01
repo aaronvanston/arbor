@@ -59,6 +59,7 @@ export type SetupCommands = {
   set_setup_file_machine: { args: { repo: string; path: string; machine: string; wanted: SkillWanted | null }; result: SetupRepo };
   set_setup_file_removed: { args: { repo: string; path: string; removed: boolean }; result: SetupRepo };
   set_setup_skill_removed: { args: { repo: string; skill: string; removed: boolean }; result: SetupRepo };
+  drop_setup_skills: { args: { repo: string; skills: string[] }; result: SetupRepo };
   set_setup_skill_machine: { args: { repo: string; skill: string; machine: string; wanted: SkillWanted | null }; result: SetupRepo };
   set_setup_skill_project: {
     args: { repo: string; skill: string; project: string; machine: string | null; wanted: PluginWanted | null };

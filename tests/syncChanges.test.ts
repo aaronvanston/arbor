@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { clearSyncChanges, requestSyncReview, setSyncMcp, setSyncPlugins, setSyncSkills, syncCounts, takeSyncReview, withSettled } from '../src/services/syncChanges';
+import { clearSyncChanges, requestSyncReview, setSyncMcp, setSyncPlugins, syncCounts, takeSyncReview, withSettled } from '../src/services/syncChanges';
 import type { PendingMcp } from '../src/services/setupMcp';
 import type { PendingPlugins } from '../src/services/setupPlugins';
-import type { PendingSkills } from '../src/services/setupSkills';
 import type { PluginAction } from '../src/native/types';
 
 const key = (machine: string, what: string) => `${machine}\u0000~/.claude\u0000plugin\u0000${what}`;
@@ -13,44 +12,37 @@ function held() {
   let mcp: PendingMcp = {};
   setSyncPlugins((current) => (plugins = current));
   setSyncMcp((current) => (mcp = current));
-  const skills = (machine: string) => {
-    let mine: PendingSkills = {};
-    setSyncSkills(machine, (current) => (mine = current));
-    return mine;
-  };
-  return { plugins, mcp, skills };
+  return { plugins, mcp };
 }
 
 describe('Sync’s chosen changes', () => {
   beforeEach(() => clearSyncChanges());
 
-  it('keeps what each page chose, skills by machine', () => {
+  it('keeps what each page chose', () => {
     setSyncPlugins({ [key('mini', 'a@m')]: 'uninstall' });
     setSyncPlugins((current) => ({ ...current, [key('air', 'a@m')]: 'uninstall' }));
-    setSyncSkills('ci-01', { '~/.claude\u0000pdf': 'remove' });
+    setSyncMcp({ 'mini\u0000~/.claude\u0000mcp\u0000linear': 'remove' });
     const now = held();
     expect(Object.keys(now.plugins)).toEqual([key('mini', 'a@m'), key('air', 'a@m')]);
-    expect(now.skills('ci-01')).toEqual({ '~/.claude\u0000pdf': 'remove' });
-    expect(now.skills('air')).toEqual({});
+    expect(Object.keys(now.mcp)).toEqual(['mini\u0000~/.claude\u0000mcp\u0000linear']);
     clearSyncChanges();
-    expect(held().plugins).toEqual({});
+    expect(held()).toEqual({ plugins: {}, mcp: {} });
   });
 
-  it('counts plugins and MCP servers together and skills by machine, across machines', () => {
+  it('counts plugins and MCP servers together, across machines', () => {
     const counts = syncCounts({
       plugins: { [key('mini', 'a@m')]: 'uninstall', [key('air', 'a@m')]: 'uninstall' },
       mcp: { 'mini\u0000~/.claude\u0000mcp\u0000linear': 'remove' },
-      skills: { 'ci-01': { '~/.claude\u0000pdf': 'remove' }, air: { '~/.claude\u0000x': 'link' }, dev: {} },
       review: null,
     });
-    expect(counts).toEqual({ total: 5, machines: 3, extensions: 3, skills: [{ machine: 'air', count: 1 }, { machine: 'ci-01', count: 1 }] });
+    expect(counts).toEqual({ total: 3, machines: 2 });
   });
 
   it('hands a review to the page it belongs to, once', () => {
-    requestSyncReview({ kind: 'skills', machine: 'air' });
     expect(takeSyncReview('plugins')).toBeNull();
-    expect(takeSyncReview('skills')).toEqual({ kind: 'skills', machine: 'air' });
-    expect(takeSyncReview('skills')).toBeNull();
+    requestSyncReview({ kind: 'plugins' });
+    expect(takeSyncReview('plugins')).toEqual({ kind: 'plugins' });
+    expect(takeSyncReview('plugins')).toBeNull();
   });
 
   it('keeps the choices for machines a scoped page isn’t showing', () => {

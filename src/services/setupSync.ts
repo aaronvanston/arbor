@@ -164,6 +164,9 @@ export const removableKind = (kind: SyncFileKind) => kind !== 'instructions';
 export const setSetupSkillRemoved = (repo: string, skill: string, removed: boolean) =>
   invokeCommand('set_setup_skill_removed', { repo, skill, removed });
 
+/** Takes skills back out of the repo in one commit, undoing putting them in: nothing is marked removed, so machines keep theirs. */
+export const dropSetupSkills = (repo: string, skills: string[]) => invokeCommand('drop_setup_skills', { repo, skills });
+
 /** A machine's own value for a repo rule, subagent or command, or undefined while it follows every machine's. */
 export const fileWanted = (repo: SetupRepo, path: string, machine: string): SkillWanted | undefined =>
   repo.fileMachines?.[path]?.[machineLookKey(machine)];
