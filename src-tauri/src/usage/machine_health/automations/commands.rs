@@ -68,6 +68,28 @@ fn last_run(connection: &rusqlite::Connection, id: &str) -> Result<Option<Automa
     }))
 }
 
+/// A found automation with its project filled in from the session it runs in, when its app names none: the checkout
+/// that session's transcript recorded, looked up by the id the app stores, never guessed from names.
+fn with_project(connection: &rusqlite::Connection, mut item: Found) -> Result<Found, String> {
+    let Some(session) = item.session.as_deref().filter(|_| item.automation.project_path.is_none()) else { return Ok(item) };
+    let checkout: Option<String> = connection
+        .query_row(
+            "SELECT CASE WHEN main_repo <> '' THEN main_repo WHEN repo_root <> '' THEN repo_root ELSE cwd END
+             FROM usage_session_transcripts WHERE session_id = ?1",
+            [session],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("Failed to read the session's project: {error}"))?;
+    if let Some(checkout) = checkout.filter(|path| !path.is_empty()) {
+        if item.automation.summary.project.is_none() {
+            item.automation.summary.project = folder_name(&checkout);
+        }
+        item.automation.project_path = Some(checkout);
+    }
+    Ok(item)
+}
+
 /// The list as the page shows it, from what's saved and each machine's last look.
 pub(super) fn list_from(
     connection: &rusqlite::Connection,
@@ -79,7 +101,9 @@ pub(super) fn list_from(
         let last = last_run(connection, &record.id)?;
         automations.push(arbor_summary(&record, last));
     }
-    automations.extend(discover::all_found(found).into_iter().map(|item| item.automation.summary));
+    for item in discover::all_found(found) {
+        automations.push(with_project(connection, item)?.automation.summary);
+    }
     let mut scans: Vec<AutomationScan> = found
         .iter()
         .map(|(machine, find)| AutomationScan {
@@ -232,7 +256,8 @@ pub(crate) async fn get_automation(id: String) -> Result<Automation, String> {
         let last = run_usage_task(move || last_run(&open_usage_database()?, &record_id)).await?;
         return Ok(arbor_automation(&record, last));
     }
-    Ok(found_or_error(&id)?.automation)
+    let found = found_or_error(&id)?;
+    run_usage_task(move || Ok(with_project(&open_usage_database()?, found)?.automation)).await
 }
 
 /// An automation's runs, or every automation's, newest first. Only Arbor's own have runs here.
@@ -350,8 +375,9 @@ pub(crate) async fn copy_automation_into_arbor(app: tauri::AppHandle, id: String
     if !item.automation.summary.abilities.copy {
         return Err("This automation can't be copied".into());
     }
-    let input = copied_input(&item.automation);
-    let record = run_usage_task(move || save_record(input)).await?;
+    // A copy works where the original did, so the project Arbor can tell comes along.
+    let lookup = item.clone();
+    let record = run_usage_task(move || save_record(copied_input(&with_project(&open_usage_database()?, lookup)?.automation))).await?;
     if pause_original && item.automation.summary.enabled && item.automation.summary.abilities.pause {
         discover::set_enabled(&app, &item, false).await?;
     }
@@ -498,5 +524,28 @@ mod tests {
         assert_eq!(copy.rrule, "FREQ=HOURLY;INTERVAL=2");
         assert_eq!(copy.target, AutomationTarget::Machine { name: "casey-mbp".into() });
         assert_eq!(copy.agent, AutomationAgent::Codex);
+    }
+
+    #[test]
+    fn a_codex_app_automation_takes_its_project_from_the_thread_it_runs_in() {
+        let connection = crate::usage::schema::test_database();
+        connection
+            .execute(
+                "INSERT INTO usage_session_transcripts (session_id, machine, agent, repo_root, main_repo) VALUES ('t-1', 'casey-mbp', 'codex', '/Users/casey/code/billing-wt', '/Users/casey/code/billing')",
+                [],
+            )
+            .unwrap();
+        // `target_thread_id = "t-1"`, and one with a thread Arbor has no transcript for.
+        let linked = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtMSIK\n";
+        let unknown = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/y/automation.toml\tbmFtZSA9ICJZIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtOSIK\n";
+        let (mut found, _) = discover::parse_scan("casey-mbp", linked);
+        found.extend(discover::parse_scan("casey-mbp", unknown).0);
+        let finds = BTreeMap::from([("casey-mbp".to_string(), MachineFind { scanned_at_ms: Some(1), found: found.clone(), ..Default::default() })]);
+        let list = list_from(&connection, &finds, &["casey-mbp".into()]).unwrap();
+        let projects: Vec<_> = list.automations.iter().map(|item| item.project.as_deref()).collect();
+        assert_eq!(projects, [Some("billing"), None]);
+        let item = with_project(&connection, found[0].clone()).unwrap();
+        assert_eq!(item.automation.project_path.as_deref(), Some("/Users/casey/code/billing"));
+        assert_eq!(copied_input(&item.automation).project_path, "/Users/casey/code/billing");
     }
 }

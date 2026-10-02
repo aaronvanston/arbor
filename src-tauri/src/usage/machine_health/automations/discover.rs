@@ -32,6 +32,9 @@ pub(super) struct Found {
     /// The machine it was found on, whose app keeps it.
     pub(super) found_on: String,
     pub(super) keeper: Keeper,
+    /// The session it runs in, when its app keeps one (a Codex app automation's thread), by the id its transcript
+    /// stores. Its project comes from there.
+    pub(super) session: Option<String>,
 }
 
 /// One machine's last look.
@@ -199,7 +202,7 @@ fn codex_automation(machine: &str, home: &str, path: &str, content: Vec<u8>) -> 
     automation.source_path = Some(tilde(path, home));
     automation.created_at_ms = number("created_at");
     automation.updated_at_ms = number("updated_at");
-    Some(Found { automation, found_on: machine.to_string(), keeper: Keeper::CodexFile { path: path.to_string(), content } })
+    Some(Found { automation, found_on: machine.to_string(), keeper: Keeper::CodexFile { path: path.to_string(), content }, session: string("target_thread_id") })
 }
 
 /// A Claude scheduled task: its SKILL.md's `name` and `description`, and the rest as the prompt. Claude keeps its
@@ -226,7 +229,7 @@ fn claude_task(machine: &str, home: &str, path: &str, content: &[u8]) -> Option<
     summary.agent = Some(AutomationAgent::Claude);
     let mut automation = found_automation(summary, body, None);
     automation.source_path = Some(tilde(path, home));
-    Some(Found { automation, found_on: machine.to_string(), keeper: Keeper::ClaudeFile })
+    Some(Found { automation, found_on: machine.to_string(), keeper: Keeper::ClaudeFile, session: None })
 }
 
 /// The `result` of an Orca command's JSON, or what's under `key` in it.
@@ -311,7 +314,7 @@ fn orca_automations(machine: &str, list: &[u8], projects: &[u8], hosts: &[u8], l
             automation.grace_minutes = item.get("missedRunGraceMinutes").and_then(serde_json::Value::as_u64).unwrap_or(0) as u32;
             automation.created_at_ms = item.get("createdAt").and_then(serde_json::Value::as_i64);
             automation.updated_at_ms = item.get("updatedAt").and_then(serde_json::Value::as_i64);
-            Some(Found { automation, found_on: machine.to_string(), keeper: Keeper::Orca { id } })
+            Some(Found { automation, found_on: machine.to_string(), keeper: Keeper::Orca { id }, session: None })
         })
         .collect()
 }

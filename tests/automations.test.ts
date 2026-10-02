@@ -5,6 +5,7 @@ import {
   automationMachines,
   choiceSummary,
   failedRunAlerts,
+  automationAgents,
   filterAutomations,
   scheduleChoice,
   scheduleRule,
@@ -77,6 +78,23 @@ describe('the list', () => {
     const shown = filterAutomations(automations, { search: '', source: 'all', machine: 'casey-mbp' });
     expect(shown.map((item) => item.id)).toEqual(['arbor:c', 'arbor:b', 'arbor:d', 'orca:1']);
     expect(filterAutomations(automations, { search: 'billing', source: 'orca', machine: '' }).map((item) => item.id)).toEqual(['orca:1']);
+  });
+
+  it('narrows to on, paused or failing automations, and to one agent', () => {
+    const mixed = [
+      summary({ id: 'arbor:on', name: 'A', agent: 'claude' }),
+      summary({ id: 'arbor:off', name: 'B', enabled: false, agent: 'codex', lastRun: { status: 'failed', atMs: 1 } }),
+      summary({ id: 'arbor:bad', name: 'C', agent: 'codex', lastRun: { status: 'unreachable', atMs: 1 } }),
+      summary({ id: 'orca:x', source: 'orca', name: 'D', agent: null }),
+    ];
+    const ids = (state: 'all' | 'on' | 'paused' | 'failing', agent: 'all' | 'codex' | 'other' = 'all') =>
+      filterAutomations(mixed, { search: '', source: 'all', machine: '', state, agent }).map((item) => item.id);
+    expect(ids('on')).toEqual(['arbor:on', 'arbor:bad', 'orca:x']);
+    expect(ids('paused')).toEqual(['arbor:off']);
+    expect(ids('failing')).toEqual(['arbor:bad']);
+    expect(ids('all', 'codex')).toEqual(['arbor:off', 'arbor:bad']);
+    expect(ids('all', 'other')).toEqual(['orca:x']);
+    expect(automationAgents(mixed)).toEqual(['claude', 'codex', 'other']);
   });
 
   it('names each machine once for the picker', () => {

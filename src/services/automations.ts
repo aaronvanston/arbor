@@ -155,20 +155,56 @@ export const AGENT_PROVIDER: Record<AutomationAgent, string | null> = { claude: 
 
 // ── Filtering ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type AutomationFilter = { search: string; source: AutomationSource | 'all'; machine: string };
+/** Which automations by whether they run: on, paused, or on with a last run that failed. */
+export type AutomationState = 'all' | 'on' | 'paused' | 'failing';
+
+export const AUTOMATION_STATES: readonly AutomationState[] = ['all', 'on', 'paused', 'failing'];
+
+export const STATE_LABEL: Record<AutomationState, MessageKey> = {
+  all: 'automations.state.all',
+  on: 'automations.state.on',
+  paused: 'automations.state.paused',
+  failing: 'automations.state.failing',
+};
+
+export type AutomationFilter = {
+  search: string;
+  source: AutomationSource | 'all';
+  machine: string;
+  /** Every one when left out. */
+  state?: AutomationState;
+  agent?: AutomationAgent | 'all';
+};
+
+const inState = (item: AutomationSummary, state: AutomationState) => {
+  switch (state) {
+    case 'all': return true;
+    case 'on': return item.enabled;
+    case 'paused': return !item.enabled;
+    // A paused one isn't failing: nothing more will go wrong until it's on again.
+    case 'failing': return item.enabled && (item.lastRun?.status === 'failed' || item.lastRun?.status === 'unreachable');
+  }
+};
 
 /**
- * The automations to list: the ones whose name, project or machine has the search in it, from the source picked, that
- * run on the machine picked (one a pool picks a member for when it's due counts on every machine). Arbor's own first, then by name.
+ * The automations to list: the ones whose name, project or machine has the search in it, from the source picked, in
+ * the state and for the agent picked, that run on the machine picked (one a pool picks a member for when it's due
+ * counts on every machine). Arbor's own first, then by name.
  */
 export function filterAutomations(automations: readonly AutomationSummary[], filter: AutomationFilter): AutomationSummary[] {
   const words = filter.search.trim().toLowerCase();
   return automations
     .filter((item) => filter.source === 'all' || item.source === filter.source)
+    .filter((item) => inState(item, filter.state ?? 'all'))
+    .filter((item) => !filter.agent || filter.agent === 'all' || (item.agent ?? 'other') === filter.agent)
     .filter((item) => !filter.machine || item.machine === filter.machine || item.target.kind !== 'machine')
     .filter((item) => !words || [item.name, item.project ?? '', item.machine ?? ''].some((text) => text.toLowerCase().includes(words)))
     .sort((left, right) => Number(left.source !== 'arbor') - Number(right.source !== 'arbor') || left.name.localeCompare(right.name));
 }
+
+/** The agents automations start, for the agent filter; one the app doesn't name counts as another agent. */
+export const automationAgents = (automations: readonly AutomationSummary[]): AutomationAgent[] =>
+  (['claude', 'codex', 'gemini', 'other'] as const).filter((agent) => automations.some((item) => (item.agent ?? 'other') === agent));
 
 /** The machines automations run on, for the breadcrumb's picker. */
 export const automationMachines = (automations: readonly AutomationSummary[]) =>

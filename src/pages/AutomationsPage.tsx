@@ -24,18 +24,22 @@ import { useI18n } from '../i18n';
 import { formatAgo, formatDateTime, formatRelative, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
 import { automationView, automationsView, type AppView, type AutomationsParams } from '../navigation';
-import type { AutomationSource, AutomationSummary } from '../native/types';
+import type { AutomationAgent, AutomationSource, AutomationSummary } from '../native/types';
 import {
   AGENT_PROVIDER,
+  AUTOMATION_STATES,
   RUN_STATUS_LABEL,
   RUN_STATUS_TONE,
   SOURCE_LABEL,
+  STATE_LABEL,
+  automationAgents,
   automationMachines,
   filterAutomations,
   loadAutomations,
   scanAutomations,
   scheduleWords,
   showAutomations,
+  type AutomationState,
   useAutomations,
 } from '../services/automations';
 import { invokeCommand } from '../native/commands';
@@ -68,18 +72,38 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   const now = useQuotaClock();
   const [search, setSearch] = useState('');
   const [source, setSource] = useState<AutomationSource | 'all'>('all');
+  const [state, setState] = useState<AutomationState>('all');
+  const [agent, setAgent] = useState<AutomationAgent | 'all'>('all');
   const [creating, setCreating] = useState(false);
   const automations = useMemo(() => list?.automations ?? [], [list]);
   // Orca's filter only once Orca's been found somewhere, like any other app's feature.
   const orcaFound = Boolean(list?.scans.some((scan) => scan.orca));
   const sources = SOURCES.filter((entry) => entry !== 'orca' || orcaFound || source === 'orca');
-  const shown = useMemo(() => filterAutomations(automations, { search, source, machine }), [automations, search, source, machine]);
+  const shown = useMemo(
+    () => filterAutomations(automations, { search, source, machine, state, agent }),
+    [automations, search, source, machine, state, agent],
+  );
+  // Only the agents something starts, and the one picked even once nothing does.
+  const agents = useMemo(() => {
+    const present = automationAgents(automations);
+    return agent === 'all' || present.includes(agent) ? present : [...present, agent];
+  }, [automations, agent]);
   const machines = useMemo(() => automationMachines(automations), [automations]);
   const failedScans = list?.scans.filter((scan) => scan.error) ?? [];
   const refresh = () => { void scanAutomations(); };
   useShortcut('page.refresh', refresh, !loading);
 
   const sourceLabel = (value: AutomationSource | 'all') => (value === 'all' ? t('automations.source.all') : t(SOURCE_LABEL[value]));
+  const agentLabel = (value: AutomationAgent | 'all') => {
+    if (value === 'all') return t('automations.agent.all');
+    const provider = AGENT_PROVIDER[value];
+    return (
+      <span className="inline-flex items-center gap-2">
+        {provider ? <ProviderMark provider={provider} decorative /> : null}
+        {t(`automations.agent.${value}`)}
+      </span>
+    );
+  };
 
   return (
     <Page width="main">
@@ -154,6 +178,22 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
                   aria-label={t('automations.search')}
                   startAddon={<Search />}
                 />
+                <Select value={state} onValueChange={(value) => setState((value ?? 'all') as AutomationState)}>
+                  <SelectTrigger size="sm" className="w-auto min-w-32" aria-label={t('automations.state.label')}>
+                    <SelectValue>{t(STATE_LABEL[state])}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end">
+                    {AUTOMATION_STATES.map((entry) => <SelectItem key={entry} value={entry}>{t(STATE_LABEL[entry])}</SelectItem>)}
+                  </SelectPopup>
+                </Select>
+                <Select value={agent} onValueChange={(value) => setAgent((value ?? 'all') as AutomationAgent | 'all')}>
+                  <SelectTrigger size="sm" className="w-auto min-w-32" aria-label={t('automations.agent.label')}>
+                    <SelectValue>{agentLabel(agent)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end">
+                    {(['all', ...agents] as const).map((entry) => <SelectItem key={entry} value={entry}>{agentLabel(entry)}</SelectItem>)}
+                  </SelectPopup>
+                </Select>
                 <Select value={source} onValueChange={(value) => setSource((value ?? 'all') as AutomationSource | 'all')}>
                   <SelectTrigger size="sm" className="w-auto min-w-36" aria-label={t('automations.source.label')}>
                     <SelectValue>{sourceLabel(source)}</SelectValue>
