@@ -2933,7 +2933,7 @@ export type PoolSshMember = {
 /**
  * Whether a member can take a connection through its pool's host.
  */
-export type PoolSshReadiness = "ready" | "noAddress" | "noHostKey" | "otherUser";
+export type PoolSshReadiness = "ready" | "noAddress" | "noHostKey" | "otherUser" | "thisMac";
 
 /**
  * Why a member could or couldn't take the next run.

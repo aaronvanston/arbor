@@ -130,6 +130,7 @@ function readinessOf(machine: string): PoolSshReadiness {
   if (sshScenario === 'nokeys') return 'noHostKey';
   if (loose(machine) === 'labbox') return 'noHostKey';
   if (loose(machine) === 'cedar02') return 'otherUser';
+  if (loose(machine) === 'caseymbp') return 'thisMac';
   return 'ready';
 }
 
@@ -141,7 +142,7 @@ function connectionsOf(pool: MachinePool): PoolSshConnection[] {
   const day = 24 * 60 * 60_000;
   return [
     ...(first ? [{ name: host, machine: first, open: 3, pickedAtMs: Date.now() - 9 * day }] : []),
-    ...(second ? [{ name: `${host}-b`, machine: second, open: 0, pickedAtMs: Date.now() - 2 * day }] : []),
+    ...(first ? [{ name: `${host}-b`, machine: second ?? first, open: 0, pickedAtMs: Date.now() - 2 * day }] : []),
   ].filter((connection) => !forgottenNames.has(`${pool.id}/${connection.name}`));
 }
 

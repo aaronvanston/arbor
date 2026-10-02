@@ -18,6 +18,7 @@ export const READINESS_LABEL: Record<PoolSshReadiness, MessageKey> = {
   noAddress: 'pools.ssh.readiness.noAddress',
   noHostKey: 'pools.ssh.readiness.noHostKey',
   otherUser: 'pools.ssh.readiness.otherUser',
+  thisMac: 'pools.ssh.readiness.thisMac',
 };
 
 /** What stands between the pool and `ssh <host>`, the first thing to fix first; null once nothing does. */

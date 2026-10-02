@@ -123,7 +123,8 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   the host's ProxyCommand, which asks the app for a member over the socket
   (`pools.connect`) and carries the bytes. A host name is pinned to the member its
   first connection went to, saved in usage.db, and only a member that's off, removed or
-  stops answering loses it (or the person forgets the name on the pool's page).
+  stops answering loses it (or the person forgets the name on the pool's page). This
+  Mac is never picked, since the ProxyCommand runs here and would connect an app to itself.
   Host keys come only from the user's own known_hosts, never a scan, and
   `~/.ssh/config` gets its one Include line only through a guarded write.
 - `src-tauri/src/usage/machine_health/archive.rs` and `archive/`: the session archive.

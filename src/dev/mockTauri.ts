@@ -88,8 +88,8 @@
  * go by, and `?pools=open` for pools with every limit off; by default there are two pools, one spilling into the other;
  * `?poolSsh=nocli` for a pool page before the arbor command is installed, `?poolSsh=noinclude` for ~/.ssh/config not
  * bringing in the pool hosts yet, `?poolSsh=nokeys` for no member's host key saved, and `?poolSsh=idle` for no host
- * name pinned yet; by default one member has no saved key, one is reached as another user, and two host names are
- * pinned to members, one with connections open;
+ * name pinned yet; by default one member has no saved key, one is reached as another user, one is this Mac, and two host
+ * names are pinned to members, one with connections open;
  * `?runs=none` for no harness runs yet, `?runs=queued` for runs waiting in a pool's queue (one for room, one for a
  * harness), `?runs=failed` for runs refused, failed and timed out for each reason, and `?runs=open-fail` for Orca not
  * finding a run's terminal;

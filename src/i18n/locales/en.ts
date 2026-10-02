@@ -4587,6 +4587,7 @@ export const en = {
   'pools.ssh.readiness.noAddress': 'Arbor can’t tell where it is. Check it on the Machines page',
   'pools.ssh.readiness.noHostKey': 'Connect to it over SSH once, so this Mac saves its host key',
   'pools.ssh.readiness.otherUser': 'Reached as another user than {user}, so it’s left out',
+  'pools.ssh.readiness.thisMac': 'This Mac. The host is opened from here, so it’s never picked',
   'pools.ssh.noneReady': 'No machine is ready yet, so a connection would be refused.',
   'pools.ssh.connections': 'Host names and their machines',
   'pools.ssh.noConnections': 'No host name has connected yet.',

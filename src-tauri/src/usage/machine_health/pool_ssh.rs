@@ -11,7 +11,8 @@
 //!
 //! Host keys are only ever ones the person's own known_hosts already trusts for a member. Arbor copies them under one
 //! alias into a file of its own, so ssh accepts whichever member answers, and never scans for new ones. A member
-//! without a saved key, or reached as another user than the pool's, isn't picked.
+//! without a saved key, or reached as another user than the pool's, isn't picked, and neither is this Mac, where the
+//! ProxyCommand runs: an app would only be connected back to itself.
 //!
 //! The files live in ~/.arbor/ssh and are Arbor's alone, rewritten whenever pools or their members change. The person's
 //! own ~/.ssh/config gets one Include line, added only when asked, through a guarded write they can undo.
@@ -217,6 +218,8 @@ pub(crate) enum Readiness {
     NoHostKey,
     /// Reached as another user than the pool's host connects as.
     OtherUser,
+    /// The Mac the host is opened from: a connection would come back to the apps already running here.
+    ThisMac,
 }
 
 fn readiness(member: Option<&MemberSsh>, user: Option<&str>) -> Readiness {
@@ -228,6 +231,27 @@ fn readiness(member: Option<&MemberSsh>, user: Option<&str>) -> Readiness {
     } else {
         Readiness::Ready
     }
+}
+
+/// The members that are this Mac. The pool host's ProxyCommand always runs here, so picking one of them would
+/// connect an app back to itself (T3 Code to its own server, Orca to its own folders).
+fn this_mac_members(inner: &Inner) -> BTreeSet<String> {
+    inner
+        .series
+        .values()
+        .filter(|series| series.local)
+        .map(|series| normalize_machine_name(&series.host.machine))
+        .chain(shell::this_machine_name(inner).map(|name| normalize_machine_name(&name)))
+        .collect()
+}
+
+/// A member's readiness for its pool's host, this Mac never ready.
+fn member_readiness(this_mac: &BTreeSet<String>, resolved: &BTreeMap<String, MemberSsh>, user: Option<&str>, machine: &str) -> Readiness {
+    let key = normalize_machine_name(machine);
+    if this_mac.contains(&key) {
+        return Readiness::ThisMac;
+    }
+    readiness(resolved.get(&key), user)
 }
 
 /// The user a pool's host connects as: the one most of its members with a saved key are reached as, the first
@@ -599,7 +623,8 @@ pub(crate) async fn open_connection(app: &tauri::AppHandle, pool: &str, name: &s
     load_pins().await?;
     let pool = find_pool(&pools_saved, pool).ok_or_else(|| format!("Arbor has no pool called {pool}."))?;
     let user = pool_user(pool, &resolved);
-    let ready = |machine: &str| readiness(resolved.get(&normalize_machine_name(machine)), user.as_deref()) == Readiness::Ready;
+    let this_mac = this_mac_members(&app.state::<MachineHealthState>().lock());
+    let ready = |machine: &str| member_readiness(&this_mac, &resolved, user.as_deref(), machine) == Readiness::Ready;
     // A token the app running ssh left unexpanded is taken as no name: the pool's own host.
     let name = match name.trim() {
         "" => host_names(&pools_saved).get(&pool.id).cloned().unwrap_or_default(),
@@ -693,12 +718,13 @@ pub(crate) async fn get_pool_ssh(app: tauri::AppHandle, pool_id: String) -> Resu
     let (pools_saved, resolved) = current(&app).await?;
     let pool = pools_saved.iter().find(|pool| pool.id == pool_id).ok_or("That pool was removed")?;
     let user = pool_user(pool, &resolved);
+    let this_mac = this_mac_members(&app.state::<MachineHealthState>().lock());
     let members = pool
         .members
         .iter()
         .map(|member| PoolSshMember {
             machine: member.machine.clone(),
-            readiness: readiness(resolved.get(&normalize_machine_name(&member.machine)), user.as_deref()),
+            readiness: member_readiness(&this_mac, &resolved, user.as_deref(), &member.machine),
         })
         .collect();
     let display: BTreeMap<String, String> = app
@@ -865,12 +891,16 @@ mod tests {
     }
 
     #[test]
-    fn a_member_is_ready_with_a_saved_key_and_the_pools_user() {
+    fn a_member_is_ready_with_a_saved_key_and_the_pools_user_unless_its_this_mac() {
         assert_eq!(readiness(None, Some("casey")), Readiness::NoAddress);
         assert_eq!(readiness(Some(&MemberSsh::default()), Some("casey")), Readiness::NoAddress);
         assert_eq!(readiness(Some(&member("casey", &[])), Some("casey")), Readiness::NoHostKey);
         assert_eq!(readiness(Some(&member("casey", &["ssh-ed25519 AAAA"])), Some("ops")), Readiness::OtherUser);
         assert_eq!(readiness(Some(&member("casey", &["ssh-ed25519 AAAA"])), Some("casey")), Readiness::Ready);
+        let resolved = BTreeMap::from([("caseymbp".to_string(), member("casey", &["ssh-ed25519 AAAA"])), ("labbox".to_string(), member("casey", &["ssh-ed25519 BBBB"]))]);
+        let this_mac = BTreeSet::from(["caseymbp".to_string()]);
+        assert_eq!(member_readiness(&this_mac, &resolved, Some("casey"), "Casey MBP"), Readiness::ThisMac, "the Mac the host is opened from is never picked");
+        assert_eq!(member_readiness(&this_mac, &resolved, Some("casey"), "lab-box"), Readiness::Ready);
     }
 
     #[test]

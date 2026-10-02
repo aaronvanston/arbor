@@ -36,7 +36,8 @@ answering). Pools are made and changed in Arbor's Settings › Pools.
 `pools connect` carries one SSH connection to the member Arbor picks, as the ProxyCommand of the pool's host in
 Arbor's SSH config: connect with `ssh arbor-<pool>` rather than running it yourself. A host name stays on the member
 its first connection went to until that member is off, removed or stops answering, or the name is forgotten with
-`arbor call forget_pool_ssh_name`; `arbor-<pool>-<anything>` is a host of its own.
+`arbor call forget_pool_ssh_name`; `arbor-<pool>-<anything>` is a host of its own. This Mac is never picked, since
+the connection starts here.
 
   arbor pools
   arbor pools --json

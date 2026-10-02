@@ -16,6 +16,7 @@ const ssh = (fields: Partial<PoolSsh> = {}): PoolSsh => ({
     { machine: 'casey-mbp', readiness: 'ready' },
     { machine: 'lab-box', readiness: 'noHostKey' },
     { machine: 'cedar-02', readiness: 'otherUser' },
+    { machine: 'home-mini', readiness: 'thisMac' },
   ],
   connections: [],
   ...fields,
@@ -30,7 +31,7 @@ describe('pools over SSH', () => {
   it('names the first thing in the way of connecting', () => {
     expect(sshBlocker(ssh({ commandReady: false, included: false }))).toBe('command');
     expect(sshBlocker(ssh({ included: false }))).toBe('include');
-    expect(sshBlocker(ssh({ members: [{ machine: 'lab-box', readiness: 'noHostKey' }] }))).toBe('members');
+    expect(sshBlocker(ssh({ members: [{ machine: 'lab-box', readiness: 'noHostKey' }, { machine: 'home-mini', readiness: 'thisMac' }] }))).toBe('members');
     expect(sshBlocker(ssh())).toBeNull();
   });
 
@@ -49,6 +50,7 @@ describe('pools over SSH', () => {
     expect(page).toContain('Machines, connected to as casey');
     expect(page).toContain('Connect to it over SSH once, so this Mac saves its host key');
     expect(page).toContain('Reached as another user than casey');
+    expect(page).toContain('This Mac. The host is opened from here, so it’s never picked');
     expect(page).toContain('2 connections open');
     expect(page).toContain(`Not connected now · Pinned ${formatDate(PICKED)}`);
     expect(page).toContain('Forget');
