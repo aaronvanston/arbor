@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
 import { AlertCircle, Download, ExternalLink, FileCode, Info, RotateCcw } from '../components/ui/icons';
 import { useCoreRuntime } from '../coreRuntime';
 import { useCoreUpdate } from '../coreUpdate';
@@ -28,6 +29,8 @@ import { Progress } from '../components/ui/progress';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
+import { Switch } from '../components/ui/switch';
+import { toast } from '../components/ui/toast';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import type { CoreInstallResult, CoreInstallTask, DevBuildStatus, UpdateChannel } from '../native/types';
 
@@ -72,6 +75,7 @@ export function VersionManagementPage() {
   const [updateChannelSaving, setUpdateChannelSaving] = useState(false);
   const [devBuild, setDevBuild] = useState<DevBuildStatus | null>(null);
   const [devBuildStarting, setDevBuildStarting] = useState(false);
+  const [devBuildsSaving, setDevBuildsSaving] = useState(false);
   const feedback = useAppNotice();
   const { showNotice } = feedback;
 
@@ -237,6 +241,25 @@ export function VersionManagementPage() {
       showNotice({ key: 'appUpdate.devBuild.buildNowFailed', variables: { error: String(error) } }, 'error');
     } finally {
       setDevBuildStarting(false);
+    }
+  };
+
+  // On asks for the repository the first time; after that the builder remembers the one it was set up from.
+  const toggleDevBuilds = async (enabled: boolean) => {
+    let repository: string | null = null;
+    if (enabled && !devBuild?.repository) {
+      const folder = await open({ directory: true, multiple: false, title: t('appUpdate.devBuild.chooseRepository') });
+      if (typeof folder !== 'string') return;
+      repository = folder;
+    }
+    setDevBuildsSaving(true);
+    try {
+      setDevBuild(await invokeCommand('set_dev_builds', { enabled, repository }));
+      toast({ kind: 'success', title: t(enabled ? 'appUpdate.devBuild.turnedOn' : 'appUpdate.devBuild.turnedOff') });
+    } catch (error) {
+      showNotice({ key: 'appUpdate.devBuild.toggleFailed', variables: { error: String(error) } }, 'error');
+    } finally {
+      setDevBuildsSaving(false);
     }
   };
 
@@ -532,34 +555,37 @@ export function VersionManagementPage() {
               </Select>
             }
           />
-          {offerDev && devBuild && devLine ? (
+          {devBuild && devLine ? (
             <SettingsRow
               settingId="updates.dev-build"
               title={t('appUpdate.devBuild')}
-              description={devBuild.installed ? t('appUpdate.devBuild.description') : t('appUpdate.channel.devUnavailable')}
-              status={
-                <span className={devLine.tone === 'error' ? 'text-error-foreground' : undefined} title={devBuild.error ?? undefined}>
+              description={devBuild.installed ? t('appUpdate.devBuild.description') : t('appUpdate.devBuild.offDescription')}
+              status={devBuildsSaving ? t('appUpdate.devBuild.settingUp') : devBuild.installed || updateChannel === 'dev' ? (
+                <span className={devLine.tone === 'error' ? 'text-error-foreground' : undefined} title={devBuild.error ?? devBuild.repository ?? undefined}>
                   {t(devLine.key, { ...devLine.variables, ...(devLine.step ? { step: t(devLine.step) } : {}) })}
                 </span>
-              }
+              ) : null}
               control={
                 <>
-                  {devBuild.hasLog ? (
+                  {devBuild.installed && devBuild.hasLog ? (
                     <Button variant="ghost-muted" size="sm" onClick={() => void openDevBuildLog()}>
                       <FileCode />
                       {t('appUpdate.devBuild.showLog')}
                     </Button>
                   ) : null}
-                  <Button
-                    variant="outline"
+                  {devBuild.installed ? (
+                    <Button variant="outline" size="sm" disabled={devBuildStarting || devLine.active} onClick={() => void buildLatestMain()}>
+                      <RefreshIcon refreshing={devBuildStarting || devLine.active} />
+                      {t('appUpdate.devBuild.buildNow')}
+                    </Button>
+                  ) : null}
+                  <Switch
                     size="sm"
-                    disabled={!devBuild.installed || devBuildStarting || devLine.active}
-                    disabledReason={!devBuild.installed ? t('appUpdate.channel.devUnavailable') : undefined}
-                    onClick={() => void buildLatestMain()}
-                  >
-                    <RefreshIcon refreshing={devBuildStarting || devLine.active} />
-                    {t('appUpdate.devBuild.buildNow')}
-                  </Button>
+                    checked={devBuild.installed}
+                    disabled={devBuildsSaving}
+                    onCheckedChange={(enabled) => void toggleDevBuilds(enabled)}
+                    aria-label={t('appUpdate.devBuild.toggle')}
+                  />
                 </>
               }
             />

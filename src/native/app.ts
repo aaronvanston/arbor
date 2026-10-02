@@ -51,6 +51,7 @@ export type AppCommands = {
   get_app_update_task: { result: AppUpdateTask };
   get_dev_build_status: { result: DevBuildStatus };
   request_dev_build: { result: DevBuildStatus };
+  set_dev_builds: { args: { enabled: boolean; repository?: string | null }; result: DevBuildStatus };
   open_dev_build_log: { result: void };
 
   get_phone_alert_secrets: { result: PhoneAlertSecretStatus };

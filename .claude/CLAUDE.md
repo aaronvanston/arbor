@@ -262,7 +262,8 @@ GitHub bills a private repository's hosted minutes:
   artifact.
 
 The dev channel is the third in Settings › Updates, for the Mac that builds releases:
-`scripts/install-dev-builds.sh` sets up a LaunchAgent that runs `scripts/dev-build.sh`
+the Dev builds switch there (or `scripts/install-dev-builds.sh`, which the switch runs
+from the repository it's pointed at) sets up a LaunchAgent that runs `scripts/dev-build.sh`
 every ten minutes, which builds origin/main in its own clone (`~/.arbor/dev-build`)
 once main has been still five minutes, checks it with both verify gates, and leaves the
 DMG with an update list signed by the release key in

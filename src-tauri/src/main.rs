@@ -1802,6 +1802,7 @@ fn main() {
             check_app_update,
             dev_builds::get_dev_build_status,
             dev_builds::request_dev_build,
+            dev_builds::set_dev_builds,
             dev_builds::open_dev_build_log,
             get_update_channel,
             set_update_channel,

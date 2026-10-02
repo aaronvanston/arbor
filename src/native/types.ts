@@ -957,6 +957,10 @@ export type DevBuildStatus = {
    * The builder's LaunchAgent is set up (scripts/install-dev-builds.sh).
    */
   installed: boolean,
+  /**
+   * The Arbor repository it was set up from, which turning it back on uses.
+   */
+  repository: string | null,
   state: DevBuildState,
   /**
    * The commit of main being waited on or built.

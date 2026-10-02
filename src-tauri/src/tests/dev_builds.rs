@@ -163,3 +163,25 @@ fn a_dev_build_copy_that_comes_out_a_different_size_fails() {
     assert!(copy_dev_build(&dir.join("a.dmg"), &dir.join("c.dmg"), 6).is_err());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn the_builder_remembers_its_repository_only_while_it_still_has_the_installer() {
+    let dir = agent_test_home("dev-repository");
+    let repository = dir.join("arbor");
+    fs::create_dir_all(repository.join(".git")).unwrap();
+    fs::create_dir_all(repository.join("scripts")).unwrap();
+    assert!(dev_installer(&repository).unwrap_err().contains("isn't a copy of Arbor's repository"));
+    fs::write(repository.join("scripts/install-dev-builds.sh"), "#!/bin/bash\n").unwrap();
+    assert_eq!(dev_installer(&repository).unwrap(), repository.join("scripts/install-dev-builds.sh"));
+    // A relative folder is never taken: the installer runs from the app, whose working folder means nothing.
+    assert!(dev_installer(Path::new("arbor")).is_err());
+
+    let feed = dir.join("feed");
+    fs::create_dir_all(&feed).unwrap();
+    assert_eq!(read_dev_build_status(&feed, true).repository, None);
+    fs::write(feed.join("repository"), format!("{}\n", repository.display())).unwrap();
+    assert_eq!(read_dev_build_status(&feed, true).repository.as_deref(), Some(repository.to_str().unwrap()));
+    fs::remove_file(repository.join("scripts/install-dev-builds.sh")).unwrap();
+    assert_eq!(read_dev_build_status(&feed, true).repository, None);
+    fs::remove_dir_all(dir).unwrap();
+}

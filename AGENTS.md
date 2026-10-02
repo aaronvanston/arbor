@@ -425,7 +425,10 @@ all external contributors (GitHub only offers it on public repositories).
 
 Settings › Updates has a third channel, Dev, for the Mac that builds releases: it
 takes that Mac's own builds of main, built after each change instead of a few times a
-day. `scripts/install-dev-builds.sh` (`--uninstall` to stop) sets up a LaunchAgent
+day. The Dev builds switch on that page turns it on and off: on runs the
+repository's `scripts/install-dev-builds.sh` (asking for the repository the first time,
+then remembering it), off stops the LaunchAgent. The script (`--uninstall` to stop)
+sets up a LaunchAgent
 running `scripts/dev-build.sh` every ten minutes. Once main has been still for five
 minutes, or when "Build latest main" leaves its `build-now` file, it builds origin/main
 in its own clone in `~/.arbor/dev-build` (a clone, not a worktree, so nothing tidies it

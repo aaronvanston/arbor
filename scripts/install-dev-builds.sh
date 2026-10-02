@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Sets this Mac up to build main for the dev update channel: a clone of Arbor to build in, and a LaunchAgent that runs
 # scripts/dev-build.sh every ten minutes and when "Build latest main" asks. Then pick Dev in Settings › Updates. Only
-# a Mac that can sign releases (node scripts/release-signing.mjs check) can build for it.
+# a Mac that can sign releases (node scripts/release-signing.mjs check) can build for it. The Dev builds switch in
+# Settings › Updates runs this too, from the repository it's given (src-tauri/src/dev_builds.rs).
 #
 #   ./scripts/install-dev-builds.sh              sets up, or updates the installed scripts
 #   ./scripts/install-dev-builds.sh --uninstall  stops the builder (its builds and clone stay)
 set -euo pipefail
+
+# Started from the app, the PATH is launchd's bare one, so the usual places these tools install to come first.
+PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 repo_dir="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir | sed 's#/\.git$##')"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,6 +63,8 @@ fi
 for file in dev-build.sh dev-build.mjs; do
   install -m 755 "$script_dir/$file" "$install_dir/$file"
 done
+# The app shows it, and turns the builder back on from it.
+printf '%s\n' "$repo_dir" > "$feed_dir/repository"
 
 cat > "$agent_path" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

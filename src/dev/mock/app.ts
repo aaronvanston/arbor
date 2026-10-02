@@ -110,11 +110,11 @@ function mockDevBuildStatus(): DevBuildStatus {
   const scenario = params.get('devbuild');
   const built = { builtVersion: '1.0.27-dev.4123', builtCommit: DEV_COMMIT, builtAt: minutesAgo(12) };
   const base: DevBuildStatus = {
-    installed: true, state: 'idle', commit: DEV_COMMIT, step: null, startedAt: minutesAgo(21), finishedAt: minutesAgo(12),
+    installed: true, repository: '/Users/casey/src/arbor', state: 'idle', commit: DEV_COMMIT, step: null, startedAt: minutesAgo(21), finishedAt: minutesAgo(12),
     error: null, hasLog: true, requested: false, ...built,
   };
   if (scenario === 'none') {
-    return { ...base, installed: false, commit: null, startedAt: null, finishedAt: null, hasLog: false, builtVersion: null, builtCommit: null, builtAt: null };
+    return { ...base, installed: false, repository: null, commit: null, startedAt: null, finishedAt: null, hasLog: false, builtVersion: null, builtCommit: null, builtAt: null };
   }
   if (scenario === 'building') return { ...base, state: 'building', step: 'verifying', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(3), finishedAt: null };
   if (scenario === 'waiting') return { ...base, state: 'waiting', commit: DEV_NEXT_COMMIT, startedAt: null, finishedAt: null };
@@ -124,6 +124,9 @@ function mockDevBuildStatus(): DevBuildStatus {
   return base;
 }
 let devBuildRequested = false;
+/** Set by the Dev builds switch; null until it's used, so the scenario decides. */
+let devBuildsOn: { installed: boolean; repository: string | null } | null = null;
+const currentDevBuildStatus = (): DevBuildStatus => ({ ...mockDevBuildStatus(), ...devBuildsOn, requested: devBuildRequested });
 
 // Release notes as the update feed gives them, newest first.
 function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[]; releaseUrl?: string } {
@@ -213,12 +216,27 @@ export const appAnswers: CommandAnswers<AppCommands> = {
     return null;
   },
   cancel_app_update: () => null,
-  get_dev_build_status: () => ({ ...mockDevBuildStatus(), requested: devBuildRequested }),
+  get_dev_build_status: () => currentDevBuildStatus(),
+  set_dev_builds: async ({ enabled, repository }) => {
+    mockLog('set_dev_builds', { enabled, repository });
+    if (!enabled) {
+      devBuildsOn = { installed: false, repository: currentDevBuildStatus().repository };
+      return currentDevBuildStatus();
+    }
+    const folder = repository ?? currentDevBuildStatus().repository;
+    if (!folder) throw 'Choose the folder you cloned Arbor into first.';
+    if (params.get('devbuild') === 'nosign') throw 'This Mac can’t sign Arbor’s update lists, so the app wouldn’t take its builds. Set up dev builds on the Mac that publishes releases.';
+    // Setting up clones Arbor and starts the first build.
+    await new Promise((done) => window.setTimeout(done, 1_200));
+    devBuildsOn = { installed: true, repository: folder };
+    devBuildRequested = true;
+    return currentDevBuildStatus();
+  },
   request_dev_build: () => {
     mockLog('request_dev_build', null);
-    if (!mockDevBuildStatus().installed) throw 'Dev builds aren’t set up on this Mac. Run scripts/install-dev-builds.sh from Arbor’s repository.';
+    if (!currentDevBuildStatus().installed) throw 'Dev builds aren’t set up on this Mac. Run scripts/install-dev-builds.sh from Arbor’s repository.';
     devBuildRequested = true;
-    return { ...mockDevBuildStatus(), requested: true };
+    return currentDevBuildStatus();
   },
   open_dev_build_log: () => { mockLog('open_dev_build_log', null); return null; },
   set_tray_rows: (args) => { mockLog('tray', { section: args.section, rows: args.rows }); return null; },

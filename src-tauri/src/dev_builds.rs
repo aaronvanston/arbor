@@ -14,6 +14,11 @@ const DEV_STATUS_FILE: &str = "status.json";
 const DEV_BUILD_NOW_FILE: &str = "build-now";
 pub(crate) const DEV_BUILD_AGENT: &str = "onl.arbor.dev-build";
 const DEV_STATUS_MAX_BYTES: u64 = 64 * 1024;
+/// The Arbor repository the builder was set up from, written by scripts/install-dev-builds.sh.
+const DEV_REPOSITORY_FILE: &str = "repository";
+const DEV_INSTALLER: &str = "scripts/install-dev-builds.sh";
+/// Setting up clones Arbor, which can take a while on a slow connection.
+const DEV_INSTALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 pub(crate) fn dev_feed_dir() -> Result<PathBuf, String> {
     let home = env::var_os("HOME")
@@ -82,6 +87,8 @@ fn lenient<'de, D: serde::Deserializer<'de>, T: serde::de::DeserializeOwned>(des
 pub(crate) struct DevBuildStatus {
     /// The builder's LaunchAgent is set up (scripts/install-dev-builds.sh).
     pub(crate) installed: bool,
+    /// The Arbor repository it was set up from, which turning it back on uses.
+    pub(crate) repository: Option<String>,
     pub(crate) state: DevBuildState,
     /// The commit of main being waited on or built.
     pub(crate) commit: Option<String>,
@@ -108,6 +115,7 @@ pub(crate) fn read_dev_build_status(dir: &Path, installed: bool) -> DevBuildStat
     let commit = |value: Option<String>| value.filter(|commit| is_commit(commit));
     DevBuildStatus {
         installed,
+        repository: dev_repository(dir).map(|path| path.to_string_lossy().into_owned()),
         state: file.state.unwrap_or_default(),
         commit: commit(file.commit),
         step: file.step,
@@ -131,6 +139,25 @@ fn dev_build_log_path(dir: &Path, name: &str) -> Option<PathBuf> {
     let logs = dir.join("logs").canonicalize().ok()?;
     let path = logs.join(name).canonicalize().ok()?;
     (path.starts_with(&logs) && path.is_file()).then_some(path)
+}
+
+/// The repository the builder was set up from, while it still has the installer.
+fn dev_repository(dir: &Path) -> Option<PathBuf> {
+    let text = read_small_file(&dir.join(DEV_REPOSITORY_FILE), 4 * 1024).ok()?;
+    let path = PathBuf::from(String::from_utf8(text).ok()?.trim());
+    dev_installer(&path).ok().map(|_| path)
+}
+
+/// The installer in an Arbor repository, or why the folder isn't one.
+pub(crate) fn dev_installer(repository: &Path) -> Result<PathBuf, String> {
+    let installer = repository.join(DEV_INSTALLER);
+    if !repository.is_absolute() || !repository.join(".git").exists() || !installer.is_file() {
+        return Err(format!(
+            "{} isn't a copy of Arbor's repository with {DEV_INSTALLER}. Choose the folder you cloned Arbor into.",
+            repository.display()
+        ));
+    }
+    Ok(installer)
 }
 
 fn is_commit(value: &str) -> bool {
@@ -267,6 +294,62 @@ pub(crate) fn request_dev_build() -> Result<DevBuildStatus, String> {
         return Err(format!("Couldn't start the dev builder: {reason}"));
     }
     Ok(read_dev_build_status(&dir, true))
+}
+
+/// Turns the builder on, from `repository` or the one it was set up from before, or off. On runs the repository's
+/// installer through the login shell, so it finds bun, node and cargo where the user's shell does; off stops the
+/// LaunchAgent and leaves the builds, the clone and the repository it remembers.
+#[tauri::command]
+pub(crate) async fn set_dev_builds(enabled: bool, repository: Option<String>) -> Result<DevBuildStatus, String> {
+    let dir = dev_feed_dir()?;
+    let plist = dev_build_agent_plist()?;
+    if !enabled {
+        let mut command = tokio::process::Command::new("/bin/launchctl");
+        // SAFETY: getuid has no preconditions and can't fail.
+        let uid = unsafe { libc::getuid() };
+        command
+            .args(["bootout", &format!("gui/{uid}/{DEV_BUILD_AGENT}")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        crate::usage::machine_health::shell::configure_helper_command(&mut command);
+        // Not loaded is fine: the point is that it isn't running.
+        let _ = command.status().await;
+        if plist.exists() {
+            fs::remove_file(&plist).map_err(|error| format!("Couldn't remove the dev builder: {error}"))?;
+        }
+        return Ok(read_dev_build_status(&dir, false));
+    }
+    let repository = match repository.filter(|path| !path.trim().is_empty()) {
+        Some(path) => PathBuf::from(path.trim()),
+        None => dev_repository(&dir).ok_or_else(|| "Choose the folder you cloned Arbor into first.".to_string())?,
+    };
+    let installer = dev_installer(&repository)?;
+    let shell = env::var("SHELL")
+        .ok()
+        .filter(|shell| shell.ends_with("/zsh") || shell.ends_with("/bash"))
+        .unwrap_or_else(|| "/bin/zsh".to_string());
+    let mut command = tokio::process::Command::new(shell);
+    command
+        .args(["-l", "-c", "exec /bin/bash \"$0\""])
+        .arg(&installer)
+        .current_dir(&repository)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    crate::usage::machine_health::shell::configure_helper_command(&mut command);
+    let output = tokio::time::timeout(DEV_INSTALL_TIMEOUT, command.output())
+        .await
+        .map_err(|_| "Setting up dev builds took more than ten minutes and was stopped.".to_string())?
+        .map_err(|error| format!("Couldn't run {DEV_INSTALLER}: {error}"))?;
+    if !output.status.success() {
+        let said = String::from_utf8_lossy(&output.stderr);
+        let reason = said.lines().filter(|line| !line.trim().is_empty()).collect::<Vec<_>>();
+        let reason = reason[reason.len().saturating_sub(3)..].join(" ");
+        return Err(if reason.is_empty() { format!("{DEV_INSTALLER} stopped without saying why") } else { reason });
+    }
+    Ok(read_dev_build_status(&dir, plist.is_file()))
 }
 
 #[tauri::command]

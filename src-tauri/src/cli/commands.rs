@@ -380,6 +380,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "set_dev_builds",
+        access: Access::Write,
+        summary: "Turns the builder on, from `repository` or the one it was set up from before, or off. On runs the repository's installer through the login shell, so it finds bun, node and cargo where the user's shell does; off stops the LaunchAgent and leaves the builds, the clone and the repository it remembers.",
+        args: &[
+            ArgSpec { name: "enabled", ts_type: "boolean", optional: false },
+            ArgSpec { name: "repository", ts_type: "string | null", optional: true },
+        ],
+    },
+    CommandSpec {
         name: "get_update_channel",
         access: Access::Read,
         summary: "Get update channel",
@@ -1765,6 +1774,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "check_app_update" => done(Box::pin(crate::check_app_update(app.state(), app.state())).await),
         "get_dev_build_status" => blocking(move || done(crate::dev_builds::get_dev_build_status())).await,
         "request_dev_build" => blocking(move || done(crate::dev_builds::request_dev_build())).await,
+        "set_dev_builds" => async { done(Box::pin(crate::dev_builds::set_dev_builds(arg(&args, "enabled")?, arg(&args, "repository")?)).await) }.await,
         "get_update_channel" => {
             let app = app.clone();
             blocking(move || done(crate::get_update_channel(app.state()))).await
