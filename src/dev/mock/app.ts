@@ -120,7 +120,7 @@ function mockDevBuildStatus(): DevBuildStatus {
   if (scenario === 'none') {
     return { ...base, installed: false, repository: null, commit: null, startedAt: null, finishedAt: null, hasLog: false, builtVersion: null, builtCommit: null, builtAt: null };
   }
-  if (scenario === 'building') return { ...base, state: 'building', step: 'verifying', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(3), finishedAt: null };
+  if (scenario === 'building') return { ...base, state: 'building', step: 'building', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(3), finishedAt: null };
   if (scenario === 'waiting') return { ...base, state: 'waiting', commit: DEV_NEXT_COMMIT, startedAt: null, finishedAt: null, settlesAt: new Date(Date.now() + 3 * 60_000).toISOString() };
   if (scenario === 'failed') {
     return { ...base, state: 'failed', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(9), finishedAt: minutesAgo(2), error: 'bun run verify failed: 2 tests failed in tests/sidebarTree.test.ts' };

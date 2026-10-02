@@ -4,9 +4,10 @@
 # build-now file and starts it at once. The app on the dev channel offers the newest build like any update
 # (src-tauri/src/dev_builds.rs).
 #
-# A build runs in its own clone (never a worktree, so disk cleanup and other sessions leave it alone), checks the code
-# with bun run verify and verify:rust, builds with scripts/build-release.sh, and signs its update list with the release
-# key, so only a Mac that can sign releases can build for the dev channel. It writes, in the builder's folder:
+# A build runs in its own clone (never a worktree, so disk cleanup and other sessions leave it alone), builds with
+# scripts/build-release.sh, and signs its update list with the release key, so only a Mac that can sign releases can
+# build for the dev channel. It skips the test gates, which main's commits already passed before they were pushed and
+# the nightly runs again, and sends no source maps to PostHog. It writes, in the builder's folder:
 #   Arbor-v<version>-Darwin-<arch>.dmg   the newest three builds
 #   arbor-update-dev.json                the newest build's signed update list
 #   status.json                          what the builder is doing, for the app
@@ -20,7 +21,6 @@
 # ARBOR_DEV_FEED_DIR       the builder's folder (~/Library/Application Support/Arbor Dev Builds)
 # ARBOR_DEV_CHECKOUT       the clone it builds in (~/.arbor/dev-build/checkout)
 # ARBOR_REPO               the main checkout, whose .env (Hugeicons and PostHog keys) builds use
-# ARBOR_DEV_SKIP_RUST=1    skips bun run verify:rust
 # ARBOR_DEV_DRY_RUN=1      checks nothing and builds a stand-in DMG, to try the bookkeeping; its list is left
 #                          unsigned (arbor-update-dev.unsigned.json) unless ARBOR_DEV_DRY_RUN_SIGN=1
 # ARBOR_DEV_INSTALL_DIR    where the LaunchAgent runs this from; a good build copies main's newer copy there
@@ -200,11 +200,6 @@ build() {
     node scripts/release-signing.mjs check
     status_set "$status_file" step=installing
     bun install --frozen-lockfile
-    status_set "$status_file" step=verifying
-    bun run verify
-    if [[ "${ARBOR_DEV_SKIP_RUST:-}" != "1" ]]; then
-      bun run verify:rust
-    fi
     status_set "$status_file" step=building
     ./scripts/build-release.sh "$version" "$dmg"
   fi

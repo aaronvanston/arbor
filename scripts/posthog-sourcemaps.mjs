@@ -3,6 +3,7 @@
 //
 // Uploading needs a personal API key with error tracking write and organization read, as POSTHOG_CLI_API_KEY in .env
 // (bun loads it), with POSTHOG_CLI_PROJECT_ID. Without one the maps are only removed, and crash reports stay minified.
+// A dev build's maps are only removed too: its crash reports come from the one Mac that built it, which has the source.
 import { spawnSync } from 'node:child_process';
 import { readdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -25,8 +26,10 @@ function cli(args, env) {
 }
 
 const key = process.env.POSTHOG_CLI_API_KEY;
-if (key) {
-  const version = parseCargoPackageVersion(await readFile(join(root, 'src-tauri', 'Cargo.toml'), 'utf8'));
+const version = parseCargoPackageVersion(await readFile(join(root, 'src-tauri', 'Cargo.toml'), 'utf8'));
+if (version.includes('-dev.')) {
+  console.log(`Arbor ${version} is a dev build, so its source maps weren't sent to PostHog.`);
+} else if (key) {
   const project = process.env.POSTHOG_CLI_PROJECT_ID || PROJECT_ID;
   const env = { ...process.env, POSTHOG_CLI_API_KEY: key, POSTHOG_CLI_PROJECT_ID: project };
   // The release goes with the uploaded maps rather than on each exception, which Arbor sends without PostHog's SDK.

@@ -1277,7 +1277,7 @@ export type DevBuildStatus = {
 /**
  * The step a running build is on.
  */
-export type DevBuildStep = "fetching" | "installing" | "verifying" | "building" | "signing";
+export type DevBuildStep = "fetching" | "installing" | "building" | "signing";
 
 /**
  * One call, as Diagnostics keeps it.

@@ -48,8 +48,8 @@ describe('dev update lists', () => {
 
 describe('the builder’s status', () => {
   it('merges fields, clears empty ones and refuses ones the app doesn’t read', () => {
-    expect(mergeStatus({ state: 'idle', builtCommit: COMMIT }, ['state=building', 'step=verifying', 'error='])).toEqual({
-      state: 'building', builtCommit: COMMIT, step: 'verifying', error: null,
+    expect(mergeStatus({ state: 'idle', builtCommit: COMMIT }, ['state=building', 'step=building', 'error='])).toEqual({
+      state: 'building', builtCommit: COMMIT, step: 'building', error: null,
     });
     // A value can hold an equals sign.
     expect(mergeStatus({}, ['error=exit=1']).error).toBe('exit=1');

@@ -124,7 +124,7 @@ fn the_builders_status_is_read_leniently_and_its_log_stays_in_its_folder() {
     fs::write(
         dir.join("status.json"),
         serde_json::json!({
-            "state": "building", "step": "verifying", "commit": COMMIT, "log": "build.log",
+            "state": "building", "step": "installing", "commit": COMMIT, "log": "build.log",
             "builtVersion": VERSION, "builtCommit": "not-a-commit", "somethingNew": 1,
         })
         .to_string(),
@@ -133,7 +133,7 @@ fn the_builders_status_is_read_leniently_and_its_log_stays_in_its_folder() {
     let status = read_dev_build_status(&dir, true);
     assert!(status.installed);
     assert_eq!(status.state, DevBuildState::Building);
-    assert_eq!(status.step, Some(DevBuildStep::Verifying));
+    assert_eq!(status.step, Some(DevBuildStep::Installing));
     assert_eq!(status.commit.as_deref(), Some(COMMIT));
     assert_eq!(status.built_version.as_deref(), Some(VERSION));
     assert_eq!(status.built_commit, None);

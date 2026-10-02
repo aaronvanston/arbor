@@ -461,8 +461,9 @@ sets up a LaunchAgent
 running `scripts/dev-build.sh` every ten minutes. Once main has been still for five
 minutes, or when "Build latest main" leaves its `build-now` file, it builds origin/main
 in its own clone in `~/.arbor/dev-build` (a clone, not a worktree, so nothing tidies it
-away), runs `bun run verify` and `verify:rust`, builds with `scripts/build-release.sh`
-and signs the update list with the release key. The DMG, `arbor-update-dev.json`,
+away), builds with `scripts/build-release.sh` without the test gates or a source map
+upload (main's commits passed the gates before they were pushed, and the nightly runs
+them again), and signs the update list with the release key. The DMG, `arbor-update-dev.json`,
 `status.json` and the build logs sit in `~/Library/Application Support/Arbor Dev
 Builds`; `scripts/dev-build.mjs` writes the version (`X.Y.Z-dev.<main's commit count>`),
 the list and the status. The app reads only that folder on Dev

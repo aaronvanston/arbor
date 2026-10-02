@@ -53,7 +53,6 @@ pub(crate) enum DevBuildState {
 pub(crate) enum DevBuildStep {
     Fetching,
     Installing,
-    Verifying,
     Building,
     Signing,
 }
