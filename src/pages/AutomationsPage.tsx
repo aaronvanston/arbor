@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MachinePill, ProviderMark } from '../components/identity/Identity';
+import { MachinePill, ModelName, ProviderMark } from '../components/identity/Identity';
 import { PoolName } from '../components/PoolName';
 import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { WithShortcut } from '../components/ShortcutKbd';
 import { AutomationDialog } from '../components/automations/AutomationDialog';
 import { AutomationActions } from '../components/automations/AutomationActions';
+import { AutomationAppName } from '../components/automations/AutomationApp';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -18,27 +19,28 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { useShortcut } from '../hooks/useShortcuts';
 import { useI18n } from '../i18n';
 import { formatAgo, formatDateTime, formatRelative, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
 import { automationView, automationsView, type AppView, type AutomationsParams } from '../navigation';
-import type { AutomationAgent, AutomationSource, AutomationSummary } from '../native/types';
+import type { AutomationSource, AutomationSummary } from '../native/types';
 import {
   AGENT_PROVIDER,
   AUTOMATION_STATES,
   RUN_STATUS_LABEL,
   RUN_STATUS_TONE,
-  SOURCE_LABEL,
   STATE_LABEL,
-  automationAgents,
   automationMachines,
+  automationModels,
   filterAutomations,
   loadAutomations,
   scanAutomations,
   scheduleWords,
   showAutomations,
+  stateCounts,
   type AutomationState,
   useAutomations,
 } from '../services/automations';
@@ -72,38 +74,32 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   const now = useQuotaClock();
   const [search, setSearch] = useState('');
   const [source, setSource] = useState<AutomationSource | 'all'>('all');
-  const [state, setState] = useState<AutomationState>('all');
-  const [agent, setAgent] = useState<AutomationAgent | 'all'>('all');
+  const [state, setState] = useState<AutomationState>('on');
+  const [model, setModel] = useState('all');
   const [creating, setCreating] = useState(false);
   const automations = useMemo(() => list?.automations ?? [], [list]);
   // Orca's filter only once Orca's been found somewhere, like any other app's feature.
   const orcaFound = Boolean(list?.scans.some((scan) => scan.orca));
   const sources = SOURCES.filter((entry) => entry !== 'orca' || orcaFound || source === 'orca');
   const shown = useMemo(
-    () => filterAutomations(automations, { search, source, machine, state, agent }),
-    [automations, search, source, machine, state, agent],
+    () => filterAutomations(automations, { search, source, machine, state, model }),
+    [automations, search, source, machine, state, model],
   );
-  // Only the agents something starts, and the one picked even once nothing does.
-  const agents = useMemo(() => {
-    const present = automationAgents(automations);
-    return agent === 'all' || present.includes(agent) ? present : [...present, agent];
-  }, [automations, agent]);
+  const counts = useMemo(() => stateCounts(automations, { search, source, machine, model }), [automations, search, source, machine, model]);
+  // Failing joins the switch only while something is, or while it's the one picked.
+  const states = AUTOMATION_STATES.filter((entry) => entry !== 'failing' || counts.failing > 0 || state === 'failing');
+  // Only the models something runs with, and the one picked even once nothing does.
+  const models = useMemo(() => {
+    const present = automationModels(automations);
+    return model === 'all' || present.includes(model) ? present : [...present, model];
+  }, [automations, model]);
   const machines = useMemo(() => automationMachines(automations), [automations]);
   const failedScans = list?.scans.filter((scan) => scan.error) ?? [];
   const refresh = () => { void scanAutomations(); };
   useShortcut('page.refresh', refresh, !loading);
 
-  const sourceLabel = (value: AutomationSource | 'all') => (value === 'all' ? t('automations.source.all') : t(SOURCE_LABEL[value]));
-  const agentLabel = (value: AutomationAgent | 'all') => {
-    if (value === 'all') return t('automations.agent.all');
-    const provider = AGENT_PROVIDER[value];
-    return (
-      <span className="inline-flex items-center gap-2">
-        {provider ? <ProviderMark provider={provider} decorative /> : null}
-        {t(`automations.agent.${value}`)}
-      </span>
-    );
-  };
+  const sourceLabel = (value: AutomationSource | 'all') => (value === 'all' ? t('automations.source.all') : <AutomationAppName source={value} />);
+  const modelLabel = (value: string) => (value === 'all' ? t('automations.model.all') : <ModelName model={value} />);
 
   return (
     <Page width="main">
@@ -166,7 +162,23 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
         ) : (
           <TableCard
             title={t('app.nav.automations')}
-            count={t(shown.length === 1 ? 'automations.count.one' : 'automations.count.other', { count: shown.length })}
+            nav={(
+              <ToggleGroup
+                value={[state]}
+                aria-label={t('automations.state.label')}
+                onValueChange={(values) => {
+                  const [next] = values;
+                  if (typeof next === 'string' && next !== state) setState(next as AutomationState);
+                }}
+              >
+                {states.map((entry) => (
+                  <Toggle key={entry} value={entry} className={cn(entry === 'failing' && 'text-error-foreground data-pressed:text-error-foreground')}>
+                    {t(STATE_LABEL[entry])}
+                    <span className="tabular-nums opacity-64">{counts[entry]}</span>
+                  </Toggle>
+                ))}
+              </ToggleGroup>
+            )}
             toolbar={(
               <>
                 <Input
@@ -178,20 +190,12 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
                   aria-label={t('automations.search')}
                   startAddon={<Search />}
                 />
-                <Select value={state} onValueChange={(value) => setState((value ?? 'all') as AutomationState)}>
-                  <SelectTrigger size="sm" className="w-auto min-w-32" aria-label={t('automations.state.label')}>
-                    <SelectValue>{t(STATE_LABEL[state])}</SelectValue>
+                <Select value={model} onValueChange={(value) => setModel(value ?? 'all')}>
+                  <SelectTrigger size="sm" className="w-auto min-w-32" aria-label={t('automations.model.label')}>
+                    <SelectValue>{modelLabel(model)}</SelectValue>
                   </SelectTrigger>
                   <SelectPopup align="end">
-                    {AUTOMATION_STATES.map((entry) => <SelectItem key={entry} value={entry}>{t(STATE_LABEL[entry])}</SelectItem>)}
-                  </SelectPopup>
-                </Select>
-                <Select value={agent} onValueChange={(value) => setAgent((value ?? 'all') as AutomationAgent | 'all')}>
-                  <SelectTrigger size="sm" className="w-auto min-w-32" aria-label={t('automations.agent.label')}>
-                    <SelectValue>{agentLabel(agent)}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end">
-                    {(['all', ...agents] as const).map((entry) => <SelectItem key={entry} value={entry}>{agentLabel(entry)}</SelectItem>)}
+                    {['all', ...models].map((entry) => <SelectItem key={entry} value={entry}>{modelLabel(entry)}</SelectItem>)}
                   </SelectPopup>
                 </Select>
                 <Select value={source} onValueChange={(value) => setSource((value ?? 'all') as AutomationSource | 'all')}>
@@ -206,22 +210,23 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
             )}
           >
             {shown.length ? (
-              <Table containerClassName="@container" className="min-w-[56rem]">
+              <Table containerClassName="@container" className="min-w-[64rem]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-full">{t('automations.column.name')}</TableHead>
+                    <TableHead>{t('automations.column.app')}</TableHead>
                     <TableHead>{t('automations.column.schedule')}</TableHead>
                     <TableHead>{t('automations.column.project')}</TableHead>
                     <TableHead>{t('automations.column.machine')}</TableHead>
+                    <TableHead>{t('automations.column.model')}</TableHead>
                     <TableHead>{t('automations.column.nextRun')}</TableHead>
                     <TableHead>{t('automations.column.lastRun')}</TableHead>
-                    <TableHead>{t('automations.column.agent')}</TableHead>
                     <TableHead><span className="sr-only">{t('automations.column.actions')}</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {shown.map((item) => (
-                    <AutomationRow key={item.id} item={item} now={now} onOpen={() => onNavigate(automationView(item.id))} onNavigate={onNavigate} />
+                    <AutomationRow key={item.id} item={item} now={now} markPaused={state === 'all'} onOpen={() => onNavigate(automationView(item.id))} onNavigate={onNavigate} />
                   ))}
                 </TableBody>
               </Table>
@@ -239,9 +244,11 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   );
 }
 
-function AutomationRow({ item, now, onOpen, onNavigate }: {
+function AutomationRow({ item, now, markPaused, onOpen, onNavigate }: {
   item: AutomationSummary;
   now: number;
+  /** Badge a paused one, where the switch shows them alongside the rest. */
+  markPaused: boolean;
   onOpen: () => void;
   onNavigate: (view: AppView) => void;
 }) {
@@ -253,10 +260,10 @@ function AutomationRow({ item, now, onOpen, onNavigate }: {
       <TableCell className="w-full max-w-0">
         <span className="flex min-w-0 items-center gap-2">
           <span className={cn('truncate text-sm font-medium', item.enabled ? 'text-foreground' : 'text-muted-foreground')}>{item.name}</span>
-          {item.source !== 'arbor' ? <Badge variant="muted" size="sm" className="shrink-0">{t(SOURCE_LABEL[item.source])}</Badge> : null}
-          {!item.enabled ? <Badge variant="outline" size="sm" className="shrink-0">{t('automations.status.paused')}</Badge> : null}
+          {markPaused && !item.enabled ? <Badge variant="outline" size="sm" className="shrink-0">{t('automations.status.paused')}</Badge> : null}
         </span>
       </TableCell>
+      <TableCell className="whitespace-nowrap text-xs text-muted-foreground"><AutomationAppName source={item.source} className="w-max" /></TableCell>
       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{scheduleWords(item.schedule, t)}</TableCell>
       <TableCell className="max-w-36 truncate text-xs text-muted-foreground">{item.project ?? '—'}</TableCell>
       <TableCell className="text-xs">
@@ -265,6 +272,15 @@ function AutomationRow({ item, now, onOpen, onNavigate }: {
           : item.target.kind === 'pool'
             ? <PoolName id={item.target.id} className="max-w-32" />
             : <MachinePill name={item.machine} fallback="—" size="sm" className="max-w-32" />}
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-xs">
+        {item.model ? <ModelName model={item.model} className="w-max" /> : (
+          // Until a run says which model, the agent stands in for it.
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground" title={t('automations.model.unknown')}>
+            {provider ? <ProviderMark provider={provider} decorative /> : null}
+            {t(`automations.agent.${item.agent ?? 'other'}`)}
+          </span>
+        )}
       </TableCell>
       <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
         {item.nextRunAtMs && item.enabled
@@ -279,7 +295,6 @@ function AutomationRow({ item, now, onOpen, onNavigate }: {
           </span>
         ) : <span className="text-muted-foreground">—</span>}
       </TableCell>
-      <TableCell>{provider ? <ProviderMark provider={provider} className="size-4" /> : <span className="text-muted-foreground">—</span>}</TableCell>
       <TableCell onClick={(event) => event.stopPropagation()}>
         <AutomationActions item={item} onNavigate={onNavigate} compact />
       </TableCell>

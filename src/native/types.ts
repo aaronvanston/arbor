@@ -601,6 +601,11 @@ export type AutomationSummary = {
    */
   project: string | null,
   agent: AutomationAgent | null,
+  /**
+   * The model it runs with: the one it's set to, or, when it's set to none or its app keeps none, the one its
+   * last run used, by the session id the run stores. Null until a run tells.
+   */
+  model: string | null,
   schedule: ScheduleSummary,
   nextRunAtMs: number | null,
   lastRun: AutomationLastRun | null,

@@ -66,7 +66,7 @@ process.stdin.on("end", () => {
   const last = {};
   for (const run of runs) {
     const at = run.startedAt || run.scheduledFor || 0;
-    if (!last[run.automationId] || last[run.automationId].at < at) last[run.automationId] = { status: String(run.status || ""), at };
+    if (!last[run.automationId] || last[run.automationId].at < at) last[run.automationId] = { status: String(run.status || ""), at, model: String((run.usage && run.usage.model) || "") };
   }
   process.stdout.write(JSON.stringify(last));
 });' 2>/dev/null)
@@ -142,6 +142,7 @@ fn summary(id: String, source: AutomationSource, name: String, enabled: bool, ma
         target: AutomationTarget::Machine { name: machine.to_string() },
         project: None,
         agent: None,
+        model: None,
         schedule: ScheduleSummary::Elsewhere,
         next_run_at_ms: None,
         last_run: None,
@@ -305,6 +306,7 @@ fn orca_automations(machine: &str, list: &[u8], projects: &[u8], hosts: &[u8], l
             summary.next_run_at_ms = item.get("nextRunAt").and_then(serde_json::Value::as_i64).filter(|_| enabled);
             let precheck = item.get("precheck").and_then(|precheck| precheck.get("command")).and_then(serde_json::Value::as_str).map(str::to_string);
             summary.has_precheck = precheck.is_some();
+            summary.model = last.get(&id).and_then(|run| run.get("model")?.as_str().filter(|model| !model.is_empty()).map(str::to_string));
             summary.last_run = last.get(&id).and_then(|run| {
                 Some(AutomationLastRun { status: orca_status(run.get("status")?.as_str()?), at_ms: run.get("at")?.as_i64()? })
             });
@@ -500,7 +502,7 @@ mod tests {
         let list = r#"{"ok":true,"result":{"automations":[{"id":"a-1","name":"Repo audit","prompt":"Audit PRs.","rrule":"FREQ=HOURLY;BYMINUTE=0","enabled":true,"agentId":"codex","projectId":"p-1","executionTargetType":"ssh","executionTargetId":"ssh-9","workspaceMode":"existing","reuseSession":true,"nextRunAt":1790900000000,"missedRunGraceMinutes":720,"precheck":{"command":"gh pr list | grep -q .","timeoutSeconds":60}}]}}"#;
         let projects = r#"{"result":{"projects":[{"id":"github:casey/billing","displayName":"billing","sourceRepoIds":["r-0","p-1"]}]}}"#;
         let hosts = r#"{"result":{"hosts":[{"id":"ssh-9","name":"cedar-02"}]}}"#;
-        let runs = r#"{"a-1":{"status":"skipped_precheck","at":1790899506005}}"#;
+        let runs = r#"{"a-1":{"status":"skipped_precheck","at":1790899506005,"model":"claude-opus-5"}}"#;
         let stdout = format!("H\t/Users/casey\nO\t{}\nP\t{}\nT\t{}\nR\t{}\n", b64(list), b64(projects), b64(hosts), b64(runs));
         let (found, orca) = parse_scan("casey-mbp", &stdout);
         assert!(orca);
@@ -509,6 +511,7 @@ mod tests {
         assert_eq!(automation.summary.machine.as_deref(), Some("cedar-02"));
         assert_eq!(automation.summary.project.as_deref(), Some("billing"));
         assert_eq!(automation.summary.agent, Some(AutomationAgent::Codex));
+        assert_eq!(automation.summary.model.as_deref(), Some("claude-opus-5"));
         assert_eq!(automation.summary.last_run, Some(AutomationLastRun { status: AutomationRunStatus::Skipped, at_ms: 1790899506005 }));
         assert!(automation.summary.has_precheck);
         assert_eq!(automation.session, AutomationSession::Reuse);

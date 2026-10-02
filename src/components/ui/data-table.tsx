@@ -46,10 +46,12 @@ export const TABLE_HEAD_SURFACE: Record<TableSurface, string> = {
  * A table that is one part of a page: a card whose head holds the title, how many rows there are and the table's own
  * controls (search, a filter, Columns), with the table under it and, when it pages or shows more, a footer.
  */
-export function TableCard({ title, count, toolbar, footer, children, className }: {
+export function TableCard({ title, count, nav, toolbar, footer, children, className }: {
   title: ReactNode;
   /** How many rows, as words: "6 skills", "1,684 requests". */
   count?: ReactNode;
+  /** A switch between the table's main sets of rows, beside the title. */
+  nav?: ReactNode;
   /** The table's own controls, at the end of the head. */
   toolbar?: ReactNode;
   /** A pager, a Show all, or a total. */
@@ -64,6 +66,7 @@ export function TableCard({ title, count, toolbar, footer, children, className }
           <h2 className="truncate text-sm font-medium text-foreground">{title}</h2>
           {count != null ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{count}</span> : null}
         </div>
+        {nav}
         {toolbar ? <div className="ms-auto flex flex-wrap items-center gap-2">{toolbar}</div> : null}
       </header>
       {children}

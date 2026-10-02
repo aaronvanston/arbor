@@ -31,6 +31,7 @@ fn arbor_summary(record: &Record, last_run: Option<AutomationLastRun>) -> Automa
         target: input.target.clone(),
         project: folder_name(&input.project_path),
         agent: Some(input.agent),
+        model: input.model.clone(),
         schedule: schedule::summary(&input.rrule),
         next_run_at_ms: record.next_run_at_ms.filter(|_| record.enabled),
         last_run,
@@ -69,10 +70,42 @@ fn last_run(connection: &rusqlite::Connection, id: &str) -> Result<Option<Automa
     }))
 }
 
-/// A found automation with its project filled in from the session it runs in, when its app names none: the checkout
-/// that session's transcript recorded, looked up by the id the app stores, never guessed from names.
+/// The model a session asked for most, from the proxy's records of it.
+fn session_model(connection: &rusqlite::Connection, session: &str) -> Result<Option<String>, String> {
+    connection
+        .query_row(
+            "SELECT model FROM usage_events WHERE session_id = ?1 AND COALESCE(model, '') <> ''
+             GROUP BY model ORDER BY SUM(input_tokens) DESC, model LIMIT 1",
+            [session],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("Failed to read the session's model: {error}"))
+}
+
+/// An Arbor automation's summary, with the model its last run used when it isn't set to one.
+fn arbor_summary_with_model(connection: &rusqlite::Connection, record: &Record, last: Option<AutomationLastRun>) -> Result<AutomationSummary, String> {
+    let mut summary = arbor_summary(record, last);
+    if summary.model.is_none() {
+        if let Some(session) = store::last_session(connection, &record.id)? {
+            summary.model = session_model(connection, &session)?;
+        }
+    }
+    Ok(summary)
+}
+
+/// A found automation with its project and model filled in from the session it runs in, when its app names none: the
+/// checkout that session's transcript recorded and the model the proxy saw it use, looked up by the id the app
+/// stores, never guessed from names.
 fn with_project(connection: &rusqlite::Connection, mut item: Found) -> Result<Found, String> {
-    let Some(session) = item.session.as_deref().filter(|_| item.automation.project_path.is_none()) else { return Ok(item) };
+    let Some(session) = item.session.clone() else { return Ok(item) };
+    if item.automation.summary.model.is_none() {
+        item.automation.summary.model = session_model(connection, &session)?;
+    }
+    if item.automation.project_path.is_some() {
+        return Ok(item);
+    }
+    let session = session.as_str();
     let checkout: Option<String> = connection
         .query_row(
             "SELECT CASE WHEN main_repo <> '' THEN main_repo WHEN repo_root <> '' THEN repo_root ELSE cwd END
@@ -100,7 +133,7 @@ pub(super) fn list_from(
     let mut automations = Vec::new();
     for record in store::records(connection)? {
         let last = last_run(connection, &record.id)?;
-        automations.push(arbor_summary(&record, last));
+        automations.push(arbor_summary_with_model(connection, &record, last)?);
     }
     for item in discover::all_found(found) {
         automations.push(with_project(connection, item)?.automation.summary);
@@ -271,8 +304,16 @@ pub(crate) async fn get_automation(id: String) -> Result<Automation, String> {
     if id.starts_with(ARBOR_PREFIX) {
         let record = arbor_record(&id).await?;
         let record_id = record.id.clone();
-        let last = run_usage_task(move || last_run(&open_usage_database()?, &record_id)).await?;
-        return Ok(arbor_automation(&record, last));
+        let summary = run_usage_task({
+            let record = record.clone();
+            move || {
+                let connection = open_usage_database()?;
+                let last = last_run(&connection, &record_id)?;
+                arbor_summary_with_model(&connection, &record, last)
+            }
+        })
+        .await?;
+        return Ok(Automation { summary, ..arbor_automation(&record, None) });
     }
     let found = found_or_error(&id)?;
     run_usage_task(move || Ok(with_project(&open_usage_database()?, found)?.automation)).await
@@ -616,6 +657,42 @@ mod tests {
         assert_eq!(list.scans.len(), 2);
         assert!(list.running);
         assert_eq!(list.draft_model, draft::DEFAULT_MODEL);
+    }
+
+    /// A proxy request of `session` to `model` with this many input tokens.
+    fn request(connection: &rusqlite::Connection, key: &str, session: &str, model: &str, input_tokens: i64) {
+        connection
+            .execute(
+                "INSERT INTO usage_events (event_key, timestamp, timestamp_ms, local_hour, model, session_id, input_tokens, created_at)
+                 VALUES (?1, '2026-10-01T00:00:00Z', 1, '2026-10-01T00', ?2, ?3, ?4, '2026-10-01T00:00:00Z')",
+                rusqlite::params![key, model, session, input_tokens],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn the_model_comes_from_the_setting_or_else_the_last_runs_session() {
+        let connection = crate::usage::schema::test_database();
+        let record = Record { id: "arbor:a".into(), input: input(), enabled: true, next_run_at_ms: None, created_at_ms: 1, updated_at_ms: 1 };
+        store::write(&connection, &record).unwrap();
+        assert_eq!(arbor_summary_with_model(&connection, &record, None).unwrap().model, None);
+        let mut run = runner::new_run("arbor:a", Some("cedar-02".into()), 5, false);
+        run.session_id = Some("s-1".into());
+        store::write_run(&connection, &store::StoredRun { run, worktree: None }).unwrap();
+        // The model the session spent most on, not a side call's.
+        request(&connection, "e-1", "s-1", "gpt-5.6-sol", 90_000);
+        request(&connection, "e-2", "s-1", "gpt-5.6-mini", 400);
+        assert_eq!(arbor_summary_with_model(&connection, &record, None).unwrap().model.as_deref(), Some("gpt-5.6-sol"));
+        let mut set = record.clone();
+        set.input.model = Some("claude-opus-5".into());
+        assert_eq!(arbor_summary_with_model(&connection, &set, None).unwrap().model.as_deref(), Some("claude-opus-5"));
+
+        // A Codex app automation's model is its thread's.
+        request(&connection, "e-3", "t-1", "gpt-5.6-sol", 10);
+        let linked = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtMSIK\n";
+        let (found, _) = discover::parse_scan("casey-mbp", linked);
+        let item = with_project(&connection, found[0].clone()).unwrap();
+        assert_eq!(item.automation.summary.model.as_deref(), Some("gpt-5.6-sol"));
     }
 
     #[test]

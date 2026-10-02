@@ -175,6 +175,9 @@ pub(crate) struct AutomationSummary {
     /// The project's folder name, or the name the owning app gives it.
     pub(crate) project: Option<String>,
     pub(crate) agent: Option<AutomationAgent>,
+    /// The model it runs with: the one it's set to, or, when it's set to none or its app keeps none, the one its
+    /// last run used, by the session id the run stores. Null until a run tells.
+    pub(crate) model: Option<String>,
     pub(crate) schedule: ScheduleSummary,
     pub(crate) next_run_at_ms: Option<i64>,
     pub(crate) last_run: Option<AutomationLastRun>,

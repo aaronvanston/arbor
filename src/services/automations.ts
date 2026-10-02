@@ -159,7 +159,8 @@ export const AGENT_PROVIDER: Record<AutomationAgent, string | null> = { claude: 
 /** Which automations by whether they run: on, paused, or on with a last run that failed. */
 export type AutomationState = 'all' | 'on' | 'paused' | 'failing';
 
-export const AUTOMATION_STATES: readonly AutomationState[] = ['all', 'on', 'paused', 'failing'];
+/** The list's switch, in order. Failed only joins it while something's failing. */
+export const AUTOMATION_STATES: readonly AutomationState[] = ['on', 'paused', 'all', 'failing'];
 
 export const STATE_LABEL: Record<AutomationState, MessageKey> = {
   all: 'automations.state.all',
@@ -174,7 +175,8 @@ export type AutomationFilter = {
   machine: string;
   /** Every one when left out. */
   state?: AutomationState;
-  agent?: AutomationAgent | 'all';
+  /** Every model when left out or `all`. */
+  model?: string;
 };
 
 const inState = (item: AutomationSummary, state: AutomationState) => {
@@ -187,25 +189,37 @@ const inState = (item: AutomationSummary, state: AutomationState) => {
   }
 };
 
-/**
- * The automations to list: the ones whose name, project or machine has the search in it, from the source picked, in
- * the state and for the agent picked, that run on the machine picked (one a pool picks a member for when it's due
- * counts on every machine). Arbor's own first, then by name.
- */
-export function filterAutomations(automations: readonly AutomationSummary[], filter: AutomationFilter): AutomationSummary[] {
+/** Everything but the state, so the switch can count what each of its choices would show. */
+const matching = (automations: readonly AutomationSummary[], filter: AutomationFilter) => {
   const words = filter.search.trim().toLowerCase();
   return automations
     .filter((item) => filter.source === 'all' || item.source === filter.source)
-    .filter((item) => inState(item, filter.state ?? 'all'))
-    .filter((item) => !filter.agent || filter.agent === 'all' || (item.agent ?? 'other') === filter.agent)
+    .filter((item) => !filter.model || filter.model === 'all' || item.model === filter.model)
     .filter((item) => !filter.machine || item.machine === filter.machine || item.target.kind !== 'machine')
-    .filter((item) => !words || [item.name, item.project ?? '', item.machine ?? ''].some((text) => text.toLowerCase().includes(words)))
+    .filter((item) => !words || [item.name, item.project ?? '', item.machine ?? '', item.model ?? ''].some((text) => text.toLowerCase().includes(words)));
+};
+
+/**
+ * The automations to list: the ones whose name, project, machine or model has the search in it, from the source
+ * picked, in the state and with the model picked, that run on the machine picked (one a pool picks a member for when
+ * it's due counts on every machine). Arbor's own first, then by name.
+ */
+export function filterAutomations(automations: readonly AutomationSummary[], filter: AutomationFilter): AutomationSummary[] {
+  return matching(automations, filter)
+    .filter((item) => inState(item, filter.state ?? 'all'))
     .sort((left, right) => Number(left.source !== 'arbor') - Number(right.source !== 'arbor') || left.name.localeCompare(right.name));
 }
 
-/** The agents automations start, for the agent filter; one the app doesn't name counts as another agent. */
-export const automationAgents = (automations: readonly AutomationSummary[]): AutomationAgent[] =>
-  (['claude', 'codex', 'gemini', 'other'] as const).filter((agent) => automations.some((item) => (item.agent ?? 'other') === agent));
+/** How many each state would list with the other filters as they are. */
+export function stateCounts(automations: readonly AutomationSummary[], filter: AutomationFilter): Record<AutomationState, number> {
+  const shown = matching(automations, filter);
+  const count = (state: AutomationState) => shown.filter((item) => inState(item, state)).length;
+  return { all: shown.length, on: count('on'), paused: count('paused'), failing: count('failing') };
+}
+
+/** The models automations run with, for the model filter. */
+export const automationModels = (automations: readonly AutomationSummary[]): string[] =>
+  [...new Set(automations.flatMap((item) => (item.model ? [item.model] : [])))].sort((left, right) => left.localeCompare(right));
 
 /** The machines automations run on, for the breadcrumb's picker. */
 export const automationMachines = (automations: readonly AutomationSummary[]) =>

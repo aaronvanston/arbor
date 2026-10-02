@@ -43,8 +43,9 @@ type Seed = Omit<Automation, 'summary'> & { summary: AutomationSummary };
 
 const machine = (name: string) => ({ kind: 'machine' as const, name });
 
-const seed = (summary: Omit<AutomationSummary, 'target' | 'runsOn'> & { target?: AutomationSummary['target']; runsOn?: AutomationSummary['runsOn'] }, detail: Partial<Omit<Automation, 'summary'>> & { prompt: string }): Seed => ({
-  summary: { target: summary.machine ? machine(summary.machine) : { kind: 'best' }, runsOn: 'app', ...summary },
+// A summary's model is the one the automation is set to unless it says which one its last run used.
+const seed = (summary: Omit<AutomationSummary, 'target' | 'runsOn' | 'model'> & { target?: AutomationSummary['target']; runsOn?: AutomationSummary['runsOn']; model?: string | null }, detail: Partial<Omit<Automation, 'summary'>> & { prompt: string }): Seed => ({
+  summary: { target: summary.machine ? machine(summary.machine) : { kind: 'best' }, runsOn: 'app', model: detail.model ?? null, ...summary },
   rrule: null,
   timezone: null,
   projectPath: null,
@@ -68,12 +69,26 @@ const SEEDS: Seed[] = [
     schedule: { kind: 'everyHours', hours: 1, minute: 15 }, nextRunAtMs: now + 23 * MINUTE,
     lastRun: { status: failing ? 'failed' : 'done', atMs: now - 37 * MINUTE }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {
-    prompt: 'Look at the unresolved Sentry issues the precheck listed. Group them by cause, open one fix per cause on its own branch, and post a short summary of what you changed and what you left.',
+    prompt: [
+      '## Sentry triage',
+      '',
+      'Look at the unresolved Sentry issues the precheck listed.',
+      '',
+      '1. Group them by cause.',
+      '2. Open one fix per cause on its own branch, with a test that fails without it.',
+      '3. Leave anything you can\'t reproduce alone.',
+      '',
+      '### When you\'re done',
+      '',
+      '- Post a short summary of what you changed and what you left.',
+      '- Link each branch and the issues it closes.',
+      '- Don\'t resolve issues in Sentry; the fix landing does that.',
+    ].join('\n'),
     rrule: 'FREQ=HOURLY;INTERVAL=1;BYMINUTE=15', projectPath: '/home/casey/src/billing', workspace: 'newWorktree',
-    precheck: './scripts/sentry-unresolved.sh --since 1h', precheckTimeoutSecs: 60, graceMinutes: 30, model: 'claude-sonnet-5-5',
+    precheck: './scripts/sentry-unresolved.sh --since 1h', precheckTimeoutSecs: 60, graceMinutes: 30, model: 'claude-sonnet-5', effort: 'high',
   }),
   seed({
-    id: 'arbor:daily-changelog', source: 'arbor', name: 'Daily changelog', enabled: true, machine: 'casey-mbp', project: 'arbor', agent: 'codex', runsOn: 'machine',
+    id: 'arbor:daily-changelog', source: 'arbor', name: 'Daily changelog', enabled: true, machine: 'casey-mbp', project: 'arbor', agent: 'codex', runsOn: 'machine', model: 'gpt-6-sol',
     schedule: { kind: 'daily', hour: 17, minute: 0 }, nextRunAtMs: now + 7 * HOUR,
     lastRun: { status: 'done', atMs: now - 17 * HOUR }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {
@@ -84,7 +99,7 @@ const SEEDS: Seed[] = [
   }),
   seed({
     // Runs on whichever member of the Builds pool has room when it's due.
-    id: 'arbor:regression-scan', source: 'arbor', name: 'Regression scan', enabled: true, machine: null, target: { kind: 'pool', id: 'mock-builds' }, project: 'proxy', agent: 'codex',
+    id: 'arbor:regression-scan', source: 'arbor', name: 'Regression scan', enabled: true, machine: null, target: { kind: 'pool', id: 'mock-builds' }, project: 'proxy', agent: 'codex', model: 'gpt-6-luna',
     schedule: { kind: 'weekdays', hour: 6, minute: 0 }, nextRunAtMs: now + 20 * HOUR,
     lastRun: { status: failing ? 'failed' : 'skipped', atMs: now - 4 * HOUR }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {
@@ -93,7 +108,7 @@ const SEEDS: Seed[] = [
     precheck: 'git fetch -q && test "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)"', precheckTimeoutSecs: 60,
   }),
   seed({
-    id: 'arbor:hygiene-sweep', source: 'arbor', name: 'Hygiene sweep', enabled: false, machine: null, project: 'docs', agent: 'claude',
+    id: 'arbor:hygiene-sweep', source: 'arbor', name: 'Hygiene sweep', enabled: false, machine: null, project: 'docs', agent: 'claude', model: 'claude-opus-5-5',
     schedule: { kind: 'weekly', days: [0], hour: 3, minute: 0 }, nextRunAtMs: null,
     lastRun: { status: 'done', atMs: now - 12 * DAY }, hasPrecheck: false, abilities: ARBOR_ABILITIES,
   }, {
@@ -101,7 +116,7 @@ const SEEDS: Seed[] = [
     rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=3;BYMINUTE=0', projectPath: '~/src/docs',
   }),
   seed({
-    id: 'codexApp:casey-mbp:inbox-triage', source: 'codexApp', name: 'Inbox triage', enabled: true, machine: 'casey-mbp', project: null, agent: 'codex',
+    id: 'codexApp:casey-mbp:inbox-triage', source: 'codexApp', name: 'Inbox triage', enabled: true, machine: 'casey-mbp', project: null, agent: 'codex', model: 'gpt-6-sol',
     schedule: { kind: 'everyMinutes', minutes: 30 }, nextRunAtMs: now + 11 * MINUTE,
     lastRun: null, hasPrecheck: false, abilities: CODEX_ABILITIES,
   }, {
@@ -126,7 +141,7 @@ const SEEDS: Seed[] = [
   }),
   ...(withOrca ? [
     seed({
-      id: 'orca:7c1f', source: 'orca', name: 'Translation fill', enabled: false, machine: 'cedar-02', project: 'billing', agent: 'claude',
+      id: 'orca:7c1f', source: 'orca', name: 'Translation fill', enabled: false, machine: 'cedar-02', project: 'billing', agent: 'claude', model: 'claude-fable-5-1',
       schedule: { kind: 'weekly', days: [1], hour: 10, minute: 0 }, nextRunAtMs: null,
       lastRun: { status: 'skipped', atMs: now - 9 * DAY }, hasPrecheck: true, abilities: ORCA_ABILITIES,
     }, {
@@ -134,7 +149,7 @@ const SEEDS: Seed[] = [
       rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0', precheck: 'node scripts/missing-strings.mjs --exit-code', workspace: 'newWorktree',
     }),
     seed({
-      id: 'orca:2a9b', source: 'orca', name: 'Weekday repo audit', enabled: true, machine: 'cedar-02', project: 'billing', agent: 'codex',
+      id: 'orca:2a9b', source: 'orca', name: 'Weekday repo audit', enabled: true, machine: 'cedar-02', project: 'billing', agent: 'codex', model: 'gpt-6-sol',
       schedule: { kind: 'weekdays', hour: 9, minute: 0 }, nextRunAtMs: now + 3 * DAY,
       lastRun: { status: 'done', atMs: now - 34 * MINUTE }, hasPrecheck: false, abilities: ORCA_ABILITIES,
     }, {
@@ -251,7 +266,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
     const item: Seed = {
       summary: {
         id, source: 'arbor', name: input.name, enabled: input.enabled, machine: machineName, target: input.target,
-        project: input.projectPath ? projectName(input.projectPath) : null, agent: input.agent,
+        project: input.projectPath ? projectName(input.projectPath) : null, agent: input.agent, model: input.model ?? existing?.summary.model ?? null,
         schedule: existing?.summary.schedule ?? { kind: 'custom' }, nextRunAtMs: input.enabled ? now + HOUR : null,
         lastRun: existing?.summary.lastRun ?? null, hasPrecheck: Boolean(input.precheck), abilities: ARBOR_ABILITIES, runsOn: input.runsOn,
       },

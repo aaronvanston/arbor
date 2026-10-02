@@ -5,7 +5,7 @@ import {
   automationMachines,
   choiceSummary,
   failedRunAlerts,
-  automationAgents,
+  automationModels,
   backgroundRunnerCheck,
   canInstallRunner,
   filterAutomations,
@@ -14,6 +14,7 @@ import {
   scheduleChoice,
   scheduleRule,
   scheduleWords,
+  stateCounts,
   switchSchedule,
 } from '../src/services/automations';
 import type { AutomationList, AutomationScan, AutomationSummary } from '../src/native/types';
@@ -30,6 +31,7 @@ const summary = (overrides: Partial<AutomationSummary>): AutomationSummary => ({
   target: { kind: 'machine', name: 'cedar-02' },
   project: 'billing',
   agent: 'claude',
+  model: null,
   schedule: { kind: 'everyHours', hours: 1, minute: 0 },
   nextRunAtMs: null,
   lastRun: null,
@@ -85,21 +87,23 @@ describe('the list', () => {
     expect(filterAutomations(automations, { search: 'billing', source: 'orca', machine: '' }).map((item) => item.id)).toEqual(['orca:1']);
   });
 
-  it('narrows to on, paused or failing automations, and to one agent', () => {
+  it('narrows to on, paused or failing automations, and to one model', () => {
     const mixed = [
-      summary({ id: 'arbor:on', name: 'A', agent: 'claude' }),
-      summary({ id: 'arbor:off', name: 'B', enabled: false, agent: 'codex', lastRun: { status: 'failed', atMs: 1 } }),
-      summary({ id: 'arbor:bad', name: 'C', agent: 'codex', lastRun: { status: 'unreachable', atMs: 1 } }),
+      summary({ id: 'arbor:on', name: 'A', model: 'claude-opus-5-5' }),
+      summary({ id: 'arbor:off', name: 'B', enabled: false, agent: 'codex', model: 'gpt-6-sol', lastRun: { status: 'failed', atMs: 1 } }),
+      summary({ id: 'arbor:bad', name: 'C', agent: 'codex', model: 'gpt-6-sol', lastRun: { status: 'unreachable', atMs: 1 } }),
       summary({ id: 'orca:x', source: 'orca', name: 'D', agent: null }),
     ];
-    const ids = (state: 'all' | 'on' | 'paused' | 'failing', agent: 'all' | 'codex' | 'other' = 'all') =>
-      filterAutomations(mixed, { search: '', source: 'all', machine: '', state, agent }).map((item) => item.id);
+    const ids = (state: 'all' | 'on' | 'paused' | 'failing', model = 'all') =>
+      filterAutomations(mixed, { search: '', source: 'all', machine: '', state, model }).map((item) => item.id);
     expect(ids('on')).toEqual(['arbor:on', 'arbor:bad', 'orca:x']);
     expect(ids('paused')).toEqual(['arbor:off']);
     expect(ids('failing')).toEqual(['arbor:bad']);
-    expect(ids('all', 'codex')).toEqual(['arbor:off', 'arbor:bad']);
-    expect(ids('all', 'other')).toEqual(['orca:x']);
-    expect(automationAgents(mixed)).toEqual(['claude', 'codex', 'other']);
+    expect(ids('all', 'gpt-6-sol')).toEqual(['arbor:off', 'arbor:bad']);
+    expect(automationModels(mixed)).toEqual(['claude-opus-5-5', 'gpt-6-sol']);
+    // A paused one that failed counts as paused, not failing.
+    expect(stateCounts(mixed, { search: '', source: 'all', machine: '' })).toEqual({ all: 4, on: 3, paused: 1, failing: 1 });
+    expect(stateCounts(mixed, { search: 'gpt', source: 'all', machine: '' })).toEqual({ all: 2, on: 1, paused: 1, failing: 1 });
   });
 
   it('names each machine once for the picker', () => {

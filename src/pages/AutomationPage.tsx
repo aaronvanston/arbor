@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AutomationActions } from '../components/automations/AutomationActions';
+import { AutomationAppName } from '../components/automations/AutomationApp';
+import { MarkdownPreview } from '../components/MarkdownPreview';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { toast } from '../components/ui/toast';
 import { MachinePill, ModelName, ProviderMark } from '../components/identity/Identity';
@@ -14,13 +16,14 @@ import { ArrowUpRight, Info } from '../components/ui/icons';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { useI18n } from '../i18n';
 import { formatAgo, formatDateTime, formatDuration, formatRelative, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
 import { automationsView, sessionsView, type AppView } from '../navigation';
 import { invokeCommand } from '../native/commands';
 import type { Automation, AutomationRun } from '../native/types';
-import { AGENT_PROVIDER, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, SOURCE_LABEL, scheduleWords, useAutomations } from '../services/automations';
+import { AGENT_PROVIDER, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
 import { useQuotaClock } from '../services/quotaTime';
 
 /** How many runs the page lists. */
@@ -67,7 +70,6 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
     );
   }
 
-  const provider = summary.agent ? AGENT_PROVIDER[summary.agent] : null;
   const arbor = summary.source === 'arbor';
 
   return (
@@ -80,7 +82,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold text-foreground">{summary.name}</h2>
             <Badge variant={summary.enabled ? 'success' : 'outline'}>{t(summary.enabled ? 'automations.status.enabled' : 'automations.status.paused')}</Badge>
-            {!arbor ? <Badge variant="muted">{t(SOURCE_LABEL[summary.source])}</Badge> : null}
+            <Badge variant="muted"><AutomationAppName source={summary.source} /></Badge>
           </div>
           <p className="text-sm text-muted-foreground">
             {[summary.project, automation.projectPath && automation.projectPath !== summary.project ? automation.projectPath : null].filter(Boolean).join(' · ') || t('automations.noProject')}
@@ -116,16 +118,8 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
               : summary.target.kind === 'pool' ? <PoolName id={summary.target.id} />
                 : <MachinePill name={summary.machine} fallback="—" />}
           </Fact>
-          <Fact label={t('automations.fact.agent')}>
-            <span className="inline-flex min-w-0 items-center gap-1.5">
-              {/* A model's name wears its own mark. */}
-              {automation.model ? <ModelName model={automation.model} effort={automation.effort} /> : (
-                <>
-                  {provider ? <ProviderMark provider={provider} decorative /> : null}
-                  {t(`automations.agent.${summary.agent ?? 'other'}`)}
-                </>
-              )}
-            </span>
+          <Fact label={t('automations.fact.model')}>
+            <ModelFact model={automation.model ?? summary.model} effort={automation.model ? automation.effort : null} agent={summary.agent} fromRun={!automation.model && Boolean(summary.model)} />
           </Fact>
           {arbor || summary.source === 'orca' ? (
             <>
@@ -146,22 +140,11 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                 </Fact>
               ) : null}
               <Fact label={t('automations.fact.grace')}>{formatDuration(automation.graceMinutes * 60_000)}</Fact>
-              <Fact label={t('automations.fact.precheck')}>
-                {automation.precheck ? t('automations.fact.precheckOn', { seconds: automation.precheckTimeoutSecs }) : t('automations.fact.precheckOff')}
-              </Fact>
             </>
           ) : null}
         </FactGrid>
 
-        {automation.precheck ? (
-          <section className="overflow-hidden rounded-2xl border border-border/70 bg-card">
-            <h3 className="border-b border-border/50 px-4 py-2.5 text-sm font-medium">{t('automations.precheck.title')}</h3>
-            <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-relaxed text-foreground">{automation.precheck}</pre>
-            <p className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">{t('automations.precheck.explain')}</p>
-          </section>
-        ) : null}
-
-        <Prompt text={automation.prompt} />
+        <RunSteps automation={automation} runs={runs} now={now} />
 
         <TableCard
           title={t('automations.runs.title')}
@@ -207,19 +190,119 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The prompt, a few lines of it until it's opened out. */
+/** The model, or the agent while no run has said which model it used. */
+function ModelFact({ model, effort, agent, fromRun }: { model: string | null; effort: string | null; agent: Automation['summary']['agent']; fromRun: boolean }) {
+  const { t } = useI18n();
+  const provider = agent ? AGENT_PROVIDER[agent] : null;
+  if (!model) {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1.5" title={t('automations.model.unknown')}>
+        {provider ? <ProviderMark provider={provider} decorative /> : null}
+        {t(`automations.agent.${agent ?? 'other'}`)}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      {/* A model's name wears its own mark. */}
+      <ModelName model={model} effort={effort} />
+      {fromRun ? <span className="truncate text-xs text-muted-foreground">{t('automations.fact.modelFromRun')}</span> : null}
+    </span>
+  );
+}
+
+/** What each run does, in order: the pre-flight check, then the agent with the prompt. */
+function RunSteps({ automation, runs, now }: { automation: Automation; runs: AutomationRun[] | null; now: number }) {
+  const { t } = useI18n();
+  const checked = runs?.find((run) => run.precheckExit !== null);
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border/70 bg-card" aria-label={t('automations.steps.title')}>
+      <h3 className="border-b border-border/50 px-4 py-2.5 text-sm font-medium">{t('automations.steps.title')}</h3>
+      <ol className="flex flex-col px-4 py-3">
+        <Step
+          number={1}
+          title={t('automations.step.precheck')}
+          meta={automation.precheck ? (
+            <>
+              <span>{t('automations.step.precheckLimit', { seconds: automation.precheckTimeoutSecs })}</span>
+              {checked && checked.precheckExit !== null ? (
+                <span className={cn('inline-flex items-center gap-1.5', checked.precheckExit === 0 && 'text-success-foreground')} title={checked.precheckOutput ?? undefined}>
+                  <StatusDot tone={checked.precheckExit === 0 ? 'success' : 'muted'} />
+                  {t(checked.precheckExit === 0 ? 'automations.step.precheckPassed' : 'automations.step.precheckStopped', {
+                    code: checked.precheckExit,
+                    when: formatAgo(checked.startedAtMs ?? checked.scheduledAtMs, now),
+                  })}
+                </span>
+              ) : null}
+            </>
+          ) : null}
+        >
+          {automation.precheck ? (
+            <>
+              <pre className="overflow-x-auto rounded-md border border-border/60 bg-muted/60 px-3 py-2 font-mono text-xs leading-5 text-foreground dark:bg-input/16">{automation.precheck}</pre>
+              <p className="text-xs text-muted-foreground">{t('automations.precheck.explain')}</p>
+            </>
+          ) : <p className="text-xs text-muted-foreground">{t('automations.step.precheckNone')}</p>}
+        </Step>
+        <Step number={2} title={t('automations.step.agent')} last>
+          <Prompt text={automation.prompt} />
+        </Step>
+      </ol>
+    </section>
+  );
+}
+
+function Step({ number, title, meta, last = false, children }: { number: number; title: string; meta?: ReactNode; last?: boolean; children: ReactNode }) {
+  return (
+    <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-3">
+      <div className="flex flex-col items-center">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium tabular-nums text-muted-foreground">{number}</span>
+        {last ? null : <span aria-hidden="true" className="my-1 w-px flex-1 bg-border" />}
+      </div>
+      <div className={cn('flex min-w-0 flex-col gap-2', !last && 'pb-5')}>
+        <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1">
+          <h4 className="text-sm font-medium text-foreground">{title}</h4>
+          {meta ? <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">{meta}</div> : null}
+        </div>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/** The prompt, as markdown or as written, a few lines of it until it's opened out. */
 function Prompt({ text }: { text: string }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const long = text.length > 320 || text.split('\n').length > 5;
+  const [plain, setPlain] = useState(false);
+  const long = text.length > 480 || text.split('\n').length > 10;
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between border-b border-border/50 px-4 py-2">
-        <h3 className="text-sm font-medium">{t('automations.prompt.title')}</h3>
-        {long ? <Button variant="ghost-muted" size="xs" onClick={() => setOpen(!open)}>{t(open ? 'automations.prompt.less' : 'automations.prompt.more')}</Button> : null}
-      </header>
-      <p className={cn('whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed text-foreground', !open && long && 'line-clamp-4')}>{text}</p>
-    </section>
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">{t('automations.prompt.title')}</span>
+        <ToggleGroup
+          value={[plain ? 'plain' : 'formatted']}
+          aria-label={t('automations.prompt.view')}
+          onValueChange={(values) => {
+            const [next] = values;
+            if (next === 'plain' || next === 'formatted') setPlain(next === 'plain');
+          }}
+        >
+          <Toggle value="formatted">{t('automations.prompt.formatted')}</Toggle>
+          <Toggle value="plain">{t('automations.prompt.plain')}</Toggle>
+        </ToggleGroup>
+      </div>
+      <div className={cn('rounded-lg border border-border/60 px-3 py-2.5', !open && long && 'max-h-56 overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)]')}>
+        {plain
+          ? <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">{text}</p>
+          : <MarkdownPreview source={text} />}
+      </div>
+      {long ? (
+        <Button variant="ghost-muted" size="xs" className="self-start" onClick={() => setOpen(!open)}>
+          {t(open ? 'automations.prompt.less' : 'automations.prompt.more')}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
