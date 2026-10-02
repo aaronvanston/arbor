@@ -23,6 +23,7 @@ import {
   snoozeOptions,
   unsnoozeFleetSession,
   waitingCount,
+  workingByMachine,
   type FleetBoard,
   type FleetSnoozes,
   type FleetSession,
@@ -596,6 +597,25 @@ describe('snoozing', () => {
     expect(t3Row({ ...snoozed, sessionStatus: 'error', sessionUpdatedAtMs: NOW - 9 * MINUTE }).snoozedBy).toBe('t3');
     expect(t3Row({ ...snoozed, pendingQuestions: 1, questionSeenAtMs: NOW - 9 * MINUTE }).snoozedBy).toBeNull();
     expect(t3Row({ ...snoozed, t3SnoozedUntilMs: NOW - MINUTE, turn: completed(8) }).snoozedBy).toBeNull();
+  });
+});
+
+describe('the working count each pool goes by', () => {
+  it('counts each machine’s working sessions as the sidebar does, leaving out snoozed ones and the rest', () => {
+    const built = board({
+      t3: [
+        channel('cedar-02', [
+          thread({ threadId: 'a', sessionStatus: 'running', turn: running(3) }),
+          thread({ threadId: 'b', sessionStatus: 'running', turn: running(1) }),
+          thread({ threadId: 'snoozed', sessionStatus: 'running', turn: running(2) }),
+          thread({ threadId: 'done', turn: completed(3) }),
+        ]),
+        channel('casey-mbp', [thread({ threadId: 'c', sessionStatus: 'running', turn: running(4) })]),
+      ],
+    }, { snoozes: { 't3:cedar-02:userdata:snoozed': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } });
+    // In name order, so the same counts are never sent twice.
+    expect(Object.entries(workingByMachine(built))).toEqual([['casey-mbp', 1], ['cedar-02', 2]]);
+    expect(workingByMachine({ rows: [] })).toEqual({});
   });
 });
 

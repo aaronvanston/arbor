@@ -547,6 +547,19 @@ export function boardForMachine(board: FleetBoard, machine: string): FleetBoard 
 }
 
 /** Sessions waiting on their user, for the tray: asking for approval or an answer, up to date and not snoozed. */
+/**
+ * Sessions working now on each machine, counted as the sidebar's chips and Home count them (snoozed ones left out),
+ * for the pools' agent limits.
+ */
+export function workingByMachine(board: Pick<FleetBoard, 'rows'>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of board.rows) {
+    if (row.machine && row.snoozedUntilMs === null && row.status === 'working') counts[row.machine] = (counts[row.machine] ?? 0) + 1;
+  }
+  // In name order, so the same counts always read the same and aren't sent again.
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 export const waitingCount = (board: FleetBoard) => board.rows.filter((row) => row.countsAsWaiting).length;
 
 /** Whether a row belongs in Needs you: asking for something, failed or done, and not snoozed. */

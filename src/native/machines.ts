@@ -38,7 +38,8 @@ export type MachineCommands = {
   get_pools: { result: MachinePool[] };
   save_pool: { args: { pool: MachinePool }; result: MachinePool[] };
   remove_pool: { args: { id: string }; result: MachinePool[] };
-  preview_pools: { result: PoolPreview[] };
+  preview_pools: { args: { watching?: boolean | null }; result: PoolPreview[] };
+  report_working_sessions: { args: { counts: Record<string, number> }; result: void };
   start_pool_run: { args: { request: RunRequest }; result: HarnessRun };
   get_runs: { result: HarnessRun[] };
   cancel_run: { args: { id: string }; result: HarnessRun[] };

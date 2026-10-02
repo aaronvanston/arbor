@@ -15,7 +15,7 @@ const said = (entry: PoolMemberVerdict) => {
 describe('a pool member’s standing', () => {
   it('says why it can or can’t take the next run, and marks the limit it’s at', () => {
     expect(said(verdict({}))).toBe('Has room');
-    expect(said(verdict({ kind: 'agentsFull', running: 4 }))).toBe('Full: agents running');
+    expect(said(verdict({ kind: 'agentsFull', running: 4 }))).toBe('Full: agents working');
     expect(said(verdict({ kind: 'stale', readingAgeMs: 200_000 }))).toBe('Reading 3 min old, too old to go by');
     expect(said(verdict({ kind: 'manual' }))).toBe('Never picked: manual only');
     expect([trippedLimit('agentsFull'), trippedLimit('cpuHigh'), trippedLimit('memoryLow'), trippedLimit('stale')]).toEqual(['agents', 'cpu', 'memory', null]);
@@ -33,7 +33,7 @@ describe('how a pool picks', () => {
   const words = (draft: MachinePool) => limitWords(draft).map((limit) => translate(limit.key, limit.values));
 
   it('names only the limits that are on, any one of which makes a machine full', () => {
-    expect(words(pool())).toEqual(['4 agents running', '95% CPU', '5% memory free or less']);
+    expect(words(pool())).toEqual(['4 agents working', '95% CPU', '5% memory free or less']);
     expect(words(pool({ maxAgents: null, memFloor: null }))).toEqual(['95% CPU']);
     expect(words(pool({ maxAgents: null, cpuCeiling: null, memFloor: null }))).toEqual([]);
   });

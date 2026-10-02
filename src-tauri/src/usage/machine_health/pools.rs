@@ -4,7 +4,7 @@
 //! that shouldn't take a pool's work isn't a member at all.
 //!
 //! Before choosing, every member is checked against the pool's limits from its latest health sample:
-//! answering, a reading fresh for how often the sampler is running, fewer agents running than the
+//! answering, a reading fresh for how often the sampler is running, fewer sessions working than the
 //! pool allows, CPU under its ceiling and free memory over its floor. Each eligible member's chance is
 //! its weight times its free agent slots, so a burst spreads instead of landing on one machine. What
 //! happens when nobody is eligible (refuse, wait in a queue, or try another pool) is the pool's own
@@ -104,7 +104,7 @@ pub(crate) struct MachinePool {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) members: Vec<PoolMember>,
-    /// The most Claude Code and Codex processes a member may have running and still take a run; None is no limit.
+    /// The most sessions a member may have working now (the live board's count) and still take a run; None is no limit.
     /// A member at any one of the three limits is full.
     pub(crate) max_agents: Option<u32>,
     /// A member at or past this CPU percent is full; None is no limit.
@@ -150,7 +150,7 @@ pub(crate) struct MemberVerdict {
     machine: String,
     weight: PoolWeight,
     kind: VerdictKind,
-    /// Agents running at the last sample, runs just sent to it included.
+    /// Sessions working on it now, as the live board counts them, runs just sent to it included.
     running: Option<u32>,
     cpu: Option<f32>,
     /// Free memory, percent.
@@ -343,13 +343,15 @@ pub(super) fn readings(inner: &Inner) -> BTreeMap<String, Reading> {
         .values()
         .map(|series| {
             let point = series.points.back();
+            let key = normalize_machine_name(&series.host.machine);
+            let running = working_on(inner.working_sessions.as_ref(), &key);
             (
-                normalize_machine_name(&series.host.machine),
+                key,
                 Reading {
                     enabled: series.host.enabled,
                     answering: series.error.is_none(),
                     last_ok_at: series.last_ok_at,
-                    running: point.map(|point| point.claude_running.unwrap_or(0) + point.codex_running.unwrap_or(0)),
+                    running,
                     cpu: point.and_then(|point| point.cpu),
                     mem_used: point.map(|point| point.mem),
                 },
@@ -362,6 +364,14 @@ pub(super) fn readings(inner: &Inner) -> BTreeMap<String, Reading> {
         readings.entry(normalize_machine_name(&name)).or_insert(Reading { enabled: true, answering: true, ..Reading::default() });
     }
     readings
+}
+
+/// A machine's agents for its pools: its sessions working now, as the live board counts them for the
+/// sidebar and Home, not its Claude Code and Codex processes, which take in idle sessions, sub-agents
+/// and each harness's helpers. A machine the board has no working session on has none; before the
+/// window has counted, nobody knows.
+fn working_on(working: Option<&BTreeMap<String, u32>>, key: &str) -> Option<u32> {
+    working.map(|counts| counts.get(key).copied().unwrap_or(0))
 }
 
 // ---------------------------------------------------------------------------
@@ -552,8 +562,13 @@ pub(crate) async fn remove_pool(app: tauri::AppHandle, id: String) -> Result<Vec
 
 /// Who would take the next run in each pool, and why each member could or couldn't, from the
 /// machines' latest health samples. Starts no run.
+/// `watching` is set while a pools page is open, which keeps the sampler on its fast interval as the
+/// Machines page does, so the members' figures move with the machines.
 #[tauri::command]
-pub(crate) async fn preview_pools(state: tauri::State<'_, MachineHealthState>) -> Result<Vec<PoolPreview>, String> {
+pub(crate) async fn preview_pools(state: tauri::State<'_, MachineHealthState>, watching: Option<bool>) -> Result<Vec<PoolPreview>, String> {
+    if watching == Some(true) {
+        state.touch();
+    }
     let pools = run_usage_task(|| read_pools(&open_usage_database()?)).await?;
     let (readings, interval_ms) = {
         let inner = state.lock();
@@ -573,6 +588,26 @@ pub(crate) async fn preview_pools(state: tauri::State<'_, MachineHealthState>) -
             }
         })
         .collect())
+}
+
+/// The window's live board, counted: sessions working now on each machine. Pools count a member's
+/// agents by it; a change tells the pages showing pools to look again.
+#[tauri::command]
+pub(crate) fn report_working_sessions(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, MachineHealthState>,
+    counts: BTreeMap<String, u32>,
+) {
+    let counts: BTreeMap<String, u32> = counts.into_iter().map(|(machine, count)| (normalize_machine_name(&machine), count)).collect();
+    let changed = {
+        let mut inner = state.lock();
+        let changed = inner.working_sessions.as_ref() != Some(&counts);
+        inner.working_sessions = Some(counts);
+        changed
+    };
+    if changed {
+        let _ = app.emit(MACHINE_POOLS_UPDATED_EVENT, ());
+    }
 }
 
 #[cfg(test)]
@@ -706,6 +741,16 @@ mod tests {
         let open: Vec<String> = plan(&pool, &idle, NOW, 5_000, 4).into_iter().flatten().collect();
         assert_eq!(open.len(), 4);
         assert!(open.contains(&"b".to_string()), "a burst reaches the normal member too: {open:?}");
+    }
+
+    #[test]
+    fn agents_are_the_sessions_working_now_not_processes() {
+        let counts = BTreeMap::from([("casey-mbp".to_string(), 3)]);
+        assert_eq!(working_on(Some(&counts), "casey-mbp"), Some(3));
+        // A machine the board has nothing working on has no agents, not an unknown number.
+        assert_eq!(working_on(Some(&counts), "cedar-02"), Some(0));
+        // Before the window has counted, nobody knows.
+        assert_eq!(working_on(None, "casey-mbp"), None);
     }
 
     #[test]

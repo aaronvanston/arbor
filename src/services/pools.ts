@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invokeCommand } from '../native/commands';
 import type { MessageKey } from '../i18n/resources';
@@ -187,6 +187,8 @@ type Snapshot = { pools: MachinePool[] | null; previews: PoolPreview[]; error: s
 let snapshot: Snapshot = { pools: null, previews: [], error: null };
 const listeners = new Set<() => void>();
 let started = false;
+/** Pages open that show pools' figures; while there are any, the sampler stays on its fast interval. */
+let watching = 0;
 
 const publish = (next: Snapshot) => {
   snapshot = next;
@@ -195,7 +197,7 @@ const publish = (next: Snapshot) => {
 
 async function reloadPreviews() {
   try {
-    publish({ ...snapshot, previews: await invokeCommand('preview_pools') });
+    publish({ ...snapshot, previews: await invokeCommand('preview_pools', { watching: watching > 0 }) });
   } catch {
     // A preview that can't be read leaves the last one up; the pools themselves still show.
   }
@@ -237,3 +239,20 @@ const subscribe = (listener: () => void) => {
 
 /** The pools and their previews, kept current while anything shows them. */
 export const usePools = () => useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
+
+/**
+ * For a page whose figures should move with the machines, as Machines' do: while it's open the sampler reads every
+ * few seconds rather than once a minute. Each round reloads the previews, which keeps it so.
+ */
+export function usePoolsWatching() {
+  useEffect(() => {
+    watching += 1;
+    void reloadPreviews();
+    return () => {
+      watching -= 1;
+    };
+  }, []);
+}
+
+/** Sessions working now on each machine, from the live board: the agents a pool counts against its limit. */
+export const reportWorkingSessions = (counts: Record<string, number>) => invokeCommand('report_working_sessions', { counts });

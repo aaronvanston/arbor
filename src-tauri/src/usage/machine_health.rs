@@ -705,6 +705,9 @@ struct Inner {
     projects: BTreeMap<String, setup_projects::MachineProjects>,
     /// Each machine's tools and what its projects ask of them, from the last scan.
     toolchain: BTreeMap<String, setup_toolchain::MachineToolchain>,
+    /// Sessions working now on each machine (normalized name), as the window's live board last
+    /// counted them; None until it has. Pools count agents by it, so they match the sidebar and Home.
+    working_sessions: Option<BTreeMap<String, u32>>,
 }
 
 pub(crate) struct MachineHealthState {
@@ -731,6 +734,7 @@ impl Default for MachineHealthState {
                 local_t3: t3_threads::T3Log::default(),
                 projects: BTreeMap::new(),
                 toolchain: BTreeMap::new(),
+                working_sessions: None,
             }),
             notify: Notify::new(),
             tailscale: tokio::sync::Mutex::new(TailscaleCache::new(Instant::now as fn() -> Instant)),

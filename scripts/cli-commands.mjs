@@ -20,6 +20,7 @@ export const LEFT_OUT = {
   set_tray_status: 'the window draws the menu bar',
   set_tray_unread: 'the window draws the menu bar',
   set_tray_waiting: 'the window draws the menu bar',
+  report_working_sessions: 'the window counts its live board for the pools',
   frontend_ready: 'only the window can say it has drawn',
   set_quit_guard: 'the window owns ⌘Q',
   get_zoom_level: 'the window owns its zoom',

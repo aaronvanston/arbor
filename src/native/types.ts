@@ -2194,7 +2194,7 @@ export type MachinePool = {
   name: string,
   members: Array<PoolMember>,
   /**
-   * The most Claude Code and Codex processes a member may have running and still take a run; None is no limit.
+   * The most sessions a member may have working now (the live board's count) and still take a run; None is no limit.
    * A member at any one of the three limits is full.
    */
   maxAgents: number | null,
@@ -2728,7 +2728,7 @@ export type PoolMemberVerdict = {
   weight: PoolWeight,
   kind: PoolVerdictKind,
   /**
-   * Agents running at the last sample, runs just sent to it included.
+   * Sessions working on it now, as the live board counts them, runs just sent to it included.
    */
   running: number | null,
   cpu: number | null,

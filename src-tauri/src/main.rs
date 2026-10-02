@@ -1852,6 +1852,7 @@ fn main() {
             usage::machine_health::pools::save_pool,
             usage::machine_health::pools::remove_pool,
             usage::machine_health::pools::preview_pools,
+            usage::machine_health::pools::report_working_sessions,
             usage::machine_health::runs::start_pool_run,
             usage::machine_health::runs::get_runs,
             usage::machine_health::runs::cancel_run,

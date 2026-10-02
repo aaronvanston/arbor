@@ -31,6 +31,9 @@ let pools: MachinePool[] = poolsScenario === 'open' ? mockPools.map((pool) => ({
 /** The pools as they stand, for the mock's runs. */
 export const poolsNow = () => pools;
 
+/** Sessions working on each machine, as the window's live board last reported them; null until it has. */
+let working: Record<string, number> | null = null;
+
 const shares = { prefer: 4, normal: 2, less: 1, manual: 0 } as const;
 const loose = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -55,7 +58,8 @@ function assess(pool: MachinePool, snapshot: MachineHealthSnapshot, sent: Record
     if (!health) return verdict;
     const latest = health.latest;
     const full = poolsScenario === 'full';
-    verdict.running = latest ? (full ? pool.maxAgents ?? 8 : (latest.claudeRunning ?? 0) + (latest.codexRunning ?? 0)) + (sent[member.machine] ?? 0) : null;
+    const workingNow = working === null ? null : Object.entries(working).find(([machine]) => loose(machine) === loose(member.machine))?.[1] ?? 0;
+    verdict.running = full ? (pool.maxAgents ?? 8) + (sent[member.machine] ?? 0) : workingNow === null ? null : workingNow + (sent[member.machine] ?? 0);
     verdict.cpu = latest?.cpu ?? null;
     verdict.memFree = latest ? Math.max(0, 100 - latest.mem) : null;
     verdict.readingAgeMs = health.lastOkAt === null ? null : poolsScenario === 'stale' ? freshForMs + 40_000 : snapshot.now - health.lastOkAt;
@@ -82,7 +86,7 @@ function assess(pool: MachinePool, snapshot: MachineHealthSnapshot, sent: Record
 
 export const poolAnswers = (
   snapshot: () => MachineHealthSnapshot,
-): Pick<CommandAnswers<MachineCommands>, 'get_pools' | 'save_pool' | 'remove_pool' | 'preview_pools'> => ({
+): Pick<CommandAnswers<MachineCommands>, 'get_pools' | 'save_pool' | 'remove_pool' | 'preview_pools' | 'report_working_sessions'> => ({
   get_pools: () => pools,
   save_pool: ({ pool }) => {
     mockLog('save_pool', pool);
@@ -99,6 +103,11 @@ export const poolAnswers = (
     pools = pools.filter((pool) => pool.id !== id).map((pool) => pool.spillPool === id ? { ...pool, whenFull: 'refuse', spillPool: null } : pool);
     void emit('machine-pools-updated', Date.now());
     return pools;
+  },
+  report_working_sessions: ({ counts }) => {
+    if (JSON.stringify(counts) === JSON.stringify(working)) return;
+    working = counts;
+    void emit('machine-pools-updated', Date.now());
   },
   preview_pools: () => {
     const health = snapshot();

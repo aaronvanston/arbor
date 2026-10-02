@@ -684,8 +684,10 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "preview_pools",
         access: Access::Read,
-        summary: "Who would take the next run in each pool, and why each member could or couldn't, from the machines' latest health samples. Starts no run.",
-        args: &[],
+        summary: "Who would take the next run in each pool, and why each member could or couldn't, from the machines' latest health samples. Starts no run. `watching` is set while a pools page is open, which keeps the sampler on its fast interval as the Machines page does, so the members' figures move with the machines.",
+        args: &[
+            ArgSpec { name: "watching", ts_type: "boolean | null", optional: true },
+        ],
     },
     CommandSpec {
         name: "start_pool_run",
@@ -1980,7 +1982,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_pools" => done(Box::pin(crate::usage::machine_health::pools::get_pools()).await),
         "save_pool" => async { done(Box::pin(crate::usage::machine_health::pools::save_pool(app.clone(), arg(&args, "pool")?)).await) }.await,
         "remove_pool" => async { done(Box::pin(crate::usage::machine_health::pools::remove_pool(app.clone(), arg(&args, "id")?)).await) }.await,
-        "preview_pools" => done(Box::pin(crate::usage::machine_health::pools::preview_pools(app.state())).await),
+        "preview_pools" => async { done(Box::pin(crate::usage::machine_health::pools::preview_pools(app.state(), arg(&args, "watching")?)).await) }.await,
         "start_pool_run" => async { done(Box::pin(crate::usage::machine_health::runs::start_pool_run(app.clone(), arg(&args, "request")?)).await) }.await,
         "get_runs" => done(Box::pin(crate::usage::machine_health::runs::get_runs()).await),
         "cancel_run" => async { done(Box::pin(crate::usage::machine_health::runs::cancel_run(app.clone(), arg(&args, "id")?)).await) }.await,

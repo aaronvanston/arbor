@@ -12,7 +12,7 @@ import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
 import { poolsView, type AppView, type PoolsParams } from '../navigation';
 import type { HarnessRun, MachinePool, PoolPreview } from '../native/types';
-import { newPool, poolStanding, usePools } from '../services/pools';
+import { newPool, poolStanding, usePools, usePoolsWatching } from '../services/pools';
 import { poolRuns, useRuns } from '../services/runs';
 
 /**
@@ -22,6 +22,7 @@ import { poolRuns, useRuns } from '../services/runs';
 export function PoolsPage({ params, onNavigate }: { params?: PoolsParams; onNavigate: (view: AppView) => void }) {
   const { t } = useI18n();
   const { pools, previews, error } = usePools();
+  usePoolsWatching();
   const { runs } = useRuns();
   const [editing, setEditing] = useState<MachinePool | null>(null);
   const [running, setRunning] = useState<MachinePool | null>(null);

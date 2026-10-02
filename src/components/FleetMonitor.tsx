@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useAppPreferences } from '../appPreferences';
-import { loadFleetSources, useFleetBoard, waitingCount } from '../services/fleetBoard';
+import { loadFleetSources, useFleetBoard, waitingCount, workingByMachine } from '../services/fleetBoard';
+import { reportWorkingSessions } from '../services/pools';
 import { setT3ThreadsEnabled, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
 
 /** New events from a machine's reporter, and new requests, which can end a wait or start work. */
@@ -12,8 +13,9 @@ const CHECK_INTERVAL_MS = 15_000;
 
 /**
  * Headless: keeps the live board fresh for Sessions › Live and Home, and the number of sessions waiting on you beside
- * the tray icon. It keeps reading while the window is hidden, since then the tray is all that shows. It tells the
- * backend whether to read T3 Code's threads, which it does nothing about until told.
+ * the tray icon, and each machine's working sessions for the pools. It keeps reading while the window is hidden, since
+ * then the tray is all that shows. It tells the backend whether to read T3 Code's threads, which it does nothing about
+ * until told.
  */
 export function FleetMonitor() {
   const { fleetT3Threads } = useAppPreferences();
@@ -90,6 +92,19 @@ export function FleetMonitor() {
       console.warn('Failed to show the sessions waiting on you on the tray icon', error);
     });
   }, [waiting]);
+
+  // Pools count a machine's agents as its sessions working now, so they read the same as the sidebar and Home; the
+  // native side picks for automations even while the window is hidden, which this keeps reporting through.
+  const working = board ? JSON.stringify(workingByMachine(board)) : null;
+  const reportedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (working === null || working === reportedRef.current) return;
+    reportedRef.current = working;
+    reportWorkingSessions(JSON.parse(working) as Record<string, number>).catch((error) => {
+      reportedRef.current = null;
+      console.warn('Failed to tell the pools which sessions are working', error);
+    });
+  }, [working]);
 
   return null;
 }
