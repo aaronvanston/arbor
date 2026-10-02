@@ -24,7 +24,7 @@ import { cn } from '../lib/utils';
 import { automationsView, sessionsView, type AppView } from '../navigation';
 import { invokeCommand } from '../native/commands';
 import type { Automation, AutomationRun } from '../native/types';
-import { loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
+import { AUTOMATION_APPS, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
 import { useQuotaClock } from '../services/quotaTime';
 
 /** How many runs the page lists. */
@@ -100,7 +100,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                   : summary.runsOn === 'machine'
                     ? t('automations.note.machine', { machine: summary.machine ?? '' })
                     : t('automations.note.arbor', { machine: summary.machine ?? '' })
-              : t(summary.source === 'claudeDesktop' ? 'automations.note.claude' : summary.source === 'orca' ? 'automations.note.orca' : 'automations.note.codex', { path: automation.sourcePath ?? '' })}
+              : t(AUTOMATION_APPS[summary.source].note ?? 'automations.note.codex', { path: automation.sourcePath ?? '' })}
           </AlertDescription>
         </Alert>
 

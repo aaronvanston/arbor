@@ -568,9 +568,9 @@ export type AutomationScan = {
   scanning: boolean,
   error: string | null,
   /**
-   * Orca's command line was found there.
+   * The apps found there: their command line answered, or their automations were found.
    */
-  orca: boolean,
+  apps: Array<AutomationSource>,
   /**
    * The background runner there; null until a look got that far.
    */
@@ -589,7 +589,7 @@ export type AutomationSession = "fresh" | "reuse";
 /**
  * Which app keeps an automation and runs it.
  */
-export type AutomationSource = "arbor" | "codexApp" | "claudeDesktop" | "orca";
+export type AutomationSource = "arbor" | "codexApp" | "claudeDesktop" | "orca" | "superset";
 
 /**
  * One automation in the list. The prompt isn't here; `get_automation` has it.

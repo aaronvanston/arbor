@@ -148,7 +148,7 @@ pub(super) fn list_from(
             scanned_at_ms: find.scanned_at_ms,
             scanning: find.scanning,
             error: find.error.clone(),
-            orca: find.orca,
+            apps: find.apps.clone(),
             udian: find.udian.clone(),
             placing_error: placing.get(machine).cloned(),
         })
@@ -159,7 +159,7 @@ pub(super) fn list_from(
             scanned_at_ms: None,
             scanning: false,
             error: None,
-            orca: false,
+            apps: Vec::new(),
             udian: None,
             placing_error: placing.get(machine).cloned(),
         });

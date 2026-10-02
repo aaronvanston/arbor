@@ -123,12 +123,33 @@ export function scheduleWords(schedule: ScheduleSummary, t: Translate): string {
   }
 }
 
-export const SOURCE_LABEL: Record<AutomationSource, MessageKey> = {
-  arbor: 'automations.source.arbor',
-  codexApp: 'automations.source.codexApp',
-  claudeDesktop: 'automations.source.claudeDesktop',
-  orca: 'automations.source.orca',
+type AutomationApp = {
+  label: MessageKey;
+  /** What an automation's page says about the app keeping it; Arbor's own say where they run instead. */
+  note: MessageKey | null;
+  /** Offered as a filter only once it's found on a machine, like any other app's feature. */
+  whenFound: boolean;
 };
+
+/**
+ * The apps that keep automations (`automations/apps/` on the native side), in the filter's order. A new app is an
+ * entry here, its mark in `AutomationApp.tsx` and its two strings.
+ */
+export const AUTOMATION_APPS: Record<AutomationSource, AutomationApp> = {
+  arbor: { label: 'automations.source.arbor', note: null, whenFound: false },
+  codexApp: { label: 'automations.source.codexApp', note: 'automations.note.codex', whenFound: false },
+  claudeDesktop: { label: 'automations.source.claudeDesktop', note: 'automations.note.claude', whenFound: false },
+  orca: { label: 'automations.source.orca', note: 'automations.note.orca', whenFound: true },
+  superset: { label: 'automations.source.superset', note: 'automations.note.superset', whenFound: true },
+};
+
+export const SOURCE_LABEL = (source: AutomationSource): MessageKey => AUTOMATION_APPS[source].label;
+
+/** The apps to filter by: every one listed always, the others once a machine has them, and the one picked. */
+export function sourceChoices(scans: readonly AutomationScan[], picked: AutomationSource | 'all'): AutomationSource[] {
+  const found = new Set(scans.flatMap((scan) => scan.apps));
+  return (Object.keys(AUTOMATION_APPS) as AutomationSource[]).filter((source) => !AUTOMATION_APPS[source].whenFound || found.has(source) || source === picked);
+}
 
 export const RUN_STATUS_LABEL: Record<AutomationRunStatus, MessageKey> = {
   running: 'automations.run.running',

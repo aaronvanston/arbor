@@ -14,7 +14,8 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
 
 /**
  * `?automations=empty`: none anywhere, so the page offers New automation. `?automations=failing`: the newest runs of
- * two failed and a machine couldn't be scanned. `?orca=none`: Orca isn't on any machine, so none of its show.
+ * two failed and a machine couldn't be scanned. `?orca=none`: Orca isn't on any machine, so none of its show, and
+ * `?superset=none` the same for Superset, whose cloud one (no machine, no prompt to copy) runs in its own workspace.
  * `?draft=fail`: the drafting model can't be reached (the core has no key); `?draft=slow` takes four seconds.
  * The background runner: casey-mbp and cedar-02 have it and ci-01 doesn't. `?runner=old`: cedar-02's is older than
  * the one Arbor carries, and `?runner=legacy` from before it kept only 30 days of runs. `?runner=failing`: writing
@@ -24,6 +25,7 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
 const scenario = params.get('automations');
 const failing = scenario === 'failing';
 const withOrca = params.get('orca') !== 'none';
+const withSuperset = params.get('superset') !== 'none';
 const runner = params.get('runner');
 const BUNDLED_RUNNER = runner === 'none' ? null : '1.0.0';
 const runnerOn = new Map<string, UdianOnMachine>([
@@ -40,6 +42,7 @@ const ARBOR_ABILITIES: AutomationAbilities = { edit: true, pause: true, runNow: 
 const CODEX_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: false, delete: false, copy: true };
 const CLAUDE_ABILITIES: AutomationAbilities = { edit: false, pause: false, runNow: false, delete: false, copy: true };
 const ORCA_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: true, delete: false, copy: true };
+const SUPERSET_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: true, delete: false, copy: true };
 
 type Seed = Omit<Automation, 'summary'> & { summary: AutomationSummary };
 
@@ -159,6 +162,24 @@ const SEEDS: Seed[] = [
       rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0', session: 'reuse',
     }),
   ] : []),
+  ...(withSuperset ? [
+    seed({
+      id: 'superset:6f1c0d2e-1a2b-4c3d-8e9f-0a1b2c3d4e5f', source: 'superset', name: 'Nightly issue triage', enabled: true, machine: 'ci-01', project: null, agent: 'claude',
+      schedule: { kind: 'daily', hour: 2, minute: 0 }, nextRunAtMs: now + 14 * HOUR,
+      lastRun: { status: 'done', atMs: now - 10 * HOUR }, hasPrecheck: false, abilities: SUPERSET_ABILITIES,
+    }, {
+      prompt: 'Label the issues opened since yesterday and close the duplicates, linking each to the one it repeats.',
+      rrule: 'FREQ=DAILY;BYHOUR=2;BYMINUTE=0', timezone: 'Australia/Melbourne', session: 'reuse',
+    }),
+    seed({
+      id: 'superset:9b8a7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d', source: 'superset', name: 'Docs refresh', enabled: false, machine: null, target: machine('casey-mbp'), project: null, agent: 'codex',
+      schedule: { kind: 'weekly', days: [5], hour: 16, minute: 0 }, nextRunAtMs: null,
+      lastRun: { status: 'unreachable', atMs: now - 6 * DAY }, hasPrecheck: false, abilities: { ...SUPERSET_ABILITIES, copy: false },
+    }, {
+      prompt: '',
+      rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0',
+    }),
+  ] : []),
 ];
 
 let automations: Seed[] = freshInstall || scenario === 'empty' ? [] : SEEDS.map((item) => structuredClone(item));
@@ -206,13 +227,13 @@ const runs = new Map<string, AutomationRun[]>(automations.map((item) => [item.su
 const list = (): AutomationList => ({
   automations: automations.map((item) => item.summary),
   scans: [
-    { machine: 'casey-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, orca: false, udian: runnerOn.get('casey-mbp') ?? null, placingError: null },
+    { machine: 'casey-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: ['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : [])], udian: runnerOn.get('casey-mbp') ?? null, placingError: null },
     {
-      machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, orca: withOrca, udian: runnerOn.get('cedar-02') ?? null,
+      machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: [...(withOrca ? ['orca' as const] : []), ...(withSuperset ? ['superset' as const] : [])], udian: runnerOn.get('cedar-02') ?? null,
       placingError: runner === 'failing' ? 'cedar-02 didn\'t answer over SSH.' : null,
     },
     {
-      machine: 'ci-01', scannedAtMs: failing ? now - 3 * HOUR : now - 6 * MINUTE, scanning: false, error: failing ? 'ci-01 didn\'t answer over SSH.' : null, orca: false,
+      machine: 'ci-01', scannedAtMs: failing ? now - 3 * HOUR : now - 6 * MINUTE, scanning: false, error: failing ? 'ci-01 didn\'t answer over SSH.' : null, apps: [],
       udian: failing ? null : runnerOn.get('ci-01') ?? null, placingError: null,
     },
   ],

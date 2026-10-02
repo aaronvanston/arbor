@@ -15,6 +15,7 @@ import {
   scheduleChoice,
   scheduleRule,
   scheduleWords,
+  sourceChoices,
   stateCounts,
   switchSchedule,
 } from '../src/services/automations';
@@ -135,8 +136,18 @@ describe('alerts', () => {
   });
 });
 
+describe('the apps that keep automations', () => {
+  const scan = (machine: string, apps: AutomationScan['apps']): AutomationScan => ({ machine, scannedAtMs: 1, scanning: false, error: null, apps, udian: null, placingError: null });
+
+  it('offers an app found only on some machine once one has it, and the one picked', () => {
+    expect(sourceChoices([], 'all')).toEqual(['arbor', 'codexApp', 'claudeDesktop']);
+    expect(sourceChoices([scan('a', ['codexApp']), scan('b', ['superset'])], 'all')).toEqual(['arbor', 'codexApp', 'claudeDesktop', 'superset']);
+    expect(sourceChoices([], 'orca')).toEqual(['arbor', 'codexApp', 'claudeDesktop', 'orca']);
+  });
+});
+
 describe('the background runner', () => {
-  const scan = (machine: string, udian: AutomationScan['udian']): AutomationScan => ({ machine, scannedAtMs: 1, scanning: false, error: null, orca: false, udian, placingError: null });
+  const scan = (machine: string, udian: AutomationScan['udian']): AutomationScan => ({ machine, scannedAtMs: 1, scanning: false, error: null, apps: [], udian, placingError: null });
 
   it('compares versions by their numbers', () => {
     expect(olderVersion('0.9.2', '1.0.0')).toBe(true);

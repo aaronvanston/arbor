@@ -102,8 +102,11 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   `digest_export.rs`, `quit_guard.rs` and `tray.rs` do what they say. Rust tests are
   in `tests.rs`, `tests/` and inline `#[cfg(test)]` modules.
 - `src-tauri/src/usage/machine_health/automations.rs` and `automations/`: scheduled
-  agent runs. `discover.rs` reads what the Codex app, Claude's scheduled tasks and Orca
-  keep on each machine, held in memory only; `runner.rs` runs Arbor's own while the
+  agent runs. `discover.rs` reads what other apps keep on each machine, held in memory
+  only, through one module per app in `apps/` (the Codex app, Claude's scheduled tasks,
+  Orca, Superset): its part of the scan, how its lines read and what it can be asked to
+  do; a new app is a module there and an entry in `AUTOMATION_APPS`
+  (`src/services/automations.ts`); `runner.rs` runs Arbor's own while the
   app is open, a precheck over SSH first and then the agent detached, whose output is
   never kept; `draft.rs` turns a sentence into a draft through the local proxy.
   An automation aimed at a pool has its machine chosen by `runs::pick_for_automation`

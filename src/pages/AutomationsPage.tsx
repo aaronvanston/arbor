@@ -40,6 +40,7 @@ import {
   scanAutomations,
   scheduleWords,
   showAutomations,
+  sourceChoices,
   stateCounts,
   type AutomationState,
   useAutomations,
@@ -47,8 +48,6 @@ import {
 import { invokeCommand } from '../native/commands';
 import { useQuotaClock } from '../services/quotaTime';
 import { AutomationPage } from './AutomationPage';
-
-const SOURCES: readonly (AutomationSource | 'all')[] = ['all', 'arbor', 'codexApp', 'claudeDesktop', 'orca'];
 
 /**
  * Fleet › Automations: every automation on every machine, Arbor's own and the ones other apps keep, or one
@@ -78,9 +77,7 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   const [model, setModel] = useState('all');
   const [creating, setCreating] = useState(false);
   const automations = useMemo(() => list?.automations ?? [], [list]);
-  // Orca's filter only once Orca's been found somewhere, like any other app's feature.
-  const orcaFound = Boolean(list?.scans.some((scan) => scan.orca));
-  const sources = SOURCES.filter((entry) => entry !== 'orca' || orcaFound || source === 'orca');
+  const sources: (AutomationSource | 'all')[] = ['all', ...sourceChoices(list?.scans ?? [], source)];
   const shown = useMemo(
     () => filterAutomations(automations, { search, source, machine, state, model }),
     [automations, search, source, machine, state, model],

@@ -265,7 +265,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       id: `automation:${automation.id}`,
       group: 'automations',
       label: automation.name,
-      keywords: [automation.project ?? '', automation.machine ? machineName(automation.machine) : '', t(SOURCE_LABEL[automation.source])].join(' '),
+      keywords: [automation.project ?? '', automation.machine ? machineName(automation.machine) : '', t(SOURCE_LABEL(automation.source))].join(' '),
       shown: 'typed',
       icon: <IconBox>{automation.agent ? <ProviderMark provider={automation.agent} decorative className="size-full object-contain" fallback={<TimeSchedule />} /> : <TimeSchedule />}</IconBox>,
       run: () => onNavigate(automationView(automation.id)),

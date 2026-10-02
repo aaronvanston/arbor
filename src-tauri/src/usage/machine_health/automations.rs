@@ -1,10 +1,12 @@
 //! Automations: prompts that run on a schedule on a machine. Arbor finds the ones other apps keep (the Codex app's
-//! automations, Claude's scheduled tasks, Orca's) and runs its own: on its schedule it runs a precheck on the machine,
-//! and only when that passes starts the agent there, so a schedule with nothing to do costs no tokens.
+//! automations, Claude's scheduled tasks, Orca's and Superset's, one module each in `apps`) and runs its own: on its
+//! schedule it runs a precheck on the machine, and only when that passes starts the agent there, so a schedule with
+//! nothing to do costs no tokens.
 //!
 //! What's kept is what the user wrote (name, prompt, schedule, precheck) and each run's times, exit codes, the end of
 //! the precheck's output and the session's id. The agent's output is never read: a run's session is linked by its id.
 
+mod apps;
 pub(crate) mod commands;
 mod discover;
 mod draft;
@@ -33,6 +35,8 @@ pub(crate) enum AutomationSource {
     ClaudeDesktop,
     /// Orca's, as `orca automations list` gives them.
     Orca,
+    /// Superset's, as `superset automations list` gives them: its organization's, kept in its cloud.
+    Superset,
 }
 
 /// The agent an automation starts is a harness from the catalog.
@@ -238,8 +242,8 @@ pub(crate) struct AutomationScan {
     pub(crate) scanned_at_ms: Option<i64>,
     pub(crate) scanning: bool,
     pub(crate) error: Option<String>,
-    /// Orca's command line was found there.
-    pub(crate) orca: bool,
+    /// The apps found there: their command line answered, or their automations were found.
+    pub(crate) apps: Vec<AutomationSource>,
     /// The background runner there; null until a look got that far.
     pub(crate) udian: Option<UdianOnMachine>,
     /// Arbor's own automations on this machine that the background runner hasn't taken yet, and why, when it failed.

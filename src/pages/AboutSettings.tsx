@@ -16,7 +16,7 @@ import type { AppView } from '../navigation';
 import type { ProductAnalyticsSettings } from '../native/types';
 
 /** Each one's name and description are `about.credit.<id>.name` and `.description` in en.ts. */
-type CreditId = 'cliproxyapi' | 'easycliproxyapi' | 't3code' | 'antiburn' | 'codexbar' | 'cossui' | 'lobeicons' | 'orca' | 'hugeicons' | 'modelsdev' | 'macmon';
+type CreditId = 'cliproxyapi' | 'easycliproxyapi' | 't3code' | 'antiburn' | 'codexbar' | 'cossui' | 'lobeicons' | 'orca' | 'superset' | 'hugeicons' | 'modelsdev' | 'macmon';
 type Credit = { id: CreditId; url: string };
 
 /**
@@ -38,6 +38,7 @@ export const CREDITS = {
     { id: 'cossui', url: 'https://github.com/cosscom/coss' },
     { id: 'lobeicons', url: 'https://github.com/lobehub/lobe-icons' },
     { id: 'orca', url: 'https://github.com/stablyai/orca' },
+    { id: 'superset', url: 'https://github.com/superset-sh/superset' },
     { id: 'hugeicons', url: 'https://github.com/hugeicons/hugeicons-react' },
   ],
   sources: [

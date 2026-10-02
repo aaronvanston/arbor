@@ -7,12 +7,14 @@ import { appIconImage } from '../AppIconPicker';
 import claudeIcon from '../../assets/icons/claude.svg';
 import codexIcon from '../../assets/icons/codex.svg';
 import orcaIcon from '../../assets/icons/orca.svg';
+import supersetIcon from '../../assets/icons/superset.svg';
 
-/** The other apps' marks. Orca's is drawn in black, so it's lightened in dark mode, and wider than it's tall. */
+/** The other apps' marks. Orca's and Superset's are drawn in black, so they're lightened in dark mode, and are wider than they're tall. */
 const MARKS: Record<Exclude<AutomationSource, 'arbor'>, { icon: string; tint?: boolean; wide?: boolean }> = {
   codexApp: { icon: codexIcon },
   claudeDesktop: { icon: claudeIcon },
   orca: { icon: orcaIcon, tint: true, wide: true },
+  superset: { icon: supersetIcon, tint: true, wide: true },
 };
 
 /** The mark of the app that keeps an automation; Arbor's own wear the Dock icon the user picked. */
@@ -28,7 +30,7 @@ export function AutomationAppName({ source, className }: { source: AutomationSou
   return (
     <span className={cn('inline-flex min-w-0 items-center gap-1.5', className)}>
       <AutomationAppMark source={source} />
-      <span className="truncate">{t(SOURCE_LABEL[source])}</span>
+      <span className="truncate">{t(SOURCE_LABEL(source))}</span>
     </span>
   );
 }

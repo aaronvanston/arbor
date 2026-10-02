@@ -42,7 +42,7 @@ export function MachineAutomations({ machine, small, onNavigate }: { machine: st
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex min-w-0 items-center gap-2 text-sm">
                   <span className="truncate">{item.name}</span>
-                  {item.source !== 'arbor' ? <Badge variant="outline" size="sm" className="shrink-0">{t(SOURCE_LABEL[item.source])}</Badge> : null}
+                  {item.source !== 'arbor' ? <Badge variant="outline" size="sm" className="shrink-0">{t(SOURCE_LABEL(item.source))}</Badge> : null}
                   {!item.enabled ? <Badge variant="outline" size="sm" className="shrink-0">{t('automations.status.paused')}</Badge> : null}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">{scheduleWords(item.schedule, t)}</span>
