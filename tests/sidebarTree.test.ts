@@ -21,15 +21,15 @@ import {
 
 
 describe('the sidebar tree', () => {
-  test('has Home alone at the top, then Fleet (Machines, Sessions, Automations, Sync) and Spend (Accounts, Usage); Alerts is the footer’s bell', () => {
+  test('has Home alone at the top, then Fleet (Machines, Pools, Sessions, Automations, Sync) and Spend (Accounts, Usage); Alerts is the footer’s bell', () => {
     expect(SIDEBAR_TREE.map((section) => [section.labelKey, section.pages.map((page) => page.id)])).toEqual([
       [null, ['home']],
-      ['tree.section.fleet', ['machines', 'sessions', 'automations', 'setup']],
+      ['tree.section.fleet', ['machines', 'pools', 'sessions', 'automations', 'setup']],
       ['tree.section.spend', ['accounts', 'usage']],
     ]);
   });
 
-  test('numbers its pages for ⌘1–⌘7 in the order it draws them, with Alerts on ⌘8', () => {
+  test('numbers its pages for ⌘1–⌘8 in the order it draws them, with Alerts on ⌘9', () => {
     expect(mainPageIds).toEqual([...TREE_PAGES.map((page) => page.id), 'alerts']);
   });
 
@@ -103,38 +103,38 @@ describe('the tree’s open groups', () => {
 
   test('that don’t fit close from the bottom up, never the current one, counting the machines as Machines’ rows', () => {
     const wanted = new Set<MainPageId>(['machines', 'setup', 'usage']);
-    expect([...fitOpenGroups(wanted, 'machines', 100, 4)].sort()).toEqual(['machines', 'setup', 'usage']);
+    expect([...fitOpenGroups(wanted, 'machines', 100, { machines: 4 })].sort()).toEqual(['machines', 'setup', 'usage']);
     // Room for Machines and Sync but not Usage as well: Usage, the lowest, goes first.
-    const both = treeHeightRem(new Set<MainPageId>(['machines', 'setup']), 4);
-    expect([...fitOpenGroups(wanted, 'machines', both, 4)].sort()).toEqual(['machines', 'setup']);
+    const both = treeHeightRem(new Set<MainPageId>(['machines', 'setup']), { machines: 4 });
+    expect([...fitOpenGroups(wanted, 'machines', both, { machines: 4 })].sort()).toEqual(['machines', 'setup']);
     // The current page low in the tree keeps its group; the ones above it close, lowest first.
-    expect([...fitOpenGroups(wanted, 'usage', treeHeightRem(new Set<MainPageId>(['machines', 'usage']), 4), 4)].sort()).toEqual(['machines', 'usage']);
+    expect([...fitOpenGroups(wanted, 'usage', treeHeightRem(new Set<MainPageId>(['machines', 'usage']), { machines: 4 }), { machines: 4 })].sort()).toEqual(['machines', 'usage']);
     // Too short for anything but the current group: it stays open, and the tree scrolls.
-    expect([...fitOpenGroups(wanted, 'machines', 1, 4)]).toEqual(['machines']);
-    expect([...fitOpenGroups(wanted, null, 1, 4)]).toEqual([]);
+    expect([...fitOpenGroups(wanted, 'machines', 1, { machines: 4 })]).toEqual(['machines']);
+    expect([...fitOpenGroups(wanted, null, 1, { machines: 4 })]).toEqual([]);
     // More machines take more room, and Machines with none listed has nothing to open.
-    expect(treeHeightRem(new Set<MainPageId>(['machines']), 18)).toBeGreaterThan(treeHeightRem(new Set<MainPageId>(['machines']), 4));
-    expect(treeHeightRem(new Set<MainPageId>(['machines']), 0)).toBe(treeHeightRem(new Set()));
+    expect(treeHeightRem(new Set<MainPageId>(['machines']), { machines: 18 })).toBeGreaterThan(treeHeightRem(new Set<MainPageId>(['machines']), { machines: 4 }));
+    expect(treeHeightRem(new Set<MainPageId>(['machines']), { machines: 0 })).toBe(treeHeightRem(new Set()));
     // A page with no views, like Home, takes a row whether it's "open" or not.
     expect(treeHeightRem(new Set<MainPageId>(['home']))).toBe(treeHeightRem(new Set()));
   });
 
   test('fit a 640px-tall window’s tree with Usage open and the machines closed', () => {
     // 640px window, less the title row, search row and footer: about 26rem for the tree.
-    const open = fitOpenGroups(new Set<MainPageId>(['machines', 'setup', 'usage']), 'usage', 26, 18);
+    const open = fitOpenGroups(new Set<MainPageId>(['machines', 'setup', 'usage']), 'usage', 26, { machines: 18 });
     expect([...open]).toEqual(['usage']);
   });
 
   test('leave a group just opened by hand open, closing only the others to fit, and scroll when even that’s too tall', () => {
     const wanted = new Set<MainPageId>(['machines', 'sessions', 'setup', 'accounts', 'usage']);
     // Accounts' chevron on Usage › Requests in a 640px window: Accounts opens, and the rest still close to fit.
-    expect([...fitOpenGroups(wanted, 'usage', 26, 18, 'accounts')].sort()).toEqual(['accounts', 'usage']);
+    expect([...fitOpenGroups(wanted, 'usage', 26, { machines: 18 }, 'accounts')].sort()).toEqual(['accounts', 'usage']);
     // Sync's nine views and Usage's four are taller than the room: both stay open, and the tree scrolls.
-    const sync = fitOpenGroups(wanted, 'usage', 26, 18, 'setup');
+    const sync = fitOpenGroups(wanted, 'usage', 26, { machines: 18 }, 'setup');
     expect([...sync].sort()).toEqual(['setup', 'usage']);
-    expect(treeHeightRem(sync, 18)).toBeGreaterThan(26);
+    expect(treeHeightRem(sync, { machines: 18 })).toBeGreaterThan(26);
     // Machines' own chevron on a machine's page is its current group; Usage opened by hand stays with it.
-    expect([...fitOpenGroups(wanted, 'machines', 26, 18, 'usage')].sort()).toEqual(['machines', 'usage']);
+    expect([...fitOpenGroups(wanted, 'machines', 26, { machines: 18 }, 'usage')].sort()).toEqual(['machines', 'usage']);
   });
 
   test('keep a group opened by hand open only while the page it was opened on is current', () => {

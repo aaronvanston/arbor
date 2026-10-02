@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo,
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
 import { onAddMachineRequest } from './services/addMachine';
-import { Activity, Archive, BellRing, Database, FolderSearch, Info, Layers, Monitor, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
+import { Activity, Archive, BellRing, Database, FolderSearch, Info, Monitor, Network, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
 import { CoreRuntimeProvider, useCoreRuntime } from './coreRuntime';
 import { CoreUpdateProvider, useCoreUpdate } from './coreUpdate';
 import { HomePage } from './pages/HomePage';
@@ -92,7 +92,7 @@ const settingsGroups: { id: string; labelKey: MessageKey; pages: { id: SettingsP
     pages: [
       { id: 'machines', icon: Monitor },
       { id: 'agent-homes', icon: FolderSearch },
-      { id: 'pools', icon: Layers },
+      { id: 'pools', icon: Network },
       { id: 'session-archive', icon: Archive },
     ],
   },
@@ -124,6 +124,7 @@ const pageModules = {
   accounts: () => import('./pages/AccountsPage'),
   usage: () => import('./pages/UsageRecordsPage'),
   automations: () => import('./pages/AutomationsPage'),
+  machinePools: () => import('./pages/PoolsPage'),
   usageData: () => import('./pages/UsageDataSettingsPage'),
   setup: () => import('./pages/SetupPage'),
   alerts: () => import('./pages/AlertsPage'),
@@ -142,6 +143,7 @@ const pageModules = {
 };
 const AccountsPage = lazy(() => pageModules.accounts().then((module) => ({ default: module.AccountsPage })));
 const UsageRecordsPage = lazy(() => pageModules.usage().then((module) => ({ default: module.UsageRecordsPage })));
+const PoolsPage = lazy(() => pageModules.machinePools().then((module) => ({ default: module.PoolsPage })));
 const AutomationsPage = lazy(() => pageModules.automations().then((module) => ({ default: module.AutomationsPage })));
 const UsageDataSettingsPage = lazy(() => pageModules.usageData().then((module) => ({ default: module.UsageDataSettingsPage })));
 const SetupPage = lazy(() => pageModules.setup().then((module) => ({ default: module.SetupPage })));
@@ -194,6 +196,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
       // list, and Back or Activity return to it as it was.
       case 'sessions': return <UsageRecordsPage key={`sessions-${visit}`} variant="sessions" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'machines': return <UsageRecordsPage key="machines" variant="machines" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
+      case 'pools': return <PoolsPage params={view.params} onNavigate={onNavigate} />;
       case 'automations': return <AutomationsPage params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'setup': return <SetupPage params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'alerts': return <AlertsPage coreReady={coreReady} onNavigate={onNavigate} />;
@@ -209,7 +212,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
     case 'extra-models': return <ExtraModelsPage />;
     case 'machines': return <MachineAssignmentsSettingsPage onNavigate={onNavigate} />;
     case 'agent-homes': return <AgentHomesSettingsPage />;
-    case 'pools': return <PoolsSettingsPage />;
+    case 'pools': return <PoolsSettingsPage onNavigate={onNavigate} />;
     case 'data': return <UsageDataSettingsPage />;
     case 'session-archive': return <SessionArchiveSettingsPage />;
     case 'appearance': return <AppearanceSettingsPage theme={theme} onThemeChange={onThemeChange} />;

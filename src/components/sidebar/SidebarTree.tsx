@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { Bell, ChartNoAxesColumn, ChevronRight, House, Layers, Lock, MessagesSquare, Monitor, TimeSchedule, Users, type AppIcon } from '../ui/icons';
+import { Bell, ChartNoAxesColumn, ChevronRight, House, Layers, Lock, MessagesSquare, Monitor, Network, TimeSchedule, Users, type AppIcon } from '../ui/icons';
 import { useI18n } from '../../i18n';
 import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
-import { canOpenView, keepMachineScope, machinesView, mainView, type AppView, type MainPageId } from '../../navigation';
+import { canOpenView, keepMachineScope, machinesView, mainView, poolsView, type AppView, type MainPageId } from '../../navigation';
 import { requestFocus } from '../../focusRequests';
 import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
 import { useFleetHealth } from '../../services/fleetHealth';
-import { accountsBadge, machinesBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
+import { accountsBadge, machinesBadge, poolsBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
+import { POOL_STANDING_LABEL, poolStanding, usePools, type PoolStanding } from '../../services/pools';
 import { useQuotaClock } from '../../services/quotaTime';
 import { setupChecks } from '../../services/setupChecks';
 import { fetchSetupInventory, SETUP_INVENTORY_UPDATED_EVENT } from '../../services/setupInventory';
@@ -23,6 +24,7 @@ import {
   leafView,
   openLeaf,
   openMachine,
+  openPool,
   setGroupOpen,
   SIDEBAR_TREE,
   treeKeyTarget,
@@ -42,6 +44,7 @@ import { SidebarRow } from './SidebarChrome';
 export const PAGE_ICONS: Record<MainPageId, AppIcon> = {
   home: House,
   machines: Monitor,
+  pools: Network,
   sessions: MessagesSquare,
   automations: TimeSchedule,
   setup: Layers,
@@ -51,6 +54,9 @@ export const PAGE_ICONS: Record<MainPageId, AppIcon> = {
 };
 
 type TreeMachine = { name: string; status: HealthStatus };
+type TreePool = { id: string; name: string; standing: PoolStanding; withRoom: number; pickable: number };
+
+const POOL_TONE: Record<PoolStanding, StatusTone> = { room: 'success', full: 'warning', empty: 'muted', checking: 'muted' };
 
 const MACHINE_TONE: Record<HealthStatus, StatusTone> = {
   healthy: 'success',
@@ -75,12 +81,17 @@ const MACHINE_STATUS: Record<HealthStatus, MessageKey> = {
  * degraded or down, Sync's problems), and the machines themselves, Machines' leaves. The machines and Sync's checks
  * are read passively, after the rounds that change them.
  */
-function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId, PageBadge | null>>; machines: TreeMachine[] } {
+function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId, PageBadge | null>>; machines: TreeMachine[]; pools: TreePool[] } {
   const { files, disabled } = useAccountsStore();
   const { paused } = useAccountReserves();
   const now = useQuotaClock();
   const health = useFleetHealth();
   const machines = useMemo<TreeMachine[]>(() => (health ?? []).map((machine) => ({ name: machine.machine, status: machine.status })), [health]);
+  const { pools: poolList, previews } = usePools();
+  const pools = useMemo<TreePool[]>(
+    () => (poolList ?? []).map((pool) => ({ id: pool.id, name: pool.name, ...poolStanding(pool, previews.find((preview) => preview.pool === pool.id)) })),
+    [poolList, previews],
+  );
   const [setup, setSetup] = useState<PageBadge | null>(null);
 
   useEffect(() => {
@@ -104,7 +115,8 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
 
   const accounts = useMemo(() => accountsBadge(files, disabled, paused, now), [files, disabled, paused, now]);
   const machinesMark = useMemo(() => machinesBadge(machines.map((machine) => machine.status)), [machines]);
-  return { badges: { accounts, machines: machinesMark, setup }, machines };
+  const poolsMark = useMemo(() => poolsBadge(pools.map((pool) => pool.standing)), [pools]);
+  return { badges: { accounts, machines: machinesMark, pools: poolsMark, setup }, machines, pools };
 }
 
 /** The room the tree has, in rem, so the open groups can be fitted to it. */
@@ -155,10 +167,12 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
 }) {
   const { t } = useI18n();
   const choices = useOpenChoices();
-  const { badges, machines } = useTreeSignals(coreReady);
+  const { badges, machines, pools } = useTreeSignals(coreReady);
   const current = view.kind === 'main' ? view.page : null;
   const lit = openLeaf(view);
   const machineOpen = openMachine(view, machines.map((machine) => machine.name));
+  const poolOpen = openPool(view, pools.map((pool) => pool.id));
+  const counts = { machines: machines.length, pools: pools.length };
   // The group last opened by hand, which the fit leaves open while its page is current (keptOpen).
   const [opened, setOpened] = useState<HandOpened | null>(null);
   useEffect(() => {
@@ -176,12 +190,12 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
     navRef(element);
   }, [navRef]);
   const availableRem = useAvailableRem(nav);
-  const open = fitOpenGroups(wantedOpen(current, choices), current, availableRem, machines.length, keptOpen(opened, current));
+  const open = fitOpenGroups(wantedOpen(current, choices), current, availableRem, counts, keptOpen(opened, current));
   // After the rows are laid out anew. Not when a group opens or closes by hand: the nav stays where the person put it.
   const measured = Number.isFinite(availableRem);
   useLayoutEffect(() => {
     if (measured) onRowsMoved?.();
-  }, [measured, availableRem, machines.length, onRowsMoved]);
+  }, [measured, availableRem, machines.length, pools.length, onRowsMoved]);
 
   // The row the focus is on. A page changed by a shortcut or Back folds the old page's group away, taking a focused
   // view out from under the focus, which would drop it on the window; after that render it goes to the row that's
@@ -266,6 +280,8 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
                 badge={badges[page.id] ?? null}
                 machines={page.machines ? machines : []}
                 machineOpen={machineOpen}
+                pools={page.pools ? pools : []}
+                poolOpen={poolOpen}
                 lit={lit?.page === page.id ? lit : undefined}
                 locked={!canOpenView(mainView(page.id), coreReady)}
                 leafLocked={(leaf) => !canOpenView(leafView(leaf), coreReady)}
@@ -290,13 +306,15 @@ const LEAF_CLASS = cn(
   'data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs/5 dark:data-[active=true]:shadow-none',
 );
 
-function TreePageRow({ page, current, open, badge, machines, machineOpen, lit, locked, leafLocked, lockedHint, hint, onNavigate, onOpenGroup }: {
+function TreePageRow({ page, current, open, badge, machines, machineOpen, pools, poolOpen, lit, locked, leafLocked, lockedHint, hint, onNavigate, onOpenGroup }: {
   page: TreePage;
   current: boolean;
   open: boolean;
   badge: PageBadge | null;
   machines: TreeMachine[];
   machineOpen: string | null;
+  pools: TreePool[];
+  poolOpen: string | null;
   /** The page's view on screen, when it's one of its leaves. */
   lit: TreeLeaf | undefined;
   locked: boolean;
@@ -309,12 +327,12 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, lit, l
   onOpenGroup: (page: MainPageId, open: boolean) => void;
 }) {
   const { t } = useI18n();
-  const expandable = leafCount(page, machines.length) > 0 && (!locked || page.leaves.some((leaf) => !leafLocked(leaf)));
+  const expandable = leafCount(page, { machines: machines.length, pools: pools.length }) > 0 && (!locked || page.leaves.some((leaf) => !leafLocked(leaf)));
   const shown = expandable && open;
   const label = t(page.labelKey);
   // The row carries the selection when nothing under it can: a page with no views, one whose views are folded away,
   // or one opened without naming a view yet. Machines' own row is the fleet overview, lit whenever that's open.
-  const underneath = page.machines ? machineOpen !== null : lit !== undefined;
+  const underneath = page.machines ? machineOpen !== null : page.pools ? poolOpen !== null : lit !== undefined;
   const active = current && (!shown || !underneath);
   const listId = `tree-${page.id}`;
   const Icon = PAGE_ICONS[page.id];
@@ -337,7 +355,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, lit, l
           onClick={() => {
             // Opened where it was left; Machines on its overview.
             arriveAtPage(page.id);
-            onNavigate(page.machines ? machinesView() : mainView(page.id));
+            onNavigate(page.machines ? machinesView() : page.pools ? poolsView() : mainView(page.id));
           }}
         />
         {expandable ? (
@@ -345,7 +363,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, lit, l
             type="button"
             aria-expanded={shown}
             aria-controls={shown ? listId : undefined}
-            aria-label={page.machines ? t('tree.group.machines') : t('tree.group.views', { page: label })}
+            aria-label={page.machines ? t('tree.group.machines') : page.pools ? t('tree.group.pools') : t('tree.group.views', { page: label })}
             className="absolute top-1 right-1 flex size-6 cursor-pointer items-center justify-center rounded-md text-[var(--sidebar-icon-color)] outline-none ring-ring transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2"
             data-tree-chevron={page.id}
             onClick={() => onOpenGroup(page.id, !shown)}
@@ -396,6 +414,30 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, lit, l
                     <StatusDot tone={MACHINE_TONE[machine.status]} className={cn('size-1.5', machine.status === 'pending' && 'bg-sidebar-muted-foreground')} />
                   )}
                   <span className="sr-only">{t(MACHINE_STATUS[machine.status])}</span>
+                </button>
+              </li>
+            );
+          })}
+          {pools.map((pool) => {
+            const active = poolOpen === pool.id;
+            return (
+              <li key={pool.id}>
+                {/* Its name, how many of its machines have room, and a dot for whether a run would start now. */}
+                <button
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  data-active={active}
+                  data-tree-row="leaf"
+                  data-tree-parent={page.id}
+                  className={cn(LEAF_CLASS, 'pr-8')}
+                  onClick={() => onNavigate(poolsView(pool.id))}
+                >
+                  <span className="min-w-0 flex-1 truncate">{pool.name}</span>
+                  {pool.standing === 'room' ? (
+                    <span className="text-xs tabular-nums text-sidebar-muted-foreground" aria-hidden="true">{pool.withRoom}/{pool.pickable}</span>
+                  ) : null}
+                  <StatusDot tone={POOL_TONE[pool.standing]} className={cn('size-1.5', POOL_TONE[pool.standing] === 'muted' && 'bg-sidebar-muted-foreground')} />
+                  <span className="sr-only">{t(POOL_STANDING_LABEL[pool.standing], { withRoom: pool.withRoom, pickable: pool.pickable })}</span>
                 </button>
               </li>
             );

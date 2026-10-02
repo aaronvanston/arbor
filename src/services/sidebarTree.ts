@@ -29,8 +29,13 @@ export type TreeLeaf =
   | LeafOf<'accounts', AccountsTabId>;
 
 export type TreePageId = Exclude<MainPageId, 'alerts'>;
-/** `machines`: the page lists the fleet's machines as its leaves, and its own row is a view, the overview. */
-export type TreePage = { id: TreePageId; labelKey: MessageKey; leaves: readonly TreeLeaf[]; machines?: true; keywords?: MessageKey };
+/**
+ * `machines`: the page lists the fleet's machines as its leaves, and its own row is a view, the overview. `pools`: the
+ * same with the machine pools.
+ */
+export type TreePage = { id: TreePageId; labelKey: MessageKey; leaves: readonly TreeLeaf[]; machines?: true; pools?: true; keywords?: MessageKey };
+/** How many machines and pools there are to list under Machines and Pools. */
+export type TreeCounts = { machines?: number; pools?: number };
 /** A section with no label (Home's) draws no head row. */
 export type TreeSection = { id: 'top' | 'fleet' | 'spend'; labelKey: MessageKey | null; pages: readonly TreePage[] };
 
@@ -48,6 +53,8 @@ export const SIDEBAR_TREE: readonly TreeSection[] = [
     pages: [
       // Each machine's page has its checklist, which was Sync's, and the palette still finds it by.
       { id: 'machines', labelKey: 'app.nav.machines', leaves: [], machines: true, keywords: 'tree.machines.keywords' },
+      // Each pool's own page, with its health and runs; editing them stays in Settings › Pools.
+      { id: 'pools', labelKey: 'app.nav.pools', leaves: [], pools: true, keywords: 'tree.pools.keywords' },
       {
         id: 'sessions',
         labelKey: 'app.nav.sessions',
@@ -165,6 +172,12 @@ export function openMachine(view: AppView, listed: readonly string[]): string | 
   return machine !== null && listed.includes(machine) ? machine : null;
 }
 
+/** The pool Pools has opened out, for lighting its leaf, when it's one of the pools `listed` (by id). */
+export function openPool(view: AppView, listed: readonly string[]): string | null {
+  const pool = view.kind === 'main' && view.page === 'pools' ? view.params?.pool ?? null : null;
+  return pool !== null && listed.includes(pool) ? pool : null;
+}
+
 // ── Heights, in rem, for working out whether the open groups fit ─────────────────────────────────────────────────
 /** A labeled section's head row, and the gap above every section but the first. */
 export const SECTION_HEAD_REM = 1.75;
@@ -175,14 +188,15 @@ export const PAGE_ROW_REM = 2 + 1 / 16;
 export const LEAF_ROW_REM = 1.75 + 2 / 16;
 export const LEAF_LIST_PAD_REM = 0.5;
 
-/** How many rows a page opens to: its views, or for Machines the machines, `machines` of them. */
-export const leafCount = (page: TreePage, machines: number) => (page.machines ? machines : page.leaves.length);
+/** How many rows a page opens to: its views, or for Machines and Pools the machines or pools. */
+export const leafCount = (page: TreePage, counts: TreeCounts) =>
+  (page.machines ? counts.machines ?? 0 : page.pools ? counts.pools ?? 0 : page.leaves.length);
 
-/** How tall the tree is with these groups open, in rem, with `machines` rows under Machines when it's open. */
-export function treeHeightRem(open: ReadonlySet<MainPageId>, machines = 0): number {
+/** How tall the tree is with these groups open, in rem, with `counts` rows under Machines and Pools when they're open. */
+export function treeHeightRem(open: ReadonlySet<MainPageId>, counts: TreeCounts = {}): number {
   return SIDEBAR_TREE.reduce((total, section, index) => {
     const pages = section.pages.reduce((sum, page) => {
-      const leaves = leafCount(page, machines);
+      const leaves = leafCount(page, counts);
       if (!open.has(page.id) || !leaves) return sum + PAGE_ROW_REM;
       return sum + PAGE_ROW_REM + LEAF_LIST_PAD_REM + leaves * LEAF_ROW_REM;
     }, 0);
@@ -200,13 +214,13 @@ export function fitOpenGroups(
   wanted: ReadonlySet<MainPageId>,
   current: MainPageId | null,
   availableRem: number,
-  machines = 0,
+  counts: TreeCounts = {},
   kept: MainPageId | null = null,
 ): Set<MainPageId> {
   const open = new Set(wanted);
   const others = TREE_PAGES.map((page) => page.id).filter((id) => id !== current && id !== kept && open.has(id)).reverse();
   for (const id of others) {
-    if (treeHeightRem(open, machines) <= availableRem) break;
+    if (treeHeightRem(open, counts) <= availableRem) break;
     open.delete(id);
   }
   return open;

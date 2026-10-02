@@ -82,6 +82,56 @@ export function planSteps(plan: readonly (string | null)[]): { machines: string[
   return { machines, fills: firstGap !== -1 };
 }
 
+/**
+ * How a pool stands as a whole: some member has room for a run, none has (so a run waits, spills or doesn't start), it
+ * has no machines that are ever picked, or its preview hasn't come in.
+ */
+export type PoolStanding = 'room' | 'full' | 'empty' | 'checking';
+
+export function poolStanding(pool: Pick<MachinePool, 'members'>, preview: Pick<PoolPreview, 'members'> | undefined): {
+  standing: PoolStanding;
+  withRoom: number;
+  /** The members ever picked for a run: all but the manual-only ones. */
+  pickable: number;
+} {
+  const pickable = pool.members.filter((member) => member.weight !== 'manual').length;
+  const withRoom = preview ? preview.members.filter((verdict) => verdict.share > 0).length : 0;
+  const standing: PoolStanding = pickable === 0 ? 'empty' : !preview ? 'checking' : withRoom > 0 ? 'room' : 'full';
+  return { standing, withRoom, pickable };
+}
+
+export const POOL_STANDING_LABEL: Record<PoolStanding, MessageKey> = {
+  room: 'pools.standing.room',
+  full: 'pools.standing.full',
+  empty: 'pools.standing.empty',
+  checking: 'pools.verdict.checking',
+};
+
+/**
+ * A member's load on one of a pool's limits, 0–1 of the way to it, for a meter that fills toward the limit: agents
+ * running against the agent limit, CPU against its ceiling, memory used against what the floor leaves. Null when the
+ * figure isn't known. With the limit off, the meter shows the figure on its own scale (eight agents, all the CPU or
+ * memory) with no line to cross.
+ */
+export function limitLoad(
+  limit: PoolLimit,
+  verdict: Pick<PoolMemberVerdict, 'running' | 'cpu' | 'memFree'>,
+  pool: Pick<MachinePool, 'maxAgents' | 'cpuCeiling' | 'memFloor'>,
+): { fill: number; mark: number | null } | null {
+  const clamp = (value: number) => Math.min(1, Math.max(0, value));
+  if (limit === 'agents') {
+    if (verdict.running === null) return null;
+    const scale = pool.maxAgents ?? Math.max(8, verdict.running);
+    return { fill: clamp(verdict.running / scale), mark: pool.maxAgents === null ? null : 1 };
+  }
+  if (limit === 'cpu') {
+    if (verdict.cpu === null) return null;
+    return { fill: clamp(verdict.cpu / 100), mark: pool.cpuCeiling === null ? null : pool.cpuCeiling / 100 };
+  }
+  if (verdict.memFree === null) return null;
+  return { fill: clamp((100 - verdict.memFree) / 100), mark: pool.memFloor === null ? null : (100 - pool.memFloor) / 100 };
+}
+
 /** Whether a verdict leaves a member out for being busy or unseen, rather than by its weight. */
 export const leftOut = (kind: PoolVerdictKind) => kind !== 'eligible' && kind !== 'manual';
 
@@ -186,4 +236,4 @@ const subscribe = (listener: () => void) => {
 };
 
 /** The pools and their previews, kept current while anything shows them. */
-export const usePools = () => useSyncExternalStore(subscribe, () => snapshot);
+export const usePools = () => useSyncExternalStore(subscribe, () => snapshot, () => snapshot);

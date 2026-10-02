@@ -3,7 +3,7 @@ import { mainPageIds, type MainPageId } from '../navigation';
 
 /**
  * The app's keyboard shortcuts. Each one is defined here once, with its keys and what it does; whoever owns the
- * action registers a handler for it while it can run (a page for ⌘R, the shell for ⌘1–⌘7). One listener on the
+ * action registers a handler for it while it can run (a page for ⌘R, the shell for ⌘1–⌘8). One listener on the
  * window hands each key press to the newest handler for the shortcut it matches.
  */
 export type ShortcutId =
@@ -36,6 +36,7 @@ const PAGE_LABELS: Record<MainPageId, MessageKey> = {
   usage: 'app.nav.usageRecords',
   sessions: 'app.nav.sessions',
   machines: 'app.nav.machines',
+  pools: 'app.nav.pools',
   automations: 'app.nav.automations',
   setup: 'app.nav.setup',
   alerts: 'app.nav.alerts',
@@ -50,7 +51,7 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
   // with the sidebar hidden, where this one passes.
   { id: 'settings.search', keys: '/', label: 'shortcuts.settingsSearch' },
   { id: 'page.search', keys: '/', label: 'shortcuts.search' },
-  // In the sidebar tree's order (Home, Machines, Sessions, Automations, Sync, Accounts, Usage), then Alerts, the footer's bell.
+  // In the sidebar tree's order (Home, Machines, Pools, Sessions, Automations, Sync, Accounts, Usage), then Alerts, the footer's bell.
   ...mainPageIds.map((page, index): ShortcutDefinition => ({ id: `go.${page}`, keys: `mod+${index + 1}`, label: PAGE_LABELS[page] })),
   { id: 'history.back', keys: 'mod+[', label: 'shortcuts.back' },
   { id: 'history.forward', keys: 'mod+]', label: 'shortcuts.forward' },

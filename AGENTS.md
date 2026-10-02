@@ -25,17 +25,17 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
 
 - `src/App.tsx`, `src/navigation.ts`: the shell. The sidebar is a tree, laid out in
   `src/services/sidebarTree.ts` and drawn by `components/sidebar/SidebarTree.tsx`:
-  Home on its own, then Fleet (Machines, with every machine listed under it, Sessions,
-  Automations and Sync) and Spend (Accounts and Usage). Each page's views hang under it, and Alerts
+  Home on its own, then Fleet (Machines, with every machine listed under it, Pools, with
+  every pool under it, Sessions, Automations and Sync) and Spend (Accounts and Usage). Each page's views hang under it, and Alerts
   is the bell in the footer. Sync is still `setup` in ids and storage keys. Pages
   have no tabs of their own; the tree picks the view and the top bar's breadcrumb
   names it. A view that can be narrowed to one machine (`hasMachineScope`, plus
   Checkouts and Sync › Cost) ends its breadcrumb with `MachineCrumb`, the machine
   picker, which other views of the same page keep. Everything else is in the Settings area. `navigation.ts` has the page
-  ids, in the tree's order that ⌘1–⌘7 follow (Alerts is ⌘8), and `ViewContent` in `App.tsx` picks
+  ids, in the tree's order that ⌘1–⌘8 follow (Alerts is ⌘9), and `ViewContent` in `App.tsx` picks
   the page for each view. There's no URL routing. Open a page with a view that names
   its view and filters (`usageView`, `sessionsView`, `setupView`, `accountsView`,
-  `machinesView`) so Back returns to them; history lives in
+  `machinesView`, `poolsView`) so Back returns to them; history lives in
   `src/services/viewHistory.ts` and shortcuts in `src/services/shortcuts.ts`. When a
   view moves, its old id still has to land somewhere: `movedUsageView` sends Usage's
   old Capacity, Analysis, Failures and Claude Code (`telemetry`) to Accounts › Value,
@@ -53,7 +53,10 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   sessions, setup against the reference machine and checkouts, with the "Bring …
   in line" checklist at the top when it's behind. Anything comparing machines stays
   in Sync. A machine's name is always its `MachinePill` (`components/identity/`);
-  its color, fill and icon are picked in `MachineLookPicker`.
+  its color, fill and icon are picked in `MachineLookPicker`. Pools is every pool's
+  health (`pages/PoolsPage.tsx`; `poolsView(id)` opens one pool's own page): who has
+  room, each member's load against the limits, the next run's chances and where a
+  burst would go. Settings › Pools only edits pools.
 - `src/pages/`: pages and the larger sections they're built from.
 - `src/components/`: shared components (limits, dashboards, dialogs, monitors).
   `components/ui/` holds the primitives; `components/layout/` holds page, settings-row

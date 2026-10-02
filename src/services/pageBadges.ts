@@ -33,6 +33,11 @@ export function machinesBadge(statuses: readonly HealthStatus[]): PageBadge | nu
   return statuses.includes('degraded') ? { tone: 'warning', label: 'sidebar.badge.machines.degraded' } : null;
 }
 
+/** Pools: one with no machine that has room now, so a run started on it would wait, spill or not start. */
+export function poolsBadge(standings: readonly string[]): PageBadge | null {
+  return standings.includes('full') ? { tone: 'warning', label: 'sidebar.badge.pools.full' } : null;
+}
+
 /** Sync: how many problems its checks found. Warnings and notes wait on the Sync page. */
 export function setupBadge(checks: readonly Pick<SetupCheck, 'level'>[]): PageBadge | null {
   const count = checks.filter((check) => check.level === 'problem').length;
