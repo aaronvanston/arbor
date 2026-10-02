@@ -33,6 +33,9 @@ const SOURCE_FOLDER: &str = "bundled-udian";
 const PRECHECK_KEPT: usize = 4 << 10;
 /// How long one run may take in all before udian stops it.
 const RUN_TIMEOUT: &str = "6h";
+/// Run records asked of udian at a time, and the most pages one sync reads before carrying on from there next time.
+const SYNC_PAGE: usize = 500;
+const SYNC_PAGES: usize = 20;
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -378,13 +381,24 @@ pub(super) fn fingerprint(machine: &str, input: &AutomationInput, enabled: bool)
 
 // ── Runs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-// Lines out: `J` and udian's run records for Arbor's group as base64 JSON, then `F run precheck-exit exit session
+// Lines out: a `J` line for each page of udian's run records as base64 JSON, then `F run precheck-exit exit session
 // worktree precheck-output` for each run folder a udian run left. A folder whose run has ended goes once it's read.
+// udian lists every run on the machine, oldest change first, so on a machine whose own schedules have years of runs
+// one page would leave Arbor's far behind: pages follow each other until a short one, up to SYNC_PAGES of them.
 pub(super) fn sync_script(since: Option<&str>) -> String {
-    let since = since.map(|since| format!(" --since {}", shell_quote(since))).unwrap_or_default();
+    let since = since.map(shell_quote).unwrap_or_default();
     format!(
         "[ -x \"$HOME/.ultradian/bin/udian\" ] || exit 0\n{REMOVE_FOLDER}\
-         printf 'J\\t%s\\n' \"$({BIN} runs{since} --limit 500 --json </dev/null 2>/dev/null | base64 | tr -d '\\n')\"\n\
+         c={since}\n\
+         n=0\n\
+         while [ \"$n\" -lt {SYNC_PAGES} ]; do\n\
+         \x20 page=$({BIN} runs ${{c:+--since \"$c\"}} --limit {SYNC_PAGE} --json </dev/null 2>/dev/null) || break\n\
+         \x20 printf 'J\\t%s\\n' \"$(printf '%s' \"$page\" | base64 | tr -d '\\n')\"\n\
+         \x20 [ \"$(printf '%s' \"$page\" | grep -o '\"run_id\"' | wc -l | tr -d ' ')\" -ge {SYNC_PAGE} ] || break\n\
+         \x20 next=$(printf '%s' \"$page\" | grep -o '\"cursor\": *\"[^\"]*\"' | head -n 1 | sed 's/.*\"\\([^\"]*\\)\"$/\\1/')\n\
+         \x20 [ -n \"$next\" ] && [ \"$next\" != \"$c\" ] || break\n\
+         \x20 c=$next; n=$((n + 1))\n\
+         done\n\
          for d in \"$HOME/.arbor/automation-runs\"/*/; do\n\
          \x20 [ -f \"$d/by-udian\" ] || continue\n\
          \x20 id=$(basename \"$d\")\n\
@@ -454,6 +468,8 @@ pub(super) fn parse_sync(stdout: &str) -> (Vec<UdianRun>, BTreeMap<String, RunFi
                         continue;
                     }
                     let trigger = run.get("trigger").map(|trigger| trigger.get("kind").and_then(serde_json::Value::as_str).or(trigger.as_str()).unwrap_or_default().to_string()).unwrap_or_default();
+                    // A run that changed between two pages is in both; the later page has its latest state.
+                    runs.retain(|known: &UdianRun| known.id != id);
                     runs.push(UdianRun {
                         id,
                         schedule,
@@ -850,6 +866,43 @@ mod tests {
         assert_eq!(files.get("r2").and_then(|files| files.precheck_exit), Some(4));
         assert!(!home.join("prompt-seen").exists());
         assert!(!home.join(".arbor/automation-runs/r2").exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_sync_pages_past_the_machine_s_own_runs_to_arbor_s() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let home = std::env::temp_dir().join(format!("arbor-udian-pages-{}-{}", std::process::id(), runner::new_uuid()));
+        let udian_bin = home.join(".ultradian/bin");
+        std::fs::create_dir_all(&udian_bin).unwrap();
+        // A full first page of the machine's own runs, then a short one with Arbor's, which also changed r1.
+        std::fs::write(
+            udian_bin.join("udian"),
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/udian-calls\"\n\
+                 case \" $* \" in\n\
+                 \x20 *' --since c2 '*) echo '{{\"data\":{{\"cursor\":\"c3\",\"runs\":[{{\"run_id\":\"r1\",\"schedule\":\"arbor-a\",\"status\":\"succeeded\"}},{{\"run_id\":\"r9\",\"schedule\":\"arbor-b\",\"status\":\"clean\"}}]}}}}' ;;\n\
+                 \x20 *) awk 'BEGIN {{ printf \"{{\\n  \\\"data\\\": {{\\n    \\\"cursor\\\": \\\"c2\\\",\\n    \\\"runs\\\": [\\n\"; \
+                 for (i = 1; i <= {SYNC_PAGE}; i++) printf \"%s      {{ \\\"run_id\\\": \\\"%s\\\", \\\"schedule\\\": \\\"%s\\\", \\\"status\\\": \\\"running\\\" }}\\n\", \
+                 (i > 1 ? \",\" : \"\"), (i == 1 ? \"r1\" : \"x\" i), (i == 1 ? \"arbor-a\" : \"backup\"); print \"    ]\\n  }}\\n}}\" }}' ;;\n\
+                 esac\n"
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(udian_bin.join("udian"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        for shell in ["sh", "dash"] {
+            let _ = std::fs::remove_file(home.join("udian-calls"));
+            let Ok(mut child) = std::process::Command::new(shell).env("HOME", &home).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn() else { continue };
+            child.stdin.take().unwrap().write_all(sync_script(None).as_bytes()).unwrap();
+            let stdout = String::from_utf8_lossy(&child.wait_with_output().unwrap().stdout).into_owned();
+            let (runs, _, cursor) = parse_sync(&stdout);
+            assert_eq!(cursor.as_deref(), Some("c3"), "{shell}");
+            let states: Vec<(&str, &str)> = runs.iter().map(|run| (run.id.as_str(), run.status.as_str())).collect();
+            assert_eq!(states, [("r1", "succeeded"), ("r9", "clean")], "{shell}");
+            let calls = std::fs::read_to_string(home.join("udian-calls")).unwrap();
+            assert_eq!(calls.lines().collect::<Vec<_>>(), ["runs --limit 500 --json", "runs --since c2 --limit 500 --json"], "{shell}");
+        }
         let _ = std::fs::remove_dir_all(&home);
     }
 
