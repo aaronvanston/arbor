@@ -1593,7 +1593,7 @@ export type Harness = "claude" | "codex" | "pi" | "primeAgent" | "openCode" | "d
 
 /**
  * A home of a harness other than Claude Code and Codex, as far as Sync reads it so far: its own instructions file
- * and the skills in its own folder. Nothing in it is changed from Arbor yet.
+ * and the skills in its own folder, which the setup repo and skill changes reach.
  */
 export type HarnessHome = {
   harness: Harness,
@@ -1602,6 +1602,10 @@ export type HarnessHome = {
    */
   path: string,
   items: Array<SetupItem>,
+  /**
+   * Where its skills folder leads, when that's a link: every skill in it is then that folder's.
+   */
+  skillsLink: string | null,
 };
 
 /**

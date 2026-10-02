@@ -2,6 +2,8 @@ import { invokeCommand } from '../native/commands';
 import type { SetupItemKind } from './setupInventory';
 import { machineLookKey } from './machineLook';
 import type {
+  Harness,
+  HarnessHome,
   SetupHome,
   SetupItem,
   SetupMachine,
@@ -70,6 +72,20 @@ export const SYNC_HOMES = [
   { agent: 'codex', path: '~/.codex' },
 ] as const;
 
+/**
+ * The other harnesses' default homes, whose own AGENTS.md the repo keeps (mirrors the backend's
+ * `harnesses::repo_instructions`).
+ */
+export const HARNESS_SYNC_HOMES: readonly { harness: Harness; path: string }[] = [
+  { harness: 'pi', path: '~/.pi/agent' },
+  { harness: 'primeAgent', path: '~/.prime/agent' },
+  { harness: 'openCode', path: '~/.config/opencode' },
+  { harness: 'droid', path: '~/.factory' },
+  { harness: 'amp', path: '~/.config/amp' },
+];
+const harnessInstructions = (path: string) => HARNESS_SYNC_HOMES.some((home) => path === `${home.path}/AGENTS.md`);
+const isHarnessSyncHome = (home: HarnessHome) => HARNESS_SYNC_HOMES.some((sync) => sync.harness === home.harness && sync.path === home.path);
+
 const SYNC_KINDS: ReadonlySet<SetupItemKind> = new Set(['instructions', 'rule', 'subagent', 'command', 'hook']);
 
 /** A script the repo's hooks run, in the machine's ~/.agents/hooks, as the backend's `is_script_name` reads one. */
@@ -87,6 +103,7 @@ const looksSecret = (name: string) => {
  */
 export function syncKind(path: string): SyncFileKind | null {
   if (!path.startsWith('~/')) return null;
+  if (harnessInstructions(path)) return 'instructions';
   const parts = path.slice(2).split('/');
   if (path.includes('\\') || parts.some((part) => !part || part === '.' || part === '..')) return null;
   const [home, folder] = parts;
@@ -174,8 +191,13 @@ export const setSetupSkillMachine = (repo: string, skill: string, machine: strin
 
 /** Each file and skill the repo syncs, and each the machine has where the repo would put one, as the machine's last scan found it. */
 export function syncPlan(repo: SetupRepo, machine: SetupMachine): SyncFile[] {
-  const homes = new Set(machine.homes.filter(isSyncHome).map((home) => home.path));
+  const homes = new Set([...machine.homes.filter(isSyncHome), ...machine.harnessHomes.filter(isHarnessSyncHome)].map((home) => home.path));
   const present = new Map<string, SetupItem>();
+  for (const home of machine.harnessHomes.filter(isHarnessSyncHome)) {
+    for (const item of home.items) {
+      if (item.path && item.kind === 'instructions' && syncKind(item.path)) present.set(item.path, item);
+    }
+  }
   // Hook scripts go in ~/.agents, which is made where there isn't one.
   for (const home of machine.homes.filter((candidate) => isSyncHome(candidate) || candidate.agent === 'shared')) {
     for (const item of home.items) {
@@ -184,7 +206,9 @@ export function syncPlan(repo: SetupRepo, machine: SetupMachine): SyncFile[] {
   }
   const files: SyncFile[] = repo.files.map((file) => {
     const item = present.get(file.path) ?? null;
-    const home = file.kind === 'hookScript' ? null : SYNC_HOMES.find((sync) => file.path.startsWith(`${sync.path}/`))?.path ?? '';
+    const home = file.kind === 'hookScript'
+      ? null
+      : [...SYNC_HOMES, ...HARNESS_SYNC_HOMES].find((sync) => file.path.startsWith(`${sync.path}/`))?.path ?? '';
     const wanted = fileWanted(repo, file.path, machine.machine);
     let state: SyncState;
     if (wanted === 'off') state = 'offHere';

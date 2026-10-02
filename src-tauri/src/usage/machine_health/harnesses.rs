@@ -275,7 +275,15 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
     },
 ];
 
+/// Each machine's store of skills, which every harness but Claude Code loads itself.
+pub(crate) const STORE: &str = "~/.agents/skills";
+
 impl HarnessSpec {
+    /// It loads the machine's store itself, so a store skill needs no link in its home.
+    pub(crate) fn loads_store(&self) -> bool {
+        self.skills.contains(&STORE)
+    }
+
     /// A path the catalog gives from `~/`, from the harness's home instead, so a home on the list that isn't the
     /// default reads its own. None when the path isn't in the home.
     fn in_own_home(&self, path: &'static str) -> Option<&'static str> {
@@ -317,6 +325,23 @@ pub(crate) fn files_script() -> String {
     }
     script.push_str("  esac\n}\n");
     script
+}
+
+/// The instruction files of the harnesses besides Claude Code and Codex that the setup repo keeps, from the home
+/// folder: each in its harness's default home.
+pub(crate) fn repo_instructions() -> impl Iterator<Item = &'static str> {
+    CATALOG
+        .iter()
+        .filter(|spec| spec.home_kind.is_some_and(|kind| !kind.has_settings()))
+        .filter_map(|spec| spec.global_instructions?.strip_prefix("~/"))
+}
+
+/// The default homes of those harnesses, from the home folder, each ending in a slash.
+pub(crate) fn repo_homes() -> impl Iterator<Item = String> {
+    CATALOG
+        .iter()
+        .filter(|spec| spec.home_kind.is_some_and(|kind| !kind.has_settings()))
+        .filter_map(|spec| spec.home.strip_prefix("~/").map(|home| format!("{home}/")))
 }
 
 /// A harness as Settings › Agent homes shows it.
@@ -408,6 +433,16 @@ mod tests {
                 assert_eq!(kind.harness(), spec.harness, "{kind:?}");
             }
         }
+    }
+
+    #[test]
+    fn every_harness_sync_reads_keeps_its_skills_in_its_homes_skills_folder() {
+        // Skill changes put a home's skills in <home>/skills, so a harness Sync reads has to keep them there.
+        for spec in CATALOG.iter().filter(|spec| spec.home_kind.is_some()) {
+            let own = spec.skills.iter().find_map(|path| spec.in_own_home(path));
+            assert!(own.is_none_or(|folder| folder == "skills"), "{}: {own:?}", spec.id);
+        }
+        assert!(!Harness::Claude.spec().loads_store() && Harness::Codex.spec().loads_store() && Harness::Droid.spec().loads_store());
     }
 
     #[test]

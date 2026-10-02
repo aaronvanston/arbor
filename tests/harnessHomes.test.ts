@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { harnessHomeRows, harnessSkillRows } from '../src/services/harnessHomes';
-import type { Harness, HarnessHome, SetupItem, SetupMachine } from '../src/native/types';
+import { harnessHomeRows, harnessSkillChange, harnessSkillRows } from '../src/services/harnessHomes';
+import type { Harness, HarnessHome, SetupHome, SetupItem, SetupMachine } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, sum: string | null): SetupItem => ({
   kind, name, path: null, sum, size: null, link: null, value: null, note: null, count: null, enabled: null, text: false, skill: null, import: null,
@@ -9,6 +9,7 @@ const home = (harness: Harness, path: string, instructions: string | null, skill
   harness,
   path,
   items: [...(instructions === null ? [] : [item('instructions', 'AGENTS.md', instructions)]), ...skills.map((name) => item('skill', name, `${name}-sum`))],
+  skillsLink: null,
 });
 const machine = (name: string, harnessHomes: HarnessHome[]): SetupMachine => ({
   machine: name, local: false, reachable: true, homes: [], harnessHomes, installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
@@ -35,9 +36,31 @@ describe('the other harnesses homes', () => {
 
   it('lists each skill once, with the harnesses each machine has it in', () => {
     const rows = harnessSkillRows([...fleet, machine('ci-02', [home('droid', '~/.factory', null, ['deploy']), home('pi', '~/.pi/agent', null, ['deploy'])])]);
-    expect(rows).toEqual([
-      { name: 'deploy', on: { 'cedar-02': ['pi'], 'casey-mbp': ['pi'], 'ci-02': ['pi', 'droid'] } },
-      { name: 'pdf', on: { 'casey-mbp': ['pi'] } },
+    const where = rows.map((row) => [row.name, Object.fromEntries(Object.entries(row.on).map(([name, places]) => [name, places.map((place) => place.harness)]))]);
+    expect(where).toEqual([
+      ['deploy', { 'cedar-02': ['pi'], 'casey-mbp': ['pi'], 'ci-02': ['pi', 'droid'] }],
+      ['pdf', { 'casey-mbp': ['pi'] }],
     ]);
+  });
+
+  it('offers what the store lets each copy do, and makes the change against what the scan found', () => {
+    const store = (skills: SetupItem[]): SetupHome => ({
+      agent: 'shared', path: '~/.agents', items: skills, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null,
+    });
+    const own = { ...machine('a', [home('pi', '~/.pi/agent', null, ['solo', 'same', 'drift', 'linked'])]) };
+    const pi = own.harnessHomes[0]!;
+    pi.items = pi.items.map((found) => (found.name === 'linked' ? { ...found, link: '~/src/linked' } : found));
+    own.homes = [store([item('skill', 'same', 'same-sum'), item('skill', 'drift', 'other-sum')])];
+    const places = Object.fromEntries(harnessSkillRows([own]).map((row) => [row.name, row.on.a?.[0]]));
+    expect(Object.fromEntries(Object.entries(places).map(([name, place]) => [name, [place?.standing, place?.actions]]))).toEqual({
+      drift: ['differs', ['adopt', 'remove']],
+      linked: ['link', ['remove']],
+      same: ['sameAsStore', ['remove']],
+      solo: ['own', ['adopt', 'remove']],
+    });
+    expect(harnessSkillChange('solo', places.solo!, 'adopt')).toEqual({ home: '~/.pi/agent', name: 'solo', action: 'adopt', homeBefore: 'Dsolo-sum', storeBefore: '-' });
+    expect(harnessSkillChange('same', places.same!, 'adopt')).toBeNull();
+    const linkedFolder = machine('b', [{ ...home('pi', '~/.pi/agent', null, ['solo']), skillsLink: '~/.agents/skills' }]);
+    expect(harnessSkillRows([linkedFolder])[0]?.on.b?.[0]?.actions).toEqual([]);
   });
 });

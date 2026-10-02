@@ -730,7 +730,7 @@ pub(super) struct FoundHook {
 }
 
 /// A home of a harness other than Claude Code and Codex, as far as Sync reads it so far: its own instructions file
-/// and the skills in its own folder. Nothing in it is changed from Arbor yet.
+/// and the skills in its own folder, which the setup repo and skill changes reach.
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HarnessHome {
@@ -738,6 +738,8 @@ pub(crate) struct HarnessHome {
     /// With the machine's home as ~.
     path: String,
     items: Vec<SetupItem>,
+    /// Where its skills folder leads, when that's a link: every skill in it is then that folder's.
+    skills_link: Option<String>,
 }
 
 /// A Claude Code or Codex on the machine's PATH. The first of each agent is the one that runs.
@@ -1610,7 +1612,7 @@ impl Scan {
     fn finish_home(&mut self, parts: HomeParts, harness: Option<Harness>, home: &str, salt: &[u8]) {
         let done = parts.finish(home, salt);
         match harness {
-            Some(harness) => self.harness_homes.push(HarnessHome { harness, path: done.path, items: done.items }),
+            Some(harness) => self.harness_homes.push(HarnessHome { harness, path: done.path, items: done.items, skills_link: done.skills_link }),
             None => self.homes.push(done),
         }
     }
@@ -2084,7 +2086,15 @@ pub(super) fn home_agent(setup: &MachineSetup, path: &str) -> Option<HomeAgent> 
 
 /// Where the skills folder of the home at `path` leads, when the last scan found it's a link.
 pub(super) fn skills_link<'a>(setup: &'a MachineSetup, path: &str) -> Option<&'a str> {
-    setup.homes.iter().find(|home| home.path == path).and_then(|home| home.skills_link.as_deref())
+    match setup.homes.iter().find(|home| home.path == path) {
+        Some(home) => home.skills_link.as_deref(),
+        None => setup.harness_homes.iter().find(|home| home.path == path).and_then(|home| home.skills_link.as_deref()),
+    }
+}
+
+/// The harness whose home is at `path`, for a home that isn't Claude Code's or Codex's.
+pub(super) fn home_harness(setup: &MachineSetup, path: &str) -> Option<Harness> {
+    setup.harness_homes.iter().find(|home| home.path == path).map(|home| home.harness)
 }
 
 #[cfg(test)]
@@ -2104,6 +2114,12 @@ impl MachineSetup {
         for home in self.homes.iter_mut().filter(|home| home.path == path) {
             home.repo_hooks = hooks.clone();
         }
+    }
+
+    /// The same, with an empty home of another harness at `path`.
+    pub(super) fn with_harness_home(mut self, harness: Harness, path: &str) -> Self {
+        self.harness_homes.push(HarnessHome { harness, path: path.to_string(), items: Vec::new(), skills_link: None });
+        self
     }
 
     /// A scan that found these homes, with nothing in them.
@@ -2194,6 +2210,7 @@ pub(super) fn scanned_item(inner: &Inner, machine: &str, path: &str, kinds: &[It
         .homes
         .iter()
         .flat_map(|home| &home.items)
+        .chain(setup.harness_homes.iter().flat_map(|home| &home.items))
         .find(|item| kinds.contains(&item.kind) && item.path.as_deref() == Some(path) && item.sum.is_some() && (item.text || item.kind == ItemKind::Skill))
         .ok_or_else(|| "Arbor can only show what its last scan of this machine found. Scan again.".to_string())?;
     Ok((target, untilde(path, &setup.home_dir)))

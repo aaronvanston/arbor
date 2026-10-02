@@ -12,7 +12,7 @@
 
 use super::shell::shell_quote;
 use ts_rs::TS;
-use super::setup::{covered_machine, home_agent, rescan, skills_link, HomeAgent, HELPERS};
+use super::setup::{covered_machine, home_agent, home_harness, rescan, skills_link, HomeAgent, HELPERS};
 use super::guarded_writes::{new_stamp, parse_outcome, prune_backups, record_backup, run_on, start_backup, ChangeKind, SyncOutcome};
 use super::*;
 use std::collections::BTreeSet;
@@ -70,9 +70,10 @@ pub(crate) struct BackupSkill {
     home: String,
     name: String,
     action: SkillAction,
-    /// A Claude Code home, which loads store skills through links; else Codex's.
+    /// A home that loads store skills through links, as Claude Code's does, rather than loading the store itself.
+    /// A backup's list keeps the words it always had for the two: `claude` and `codex`.
     #[serde(skip)]
-    claude: bool,
+    links: bool,
     #[serde(skip)]
     home_before: String,
     #[serde(skip)]
@@ -141,7 +142,7 @@ impl BackupSkill {
         if home_place(&home).is_none() || !is_skill_name(name) || !is_state(home_before) || !is_state(store_before) {
             return None;
         }
-        let claude = match *agent {
+        let links = match *agent {
             "claude" => true,
             "codex" => false,
             _ => return None,
@@ -150,7 +151,7 @@ impl BackupSkill {
             home,
             name: name.to_string(),
             action: SkillAction::parse(action)?,
-            claude,
+            links,
             home_before: home_before.to_string(),
             store_before: store_before.to_string(),
         })
@@ -160,7 +161,7 @@ impl BackupSkill {
         format!(
             "S\t{}\t{}\t{}\t{}\t{}\t{}\n",
             self.action.as_str(),
-            if self.claude { "claude" } else { "codex" },
+            if self.links { "claude" } else { "codex" },
             home_place(&self.home).unwrap_or_default(),
             self.name,
             self.home_before,
@@ -233,10 +234,11 @@ fn plan(setup: &setup::MachineSetup, changes: Vec<SkillChange>) -> Result<Vec<Ba
         if home_place(&change.home).is_none() || !is_skill_name(&change.name) {
             return Err(format!("Arbor doesn't change skills at {where_}"));
         }
-        let claude = match home_agent(setup, &change.home) {
-            Some(HomeAgent::Claude) => true,
-            Some(HomeAgent::Codex) => false,
-            _ => return Err(format!("{} isn't a Claude Code or Codex home on this machine", change.home)),
+        let links = match (home_agent(setup, &change.home), home_harness(setup, &change.home)) {
+            (Some(HomeAgent::Claude), _) => true,
+            (Some(HomeAgent::Codex), _) => false,
+            (None, Some(harness)) => !harness.spec().loads_store(),
+            _ => return Err(format!("{} isn't an agent home Arbor reads on this machine", change.home)),
         };
         if let Some(target) = skills_link(setup, &change.home) {
             return Err(format!("{}/skills is a link to {target}, so Arbor leaves the skills in it alone", change.home));
@@ -252,8 +254,8 @@ fn plan(setup: &setup::MachineSetup, changes: Vec<SkillChange>) -> Result<Vec<Ba
         }
         let (home, store) = (change.home_before.as_bytes()[0], change.store_before.as_bytes()[0]);
         let fits = match change.action {
-            SkillAction::Link => claude && home == b'-',
-            SkillAction::UseStore => claude && home == b'D',
+            SkillAction::Link => links && home == b'-',
+            SkillAction::UseStore => links && home == b'D',
             SkillAction::Adopt => home == b'D' && store != b'L' && adopted.insert(change.name.clone()),
             SkillAction::Remove => home != b'-',
         };
@@ -264,7 +266,7 @@ fn plan(setup: &setup::MachineSetup, changes: Vec<SkillChange>) -> Result<Vec<Ba
             home: change.home,
             name: change.name,
             action: change.action,
-            claude,
+            links,
             home_before: change.home_before,
             store_before: change.store_before,
         });
@@ -377,7 +379,7 @@ fn apply_script(stamp: &str, skills: &[BackupSkill]) -> String {
         let call = match skill.action {
             SkillAction::Link => format!("link_in {entry} {name}"),
             SkillAction::UseStore => format!("use_store {entry} {name} {backup}"),
-            SkillAction::Adopt => format!("adopt {entry} {name} {backup} {}", u8::from(skill.claude)),
+            SkillAction::Adopt => format!("adopt {entry} {name} {backup} {}", u8::from(skill.links)),
             SkillAction::Remove => format!("remove_skill {entry} {name} {backup}"),
         };
         script.push_str(&format!("{call}; report $? {}\n", skill.rel()));
@@ -400,7 +402,7 @@ pub(super) fn undo_checks(skills: &[BackupSkill]) -> String {
             SkillAction::Adopt => (
                 format!(
                     "[ \"$sh{index}\" = {} ] && [ \"$ss{index}\" = {home_before} ]",
-                    if skill.claude { skill.to_store() } else { "-".into() }
+                    if skill.links { skill.to_store() } else { "-".into() }
                 ),
                 format!("[ \"$sh{index}\" = {home_before} ] && [ \"$ss{index}\" = {store_before} ]"),
             ),
@@ -422,7 +424,7 @@ pub(super) fn undo_actions(skills: &[BackupSkill]) -> String {
         let call = match skill.action {
             SkillAction::Link => format!("unlink_in {entry}"),
             SkillAction::UseStore => format!("unuse_store {entry} {name} {backup}"),
-            SkillAction::Adopt => format!("unadopt {entry} {name} {backup} {}", u8::from(skill.claude)),
+            SkillAction::Adopt => format!("unadopt {entry} {name} {backup} {}", u8::from(skill.links)),
             SkillAction::Remove => format!("unremove {entry} {name} {backup}"),
         };
         script.push_str(&format!("if [ \"$su{index}\" = 1 ]; then {call}; report $? {}; fi\n", skill.rel()));
@@ -455,6 +457,7 @@ pub(crate) async fn apply_skill_changes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::usage::machine_health::harnesses::Harness;
 
     fn change(home: &str, name: &str, action: SkillAction, home_before: &str, store_before: &str) -> SkillChange {
         SkillChange { home: home.into(), name: name.into(), action, home_before: home_before.into(), store_before: store_before.into() }
@@ -480,7 +483,7 @@ mod tests {
             assert!(!is_state(bad), "{bad}");
         }
         let line = ["S", "adopt", "codex", ".codex", "pdf", SUM, "-"];
-        assert_eq!(BackupSkill::parse(&line).map(|skill| (skill.home, skill.claude)), Some(("~/.codex".into(), false)));
+        assert_eq!(BackupSkill::parse(&line).map(|skill| (skill.home, skill.links)), Some(("~/.codex".into(), false)));
         assert!(BackupSkill::parse(&["S", "adopt", "codex", "../x", "pdf", SUM, "-"]).is_none());
         assert!(BackupSkill::parse(&["S", "delete", "codex", ".codex", "pdf", SUM, "-"]).is_none());
     }
@@ -550,8 +553,8 @@ mod tests {
             format!("D{:x}", sha2::Sha256::digest(format!("{}\n", lines.join("\n"))))
         }
 
-        fn planned(home: &str, name: &str, action: SkillAction, claude: bool, home_before: &str, store_before: &str) -> BackupSkill {
-            BackupSkill { home: home.into(), name: name.into(), action, claude, home_before: home_before.into(), store_before: store_before.into() }
+        fn planned(home: &str, name: &str, action: SkillAction, links: bool, home_before: &str, store_before: &str) -> BackupSkill {
+            BackupSkill { home: home.into(), name: name.into(), action, links, home_before: home_before.into(), store_before: store_before.into() }
         }
 
         #[test]
@@ -738,7 +741,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(planned.iter().map(|skill| (skill.home.as_str(), skill.action)).collect::<Vec<_>>(), [("~/.codex", SkillAction::Adopt), ("~/.claude", SkillAction::Link)]);
-        assert!(!planned[0].claude && planned[1].claude);
+        assert!(!planned[0].links && planned[1].links);
 
         let refused = |changes: Vec<SkillChange>| plan(&setup, changes).unwrap_err();
         let linked = setup::MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex")]).with_skills_link("~/.codex", "~/.agents/skills");
@@ -756,8 +759,14 @@ mod tests {
         .unwrap();
         assert_eq!(both.iter().map(|skill| skill.action).collect::<Vec<_>>(), [SkillAction::Adopt, SkillAction::UseStore]);
         assert!(refused(vec![change("~/.codex", "pdf", SkillAction::Link, "-", SUM)]).contains("can't link"), "Codex loads the store itself");
-        assert!(refused(vec![change("~/.agents", "pdf", SkillAction::Remove, SUM, "-")]).contains("isn't a Claude Code or Codex home"));
-        assert!(refused(vec![change("~/.agent-app/homes/other", "pdf", SkillAction::Remove, SUM, "-")]).contains("isn't a Claude Code or Codex home"));
+        assert!(refused(vec![change("~/.agents", "pdf", SkillAction::Remove, SUM, "-")]).contains("isn't an agent home Arbor reads"));
+        assert!(refused(vec![change("~/.agent-app/homes/other", "pdf", SkillAction::Remove, SUM, "-")]).contains("isn't an agent home Arbor reads"));
+        // Another harness that loads the store itself takes the changes Codex's homes do.
+        let pi = setup::MachineSetup::with_homes(&[(HomeAgent::Shared, "~/.agents")]).with_harness_home(Harness::Pi, "~/.pi/agent");
+        let adopted = plan(&pi, vec![change("~/.pi/agent", "deploy", SkillAction::Adopt, SUM, "-")]).unwrap();
+        assert!(!adopted[0].links, "no link back: Pi loads the store");
+        assert!(plan(&pi, vec![change("~/.pi/agent", "deploy", SkillAction::Remove, SUM, SUM)]).is_ok());
+        assert!(plan(&pi, vec![change("~/.pi/agent", "deploy", SkillAction::Link, "-", SUM)]).unwrap_err().contains("can't link"));
         assert!(refused(vec![change("~/.claude", "../x", SkillAction::Remove, SUM, "-")]).contains("doesn't change skills"));
         assert!(refused(vec![change("~/.claude", "pdf", SkillAction::Remove, "SUM", "-")]).contains("can't tell"));
         assert!(refused(vec![change("~/.claude", "pdf", SkillAction::Remove, "-", "-")]).contains("can't remove"));

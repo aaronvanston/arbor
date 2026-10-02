@@ -1,7 +1,8 @@
 //! Setup sync: a git repo on this Mac holds the instructions, rules, subagents
 //! and commands the agents should load, each where it goes in a home folder:
 //! .claude/CLAUDE.md, .claude/rules/, .claude/agents/ and .claude/commands/,
-//! .codex/AGENTS.md and .codex/prompts/. CLAUDE.md and AGENTS.md stay separate
+//! .codex/AGENTS.md and .codex/prompts/, and the AGENTS.md each other harness reads
+//! in its own home (`harnesses::repo_instructions`). CLAUDE.md and AGENTS.md stay separate
 //! files. The repo can be a folder in a larger one, like a dotfiles repo.
 //!
 //! A machine is brought in step with the repo's last commit only after the page
@@ -37,6 +38,7 @@ use super::guarded_writes::{
     base64_lines, cksum, is_stamp, new_stamp, parse_outcome, prune_backups, record_backup, run_on, stamp_ms, start_backup, BackupEdit,
     undo_edit_actions, undo_edit_checks, ChangeKind, SyncOutcome, BACKUPS_SCRIPT, STATE_FUNCTIONS,
 };
+use super::harnesses;
 use super::setup_skills::{self, BackupSkill};
 use super::*;
 use sha2::{Digest, Sha256};
@@ -47,14 +49,18 @@ pub(super) const GIT_TIMEOUT: Duration = Duration::from_secs(20);
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(90);
 /// The largest file the repo syncs.
 pub(super) const FILE_MAX_BYTES: u64 = 1024 * 1024;
-/// Files in these folders that the repo doesn't sync are listed, so it's clear they aren't.
-const AGENT_FOLDERS: [&str; 3] = [".claude/", ".codex/", ".agents/"];
+/// Files in these folders that the repo doesn't sync are listed, so it's clear they aren't: Claude Code's, Codex's and
+/// the store's, and the other harnesses' homes.
+fn agent_folders() -> Vec<String> {
+    [".claude/", ".codex/", ".agents/"].into_iter().map(str::to_string).chain(harnesses::repo_homes()).collect()
+}
 
 const README: &str = "# Agent setup\n\n\
 Arbor keeps each machine's Claude Code and Codex setup in step with this repo.\n\
 Each file sits where it goes in the home folder:\n\n\
 - `.claude/CLAUDE.md`, and `.claude/rules/`, `.claude/agents/` and `.claude/commands/`\n\
 - `.codex/AGENTS.md` and `.codex/prompts/`\n\
+- the `AGENTS.md` other agents read, in each one's folder: `.pi/agent/`, `.factory/` and the like\n\
 - `.agents/skills/`, a folder for each skill, which goes into each machine's `~/.agents/skills`\n\n\
 `.agents/skill-sources.json` records where skills came from, so Arbor can\n\
 update them from GitHub. `.agents/mcp-servers.json` defines the MCP servers each\n\
@@ -83,6 +89,9 @@ pub(super) fn managed(rel: &str) -> Option<SyncFileKind> {
     }
     let name = rel.rsplit('/').next().unwrap_or(rel);
     let markdown = name.len() > 3 && name.ends_with(".md") && !looks_secret(rel);
+    if harnesses::repo_instructions().any(|path| path == rel) {
+        return Some(SyncFileKind::Instructions);
+    }
     let (home, rest) = rel.split_once('/')?;
     let (folder, within) = rest.split_once('/').unwrap_or(("", rest));
     match (home, folder) {
@@ -358,7 +367,7 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<(Vec<RepoFile
             Some(kind) if file && size.parse::<u64>().is_ok_and(|size| size <= FILE_MAX_BYTES) => {
                 synced.push((rel.to_string(), kind, object.to_string()));
             }
-            _ if AGENT_FOLDERS.iter().any(|folder| rel.starts_with(folder)) => ignored.push(rel.to_string()),
+            _ if agent_folders().iter().any(|folder| rel.starts_with(folder.as_str())) => ignored.push(rel.to_string()),
             _ => {}
         }
     }
@@ -493,7 +502,7 @@ fn home_files(home: &Path) -> Vec<(String, Vec<u8>)> {
         }
     }
     let mut files = Vec::new();
-    for rel in [".claude/CLAUDE.md", ".codex/AGENTS.md"] {
+    for rel in [".claude/CLAUDE.md", ".codex/AGENTS.md"].into_iter().chain(harnesses::repo_instructions()) {
         add(home, rel.to_string(), &mut files);
     }
     for rel in [".claude/rules", ".claude/agents", ".claude/commands", ".codex/prompts"] {
@@ -506,7 +515,7 @@ fn home_files(home: &Path) -> Vec<(String, Vec<u8>)> {
 /// Starts a repo in `folder` with this Mac's files and store skills from `home`, as one commit. A
 /// folder in a repo already gets the commit there; `git_config` is set for each git command.
 async fn start_repo(folder: &Path, home: &Path, machine: &str, git_config: &[&str]) -> Result<SetupRepo, String> {
-    if AGENT_FOLDERS.iter().any(|name| folder.join(name.trim_end_matches('/')).exists()) {
+    if agent_folders().iter().any(|name| folder.join(name.trim_end_matches('/')).exists()) {
         return Err(format!("{} already has agent files in it. Choose it as the repo instead.", folder.display()));
     }
     fs::create_dir_all(folder).map_err(|error| format!("Arbor couldn't make {}: {error}", folder.display()))?;
@@ -1220,6 +1229,11 @@ mod tests {
     fn only_the_files_the_agents_load_are_synced() {
         assert_eq!(managed(".claude/CLAUDE.md"), Some(SyncFileKind::Instructions));
         assert_eq!(managed(".codex/AGENTS.md"), Some(SyncFileKind::Instructions));
+        assert_eq!(managed(".pi/agent/AGENTS.md"), Some(SyncFileKind::Instructions));
+        assert_eq!(managed(".factory/AGENTS.md"), Some(SyncFileKind::Instructions));
+        assert_eq!(managed(".config/opencode/AGENTS.md"), Some(SyncFileKind::Instructions));
+        assert_eq!(managed(".pi/agent/settings.json"), None);
+        assert_eq!(managed(".pi/AGENTS.md"), None);
         assert_eq!(managed(".claude/rules/web/react.md"), Some(SyncFileKind::Rule));
         assert_eq!(managed(".claude/agents/reviewer.md"), Some(SyncFileKind::Subagent));
         assert_eq!(managed(".claude/agents/team/reviewer.md"), None, "Claude Code only reads subagents at the top");

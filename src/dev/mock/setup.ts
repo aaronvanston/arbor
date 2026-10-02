@@ -83,7 +83,7 @@ import type {
   WorktreeRemoval,
 } from '../../native/types';
 import { projectOf, skillFolder, skillOf } from '../../services/repoBrowser';
-import { syncKind } from '../../services/setupSync';
+import { HARNESS_SYNC_HOMES, syncKind } from '../../services/setupSync';
 import type { CommandAnswers } from './answers';
 import { freshInstall, hours, later, mockLog, params } from './scenario';
 
@@ -219,7 +219,7 @@ const setupHome = (agent: HomeAgent, path: string, items: SetupItem[], problems:
 
 // The other harnesses' homes, read for their own instructions and skills. `?harnessHomes=none` for machines with none.
 const noHarnessHomes = params.get('harnessHomes') === 'none';
-const harnessHome = (harness: Harness, path: string, items: SetupItem[]): HarnessHome => ({ harness, path, items });
+const harnessHome = (harness: Harness, path: string, items: SetupItem[]): HarnessHome => ({ harness, path, items, skillsLink: null });
 const harnessHomes = (homes: HarnessHome[]) => (noHarnessHomes ? [] : homes);
 
 const setupInstall = (agent: AgentKind, path: string, version: string | null, real: string | null = null): SetupInstall => ({ agent, path, real, version });
@@ -560,7 +560,8 @@ if (params.get('chunks') === 'fail') chunkMock.__mockChunkFail = 'Importing a mo
 
 /** The item a machine's last scan found at `path`, as the real reads insist on. */
 const scannedSetupItem = (machine: string, path: string) => {
-  const found = setupMachines.find((entry) => entry.machine === machine)?.homes.flatMap((home) => home.items).find((item) => item.path === path && item.sum !== null);
+  const entry = setupMachines.find((candidate) => candidate.machine === machine);
+  const found = [...(entry?.homes ?? []), ...(entry?.harnessHomes ?? [])].flatMap((home) => home.items).find((item) => item.path === path && item.sum !== null);
   if (!found) throw new Error('Arbor can only show what its last scan of this machine found. Scan again.');
   return found;
 };
@@ -836,8 +837,10 @@ type MockSetupBackup = SetupBackup & {
 
 const setupBackups: Record<string, MockSetupBackup[]> = {};
 
-const syncedHome = (entry: SetupMachine, path: string) =>
-  entry.homes.find((home) => (home.path === '~/.claude' || home.path === '~/.codex' || (home.path === '~/.agents' && path.startsWith('~/.agents/hooks/'))) && path.startsWith(`${home.path}/`)) ?? null;
+const syncedHome = (entry: SetupMachine, path: string): { items: SetupItem[] } | null =>
+  entry.homes.find((home) => (home.path === '~/.claude' || home.path === '~/.codex' || (home.path === '~/.agents' && path.startsWith('~/.agents/hooks/'))) && path.startsWith(`${home.path}/`))
+  ?? entry.harnessHomes.find((home) => HARNESS_SYNC_HOMES.some((sync) => sync.harness === home.harness && sync.path === home.path) && path === `${home.path}/AGENTS.md`)
+  ?? null;
 
 /** A store skill's name, from where setup sync puts it. */
 const storeSkillName = (path: string) => /^~\/\.agents\/skills\/([^/]+)$/.exec(path)?.[1] ?? null;
@@ -926,7 +929,10 @@ const mockStore = '~/.agents/skills';
 
 const skillPlaceOf = (item: SetupItem | null | undefined) => (!item ? '-' : item.link ? `L${item.link}` : item.sum ? `D${item.sum}` : '?');
 
-const skillHomeOf = (entry: SetupMachine, path: string) => entry.homes.find((home) => home.path === path && (home.agent === 'claude' || home.agent === 'codex')) ?? null;
+const skillHomeOf = (entry: SetupMachine, path: string): { items: SetupItem[]; skillsLink: string | null; agent?: SetupHome['agent'] } | null =>
+  entry.homes.find((home) => home.path === path && (home.agent === 'claude' || home.agent === 'codex'))
+  ?? entry.harnessHomes.find((home) => home.path === path)
+  ?? null;
 
 const storeHomeOf = (entry: SetupMachine, create: boolean) => {
   let store = entry.homes.find((home) => home.agent === 'shared') ?? null;
@@ -2295,7 +2301,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     mockLog('start_setup_repo', { repo: path });
     if (setupRepos[path]) throw `${path} already has agent files in it. Choose it as the repo instead.`;
     const mac = setupMachines.find((entry) => entry.local)!;
-    const files = mac.homes.filter((home) => home.path === '~/.claude' || home.path === '~/.codex').flatMap((home) => home.items)
+    const files = [...mac.homes.filter((home) => home.path === '~/.claude' || home.path === '~/.codex'), ...mac.harnessHomes].flatMap((home) => home.items)
       .flatMap((item) => {
         const kind = item.path ? syncKind(item.path) : null;
         return kind && item.path && item.sum !== null ? [repoFile(kind, item.path, item.sum)] : [];
