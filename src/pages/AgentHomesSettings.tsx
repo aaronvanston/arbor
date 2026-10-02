@@ -7,6 +7,7 @@ import { formatWhen } from '../lib/format';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { SettingsMachineCrumb } from '../components/layout/MachineCrumb';
+import { HarnessName } from '../components/identity/Harness';
 import { MachinePill } from '../components/identity/Identity';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -39,7 +40,7 @@ import {
   syncOffCount,
   useAgentHomes,
 } from '../services/agentHomes';
-import type { AgentHome, AgentHomeKind, AgentHomesView, MachineAgentHomes } from '../native/types';
+import type { AgentHome, AgentHomeKind, AgentHomesView, HarnessInfo, MachineAgentHomes } from '../native/types';
 
 /**
  * Settings › Agent homes: where each machine's agents keep their homes, which every script that reads one goes by.
@@ -76,6 +77,7 @@ export function AgentHomesSettingsPage() {
             {machines.map((machine) => (
               <MachineHomes key={machine.machine} view={view} machine={machine} onAdd={() => setAdding(machine.machine)} />
             ))}
+            <KnownHarnesses harnesses={view.harnesses} />
           </>
         )}
         <AddAgentHomeDialog
@@ -101,6 +103,77 @@ function EveryMachineHomes({ view, onAdd }: { view: AgentHomesView; onAdd: () =>
       <HomesTable homes={view.everywhere} view={view} />
     </SettingsSection>
   );
+}
+
+/** What Arbor knows about each harness: where it keeps things by default, and what Arbor does with it. */
+function KnownHarnesses({ harnesses }: { harnesses: HarnessInfo[] }) {
+  const { t } = useI18n();
+  return (
+    <SettingsSection settingId="agent-homes.harnesses" title={t('agentHomes.harnesses.title')} description={t('agentHomes.harnesses.description')}>
+      <Table containerClassName="@container" className="min-w-[52rem]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('agentHomes.harnesses.harness')}</TableHead>
+            <TableHead>{t('agentHomes.harnesses.arbor')}</TableHead>
+            <TableHead>{t('agentHomes.harnesses.home')}</TableHead>
+            <TableHead>{t('agentHomes.harnesses.instructions')}</TableHead>
+            <TableHead>{t('agentHomes.harnesses.skills')}</TableHead>
+            <TableHead>{t('agentHomes.harnesses.mcp')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {harnesses.map((harness) => (
+            <TableRow key={harness.harness} className="align-top">
+              <TableCell className="whitespace-nowrap text-sm"><HarnessName harness={harness.harness} className="w-max" /></TableCell>
+              <TableCell className="whitespace-nowrap">
+                <span className="flex flex-col items-start gap-1">
+                  {harness.sessions ? <Badge variant="muted" size="sm">{t('agentHomes.harnesses.readsSessions')}</Badge> : null}
+                  {harness.automations ? (
+                    <Badge variant="muted" size="sm" title={harness.limitsEdits ? undefined : t('agentHomes.harnesses.fullAccessHint')}>
+                      {t(harness.limitsEdits ? 'agentHomes.harnesses.automations' : 'agentHomes.harnesses.automationsFull')}
+                    </Badge>
+                  ) : null}
+                  {!harness.sessions && !harness.automations ? <span className="text-xs text-muted-foreground">{t('agentHomes.harnesses.listedOnly')}</span> : null}
+                </span>
+              </TableCell>
+              <TableCell className="text-xs">
+                <Paths paths={[harness.home]} />
+                {harness.homeEnv ? <span className="block font-mono text-2xs text-muted-foreground">{harness.homeEnv}</span> : null}
+              </TableCell>
+              <TableCell className="text-xs">
+                {harness.globalInstructions ? <Paths paths={[harness.globalInstructions]} /> : null}
+                {harness.projectInstructions.length
+                  ? <span className="block text-2xs text-muted-foreground">{t('agentHomes.harnesses.inProjects', { files: harness.projectInstructions.join(', ') })}</span>
+                  : null}
+                {!harness.globalInstructions && !harness.projectInstructions.length ? <Unknown /> : null}
+              </TableCell>
+              <TableCell className="text-xs">{harness.skills.length ? <Paths paths={harness.skills} /> : <Unknown />}</TableCell>
+              <TableCell className="text-xs">
+                {harness.mcp ? (
+                  <>
+                    <Paths paths={[harness.mcp]} />
+                    {harness.mcpKey ? <span className="block font-mono text-2xs text-muted-foreground">{harness.mcpKey}</span> : null}
+                  </>
+                ) : <Unknown />}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </SettingsSection>
+  );
+}
+
+function Paths({ paths }: { paths: string[] }) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      {paths.map((path) => <span key={path} className="whitespace-nowrap font-mono text-xs text-foreground">{path}</span>)}
+    </span>
+  );
+}
+
+function Unknown() {
+  return <span className="text-muted-foreground">—</span>;
 }
 
 /** One machine's own homes, how its last look went, and what that look found that the list doesn't have. */

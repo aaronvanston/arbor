@@ -216,6 +216,7 @@ const list = (): AutomationList => ({
   draftModel,
   draftEffort,
   udianBundled: BUNDLED_RUNNER,
+  agents: ['claude', 'codex', 'pi', 'primeAgent', 'droid'],
 });
 
 const find = (id: string) => {

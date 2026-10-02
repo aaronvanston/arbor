@@ -14,6 +14,7 @@ import type {
   DiagnosticCall,
   DiscoveredHost,
   FoundHome,
+  HarnessInfo,
   HealthPoint,
   MachineAgents,
   MachineFacts,
@@ -568,7 +569,20 @@ function homesOn(machine: string): AgentHome[] {
   return homes;
 }
 
+/** The harness catalog as the native side lists it (`harnesses.rs`). */
+const HARNESSES: HarnessInfo[] = [
+  { harness: 'claude', binary: 'claude', home: '~/.claude', homeEnv: '$CLAUDE_CONFIG_DIR', sessions: '~/.claude', globalInstructions: '~/.claude/CLAUDE.md', projectInstructions: ['CLAUDE.md', '.claude/CLAUDE.md'], skills: ['~/.claude/skills'], mcp: '~/.claude.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: true },
+  { harness: 'codex', binary: 'codex', home: '~/.codex', homeEnv: '$CODEX_HOME', sessions: '~/.codex', globalInstructions: '~/.codex/AGENTS.md', projectInstructions: ['AGENTS.md'], skills: ['~/.agents/skills', '~/.codex/skills'], mcp: '~/.codex/config.toml', mcpKey: 'mcp_servers', mcpFormat: 'toml', automations: true, limitsEdits: true },
+  { harness: 'pi', binary: 'pi', home: '~/.pi/agent', homeEnv: '$PI_CODING_AGENT_DIR', sessions: '~/.pi/agent/sessions', globalInstructions: '~/.pi/agent/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.pi/agent/skills', '~/.agents/skills'], mcp: '~/.pi/agent/mcp.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: false },
+  { harness: 'primeAgent', binary: 'prime-agent', home: '~/.prime/agent', homeEnv: '$PRIME_AGENT_CODING_AGENT_DIR', globalInstructions: '~/.prime/agent/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.prime/agent/skills', '~/.agents/skills'], mcp: '~/.prime/agent/settings.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: false },
+  { harness: 'openCode', binary: 'opencode', home: '~/.config/opencode', globalInstructions: '~/.config/opencode/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.config/opencode/skills', '~/.claude/skills', '~/.agents/skills'], mcp: '~/.config/opencode/opencode.json', mcpKey: 'mcp', mcpFormat: 'json', automations: false, limitsEdits: false },
+  { harness: 'droid', binary: 'droid', home: '~/.factory', globalInstructions: '~/.factory/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.factory/skills', '~/.agents/skills'], mcp: '~/.factory/mcp.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: true },
+  { harness: 'amp', binary: 'amp', home: '~/.config/amp', globalInstructions: '~/.config/amp/AGENTS.md', projectInstructions: ['AGENTS.md', 'AGENT.md', 'CLAUDE.md'], skills: ['~/.config/amp/skills', '~/.config/agents/skills', '~/.agents/skills', '~/.claude/skills'], mcp: '~/.config/amp/settings.json', mcpKey: 'amp.mcpServers', mcpFormat: 'json', automations: false, limitsEdits: false },
+  { harness: 'gemini', binary: 'gemini', home: '~/.gemini', projectInstructions: [], skills: [], automations: false, limitsEdits: false },
+];
+
 const agentHomesView = (): AgentHomesView => ({
+  harnesses: HARNESSES,
   everywhere: homesOn(''),
   machines: homeMachines().map((machine) => {
     const scan = homeScans[machine];

@@ -4,7 +4,8 @@ import { AutomationAppName } from '../components/automations/AutomationApp';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { toast } from '../components/ui/toast';
-import { MachinePill, ModelName, ProviderMark } from '../components/identity/Identity';
+import { HarnessName } from '../components/identity/Harness';
+import { MachinePill, ModelName } from '../components/identity/Identity';
 import { PoolName } from '../components/PoolName';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -23,7 +24,7 @@ import { cn } from '../lib/utils';
 import { automationsView, sessionsView, type AppView } from '../navigation';
 import { invokeCommand } from '../native/commands';
 import type { Automation, AutomationRun } from '../native/types';
-import { AGENT_PROVIDER, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
+import { loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
 import { useQuotaClock } from '../services/quotaTime';
 
 /** How many runs the page lists. */
@@ -193,13 +194,9 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /** The model, or the agent while no run has said which model it used. */
 function ModelFact({ model, effort, agent, fromRun }: { model: string | null; effort: string | null; agent: Automation['summary']['agent']; fromRun: boolean }) {
   const { t } = useI18n();
-  const provider = agent ? AGENT_PROVIDER[agent] : null;
   if (!model) {
     return (
-      <span className="inline-flex min-w-0 items-center gap-1.5" title={t('automations.model.unknown')}>
-        {provider ? <ProviderMark provider={provider} decorative /> : null}
-        {t(`automations.agent.${agent ?? 'other'}`)}
-      </span>
+      <span title={t('automations.model.unknown')}><HarnessName harness={agent} /></span>
     );
   }
   return (

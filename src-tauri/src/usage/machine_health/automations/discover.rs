@@ -196,7 +196,7 @@ fn codex_automation(machine: &str, home: &str, path: &str, content: Vec<u8>) -> 
         machine,
         AutomationAbilities { edit: false, pause: true, run_now: false, delete: false, copy: true },
     );
-    summary.agent = Some(AutomationAgent::Codex);
+    summary.agent = Some(Harness::Codex);
     if let Some(rule) = &rrule {
         summary.schedule = schedule::summary(rule);
         if enabled {
@@ -231,7 +231,7 @@ fn claude_task(machine: &str, home: &str, path: &str, content: &[u8]) -> Option<
         machine,
         AutomationAbilities { edit: false, pause: false, run_now: false, delete: false, copy: true },
     );
-    summary.agent = Some(AutomationAgent::Claude);
+    summary.agent = Some(Harness::Claude);
     let mut automation = found_automation(summary, body, None);
     automation.source_path = Some(tilde(path, home));
     Some(Found { automation, found_on: machine.to_string(), keeper: Keeper::ClaudeFile, session: None })
@@ -255,15 +255,6 @@ fn orca_status(status: &str) -> AutomationRunStatus {
         "skipped_missed" => AutomationRunStatus::Missed,
         "canceled" | "cancelled" => AutomationRunStatus::Canceled,
         _ => AutomationRunStatus::Failed,
-    }
-}
-
-fn orca_agent(agent: &str) -> AutomationAgent {
-    match agent {
-        "claude" => AutomationAgent::Claude,
-        "codex" => AutomationAgent::Codex,
-        "gemini" => AutomationAgent::Gemini,
-        _ => AutomationAgent::Other,
     }
 }
 
@@ -300,7 +291,7 @@ fn orca_automations(machine: &str, list: &[u8], projects: &[u8], hosts: &[u8], l
                 AutomationAbilities { edit: false, pause: true, run_now: true, delete: false, copy: true },
             );
             summary.project = text(item, "projectId").and_then(|project| project_names.get(&project).cloned());
-            summary.agent = text(item, "agentId").map(|agent| orca_agent(&agent));
+            summary.agent = text(item, "agentId").map(|agent| Harness::from_id(&agent));
             let rrule = text(item, "rrule");
             summary.schedule = rrule.as_deref().map_or(ScheduleSummary::Custom, schedule::summary);
             summary.next_run_at_ms = item.get("nextRunAt").and_then(serde_json::Value::as_i64).filter(|_| enabled);
@@ -510,7 +501,7 @@ mod tests {
         assert_eq!(automation.summary.id, "orca:a-1");
         assert_eq!(automation.summary.machine.as_deref(), Some("cedar-02"));
         assert_eq!(automation.summary.project.as_deref(), Some("billing"));
-        assert_eq!(automation.summary.agent, Some(AutomationAgent::Codex));
+        assert_eq!(automation.summary.agent, Some(Harness::Codex));
         assert_eq!(automation.summary.model.as_deref(), Some("claude-opus-5"));
         assert_eq!(automation.summary.last_run, Some(AutomationLastRun { status: AutomationRunStatus::Skipped, at_ms: 1790899506005 }));
         assert!(automation.summary.has_precheck);

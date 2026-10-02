@@ -78,6 +78,10 @@ export type AgentHomesView = {
    */
   everywhere: Array<AgentHome>,
   machines: Array<MachineAgentHomes>,
+  /**
+   * What Arbor knows about each harness: its home, sessions, instructions, skills and MCP config.
+   */
+  harnesses: Array<HarnessInfo>,
 };
 
 /**
@@ -416,11 +420,6 @@ export type AutomationAbilities = {
 export type AutomationAccess = "edits" | "full";
 
 /**
- * The agent an automation starts.
- */
-export type AutomationAgent = "claude" | "codex" | "gemini" | "other";
-
-/**
  * What the drafting model made of a description, for the dialog to fill in and the user to check.
  */
 export type AutomationDraft = {
@@ -429,7 +428,7 @@ export type AutomationDraft = {
   rrule: string,
   precheck: string | null,
   precheckTimeoutSecs: number,
-  agent: AutomationAgent,
+  agent: Harness,
   session: AutomationSession,
   graceMinutes: number,
   /**
@@ -454,7 +453,7 @@ export type AutomationInput = {
   id?: string,
   name: string,
   prompt: string,
-  agent: AutomationAgent,
+  agent: Harness,
   model?: string,
   effort?: string,
   target: AutomationTarget,
@@ -504,6 +503,10 @@ export type AutomationList = {
    * The background runner's version Arbor carries and installs; null for a build without it.
    */
   udianBundled: string | null,
+  /**
+   * The harnesses Arbor can start an automation with, in the catalog's order.
+   */
+  agents: Array<Harness>,
 };
 
 /**
@@ -600,7 +603,7 @@ export type AutomationSummary = {
    * The project's folder name, or the name the owning app gives it.
    */
   project: string | null,
-  agent: AutomationAgent | null,
+  agent: Harness | null,
   /**
    * The model it runs with: the one it's set to, or, when it's set to none or its app keeps none, the one its
    * last run used, by the session id the run stores. Null until a run tells.
@@ -1583,6 +1586,45 @@ export type GuiSettings = {
   closeBehavior: WindowsCloseBehavior,
 };
 
+/**
+ * A harness, by the id the other apps that start agents (Orca, the Codex app) give it.
+ */
+export type Harness = "claude" | "codex" | "pi" | "primeAgent" | "openCode" | "droid" | "amp" | "gemini" | "other";
+
+/**
+ * A harness as Settings › Agent homes shows it.
+ */
+export type HarnessInfo = {
+  harness: Harness,
+  binary: string,
+  /**
+   * Where it keeps its settings, with the variable that moves it.
+   */
+  home: string,
+  homeEnv?: string,
+  /**
+   * Where Arbor reads its sessions; none when it can't yet.
+   */
+  sessions?: string,
+  globalInstructions?: string,
+  projectInstructions: Array<string>,
+  skills: Array<string>,
+  /**
+   * Its MCP config file, when it has one, the key its servers sit under and the file's shape.
+   */
+  mcp?: string,
+  mcpKey?: string,
+  mcpFormat?: McpFormat,
+  /**
+   * Arbor can start an automation with it.
+   */
+  automations: boolean,
+  /**
+   * Arbor can hold it to editing files; one that can't only runs with full access.
+   */
+  limitsEdits: boolean,
+};
+
 export type HarnessRun = {
   id: string,
   trigger: string | null,
@@ -2335,6 +2377,11 @@ export type McpChange = {
   name: string,
   action: McpAction,
 };
+
+/**
+ * An MCP config file and the shape it's in.
+ */
+export type McpFormat = "json" | "toml";
 
 export type McpHealth = {
   home: string,

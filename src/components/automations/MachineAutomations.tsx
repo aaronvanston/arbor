@@ -3,7 +3,7 @@ import { useI18n } from '../../i18n';
 import { formatWhen } from '../../lib/format';
 import { automationsView, automationView, type AppView } from '../../navigation';
 import { filterAutomations, RUN_STATUS_LABEL, scheduleWords, SOURCE_LABEL, useAutomations } from '../../services/automations';
-import { ProviderMark } from '../identity/Identity';
+import { HarnessMark } from '../identity/Harness';
 import { SettingsBlock, SettingsSection } from '../layout/settings';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -37,7 +37,7 @@ export function MachineAutomations({ machine, small, onNavigate }: { machine: st
               onClick={() => onNavigate(automationView(item.id))}
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background p-1.5 dark:bg-input/32">
-                {item.agent ? <ProviderMark provider={item.agent} decorative className="size-full object-contain" fallback={<TimeSchedule className="size-3.5 text-muted-foreground" />} /> : <TimeSchedule className="size-3.5 text-muted-foreground" />}
+                {item.agent && item.agent !== 'other' ? <HarnessMark harness={item.agent} className="size-full object-contain" /> : <TimeSchedule className="size-3.5 text-muted-foreground" />}
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex min-w-0 items-center gap-2 text-sm">

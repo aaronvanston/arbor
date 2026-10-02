@@ -41,7 +41,7 @@ const summary = (overrides: Partial<AutomationSummary>): AutomationSummary => ({
   ...overrides,
 });
 
-const list = (automations: AutomationSummary[]): AutomationList => ({ automations, scans: [], running: true, draftModel: 'gpt-6-luna', draftEffort: 'low', udianBundled: '1.0.0' });
+const list = (automations: AutomationSummary[]): AutomationList => ({ automations, scans: [], running: true, draftModel: 'gpt-6-luna', draftEffort: 'low', udianBundled: '1.0.0', agents: ['claude', 'codex'] });
 
 describe('schedules', () => {
   it('reads the rules the Codex app and Orca write into the dialog’s choices', () => {

@@ -230,7 +230,7 @@ pub(super) fn set_setting(connection: &Connection, key: &str, value: &str) -> Re
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AutomationAccess, AutomationAgent, AutomationRunsOn, AutomationSession, AutomationTarget, AutomationWorkspace};
+    use super::super::{AutomationAccess, Harness, AutomationRunsOn, AutomationSession, AutomationTarget, AutomationWorkspace};
     use super::*;
     use crate::usage::schema::test_database;
 
@@ -239,7 +239,7 @@ mod tests {
             id: None,
             name: name.into(),
             prompt: "Check the build.".into(),
-            agent: AutomationAgent::Claude,
+            agent: Harness::Claude,
             model: None,
             effort: None,
             target: AutomationTarget::Machine { name: "casey-mbp".into() },

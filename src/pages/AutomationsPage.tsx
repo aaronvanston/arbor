@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MachinePill, ModelName, ProviderMark } from '../components/identity/Identity';
+import { HarnessName } from '../components/identity/Harness';
+import { MachinePill, ModelName } from '../components/identity/Identity';
 import { PoolName } from '../components/PoolName';
 import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
@@ -28,7 +29,6 @@ import { cn } from '../lib/utils';
 import { automationView, automationsView, type AppView, type AutomationsParams } from '../navigation';
 import type { AutomationSource, AutomationSummary } from '../native/types';
 import {
-  AGENT_PROVIDER,
   AUTOMATION_STATES,
   RUN_STATUS_LABEL,
   RUN_STATUS_TONE,
@@ -253,7 +253,6 @@ function AutomationRow({ item, now, markPaused, onOpen, onNavigate }: {
   onNavigate: (view: AppView) => void;
 }) {
   const { t } = useI18n();
-  const provider = item.agent ? AGENT_PROVIDER[item.agent] : null;
   const last = item.lastRun;
   return (
     <TableRow className={cn('cursor-pointer transition-colors hover:bg-muted/50 dark:hover:bg-input/16', !item.enabled && 'text-muted-foreground')} onClick={onOpen}>
@@ -276,10 +275,7 @@ function AutomationRow({ item, now, markPaused, onOpen, onNavigate }: {
       <TableCell className="whitespace-nowrap text-xs">
         {item.model ? <ModelName model={item.model} className="w-max" /> : (
           // Until a run says which model, the agent stands in for it.
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground" title={t('automations.model.unknown')}>
-            {provider ? <ProviderMark provider={provider} decorative /> : null}
-            {t(`automations.agent.${item.agent ?? 'other'}`)}
-          </span>
+          <span className="text-muted-foreground" title={t('automations.model.unknown')}><HarnessName harness={item.agent} className="w-max" /></span>
         )}
       </TableCell>
       <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">

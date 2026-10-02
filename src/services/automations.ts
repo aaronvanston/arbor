@@ -2,7 +2,6 @@ import { useSyncExternalStore } from 'react';
 import type { MessageKey } from '../i18n/resources';
 import { invokeCommand } from '../native/commands';
 import type {
-  AutomationAgent,
   AutomationList,
   AutomationScan,
   AutomationRunStatus,
@@ -151,8 +150,6 @@ export const RUN_STATUS_TONE: Record<AutomationRunStatus, StatusTone> = {
   canceled: 'muted',
 };
 
-/** The provider whose mark stands for the agent. */
-export const AGENT_PROVIDER: Record<AutomationAgent, string | null> = { claude: 'claude', codex: 'codex', gemini: 'gemini', other: null };
 
 // ── Filtering ─────────────────────────────────────────────────────────────────────────────────────────────────────
 

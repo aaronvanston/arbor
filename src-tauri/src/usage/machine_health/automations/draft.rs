@@ -3,7 +3,7 @@
 //! it and the user checks it before anything is saved. Nothing else is sent: no files, no other automations.
 
 use super::schedule;
-use super::{AutomationAgent, AutomationDraft, AutomationDraftInput, AutomationSession};
+use super::{Harness, AutomationDraft, AutomationDraftInput, AutomationSession};
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
@@ -30,11 +30,16 @@ Weekdays at 9 is FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0.\n\
 to do, so a run with nothing to do costs nothing. Use read-only commands (gh, git, curl, test, grep). Print what it \
 found; the agent is given that output. Null when every run has work.\n\
 - precheckTimeoutSecs: 10 to 300.\n\
-- agent: claude or codex; codex unless the user names Claude.\n\
+- agent: the harness id; codex unless the user names another.\n\
 - session: fresh, or reuse when each run should carry on from the last.\n\
 - graceMinutes: how late a missed run may still start, 0 to 1440; about a third of the interval.\n\
 - note: one plain sentence on anything the user must fill in or check (a token, a project, a command that may not \
 be installed), or null.";
+
+/// The ids of the harnesses Arbor can start, for the model to pick from.
+fn launchable_ids() -> Vec<&'static str> {
+    Harness::ALL.into_iter().filter(|harness| harness.launches()).map(|harness| harness.spec().id).collect()
+}
 
 fn schema() -> serde_json::Value {
     let nullable = |kind: &str| json!({ "type": [kind, "null"] });
@@ -48,7 +53,7 @@ fn schema() -> serde_json::Value {
             "rrule": { "type": "string" },
             "precheck": nullable("string"),
             "precheckTimeoutSecs": { "type": "integer" },
-            "agent": { "type": "string", "enum": ["claude", "codex"] },
+            "agent": { "type": "string", "enum": launchable_ids() },
             "session": { "type": "string", "enum": ["fresh", "reuse"] },
             "graceMinutes": { "type": "integer" },
             "note": nullable("string"),
@@ -128,7 +133,7 @@ pub(super) fn parse_answer(body: &serde_json::Value) -> Result<AutomationDraft, 
         rrule,
         precheck: raw.precheck.map(|precheck| precheck.trim().to_string()).filter(|precheck| !precheck.is_empty()),
         precheck_timeout_secs: raw.precheck_timeout_secs.clamp(10, 300) as u32,
-        agent: if raw.agent == "claude" { AutomationAgent::Claude } else { AutomationAgent::Codex },
+        agent: Some(Harness::from_id(&raw.agent)).filter(|harness| harness.launches()).unwrap_or(Harness::Codex),
         session: if raw.session == "reuse" { AutomationSession::Reuse } else { AutomationSession::Fresh },
         grace_minutes: raw.grace_minutes.clamp(0, 1440) as u32,
         note,
@@ -188,7 +193,7 @@ mod tests {
         assert_eq!(draft.name, "Sentry triage");
         assert_eq!(draft.rrule, "FREQ=HOURLY;BYMINUTE=0");
         assert_eq!(draft.precheck_timeout_secs, 300);
-        assert_eq!(draft.agent, AutomationAgent::Codex);
+        assert_eq!(draft.agent, Harness::Codex);
         assert_eq!(draft.note, None);
     }
 

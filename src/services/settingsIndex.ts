@@ -111,6 +111,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('machines', 'telemetry-machines', 'telemetry.settings.title', 'telemetry.settings.machines'),
 
   section('agent-homes', 'everywhere', 'agentHomes.everywhere.title', { description: 'agentHomes.everywhere.description', keywords: 'settingsSearch.keywords.agentHomes' }),
+  section('agent-homes', 'harnesses', 'agentHomes.harnesses.title', { description: 'agentHomes.harnesses.description', keywords: 'agentHomes.harnesses.keywords' }),
   section('pools', 'list', 'pools.list.title', { description: 'pools.list.description', keywords: 'settingsSearch.keywords.pools' }),
 
   row('session-archive', 'folder', 'sessionArchive.title', 'sessionArchive.folder.title', { description: 'sessionArchive.setup.folderDescription' }),

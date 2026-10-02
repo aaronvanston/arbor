@@ -34,16 +34,8 @@ pub(crate) enum AutomationSource {
     Orca,
 }
 
-/// The agent an automation starts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum AutomationAgent {
-    Claude,
-    Codex,
-    Gemini,
-    /// One Arbor has no mark for, which another app named.
-    Other,
-}
+/// The agent an automation starts is a harness from the catalog.
+pub(crate) use super::harnesses::Harness;
 
 /// Where an Arbor automation runs: a machine, or a pool's member with room when it's due.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -174,7 +166,7 @@ pub(crate) struct AutomationSummary {
     pub(crate) target: AutomationTarget,
     /// The project's folder name, or the name the owning app gives it.
     pub(crate) project: Option<String>,
-    pub(crate) agent: Option<AutomationAgent>,
+    pub(crate) agent: Option<Harness>,
     /// The model it runs with: the one it's set to, or, when it's set to none or its app keeps none, the one its
     /// last run used, by the session id the run stores. Null until a run tells.
     pub(crate) model: Option<String>,
@@ -266,6 +258,8 @@ pub(crate) struct AutomationList {
     pub(crate) draft_effort: String,
     /// The background runner's version Arbor carries and installs; null for a build without it.
     pub(crate) udian_bundled: Option<String>,
+    /// The harnesses Arbor can start an automation with, in the catalog's order.
+    pub(crate) agents: Vec<Harness>,
 }
 
 /// An Arbor automation as the dialog saves it; no id is a new one.
@@ -276,7 +270,7 @@ pub(crate) struct AutomationInput {
     pub(crate) id: Option<String>,
     pub(crate) name: String,
     pub(crate) prompt: String,
-    pub(crate) agent: AutomationAgent,
+    pub(crate) agent: Harness,
     #[ts(optional)]
     pub(crate) model: Option<String>,
     #[ts(optional)]
@@ -310,7 +304,7 @@ pub(crate) struct AutomationDraft {
     pub(crate) rrule: String,
     pub(crate) precheck: Option<String>,
     pub(crate) precheck_timeout_secs: u32,
-    pub(crate) agent: AutomationAgent,
+    pub(crate) agent: Harness,
     pub(crate) session: AutomationSession,
     pub(crate) grace_minutes: u32,
     /// What the model couldn't decide and left for the user, in a sentence.

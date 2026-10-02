@@ -91,25 +91,19 @@ pub(crate) struct AgentHome {
     pub(crate) sync: bool,
 }
 
-/// The agents' own homes, on every machine that has them: where each agent's environment variable points, then its
-/// default folder.
-const STANDARD: &[(AgentHomeKind, &str)] = &[
-    (AgentHomeKind::Claude, "$CLAUDE_CONFIG_DIR"),
-    (AgentHomeKind::Claude, "~/.claude"),
-    (AgentHomeKind::Codex, "$CODEX_HOME"),
-    (AgentHomeKind::Codex, "~/.codex"),
-    (AgentHomeKind::Pi, "$PI_CODING_AGENT_SESSION_DIR"),
-    (AgentHomeKind::Pi, "~/.pi/agent/sessions"),
-];
+/// The agents' own homes, on every machine that has them: where each harness's environment variable points, then its
+/// default folder, for each harness whose sessions Arbor reads (see `harnesses`).
+fn standard_paths() -> impl Iterator<Item = (AgentHomeKind, &'static str)> {
+    super::harnesses::CATALOG.iter().filter_map(|spec| spec.sessions).flat_map(|home| home.env.map(|env| (home.kind, env)).into_iter().chain([(home.kind, home.default)]))
+}
 
 /// Whether a home the scan finds starts with Sync on. Off, since a found home is often a tool's copy of a standard
 /// one, or a folder of short-lived sessions, whose settings nobody keeps in line.
 const FOUND_SYNC: bool = false;
 
 fn standard() -> Vec<AgentHome> {
-    STANDARD
-        .iter()
-        .map(|&(agent, path)| AgentHome {
+    standard_paths()
+        .map(|(agent, path)| AgentHome {
             machine: String::new(),
             agent,
             path: path.to_string(),
@@ -213,7 +207,7 @@ pub(crate) fn shell_function_for(saved: &[AgentHome], machine: &str, use_: HomeU
 /// path that can't be one.
 fn shell_words(path: &str) -> Option<String> {
     if let Some(name) = path.strip_prefix('$') {
-        return STANDARD.iter().any(|(_, standard)| *standard == path).then(|| format!("\"${{{name}:-}}\""));
+        return standard_paths().any(|(_, standard)| standard == path).then(|| format!("\"${{{name}:-}}\""));
     }
     let (mut words, rest) = match path.strip_prefix("~/") {
         Some(rest) => (String::from("\"$HOME\""), rest),
@@ -249,7 +243,7 @@ fn checked(home: AgentHome) -> Result<AgentHome, String> {
         return Err("Machine names are at most 100 characters".into());
     }
     let path = home.path.trim().trim_end_matches('/').to_string();
-    let standard = STANDARD.iter().any(|&(agent, listed)| agent == home.agent && listed == path);
+    let standard = standard_paths().any(|(agent, listed)| agent == home.agent && listed == path);
     if !standard {
         if !(path.starts_with("~/") || path.starts_with('/')) || path.contains('$') {
             return Err("A home's folder starts with ~/ or /".into());
@@ -757,6 +751,8 @@ pub(crate) struct AgentHomesView {
     /// The homes on every machine: the standard ones and those saved for every machine.
     everywhere: Vec<AgentHome>,
     machines: Vec<MachineHomes>,
+    /// What Arbor knows about each harness: its home, sessions, instructions, skills and MCP config.
+    harnesses: Vec<super::harnesses::HarnessInfo>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -791,7 +787,7 @@ fn view(connection: &Connection, machines: &[String]) -> Result<AgentHomesView, 
             }
         })
         .collect();
-    Ok(AgentHomesView { everywhere: homes_on(&saved, ""), machines })
+    Ok(AgentHomesView { everywhere: homes_on(&saved, ""), machines, harnesses: super::harnesses::infos() })
 }
 
 fn machine_names(state: &MachineHealthState) -> Vec<String> {
@@ -1081,6 +1077,6 @@ pub(crate) mod tests {
         let [cedar] = &view.machines[..] else { panic!() };
         assert_eq!(cedar.suggested, [FoundHome { agent: AgentHomeKind::Claude, path: "~/.other".into(), folders: 1 }]);
         assert!(cedar.homes.iter().any(|home| home.path == "~/.tools/*" && home.machine == "cedar-01"));
-        assert_eq!(view.everywhere.len(), STANDARD.len());
+        assert_eq!(view.everywhere.len(), standard_paths().count());
     }
 }

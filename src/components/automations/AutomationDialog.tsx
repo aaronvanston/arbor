@@ -3,7 +3,7 @@ import { useI18n } from '../../i18n';
 import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
 import { invokeCommand } from '../../native/commands';
-import type { Automation, AutomationAccess, AutomationAgent, AutomationInput, AutomationRunsOn, AutomationSession, AutomationWorkspace, MachineProjects } from '../../native/types';
+import type { Automation, AutomationAccess, Harness, AutomationInput, AutomationRunsOn, AutomationSession, AutomationWorkspace, MachineProjects } from '../../native/types';
 import {
   backgroundRunnerCheck,
   choiceSummary,
@@ -19,7 +19,8 @@ import { usePools } from '../../services/pools';
 import { PoolName } from '../PoolName';
 import { useFleetMachines } from '../../services/fleetHealth';
 import { getProjects, tilde } from '../../services/setupProjects';
-import { MachinePill, ProviderMark } from '../identity/Identity';
+import { HarnessName } from '../identity/Harness';
+import { MachinePill } from '../identity/Identity';
 import { Button } from '../ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../ui/dialog';
 import { ArrowLeft, Sparkles, TriangleAlert } from '../ui/icons';
@@ -38,7 +39,7 @@ type Step = 'describe' | 'review';
 type Form = {
   name: string;
   prompt: string;
-  agent: AutomationAgent;
+  agent: Harness;
   machine: string;
   projectPath: string;
   workspace: AutomationWorkspace;
@@ -80,7 +81,7 @@ const emptyForm = (machine: string): Form => ({
 const formFrom = (automation: Automation): Form => ({
   name: automation.summary.name,
   prompt: automation.prompt,
-  agent: automation.summary.agent === 'codex' ? 'codex' : 'claude',
+  agent: automation.summary.agent ?? 'claude',
   machine: automation.summary.target.kind === 'best' ? BEST
     : automation.summary.target.kind === 'pool' ? poolValue(automation.summary.target.id)
       : automation.summary.machine ?? '',
@@ -156,7 +157,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
         ...current,
         name: result.name,
         prompt: result.prompt,
-        agent: result.agent === 'codex' ? 'codex' : 'claude',
+        agent: result.agent,
         session: result.session,
         schedule: scheduleChoice(result.rrule),
         graceMinutes: result.graceMinutes,
@@ -435,23 +436,20 @@ function ChoiceSelect({ label, value, choices, words, onChange }: { label: strin
   );
 }
 
-const AGENTS: readonly AutomationAgent[] = ['claude', 'codex'];
-
-function AgentField({ value, onChange }: { value: AutomationAgent; onChange: (agent: AutomationAgent) => void }) {
+function AgentField({ value, onChange }: { value: Harness; onChange: (agent: Harness) => void }) {
   const { t } = useI18n();
+  // The harnesses Arbor can start, and the one picked even if this Arbor no longer can.
+  const launchable = useAutomations().list?.agents ?? ['claude', 'codex'];
+  const agents = launchable.includes(value) ? launchable : [...launchable, value];
   return (
     <Field label={t('automations.fact.agent')}>
-      <Select value={value} onValueChange={(next) => onChange((next ?? 'claude') as AutomationAgent)}>
+      <Select value={value} onValueChange={(next) => onChange((next ?? 'claude') as Harness)}>
         <SelectTrigger aria-label={t('automations.fact.agent')}>
-          <SelectValue>
-            <span className="inline-flex items-center gap-2"><ProviderMark provider={value} decorative />{t(`automations.agent.${value}`)}</span>
-          </SelectValue>
+          <SelectValue><HarnessName harness={value} /></SelectValue>
         </SelectTrigger>
         <SelectPopup>
-          {AGENTS.map((agent) => (
-            <SelectItem key={agent} value={agent}>
-              <span className="inline-flex items-center gap-2"><ProviderMark provider={agent} decorative />{t(`automations.agent.${agent}`)}</span>
-            </SelectItem>
+          {agents.map((agent) => (
+            <SelectItem key={agent} value={agent}><HarnessName harness={agent} /></SelectItem>
           ))}
         </SelectPopup>
       </Select>

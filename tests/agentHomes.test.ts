@@ -19,6 +19,7 @@ describe('agent homes', () => {
 
   it('lists under a machine only its own homes, and counts the found ones whose settings are left alone', () => {
     const view: AgentHomesView = {
+      harnesses: [],
       everywhere: [home('', '~/.claude', { source: 'standard', sync: true })],
       machines: [{
         machine: 'cedar-01',

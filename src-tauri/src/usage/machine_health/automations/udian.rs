@@ -286,7 +286,7 @@ fn run_script(input: &AutomationInput) -> String {
     }
     let resumed = agent_command_for(input, Some("\"$session\""), true);
     let fresh = match input.agent {
-        AutomationAgent::Claude => {
+        Harness::Claude => {
             script.push_str(
                 "if [ -z \"$session\" ]; then new=$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid) | tr 'A-Z' 'a-z'); fi\n",
             );
@@ -696,7 +696,7 @@ mod tests {
             id: None,
             name: "Sentry watch".into(),
             prompt: "Fix what's new.".into(),
-            agent: AutomationAgent::Claude,
+            agent: Harness::Claude,
             model: None,
             effort: None,
             target: AutomationTarget::Machine { name: "cedar-02".into() },

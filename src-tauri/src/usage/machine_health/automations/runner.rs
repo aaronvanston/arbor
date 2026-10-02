@@ -8,6 +8,7 @@
 
 use super::super::agents::AGENT_ENV;
 use super::super::guarded_writes::STATE_FUNCTIONS;
+use super::super::harnesses::Launcher;
 use super::super::shell::{find_machine, run_checked, shell_quote, Machine};
 use super::store::{self, StoredRun};
 use super::*;
@@ -110,8 +111,8 @@ pub(super) fn agent_command_for(input: &AutomationInput, session: Option<&str>, 
     let full = input.access == AutomationAccess::Full;
     let model = input.model.as_deref().filter(|model| !model.is_empty());
     let effort = input.effort.as_deref().filter(|effort| !effort.is_empty());
-    match input.agent {
-        AutomationAgent::Claude => {
+    match input.agent.spec().launcher {
+        Some(Launcher::Claude) => {
             let mut command = String::from("claude -p");
             match (session, resume) {
                 (Some(session), true) => command.push_str(&format!(" --resume {session}")),
@@ -127,7 +128,35 @@ pub(super) fn agent_command_for(input: &AutomationInput, session: Option<&str>, 
             command.push_str(if full { " --dangerously-skip-permissions" } else { " --permission-mode acceptEdits" });
             format!("{{ {command} <\"$dir/prompt\" >/dev/null 2>&1; echo $? >\"$dir/code\"; }}")
         }
-        _ => {
+        Some(Launcher::Droid) => {
+            let mut command = String::from("droid exec -f \"$dir/prompt\" --cwd \"$work\"");
+            if let Some(model) = model {
+                command.push_str(&format!(" -m {}", shell_quote(model)));
+            }
+            if let Some(effort) = effort {
+                command.push_str(&format!(" -r {}", shell_quote(effort)));
+            }
+            // Low lets it edit files and nothing more, as Claude's acceptEdits does.
+            command.push_str(if full { " --skip-permissions-unsafe" } else { " --auto low" });
+            format!("{{ {command} </dev/null >/dev/null 2>&1; echo $? >\"$dir/code\"; }}")
+        }
+        // Saving made sure it has full access: it never asks before running a command.
+        Some(Launcher::Pi { binary, cwd_flag, thinking }) => {
+            let mut command = format!("{binary} -p");
+            if cwd_flag {
+                command.push_str(" --cwd \"$work\"");
+            }
+            if let Some(model) = model {
+                command.push_str(&format!(" --model {}", shell_quote(model)));
+            }
+            if let (true, Some(effort)) = (thinking, effort) {
+                command.push_str(&format!(" --thinking {}", shell_quote(effort)));
+            }
+            format!("{{ {command} -- \"$(cat \"$dir/prompt\")\" </dev/null >/dev/null 2>&1; echo $? >\"$dir/code\"; }}")
+        }
+        // Saving checks the agent can be started, so this is only an automation saved by a newer Arbor.
+        None => String::from("{ echo 127 >\"$dir/code\"; }"),
+        Some(Launcher::Codex) => {
             let mut options = String::from("--json --skip-git-repo-check");
             if let Some(model) = model {
                 options.push_str(&format!(" -m {}", shell_quote(model)));
@@ -198,7 +227,7 @@ pub(super) fn start_script(start: &Start) -> String {
             timeout = input.precheck_timeout_secs.clamp(1, 3600),
         ));
     }
-    if let (AutomationAgent::Claude, Some(session)) = (input.agent, start.session) {
+    if let (Harness::Claude, Some(session)) = (input.agent, start.session) {
         script.push_str(&format!("printf '%s' {} >\"$dir/session\"\n", shell_quote(session)));
     }
     script.push_str(&format!(
@@ -369,8 +398,8 @@ async fn pick_target(app: &tauri::AppHandle, input: &AutomationInput) -> Result<
     match &input.target {
         AutomationTarget::Pool { id } => {
             let agent = match input.agent {
-                AutomationAgent::Claude => Some(super::super::agents::AgentKind::Claude),
-                AutomationAgent::Codex => Some(super::super::agents::AgentKind::Codex),
+                Harness::Claude => Some(super::super::agents::AgentKind::Claude),
+                Harness::Codex => Some(super::super::agents::AgentKind::Codex),
                 _ => None,
             };
             super::super::runs::pick_for_automation(app, id, agent, input.grace_minutes).await
@@ -451,7 +480,7 @@ async fn start_run_inner(app: &tauri::AppHandle, record: &store::Record, schedul
         },
         AutomationSession::Fresh => (None, false),
     };
-    let session = session.or_else(|| (record.input.agent == AutomationAgent::Claude).then(new_uuid));
+    let session = session.or_else(|| (record.input.agent == Harness::Claude).then(new_uuid));
     run.session_id = session.clone();
     save_run(StoredRun { run: run.clone(), worktree: None }).await?;
     let start = Start { run_id: &run.id, automation_id: &record.id, input: &record.input, session: session.as_deref(), resume };
@@ -658,7 +687,7 @@ mod tests {
         std::fs::remove_dir_all(&home).unwrap();
     }
 
-    fn input(agent: AutomationAgent) -> AutomationInput {
+    fn input(agent: Harness) -> AutomationInput {
         AutomationInput {
             id: None,
             name: "Sentry watch".into(),
@@ -701,7 +730,7 @@ mod tests {
 
     #[test]
     fn the_start_script_checks_first_and_keeps_no_output() {
-        let input = input(AutomationAgent::Codex);
+        let input = input(Harness::Codex);
         let start = Start { run_id: "run-1", automation_id: "a-1", input: &input, session: None, resume: false };
         let script = start_script(&start);
         assert!(script.contains("work=\"$HOME\"/'code/billing'"));
@@ -716,7 +745,7 @@ mod tests {
 
     #[test]
     fn claude_gets_its_session_id_and_the_access_asked_for() {
-        let mut input = input(AutomationAgent::Claude);
+        let mut input = input(Harness::Claude);
         input.access = AutomationAccess::Full;
         input.workspace = AutomationWorkspace::NewWorktree;
         let start = Start { run_id: "run-2", automation_id: "a-1", input: &input, session: Some("s-1"), resume: false };
@@ -729,7 +758,7 @@ mod tests {
 
     #[test]
     fn codex_carries_on_a_session_with_the_same_sandbox() {
-        let input = input(AutomationAgent::Codex);
+        let input = input(Harness::Codex);
         let start = Start { run_id: "run-4", automation_id: "a-1", input: &input, session: Some("t-9"), resume: true };
         let script = start_script(&start);
         assert!(script.contains("codex exec resume --json --skip-git-repo-check -m 'gpt-6-sol'"));
@@ -813,7 +842,7 @@ mod tests {
             child.stdin.take().unwrap().write_all(script.as_bytes()).unwrap();
             String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
         };
-        let mut input = input(AutomationAgent::Codex);
+        let mut input = input(Harness::Codex);
         input.precheck = Some("echo 2 new issues".into());
         let start = Start { run_id: "run-sh", automation_id: "arbor:a", input: &input, session: None, resume: false };
         let started = parse_started(&sh(&start_script(&start)));
@@ -839,6 +868,70 @@ mod tests {
         let skipped = parse_started(&sh(&start_script(&start)));
         assert_eq!(skipped.precheck_exit, Some(1));
         assert_eq!(skipped.pid, None);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn droid_and_pi_style_agents_get_the_prompt_and_their_own_flags_under_sh() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let home = std::env::temp_dir().join(format!("arbor-automation-harness-{}-{}", std::process::id(), new_uuid()));
+        let project = home.join("code/billing");
+        let bin = home.join(".local/bin");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        // Each stand-in writes the words it was given, one to a line, and the prompt file droid reads.
+        for name in ["droid", "prime-agent"] {
+            let path = bin.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done >\"$HOME/{name}.args\"\nexit 0\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let sh = |script: &str| {
+            let mut child = std::process::Command::new("sh")
+                .env("HOME", &home)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(script.as_bytes()).unwrap();
+            String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
+        };
+        let wait_for = |name: &str| {
+            let path = home.join(format!("{name}.args"));
+            for _ in 0..100 {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    if !text.is_empty() {
+                        return text;
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            panic!("{name} never ran");
+        };
+
+        let mut droid = input(Harness::Droid);
+        droid.precheck = None;
+        let start = Start { run_id: "run-droid", automation_id: "arbor:d", input: &droid, session: None, resume: false };
+        assert_eq!(parse_started(&sh(&start_script(&start))).error, None);
+        let args = wait_for("droid");
+        let args: Vec<&str> = args.lines().collect();
+        assert_eq!(args[..2], ["exec", "-f"]);
+        assert!(args.windows(2).any(|pair| pair == ["--auto", "low"]), "{args:?}");
+        assert!(args.windows(2).any(|pair| pair == ["-m", "gpt-6-sol"]), "{args:?}");
+        assert!(args.windows(2).any(|pair| pair[0] == "--cwd" && pair[1].ends_with("code/billing")), "{args:?}");
+
+        let mut prime = input(Harness::PrimeAgent);
+        prime.precheck = None;
+        prime.access = AutomationAccess::Full;
+        prime.prompt = "- Fix what's new\n- Say what you did".into();
+        let start = Start { run_id: "run-prime", automation_id: "arbor:p", input: &prime, session: None, resume: false };
+        assert_eq!(parse_started(&sh(&start_script(&start))).error, None);
+        let args = wait_for("prime-agent");
+        assert!(args.starts_with("-p\n--cwd\n"), "{args}");
+        assert!(args.contains("--model\ngpt-6-sol\n--thinking\nlow\n--\n"), "{args}");
+        // The prompt arrives whole, as one message after `--`, even where it starts with a dash.
+        assert!(args.ends_with("--\n- Fix what's new\n- Say what you did\n"), "{args}");
         let _ = std::fs::remove_dir_all(&home);
     }
 }

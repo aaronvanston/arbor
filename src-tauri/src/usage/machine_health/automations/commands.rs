@@ -2,6 +2,7 @@
 
 use super::discover::{self, Found, MachineFind};
 use super::store::{self, Record};
+use super::super::harnesses::Launcher;
 use super::*;
 use tauri::Manager;
 
@@ -170,6 +171,7 @@ pub(super) fn list_from(
         draft_model: store::setting(connection, "draft_model")?.unwrap_or_else(|| draft::DEFAULT_MODEL.into()),
         draft_effort: store::setting(connection, "draft_effort")?.unwrap_or_else(|| draft::DEFAULT_EFFORT.into()),
         udian_bundled: udian::bundle().map(|bundle| bundle.version),
+        agents: Harness::ALL.into_iter().filter(|harness| harness.launches()).collect(),
     })
 }
 
@@ -200,8 +202,14 @@ pub(super) fn check_input(input: &AutomationInput) -> Result<(), String> {
     if input.prompt.trim().is_empty() {
         return Err("Write what the agent should do".into());
     }
-    if !matches!(input.agent, AutomationAgent::Claude | AutomationAgent::Codex) {
-        return Err("Arbor runs Claude Code and Codex automations".into());
+    let Some(launcher) = input.agent.spec().launcher else {
+        return Err("Arbor can't start that agent yet. Pick another".into());
+    };
+    if input.access != AutomationAccess::Full && !launcher.limits_edits() {
+        return Err("This agent doesn't ask before it runs commands, so it can only run with full access".into());
+    }
+    if input.session == AutomationSession::Reuse && !matches!(launcher, Launcher::Claude | Launcher::Codex) {
+        return Err("This agent starts a fresh session each run".into());
     }
     match &input.target {
         AutomationTarget::Machine { name } if !name.trim().is_empty() => {}
@@ -469,21 +477,24 @@ pub(crate) async fn cancel_automation_run(app: tauri::AppHandle, run_id: String)
 pub(super) fn copied_input(automation: &Automation) -> AutomationInput {
     let summary = &automation.summary;
     let rrule = automation.rrule.clone().filter(|rule| schedule::parse(rule).is_some()).unwrap_or_else(|| "FREQ=DAILY;BYHOUR=9;BYMINUTE=0".into());
+    // A copy keeps its agent when Arbor can start it, with what that agent allows: one that can't be held to edits
+    // runs with full access, as it did, and only Claude Code and Codex carry a session on.
+    let agent = summary.agent.filter(|agent| agent.launches()).unwrap_or(Harness::Codex);
+    let launcher = agent.spec().launcher;
+    let limits_edits = launcher.is_none_or(Launcher::limits_edits);
+    let carries_on = matches!(launcher, Some(Launcher::Claude | Launcher::Codex));
     AutomationInput {
         id: None,
         name: summary.name.clone(),
         prompt: automation.prompt.clone(),
-        agent: match summary.agent {
-            Some(AutomationAgent::Claude) => AutomationAgent::Claude,
-            _ => AutomationAgent::Codex,
-        },
+        agent,
         model: None,
         effort: None,
         target: summary.target.clone(),
         project_path: automation.project_path.clone().unwrap_or_else(|| "~".into()),
         workspace: automation.workspace,
-        session: automation.session,
-        access: AutomationAccess::Edits,
+        session: if carries_on { automation.session } else { AutomationSession::Fresh },
+        access: if limits_edits { AutomationAccess::Edits } else { AutomationAccess::Full },
         rrule: rrule.trim_start_matches("RRULE:").to_string(),
         timezone: automation.timezone.clone(),
         grace_minutes: automation.grace_minutes,
@@ -600,7 +611,7 @@ mod tests {
             id: None,
             name: "Sentry watch".into(),
             prompt: "Fix new issues.".into(),
-            agent: AutomationAgent::Claude,
+            agent: Harness::Claude,
             model: None,
             effort: None,
             target: AutomationTarget::Machine { name: "cedar-02".into() },
@@ -633,8 +644,22 @@ mod tests {
         monthly.rrule = "FREQ=MONTHLY;BYMONTHDAY=1".into();
         assert!(check_input(&monthly).is_err());
         let mut gemini = input();
-        gemini.agent = AutomationAgent::Gemini;
+        gemini.agent = Harness::Gemini;
         assert!(check_input(&gemini).is_err());
+        // Pi never asks before a command, so it only runs with full access, and each run is fresh.
+        let mut pi = input();
+        pi.agent = Harness::Pi;
+        pi.session = AutomationSession::Fresh;
+        pi.access = AutomationAccess::Edits;
+        assert!(check_input(&pi).unwrap_err().contains("full access"));
+        pi.access = AutomationAccess::Full;
+        assert!(check_input(&pi).is_ok());
+        pi.session = AutomationSession::Reuse;
+        assert!(check_input(&pi).unwrap_err().contains("fresh session"));
+        let mut droid = input();
+        droid.agent = Harness::Droid;
+        droid.session = AutomationSession::Fresh;
+        assert!(check_input(&droid).is_ok());
     }
 
     #[test]
@@ -703,7 +728,7 @@ mod tests {
         assert!(!copy.enabled);
         assert_eq!(copy.rrule, "FREQ=HOURLY;INTERVAL=2");
         assert_eq!(copy.target, AutomationTarget::Machine { name: "casey-mbp".into() });
-        assert_eq!(copy.agent, AutomationAgent::Codex);
+        assert_eq!(copy.agent, Harness::Codex);
     }
 
     #[test]
