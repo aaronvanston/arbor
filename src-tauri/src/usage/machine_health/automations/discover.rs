@@ -263,8 +263,15 @@ fn orca_agent(agent: &str) -> AutomationAgent {
 /// one on an SSH host is on the machine of that name.
 fn orca_automations(machine: &str, list: &[u8], projects: &[u8], hosts: &[u8], last_runs: &[u8]) -> Vec<Found> {
     let text = |value: &serde_json::Value, key: &str| value.get(key).and_then(serde_json::Value::as_str).map(str::to_string);
-    let project_names: BTreeMap<String, String> =
-        orca_result(projects, "projects").iter().filter_map(|project| Some((text(project, "id")?, text(project, "displayName")?))).collect();
+    // An automation names its project by one of the project's repositories, which Orca lists in `sourceRepoIds`.
+    let mut project_names: BTreeMap<String, String> = BTreeMap::new();
+    for project in orca_result(projects, "projects") {
+        let Some(name) = text(&project, "displayName") else { continue };
+        let repos = project.get("sourceRepoIds").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+        for id in text(&project, "id").into_iter().chain(repos.iter().filter_map(|id| id.as_str().map(str::to_string))) {
+            project_names.insert(id, name.clone());
+        }
+    }
     let host_names: BTreeMap<String, String> = orca_result(hosts, "hosts").iter().filter_map(|host| Some((text(host, "id")?, text(host, "name")?))).collect();
     let last: BTreeMap<String, serde_json::Value> = serde_json::from_slice(last_runs).unwrap_or_default();
     orca_result(list, "automations")
@@ -380,10 +387,26 @@ pub(super) fn scan_due(app: &tauri::AppHandle, now_ms: i64) {
     }
 }
 
-/// Every found automation, an Orca one once.
+/// Every found automation, an Orca one once. Orca's command line on another machine can list the same automations
+/// without their runs or projects, so of the copies the one that knows most is kept.
 pub(super) fn all_found(found: &BTreeMap<String, MachineFind>) -> Vec<Found> {
-    let mut seen = std::collections::BTreeSet::new();
-    found.values().flat_map(|find| find.found.iter()).filter(|item| seen.insert(item.automation.summary.id.clone())).cloned().collect()
+    let knows = |item: &Found| usize::from(item.automation.summary.last_run.is_some()) + usize::from(item.automation.summary.project.is_some());
+    let mut order: Vec<String> = Vec::new();
+    let mut best: BTreeMap<String, Found> = BTreeMap::new();
+    for item in found.values().flat_map(|find| find.found.iter()) {
+        let id = item.automation.summary.id.clone();
+        match best.get(&id) {
+            Some(kept) if knows(kept) >= knows(item) => {}
+            Some(_) => {
+                best.insert(id, item.clone());
+            }
+            None => {
+                order.push(id.clone());
+                best.insert(id, item.clone());
+            }
+        }
+    }
+    order.into_iter().filter_map(|id| best.remove(&id)).collect()
 }
 
 pub(super) fn find(id: &str) -> Option<Found> {
@@ -468,7 +491,7 @@ mod tests {
     #[test]
     fn reads_orca_with_its_projects_hosts_and_last_runs() {
         let list = r#"{"ok":true,"result":{"automations":[{"id":"a-1","name":"Repo audit","prompt":"Audit PRs.","rrule":"FREQ=HOURLY;BYMINUTE=0","enabled":true,"agentId":"codex","projectId":"p-1","executionTargetType":"ssh","executionTargetId":"ssh-9","workspaceMode":"existing","reuseSession":true,"nextRunAt":1790900000000,"missedRunGraceMinutes":720,"precheck":{"command":"gh pr list | grep -q .","timeoutSeconds":60}}]}}"#;
-        let projects = r#"{"result":{"projects":[{"id":"p-1","displayName":"billing"}]}}"#;
+        let projects = r#"{"result":{"projects":[{"id":"github:casey/billing","displayName":"billing","sourceRepoIds":["r-0","p-1"]}]}}"#;
         let hosts = r#"{"result":{"hosts":[{"id":"ssh-9","name":"cedar-02"}]}}"#;
         let runs = r#"{"a-1":{"status":"skipped_precheck","at":1790899506005}}"#;
         let stdout = format!("H\t/Users/casey\nO\t{}\nP\t{}\nT\t{}\nR\t{}\n", b64(list), b64(projects), b64(hosts), b64(runs));
@@ -485,6 +508,22 @@ mod tests {
         assert_eq!(automation.grace_minutes, 720);
         assert_eq!(found[0].found_on, "casey-mbp");
         assert_eq!(found[0].keeper, Keeper::Orca { id: "a-1".into() });
+    }
+
+    #[test]
+    fn of_two_machines_listing_one_orca_the_copy_with_runs_is_kept() {
+        let list = r#"{"result":{"automations":[{"id":"a-1","name":"Repo audit","prompt":"p","rrule":"FREQ=HOURLY;BYMINUTE=0","enabled":true}]}}"#;
+        let runs = r#"{"a-1":{"status":"completed","at":5}}"#;
+        let bare = parse_scan("alpha-01", &format!("O\t{}\n", b64(list))).0;
+        let full = parse_scan("zulu-02", &format!("O\t{}\nR\t{}\n", b64(list), b64(runs))).0;
+        let finds = BTreeMap::from([
+            ("alpha-01".to_string(), MachineFind { found: bare, ..Default::default() }),
+            ("zulu-02".to_string(), MachineFind { found: full, ..Default::default() }),
+        ]);
+        let all = all_found(&finds);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].found_on, "zulu-02");
+        assert!(all[0].automation.summary.last_run.is_some());
     }
 
     #[test]
