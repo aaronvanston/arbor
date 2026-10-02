@@ -22,6 +22,17 @@ const TICK: Duration = Duration::from_secs(30);
 /// How much of a precheck's output comes back, from its end.
 const PRECHECK_KEPT: usize = 4 << 10;
 const POLL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The only way Arbor's automation scripts delete a folder. A path built from an empty variable or a missing id must
+/// never reach `rm -rf`, so this removes nothing but one named folder inside Arbor's own automation folders, and only
+/// when HOME is a real folder.
+pub(super) const REMOVE_FOLDER: &str = "arbor_remove() {\n\
+ \x20 case \"$HOME\" in ''|/) return 0 ;; esac\n\
+ \x20 case \"${1%/}\" in\n\
+ \x20   */*/..|*/*/.|\"$HOME\"/.arbor/automation-runs/*/*|\"$HOME\"/.arbor/automations/*/*) return 0 ;;\n\
+ \x20   \"$HOME\"/.arbor/automation-runs/?*|\"$HOME\"/.arbor/automations/?*) rm -rf -- \"${1%/}\" ;;\n\
+ \x20 esac\n\
+ }\n";
 /// A run can't start late by less than a round, so that much is always allowed.
 const SLACK_MS: i64 = 2 * TICK.as_millis() as i64;
 
@@ -149,7 +160,7 @@ pub(super) fn start_script(start: &Start) -> String {
     let input = start.input;
     let run = shell_quote(start.run_id);
     let mut script = format!(
-        "{AGENT_ENV}{STATE_FUNCTIONS}\
+        "{AGENT_ENV}{STATE_FUNCTIONS}{REMOVE_FOLDER}\
          fail() {{ printf 'E\\t%s\\n' \"$1\"; exit 0; }}\n\
          dir=\"$HOME/.arbor/automation-runs/\"{run}\n\
          mkdir -p \"$dir\" || fail \"Couldn't make a folder for the run\"\n\
@@ -181,7 +192,7 @@ pub(super) fn start_script(start: &Start) -> String {
              kill \"$watchdog\" 2>/dev/null\n\
              printf 'P\\t%s\\n' \"$code\"\n\
              printf 'O\\t%s\\n' \"$(tail -c {PRECHECK_KEPT} \"$dir/precheck.out\" | base64 | tr -d '\\n')\"\n\
-             if [ \"$code\" -ne 0 ]; then rm -rf \"$dir\"; exit 0; fi\n\
+             if [ \"$code\" -ne 0 ]; then arbor_remove \"$dir\"; exit 0; fi\n\
              if [ -s \"$dir/precheck.out\" ]; then {{ printf '\\n\\nThe precheck found:\\n'; tail -c {PRECHECK_KEPT} \"$dir/precheck.out\"; }} >>\"$dir/prompt\"; fi\n",
             shell_quote(&STANDARD.encode(precheck)),
             timeout = input.precheck_timeout_secs.clamp(1, 3600),
@@ -275,14 +286,14 @@ pub(super) enum Seen {
 
 // Per run, `R id state exit session`. An ended run's folder goes, and its worktree when nothing in it changed.
 pub(super) fn poll_script(runs: &[StoredRun]) -> String {
-    let mut script = String::from(
-        "set -u\n\
-         look() {\n\
+    let mut script = format!("set -u\n{REMOVE_FOLDER}");
+    script.push_str(
+        "look() {\n\
          \x20 d=\"$HOME/.arbor/automation-runs/$1\"\n\
          \x20 session=$(head -c 200 \"$d/session\" 2>/dev/null | head -n 1)\n\
          \x20 if [ -f \"$d/exit\" ]; then\n\
          \x20   printf 'R\\t%s\\tended\\t%s\\t%s\\n' \"$1\" \"$(head -c 20 \"$d/exit\" | tr -dc '0-9')\" \"$session\"\n\
-         \x20   rm -rf \"$d\"\n\
+         \x20   arbor_remove \"$d\"\n\
          \x20   if [ -n \"$2\" ] && [ -d \"$2\" ] && [ -z \"$(git -C \"$2\" status --porcelain 2>/dev/null)\" ]; then git -C \"$2\" worktree remove \"$2\" </dev/null >/dev/null 2>&1; fi\n\
          \x20 elif [ -f \"$d/pid\" ] && kill -0 \"$(cat \"$d/pid\")\" 2>/dev/null; then\n\
          \x20   printf 'R\\t%s\\trunning\\t\\t%s\\n' \"$1\" \"$session\"\n\
@@ -503,9 +514,9 @@ pub(super) async fn cancel(app: &tauri::AppHandle, run_id: &str) -> Result<(), S
     if let Some(name) = stored.run.machine.clone() {
         let machine = find_machine(&app.state::<MachineHealthState>().lock(), &name)?;
         let script = format!(
-            "d=\"$HOME/.arbor/automation-runs/\"{}\n\
+            "{REMOVE_FOLDER}d=\"$HOME/.arbor/automation-runs/\"{}\n\
              if [ -f \"$d/pid\" ]; then pid=$(cat \"$d/pid\"); pkill -TERM -P \"$pid\" 2>/dev/null; kill -TERM \"$pid\" 2>/dev/null; fi\n\
-             rm -rf \"$d\"\n",
+             arbor_remove \"$d\"\n",
             shell_quote(run_id)
         );
         run_checked(&machine, MachineOp::AutomationChange, &script, POLL_TIMEOUT).await?;
@@ -608,6 +619,44 @@ pub(crate) async fn poll_loop(app: tauri::AppHandle, token: CancellationToken) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_remove_helper_only_deletes_one_named_automation_folder() {
+        let home = std::env::temp_dir().join(format!("arbor-remove-{}-{}", std::process::id(), new_uuid()));
+        let runs = home.join(".arbor/automation-runs");
+        for dir in ["kept", "gone", "other/inner"] {
+            std::fs::create_dir_all(runs.join(dir)).unwrap();
+        }
+        std::fs::create_dir_all(home.join(".arbor/automations/arbor-a")).unwrap();
+        std::fs::write(home.join("precious"), "x").unwrap();
+        let script = format!(
+            "{REMOVE_FOLDER}r=\"$HOME/.arbor/automation-runs\"\n\
+             arbor_remove \"$r/\"\n\
+             arbor_remove \"$r\"\n\
+             arbor_remove \"$r/..\"\n\
+             arbor_remove \"$r/.\"\n\
+             arbor_remove \"$r/other/inner\"\n\
+             arbor_remove \"$HOME\"\n\
+             arbor_remove \"$HOME/.arbor\"\n\
+             arbor_remove \"\"\n\
+             arbor_remove /\n\
+             arbor_remove \"$r/gone/\"\n\
+             HOME= arbor_remove \"/.arbor/automation-runs/kept\"\n"
+        );
+        for shell in ["sh", "dash"] {
+            if shell == "dash" && std::process::Command::new("dash").arg("-c").arg("true").status().is_err() {
+                continue;
+            }
+            let status = std::process::Command::new(shell).arg("-c").arg(&script).env("HOME", &home).status().unwrap();
+            assert!(status.success());
+        }
+        assert!(home.join("precious").exists());
+        assert!(runs.join("kept").exists());
+        assert!(runs.join("other/inner").exists());
+        assert!(home.join(".arbor/automations/arbor-a").exists());
+        assert!(!runs.join("gone").exists());
+        std::fs::remove_dir_all(&home).unwrap();
+    }
 
     fn input(agent: AutomationAgent) -> AutomationInput {
         AutomationInput {

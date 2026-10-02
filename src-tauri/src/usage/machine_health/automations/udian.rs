@@ -11,7 +11,7 @@
 use super::super::agents::AGENT_ENV;
 use super::super::guarded_writes::STATE_FUNCTIONS;
 use super::super::shell::{run_checked, shell_quote, Machine};
-use super::runner::{agent_command_for, path_word};
+use super::runner::{agent_command_for, path_word, REMOVE_FOLDER};
 use super::*;
 use crate::usage::diagnostics::MachineOp;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -346,8 +346,8 @@ pub(super) fn place_script(id: &str, input: &AutomationInput, enabled: bool, zon
 pub(super) fn remove_script(id: &str) -> String {
     let name = schedule_name(id);
     format!(
-        "if [ -x \"$HOME/.ultradian/bin/udian\" ]; then {BIN} rm {name} --yes --json </dev/null >/dev/null 2>&1 || true; fi\n\
-         rm -rf \"$HOME/.arbor/automations/\"{name}\n",
+        "{REMOVE_FOLDER}if [ -x \"$HOME/.ultradian/bin/udian\" ]; then {BIN} rm {name} --yes --json </dev/null >/dev/null 2>&1 || true; fi\n\
+         arbor_remove \"$HOME/.arbor/automations/\"{name}\n",
         name = shell_quote(&name)
     )
 }
@@ -381,7 +381,7 @@ pub(super) fn fingerprint(machine: &str, input: &AutomationInput, enabled: bool)
 pub(super) fn sync_script(since: Option<&str>) -> String {
     let since = since.map(|since| format!(" --since {}", shell_quote(since))).unwrap_or_default();
     format!(
-        "[ -x \"$HOME/.ultradian/bin/udian\" ] || exit 0\n\
+        "[ -x \"$HOME/.ultradian/bin/udian\" ] || exit 0\n{REMOVE_FOLDER}\
          printf 'J\\t%s\\n' \"$({BIN} runs --group {GROUP}{since} --limit 500 --json </dev/null 2>/dev/null | base64 | tr -d '\\n')\"\n\
          for d in \"$HOME/.arbor/automation-runs\"/*/; do\n\
          \x20 [ -f \"$d/by-udian\" ] || continue\n\
@@ -392,7 +392,7 @@ pub(super) fn sync_script(since: Option<&str>) -> String {
          \x20 if [ -n \"$ex\" ] || {{ [ -n \"$pe\" ] && [ \"$pe\" != 0 ]; }}; then\n\
          \x20   wt=$(cat \"$d/worktree\" 2>/dev/null)\n\
          \x20   if [ -n \"$wt\" ] && [ -d \"$wt\" ] && [ -z \"$(git -C \"$wt\" status --porcelain 2>/dev/null)\" ]; then git -C \"$wt\" worktree remove \"$wt\" </dev/null >/dev/null 2>&1; fi\n\
-         \x20   rm -rf \"$d\"\n\
+         \x20   arbor_remove \"$d\"\n\
          \x20 fi\n\
          done\n"
     )
