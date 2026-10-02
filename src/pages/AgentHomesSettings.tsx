@@ -27,7 +27,8 @@ import { useSettingsScope } from '../services/machineSettings';
 import {
   AGENT_HOME_KINDS,
   AGENT_HOME_LABEL,
-  hasSettings,
+  readsSessions,
+  syncs,
   homeFromFound,
   homePathProblem,
   isVariable,
@@ -128,12 +129,13 @@ function KnownHarnesses({ harnesses }: { harnesses: HarnessInfo[] }) {
               <TableCell className="whitespace-nowrap">
                 <span className="flex flex-col items-start gap-1">
                   {harness.sessions ? <Badge variant="muted" size="sm">{t('agentHomes.harnesses.readsSessions')}</Badge> : null}
+                  {harness.sync ? <Badge variant="muted" size="sm">{t('agentHomes.harnesses.sync')}</Badge> : null}
                   {harness.automations ? (
                     <Badge variant="muted" size="sm" title={harness.limitsEdits ? undefined : t('agentHomes.harnesses.fullAccessHint')}>
                       {t(harness.limitsEdits ? 'agentHomes.harnesses.automations' : 'agentHomes.harnesses.automationsFull')}
                     </Badge>
                   ) : null}
-                  {!harness.sessions && !harness.automations ? <span className="text-xs text-muted-foreground">{t('agentHomes.harnesses.listedOnly')}</span> : null}
+                  {!harness.sessions && !harness.sync && !harness.automations ? <span className="text-xs text-muted-foreground">{t('agentHomes.harnesses.listedOnly')}</span> : null}
                 </span>
               </TableCell>
               <TableCell className="text-xs">
@@ -332,10 +334,14 @@ function HomeRow({ home, view }: { home: AgentHome; view: AgentHomesView }) {
       <TableCell>{folder}</TableCell>
       <TableCell><Badge variant={home.source === 'standard' ? 'muted' : 'outline'} size="sm">{t(source)}</Badge></TableCell>
       <TableCell className="text-center">
-        <Switch size="sm" checked={home.sessions} disabled={saving} onCheckedChange={(sessions) => void change({ sessions })} aria-label={t('agentHomes.sessionsFor', { path: home.path })} />
+        {readsSessions(home.agent) ? (
+          <Switch size="sm" checked={home.sessions} disabled={saving} onCheckedChange={(sessions) => void change({ sessions })} aria-label={t('agentHomes.sessionsFor', { path: home.path })} />
+        ) : (
+          <span className="text-muted-foreground" title={t('agentHomes.noSessions')}>–</span>
+        )}
       </TableCell>
       <TableCell className="text-center">
-        {hasSettings(home.agent) ? (
+        {syncs(home.agent) ? (
           <Switch size="sm" checked={home.sync} disabled={saving} onCheckedChange={(sync) => void change({ sync })} aria-label={t('agentHomes.syncFor', { path: home.path })} />
         ) : (
           <span className="text-muted-foreground" title={t('agentHomes.noSettings')}>–</span>
@@ -406,7 +412,7 @@ function AddAgentHomeDialog({ machine, machines, onClose }: { machine: string | 
     setSaving(true);
     setError(null);
     try {
-      await saveAgentHome({ machine: target, agent, path: path.trim(), source: 'added', sessions, sync: sync && hasSettings(agent) });
+      await saveAgentHome({ machine: target, agent, path: path.trim(), source: 'added', sessions: sessions && readsSessions(agent), sync: sync && syncs(agent) });
       toast({ kind: 'success', title: t('agentHomes.added', { path: path.trim() }) });
       onClose();
     } catch (failure) {
@@ -481,16 +487,16 @@ function AddAgentHomeDialog({ machine, machines, onClose }: { machine: string | 
               <label className="flex items-start justify-between gap-3 text-sm">
                 <span>
                   <span className="block text-foreground">{t('agentHomes.add.sessions')}</span>
-                  <span className="block text-xs text-muted-foreground">{t('agentHomes.add.sessionsHint')}</span>
+                  <span className="block text-xs text-muted-foreground">{t(readsSessions(agent) ? 'agentHomes.add.sessionsHint' : 'agentHomes.noSessions')}</span>
                 </span>
-                <Switch size="sm" checked={sessions} onCheckedChange={setSessions} aria-label={t('agentHomes.add.sessions')} />
+                <Switch size="sm" checked={sessions && readsSessions(agent)} disabled={!readsSessions(agent)} onCheckedChange={setSessions} aria-label={t('agentHomes.add.sessions')} />
               </label>
               <label className="flex items-start justify-between gap-3 text-sm">
                 <span>
                   <span className="block text-foreground">{t('agentHomes.add.sync')}</span>
-                  <span className="block text-xs text-muted-foreground">{t(hasSettings(agent) ? 'agentHomes.add.syncHint' : 'agentHomes.noSettings')}</span>
+                  <span className="block text-xs text-muted-foreground">{t(syncs(agent) ? 'agentHomes.add.syncHint' : 'agentHomes.noSettings')}</span>
                 </span>
-                <Switch size="sm" checked={sync && hasSettings(agent)} disabled={!hasSettings(agent)} onCheckedChange={setSync} aria-label={t('agentHomes.add.sync')} />
+                <Switch size="sm" checked={sync && syncs(agent)} disabled={!syncs(agent)} onCheckedChange={setSync} aria-label={t('agentHomes.add.sync')} />
               </label>
             </div>
             {error ? <p className="text-sm text-error-foreground" role="alert">{error}</p> : null}

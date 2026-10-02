@@ -23,6 +23,13 @@ pub(crate) enum AgentHomeKind {
     Pi,
     /// A folder of Claude's desktop app's local sessions, each with an audit log.
     ClaudeDesktop,
+    /// Pi's own folder, with its instructions and skills; its sessions are listed as `Pi`.
+    PiAgent,
+    PrimeAgent,
+    #[serde(rename = "opencode")]
+    OpenCode,
+    Droid,
+    Amp,
 }
 
 impl AgentHomeKind {
@@ -32,16 +39,35 @@ impl AgentHomeKind {
             Self::Codex => "codex",
             Self::Pi => "pi",
             Self::ClaudeDesktop => "claude-desktop",
+            Self::PiAgent => "pi-agent",
+            Self::PrimeAgent => "prime-agent",
+            Self::OpenCode => "opencode",
+            Self::Droid => "droid",
+            Self::Amp => "amp",
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
-        [Self::Claude, Self::Codex, Self::Pi, Self::ClaudeDesktop].into_iter().find(|kind| kind.shell_name() == value)
+    const ALL: [Self; 9] =
+        [Self::Claude, Self::Codex, Self::Pi, Self::ClaudeDesktop, Self::PiAgent, Self::PrimeAgent, Self::OpenCode, Self::Droid, Self::Amp];
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.shell_name() == value)
     }
 
-    /// Only Claude Code's and Codex's homes have settings for Sync to read; the others hold sessions alone.
+    /// Only Claude Code's and Codex's homes have settings Sync reads and changes, and the scripts that look in a home
+    /// for its settings take only theirs.
     pub(crate) fn has_settings(self) -> bool {
         matches!(self, Self::Claude | Self::Codex)
+    }
+
+    /// Arbor reads the sessions in it. The other harnesses' own folders hold no sessions it can read yet.
+    pub(crate) fn reads_sessions(self) -> bool {
+        matches!(self, Self::Claude | Self::Codex | Self::Pi | Self::ClaudeDesktop)
+    }
+
+    /// Sync reads it: Claude Code's and Codex's settings, and the other harnesses' instructions and skills.
+    pub(crate) fn syncs(self) -> bool {
+        !matches!(self, Self::Pi | Self::ClaudeDesktop)
     }
 }
 
@@ -94,7 +120,12 @@ pub(crate) struct AgentHome {
 /// The agents' own homes, on every machine that has them: where each harness's environment variable points, then its
 /// default folder, for each harness whose sessions Arbor reads (see `harnesses`).
 fn standard_paths() -> impl Iterator<Item = (AgentHomeKind, &'static str)> {
-    super::harnesses::CATALOG.iter().filter_map(|spec| spec.sessions).flat_map(|home| home.env.map(|env| (home.kind, env)).into_iter().chain([(home.kind, home.default)]))
+    super::harnesses::CATALOG.iter().flat_map(|spec| {
+        let sessions = spec.sessions.map(|home| (home.kind, home.env, home.default));
+        // A harness whose sessions sit in a folder of their own, like Pi's, has its home listed beside them.
+        let own = spec.home_kind.filter(|kind| sessions.is_none_or(|(listed, _, _)| listed != *kind)).map(|kind| (kind, spec.home_env, spec.home));
+        sessions.into_iter().chain(own).flat_map(|(kind, env, default)| env.map(|env| (kind, env)).into_iter().chain([(kind, default)]))
+    })
 }
 
 /// Whether a home the scan finds starts with Sync on. Off, since a found home is often a tool's copy of a standard
@@ -108,8 +139,8 @@ fn standard() -> Vec<AgentHome> {
             agent,
             path: path.to_string(),
             source: AgentHomeSource::Standard,
-            sessions: true,
-            sync: agent.has_settings(),
+            sessions: agent.reads_sessions(),
+            sync: agent.syncs(),
         })
         .collect()
 }
@@ -125,10 +156,14 @@ pub(crate) fn homes_on(saved: &[AgentHome], machine: &str) -> Vec<AgentHome> {
             match homes.iter_mut().find(|listed| listed.agent == home.agent && listed.path == home.path) {
                 Some(listed) => {
                     listed.machine = home.machine.clone();
-                    listed.sessions = home.sessions;
-                    listed.sync = home.sync && home.agent.has_settings();
+                    listed.sessions = home.sessions && home.agent.reads_sessions();
+                    listed.sync = home.sync && home.agent.syncs();
                 }
-                None => homes.push(AgentHome { sync: home.sync && home.agent.has_settings(), ..home.clone() }),
+                None => homes.push(AgentHome {
+                    sessions: home.sessions && home.agent.reads_sessions(),
+                    sync: home.sync && home.agent.syncs(),
+                    ..home.clone()
+                }),
             }
         }
     }
@@ -148,6 +183,9 @@ pub(crate) enum HomeUse {
     Archive,
     /// Claude Code's and Codex's homes with Sync on, for their settings.
     Sync,
+    /// Every home with Sync on, for the setup scan: Claude Code's and Codex's settings and the other harnesses'
+    /// instructions and skills.
+    Files,
 }
 
 /// Every script that reads agent homes starts with these: `tab`, `settings_file agent home`, and `home_line agent
@@ -166,6 +204,8 @@ home_line() {
       claude) { [ -d "$hl_dir/projects" ] || [ -f "$hl_dir/.claude.json" ]; } || return 0 ;;
       codex) { [ -f "$hl_dir/config.toml" ] || [ -d "$hl_dir/sessions" ]; } || return 0 ;;
       claude-desktop) set -- "$hl_dir"/local_*/audit.jsonl; [ -f "$1" ] || return 0 ;;
+      pi-agent|prime-agent|droid|amp) { [ -f "$hl_dir/settings.json" ] || [ -f "$hl_dir/AGENTS.md" ] || [ -d "$hl_dir/skills" ]; } || return 0 ;;
+      opencode) { [ -f "$hl_dir/opencode.json" ] || [ -f "$hl_dir/AGENTS.md" ] || [ -d "$hl_dir/skills" ]; } || return 0 ;;
     esac
   fi
   printf '%s\t%s\n' "$hl_agent" "$hl_dir"
@@ -191,7 +231,8 @@ pub(crate) fn shell_function_for(saved: &[AgentHome], machine: &str, use_: HomeU
         let taken = match use_ {
             HomeUse::Sessions => home.sessions && home.agent.has_settings(),
             HomeUse::Archive => home.sessions,
-            HomeUse::Sync => home.sync,
+            HomeUse::Sync => home.sync && home.agent.has_settings(),
+            HomeUse::Files => home.sync,
         };
         let Some(words) = taken.then(|| shell_words(&home.path)).flatten() else {
             continue;
@@ -261,7 +302,7 @@ fn checked(home: AgentHome) -> Result<AgentHome, String> {
         _ if standard => AgentHomeSource::Standard,
         source => source,
     };
-    Ok(AgentHome { machine, path, source, sync: home.sync && home.agent.has_settings(), ..home })
+    Ok(AgentHome { machine, path, source, sessions: home.sessions && home.agent.reads_sessions(), sync: home.sync && home.agent.syncs(), ..home })
 }
 
 // ---------------------------------------------------------------------------
@@ -428,8 +469,8 @@ fn store_scan(connection: &mut Connection, scan: &StoredScan) -> Result<Vec<Agen
                 agent: found.agent,
                 path: found.path,
                 source: AgentHomeSource::Found,
-                sessions: true,
-                sync: FOUND_SYNC && found.agent.has_settings(),
+                sessions: found.agent.reads_sessions(),
+                sync: FOUND_SYNC && found.agent.syncs(),
             };
             write_home(&transaction, &home)?;
             added.push(home);

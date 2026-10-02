@@ -18,6 +18,8 @@ import type {
   RepoProjectValue,
   SkillWanted,
   DefinitionView,
+  Harness,
+  HarnessHome,
   HiddenReason,
   HomeAgent,
   ItemKind,
@@ -215,6 +217,11 @@ const sharedItems: SetupItem[] = [
 const setupHome = (agent: HomeAgent, path: string, items: SetupItem[], problems: string[] = [], skillsLink: string | null = null): SetupHome =>
   ({ agent, path, items, problems, skillsLink, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 
+// The other harnesses' homes, read for their own instructions and skills. `?harnessHomes=none` for machines with none.
+const noHarnessHomes = params.get('harnessHomes') === 'none';
+const harnessHome = (harness: Harness, path: string, items: SetupItem[]): HarnessHome => ({ harness, path, items });
+const harnessHomes = (homes: HarnessHome[]) => (noHarnessHomes ? [] : homes);
+
 const setupInstall = (agent: AgentKind, path: string, version: string | null, real: string | null = null): SetupInstall => ({ agent, path, real, version });
 
 export const setupMachines: SetupMachine[] = [
@@ -230,6 +237,17 @@ export const setupMachines: SetupMachine[] = [
         setupItem('marketplace', 'superpowers-marketplace', 'mk1', { note: 'obra/superpowers-marketplace', value: mockAgo(3) }),
       ]),
     ],
+    harnessHomes: harnessHomes([
+      harnessHome('pi', '~/.pi/agent', [
+        setupFile('instructions', 'AGENTS.md', '~/.pi/agent/AGENTS.md', 'pi1', 820),
+        setupSkill('deploy', '~/.pi/agent/skills/deploy', 'pd1', 3),
+        setupSkill('pdf', '~/.pi/agent/skills/pdf', 'k1', 4),
+      ]),
+      harnessHome('droid', '~/.factory', [
+        setupFile('instructions', 'AGENTS.md', '~/.factory/AGENTS.md', 'dr1', 410),
+        setupSkill('review-pr', '~/.factory/skills/review-pr', 'dr2', 2),
+      ]),
+    ]),
     installs: [
       setupInstall('claude', '~/.local/bin/claude', '2.1.281', '~/.local/share/claude/versions/2.1.281'),
       setupInstall('codex', '~/.npm-global/bin/codex', '0.156.0', '~/.npm-global/lib/node_modules/@openai/codex/bin/codex.js'),
@@ -267,6 +285,12 @@ export const setupMachines: SetupMachine[] = [
       ], ["~/.codex/config.toml isn't TOML Arbor can read"], '~/.agents/skills'),
       setupHome('shared', '~/.agents', setupDrift(sharedItems, { 'skill:frontend-design': { sum: 'q3-old' } })),
     ],
+    harnessHomes: harnessHomes([
+      harnessHome('pi', '~/.pi/agent', [
+        setupFile('instructions', 'AGENTS.md', '~/.pi/agent/AGENTS.md', 'pi0', 612),
+        setupSkill('deploy', '~/.pi/agent/skills/deploy', 'pd1', 3),
+      ]),
+    ]),
     installs: [
       setupInstall('claude', '~/.local/bin/claude', '2.1.270', '~/.local/share/claude/versions/2.1.270'),
       setupInstall('codex', '~/.npm-global/bin/codex', '0.153.3', '~/.npm-global/lib/node_modules/@openai/codex/bin/codex.js'),
@@ -288,6 +312,9 @@ export const setupMachines: SetupMachine[] = [
         setupSkill('log-triage', '~/.agents/skills/log-triage', 'e8', 2),
       ]),
     ],
+    harnessHomes: harnessHomes([
+      harnessHome('openCode', '~/.config/opencode', [setupFile('instructions', 'AGENTS.md', '~/.config/opencode/AGENTS.md', 'oc1', 233)]),
+    ]),
     installs: [
       setupInstall('claude', '~/.local/bin/claude', '2.1.281', '~/.local/share/claude/versions/2.1.281'),
       setupInstall('claude', '~/.npm-global/bin/claude', '1.0.128', '~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/cli.js'),
@@ -1946,7 +1973,7 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
   const at = Date.now();
   const scannedAt = arrived ? at - 60_000 : null;
   const entry: SetupMachine = {
-    machine: name, local: false, reachable: arrived, scannedAt, error: null, scanning: false, policy: null,
+    machine: name, local: false, reachable: arrived, scannedAt, error: null, scanning: false, policy: null, harnessHomes: [],
     homes: [
       setupHome('claude', '~/.claude', [
         setupFile('instructions', 'CLAUDE.md', '~/.claude/CLAUDE.md', 'c1a7', 298),

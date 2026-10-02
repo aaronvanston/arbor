@@ -38,7 +38,7 @@ const CODEX = '~/.codex';
 const STORE = '~/.agents';
 
 const machine: SetupMachine = {
-  machine: 'casey-mbp', local: true, reachable: true, installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false,
+  machine: 'casey-mbp', local: true, reachable: true, harnessHomes: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false,
   homes: [
     home('codex', CODEX, [
       skill(CODEX, 'pdf', sha('1')),

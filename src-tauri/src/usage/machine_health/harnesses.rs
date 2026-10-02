@@ -116,6 +116,8 @@ pub(crate) struct HarnessSpec {
     pub(crate) home: &'static str,
     /// Where its sessions are, when Arbor reads them.
     pub(crate) sessions: Option<SessionsHome>,
+    /// What its home is listed as on the agent homes list, for Sync to read; none for one Sync doesn't read.
+    pub(crate) home_kind: Option<AgentHomeKind>,
     /// The instruction file it reads for every project, from `~/`.
     pub(crate) global_instructions: Option<&'static str>,
     /// The instruction files it reads in a project, in the order it prefers them.
@@ -134,6 +136,7 @@ const OTHER: HarnessSpec = HarnessSpec {
     home_env: None,
     home: "",
     sessions: None,
+    home_kind: None,
     global_instructions: None,
     project_instructions: &[],
     skills: &[],
@@ -153,6 +156,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home_env: Some("$CLAUDE_CONFIG_DIR"),
         home: "~/.claude",
         sessions: Some(SessionsHome { kind: AgentHomeKind::Claude, env: Some("$CLAUDE_CONFIG_DIR"), default: "~/.claude" }),
+        home_kind: Some(AgentHomeKind::Claude),
         global_instructions: Some("~/.claude/CLAUDE.md"),
         project_instructions: &["CLAUDE.md", ".claude/CLAUDE.md"],
         skills: &["~/.claude/skills"],
@@ -167,6 +171,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home_env: Some("$CODEX_HOME"),
         home: "~/.codex",
         sessions: Some(SessionsHome { kind: AgentHomeKind::Codex, env: Some("$CODEX_HOME"), default: "~/.codex" }),
+        home_kind: Some(AgentHomeKind::Codex),
         global_instructions: Some("~/.codex/AGENTS.md"),
         project_instructions: &["AGENTS.md"],
         skills: &["~/.agents/skills", "~/.codex/skills"],
@@ -181,6 +186,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home_env: Some("$PI_CODING_AGENT_DIR"),
         home: "~/.pi/agent",
         sessions: Some(SessionsHome { kind: AgentHomeKind::Pi, env: Some("$PI_CODING_AGENT_SESSION_DIR"), default: "~/.pi/agent/sessions" }),
+        home_kind: Some(AgentHomeKind::PiAgent),
         global_instructions: Some("~/.pi/agent/AGENTS.md"),
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.pi/agent/skills", "~/.agents/skills"],
@@ -196,6 +202,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home: "~/.prime/agent",
         // Its sessions are one flat file each, which the Pi reader doesn't take yet.
         sessions: None,
+        home_kind: Some(AgentHomeKind::PrimeAgent),
         global_instructions: Some("~/.prime/agent/AGENTS.md"),
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.prime/agent/skills", "~/.agents/skills"],
@@ -212,6 +219,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home: "~/.config/opencode",
         // Kept in a SQLite database Arbor doesn't read yet.
         sessions: None,
+        home_kind: Some(AgentHomeKind::OpenCode),
         global_instructions: Some("~/.config/opencode/AGENTS.md"),
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"],
@@ -226,6 +234,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home_env: None,
         home: "~/.factory",
         sessions: None,
+        home_kind: Some(AgentHomeKind::Droid),
         global_instructions: Some("~/.factory/AGENTS.md"),
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.factory/skills", "~/.agents/skills"],
@@ -241,6 +250,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home: "~/.config/amp",
         // Amp keeps its threads on ampcode.com.
         sessions: None,
+        home_kind: Some(AgentHomeKind::Amp),
         global_instructions: Some("~/.config/amp/AGENTS.md"),
         project_instructions: &["AGENTS.md", "AGENT.md", "CLAUDE.md"],
         skills: &["~/.config/amp/skills", "~/.config/agents/skills", "~/.agents/skills", "~/.claude/skills"],
@@ -256,6 +266,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         home_env: None,
         home: "~/.gemini",
         sessions: None,
+        home_kind: None,
         global_instructions: None,
         project_instructions: &[],
         skills: &[],
@@ -263,6 +274,50 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         launcher: None,
     },
 ];
+
+impl HarnessSpec {
+    /// A path the catalog gives from `~/`, from the harness's home instead, so a home on the list that isn't the
+    /// default reads its own. None when the path isn't in the home.
+    fn in_own_home(&self, path: &'static str) -> Option<&'static str> {
+        path.strip_prefix(self.home).and_then(|rest| rest.strip_prefix('/')).filter(|rest| !rest.is_empty())
+    }
+}
+
+impl AgentHomeKind {
+    /// The harness a home on the list belongs to.
+    pub(crate) fn harness(self) -> Harness {
+        if self == AgentHomeKind::ClaudeDesktop {
+            return Harness::Claude;
+        }
+        CATALOG
+            .iter()
+            .find(|spec| spec.home_kind == Some(self) || spec.sessions.is_some_and(|home| home.kind == self))
+            .map_or(Harness::Other, |spec| spec.harness)
+    }
+}
+
+/// Defines `harness_home kind folder`, which the setup scan runs on each home with Sync on that isn't Claude Code's or
+/// Codex's: the harness's own instructions file and its own skills folder, in the home the list has.
+pub(crate) fn files_script() -> String {
+    let mut script = String::from("harness_home() {\n  case \"$1\" in\n");
+    for spec in CATALOG {
+        let Some(kind) = spec.home_kind.filter(|kind| !kind.has_settings()) else {
+            continue;
+        };
+        let mut reads = Vec::new();
+        if let Some(file) = spec.global_instructions.and_then(|path| spec.in_own_home(path)) {
+            reads.push(format!("emit_file instructions \"$2/{file}\""));
+        }
+        if let Some(folder) = spec.skills.iter().find_map(|path| spec.in_own_home(path)) {
+            reads.push(format!("emit_skills \"$2/{folder}\""));
+        }
+        if !reads.is_empty() {
+            script.push_str(&format!("    {}) {} ;;\n", kind.shell_name(), reads.join("; ")));
+        }
+    }
+    script.push_str("  esac\n}\n");
+    script
+}
 
 /// A harness as Settings › Agent homes shows it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -288,6 +343,8 @@ pub(crate) struct HarnessInfo {
     pub(crate) mcp_key: Option<String>,
     #[ts(optional)]
     pub(crate) mcp_format: Option<McpFormat>,
+    /// Sync reads its home.
+    pub(crate) sync: bool,
     /// Arbor can start an automation with it.
     pub(crate) automations: bool,
     /// Arbor can hold it to editing files; one that can't only runs with full access.
@@ -312,6 +369,7 @@ fn info(spec: &HarnessSpec) -> HarnessInfo {
         mcp: spec.mcp.map(|mcp| in_home(spec, mcp.path)),
         mcp_key: spec.mcp.map(|mcp| mcp.key.to_string()),
         mcp_format: spec.mcp.map(|mcp| mcp.format),
+        sync: spec.home_kind.is_some_and(AgentHomeKind::syncs),
         automations: spec.launcher.is_some(),
         limits_edits: spec.launcher.is_some_and(Launcher::limits_edits),
     }
@@ -345,6 +403,20 @@ mod tests {
     fn the_standard_homes_are_the_ones_arbor_reads_sessions_from() {
         let homes: Vec<_> = CATALOG.iter().filter_map(|spec| spec.sessions).map(|home| home.kind).collect();
         assert_eq!(homes, [AgentHomeKind::Claude, AgentHomeKind::Codex, AgentHomeKind::Pi]);
+        for spec in CATALOG {
+            for kind in spec.home_kind.into_iter().chain(spec.sessions.map(|home| home.kind)) {
+                assert_eq!(kind.harness(), spec.harness, "{kind:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_other_harnesses_homes_are_read_for_their_own_instructions_and_skills() {
+        let script = files_script();
+        assert!(script.contains(r#"pi-agent) emit_file instructions "$2/AGENTS.md"; emit_skills "$2/skills" ;;"#), "{script}");
+        assert!(script.contains(r#"opencode) emit_file instructions "$2/AGENTS.md"; emit_skills "$2/skills" ;;"#), "{script}");
+        assert!(!script.contains("claude)") && !script.contains("codex)"), "{script}");
+        assert!(!script.contains("gemini"), "{script}");
     }
 
     #[test]

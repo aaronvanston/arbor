@@ -59,6 +59,7 @@ import { SetupPlugins } from './SetupPlugins';
 import { historyMachine, rememberHistoryMachine, SetupHistory } from './SetupHistory';
 import { SetupCost } from './SetupCost';
 import { SetupAgents } from './SetupAgents';
+import { HarnessHomesSection, HarnessSkillsSection } from './SetupHarnessHomes';
 import { SetupHooks } from './SetupHooks';
 import { SetupToolchain } from './SetupToolchain';
 import { SetupSkills } from './SetupSkills';
@@ -518,7 +519,10 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
         {tab === 'skills' || tab === 'plugins' ? <SyncScopeSentence /> : null}
         {tab === 'agents' ? (
           // The fleet's agents come from the machines' health checks, not the setup scan, so they don't wait for it.
-          <SetupAgents onNavigate={onNavigate} />
+          <>
+            <SetupAgents onNavigate={onNavigate} />
+            <HarnessHomesSection machines={machines} />
+          </>
         ) : inventory === null ? (
           <p className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
             <Spinner />
@@ -533,15 +537,18 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
         ) : tab === 'repo' ? (
           <SetupRepoSection machines={machines} />
         ) : tab === 'skills' ? (
-          <SetupSkills
-            machines={machines}
-            homeLabel={(key) => homeLabel(key, t)}
-            onCompare={setComparison}
-            onOpenInRepo={(path) => {
-              requestFocus('repo-file', path);
-              onNavigate(setupView({ tab: 'repo' }));
-            }}
-          />
+          <>
+            <SetupSkills
+              machines={machines}
+              homeLabel={(key) => homeLabel(key, t)}
+              onCompare={setComparison}
+              onOpenInRepo={(path) => {
+                requestFocus('repo-file', path);
+                onNavigate(setupView({ tab: 'repo' }));
+              }}
+            />
+            <HarnessSkillsSection machines={machines} />
+          </>
         ) : tab === 'plugins' ? (
           <SetupPlugins machines={machines} homeLabel={(key) => homeLabel(key, t)} />
         ) : tab === 'hooks' ? (

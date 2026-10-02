@@ -18,7 +18,7 @@ const checkout = (machine: string, path: string, extra: Partial<ProjectCheckout>
 });
 
 const withCodex = (machine: string): SetupMachine => ({
-  machine, local: false, reachable: true, installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
+  machine, local: false, reachable: true, harnessHomes: [], installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
   homes: [{ agent: 'codex', path: '~/.codex', items: [], problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null }],
 });
 

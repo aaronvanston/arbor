@@ -37,7 +37,7 @@ const install = (agent: SetupInstall['agent'], version: string | null, real: str
   agent, path: `~/.local/bin/${agent}`, real, version,
 });
 const machine = (name: string, homes: SetupHome[], fields: Partial<SetupMachine> = {}): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, installs: [], policy: null, scannedAt: NOW, error: null, scanning: false, ...fields,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: NOW, error: null, scanning: false, ...fields,
 });
 
 const reference = machine('mbp', [

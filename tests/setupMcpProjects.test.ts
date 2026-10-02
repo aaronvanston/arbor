@@ -9,7 +9,7 @@ const mcp = (name: string): SetupItem => ({
   text: false, skill: null, import: null,
 });
 const machine = (name: string, items: SetupItem[], deniedMcp: string[] = []): SetupMachine => ({
-  machine: name, local: false, reachable: true, installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
+  machine: name, local: false, reachable: true, harnessHomes: [], installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
   homes: [{ agent: 'claude', path: '~/.claude', items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp, shares: null }],
 });
 const checkout = (machineName: string, path: string, extra: Partial<ProjectCheckout> = {}): ProjectCheckout => ({

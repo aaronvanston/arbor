@@ -31,7 +31,7 @@ const home = (agent: SetupHome['agent'], path: string, items: SetupItem[]): Setu
   agent, path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null,
 });
 const machine = (name: string, homes: SetupHome[]): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false,
 });
 const repoSkill = (name: string, sum: string): SetupRepoSkill => ({
   name, path: `~/.agents/skills/${name}`, sum, ck: 'c9-40', files: 2, size: 1_024, problem: null, source: null,

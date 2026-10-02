@@ -28,7 +28,7 @@ const market = (name: string, source: string, fetched: string | null, auto: bool
 const server = (name: string, sum: string, fields: Partial<SetupItem> = {}) => item('mcp', name, { sum, value: 'stdio', note: 'npx', ...fields });
 const home = (agent: SetupHome['agent'], path: string, items: SetupItem[]): SetupHome => ({ agent, path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const machine = (name: string, homes: SetupHome[], reachable = true): SetupMachine => ({
-  machine: name, local: name === 'mbp', reachable, homes, installs: [], policy: null, scannedAt: NOW, error: null, scanning: false,
+  machine: name, local: name === 'mbp', reachable, homes, harnessHomes: [], installs: [], policy: null, scannedAt: NOW, error: null, scanning: false,
 });
 
 const OFFICIAL = 'claude-plugins-official';

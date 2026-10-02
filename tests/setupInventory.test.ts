@@ -27,7 +27,7 @@ const item = (kind: SetupItem['kind'], name: string, sum: string | null, fields:
 });
 const home = (agent: SetupHome['agent'], path: string, items: SetupItem[]): SetupHome => ({ agent, path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const machine = (name: string, homes: SetupHome[], fields: Partial<SetupMachine> = {}): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false, ...fields,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false, ...fields,
 });
 
 describe('setup homes', () => {

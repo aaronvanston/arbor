@@ -11,7 +11,7 @@ const plugin = (id: string, version: string | null, enabled: boolean | null = tr
 const market = (name: string, source: string) => item('marketplace', name, { note: source, value: new Date().toISOString(), enabled: true });
 const home = (path: string, items: SetupItem[]): SetupHome => ({ agent: 'claude', path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const machine = (name: string, homes: SetupHome[]): SetupMachine => ({
-  machine: name, local: name === 'Mac Mini', reachable: true, homes, installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
+  machine: name, local: name === 'Mac Mini', reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
 });
 
 const OFFICIAL = 'anthropics/claude-plugins-official';

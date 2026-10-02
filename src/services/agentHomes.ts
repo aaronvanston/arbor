@@ -12,17 +12,28 @@ import type { AgentHome, AgentHomeKind, AgentHomesView, FoundHome } from '../nat
 
 export const AGENT_HOMES_UPDATED_EVENT = 'agent-homes-updated';
 
-export const AGENT_HOME_KINDS: readonly AgentHomeKind[] = ['claude', 'codex', 'pi', 'claude-desktop'];
+export const AGENT_HOME_KINDS: readonly AgentHomeKind[] = ['claude', 'codex', 'pi', 'claude-desktop', 'pi-agent', 'prime-agent', 'opencode', 'droid', 'amp'];
 
 export const AGENT_HOME_LABEL: Record<AgentHomeKind, MessageKey> = {
   claude: 'agentHomes.agent.claude',
   codex: 'agentHomes.agent.codex',
   pi: 'agentHomes.agent.pi',
   'claude-desktop': 'agentHomes.agent.claudeDesktop',
+  'pi-agent': 'agentHomes.agent.piAgent',
+  'prime-agent': 'agentHomes.agent.primeAgent',
+  opencode: 'agentHomes.agent.openCode',
+  droid: 'agentHomes.agent.droid',
+  amp: 'agentHomes.agent.amp',
 };
 
-/** Only Claude Code's and Codex's homes have settings for Sync to read. */
+/** Only Claude Code's and Codex's homes have settings for Sync to read and change. */
 export const hasSettings = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex';
+
+/** Sync reads it: Claude Code's and Codex's settings, and the other agents' instructions and skills. */
+export const syncs = (agent: AgentHomeKind) => agent !== 'pi' && agent !== 'claude-desktop';
+
+/** Arbor reads the sessions in it; the other agents' own folders hold none it can read yet. */
+export const readsSessions = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex' || agent === 'pi' || agent === 'claude-desktop';
 
 /** A standard home read from where an agent's environment variable points, rather than a folder. */
 export const isVariable = (home: Pick<AgentHome, 'path'>) => home.path.startsWith('$');
@@ -56,7 +67,7 @@ export function homePathProblem(path: string): MessageKey | null {
 
 /** A home to add from a look's suggestion: its sessions read, its settings left alone until Sync is switched on. */
 export const homeFromFound = (machine: string, found: FoundHome): AgentHome => ({
-  machine, agent: found.agent, path: found.path, source: 'added', sessions: true, sync: false,
+  machine, agent: found.agent, path: found.path, source: 'added', sessions: readsSessions(found.agent), sync: false,
 });
 
 // ---------------------------------------------------------------------------

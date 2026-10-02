@@ -10,7 +10,7 @@ const item = (kind: SetupItem['kind'], name: string, fields: Partial<SetupItem> 
 const plugin = (id: string, version: string | null, enabled: boolean | null = true) => item('plugin', id, { value: version, enabled });
 const home = (path: string, items: SetupItem[]): SetupHome => ({ agent: 'claude', path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const machine = (name: string, homes: SetupHome[]): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
 });
 const cost = (id: string, tokens: number | null, under = false): PluginCost => ({
   id, alwaysOn: tokens === null ? null : { tokens, under }, components: [], counts: {}, error: tokens === null ? 'claude plugin details stopped with code 1 there' : null,

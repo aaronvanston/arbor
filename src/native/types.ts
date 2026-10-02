@@ -62,7 +62,7 @@ export type AgentHome = {
 /**
  * What a home belongs to, by the name the archive files its sessions under.
  */
-export type AgentHomeKind = "claude" | "codex" | "pi" | "claude-desktop";
+export type AgentHomeKind = "claude" | "codex" | "pi" | "claude-desktop" | "pi-agent" | "prime-agent" | "opencode" | "droid" | "amp";
 
 /**
  * Where a home on the list came from.
@@ -1592,6 +1592,19 @@ export type GuiSettings = {
 export type Harness = "claude" | "codex" | "pi" | "primeAgent" | "openCode" | "droid" | "amp" | "gemini" | "other";
 
 /**
+ * A home of a harness other than Claude Code and Codex, as far as Sync reads it so far: its own instructions file
+ * and the skills in its own folder. Nothing in it is changed from Arbor yet.
+ */
+export type HarnessHome = {
+  harness: Harness,
+  /**
+   * With the machine's home as ~.
+   */
+  path: string,
+  items: Array<SetupItem>,
+};
+
+/**
  * A harness as Settings › Agent homes shows it.
  */
 export type HarnessInfo = {
@@ -1615,6 +1628,10 @@ export type HarnessInfo = {
   mcp?: string,
   mcpKey?: string,
   mcpFormat?: McpFormat,
+  /**
+   * Sync reads its home.
+   */
+  sync: boolean,
   /**
    * Arbor can start an automation with it.
    */
@@ -4001,6 +4018,10 @@ export type SetupMachine = {
    */
   reachable: boolean,
   homes: Array<SetupHome>,
+  /**
+   * The other harnesses' homes, read for their own instructions and skills alone.
+   */
+  harnessHomes: Array<HarnessHome>,
   installs: Array<SetupInstall>,
   /**
    * Claude Code's managed-settings policy, when the machine has one.

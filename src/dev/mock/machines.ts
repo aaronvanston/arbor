@@ -514,10 +514,13 @@ const homesScenario = params.get('homes') ?? '';
 
 const STANDARD_HOMES: readonly (readonly [AgentHomeKind, string])[] = [
   ['claude', '$CLAUDE_CONFIG_DIR'], ['claude', '~/.claude'], ['codex', '$CODEX_HOME'], ['codex', '~/.codex'],
-  ['pi', '$PI_CODING_AGENT_SESSION_DIR'], ['pi', '~/.pi/agent/sessions'],
+  ['pi', '$PI_CODING_AGENT_SESSION_DIR'], ['pi', '~/.pi/agent/sessions'], ['pi-agent', '$PI_CODING_AGENT_DIR'], ['pi-agent', '~/.pi/agent'],
+  ['prime-agent', '$PRIME_AGENT_CODING_AGENT_DIR'], ['prime-agent', '~/.prime/agent'], ['opencode', '~/.config/opencode'], ['droid', '~/.factory'],
+  ['amp', '~/.config/amp'],
 ];
 const standardHome = (agent: AgentHomeKind, path: string) => STANDARD_HOMES.some(([kind, standard]) => kind === agent && standard === path);
-const hasHomeSettings = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex';
+const homeSyncs = (agent: AgentHomeKind) => agent !== 'pi' && agent !== 'claude-desktop';
+const homeReadsSessions = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex' || agent === 'pi' || agent === 'claude-desktop';
 const DESKTOP_HOMES = '~/Library/Application Support/Claude/local-agent-mode-sessions/*/*';
 const savedHome = (machine: string, agent: AgentHomeKind, path: string, sync: boolean): AgentHome => ({ machine, agent, path, source: 'found', sessions: true, sync });
 
@@ -558,7 +561,7 @@ const homeMachines = () => healthHosts.filter((host) => host.enabled && host.end
 
 /** A machine's homes as its scripts read them: the standard ones, then every machine's, then its own, each taking the place of the same home before it. */
 function homesOn(machine: string): AgentHome[] {
-  const homes: AgentHome[] = STANDARD_HOMES.map(([agent, path]) => ({ machine: '', agent, path, source: 'standard', sessions: true, sync: hasHomeSettings(agent) }));
+  const homes: AgentHome[] = STANDARD_HOMES.map(([agent, path]) => ({ machine: '', agent, path, source: 'standard', sessions: homeReadsSessions(agent), sync: homeSyncs(agent) }));
   for (const scope of machine ? ['', machine] : ['']) {
     for (const home of savedHomes.filter((entry) => entry.machine === scope)) {
       const at = homes.findIndex((listed) => listed.agent === home.agent && listed.path === home.path);
@@ -571,14 +574,14 @@ function homesOn(machine: string): AgentHome[] {
 
 /** The harness catalog as the native side lists it (`harnesses.rs`). */
 const HARNESSES: HarnessInfo[] = [
-  { harness: 'claude', binary: 'claude', home: '~/.claude', homeEnv: '$CLAUDE_CONFIG_DIR', sessions: '~/.claude', globalInstructions: '~/.claude/CLAUDE.md', projectInstructions: ['CLAUDE.md', '.claude/CLAUDE.md'], skills: ['~/.claude/skills'], mcp: '~/.claude.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: true },
-  { harness: 'codex', binary: 'codex', home: '~/.codex', homeEnv: '$CODEX_HOME', sessions: '~/.codex', globalInstructions: '~/.codex/AGENTS.md', projectInstructions: ['AGENTS.md'], skills: ['~/.agents/skills', '~/.codex/skills'], mcp: '~/.codex/config.toml', mcpKey: 'mcp_servers', mcpFormat: 'toml', automations: true, limitsEdits: true },
-  { harness: 'pi', binary: 'pi', home: '~/.pi/agent', homeEnv: '$PI_CODING_AGENT_DIR', sessions: '~/.pi/agent/sessions', globalInstructions: '~/.pi/agent/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.pi/agent/skills', '~/.agents/skills'], mcp: '~/.pi/agent/mcp.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: false },
-  { harness: 'primeAgent', binary: 'prime-agent', home: '~/.prime/agent', homeEnv: '$PRIME_AGENT_CODING_AGENT_DIR', globalInstructions: '~/.prime/agent/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.prime/agent/skills', '~/.agents/skills'], mcp: '~/.prime/agent/settings.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: false },
-  { harness: 'openCode', binary: 'opencode', home: '~/.config/opencode', globalInstructions: '~/.config/opencode/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.config/opencode/skills', '~/.claude/skills', '~/.agents/skills'], mcp: '~/.config/opencode/opencode.json', mcpKey: 'mcp', mcpFormat: 'json', automations: false, limitsEdits: false },
-  { harness: 'droid', binary: 'droid', home: '~/.factory', globalInstructions: '~/.factory/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.factory/skills', '~/.agents/skills'], mcp: '~/.factory/mcp.json', mcpKey: 'mcpServers', mcpFormat: 'json', automations: true, limitsEdits: true },
-  { harness: 'amp', binary: 'amp', home: '~/.config/amp', globalInstructions: '~/.config/amp/AGENTS.md', projectInstructions: ['AGENTS.md', 'AGENT.md', 'CLAUDE.md'], skills: ['~/.config/amp/skills', '~/.config/agents/skills', '~/.agents/skills', '~/.claude/skills'], mcp: '~/.config/amp/settings.json', mcpKey: 'amp.mcpServers', mcpFormat: 'json', automations: false, limitsEdits: false },
-  { harness: 'gemini', binary: 'gemini', home: '~/.gemini', projectInstructions: [], skills: [], automations: false, limitsEdits: false },
+  { harness: 'claude', binary: 'claude', home: '~/.claude', homeEnv: '$CLAUDE_CONFIG_DIR', sessions: '~/.claude', globalInstructions: '~/.claude/CLAUDE.md', projectInstructions: ['CLAUDE.md', '.claude/CLAUDE.md'], skills: ['~/.claude/skills'], mcp: '~/.claude.json', mcpKey: 'mcpServers', mcpFormat: 'json', sync: true, automations: true, limitsEdits: true },
+  { harness: 'codex', binary: 'codex', home: '~/.codex', homeEnv: '$CODEX_HOME', sessions: '~/.codex', globalInstructions: '~/.codex/AGENTS.md', projectInstructions: ['AGENTS.md'], skills: ['~/.agents/skills', '~/.codex/skills'], mcp: '~/.codex/config.toml', mcpKey: 'mcp_servers', mcpFormat: 'toml', sync: true, automations: true, limitsEdits: true },
+  { harness: 'pi', binary: 'pi', home: '~/.pi/agent', homeEnv: '$PI_CODING_AGENT_DIR', sessions: '~/.pi/agent/sessions', globalInstructions: '~/.pi/agent/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.pi/agent/skills', '~/.agents/skills'], mcp: '~/.pi/agent/mcp.json', mcpKey: 'mcpServers', mcpFormat: 'json', sync: true, automations: true, limitsEdits: false },
+  { harness: 'primeAgent', binary: 'prime-agent', home: '~/.prime/agent', homeEnv: '$PRIME_AGENT_CODING_AGENT_DIR', globalInstructions: '~/.prime/agent/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.prime/agent/skills', '~/.agents/skills'], mcp: '~/.prime/agent/settings.json', mcpKey: 'mcpServers', mcpFormat: 'json', sync: true, automations: true, limitsEdits: false },
+  { harness: 'openCode', binary: 'opencode', home: '~/.config/opencode', globalInstructions: '~/.config/opencode/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.config/opencode/skills', '~/.claude/skills', '~/.agents/skills'], mcp: '~/.config/opencode/opencode.json', mcpKey: 'mcp', mcpFormat: 'json', sync: true, automations: false, limitsEdits: false },
+  { harness: 'droid', binary: 'droid', home: '~/.factory', globalInstructions: '~/.factory/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.factory/skills', '~/.agents/skills'], mcp: '~/.factory/mcp.json', mcpKey: 'mcpServers', mcpFormat: 'json', sync: true, automations: true, limitsEdits: true },
+  { harness: 'amp', binary: 'amp', home: '~/.config/amp', globalInstructions: '~/.config/amp/AGENTS.md', projectInstructions: ['AGENTS.md', 'AGENT.md', 'CLAUDE.md'], skills: ['~/.config/amp/skills', '~/.config/agents/skills', '~/.agents/skills', '~/.claude/skills'], mcp: '~/.config/amp/settings.json', mcpKey: 'amp.mcpServers', mcpFormat: 'json', sync: true, automations: false, limitsEdits: false },
+  { harness: 'gemini', binary: 'gemini', home: '~/.gemini', projectInstructions: [], skills: [], sync: false, automations: false, limitsEdits: false },
 ];
 
 const agentHomesView = (): AgentHomesView => ({
@@ -636,7 +639,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     const problem = homePathProblem(home.path);
     if (!standardHome(home.agent, home.path) && problem) throw new Error('A home’s folder starts with ~/ or /');
     const path = home.path.trim().replace(/\/+$/, '');
-    const saved: AgentHome = { ...home, path, source: standardHome(home.agent, path) ? 'standard' : home.source === 'standard' ? 'added' : home.source, sync: home.sync && hasHomeSettings(home.agent) };
+    const saved: AgentHome = { ...home, path, source: standardHome(home.agent, path) ? 'standard' : home.source === 'standard' ? 'added' : home.source, sessions: home.sessions && homeReadsSessions(home.agent), sync: home.sync && homeSyncs(home.agent) };
     savedHomes = [...savedHomes.filter((entry) => !(entry.machine === saved.machine && entry.agent === saved.agent && entry.path === saved.path)), saved];
     return agentHomesView();
   },

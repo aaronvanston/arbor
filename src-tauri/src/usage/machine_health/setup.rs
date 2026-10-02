@@ -32,7 +32,8 @@
 
 use super::agents::{parse_version, AgentKind, AGENT_ENV};
 use ts_rs::TS;
-use super::agent_homes::{self, tilde, HomeUse};
+use super::agent_homes::{self, tilde, AgentHomeKind, HomeUse};
+use super::harnesses::{self, Harness};
 use super::attention::REPORTER_MARK;
 use super::shell::shell_quote;
 use super::*;
@@ -299,7 +300,8 @@ agent_homes | while IFS=$tab read -r agent home; do
   printf 'A\t%s\t%s\n' "$agent" "$home"
   case "$agent" in
     claude) claude_home "$home" ;;
-    *) codex_home "$home" ;;
+    codex) codex_home "$home" ;;
+    *) harness_home "$agent" "$home" ;;
   esac < /dev/null
 done
 if [ -d "$HOME/.agents" ]; then
@@ -727,6 +729,17 @@ pub(super) struct FoundHook {
     pub(super) sum: String,
 }
 
+/// A home of a harness other than Claude Code and Codex, as far as Sync reads it so far: its own instructions file
+/// and the skills in its own folder. Nothing in it is changed from Arbor yet.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HarnessHome {
+    harness: Harness,
+    /// With the machine's home as ~.
+    path: String,
+    items: Vec<SetupItem>,
+}
+
 /// A Claude Code or Codex on the machine's PATH. The first of each agent is the one that runs.
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -745,6 +758,8 @@ pub(crate) struct SetupInstall {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MachineSetup {
     homes: Vec<SetupHome>,
+    /// The other harnesses' homes, read for their own instructions and skills alone.
+    harness_homes: Vec<HarnessHome>,
     installs: Vec<SetupInstall>,
     /// Claude Code's managed-settings policy, when the machine has one.
     policy: Option<ClaudePolicy>,
@@ -833,6 +848,7 @@ fn watched_changes(before: &[SetupHome], after: &[SetupHome]) -> Vec<SetupChange
 struct Scan {
     home_dir: String,
     homes: Vec<SetupHome>,
+    harness_homes: Vec<HarnessHome>,
     installs: Vec<SetupInstall>,
     policy: Option<ClaudePolicy>,
 }
@@ -1590,9 +1606,21 @@ fn mcp_item(agent: HomeAgent, name: &str, server: &Value, home: &str, salt: &[u8
     item
 }
 
+impl Scan {
+    fn finish_home(&mut self, parts: HomeParts, harness: Option<Harness>, home: &str, salt: &[u8]) {
+        let done = parts.finish(home, salt);
+        match harness {
+            Some(harness) => self.harness_homes.push(HarnessHome { harness, path: done.path, items: done.items }),
+            None => self.homes.push(done),
+        }
+    }
+}
+
 fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
     let mut scan = Scan::default();
     let mut current: Option<HomeParts> = None;
+    // The harness the home being read belongs to, when it isn't Claude Code's or Codex's.
+    let mut harness: Option<Harness> = None;
     let mut policy_overrides = None;
     let mut policy_denied: Vec<String> = Vec::new();
     // Which Codex homes there are, as the machine has them, so a shadow home's links can be told apart from others.
@@ -1609,13 +1637,20 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
             ["H", dir] => scan.home_dir = dir.to_string(),
             ["A", agent, path] => {
                 if let Some(done) = current.take() {
-                    scan.homes.push(done.finish(&home, salt));
+                    scan.finish_home(done, harness.take(), &home, salt);
                 }
                 let agent = match *agent {
                     "claude" => HomeAgent::Claude,
                     "codex" => HomeAgent::Codex,
                     "shared" => HomeAgent::Shared,
-                    _ => continue,
+                    other => match AgentHomeKind::parse(other).filter(|kind| kind.syncs() && !kind.has_settings()) {
+                        // Its lines are only instructions and skills, which a home of any agent takes the same way.
+                        Some(kind) => {
+                            harness = Some(kind.harness());
+                            HomeAgent::Shared
+                        }
+                        None => continue,
+                    },
                 };
                 current = Some(HomeParts::new(agent, path));
             }
@@ -1685,7 +1720,8 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
         }
     }
     if let Some(done) = current.take() {
-        scan.homes.push(done.finish(&scan.home_dir, salt));
+        let home = scan.home_dir.clone();
+        scan.finish_home(done, harness, &home, salt);
     }
     if scan.home_dir.is_empty() {
         return Err("The machine didn't say where its home is".into());
@@ -1717,8 +1753,9 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
 /// The scan of `machine`'s homes, with `policy` setting where the managed-settings policy is looked for and ending
 /// with `installs`, the line that lists the agents' installs.
 fn scan_script_with(machine: &str, policy: &str, installs: &str) -> String {
-    let homes = agent_homes::shell_function(machine, HomeUse::Sync);
-    format!("set -u\nexport LC_ALL=C\n{homes}{HELPERS}{EMIT_FUNCTIONS}{policy}{SCAN_SCRIPT}{INSTALLS_SCRIPT}{installs}")
+    let homes = agent_homes::shell_function(machine, HomeUse::Files);
+    let harness_homes = harnesses::files_script();
+    format!("set -u\nexport LC_ALL=C\n{homes}{HELPERS}{EMIT_FUNCTIONS}{harness_homes}{policy}{SCAN_SCRIPT}{INSTALLS_SCRIPT}{installs}")
 }
 
 /// Installs are looked for along the PATH the agents check uses, which puts the
@@ -1806,6 +1843,7 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
                 Some(_) => recorded.again = true,
             }
             setup.homes = scan.homes;
+            setup.harness_homes = scan.harness_homes;
             setup.installs = scan.installs;
             setup.policy = scan.policy;
             setup.home_dir = scan.home_dir;
@@ -2886,7 +2924,13 @@ notifications = true
 
     #[test]
     fn what_arbor_changed_itself_is_not_reported() {
-        let scan = |sum: &str| Scan { home_dir: "/h".into(), homes: vec![claude_home(vec![watched(ItemKind::Mcp, "github", sum)], &[])], installs: vec![], policy: None };
+        let scan = |sum: &str| Scan {
+            home_dir: "/h".into(),
+            homes: vec![claude_home(vec![watched(ItemKind::Mcp, "github", sum)], &[])],
+            harness_homes: vec![],
+            installs: vec![],
+            policy: None,
+        };
         let mut setup = MachineSetup::default();
         assert_eq!(record_scan(&mut setup, 100, 110, Ok(scan("m1"))), Recorded::default(), "the first scan has nothing to compare with");
         assert_eq!(record_scan(&mut setup, 200, 210, Ok(scan("m2"))).changes.len(), 1);
@@ -2933,6 +2977,7 @@ notifications = true
         let found = Scan {
             home_dir: "/h".into(),
             homes: MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude")]).homes,
+            harness_homes: vec![],
             installs: vec![SetupInstall { agent: AgentKind::Claude, path: "~/.local/bin/claude".into(), real: None, version: Some("2.1.281".into()) }],
             policy: None,
         };
@@ -3044,6 +3089,12 @@ notifications = true
             write(&codex.join("fast.config.toml"), "model = \"mini\"\n");
             write(&codex.join("auth.json"), &format!("{{ \"token\": \"{PRIVATE}\" }}"));
             symlink("../.agents/skills", codex.join("skills")).unwrap();
+            // Another harness's home: its instructions and own skills are read, and its settings never are.
+            let pi = home.join(".pi/agent");
+            write(&pi.join("AGENTS.md"), "Pi rules.\n");
+            write(&pi.join("skills/deploy/SKILL.md"), "---\nname: deploy\ndescription: Ship it.\n---\n");
+            write(&pi.join("settings.json"), &format!("{{ \"apiKey\": \"{SECRET}\" }}"));
+            write(&home.join(".factory/AGENTS.md"), "Droid rules.\n");
             // Stand-ins for the agents, so the test never runs the real ones.
             let program = |path: PathBuf, prints: &str, mode: u32| {
                 write(&path, &format!("#!/bin/sh\necho '{prints}'\n"));
@@ -3076,6 +3127,18 @@ notifications = true
             let scan = parse_scan(&stdout, SALT).unwrap();
             let shown = serde_json::to_string(&scan.homes).unwrap();
             assert!(!shown.contains(SECRET), "{shown}");
+            let harness_homes = serde_json::to_string(&scan.harness_homes).unwrap();
+            assert!(!harness_homes.contains(SECRET) && !harness_homes.contains("Pi rules"), "{harness_homes}");
+            let read: Vec<_> = scan
+                .harness_homes
+                .iter()
+                .map(|found| (found.harness, found.path.as_str(), found.items.iter().map(|item| (item.kind, item.name.as_str())).collect::<Vec<_>>()))
+                .collect();
+            assert_eq!(read, [
+                (Harness::Pi, "~/.pi/agent", vec![(ItemKind::Instructions, "AGENTS.md"), (ItemKind::Skill, "deploy")]),
+                (Harness::Droid, "~/.factory", vec![(ItemKind::Instructions, "AGENTS.md")]),
+            ], "{shell}");
+            assert!(scan.homes.iter().all(|found| !found.path.starts_with("~/.pi") && found.path != "~/.factory"));
 
             let claude = scan.homes.iter().find(|found| found.path == "~/.claude").unwrap();
             assert_eq!(item(claude, ItemKind::Instructions, "CLAUDE.md").size, Some(instructions.len() as u64));

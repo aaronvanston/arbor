@@ -21,7 +21,7 @@ const item = (kind: SetupItem['kind'], path: string, sum: string | null, fields:
 });
 const home = (agent: SetupHome['agent'], path: string, items: SetupItem[]): SetupHome => ({ agent, path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const machine = (homes: SetupHome[], fields: Partial<SetupMachine> = {}): SetupMachine => ({
-  machine: 'ci-01', local: false, reachable: true, homes, installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false, ...fields,
+  machine: 'ci-01', local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false, ...fields,
 });
 const sha = (seed: string) => seed.repeat(64).slice(0, 64);
 const repoFile = (path: string, sum: string, ck = 'c1-120'): SetupRepoFile => ({ path, kind: syncKind(path)!, sum, ck, size: 120 });
