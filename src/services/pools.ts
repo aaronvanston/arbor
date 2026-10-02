@@ -35,9 +35,8 @@ export const newPool = (): MachinePool => ({
   id: '', name: '', members: [], maxAgents: 4, cpuCeiling: 95, memFloor: 5, whenFull: 'refuse', spillPool: null, queueTimeoutMin: 30,
 });
 
-/** What a member's verdict says, filled from its figures. */
-export function verdictMessage(verdict: PoolMemberVerdict, pool: Pick<MachinePool, 'maxAgents'>): { key: MessageKey; values: Record<string, string | number> } {
-  const running = verdict.running ?? 0;
+/** What a member's verdict says, short, beside its figures in their own columns. */
+export function verdictMessage(verdict: PoolMemberVerdict): { key: MessageKey; values: Record<string, string | number> } {
   const byKind: Record<PoolVerdictKind, MessageKey> = {
     eligible: 'pools.verdict.eligible',
     manual: 'pools.verdict.manual',
@@ -51,16 +50,36 @@ export function verdictMessage(verdict: PoolMemberVerdict, pool: Pick<MachinePoo
     memoryLow: 'pools.verdict.memoryLow',
     noHarness: 'pools.verdict.noHarness',
   };
-  return {
-    key: byKind[verdict.kind],
-    values: {
-      running,
-      max: pool.maxAgents,
-      cpu: Math.round(verdict.cpu ?? 0),
-      free: Math.round(verdict.memFree ?? 0),
-      minutes: Math.max(1, Math.round((verdict.readingAgeMs ?? 0) / 60_000)),
-    },
-  };
+  return { key: byKind[verdict.kind], values: { minutes: Math.max(1, Math.round((verdict.readingAgeMs ?? 0) / 60_000)) } };
+}
+
+export type PoolLimit = 'agents' | 'cpu' | 'memory';
+
+/** The limit a verdict says a member is at, so its figure can be marked. */
+export const trippedLimit = (kind: PoolVerdictKind): PoolLimit | null =>
+  kind === 'agentsFull' ? 'agents' : kind === 'cpuHigh' ? 'cpu' : kind === 'memoryLow' ? 'memory' : null;
+
+/** The limits a pool has on, as words; a member at any one of them is full. Empty when every limit is off. */
+export function limitWords(pool: Pick<MachinePool, 'maxAgents' | 'cpuCeiling' | 'memFloor'>): { key: MessageKey; values: Record<string, number> }[] {
+  const words: { key: MessageKey; values: Record<string, number> }[] = [];
+  if (pool.maxAgents !== null) words.push({ key: 'pools.limit.agents', values: { count: pool.maxAgents } });
+  if (pool.cpuCeiling !== null) words.push({ key: 'pools.limit.cpu', values: { percent: pool.cpuCeiling } });
+  if (pool.memFloor !== null) words.push({ key: 'pools.limit.memory', values: { percent: pool.memFloor } });
+  return words;
+}
+
+/** How a member's chance is worked out: by free agent slots under an agent limit, else by agents running. */
+export const shareRule = (pool: Pick<MachinePool, 'maxAgents'>): MessageKey =>
+  pool.maxAgents === null ? 'pools.how.shareOpen' : 'pools.how.shareSlots';
+
+/**
+ * The preview's plan as the page shows it: the runs that would find a member, in order, and whether the pool fills
+ * before the plan's end (every later run then waits, spills or doesn't start).
+ */
+export function planSteps(plan: readonly (string | null)[]): { machines: string[]; fills: boolean } {
+  const firstGap = plan.indexOf(null);
+  const machines = (firstGap === -1 ? plan : plan.slice(0, firstGap)).filter((machine): machine is string => machine !== null);
+  return { machines, fills: firstGap !== -1 };
 }
 
 /** Whether a verdict leaves a member out for being busy or unseen, rather than by its weight. */

@@ -2171,17 +2171,18 @@ export type MachinePool = {
   name: string,
   members: Array<PoolMember>,
   /**
-   * The most Claude Code and Codex processes a member may have running and still take a run.
+   * The most Claude Code and Codex processes a member may have running and still take a run; None is no limit.
+   * A member at any one of the three limits is full.
    */
-  maxAgents: number,
+  maxAgents: number | null,
   /**
-   * A member busier than this CPU percent is full.
+   * A member at or past this CPU percent is full; None is no limit.
    */
-  cpuCeiling: number,
+  cpuCeiling: number | null,
   /**
-   * A member with less free memory than this percent is full.
+   * A member with this percent of memory free or less is full; None is no limit.
    */
-  memFloor: number,
+  memFloor: number | null,
   whenFull: PoolWhenFull,
   /**
    * The pool a run goes to when this one is full and `when_full` is Spill.
@@ -2730,6 +2731,11 @@ export type PoolPreview = {
    * How old a reading may be before it's stale, from how often machines are being sampled now.
    */
   freshForMs: number,
+  /**
+   * Where the next few runs would most likely go if they all started now, each counting as running for the ones
+   * after it; None once no member has room. Shows how a burst spreads and when the pool fills.
+   */
+  plan: Array<string | null>,
 };
 
 /**

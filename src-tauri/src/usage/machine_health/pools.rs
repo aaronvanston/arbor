@@ -104,12 +104,13 @@ pub(crate) struct MachinePool {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) members: Vec<PoolMember>,
-    /// The most Claude Code and Codex processes a member may have running and still take a run.
-    pub(crate) max_agents: u32,
-    /// A member busier than this CPU percent is full.
-    pub(crate) cpu_ceiling: u32,
-    /// A member with less free memory than this percent is full.
-    pub(crate) mem_floor: u32,
+    /// The most Claude Code and Codex processes a member may have running and still take a run; None is no limit.
+    /// A member at any one of the three limits is full.
+    pub(crate) max_agents: Option<u32>,
+    /// A member at or past this CPU percent is full; None is no limit.
+    pub(crate) cpu_ceiling: Option<u32>,
+    /// A member with this percent of memory free or less is full; None is no limit.
+    pub(crate) mem_floor: Option<u32>,
     pub(crate) when_full: PoolWhenFull,
     /// The pool a run goes to when this one is full and `when_full` is Spill.
     pub(crate) spill_pool: Option<String>,
@@ -180,7 +181,13 @@ pub(crate) struct PoolPreview {
     /// How old a reading may be before it's stale, from how often machines are being sampled now.
     #[ts(type = "number")]
     fresh_for_ms: i64,
+    /// Where the next few runs would most likely go if they all started now, each counting as running for the ones
+    /// after it; None once no member has room. Shows how a burst spreads and when the pool fills.
+    plan: Vec<Option<String>>,
 }
+
+/// How many runs the preview's plan walks through.
+const PLAN_RUNS: usize = 8;
 
 // ---------------------------------------------------------------------------
 // Choosing
@@ -253,11 +260,11 @@ pub(super) fn assess_with(
                 VerdictKind::Unreachable
             } else if verdict.reading_age_ms.is_some_and(|age| age > fresh_for) {
                 VerdictKind::Stale
-            } else if verdict.running.unwrap_or(0) >= pool.max_agents {
+            } else if pool.max_agents.is_some_and(|max| verdict.running.unwrap_or(0) >= max) {
                 VerdictKind::AgentsFull
-            } else if reading.cpu.is_some_and(|cpu| cpu >= pool.cpu_ceiling as f32) {
+            } else if pool.cpu_ceiling.zip(reading.cpu).is_some_and(|(ceiling, cpu)| cpu >= ceiling as f32) {
                 VerdictKind::CpuHigh
-            } else if verdict.mem_free.is_some_and(|free| free <= pool.mem_floor as f32) {
+            } else if pool.mem_floor.zip(verdict.mem_free).is_some_and(|(floor, free)| free <= floor as f32) {
                 VerdictKind::MemoryLow
             } else if member.weight == PoolWeight::Manual {
                 VerdictKind::Manual
@@ -272,7 +279,15 @@ pub(super) fn assess_with(
     let weights: Vec<f64> = verdicts
         .iter()
         .map(|verdict| match verdict.kind {
-            VerdictKind::Eligible => verdict.weight.shares() * pool.max_agents.saturating_sub(verdict.running.unwrap_or(0)) as f64,
+            // Weight times free agent slots; with no agent limit, weight shrinking with each agent running, so a busy
+            // member still gets less and a burst still spreads.
+            VerdictKind::Eligible => {
+                let running = verdict.running.unwrap_or(0);
+                match pool.max_agents {
+                    Some(max) => verdict.weight.shares() * max.saturating_sub(running) as f64,
+                    None => verdict.weight.shares() / (running + 1) as f64,
+                }
+            }
             _ => 0.0,
         })
         .collect();
@@ -297,6 +312,20 @@ pub(super) fn choose(verdicts: &[MemberVerdict], roll: f64) -> Option<&MemberVer
     }
     // Rounding can leave a sliver past the last share.
     eligible.last().copied()
+}
+
+/// The most likely member for each of the next `runs` runs, each one counted as running on its member for the next.
+fn plan(pool: &MachinePool, readings: &BTreeMap<String, Reading>, now_ms: i64, interval_ms: u64, runs: usize) -> Vec<Option<String>> {
+    let mut recent: BTreeMap<String, u32> = BTreeMap::new();
+    (0..runs)
+        .map(|_| {
+            let next = likely(&assess(pool, readings, &recent, now_ms, interval_ms));
+            if let Some(machine) = &next {
+                *recent.entry(normalize_machine_name(machine)).or_default() += 1;
+            }
+            next
+        })
+        .collect()
 }
 
 fn likely(verdicts: &[MemberVerdict]) -> Option<String> {
@@ -352,9 +381,10 @@ pub(super) fn read_pools(connection: &Connection) -> Result<Vec<MachinePool>, St
                 id: row.get(0)?,
                 name: row.get(1)?,
                 members: Vec::new(),
-                max_agents: row.get(2)?,
-                cpu_ceiling: row.get(3)?,
-                mem_floor: row.get(4)?,
+                // 0 is stored for a limit that's off.
+                max_agents: row.get::<_, Option<u32>>(2)?.filter(|value| *value > 0),
+                cpu_ceiling: row.get::<_, Option<u32>>(3)?.filter(|value| *value > 0),
+                mem_floor: row.get::<_, Option<u32>>(4)?.filter(|value| *value > 0),
                 when_full: PoolWhenFull::from_stored(&row.get::<_, String>(5)?),
                 spill_pool: row.get(6)?,
                 queue_timeout_min: row.get(7)?,
@@ -406,9 +436,10 @@ fn checked(mut pool: MachinePool, others: &[MachinePool]) -> Result<MachinePool,
     }
     let mut seen = BTreeSet::new();
     pool.members.retain(|member| !member.machine.trim().is_empty() && seen.insert(normalize_machine_name(&member.machine)));
-    pool.max_agents = pool.max_agents.clamp(1, 64);
-    pool.cpu_ceiling = pool.cpu_ceiling.clamp(10, 100);
-    pool.mem_floor = pool.mem_floor.min(90);
+    pool.max_agents = pool.max_agents.map(|max| max.clamp(1, 64));
+    pool.cpu_ceiling = pool.cpu_ceiling.map(|ceiling| ceiling.clamp(10, 100));
+    // No memory free at all is no floor.
+    pool.mem_floor = pool.mem_floor.map(|floor| floor.min(90)).filter(|floor| *floor > 0);
     pool.queue_timeout_min = pool.queue_timeout_min.clamp(1, 24 * 60);
     if pool.when_full != PoolWhenFull::Spill {
         pool.spill_pool = None;
@@ -445,9 +476,9 @@ fn write_pool(connection: &mut Connection, pool: &MachinePool) -> Result<(), Str
             params![
                 pool.id,
                 pool.name,
-                pool.max_agents,
-                pool.cpu_ceiling,
-                pool.mem_floor,
+                pool.max_agents.unwrap_or(0),
+                pool.cpu_ceiling.unwrap_or(0),
+                pool.mem_floor.unwrap_or(0),
                 pool.when_full.stored(),
                 pool.spill_pool,
                 pool.queue_timeout_min
@@ -533,7 +564,13 @@ pub(crate) async fn preview_pools(state: tauri::State<'_, MachineHealthState>) -
         .iter()
         .map(|pool| {
             let members = assess(pool, &readings, &BTreeMap::new(), now_ms, interval_ms);
-            PoolPreview { pool: pool.id.clone(), likely: likely(&members), members, fresh_for_ms: fresh_for_ms(interval_ms) }
+            PoolPreview {
+                pool: pool.id.clone(),
+                likely: likely(&members),
+                members,
+                fresh_for_ms: fresh_for_ms(interval_ms),
+                plan: plan(pool, &readings, now_ms, interval_ms, PLAN_RUNS),
+            }
         })
         .collect())
 }
@@ -549,9 +586,9 @@ mod tests {
             id: "p1".into(),
             name: "Builds".into(),
             members: members.iter().map(|(machine, weight)| PoolMember { machine: (*machine).into(), weight: *weight }).collect(),
-            max_agents: 4,
-            cpu_ceiling: 95,
-            mem_floor: 5,
+            max_agents: Some(4),
+            cpu_ceiling: Some(95),
+            mem_floor: Some(5),
             when_full: PoolWhenFull::Refuse,
             spill_pool: None,
             queue_timeout_min: 30,
@@ -642,6 +679,36 @@ mod tests {
     }
 
     #[test]
+    fn a_limit_left_off_never_makes_a_member_full() {
+        let mut pool = pool(&[("a", PoolWeight::Normal), ("b", PoolWeight::Normal)]);
+        let busy = readings(&[("a", Reading { cpu: Some(99.0), mem_used: Some(99.0), ..healthy(12) }), ("b", healthy(0))]);
+        assert_eq!(kinds(&assess(&pool, &busy, &BTreeMap::new(), NOW, 5_000))[0], VerdictKind::AgentsFull);
+        pool.max_agents = None;
+        assert_eq!(kinds(&assess(&pool, &busy, &BTreeMap::new(), NOW, 5_000))[0], VerdictKind::CpuHigh);
+        pool.cpu_ceiling = None;
+        assert_eq!(kinds(&assess(&pool, &busy, &BTreeMap::new(), NOW, 5_000))[0], VerdictKind::MemoryLow);
+        pool.mem_floor = None;
+        let verdicts = assess(&pool, &busy, &BTreeMap::new(), NOW, 5_000);
+        assert_eq!(kinds(&verdicts), vec![VerdictKind::Eligible, VerdictKind::Eligible]);
+        // With no agent limit, each agent running shrinks a member’s weight: 2/13 against 2/1, so 1/14 of the chance.
+        assert!((verdicts[0].share - 1.0 / 14.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_plan_spreads_a_burst_and_says_when_the_pool_fills() {
+        let mut pool = pool(&[("a", PoolWeight::Prefer), ("b", PoolWeight::Normal)]);
+        pool.max_agents = Some(2);
+        let idle = readings(&[("a", healthy(0)), ("b", healthy(1))]);
+        let planned = plan(&pool, &idle, NOW, 5_000, 5);
+        let named: Vec<Option<&str>> = planned.iter().map(|entry| entry.as_deref()).collect();
+        assert_eq!(named, vec![Some("a"), Some("a"), Some("b"), None, None]);
+        pool.max_agents = None;
+        let open: Vec<String> = plan(&pool, &idle, NOW, 5_000, 4).into_iter().flatten().collect();
+        assert_eq!(open.len(), 4);
+        assert!(open.contains(&"b".to_string()), "a burst reaches the normal member too: {open:?}");
+    }
+
+    #[test]
     fn runs_just_sent_count_as_running_so_a_burst_spreads() {
         let pool = pool(&[("a", PoolWeight::Prefer), ("b", PoolWeight::Normal)]);
         let idle = readings(&[("a", healthy(0)), ("b", healthy(0))]);
@@ -675,13 +742,13 @@ mod tests {
     fn a_pool_is_tidied_and_checked_before_it_is_saved() {
         let mut draft = pool(&[("casey-mbp", PoolWeight::Prefer), ("Casey MBP", PoolWeight::Less), (" ", PoolWeight::Normal)]);
         draft.name = "  Builds ".into();
-        draft.max_agents = 0;
-        draft.cpu_ceiling = 500;
+        draft.max_agents = Some(0);
+        draft.cpu_ceiling = Some(500);
         draft.queue_timeout_min = 0;
         let saved = checked(draft.clone(), &[]).unwrap();
         assert_eq!(saved.name, "Builds");
         assert_eq!(saved.members, vec![PoolMember { machine: "casey-mbp".into(), weight: PoolWeight::Prefer }]);
-        assert_eq!((saved.max_agents, saved.cpu_ceiling, saved.queue_timeout_min), (1, 100, 1));
+        assert_eq!((saved.max_agents, saved.cpu_ceiling, saved.queue_timeout_min), (Some(1), Some(100), 1));
 
         let mut other = pool(&[]);
         other.id = "p2".into();

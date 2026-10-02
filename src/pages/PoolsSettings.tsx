@@ -25,15 +25,20 @@ import {
   POOL_WHEN_FULL,
   POOL_WHEN_FULL_LABEL,
   leftOut,
+  limitWords,
   machinesToAdd,
   newPool,
   poolDraftProblem,
+  planSteps,
   poolSummary,
   removePool,
   savePool,
+  shareRule,
   spillTargets,
+  trippedLimit,
   usePools,
   verdictMessage,
+  type PoolLimit,
 } from '../services/pools';
 import { poolRuns, useRuns } from '../services/runs';
 import { cn } from '../lib/utils';
@@ -101,6 +106,8 @@ function PoolSection({ pool, pools, preview, runs, onEdit, onRun }: {
   const { t, tRich } = useI18n();
   const [removing, setRemoving] = useState(false);
   const shaped = poolSummary(pool);
+  const limits = limitWords(pool);
+  const steps = planSteps(preview?.plan ?? []);
   const remove = async () => {
     setRemoving(true);
     try {
@@ -151,7 +158,7 @@ function PoolSection({ pool, pools, preview, runs, onEdit, onRun }: {
       }
     >
       <SettingsBlock className="py-2 text-xs text-muted-foreground">
-        {t('pools.limits', { agents: pool.maxAgents, cpu: pool.cpuCeiling, mem: pool.memFloor })}
+        {limits.length ? t('pools.limits.any', { limits: limits.map((limit) => t(limit.key, limit.values)).join(', ') }) : t('pools.limits.none')}
       </SettingsBlock>
       {pool.members.length === 0 ? (
         <TableEmpty>{t('pools.noMembers')}</TableEmpty>
@@ -160,35 +167,79 @@ function PoolSection({ pool, pools, preview, runs, onEdit, onRun }: {
           <TableHeader>
             <TableRow>
               <TableHead>{t('pools.column.machine')}</TableHead>
-              <TableHead className="w-32">{t('pools.column.weight')}</TableHead>
+              <TableHead className="w-28">{t('pools.column.weight')}</TableHead>
+              <TableHead className="w-20 text-end">{t('pools.column.agents')}</TableHead>
+              <TableHead className="w-16 text-end">{t('pools.column.cpu')}</TableHead>
+              <TableHead className="w-28 text-end">{t('pools.column.memory')}</TableHead>
               <TableHead>{t('pools.column.now')}</TableHead>
-              <TableHead className="w-28 text-end">{t('pools.column.chance')}</TableHead>
+              <TableHead className="w-36">{t('pools.column.chance')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pool.members.map((member) => {
               const verdict = preview?.members.find((entry) => entry.machine === member.machine);
-              const message = verdict ? verdictMessage(verdict, pool) : null;
+              const message = verdict ? verdictMessage(verdict) : null;
+              const tripped = verdict ? trippedLimit(verdict.kind) : null;
+              const figure = (limit: PoolLimit, value: string | null) => (
+                <span className={cn('tabular-nums', tripped === limit ? 'font-medium text-warning-foreground' : value === null && 'text-muted-foreground')}>
+                  {value ?? t('pools.figure.none')}
+                </span>
+              );
+              const running = verdict?.running ?? null;
               return (
                 <TableRow key={member.machine} data-verdict={verdict?.kind}>
                   <TableCell><MachinePill name={member.machine} /></TableCell>
                   <TableCell className="text-muted-foreground">{t(POOL_WEIGHT_LABEL[member.weight])}</TableCell>
+                  <TableCell className="text-end">
+                    {figure('agents', running === null ? null : pool.maxAgents === null ? String(running) : t('pools.figure.agentsOf', { running, max: pool.maxAgents }))}
+                  </TableCell>
+                  <TableCell className="text-end">{figure('cpu', verdict?.cpu == null ? null : `${Math.round(verdict.cpu)}%`)}</TableCell>
+                  <TableCell className="text-end">{figure('memory', verdict?.memFree == null ? null : `${Math.round(verdict.memFree)}%`)}</TableCell>
                   <TableCell className={cn('text-xs', verdict && leftOut(verdict.kind) ? 'text-warning-foreground' : 'text-muted-foreground')}>
                     {message ? t(message.key, message.values) : t('pools.verdict.checking')}
                   </TableCell>
-                  <TableCell className="text-end tabular-nums">{verdict && verdict.share > 0 ? formatPercent(verdict.share) : <span className="text-muted-foreground">{t('pools.chance.none')}</span>}</TableCell>
+                  <TableCell>
+                    {verdict && verdict.share > 0 ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
+                          <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(4, verdict.share * 100)}%` }} />
+                        </span>
+                        <span className="w-10 text-end tabular-nums">{formatPercent(verdict.share)}</span>
+                      </span>
+                    ) : <span className="text-muted-foreground">{t('pools.figure.none')}</span>}
+                  </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
       )}
-      <SettingsBlock className="py-2.5 text-sm">
-        {preview?.likely
-          ? tRich('pools.next.likely', { machine: <MachinePill name={preview.likely} size="sm" /> })
-          : preview
-            ? <span className="text-muted-foreground">{t('pools.next.nobody', { action: whenFull })}</span>
-            : <span className="text-muted-foreground">{t('pools.verdict.checking')}</span>}
+      <SettingsBlock className="flex flex-col gap-2 py-3 text-sm">
+        <span className="text-xs font-medium text-muted-foreground">{t('pools.how.title')}</span>
+        <span className="text-xs text-muted-foreground">{t(shareRule(pool))}</span>
+        {!preview ? (
+          <span className="text-muted-foreground">{t('pools.verdict.checking')}</span>
+        ) : steps.machines.length === 0 ? (
+          <span className="text-muted-foreground">{t('pools.how.nobody', { action: whenFull })}</span>
+        ) : (
+          <>
+            <span>{tRich('pools.next.likely', { machine: <MachinePill name={steps.machines[0] ?? ''} size="sm" /> })}</span>
+            <div className="flex flex-col gap-1.5" data-slot="pool-plan">
+              <span className="text-xs text-muted-foreground">{t('pools.how.plan', { count: preview.plan.length })}</span>
+              <ol className="flex flex-wrap items-center gap-1.5">
+                {steps.machines.map((machine, index) => (
+                  <li key={index} className="inline-flex items-center gap-1 rounded-md border border-border/60 py-0.5 ps-1.5 pe-1">
+                    <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
+                    <MachinePill name={machine} size="sm" />
+                  </li>
+                ))}
+              </ol>
+              <span className="text-xs text-muted-foreground">
+                {steps.fills ? t('pools.how.fills', { action: whenFull }) : t('pools.how.planHint')}
+              </span>
+            </div>
+          </>
+        )}
       </SettingsBlock>
       {runs ? (
         <>
@@ -296,9 +347,9 @@ function PoolDialog({ pool, pools, onClose }: { pool: MachinePool | null; pools:
             <div className="flex flex-col gap-2">
               <Label>{t('pools.dialog.full')}</Label>
               <div className="grid grid-cols-3 gap-3">
-                <LimitField id="pool-agents" label={t('pools.dialog.maxAgents')} value={draft.maxAgents} min={1} max={64} onChange={(maxAgents) => change({ maxAgents })} />
-                <LimitField id="pool-cpu" label={t('pools.dialog.cpuCeiling')} value={draft.cpuCeiling} min={10} max={100} unit="%" onChange={(cpuCeiling) => change({ cpuCeiling })} />
-                <LimitField id="pool-mem" label={t('pools.dialog.memFloor')} value={draft.memFloor} min={0} max={90} unit="%" onChange={(memFloor) => change({ memFloor })} />
+                <LimitField id="pool-agents" label={t('pools.dialog.maxAgents')} value={draft.maxAgents} min={1} max={64} optional onChange={(maxAgents) => change({ maxAgents })} />
+                <LimitField id="pool-cpu" label={t('pools.dialog.cpuCeiling')} value={draft.cpuCeiling} min={10} max={100} unit="%" optional onChange={(cpuCeiling) => change({ cpuCeiling })} />
+                <LimitField id="pool-mem" label={t('pools.dialog.memFloor')} value={draft.memFloor} min={1} max={90} unit="%" optional onChange={(memFloor) => change({ memFloor })} />
               </div>
               <p className="text-xs text-muted-foreground">{t('pools.dialog.fullHint')}</p>
             </div>
@@ -329,7 +380,7 @@ function PoolDialog({ pool, pools, onClose }: { pool: MachinePool | null; pools:
                   </Select>
                 </div>
               ) : draft.whenFull === 'queue' ? (
-                <LimitField id="pool-wait" label={t('pools.dialog.queueTimeout')} value={draft.queueTimeoutMin} min={1} max={1440} unit={t('pools.dialog.minutes')} onChange={(queueTimeoutMin) => change({ queueTimeoutMin })} />
+                <LimitField id="pool-wait" label={t('pools.dialog.queueTimeout')} value={draft.queueTimeoutMin} min={1} max={1440} unit={t('pools.dialog.minutes')} onChange={(queueTimeoutMin) => { if (queueTimeoutMin !== null) change({ queueTimeoutMin }); }} />
               ) : null}
             </div>
             {tried && problem ? <p className="text-sm text-error-foreground" role="alert">{t(problem)}</p> : null}
@@ -348,9 +399,11 @@ function PoolDialog({ pool, pools, onClose }: { pool: MachinePool | null; pools:
   );
 }
 
-function LimitField({ id, label, value, min, max, unit, onChange }: {
-  id: string; label: string; value: number; min: number; max: number; unit?: string; onChange: (value: number) => void;
+/** A number a pool is limited by. An optional one can be emptied, which turns the limit off. */
+function LimitField({ id, label, value, min, max, unit, optional = false, onChange }: {
+  id: string; label: string; value: number | null; min: number; max: number; unit?: string; optional?: boolean; onChange: (value: number | null) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
@@ -360,9 +413,13 @@ function LimitField({ id, label, value, min, max, unit, onChange }: {
         min={min}
         max={max}
         value={value}
-        unit={unit}
+        unit={value === null ? undefined : unit}
+        placeholder={optional ? t('pools.dialog.noLimit') : undefined}
         allowOutOfRange={false}
-        onValueChange={(next) => { if (next !== null) onChange(Math.round(next)); }}
+        onValueChange={(next) => {
+          if (next !== null) onChange(Math.round(next));
+          else if (optional) onChange(null);
+        }}
         aria-label={label}
       />
     </div>

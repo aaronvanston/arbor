@@ -5,10 +5,10 @@ import type { MachineHealthSnapshot, MachinePool, PoolMemberVerdict, PoolPreview
 import type { CommandAnswers } from './answers';
 import { freshInstall, mockLog, params } from './scenario';
 
-// `?pools=none`, `full` or `stale` (listed at the top of mockTauri.ts).
+// `?pools=none`, `full`, `stale` or `open` (every limit off; listed at the top of mockTauri.ts).
 const poolsScenario = params.get('pools');
 
-let pools: MachinePool[] = poolsScenario === 'none' || freshInstall ? [] : [
+const mockPools: MachinePool[] = poolsScenario === 'none' || freshInstall ? [] : [
   {
     id: 'mock-builds', name: 'Builds', maxAgents: 6, cpuCeiling: 95, memFloor: 5, whenFull: 'spill', spillPool: 'mock-overflow', queueTimeoutMin: 30,
     members: [
@@ -26,6 +26,7 @@ let pools: MachinePool[] = poolsScenario === 'none' || freshInstall ? [] : [
     ],
   },
 ];
+let pools: MachinePool[] = poolsScenario === 'open' ? mockPools.map((pool) => ({ ...pool, maxAgents: null, cpuCeiling: null, memFloor: null })) : mockPools;
 
 /** The pools as they stand, for the mock's runs. */
 export const poolsNow = () => pools;
@@ -35,6 +36,18 @@ const loose = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** The native side's verdicts (`pools.rs` `assess`), near enough for the page to show each case. */
 export function preview(pool: MachinePool, snapshot: MachineHealthSnapshot): PoolPreview {
+  const first = assess(pool, snapshot, {});
+  // The native side's plan: each run counted as running on its member for the next.
+  const sent: Record<string, number> = {};
+  const plan = Array.from({ length: 8 }, () => {
+    const next = assess(pool, snapshot, sent).likely;
+    if (next) sent[next] = (sent[next] ?? 0) + 1;
+    return next;
+  });
+  return { ...first, plan };
+}
+
+function assess(pool: MachinePool, snapshot: MachineHealthSnapshot, sent: Record<string, number>): Omit<PoolPreview, 'plan'> {
   const freshForMs = Math.max(15_000, snapshot.intervalMs * 3);
   const members = pool.members.map((member): PoolMemberVerdict => {
     const health = snapshot.machines.find((entry) => loose(entry.machine) === loose(member.machine));
@@ -42,7 +55,7 @@ export function preview(pool: MachinePool, snapshot: MachineHealthSnapshot): Poo
     if (!health) return verdict;
     const latest = health.latest;
     const full = poolsScenario === 'full';
-    verdict.running = latest ? (full ? pool.maxAgents : (latest.claudeRunning ?? 0) + (latest.codexRunning ?? 0)) : null;
+    verdict.running = latest ? (full ? pool.maxAgents ?? 8 : (latest.claudeRunning ?? 0) + (latest.codexRunning ?? 0)) + (sent[member.machine] ?? 0) : null;
     verdict.cpu = latest?.cpu ?? null;
     verdict.memFree = latest ? Math.max(0, 100 - latest.mem) : null;
     verdict.readingAgeMs = health.lastOkAt === null ? null : poolsScenario === 'stale' ? freshForMs + 40_000 : snapshot.now - health.lastOkAt;
@@ -50,13 +63,17 @@ export function preview(pool: MachinePool, snapshot: MachineHealthSnapshot): Poo
       : health.lastOkAt === null ? (health.error ? 'unreachable' : 'noReading')
       : health.error ? 'unreachable'
       : (verdict.readingAgeMs ?? 0) > freshForMs ? 'stale'
-      : (verdict.running ?? 0) >= pool.maxAgents ? 'agentsFull'
-      : verdict.cpu !== null && verdict.cpu >= pool.cpuCeiling ? 'cpuHigh'
-      : verdict.memFree !== null && verdict.memFree <= pool.memFloor ? 'memoryLow'
+      : pool.maxAgents !== null && (verdict.running ?? 0) >= pool.maxAgents ? 'agentsFull'
+      : pool.cpuCeiling !== null && verdict.cpu !== null && verdict.cpu >= pool.cpuCeiling ? 'cpuHigh'
+      : pool.memFloor !== null && verdict.memFree !== null && verdict.memFree <= pool.memFloor ? 'memoryLow'
       : member.weight === 'manual' ? 'manual' : 'eligible';
     return { ...verdict, kind };
   });
-  const weights = members.map((verdict) => verdict.kind === 'eligible' ? shares[verdict.weight] * Math.max(0, pool.maxAgents - (verdict.running ?? 0)) : 0);
+  const weights = members.map((verdict) => {
+    if (verdict.kind !== 'eligible') return 0;
+    const running = verdict.running ?? 0;
+    return pool.maxAgents === null ? shares[verdict.weight] / (running + 1) : shares[verdict.weight] * Math.max(0, pool.maxAgents - running);
+  });
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   const shared = members.map((verdict, index) => ({ ...verdict, share: total > 0 ? (weights[index] ?? 0) / total : 0 }));
   const best = shared.filter((verdict) => verdict.share > 0).sort((a, b) => b.share - a.share)[0];

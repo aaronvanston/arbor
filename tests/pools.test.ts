@@ -1,25 +1,24 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import type { MachinePool, PoolMemberVerdict } from '../src/native/types';
-import { leftOut, machinesToAdd, newPool, poolDraftProblem, poolSummary, spillTargets, verdictMessage } from '../src/services/pools';
+import { leftOut, limitWords, machinesToAdd, newPool, planSteps, poolDraftProblem, poolSummary, shareRule, spillTargets, trippedLimit, verdictMessage } from '../src/services/pools';
 
 const pool = (patch: Partial<MachinePool> = {}): MachinePool => ({ ...newPool(), id: 'p1', name: 'Builds', ...patch });
 const verdict = (patch: Partial<PoolMemberVerdict>): PoolMemberVerdict => ({
   machine: 'casey-mbp', weight: 'normal', kind: 'eligible', running: 1, cpu: 31.6, memFree: 42.2, readingAgeMs: 2_000, share: 0.5, ...patch,
 });
-const said = (entry: PoolMemberVerdict, max = 4) => {
-  const message = verdictMessage(entry, { maxAgents: max });
+const said = (entry: PoolMemberVerdict) => {
+  const message = verdictMessage(entry);
   return translate(message.key, message.values);
 };
 
 describe('a pool member’s standing', () => {
-  it('says why it can or can’t take the next run, with its figures', () => {
-    expect(said(verdict({}))).toBe('Has room: 1 of 4 agents running');
-    expect(said(verdict({ kind: 'agentsFull', running: 4 }))).toBe('Full: 4 agents running, the pool allows 4');
-    expect(said(verdict({ kind: 'cpuHigh', cpu: 97.4 }))).toBe('Busy: CPU at 97%');
-    expect(said(verdict({ kind: 'memoryLow', memFree: 3.2 }))).toBe('Busy: 3% memory free');
-    expect(said(verdict({ kind: 'stale', readingAgeMs: 200_000 }))).toBe('Last reading 3 min ago, too old to go by');
-    expect(said(verdict({ kind: 'manual' }))).toBe('Manual only: never picked for a run');
+  it('says why it can or can’t take the next run, and marks the limit it’s at', () => {
+    expect(said(verdict({}))).toBe('Has room');
+    expect(said(verdict({ kind: 'agentsFull', running: 4 }))).toBe('Full: agents running');
+    expect(said(verdict({ kind: 'stale', readingAgeMs: 200_000 }))).toBe('Reading 3 min old, too old to go by');
+    expect(said(verdict({ kind: 'manual' }))).toBe('Never picked: manual only');
+    expect([trippedLimit('agentsFull'), trippedLimit('cpuHigh'), trippedLimit('memoryLow'), trippedLimit('stale')]).toEqual(['agents', 'cpu', 'memory', null]);
   });
 
   it('counts a member as left out only when it’s busy or unseen, not for its weight', () => {
@@ -27,6 +26,27 @@ describe('a pool member’s standing', () => {
     expect(leftOut('manual')).toBe(false);
     expect(leftOut('agentsFull')).toBe(true);
     expect(leftOut('unreachable')).toBe(true);
+  });
+});
+
+describe('how a pool picks', () => {
+  const words = (draft: MachinePool) => limitWords(draft).map((limit) => translate(limit.key, limit.values));
+
+  it('names only the limits that are on, any one of which makes a machine full', () => {
+    expect(words(pool())).toEqual(['4 agents running', '95% CPU', '5% memory free or less']);
+    expect(words(pool({ maxAgents: null, memFloor: null }))).toEqual(['95% CPU']);
+    expect(words(pool({ maxAgents: null, cpuCeiling: null, memFloor: null }))).toEqual([]);
+  });
+
+  it('explains the chance by free slots under an agent limit, else by agents running', () => {
+    expect(shareRule(pool())).toBe('pools.how.shareSlots');
+    expect(shareRule(pool({ maxAgents: null }))).toBe('pools.how.shareOpen');
+  });
+
+  it('shows the planned runs up to the first that finds no room', () => {
+    expect(planSteps(['casey-mbp', 'cedar-02', 'casey-mbp', null, null])).toEqual({ machines: ['casey-mbp', 'cedar-02', 'casey-mbp'], fills: true });
+    expect(planSteps(['casey-mbp', 'casey-mbp'])).toEqual({ machines: ['casey-mbp', 'casey-mbp'], fills: false });
+    expect(planSteps([null])).toEqual({ machines: [], fills: true });
   });
 });
 
