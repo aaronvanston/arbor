@@ -32,6 +32,10 @@
  * Usage's Overview, whose Breakdown it was, `failures` Usage's Requests with Failed on, which lists the failed
  * requests with their statuses and what went wrong, and `telemetry` Sync › Cost); `?page=machine:ci-01` starts on
  * ci-01's own page, as its leaf in the sidebar opens it (`machine:lab-box` for one with no host, only its checklist);
+ * `?page=automation:arbor:sentry-watch` starts on one automation's page (any id the Automations list has);
+ * `?automations=empty` for nothing scheduled anywhere, `?automations=failing` for runs that failed and ci-01's look failing,
+ * `?automations=off` for Arbor's automations turned off in Settings; `?orca=none` for no machine with Orca;
+ * `?draft=fail` for drafting an automation failing (no client key), `?draft=slow` for a draft that takes four seconds;
  * `?failures=none` for no request failing, so Requests with Failed on says there's nothing to list;
  * `?oldviews=seed` saves what an older Arbor left behind naming views that have since moved: the palette's
  * Recent section has Usage › Capacity, Analysis and Failures (listed as Accounts › Value, Usage › Overview and
@@ -339,11 +343,12 @@ import { isSidebarArt } from '../services/sidebarArt';
 import { isAppColor } from '../services/appColor';
 import { previewAppPreference } from '../appPreferences';
 import { resetViewHistory } from '../services/viewHistory';
-import { failedRequestsView, machinesView, mainPageView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
+import { automationView, failedRequestsView, machinesView, mainPageView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
 import type { Commands } from '../native/commands';
 import { mockCommands, type CommandAnswers } from './mock/answers';
 import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
 import { archiveAnswers } from './mock/archive';
+import { automationsAnswers } from './mock/automations';
 import { cliAnswers } from './mock/cli';
 import { coreAnswers, coreScenario, stopCoreLater } from './mock/core';
 import { machinesAnswers } from './mock/machines';
@@ -364,6 +369,7 @@ function mockStartView(page: string | null): AppView | null {
   const settingsView = page.startsWith('settings:') ? settingsPageView(page.slice('settings:'.length)) : null;
   if (settingsView) return settingsView;
   if (page.startsWith('machine:')) return machinesView(page.slice('machine:'.length));
+  if (page.startsWith('automation:')) return automationView(page.slice('automation:'.length));
   return mainPageView(page, params.get('tab'), { lens: params.get('lens') });
 }
 
@@ -403,7 +409,7 @@ const pluginAnswers: Record<string, (args: Json) => unknown> = {
   'plugin:notification|notify': (args) => { mockLog('notification', args); return null; },
 };
 
-const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers, ...cliAnswers };
+const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers, ...cliAnswers, ...automationsAnswers };
 
 // Status page replies, shaped like status.claude.com (Statuspage) and status.openai.com (incident.io's own feed).
 const claudeStatusFeed = () => {

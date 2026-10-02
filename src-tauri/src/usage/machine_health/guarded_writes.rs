@@ -44,10 +44,13 @@ pub(crate) enum ChangeKind {
     Plugins,
     /// The setup repo's hooks in a home's settings.
     Hooks,
+    /// Pausing or resuming an automation another app keeps.
+    Automations,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 9] = [Self::Sync, Self::Skills, Self::Reporter, Self::KeepSessions, Self::Telemetry, Self::Mcp, Self::Checkouts, Self::Plugins, Self::Hooks];
+    const ALL: [Self; 10] =
+        [Self::Sync, Self::Skills, Self::Reporter, Self::KeepSessions, Self::Telemetry, Self::Mcp, Self::Checkouts, Self::Plugins, Self::Hooks, Self::Automations];
 
     fn name(self) -> &'static str {
         match self {
@@ -60,6 +63,7 @@ impl ChangeKind {
             Self::Checkouts => "checkouts",
             Self::Plugins => "plugins",
             Self::Hooks => "hooks",
+            Self::Automations => "automations",
         }
     }
 

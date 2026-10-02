@@ -38,6 +38,7 @@ const STEPS: &[Step] = &[
     Step { version: 15, name: "failures index", apply: failures_index },
     Step { version: 16, name: "agent homes", apply: agent_homes },
     Step { version: 17, name: "machine pools", apply: machine_pools },
+    Step { version: 18, name: "automations", apply: automations },
 ];
 
 /// The version of a database that has had every step.
@@ -1147,6 +1148,44 @@ fn machine_pools(connection: &mut Connection, _: &Path) -> Result<(), String> {
             )",
         )
         .map_err(|error| format!("Failed to prepare the machine pools tables: {error}"))
+}
+
+/// Arbor's own automations, each run of one, and the automations page's own settings. `input` is the automation as
+/// the dialog saved it, as JSON, so a field added later needs no step of its own.
+fn automations(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS usage_automations (
+                id TEXT PRIMARY KEY NOT NULL,
+                input TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                next_run_at_ms INTEGER,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS usage_automation_runs (
+                id TEXT PRIMARY KEY NOT NULL,
+                automation_id TEXT NOT NULL,
+                machine TEXT,
+                status TEXT NOT NULL,
+                scheduled_at_ms INTEGER NOT NULL,
+                started_at_ms INTEGER,
+                finished_at_ms INTEGER,
+                manual INTEGER NOT NULL DEFAULT 0,
+                precheck_exit INTEGER,
+                precheck_output TEXT,
+                exit_code INTEGER,
+                session_id TEXT,
+                error TEXT,
+                worktree TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_usage_automation_runs ON usage_automation_runs(automation_id, scheduled_at_ms DESC);
+            CREATE TABLE IF NOT EXISTS usage_automation_settings (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL
+            )",
+        )
+        .map_err(|error| format!("Failed to prepare the automations tables: {error}"))
 }
 
 // ---------------------------------------------------------------------------

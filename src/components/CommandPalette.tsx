@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { invokeCommand } from '../native/commands';
-import { ArrowLeft, Bot, ChevronRight, FolderGit2, Search, SlidersHorizontal, type AppIcon } from './ui/icons';
+import { ArrowLeft, Bot, ChevronRight, FolderGit2, Search, SlidersHorizontal, TimeSchedule, type AppIcon } from './ui/icons';
 import { requestFocus } from '../focusRequests';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
-import { accountLimitsView, machineSessionsView, machinesView, sessionsView, type AppView } from '../navigation';
+import { accountLimitsView, automationView, machineSessionsView, machinesView, sessionsView, type AppView } from '../navigation';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { useAccountReserves } from '../services/accountReserves';
 import { useAccountsStore } from '../services/accountsStore';
@@ -29,6 +29,7 @@ import { StatusDot, type StatusTone } from './ui/status-dot';
 import type { FacetCount, HealthStatus, UsageSession, UsageSessionPage } from '../native/types';
 import { paletteKind, trackFeature } from '../services/productAnalytics';
 import { machineName } from '../services/machineNames';
+import { SOURCE_LABEL, useAutomations } from '../services/automations';
 
 /**
  * A page the palette can open, as the sidebar lists it, or one of its views, which names its page in `parent` and is
@@ -53,6 +54,7 @@ const GROUP_LABEL: Record<PaletteGroup, MessageKey> = {
   settings: 'palette.group.settings',
   projects: 'palette.group.projects',
   sessions: 'palette.group.sessions',
+  automations: 'palette.group.automations',
   machines: 'palette.group.machines',
   accounts: 'palette.group.accounts',
 };
@@ -107,6 +109,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
   const { files, disabled } = useAccountsStore();
   const profiles = useAccountProfiles();
   const reserves = useAccountReserves();
+  const { list: automationList } = useAutomations();
   const { actions, submenus } = usePaletteActions({ onNavigate });
   const listRef = useRef<HTMLDivElement>(null);
   // The dialog puts the focus in the field as it opens (initialFocus), once it has noted what had it, so closing hands
@@ -258,6 +261,15 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       content: countLabel(project.value, project.sessions),
       run: () => onNavigate(sessionsView({ tab: 'sessions', project: project.value })),
     }));
+    const automationItems: PaletteItem[] = (automationList?.automations ?? []).map((automation) => ({
+      id: `automation:${automation.id}`,
+      group: 'automations',
+      label: automation.name,
+      keywords: [automation.project ?? '', automation.machine ? machineName(automation.machine) : '', t(SOURCE_LABEL[automation.source])].join(' '),
+      shown: 'typed',
+      icon: <IconBox>{automation.agent ? <ProviderMark provider={automation.agent} decorative className="size-full object-contain" fallback={<TimeSchedule />} /> : <TimeSchedule />}</IconBox>,
+      run: () => onNavigate(automationView(automation.id)),
+    }));
     const listed = new Set(machines.map((item) => item.machine));
     const machineItems: PaletteItem[] = [
       ...machines.map((item): PaletteItem => ({
@@ -317,8 +329,8 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
         },
       };
     });
-    return [...pageItems, ...actions, ...settingItems, ...projectItems, ...sessionItems, ...machineItems, ...accountItems];
-  }, [open, pages, settings, onOpenSetting, lockedHint, actions, text, found, recent, pickedSessions, projects, machines, sessionMachines, files, disabled, reserves.paused, profiles, coreReady, onNavigate, t]);
+    return [...pageItems, ...actions, ...settingItems, ...projectItems, ...sessionItems, ...automationItems, ...machineItems, ...accountItems];
+  }, [open, pages, settings, onOpenSetting, lockedHint, actions, text, found, recent, pickedSessions, projects, automationList, machines, sessionMachines, files, disabled, reserves.paused, profiles, coreReady, onNavigate, t]);
 
   const items = useMemo(
     () => (submenu ? paletteMatches(submenus[submenu], query) : paletteResults(entries, query, recents)),

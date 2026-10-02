@@ -25,6 +25,7 @@ const TOAST_KIND: Record<AlertKind, ToastKind> = {
   machineDown: 'warning',
   machineUp: 'success',
   setupChanged: 'info',
+  automationFailed: 'warning',
   outage: 'warning',
   proxySettings: 'error',
   digest: 'info',

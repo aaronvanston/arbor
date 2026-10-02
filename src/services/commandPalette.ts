@@ -6,10 +6,10 @@ import type { ZoomLevel } from '../native/types';
 import { canZoomIn, canZoomOut } from './zoom';
 
 /** What the search palette lists, in the order its groups are listed. */
-export type PaletteGroup = 'recent' | 'pages' | 'actions' | 'settings' | 'projects' | 'sessions' | 'machines' | 'accounts';
-export const PALETTE_GROUPS: readonly PaletteGroup[] = ['recent', 'pages', 'actions', 'settings', 'projects', 'sessions', 'machines', 'accounts'];
+export type PaletteGroup = 'recent' | 'pages' | 'actions' | 'settings' | 'projects' | 'sessions' | 'automations' | 'machines' | 'accounts';
+export const PALETTE_GROUPS: readonly PaletteGroup[] = ['recent', 'pages', 'actions', 'settings', 'projects', 'sessions', 'automations', 'machines', 'accounts'];
 /** The most of each group listed at once for a search. Nothing typed, or `>` for actions, lists them all. */
-export const PALETTE_LIMITS: Record<PaletteGroup, number> = { recent: 5, pages: 7, actions: 5, settings: 5, projects: 5, sessions: 8, machines: 5, accounts: 5 };
+export const PALETTE_LIMITS: Record<PaletteGroup, number> = { recent: 5, pages: 7, actions: 5, settings: 5, projects: 5, sessions: 8, automations: 5, machines: 5, accounts: 5 };
 
 export type PaletteEntry = {
   id: string;

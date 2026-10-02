@@ -33,6 +33,7 @@ pub(crate) mod agent_install;
 pub(crate) mod agent_releases;
 pub(crate) mod agents;
 pub(crate) mod archive;
+pub(crate) mod automations;
 pub(crate) mod attention;
 pub(crate) mod checkout_settings;
 pub(crate) mod cli_skill;
@@ -1267,6 +1268,7 @@ pub(crate) fn start_machine_health_sampler(app: tauri::AppHandle) {
     };
     tauri::async_runtime::spawn(attention::poll_loop(app.clone(), token.clone()));
     tauri::async_runtime::spawn(t3_threads::poll_loop(app.clone(), token.clone()));
+    tauri::async_runtime::spawn(automations::poll_loop(app.clone(), token.clone()));
     tauri::async_runtime::spawn(archive::run_loop(app.clone(), token.clone()));
     tauri::async_runtime::spawn(async move {
         sampler_loop(app, token).await;

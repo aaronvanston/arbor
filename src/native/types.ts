@@ -357,6 +357,246 @@ export type AttentionItem = {
 };
 
 /**
+ * One automation with all it's set to do.
+ */
+export type Automation = {
+  summary: AutomationSummary,
+  prompt: string,
+  /**
+   * The schedule as an RRULE, when the owning app keeps one.
+   */
+  rrule: string | null,
+  /**
+   * An IANA time zone; null is this Mac's.
+   */
+  timezone: string | null,
+  /**
+   * The project's folder on the machine.
+   */
+  projectPath: string | null,
+  workspace: AutomationWorkspace,
+  session: AutomationSession,
+  access: AutomationAccess,
+  model: string | null,
+  effort: string | null,
+  /**
+   * A shell command run in the project's folder first: exit 0 starts the agent, anything else skips the run.
+   */
+  precheck: string | null,
+  precheckTimeoutSecs: number,
+  /**
+   * How late a run may still start after Arbor or the machine was away when it was due.
+   */
+  graceMinutes: number,
+  /**
+   * Where the owning app keeps it, from the machine's home folder, for the ones Arbor found.
+   */
+  sourcePath: string | null,
+  createdAtMs: number | null,
+  updatedAtMs: number | null,
+};
+
+/**
+ * What the owning app lets Arbor do with an automation it found.
+ */
+export type AutomationAbilities = {
+  edit: boolean,
+  pause: boolean,
+  runNow: boolean,
+  delete: boolean,
+  /**
+   * Can be copied into an Arbor automation, which Arbor then runs.
+   */
+  copy: boolean,
+};
+
+/**
+ * What an Arbor automation's agent may do without asking: edit files in the project (the default), or anything.
+ */
+export type AutomationAccess = "edits" | "full";
+
+/**
+ * The agent an automation starts.
+ */
+export type AutomationAgent = "claude" | "codex" | "gemini" | "other";
+
+/**
+ * What the drafting model made of a description, for the dialog to fill in and the user to check.
+ */
+export type AutomationDraft = {
+  name: string,
+  prompt: string,
+  rrule: string,
+  precheck: string | null,
+  precheckTimeoutSecs: number,
+  agent: AutomationAgent,
+  session: AutomationSession,
+  graceMinutes: number,
+  /**
+   * What the model couldn't decide and left for the user, in a sentence.
+   */
+  note: string | null,
+};
+
+/**
+ * What `draft_automation` is given: the description, and the machine and project when they're already picked.
+ */
+export type AutomationDraftInput = {
+  description: string,
+  machine?: string,
+  projectPath?: string,
+};
+
+/**
+ * An Arbor automation as the dialog saves it; no id is a new one.
+ */
+export type AutomationInput = {
+  id?: string,
+  name: string,
+  prompt: string,
+  agent: AutomationAgent,
+  model?: string,
+  effort?: string,
+  target: AutomationTarget,
+  projectPath: string,
+  workspace: AutomationWorkspace,
+  session: AutomationSession,
+  /**
+   * Saved before there was a choice means the default.
+   */
+  access: AutomationAccess,
+  rrule: string,
+  timezone?: string,
+  graceMinutes: number,
+  precheck?: string,
+  precheckTimeoutSecs: number,
+  enabled: boolean,
+};
+
+/**
+ * The last run, as the list shows it.
+ */
+export type AutomationLastRun = {
+  status: AutomationRunStatus,
+  atMs: number,
+};
+
+/**
+ * Every automation Arbor knows of.
+ */
+export type AutomationList = {
+  automations: Array<AutomationSummary>,
+  scans: Array<AutomationScan>,
+  /**
+   * Arbor's own automations run (Settings' master switch).
+   */
+  running: boolean,
+  /**
+   * The model that drafts an automation from a description, and its effort.
+   */
+  draftModel: string,
+  draftEffort: string,
+};
+
+/**
+ * One run of an automation.
+ */
+export type AutomationRun = {
+  id: string,
+  automationId: string,
+  machine: string | null,
+  status: AutomationRunStatus,
+  scheduledAtMs: number,
+  startedAtMs: number | null,
+  finishedAtMs: number | null,
+  /**
+   * Started by hand, not by its schedule.
+   */
+  manual: boolean,
+  precheckExit: number | null,
+  /**
+   * The end of what the precheck printed, which the agent is given too.
+   */
+  precheckOutput: string | null,
+  exitCode: number | null,
+  /**
+   * The session the agent ran in, by the id its transcript stores.
+   */
+  sessionId: string | null,
+  /**
+   * Why it failed, in a few words, when Arbor knows.
+   */
+  error: string | null,
+};
+
+/**
+ * How a run ended, or that it's still going.
+ */
+export type AutomationRunStatus = "running" | "done" | "failed" | "skipped" | "unreachable" | "missed" | "canceled";
+
+/**
+ * One machine's last look for automations.
+ */
+export type AutomationScan = {
+  machine: string,
+  scannedAtMs: number | null,
+  scanning: boolean,
+  error: string | null,
+  /**
+   * Orca's command line was found there.
+   */
+  orca: boolean,
+};
+
+/**
+ * Whether a run starts a new session, or carries on the last run's.
+ */
+export type AutomationSession = "fresh" | "reuse";
+
+/**
+ * Which app keeps an automation and runs it.
+ */
+export type AutomationSource = "arbor" | "codexApp" | "claudeDesktop" | "orca";
+
+/**
+ * One automation in the list. The prompt isn't here; `get_automation` has it.
+ */
+export type AutomationSummary = {
+  /**
+   * `arbor:<id>`, or the source and its own id, with the machine for a source each machine keeps its own of.
+   */
+  id: string,
+  source: AutomationSource,
+  name: string,
+  enabled: boolean,
+  /**
+   * The machine it runs on; null for one Arbor picks when it's due.
+   */
+  machine: string | null,
+  target: AutomationTarget,
+  /**
+   * The project's folder name, or the name the owning app gives it.
+   */
+  project: string | null,
+  agent: AutomationAgent | null,
+  schedule: ScheduleSummary,
+  nextRunAtMs: number | null,
+  lastRun: AutomationLastRun | null,
+  hasPrecheck: boolean,
+  abilities: AutomationAbilities,
+};
+
+/**
+ * Where an Arbor automation runs: a machine, or the one best placed to take it when it's due.
+ */
+export type AutomationTarget = { "kind": "machine", name: string, } | { "kind": "best" };
+
+/**
+ * Where a run works: the project's own checkout, or a new worktree of it for each run.
+ */
+export type AutomationWorkspace = "checkout" | "newWorktree";
+
+/**
  * One file or skill a change wrote or removed.
  */
 export type BackupFile = {
@@ -454,7 +694,7 @@ export type CapacityReport = {
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.
@@ -3134,6 +3374,12 @@ export type SavedStoreSnapshot = {
   values: { [key in string]: string },
   migrated: boolean,
 };
+
+/**
+ * A schedule as words are made from it. `Custom` is a rule none of these describe; `Elsewhere` is a schedule the
+ * owning app keeps where Arbor can't read it.
+ */
+export type ScheduleSummary = { "kind": "everyMinutes", minutes: number, } | { "kind": "everyHours", hours: number, minute: number, } | { "kind": "daily", hour: number, minute: number, } | { "kind": "weekdays", hour: number, minute: number, } | { "kind": "weekly", days: Array<number>, hour: number, minute: number, } | { "kind": "custom" } | { "kind": "elsewhere" };
 
 export type ServerView = {
   name: string,

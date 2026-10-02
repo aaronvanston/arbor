@@ -18,6 +18,8 @@ export type AlertSubject = {
   accounts?: string[];
   machines?: string[];
   on?: string;
+  /** An automation, by its id. */
+  automation?: string;
 };
 
 /** An alert as it fired, and how it got out. */
@@ -78,6 +80,7 @@ const CATEGORY: Record<AlertKind, AlertCategory | null> = {
   archiveAway: 'sessions',
   archiveFailing: 'sessions',
   machineDown: 'machines',
+  automationFailed: 'machines',
   machineUp: 'machines',
   setupChanged: 'machines',
   outage: 'outages',
@@ -92,6 +95,7 @@ export const alertCategory = (kind: AlertKind) => CATEGORY[kind];
 export type AlertDestination =
   | { kind: 'accounts'; account?: string }
   | { kind: 'machines'; machine?: string }
+  | { kind: 'automation'; automation: string }
   | { kind: 'setup' }
   | { kind: 'archive' }
   | { kind: 'session'; session: string }
@@ -104,6 +108,7 @@ export type AlertDestination =
 export function alertDestination({ kind, subject }: Pick<AlertRecord, 'kind' | 'subject'>): AlertDestination | null {
   // What changed shows on Sync, not on the machine's row.
   if (kind === 'setupChanged') return { kind: 'setup' };
+  if (kind === 'automationFailed' && subject?.automation) return { kind: 'automation', automation: subject.automation };
   // What's wrong with the archive, and what to do, is on its settings page.
   if (kind === 'archiveAway' || kind === 'archiveFailing') return { kind: 'archive' };
   switch (CATEGORY[kind]) {
@@ -136,6 +141,7 @@ function aboutThings(subject: AlertSubject | undefined): string[] {
     ...ids(subject.session).map((id) => `session:${id}`),
     ...ids(subject.url).map((id) => `url:${id}`),
     ...ids(subject.provider).map((id) => `provider:${id}`),
+    ...ids(subject.automation).map((id) => `automation:${id}`),
   ];
 }
 

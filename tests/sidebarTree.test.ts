@@ -21,15 +21,15 @@ import {
 
 
 describe('the sidebar tree', () => {
-  test('has Home alone at the top, then Fleet (Machines, Sessions, Sync) and Spend (Accounts, Usage); Alerts is the footer’s bell', () => {
+  test('has Home alone at the top, then Fleet (Machines, Sessions, Automations, Sync) and Spend (Accounts, Usage); Alerts is the footer’s bell', () => {
     expect(SIDEBAR_TREE.map((section) => [section.labelKey, section.pages.map((page) => page.id)])).toEqual([
       [null, ['home']],
-      ['tree.section.fleet', ['machines', 'sessions', 'setup']],
+      ['tree.section.fleet', ['machines', 'sessions', 'automations', 'setup']],
       ['tree.section.spend', ['accounts', 'usage']],
     ]);
   });
 
-  test('numbers its pages for ⌘1–⌘6 in the order it draws them, with Alerts on ⌘7', () => {
+  test('numbers its pages for ⌘1–⌘7 in the order it draws them, with Alerts on ⌘8', () => {
     expect(mainPageIds).toEqual([...TREE_PAGES.map((page) => page.id), 'alerts']);
   });
 

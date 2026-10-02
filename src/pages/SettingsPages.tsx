@@ -12,6 +12,7 @@ import { Switch } from '../components/ui/switch';
 import { UsageMachineAssignments } from './UsageMachineAssignments';
 import { MachineHostsSettings } from './MachineHostsSettings';
 import { AgentTelemetrySettings } from './AgentTelemetrySettings';
+import { AutomationSettings } from '../components/automations/AutomationSettings';
 import { FleetWideNotice, SettingsScopeSentence } from '../components/layout/machineScope';
 import { MachinePill } from '../components/identity/Identity';
 import { useSettingsScope } from '../services/machineSettings';
@@ -53,6 +54,7 @@ export function MachineAssignmentsSettingsPage({ onNavigate }: { onNavigate?: (v
             <UsageMachineAssignments assignments={assignments} onSaved={() => void load()} />
             <MachineHostsSettings />
             <LiveBoardSettings />
+            <AutomationSettings />
             <AgentTelemetrySettings />
           </>
         )}

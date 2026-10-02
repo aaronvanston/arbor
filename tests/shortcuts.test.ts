@@ -58,7 +58,8 @@ describe('keyboard shortcuts', () => {
     // Extra modifiers make it another shortcut.
     expect(matchesShortcut(cmd('k', { shiftKey: true }), 'palette.toggle', true)).toBe(false);
     expect(SHORTCUTS.filter((shortcut) => shortcut.id.startsWith('go.')).map((shortcut) => `${shortcut.id} ${shortcut.keys}`)).toEqual([
-      'go.home mod+1', 'go.machines mod+2', 'go.sessions mod+3', 'go.setup mod+4', 'go.accounts mod+5', 'go.usage mod+6', 'go.alerts mod+7',
+      'go.home mod+1', 'go.machines mod+2', 'go.sessions mod+3', 'go.automations mod+4', 'go.setup mod+5', 'go.accounts mod+6',
+      'go.usage mod+7', 'go.alerts mod+8',
     ]);
   });
 

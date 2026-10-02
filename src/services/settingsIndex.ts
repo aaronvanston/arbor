@@ -103,6 +103,8 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   section('machines', 'assignments', 'usage.assignments.title', { description: 'usage.assignments.description' }),
   section('machines', 'hosts', 'machines.hosts.title', { description: 'machines.hosts.description', keywords: 'settingsSearch.keywords.ssh' }),
   row('machines', 't3Threads', 'fleet.settings.title', 'fleet.settings.t3Threads', { description: 'fleet.settings.t3ThreadsHint', keywords: 'fleet.palette.keywords', fallback: 'machines.hosts' }),
+  row('machines', 'automations-running', 'automations.settings.title', 'automations.settings.running', { description: 'automations.settings.runningHint', keywords: 'tree.automations.keywords' }),
+  row('machines', 'automations-draft-model', 'automations.settings.title', 'automations.settings.model', { description: 'automations.settings.modelHint', keywords: 'tree.automations.keywords' }),
   row('machines', 'telemetry', 'telemetry.settings.title', 'telemetry.settings.receive', { description: 'telemetry.settings.receiveHint' }),
   row('machines', 'telemetry-port', 'telemetry.settings.title', 'telemetry.settings.port', { description: 'telemetry.settings.portHint' }),
   row('machines', 'telemetry-machines', 'telemetry.settings.title', 'telemetry.settings.machines'),

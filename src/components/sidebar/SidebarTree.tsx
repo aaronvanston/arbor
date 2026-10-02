@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { Bell, ChartNoAxesColumn, ChevronRight, House, Layers, Lock, MessagesSquare, Monitor, Users, type AppIcon } from '../ui/icons';
+import { Bell, ChartNoAxesColumn, ChevronRight, House, Layers, Lock, MessagesSquare, Monitor, TimeSchedule, Users, type AppIcon } from '../ui/icons';
 import { useI18n } from '../../i18n';
 import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
@@ -43,6 +43,7 @@ export const PAGE_ICONS: Record<MainPageId, AppIcon> = {
   home: House,
   machines: Monitor,
   sessions: MessagesSquare,
+  automations: TimeSchedule,
   setup: Layers,
   accounts: Users,
   usage: ChartNoAxesColumn,

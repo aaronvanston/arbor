@@ -44,6 +44,7 @@ import { SetupChecklist, type ChecklistTab } from './SetupChecklist';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
 import { homeLabel, rememberSetupComparison, storedSetupReference } from './SetupPage';
 import { SetupProjects } from './SetupProjects';
+import { MachineAutomations } from '../components/automations/MachineAutomations';
 import { setSyncMachine } from '../services/syncScope';
 import { MachineThroughput, throughputScale } from './UsageFleet';
 
@@ -281,6 +282,8 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
               <SettingsBlock className="text-xs text-muted-foreground">{tRich('machine.sessions.none', { machine: small })}</SettingsBlock>
             )}
           </SettingsSection>
+
+          <MachineAutomations machine={name} small={small} onNavigate={onNavigate} />
 
           <SettingsSection
             title={t('machine.setup.title')}

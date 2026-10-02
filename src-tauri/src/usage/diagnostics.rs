@@ -150,6 +150,10 @@ pub(crate) enum MachineOp {
     ArchiveRead,
     AgentHomesScan,
     AgentHomeCheck,
+    AutomationScan,
+    AutomationStart,
+    AutomationPoll,
+    AutomationChange,
 }
 
 impl MachineOp {
@@ -191,6 +195,10 @@ impl MachineOp {
             Self::ArchiveRead => "archive read",
             Self::AgentHomesScan => "agent homes scan",
             Self::AgentHomeCheck => "agent home check",
+            Self::AutomationScan => "automations scan",
+            Self::AutomationStart => "automation start",
+            Self::AutomationPoll => "automation runs check",
+            Self::AutomationChange => "automation change",
         }
     }
 
@@ -212,7 +220,9 @@ impl MachineOp {
             | Self::PackageScan
             | Self::ArchiveList
             | Self::ArchiveRead
-            | Self::AgentHomesScan => MACHINE_SCAN_SLOW_MS,
+            | Self::AgentHomesScan
+            | Self::AutomationScan
+            | Self::AutomationStart => MACHINE_SCAN_SLOW_MS,
             _ => MACHINE_SLOW_MS,
         }
     }

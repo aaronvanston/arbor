@@ -108,6 +108,13 @@ mod tests {
         types.visit::<crate::usage::projects::MergedPullRequests>();
         types.visit::<crate::usage::pull_requests::NamedPullRequests>();
         types.visit::<crate::usage::machine_health::transcripts::PullRequestLink>();
+        // Automations
+        types.visit::<crate::usage::machine_health::automations::AutomationList>();
+        types.visit::<crate::usage::machine_health::automations::Automation>();
+        types.visit::<crate::usage::machine_health::automations::AutomationRun>();
+        types.visit::<crate::usage::machine_health::automations::AutomationInput>();
+        types.visit::<crate::usage::machine_health::automations::AutomationDraft>();
+        types.visit::<crate::usage::machine_health::automations::AutomationDraftInput>();
         // Machines
         types.visit::<crate::usage::machine_health::MachineHost>();
         types.visit::<crate::usage::machine_health::ThisMac>();

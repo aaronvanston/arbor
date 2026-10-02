@@ -1,6 +1,6 @@
 import type { UsageResultFilter } from './services/usageFilters';
 
-export type MainPageId = 'home' | 'accounts' | 'usage' | 'sessions' | 'machines' | 'setup' | 'alerts';
+export type MainPageId = 'home' | 'accounts' | 'usage' | 'sessions' | 'machines' | 'automations' | 'setup' | 'alerts';
 /**
  * Settings' pages. Some ids differ from their names: `general` is Proxy, `overrides` Model routes, `data` Usage
  * database and `software` App. The ids are what saved views and picks hold, so they stay.
@@ -66,6 +66,11 @@ export type SetupParams = { tab?: SetupTabId; machine?: string };
 export type AccountsParams = { tab?: AccountsTabId };
 /** What Machines shows: the fleet at a glance, or one machine's own page. */
 export type MachinesParams = { machine?: string };
+/**
+ * What Automations shows: every automation, narrowed to the machine they run on, or one automation's own page, with
+ * what it's set to do and its runs.
+ */
+export type AutomationsParams = { automation?: string; machine?: string };
 
 /**
  * What's on screen. Views are state, not URLs. A page that can show more than one thing carries what it shows in
@@ -77,11 +82,12 @@ export type AppView =
   | { kind: 'main'; page: 'setup'; params?: SetupParams }
   | { kind: 'main'; page: 'accounts'; params?: AccountsParams }
   | { kind: 'main'; page: 'machines'; params?: MachinesParams }
+  | { kind: 'main'; page: 'automations'; params?: AutomationsParams }
   | { kind: 'main'; page: Exclude<MainPageId, ParamPageId>; params?: undefined }
   | { kind: 'settings'; page: SettingsPageId; params?: undefined };
 
 /** The main pages whose views carry params. */
-type ParamPageId = 'usage' | 'sessions' | 'setup' | 'accounts' | 'machines';
+type ParamPageId = 'usage' | 'sessions' | 'setup' | 'accounts' | 'machines' | 'automations';
 
 /** A main page as it opens from its row, the palette or ⌘1–⌘7: where it was left, for a page that remembers that. */
 export const mainView = (page: MainPageId): AppView => ({ kind: 'main', page }) as AppView;
@@ -103,6 +109,10 @@ export const accountSignInsView = (): AppView => accountsView({ tab: 'sign-ins' 
 /** The Machines page: the fleet at a glance, or `machine`'s own page when it's given. */
 export const machinesView = (machine?: string): AppView => ({ kind: 'main', page: 'machines', params: machine ? { machine } : {} });
 export const sessionsView = (params: SessionsParams = {}): AppView => ({ kind: 'main', page: 'sessions', params });
+/** Automations: every one, or `automation`'s own page when it's given. */
+export const automationsView = (params: AutomationsParams = {}): AppView => ({ kind: 'main', page: 'automations', params });
+/** One automation's own page. */
+export const automationView = (automation: string): AppView => automationsView({ automation });
 /** Sessions › Projects' Checkouts: each repo's branches and worktrees on each machine, with the ones that can go. */
 export const checkoutsView = (): AppView => sessionsView({ tab: 'projects', lens: 'checkouts' });
 /** The live board: every machine's sessions working, waiting on their user or done, on the Sessions page. */
@@ -215,6 +225,7 @@ export function mainPageView(page: string, tab?: string | null, more: { machine?
     case 'setup': return isSetupTab(tab) ? setupView({ tab }) : movedSetupView(tab) ?? setupView();
     case 'accounts': return accountsView(isAccountsTab(tab) ? { tab } : {});
     case 'machines': return machinesView(more.machine ?? undefined);
+    case 'automations': return automationsView();
     default: return mainView(page as MainPageId);
   }
 }
@@ -243,8 +254,8 @@ export function sameView(a: AppView, b: AppView) {
   return [...new Set([...Object.keys(left), ...Object.keys(right)])].every((key) => (left[key] || '') === (right[key] || ''));
 }
 
-/** The main pages in the sidebar tree's order, which ⌘1–⌘6 follow, then Alerts, the footer's bell, on ⌘7. */
-export const mainPageIds: readonly MainPageId[] = ['home', 'machines', 'sessions', 'setup', 'accounts', 'usage', 'alerts'];
+/** The main pages in the sidebar tree's order, which ⌘1–⌘7 follow, then Alerts, the footer's bell, on ⌘8. */
+export const mainPageIds: readonly MainPageId[] = ['home', 'machines', 'sessions', 'automations', 'setup', 'accounts', 'usage', 'alerts'];
 /** Settings' pages in the sidebar's order: Proxy, Fleet, Data and Arbor's own. */
 export const settingsPageIds: readonly SettingsPageId[] = [
   'general', 'routing', 'overrides', 'aliases', 'extra-models', 'machines', 'agent-homes', 'pools', 'session-archive', 'data',
@@ -287,7 +298,7 @@ export function settingsPageView(id: string): AppView | null {
 /** Pages that talk only to the desktop app (local SQLite, config files, updater) and never need the core. */
 const alwaysAvailablePages = new Set<string>([
   // Main pages.
-  'home', 'usage', 'sessions', 'machines', 'setup', 'alerts',
+  'home', 'usage', 'sessions', 'machines', 'automations', 'setup', 'alerts',
   // Settings pages.
   'settings:general', 'settings:routing', 'settings:aliases', 'settings:extra-models', 'settings:software',
   'settings:machines', 'settings:agent-homes', 'settings:pools', 'settings:data', 'settings:session-archive', 'settings:appearance', 'settings:notifications',

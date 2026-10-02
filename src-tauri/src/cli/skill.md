@@ -31,6 +31,7 @@ any other machine, say so instead of trying.
 | How far machines are from the setup repo | `arbor sync`, then `arbor sync <machine>` for what would change there |
 | Proxy core | `arbor core` |
 | Session archive | `arbor archive` |
+| Scheduled automations, Arbor's and other apps' | `arbor call list_automations`, then `arbor call get_automation id=<id>` and `arbor call list_automation_runs id=<id>` |
 | Saved settings | `arbor settings`, `arbor settings get <name>` |
 
 Machines can be named by their name or their SSH host, in any case (`eden-dev-01` finds "Eden dev 01"). Accounts
@@ -56,6 +57,8 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Bring a machine in line with the setup repo | `arbor sync apply <machine>` (backed up first; undo it in Sync › Arbor's changes) |
 | Proxy core | `arbor core start`, `arbor core stop`, `arbor core restart`, `arbor core install [version]` |
 | Mark every alert seen | `arbor alerts seen` |
+| Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |
+| Run an automation now, precheck first | `arbor call run_automation_now id=<id>` |
 
 Stopping or restarting the proxy cuts off every agent using it for a moment, on every machine. Say so when you show
 the plan.

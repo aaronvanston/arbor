@@ -718,6 +718,112 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "list_automations",
+        access: Access::Read,
+        summary: "List automations",
+        args: &[],
+    },
+    CommandSpec {
+        name: "scan_automations",
+        access: Access::Write,
+        summary: "Looks again on one machine, or on all of them, and answers once the looks are done.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string | null", optional: true },
+        ],
+    },
+    CommandSpec {
+        name: "get_automation",
+        access: Access::Read,
+        summary: "Get automation",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "list_automation_runs",
+        access: Access::Read,
+        summary: "An automation's runs, or every automation's, newest first. Only Arbor's own have runs here.",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string | null", optional: true },
+            ArgSpec { name: "limit", ts_type: "number | null", optional: true },
+        ],
+    },
+    CommandSpec {
+        name: "save_automation",
+        access: Access::Write,
+        summary: "Save automation",
+        args: &[
+            ArgSpec { name: "input", ts_type: "AutomationInput", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "delete_automation",
+        access: Access::Confirm,
+        summary: "Delete automation",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "set_automation_enabled",
+        access: Access::Write,
+        summary: "Pauses or resumes an automation: Arbor's own here, another app's where that app keeps it.",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+            ArgSpec { name: "enabled", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "run_automation_now",
+        access: Access::Confirm,
+        summary: "Runs an automation now, precheck first, whatever its schedule.",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "cancel_automation_run",
+        access: Access::Confirm,
+        summary: "Cancel automation run",
+        args: &[
+            ArgSpec { name: "runId", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "copy_automation_into_arbor",
+        access: Access::Write,
+        summary: "Copy automation into arbor",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+            ArgSpec { name: "pauseOriginal", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "draft_automation",
+        access: Access::Write,
+        summary: "Drafts an automation from a description with the model Settings names, through the proxy on this Mac.",
+        args: &[
+            ArgSpec { name: "input", ts_type: "AutomationDraftInput", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "set_automations_running",
+        access: Access::Write,
+        summary: "Turns running Arbor's automations on or off. Off leaves runs that are going alone.",
+        args: &[
+            ArgSpec { name: "running", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "set_automation_draft_model",
+        access: Access::Write,
+        summary: "Sets the model that drafts automations, and its effort.",
+        args: &[
+            ArgSpec { name: "model", ts_type: "string", optional: false },
+            ArgSpec { name: "effort", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_fleet_sources",
         access: Access::Read,
         summary: "Get fleet sources",
@@ -1841,6 +1947,19 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_agent_latest_versions" => done(Box::pin(crate::usage::machine_health::agent_releases::get_agent_latest_versions(app.state())).await),
         "get_t3_compatibility" => done(Box::pin(crate::usage::machine_health::agent_releases::get_t3_compatibility(app.state())).await),
         "set_t3_threads_enabled" => async { done(Box::pin(crate::usage::machine_health::t3_threads::set_t3_threads_enabled(arg(&args, "enabled")?, app.state())).await) }.await,
+        "list_automations" => done(Box::pin(crate::usage::machine_health::automations::commands::list_automations(app.clone())).await),
+        "scan_automations" => async { done(Box::pin(crate::usage::machine_health::automations::commands::scan_automations(app.clone(), arg(&args, "machine")?)).await) }.await,
+        "get_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::get_automation(arg(&args, "id")?)).await) }.await,
+        "list_automation_runs" => async { done(Box::pin(crate::usage::machine_health::automations::commands::list_automation_runs(arg(&args, "id")?, arg(&args, "limit")?)).await) }.await,
+        "save_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::save_automation(app.clone(), arg(&args, "input")?)).await) }.await,
+        "delete_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::delete_automation(app.clone(), arg(&args, "id")?)).await) }.await,
+        "set_automation_enabled" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_enabled(app.clone(), arg(&args, "id")?, arg(&args, "enabled")?)).await) }.await,
+        "run_automation_now" => async { done(Box::pin(crate::usage::machine_health::automations::commands::run_automation_now(app.clone(), arg(&args, "id")?)).await) }.await,
+        "cancel_automation_run" => async { done(Box::pin(crate::usage::machine_health::automations::commands::cancel_automation_run(app.clone(), arg(&args, "runId")?)).await) }.await,
+        "copy_automation_into_arbor" => async { done(Box::pin(crate::usage::machine_health::automations::commands::copy_automation_into_arbor(app.clone(), arg(&args, "id")?, arg(&args, "pauseOriginal")?)).await) }.await,
+        "draft_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::draft_automation(arg(&args, "input")?, app.state())).await) }.await,
+        "set_automations_running" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automations_running(app.clone(), arg(&args, "running")?)).await) }.await,
+        "set_automation_draft_model" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_draft_model(app.clone(), arg(&args, "model")?, arg(&args, "effort")?)).await) }.await,
         "get_fleet_sources" => done(Box::pin(crate::usage::fleet::get_fleet_sources(app.state(), app.state())).await),
         "get_antiburn" => done(Box::pin(crate::usage::antiburn::get_antiburn(app.state())).await),
         "open_antiburn" => done(Box::pin(crate::usage::antiburn::open_antiburn(app.clone())).await),

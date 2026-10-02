@@ -58,6 +58,8 @@ export const SIDEBAR_TREE: readonly TreeSection[] = [
           { page: 'sessions', tab: 'projects', labelKey: 'usage.tab.projects', keywords: 'tree.projects.activityKeywords' },
         ],
       },
+      // Its own page per automation, opened from the list, so it has no views to list.
+      { id: 'automations', labelKey: 'app.nav.automations', leaves: [], keywords: 'tree.automations.keywords' },
       {
         id: 'setup',
         labelKey: 'app.nav.setup',

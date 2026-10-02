@@ -17,6 +17,7 @@ import { LiveSessionsMonitor } from './components/LiveSessionsMonitor';
 import { WeeklyDigestMonitor } from './components/WeeklyDigestMonitor';
 import { MachineMonitor } from './components/MachineMonitor';
 import { SetupChangeMonitor } from './components/SetupChangeMonitor';
+import { AutomationMonitor } from './components/AutomationMonitor';
 import { ArchiveMonitor } from './components/ArchiveMonitor';
 import { AgentAttentionMonitor } from './components/AgentAttentionMonitor';
 import { FleetMonitor } from './components/FleetMonitor';
@@ -122,6 +123,7 @@ const HOME_VIEW: AppView = { kind: 'main', page: 'home' };
 const pageModules = {
   accounts: () => import('./pages/AccountsPage'),
   usage: () => import('./pages/UsageRecordsPage'),
+  automations: () => import('./pages/AutomationsPage'),
   usageData: () => import('./pages/UsageDataSettingsPage'),
   setup: () => import('./pages/SetupPage'),
   alerts: () => import('./pages/AlertsPage'),
@@ -140,6 +142,7 @@ const pageModules = {
 };
 const AccountsPage = lazy(() => pageModules.accounts().then((module) => ({ default: module.AccountsPage })));
 const UsageRecordsPage = lazy(() => pageModules.usage().then((module) => ({ default: module.UsageRecordsPage })));
+const AutomationsPage = lazy(() => pageModules.automations().then((module) => ({ default: module.AutomationsPage })));
 const UsageDataSettingsPage = lazy(() => pageModules.usageData().then((module) => ({ default: module.UsageDataSettingsPage })));
 const SetupPage = lazy(() => pageModules.setup().then((module) => ({ default: module.SetupPage })));
 const AlertsPage = lazy(() => pageModules.alerts().then((module) => ({ default: module.AlertsPage })));
@@ -191,6 +194,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
       // list, and Back or Activity return to it as it was.
       case 'sessions': return <UsageRecordsPage key={`sessions-${visit}`} variant="sessions" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'machines': return <UsageRecordsPage key="machines" variant="machines" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
+      case 'automations': return <AutomationsPage params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'setup': return <SetupPage params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'alerts': return <AlertsPage coreReady={coreReady} onNavigate={onNavigate} />;
     }
@@ -475,6 +479,7 @@ function AppContent() {
       <MonitorBoundary name="MachineMonitor"><MachineMonitor /></MonitorBoundary>
       <MonitorBoundary name="FleetHealthMonitor"><FleetHealthMonitor /></MonitorBoundary>
       <MonitorBoundary name="SetupChangeMonitor"><SetupChangeMonitor /></MonitorBoundary>
+      <MonitorBoundary name="AutomationMonitor"><AutomationMonitor /></MonitorBoundary>
       <MonitorBoundary name="ArchiveMonitor"><ArchiveMonitor /></MonitorBoundary>
       <MonitorBoundary name="AgentAttentionMonitor"><AgentAttentionMonitor /></MonitorBoundary>
       <MonitorBoundary name="FleetMonitor"><FleetMonitor /></MonitorBoundary>

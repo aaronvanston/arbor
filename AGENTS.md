@@ -25,14 +25,14 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
 
 - `src/App.tsx`, `src/navigation.ts`: the shell. The sidebar is a tree, laid out in
   `src/services/sidebarTree.ts` and drawn by `components/sidebar/SidebarTree.tsx`:
-  Home on its own, then Fleet (Machines, with every machine listed under it, Sessions
-  and Sync) and Spend (Accounts and Usage). Each page's views hang under it, and Alerts
+  Home on its own, then Fleet (Machines, with every machine listed under it, Sessions,
+  Automations and Sync) and Spend (Accounts and Usage). Each page's views hang under it, and Alerts
   is the bell in the footer. Sync is still `setup` in ids and storage keys. Pages
   have no tabs of their own; the tree picks the view and the top bar's breadcrumb
   names it. A view that can be narrowed to one machine (`hasMachineScope`, plus
   Checkouts and Sync › Cost) ends its breadcrumb with `MachineCrumb`, the machine
   picker, which other views of the same page keep. Everything else is in the Settings area. `navigation.ts` has the page
-  ids, in the tree's order that ⌘1–⌘6 follow, and `ViewContent` in `App.tsx` picks
+  ids, in the tree's order that ⌘1–⌘7 follow (Alerts is ⌘8), and `ViewContent` in `App.tsx` picks
   the page for each view. There's no URL routing. Open a page with a view that names
   its view and filters (`usageView`, `sessionsView`, `setupView`, `accountsView`,
   `machinesView`) so Back returns to them; history lives in
@@ -98,6 +98,12 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   `app_update.rs` checks for and installs app updates; `phone_alerts.rs`,
   `digest_export.rs`, `quit_guard.rs` and `tray.rs` do what they say. Rust tests are
   in `tests.rs`, `tests/` and inline `#[cfg(test)]` modules.
+- `src-tauri/src/usage/machine_health/automations.rs` and `automations/`: scheduled
+  agent runs. `discover.rs` reads what the Codex app, Claude's scheduled tasks and Orca
+  keep on each machine, held in memory only; `runner.rs` runs Arbor's own while the
+  app is open, a precheck over SSH first and then the agent detached, whose output is
+  never kept; `draft.rs` turns a sentence into a draft through the local proxy;
+  `pick_machine` in `runner.rs` is where a best-machine balancer will plug in.
 - `src-tauri/src/usage/machine_health/archive.rs` and `archive/`: the session archive.
   Byte-for-byte copies of transcripts go into a store in a folder the user picks,
   usually on another drive (this Mac's own disk works, with a warning), with the index

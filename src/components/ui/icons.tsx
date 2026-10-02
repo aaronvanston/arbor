@@ -167,6 +167,7 @@ export const SunMoon = icon(stroke.SunMoonIcon);
 export const Tags = icon(stroke.TagsIcon, duotone.TagsIcon);
 export const TerminalSquare = icon(stroke.ComputerTerminal01Icon);
 export const Thermometer = icon(stroke.ThermometerIcon);
+export const TimeSchedule = icon(stroke.TimeScheduleIcon, duotone.TimeScheduleIcon);
 export const Trash2 = icon(stroke.Delete02Icon);
 export const TriangleAlert = icon(stroke.TriangleAlertIcon);
 export const Unplug = icon(stroke.UnplugIcon);

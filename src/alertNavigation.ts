@@ -1,6 +1,6 @@
 import { invokeCommand } from './native/commands';
 import { requestFocus } from './focusRequests';
-import { accountLimitsView, machinesView, sessionsView, setupChecksView, usageView, type AppView } from './navigation';
+import { accountLimitsView, automationView, machinesView, sessionsView, setupChecksView, usageView, type AppView } from './navigation';
 import type { AlertDestination } from './services/alertHistory';
 
 /** The page an alert opens on, or null for a status page, which opens in the browser. */
@@ -8,6 +8,7 @@ export function alertDestinationView(destination: AlertDestination): AppView | n
   switch (destination.kind) {
     case 'accounts': return accountLimitsView();
     case 'machines': return machinesView(destination.machine);
+    case 'automation': return automationView(destination.automation);
     // What changed is in Checks' table of each machine's setup.
     case 'setup': return setupChecksView();
     case 'archive': return { kind: 'settings', page: 'session-archive' };
