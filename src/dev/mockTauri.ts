@@ -34,7 +34,7 @@
  * ci-01's own page, as its leaf in the sidebar opens it (`machine:lab-box` for one with no host, only its checklist);
  * `?page=automation:arbor:sentry-watch` starts on one automation's page (any id the Automations list has);
  * `?automations=empty` for nothing scheduled anywhere, `?automations=failing` for runs that failed and ci-01's look failing,
- * `?automations=off` for Arbor's automations turned off in Settings; `?orca=none` for no machine with Orca;
+ * `?automations=off` for Arbor's automations turned off in Settings, `?automations=nokey` for no Automations proxy key yet; `?orca=none` for no machine with Orca;
  * `?draft=fail` for drafting an automation failing (no client key), `?draft=slow` for a draft that takes four seconds;
  * `?failures=none` for no request failing, so Requests with Failed on says there's nothing to list;
  * `?oldviews=seed` saves what an older Arbor left behind naming views that have since moved: the palette's

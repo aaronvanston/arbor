@@ -507,6 +507,14 @@ export type AutomationList = {
    * The harnesses Arbor can start an automation with, in the catalog's order.
    */
   agents: Array<Harness>,
+  /**
+   * The proxy has the Automations client key, which every Claude and Codex automation reaches it with.
+   */
+  proxyKey: boolean,
+  /**
+   * The address machines try first to reach the proxy; empty to find it on their own.
+   */
+  proxyAddress: string,
 };
 
 /**

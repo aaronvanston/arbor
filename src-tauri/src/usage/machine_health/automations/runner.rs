@@ -10,6 +10,8 @@ use super::super::agents::AGENT_ENV;
 use super::super::guarded_writes::STATE_FUNCTIONS;
 use super::super::harnesses::Launcher;
 use super::super::shell::{find_machine, run_checked, shell_quote, Machine};
+use super::super::agent_homes::{self, HomeUse};
+use super::proxy::{self, ProxySetup, FUNCTIONS};
 use super::store::{self, StoredRun};
 use super::*;
 use crate::usage::diagnostics::MachineOp;
@@ -99,6 +101,9 @@ pub(super) struct Start<'a> {
     pub(super) session: Option<&'a str>,
     /// Carrying on `session` rather than starting it.
     pub(super) resume: bool,
+    /// How the agent reaches Arbor's proxy, and the machine's `agent_homes` for the addresses its agents use; None
+    /// for an agent that keeps its own setup.
+    pub(super) proxy: Option<(&'a ProxySetup, &'a str)>,
 }
 
 /// The agent's command line, reading the prompt from `$dir/prompt` and working in `$work`.
@@ -113,7 +118,9 @@ pub(super) fn agent_command_for(input: &AutomationInput, session: Option<&str>, 
     let effort = input.effort.as_deref().filter(|effort| !effort.is_empty());
     match input.agent.spec().launcher {
         Some(Launcher::Claude) => {
-            let mut command = String::from("claude -p");
+            // The proxy's address and the Automations key for this run only; an API key the machine's environment
+            // has would otherwise win over them.
+            let mut command = String::from("ANTHROPIC_BASE_URL=\"$ARBOR_PROXY_URL\" ANTHROPIC_AUTH_TOKEN=\"$ARBOR_PROXY_KEY\" claude -p");
             match (session, resume) {
                 (Some(session), true) => command.push_str(&format!(" --resume {session}")),
                 (Some(session), false) => command.push_str(&format!(" --session-id {session}")),
@@ -126,7 +133,7 @@ pub(super) fn agent_command_for(input: &AutomationInput, session: Option<&str>, 
                 command.push_str(&format!(" --effort {}", shell_quote(effort)));
             }
             command.push_str(if full { " --dangerously-skip-permissions" } else { " --permission-mode acceptEdits" });
-            format!("{{ {command} <\"$dir/prompt\" >/dev/null 2>&1; echo $? >\"$dir/code\"; }}")
+            format!("{{ unset ANTHROPIC_API_KEY; {command} <\"$dir/prompt\" >/dev/null 2>&1; echo $? >\"$dir/code\"; }}")
         }
         Some(Launcher::Droid) => {
             let mut command = String::from("droid exec -f \"$dir/prompt\" --cwd \"$work\"");
@@ -157,7 +164,12 @@ pub(super) fn agent_command_for(input: &AutomationInput, session: Option<&str>, 
         // Saving checks the agent can be started, so this is only an automation saved by a newer Arbor.
         None => String::from("{ echo 127 >\"$dir/code\"; }"),
         Some(Launcher::Codex) => {
-            let mut options = String::from("--json --skip-git-repo-check");
+            // A provider of Arbor's own for this run, so the machine's Codex login and provider don't matter. The key
+            // comes from the environment by name.
+            let mut options = String::from(
+                "--json --skip-git-repo-check -c 'model_provider=\"arbor\"' \
+                 -c \"model_providers.arbor={ name = \\\"Arbor\\\", base_url = \\\"$ARBOR_PROXY_URL/v1\\\", env_key = \\\"ARBOR_PROXY_KEY\\\", wire_api = \\\"responses\\\" }\"",
+            );
             if let Some(model) = model {
                 options.push_str(&format!(" -m {}", shell_quote(model)));
             }
@@ -225,6 +237,21 @@ pub(super) fn start_script(start: &Start) -> String {
              if [ -s \"$dir/precheck.out\" ]; then {{ printf '\\n\\nThe precheck found:\\n'; tail -c {PRECHECK_KEPT} \"$dir/precheck.out\"; }} >>\"$dir/prompt\"; fi\n",
             shell_quote(&STANDARD.encode(precheck)),
             timeout = input.precheck_timeout_secs.clamp(1, 3600),
+        ));
+    }
+    if let Some((proxy, homes)) = start.proxy {
+        // The key goes in a file only the owner can read, is read back into the run's environment, and the file goes.
+        script.push_str(&format!(
+            "{homes}{FUNCTIONS}\
+             command -v curl >/dev/null 2>&1 || fail \"curl isn't on this machine, and automations need it to reach your proxy\"\n\
+             ( umask 077; printf '%s' {file} | unbase >\"$dir/proxy\" ) || fail \"Couldn't write the run's proxy settings\"\n\
+             ARBOR_PROXY_URL=$(arbor_proxy_find \"$dir/proxy\")\n\
+             ARBOR_PROXY_KEY=$(sed -n 's/^key=//p' \"$dir/proxy\" | head -n 1)\n\
+             rm -f \"$dir/proxy\"\n\
+             [ -n \"$ARBOR_PROXY_URL\" ] || fail {unreachable}\n\
+             export ARBOR_PROXY_URL ARBOR_PROXY_KEY\n",
+            file = shell_quote(&STANDARD.encode(proxy.file())),
+            unreachable = shell_quote(proxy::UNREACHABLE),
         ));
     }
     if let (Harness::Claude, Some(session)) = (input.agent, start.session) {
@@ -483,7 +510,29 @@ async fn start_run_inner(app: &tauri::AppHandle, record: &store::Record, schedul
     let session = session.or_else(|| (record.input.agent == Harness::Claude).then(new_uuid));
     run.session_id = session.clone();
     save_run(StoredRun { run: run.clone(), worktree: None }).await?;
-    let start = Start { run_id: &run.id, automation_id: &record.id, input: &record.input, session: session.as_deref(), resume };
+    let proxy = if proxy::routes(&record.input) {
+        match proxy::setup(app, &machine).await {
+            Ok(proxy) => Some((proxy, agent_homes::shell_function(machine.name(), HomeUse::Sync))),
+            Err(error) => {
+                let now_ms = Local::now().timestamp_millis();
+                run.status = AutomationRunStatus::Failed;
+                run.finished_at_ms = Some(now_ms);
+                run.error = Some(error);
+                save_run(StoredRun { run: run.clone(), worktree: None }).await?;
+                return Ok(run);
+            }
+        }
+    } else {
+        None
+    };
+    let start = Start {
+        run_id: &run.id,
+        automation_id: &record.id,
+        input: &record.input,
+        session: session.as_deref(),
+        resume,
+        proxy: proxy.as_ref().map(|(proxy, homes)| (proxy, homes.as_str())),
+    };
     let timeout = Duration::from_secs(u64::from(record.input.precheck_timeout_secs.clamp(1, 3600)) + 60);
     let result = run_checked(&machine, MachineOp::AutomationStart, &start_script(&start), timeout).await.map(|stdout| parse_started(&stdout));
     let (run, worktree) = after_start(run, result, Local::now().timestamp_millis());
@@ -731,11 +780,13 @@ mod tests {
     #[test]
     fn the_start_script_checks_first_and_keeps_no_output() {
         let input = input(Harness::Codex);
-        let start = Start { run_id: "run-1", automation_id: "a-1", input: &input, session: None, resume: false };
+        let start = Start { run_id: "run-1", automation_id: "a-1", input: &input, session: None, resume: false, proxy: None };
         let script = start_script(&start);
         assert!(script.contains("work=\"$HOME\"/'code/billing'"));
         assert!(script.contains("sleep 60"));
-        assert!(script.contains("codex exec --json --skip-git-repo-check -m 'gpt-6-sol'"));
+        assert!(script.contains("codex exec --json --skip-git-repo-check -c 'model_provider=\"arbor\"'"));
+        assert!(script.contains("base_url = \\\"$ARBOR_PROXY_URL/v1\\\", env_key = \\\"ARBOR_PROXY_KEY\\\""), "{script}");
+        assert!(script.contains("\" -m 'gpt-6-sol'"));
         assert!(script.contains(" -s workspace-write -C \"$work\" -"));
         assert!(!script.contains("dangerously"));
         assert!(script.contains(">\"$dir/session\""));
@@ -748,20 +799,20 @@ mod tests {
         let mut input = input(Harness::Claude);
         input.access = AutomationAccess::Full;
         input.workspace = AutomationWorkspace::NewWorktree;
-        let start = Start { run_id: "run-2", automation_id: "a-1", input: &input, session: Some("s-1"), resume: false };
+        let start = Start { run_id: "run-2", automation_id: "a-1", input: &input, session: Some("s-1"), resume: false, proxy: None };
         let script = start_script(&start);
-        assert!(script.contains("claude -p --session-id 's-1' --model 'gpt-6-sol' --effort 'low' --dangerously-skip-permissions"));
+        assert!(script.contains("{ unset ANTHROPIC_API_KEY; ANTHROPIC_BASE_URL=\"$ARBOR_PROXY_URL\" ANTHROPIC_AUTH_TOKEN=\"$ARBOR_PROXY_KEY\" claude -p --session-id 's-1' --model 'gpt-6-sol' --effort 'low' --dangerously-skip-permissions"));
         assert!(script.contains("git worktree add"));
-        let resumed = Start { run_id: "run-3", automation_id: "a-1", input: &input, session: Some("s-1"), resume: true };
+        let resumed = Start { run_id: "run-3", automation_id: "a-1", input: &input, session: Some("s-1"), resume: true, proxy: None };
         assert!(start_script(&resumed).contains("claude -p --resume 's-1'"));
     }
 
     #[test]
     fn codex_carries_on_a_session_with_the_same_sandbox() {
         let input = input(Harness::Codex);
-        let start = Start { run_id: "run-4", automation_id: "a-1", input: &input, session: Some("t-9"), resume: true };
+        let start = Start { run_id: "run-4", automation_id: "a-1", input: &input, session: Some("t-9"), resume: true, proxy: None };
         let script = start_script(&start);
-        assert!(script.contains("codex exec resume --json --skip-git-repo-check -m 'gpt-6-sol'"));
+        assert!(script.contains("codex exec resume --json --skip-git-repo-check -c 'model_provider=\"arbor\"'"));
         assert!(script.contains("sandbox_mode=\"workspace-write\"' 't-9' -"));
     }
 
@@ -828,12 +879,23 @@ mod tests {
         std::fs::create_dir_all(&project).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
         let codex = bin.join("codex");
-        std::fs::write(&codex, "#!/bin/sh\nprintf '{\"type\":\"thread.started\",\"thread_id\":\"t-42\"}\\n'\ncat\nexit 3\n").unwrap();
+        std::fs::write(&codex, "#!/bin/sh\nprintf '%s %s' \"$ARBOR_PROXY_URL\" \"$ARBOR_PROXY_KEY\" >\"$HOME/env-seen\"\nprintf '%s' \"$*\" >\"$HOME/args-seen\"\nprintf '{\"type\":\"thread.started\",\"thread_id\":\"t-42\"}\\n'\ncat\nexit 3\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // A curl that answers 200 only at the test proxy and only with the key.
+        std::fs::write(
+            bin.join("curl"),
+            "#!/bin/sh\nconfig=$(cat)\ncase $config in *sk-arbor-0123abcd*) ;; *) echo 401; exit 0 ;; esac\n\
+             case \" $* \" in *' http://proxy.test:8443/v1/models '*) echo 200 ;; *) echo 000 ;; esac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(bin.join("curl"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let proxy = ProxySetup { key: "sk-arbor-0123abcd".into(), first: vec!["http://nowhere.test:1".into()], last: vec!["http://proxy.test:8443".into()] };
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
         let sh = |script: &str| {
             let mut child = std::process::Command::new("sh")
                 .env("HOME", &home)
+                .env("PATH", &path)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null())
@@ -844,7 +906,8 @@ mod tests {
         };
         let mut input = input(Harness::Codex);
         input.precheck = Some("echo 2 new issues".into());
-        let start = Start { run_id: "run-sh", automation_id: "arbor:a", input: &input, session: None, resume: false };
+        let start = Start { run_id: "run-sh", automation_id: "arbor:a", input: &input, session: None, resume: false, proxy: Some((&proxy, "")) };
+        assert!(!start_script(&start).contains("sk-arbor-0123abcd"), "the key travels encoded, never as a word");
         let started = parse_started(&sh(&start_script(&start)));
         assert_eq!(started.error, None);
         assert_eq!(started.precheck_exit, Some(0));
@@ -861,10 +924,13 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert_eq!(seen, Seen::Ended { exit: Some(3), session: Some("t-42".into()) });
+        // Codex went through the first address that answered, with the key in its environment only.
+        assert_eq!(std::fs::read_to_string(home.join("env-seen")).unwrap(), "http://proxy.test:8443 sk-arbor-0123abcd");
+        assert!(!std::fs::read_to_string(home.join("args-seen")).unwrap().contains("sk-arbor"));
         assert!(!home.join(".arbor/automation-runs/run-sh").exists(), "an ended run's folder goes");
 
         input.precheck = Some("exit 1".into());
-        let start = Start { run_id: "run-skip", automation_id: "arbor:a", input: &input, session: None, resume: false };
+        let start = Start { run_id: "run-skip", automation_id: "arbor:a", input: &input, session: None, resume: false, proxy: Some((&proxy, "")) };
         let skipped = parse_started(&sh(&start_script(&start)));
         assert_eq!(skipped.precheck_exit, Some(1));
         assert_eq!(skipped.pid, None);
@@ -912,7 +978,7 @@ mod tests {
 
         let mut droid = input(Harness::Droid);
         droid.precheck = None;
-        let start = Start { run_id: "run-droid", automation_id: "arbor:d", input: &droid, session: None, resume: false };
+        let start = Start { run_id: "run-droid", automation_id: "arbor:d", input: &droid, session: None, resume: false, proxy: None };
         assert_eq!(parse_started(&sh(&start_script(&start))).error, None);
         let args = wait_for("droid");
         let args: Vec<&str> = args.lines().collect();
@@ -925,7 +991,7 @@ mod tests {
         prime.precheck = None;
         prime.access = AutomationAccess::Full;
         prime.prompt = "- Fix what's new\n- Say what you did".into();
-        let start = Start { run_id: "run-prime", automation_id: "arbor:p", input: &prime, session: None, resume: false };
+        let start = Start { run_id: "run-prime", automation_id: "arbor:p", input: &prime, session: None, resume: false, proxy: None };
         assert_eq!(parse_started(&sh(&start_script(&start))).error, None);
         let args = wait_for("prime-agent");
         assert!(args.starts_with("-p\n--cwd\n"), "{args}");

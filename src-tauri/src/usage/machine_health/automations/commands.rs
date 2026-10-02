@@ -1,6 +1,7 @@
 //! The Automations page's commands.
 
 use super::discover::{self, Found, MachineFind};
+use super::proxy;
 use super::store::{self, Record};
 use super::super::harnesses::Launcher;
 use super::*;
@@ -172,6 +173,9 @@ pub(super) fn list_from(
         draft_effort: store::setting(connection, "draft_effort")?.unwrap_or_else(|| draft::DEFAULT_EFFORT.into()),
         udian_bundled: udian::bundle().map(|bundle| bundle.version),
         agents: Harness::ALL.into_iter().filter(|harness| harness.launches()).collect(),
+        // Whether the core still has the key needs the app; `current_list` fills it in.
+        proxy_key: false,
+        proxy_address: store::setting(connection, proxy::ADDRESS_SETTING)?.unwrap_or_default(),
     })
 }
 
@@ -182,7 +186,13 @@ fn machine_names(app: &tauri::AppHandle) -> Vec<String> {
 async fn current_list(app: &tauri::AppHandle) -> Result<AutomationList, String> {
     let found = discover::found();
     let machines = machine_names(app);
-    run_usage_task(move || list_from(&open_usage_database()?, &found, &machines)).await
+    let (mut list, fingerprint) = run_usage_task(move || {
+        let connection = open_usage_database()?;
+        Ok((list_from(&connection, &found, &machines)?, store::setting(&connection, proxy::KEY_SETTING)?))
+    })
+    .await?;
+    list.proxy_key = proxy::has_key(app, fingerprint.as_deref());
+    Ok(list)
 }
 
 async fn arbor_record(id: &str) -> Result<Record, String> {
@@ -599,6 +609,45 @@ pub(crate) async fn set_automation_draft_model(app: tauri::AppHandle, model: Str
         store::set_setting(&connection, "draft_effort", effort.trim())
     })
     .await?;
+    current_list(&app).await
+}
+
+/// Adds the client key every Claude and Codex automation reaches the proxy with, named so Usage shows their spend
+/// apart. Only its fingerprint is kept here; the key itself stays in the core's list, where Settings can pause or
+/// delete it. A key already there is kept.
+#[tauri::command]
+pub(crate) async fn add_automations_key(app: tauri::AppHandle) -> Result<AutomationList, String> {
+    let fingerprint = run_usage_task(|| store::setting(&open_usage_database()?, proxy::KEY_SETTING)).await?;
+    if !proxy::has_key(&app, fingerprint.as_deref()) {
+        let key = proxy::new_key()?;
+        crate::core_config::add_core_api_key(app.state::<crate::GuiConfigState>(), key.clone(), proxy::KEY_NAME.into())?;
+        let fingerprint = crate::usage::hash_text(&key);
+        run_usage_task(move || {
+            let connection = open_usage_database()?;
+            let _guard = lock_usage_writes();
+            store::set_setting(&connection, proxy::KEY_SETTING, &fingerprint)
+        })
+        .await?;
+    }
+    // Automations placed without a key, or with an old one, are placed again with it.
+    runner::WAKE.notify_one();
+    runner::emit(&app);
+    current_list(&app).await
+}
+
+/// Sets the address machines try first to reach the proxy, for one they can't find on their own; empty clears it.
+#[tauri::command]
+pub(crate) async fn set_automation_proxy_address(app: tauri::AppHandle, address: String) -> Result<AutomationList, String> {
+    proxy::check_address(&address)?;
+    let address = address.trim().trim_end_matches('/').to_string();
+    run_usage_task(move || {
+        let connection = open_usage_database()?;
+        let _guard = lock_usage_writes();
+        store::set_setting(&connection, proxy::ADDRESS_SETTING, &address)
+    })
+    .await?;
+    runner::WAKE.notify_one();
+    runner::emit(&app);
     current_list(&app).await
 }
 

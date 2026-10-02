@@ -29,6 +29,8 @@ export function AutomationSettings() {
   const { list } = useAutomations();
   const { askConfirmation } = useConfirmation();
   const [model, setModel] = useState('');
+  const [address, setAddress] = useState(() => list?.proxyAddress ?? '');
+  const [addressError, setAddressError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -36,6 +38,8 @@ export function AutomationSettings() {
   const savedModel = list?.draftModel;
   // Follows what's saved, as Settings or the command line changes it.
   useEffect(() => { if (savedModel !== undefined) setModel(savedModel); }, [savedModel]);
+  const savedAddress = list?.proxyAddress;
+  useEffect(() => { if (savedAddress !== undefined) setAddress(savedAddress); }, [savedAddress]);
   if (!list) return null;
 
   const run = async (action: () => Promise<void>) => {
@@ -53,6 +57,31 @@ export function AutomationSettings() {
     showAutomations(await invokeCommand('set_automation_draft_model', { model: nextModel.trim(), effort }));
     toast({ title: t('automations.settings.modelSaved') });
   });
+
+  const addKey = async () => {
+    if (!(await askConfirmation({
+      title: t('automations.proxy.addTitle'),
+      message: t('automations.proxy.addMessage'),
+      confirmText: t('automations.proxy.add'),
+    }))) return;
+    await run(async () => {
+      showAutomations(await invokeCommand('add_automations_key'));
+      toast({ title: t('automations.proxy.added') });
+    });
+  };
+  const saveAddress = async () => {
+    setSaving(true);
+    setAddressError(null);
+    try {
+      showAutomations(await invokeCommand('set_automation_proxy_address', { address: address.trim() }));
+      toast({ title: t('automations.proxy.addressSaved') });
+    } catch (reason) {
+      setAddressError(String(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const addressChanged = address.trim() !== list.proxyAddress;
 
   const install = async (machine: string, update: boolean, prunes: boolean) => {
     if (prunes && !(await askConfirmation({
@@ -108,6 +137,44 @@ export function AutomationSettings() {
           })}
         </ul>
       </SettingsRow>
+      <SettingsRow
+        settingId="machines.automations-proxy-key"
+        title={t('automations.proxy.key')}
+        description={t('automations.proxy.keyHint')}
+        control={list.proxyKey ? (
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <StatusDot tone="success" />
+            {t('automations.proxy.keyReady')}
+          </span>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <StatusDot tone="warning" />
+              {t('automations.proxy.keyMissing')}
+            </span>
+            <Button size="sm" disabled={saving} onClick={() => void addKey()}>{t('automations.proxy.add')}</Button>
+          </div>
+        )}
+      />
+      <SettingsRow
+        settingId="machines.automations-proxy-address"
+        title={t('automations.proxy.address')}
+        description={addressError ?? t('automations.proxy.addressHint')}
+        control={
+          <div className="flex items-center gap-2">
+            <Input
+              font="mono"
+              className="w-64"
+              aria-label={t('automations.proxy.address')}
+              placeholder={t('automations.proxy.addressPlaceholder')}
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter' && addressChanged) void saveAddress(); }}
+            />
+            {addressChanged ? <Button size="sm" disabled={saving} onClick={() => void saveAddress()}>{t('common.save')}</Button> : null}
+          </div>
+        }
+      />
       <SettingsRow
         settingId="machines.automations-running"
         title={t('automations.settings.running')}

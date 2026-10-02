@@ -17,5 +17,7 @@ export type AutomationCommands = {
   draft_automation: { args: { input: AutomationDraftInput }; result: AutomationDraft };
   set_automations_running: { args: { running: boolean }; result: AutomationList };
   set_automation_draft_model: { args: { model: string; effort: string }; result: AutomationList };
+  add_automations_key: { result: AutomationList };
+  set_automation_proxy_address: { args: { address: string }; result: AutomationList };
   install_background_runner: { args: { machine: string }; result: AutomationList };
 };

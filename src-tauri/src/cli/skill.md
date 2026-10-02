@@ -61,6 +61,8 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |
 | Run an automation now, precheck first | `arbor call run_automation_now id=<id>` |
 | Set up or update the background runner on a machine, so its automations run with Arbor closed | `arbor call install_background_runner machine=<name>` (needs `--yes`) |
+| Give automations their proxy key (Claude and Codex automations reach the proxy with it, whatever a machine is signed in to) | `arbor call add_automations_key` (needs `--yes`) |
+| Set the address machines try first to reach the proxy, or clear it | `arbor call set_automation_proxy_address address=<url>` (`address=` clears it) |
 | Hand a run to a harness on whichever pool member has room | `arbor call start_pool_run --args '{"request":{"pool":"<pool id>","harness":"t3","setup":"codex","folder":"~/src/app","prompt":"…","fallback":false}}'` (asks first; `arbor call get_runs` lists runs) |
 
 Stopping or restarting the proxy cuts off every agent using it for a moment, on every machine. Say so when you show

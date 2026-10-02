@@ -1879,6 +1879,8 @@ fn main() {
             usage::machine_health::automations::commands::draft_automation,
             usage::machine_health::automations::commands::set_automations_running,
             usage::machine_health::automations::commands::set_automation_draft_model,
+            usage::machine_health::automations::commands::add_automations_key,
+            usage::machine_health::automations::commands::set_automation_proxy_address,
             usage::fleet::get_fleet_sources,
             usage::antiburn::get_antiburn,
             usage::antiburn::open_antiburn,

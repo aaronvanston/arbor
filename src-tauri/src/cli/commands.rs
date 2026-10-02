@@ -887,6 +887,20 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "add_automations_key",
+        access: Access::Confirm,
+        summary: "Adds the client key every Claude and Codex automation reaches the proxy with, named so Usage shows their spend apart. Only its fingerprint is kept here; the key itself stays in the core's list, where Settings can pause or delete it. A key already there is kept.",
+        args: &[],
+    },
+    CommandSpec {
+        name: "set_automation_proxy_address",
+        access: Access::Write,
+        summary: "Sets the address machines try first to reach the proxy, for one they can't find on their own; empty clears it.",
+        args: &[
+            ArgSpec { name: "address", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_fleet_sources",
         access: Access::Read,
         summary: "Get fleet sources",
@@ -2031,6 +2045,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "draft_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::draft_automation(arg(&args, "input")?, app.state())).await) }.await,
         "set_automations_running" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automations_running(app.clone(), arg(&args, "running")?)).await) }.await,
         "set_automation_draft_model" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_draft_model(app.clone(), arg(&args, "model")?, arg(&args, "effort")?)).await) }.await,
+        "add_automations_key" => done(Box::pin(crate::usage::machine_health::automations::commands::add_automations_key(app.clone())).await),
+        "set_automation_proxy_address" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_proxy_address(app.clone(), arg(&args, "address")?)).await) }.await,
         "get_fleet_sources" => done(Box::pin(crate::usage::fleet::get_fleet_sources(app.state(), app.state())).await),
         "get_antiburn" => done(Box::pin(crate::usage::antiburn::get_antiburn(app.state())).await),
         "open_antiburn" => done(Box::pin(crate::usage::antiburn::open_antiburn(app.clone())).await),

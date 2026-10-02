@@ -8,9 +8,11 @@
 //! session's id and the agent's exit in `~/.arbor/automation-runs/<udian run>/`, which Arbor reads with udian's own run
 //! records and then takes away. udian keeps its own log of each run on the machine; Arbor never reads it.
 
+use super::super::agent_homes::{self, HomeUse};
 use super::super::agents::AGENT_ENV;
 use super::super::guarded_writes::STATE_FUNCTIONS;
 use super::super::shell::{run_checked, shell_quote, Machine};
+use super::proxy::{self, ProxySetup};
 use super::runner::{agent_command_for, path_word, REMOVE_FOLDER};
 use super::*;
 use crate::usage::diagnostics::MachineOp;
@@ -284,6 +286,18 @@ fn run_script(input: &AutomationInput) -> String {
          cd \"$work\" 2>/dev/null || ended 127\n",
         project = path_word(&input.project_path),
     );
+    if proxy::routes(input) {
+        // Placing wrote the addresses this machine reaches the proxy at, in the order to try them.
+        script.push_str(&format!(
+            "{functions}\
+             ARBOR_PROXY_URL=$(arbor_proxy_find \"$here/proxy\")\n\
+             [ -n \"$ARBOR_PROXY_URL\" ] || ended {unreachable}\n\
+             ARBOR_PROXY_KEY=$(sed -n 's/^key=//p' \"$here/proxy\" | head -n 1)\n\
+             export ARBOR_PROXY_URL ARBOR_PROXY_KEY\n",
+            functions = proxy::FUNCTIONS,
+            unreachable = proxy::UNREACHABLE_EXIT,
+        ));
+    }
     if input.workspace == AutomationWorkspace::NewWorktree {
         script.push_str(
             "wt=\"$HOME/.arbor/automation-worktrees/$(basename \"$here\")/$ULTRADIAN_RUN_ID\"\n\
@@ -329,9 +343,27 @@ fn run_script(input: &AutomationInput) -> String {
 
 /// Writes an automation's folder on its machine and its schedule into udian: a new one, or the same name changed in
 /// place so its run history stays. A paused automation's schedule is paused.
-pub(super) fn place_script(id: &str, input: &AutomationInput, enabled: bool, zone: Option<&str>) -> Result<String, String> {
+pub(super) fn place_script(id: &str, input: &AutomationInput, enabled: bool, zone: Option<&str>, proxy: Option<(&ProxySetup, &str)>) -> Result<String, String> {
     let name = schedule_name(id);
     let trigger = trigger_args(input, zone).ok_or_else(|| unplaceable(input).unwrap_or_default().to_string())?;
+    // The addresses the machine's own agents use are read once here, in the order to try them all, and an address
+    // that answers is found before anything's placed: a run with Arbor closed can't say what went wrong as well.
+    let proxy_part = match (proxy::routes(input), proxy) {
+        (false, _) => "rm -f \"$here/proxy\"\n".to_string(),
+        (true, None) => return Err(proxy::NO_KEY.into()),
+        (true, Some((proxy, homes))) => format!(
+            "{homes}{functions}\
+             command -v curl >/dev/null 2>&1 || {{ echo \"curl isn't on this machine, and automations need it to reach your proxy\" >&2; exit 1; }}\n\
+             printf '%s' {file} | unbase >\"$here/proxy.new\"\n\
+             {{ sed -n 's/^key=//p' \"$here/proxy.new\" | head -n 1 | sed 's/^/key=/'; arbor_proxy_order \"$here/proxy.new\" | sed 's/^/first=/'; }} >\"$here/proxy.next\"\n\
+             rm -f \"$here/proxy.new\"\n\
+             if [ -z \"$(arbor_proxy_find \"$here/proxy.next\")\" ]; then rm -f \"$here/proxy.next\"; echo {unreachable} >&2; exit 1; fi\n\
+             mv -f \"$here/proxy.next\" \"$here/proxy\"\n",
+            functions = proxy::FUNCTIONS,
+            file = shell_quote(&STANDARD.encode(proxy.file())),
+            unreachable = shell_quote(proxy::UNREACHABLE),
+        ),
+    };
     let file = |content: &str| shell_quote(&STANDARD.encode(content));
     let mut options: Vec<String> = trigger;
     options.extend(["--timeout".into(), RUN_TIMEOUT.into(), "--catch-up".into(), format!("{}m", input.grace_minutes)]);
@@ -340,9 +372,10 @@ pub(super) fn place_script(id: &str, input: &AutomationInput, enabled: bool, zon
     let gate = if has_precheck { " --gate \"sh \\\"$here/gate.sh\\\"\" --gate-mode exit".to_string() } else { " --no-gate".to_string() };
     let pause = if enabled { "resume" } else { "pause" };
     Ok(format!(
-        "set -e\n{STATE_FUNCTIONS}\
+        "set -e\numask 077\n{STATE_FUNCTIONS}\
          here=\"$HOME/.arbor/automations/\"{folder}\n\
          mkdir -p \"$here\"\n\
+         {proxy_part}\
          printf '%s' {prompt} | unbase >\"$here/prompt\"\n\
          printf '%s' {precheck} | unbase >\"$here/precheck\"\n\
          printf '%s' {gate_file} | unbase >\"$here/gate.sh\"\n\
@@ -386,13 +419,14 @@ pub(super) async fn call(machine: &Machine, script: &str) -> Result<String, Stri
     run_checked(machine, MachineOp::AutomationChange, script, CALL_TIMEOUT).await
 }
 
-pub(super) fn place_on(id: &str, input: &AutomationInput, enabled: bool) -> Result<String, String> {
-    place_script(id, input, enabled, local_zone().as_deref())
+pub(super) fn place_on(id: &str, input: &AutomationInput, enabled: bool, proxy: Option<(&ProxySetup, &str)>) -> Result<String, String> {
+    place_script(id, input, enabled, local_zone().as_deref(), proxy)
 }
 
 /// What a placed automation looks like to the reconciler: a change to any of these means writing it again.
-pub(super) fn fingerprint(machine: &str, input: &AutomationInput, enabled: bool) -> String {
-    let text = format!("{machine}\n{enabled}\n{}", serde_json::to_string(input).unwrap_or_default());
+pub(super) fn fingerprint(machine: &str, input: &AutomationInput, enabled: bool, proxy: Option<&ProxySetup>) -> String {
+    let proxy = proxy.map(ProxySetup::summary).unwrap_or_default();
+    let text = format!("{machine}\n{enabled}\n{}\n{proxy}", serde_json::to_string(input).unwrap_or_default());
     Sha256::digest(text.as_bytes()).iter().take(12).map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -548,6 +582,7 @@ pub(super) fn as_run(udian: &UdianRun, files: Option<&RunFiles>, automation_id: 
     run.error = match (status, error) {
         (_, Some(error)) => Some(error.to_string()),
         (AutomationRunStatus::Failed, None) => Some(match run.exit_code {
+            Some(proxy::UNREACHABLE_EXIT) => proxy::UNREACHABLE.to_string(),
             Some(code) => format!("The agent exited with {code}"),
             None => "The run failed".to_string(),
         }),
@@ -610,8 +645,22 @@ pub(super) async fn reconcile(app: &tauri::AppHandle) -> Result<bool, String> {
         wanted.insert(record.id.clone());
         // Settings' switch for all of Arbor's automations pauses the ones on machines too.
         let enabled = record.enabled && on;
-        let value = placed_value(name, &fingerprint(name, &record.input, enabled));
-        if placed.get(&record.id) == Some(&value) || !ready(found.get(name).and_then(|find| find.udian.as_ref())) {
+        if !ready(found.get(name).and_then(|find| find.udian.as_ref())) {
+            continue;
+        }
+        let machine = machine_named(app, name);
+        let proxy = match (&machine, proxy::routes(&record.input)) {
+            (Ok(machine), true) => match proxy::setup(app, machine).await {
+                Ok(proxy) => Some((proxy, agent_homes::shell_function(name, HomeUse::Sync))),
+                Err(error) => {
+                    errors.insert(name.to_string(), error);
+                    continue;
+                }
+            },
+            _ => None,
+        };
+        let value = placed_value(name, &fingerprint(name, &record.input, enabled, proxy.as_ref().map(|(proxy, _)| proxy)));
+        if placed.get(&record.id) == Some(&value) {
             continue;
         }
         if let Some(before) = placed.get(&record.id).map(|value| placed_machine(value)).filter(|before| *before != name) {
@@ -619,7 +668,7 @@ pub(super) async fn reconcile(app: &tauri::AppHandle) -> Result<bool, String> {
                 let _ = call(&machine, &remove_script(&record.id)).await;
             }
         }
-        let result = match (machine_named(app, name), place_on(&record.id, &record.input, enabled)) {
+        let result = match (machine, place_on(&record.id, &record.input, enabled, proxy.as_ref().map(|(proxy, homes)| (proxy, homes.as_str())))) {
             (Ok(machine), Ok(script)) => call(&machine, &script).await,
             (Err(error), _) | (_, Err(error)) => Err(error),
         };
@@ -707,6 +756,15 @@ pub(super) async fn sync(app: &tauri::AppHandle, now: bool) -> Result<bool, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn proxy_setup() -> ProxySetup {
+        ProxySetup { key: "sk-arbor-0123abcd".into(), first: vec!["http://proxy.test:8443/".into()], last: Vec::new() }
+    }
+
+    /// A curl that answers 200 only at the test proxy and only with the key, and notes what it was given.
+    const FAKE_CURL: &str = "#!/bin/sh\nconfig=$(cat)\nprintf '%s\\n' \"$*\" >>\"$HOME/curl-args\"\n\
+        case $config in *sk-arbor-0123abcd*) ;; *) echo 401; exit 0 ;; esac\n\
+        case \" $* \" in *' http://proxy.test:8443/v1/models '*) echo 200 ;; *) echo 000 ;; esac\n";
 
     fn input() -> AutomationInput {
         AutomationInput {
@@ -825,7 +883,8 @@ mod tests {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
         };
         // The agent reads its prompt and exits 0; udian only notes what it's asked and answers `runs`.
-        executable(&bin.join("claude"), "#!/bin/sh\ncat >\"$HOME/prompt-seen\"\nprintf '%s' \"$*\" >\"$HOME/args-seen\"\nexit 0\n");
+        executable(&bin.join("claude"), "#!/bin/sh\ncat >\"$HOME/prompt-seen\"\nprintf '%s' \"$*\" >\"$HOME/args-seen\"\nprintf '%s %s' \"$ANTHROPIC_BASE_URL\" \"$ANTHROPIC_AUTH_TOKEN\" >\"$HOME/env-seen\"\nexit 0\n");
+        executable(&bin.join("curl"), FAKE_CURL);
         executable(
             &udian_bin.join("udian"),
             // It refuses the options the real one refuses, per command, so a call udian would reject fails here too.
@@ -838,7 +897,8 @@ mod tests {
         );
         let sh = |script: &str, run: Option<&str>| {
             let mut command = std::process::Command::new("sh");
-            command.env("HOME", &home).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+            let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+            command.env("HOME", &home).env("PATH", path).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
             if let Some(run) = run {
                 command.env("ULTRADIAN_RUN_ID", run);
             }
@@ -849,7 +909,7 @@ mod tests {
         };
         let mut item = input();
         item.precheck = Some("echo 3 new issues".into());
-        let (code, _) = sh(&place_script("arbor:a", &item, true, None).unwrap(), None);
+        let (code, _) = sh(&place_script("arbor:a", &item, true, None, Some((&proxy_setup(), ""))).unwrap(), None);
         assert_eq!(code, Some(0));
         let calls = std::fs::read_to_string(home.join("udian-calls")).unwrap();
         assert!(calls.contains("add arbor-a --cron 15 * * * * --timeout 6h --catch-up 20m --gate sh \""), "{calls}");
@@ -864,6 +924,13 @@ mod tests {
         assert!(prompt.starts_with("Fix what's new.") && prompt.contains("The precheck found:\n3 new issues"), "{prompt}");
         let args = std::fs::read_to_string(home.join("args-seen")).unwrap();
         assert!(args.contains("--session-id ") && args.contains("--permission-mode acceptEdits"), "{args}");
+        // The agent goes through the proxy the machine found, with the key in its environment and nowhere else.
+        assert_eq!(std::fs::read_to_string(home.join("env-seen")).unwrap(), "http://proxy.test:8443 sk-arbor-0123abcd");
+        assert!(!args.contains("sk-arbor"), "{args}");
+        assert!(!std::fs::read_to_string(home.join("curl-args")).unwrap().contains("sk-arbor"));
+        let kept = std::fs::read_to_string(folder.join("proxy")).unwrap();
+        assert_eq!(kept, "key=sk-arbor-0123abcd\nfirst=http://proxy.test:8443\n");
+        assert_eq!(std::fs::metadata(folder.join("proxy")).unwrap().permissions().mode() & 0o777, 0o600);
         let (runs, files, cursor) = parse_sync(&sh(&sync_script(None), None).1);
         assert_eq!(cursor.as_deref(), Some("c1"));
         let files = files.get("r1").unwrap();
@@ -877,7 +944,7 @@ mod tests {
         // A precheck that fails stops there: no agent, and the folder goes once read.
         std::fs::remove_file(home.join("prompt-seen")).unwrap();
         item.precheck = Some("exit 4".into());
-        sh(&place_script("arbor:a", &item, true, None).unwrap(), None);
+        sh(&place_script("arbor:a", &item, true, None, Some((&proxy_setup(), ""))).unwrap(), None);
         assert_eq!(sh(&gate, Some("r2")).0, Some(4));
         let (_, files, _) = parse_sync(&sh(&sync_script(Some("c1")), None).1);
         assert_eq!(files.get("r2").and_then(|files| files.precheck_exit), Some(4));
@@ -983,7 +1050,7 @@ mod tests {
 
     #[test]
     fn the_placed_scripts_start_the_agent_only_after_the_gate() {
-        let script = place_script("arbor:a", &input(), true, Some("Australia/Melbourne")).unwrap();
+        let script = place_script("arbor:a", &input(), true, Some("Australia/Melbourne"), Some((&proxy_setup(), ""))).unwrap();
         assert!(script.contains("--gate-mode exit"));
         assert!(script.contains("'--cron' '15 * * * *' '--tz' 'Australia/Melbourne'"));
         assert!(script.contains("--catch-up' '20m'"));
@@ -993,7 +1060,9 @@ mod tests {
         assert!(run.contains(">/dev/null 2>&1"));
         let mut paused = input();
         paused.precheck = None;
-        assert!(place_script("arbor:a", &paused, false, None).unwrap().contains(" pause 'arbor-a'"));
+        assert!(place_script("arbor:a", &paused, false, None, Some((&proxy_setup(), ""))).unwrap().contains(" pause 'arbor-a'"));
+        assert_eq!(place_script("arbor:a", &paused, false, None, None).unwrap_err(), proxy::NO_KEY);
+        assert!(!script.contains("sk-arbor-0123abcd"), "the key travels encoded, never as a word");
     }
 
     /// The checkout's pinned release, as `scripts/build-release.sh` fetches it into `bundled-udian/`: every system's
@@ -1031,6 +1100,8 @@ mod tests {
         std::fs::copy(&binary, udian_bin.join("udian")).unwrap();
         std::fs::write(bin.join("claude"), "#!/bin/sh\ncat >\"$HOME/prompt-seen\"\nexit 0\n").unwrap();
         std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(bin.join("curl"), FAKE_CURL).unwrap();
+        std::fs::set_permissions(bin.join("curl"), std::fs::Permissions::from_mode(0o755)).unwrap();
         let sh = |script: &str| {
             let mut child = std::process::Command::new("sh")
                 .env("HOME", &home)
@@ -1056,12 +1127,12 @@ mod tests {
         let mut item = input();
         item.project_path = project.display().to_string();
         item.precheck = Some("echo 3 new issues".into());
-        let (code, _, err) = sh(&place_script("arbor:a", &item, true, None).unwrap());
+        let (code, _, err) = sh(&place_script("arbor:a", &item, true, None, Some((&proxy_setup(), ""))).unwrap());
         assert_eq!(code, Some(0), "placing: {err}");
         // Placing again edits the schedule in place.
-        let (code, _, err) = sh(&place_script("arbor:a", &item, false, None).unwrap());
+        let (code, _, err) = sh(&place_script("arbor:a", &item, false, None, Some((&proxy_setup(), ""))).unwrap());
         assert_eq!(code, Some(0), "placing again: {err}");
-        let (code, _, err) = sh(&place_script("arbor:a", &item, true, None).unwrap());
+        let (code, _, err) = sh(&place_script("arbor:a", &item, true, None, Some((&proxy_setup(), ""))).unwrap());
         assert_eq!(code, Some(0), "resuming: {err}");
         let (code, out, err) = sh(&run_now_script("arbor:a"));
         assert_eq!(code, Some(0), "run now: {err}");

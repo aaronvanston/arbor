@@ -18,7 +18,8 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
  * `?draft=fail`: the drafting model can't be reached (the core has no key); `?draft=slow` takes four seconds.
  * The background runner: casey-mbp and cedar-02 have it and ci-01 doesn't. `?runner=old`: cedar-02's is older than
  * the one Arbor carries, and `?runner=legacy` from before it kept only 30 days of runs. `?runner=failing`: writing
- * cedar-02's schedules failed. `?runner=none`: this build carries none.
+ * cedar-02's schedules failed. `?runner=none`: this build carries none. `?automations=nokey`: the proxy has no
+ * Automations key yet, so Settings offers to add one.
  */
 const scenario = params.get('automations');
 const failing = scenario === 'failing';
@@ -197,6 +198,8 @@ function seedRuns(item: Seed): AutomationRun[] {
 
 let draftModel = 'gpt-6-luna';
 let draftEffort = 'low';
+let proxyKey = scenario !== 'nokey' && !freshInstall;
+let proxyAddress = '';
 
 const runs = new Map<string, AutomationRun[]>(automations.map((item) => [item.summary.id, seedRuns(item)]));
 
@@ -218,6 +221,8 @@ const list = (): AutomationList => ({
   draftEffort,
   udianBundled: BUNDLED_RUNNER,
   agents: ['claude', 'codex', 'pi', 'primeAgent', 'droid'],
+  proxyKey,
+  proxyAddress,
 });
 
 const find = (id: string) => {
@@ -354,6 +359,18 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
     mockLog('set_automation_draft_model', { model, effort });
     draftModel = model;
     draftEffort = effort;
+    return list();
+  },
+  add_automations_key: () => {
+    mockLog('add_automations_key', {});
+    proxyKey = true;
+    return list();
+  },
+  set_automation_proxy_address: ({ address }) => {
+    mockLog('set_automation_proxy_address', { address });
+    const trimmed = address.trim();
+    if (trimmed && !/^https?:\/\/\S+$/.test(trimmed)) throw 'Start the address with http:// or https://';
+    proxyAddress = trimmed.replace(/\/+$/, '');
     return list();
   },
   install_background_runner: ({ machine: name }) => later(2_500, () => {

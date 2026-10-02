@@ -8,6 +8,7 @@
 pub(crate) mod commands;
 mod discover;
 mod draft;
+mod proxy;
 mod runner;
 mod schedule;
 mod store;
@@ -260,6 +261,10 @@ pub(crate) struct AutomationList {
     pub(crate) udian_bundled: Option<String>,
     /// The harnesses Arbor can start an automation with, in the catalog's order.
     pub(crate) agents: Vec<Harness>,
+    /// The proxy has the Automations client key, which every Claude and Codex automation reaches it with.
+    pub(crate) proxy_key: bool,
+    /// The address machines try first to reach the proxy; empty to find it on their own.
+    pub(crate) proxy_address: String,
 }
 
 /// An Arbor automation as the dialog saves it; no id is a new one.

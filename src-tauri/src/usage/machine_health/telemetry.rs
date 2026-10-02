@@ -893,7 +893,7 @@ struct Export {
 
 /// This Mac's address for another machine: the one the proxy listens on, or
 /// its LAN address when it listens on all of them.
-fn remote_address(host: &str) -> Option<String> {
+pub(super) fn remote_address(host: &str) -> Option<String> {
     let address: IpAddr = host.trim_start_matches('[').trim_end_matches(']').parse().ok()?;
     if address.is_unspecified() {
         return crate::core_config::detect_lan_ipv4().map(|address| address.to_string());
