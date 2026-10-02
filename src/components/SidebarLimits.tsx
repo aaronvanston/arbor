@@ -40,6 +40,9 @@ const statusDot: Record<StatusIndicator, string> = {
 };
 
 /** A 28px footer chip: a 14px icon and the headline percentage in a hairline outline, filling on hover like a row. */
+/** The glance's chips open their cards in half the app's tooltip wait, since the card is the point of hovering one. */
+export const CHIP_TOOLTIP_DELAY = 250;
+
 export const CHIP_CLASS = 'flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-1.5 text-xs font-medium outline-none ring-ring transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2';
 
 /**
@@ -71,6 +74,7 @@ export function SidebarLimits({ onOpen, onAddAccount }: { onOpen: () => void; on
     return (
       <Tooltip>
         <TooltipTrigger
+          delay={CHIP_TOOLTIP_DELAY}
           render={<button type="button" className={cn(CHIP_CLASS, 'w-fit text-sidebar-muted-foreground hover:text-sidebar-foreground')} onClick={onAddAccount} />}
         >
           <Plus aria-hidden="true" className="size-3.5 shrink-0" />
@@ -125,6 +129,7 @@ function SidebarLimitRow({ limit, filesByKey, status, now, onOpen }: {
   return (
     <Tooltip>
       <TooltipTrigger
+        delay={CHIP_TOOLTIP_DELAY}
         render={
           <button
             type="button"

@@ -13,7 +13,7 @@ import { identityColorCss } from '../../services/identityColors';
 import { useMachineName } from '../../services/machineNames';
 import { MachinePickItems, ProviderPickItems, useGlanceMachineNames, useGlanceProviders } from '../GlancePicks';
 import { MachineMark, MachinePill, ProviderMark, useMachineLook } from '../identity/Identity';
-import { CHIP_CLASS } from '../SidebarLimits';
+import { CHIP_CLASS, CHIP_TOOLTIP_DELAY } from '../SidebarLimits';
 import { ContextMenu, ContextMenuTrigger, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator } from '../ui/menu';
 import { StatusDot, type StatusTone } from '../ui/status-dot';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
@@ -106,6 +106,7 @@ function MachineChip({ item, onOpen }: { item: HomeMachine; onOpen: () => void }
   return (
     <Tooltip>
       <TooltipTrigger
+        delay={CHIP_TOOLTIP_DELAY}
         render={
           <button
             type="button"
