@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds origin/main for the dev update channel, on the Mac that runs it, when main has moved. The LaunchAgent
-# scripts/install-dev-builds.sh sets up runs this every ten minutes; "Build latest main" in Settings › Updates leaves a
+# scripts/install-dev-builds.sh sets up runs this every two minutes; "Build latest main" in Settings › Updates leaves a
 # build-now file and starts it at once. The app on the dev channel offers the newest build like any update
 # (src-tauri/src/dev_builds.rs).
 #
@@ -13,9 +13,9 @@
 #   status.json                          what the builder is doing, for the app
 #   logs/                                each build's output, the newest ten
 #
-# On the timer, a build waits until main has been still for ARBOR_DEV_SETTLE_SECONDS (300), so a run of pushes builds
+# On the timer, a build waits until main has been still for ARBOR_DEV_SETTLE_SECONDS (120), so a run of pushes builds
 # once, and a commit that failed isn't tried again until main moves or a build is asked for. The run that sees main
-# move waits out the rest itself, rather than leaving it to the next run up to ten minutes later, and builds at once if
+# move waits out the rest itself, rather than leaving it to the next run up to two minutes later, and builds at once if
 # a build is asked for meanwhile.
 #
 # ARBOR_DEV_FEED_DIR       the builder's folder (~/Library/Application Support/Arbor Dev Builds)
@@ -30,7 +30,7 @@ set -euo pipefail
 main() {
   local feed_dir="${ARBOR_DEV_FEED_DIR:-$HOME/Library/Application Support/Arbor Dev Builds}"
   local checkout="${ARBOR_DEV_CHECKOUT:-$HOME/.arbor/dev-build/checkout}"
-  local settle="${ARBOR_DEV_SETTLE_SECONDS:-300}"
+  local settle="${ARBOR_DEV_SETTLE_SECONDS:-120}"
   local status_file="$feed_dir/status.json"
   local lock="$feed_dir/.lock"
   mkdir -p "$feed_dir/logs"

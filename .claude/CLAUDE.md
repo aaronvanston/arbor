@@ -265,8 +265,8 @@ GitHub bills a private repository's hosted minutes:
 The dev channel is the third in Settings › Updates, for the Mac that builds releases:
 the Dev builds switch there (or `scripts/install-dev-builds.sh`, which the switch runs
 from the repository it's pointed at) sets up a LaunchAgent that runs `scripts/dev-build.sh`
-every ten minutes, which builds origin/main in its own clone (`~/.arbor/dev-build`)
-once main has been still five minutes, without the verify gates (main's commits passed
+every two minutes, which builds origin/main in its own clone (`~/.arbor/dev-build`)
+once main has been still two minutes, without the verify gates (main's commits passed
 them before the push, and the nightly runs them again) or a source map upload, and leaves the
 DMG with an update list signed by the release key in
 `~/Library/Application Support/Arbor Dev Builds`. The app reads only that folder on

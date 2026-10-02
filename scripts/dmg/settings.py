@@ -9,7 +9,8 @@ import os.path
 app = defines["app"]
 files = [app]
 symlinks = {"Applications": "/Applications"}
-format = "UDZO"
+# LZFSE compresses as small as zlib here in about half the time; every macOS Arbor runs on opens it.
+format = "ULFO"
 background = defines["background"]
 window_rect = ((200, 120), (660, 400))
 default_view = "icon-view"

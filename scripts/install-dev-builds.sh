@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sets this Mac up to build main for the dev update channel: a clone of Arbor to build in, and a LaunchAgent that runs
-# scripts/dev-build.sh every ten minutes and when "Build latest main" asks. Then pick Dev in Settings › Updates. Only
+# scripts/dev-build.sh every two minutes and when "Build latest main" asks. Then pick Dev in Settings › Updates. Only
 # a Mac that can sign releases (node scripts/release-signing.mjs check) can build for it. The Dev builds switch in
 # Settings › Updates runs this too, from the repository it's given (src-tauri/src/dev_builds.rs).
 #
@@ -91,7 +91,7 @@ cat > "$agent_path" <<PLIST
     <string>${agent_path_dirs}</string>
   </dict>
   <key>StartInterval</key>
-  <integer>600</integer>
+  <integer>120</integer>
   <key>RunAtLoad</key>
   <true/>
   <key>LowPriorityIO</key>

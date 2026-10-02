@@ -458,7 +458,7 @@ day. The Dev builds switch on that page turns it on and off: on runs the
 repository's `scripts/install-dev-builds.sh` (asking for the repository the first time,
 then remembering it), off stops the LaunchAgent. The script (`--uninstall` to stop)
 sets up a LaunchAgent
-running `scripts/dev-build.sh` every ten minutes. Once main has been still for five
+running `scripts/dev-build.sh` every two minutes. Once main has been still for two
 minutes, or when "Build latest main" leaves its `build-now` file, it builds origin/main
 in its own clone in `~/.arbor/dev-build` (a clone, not a worktree, so nothing tidies it
 away), builds with `scripts/build-release.sh` without the test gates or a source map

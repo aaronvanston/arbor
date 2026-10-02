@@ -81,27 +81,48 @@ find bundled-core -maxdepth 1 -type f -name 'CLIProxyAPI_*' ! -name "$core_asset
 # udian-version.txt builds without it, and automations then run only from Arbor while it's open.
 udian_version="$(tr -d '[:space:]' < udian-version.txt)"
 udian_version="${udian_version#v}"
-rm -rf bundled-udian
-mkdir -p bundled-udian
-if [[ -n "$udian_version" ]]; then
-  udian_release_url="https://github.com/aaronvanston/ultradian/releases/download/v${udian_version}"
-  curl -fsSL --retry 3 -o bundled-udian/SHA256SUMS.release "$udian_release_url/SHA256SUMS"
-  : > bundled-udian/SHA256SUMS
-  for udian_target in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-    udian_asset="ultradian-${udian_version}-${udian_target}.tar.gz"
-    curl -fsSL --retry 3 -o "bundled-udian/$udian_asset" "$udian_release_url/$udian_asset"
-    udian_expected="$(awk -v name="$udian_asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print tolower($1); exit } }' bundled-udian/SHA256SUMS.release)"
-    udian_actual="$(shasum -a 256 "bundled-udian/$udian_asset" | awk '{print $1}')"
-    if [[ -z "$udian_expected" || "$udian_actual" != "$udian_expected" ]]; then
-      echo "SHA-256 verification failed for $udian_asset" >&2
-      exit 1
-    fi
-    printf '%s  %s\n' "$udian_actual" "$udian_asset" >> bundled-udian/SHA256SUMS
+udian_targets=(darwin-arm64 darwin-x64 linux-x64 linux-arm64)
+
+# The last build's archives are reused when they're this version's and still match the sums it checked them against,
+# as the core's are, and the folder holds nothing else, since all of it goes into the app.
+udian_cached() {
+  [[ -n "$udian_version" && -f bundled-udian/SHA256SUMS ]] || return 1
+  [[ "$(find bundled-udian -mindepth 1 | wc -l | tr -d ' ')" == "$(( ${#udian_targets[@]} + 1 ))" ]] || return 1
+  local target asset expected actual
+  for target in "${udian_targets[@]}"; do
+    asset="ultradian-${udian_version}-${target}.tar.gz"
+    [[ -f "bundled-udian/$asset" ]] || return 1
+    expected="$(awk -v name="$asset" '$2 == name { print $1; exit }' bundled-udian/SHA256SUMS)"
+    actual="$(shasum -a 256 "bundled-udian/$asset" | awk '{print $1}')"
+    [[ -n "$expected" && "$actual" == "$expected" ]] || return 1
   done
-  rm bundled-udian/SHA256SUMS.release
+}
+
+if udian_cached; then
+  echo "Using cached ultradian $udian_version"
 else
-  echo "No background runner pinned in udian-version.txt; building without it."
-  : > bundled-udian/SHA256SUMS
+  rm -rf bundled-udian
+  mkdir -p bundled-udian
+  if [[ -n "$udian_version" ]]; then
+    udian_release_url="https://github.com/aaronvanston/ultradian/releases/download/v${udian_version}"
+    curl -fsSL --retry 3 -o bundled-udian/SHA256SUMS.release "$udian_release_url/SHA256SUMS"
+    : > bundled-udian/SHA256SUMS
+    for udian_target in "${udian_targets[@]}"; do
+      udian_asset="ultradian-${udian_version}-${udian_target}.tar.gz"
+      curl -fsSL --retry 3 -o "bundled-udian/$udian_asset" "$udian_release_url/$udian_asset"
+      udian_expected="$(awk -v name="$udian_asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print tolower($1); exit } }' bundled-udian/SHA256SUMS.release)"
+      udian_actual="$(shasum -a 256 "bundled-udian/$udian_asset" | awk '{print $1}')"
+      if [[ -z "$udian_expected" || "$udian_actual" != "$udian_expected" ]]; then
+        echo "SHA-256 verification failed for $udian_asset" >&2
+        exit 1
+      fi
+      printf '%s  %s\n' "$udian_actual" "$udian_asset" >> bundled-udian/SHA256SUMS
+    done
+    rm bundled-udian/SHA256SUMS.release
+  else
+    echo "No background runner pinned in udian-version.txt; building without it."
+    : > bundled-udian/SHA256SUMS
+  fi
 fi
 
 node scripts/set-version.mjs "$version"
@@ -184,6 +205,6 @@ else
   echo "dmgbuild didn't build the DMG, so it's a plain one:" >&2
   tail -n 5 "$work_dir/dmgbuild.log" >&2 2>/dev/null || true
   rm -f "$asset_path"
-  hdiutil create -volname "Arbor" -srcfolder "$dmg_stage" -format UDZO -ov "$asset_path" >/dev/null
+  hdiutil create -volname "Arbor" -srcfolder "$dmg_stage" -format ULFO -ov "$asset_path" >/dev/null
 fi
 codesign --force --sign - "$asset_path"
