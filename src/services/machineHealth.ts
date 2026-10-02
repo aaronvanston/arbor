@@ -56,6 +56,15 @@ export function mergeSnapshots(previous: MachineHealthSnapshot | null, next: Mac
   };
 }
 
+/** Where a reading turns warning and critical, matching the backend's score ramps. */
+export const READING_LIMITS = { cpu: [75, 98], mem: [78, 96], disk: [82, 96] } as const satisfies Record<string, readonly [number, number]>;
+
+/** A reading's pressure tone: primary while fine, warning and error past its limits, muted with no reading. */
+export const readingTone = (reading: keyof typeof READING_LIMITS, value: number | null): 'primary' | 'warning' | 'error' | 'muted' => {
+  const [warn, critical] = READING_LIMITS[reading];
+  return value === null ? 'muted' : value >= critical ? 'error' : value >= warn ? 'warning' : 'primary';
+};
+
 export const KIB = 1024;
 
 export function formatBytes(bytes: number, fractionDigits = 1): string {

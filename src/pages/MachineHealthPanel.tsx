@@ -13,6 +13,7 @@ import {
   latencyDigits,
   latencyStats,
   mergeSnapshots,
+  READING_LIMITS,
   type HealthWindowId,
 } from '../services/machineHealth';
 import { useLatestAgentVersions } from '../services/agentReleases';
@@ -451,9 +452,9 @@ function MachineRow({ item, newest, windowMs, onOpen }: { item: MachineHealth; n
         {sampled ? (
           <>
             <MachineScore item={item} windowMs={windowMs} chartClassName="hidden @min-[55rem]:block" />
-            <MetricCell label={t('machines.health.tile.cpu')} value={latest?.cpu ?? null} unit="%" tone={toneFor(latest?.cpu ?? null, 75, 98)} />
-            <MetricCell label={t('machines.health.tile.memory')} value={latest?.mem ?? null} unit="%" tone={toneFor(latest?.mem ?? null, 78, 96)} />
-            <MetricCell label={t('machines.health.tile.disk')} value={latest?.disk ?? null} unit="%" tone={toneFor(latest?.disk ?? null, 82, 96)} />
+            <MetricCell label={t('machines.health.tile.cpu')} value={latest?.cpu ?? null} unit="%" tone={toneFor(latest?.cpu ?? null, ...READING_LIMITS.cpu)} />
+            <MetricCell label={t('machines.health.tile.memory')} value={latest?.mem ?? null} unit="%" tone={toneFor(latest?.mem ?? null, ...READING_LIMITS.mem)} />
+            <MetricCell label={t('machines.health.tile.disk')} value={latest?.disk ?? null} unit="%" tone={toneFor(latest?.disk ?? null, ...READING_LIMITS.disk)} />
             <MetricCell label={t('machines.health.tile.network')} value={totalRate.value} digits={totalRate.digits} unit={totalRate.unit} meter={false} />
             {pinged ? (
               <MetricCell className="@min-[55rem]:hidden @min-[60rem]:flex" label={t('machines.health.tile.latency')} value={latency} digits={latencyDigits(latency ?? 0)} unit="ms" meter={false} />
@@ -491,9 +492,9 @@ export function MachineHealthDetail({ item, windowMs }: { item: MachineHealth; w
   const latencyMax = useMemo(() => Math.max(10, ...item.points.map((point) => point.latencyMs ?? 0)) * 1.2, [item.points]);
   const latencyRange = useMemo(() => latencyStats(item.points), [item.points]);
 
-  const cpuTone = toneFor(latest?.cpu ?? null, 75, 98);
-  const memTone = toneFor(latest?.mem ?? null, 78, 96);
-  const diskTone = toneFor(latest?.disk ?? null, 82, 96);
+  const cpuTone = toneFor(latest?.cpu ?? null, ...READING_LIMITS.cpu);
+  const memTone = toneFor(latest?.mem ?? null, ...READING_LIMITS.mem);
+  const diskTone = toneFor(latest?.disk ?? null, ...READING_LIMITS.disk);
   const swapTone = toneFor(latest?.swap ?? null, 50, 90);
   const cpuTempTone = toneFor(latest?.cpuTemp ?? null, 82, 97);
   const gpuTempTone = toneFor(latest?.gpuTemp ?? null, 82, 95);

@@ -325,6 +325,8 @@ export const en = {
   'glance.working': '{count} working',
   'glance.waiting': '{count} waiting on you',
   'glance.idle': 'No agents working',
+  'glance.agentIdle': 'Idle',
+  'glance.otherAgents': 'Other agents',
   'glance.machine.aria': '{machine}: {status}. {agents}.',
   'glance.machine.score': '{status}, score {score}',
   'glance.limit.moreAccounts': '{count} more on Accounts',
