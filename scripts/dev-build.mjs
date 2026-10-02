@@ -16,7 +16,7 @@ const REPOSITORY = 'aaronvanston/arbor';
 /** The most commit subjects a build lists, newest first; the app shows fewer. */
 const MAX_SUBJECTS = 20;
 /** status.json's keys, so a typo in the shell script fails instead of writing a field the app never reads. */
-const STATUS_KEYS = new Set(['state', 'commit', 'step', 'startedAt', 'finishedAt', 'error', 'log', 'builtVersion', 'builtCommit', 'builtAt']);
+const STATUS_KEYS = new Set(['state', 'commit', 'step', 'startedAt', 'finishedAt', 'error', 'log', 'builtVersion', 'builtCommit', 'builtAt', 'settlesAt']);
 const isCommit = (value) => /^[0-9a-f]{40}$/.test(value);
 
 /** A dev build of main is a prerelease of the patch after the version main says it's at, numbered by main's commits. */

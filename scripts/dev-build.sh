@@ -13,7 +13,9 @@
 #   logs/                                each build's output, the newest ten
 #
 # On the timer, a build waits until main has been still for ARBOR_DEV_SETTLE_SECONDS (300), so a run of pushes builds
-# once, and a commit that failed isn't tried again until main moves or a build is asked for.
+# once, and a commit that failed isn't tried again until main moves or a build is asked for. The run that sees main
+# move waits out the rest itself, rather than leaving it to the next run up to ten minutes later, and builds at once if
+# a build is asked for meanwhile.
 #
 # ARBOR_DEV_FEED_DIR       the builder's folder (~/Library/Application Support/Arbor Dev Builds)
 # ARBOR_DEV_CHECKOUT       the clone it builds in (~/.arbor/dev-build/checkout)
@@ -71,23 +73,28 @@ main() {
 
     if (( ! requested )); then
       if [[ "$target" == "$built" ]]; then
-        status_set "$status_file" state=idle step=
+        status_set "$status_file" state=idle step= settlesAt=
         return 0
       fi
       if [[ "$target" == "$failed" ]]; then
         return 0
       fi
-      local age=$(( $(date +%s) - $(git log -1 --format=%ct "$target") ))
+      local committed age
+      committed="$(git log -1 --format=%ct "$target")"
+      age=$(( $(date +%s) - committed ))
       if (( age < settle )); then
-        status_set "$status_file" state=waiting commit="$target" step= error=
-        return 0
+        status_set "$status_file" state=waiting commit="$target" step= error= \
+          settlesAt="$(date -u -r $(( committed + settle )) +%Y-%m-%dT%H:%M:%SZ)"
+        wait_to_settle "$feed_dir" $(( settle - age ))
+        # Fetches again: main may have moved while it waited, which starts the wait over.
+        continue
       fi
     fi
     rm -f "$feed_dir/build-now"
 
     local log_name
     log_name="$(date -u +%Y%m%dT%H%M%SZ)-${target:0:7}.log"
-    status_set "$status_file" state=building commit="$target" step=fetching error= finishedAt= \
+    status_set "$status_file" state=building commit="$target" step=fetching error= finishedAt= settlesAt= \
       startedAt="$(now)" log="$log_name"
     # In a subshell outside any `if`, where set -e still stops the build at the first failure.
     local outcome
@@ -118,6 +125,15 @@ main() {
 
 now() {
   date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+# Sleeps up to `seconds`, a few at a time, until then or until "Build latest main" leaves its build-now file.
+wait_to_settle() {
+  local feed_dir="$1" left="$2"
+  while (( left > 0 )) && [[ ! -e "$feed_dir/build-now" ]]; do
+    sleep $(( left < 5 ? left : 5 ))
+    left=$(( left - 5 ))
+  done
 }
 
 # The checkout's helper when it has one, else the copy installed beside this script.

@@ -5257,6 +5257,7 @@ export const en = {
   'appUpdate.devBuild.built': 'Built {commit} {when}',
   'appUpdate.devBuild.building': 'Building {commit}: {step}, started {since}',
   'appUpdate.devBuild.waiting': 'Main moved to {commit}; building once it settles',
+  'appUpdate.devBuild.waitingUntil': 'Main moved to {commit}; building at {time} unless it moves again',
   'appUpdate.devBuild.requested': 'Build asked for; starting soon',
   'appUpdate.devBuild.failed': 'Building {commit} failed {when}',
   'appUpdate.devBuild.step.fetching': 'fetching main',

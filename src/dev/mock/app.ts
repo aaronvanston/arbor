@@ -115,13 +115,13 @@ function mockDevBuildStatus(): DevBuildStatus {
   const built = { builtVersion: '1.0.27-dev.4123', builtCommit: DEV_COMMIT, builtAt: minutesAgo(12) };
   const base: DevBuildStatus = {
     installed: true, repository: '/Users/casey/src/arbor', state: 'idle', commit: DEV_COMMIT, step: null, startedAt: minutesAgo(21), finishedAt: minutesAgo(12),
-    error: null, hasLog: true, requested: false, ...built,
+    error: null, hasLog: true, requested: false, settlesAt: null, ...built,
   };
   if (scenario === 'none') {
     return { ...base, installed: false, repository: null, commit: null, startedAt: null, finishedAt: null, hasLog: false, builtVersion: null, builtCommit: null, builtAt: null };
   }
   if (scenario === 'building') return { ...base, state: 'building', step: 'verifying', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(3), finishedAt: null };
-  if (scenario === 'waiting') return { ...base, state: 'waiting', commit: DEV_NEXT_COMMIT, startedAt: null, finishedAt: null };
+  if (scenario === 'waiting') return { ...base, state: 'waiting', commit: DEV_NEXT_COMMIT, startedAt: null, finishedAt: null, settlesAt: new Date(Date.now() + 3 * 60_000).toISOString() };
   if (scenario === 'failed') {
     return { ...base, state: 'failed', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(9), finishedAt: minutesAgo(2), error: 'bun run verify failed: 2 tests failed in tests/sidebarTree.test.ts' };
   }

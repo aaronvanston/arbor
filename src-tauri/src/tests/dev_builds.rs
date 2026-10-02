@@ -149,6 +149,13 @@ fn the_builders_status_is_read_leniently_and_its_log_stays_in_its_folder() {
     assert!(!status.has_log);
     assert!(status.requested);
 
+    // When the wait for main to settle ends is only read while the builder is waiting.
+    let settles = "2026-10-02T01:32:07Z";
+    fs::write(dir.join("status.json"), serde_json::json!({ "state": "waiting", "commit": COMMIT, "settlesAt": settles }).to_string()).unwrap();
+    assert_eq!(read_dev_build_status(&dir, true).settles_at.as_deref(), Some(settles));
+    fs::write(dir.join("status.json"), serde_json::json!({ "state": "building", "settlesAt": settles }).to_string()).unwrap();
+    assert_eq!(read_dev_build_status(&dir, true).settles_at, None);
+
     // No builder at all reads as idle with nothing built.
     assert_eq!(read_dev_build_status(&dir.join("missing"), false), DevBuildStatus::default());
     fs::remove_dir_all(dir).unwrap();

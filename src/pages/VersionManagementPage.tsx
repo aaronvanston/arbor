@@ -574,8 +574,8 @@ export function VersionManagementPage() {
                     </Button>
                   ) : null}
                   {devBuild.installed ? (
-                    <Button variant="outline" size="sm" disabled={devBuildStarting || devLine.active} onClick={() => void buildLatestMain()}>
-                      <RefreshIcon refreshing={devBuildStarting || devLine.active} />
+                    <Button variant="outline" size="sm" disabled={devBuildStarting || devLine.busy} onClick={() => void buildLatestMain()}>
+                      <RefreshIcon refreshing={devBuildStarting || devLine.busy} />
                       {t('appUpdate.devBuild.buildNow')}
                     </Button>
                   ) : null}

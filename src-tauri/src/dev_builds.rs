@@ -74,6 +74,7 @@ struct DevBuildStatusFile {
     built_version: Option<String>,
     built_commit: Option<String>,
     built_at: Option<String>,
+    settles_at: Option<String>,
 }
 
 fn lenient<'de, D: serde::Deserializer<'de>, T: serde::de::DeserializeOwned>(deserializer: D) -> Result<Option<T>, D::Error> {
@@ -105,6 +106,8 @@ pub(crate) struct DevBuildStatus {
     pub(crate) built_version: Option<String>,
     pub(crate) built_commit: Option<String>,
     pub(crate) built_at: Option<String>,
+    /// While it waits for main to settle: when it'll start building, unless main moves again.
+    pub(crate) settles_at: Option<String>,
 }
 
 pub(crate) fn read_dev_build_status(dir: &Path, installed: bool) -> DevBuildStatus {
@@ -127,6 +130,7 @@ pub(crate) fn read_dev_build_status(dir: &Path, installed: bool) -> DevBuildStat
         built_version: file.built_version.filter(|version| semver::Version::parse(version).is_ok()),
         built_commit: commit(file.built_commit),
         built_at: file.built_at,
+        settles_at: file.settles_at.filter(|_| file.state == Some(DevBuildState::Waiting)),
     }
 }
 

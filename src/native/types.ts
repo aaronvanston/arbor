@@ -1240,6 +1240,10 @@ export type DevBuildStatus = {
   builtVersion: string | null,
   builtCommit: string | null,
   builtAt: string | null,
+  /**
+   * While it waits for main to settle: when it'll start building, unless main moves again.
+   */
+  settlesAt: string | null,
 };
 
 /**
