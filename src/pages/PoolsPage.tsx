@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { PoolDialog } from '../components/pools/PoolDialog';
 import { PoolLimitsLine, PoolMembersTable, PoolPlan, PoolStandingBadge, ShareBar, useWhenFull } from '../components/pools/PoolHealth';
 import { PoolRunsBlock, StartRunDialog } from '../components/PoolRuns';
+import { PoolSshSection } from '../components/pools/PoolSshSection';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -210,6 +211,7 @@ function PoolDetail({ pool, pools, preview, runs }: { pool: MachinePool; pools: 
         <h3 className="text-sm font-medium">{t('pools.how.title')}</h3>
         <PoolPlan pool={pool} pools={pools} preview={preview} explain />
       </section>
+      {pool.members.length > 0 ? <PoolSshSection poolId={pool.id} /> : null}
       {runs ? (
         <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5">
           <h3 className="border-b border-border/50 px-4 py-3 text-sm font-medium">{t('runs.recent')}</h3>

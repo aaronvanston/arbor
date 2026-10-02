@@ -194,6 +194,7 @@ Usage: arbor [command] [flags]
   status                       The proxy, machines, live sessions and alerts at a glance (the default)
   machines [name]              Every machine's health, or one machine in full
   pools                        Machine pools and who would take each one's next run
+  pools connect <pool> [host]  Carry an SSH connection to a pool member (ssh's ProxyCommand)
   sessions [--live]            Recent sessions, or the ones running now
   usage [today|7d|30d]         Requests, tokens and cost
   accounts [refresh]           Signed-in accounts and their limits (refresh reads them again)
@@ -366,6 +367,7 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
             print_json(&machine);
             Ok(())
         }
+        ["pools" | "pool", "connect", pool, host @ ..] => pool_connect(options, pool, host.first().copied().unwrap_or_default()),
         ["pools"] => {
             let mut client = connect(options)?;
             let pools = client.read("get_pools", Value::Null)?;
@@ -453,6 +455,67 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
         }
         [other, ..] => Err(usage_error(format!("arbor has no command called {other}. Run arbor help to see them."))),
     }
+}
+
+/// Carries one SSH connection to the pool member Arbor picks: ssh runs this as a host's ProxyCommand, so stdin and
+/// stdout are the connection and anything to say goes to stderr. The socket to Arbor stays open while the connection
+/// does, which is how Arbor knows the member is still in use.
+fn pool_connect(options: &args::Options, pool: &str, host: &str) -> Result<(), Failure> {
+    let mut client = connect(options)?;
+    let target = client.read(protocol::POOL_CONNECT, json!({ "pool": pool, "name": host }))?;
+    let port = target.get("port").and_then(Value::as_u64).and_then(|port| u16::try_from(port).ok()).unwrap_or(22);
+    let result = match render::field(&target, "how").as_str() {
+        "direct" => carry(&render::field(&target, "host"), port),
+        "via" => {
+            // ssh's own config knows the way to a machine behind a jump host; it then opens the machine's own sshd.
+            let mut command = Command::new("ssh");
+            command
+                .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-W"])
+                .arg(format!("127.0.0.1:{port}"))
+                .arg("--")
+                .arg(render::field(&target, "endpoint"));
+            match command.status() {
+                Ok(status) if status.success() => Ok(()),
+                Ok(_) => Err(Failure::new(exit::FAILED, format!("Couldn't reach {} through ssh.", render::field(&target, "machine")))),
+                Err(error) => Err(Failure::new(exit::FAILED, format!("Couldn't run ssh: {error}"))),
+            }
+        }
+        _ => Err(Failure::new(exit::PROTOCOL, "Arbor answered with a way to connect this arbor doesn't know. Update the arbor command.")),
+    };
+    drop(client);
+    result
+}
+
+/// Copies stdin to a TCP connection and the connection to stdout until either side ends.
+fn carry(host: &str, port: u16) -> Result<(), Failure> {
+    use std::{fs::File, mem::ManuallyDrop, net::{TcpStream, ToSocketAddrs}, os::fd::FromRawFd};
+    let unreachable = |error: std::io::Error| Failure::new(exit::FAILED, format!("Couldn't connect to {host}:{port}: {error}"));
+    let addresses: Vec<_> = (host, port).to_socket_addrs().map_err(unreachable)?.collect();
+    let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "no address");
+    let mut stream = None;
+    for address in addresses {
+        match TcpStream::connect_timeout(&address, Duration::from_secs(10)) {
+            Ok(connected) => {
+                stream = Some(connected);
+                break;
+            }
+            Err(error) => last = error,
+        }
+    }
+    let stream = stream.ok_or_else(|| unreachable(last))?;
+    let _ = stream.set_nodelay(true);
+    let mut upstream = stream.try_clone().map_err(unreachable)?;
+    // Raw descriptors, not Rust's stdin and stdout: stdout's line buffering would hold back an SSH stream.
+    // ManuallyDrop leaves them open for the process, which owns them.
+    std::thread::spawn(move || {
+        let mut input = ManuallyDrop::new(unsafe { File::from_raw_fd(0) });
+        let _ = std::io::copy(&mut *input, &mut upstream);
+        let _ = upstream.shutdown(std::net::Shutdown::Write);
+    });
+    let mut output = ManuallyDrop::new(unsafe { File::from_raw_fd(1) });
+    let mut downstream = stream;
+    let _ = std::io::copy(&mut downstream, &mut *output);
+    Ok(())
 }
 
 /// Runs one of the window's actions and prints what it gave.

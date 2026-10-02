@@ -1,8 +1,9 @@
 /** The browser mock's machine pools (Settings › Pools), with a preview read from the mock machines' health. */
 import { emit } from '@tauri-apps/api/event';
 import type { MachineCommands } from '../../native/machines';
-import type { MachineHealthSnapshot, MachinePool, PoolMemberVerdict, PoolPreview, PoolVerdictKind } from '../../native/types';
+import type { MachineHealthSnapshot, MachinePool, PoolMemberVerdict, PoolPreview, PoolSsh, PoolSshConnection, PoolSshReadiness, PoolVerdictKind } from '../../native/types';
 import type { CommandAnswers } from './answers';
+import { recordEditMock } from './setup';
 import { freshInstall, mockLog, params } from './scenario';
 
 // `?pools=none`, `full`, `stale` or `open` (every limit off; listed at the top of mockTauri.ts).
@@ -112,5 +113,54 @@ export const poolAnswers = (
   preview_pools: () => {
     const health = snapshot();
     return pools.map((pool) => preview(pool, health));
+  },
+});
+
+// `?poolSsh=nocli` (the arbor command isn't installed), `noinclude` (~/.ssh/config doesn't bring in the pool hosts yet),
+// `nokeys` (no member's host key is saved) or `idle` (nothing connected lately); listed at the top of mockTauri.ts.
+const sshScenario = params.get('poolSsh');
+let sshIncluded = sshScenario !== 'noinclude';
+
+/** A pool's host name, the way `pool_ssh.rs` makes it. */
+const hostName = (pool: MachinePool) => `arbor-${pool.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'pool'}`;
+
+function readinessOf(machine: string): PoolSshReadiness {
+  if (sshScenario === 'nokeys') return 'noHostKey';
+  if (loose(machine) === 'labbox') return 'noHostKey';
+  if (loose(machine) === 'cedar02') return 'otherUser';
+  return 'ready';
+}
+
+function connectionsOf(pool: MachinePool): PoolSshConnection[] {
+  if (sshScenario === 'idle' || sshScenario === 'nokeys' || sshScenario === 'nocli') return [];
+  const ready = pool.members.filter((member) => readinessOf(member.machine) === 'ready').map((member) => member.machine);
+  const [first, second] = ready;
+  const host = hostName(pool);
+  return [
+    ...(first ? [{ name: host, machine: first, open: 3, idleSinceMs: null }] : []),
+    ...(second ? [{ name: `${host}-b`, machine: second, open: 0, idleSinceMs: Date.now() - 4 * 60_000 }] : []),
+  ];
+}
+
+export const poolSshAnswers = (): Pick<CommandAnswers<MachineCommands>, 'get_pool_ssh' | 'add_pool_ssh_include'> => ({
+  get_pool_ssh: ({ poolId }): PoolSsh => {
+    const pool = pools.find((entry) => entry.id === poolId);
+    if (!pool) throw new Error('That pool was removed');
+    const members = pool.members.map((member) => ({ machine: member.machine, readiness: readinessOf(member.machine) }));
+    return {
+      host: hostName(pool),
+      commandReady: sshScenario !== 'nocli',
+      includeLine: 'Include ~/.arbor/ssh/pools.conf',
+      included: sshIncluded,
+      user: sshScenario === 'nokeys' ? null : 'casey',
+      members,
+      connections: connectionsOf(pool),
+    };
+  },
+  add_pool_ssh_include: () => {
+    mockLog('add_pool_ssh_include', {});
+    sshIncluded = true;
+    recordEditMock('casey-mbp', 'ssh', [{ path: '~/.ssh/config', added: false }]);
+    void emit('pool-ssh-updated', Date.now());
   },
 });

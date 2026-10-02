@@ -923,6 +923,7 @@ const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
   plugins: 'setup.history.what.plugins',
   hooks: 'setup.history.what.hooks',
   automations: 'setup.history.what.automations',
+  ssh: 'setup.history.what.ssh',
 };
 
 /**

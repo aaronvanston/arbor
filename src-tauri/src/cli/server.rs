@@ -1,9 +1,10 @@
 //! The socket the running app answers the command line on. It's a file in the app's data folder that only this user
 //! can open (folder 0700, socket 0600), and each connection is checked to come from the same user; there's no
 //! network port. Each line in is a request, each line out its answer, and `watch` turns a connection into the app's
-//! event stream until the other end goes away.
+//! event stream until the other end goes away. `pools.connect` picks a pool member for an SSH connection and holds
+//! the pick for as long as the connection stays open, which is as long as the `arbor` carrying it keeps the socket.
 
-use super::{dispatch, protocol};
+use super::{audit, dispatch, protocol};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -125,10 +126,52 @@ async fn connection(app: tauri::AppHandle, stream: UnixStream) -> std::io::Resul
         if request.method == protocol::WATCH {
             return watch(&app, &request, reader, write).await;
         }
+        if request.method == protocol::POOL_CONNECT {
+            return pool_connect(&app, &client, &request, reader, write).await;
+        }
         let response = dispatch::handle(&app, &client, request).await;
         write_line(&mut write, &response).await?;
     }
     Ok(())
+}
+
+/// Answers where an SSH connection to a pool goes, then keeps its place on the member until the other end closes,
+/// which is when `arbor` stops carrying the connection.
+async fn pool_connect<R: AsyncRead + Unpin>(
+    app: &tauri::AppHandle,
+    client: &str,
+    request: &protocol::Request,
+    reader: BufReader<R>,
+    mut write: impl AsyncWrite + Unpin,
+) -> std::io::Result<()> {
+    let started = std::time::Instant::now();
+    let text = |name: &str| request.args.get(name).and_then(|value| value.as_str()).unwrap_or_default().to_string();
+    let opened = if !super::settings::read().enabled {
+        Err(protocol::unavailable("Command line control is off in Arbor's Settings › App."))
+    } else {
+        crate::usage::machine_health::pool_ssh::open_connection(app, &text("pool"), &text("name"))
+            .await
+            .map_err(crate::command_error::CommandError::failed)
+    };
+    let (response, hold) = match opened {
+        Ok((target, hold)) => (protocol::Response::ok(&request.id, serde_json::to_value(target).unwrap_or_default()), Some(hold)),
+        Err(error) => (protocol::Response::error(&request.id, error), None),
+    };
+    audit::record(&audit::Entry::new(client, &request.method, Some(dispatch::Access::Read), &response, started.elapsed()));
+    write_line(&mut write, &response).await?;
+    if hold.is_some() {
+        held_until_closed(reader).await;
+    }
+    drop(hold);
+    Ok(())
+}
+
+/// Waits for the other end to close, ignoring anything it sends.
+async fn held_until_closed<R: AsyncRead + Unpin>(mut reader: BufReader<R>) {
+    let mut ignored = Vec::new();
+    while matches!((&mut reader).read_buf(&mut ignored).await, Ok(count) if count > 0) {
+        ignored.clear();
+    }
 }
 
 /// Passes on the app's events until the other end closes. `args.events` picks some; none means all of them.
@@ -199,6 +242,18 @@ mod tests {
         assert!(bind(&path).is_err(), "a socket something answers on is left to it");
         drop(listener);
         assert!(bind(&path).is_ok(), "one nothing answers on is cleared");
+    }
+
+    #[tokio::test]
+    async fn a_held_connection_lasts_until_the_other_end_closes() {
+        let (client, server) = UnixStream::pair().unwrap();
+        let held = tokio::spawn(held_until_closed(BufReader::new(server)));
+        let (_, mut write) = client.into_split();
+        write.write_all(b"anything\n").await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(!held.is_finished(), "still open");
+        drop(write);
+        tokio::time::timeout(std::time::Duration::from_secs(2), held).await.unwrap().unwrap();
     }
 
     #[tokio::test]

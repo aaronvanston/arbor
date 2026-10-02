@@ -690,6 +690,20 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_pool_ssh",
+        access: Access::Read,
+        summary: "How to connect to a pool over SSH: its host name, which members can take a connection and why the others can't, and which host names are on which member now.",
+        args: &[
+            ArgSpec { name: "poolId", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "add_pool_ssh_include",
+        access: Access::Write,
+        summary: "Adds the line that brings Arbor's pool hosts into ~/.ssh/config, backed up so Sync › Arbor's changes can undo it.",
+        args: &[],
+    },
+    CommandSpec {
         name: "start_pool_run",
         access: Access::Confirm,
         summary: "Starts a run on a pool: the machine it picks gets it, handed to the harness named, or queued, spilled or refused as the pool says when nobody can take it.",
@@ -1983,6 +1997,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "save_pool" => async { done(Box::pin(crate::usage::machine_health::pools::save_pool(app.clone(), arg(&args, "pool")?)).await) }.await,
         "remove_pool" => async { done(Box::pin(crate::usage::machine_health::pools::remove_pool(app.clone(), arg(&args, "id")?)).await) }.await,
         "preview_pools" => async { done(Box::pin(crate::usage::machine_health::pools::preview_pools(app.state(), arg(&args, "watching")?)).await) }.await,
+        "get_pool_ssh" => async { done(Box::pin(crate::usage::machine_health::pool_ssh::get_pool_ssh(app.clone(), arg(&args, "poolId")?)).await) }.await,
+        "add_pool_ssh_include" => done(Box::pin(crate::usage::machine_health::pool_ssh::add_pool_ssh_include(app.clone())).await),
         "start_pool_run" => async { done(Box::pin(crate::usage::machine_health::runs::start_pool_run(app.clone(), arg(&args, "request")?)).await) }.await,
         "get_runs" => done(Box::pin(crate::usage::machine_health::runs::get_runs()).await),
         "cancel_run" => async { done(Box::pin(crate::usage::machine_health::runs::cancel_run(app.clone(), arg(&args, "id")?)).await) }.await,

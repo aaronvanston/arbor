@@ -15,6 +15,7 @@ import type {
   MachineHealthSnapshot,
   MachineHost,
   PoolPreview,
+  PoolSsh,
   ReporterSetup,
   SettingsEdit,
   T3Policy,
@@ -40,6 +41,8 @@ export type MachineCommands = {
   remove_pool: { args: { id: string }; result: MachinePool[] };
   preview_pools: { args: { watching?: boolean | null }; result: PoolPreview[] };
   report_working_sessions: { args: { counts: Record<string, number> }; result: void };
+  get_pool_ssh: { args: { poolId: string }; result: PoolSsh };
+  add_pool_ssh_include: { result: void };
   start_pool_run: { args: { request: RunRequest }; result: HarnessRun };
   get_runs: { result: HarnessRun[] };
   cancel_run: { args: { id: string }; result: HarnessRun[] };

@@ -544,6 +544,7 @@ pub(crate) async fn save_pool(app: tauri::AppHandle, pool: MachinePool) -> Resul
     })
     .await?;
     let _ = app.emit(MACHINE_POOLS_UPDATED_EVENT, ());
+    super::pool_ssh::refresh_soon(&app);
     Ok(pools)
 }
 
@@ -557,6 +558,7 @@ pub(crate) async fn remove_pool(app: tauri::AppHandle, id: String) -> Result<Vec
     })
     .await?;
     let _ = app.emit(MACHINE_POOLS_UPDATED_EVENT, ());
+    super::pool_ssh::refresh_soon(&app);
     Ok(pools)
 }
 

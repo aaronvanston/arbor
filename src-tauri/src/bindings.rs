@@ -124,6 +124,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::agent_homes::AgentHomesView>();
         types.visit::<crate::usage::machine_health::pools::MachinePool>();
         types.visit::<crate::usage::machine_health::pools::PoolPreview>();
+        types.visit::<crate::usage::machine_health::pool_ssh::PoolSsh>();
         types.visit::<crate::usage::machine_health::runs::RunRequest>();
         types.visit::<crate::usage::machine_health::runs::HarnessRun>();
         types.visit::<crate::usage::machine_health::agent_releases::LatestVersions>();

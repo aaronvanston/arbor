@@ -13,6 +13,8 @@ pub(crate) const MAX_LINE: usize = 8 * 1024 * 1024;
 
 pub(crate) const HELLO: &str = "hello";
 pub(crate) const WATCH: &str = "watch";
+/// Routes an SSH connection to one of a pool's machines and holds it there until the connection closes.
+pub(crate) const POOL_CONNECT: &str = "pools.connect";
 
 /// The events `watch` passes on: everything the window listens to so it stays current.
 pub(crate) const WATCHED_EVENTS: &[&str] = &[
@@ -24,6 +26,7 @@ pub(crate) const WATCHED_EVENTS: &[&str] = &[
     "agent-attention-updated",
     "agent-homes-updated",
     "machine-pools-updated",
+    "pool-ssh-updated",
     "harness-runs-updated",
     "t3-threads-updated",
     "session-transcripts-updated",

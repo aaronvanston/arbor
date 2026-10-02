@@ -118,6 +118,13 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   on them, handed to T3 Code or Orca on the member picked, with the agent's own command
   line as the last resort. Arbor routes a run and keeps where it went, never its
   prompt.
+- `src-tauri/src/usage/machine_health/pool_ssh.rs`: each pool as an SSH host,
+  `ssh arbor-<pool>`. Arbor's own `~/.arbor/ssh/pools.conf` makes `arbor pools connect`
+  the host's ProxyCommand, which asks the app for a member over the socket
+  (`pools.connect`) and carries the bytes. A host name keeps its member while it's
+  connected and ten minutes after, and only a member that stops answering loses it.
+  Host keys come only from the user's own known_hosts, never a scan, and
+  `~/.ssh/config` gets its one Include line only through a guarded write.
 - `src-tauri/src/usage/machine_health/archive.rs` and `archive/`: the session archive.
   Byte-for-byte copies of transcripts go into a store in a folder the user picks,
   usually on another drive (this Mac's own disk works, with a warning), with the index

@@ -303,6 +303,18 @@ struct Placement {
 }
 
 fn place(inner: &Inner, pool: &MachinePool, offer_for: &dyn Fn(&agents::MachineAgents) -> Offer, recent: &BTreeMap<String, u32>, roll: f64) -> Placement {
+    place_where(inner, pool, offer_for, &|_| true, recent, roll)
+}
+
+/// `place`, leaving out members `ready` turns down by name as though they lacked the harness.
+fn place_where(
+    inner: &Inner,
+    pool: &MachinePool,
+    offer_for: &dyn Fn(&agents::MachineAgents) -> Offer,
+    ready: &dyn Fn(&str) -> bool,
+    recent: &BTreeMap<String, u32>,
+    roll: f64,
+) -> Placement {
     let now_ms = Local::now().timestamp_millis();
     let offers: HashMap<String, Offer> = pool
         .members
@@ -314,7 +326,7 @@ fn place(inner: &Inner, pool: &MachinePool, offer_for: &dyn Fn(&agents::MachineA
         })
         .collect();
     let verdicts = pools::assess_with(pool, &pools::readings(inner), recent, now_ms, inner.interval_ms, |machine| {
-        offers.get(&normalize_machine_name(machine)).is_some_and(|offer| *offer != Offer::Nothing)
+        ready(machine) && offers.get(&normalize_machine_name(machine)).is_some_and(|offer| *offer != Offer::Nothing)
     });
     let Some(chosen) = pools::choose(&verdicts, roll) else {
         let room = verdicts.iter().any(|verdict| verdict.kind() == pools::VerdictKind::NoHarness);
@@ -323,13 +335,17 @@ fn place(inner: &Inner, pool: &MachinePool, offer_for: &dyn Fn(&agents::MachineA
     let key = normalize_machine_name(chosen.machine());
     // A harness beats the command line whenever both are on offer.
     let offer = offers.get(&key).copied().unwrap_or(Offer::Nothing);
-    let machine = inner
+    Placement { machine: machine_named(inner, &key).map(|machine| (machine, offer)), reason: RunReason::NoRoom }
+}
+
+/// A pool member as scripts reach it, by normalized name: a listed machine, or this Mac when the page doesn't list it.
+pub(super) fn machine_named(inner: &Inner, key: &str) -> Option<Machine> {
+    inner
         .series
         .values()
         .find(|series| normalize_machine_name(&series.host.machine) == key)
         .map(Machine::listed)
-        .or_else(|| this_machine_name(inner).filter(|name| normalize_machine_name(name) == key).map(|name| Machine::this_mac(&name)));
-    Placement { machine: machine.map(|machine| (machine, offer)), reason: RunReason::NoRoom }
+        .or_else(|| this_machine_name(inner).filter(|name| normalize_machine_name(name) == key).map(|name| Machine::this_mac(&name)))
 }
 
 /// How long a queued automation waits between looks at its pool.
@@ -374,6 +390,34 @@ pub(super) async fn pick_for_automation(app: &tauri::AppHandle, pool_id: &str, a
             });
         }
         tokio::time::sleep(POOL_RETRY).await;
+    }
+}
+
+/// The member an SSH connection to a pool goes to, among those `ready` for one, following the pool's spill, with the
+/// pool it came from. A pool that queues refuses instead: ssh can't wait in a queue. The pick counts as a run just
+/// sent, so a burst of new connections spreads the way runs do.
+pub(super) fn pick_for_connection(inner: &Inner, pools_saved: &[MachinePool], pool_id: &str, ready: &dyn Fn(&str) -> bool) -> Result<(String, Machine), String> {
+    let now_ms = Local::now().timestamp_millis();
+    let recent = recent_counts(now_ms - inner.interval_ms as i64 * 2);
+    let mut pool_id = pool_id.to_string();
+    let mut visited = BTreeSet::new();
+    loop {
+        let pool = pools_saved.iter().find(|pool| pool.id == pool_id).ok_or("That pool was removed. Pick another on Arbor's Pools page")?;
+        visited.insert(pool.id.clone());
+        let placement = place_where(inner, pool, &|_| Offer::Harness, ready, &recent, roll());
+        if let Some((machine, _)) = placement.machine {
+            lock_held().recent.push((normalize_machine_name(machine.name()), now_ms));
+            return Ok((pool.id.clone(), machine));
+        }
+        match (&pool.when_full, &pool.spill_pool) {
+            (PoolWhenFull::Spill, Some(next)) if !visited.contains(next) => pool_id = next.clone(),
+            _ => {
+                return Err(match placement.reason {
+                    RunReason::NoHarness => format!("No member of {} with room is ready for SSH. Its page in Arbor says what each one needs", pool.name),
+                    _ => format!("Every member of {} is busy, unreachable or out of date, so Arbor didn't connect", pool.name),
+                });
+            }
+        }
     }
 }
 

@@ -46,11 +46,24 @@ pub(crate) enum ChangeKind {
     Hooks,
     /// Pausing or resuming an automation another app keeps.
     Automations,
+    /// The line that brings Arbor's pool hosts into ~/.ssh/config.
+    Ssh,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 10] =
-        [Self::Sync, Self::Skills, Self::Reporter, Self::KeepSessions, Self::Telemetry, Self::Mcp, Self::Checkouts, Self::Plugins, Self::Hooks, Self::Automations];
+    const ALL: [Self; 11] = [
+        Self::Sync,
+        Self::Skills,
+        Self::Reporter,
+        Self::KeepSessions,
+        Self::Telemetry,
+        Self::Mcp,
+        Self::Checkouts,
+        Self::Plugins,
+        Self::Hooks,
+        Self::Automations,
+        Self::Ssh,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -64,6 +77,7 @@ impl ChangeKind {
             Self::Plugins => "plugins",
             Self::Hooks => "hooks",
             Self::Automations => "automations",
+            Self::Ssh => "ssh",
         }
     }
 

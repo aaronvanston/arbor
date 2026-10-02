@@ -28,12 +28,18 @@ case.
     (
         "pools",
         "arbor pools
+arbor pools connect <pool> [host]
 
 Each machine pool, who would most likely take its next run, and why each other member couldn't now (full, busy, not
 answering). Pools are made and changed in Arbor's Settings › Pools.
 
+`pools connect` carries one SSH connection to the member Arbor picks, as the ProxyCommand of the pool's host in
+Arbor's SSH config: connect with `ssh arbor-<pool>` rather than running it yourself. Connections under one host name
+stay on one member while any is open and for ten minutes after; `arbor-<pool>-<anything>` is a host of its own.
+
   arbor pools
   arbor pools --json
+  ssh arbor-builds
 ",
     ),
     (

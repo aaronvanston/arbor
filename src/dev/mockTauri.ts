@@ -83,6 +83,10 @@
  * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every
  * pool too busy to take a run (the preview says why each is left out), `?pools=stale` for every reading too old to
  * go by, and `?pools=open` for pools with every limit off; by default there are two pools, one spilling into the other;
+ * `?poolSsh=nocli` for a pool page before the arbor command is installed, `?poolSsh=noinclude` for ~/.ssh/config not
+ * bringing in the pool hosts yet, `?poolSsh=nokeys` for no member's host key saved, and `?poolSsh=idle` for nothing
+ * connected to a pool lately; by default one member has no saved key, one is reached as another user, and two host
+ * names are on members;
  * `?runs=none` for no harness runs yet, `?runs=queued` for runs waiting in a pool's queue (one for room, one for a
  * harness), `?runs=failed` for runs refused, failed and timed out for each reason, and `?runs=open-fail` for Orca not
  * finding a run's terminal;

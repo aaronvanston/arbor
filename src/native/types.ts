@@ -722,7 +722,7 @@ export type CapacityReport = {
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.
@@ -2765,6 +2765,60 @@ export type PoolPreview = {
    */
   plan: Array<string | null>,
 };
+
+/**
+ * Connecting to a pool over SSH, for its page.
+ */
+export type PoolSsh = {
+  /**
+   * The pool's host name, as `ssh` takes it.
+   */
+  host: string,
+  /**
+   * Whether the arbor command ssh runs is installed.
+   */
+  commandReady: boolean,
+  /**
+   * The line ~/.ssh/config needs for the pool hosts.
+   */
+  includeLine: string,
+  /**
+   * Whether ~/.ssh/config has it.
+   */
+  included: boolean,
+  /**
+   * The user its host connects as.
+   */
+  user: string | null,
+  members: Array<PoolSshMember>,
+  connections: Array<PoolSshConnection>,
+};
+
+/**
+ * A host name connected to the pool lately, and the member it goes to.
+ */
+export type PoolSshConnection = {
+  name: string,
+  machine: string,
+  /**
+   * Connections open now.
+   */
+  open: number,
+  /**
+   * When the last one closed, while none is open; it keeps its member until LEASE_GRACE_MS after.
+   */
+  idleSinceMs: number | null,
+};
+
+export type PoolSshMember = {
+  machine: string,
+  readiness: PoolSshReadiness,
+};
+
+/**
+ * Whether a member can take a connection through its pool's host.
+ */
+export type PoolSshReadiness = "ready" | "noAddress" | "noHostKey" | "otherUser";
 
 /**
  * Why a member could or couldn't take the next run.

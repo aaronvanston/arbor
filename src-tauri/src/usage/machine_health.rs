@@ -42,6 +42,7 @@ pub(crate) mod discovery;
 pub(crate) mod fix_session;
 pub(crate) mod guarded_writes;
 pub(crate) mod keep_sessions;
+pub(crate) mod pool_ssh;
 pub(crate) mod pools;
 pub(crate) mod runs;
 pub(crate) mod project_instructions;
