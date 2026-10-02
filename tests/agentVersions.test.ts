@@ -5,7 +5,7 @@ import type { AgentInstall, HealthPoint, MachineAgents, MachineHealth } from '..
 
 const install = (version: string | null, path = '/home/casey/.local/bin/claude'): AgentInstall => ({ version, path, real: null, method: 'native', updateCommand: 'claude update', copies: [] });
 const agents = (fields: Partial<MachineAgents> = {}): MachineAgents => ({
-  claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, ...fields,
+  claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, orca: null, ...fields,
 });
 const machine = (name: string, fields: Partial<MachineHealth> = {}): MachineHealth => ({
   machine: name,

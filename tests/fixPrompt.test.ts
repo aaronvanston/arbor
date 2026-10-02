@@ -34,7 +34,7 @@ const GB_KB = 1024 * 1024;
 
 const install = (version: string, path: string): AgentInstall => ({ version, path, real: null, method: 'native', updateCommand: `${path} update`, copies: [] });
 const agents = (fields: Partial<MachineAgents> = {}): MachineAgents => ({
-  claude: null, codex: null, checkedAt: 1, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, ...fields,
+  claude: null, codex: null, checkedAt: 1, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, orca: null, ...fields,
 });
 const facts: MachineFacts = {
   hostname: 'cedar-02.lan', os: 'Linux', osVersion: 'Ubuntu 24.04', arch: 'x86_64', model: 'B650', productName: '', chip: 'Ryzen 9',

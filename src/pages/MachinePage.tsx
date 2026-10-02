@@ -16,6 +16,8 @@ import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import { FleetMachineSection } from '../components/FleetBoard';
 import { FixMenu } from '../components/FixMenu';
+import { MachineHarnessesBlock } from '../components/MachineHarnesses';
+import { machineHarnesses } from '../services/harnesses';
 import { MachinePill } from '../components/identity/Identity';
 import { MachineLookPicker } from '../components/identity/MachineLookPicker';
 import { ProviderMark } from '../components/identity/Identity';
@@ -223,6 +225,12 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           {item ? (
             <SettingsSection title={t('machines.agents.title')} description={t('machine.agents.description')}>
               <MachineAgentsBlock item={item} newest={newest} embedded />
+            </SettingsSection>
+          ) : null}
+
+          {item?.agents.checkedAt ? (
+            <SettingsSection title={t('harness.title')} description={t('harness.description')}>
+              <MachineHarnessesBlock harnesses={machineHarnesses(item.agents)} />
             </SettingsSection>
           ) : null}
 

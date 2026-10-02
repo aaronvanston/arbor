@@ -121,6 +121,107 @@ if [ -d "$HOME/.t3" ]; then
 fi
 "##;
 
+// Which harnesses a run could be handed to here, and T3 Code's setups. T3 Code's settings are read
+// on the machine and only each setup's id, driver, name and switch are printed: setups can carry API
+// keys and environment values, which never leave it. A Mac reads them with its own JavaScript, since
+// a bare `python3` there asks to install the developer tools; elsewhere python3, then node. Orca
+// counts once it has a data folder here, so a screen reader that's also called orca doesn't.
+const HARNESS_CHECK: &str = r##"t3_data="$HOME/.t3/userdata"
+if [ -d "$HOME/.t3" ] && [ -f "$t3_data/settings.json" -o -f "$t3_data/server-runtime.json" ]; then
+  t3_out=
+  if [ "$(uname -s)" = Darwin ] && command -v osascript >/dev/null 2>&1; then
+    t3_out=$(osascript -l JavaScript - "$t3_data" 2>/dev/null <<'JS'
+ObjC.import('Foundation');
+function read(path) {
+  const text = $.NSString.stringWithContentsOfFileEncodingError(path, $.NSUTF8StringEncoding, null);
+  if (text.isNil()) return null;
+  try { return JSON.parse(ObjC.unwrap(text)); } catch (error) { return null; }
+}
+function clean(value) { return String(value == null ? '' : value).replace(/[\u0000-\u001f]/g, ' ').slice(0, 80); }
+function run(argv) {
+  const out = [];
+  const settings = read(argv[0] + '/settings.json') || {};
+  const instances = settings.providerInstances || {};
+  for (const id of Object.keys(instances)) {
+    const entry = instances[id];
+    if (entry && typeof entry === 'object') out.push('t3_setup=' + [clean(id), clean(entry.driver), clean(entry.displayName), entry.enabled === false ? '0' : '1'].join('\t'));
+  }
+  const providers = settings.providers || {};
+  for (const driver of Object.keys(providers)) {
+    const entry = providers[driver];
+    if (entry && typeof entry === 'object') out.push('t3_builtin=' + clean(driver) + '\t' + (entry.enabled === false ? '0' : '1'));
+  }
+  const runtime = read(argv[0] + '/server-runtime.json');
+  if (runtime && Number.isInteger(runtime.pid)) out.push('t3_pid=' + runtime.pid);
+  return out.join('\n');
+}
+JS
+)
+  elif command -v python3 >/dev/null 2>&1; then
+    t3_out=$(python3 - "$t3_data" 2>/dev/null <<'PY'
+import json, re, sys
+def read(path):
+    try:
+        with open(path) as handle:
+            return json.load(handle)
+    except Exception:
+        return None
+def clean(value):
+    return re.sub(r'[\x00-\x1f]', ' ', '' if value is None else str(value))[:80]
+settings = read(sys.argv[1] + '/settings.json') or {}
+for key, entry in (settings.get('providerInstances') or {}).items():
+    if isinstance(entry, dict):
+        print('t3_setup=' + '\t'.join([clean(key), clean(entry.get('driver')), clean(entry.get('displayName')), '0' if entry.get('enabled') is False else '1']))
+for driver, entry in (settings.get('providers') or {}).items():
+    if isinstance(entry, dict):
+        print('t3_builtin=' + clean(driver) + '\t' + ('0' if entry.get('enabled') is False else '1'))
+runtime = read(sys.argv[1] + '/server-runtime.json')
+if isinstance(runtime, dict) and isinstance(runtime.get('pid'), int):
+    print('t3_pid=%d' % runtime['pid'])
+PY
+)
+  elif command -v node >/dev/null 2>&1; then
+    t3_out=$(node - "$t3_data" 2>/dev/null <<'NODE'
+const fs = require('fs');
+const dir = process.argv[2];
+const read = (path) => { try { return JSON.parse(fs.readFileSync(path, 'utf8')); } catch { return null; } };
+const clean = (value) => String(value == null ? '' : value).replace(/[\u0000-\u001f]/g, ' ').slice(0, 80);
+const settings = read(dir + '/settings.json') || {};
+for (const [id, entry] of Object.entries(settings.providerInstances || {})) {
+  if (entry && typeof entry === 'object') console.log('t3_setup=' + [clean(id), clean(entry.driver), clean(entry.displayName), entry.enabled === false ? '0' : '1'].join('\t'));
+}
+for (const [driver, entry] of Object.entries(settings.providers || {})) {
+  if (entry && typeof entry === 'object') console.log('t3_builtin=' + clean(driver) + '\t' + (entry.enabled === false ? '0' : '1'));
+}
+const runtime = read(dir + '/server-runtime.json');
+if (runtime && Number.isInteger(runtime.pid)) console.log('t3_pid=' + runtime.pid);
+NODE
+)
+  fi
+  printf '%s\n' "$t3_out" | grep -E '^t3_(setup|builtin)=' || true
+  t3_pid=$(printf '%s\n' "$t3_out" | sed -n 's/^t3_pid=\([0-9][0-9]*\)$/\1/p' | head -n 1)
+  if [ -n "$t3_pid" ] && kill -0 "$t3_pid" 2>/dev/null; then printf 't3_running=1\n'; fi
+fi
+if [ -d "$HOME/.orca" ] || [ -d "$HOME/Library/Application Support/orca" ] || [ -d "$HOME/.config/orca/profiles" ]; then
+  orca_app=
+  for app in /Applications/Orca.app "$HOME"/Applications/Orca.app; do
+    if [ -f "$app/Contents/Info.plist" ]; then orca_app=$app; break; fi
+  done
+  orca_bin=$(command -v orca 2>/dev/null || true)
+  if [ -n "$orca_app" ] || [ -n "$orca_bin" ]; then
+    printf 'orca=1\n'
+    if [ -n "$orca_app" ]; then
+      orca_version=$(plutil -extract CFBundleShortVersionString raw -o - "$orca_app/Contents/Info.plist" 2>/dev/null || true)
+      if [ -n "$orca_version" ]; then printf 'orca_version=%s\n' "$orca_version"; fi
+    fi
+    if pgrep -x Orca >/dev/null 2>&1 || pgrep -f 'orca serve' >/dev/null 2>&1; then printf 'orca_running=1\n'; fi
+    for orca_agent in claude codex opencode gemini; do
+      if command -v "$orca_agent" >/dev/null 2>&1; then printf 'orca_agent=%s\n' "$orca_agent"; fi
+    done
+  fi
+fi
+"##;
+
 // Expects `agent` to be set. An npm install updates with the npm next to the
 // Node that owns it rather than whichever npm comes first.
 pub(super) const UPDATE_SCRIPT: &str = r##"bin=$(command -v "$agent" 2>/dev/null || true)
@@ -197,6 +298,34 @@ pub(crate) struct AgentCopy {
 pub(crate) struct T3Install {
     /// From its app, or the npm package behind its `t3` command.
     version: Option<String>,
+    /// Its server is up (the pid it left in `server-runtime.json` is alive), so a run can be handed to it.
+    running: bool,
+    /// Its provider setups ("Codex · Hub"), by the id a thread names one with. Only ids, drivers, names and
+    /// whether each is on leave the machine; their settings and environment never do.
+    setups: Vec<HarnessSetup>,
+}
+
+/// A harness's own setup of an agent: T3 Code's provider instances.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HarnessSetup {
+    id: String,
+    /// The agent behind it, in the harness's words ("codex", "claudeAgent", "cursor").
+    driver: String,
+    /// What the harness shows it as, when it was given a name.
+    name: Option<String>,
+    enabled: bool,
+}
+
+/// Orca on a machine, once it's been used there.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OrcaInstall {
+    version: Option<String>,
+    /// Its app or headless server is running, so a run can be handed to it.
+    running: bool,
+    /// The agents it could start here: the ones it knows whose commands are installed.
+    agents: Vec<String>,
 }
 
 /// The installs one check found.
@@ -206,6 +335,7 @@ struct AgentCheck {
     codex: Option<AgentInstall>,
     reporter: attention::ReporterStatus,
     t3: Option<T3Install>,
+    orca: Option<OrcaInstall>,
 }
 
 impl AgentCheck {
@@ -231,6 +361,8 @@ pub(crate) struct MachineAgents {
     reporter: attention::ReporterStatus,
     /// T3 Code, when it keeps its home here.
     t3: Option<T3Install>,
+    /// Orca, once it's been used here.
+    orca: Option<OrcaInstall>,
     #[serde(skip)]
     checking: bool,
 }
@@ -321,12 +453,62 @@ fn parse_check(stdout: &str) -> AgentCheck {
         reporter: attention::parse_status(stdout),
         t3: fields.get("t3").filter(|on| **on == "1").map(|_| T3Install {
             version: fields.get("t3_version").and_then(|line| parse_version(line)),
+            running: fields.get("t3_running") == Some(&"1"),
+            setups: t3_setups(stdout, fields.contains_key("claude_path"), fields.contains_key("codex_path")),
+        }),
+        orca: fields.get("orca").filter(|on| **on == "1").map(|_| OrcaInstall {
+            version: fields.get("orca_version").and_then(|line| parse_version(line)),
+            running: fields.get("orca_running") == Some(&"1"),
+            agents: stdout.lines().filter_map(|line| line.strip_prefix("orca_agent=")).map(|agent| agent.trim().to_string()).filter(|agent| !agent.is_empty()).collect(),
         }),
     }
 }
 
+/// T3 Code's setups from what the check printed: its own provider instances, then the built-in ones it
+/// would offer. A built-in is listed only when it isn't switched off and, for Codex and Claude, when
+/// that agent is installed; the others only when switched on, since T3 Code ships them all.
+fn t3_setups(stdout: &str, claude: bool, codex: bool) -> Vec<HarnessSetup> {
+    let mut setups: Vec<HarnessSetup> = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("t3_setup="))
+        .filter_map(|line| {
+            let mut parts = line.splitn(4, '\t');
+            let id = parts.next()?.trim();
+            let driver = parts.next()?.trim();
+            let name = parts.next().unwrap_or_default().trim();
+            let enabled = parts.next().unwrap_or("1").trim() != "0";
+            (!id.is_empty() && !driver.is_empty()).then(|| HarnessSetup {
+                id: id.to_string(),
+                driver: driver.to_string(),
+                name: (!name.is_empty()).then(|| name.to_string()),
+                enabled,
+            })
+        })
+        .collect();
+    let switched: HashMap<&str, bool> = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("t3_builtin="))
+        .filter_map(|line| line.split_once('\t'))
+        .map(|(driver, enabled)| (driver.trim(), enabled.trim() != "0"))
+        .collect();
+    for driver in ["codex", "claudeAgent", "cursor", "grok", "opencode", "antigravity"] {
+        if setups.iter().any(|setup| setup.id == driver) {
+            continue;
+        }
+        let installed = match driver {
+            "codex" => codex,
+            "claudeAgent" => claude,
+            _ => switched.get(driver) == Some(&true),
+        };
+        if installed && switched.get(driver) != Some(&false) {
+            setups.push(HarnessSetup { id: driver.to_string(), driver: driver.to_string(), name: None, enabled: true });
+        }
+    }
+    setups
+}
+
 fn check_script(machine: &str) -> String {
-    format!("{AGENT_ENV}{CHECK_SCRIPT}{}{}", agent_homes::shell_function(machine, HomeUse::Sync), attention::REPORTER_CHECK)
+    format!("{AGENT_ENV}{CHECK_SCRIPT}{HARNESS_CHECK}{}{}", agent_homes::shell_function(machine, HomeUse::Sync), attention::REPORTER_CHECK)
 }
 
 fn update_script(agent: AgentKind, plan: &UpdatePlan) -> String {
@@ -355,6 +537,7 @@ fn record_check(state: &MachineHealthState, machine: &str, host: &MachineHost, a
             agents.codex = found.codex;
             agents.reporter = found.reporter;
             agents.t3 = found.t3;
+            agents.orca = found.orca;
             agents.error = None;
         }
         Err(error) => agents.error = Some(error),
@@ -618,8 +801,8 @@ mod tests {
             AgentCopy { path: "/opt/homebrew/bin/codex".into(), real: Some("/opt/homebrew/Caskroom/codex/0.153.3/codex".into()), version: Some("0.153.3".into()) },
             AgentCopy { path: "/usr/local/bin/codex".into(), real: None, version: None },
         ]);
-        assert_eq!(found.t3, Some(T3Install { version: Some("0.0.42".into()) }));
-        assert_eq!(parse_check("t3=1\n").t3, Some(T3Install { version: None }));
+        assert_eq!(found.t3.and_then(|t3| t3.version).as_deref(), Some("0.0.42"));
+        assert_eq!(parse_check("t3=1\n").t3, Some(T3Install { version: None, running: false, setups: Vec::new() }));
 
         let brew = parse_check(
             "codex_path=/opt/homebrew/bin/codex\ncodex_real=/opt/homebrew/Caskroom/codex/0.157.0/codex\n\
@@ -753,8 +936,10 @@ mod tests {
         /// /Applications, so whatever this Mac has installed there can't be found.
         fn home_check_script() -> String {
             let apps = "for app in /Applications/T3\\ Code*.app ";
+            let orca = "for app in /Applications/Orca.app ";
             assert!(check_script("").contains(apps));
-            home_only(&check_script("")).replace(apps, "for app in ")
+            assert!(check_script("").contains(orca));
+            home_only(&check_script("")).replace(apps, "for app in ").replace(orca, "for app in ")
         }
 
         /// A script with the system's Homebrew directories left off its PATH.
@@ -859,9 +1044,87 @@ mod tests {
                 let codex = found.codex.expect("codex");
                 assert_eq!((codex.path.as_str(), codex.method, codex.version.as_deref()), (shown(".npm-global/bin/codex").as_str(), InstallMethod::Npm, Some("0.156.0")), "{shell_name}");
                 assert_eq!(codex.copies, [AgentCopy { path: shown(".bun/bin/codex"), real: None, version: Some("0.150.0".into()) }], "{shell_name}");
-                assert_eq!(found.t3, Some(T3Install { version: Some("0.0.42".into()) }), "{shell_name}");
+                let t3 = found.t3.clone().expect("t3");
+                assert_eq!((t3.version.as_deref(), t3.running), (Some("0.0.42"), false), "{shell_name}");
+                // No settings yet: the built-in setups for the agents installed here.
+                assert_eq!(t3.setups.iter().map(|setup| setup.id.as_str()).collect::<Vec<_>>(), ["codex", "claudeAgent"], "{shell_name}");
             }
             let _ = fs::remove_dir_all(&home);
+        }
+
+        /// T3 Code's settings as a person with a few setups might have them, keys and all.
+        const T3_SETTINGS: &str = r#"{
+  "providers": { "codex": { "enabled": false, "binaryPath": "codex" }, "grok": { "enabled": true } },
+  "providerInstances": {
+    "codex_hub": {
+      "driver": "codex", "displayName": "Codex · Hub", "enabled": true,
+      "environment": [
+        { "name": "OPENAI_BASE_URL", "value": "http://10.0.0.5:8317/v1", "sensitive": false },
+        { "name": "OPENAI_API_KEY", "value": "", "sensitive": true, "valueRedacted": true }
+      ],
+      "config": { "homePath": "~/.codex", "shadowHomePath": "~/.codex-t3/personal", "launchArgs": "--flag SECRET-ARG" }
+    },
+    "claude_hub": { "driver": "claudeAgent", "displayName": "Claude\tHub", "environment": [{ "name": "ANTHROPIC_AUTH_TOKEN", "value": "sk-ant-SECRET-TOKEN", "sensitive": false }] },
+    "antigravity_work": { "driver": "antigravity", "enabled": false, "config": { "apiKey": "AIza-SECRET-KEY" } }
+  }
+}"#;
+
+        #[test]
+        fn t3_codes_setups_leave_the_machine_as_ids_names_and_switches_only() {
+            let home = temp_home("t3-setups");
+            write(&home.join(".t3/userdata/settings.json"), T3_SETTINGS);
+            // A pid that's no longer running: the server isn't up.
+            write(&home.join(".t3/userdata/server-runtime.json"), r#"{ "version": 1, "pid": 999999, "port": 3773, "origin": "http://127.0.0.1:3773" }"#);
+            fake(&home.join(".local/bin/claude"), "echo '2.1.281 (Claude Code)'");
+            fake(&home.join(".local/bin/codex"), "echo 'codex-cli 0.156.0'");
+            for shell_name in shells() {
+                let output = run_in(shell_name, &home, &home_check_script());
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                // SECRET: no environment value, key, setting or argument reaches Arbor, however it's read.
+                for secret in ["SECRET", "10.0.0.5", "OPENAI", "ANTHROPIC", "homePath", "shadow", "launchArgs", "3773"] {
+                    assert!(!stdout.contains(secret), "{shell_name}: {secret} in {stdout}");
+                }
+                let t3 = parse_check(&stdout).t3.expect("t3");
+                assert!(!t3.running, "{shell_name}");
+                let reader_found = stdout.contains("t3_setup=");
+                if reader_found {
+                    assert_eq!(
+                        t3.setups,
+                        vec![
+                            HarnessSetup { id: "codex_hub".into(), driver: "codex".into(), name: Some("Codex · Hub".into()), enabled: true },
+                            HarnessSetup { id: "claude_hub".into(), driver: "claudeAgent".into(), name: Some("Claude Hub".into()), enabled: true },
+                            HarnessSetup { id: "antigravity_work".into(), driver: "antigravity".into(), name: None, enabled: false },
+                            // Codex's built-in is switched off; Grok's is on.
+                            HarnessSetup { id: "claudeAgent".into(), driver: "claudeAgent".into(), name: None, enabled: true },
+                            HarnessSetup { id: "grok".into(), driver: "grok".into(), name: None, enabled: true },
+                        ],
+                        "{shell_name}",
+                    );
+                }
+            }
+            let _ = fs::remove_dir_all(&home);
+        }
+
+        #[test]
+        fn orca_counts_once_it_has_been_used_here_with_the_agents_it_could_start() {
+            let home = temp_home("orca");
+            fake(&home.join(".local/bin/orca"), "exit 0");
+            fake(&home.join(".local/bin/codex"), "echo 'codex-cli 0.156.0'");
+            assert_eq!(checked("sh", &home).orca, None, "an orca command alone could be the screen reader");
+            fs::create_dir_all(home.join(".orca")).unwrap();
+            for shell_name in shells() {
+                let orca = checked(shell_name, &home).orca.expect("orca");
+                assert_eq!(orca.agents, ["codex"], "{shell_name}");
+            }
+            let _ = fs::remove_dir_all(&home);
+        }
+
+        #[test]
+        fn setups_parse_with_built_ins_only_where_t3_code_would_offer_them() {
+            let found = parse_check("claude_path=/x/claude\nt3=1\nt3_setup=hub\tcodex\tHub\t1\nt3_builtin=claudeAgent\t0\nt3_builtin=cursor\t1\nt3_running=1\n");
+            let t3 = found.t3.expect("t3");
+            assert!(t3.running);
+            assert_eq!(t3.setups.iter().map(|setup| setup.id.as_str()).collect::<Vec<_>>(), ["hub", "cursor"]);
         }
 
         #[cfg(target_os = "macos")]
@@ -876,7 +1139,7 @@ mod tests {
 <plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>0.0.43</string></dict></plist>
 "#,
             );
-            assert_eq!(checked("sh", &home).t3, Some(T3Install { version: Some("0.0.43".into()) }));
+            assert_eq!(checked("sh", &home).t3.and_then(|t3| t3.version), Some("0.0.43".into()));
             let _ = fs::remove_dir_all(&home);
         }
 

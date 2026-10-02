@@ -124,7 +124,7 @@ describe('the reporter on a machine', () => {
     machine: 'casey-mbp', host: { machine: 'casey-mbp', endpoint: 'localhost', port: 22, enabled: true, source: '' }, local: true,
     status: 'healthy', score: 96, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: 0, lastAttemptAt: 0,
     pingTarget: null, path: null,
-    agents: { claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter, t3: null },
+    agents: { claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter, t3: null, orca: null },
   });
   const row = (reporter: ReporterStatus) => text(renderToStaticMarkup(<I18nProvider><MachineReporterRow item={machine(reporter)} /></I18nProvider>));
 

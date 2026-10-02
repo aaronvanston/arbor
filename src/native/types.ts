@@ -1299,6 +1299,22 @@ export type GuiSettings = {
 };
 
 /**
+ * A harness's own setup of an agent: T3 Code's provider instances.
+ */
+export type HarnessSetup = {
+  id: string,
+  /**
+   * The agent behind it, in the harness's words ("codex", "claudeAgent", "cursor").
+   */
+  driver: string,
+  /**
+   * What the harness shows it as, when it was given a name.
+   */
+  name: string | null,
+  enabled: boolean,
+};
+
+/**
  * What a health score is read from.
  */
 export type HealthMetric = "cpu" | "memory" | "swap" | "disk" | "load" | "cpuTemp" | "gpuTemp";
@@ -1768,6 +1784,10 @@ export type MachineAgents = {
    * T3 Code, when it keeps its home here.
    */
   t3: T3Install | null,
+  /**
+   * Orca, once it's been used here.
+   */
+  orca: OrcaInstall | null,
 };
 
 export type MachineAssignment = {
@@ -2209,6 +2229,21 @@ export type OAuthStartResult = {
 export type OAuthStatusResult = {
   status: string,
   error: string | null,
+};
+
+/**
+ * Orca on a machine, once it's been used there.
+ */
+export type OrcaInstall = {
+  version: string | null,
+  /**
+   * Its app or headless server is running, so a run can be handed to it.
+   */
+  running: boolean,
+  /**
+   * The agents it could start here: the ones it knows whose commands are installed.
+   */
+  agents: Array<string>,
 };
 
 /**
@@ -3956,6 +3991,15 @@ export type T3Install = {
    * From its app, or the npm package behind its `t3` command.
    */
   version: string | null,
+  /**
+   * Its server is up (the pid it left in `server-runtime.json` is alive), so a run can be handed to it.
+   */
+  running: boolean,
+  /**
+   * Its provider setups ("Codex · Hub"), by the id a thread names one with. Only ids, drivers, names and
+   * whether each is on leave the machine; their settings and environment never do.
+   */
+  setups: Array<HarnessSetup>,
 };
 
 /**

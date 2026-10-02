@@ -19,7 +19,7 @@ const machine = (name: string, fields: Partial<MachineHealth> = {}): MachineHeal
   host: { machine: name, endpoint: name, port: 22, enabled: true, source: 'manual' },
   local: false, status: 'healthy', score: 90, reason: null, facts: null, latest: null, points: [],
   error: null, lastOkAt: 0, lastAttemptAt: 0, pingTarget: null, path: null,
-  agents: { claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null },
+  agents: { claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, orca: null },
   ...fields,
 });
 const REFUSED = (name: string) => `ssh: connect to host ${name} port 22: Connection refused`;

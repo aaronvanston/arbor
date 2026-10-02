@@ -74,6 +74,8 @@
  * `?homes=fresh` for no machine looked at for agent homes yet (Settings › Agent homes lists only the standard homes
  * until Look again fills each machine's list), `?homes=fail` for cedar-02's last look failing, and `?homes=none` for
  * looks that found nothing more to suggest;
+ * `?harness=none` for no T3 Code or Orca on any machine (each machine's page says no harness was found), and
+ * `?t3=stopped` for T3 Code installed but not running on casey-mbp too;
  * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every
  * pool too busy to take a run (the preview says why each is left out), and `?pools=stale` for every reading too old to
  * go by; by default there are two pools, one spilling into the other;

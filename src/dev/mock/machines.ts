@@ -22,11 +22,13 @@ import type {
   MachineHost,
   MachineTelemetry,
   NetworkPath,
+  OrcaInstall,
   ReporterHome,
   ReporterSetup,
   ReporterStatus,
   SettingsEdit,
   Spend,
+  T3Install,
   T3Policy,
   TelemetryBreakdown,
   TelemetrySetup,
@@ -284,14 +286,40 @@ function mockInstallAt(agent: AgentKind, version: string | null, home: string, m
 }
 
 // T3 Code keeps its home on casey-mbp and cedar-02 (0.0.42, from its app); `?t3compat=broken` puts it on ci-01 too,
-// with a version Arbor couldn't read.
+// with a version Arbor couldn't read. Harnesses a run can be handed to: T3 Code runs on casey-mbp with a setup of its own
+// beside the built-ins, and is installed but stopped on cedar-02; Orca runs on casey-mbp and is installed on ci-01.
+// `?harness=none` has neither anywhere, and `?t3=stopped` stops T3 Code on casey-mbp too.
 const t3Scenario = params.get('t3compat');
+const harnessScenario = params.get('harness');
+const t3Stopped = params.get('t3') === 'stopped';
+const t3On = (install: T3Install): T3Install | null => (harnessScenario === 'none' ? null : install);
+const orcaOn = (install: OrcaInstall): OrcaInstall | null => (harnessScenario === 'none' ? null : install);
 
 // Each machine's agents as its last check found them; the reporter's state is added as the snapshot is read.
 const healthAgents: Record<string, Omit<MachineAgents, 'reporter'>> = {
-  'casey-mbp': { claude: mockInstall('claude', '2.1.281', '/Users/casey', true), codex: mockInstall('codex', '0.156.0', '/Users/casey', true), checkedAt: Date.now() - 4 * 60_000, error: null, updating: [], t3: { version: '0.0.42' } },
-  'ci-01': { claude: mockInstall('claude', '2.1.270', '/home/ci', false), codex: mockInstall('codex', '0.153.3', '/home/ci', false), checkedAt: Date.now() - 7 * 60_000, error: null, updating: [], t3: t3Scenario === 'broken' ? { version: null } : null },
-  'cedar-02': { claude: mockInstall('claude', '2.1.281', '/home/casey', false), codex: null, checkedAt: Date.now() - 2 * 60_000, error: null, updating: [], t3: { version: '0.0.42' } },
+  'casey-mbp': {
+    claude: mockInstall('claude', '2.1.281', '/Users/casey', true), codex: mockInstall('codex', '0.156.0', '/Users/casey', true), checkedAt: Date.now() - 4 * 60_000, error: null, updating: [],
+    t3: t3On({
+      version: '0.0.42', running: !t3Stopped,
+      setups: [
+        { id: 'codex_work', driver: 'codex', name: 'Codex · Work', enabled: true },
+        { id: 'claude_proxy', driver: 'claudeAgent', name: 'Claude · Proxy', enabled: true },
+        { id: 'codex', driver: 'codex', name: null, enabled: false },
+        { id: 'claudeAgent', driver: 'claudeAgent', name: null, enabled: true },
+      ],
+    }),
+    orca: orcaOn({ version: '1.4.217', running: true, agents: ['claude', 'codex'] }),
+  },
+  'ci-01': {
+    claude: mockInstall('claude', '2.1.270', '/home/ci', false), codex: mockInstall('codex', '0.153.3', '/home/ci', false), checkedAt: Date.now() - 7 * 60_000, error: null, updating: [],
+    t3: t3Scenario === 'broken' ? { version: null, running: false, setups: [] } : null,
+    orca: orcaOn({ version: null, running: false, agents: ['claude', 'codex'] }),
+  },
+  'cedar-02': {
+    claude: mockInstall('claude', '2.1.281', '/home/casey', false), codex: null, checkedAt: Date.now() - 2 * 60_000, error: null, updating: [],
+    t3: t3On({ version: '0.0.42', running: false, setups: [{ id: 'claudeAgent', driver: 'claudeAgent', name: null, enabled: true }] }),
+    orca: null,
+  },
 };
 
 // T3 Code's compatibility policies, as its model manifest had them. `?t3compat=broken` has Codex before 0.154.0 known
@@ -327,7 +355,7 @@ if (duplicateScenario === 'claude' || duplicateScenario === 'codex') {
   });
 }
 
-const noAgents: MachineAgents = { claude: null, codex: null, checkedAt: null, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null };
+const noAgents: MachineAgents = { claude: null, codex: null, checkedAt: null, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, orca: null };
 
 const agentsOf = (machine: string): MachineAgents => {
   const agents = healthAgents[machine];
@@ -468,7 +496,7 @@ const discoveredHosts = (): DiscoveredHost[] => {
 // after it's saved.
 const joinMockMachine = (name: string, arrived: boolean) => {
   if (!joinSetupMachine(name, arrived)) return;
-  healthAgents[name] = { claude: mockInstall('claude', '2.1.270', '/home/casey', false), codex: null, checkedAt: Date.now(), error: null, updating: [], t3: null };
+  healthAgents[name] = { claude: mockInstall('claude', '2.1.270', '/home/casey', false), codex: null, checkedAt: Date.now(), error: null, updating: [], t3: null, orca: null };
   reporterHomes[name] = [{ agent: 'claude', home: '~/.claude', reporting: false }];
   reporterInstalled[name] = false;
 };
