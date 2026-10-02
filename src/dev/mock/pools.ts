@@ -27,11 +27,14 @@ let pools: MachinePool[] = poolsScenario === 'none' || freshInstall ? [] : [
   },
 ];
 
+/** The pools as they stand, for the mock's runs. */
+export const poolsNow = () => pools;
+
 const shares = { prefer: 4, normal: 2, less: 1, manual: 0 } as const;
 const loose = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** The native side's verdicts (`pools.rs` `assess`), near enough for the page to show each case. */
-function preview(pool: MachinePool, snapshot: MachineHealthSnapshot): PoolPreview {
+export function preview(pool: MachinePool, snapshot: MachineHealthSnapshot): PoolPreview {
   const freshForMs = Math.max(15_000, snapshot.intervalMs * 3);
   const members = pool.members.map((member): PoolMemberVerdict => {
     const health = snapshot.machines.find((entry) => loose(entry.machine) === loose(member.machine));

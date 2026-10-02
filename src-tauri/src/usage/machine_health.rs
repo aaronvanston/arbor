@@ -43,6 +43,7 @@ pub(crate) mod fix_session;
 pub(crate) mod guarded_writes;
 pub(crate) mod keep_sessions;
 pub(crate) mod pools;
+pub(crate) mod runs;
 pub(crate) mod project_instructions;
 pub(crate) mod setup;
 pub(crate) mod setup_hooks;
@@ -1245,6 +1246,7 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
             record_result(&state, &machine, at_ms, result, ping.latency_ms, path);
         }
         agents::check_due(&app, &state, at_ms);
+        runs::after_round(&app, at_ms);
         transcripts::scan_due(&app, &state, at_ms);
         agent_homes::scan_due(&app, &state, at_ms);
         let interval = if state.is_active() { ACTIVE_INTERVAL } else { IDLE_INTERVAL };

@@ -37,6 +37,7 @@ import type {
 import { homePathProblem } from '../../services/agentHomes';
 import type { CommandAnswers } from './answers';
 import { poolAnswers } from './pools';
+import { runAnswers } from './runs';
 import { configSettings } from './core';
 import { freshInstall, later, mockLog, now, params } from './scenario';
 import { joinSetupMachine, leaveToPolicy, recordEditMock, scanSetupMock, setupItem, setupMachines } from './setup';
@@ -613,6 +614,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     return { name: listed?.machine ?? MOCK_THIS_MAC, listed: Boolean(listed) };
   },
   ...poolAnswers(() => machineHealthSnapshot(null, 60_000)),
+  ...runAnswers(() => machineHealthSnapshot(null, 60_000)),
   get_agent_homes: () => agentHomesView(),
   save_agent_home: ({ home }) => {
     mockLog('save_agent_home', home);

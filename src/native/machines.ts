@@ -1,4 +1,6 @@
 import type {
+  HarnessRun,
+  RunRequest,
   AgentHome,
   AgentHomeKind,
   AgentHomesView,
@@ -37,6 +39,10 @@ export type MachineCommands = {
   save_pool: { args: { pool: MachinePool }; result: MachinePool[] };
   remove_pool: { args: { id: string }; result: MachinePool[] };
   preview_pools: { result: PoolPreview[] };
+  start_pool_run: { args: { request: RunRequest }; result: HarnessRun };
+  get_runs: { result: HarnessRun[] };
+  cancel_run: { args: { id: string }; result: HarnessRun[] };
+  open_run: { args: { id: string }; result: void };
   get_machine_health: {
     args: { since?: number | null; windowMs?: number | null; passive?: boolean | null };
     result: MachineHealthSnapshot;

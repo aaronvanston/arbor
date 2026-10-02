@@ -138,6 +138,8 @@ pub(crate) enum VerdictKind {
     AgentsFull,
     CpuHigh,
     MemoryLow,
+    /// Has room, but not the harness a run asked for running with its setup.
+    NoHarness,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -158,6 +160,16 @@ pub(crate) struct MemberVerdict {
     share: f64,
 }
 
+impl MemberVerdict {
+    pub(super) fn machine(&self) -> &str {
+        &self.machine
+    }
+
+    pub(super) fn kind(&self) -> VerdictKind {
+        self.kind
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PoolPreview {
@@ -176,7 +188,7 @@ pub(crate) struct PoolPreview {
 
 /// A member's latest health sample, as far as a pool is concerned.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Reading {
+pub(super) struct Reading {
     enabled: bool,
     answering: bool,
     last_ok_at: Option<i64>,
@@ -195,6 +207,19 @@ fn fresh_for_ms(interval_ms: u64) -> i64 {
 /// Each member's verdict and share. `readings` is keyed by normalized machine name (None: not
 /// listed); `recent` counts runs sent to a machine since its last sample, so a burst spreads out.
 fn assess(pool: &MachinePool, readings: &BTreeMap<String, Reading>, recent: &BTreeMap<String, u32>, now_ms: i64, interval_ms: u64) -> Vec<MemberVerdict> {
+    assess_with(pool, readings, recent, now_ms, interval_ms, |_| true)
+}
+
+/// `assess` for one run: `can_take` says whether a member has what the run needs (its harness and
+/// setup), and a member with room but without it is left out.
+pub(super) fn assess_with(
+    pool: &MachinePool,
+    readings: &BTreeMap<String, Reading>,
+    recent: &BTreeMap<String, u32>,
+    now_ms: i64,
+    interval_ms: u64,
+    can_take: impl Fn(&str) -> bool,
+) -> Vec<MemberVerdict> {
     let fresh_for = fresh_for_ms(interval_ms);
     let mut verdicts: Vec<MemberVerdict> = pool
         .members
@@ -236,6 +261,8 @@ fn assess(pool: &MachinePool, readings: &BTreeMap<String, Reading>, recent: &BTr
                 VerdictKind::MemoryLow
             } else if member.weight == PoolWeight::Manual {
                 VerdictKind::Manual
+            } else if !can_take(&member.machine) {
+                VerdictKind::NoHarness
             } else {
                 VerdictKind::Eligible
             };
@@ -259,9 +286,6 @@ fn assess(pool: &MachinePool, readings: &BTreeMap<String, Reading>, recent: &BTr
 }
 
 /// The member a roll in [0, 1) lands on, by share. None when nobody is eligible.
-// Starting a run is what picks with this; until runs start, only the tests and the preview's
-// shares rely on it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn choose(verdicts: &[MemberVerdict], roll: f64) -> Option<&MemberVerdict> {
     let mut left = roll.clamp(0.0, 1.0);
     let eligible: Vec<&MemberVerdict> = verdicts.iter().filter(|verdict| verdict.share > 0.0).collect();
@@ -284,7 +308,7 @@ fn likely(verdicts: &[MemberVerdict]) -> Option<String> {
 }
 
 /// Every listed machine's reading, keyed by normalized name.
-fn readings(inner: &Inner) -> BTreeMap<String, Reading> {
+pub(super) fn readings(inner: &Inner) -> BTreeMap<String, Reading> {
     let mut readings: BTreeMap<String, Reading> = inner
         .series
         .values()
@@ -315,7 +339,7 @@ fn readings(inner: &Inner) -> BTreeMap<String, Reading> {
 // Storage
 // ---------------------------------------------------------------------------
 
-fn read_pools(connection: &Connection) -> Result<Vec<MachinePool>, String> {
+pub(super) fn read_pools(connection: &Connection) -> Result<Vec<MachinePool>, String> {
     let mut statement = connection
         .prepare(
             "SELECT id, name, max_agents, cpu_ceiling, mem_floor, when_full, spill_pool, queue_timeout_min

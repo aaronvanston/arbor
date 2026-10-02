@@ -49,6 +49,7 @@ export function verdictMessage(verdict: PoolMemberVerdict, pool: Pick<MachinePoo
     agentsFull: 'pools.verdict.agentsFull',
     cpuHigh: 'pools.verdict.cpuHigh',
     memoryLow: 'pools.verdict.memoryLow',
+    noHarness: 'pools.verdict.noHarness',
   };
   return {
     key: byKind[verdict.kind],

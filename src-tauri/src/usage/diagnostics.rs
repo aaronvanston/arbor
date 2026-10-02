@@ -154,6 +154,9 @@ pub(crate) enum MachineOp {
     AutomationStart,
     AutomationPoll,
     AutomationChange,
+    RunHandOff,
+    RunCheck,
+    RunOpen,
 }
 
 impl MachineOp {
@@ -199,6 +202,9 @@ impl MachineOp {
             Self::AutomationStart => "automation start",
             Self::AutomationPoll => "automation runs check",
             Self::AutomationChange => "automation change",
+            Self::RunHandOff => "run hand-off",
+            Self::RunCheck => "run check",
+            Self::RunOpen => "run open",
         }
     }
 
@@ -211,6 +217,7 @@ impl MachineOp {
             | Self::SetupUndo
             | Self::SkillsApply
             | Self::SkillsTake
+            | Self::RunHandOff
             | Self::McpHealth
             | Self::PluginCost
             | Self::ProjectsScan

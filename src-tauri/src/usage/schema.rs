@@ -39,6 +39,7 @@ const STEPS: &[Step] = &[
     Step { version: 16, name: "agent homes", apply: agent_homes },
     Step { version: 17, name: "machine pools", apply: machine_pools },
     Step { version: 18, name: "automations", apply: automations },
+    Step { version: 19, name: "harness runs", apply: harness_runs },
 ];
 
 /// The version of a database that has had every step.
@@ -1186,6 +1187,37 @@ fn automations(connection: &mut Connection, _: &Path) -> Result<(), String> {
             )",
         )
         .map_err(|error| format!("Failed to prepare the automations tables: {error}"))
+}
+
+/// Runs started on a pool (`machine_health/runs.rs`): where each went and how it went. A run's
+/// prompt is never kept here; `handle` holds the ids the harness gave back, as JSON.
+fn harness_runs(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS usage_runs (
+                id TEXT PRIMARY KEY NOT NULL,
+                trigger_id TEXT,
+                pool_id TEXT NOT NULL,
+                ran_pool_id TEXT,
+                machine TEXT,
+                harness TEXT NOT NULL,
+                used_harness TEXT,
+                setup TEXT NOT NULL,
+                folder TEXT NOT NULL,
+                title TEXT NOT NULL,
+                state TEXT NOT NULL,
+                reason TEXT,
+                detail TEXT,
+                handle TEXT NOT NULL DEFAULT '{}',
+                queued_at_ms INTEGER NOT NULL,
+                started_at_ms INTEGER,
+                ended_at_ms INTEGER,
+                wait_until_ms INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS usage_runs_queued ON usage_runs (queued_at_ms DESC);
+            CREATE INDEX IF NOT EXISTS usage_runs_state ON usage_runs (state)",
+        )
+        .map_err(|error| format!("Failed to prepare the harness runs table: {error}"))
 }
 
 // ---------------------------------------------------------------------------

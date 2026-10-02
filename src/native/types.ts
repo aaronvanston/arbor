@@ -1551,6 +1551,42 @@ export type GuiSettings = {
   closeBehavior: WindowsCloseBehavior,
 };
 
+export type HarnessRun = {
+  id: string,
+  trigger: string | null,
+  pool: string,
+  /**
+   * The pool it ran on, after any spill.
+   */
+  ranPool: string | null,
+  machine: string | null,
+  /**
+   * The harness asked for.
+   */
+  harness: RunHarness,
+  /**
+   * The harness it went to: the command line when it fell back.
+   */
+  used: RunHarness | null,
+  setup: string,
+  folder: string,
+  title: string,
+  state: RunState,
+  reason: RunReason | null,
+  /**
+   * What the harness or the machine said when it failed.
+   */
+  detail: string | null,
+  handle: RunHandle,
+  queuedAtMs: number,
+  startedAtMs: number | null,
+  endedAtMs: number | null,
+  /**
+   * How long it may wait in the queue, from the pool.
+   */
+  waitUntilMs: number | null,
+};
+
 /**
  * A harness's own setup of an agent: T3 Code's provider instances.
  */
@@ -2695,7 +2731,7 @@ export type PoolPreview = {
 /**
  * Why a member could or couldn't take the next run.
  */
-export type PoolVerdictKind = "eligible" | "manual" | "notListed" | "off" | "noReading" | "unreachable" | "stale" | "agentsFull" | "cpuHigh" | "memoryLow";
+export type PoolVerdictKind = "eligible" | "manual" | "notListed" | "off" | "noReading" | "unreachable" | "stale" | "agentsFull" | "cpuHigh" | "memoryLow" | "noHarness";
 
 /**
  * How much of a pool's work a member takes.
@@ -3358,6 +3394,67 @@ export type ReporterStatus = {
    */
   homes: Array<ReporterHome>,
 };
+
+/**
+ * What the harness gave back, to find the run in it later.
+ */
+export type RunHandle = {
+  environmentId?: string,
+  projectId?: string,
+  threadId?: string,
+  /**
+   * Orca's terminal handle.
+   */
+  terminal?: string,
+  pid?: number,
+  /**
+   * The session id given to a Claude Code run on the command line, which Sessions finds it by.
+   */
+  sessionId?: string,
+};
+
+/**
+ * What runs the agent.
+ */
+export type RunHarness = "t3" | "orca" | "headless";
+
+/**
+ * Why a run didn't start, or stopped.
+ */
+export type RunReason = "noPool" | "noRoom" | "noHarness" | "noFolder" | "noModel" | "handOffFailed" | "arborRestarted" | "canceled" | "agentFailed";
+
+/**
+ * What to start. The prompt is used to hand the run over and then dropped.
+ */
+export type RunRequest = {
+  pool: string,
+  harness: RunHarness,
+  /**
+   * T3 Code's setup id ("codex_work"), Orca's agent id ("codex"), or for the command line
+   * "claude" or "codex".
+   */
+  setup: string,
+  /**
+   * Where on the machine the agent works, from `~/` or `/`.
+   */
+  folder: string,
+  prompt: string,
+  model?: string,
+  /**
+   * Start it on the command line when a member has room but not the harness.
+   */
+  fallback: boolean,
+  /**
+   * What the harness calls it; the prompt's first line when left out.
+   */
+  title?: string,
+  /**
+   * The trigger that started it.
+   */
+  trigger?: string,
+};
+
+export type RunState = "queued" | "starting" | "handedOff" | "running" | "exited" | "failed" | "refused" | "timedOut";
 
 /**
  * One saved setting changed; `value` is none when it was removed.

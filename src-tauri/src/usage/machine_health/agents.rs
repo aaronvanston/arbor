@@ -305,6 +305,37 @@ pub(crate) struct T3Install {
     setups: Vec<HarnessSetup>,
 }
 
+impl T3Install {
+    pub(super) fn is_running(&self) -> bool {
+        self.running
+    }
+
+    pub(super) fn setup(&self, id: &str) -> Option<&HarnessSetup> {
+        self.setups.iter().find(|setup| setup.id == id)
+    }
+}
+
+impl HarnessSetup {
+    pub(super) fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub(super) fn driver_name(&self) -> &str {
+        &self.driver
+    }
+}
+
+impl OrcaInstall {
+    pub(super) fn is_running(&self) -> bool {
+        self.running
+    }
+
+    /// Whether it could start this agent here.
+    pub(super) fn can_start(&self, agent: &str) -> bool {
+        self.agents.iter().any(|found| found == agent)
+    }
+}
+
 /// A harness's own setup of an agent: T3 Code's provider instances.
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -374,6 +405,10 @@ impl MachineAgents {
 
     pub(super) fn t3(&self) -> Option<&T3Install> {
         self.t3.as_ref()
+    }
+
+    pub(super) fn orca(&self) -> Option<&OrcaInstall> {
+        self.orca.as_ref()
     }
 
     /// Where the machine's PATH finds the agent, as its last check read it.

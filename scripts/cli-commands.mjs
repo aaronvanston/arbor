@@ -71,6 +71,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'save_machine_hosts',
   'remove_agent_home',
   'remove_pool',
+  'start_pool_run',
   'update_machine_agent',
   'set_agent_reporter',
   'set_agent_telemetry',

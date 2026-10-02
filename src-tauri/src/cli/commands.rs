@@ -688,6 +688,36 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "start_pool_run",
+        access: Access::Confirm,
+        summary: "Starts a run on a pool: the machine it picks gets it, handed to the harness named, or queued, spilled or refused as the pool says when nobody can take it.",
+        args: &[
+            ArgSpec { name: "request", ts_type: "RunRequest", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "get_runs",
+        access: Access::Read,
+        summary: "Get runs",
+        args: &[],
+    },
+    CommandSpec {
+        name: "cancel_run",
+        access: Access::Write,
+        summary: "Takes a waiting run out of the queue.",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "open_run",
+        access: Access::Write,
+        summary: "Brings a run up where it runs, as far as its harness allows: Orca switches to the run's terminal on its machine. T3 Code has no way to open one thread from outside, so its runs say where to look.",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "update_machine_agent",
         access: Access::Confirm,
         summary: "Updates the agent on the machine the way it was installed, then checks its agents again so the page shows the version it ended up on. How it was installed is read again first, so the update never goes by an older check; `command`, when given, is what its user was shown, and nothing runs if that has changed.",
@@ -1943,6 +1973,10 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "save_pool" => async { done(Box::pin(crate::usage::machine_health::pools::save_pool(app.clone(), arg(&args, "pool")?)).await) }.await,
         "remove_pool" => async { done(Box::pin(crate::usage::machine_health::pools::remove_pool(app.clone(), arg(&args, "id")?)).await) }.await,
         "preview_pools" => done(Box::pin(crate::usage::machine_health::pools::preview_pools(app.state())).await),
+        "start_pool_run" => async { done(Box::pin(crate::usage::machine_health::runs::start_pool_run(app.clone(), arg(&args, "request")?)).await) }.await,
+        "get_runs" => done(Box::pin(crate::usage::machine_health::runs::get_runs()).await),
+        "cancel_run" => async { done(Box::pin(crate::usage::machine_health::runs::cancel_run(app.clone(), arg(&args, "id")?)).await) }.await,
+        "open_run" => async { done(Box::pin(crate::usage::machine_health::runs::open_run(app.clone(), arg(&args, "id")?)).await) }.await,
         "update_machine_agent" => async { done(Box::pin(crate::usage::machine_health::agents::update_machine_agent(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "command")?)).await) }.await,
         "get_agent_latest_versions" => done(Box::pin(crate::usage::machine_health::agent_releases::get_agent_latest_versions(app.state())).await),
         "get_t3_compatibility" => done(Box::pin(crate::usage::machine_health::agent_releases::get_t3_compatibility(app.state())).await),

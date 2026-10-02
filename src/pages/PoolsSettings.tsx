@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Pencil, Plus, Trash2 } from '../components/ui/icons';
+import { AlertCircle, Pencil, Play, Plus, Trash2 } from '../components/ui/icons';
 import { useI18n } from '../i18n';
 import { formatPercent } from '../lib/format';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { MachinePill } from '../components/identity/Identity';
+import { PoolRunsBlock, StartRunDialog } from '../components/PoolRuns';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
@@ -34,8 +35,9 @@ import {
   usePools,
   verdictMessage,
 } from '../services/pools';
+import { poolRuns, useRuns } from '../services/runs';
 import { cn } from '../lib/utils';
-import type { MachinePool, PoolPreview, PoolWeight, PoolWhenFull } from '../native/types';
+import type { HarnessRun, MachinePool, PoolPreview, PoolWeight, PoolWhenFull } from '../native/types';
 
 /**
  * Settings › Pools: named sets of machines that harness runs are balanced across. Each pool shows who would take its
@@ -46,6 +48,9 @@ export function PoolsSettingsPage() {
   const { pools, previews, error } = usePools();
   // The pool being edited ('' id for a new one), while the dialog is open.
   const [editing, setEditing] = useState<MachinePool | null>(null);
+  // The pool a run is being started on, while that dialog is open.
+  const [running, setRunning] = useState<MachinePool | null>(null);
+  const { runs } = useRuns();
   return (
     <Page>
       <PageTopbar>
@@ -66,17 +71,33 @@ export function PoolsSettingsPage() {
           <p className="px-4 text-sm text-muted-foreground" data-slot="pools-empty">{t('pools.empty')}</p>
         ) : (
           pools.map((pool) => (
-            <PoolSection key={pool.id} pool={pool} pools={pools} preview={previews.find((entry) => entry.pool === pool.id)} onEdit={() => setEditing(pool)} />
+            <PoolSection
+              key={pool.id}
+              pool={pool}
+              pools={pools}
+              preview={previews.find((entry) => entry.pool === pool.id)}
+              runs={runs ? poolRuns(runs, pool.id) : null}
+              onEdit={() => setEditing(pool)}
+              onRun={() => setRunning(pool)}
+            />
           ))
         )}
         <PoolDialog pool={editing} pools={pools ?? []} onClose={() => setEditing(null)} />
+        <StartRunDialog pool={running} onClose={() => setRunning(null)} />
       </PageBody>
     </Page>
   );
 }
 
 /** One pool: its limits, each member with its weight and how it stands now, and where the next run would go. */
-function PoolSection({ pool, pools, preview, onEdit }: { pool: MachinePool; pools: MachinePool[]; preview: PoolPreview | undefined; onEdit: () => void }) {
+function PoolSection({ pool, pools, preview, runs, onEdit, onRun }: {
+  pool: MachinePool;
+  pools: MachinePool[];
+  preview: PoolPreview | undefined;
+  runs: HarnessRun[] | null;
+  onEdit: () => void;
+  onRun: () => void;
+}) {
   const { t, tRich } = useI18n();
   const [removing, setRemoving] = useState(false);
   const shaped = poolSummary(pool);
@@ -121,6 +142,7 @@ function PoolSection({ pool, pools, preview, onEdit }: { pool: MachinePool; pool
       }
       headerAction={
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onRun} disabledReason={pool.members.length === 0 ? t('runs.needsMembers') : undefined}><Play />{t('runs.start')}</Button>
           <Button variant="outline" size="sm" onClick={onEdit}><Pencil />{t('pools.edit')}</Button>
           <Button variant="ghost" size="icon-sm" onClick={() => void remove()} disabled={removing} aria-label={t('pools.remove', { name: pool.name })} title={t('pools.remove', { name: pool.name })}>
             <Trash2 />
@@ -168,6 +190,12 @@ function PoolSection({ pool, pools, preview, onEdit }: { pool: MachinePool; pool
             ? <span className="text-muted-foreground">{t('pools.next.nobody', { action: whenFull })}</span>
             : <span className="text-muted-foreground">{t('pools.verdict.checking')}</span>}
       </SettingsBlock>
+      {runs ? (
+        <>
+          <SettingsBlock className="border-t border-border/50 pt-3 pb-1 text-xs font-medium text-muted-foreground">{t('runs.recent')}</SettingsBlock>
+          <PoolRunsBlock runs={runs} />
+        </>
+      ) : null}
     </SettingsSection>
   );
 }

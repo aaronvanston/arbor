@@ -83,6 +83,9 @@
  * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every
  * pool too busy to take a run (the preview says why each is left out), and `?pools=stale` for every reading too old to
  * go by; by default there are two pools, one spilling into the other;
+ * `?runs=none` for no harness runs yet, `?runs=queued` for runs waiting in a pool's queue (one for room, one for a
+ * harness), `?runs=failed` for runs refused, failed and timed out for each reason, and `?runs=open-fail` for Orca not
+ * finding a run's terminal;
  * `?fix=fail` for Terminal not opening when a Fix menu starts an agent session;
  * `?phone=fail` to have phone alerts refused, `?phone=unreadable` for a damaged phone alert secrets file;
  * `?proxy=usage-off`, `no-keys`, `default-key`, `refused`, `network` or `not-loaded` (several joined by commas) for the
