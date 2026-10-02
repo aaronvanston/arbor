@@ -337,7 +337,9 @@ fn render_config(blocks: &[HostBlock], arbor: Option<&str>) -> String {
     };
     for block in blocks {
         text.push_str(&format!("\nHost {0} {0}-*\n", block.host));
-        text.push_str(&format!("  ProxyCommand \"{arbor}\" pools connect {} %n\n", block.pool_id));
+        // %h is the name as typed, since the block sets no HostName; apps that run a ProxyCommand themselves (Orca)
+        // fill in %h, %p and %r but not %n.
+        text.push_str(&format!("  ProxyCommand \"{arbor}\" pools connect {} %h\n", block.pool_id));
         text.push_str(&format!("  HostKeyAlias {HOST_KEY_ALIAS}\n"));
         text.push_str(&format!("  UserKnownHostsFile ~/{SSH_DIR}/{KNOWN_HOSTS_FILE}\n"));
         text.push_str("  StrictHostKeyChecking yes\n  UpdateHostKeys no\n");
@@ -533,8 +535,10 @@ pub(crate) async fn open_connection(app: &tauri::AppHandle, pool: &str, name: &s
     let pool = find_pool(&pools_saved, pool).ok_or_else(|| format!("Arbor has no pool called {pool}."))?;
     let user = pool_user(pool, &resolved);
     let ready = |machine: &str| readiness(resolved.get(&normalize_machine_name(machine)), user.as_deref()) == Readiness::Ready;
+    // A token the app running ssh left unexpanded is taken as no name: the pool's own host.
     let name = match name.trim() {
         "" => host_names(&pools_saved).get(&pool.id).cloned().unwrap_or_default(),
+        typed if typed.starts_with('%') => host_names(&pools_saved).get(&pool.id).cloned().unwrap_or_default(),
         typed => typed.to_ascii_lowercase(),
     };
     let key = (pool.id.clone(), name);
@@ -805,7 +809,7 @@ mod tests {
         let resolved = BTreeMap::from([("a".to_string(), member("casey", &["ssh-ed25519 AAAA"])), ("b".to_string(), member("casey", &["ssh-rsa BBBB"]))]);
         let pools = [pool("p1", "Builds", &["a"]), pool("p2", "Builds 2", &["a", "b"]), pool("p3", "Empty", &[])];
         let config = render_config(&host_blocks(&pools, &resolved), Some("/Users/casey/.local/bin/arbor"));
-        assert!(config.contains("\nHost arbor-builds arbor-builds-*\n  ProxyCommand \"/Users/casey/.local/bin/arbor\" pools connect p1 %n\n"), "{config}");
+        assert!(config.contains("\nHost arbor-builds arbor-builds-*\n  ProxyCommand \"/Users/casey/.local/bin/arbor\" pools connect p1 %h\n"), "{config}");
         assert!(config.find("Host arbor-builds-2").unwrap() < config.find("Host arbor-builds ").unwrap(), "the longer name matches first");
         assert!(config.contains("  HostKeyAlias arbor-pools\n  UserKnownHostsFile ~/.arbor/ssh/pools_known_hosts\n  StrictHostKeyChecking yes\n"));
         assert!(config.contains("  User casey\n"));
