@@ -45,6 +45,8 @@ pub(super) struct MachineFind {
     pub(super) error: Option<String>,
     pub(super) orca: bool,
     pub(super) found: Vec<Found>,
+    /// The background runner there, once a look got that far.
+    pub(super) udian: Option<UdianOnMachine>,
 }
 
 // Lines out: `H home`, `C path base64` for each Codex automation, `S path base64` for each Claude task (its first
@@ -84,7 +86,8 @@ fn scan_script(machine: &str) -> String {
          \x20   claude) for f in \"$home\"/scheduled-tasks/*/SKILL.md; do [ -f \"$f\" ] || continue; printf 'S\\t%s\\t%s\\n' \"$f\" \"$(head -c 65536 \"$f\" | base64 | tr -d '\\n')\"; done ;;\n\
          \x20 esac\n\
          done <<ARBOR_HOMES\n$homes\nARBOR_HOMES\n\
-         {ORCA_SCRIPT}",
+         {ORCA_SCRIPT}{probe}",
+        probe = udian::PROBE_SCRIPT,
         homes = agent_homes::shell_function(machine, HomeUse::Sync),
     )
 }
@@ -94,9 +97,9 @@ pub(super) async fn scan(machine: &Machine) -> MachineFind {
     match run_checked(machine, MachineOp::AutomationScan, &scan_script(machine.name()), SCAN_TIMEOUT).await {
         Ok(stdout) => {
             let (found, orca) = parse_scan(machine.name(), &stdout);
-            MachineFind { scanned_at_ms: Some(scanned_at_ms), scanning: false, error: None, orca, found }
+            MachineFind { scanned_at_ms: Some(scanned_at_ms), scanning: false, error: None, orca, found, udian: udian::parse_probe(&stdout) }
         }
-        Err(error) => MachineFind { scanned_at_ms: Some(scanned_at_ms), scanning: false, error: Some(error), orca: false, found: Vec::new() },
+        Err(error) => MachineFind { scanned_at_ms: Some(scanned_at_ms), scanning: false, error: Some(error), orca: false, found: Vec::new(), udian: None },
     }
 }
 
@@ -144,6 +147,7 @@ fn summary(id: String, source: AutomationSource, name: String, enabled: bool, ma
         last_run: None,
         has_precheck: false,
         abilities,
+        runs_on: AutomationRunsOn::App,
     }
 }
 

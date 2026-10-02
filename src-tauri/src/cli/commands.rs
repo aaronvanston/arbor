@@ -820,6 +820,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "install_background_runner",
+        access: Access::Confirm,
+        summary: "Puts the background runner Arbor carries on a machine, or updates an older one there, then looks at the machine again so the page shows it ready.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "copy_automation_into_arbor",
         access: Access::Write,
         summary: "Copy automation into arbor",
@@ -1990,6 +1998,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "set_automation_enabled" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_enabled(app.clone(), arg(&args, "id")?, arg(&args, "enabled")?)).await) }.await,
         "run_automation_now" => async { done(Box::pin(crate::usage::machine_health::automations::commands::run_automation_now(app.clone(), arg(&args, "id")?)).await) }.await,
         "cancel_automation_run" => async { done(Box::pin(crate::usage::machine_health::automations::commands::cancel_automation_run(app.clone(), arg(&args, "runId")?)).await) }.await,
+        "install_background_runner" => async { done(Box::pin(crate::usage::machine_health::automations::commands::install_background_runner(app.clone(), arg(&args, "machine")?)).await) }.await,
         "copy_automation_into_arbor" => async { done(Box::pin(crate::usage::machine_health::automations::commands::copy_automation_into_arbor(app.clone(), arg(&args, "id")?, arg(&args, "pauseOriginal")?)).await) }.await,
         "draft_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::draft_automation(arg(&args, "input")?, app.state())).await) }.await,
         "set_automations_running" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automations_running(app.clone(), arg(&args, "running")?)).await) }.await,

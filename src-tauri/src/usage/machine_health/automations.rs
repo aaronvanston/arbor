@@ -11,6 +11,7 @@ mod draft;
 mod runner;
 mod schedule;
 mod store;
+mod udian;
 
 pub(crate) use runner::poll_loop;
 
@@ -85,6 +86,29 @@ pub(crate) enum AutomationAccess {
     Full,
 }
 
+/// What runs an Arbor automation when it's due: Arbor itself, while it's open on this Mac, or the background runner on
+/// the machine (ultradian, which Arbor installs there), whether Arbor is open or not.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum AutomationRunsOn {
+    /// Saved before there was a choice, or aimed at a pool, whose member is picked when it's due.
+    #[default]
+    App,
+    Machine,
+}
+
+/// The background runner on one machine, as its last look found it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UdianOnMachine {
+    /// The build it needs, like `darwin-arm64`; null when Arbor carries none for the machine's system.
+    pub(crate) target: Option<String>,
+    /// The version installed, or null when it isn't.
+    pub(crate) version: Option<String>,
+    /// Its daemon answered.
+    pub(crate) live: bool,
+}
+
 /// A schedule as words are made from it. `Custom` is a rule none of these describe; `Elsewhere` is a schedule the
 /// owning app keeps where Arbor can't read it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -156,6 +180,7 @@ pub(crate) struct AutomationSummary {
     pub(crate) last_run: Option<AutomationLastRun>,
     pub(crate) has_precheck: bool,
     pub(crate) abilities: AutomationAbilities,
+    pub(crate) runs_on: AutomationRunsOn,
 }
 
 /// One automation with all it's set to do.
@@ -219,6 +244,10 @@ pub(crate) struct AutomationScan {
     pub(crate) error: Option<String>,
     /// Orca's command line was found there.
     pub(crate) orca: bool,
+    /// The background runner there; null until a look got that far.
+    pub(crate) udian: Option<UdianOnMachine>,
+    /// Arbor's own automations on this machine that the background runner hasn't taken yet, and why, when it failed.
+    pub(crate) placing_error: Option<String>,
 }
 
 /// Every automation Arbor knows of.
@@ -232,6 +261,8 @@ pub(crate) struct AutomationList {
     /// The model that drafts an automation from a description, and its effort.
     pub(crate) draft_model: String,
     pub(crate) draft_effort: String,
+    /// The background runner's version Arbor carries and installs; null for a build without it.
+    pub(crate) udian_bundled: Option<String>,
 }
 
 /// An Arbor automation as the dialog saves it; no id is a new one.
@@ -254,6 +285,9 @@ pub(crate) struct AutomationInput {
     /// Saved before there was a choice means the default.
     #[serde(default)]
     pub(crate) access: AutomationAccess,
+    /// Saved before there was a choice runs from the app, as it did.
+    #[serde(default)]
+    pub(crate) runs_on: AutomationRunsOn,
     pub(crate) rrule: String,
     #[ts(optional)]
     pub(crate) timezone: Option<String>,

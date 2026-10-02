@@ -36,6 +36,7 @@ fn arbor_summary(record: &Record, last_run: Option<AutomationLastRun>) -> Automa
         last_run,
         has_precheck: input.precheck.as_deref().is_some_and(|precheck| !precheck.trim().is_empty()),
         abilities: ARBOR_ABILITIES,
+        runs_on: input.runs_on,
     }
 }
 
@@ -104,6 +105,7 @@ pub(super) fn list_from(
     for item in discover::all_found(found) {
         automations.push(with_project(connection, item)?.automation.summary);
     }
+    let placing = udian::placing_errors();
     let mut scans: Vec<AutomationScan> = found
         .iter()
         .map(|(machine, find)| AutomationScan {
@@ -112,10 +114,20 @@ pub(super) fn list_from(
             scanning: find.scanning,
             error: find.error.clone(),
             orca: find.orca,
+            udian: find.udian.clone(),
+            placing_error: placing.get(machine).cloned(),
         })
         .collect();
     for machine in machines.iter().filter(|machine| !found.contains_key(*machine)) {
-        scans.push(AutomationScan { machine: machine.clone(), scanned_at_ms: None, scanning: false, error: None, orca: false });
+        scans.push(AutomationScan {
+            machine: machine.clone(),
+            scanned_at_ms: None,
+            scanning: false,
+            error: None,
+            orca: false,
+            udian: None,
+            placing_error: placing.get(machine).cloned(),
+        });
     }
     scans.sort_by(|a, b| a.machine.cmp(&b.machine));
     Ok(AutomationList {
@@ -124,6 +136,7 @@ pub(super) fn list_from(
         running: runner::running_on(connection)?,
         draft_model: store::setting(connection, "draft_model")?.unwrap_or_else(|| draft::DEFAULT_MODEL.into()),
         draft_effort: store::setting(connection, "draft_effort")?.unwrap_or_else(|| draft::DEFAULT_EFFORT.into()),
+        udian_bundled: udian::bundle().map(|bundle| bundle.version),
     })
 }
 
@@ -170,6 +183,11 @@ pub(super) fn check_input(input: &AutomationInput) -> Result<(), String> {
     }
     if !(1..=3600).contains(&input.precheck_timeout_secs) {
         return Err("The precheck's time limit is 1 second to an hour".into());
+    }
+    if input.runs_on == AutomationRunsOn::Machine {
+        if let Some(why) = udian::unplaceable(input) {
+            return Err(why.into());
+        }
     }
     Ok(())
 }
@@ -323,6 +341,9 @@ pub(crate) async fn set_automation_enabled(app: tauri::AppHandle, id: String, en
 pub(crate) async fn run_automation_now(app: tauri::AppHandle, id: String) -> Result<AutomationRun, String> {
     if id.starts_with(ARBOR_PREFIX) {
         let record = arbor_record(&id).await?;
+        if let Some(name) = udian::wanted_machine(&record).map(str::to_string) {
+            return run_in_background_now(&app, &record, &name).await;
+        }
         return runner::start_run(&app, &record, Local::now().timestamp_millis(), true).await;
     }
     let item = found_or_error(&id)?;
@@ -333,9 +354,71 @@ pub(crate) async fn run_automation_now(app: tauri::AppHandle, id: String) -> Res
     Ok(run)
 }
 
+/// Has the machine's background runner start the automation now; the run is read back as it goes.
+async fn run_in_background_now(app: &tauri::AppHandle, record: &Record, machine_name: &str) -> Result<AutomationRun, String> {
+    // A schedule just saved may not be on the machine yet.
+    udian::reconcile(app).await?;
+    let machine = shell::find_machine(&app.state::<MachineHealthState>().lock(), machine_name)?;
+    let stdout = udian::call(&machine, &udian::run_now_script(&record.id)).await?;
+    let answer: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|_| "The machine's background runner didn't say which run it started".to_string())?;
+    let data = answer.get("data").unwrap_or(&answer);
+    let run_id = data
+        .get("run_id")
+        .or_else(|| data.get("run").and_then(|run| run.get("run_id")))
+        .and_then(serde_json::Value::as_str)
+        .ok_or("The machine's background runner didn't say which run it started")?
+        .to_string();
+    let now_ms = Local::now().timestamp_millis();
+    let mut run = runner::new_run(&record.id, Some(machine_name.to_string()), now_ms, true);
+    run.id = run_id;
+    run.started_at_ms = Some(now_ms);
+    let stored = store::StoredRun { run: run.clone(), worktree: None };
+    run_usage_task(move || {
+        let connection = open_usage_database()?;
+        let _guard = lock_usage_writes();
+        store::write_run(&connection, &stored)
+    })
+    .await?;
+    runner::SYNC_NOW.store(true, std::sync::atomic::Ordering::Relaxed);
+    runner::WAKE.notify_one();
+    runner::emit(app);
+    Ok(run)
+}
+
+/// Stops a run on a machine's background runner, which ends its whole process group there.
+async fn cancel_in_background(app: &tauri::AppHandle, stored: store::StoredRun) -> Result<(), String> {
+    let name = stored.run.machine.clone().ok_or("Arbor doesn't know which machine that run is on")?;
+    let machine = shell::find_machine(&app.state::<MachineHealthState>().lock(), &name)?;
+    udian::call(&machine, &udian::cancel_script(&stored.run.id)).await?;
+    let mut run = stored.run;
+    run.status = AutomationRunStatus::Canceled;
+    run.finished_at_ms = Some(Local::now().timestamp_millis());
+    run_usage_task(move || {
+        let connection = open_usage_database()?;
+        let _guard = lock_usage_writes();
+        store::write_run(&connection, &store::StoredRun { run, worktree: None })
+    })
+    .await?;
+    runner::SYNC_NOW.store(true, std::sync::atomic::Ordering::Relaxed);
+    runner::emit(app);
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) async fn cancel_automation_run(app: tauri::AppHandle, run_id: String) -> Result<AutomationRun, String> {
-    runner::cancel(&app, &run_id).await?;
+    let id = run_id.clone();
+    let (stored, record) = run_usage_task(move || {
+        let connection = open_usage_database()?;
+        let stored = store::run(&connection, &id)?.ok_or("Arbor has no run with that id")?;
+        let record = store::record(&connection, &stored.run.automation_id)?;
+        Ok((stored, record))
+    })
+    .await?;
+    if stored.run.status == AutomationRunStatus::Running && record.as_ref().and_then(udian::wanted_machine).is_some() {
+        cancel_in_background(&app, stored).await?;
+    } else {
+        runner::cancel(&app, &run_id).await?;
+    }
     let id = run_id.clone();
     run_usage_task(move || store::run(&open_usage_database()?, &id)).await?.map(|stored| stored.run).ok_or_else(|| "Arbor has no run with that id".to_string())
 }
@@ -365,8 +448,27 @@ pub(super) fn copied_input(automation: &Automation) -> AutomationInput {
         grace_minutes: automation.grace_minutes,
         precheck: automation.precheck.clone(),
         precheck_timeout_secs: automation.precheck_timeout_secs.clamp(1, 3600),
+        runs_on: AutomationRunsOn::App,
         enabled: false,
     }
+}
+
+/// Puts the background runner Arbor carries on a machine, or updates an older one there, then looks at the machine
+/// again so the page shows it ready.
+#[tauri::command]
+pub(crate) async fn install_background_runner(app: tauri::AppHandle, machine: String) -> Result<AutomationList, String> {
+    let bundle = udian::bundle().ok_or("This build of Arbor doesn't carry the background runner")?;
+    let target = discover::found()
+        .get(&machine)
+        .and_then(|find| find.udian.as_ref())
+        .map(|udian| udian.target.clone().ok_or("Arbor has no background runner for this machine's system"))
+        .ok_or("Look for automations on this machine first, so Arbor knows its system")??;
+    let archive = udian::archive(&bundle, &target)?;
+    let found = shell::find_machine(&app.state::<MachineHealthState>().lock(), &machine)?;
+    udian::install(&found, &archive).await?;
+    discover::scan_machine(&app, found).await;
+    runner::WAKE.notify_one();
+    current_list(&app).await
 }
 
 #[tauri::command]
@@ -465,6 +567,7 @@ mod tests {
             workspace: AutomationWorkspace::Checkout,
             session: AutomationSession::Fresh,
             access: AutomationAccess::Edits,
+            runs_on: AutomationRunsOn::App,
             rrule: "FREQ=HOURLY;BYMINUTE=0".into(),
             timezone: None,
             grace_minutes: 20,

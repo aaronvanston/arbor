@@ -1870,6 +1870,7 @@ fn main() {
             usage::machine_health::automations::commands::set_automation_enabled,
             usage::machine_health::automations::commands::run_automation_now,
             usage::machine_health::automations::commands::cancel_automation_run,
+            usage::machine_health::automations::commands::install_background_runner,
             usage::machine_health::automations::commands::copy_automation_into_arbor,
             usage::machine_health::automations::commands::draft_automation,
             usage::machine_health::automations::commands::set_automations_running,

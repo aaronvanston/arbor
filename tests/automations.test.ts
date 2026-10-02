@@ -6,13 +6,17 @@ import {
   choiceSummary,
   failedRunAlerts,
   automationAgents,
+  backgroundRunnerCheck,
+  canInstallRunner,
   filterAutomations,
+  olderVersion,
+  runnerState,
   scheduleChoice,
   scheduleRule,
   scheduleWords,
   switchSchedule,
 } from '../src/services/automations';
-import type { AutomationList, AutomationSummary } from '../src/native/types';
+import type { AutomationList, AutomationScan, AutomationSummary } from '../src/native/types';
 import { itemAt } from './support/items';
 
 const t = (key: Parameters<typeof translate>[0], variables?: Record<string, string | number>) => translate(key, variables);
@@ -31,10 +35,11 @@ const summary = (overrides: Partial<AutomationSummary>): AutomationSummary => ({
   lastRun: null,
   hasPrecheck: true,
   abilities: { edit: true, pause: true, runNow: true, delete: true, copy: false },
+  runsOn: 'app',
   ...overrides,
 });
 
-const list = (automations: AutomationSummary[]): AutomationList => ({ automations, scans: [], running: true, draftModel: 'gpt-6-luna', draftEffort: 'low' });
+const list = (automations: AutomationSummary[]): AutomationList => ({ automations, scans: [], running: true, draftModel: 'gpt-6-luna', draftEffort: 'low', udianBundled: '1.0.0' });
 
 describe('schedules', () => {
   it('reads the rules the Codex app and Orca write into the dialog’s choices', () => {
@@ -122,5 +127,37 @@ describe('alerts', () => {
     expect(done.alerts).toEqual([]);
     const orca = failedRunAlerts(seen, list([summary({ id: 'orca:1', source: 'orca', lastRun: { status: 'failed', atMs: 5 } })]), t);
     expect(orca.alerts).toEqual([]);
+  });
+});
+
+describe('the background runner', () => {
+  const scan = (machine: string, udian: AutomationScan['udian']): AutomationScan => ({ machine, scannedAtMs: 1, scanning: false, error: null, orca: false, udian, placingError: null });
+
+  it('compares versions by their numbers', () => {
+    expect(olderVersion('0.9.2', '1.0.0')).toBe(true);
+    expect(olderVersion('1.0.10', '1.0.9')).toBe(false);
+    expect(olderVersion('1.0.0', '1.0.0')).toBe(false);
+  });
+
+  it('says where each machine stands, and offers to set it up only where Arbor can', () => {
+    expect(runnerState(undefined, '1.0.0')).toBe('unknown');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: null, live: false }), '1.0.0')).toBe('missing');
+    expect(runnerState(scan('a', { target: null, version: null, live: false }), '1.0.0')).toBe('unsupported');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: null, live: false }), null)).toBe('unsupported');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: '0.9.2', live: true }), '1.0.0')).toBe('outdated');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: false }), '1.0.0')).toBe('stopped');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: true }), '1.0.0')).toBe('ready');
+    expect(canInstallRunner('ready')).toBe(false);
+    expect(canInstallRunner('unsupported')).toBe(false);
+    expect(canInstallRunner('outdated')).toBe(true);
+  });
+
+  it('lets an automation run on its machine only with one machine, a usual schedule and a runner there', () => {
+    const runners = { ...list([]), scans: [scan('ready-box', { target: 'linux-x64', version: '1.0.0', live: true }), scan('bare-box', { target: 'linux-x64', version: null, live: false })] };
+    expect(backgroundRunnerCheck(runners, 'ready-box', 'daily')).toBeNull();
+    expect(backgroundRunnerCheck(runners, null, 'daily')).toBe('automations.runsOn.why.pool');
+    expect(backgroundRunnerCheck(runners, 'ready-box', 'custom')).toBe('automations.runsOn.why.custom');
+    expect(backgroundRunnerCheck(runners, 'bare-box', 'daily')).toBe('automations.runsOn.why.notSetUp');
+    expect(backgroundRunnerCheck(null, 'ready-box', 'daily')).toBe('automations.runsOn.why.notSetUp');
   });
 });

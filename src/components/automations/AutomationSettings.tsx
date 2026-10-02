@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { invokeCommand } from '../../native/commands';
-import { showAutomations, useAutomations } from '../../services/automations';
+import {
+  RUNNER_STATE_LABEL,
+  RUNNER_STATE_TONE,
+  canInstallRunner,
+  runnerState,
+  showAutomations,
+  useAutomations,
+} from '../../services/automations';
+import { MachinePill } from '../identity/Identity';
 import { SettingsRow, SettingsSection } from '../layout/settings';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../ui/select';
+import { Spinner } from '../ui/spinner';
+import { StatusDot } from '../ui/status-dot';
 import { Switch } from '../ui/switch';
 import { toast } from '../ui/toast';
 
@@ -18,6 +28,8 @@ export function AutomationSettings() {
   const [model, setModel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [installing, setInstalling] = useState<string | null>(null);
+  const [installError, setInstallError] = useState<{ machine: string; error: string } | null>(null);
   const savedModel = list?.draftModel;
   // Follows what's saved, as Settings or the command line changes it.
   useEffect(() => { if (savedModel !== undefined) setModel(savedModel); }, [savedModel]);
@@ -39,8 +51,55 @@ export function AutomationSettings() {
     toast({ title: t('automations.settings.modelSaved') });
   });
 
+  const install = async (machine: string, update: boolean) => {
+    setInstalling(machine);
+    setInstallError(null);
+    try {
+      showAutomations(await invokeCommand('install_background_runner', { machine }));
+      toast({ title: t(update ? 'automations.runner.updated' : 'automations.runner.installed', { machine }) });
+    } catch (reason) {
+      setInstallError({ machine, error: String(reason) });
+    } finally {
+      setInstalling(null);
+    }
+  };
+  const bundled = list.udianBundled;
+
   return (
     <SettingsSection title={t('automations.settings.title')} description={t('automations.settings.description')}>
+      <SettingsRow
+        settingId="machines.automations-runner"
+        align="start"
+        title={t('automations.runner.title')}
+        description={bundled ? t('automations.runner.description', { version: bundled }) : t('automations.runner.noBundle')}
+      >
+        <ul className="divide-y divide-border/60 rounded-lg border border-border/70">
+          {list.scans.map((scan) => {
+            const state = runnerState(scan, bundled);
+            const busy = installing === scan.machine;
+            const failed = installError?.machine === scan.machine ? installError.error : scan.placingError;
+            return (
+              <li key={scan.machine} className="flex flex-col gap-1 px-3 py-2">
+                <div className="flex items-center gap-3">
+                  <MachinePill name={scan.machine} />
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
+                    <StatusDot tone={RUNNER_STATE_TONE[state]} />
+                    {t(RUNNER_STATE_LABEL[state])}
+                    {scan.udian?.version ? <span className="tabular-nums">· {scan.udian.version}</span> : null}
+                  </span>
+                  {bundled && canInstallRunner(state) ? (
+                    <Button size="xs" variant="outline" disabled={installing !== null} onClick={() => void install(scan.machine, state !== 'missing')}>
+                      {busy ? <Spinner /> : null}
+                      {t(state === 'missing' ? 'automations.runner.install' : state === 'stopped' ? 'automations.runner.restart' : 'automations.runner.update')}
+                    </Button>
+                  ) : null}
+                </div>
+                {failed ? <p className="text-xs text-error-foreground" role="alert">{failed}</p> : null}
+              </li>
+            );
+          })}
+        </ul>
+      </SettingsRow>
       <SettingsRow
         settingId="machines.automations-running"
         title={t('automations.settings.running')}

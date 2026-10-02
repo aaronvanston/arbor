@@ -60,6 +60,13 @@ const BUNDLED = [
     use: 'the proxy core, shipped unmodified inside the app',
   },
   {
+    name: 'ultradian',
+    url: 'https://github.com/aaronvanston/ultradian',
+    license: 'MIT',
+    copyright: ['Copyright (c) 2026 Aaron Vanston'],
+    use: 'the background runner Arbor puts on machines, shipped unmodified inside the app',
+  },
+  {
     name: 'EasyCLIProxyAPI',
     url: 'https://github.com/router-for-me/EasyCLIProxyAPI',
     license: 'MIT',

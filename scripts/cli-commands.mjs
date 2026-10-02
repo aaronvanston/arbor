@@ -83,6 +83,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'discard_setup_repo_changes',
   'push_setup_repo',
   'run_automation_now',
+  'install_background_runner',
   'delete_automation',
   'cancel_automation_run',
   'apply_skill_changes',

@@ -7,6 +7,7 @@ import type {
   AutomationRun,
   AutomationRunStatus,
   AutomationSummary,
+  UdianOnMachine,
 } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { freshInstall, later, mockLog, now, params } from './scenario';
@@ -15,10 +16,19 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
  * `?automations=empty`: none anywhere, so the page offers New automation. `?automations=failing`: the newest runs of
  * two failed and a machine couldn't be scanned. `?orca=none`: Orca isn't on any machine, so none of its show.
  * `?draft=fail`: the drafting model can't be reached (the core has no key); `?draft=slow` takes four seconds.
+ * The background runner: casey-mbp and cedar-02 have it and ci-01 doesn't. `?runner=old`: cedar-02's is older than
+ * the one Arbor carries. `?runner=failing`: writing cedar-02's schedules failed. `?runner=none`: this build carries none.
  */
 const scenario = params.get('automations');
 const failing = scenario === 'failing';
 const withOrca = params.get('orca') !== 'none';
+const runner = params.get('runner');
+const BUNDLED_RUNNER = runner === 'none' ? null : '1.0.0';
+const runnerOn = new Map<string, UdianOnMachine>([
+  ['casey-mbp', { target: 'darwin-arm64', version: '1.0.0', live: true }],
+  ['cedar-02', { target: 'linux-x64', version: runner === 'old' ? '0.9.2' : '1.0.0', live: true }],
+  ['ci-01', { target: 'linux-arm64', version: null, live: false }],
+]);
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -33,8 +43,8 @@ type Seed = Omit<Automation, 'summary'> & { summary: AutomationSummary };
 
 const machine = (name: string) => ({ kind: 'machine' as const, name });
 
-const seed = (summary: Omit<AutomationSummary, 'target'> & { target?: AutomationSummary['target'] }, detail: Partial<Omit<Automation, 'summary'>> & { prompt: string }): Seed => ({
-  summary: { target: summary.machine ? machine(summary.machine) : { kind: 'best' }, ...summary },
+const seed = (summary: Omit<AutomationSummary, 'target' | 'runsOn'> & { target?: AutomationSummary['target']; runsOn?: AutomationSummary['runsOn'] }, detail: Partial<Omit<Automation, 'summary'>> & { prompt: string }): Seed => ({
+  summary: { target: summary.machine ? machine(summary.machine) : { kind: 'best' }, runsOn: 'app', ...summary },
   rrule: null,
   timezone: null,
   projectPath: null,
@@ -54,7 +64,7 @@ const seed = (summary: Omit<AutomationSummary, 'target'> & { target?: Automation
 
 const SEEDS: Seed[] = [
   seed({
-    id: 'arbor:sentry-watch', source: 'arbor', name: 'Sentry watch', enabled: true, machine: 'cedar-02', project: 'billing', agent: 'claude',
+    id: 'arbor:sentry-watch', source: 'arbor', name: 'Sentry watch', enabled: true, machine: 'cedar-02', project: 'billing', agent: 'claude', runsOn: 'machine',
     schedule: { kind: 'everyHours', hours: 1, minute: 15 }, nextRunAtMs: now + 23 * MINUTE,
     lastRun: { status: failing ? 'failed' : 'done', atMs: now - 37 * MINUTE }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {
@@ -63,7 +73,7 @@ const SEEDS: Seed[] = [
     precheck: './scripts/sentry-unresolved.sh --since 1h', precheckTimeoutSecs: 60, graceMinutes: 30, model: 'claude-sonnet-5-5',
   }),
   seed({
-    id: 'arbor:daily-changelog', source: 'arbor', name: 'Daily changelog', enabled: true, machine: 'casey-mbp', project: 'arbor', agent: 'codex',
+    id: 'arbor:daily-changelog', source: 'arbor', name: 'Daily changelog', enabled: true, machine: 'casey-mbp', project: 'arbor', agent: 'codex', runsOn: 'machine',
     schedule: { kind: 'daily', hour: 17, minute: 0 }, nextRunAtMs: now + 7 * HOUR,
     lastRun: { status: 'done', atMs: now - 17 * HOUR }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {
@@ -177,13 +187,20 @@ const runs = new Map<string, AutomationRun[]>(automations.map((item) => [item.su
 const list = (): AutomationList => ({
   automations: automations.map((item) => item.summary),
   scans: [
-    { machine: 'casey-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, orca: false },
-    { machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, orca: withOrca },
-    { machine: 'ci-01', scannedAtMs: failing ? now - 3 * HOUR : now - 6 * MINUTE, scanning: false, error: failing ? 'ci-01 didn\'t answer over SSH.' : null, orca: false },
+    { machine: 'casey-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, orca: false, udian: runnerOn.get('casey-mbp') ?? null, placingError: null },
+    {
+      machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, orca: withOrca, udian: runnerOn.get('cedar-02') ?? null,
+      placingError: runner === 'failing' ? 'cedar-02 didn\'t answer over SSH.' : null,
+    },
+    {
+      machine: 'ci-01', scannedAtMs: failing ? now - 3 * HOUR : now - 6 * MINUTE, scanning: false, error: failing ? 'ci-01 didn\'t answer over SSH.' : null, orca: false,
+      udian: failing ? null : runnerOn.get('ci-01') ?? null, placingError: null,
+    },
   ],
   running,
   draftModel,
   draftEffort,
+  udianBundled: BUNDLED_RUNNER,
 });
 
 const find = (id: string) => {
@@ -236,7 +253,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
         id, source: 'arbor', name: input.name, enabled: input.enabled, machine: machineName, target: input.target,
         project: input.projectPath ? projectName(input.projectPath) : null, agent: input.agent,
         schedule: existing?.summary.schedule ?? { kind: 'custom' }, nextRunAtMs: input.enabled ? now + HOUR : null,
-        lastRun: existing?.summary.lastRun ?? null, hasPrecheck: Boolean(input.precheck), abilities: ARBOR_ABILITIES,
+        lastRun: existing?.summary.lastRun ?? null, hasPrecheck: Boolean(input.precheck), abilities: ARBOR_ABILITIES, runsOn: input.runsOn,
       },
       prompt: input.prompt, rrule: input.rrule, timezone: input.timezone ?? null, projectPath: input.projectPath,
       workspace: input.workspace, session: input.session, access: input.access, model: input.model ?? null, effort: input.effort ?? null,
@@ -322,4 +339,11 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
     draftEffort = effort;
     return list();
   },
+  install_background_runner: ({ machine: name }) => later(2_500, () => {
+    mockLog('install_background_runner', { machine: name });
+    const found = runnerOn.get(name);
+    if (!found?.target || !BUNDLED_RUNNER) throw 'Arbor has no background runner for this machine\'s system';
+    runnerOn.set(name, { ...found, version: BUNDLED_RUNNER, live: true });
+    return list();
+  }),
 };

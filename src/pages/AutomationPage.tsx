@@ -94,7 +94,9 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                 ? t('automations.note.best')
                 : summary.target.kind === 'pool'
                   ? t('automations.note.pool')
-                  : t('automations.note.arbor', { machine: summary.machine ?? '' })
+                  : summary.runsOn === 'machine'
+                    ? t('automations.note.machine', { machine: summary.machine ?? '' })
+                    : t('automations.note.arbor', { machine: summary.machine ?? '' })
               : t(summary.source === 'claudeDesktop' ? 'automations.note.claude' : summary.source === 'orca' ? 'automations.note.orca' : 'automations.note.codex', { path: automation.sourcePath ?? '' })}
           </AlertDescription>
         </Alert>
@@ -129,6 +131,13 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
             <>
               <Fact label={t('automations.fact.workspace')}>{t(automation.workspace === 'newWorktree' ? 'automations.workspace.newWorktree' : 'automations.workspace.checkout')}</Fact>
               <Fact label={t('automations.fact.session')}>{t(automation.session === 'reuse' ? 'automations.session.reuse' : 'automations.session.fresh')}</Fact>
+              {arbor ? (
+                <Fact label={t('automations.fact.runsOn')}>
+                  {automation.summary.runsOn === 'machine' && automation.summary.machine
+                    ? t('automations.runsOn.machineShort', { machine: automation.summary.machine })
+                    : t('automations.runsOn.appShort')}
+                </Fact>
+              ) : null}
               {arbor ? (
                 <Fact label={t('automations.fact.access')}>
                   <span className={automation.access === 'full' ? 'text-warning-foreground' : undefined}>

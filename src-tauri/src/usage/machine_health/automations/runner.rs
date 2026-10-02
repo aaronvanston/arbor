@@ -29,6 +29,8 @@ const SLACK_MS: i64 = 2 * TICK.as_millis() as i64;
 pub(crate) const AUTOMATIONS_UPDATED_EVENT: &str = "automations-updated";
 
 pub(super) static WAKE: Notify = Notify::const_new();
+/// Read the machines' background runs back on the next round, not when it's time: something there just changed.
+pub(super) static SYNC_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Automations whose start script is out now, so one slow machine can't have the same run started twice.
 static STARTING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
@@ -68,7 +70,7 @@ pub(super) fn new_uuid() -> String {
 }
 
 /// A path as the script uses it: `~/` becomes the machine's home.
-fn path_word(path: &str) -> String {
+pub(super) fn path_word(path: &str) -> String {
     match path.strip_prefix("~/") {
         Some(rest) => format!("\"$HOME\"/{}", shell_quote(rest)),
         None if path == "~" => "\"$HOME\"".into(),
@@ -89,16 +91,20 @@ pub(super) struct Start<'a> {
 
 /// The agent's command line, reading the prompt from `$dir/prompt` and working in `$work`.
 fn agent_command(start: &Start) -> String {
-    let input = start.input;
+    agent_command_for(start.input, start.session.map(shell_quote).as_deref(), start.resume)
+}
+
+/// `agent_command` with the session as a shell word, which can be a variable the script sets.
+pub(super) fn agent_command_for(input: &AutomationInput, session: Option<&str>, resume: bool) -> String {
     let full = input.access == AutomationAccess::Full;
     let model = input.model.as_deref().filter(|model| !model.is_empty());
     let effort = input.effort.as_deref().filter(|effort| !effort.is_empty());
     match input.agent {
         AutomationAgent::Claude => {
             let mut command = String::from("claude -p");
-            match (start.session, start.resume) {
-                (Some(session), true) => command.push_str(&format!(" --resume {}", shell_quote(session))),
-                (Some(session), false) => command.push_str(&format!(" --session-id {}", shell_quote(session))),
+            match (session, resume) {
+                (Some(session), true) => command.push_str(&format!(" --resume {session}")),
+                (Some(session), false) => command.push_str(&format!(" --session-id {session}")),
                 (None, _) => {}
             }
             if let Some(model) = model {
@@ -118,10 +124,10 @@ fn agent_command(start: &Start) -> String {
             if let Some(effort) = effort {
                 options.push_str(&format!(" -c {}", shell_quote(&format!("model_reasoning_effort=\"{effort}\""))));
             }
-            let command = match (start.session, start.resume) {
+            let command = match (session, resume) {
                 (Some(session), true) => {
                     let access = if full { " --dangerously-bypass-approvals-and-sandbox".to_string() } else { format!(" -c {}", shell_quote("sandbox_mode=\"workspace-write\"")) };
-                    format!("codex exec resume {options}{access} {} -", shell_quote(session))
+                    format!("codex exec resume {options}{access} {session} -")
                 }
                 _ => {
                     let access = if full { " --dangerously-bypass-approvals-and-sandbox" } else { " -s workspace-write" };
@@ -447,7 +453,14 @@ async fn start_run_inner(app: &tauri::AppHandle, record: &store::Record, schedul
 
 /// Asks each machine with runs going how they are, and records what ended.
 async fn poll_running(app: &tauri::AppHandle) -> Result<bool, String> {
-    let running = run_usage_task(|| store::running(&open_usage_database()?)).await?;
+    // A run on a machine's background runner is read back by `udian::sync`; there's no folder of Arbor's to look at.
+    let running = run_usage_task(|| {
+        let connection = open_usage_database()?;
+        let elsewhere: BTreeSet<String> =
+            store::records(&connection)?.iter().filter(|record| udian::wanted_machine(record).is_some()).map(|record| record.id.clone()).collect();
+        Ok(store::running(&connection)?.into_iter().filter(|stored| !elsewhere.contains(&stored.run.automation_id)).collect::<Vec<_>>())
+    })
+    .await?;
     if running.is_empty() {
         return Ok(false);
     }
@@ -536,6 +549,10 @@ async fn round(app: &tauri::AppHandle) -> Result<bool, String> {
         })
         .await?;
         changed = true;
+        // The machine's background runner starts it, and records it if it's missed or overlaps.
+        if udian::wanted_machine(&record).is_some() {
+            continue;
+        }
         match due(scheduled_at_ms, record.input.grace_minutes, now_ms, running.contains(&record.id)) {
             Due::Start => {
                 let app = app.clone();
@@ -572,6 +589,13 @@ pub(crate) async fn poll_loop(app: tauri::AppHandle, token: CancellationToken) {
             Ok(false) => {}
             Err(error) => eprintln!("Automations round failed: {error}"),
         }
+        let placed = udian::reconcile(&app).await;
+        let synced = udian::sync(&app, SYNC_NOW.swap(false, std::sync::atomic::Ordering::Relaxed)).await;
+        match (placed, synced) {
+            (Ok(placed), Ok(synced)) if placed || synced => emit(&app),
+            (Err(error), _) | (_, Err(error)) => eprintln!("Background runner round failed: {error}"),
+            _ => {}
+        }
         discover::scan_due(&app, Local::now().timestamp_millis());
         tokio::select! {
             _ = tokio::time::sleep(TICK) => {},
@@ -598,6 +622,7 @@ mod tests {
             workspace: AutomationWorkspace::Checkout,
             session: AutomationSession::Fresh,
             access: AutomationAccess::Edits,
+            runs_on: AutomationRunsOn::App,
             rrule: "FREQ=HOURLY;BYMINUTE=0".into(),
             timezone: None,
             grace_minutes: 20,

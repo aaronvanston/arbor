@@ -154,6 +154,7 @@ pub(crate) enum MachineOp {
     AutomationStart,
     AutomationPoll,
     AutomationChange,
+    RunnerInstall,
     RunHandOff,
     RunCheck,
     RunOpen,
@@ -202,6 +203,7 @@ impl MachineOp {
             Self::AutomationStart => "automation start",
             Self::AutomationPoll => "automation runs check",
             Self::AutomationChange => "automation change",
+            Self::RunnerInstall => "background runner install",
             Self::RunHandOff => "run hand-off",
             Self::RunCheck => "run check",
             Self::RunOpen => "run open",
@@ -210,7 +212,9 @@ impl MachineOp {
 
     fn slow_after_ms(self) -> u64 {
         match self {
-            Self::AgentUpdate | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange => MACHINE_INSTALL_SLOW_MS,
+            Self::AgentUpdate | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall => {
+                MACHINE_INSTALL_SLOW_MS
+            }
             Self::TranscriptScan
             | Self::SetupScan
             | Self::SetupApply

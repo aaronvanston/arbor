@@ -465,6 +465,10 @@ export type AutomationInput = {
    * Saved before there was a choice means the default.
    */
   access: AutomationAccess,
+  /**
+   * Saved before there was a choice runs from the app, as it did.
+   */
+  runsOn: AutomationRunsOn,
   rrule: string,
   timezone?: string,
   graceMinutes: number,
@@ -496,6 +500,10 @@ export type AutomationList = {
    */
   draftModel: string,
   draftEffort: string,
+  /**
+   * The background runner's version Arbor carries and installs; null for a build without it.
+   */
+  udianBundled: string | null,
 };
 
 /**
@@ -535,6 +543,12 @@ export type AutomationRun = {
 export type AutomationRunStatus = "running" | "done" | "failed" | "skipped" | "unreachable" | "missed" | "canceled";
 
 /**
+ * What runs an Arbor automation when it's due: Arbor itself, while it's open on this Mac, or the background runner on
+ * the machine (ultradian, which Arbor installs there), whether Arbor is open or not.
+ */
+export type AutomationRunsOn = "app" | "machine";
+
+/**
  * One machine's last look for automations.
  */
 export type AutomationScan = {
@@ -546,6 +560,14 @@ export type AutomationScan = {
    * Orca's command line was found there.
    */
   orca: boolean,
+  /**
+   * The background runner there; null until a look got that far.
+   */
+  udian: UdianOnMachine | null,
+  /**
+   * Arbor's own automations on this machine that the background runner hasn't taken yet, and why, when it failed.
+   */
+  placingError: string | null,
 };
 
 /**
@@ -584,6 +606,7 @@ export type AutomationSummary = {
   lastRun: AutomationLastRun | null,
   hasPrecheck: boolean,
   abilities: AutomationAbilities,
+  runsOn: AutomationRunsOn,
 };
 
 /**
@@ -4631,6 +4654,24 @@ export type TrayRow = {
 };
 
 export type TraySection = "limits" | "machines" | "sessions";
+
+/**
+ * The background runner on one machine, as its last look found it.
+ */
+export type UdianOnMachine = {
+  /**
+   * The build it needs, like `darwin-arm64`; null when Arbor carries none for the machine's system.
+   */
+  target: string | null,
+  /**
+   * The version installed, or null when it isn't.
+   */
+  version: string | null,
+  /**
+   * Its daemon answered.
+   */
+  live: boolean,
+};
 
 /**
  * Which releases the app updates to. Stable is the release GitHub marks as the latest. Nightly also takes the

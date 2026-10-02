@@ -3,14 +3,16 @@ import { useI18n } from '../../i18n';
 import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
 import { invokeCommand } from '../../native/commands';
-import type { Automation, AutomationAccess, AutomationAgent, AutomationInput, AutomationSession, AutomationWorkspace, MachineProjects } from '../../native/types';
+import type { Automation, AutomationAccess, AutomationAgent, AutomationInput, AutomationRunsOn, AutomationSession, AutomationWorkspace, MachineProjects } from '../../native/types';
 import {
+  backgroundRunnerCheck,
   choiceSummary,
   loadAutomations,
   scheduleChoice,
   scheduleRule,
   scheduleWords,
   switchSchedule,
+  useAutomations,
   type ScheduleChoice,
 } from '../../services/automations';
 import { usePools } from '../../services/pools';
@@ -42,6 +44,8 @@ type Form = {
   workspace: AutomationWorkspace;
   session: AutomationSession;
   access: AutomationAccess;
+  /** As picked; the machine only when its background runner can take it (`backgroundRunnerCheck`). */
+  runsOn: AutomationRunsOn;
   schedule: ScheduleChoice;
   graceMinutes: number;
   precheck: string;
@@ -65,6 +69,7 @@ const emptyForm = (machine: string): Form => ({
   workspace: 'checkout',
   session: 'fresh',
   access: 'edits',
+  runsOn: 'machine',
   schedule: { kind: 'hourly', hours: 1, minute: 0 },
   graceMinutes: 60,
   precheck: '',
@@ -83,6 +88,7 @@ const formFrom = (automation: Automation): Form => ({
   workspace: automation.workspace,
   session: automation.session,
   access: automation.access,
+  runsOn: automation.summary.runsOn,
   schedule: automation.rrule ? scheduleChoice(automation.rrule) : { kind: 'daily', hour: 9, minute: 0 },
   graceMinutes: automation.graceMinutes,
   precheck: automation.precheck ?? '',
@@ -171,6 +177,10 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
     setStep('review');
   };
 
+  const { list } = useAutomations();
+  const runsOnBlocked = backgroundRunnerCheck(list, isMachine(form.machine) ? form.machine : null, form.schedule.kind);
+  const runsOn: AutomationRunsOn = runsOnBlocked ? 'app' : form.runsOn;
+
   const problem = !form.name.trim() ? t('automations.form.needName')
     : !form.prompt.trim() ? t('automations.form.needPrompt')
       : !form.machine ? t('automations.form.needMachine')
@@ -193,6 +203,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
       workspace: form.workspace,
       session: form.session,
       access: form.access,
+      runsOn,
       rrule: scheduleRule(form.schedule),
       graceMinutes: form.graceMinutes,
       ...(form.precheck.trim() ? { precheck: form.precheck.trim() } : {}),
@@ -302,6 +313,17 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
                 <div className="flex min-h-0 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden border-t p-6 md:border-t-0 md:border-s">
                   <AgentField value={form.agent} onChange={(agent) => update({ agent })} />
                   <MachineField machine={form.machine} onChange={(next) => update({ machine: next, projectPath: next === form.machine ? form.projectPath : '' })} />
+                  <Field
+                    label={t('automations.fact.runsOn')}
+                    hint={runsOnBlocked ? t(runsOnBlocked, { machine: form.machine }) : t(runsOn === 'machine' ? 'automations.runsOn.machineHint' : 'automations.runsOn.appHint')}
+                  >
+                    <Segmented
+                      label={t('automations.fact.runsOn')}
+                      value={runsOn}
+                      options={[['machine', t('automations.runsOn.machine'), Boolean(runsOnBlocked)], ['app', t('automations.runsOn.app')]]}
+                      onChange={(next) => update({ runsOn: next })}
+                    />
+                  </Field>
                   <ProjectField machine={isMachine(form.machine) ? form.machine : ''} value={form.projectPath} onChange={(projectPath) => update({ projectPath })} />
                   <Field label={t('automations.fact.workspace')} hint={t(form.workspace === 'newWorktree' ? 'automations.workspace.newWorktreeHint' : 'automations.workspace.checkoutHint')}>
                     <Segmented
@@ -384,7 +406,13 @@ function Field({ label, htmlFor, hint, grow = false, children }: { label: string
   );
 }
 
-function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (value: T) => void }) {
+function Segmented<T extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: T;
+  /** Each choice, its words, and whether it can't be picked now. */
+  options: [T, string, boolean?][];
+  onChange: (value: T) => void;
+}) {
   return (
     <ToggleGroup
       aria-label={label}
@@ -392,7 +420,7 @@ function Segmented<T extends string>({ label, value, options, onChange }: { labe
       onValueChange={(next: unknown[]) => { const [picked] = next; if (typeof picked === 'string') onChange(picked as T); }}
       className="w-full"
     >
-      {options.map(([option, words]) => <Toggle key={option} value={option} className="flex-1">{words}</Toggle>)}
+      {options.map(([option, words, disabled]) => <Toggle key={option} value={option} disabled={disabled} className="flex-1">{words}</Toggle>)}
     </ToggleGroup>
   );
 }

@@ -230,7 +230,7 @@ pub(super) fn set_setting(connection: &Connection, key: &str, value: &str) -> Re
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AutomationAccess, AutomationAgent, AutomationSession, AutomationTarget, AutomationWorkspace};
+    use super::super::{AutomationAccess, AutomationAgent, AutomationRunsOn, AutomationSession, AutomationTarget, AutomationWorkspace};
     use super::*;
     use crate::usage::schema::test_database;
 
@@ -247,6 +247,7 @@ mod tests {
             workspace: AutomationWorkspace::Checkout,
             session: AutomationSession::Fresh,
             access: AutomationAccess::Edits,
+            runs_on: AutomationRunsOn::App,
             rrule: "FREQ=HOURLY;INTERVAL=1".into(),
             timezone: None,
             grace_minutes: 60,
@@ -308,4 +309,22 @@ mod tests {
         set_setting(&connection, "running", "1").unwrap();
         assert_eq!(setting(&connection, "running").unwrap().as_deref(), Some("1"));
     }
+}
+
+/// Every setting whose key starts with `prefix`, with the prefix taken off.
+pub(super) fn settings_with_prefix(connection: &Connection, prefix: &str) -> Result<Vec<(String, String)>, String> {
+    let mut statement = connection.prepare("SELECT key, value FROM usage_automation_settings ORDER BY key").map_err(|error| error.to_string())?;
+    let rows = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).map_err(|error| error.to_string())?;
+    let mut found = Vec::new();
+    for row in rows {
+        let (key, value) = row.map_err(|error| error.to_string())?;
+        if let Some(rest) = key.strip_prefix(prefix) {
+            found.push((rest.to_string(), value));
+        }
+    }
+    Ok(found)
+}
+
+pub(super) fn remove_setting(connection: &Connection, key: &str) -> Result<(), String> {
+    connection.execute("DELETE FROM usage_automation_settings WHERE key = ?1", params![key]).map(|_| ()).map_err(|error| error.to_string())
 }

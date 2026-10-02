@@ -107,7 +107,12 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   app is open, a precheck over SSH first and then the agent detached, whose output is
   never kept; `draft.rs` turns a sentence into a draft through the local proxy.
   An automation aimed at a pool has its machine chosen by `runs::pick_for_automation`
-  when it's due.
+  when it's due. One set to run on its machine goes to `udian.rs` instead: Arbor
+  installs the background runner it carries (ultradian, pinned in `udian-version.txt`,
+  fetched into `bundled-udian/` by the release build) on that machine, writes the
+  automation's schedule and scripts there, and reads its runs back, so it runs whether
+  Arbor is open or not. ultradian keeps its own log of each run on the machine; Arbor
+  never reads it.
 - `src-tauri/src/usage/machine_health/pools.rs`, `runs.rs` and `runs_handoff.rs`:
   machine pools (members, weights, limits, what a full pool does) and the runs started
   on them, handed to T3 Code or Orca on the member picked, with the agent's own command
@@ -166,6 +171,8 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   when T3 Code makes a worktree), version helpers, and packaging scripts inherited
   from upstream.
 - `core-version.txt`: the core release the DMG bundles.
+- `udian-version.txt`: the ultradian release the DMG bundles for the background
+  runner; empty builds without it.
 
 ## Commands
 

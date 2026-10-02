@@ -76,6 +76,34 @@ done
 # The DMG bundles every bundled-core/CLIProxyAPI_* file, so drop archives from earlier core versions.
 find bundled-core -maxdepth 1 -type f -name 'CLIProxyAPI_*' ! -name "$core_asset" -delete
 
+# Bundle the background runner (ultradian) pinned in udian-version.txt: one archive for each system Arbor can put it
+# on, each checked against the release's SHA256SUMS. Arbor checks it again before it copies one to a machine. An empty
+# udian-version.txt builds without it, and automations then run only from Arbor while it's open.
+udian_version="$(tr -d '[:space:]' < udian-version.txt)"
+udian_version="${udian_version#v}"
+rm -rf bundled-udian
+mkdir -p bundled-udian
+if [[ -n "$udian_version" ]]; then
+  udian_release_url="https://github.com/aaronvanston/ultradian/releases/download/v${udian_version}"
+  curl -fsSL --retry 3 -o bundled-udian/SHA256SUMS.release "$udian_release_url/SHA256SUMS"
+  : > bundled-udian/SHA256SUMS
+  for udian_target in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+    udian_asset="ultradian-${udian_version}-${udian_target}.tar.gz"
+    curl -fsSL --retry 3 -o "bundled-udian/$udian_asset" "$udian_release_url/$udian_asset"
+    udian_expected="$(awk -v name="$udian_asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print tolower($1); exit } }' bundled-udian/SHA256SUMS.release)"
+    udian_actual="$(shasum -a 256 "bundled-udian/$udian_asset" | awk '{print $1}')"
+    if [[ -z "$udian_expected" || "$udian_actual" != "$udian_expected" ]]; then
+      echo "SHA-256 verification failed for $udian_asset" >&2
+      exit 1
+    fi
+    printf '%s  %s\n' "$udian_actual" "$udian_asset" >> bundled-udian/SHA256SUMS
+  done
+  rm bundled-udian/SHA256SUMS.release
+else
+  echo "No background runner pinned in udian-version.txt; building without it."
+  : > bundled-udian/SHA256SUMS
+fi
+
 node scripts/set-version.mjs "$version"
 
 # Versions up to 1.0 install an update only when this marker names EasyCLIProxyAPI, the app Arbor was forked from, so

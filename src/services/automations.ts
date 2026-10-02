@@ -4,6 +4,7 @@ import { invokeCommand } from '../native/commands';
 import type {
   AutomationAgent,
   AutomationList,
+  AutomationScan,
   AutomationRunStatus,
   AutomationSource,
   AutomationSummary,
@@ -308,4 +309,63 @@ export function switchSchedule(choice: ScheduleChoice, kind: ScheduleChoice['kin
     case 'weekly': return { kind, days: choice.kind === 'weekly' ? choice.days : [1], hour, minute };
     case 'custom': return { kind, rrule: scheduleRule(choice) };
   }
+}
+
+// ── The background runner ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** Where a machine's background runner stands: what Settings shows and offers for it. */
+export type RunnerState = 'ready' | 'outdated' | 'stopped' | 'missing' | 'unsupported' | 'unknown';
+
+const versionParts = (version: string) => version.split(/[.-]/).map((part) => Number.parseInt(part, 10)).map((part) => (Number.isNaN(part) ? 0 : part));
+
+/** Whether `version` is older than `than`, by its numbers. */
+export function olderVersion(version: string, than: string): boolean {
+  const [left, right] = [versionParts(version), versionParts(than)];
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const [a, b] = [left[index] ?? 0, right[index] ?? 0];
+    if (a !== b) return a < b;
+  }
+  return false;
+}
+
+export function runnerState(scan: AutomationScan | undefined, bundled: string | null): RunnerState {
+  const udian = scan?.udian;
+  if (!udian) return 'unknown';
+  if (!udian.version) return udian.target && bundled ? 'missing' : 'unsupported';
+  if (!udian.live) return 'stopped';
+  return bundled && olderVersion(udian.version, bundled) ? 'outdated' : 'ready';
+}
+
+/** Whether Arbor can put or update the runner Arbor carries on the machine. */
+export const canInstallRunner = (state: RunnerState) => state === 'missing' || state === 'outdated' || state === 'stopped';
+
+export const RUNNER_STATE_LABEL: Record<RunnerState, MessageKey> = {
+  ready: 'automations.runner.state.ready',
+  outdated: 'automations.runner.state.outdated',
+  stopped: 'automations.runner.state.stopped',
+  missing: 'automations.runner.state.missing',
+  unsupported: 'automations.runner.state.unsupported',
+  unknown: 'automations.runner.state.unknown',
+};
+
+export const RUNNER_STATE_TONE: Record<RunnerState, StatusTone> = {
+  ready: 'success',
+  outdated: 'warning',
+  stopped: 'warning',
+  missing: 'muted',
+  unsupported: 'muted',
+  unknown: 'muted',
+};
+
+/**
+ * Whether an automation can run on its machine in the background, and why not when it can't: it has to name one
+ * machine (a pool's member is picked by Arbor when it's due), follow one of the usual schedules, and the machine's
+ * runner has to be there and answering. A runner that's only older still runs it.
+ */
+export function backgroundRunnerCheck(list: AutomationList | null, machine: string | null, scheduleKind: string): MessageKey | null {
+  if (!machine) return 'automations.runsOn.why.pool';
+  if (scheduleKind === 'custom') return 'automations.runsOn.why.custom';
+  const state = runnerState(list?.scans.find((scan) => scan.machine === machine), list?.udianBundled ?? null);
+  if (state === 'ready' || state === 'outdated') return null;
+  return 'automations.runsOn.why.notSetUp';
 }

@@ -8,6 +8,8 @@
       "../LICENSE": "LICENSE",
       "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
       "../core-version.txt": "core-version.txt",
+      "../udian-version.txt": "udian-version.txt",
+      "../bundled-udian/*": "udian/",
       "../bundled-core/CLIProxyAPI_*": "core/",
       "../bundled-core/plugins/arbor-models.dylib": "core/plugins/arbor-models.dylib",
       "../portable-app.json": "portable-app.json"
