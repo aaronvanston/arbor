@@ -18,6 +18,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
 import { SidebarArt } from './SidebarArt';
 
 /**
+ * The build tag sits on the sidebar art, where the badge's see-through tint is unreadable, so it gets an opaque pill: the
+ * sidebar's own color with the tint mixed in.
+ */
+const BUILD_PILL_DEV = 'border-info/30 bg-[color-mix(in_srgb,var(--info)_14%,var(--sidebar))] dark:bg-[color-mix(in_srgb,var(--info)_28%,var(--sidebar))]';
+const BUILD_PILL_NIGHTLY = 'border-warning/35 bg-[color-mix(in_srgb,var(--warning)_16%,var(--sidebar))] dark:bg-[color-mix(in_srgb,var(--warning)_26%,var(--sidebar))]';
+
+/**
  * T3's title row: 52px, a drag region, the artwork behind it and the wordmark at the title content inset, past the Mac
  * window buttons and the sidebar button (which is fixed to the window, not in here).
  */
@@ -40,7 +47,7 @@ export function SidebarHeader({ art, theme, color, macTitleBar, onHome }: { art:
       {buildLabel ? (
         <Badge
           variant={build === 'dev' ? 'info' : 'warning'}
-          className="relative z-10 ms-1.5 [-webkit-app-region:no-drag]"
+          className={cn('relative z-10 ms-1.5 rounded-full shadow-xs [-webkit-app-region:no-drag]', build === 'dev' ? BUILD_PILL_DEV : BUILD_PILL_NIGHTLY)}
           title={t(build === 'dev' ? 'app.build.devHint' : 'app.build.nightlyHint')}
         >
           {t(buildLabel)}
