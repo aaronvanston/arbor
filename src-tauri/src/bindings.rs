@@ -114,6 +114,8 @@ mod tests {
         types.visit::<crate::usage::machine_health::discovery::DiscoveredHost>();
         types.visit::<crate::usage::machine_health::agent_homes::AgentHome>();
         types.visit::<crate::usage::machine_health::agent_homes::AgentHomesView>();
+        types.visit::<crate::usage::machine_health::pools::MachinePool>();
+        types.visit::<crate::usage::machine_health::pools::PoolPreview>();
         types.visit::<crate::usage::machine_health::agent_releases::LatestVersions>();
         types.visit::<crate::usage::machine_health::agent_releases::T3Policy>();
         types.visit::<crate::usage::machine_health::agents::AgentKind>();

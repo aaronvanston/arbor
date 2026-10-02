@@ -37,6 +37,7 @@ const STEPS: &[Step] = &[
     Step { version: 14, name: "credential index", apply: credential_index },
     Step { version: 15, name: "failures index", apply: failures_index },
     Step { version: 16, name: "agent homes", apply: agent_homes },
+    Step { version: 17, name: "machine pools", apply: machine_pools },
 ];
 
 /// The version of a database that has had every step.
@@ -1120,6 +1121,32 @@ fn agent_homes(connection: &mut Connection, _: &Path) -> Result<(), String> {
             )",
         )
         .map_err(|error| format!("Failed to prepare the agent homes tables: {error}"))
+}
+
+/// Machine pools and their members (`machine_health/pools.rs`). Members keep the order they were
+/// listed in; a machine is matched to the Machines page by its normalized name when read.
+fn machine_pools(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS usage_pools (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                max_agents INTEGER NOT NULL DEFAULT 4,
+                cpu_ceiling INTEGER NOT NULL DEFAULT 95,
+                mem_floor INTEGER NOT NULL DEFAULT 5,
+                when_full TEXT NOT NULL DEFAULT 'refuse',
+                spill_pool TEXT,
+                queue_timeout_min INTEGER NOT NULL DEFAULT 30
+            );
+            CREATE TABLE IF NOT EXISTS usage_pool_members (
+                pool_id TEXT NOT NULL,
+                machine TEXT NOT NULL,
+                weight TEXT NOT NULL DEFAULT 'normal',
+                position INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (pool_id, machine)
+            )",
+        )
+        .map_err(|error| format!("Failed to prepare the machine pools tables: {error}"))
 }
 
 // ---------------------------------------------------------------------------

@@ -651,6 +651,34 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_pools",
+        access: Access::Read,
+        summary: "Every machine pool, with its members, their weights, and its limits.",
+        args: &[],
+    },
+    CommandSpec {
+        name: "save_pool",
+        access: Access::Write,
+        summary: "Adds a pool, or changes one. A pool given an id that isn't saved is added with it, so Undo after a removal brings back the same pool.",
+        args: &[
+            ArgSpec { name: "pool", ts_type: "MachinePool", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "remove_pool",
+        access: Access::Confirm,
+        summary: "Takes a pool off the list by its id. Pools that sent their overflow to it refuse runs instead.",
+        args: &[
+            ArgSpec { name: "id", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "preview_pools",
+        access: Access::Read,
+        summary: "Who would take the next run in each pool, and why each member could or couldn't, from the machines' latest health samples. Starts no run.",
+        args: &[],
+    },
+    CommandSpec {
         name: "update_machine_agent",
         access: Access::Confirm,
         summary: "Updates the agent on the machine the way it was installed, then checks its agents again so the page shows the version it ended up on. How it was installed is read again first, so the update never goes by an older check; `command`, when given, is what its user was shown, and nothing runs if that has changed.",
@@ -1795,6 +1823,10 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "remove_agent_home" => async { done(Box::pin(crate::usage::machine_health::agent_homes::remove_agent_home(app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "path")?)).await) }.await,
         "scan_agent_homes" => async { done(Box::pin(crate::usage::machine_health::agent_homes::scan_agent_homes(app.clone(), app.state(), arg(&args, "machine")?)).await) }.await,
         "preview_agent_home" => async { done(Box::pin(crate::usage::machine_health::agent_homes::preview_agent_home(app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "path")?)).await) }.await,
+        "get_pools" => done(Box::pin(crate::usage::machine_health::pools::get_pools()).await),
+        "save_pool" => async { done(Box::pin(crate::usage::machine_health::pools::save_pool(app.clone(), arg(&args, "pool")?)).await) }.await,
+        "remove_pool" => async { done(Box::pin(crate::usage::machine_health::pools::remove_pool(app.clone(), arg(&args, "id")?)).await) }.await,
+        "preview_pools" => done(Box::pin(crate::usage::machine_health::pools::preview_pools(app.state())).await),
         "update_machine_agent" => async { done(Box::pin(crate::usage::machine_health::agents::update_machine_agent(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "command")?)).await) }.await,
         "get_agent_latest_versions" => done(Box::pin(crate::usage::machine_health::agent_releases::get_agent_latest_versions(app.state())).await),
         "get_t3_compatibility" => done(Box::pin(crate::usage::machine_health::agent_releases::get_t3_compatibility(app.state())).await),

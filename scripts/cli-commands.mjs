@@ -68,6 +68,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'clear_call_diagnostics',
   'save_machine_hosts',
   'remove_agent_home',
+  'remove_pool',
   'update_machine_agent',
   'set_agent_reporter',
   'set_agent_telemetry',

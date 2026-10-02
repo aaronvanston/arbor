@@ -13,6 +13,7 @@ export type SettingsPageId =
   | 'extra-models'
   | 'machines'
   | 'agent-homes'
+  | 'pools'
   | 'session-archive'
   | 'data'
   | 'diagnostics'
@@ -246,7 +247,7 @@ export function sameView(a: AppView, b: AppView) {
 export const mainPageIds: readonly MainPageId[] = ['home', 'machines', 'sessions', 'setup', 'accounts', 'usage', 'alerts'];
 /** Settings' pages in the sidebar's order: Proxy, Fleet, Data and Arbor's own. */
 export const settingsPageIds: readonly SettingsPageId[] = [
-  'general', 'routing', 'overrides', 'aliases', 'extra-models', 'machines', 'agent-homes', 'session-archive', 'data',
+  'general', 'routing', 'overrides', 'aliases', 'extra-models', 'machines', 'agent-homes', 'pools', 'session-archive', 'data',
   'diagnostics', 'appearance', 'notifications', 'software', 'updates', 'about',
 ];
 
@@ -289,7 +290,7 @@ const alwaysAvailablePages = new Set<string>([
   'home', 'usage', 'sessions', 'machines', 'setup', 'alerts',
   // Settings pages.
   'settings:general', 'settings:routing', 'settings:aliases', 'settings:extra-models', 'settings:software',
-  'settings:machines', 'settings:agent-homes', 'settings:data', 'settings:session-archive', 'settings:appearance', 'settings:notifications',
+  'settings:machines', 'settings:agent-homes', 'settings:pools', 'settings:data', 'settings:session-archive', 'settings:appearance', 'settings:notifications',
   'settings:updates', 'settings:diagnostics', 'settings:about',
 ]);
 

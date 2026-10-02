@@ -9,8 +9,10 @@ import type {
   ClientVersions,
   DiscoveredHost,
   LatestVersions,
+  MachinePool,
   MachineHealthSnapshot,
   MachineHost,
+  PoolPreview,
   ReporterSetup,
   SettingsEdit,
   T3Policy,
@@ -31,6 +33,10 @@ export type MachineCommands = {
   remove_agent_home: { args: { machine: string; agent: AgentHomeKind; path: string }; result: AgentHomesView };
   scan_agent_homes: { args: { machine?: string | null }; result: AgentHomesView };
   preview_agent_home: { args: { machine: string; agent: AgentHomeKind; path: string }; result: string[] };
+  get_pools: { result: MachinePool[] };
+  save_pool: { args: { pool: MachinePool }; result: MachinePool[] };
+  remove_pool: { args: { id: string }; result: MachinePool[] };
+  preview_pools: { result: PoolPreview[] };
   get_machine_health: {
     args: { since?: number | null; windowMs?: number | null; passive?: boolean | null };
     result: MachineHealthSnapshot;

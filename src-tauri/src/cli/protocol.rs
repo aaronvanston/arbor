@@ -23,6 +23,7 @@ pub(crate) const WATCHED_EVENTS: &[&str] = &[
     "agent-telemetry-updated",
     "agent-attention-updated",
     "agent-homes-updated",
+    "machine-pools-updated",
     "t3-threads-updated",
     "session-transcripts-updated",
     "setup-inventory-updated",

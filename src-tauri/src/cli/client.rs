@@ -193,6 +193,7 @@ Usage: arbor [command] [flags]
 
   status                       The proxy, machines, live sessions and alerts at a glance (the default)
   machines [name]              Every machine's health, or one machine in full
+  pools                        Machine pools and who would take each one's next run
   sessions [--live]            Recent sessions, or the ones running now
   usage [today|7d|30d]         Requests, tokens and cost
   accounts [refresh]           Signed-in accounts and their limits (refresh reads them again)
@@ -363,6 +364,13 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
                 .cloned()
                 .ok_or_else(|| Failure::new(exit::FAILED, format!("Arbor has no machine called {name}.")))?;
             print_json(&machine);
+            Ok(())
+        }
+        ["pools"] => {
+            let mut client = connect(options)?;
+            let pools = client.read("get_pools", Value::Null)?;
+            let previews = client.read("preview_pools", Value::Null)?;
+            show(options, &json!({ "pools": pools, "previews": previews }), render::pools);
             Ok(())
         }
         ["sessions", rest @ ..] => sessions(options, rest.contains(&"--live")),

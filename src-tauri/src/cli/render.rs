@@ -109,6 +109,47 @@ pub(crate) fn machines(snapshot: &Value) -> String {
     table(&["MACHINE", "STATUS", "SCORE", "LAST OK", "PROBLEM"], &rows)
 }
 
+/// Each pool from `get_pools`, with who would take its next run and how each member stands, from `preview_pools`.
+pub(crate) fn pools(value: &Value) -> String {
+    let pools = items(value, "pools");
+    if pools.is_empty() {
+        return "No machine pools yet. Make one in Arbor's Settings › Pools.".into();
+    }
+    let previews = items(value, "previews");
+    pools
+        .iter()
+        .map(|pool| {
+            let id = field(pool, "id");
+            let preview = previews.iter().find(|preview| field(preview, "pool") == id);
+            let next = match preview.and_then(|preview| preview.get("likely")).and_then(Value::as_str) {
+                Some(machine) => format!("next run most likely on {machine}"),
+                None => match field(pool, "whenFull").as_str() {
+                    "queue" => format!("no member has room; a run would wait up to {} min", field(pool, "queueTimeoutMin")),
+                    "spill" => "no member has room; a run would go to its overflow pool".into(),
+                    _ => "no member has room; a run wouldn't start".into(),
+                },
+            };
+            let rows: Vec<Vec<String>> = items(pool, "members")
+                .iter()
+                .map(|member| {
+                    let machine = field(member, "machine");
+                    let verdict = preview.and_then(|preview| items(preview, "members").iter().find(|entry| field(entry, "machine") == machine).cloned());
+                    let share = verdict.as_ref().and_then(|verdict| verdict.get("share")).and_then(Value::as_f64).unwrap_or(0.0);
+                    vec![
+                        machine,
+                        field(member, "weight"),
+                        verdict.as_ref().map(|verdict| field(verdict, "kind")).unwrap_or_default(),
+                        if share > 0.0 { format!("{:.0}%", share * 100.0) } else { "-".into() },
+                    ]
+                })
+                .collect();
+            let members = if rows.is_empty() { "  No machines yet.".into() } else { table(&["MACHINE", "WEIGHT", "NOW", "NEXT RUN"], &rows) };
+            format!("{} ({next})\n{members}", field(pool, "name"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 /// Sessions from `get_live_sessions` or a page of `get_usage_sessions`.
 pub(crate) fn sessions(sessions: &[Value]) -> String {
     let now = now_ms();
@@ -336,6 +377,16 @@ mod tests {
         ]});
         assert!(machines(&snapshot).contains("casey-mbp (this Mac)  healthy"));
         assert_eq!(machines(&json!({ "machines": [] })), "No machines yet. Add them in Arbor's Settings › Machines.");
+        let pools_out = pools(&json!({
+            "pools": [{ "id": "p1", "name": "Builds", "whenFull": "queue", "queueTimeoutMin": 30, "members": [
+                { "machine": "casey-mbp", "weight": "prefer" }, { "machine": "ci-01", "weight": "less" },
+            ]}],
+            "previews": [{ "pool": "p1", "likely": null, "members": [
+                { "machine": "casey-mbp", "kind": "agentsFull", "share": 0.0 }, { "machine": "ci-01", "kind": "cpuHigh", "share": 0.0 },
+            ]}],
+        }));
+        assert!(pools_out.starts_with("Builds (no member has room; a run would wait up to 30 min)"));
+        assert!(pools_out.contains("agentsFull"));
         assert_eq!(core(&json!({ "running": true, "ready": true, "currentVersion": "8.0.4" })), "Proxy core 8.0.4: running");
     }
 

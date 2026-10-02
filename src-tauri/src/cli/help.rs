@@ -26,6 +26,17 @@ case.
 ",
     ),
     (
+        "pools",
+        "arbor pools
+
+Each machine pool, who would most likely take its next run, and why each other member couldn't now (full, busy, not
+answering). Pools are made and changed in Arbor's Settings › Pools.
+
+  arbor pools
+  arbor pools --json
+",
+    ),
+    (
         "sessions",
         "arbor sessions [--live]
 

@@ -22,6 +22,7 @@ any other machine, say so instead of trying.
 | Ask | Command |
 | --- | --- |
 | Machine health | `arbor machines`, or `arbor machines <name>` for one in full |
+| Machine pools and who would take each one's next run | `arbor pools` |
 | Sessions | `arbor sessions` (recent), `arbor sessions --live` (running now, with cost per hour) |
 | Usage and cost | `arbor usage today`, `arbor usage 7d`, `arbor usage 30d` |
 | Accounts and limits | `arbor accounts`, or `arbor accounts refresh` to read the limits again |

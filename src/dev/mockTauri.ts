@@ -74,6 +74,9 @@
  * `?homes=fresh` for no machine looked at for agent homes yet (Settings › Agent homes lists only the standard homes
  * until Look again fills each machine's list), `?homes=fail` for cedar-02's last look failing, and `?homes=none` for
  * looks that found nothing more to suggest;
+ * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every
+ * pool too busy to take a run (the preview says why each is left out), and `?pools=stale` for every reading too old to
+ * go by; by default there are two pools, one spilling into the other;
  * `?fix=fail` for Terminal not opening when a Fix menu starts an agent session;
  * `?phone=fail` to have phone alerts refused, `?phone=unreadable` for a damaged phone alert secrets file;
  * `?proxy=usage-off`, `no-keys`, `default-key`, `refused`, `network` or `not-loaded` (several joined by commas) for the

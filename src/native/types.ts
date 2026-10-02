@@ -1846,6 +1846,36 @@ export type MachineLive = {
   requests: number,
 };
 
+export type MachinePool = {
+  /**
+   * Empty for a pool not saved yet; the native side gives it one.
+   */
+  id: string,
+  name: string,
+  members: Array<PoolMember>,
+  /**
+   * The most Claude Code and Codex processes a member may have running and still take a run.
+   */
+  maxAgents: number,
+  /**
+   * A member busier than this CPU percent is full.
+   */
+  cpuCeiling: number,
+  /**
+   * A member with less free memory than this percent is full.
+   */
+  memFloor: number,
+  whenFull: PoolWhenFull,
+  /**
+   * The pool a run goes to when this one is full and `when_full` is Spill.
+   */
+  spillPool: string | null,
+  /**
+   * How long a queued run waits for room before it's dropped.
+   */
+  queueTimeoutMin: number,
+};
+
 export type MachineProjects = {
   machine: string,
   homeDir: string,
@@ -2328,6 +2358,62 @@ export type PolicyKey = {
   kind: ItemKind,
   name: string,
 };
+
+export type PoolMember = {
+  /**
+   * The machine's name as the Machines page lists it.
+   */
+  machine: string,
+  weight: PoolWeight,
+};
+
+export type PoolMemberVerdict = {
+  machine: string,
+  weight: PoolWeight,
+  kind: PoolVerdictKind,
+  /**
+   * Agents running at the last sample, runs just sent to it included.
+   */
+  running: number | null,
+  cpu: number | null,
+  /**
+   * Free memory, percent.
+   */
+  memFree: number | null,
+  readingAgeMs: number | null,
+  /**
+   * Its chance of taking the next run, 0–1; 0 unless eligible.
+   */
+  share: number,
+};
+
+export type PoolPreview = {
+  pool: string,
+  /**
+   * The member most likely to take the next run; None when nobody can.
+   */
+  likely: string | null,
+  members: Array<PoolMemberVerdict>,
+  /**
+   * How old a reading may be before it's stale, from how often machines are being sampled now.
+   */
+  freshForMs: number,
+};
+
+/**
+ * Why a member could or couldn't take the next run.
+ */
+export type PoolVerdictKind = "eligible" | "manual" | "notListed" | "off" | "noReading" | "unreachable" | "stale" | "agentsFull" | "cpuHigh" | "memoryLow";
+
+/**
+ * How much of a pool's work a member takes.
+ */
+export type PoolWeight = "prefer" | "normal" | "less" | "manual";
+
+/**
+ * What a run does when no member has room.
+ */
+export type PoolWhenFull = "refuse" | "queue" | "spill";
 
 export type ProductAnalyticsInput = {
   usage: boolean,
