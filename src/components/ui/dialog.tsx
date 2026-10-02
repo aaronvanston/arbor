@@ -6,6 +6,9 @@ import { useI18n } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { Button } from './button';
 
+// Dialogs, popovers, menus and selects share z-50, and each portals to the end of <body> as it opens, so whatever
+// opened last is on top: a confirmation asked from a popover covers it, and a select inside a dialog opens over it.
+// Tooltips (z-[140]) and toasts (z-60) stay above all of them.
 const DIALOG_BACKDROP_CLASS = 'dialog-backdrop fixed inset-0 z-50 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0';
 const DIALOG_POPUP_CLASS =
   'dialog-glass relative flex min-h-0 w-full min-w-0 flex-col rounded-2xl border outline-none transition-[scale,opacity] duration-200 ease-in-out will-change-transform data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0';

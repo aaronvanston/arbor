@@ -66,7 +66,7 @@ function SelectPopup({
   const [listRef, listEdges] = useScrollEdges<HTMLDivElement>();
   return (
     <SelectPrimitive.Portal>
-      <SelectPrimitive.Positioner align={align} alignItemWithTrigger={alignItemWithTrigger} className="z-[130] select-none" data-slot="select-positioner" side={side} sideOffset={sideOffset}>
+      <SelectPrimitive.Positioner align={align} alignItemWithTrigger={alignItemWithTrigger} className="z-50 select-none" data-slot="select-positioner" side={side} sideOffset={sideOffset}>
         <SelectPrimitive.Popup
           className="origin-(--transform-origin) rounded-lg text-foreground outline-none transition-[scale,opacity] duration-150 data-starting-style:scale-98 data-starting-style:opacity-0 data-ending-style:scale-98 data-ending-style:opacity-0"
           data-slot="select-popup"

@@ -1,8 +1,26 @@
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
+import { LayerPopupContext, pressedLayerAbove, useLayerPopup, useLayerPopupRef } from './layers';
 
-const Popover = PopoverPrimitive.Root;
+/** Stays open under a dialog it opened, such as a confirmation, while a press in that dialog is answered. */
+function Popover<Payload>({ onOpenChange, ...props }: PopoverPrimitive.Root.Props<Payload>) {
+  const popupRef = useLayerPopupRef();
+  return (
+    <LayerPopupContext value={popupRef}>
+      <PopoverPrimitive.Root
+        {...props}
+        onOpenChange={(open, details) => {
+          if (!open && details.reason === 'outside-press' && pressedLayerAbove(popupRef.current, details.event)) {
+            details.cancel();
+            return;
+          }
+          onOpenChange?.(open, details);
+        }}
+      />
+    </LayerPopupContext>
+  );
+}
 
 function PopoverTrigger(props: PopoverPrimitive.Trigger.Props) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
@@ -60,18 +78,19 @@ function PopoverPopup({
   anchor?: PopoverPrimitive.Positioner.Props['anchor'];
   keepMounted?: PopoverPrimitive.Portal.Props['keepMounted'];
 }) {
+  const popupRef = useLayerPopup();
   return (
     <PopoverPrimitive.Portal keepMounted={keepMounted}>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130] max-w-(--available-width)"
+        className="z-50 max-w-(--available-width)"
         data-slot="popover-positioner"
         side={side}
         sideOffset={sideOffset}
       >
-        <PopoverPrimitive.Popup className={cn(popoverPopupVariants({ width }), className)} data-slot="popover-popup" {...props}>
+        <PopoverPrimitive.Popup className={cn(popoverPopupVariants({ width }), className)} data-slot="popover-popup" ref={popupRef ?? undefined} {...props}>
           <div className={popoverContentVariants({ padding })}>{children}</div>
         </PopoverPrimitive.Popup>
       </PopoverPrimitive.Positioner>

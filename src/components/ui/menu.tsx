@@ -3,8 +3,26 @@ import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Check, ChevronRight } from './icons';
 import { useId, type ReactNode } from 'react';
 import { cn } from '../../lib/utils';
+import { LayerPopupContext, pressedLayerAbove, useLayerPopup, useLayerPopupRef } from './layers';
 
-const Menu = MenuPrimitive.Root;
+/** Stays open under a dialog it opened, such as a confirmation, while a press in that dialog is answered. */
+function Menu<Payload>({ onOpenChange, ...props }: MenuPrimitive.Root.Props<Payload>) {
+  const popupRef = useLayerPopupRef();
+  return (
+    <LayerPopupContext value={popupRef}>
+      <MenuPrimitive.Root
+        {...props}
+        onOpenChange={(open, details) => {
+          if (!open && details.reason === 'outside-press' && pressedLayerAbove(popupRef.current, details.event)) {
+            details.cancel();
+            return;
+          }
+          onOpenChange?.(open, details);
+        }}
+      />
+    </LayerPopupContext>
+  );
+}
 
 function MenuTrigger(props: MenuPrimitive.Trigger.Props) {
   return <MenuPrimitive.Trigger data-slot="menu-trigger" {...props} />;
@@ -34,15 +52,18 @@ function MenuPopup({
   side?: MenuPrimitive.Positioner.Props['side'];
   anchor?: MenuPrimitive.Positioner.Props['anchor'];
 }) {
+  const popupRef = useLayerPopup();
   return (
     <MenuPrimitive.Portal>
-      <MenuPrimitive.Positioner align={align} anchor={anchor} className="z-[130]" data-slot="menu-positioner" side={side} sideOffset={sideOffset}>
+      {/* Same layer as dialogs (see dialog.tsx), so whichever opened last is on top. */}
+      <MenuPrimitive.Positioner align={align} anchor={anchor} className="z-50" data-slot="menu-positioner" side={side} sideOffset={sideOffset}>
         <MenuPrimitive.Popup
           className={cn(
             'dropdown-glass relative flex min-w-40 origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity] duration-150 data-starting-style:scale-98 data-starting-style:opacity-0 data-ending-style:scale-98 data-ending-style:opacity-0 dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]',
             className,
           )}
           data-slot="menu-popup"
+          ref={popupRef ?? undefined}
           {...props}
         >
           <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
@@ -100,7 +121,14 @@ function MenuItem({ className, variant = 'default', disabled, disabledReason, ch
 }
 
 /** A menu inside a menu: a MenuSubTrigger and the MenuPopup it opens, to the side. */
-const MenuSub = MenuPrimitive.SubmenuRoot;
+// A submenu's popup isn't the menu's own, so it doesn't take the menu's popup ref.
+function MenuSub(props: MenuPrimitive.SubmenuRoot.Props) {
+  return (
+    <LayerPopupContext value={null}>
+      <MenuPrimitive.SubmenuRoot {...props} />
+    </LayerPopupContext>
+  );
+}
 
 function MenuSubTrigger({ className, children, ...props }: MenuPrimitive.SubmenuTrigger.Props) {
   return (
