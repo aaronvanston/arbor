@@ -1,4 +1,4 @@
-//! The Dock icon's color. Nightly and dev builds are packaged with their own icon (Amber and Sky, from
+//! The Dock icon's color. Nightly and dev builds are packaged with their own icon (Amber and Signal, from
 //! `icons/channels/`, picked by scripts/build-release.sh), so Finder and Launchpad tell them from stable too. While
 //! Arbor runs, Settings › Appearance can put any of the colors in the Dock instead; macOS only lets an app change its
 //! icon while it runs, so a closed Arbor always shows its build's own. The choice is saved in config.toml.
@@ -46,7 +46,7 @@ pub(crate) fn build_icon(channel: BuildChannel) -> AppIconChoice {
     match channel {
         BuildChannel::Stable => AppIconChoice::Forest,
         BuildChannel::Nightly => AppIconChoice::Amber,
-        BuildChannel::Dev => AppIconChoice::Sky,
+        BuildChannel::Dev => AppIconChoice::Signal,
     }
 }
 
@@ -167,7 +167,7 @@ mod tests {
         );
         assert_eq!(
             shown_icon(AppIconChoice::Auto, BuildChannel::Dev),
-            AppIconChoice::Sky
+            AppIconChoice::Signal
         );
         assert_eq!(
             shown_icon(AppIconChoice::Paper, BuildChannel::Nightly),

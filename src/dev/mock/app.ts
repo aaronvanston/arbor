@@ -29,7 +29,7 @@ let productAnalytics: ProductAnalyticsSettings = {
 };
 
 /** The Dock icon the build shows on Auto, as `?build=` makes it (app_icon.rs's `build_icon`). */
-const mockBuildIcon: AppIconChoice = params.get('build') === 'nightly' ? 'amber' : params.get('build') === 'dev' ? 'sky' : 'forest';
+const mockBuildIcon: AppIconChoice = params.get('build') === 'nightly' ? 'amber' : params.get('build') === 'dev' ? 'signal' : 'forest';
 let appIcon: AppIconSetting = { choice: 'auto', shown: mockBuildIcon };
 
 let quitGuard: { enabled: boolean; armedAt: number | null } = { enabled: true, armedAt: null };

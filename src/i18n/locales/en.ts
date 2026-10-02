@@ -830,7 +830,7 @@ export const en = {
   'appearance.sidebarArtMotion.slow': 'Slow',
   'appearance.sidebarArtMotion.still': 'Still',
   'appearance.appIcon.title': 'App icon',
-  'appearance.appIcon.description': 'The icon’s color in the Dock while Arbor is open. Auto matches the build: Forest for stable, Amber for nightly and Sky for dev, which Finder and Launchpad show too.',
+  'appearance.appIcon.description': 'The icon’s color in the Dock while Arbor is open. Auto matches the build: Forest for stable, Amber for nightly and Signal for dev, which Finder and Launchpad show too.',
   'appearance.appIcon.failed': 'Couldn’t change the app icon: {error}',
   'appIcon.auto': 'Auto',
   'appIcon.autoShowing': 'Auto ({icon})',

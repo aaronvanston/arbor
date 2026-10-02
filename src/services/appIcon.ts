@@ -6,7 +6,7 @@ import type { MessageKey } from '../i18n/resources';
 /**
  * The Dock icon's color. The native side owns it (src-tauri/src/app_icon.rs): it's saved in config.toml and put in the
  * Dock at launch. Auto shows the build's own icon, the one it's packaged with: Forest for stable, Amber for nightly and
- * Sky for dev. Settings › Appearance picks it, and Settings › About shows the one in the Dock.
+ * Signal for dev. Settings › Appearance picks it, and Settings › About shows the one in the Dock.
  */
 export const APP_ICON_CHOICES: readonly AppIconChoice[] = ['auto', 'forest', 'amber', 'sky', 'ember', 'signal', 'paper', 'mono'];
 
