@@ -1768,6 +1768,17 @@ const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scan
   },
 };
 
+// `?nodeversions=many` gives the Mac a crowd of Node versions under nvm and fnm, with a pinned one and patches of
+// the same lines to clean up.
+if (params.get('nodeversions') === 'many') {
+  const mac = toolchainMachines['casey-mbp'];
+  if (mac) {
+    const extra = [['fnm', '24.12.0'], ['nvm', '22.21.1'], ['fnm', '22.18.0'], ['nvm', '22.13.1'], ['fnm', '22.13.1'], ['nvm', '20.15.1'], ['nvm', '20.12.2'], ['nvm', '19.8.1'], ['nvm', '18.20.4'], ['nvm', '18.15.0'], ['nvm', '18.10.0'], ['fnm', '16.20.2'], ['nvm', '16.14.0']] as const;
+    mac.kept = [...mac.kept, ...extra.map(([manager, version]) => ({ tool: 'node', manager, version, label: null }))];
+    mac.projects = [...mac.projects, toolchainProject('/Users/casey/src/old-dash', 'github.com/casey/old-dash', 400, { needs: [toolNeed('node', '20.12.2', 'pin', '.nvmrc')] })];
+  }
+}
+
 const toolchainReply = (machine: string, entry: (typeof toolchainMachines)[string], scannedAt: number | null): MachineToolchain => ({
   machine, scannedAt, partial: toolchainScenario === 'partial' && machine === 'casey-mbp', scanning: false, error: null,
   ...structuredClone(entry),

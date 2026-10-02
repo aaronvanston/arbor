@@ -15,6 +15,7 @@ import {
   nodeInstallers,
   nodeVersions,
   notInstalled,
+  olderNodeVersions,
   placeSummary,
   releaseLine,
   satisfiesPython,
@@ -298,5 +299,22 @@ describe('Node’s versions on a machine', () => {
     expect(nodeInstallers(machine('none', '/h'))).toEqual([]);
     expect(['22', 'v22.20.0', '22.20', ' 24 '].map(installableNode)).toEqual([true, true, true, true]);
     expect(['lts/*', '22.x', '22; rm', ''].map(installableNode)).toEqual([false, false, false, false]);
+  });
+
+  it('picks for a cleanup the older patches of each line, never the default, a pin or a line’s newest', () => {
+    const crowded = machine('eden', '/Users/e', {
+      tools: [tool('node', '20.19.4', '/Users/e/.nvm/versions/node/v20.19.4/bin/node')],
+      kept: [
+        kept('node', 'fnm', '24.12.0'), kept('node', 'nvm', '22.21.1'), kept('node', 'fnm', '22.18.0'),
+        kept('node', 'nvm', '22.13.1'), kept('node', 'fnm', '22.13.1'), kept('node', 'nvm', '20.19.4'),
+        kept('node', 'nvm', '20.15.1'), kept('node', 'nvm', '20.12.2'), kept('node', 'nvm', '19.8.1'),
+        kept('node', 'volta', '18.20.4'), kept('node', 'nvm', '18.15.0'), kept('node', 'nvm', '18.10.0'),
+      ],
+      projects: [project('/Users/e/src/old', null, { needs: [need('node', '20.12.2', 'pin', { file: '.nvmrc' })] })],
+    });
+    expect(olderNodeVersions(nodeVersions(crowded)).map((entry) => `${entry.kept.manager}:${entry.kept.version}`)).toEqual([
+      // 20.19.4 is the default and 20.12.2 is pinned; Volta's 18.20.4 can't be removed but is still 18's newest.
+      'fnm:22.18.0', 'nvm:22.13.1', 'fnm:22.13.1', 'nvm:20.15.1', 'nvm:18.15.0', 'nvm:18.10.0',
+    ]);
   });
 });

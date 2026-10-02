@@ -5,6 +5,7 @@ import { SectionAbout } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
 import { TableCard, TableEmpty } from '../components/ui/data-table';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { Input } from '../components/ui/input';
@@ -35,8 +36,11 @@ import {
   needsLook,
   needsScan,
   nodeInstallers,
+  MOST_NODE_CHANGES,
+  nodeVersionKey,
   nodeVersions,
   notInstalled,
+  olderNodeVersions,
   placeSummary,
   scanToolchain,
   SETUP_TOOLCHAIN_UPDATED_EVENT,
@@ -498,6 +502,11 @@ function NodeVersions({ toolchain }: { toolchain: MachineToolchain }) {
   const [version, setVersion] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
+  const removable = useMemo(() => versions.filter((entry) => entry.canRemove), [versions]);
+  const older = useMemo(() => olderNodeVersions(versions), [versions]);
+  // A pick whose version went away after a scan drops out of the choice.
+  const chosen = removable.filter((entry) => picked.has(nodeVersionKey(entry)));
   const using = manager && installers.includes(manager) ? manager : installers[0] ?? null;
 
   const run = async (key: string, change: NodeChange) => {
@@ -532,6 +541,45 @@ function NodeVersions({ toolchain }: { toolchain: MachineToolchain }) {
     });
     if (confirmed) await run(`${entry.kept.manager}:${entry.kept.version}`, { manager: entry.kept.manager as NodeManager, version: entry.kept.version, action: 'uninstall' });
   };
+  const removeChosen = async () => {
+    const pinned = chosen.filter((entry) => entry.pinnedBy.length);
+    const confirmed = await askConfirmation({
+      title: t(chosen.length === 1 ? 'setup.toolchain.node.bulk.title.one' : 'setup.toolchain.node.bulk.title.other', { count: chosen.length }),
+      message: tRich('setup.toolchain.node.bulk.message', { machine: <MachinePill name={machine} size="sm" /> }),
+      details: chosen.map((entry) => ({ label: entry.kept.manager, value: entry.kept.version })),
+      warning: pinned.length ? t('setup.toolchain.node.bulk.pinned', { projects: [...new Set(pinned.flatMap((entry) => entry.pinnedBy))].join(', ') }) : undefined,
+      confirmText: t(chosen.length === 1 ? 'setup.toolchain.node.bulk.confirm.one' : 'setup.toolchain.node.bulk.confirm.other', { count: chosen.length }),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    setBusy('bulk');
+    setError(null);
+    const changes: NodeChange[] = chosen.map((entry) => ({ manager: entry.kept.manager as NodeManager, version: entry.kept.version, action: 'uninstall' }));
+    const failed: string[] = [];
+    let removed = 0;
+    try {
+      for (let start = 0; start < changes.length; start += MOST_NODE_CHANGES) {
+        const results = await changeNodeVersions(machine, changes.slice(start, start + MOST_NODE_CHANGES));
+        for (const result of results) {
+          if (result.ok) removed += 1;
+          else failed.push(`${result.version} (${result.manager}): ${result.message ?? ''}`);
+        }
+      }
+    } catch (failure) {
+      failed.push(String(failure));
+    }
+    if (removed) toast({ kind: 'success', title: t(removed === 1 ? 'setup.toolchain.node.bulk.done.one' : 'setup.toolchain.node.bulk.done.other', { count: removed, machine }) });
+    if (failed.length) setError(t('setup.toolchain.node.failed', { error: failed.join('; ') }));
+    setPicked(new Set());
+    await scanToolchain(machine).catch(() => undefined);
+    setBusy(null);
+  };
+  const pick = (entry: NodeVersion, on: boolean) => setPicked((current) => {
+    const next = new Set(current);
+    if (on) next.add(nodeVersionKey(entry));
+    else next.delete(nodeVersionKey(entry));
+    return next;
+  });
   const wanted = version.trim();
   const install = () => {
     if (using && installableNode(wanted)) void run('install', { manager: using, version: wanted, action: 'install' });
@@ -542,11 +590,35 @@ function NodeVersions({ toolchain }: { toolchain: MachineToolchain }) {
       <div className="flex items-center gap-2 border-b border-border/50 px-3.5 py-2.5">
         <MachinePill name={machine} size="sm" />
         <span className="text-xs text-muted-foreground">{t('setup.toolchain.node.title')}</span>
+        {older.length ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            className="ms-auto"
+            disabled={busy !== null}
+            onClick={() => setPicked(new Set(older.map(nodeVersionKey)))}
+          >
+            {t('setup.toolchain.node.bulk.pickOlder', { count: older.length })}
+          </Button>
+        ) : null}
       </div>
       {versions.length ? versions.map((entry) => {
-        const key = `${entry.kept.manager}:${entry.kept.version}`;
+        const key = nodeVersionKey(entry);
         return (
-          <div key={key} className="flex min-w-0 items-center gap-2 border-b border-border/50 px-3.5 py-2">
+          <div key={key} className="flex min-w-0 items-center gap-2.5 border-b border-border/50 px-3.5 py-2">
+            {removable.length ? (
+              // Every row keeps the box's room, so the versions line up whether or not they can go.
+              <span className="flex size-4 shrink-0">
+                {entry.canRemove ? (
+                  <Checkbox
+                    checked={picked.has(key)}
+                    disabled={busy !== null}
+                    onCheckedChange={(on) => pick(entry, on === true)}
+                    aria-label={t('setup.toolchain.node.bulk.pickOne', { version: entry.kept.version, manager: entry.kept.manager })}
+                  />
+                ) : null}
+              </span>
+            ) : null}
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex items-center gap-1.5">
                 <span className="font-mono text-sm text-foreground">{entry.kept.version}</span>
@@ -558,7 +630,7 @@ function NodeVersions({ toolchain }: { toolchain: MachineToolchain }) {
                   : entry.kept.manager}
               </span>
             </span>
-            {busy === key ? <Spinner className="size-3.5" /> : null}
+            {busy === key || (busy === 'bulk' && picked.has(key)) ? <Spinner className="size-3.5" /> : null}
             {entry.canDefault ? (
               <Button variant="ghost" size="xs" disabled={busy !== null} onClick={() => void run(key, { manager: entry.kept.manager as NodeManager, version: entry.kept.version, action: 'setDefault' })}>
                 {t('setup.toolchain.node.makeDefault')}
@@ -572,6 +644,18 @@ function NodeVersions({ toolchain }: { toolchain: MachineToolchain }) {
           </div>
         );
       }) : <p className="border-b border-border/50 px-3.5 py-2.5 text-xs text-muted-foreground">{t('setup.toolchain.node.noneKept')}</p>}
+      {chosen.length ? (
+        <div className="flex items-center gap-2 border-b border-border/50 bg-muted/40 px-3.5 py-2">
+          <span className="text-xs text-muted-foreground">{t(chosen.length === 1 ? 'setup.toolchain.node.bulk.chosen.one' : 'setup.toolchain.node.bulk.chosen.other', { count: chosen.length })}</span>
+          <Button variant="ghost" size="xs" className="ms-auto" disabled={busy !== null} onClick={() => setPicked(new Set())}>
+            {t('setup.toolchain.node.bulk.clear')}
+          </Button>
+          <Button variant="destructive" size="xs" disabled={busy !== null} onClick={() => void removeChosen()}>
+            {busy === 'bulk' ? <Spinner /> : null}
+            {t(chosen.length === 1 ? 'setup.toolchain.node.bulk.remove.one' : 'setup.toolchain.node.bulk.remove.other', { count: chosen.length })}
+          </Button>
+        </div>
+      ) : null}
       {using ? (
         <form
           className="flex items-center gap-2 px-3.5 py-2.5"

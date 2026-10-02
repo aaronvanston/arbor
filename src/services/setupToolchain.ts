@@ -597,6 +597,26 @@ export function nodeVersions(machine: MachineToolchain): NodeVersion[] {
     });
 }
 
+export const nodeVersionKey = (entry: NodeVersion) => `${entry.kept.manager}:${entry.kept.version}`;
+
+/**
+ * The versions a cleanup picks: ones Arbor can remove that no project pins and that aren't the newest the machine
+ * keeps on their major line, so every line still in use keeps its latest patch.
+ */
+export function olderNodeVersions(versions: NodeVersion[]): NodeVersion[] {
+  const newest = new Map<string, string>();
+  for (const entry of versions) {
+    const line = releaseLine(entry.kept.version) ?? entry.kept.version;
+    const current = newest.get(line);
+    if (current === undefined || compareVersions(entry.kept.version, current) > 0) newest.set(line, entry.kept.version);
+  }
+  return versions.filter((entry) => entry.canRemove && !entry.pinnedBy.length
+    && compareVersions(entry.kept.version, newest.get(releaseLine(entry.kept.version) ?? entry.kept.version) ?? entry.kept.version) < 0);
+}
+
+/** The backend takes this many Node changes in one run, so a bigger cleanup goes in several. */
+export const MOST_NODE_CHANGES = 12;
+
 /** The version managers on a machine that can install Node: the ones keeping a version, or giving the shell its node. */
 export function nodeInstallers(machine: MachineToolchain): NodeManager[] {
   const node = machine.tools.find((tool) => tool.tool === 'node');

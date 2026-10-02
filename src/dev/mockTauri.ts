@@ -151,6 +151,7 @@
  * the Mac that ran out of time; `?worktrees=changed` to have every worktree but the first come back changed when
  * removed, or `?worktrees=fail` to have removing them fail outright;
  * `?nodechange=fail` to have every Node install from a machine's Node cell on the Toolchain tab fail to download;
+ * `?nodeversions=many` for a Mac keeping 16 Node versions under nvm and fnm, to clean up in bulk;
  * `?toolchain=fresh` for machines whose tools haven't been scanned (the tab scans them), `?toolchain=none` for scans
  * that found no projects, `?toolchain=fail` to have cedar-02's toolchain scan fail, `?toolchain=partial` for a
  * scan of the Mac that ran out of time;
