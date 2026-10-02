@@ -1855,6 +1855,7 @@ fn main() {
             usage::machine_health::pools::report_working_sessions,
             usage::machine_health::pool_ssh::get_pool_ssh,
             usage::machine_health::pool_ssh::add_pool_ssh_include,
+            usage::machine_health::pool_ssh::forget_pool_ssh_name,
             usage::machine_health::runs::start_pool_run,
             usage::machine_health::runs::get_runs,
             usage::machine_health::runs::cancel_run,

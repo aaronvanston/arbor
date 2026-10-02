@@ -40,6 +40,7 @@ const STEPS: &[Step] = &[
     Step { version: 17, name: "machine pools", apply: machine_pools },
     Step { version: 18, name: "automations", apply: automations },
     Step { version: 19, name: "harness runs", apply: harness_runs },
+    Step { version: 20, name: "pool ssh names", apply: pool_ssh_names },
 ];
 
 /// The version of a database that has had every step.
@@ -1218,6 +1219,24 @@ fn harness_runs(connection: &mut Connection, _: &Path) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS usage_runs_state ON usage_runs (state)",
         )
         .map_err(|error| format!("Failed to prepare the harness runs table: {error}"))
+}
+
+/// Which machine each host name a pool was reached under over SSH (`machine_health/pool_ssh.rs`) is pinned to, so an
+/// app that remembers a host by name finds its files on the same machine after Arbor restarts. `from_pool_id` is the
+/// pool the machine was picked from: the one asked for, or one it spilled into.
+fn pool_ssh_names(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS usage_pool_ssh_names (
+                pool_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                from_pool_id TEXT NOT NULL,
+                machine TEXT NOT NULL,
+                picked_at_ms INTEGER NOT NULL,
+                PRIMARY KEY (pool_id, name)
+            )",
+        )
+        .map_err(|error| format!("Failed to prepare the pool SSH names table: {error}"))
 }
 
 // ---------------------------------------------------------------------------

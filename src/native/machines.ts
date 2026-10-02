@@ -43,6 +43,7 @@ export type MachineCommands = {
   report_working_sessions: { args: { counts: Record<string, number> }; result: void };
   get_pool_ssh: { args: { poolId: string }; result: PoolSsh };
   add_pool_ssh_include: { result: void };
+  forget_pool_ssh_name: { args: { poolId: string; name: string }; result: void };
   start_pool_run: { args: { request: RunRequest }; result: HarnessRun };
   get_runs: { result: HarnessRun[] };
   cancel_run: { args: { id: string }; result: HarnessRun[] };

@@ -121,8 +121,9 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
 - `src-tauri/src/usage/machine_health/pool_ssh.rs`: each pool as an SSH host,
   `ssh arbor-<pool>`. Arbor's own `~/.arbor/ssh/pools.conf` makes `arbor pools connect`
   the host's ProxyCommand, which asks the app for a member over the socket
-  (`pools.connect`) and carries the bytes. A host name keeps its member while it's
-  connected and ten minutes after, and only a member that stops answering loses it.
+  (`pools.connect`) and carries the bytes. A host name is pinned to the member its
+  first connection went to, saved in usage.db, and only a member that's off, removed or
+  stops answering loses it (or the person forgets the name on the pool's page).
   Host keys come only from the user's own known_hosts, never a scan, and
   `~/.ssh/config` gets its one Include line only through a guarded write.
 - `src-tauri/src/usage/machine_health/archive.rs` and `archive/`: the session archive.

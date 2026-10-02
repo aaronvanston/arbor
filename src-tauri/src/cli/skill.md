@@ -23,7 +23,7 @@ any other machine, say so instead of trying.
 | --- | --- |
 | Machine health | `arbor machines`, or `arbor machines <name>` for one in full |
 | Machine pools and who would take each one's next run | `arbor pools` |
-| Connect to a pool over SSH | `ssh arbor-<pool>`, once its page in Arbor says it's ready; `arbor pools connect` is that host's ProxyCommand, not something to run yourself |
+| Connect to a pool over SSH | `ssh arbor-<pool>`, once its page in Arbor says it's ready; `arbor pools connect` is that host's ProxyCommand, not something to run yourself. Each host name stays on its first machine; `arbor call forget_pool_ssh_name --args '{"poolId":"<id>","name":"<host>"}'` lets it pick again |
 | Sessions | `arbor sessions` (recent), `arbor sessions --live` (running now, with cost per hour) |
 | Usage and cost | `arbor usage today`, `arbor usage 7d`, `arbor usage 30d` |
 | Accounts and limits | `arbor accounts`, or `arbor accounts refresh` to read the limits again |

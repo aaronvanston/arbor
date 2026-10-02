@@ -2863,7 +2863,7 @@ export type PoolSsh = {
 };
 
 /**
- * A host name connected to the pool lately, and the member it goes to.
+ * A host name the pool has been reached under, and the member it's pinned to.
  */
 export type PoolSshConnection = {
   name: string,
@@ -2873,9 +2873,9 @@ export type PoolSshConnection = {
    */
   open: number,
   /**
-   * When the last one closed, while none is open; it keeps its member until LEASE_GRACE_MS after.
+   * When it was pinned to the member.
    */
-  idleSinceMs: number | null,
+  pickedAtMs: number,
 };
 
 export type PoolSshMember = {

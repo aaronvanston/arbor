@@ -511,6 +511,7 @@ fn write_pool(connection: &mut Connection, pool: &MachinePool) -> Result<(), Str
 fn delete_pool(connection: &mut Connection, id: &str) -> Result<(), String> {
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
     transaction.execute("DELETE FROM usage_pool_members WHERE pool_id = ?1", params![id]).map_err(|error| error.to_string())?;
+    super::pool_ssh::delete_pool_pins(&transaction, id)?;
     transaction.execute("DELETE FROM usage_pools WHERE id = ?1", params![id]).map_err(|error| error.to_string())?;
     transaction
         .execute("UPDATE usage_pools SET when_full = 'refuse', spill_pool = NULL WHERE spill_pool = ?1", params![id])
@@ -551,12 +552,14 @@ pub(crate) async fn save_pool(app: tauri::AppHandle, pool: MachinePool) -> Resul
 /// Takes a pool off the list by its id. Pools that sent their overflow to it refuse runs instead.
 #[tauri::command]
 pub(crate) async fn remove_pool(app: tauri::AppHandle, id: String) -> Result<Vec<MachinePool>, String> {
+    let removing = id.clone();
     let pools = run_usage_task(move || {
         let mut connection = open_usage_database()?;
-        delete_pool(&mut connection, &id)?;
+        delete_pool(&mut connection, &removing)?;
         read_pools(&connection)
     })
     .await?;
+    super::pool_ssh::forget_pool_pins(&id);
     let _ = app.emit(MACHINE_POOLS_UPDATED_EVENT, ());
     super::pool_ssh::refresh_soon(&app);
     Ok(pools)

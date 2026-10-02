@@ -2,11 +2,12 @@
 //! host whose ProxyCommand is `arbor pools connect`, which asks the app for a member and carries the connection to its
 //! sshd. Any app that connects to SSH hosts (an editor, an agent app, plain ssh) can open a pool that way unchanged.
 //!
-//! A pick is per connection, and sticky: every connection under one host name goes to the same member while any is
-//! open and for LEASE_GRACE_MS after the last closes, since apps open several (a control connection, file sync,
-//! forwarded ports) and they all have to land on one machine. A member getting busy never moves a lease, which would
-//! split one workspace across machines; only one that's off, gone or not answering is replaced, on the next
-//! connection. Each name is its own lease (`arbor-builds`, `arbor-builds-b`), so two workspaces can spread out.
+//! The first connection under a host name picks a member, and the name is pinned to it from then on, saved in usage.db:
+//! apps open several connections (a control connection, file sync, forwarded ports) that have to land on one machine,
+//! and apps that remember a host by name (its folders, its threads, a server they installed there) have to find the
+//! same machine next week. A member getting busy never moves a pin; only one that's off, gone or failing its health
+//! check is replaced, on the next connection, and the person can forget a name on the pool's page. Each name is pinned
+//! on its own (`arbor-builds`, `arbor-builds-b`), so two workspaces can spread out.
 //!
 //! Host keys are only ever ones the person's own known_hosts already trusts for a member. Arbor copies them under one
 //! alias into a file of its own, so ssh accepts whichever member answers, and never scans for new ones. A member
@@ -27,8 +28,6 @@ pub(crate) const POOL_SSH_UPDATED_EVENT: &str = "pool-ssh-updated";
 
 /// The one name every member's host key is filed under in Arbor's known_hosts.
 const HOST_KEY_ALIAS: &str = "arbor-pools";
-/// How long a host name keeps its member after its last connection closes, so an app reconnecting lands back on it.
-const LEASE_GRACE_MS: i64 = 10 * 60_000;
 /// How long a member's SSH settings and host keys are taken as read; connecting reads them, so a burst of connections
 /// doesn't start dozens of helpers.
 const RESOLVED_FOR: Duration = Duration::from_secs(60);
@@ -426,66 +425,128 @@ pub(super) fn refresh_soon(app: &tauri::AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Leases
+// Pins
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
-struct Lease {
+struct Pin {
     /// The pool the member was picked from: the one asked for, or one it spilled into.
     pool_id: String,
     /// The member, by normalized name.
     machine: String,
-    open: u32,
-    last_closed_ms: Option<i64>,
+    picked_at_ms: i64,
 }
 
-/// Leases by the pool asked for and the host name it was asked under.
-type Leases = HashMap<(String, String), Lease>;
+/// A pool asked for and the host name it was asked under.
+type PinKey = (String, String);
 
-fn leases() -> &'static StdMutex<Leases> {
-    static LEASES: OnceLock<StdMutex<Leases>> = OnceLock::new();
-    LEASES.get_or_init(Default::default)
+/// The saved pins, read from usage.db once, and the connections open under each name now, which only this run of Arbor
+/// knows.
+#[derive(Default)]
+struct Pins {
+    loaded: bool,
+    saved: HashMap<PinKey, Pin>,
+    open: HashMap<PinKey, u32>,
 }
 
-fn lock_leases() -> std::sync::MutexGuard<'static, Leases> {
-    leases().lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+fn pins() -> &'static StdMutex<Pins> {
+    static PINS: OnceLock<StdMutex<Pins>> = OnceLock::new();
+    PINS.get_or_init(Default::default)
 }
 
-fn prune(leases: &mut Leases, now_ms: i64) {
-    leases.retain(|_, lease| lease.open > 0 || lease.last_closed_ms.is_none_or(|closed| now_ms - closed < LEASE_GRACE_MS));
+fn lock_pins() -> std::sync::MutexGuard<'static, Pins> {
+    pins().lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Whether a member keeps its lease: only one the pool can't reach any more loses it. Being busy never does.
-fn keeps_lease(kind: VerdictKind) -> bool {
-    !matches!(kind, VerdictKind::NotListed | VerdictKind::Off | VerdictKind::Unreachable | VerdictKind::Stale)
+fn read_pins(connection: &Connection) -> Result<HashMap<PinKey, Pin>, String> {
+    let mut statement = connection
+        .prepare("SELECT pool_id, name, from_pool_id, machine, picked_at_ms FROM usage_pool_ssh_names")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| Ok(((row.get(0)?, row.get(1)?), Pin { pool_id: row.get(2)?, machine: row.get(3)?, picked_at_ms: row.get(4)? })))
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<_, _>>().map_err(|error| error.to_string())
 }
 
-fn lease_holds(inner: &Inner, pools_saved: &[MachinePool], lease: &Lease, ready: &dyn Fn(&str) -> bool) -> bool {
-    let Some(pool) = pools_saved.iter().find(|pool| pool.id == lease.pool_id) else { return false };
+fn save_pin(connection: &Connection, key: &PinKey, pin: &Pin) -> Result<(), String> {
+    connection
+        .execute(
+            "INSERT OR REPLACE INTO usage_pool_ssh_names (pool_id, name, from_pool_id, machine, picked_at_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![key.0, key.1, pin.pool_id, pin.machine, pin.picked_at_ms],
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// Takes a pool's pins off usage.db with the pool, inside its removal.
+pub(super) fn delete_pool_pins(connection: &Connection, pool_id: &str) -> Result<(), String> {
+    connection
+        .execute("DELETE FROM usage_pool_ssh_names WHERE pool_id = ?1 OR from_pool_id = ?1", params![pool_id])
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// Drops a removed pool's pins from memory too.
+pub(super) fn forget_pool_pins(pool_id: &str) {
+    lock_pins().saved.retain(|key, pin| key.0 != pool_id && pin.pool_id != pool_id);
+}
+
+async fn load_pins() -> Result<(), String> {
+    if lock_pins().loaded {
+        return Ok(());
+    }
+    let saved = run_usage_task(|| read_pins(&open_usage_database()?)).await?;
+    let mut pins = lock_pins();
+    if !pins.loaded {
+        for (key, pin) in saved {
+            pins.saved.entry(key).or_insert(pin);
+        }
+        pins.loaded = true;
+    }
+    Ok(())
+}
+
+/// Whether a pinned member keeps its pin. Only one known to be gone loses it: switched off, failing its health check,
+/// or taken off the Machines page. Being busy never does, nor an old reading (Arbor may have been asleep), since moving
+/// would leave the app looking for its files on another machine.
+fn keeps_pin(kind: VerdictKind) -> bool {
+    !matches!(kind, VerdictKind::NotListed | VerdictKind::Off | VerdictKind::Unreachable)
+}
+
+fn pin_holds(inner: &Inner, pools_saved: &[MachinePool], pin: &Pin, ready: &dyn Fn(&str) -> bool) -> Result<bool, String> {
+    let Some(pool) = pools_saved.iter().find(|pool| pool.id == pin.pool_id) else { return Ok(false) };
     let now_ms = Local::now().timestamp_millis();
-    pools::assess_with(pool, &pools::readings(inner), &BTreeMap::new(), now_ms, inner.interval_ms, |_| true)
-        .iter()
-        .find(|verdict| normalize_machine_name(verdict.machine()) == lease.machine)
-        .is_some_and(|verdict| keeps_lease(verdict.kind()) && ready(verdict.machine()))
+    let Some(verdict) = pools::assess_with(pool, &pools::readings(inner), &BTreeMap::new(), now_ms, inner.interval_ms, |_| true)
+        .into_iter()
+        .find(|verdict| normalize_machine_name(verdict.machine()) == pin.machine)
+    else {
+        return Ok(false);
+    };
+    // Just after Arbor starts, no machine is listed yet: that says nothing about this one.
+    if verdict.kind() == VerdictKind::NotListed && inner.series.is_empty() {
+        return Err("Arbor is still loading its machines. Try again in a moment".into());
+    }
+    Ok(keeps_pin(verdict.kind()) && ready(verdict.machine()))
 }
 
-/// The member a connection under `key` (the pool asked for, the host name) goes to, counted as open on its lease: the
-/// lease's member while it holds, otherwise a fresh pick.
-fn take_lease(inner: &Inner, pools_saved: &[MachinePool], leases: &mut Leases, key: &(String, String), ready: &dyn Fn(&str) -> bool) -> Result<Machine, String> {
-    prune(leases, Local::now().timestamp_millis());
-    let kept = leases.get(key).filter(|lease| lease_holds(inner, pools_saved, lease, ready)).and_then(|lease| runs::machine_named(inner, &lease.machine));
-    let machine = match kept {
-        Some(machine) => machine,
+/// The member a connection under `key` goes to, counted as open: the pinned one while it holds, otherwise a fresh
+/// pick, given back to be saved.
+fn take_pin(inner: &Inner, pools_saved: &[MachinePool], pins: &mut Pins, key: &PinKey, ready: &dyn Fn(&str) -> bool) -> Result<(Machine, Option<Pin>), String> {
+    let kept = match pins.saved.get(key) {
+        Some(pin) if pin_holds(inner, pools_saved, pin, ready)? => runs::machine_named(inner, &pin.machine),
+        _ => None,
+    };
+    let (machine, picked) = match kept {
+        Some(machine) => (machine, None),
         None => {
             let (from, machine) = runs::pick_for_connection(inner, pools_saved, &key.0, ready)?;
-            leases.insert(key.clone(), Lease { pool_id: from, machine: normalize_machine_name(machine.name()), open: 0, last_closed_ms: None });
-            machine
+            let pin = Pin { pool_id: from, machine: normalize_machine_name(machine.name()), picked_at_ms: Local::now().timestamp_millis() };
+            pins.saved.insert(key.clone(), pin.clone());
+            (machine, Some(pin))
         }
     };
-    if let Some(lease) = leases.get_mut(key) {
-        lease.open += 1;
-    }
-    Ok(machine)
+    *pins.open.entry(key.clone()).or_default() += 1;
+    Ok((machine, picked))
 }
 
 /// Where `arbor pools connect` sends a connection.
@@ -499,18 +560,21 @@ pub(crate) enum ConnectTarget {
     Via { machine: String, endpoint: String, port: u16 },
 }
 
-/// Holds a connection's place on its lease; dropping it, when the connection ends, starts the lease's grace.
-pub(crate) struct LeaseHold {
-    key: (String, String),
+/// Counts a connection as open under its host name until it ends.
+pub(crate) struct PinHold {
+    key: PinKey,
     app: tauri::AppHandle,
 }
 
-impl Drop for LeaseHold {
+impl Drop for PinHold {
     fn drop(&mut self) {
-        if let Some(lease) = lock_leases().get_mut(&self.key) {
-            lease.open = lease.open.saturating_sub(1);
-            if lease.open == 0 {
-                lease.last_closed_ms = Some(Local::now().timestamp_millis());
+        {
+            let mut pins = lock_pins();
+            if let Some(open) = pins.open.get_mut(&self.key) {
+                *open = open.saturating_sub(1);
+                if *open == 0 {
+                    pins.open.remove(&self.key);
+                }
             }
         }
         let _ = self.app.emit(POOL_SSH_UPDATED_EVENT, ());
@@ -528,10 +592,11 @@ fn find_pool<'a>(pools_saved: &'a [MachinePool], wanted: &str) -> Option<&'a Mac
         .or_else(|| pools_saved.iter().find(|pool| normalize_machine_name(&pool.name) == loose))
 }
 
-/// Picks the member a connection to a pool under host name `name` goes to, keeping the one it went to last time
-/// while that one can still be reached, and holds its place until the connection ends.
-pub(crate) async fn open_connection(app: &tauri::AppHandle, pool: &str, name: &str) -> Result<(ConnectTarget, LeaseHold), String> {
+/// Picks the member a connection to a pool under host name `name` goes to: the one that name is pinned to while it can
+/// still be reached, otherwise a fresh pick, pinned from then on. Holds its place until the connection ends.
+pub(crate) async fn open_connection(app: &tauri::AppHandle, pool: &str, name: &str) -> Result<(ConnectTarget, PinHold), String> {
     let (pools_saved, resolved) = current(app).await?;
+    load_pins().await?;
     let pool = find_pool(&pools_saved, pool).ok_or_else(|| format!("Arbor has no pool called {pool}."))?;
     let user = pool_user(pool, &resolved);
     let ready = |machine: &str| readiness(resolved.get(&normalize_machine_name(machine)), user.as_deref()) == Readiness::Ready;
@@ -542,12 +607,18 @@ pub(crate) async fn open_connection(app: &tauri::AppHandle, pool: &str, name: &s
         typed => typed.to_ascii_lowercase(),
     };
     let key = (pool.id.clone(), name);
-    let (machine, host) = {
+    let (machine, host, picked) = {
         let state = app.state::<MachineHealthState>();
-        let machine = take_lease(&state.lock(), &pools_saved, &mut lock_leases(), &key, &ready)?;
-        (machine.name().to_string(), machine.host().clone())
+        let (machine, picked) = take_pin(&state.lock(), &pools_saved, &mut lock_pins(), &key, &ready)?;
+        (machine.name().to_string(), machine.host().clone(), picked)
     };
-    let hold = LeaseHold { key, app: app.clone() };
+    let hold = PinHold { key: key.clone(), app: app.clone() };
+    if let Some(pin) = picked {
+        // The connection goes ahead either way; only the pin would be forgotten when Arbor restarts.
+        if let Err(error) = run_usage_task(move || save_pin(&open_usage_database()?, &key, &pin)).await {
+            eprintln!("Arbor couldn't save which machine a pool's SSH host name is pinned to: {error}");
+        }
+    }
     let _ = app.emit(POOL_SSH_UPDATED_EVENT, ());
     let settings = resolved.get(&normalize_machine_name(&machine)).and_then(|member| member.settings.clone()).ok_or("Arbor lost track of where that machine is")?;
     Ok((target_for(&machine, &host, &settings), hold))
@@ -572,7 +643,7 @@ pub(crate) struct PoolSshMember {
     readiness: Readiness,
 }
 
-/// A host name connected to the pool lately, and the member it goes to.
+/// A host name the pool has been reached under, and the member it's pinned to.
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PoolSshConnection {
@@ -580,9 +651,9 @@ pub(crate) struct PoolSshConnection {
     machine: String,
     /// Connections open now.
     open: u32,
-    /// When the last one closed, while none is open; it keeps its member until LEASE_GRACE_MS after.
-    #[ts(type = "number | null")]
-    idle_since_ms: Option<i64>,
+    /// When it was pinned to the member.
+    #[ts(type = "number")]
+    picked_at_ms: i64,
 }
 
 /// Connecting to a pool over SSH, for its page.
@@ -616,7 +687,7 @@ fn includes_pools(config: &str) -> bool {
 }
 
 /// How to connect to a pool over SSH: its host name, which members can take a connection and why the others can't,
-/// and which host names are on which member now.
+/// and which host names are pinned to which member.
 #[tauri::command]
 pub(crate) async fn get_pool_ssh(app: tauri::AppHandle, pool_id: String) -> Result<PoolSsh, String> {
     let (pools_saved, resolved) = current(&app).await?;
@@ -637,17 +708,17 @@ pub(crate) async fn get_pool_ssh(app: tauri::AppHandle, pool_id: String) -> Resu
         .values()
         .map(|series| (normalize_machine_name(&series.host.machine), series.host.machine.clone()))
         .collect();
+    load_pins().await?;
     let mut connections: Vec<PoolSshConnection> = {
-        let mut leases = lock_leases();
-        prune(&mut leases, Local::now().timestamp_millis());
-        leases
+        let pins = lock_pins();
+        pins.saved
             .iter()
             .filter(|((pool, _), _)| *pool == pool_id)
-            .map(|((_, name), lease)| PoolSshConnection {
-                name: name.clone(),
-                machine: display.get(&lease.machine).cloned().unwrap_or_else(|| lease.machine.clone()),
-                open: lease.open,
-                idle_since_ms: if lease.open == 0 { lease.last_closed_ms } else { None },
+            .map(|(key, pin)| PoolSshConnection {
+                name: key.1.clone(),
+                machine: display.get(&pin.machine).cloned().unwrap_or_else(|| pin.machine.clone()),
+                open: pins.open.get(key).copied().unwrap_or(0),
+                picked_at_ms: pin.picked_at_ms,
             })
             .collect()
     };
@@ -707,6 +778,28 @@ pub(crate) async fn add_pool_ssh_include(app: tauri::AppHandle) -> Result<(), St
         Some(EditOutcome::Changed) => Err("~/.ssh/config changed while Arbor was adding the line, so it left it alone. Try again".into()),
         _ => Err("Arbor couldn't add the line to ~/.ssh/config".into()),
     }
+}
+
+/// Unpins a host name, so its next connection picks a member afresh. Refused while it has connections open, which
+/// would be left on one machine with the next on another.
+#[tauri::command]
+pub(crate) async fn forget_pool_ssh_name(app: tauri::AppHandle, pool_id: String, name: String) -> Result<(), String> {
+    load_pins().await?;
+    let key = (pool_id, name);
+    if lock_pins().open.get(&key).is_some_and(|open| *open > 0) {
+        return Err(format!("{} has connections open. Close them, then forget it", key.1));
+    }
+    let row = key.clone();
+    run_usage_task(move || {
+        open_usage_database()?
+            .execute("DELETE FROM usage_pool_ssh_names WHERE pool_id = ?1 AND name = ?2", params![row.0, row.1])
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .await?;
+    lock_pins().saved.remove(&key);
+    let _ = app.emit(POOL_SSH_UPDATED_EVENT, ());
+    Ok(())
 }
 
 #[cfg(test)]
@@ -821,27 +914,30 @@ mod tests {
     }
 
     #[test]
-    fn only_a_member_that_can_no_longer_be_reached_loses_its_lease() {
-        for kind in [VerdictKind::Eligible, VerdictKind::AgentsFull, VerdictKind::CpuHigh, VerdictKind::MemoryLow, VerdictKind::NoReading] {
-            assert!(keeps_lease(kind), "{kind:?}");
+    fn only_a_member_known_to_be_gone_loses_its_pin() {
+        for kind in [VerdictKind::Eligible, VerdictKind::AgentsFull, VerdictKind::CpuHigh, VerdictKind::MemoryLow, VerdictKind::NoReading, VerdictKind::Stale] {
+            assert!(keeps_pin(kind), "{kind:?}");
         }
-        for kind in [VerdictKind::NotListed, VerdictKind::Off, VerdictKind::Unreachable, VerdictKind::Stale] {
-            assert!(!keeps_lease(kind), "{kind:?}");
+        for kind in [VerdictKind::NotListed, VerdictKind::Off, VerdictKind::Unreachable] {
+            assert!(!keeps_pin(kind), "{kind:?}");
         }
     }
 
     #[test]
-    fn a_lease_is_kept_while_open_and_for_its_grace_after() {
-        let lease = |open, last_closed_ms| Lease { pool_id: "p".into(), machine: "a".into(), open, last_closed_ms };
-        let mut held: Leases = HashMap::from([
-            (("p".into(), "open".into()), lease(2, Some(0))),
-            (("p".into(), "recent".into()), lease(0, Some(1_000_000 - LEASE_GRACE_MS + 1))),
-            (("p".into(), "old".into()), lease(0, Some(1_000_000 - LEASE_GRACE_MS))),
-        ]);
-        prune(&mut held, 1_000_000);
-        let mut kept: Vec<&str> = held.keys().map(|(_, name)| name.as_str()).collect();
-        kept.sort();
-        assert_eq!(kept, ["open", "recent"]);
+    fn pins_are_saved_and_go_with_their_pool() {
+        let connection = super::super::super::schema::test_database();
+        let pin = |pool_id: &str, machine: &str| Pin { pool_id: pool_id.into(), machine: machine.into(), picked_at_ms: 7 };
+        save_pin(&connection, &("p1".into(), "arbor-builds".into()), &pin("p1", "casey-mbp")).unwrap();
+        save_pin(&connection, &("p1".into(), "arbor-builds".into()), &pin("p1", "lab-box")).unwrap();
+        save_pin(&connection, &("p1".into(), "arbor-builds-b".into()), &pin("p2", "cedar-02")).unwrap();
+        save_pin(&connection, &("p3".into(), "arbor-docs".into()), &pin("p3", "casey-mbp")).unwrap();
+        let saved = read_pins(&connection).unwrap();
+        assert_eq!(saved.len(), 3);
+        assert_eq!(saved[&("p1".to_string(), "arbor-builds".to_string())], pin("p1", "lab-box"), "a new pick replaces the old");
+        delete_pool_pins(&connection, "p2").unwrap();
+        let mut left: Vec<String> = read_pins(&connection).unwrap().into_keys().map(|(_, name)| name).collect();
+        left.sort();
+        assert_eq!(left, ["arbor-builds", "arbor-docs"], "a pin spilled into a removed pool goes with it");
     }
 
     /// Machines answering now, with the pool's limits in reach of `working` sessions.
@@ -861,39 +957,65 @@ mod tests {
         state
     }
 
-    fn key(name: &str) -> (String, String) {
+    fn key(name: &str) -> PinKey {
         ("p1".into(), name.into())
+    }
+
+    fn take(state: &MachineHealthState, pools: &[MachinePool], pins: &mut Pins, name: &str, ready: &dyn Fn(&str) -> bool) -> Result<(String, Option<Pin>), String> {
+        take_pin(&state.lock(), pools, pins, &key(name), ready).map(|(machine, picked)| (machine.name().to_string(), picked))
     }
 
     // Picks count as runs just sent, in memory every test shares, so each test has machines of its own.
     #[test]
     fn a_host_name_stays_on_its_member_even_when_it_gets_busy() {
-        let state = state_with(&["lease-mbp", "lease-mini"]);
-        let mut builds = pool("p1", "Builds", &["lease-mbp", "lease-mini"]);
+        let state = state_with(&["pin-mbp", "pin-mini"]);
+        let mut builds = pool("p1", "Builds", &["pin-mbp", "pin-mini"]);
         builds.max_agents = Some(2);
         let pools = [builds];
-        let mut leases = Leases::new();
-        let first = take_lease(&state.lock(), &pools, &mut leases, &key("arbor-builds"), &|_| true).unwrap().name().to_string();
+        let mut pins = Pins::default();
+        let (first, picked) = take(&state, &pools, &mut pins, "arbor-builds", &|_| true).unwrap();
+        assert_eq!(picked.map(|pin| pin.machine), Some(normalize_machine_name(&first)), "a fresh pick is given back to be saved");
         state.lock().working_sessions = Some(BTreeMap::from([(normalize_machine_name(&first), 5)]));
         for _ in 0..5 {
-            let again = take_lease(&state.lock(), &pools, &mut leases, &key("arbor-builds"), &|_| true).unwrap();
-            assert_eq!(again.name(), first, "a full member keeps the connections it has");
+            let (again, picked) = take(&state, &pools, &mut pins, "arbor-builds", &|_| true).unwrap();
+            assert_eq!(again, first, "a full member keeps the connections it has");
+            assert_eq!(picked, None, "nothing new to save");
         }
-        assert_eq!(leases[&key("arbor-builds")].open, 6);
-        let other = take_lease(&state.lock(), &pools, &mut leases, &key("arbor-builds-b"), &|_| true).unwrap();
-        assert_ne!(other.name(), first, "a new host name goes to a member with room");
+        assert_eq!(pins.open[&key("arbor-builds")], 6);
+        let (other, _) = take(&state, &pools, &mut pins, "arbor-builds-b", &|_| true).unwrap();
+        assert_ne!(other, first, "a new host name goes to a member with room");
     }
 
     #[test]
-    fn a_member_that_stops_answering_is_replaced_on_the_next_connection() {
+    fn a_pin_survives_a_restart_and_an_old_reading_but_not_a_failed_check() {
         let state = state_with(&["drop-mbp", "drop-mini"]);
         let pools = [pool("p1", "Builds", &["drop-mbp", "drop-mini"])];
-        let mut leases = Leases::new();
-        let first = take_lease(&state.lock(), &pools, &mut leases, &key("arbor-builds"), &|_| true).unwrap().name().to_string();
-        state.lock().series.get_mut(&first).unwrap().error = Some("timed out".into());
-        let next = take_lease(&state.lock(), &pools, &mut leases, &key("arbor-builds"), &|_| true).unwrap();
-        assert_ne!(next.name(), first);
-        assert_eq!(leases[&key("arbor-builds")].open, 1, "the new lease counts only its own connection");
+        // As Arbor finds it after a restart: the pin saved, nothing open.
+        let mut pins = Pins { loaded: true, saved: HashMap::from([(key("arbor-builds"), Pin { pool_id: "p1".into(), machine: "dropmini".into(), picked_at_ms: 1 })]), open: HashMap::new() };
+        state.lock().series.get_mut("drop-mini").unwrap().last_ok_at = Some(1);
+        assert_eq!(take(&state, &pools, &mut pins, "arbor-builds", &|_| true).unwrap(), ("drop-mini".to_string(), None), "an old reading keeps it");
+        state.lock().series.get_mut("drop-mini").unwrap().error = Some("timed out".into());
+        let (next, picked) = take(&state, &pools, &mut pins, "arbor-builds", &|_| true).unwrap();
+        assert_eq!(next, "drop-mbp");
+        assert_eq!(picked.map(|pin| pin.machine), Some("dropmbp".to_string()), "the new member is saved in its place");
+        {
+            let mut inner = state.lock();
+            let mini = inner.series.get_mut("drop-mini").unwrap();
+            mini.error = None;
+            mini.last_ok_at = Some(Local::now().timestamp_millis());
+        }
+        let (back, _) = take(&state, &pools, &mut pins, "arbor-builds", &|machine| machine != "drop-mbp").unwrap();
+        assert_eq!(back, "drop-mini", "a member no longer ready for SSH loses it too");
+    }
+
+    #[test]
+    fn a_pin_waits_for_arbor_to_load_its_machines() {
+        let state = MachineHealthState::default();
+        let pools = [pool("p1", "Builds", &["load-mbp"])];
+        let mut pins = Pins { loaded: true, saved: HashMap::from([(key("arbor-builds"), Pin { pool_id: "p1".into(), machine: "loadmbp".into(), picked_at_ms: 1 })]), open: HashMap::new() };
+        let error = take(&state, &pools, &mut pins, "arbor-builds", &|_| true).unwrap_err();
+        assert!(error.contains("still loading"), "{error}");
+        assert_eq!(pins.saved[&key("arbor-builds")].machine, "loadmbp", "and isn't moved meanwhile");
     }
 
     #[test]
@@ -902,16 +1024,16 @@ mod tests {
         let mut builds = pool("p1", "Builds", &["spill-mbp"]);
         let overflow = pool("p2", "Overflow", &["spill-mini"]);
         let not_mbp = |machine: &str| machine != "spill-mbp";
-        let refused = take_lease(&state.lock(), &[builds.clone(), overflow.clone()], &mut Leases::new(), &key("arbor-builds"), &not_mbp).unwrap_err();
+        let refused = take(&state, &[builds.clone(), overflow.clone()], &mut Pins::default(), "arbor-builds", &not_mbp).unwrap_err();
         assert!(refused.contains("ready for SSH"), "{refused}");
         builds.when_full = PoolWhenFull::Queue;
-        assert!(take_lease(&state.lock(), &[builds.clone(), overflow.clone()], &mut Leases::new(), &key("arbor-builds"), &not_mbp).is_err(), "ssh can't wait in a queue");
+        assert!(take(&state, &[builds.clone(), overflow.clone()], &mut Pins::default(), "arbor-builds", &not_mbp).is_err(), "ssh can't wait in a queue");
         builds.when_full = PoolWhenFull::Spill;
         builds.spill_pool = Some("p2".into());
-        let mut leases = Leases::new();
-        let spilled = take_lease(&state.lock(), &[builds, overflow], &mut leases, &key("arbor-builds"), &not_mbp).unwrap();
-        assert_eq!(spilled.name(), "spill-mini");
-        assert_eq!(leases[&key("arbor-builds")].pool_id, "p2", "the lease is held against the pool it came from");
+        let mut pins = Pins::default();
+        let (spilled, _) = take(&state, &[builds, overflow], &mut pins, "arbor-builds", &not_mbp).unwrap();
+        assert_eq!(spilled, "spill-mini");
+        assert_eq!(pins.saved[&key("arbor-builds")].pool_id, "p2", "the pin is held against the pool it came from");
     }
 
     #[test]

@@ -117,9 +117,11 @@ export const poolAnswers = (
 });
 
 // `?poolSsh=nocli` (the arbor command isn't installed), `noinclude` (~/.ssh/config doesn't bring in the pool hosts yet),
-// `nokeys` (no member's host key is saved) or `idle` (nothing connected lately); listed at the top of mockTauri.ts.
+// `nokeys` (no member's host key is saved) or `idle` (no host name pinned yet); listed at the top of mockTauri.ts.
 const sshScenario = params.get('poolSsh');
 let sshIncluded = sshScenario !== 'noinclude';
+/** Host names forgotten on a pool's page, as `pool id/name`. */
+const forgottenNames = new Set<string>();
 
 /** A pool's host name, the way `pool_ssh.rs` makes it. */
 const hostName = (pool: MachinePool) => `arbor-${pool.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'pool'}`;
@@ -136,13 +138,14 @@ function connectionsOf(pool: MachinePool): PoolSshConnection[] {
   const ready = pool.members.filter((member) => readinessOf(member.machine) === 'ready').map((member) => member.machine);
   const [first, second] = ready;
   const host = hostName(pool);
+  const day = 24 * 60 * 60_000;
   return [
-    ...(first ? [{ name: host, machine: first, open: 3, idleSinceMs: null }] : []),
-    ...(second ? [{ name: `${host}-b`, machine: second, open: 0, idleSinceMs: Date.now() - 4 * 60_000 }] : []),
-  ];
+    ...(first ? [{ name: host, machine: first, open: 3, pickedAtMs: Date.now() - 9 * day }] : []),
+    ...(second ? [{ name: `${host}-b`, machine: second, open: 0, pickedAtMs: Date.now() - 2 * day }] : []),
+  ].filter((connection) => !forgottenNames.has(`${pool.id}/${connection.name}`));
 }
 
-export const poolSshAnswers = (): Pick<CommandAnswers<MachineCommands>, 'get_pool_ssh' | 'add_pool_ssh_include'> => ({
+export const poolSshAnswers = (): Pick<CommandAnswers<MachineCommands>, 'get_pool_ssh' | 'add_pool_ssh_include' | 'forget_pool_ssh_name'> => ({
   get_pool_ssh: ({ poolId }): PoolSsh => {
     const pool = pools.find((entry) => entry.id === poolId);
     if (!pool) throw new Error('That pool was removed');
@@ -161,6 +164,15 @@ export const poolSshAnswers = (): Pick<CommandAnswers<MachineCommands>, 'get_poo
     mockLog('add_pool_ssh_include', {});
     sshIncluded = true;
     recordEditMock('casey-mbp', 'ssh', [{ path: '~/.ssh/config', added: false }]);
+    void emit('pool-ssh-updated', Date.now());
+  },
+  forget_pool_ssh_name: ({ poolId, name }) => {
+    mockLog('forget_pool_ssh_name', { poolId, name });
+    const pool = pools.find((entry) => entry.id === poolId);
+    if (pool && connectionsOf(pool).some((connection) => connection.name === name && connection.open > 0)) {
+      throw new Error(`${name} has connections open. Close them, then forget it`);
+    }
+    forgottenNames.add(`${poolId}/${name}`);
     void emit('pool-ssh-updated', Date.now());
   },
 });

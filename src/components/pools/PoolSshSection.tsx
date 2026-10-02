@@ -8,24 +8,24 @@ import { Skeleton } from '../ui/skeleton';
 import { toast } from '../ui/toast';
 import { useI18n } from '../../i18n';
 import { invokeCommand } from '../../native/commands';
-import type { PoolSsh } from '../../native/types';
-import { useNow } from '../../hooks/useNow';
-import { READINESS_LABEL, connectionWords, spreadExample, sshBlocker, usePoolSsh } from '../../services/poolSsh';
+import type { PoolSsh, PoolSshConnection } from '../../native/types';
+import { formatDate } from '../../lib/format';
+import { READINESS_LABEL, connectionWords, forgetBlocker, spreadExample, sshBlocker, usePoolSsh } from '../../services/poolSsh';
 
 /** A pool's page: reaching the pool as one SSH host. */
 export function PoolSshSection({ poolId }: { poolId: string }) {
   const { ssh, error } = usePoolSsh(poolId);
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-xs/5">
-      <PoolSshBody ssh={ssh} error={error} />
+      <PoolSshBody poolId={poolId} ssh={ssh} error={error} />
     </section>
   );
 }
 
-export function PoolSshBody({ ssh, error }: { ssh: PoolSsh | null; error: string | null }) {
+export function PoolSshBody({ poolId, ssh, error }: { poolId: string; ssh: PoolSsh | null; error: string | null }) {
   const { t } = useI18n();
-  const now = useNow();
   const [adding, setAdding] = useState(false);
+  const [forgetting, setForgetting] = useState<string | null>(null);
   const title = <h3 className="text-sm font-medium">{t('pools.ssh.title')}</h3>;
   if (error) {
     return (
@@ -53,6 +53,17 @@ export function PoolSshBody({ ssh, error }: { ssh: PoolSsh | null; error: string
       toast({ kind: 'error', title: String(failure) });
     } finally {
       setAdding(false);
+    }
+  };
+  const forget = async (connection: PoolSshConnection) => {
+    setForgetting(connection.name);
+    try {
+      await invokeCommand('forget_pool_ssh_name', { poolId, name: connection.name });
+      toast({ title: t('pools.ssh.forget.done', { name: connection.name }) });
+    } catch (failure) {
+      toast({ kind: 'error', title: String(failure) });
+    } finally {
+      setForgetting(null);
     }
   };
   return (
@@ -100,12 +111,26 @@ export function PoolSshBody({ ssh, error }: { ssh: PoolSsh | null; error: string
         ) : (
           <ul className="flex flex-col gap-1.5">
             {ssh.connections.map((connection) => {
-              const words = connectionWords(connection, now);
+              const words = connectionWords(connection);
+              const blocked = forgetBlocker(connection);
               return (
                 <li key={connection.name} className="flex flex-wrap items-center gap-2 text-sm">
                   <code className="font-mono text-xs text-foreground">{connection.name}</code>
                   <MachinePill name={connection.machine} size="sm" />
-                  <span className="text-muted-foreground">{t(words.key, words.values)}</span>
+                  <span className="text-muted-foreground">
+                    {t(words.key, words.values)} · {t('pools.ssh.connection.since', { date: formatDate(connection.pickedAtMs) })}
+                  </span>
+                  <Button
+                    className="ml-auto"
+                    size="xs"
+                    variant="ghost"
+                    aria-label={t('pools.ssh.forget.label', { name: connection.name })}
+                    disabled={blocked !== null || forgetting === connection.name}
+                    disabledReason={blocked ? t(blocked) : undefined}
+                    onClick={() => void forget(connection)}
+                  >
+                    {t('pools.ssh.forget')}
+                  </Button>
                 </li>
               );
             })}
