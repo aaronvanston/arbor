@@ -868,6 +868,23 @@ mod tests {
         assert!(place_script("arbor:a", &paused, false, None).unwrap().contains(" pause 'arbor-a'"));
     }
 
+    /// The checkout's pinned release, as `scripts/build-release.sh` fetches it into `bundled-udian/`: every system's
+    /// archive is there, matches its checksum and holds the version udian-version.txt names. Ignored because it needs
+    /// that fetch first.
+    #[test]
+    #[ignore]
+    fn the_pinned_release_is_bundled_for_every_system() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let bundle = bundle_in(&root.join(VERSION_FILE), &root.join(SOURCE_FOLDER)).expect("udian-version.txt names a release");
+        for target in ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"] {
+            let bytes = archive(&bundle, target).unwrap();
+            let mut tar = std::process::Command::new("tar").args(["-tzf", "-"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+            std::io::Write::write_all(&mut tar.stdin.take().unwrap(), &bytes).unwrap();
+            let listing = String::from_utf8(tar.wait_with_output().unwrap().stdout).unwrap();
+            assert_eq!(listing.trim(), "ultradian", "{target}");
+        }
+    }
+
     /// The same round trip against a real ultradian build, with its daemon: place, run now, read back, remove. It's
     /// ignored because it needs that build, named by ARBOR_UDIAN_BIN; run it before pinning a version in
     /// udian-version.txt. Everything happens under a temporary HOME, and the daemon it starts is stopped at the end.
