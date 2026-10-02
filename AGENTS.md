@@ -102,8 +102,14 @@ its store is on the drive chosen in Settings › Session Archive. Leave those al
   agent runs. `discover.rs` reads what the Codex app, Claude's scheduled tasks and Orca
   keep on each machine, held in memory only; `runner.rs` runs Arbor's own while the
   app is open, a precheck over SSH first and then the agent detached, whose output is
-  never kept; `draft.rs` turns a sentence into a draft through the local proxy;
-  `pick_machine` in `runner.rs` is where a best-machine balancer will plug in.
+  never kept; `draft.rs` turns a sentence into a draft through the local proxy.
+  An automation aimed at a pool has its machine chosen by `runs::pick_for_automation`
+  when it's due.
+- `src-tauri/src/usage/machine_health/pools.rs`, `runs.rs` and `runs_handoff.rs`:
+  machine pools (members, weights, limits, what a full pool does) and the runs started
+  on them, handed to T3 Code or Orca on the member picked, with the agent's own command
+  line as the last resort. Arbor routes a run and keeps where it went, never its
+  prompt.
 - `src-tauri/src/usage/machine_health/archive.rs` and `archive/`: the session archive.
   Byte-for-byte copies of transcripts go into a store in a folder the user picks,
   usually on another drive (this Mac's own disk works, with a warning), with the index

@@ -13,6 +13,8 @@ import {
   switchSchedule,
   type ScheduleChoice,
 } from '../../services/automations';
+import { usePools } from '../../services/pools';
+import { PoolName } from '../PoolName';
 import { useFleetMachines } from '../../services/fleetHealth';
 import { getProjects, tilde } from '../../services/setupProjects';
 import { MachinePill, ProviderMark } from '../identity/Identity';
@@ -48,6 +50,11 @@ type Form = {
 };
 
 const BEST = 'best';
+/** A pool's choice in the machine field, beside the machines' names. */
+const POOL_PREFIX = 'pool:';
+const poolValue = (id: string) => `${POOL_PREFIX}${id}`;
+const poolOf = (value: string) => (value.startsWith(POOL_PREFIX) ? value.slice(POOL_PREFIX.length) : null);
+const isMachine = (value: string) => Boolean(value) && value !== BEST && poolOf(value) === null;
 
 const emptyForm = (machine: string): Form => ({
   name: '',
@@ -69,7 +76,9 @@ const formFrom = (automation: Automation): Form => ({
   name: automation.summary.name,
   prompt: automation.prompt,
   agent: automation.summary.agent === 'codex' ? 'codex' : 'claude',
-  machine: automation.summary.target.kind === 'best' ? BEST : automation.summary.machine ?? '',
+  machine: automation.summary.target.kind === 'best' ? BEST
+    : automation.summary.target.kind === 'pool' ? poolValue(automation.summary.target.id)
+      : automation.summary.machine ?? '',
   projectPath: automation.projectPath ?? '',
   workspace: automation.workspace,
   session: automation.session,
@@ -135,7 +144,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
     setDraftError(null);
     try {
       const result = await invokeCommand('draft_automation', {
-        input: { description, ...(form.machine && form.machine !== BEST ? { machine: form.machine } : {}), ...(form.projectPath ? { projectPath: form.projectPath } : {}) },
+        input: { description, ...(isMachine(form.machine) ? { machine: form.machine } : {}), ...(form.projectPath ? { projectPath: form.projectPath } : {}) },
       });
       setForm((current) => ({
         ...current,
@@ -165,7 +174,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
   const problem = !form.name.trim() ? t('automations.form.needName')
     : !form.prompt.trim() ? t('automations.form.needPrompt')
       : !form.machine ? t('automations.form.needMachine')
-        : form.machine === BEST ? t('automations.target.bestSoon')
+        : form.machine === BEST ? t('automations.target.bestGone')
           : !form.projectPath.trim() ? t('automations.form.needProject')
             : form.schedule.kind === 'custom' && !form.schedule.rrule.trim() ? t('automations.form.needRule')
               : null;
@@ -179,7 +188,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
       name: form.name.trim(),
       prompt: form.prompt.trim(),
       agent: form.agent,
-      target: { kind: 'machine', name: form.machine },
+      target: poolOf(form.machine) !== null ? { kind: 'pool', id: poolOf(form.machine) ?? '' } : { kind: 'machine', name: form.machine },
       projectPath: form.projectPath.trim(),
       workspace: form.workspace,
       session: form.session,
@@ -293,7 +302,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
                 <div className="flex min-h-0 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden border-t p-6 md:border-t-0 md:border-s">
                   <AgentField value={form.agent} onChange={(agent) => update({ agent })} />
                   <MachineField machine={form.machine} onChange={(next) => update({ machine: next, projectPath: next === form.machine ? form.projectPath : '' })} />
-                  <ProjectField machine={form.machine} value={form.projectPath} onChange={(projectPath) => update({ projectPath })} />
+                  <ProjectField machine={isMachine(form.machine) ? form.machine : ''} value={form.projectPath} onChange={(projectPath) => update({ projectPath })} />
                   <Field label={t('automations.fact.workspace')} hint={t(form.workspace === 'newWorktree' ? 'automations.workspace.newWorktreeHint' : 'automations.workspace.checkoutHint')}>
                     <Segmented
                       label={t('automations.fact.workspace')}
@@ -425,27 +434,41 @@ function AgentField({ value, onChange }: { value: AutomationAgent; onChange: (ag
 function MachineField({ machine, onChange }: { machine: string; onChange: (machine: string) => void }) {
   const { t } = useI18n();
   const fleet = useFleetMachines();
+  const { pools } = usePools();
   const names = useMemo(() => {
     const listed = (fleet ?? []).map((entry) => entry.machine);
-    return machine && machine !== BEST && !listed.includes(machine) ? [...listed, machine] : listed;
+    return isMachine(machine) && !listed.includes(machine) ? [...listed, machine] : listed;
   }, [fleet, machine]);
+  const pool = poolOf(machine);
   return (
-    <Field label={t('automations.fact.machine')} hint={machine === BEST ? t('automations.target.bestSoon') : t('automations.form.machineHint')}>
+    <Field label={t('automations.fact.machine')} hint={machine === BEST ? t('automations.target.bestGone') : pool !== null ? t('automations.target.poolHint') : t('automations.form.machineHint')}>
       <Select value={machine} onValueChange={(next) => onChange(String(next ?? ''))}>
         <SelectTrigger aria-label={t('automations.fact.machine')}>
           <SelectValue>
-            {machine === BEST ? t('automations.target.best') : machine ? <MachinePill name={machine} size="sm" /> : <span className="text-muted-foreground">{t('automations.form.pickMachine')}</span>}
+            {machine === BEST ? t('automations.target.best')
+              : pool !== null ? <PoolName id={pool} />
+                : machine ? <MachinePill name={machine} size="sm" /> : <span className="text-muted-foreground">{t('automations.form.pickMachine')}</span>}
           </SelectValue>
         </SelectTrigger>
         <SelectPopup>
           {names.map((name) => <SelectItem key={name} value={name}><MachinePill name={name} size="sm" /></SelectItem>)}
-          {/* The load balancer will pick the machine; until it's there the choice is shown, but can't be taken. */}
-          <SelectItem value={BEST} disabled>
-            <span className="flex flex-col">
-              <span>{t('automations.target.best')}</span>
-              <span className="text-xs text-muted-foreground">{t('automations.target.bestSoonShort')}</span>
-            </span>
-          </SelectItem>
+          {/* A pool picks one of its members with room when the run is due. */}
+          {(pools ?? []).map((entry) => (
+            <SelectItem key={entry.id} value={poolValue(entry.id)}>
+              <span className="flex flex-col">
+                <PoolName id={entry.id} />
+                <span className="text-xs text-muted-foreground">{t('automations.target.poolShort')}</span>
+              </span>
+            </SelectItem>
+          ))}
+          {pools && pools.length === 0 ? (
+            <SelectItem value="" disabled>
+              <span className="flex flex-col">
+                <span>{t('automations.target.pool')}</span>
+                <span className="text-xs text-muted-foreground">{t('automations.target.noPools')}</span>
+              </span>
+            </SelectItem>
+          ) : null}
         </SelectPopup>
       </Select>
     </Field>

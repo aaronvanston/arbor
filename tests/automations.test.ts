@@ -69,12 +69,13 @@ describe('the list', () => {
     summary({ id: 'orca:1', source: 'orca', name: 'Audit', machine: 'casey-mbp', target: { kind: 'machine', name: 'casey-mbp' } }),
     summary({ id: 'arbor:b', name: 'Changelog', machine: 'casey-mbp', target: { kind: 'machine', name: 'casey-mbp' } }),
     summary({ id: 'arbor:c', name: 'Best placed', machine: null, target: { kind: 'best' } }),
+    summary({ id: 'arbor:d', name: 'Pooled', machine: null, target: { kind: 'pool', id: 'builds' } }),
     summary({}),
   ];
 
-  it('lists Arbor’s own first, by name, and keeps one Arbor places on every machine', () => {
+  it('lists Arbor’s own first, by name, and keeps one a pool places on every machine', () => {
     const shown = filterAutomations(automations, { search: '', source: 'all', machine: 'casey-mbp' });
-    expect(shown.map((item) => item.id)).toEqual(['arbor:c', 'arbor:b', 'orca:1']);
+    expect(shown.map((item) => item.id)).toEqual(['arbor:c', 'arbor:b', 'arbor:d', 'orca:1']);
     expect(filterAutomations(automations, { search: 'billing', source: 'orca', machine: '' }).map((item) => item.id)).toEqual(['orca:1']);
   });
 

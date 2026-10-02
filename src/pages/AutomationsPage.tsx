@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MachinePill, ProviderMark } from '../components/identity/Identity';
+import { PoolName } from '../components/PoolName';
 import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { WithShortcut } from '../components/ShortcutKbd';
@@ -221,7 +222,9 @@ function AutomationRow({ item, now, onOpen, onNavigate }: {
       <TableCell className="text-xs">
         {item.target.kind === 'best'
           ? <span className="whitespace-nowrap text-muted-foreground">{t('automations.target.best')}</span>
-          : <MachinePill name={item.machine} fallback="—" size="sm" className="max-w-32" />}
+          : item.target.kind === 'pool'
+            ? <PoolName id={item.target.id} className="max-w-32" />
+            : <MachinePill name={item.machine} fallback="—" size="sm" className="max-w-32" />}
       </TableCell>
       <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
         {item.nextRunAtMs && item.enabled

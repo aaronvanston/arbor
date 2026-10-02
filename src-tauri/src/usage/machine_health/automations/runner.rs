@@ -338,11 +338,27 @@ pub(super) fn after_poll(run: &AutomationRun, seen: &Seen, now_ms: i64) -> Optio
 
 // ── Doing it ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/// Where a run goes. The best machine waits on the load balancer, which plugs in here.
+/// Where a run goes when it names a machine. A pool's member is picked by `pick_target`.
 pub(super) fn pick_machine(inner: &Inner, target: &AutomationTarget) -> Result<Machine, String> {
     match target {
         AutomationTarget::Machine { name } => find_machine(inner, name),
-        AutomationTarget::Best => Err("Arbor can't pick the best machine yet. Choose a machine for this automation".into()),
+        AutomationTarget::Pool { .. } => Err("A pool's member is picked when the run starts".into()),
+        AutomationTarget::Best => Err("Arbor no longer picks a best machine on its own. Choose a machine or pool for this automation".into()),
+    }
+}
+
+/// Where a run goes: the machine it names, or a member of its pool with room and the agent.
+async fn pick_target(app: &tauri::AppHandle, input: &AutomationInput) -> Result<Machine, String> {
+    match &input.target {
+        AutomationTarget::Pool { id } => {
+            let agent = match input.agent {
+                AutomationAgent::Claude => Some(super::super::agents::AgentKind::Claude),
+                AutomationAgent::Codex => Some(super::super::agents::AgentKind::Codex),
+                _ => None,
+            };
+            super::super::runs::pick_for_automation(app, id, agent, input.grace_minutes).await
+        }
+        target => pick_machine(&app.state::<MachineHealthState>().lock(), target),
     }
 }
 
@@ -392,7 +408,7 @@ pub(super) async fn start_run(app: &tauri::AppHandle, record: &store::Record, sc
 
 async fn start_run_inner(app: &tauri::AppHandle, record: &store::Record, scheduled_at_ms: i64, manual: bool) -> Result<AutomationRun, String> {
     let now_ms = Local::now().timestamp_millis();
-    let picked = pick_machine(&app.state::<MachineHealthState>().lock(), &record.input.target);
+    let picked = pick_target(app, &record.input).await;
     let machine_name = match (&picked, &record.input.target) {
         (Ok(machine), _) => Some(machine.name().to_string()),
         (Err(_), AutomationTarget::Machine { name }) => Some(name.clone()),
@@ -532,7 +548,7 @@ async fn round(app: &tauri::AppHandle) -> Result<bool, String> {
             outcome => {
                 let machine = match &record.input.target {
                     AutomationTarget::Machine { name } => Some(name.clone()),
-                    AutomationTarget::Best => None,
+                    AutomationTarget::Pool { .. } | AutomationTarget::Best => None,
                 };
                 let mut run = new_run(&record.id, machine, scheduled_at_ms, false);
                 run.finished_at_ms = Some(now_ms);
@@ -695,7 +711,7 @@ mod tests {
     #[test]
     fn the_best_machine_isnt_picked_yet() {
         let state = MachineHealthState::default();
-        assert!(pick_machine(&state.lock(), &AutomationTarget::Best).unwrap_err().contains("best machine"));
+        assert!(pick_machine(&state.lock(), &AutomationTarget::Best).unwrap_err().contains("machine or pool"));
     }
 
     /// The scripts as a machine runs them, under `sh` with a temp HOME and a stand-in `codex` that prints Codex's

@@ -607,6 +607,16 @@ mod tests {
     }
 
     #[test]
+    fn a_member_with_room_but_not_what_the_run_needs_is_left_out() {
+        let pool = pool(&[("casey-mbp", PoolWeight::Prefer), ("cedar-02", PoolWeight::Normal), ("ci-01", PoolWeight::Normal)]);
+        let all = readings(&[("casey-mbp", healthy(0)), ("cedar-02", healthy(0)), ("ci-01", healthy(9))]);
+        let verdicts = assess_with(&pool, &all, &BTreeMap::new(), NOW, 5_000, |machine| machine != "casey-mbp");
+        // Full comes first: a busy member is busy whatever it has.
+        assert_eq!(kinds(&verdicts), vec![VerdictKind::NoHarness, VerdictKind::Eligible, VerdictKind::AgentsFull]);
+        assert_eq!(choose(&verdicts, 0.99).map(MemberVerdict::machine), Some("cedar-02"));
+    }
+
+    #[test]
     fn a_reading_is_fresh_for_three_sampling_rounds() {
         let pool = pool(&[("casey-mbp", PoolWeight::Normal)]);
         let old = readings(&[("casey-mbp", Reading { last_ok_at: Some(NOW - 100_000), ..healthy(0) })]);

@@ -3,6 +3,7 @@ import { AutomationActions } from '../components/automations/AutomationActions';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { toast } from '../components/ui/toast';
 import { MachinePill, ModelName, ProviderMark } from '../components/identity/Identity';
+import { PoolName } from '../components/PoolName';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -91,7 +92,9 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
             {arbor
               ? summary.target.kind === 'best'
                 ? t('automations.note.best')
-                : t('automations.note.arbor', { machine: summary.machine ?? '' })
+                : summary.target.kind === 'pool'
+                  ? t('automations.note.pool')
+                  : t('automations.note.arbor', { machine: summary.machine ?? '' })
               : t(summary.source === 'claudeDesktop' ? 'automations.note.claude' : summary.source === 'orca' ? 'automations.note.orca' : 'automations.note.codex', { path: automation.sourcePath ?? '' })}
           </AlertDescription>
         </Alert>
@@ -107,7 +110,9 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
               : t(summary.enabled ? 'automations.fact.unknown' : 'automations.status.paused')}
           </Fact>
           <Fact label={t('automations.fact.machine')}>
-            {summary.target.kind === 'best' ? t('automations.target.best') : <MachinePill name={summary.machine} fallback="—" />}
+            {summary.target.kind === 'best' ? t('automations.target.best')
+              : summary.target.kind === 'pool' ? <PoolName id={summary.target.id} />
+                : <MachinePill name={summary.machine} fallback="—" />}
           </Fact>
           <Fact label={t('automations.fact.agent')}>
             <span className="inline-flex min-w-0 items-center gap-1.5">

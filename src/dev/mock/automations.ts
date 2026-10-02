@@ -73,7 +73,8 @@ const SEEDS: Seed[] = [
     session: 'reuse',
   }),
   seed({
-    id: 'arbor:regression-scan', source: 'arbor', name: 'Regression scan', enabled: true, machine: 'ci-01', project: 'proxy', agent: 'codex',
+    // Runs on whichever member of the Builds pool has room when it's due.
+    id: 'arbor:regression-scan', source: 'arbor', name: 'Regression scan', enabled: true, machine: null, target: { kind: 'pool', id: 'mock-builds' }, project: 'proxy', agent: 'codex',
     schedule: { kind: 'weekdays', hour: 6, minute: 0 }, nextRunAtMs: now + 20 * HOUR,
     lastRun: { status: failing ? 'failed' : 'skipped', atMs: now - 4 * HOUR }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {

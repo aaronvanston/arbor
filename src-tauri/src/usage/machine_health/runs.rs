@@ -302,7 +302,7 @@ struct Placement {
     reason: RunReason,
 }
 
-fn place(inner: &Inner, pool: &MachinePool, request: &RunRequest, recent: &BTreeMap<String, u32>, roll: f64) -> Placement {
+fn place(inner: &Inner, pool: &MachinePool, offer_for: &dyn Fn(&agents::MachineAgents) -> Offer, recent: &BTreeMap<String, u32>, roll: f64) -> Placement {
     let now_ms = Local::now().timestamp_millis();
     let offers: HashMap<String, Offer> = pool
         .members
@@ -310,7 +310,7 @@ fn place(inner: &Inner, pool: &MachinePool, request: &RunRequest, recent: &BTree
         .map(|member| {
             let key = normalize_machine_name(&member.machine);
             let agents = inner.series.values().find(|series| normalize_machine_name(&series.host.machine) == key).map(|series| &series.agents);
-            (key, agents.map_or(Offer::Nothing, |agents| offer(agents, request)))
+            (key, agents.map_or(Offer::Nothing, offer_for))
         })
         .collect();
     let verdicts = pools::assess_with(pool, &pools::readings(inner), recent, now_ms, inner.interval_ms, |machine| {
@@ -330,6 +330,51 @@ fn place(inner: &Inner, pool: &MachinePool, request: &RunRequest, recent: &BTree
         .map(Machine::listed)
         .or_else(|| this_machine_name(inner).filter(|name| normalize_machine_name(name) == key).map(|name| Machine::this_mac(&name)));
     Placement { machine: machine.map(|machine| (machine, offer)), reason: RunReason::NoRoom }
+}
+
+/// How long a queued automation waits between looks at its pool.
+const POOL_RETRY: Duration = Duration::from_secs(15);
+
+/// The machine an automation's run goes to when it names a pool: a member with room that has the
+/// agent installed, following the pool's spill. A pool that queues is looked at again until the
+/// pool's wait or the automation's grace runs out, whichever is first; Automations runs the agent
+/// itself, so the harness a run would be handed to doesn't come into it.
+pub(super) async fn pick_for_automation(app: &tauri::AppHandle, pool_id: &str, agent: Option<AgentKind>, grace_minutes: u32) -> Result<Machine, String> {
+    let pools_saved = run_usage_task(|| pools::read_pools(&open_usage_database()?)).await?;
+    let has_agent = |agents: &agents::MachineAgents| match agent {
+        Some(agent) if agents.path_of(agent).is_none() => Offer::Nothing,
+        Some(agent) => Offer::Fallback(agent),
+        None => Offer::Harness,
+    };
+    let started = Instant::now();
+    loop {
+        let mut pool_id = pool_id.to_string();
+        let mut visited = BTreeSet::new();
+        let (pool, reason) = loop {
+            let pool = pools_saved.iter().find(|pool| pool.id == pool_id).ok_or("The automation's pool was removed. Choose a pool or machine for it")?;
+            visited.insert(pool.id.clone());
+            let state = app.state::<MachineHealthState>();
+            let since = Local::now().timestamp_millis() - state.lock().interval_ms as i64 * 2;
+            let recent = recent_counts(since);
+            let placement = place(&state.lock(), pool, &has_agent, &recent, roll());
+            if let Some((machine, _)) = placement.machine {
+                lock_held().recent.push((normalize_machine_name(machine.name()), Local::now().timestamp_millis()));
+                return Ok(machine);
+            }
+            match (&pool.when_full, &pool.spill_pool) {
+                (PoolWhenFull::Spill, Some(next)) if !visited.contains(next) => pool_id = next.clone(),
+                _ => break (pool, placement.reason),
+            }
+        };
+        let wait = Duration::from_secs(u64::from(pool.queue_timeout_min.min(grace_minutes)) * 60);
+        if pool.when_full != PoolWhenFull::Queue || started.elapsed() + POOL_RETRY > wait {
+            return Err(match reason {
+                RunReason::NoHarness => format!("No member of {} with room has the agent installed", pool.name),
+                _ => format!("Every member of {} was busy, unreachable or out of date", pool.name),
+            });
+        }
+        tokio::time::sleep(POOL_RETRY).await;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -592,7 +637,7 @@ async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequ
         let state = app.state::<MachineHealthState>();
         let since = Local::now().timestamp_millis() - state.lock().interval_ms as i64 * 2;
         let recent = recent_counts(since);
-        let placement = place(&state.lock(), pool, request, &recent, roll());
+        let placement = place(&state.lock(), pool, &|agents| offer(agents, request), &recent, roll());
         match placement.machine {
             Some((machine, offer)) => {
                 run.ran_pool = Some(pool.id.clone());

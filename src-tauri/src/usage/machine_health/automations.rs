@@ -44,13 +44,15 @@ pub(crate) enum AutomationAgent {
     Other,
 }
 
-/// Where an Arbor automation runs: a machine, or the one best placed to take it when it's due.
+/// Where an Arbor automation runs: a machine, or a pool's member with room when it's due.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(rename = "AutomationTarget")]
 pub(crate) enum AutomationTarget {
     Machine { name: String },
-    /// Picked when it's due; not available yet.
+    /// A member of the pool, picked when it's due (`runs::pick_for_automation`).
+    Pool { id: String },
+    /// Saved before pools could be chosen, and never run: it asks for a machine or pool instead.
     Best,
 }
 

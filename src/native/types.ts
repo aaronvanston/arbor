@@ -587,9 +587,9 @@ export type AutomationSummary = {
 };
 
 /**
- * Where an Arbor automation runs: a machine, or the one best placed to take it when it's due.
+ * Where an Arbor automation runs: a machine, or a pool's member with room when it's due.
  */
-export type AutomationTarget = { "kind": "machine", name: string, } | { "kind": "best" };
+export type AutomationTarget = { "kind": "machine", name: string, } | { "kind": "pool", id: string, } | { "kind": "best" };
 
 /**
  * Where a run works: the project's own checkout, or a new worktree of it for each run.

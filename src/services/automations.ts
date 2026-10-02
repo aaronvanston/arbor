@@ -159,13 +159,13 @@ export type AutomationFilter = { search: string; source: AutomationSource | 'all
 
 /**
  * The automations to list: the ones whose name, project or machine has the search in it, from the source picked, that
- * run on the machine picked (one Arbor picks when it's due counts on every machine). Arbor's own first, then by name.
+ * run on the machine picked (one a pool picks a member for when it's due counts on every machine). Arbor's own first, then by name.
  */
 export function filterAutomations(automations: readonly AutomationSummary[], filter: AutomationFilter): AutomationSummary[] {
   const words = filter.search.trim().toLowerCase();
   return automations
     .filter((item) => filter.source === 'all' || item.source === filter.source)
-    .filter((item) => !filter.machine || item.machine === filter.machine || item.target.kind === 'best')
+    .filter((item) => !filter.machine || item.machine === filter.machine || item.target.kind !== 'machine')
     .filter((item) => !words || [item.name, item.project ?? '', item.machine ?? ''].some((text) => text.toLowerCase().includes(words)))
     .sort((left, right) => Number(left.source !== 'arbor') - Number(right.source !== 'arbor') || left.name.localeCompare(right.name));
 }

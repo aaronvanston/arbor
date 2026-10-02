@@ -16,7 +16,7 @@ fn folder_name(path: &str) -> Option<String> {
 fn target_machine(target: &AutomationTarget) -> Option<String> {
     match target {
         AutomationTarget::Machine { name } => Some(name.clone()),
-        AutomationTarget::Best => None,
+        AutomationTarget::Pool { .. } | AutomationTarget::Best => None,
     }
 }
 
@@ -135,7 +135,8 @@ pub(super) fn check_input(input: &AutomationInput) -> Result<(), String> {
     }
     match &input.target {
         AutomationTarget::Machine { name } if !name.trim().is_empty() => {}
-        _ => return Err("Choose the machine it runs on".into()),
+        AutomationTarget::Pool { id } if !id.trim().is_empty() => {}
+        _ => return Err("Choose the machine or pool it runs on".into()),
     }
     if input.project_path.trim().is_empty() {
         return Err("Choose the project it works in".into());
@@ -160,6 +161,11 @@ fn next_run(input: &AutomationInput, enabled: bool, now_ms: i64) -> Option<i64> 
 fn save_record(mut input: AutomationInput) -> Result<Record, String> {
     check_input(&input)?;
     let connection = open_usage_database()?;
+    if let AutomationTarget::Pool { id } = &input.target {
+        if !super::super::pools::read_pools(&connection)?.iter().any(|pool| &pool.id == id) {
+            return Err("That pool isn't saved any more. Choose another".into());
+        }
+    }
     let _guard = lock_usage_writes();
     let now_ms = Local::now().timestamp_millis();
     let existing = match input.id.as_deref() {
@@ -448,6 +454,11 @@ mod tests {
         let mut best = input();
         best.target = AutomationTarget::Best;
         assert!(check_input(&best).unwrap_err().contains("machine"));
+        let mut pooled = input();
+        pooled.target = AutomationTarget::Pool { id: "builds".into() };
+        assert!(check_input(&pooled).is_ok());
+        pooled.target = AutomationTarget::Pool { id: " ".into() };
+        assert!(check_input(&pooled).is_err());
         let mut monthly = input();
         monthly.rrule = "FREQ=MONTHLY;BYMONTHDAY=1".into();
         assert!(check_input(&monthly).is_err());
