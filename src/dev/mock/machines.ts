@@ -686,6 +686,17 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
       resolve({ before, after, output: before === after ? `${agent} is up to date (${after})` : `Current version: ${before}\nUpdating to ${after}…\nSuccessfully updated from ${before} to version ${after}` });
     }, 1_500));
   },
+  // Another agent's own update: `?harnessupdate=fail` has it refuse, as an agent without the command does.
+  update_machine_harness: ({ machine, harness, command }) => later(1_500, () => {
+    mockLog('update_machine_harness', { machine, harness, command });
+    if (params.get('harnessupdate') === 'fail') throw new Error(`This version of ${command.split(' ')[0]} has no ${command.split(' ')[1]} command. Update it the way it was installed.`);
+    const install = setupMachines.find((entry) => entry.machine === machine)?.harnessInstalls.find((found) => found.harness === harness);
+    if (!install) throw new Error(`${command.split(' ')[0]} is not installed where Arbor looks for it`);
+    const before = install.version;
+    const after = before?.replace(/(\d+)$/, (last) => String(Number(last) + 1)) ?? null;
+    install.version = after;
+    return { before, after, output: `Updated from ${before} to ${after}` };
+  }),
   // `?fix=fail` is Terminal not opening, which the Fix menu says in a toast.
   open_fix_session: ({ machine, agent, onMachine, prompt }) => later(300, () => {
     mockLog('open_fix_session', { machine, agent, onMachine, prompt });

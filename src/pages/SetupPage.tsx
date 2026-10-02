@@ -550,10 +550,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             <HarnessSkillsSection machines={machines} />
           </>
         ) : tab === 'plugins' ? (
-          <>
-            <SetupPlugins machines={machines} homeLabel={(key) => homeLabel(key, t)} />
-            <HarnessItemsSection machines={machines} kind="mcp" />
-          </>
+          <SetupPlugins machines={machines} homeLabel={(key) => homeLabel(key, t)} />
         ) : tab === 'hooks' ? (
           <>
             <SetupHooks machines={machines} />

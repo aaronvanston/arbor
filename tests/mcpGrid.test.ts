@@ -25,7 +25,7 @@ const machines = [
 ];
 
 const definition = { transport: 'http', place: 'mcp.linear.app', variables: [] };
-const serverView = (name: string, fields: Partial<ServerView> = {}): ServerView => ({ name, claude: definition, codex: definition, homes: null, own: [], off: [], problems: [], ...fields });
+const serverView = (name: string, fields: Partial<ServerView> = {}): ServerView => ({ name, claude: definition, codex: definition, homes: null, agents: [], own: [], off: [], problems: [], ...fields });
 const cell = (machineName: string, path: string, name: string, state: RegistryCell['state']): RegistryCell => ({ machine: machineName, home: path, name, state, own: false, blocked: null });
 const registry: McpRegistry = {
   commit: 'a'.repeat(40),

@@ -22,14 +22,19 @@
 //!
 //! A machine's server can be taken into the repo too, once it passes the same
 //! check, as a commit of the file alone.
+//!
+//! A server can go to other agents too, the ones `agents` lists: each takes its
+//! Claude Code definition in its own shape, written into its MCP file the way a
+//! Codex home's config.toml is, as a guarded edit that keeps the rest of the file.
 
 use super::agents::AGENT_ENV;
+use super::harnesses::Harness;
 use ts_rs::TS;
 use super::shell::shell_quote;
-use super::setup::{covered_machine, file_name, home_agent, mcp_sum, normalized_mcp, rescan, scanned_machines, url_host, HomeAgent, MachineSetup, EMIT_FUNCTIONS, HELPERS};
+use super::setup::{covered_machine, file_name, home_agent, home_harness, mcp_sum, normalized_mcp, rescan, scanned_machines, url_host, HomeAgent, MachineSetup, EMIT_FUNCTIONS, HELPERS};
 use super::setup_plugins::message;
 use super::setup_skills::{home_place, place_words};
-use super::guarded_writes::{cksum, edit_call, edit_finish, edit_outcomes, edit_start, new_stamp, run_on, ChangeKind, Edit, EditFile, EditOutcome};
+use super::guarded_writes::{cksum, edit_call, edit_finish, edit_outcomes, edit_start, new_stamp, parse_outcome, run_on, ChangeKind, Edit, EditFile, EditOutcome};
 use super::setup_sync::{git, git_out, is_commit, repo_file, take_into_repo, GIT_TIMEOUT};
 use super::*;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -799,6 +804,122 @@ fn with_texts(value: &Value, change: &impl Fn(&str) -> String) -> Value {
 }
 
 // ---------------------------------------------------------------------------
+// Other agents
+// ---------------------------------------------------------------------------
+
+/// The other agents a server can go to. Prime Agent keeps servers in its settings.json in a shape it doesn't publish,
+/// so it isn't one.
+const MCP_AGENTS: [Harness; 4] = [Harness::Pi, Harness::Droid, Harness::Amp, Harness::OpenCode];
+
+fn mcp_agent_ids() -> String {
+    MCP_AGENTS.iter().map(|harness| harness.spec().id).collect::<Vec<_>>().join(", ")
+}
+
+fn harness_name(harness: Harness) -> &'static str {
+    match harness {
+        Harness::Pi => "Pi",
+        Harness::Droid => "Droid",
+        Harness::Amp => "Amp",
+        Harness::OpenCode => "OpenCode",
+        other => other.spec().id,
+    }
+}
+
+/// Somewhere in `text` there's a `${VAR:-default}`, which only Claude Code fills in.
+fn has_default(text: &str) -> bool {
+    let mut rest = text;
+    while let Some(start) = rest.find("${") {
+        let after = &rest[start + 2..];
+        let Some(end) = after.find('}') else { return false };
+        if after[..end].split_once(":-").is_some_and(|(name, _)| is_variable(name)) {
+            return true;
+        }
+        rest = &after[end + 1..];
+    }
+    false
+}
+
+/// `text` with each `${VAR}` as OpenCode writes one: `{env:VAR}`.
+fn opencode_references(text: &str) -> String {
+    let mut kept = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("${") {
+        kept.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        match after.find('}').filter(|end| is_variable(&after[..*end])) {
+            Some(end) => {
+                kept.push_str(&format!("{{env:{}}}", &after[..end]));
+                rest = &after[end + 1..];
+            }
+            None => {
+                kept.push_str("${");
+                rest = after;
+            }
+        }
+    }
+    kept.push_str(rest);
+    kept
+}
+
+/// A Claude Code definition, as `harness` keeps the server in its MCP file. Pi and Droid read Claude Code's shape. Amp's
+/// has no type. OpenCode's has the command and its arguments as one list, `environment` for env, and `{env:VAR}` where
+/// Claude Code has `${VAR}`. Only a command, its arguments and environment, or a URL and its headers, go across: the
+/// rest is Claude Code's alone, so a definition with it can't go.
+fn harness_definition(harness: Harness, claude: &Value) -> Result<Value, String> {
+    let name = harness_name(harness);
+    let Some(fields) = claude.as_object() else {
+        return Err("It isn't a JSON object".into());
+    };
+    let left: Vec<String> = fields.keys().filter(|key| !["type", "command", "args", "env", "url", "headers"].contains(&key.as_str())).map(|key| shown_key(key)).collect();
+    if !left.is_empty() {
+        return Err(format!("{name} has no {}, so Arbor can't set it up there", left.join(", ")));
+    }
+    let stdio = fields.get("type").and_then(Value::as_str).is_none_or(|kind| kind == "stdio");
+    if fields.get("type").and_then(Value::as_str) == Some("ws") {
+        return Err(format!("{name} can't reach a server over ws"));
+    }
+    let mut defaults = false;
+    each_text(claude, "", &mut |_, text| defaults |= has_default(text));
+    if defaults {
+        return Err(format!("{name} doesn't fill in ${{VAR:-default}}. Use ${{VAR}} alone."));
+    }
+    let in_args = fields.get("args").and_then(Value::as_array).into_iter().flatten().any(|arg| arg.as_str().is_some_and(|arg| !take_references(arg).1.is_empty()));
+    if harness == Harness::Droid && in_args {
+        return Err("Droid doesn't fill in ${VAR} in args. Pass it in env instead.".into());
+    }
+    match harness {
+        Harness::Pi | Harness::Droid => Ok(claude.clone()),
+        Harness::Amp => {
+            let mut fields = fields.clone();
+            fields.remove("type");
+            Ok(Value::Object(fields))
+        }
+        Harness::OpenCode => {
+            let claude = with_texts(claude, &opencode_references);
+            let mut fields = serde_json::Map::new();
+            if stdio {
+                let mut command: Vec<Value> = claude.get("command").into_iter().cloned().collect();
+                command.extend(claude.get("args").and_then(Value::as_array).into_iter().flatten().cloned());
+                fields.insert("type".into(), "local".into());
+                fields.insert("command".into(), Value::Array(command));
+                if let Some(env) = claude.get("env") {
+                    fields.insert("environment".into(), env.clone());
+                }
+            } else {
+                fields.insert("type".into(), "remote".into());
+                for key in ["url", "headers"] {
+                    if let Some(value) = claude.get(key) {
+                        fields.insert(key.into(), value.clone());
+                    }
+                }
+            }
+            Ok(Value::Object(fields))
+        }
+        _ => Err(format!("Arbor doesn't set up MCP servers for {name}")),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The registry
 // ---------------------------------------------------------------------------
 
@@ -822,6 +943,8 @@ struct Server {
     homes: Option<Vec<String>>,
     /// Machines set apart, with what their Claude Code and Codex homes have.
     machines: BTreeMap<String, [Wanted; 2]>,
+    /// The other agents it goes to, each in every home of it, as the machine's Claude Code homes have it.
+    agents: Vec<Harness>,
     problems: Vec<String>,
 }
 
@@ -849,6 +972,20 @@ impl Server {
             Some(Wanted::Own(definition)) => Some((definition, true)),
             _ => self.definition(agent).map(|definition| (definition, false)),
         }
+    }
+
+    /// The definition `harness`'s homes on `machine` should have, in its own shape, and whether it's the machine's own.
+    /// One that can't be put in its shape is a problem with the server, so it's given as Claude Code's.
+    fn wanted_by(&self, machine: &str, harness: Harness) -> Option<(Value, bool)> {
+        if !self.agents.contains(&harness) {
+            return None;
+        }
+        let (definition, own) = match self.machines.get(machine).map(|choices| &choices[0]) {
+            Some(Wanted::Off) => return None,
+            Some(Wanted::Own(definition)) => (definition, true),
+            _ => (self.claude.as_ref()?, false),
+        };
+        Some((harness_definition(harness, definition).unwrap_or_else(|_| definition.clone()), own))
     }
 }
 
@@ -911,7 +1048,7 @@ fn read_definition(agent: HomeAgent, value: &Value, at: &str, problems: &mut Vec
 }
 
 fn read_server(name: &str, entry: &Value) -> Server {
-    let mut server = Server { name: name.to_string(), claude: None, codex: None, homes: None, machines: BTreeMap::new(), problems: Vec::new() };
+    let mut server = Server { name: name.to_string(), claude: None, codex: None, homes: None, machines: BTreeMap::new(), agents: Vec::new(), problems: Vec::new() };
     if !is_server_name(name) {
         server.problems.push("Arbor keeps servers named with letters, digits, - and _, starting with a letter or digit, up to 64 long".into());
     }
@@ -967,9 +1104,37 @@ fn read_server(name: &str, entry: &Value) -> Server {
                     server.machines.insert(machine.clone(), choices);
                 }
             }
+            "agents" => {
+                let Some(ids) = value.as_array().and_then(|ids| ids.iter().map(Value::as_str).collect::<Option<Vec<&str>>>()) else {
+                    server.problems.push("agents should list agents by id, like \"pi\" or \"opencode\"".into());
+                    continue;
+                };
+                for id in ids {
+                    match MCP_AGENTS.into_iter().find(|harness| harness.spec().id == id) {
+                        Some(harness) if !server.agents.contains(&harness) => server.agents.push(harness),
+                        Some(_) => {}
+                        None => server.problems.push(format!("agents: Arbor doesn't set up MCP servers for {}. It does for {}.", shown_key(id), mcp_agent_ids())),
+                    }
+                }
+            }
             other => server.problems.push(format!("Arbor doesn't know {}", shown_key(other))),
         }
     }
+    // Each agent it goes to takes each of its Claude Code definitions, so each has to fit every one of them.
+    let claude = server.claude.iter().map(|definition| ("claude".to_string(), definition));
+    let own = server.machines.iter().filter_map(|(machine, choices)| match &choices[0] {
+        Wanted::Own(definition) => Some((format!("machines.{}.claude", shown_key(machine)), definition)),
+        _ => None,
+    });
+    let mut unfit = Vec::new();
+    for (at, definition) in claude.chain(own) {
+        for harness in &server.agents {
+            if let Err(problem) = harness_definition(*harness, definition) {
+                unfit.push(format!("{at}: {problem}"));
+            }
+        }
+    }
+    server.problems.extend(unfit);
     server
 }
 
@@ -1087,6 +1252,32 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
             }
         }
     }
+    // The other agents' homes have only what the repo sends them, so a server of their own is never the repo's.
+    for (harness, home, present) in setup.harness_servers() {
+        if !MCP_AGENTS.contains(&harness) {
+            continue;
+        }
+        for server in &registry.servers {
+            let found = present.get(server.name.as_str());
+            let (state, own) = match (server.wanted_by(machine, harness), found) {
+                (Some((_, own)), None) => (RegistryState::Add, own),
+                (Some((definition, own)), Some(sum)) => {
+                    let same = *sum == Some(mcp_sum(HomeAgent::Shared, &definition, setup.home_dir()).as_str());
+                    (if same { RegistryState::Same } else { RegistryState::Update }, own)
+                }
+                (None, Some(_)) if server.agents.contains(&harness) => (RegistryState::Extra, false),
+                _ => continue,
+            };
+            let blocked = if !is_server_name(&server.name) {
+                Some(RegistryBlock::Name)
+            } else if !server.problems.is_empty() {
+                Some(RegistryBlock::Broken)
+            } else {
+                None
+            };
+            cells.push(RegistryCell { machine: machine.to_string(), home: home.to_string(), name: server.name.clone(), state, own, blocked });
+        }
+    }
     cells
 }
 
@@ -1142,6 +1333,8 @@ pub(crate) struct ServerView {
     codex: Option<DefinitionView>,
     /// The homes it's kept to.
     homes: Option<Vec<String>>,
+    /// The other agents it goes to.
+    agents: Vec<Harness>,
     /// Machines with their own definition, and machines it's kept off.
     own: Vec<String>,
     off: Vec<String>,
@@ -1182,6 +1375,7 @@ fn registry_view(commit: Option<String>, found: bool, uncommitted: bool, registr
                 claude: server.claude.as_ref().map(|definition| definition_view(HomeAgent::Claude, definition)),
                 codex: server.codex.as_ref().map(|definition| definition_view(HomeAgent::Codex, definition)),
                 homes: server.homes.clone(),
+                agents: server.agents.clone(),
                 own,
                 off,
                 problems: server.problems.clone(),
@@ -1466,13 +1660,20 @@ pub(crate) struct McpResult {
     action: McpAction,
     outcome: McpOutcome,
     message: String,
+    /// The backup a change to another agent's file is kept in, which Sync's undo takes it back from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    backup: Option<String>,
 }
 
 /// A change as it's made.
 #[derive(Debug, PartialEq)]
 struct Planned {
     home: String,
+    /// Shared for another agent's home.
     agent: HomeAgent,
+    /// The agent, for a home that isn't Claude Code's or Codex's.
+    harness: Option<Harness>,
     /// The home's folder under the machine's home folder.
     rel: String,
     name: String,
@@ -1513,19 +1714,25 @@ fn plan(registry: &Registry, machine: &str, setup: &MachineSetup, changes: Vec<M
         if let Some(blocked) = cell.and_then(|cell| cell.blocked) {
             return Err(format!("{what}: {}", blocked.message()));
         }
-        let (Some(agent), Some(rel)) = (home_agent(setup, &change.home), home_place(&change.home).map(str::to_string)) else {
+        let harness = home_harness(setup, &change.home).filter(|harness| MCP_AGENTS.contains(harness));
+        let agent = home_agent(setup, &change.home).or(harness.map(|_| HomeAgent::Shared));
+        let (Some(agent), Some(rel)) = (agent, home_place(&change.home).map(str::to_string)) else {
             return Err(format!("{} isn't a home Arbor changes on this machine", change.home));
         };
-        let definition = match change.action {
-            McpAction::Remove => None,
-            _ => registry
-                .server(&change.name)
-                .and_then(|server| server.wanted(machine, agent, &change.home))
-                .map(|(definition, _)| with_texts(definition, &|text| swap_home(text, "~", setup.home_dir()))),
+        let server = registry.server(&change.name);
+        let definition = match (change.action, harness) {
+            (McpAction::Remove, _) => None,
+            (_, Some(harness)) => server.and_then(|server| server.wanted_by(machine, harness)).map(|(definition, _)| definition),
+            (_, None) => server.and_then(|server| server.wanted(machine, agent, &change.home)).map(|(definition, _)| definition.clone()),
+        }
+        .map(|definition| with_texts(&definition, &|text| swap_home(text, "~", setup.home_dir())));
+        let present = match harness {
+            Some(_) => setup.harness_servers().into_iter().find(|(_, home, _)| *home == change.home).map(|(_, _, servers)| servers).unwrap_or_default(),
+            None => setup.home_servers(&change.home),
         };
         // A server the scan found with no fingerprint never matches what's there, so it's left alone.
-        let seen = setup.home_servers(&change.home).get(change.name.as_str()).map(|sum| sum.unwrap_or_default().to_string());
-        planned.push(Planned { home: change.home, agent, rel, name: change.name, action: change.action, definition, seen });
+        let seen = present.get(change.name.as_str()).map(|sum| sum.unwrap_or_default().to_string());
+        planned.push(Planned { home: change.home, agent, harness, rel, name: change.name, action: change.action, definition, seen });
     }
     planned.sort_by_key(|change| change.agent != HomeAgent::Claude);
     Ok(planned)
@@ -1728,7 +1935,7 @@ fn parse_results(stdout: &str, planned: &[Planned], writes: &[CodexWrite]) -> Ve
         .zip(outcomes)
         .map(|(change, outcome)| {
             let (outcome, message) = outcome.unwrap_or_else(|| (McpOutcome::Failed, "Arbor didn't hear how this went".into()));
-            McpResult { home: change.home.clone(), name: change.name.clone(), action: change.action, outcome, message }
+            McpResult { home: change.home.clone(), name: change.name.clone(), action: change.action, outcome, message, backup: None }
         })
         .collect()
 }
@@ -1768,7 +1975,7 @@ fn still_as_scanned(
             fresh.push(change);
         } else {
             let message = "It's changed there since the last scan, so Arbor left it alone. Scan and try again.".to_string();
-            stale.push(McpResult { home: change.home, name: change.name, action: change.action, outcome: McpOutcome::Changed, message });
+            stale.push(McpResult { home: change.home, name: change.name, action: change.action, outcome: McpOutcome::Changed, message, backup: None });
         }
     }
     Ok((fresh, stale))
@@ -1793,9 +2000,22 @@ pub(crate) async fn apply_mcp_changes(
         let (target, setup) = covered_machine(&inner, &machine)?;
         (target, setup.home_dir().to_string(), plan(&registry, &machine, setup, changes)?)
     };
+    let (others, planned): (Vec<Planned>, Vec<Planned>) = planned.into_iter().partition(|change| change.harness.is_some());
+    let mut results = Vec::new();
+    if !others.is_empty() {
+        let applied = apply_harness_changes(&target, &home_dir, others).await;
+        if planned.is_empty() || applied.is_err() {
+            rescan(&app, &machine);
+        }
+        results.extend(applied?);
+    }
+    if planned.is_empty() {
+        return Ok(results);
+    }
     let homes = planned_homes(&planned);
     let files = read_homes(&target, &homes).await?;
-    let (planned, mut results) = still_as_scanned(planned, &files, &homes, &home_dir)?;
+    let (planned, stale) = still_as_scanned(planned, &files, &homes, &home_dir)?;
+    results.extend(stale);
     if planned.is_empty() {
         rescan(&app, &machine);
         return Ok(results);
@@ -1811,6 +2031,172 @@ pub(crate) async fn apply_mcp_changes(
     }
     results.extend(parse_results(&stdout, &planned, &writes));
     Ok(results)
+}
+
+// ---------------------------------------------------------------------------
+// Changing the other agents' MCP files
+// ---------------------------------------------------------------------------
+
+/// An agent's MCP file, in its home at `rel`, and the key its servers sit under.
+#[derive(Debug, PartialEq)]
+struct HarnessFile {
+    harness: Harness,
+    rel: String,
+    file: &'static str,
+    key: &'static str,
+}
+
+impl HarnessFile {
+    fn shown(&self) -> String {
+        format!("~/{}/{}", self.rel, self.file).replacen("~//", "/", 1)
+    }
+
+    fn holds(&self, change: &Planned) -> bool {
+        change.harness == Some(self.harness) && change.rel == self.rel
+    }
+}
+
+/// Each other agent's MCP file a change is in, once.
+fn harness_files(planned: &[Planned]) -> Vec<HarnessFile> {
+    let mut files: Vec<HarnessFile> = Vec::new();
+    for change in planned {
+        let Some((harness, mcp)) = change.harness.and_then(|harness| Some((harness, harness.spec().mcp?))) else { continue };
+        let file = HarnessFile { harness, rel: change.rel.clone(), file: mcp.path, key: mcp.key };
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    files
+}
+
+fn harness_read_script(files: &[HarnessFile]) -> String {
+    let mut script = format!("set -u\nexport LC_ALL=C\n{HELPERS}{EMIT_FUNCTIONS}");
+    for (index, file) in files.iter().enumerate() {
+        script.push_str(&format!("printf 'N\\t{index}\\n'\nemit_data config {}/{}\n", place_words(&file.rel, ""), shell_quote(file.file)));
+    }
+    script.push_str("printf 'E\\n'\n");
+    script
+}
+
+/// The file as JSON, or an empty one when it isn't there. One with comments isn't JSON, so it's left alone.
+fn harness_json(file: &HarnessFile, bytes: Option<&[u8]>) -> Result<serde_json::Map<String, Value>, String> {
+    let Some(bytes) = bytes else {
+        return Ok(serde_json::Map::new());
+    };
+    match serde_json::from_slice::<Value>(bytes) {
+        Ok(Value::Object(fields)) if fields.get(file.key).is_none_or(Value::is_object) => Ok(fields),
+        _ => Err(format!("{} isn't JSON Arbor can read, so Arbor left it alone", file.shown())),
+    }
+}
+
+/// The file with its changes made: only the servers named are touched.
+fn edit_harness_file(file: &HarnessFile, bytes: Option<&[u8]>, changes: &[&Planned]) -> Result<String, String> {
+    let mut fields = harness_json(file, bytes)?;
+    let servers = fields.entry(file.key).or_insert_with(|| Value::Object(serde_json::Map::new()));
+    let Some(servers) = servers.as_object_mut() else {
+        return Err(format!("{} isn't JSON Arbor can read, so Arbor left it alone", file.shown()));
+    };
+    for change in changes {
+        match &change.definition {
+            Some(definition) => servers.insert(change.name.clone(), definition.clone()),
+            None => servers.remove(&change.name),
+        };
+    }
+    Ok(serde_json::to_string_pretty(&Value::Object(fields)).map_err(|error| error.to_string())? + "\n")
+}
+
+/// A file as it will be written.
+#[derive(Debug, PartialEq)]
+struct HarnessWrite {
+    /// Its number in the files read.
+    at: usize,
+    before: String,
+    content: String,
+}
+
+/// Makes the changes in the other agents' files, each still as the last scan found it, and says how each went: as
+/// guarded edits, kept in a backup that Sync › Arbor's changes can undo.
+async fn apply_harness_changes(target: &Machine, home_dir: &str, planned: Vec<Planned>) -> Result<Vec<McpResult>, String> {
+    let files = harness_files(&planned);
+    let read = read_blocks(&run_on(target, MachineOp::McpRead, &harness_read_script(&files)).await?)?;
+    let (planned, writes, mut results) = harness_writes(planned, &files, &read, home_dir);
+    if writes.is_empty() {
+        return Ok(results);
+    }
+    let stdout = run_on(target, MachineOp::McpApply, &harness_apply_script(&new_stamp(), &files, &writes)).await?;
+    results.extend(harness_results(&stdout, &planned, &files, &writes));
+    Ok(results)
+}
+
+/// The script that writes each file, as edit number its place in `writes`, kept in backup `stamp`.
+fn harness_apply_script(stamp: &str, files: &[HarnessFile], writes: &[HarnessWrite]) -> String {
+    let mut script = format!("set -u\nexport LC_ALL=C\n{}", edit_start(stamp, ChangeKind::Mcp));
+    for (index, write) in writes.iter().enumerate() {
+        let Some(file) = files.get(write.at) else { continue };
+        let edit = Edit { file: EditFile::in_home(&file.rel, file.file), before: write.before.clone(), content: write.content.as_bytes().to_vec() };
+        script.push_str(&edit_call(index, &edit));
+    }
+    script.push_str(&edit_finish());
+    script
+}
+
+/// Each file with its changes made, from the files as they were read, and a result for each change that's left alone:
+/// one whose server changed since the scan, or that's in a file Arbor can't read.
+fn harness_writes(planned: Vec<Planned>, files: &[HarnessFile], read: &BTreeMap<usize, Vec<u8>>, home_dir: &str) -> (Vec<Planned>, Vec<HarnessWrite>, Vec<McpResult>) {
+    let (mut fresh, mut writes, mut results) = (Vec::new(), Vec::new(), Vec::new());
+    let left = |change: Planned, outcome: McpOutcome, message: String| McpResult { home: change.home, name: change.name, action: change.action, outcome, message, backup: None };
+    let mut changes: Vec<Vec<Planned>> = files.iter().map(|_| Vec::new()).collect();
+    for change in planned {
+        match files.iter().position(|file| file.holds(&change)).and_then(|at| changes.get_mut(at)) {
+            Some(slot) => slot.push(change),
+            None => results.push(left(change, McpOutcome::Failed, "Arbor doesn't change MCP servers for this agent".into())),
+        }
+    }
+    for ((at, file), changes) in files.iter().enumerate().zip(changes) {
+        let bytes = read.get(&at).map(Vec::as_slice);
+        let servers = match harness_json(file, bytes) {
+            Ok(fields) => fields.get(file.key).and_then(Value::as_object).cloned().unwrap_or_default(),
+            Err(problem) => {
+                results.extend(changes.into_iter().map(|change| left(change, McpOutcome::Failed, problem.clone())));
+                continue;
+            }
+        };
+        let (still, changed): (Vec<Planned>, Vec<Planned>) =
+            changes.into_iter().partition(|change| servers.get(&change.name).map(|definition| mcp_sum(HomeAgent::Shared, definition, home_dir)) == change.seen);
+        let message = "It's changed there since the last scan, so Arbor left it alone. Scan and try again.";
+        results.extend(changed.into_iter().map(|change| left(change, McpOutcome::Changed, message.into())));
+        if still.is_empty() {
+            continue;
+        }
+        match edit_harness_file(file, bytes, &still.iter().collect::<Vec<_>>()) {
+            Ok(content) => {
+                writes.push(HarnessWrite { at, before: file_state(bytes), content });
+                fresh.extend(still);
+            }
+            Err(problem) => results.extend(still.into_iter().map(|change| left(change, McpOutcome::Failed, problem.clone()))),
+        }
+    }
+    (fresh, writes, results)
+}
+
+/// Each change's result, from how its file's edit went.
+fn harness_results(stdout: &str, planned: &[Planned], files: &[HarnessFile], writes: &[HarnessWrite]) -> Vec<McpResult> {
+    let outcomes = edit_outcomes(stdout);
+    let backup = parse_outcome(stdout).backup;
+    planned
+        .iter()
+        .map(|change| {
+            let found = writes.iter().enumerate().find(|(_, write)| files.get(write.at).is_some_and(|file| file.holds(change)));
+            let (outcome, message) = match found.map(|(index, write)| (outcomes.get(&index).copied(), files.get(write.at).map(HarnessFile::shown).unwrap_or_default())) {
+                Some((Some(EditOutcome::Done), _)) => (McpOutcome::Done, String::new()),
+                Some((Some(EditOutcome::Changed), shown)) => (McpOutcome::Changed, format!("{shown} changed after Arbor read it, so nothing in it was changed. Scan and try again.")),
+                Some((Some(EditOutcome::Failed | EditOutcome::Back), shown)) => (McpOutcome::Failed, format!("Arbor couldn't write {shown}")),
+                _ => (McpOutcome::Failed, "Arbor didn't hear how this went".into()),
+            };
+            let backup = backup.clone().filter(|_| outcome == McpOutcome::Done);
+            McpResult { home: change.home.clone(), name: change.name.clone(), action: change.action, outcome, message, backup }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -1859,7 +2245,12 @@ fn set_wanted(file: &mut Value, name: &str, machine: Option<&str>, wanted: McpWa
     let servers = root.entry("servers").or_insert_with(|| serde_json::json!({})).as_object_mut().ok_or_else(unreadable)?;
     match (machine, wanted) {
         (None, McpWanted::Removed) => {
-            servers.insert(name.to_string(), serde_json::json!({ "claude": null, "codex": null }));
+            let mut removed = serde_json::json!({ "claude": null, "codex": null });
+            // The other agents it went to stay listed, so each of them is rid of it too.
+            if let Some(agents) = servers.get(name).and_then(|server| server.get("agents")).cloned() {
+                removed["agents"] = agents;
+            }
+            servers.insert(name.to_string(), removed);
         }
         (None, _) => return Err("Every machine's value is a definition: take one into the repo from a home".into()),
         (Some(_), McpWanted::Removed) => return Err("A server is removed from every machine, or kept off one".into()),
@@ -2059,6 +2450,11 @@ mod tests {
         assert!(set_wanted(&mut file, "linear", None, McpWanted::Off).is_err());
         assert!(set_wanted(&mut file, "linear", Some("mac"), McpWanted::Removed).is_err());
         assert!(set_wanted(&mut file, "sentry", Some("mac"), McpWanted::Off).is_err());
+
+        // The other agents a removed server went to stay listed, so they're rid of it too.
+        let mut sent = json!({ "version": 1, "servers": { "fs": { "claude": { "command": "npx" }, "agents": ["pi"] } } });
+        set_wanted(&mut sent, "fs", None, McpWanted::Removed).unwrap();
+        assert_eq!(sent["servers"]["fs"], json!({ "claude": null, "codex": null, "agents": ["pi"] }));
     }
 
     #[test]
@@ -2446,6 +2842,176 @@ mod tests {
         assert_eq!(whole[0].outcome, McpOutcome::Done);
     }
 
+    #[test]
+    fn other_agents_take_the_claude_definition_in_their_own_shape() {
+        let stdio = normalized_mcp(HomeAgent::Claude, &json!({ "command": "npx", "args": ["-y", "@upstash/context7-mcp"], "env": { "C7_KEY": "${C7_KEY}" } }));
+        let remote = json!({ "type": "http", "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer ${LINEAR_TOKEN}" } });
+        assert_eq!(harness_definition(Harness::Pi, &stdio).unwrap(), stdio, "Pi reads Claude Code's shape");
+        assert_eq!(harness_definition(Harness::Droid, &remote).unwrap(), remote, "so does Droid");
+        assert_eq!(
+            harness_definition(Harness::Amp, &stdio).unwrap(),
+            json!({ "command": "npx", "args": ["-y", "@upstash/context7-mcp"], "env": { "C7_KEY": "${C7_KEY}" } }),
+            "Amp's has no type"
+        );
+        assert_eq!(harness_definition(Harness::Amp, &remote).unwrap(), json!({ "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer ${LINEAR_TOKEN}" } }));
+        assert_eq!(
+            harness_definition(Harness::OpenCode, &stdio).unwrap(),
+            json!({ "type": "local", "command": ["npx", "-y", "@upstash/context7-mcp"], "environment": { "C7_KEY": "{env:C7_KEY}" } })
+        );
+        assert_eq!(
+            harness_definition(Harness::OpenCode, &remote).unwrap(),
+            json!({ "type": "remote", "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer {env:LINEAR_TOKEN}" } })
+        );
+        assert_eq!(opencode_references("a ${B} ${not valid} ${C"), "a {env:B} ${not valid} ${C");
+
+        // What only Claude Code reads doesn't go across.
+        let helper = json!({ "type": "http", "url": "https://x.example/mcp", "headersHelper": "~/bin/headers" });
+        assert_eq!(harness_definition(Harness::Amp, &helper).unwrap_err(), "Amp has no headersHelper, so Arbor can't set it up there");
+        assert_eq!(harness_definition(Harness::OpenCode, &json!({ "type": "ws", "url": "wss://x.example" })).unwrap_err(), "OpenCode can't reach a server over ws");
+        assert_eq!(
+            harness_definition(Harness::Pi, &json!({ "type": "http", "url": "https://${HOST:-x.example}/mcp" })).unwrap_err(),
+            "Pi doesn't fill in ${VAR:-default}. Use ${VAR} alone."
+        );
+        assert_eq!(
+            harness_definition(Harness::Droid, &json!({ "type": "stdio", "command": "x", "args": ["--key=${KEY}"] })).unwrap_err(),
+            "Droid doesn't fill in ${VAR} in args. Pass it in env instead."
+        );
+        assert!(harness_definition(Harness::Pi, &json!({ "type": "stdio", "command": "x", "args": ["--key=${KEY}"] })).is_ok());
+        assert!(harness_definition(Harness::PrimeAgent, &stdio).is_err());
+
+        let read = registry(json!({ "version": 1, "servers": {
+            "context7": { "claude": { "command": "npx" }, "agents": ["pi", "opencode", "pi"] },
+            "helper": { "claude": helper, "agents": ["amp"] },
+            "own": { "claude": { "command": "npx" }, "agents": ["droid"], "machines": { "mac": { "claude": { "command": "x", "args": ["${KEY}"] } } } },
+            "prime": { "claude": { "command": "npx" }, "agents": ["prime-agent"] },
+            "bad": { "claude": { "command": "npx" }, "agents": "pi" }
+        } }));
+        assert_eq!(read.server("context7").unwrap().agents, [Harness::Pi, Harness::OpenCode]);
+        assert!(read.server("context7").unwrap().problems.is_empty());
+        assert_eq!(read.server("helper").unwrap().problems, ["claude: Amp has no headersHelper, so Arbor can't set it up there"]);
+        assert_eq!(read.server("own").unwrap().problems, ["machines.mac.claude: Droid doesn't fill in ${VAR} in args. Pass it in env instead."], "a machine's own is checked too");
+        assert_eq!(read.server("prime").unwrap().problems, ["agents: Arbor doesn't set up MCP servers for prime-agent. It does for pi, droid, amp, opencode."]);
+        assert_eq!(read.server("bad").unwrap().problems, ["agents should list agents by id, like \"pi\" or \"opencode\""]);
+    }
+
+    fn harness_machine() -> MachineSetup {
+        MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude")])
+            .with_home_dir("/Users/casey")
+            .with_harness_home(Harness::Pi, "~/.pi/agent")
+            .with_harness_home(Harness::OpenCode, "~/.config/opencode")
+            .with_harness_home(Harness::PrimeAgent, "~/.prime/agent")
+            // As Arbor writes it for Pi.
+            .with_harness_mcp("~/.pi/agent", "context7", &json!({ "type": "stdio", "command": "npx", "args": ["-y", "@upstash/context7-mcp"] }))
+            .with_harness_mcp("~/.pi/agent", "mine", &json!({ "command": "x" }))
+            .with_harness_mcp("~/.config/opencode", "linear", &json!({ "type": "remote", "url": "https://old.example/mcp" }))
+            .with_harness_mcp("~/.config/opencode", "gone", &json!({ "type": "local", "command": ["gone"] }))
+            .with_harness_mcp("~/.prime/agent", "context7", &json!({ "command": "npx" }))
+    }
+
+    fn harness_file() -> Value {
+        json!({ "version": 1, "servers": {
+            "claudeonly": { "claude": { "command": "npx", "args": ["claude-only"] } },
+            "context7": { "claude": { "command": "npx", "args": ["-y", "@upstash/context7-mcp"] }, "agents": ["pi", "opencode"] },
+            "gone": { "claude": null, "agents": ["opencode"] },
+            "linear": { "claude": { "type": "http", "url": "https://mcp.linear.app/mcp" }, "agents": ["opencode"] },
+            "mine": { "claude": { "command": "x" } }
+        } })
+    }
+
+    #[test]
+    fn other_agents_homes_have_only_what_the_repo_sends_them() {
+        let cells = machine_cells(&registry(harness_file()), "mac", &harness_machine());
+        let theirs: Vec<_> = states(&cells).into_iter().filter(|(home, ..)| *home != "~/.claude").collect();
+        assert_eq!(
+            theirs,
+            [
+                ("~/.pi/agent", "context7", RegistryState::Same, None),
+                ("~/.config/opencode", "context7", RegistryState::Add, None),
+                ("~/.config/opencode", "gone", RegistryState::Extra, None),
+                ("~/.config/opencode", "linear", RegistryState::Update, None),
+            ],
+            "Pi's own mine isn't the repo's to take out, though the repo has one for Claude Code; Prime Agent isn't changed"
+        );
+
+        // Kept off a machine, it's taken out of the agents it's sent to there.
+        let mut off = harness_file();
+        off["servers"]["context7"]["machines"] = json!({ "mac": null });
+        let cells = machine_cells(&registry(off), "mac", &harness_machine());
+        assert!(cells.iter().any(|cell| cell.home == "~/.pi/agent" && cell.name == "context7" && cell.state == RegistryState::Extra));
+
+        let change = |home: &str, name: &str, action: McpAction| McpChange { home: home.into(), name: name.into(), action };
+        let registry = registry(harness_file());
+        let planned = plan(
+            &registry,
+            "mac",
+            &harness_machine(),
+            vec![
+                change("~/.config/opencode", "context7", McpAction::Add),
+                change("~/.config/opencode", "linear", McpAction::Update),
+                change("~/.config/opencode", "gone", McpAction::Remove),
+            ],
+        )
+        .unwrap();
+        assert!(planned.iter().all(|change| change.harness == Some(Harness::OpenCode) && change.agent == HomeAgent::Shared && change.rel == ".config/opencode"));
+        assert_eq!(planned[0].definition, Some(json!({ "type": "local", "command": ["npx", "-y", "@upstash/context7-mcp"] })));
+        assert_eq!((planned[0].seen.is_none(), planned[1].seen.is_some()), (true, true));
+        let refused = |changes: Vec<McpChange>| plan(&registry, "mac", &harness_machine(), changes).unwrap_err();
+        assert_eq!(refused(vec![change("~/.pi/agent", "mine", McpAction::Remove)]), "Arbor can't remove mine in ~/.pi/agent as it is");
+        assert_eq!(refused(vec![change("~/.prime/agent", "context7", McpAction::Update)]), "Arbor can't update context7 in ~/.prime/agent as it is");
+
+        // Written into the file as it was read, keeping the rest of it.
+        let files = harness_files(&planned);
+        assert_eq!(files, [HarnessFile { harness: Harness::OpenCode, rel: ".config/opencode".into(), file: "opencode.json", key: "mcp" }]);
+        assert_eq!(files[0].shown(), "~/.config/opencode/opencode.json");
+        let as_scanned = json!({
+            "$schema": "https://opencode.ai/config.json",
+            "theme": "system",
+            "mcp": { "linear": { "type": "remote", "url": "https://old.example/mcp" }, "gone": { "type": "local", "command": ["gone"] }, "keep": { "type": "local", "command": ["k"] } }
+        });
+        let read = BTreeMap::from([(0, as_scanned.to_string().into_bytes())]);
+        let (fresh, writes, left) = harness_writes(plan(&registry, "mac", &harness_machine(), vec![
+            change("~/.config/opencode", "context7", McpAction::Add),
+            change("~/.config/opencode", "linear", McpAction::Update),
+            change("~/.config/opencode", "gone", McpAction::Remove),
+        ]).unwrap(), &files, &read, "/Users/casey");
+        assert!(left.is_empty(), "{left:?}");
+        assert_eq!(fresh.len(), 3);
+        let written: Value = serde_json::from_str(&writes[0].content).unwrap();
+        assert_eq!(
+            written,
+            json!({
+                "$schema": "https://opencode.ai/config.json",
+                "theme": "system",
+                "mcp": {
+                    "context7": { "type": "local", "command": ["npx", "-y", "@upstash/context7-mcp"] },
+                    "keep": { "type": "local", "command": ["k"] },
+                    "linear": { "type": "remote", "url": "https://mcp.linear.app/mcp" }
+                }
+            })
+        );
+        assert_eq!(writes[0].before, cksum(&read[&0]));
+        let done = harness_results("E\t0\tok\nK\t20260926T010203Z-00cc\n", &fresh, &files, &writes);
+        assert!(done.iter().all(|result| result.outcome == McpOutcome::Done && result.backup.as_deref() == Some("20260926T010203Z-00cc")), "{done:?}");
+        let late = harness_results("E\t0\tchanged\n", &fresh, &files, &writes);
+        assert_eq!(late[0].message, "~/.config/opencode/opencode.json changed after Arbor read it, so nothing in it was changed. Scan and try again.");
+
+        // A server changed there since the scan is left alone, and the rest still go in.
+        let mut since = as_scanned.clone();
+        since["mcp"]["linear"]["url"] = json!("https://mine.example/mcp");
+        let read = BTreeMap::from([(0, since.to_string().into_bytes())]);
+        let (fresh, writes, left) = harness_writes(planned, &files, &read, "/Users/casey");
+        assert_eq!(fresh.iter().map(|change| change.name.as_str()).collect::<Vec<_>>(), ["context7", "gone"]);
+        assert_eq!(left.iter().map(|result| (result.name.as_str(), result.outcome)).collect::<Vec<_>>(), [("linear", McpOutcome::Changed)]);
+        assert_eq!(serde_json::from_str::<Value>(&writes[0].content).unwrap()["mcp"]["linear"]["url"], "https://mine.example/mcp");
+
+        // A file with comments isn't JSON, so nothing in it is changed.
+        let commented = BTreeMap::from([(0, b"{\n  // mine\n  \"mcp\": {}\n}\n".to_vec())]);
+        let planned = plan(&registry, "mac", &harness_machine(), vec![change("~/.config/opencode", "context7", McpAction::Add)]).unwrap();
+        let (fresh, writes, left) = harness_writes(planned, &files, &commented, "/Users/casey");
+        assert!(fresh.is_empty() && writes.is_empty());
+        assert_eq!((left[0].outcome, left[0].message.as_str()), (McpOutcome::Failed, "~/.config/opencode/opencode.json isn't JSON Arbor can read, so Arbor left it alone"));
+    }
+
     #[cfg(unix)]
     mod scripts {
         use super::*;
@@ -2504,7 +3070,7 @@ if grep -q broken "$CODEX_HOME/config.toml" 2>/dev/null; then echo 'Error loadin
 exit 0"#;
 
         fn planned(agent: HomeAgent, home: &str, name: &str, action: McpAction, definition: Option<Value>) -> Planned {
-            Planned { home: home.into(), agent, rel: home_place(home).unwrap().into(), name: name.into(), action, definition, seen: None }
+            Planned { home: home.into(), agent, harness: None, rel: home_place(home).unwrap().into(), name: name.into(), action, definition, seen: None }
         }
 
         #[test]
@@ -2569,6 +3135,59 @@ exit 0"#;
                 assert_eq!(output.status.code(), Some(2), "{shell}");
                 assert_eq!(failure_detail(&output), "This version of Claude Code can't change MCP servers for Arbor. Update it first.");
                 assert!(fs::read_to_string(home.join("calls")).unwrap().lines().all(|line| line.ends_with("--help")));
+                let _ = fs::remove_dir_all(&home);
+            }
+        }
+
+        #[test]
+        fn another_agents_file_is_read_and_written_only_while_it_is_as_read() {
+            for shell in shells() {
+                let home = temp_home(&format!("harness-{shell}"));
+                let dir = home.join(".config/opencode");
+                fs::create_dir_all(&dir).unwrap();
+                // Pi's home is there, without its file.
+                fs::create_dir_all(home.join(".pi/agent")).unwrap();
+                let before = "{\n  \"theme\": \"system\",\n  \"mcp\": {}\n}\n";
+                fs::write(dir.join("opencode.json"), before).unwrap();
+                let files = vec![
+                    HarnessFile { harness: Harness::OpenCode, rel: ".config/opencode".into(), file: "opencode.json", key: "mcp" },
+                    HarnessFile { harness: Harness::Pi, rel: ".pi/agent".into(), file: "mcp.json", key: "mcpServers" },
+                ];
+                let output = run(shell, &home, &harness_read_script(&files));
+                assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
+                let read = read_blocks(&String::from_utf8_lossy(&output.stdout)).unwrap();
+                assert_eq!((read.get(&0).map(Vec::as_slice), read.get(&1)), (Some(before.as_bytes()), None), "{shell}: Pi has no file yet");
+
+                let context7 = json!({ "type": "local", "command": ["npx", "-y", "@upstash/context7-mcp"] });
+                let add = |harness: Harness, home: &str| Planned {
+                    home: home.into(),
+                    agent: HomeAgent::Shared,
+                    harness: Some(harness),
+                    rel: home_place(home).unwrap().into(),
+                    name: "context7".into(),
+                    action: McpAction::Add,
+                    definition: Some(context7.clone()),
+                    seen: None,
+                };
+                let planned = vec![add(Harness::OpenCode, "~/.config/opencode"), add(Harness::Pi, "~/.pi/agent")];
+                let (fresh, writes, left) = harness_writes(planned, &files, &read, "/Users/casey");
+                assert!(left.is_empty());
+                let output = run(shell, &home, &harness_apply_script("20260926T010203Z-00cc", &files, &writes));
+                assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
+                let results = harness_results(&String::from_utf8_lossy(&output.stdout), &fresh, &files, &writes);
+                assert!(results.iter().all(|result| result.outcome == McpOutcome::Done), "{shell}: {results:?}");
+                let written: Value = serde_json::from_str(&fs::read_to_string(dir.join("opencode.json")).unwrap()).unwrap();
+                assert_eq!((written["theme"].clone(), written["mcp"]["context7"].clone()), (json!("system"), context7.clone()), "{shell}");
+                let pi: Value = serde_json::from_str(&fs::read_to_string(home.join(".pi/agent/mcp.json")).unwrap()).unwrap();
+                assert_eq!(pi, json!({ "mcpServers": { "context7": context7 } }), "{shell}");
+                assert_eq!(fs::read_to_string(home.join(".arbor/setup-backups/20260926T010203Z-00cc/edits/0")).unwrap(), before, "{shell}: the copy before is kept");
+
+                // Changed after Arbor read it: left alone.
+                let now = fs::read_to_string(dir.join("opencode.json")).unwrap();
+                let output = run(shell, &home, &harness_apply_script("20260926T010204Z-00dd", &files, &writes[..1]));
+                let results = harness_results(&String::from_utf8_lossy(&output.stdout), &fresh[..1], &files, &writes[..1]);
+                assert_eq!(results[0].outcome, McpOutcome::Changed, "{shell}");
+                assert_eq!(fs::read_to_string(dir.join("opencode.json")).unwrap(), now, "{shell}");
                 let _ = fs::remove_dir_all(&home);
             }
         }

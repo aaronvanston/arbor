@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { harnessHomeRows, harnessItemRows, harnessSkillChange, harnessSkillRows } from '../src/services/harnessHomes';
-import type { Harness, HarnessHome, HarnessInstall, SetupHome, SetupItem, SetupMachine } from '../src/native/types';
+import { harnessHomeRows, harnessItemRows, harnessMcpAction, harnessSkillChange, harnessSkillRows, harnessUpdateOutcome } from '../src/services/harnessHomes';
+import type { Harness, HarnessHome, HarnessInstall, McpRegistry, RegistryCell, SetupHome, SetupItem, SetupMachine } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, sum: string | null): SetupItem => ({
   kind, name, path: null, sum, size: null, link: null, value: null, note: null, count: null, enabled: null, text: false, skill: null, import: null,
@@ -36,12 +36,18 @@ describe('the other harnesses homes', () => {
 
   it('gives each home the version of its harness that runs on its machine, the first on the path', () => {
     const installs: HarnessInstall[] = [
-      { harness: 'droid', path: '~/.local/bin/droid', real: null, version: '0.22.1' },
-      { harness: 'pi', path: '~/.npm-global/bin/pi', real: null, version: '0.70.2' },
-      { harness: 'pi', path: '/opt/homebrew/bin/pi', real: null, version: '0.60.0' },
+      { harness: 'droid', path: '~/.local/bin/droid', real: null, version: '0.22.1', updateCommand: 'droid update' },
+      { harness: 'pi', path: '~/.npm-global/bin/pi', real: null, version: '0.70.2', updateCommand: 'pi update' },
+      { harness: 'pi', path: '/opt/homebrew/bin/pi', real: null, version: '0.60.0', updateCommand: 'pi update' },
     ];
     const rows = harnessHomeRows([machine('a', [home('pi', '~/.pi/agent', 'p'), home('openCode', '~/.config/opencode', null)], installs)]);
-    expect(rows.map((row) => [row.harness, row.version])).toEqual([['pi', '0.70.2'], ['openCode', null]]);
+    expect(rows.map((row) => [row.harness, row.version, row.updateCommand])).toEqual([['pi', '0.70.2', 'pi update'], ['openCode', null, null]]);
+  });
+
+  it('says whether an update moved the version on', () => {
+    expect(harnessUpdateOutcome({ before: '0.70.2', after: '0.71.0', output: '' })).toBe('updated');
+    expect(harnessUpdateOutcome({ before: '0.70.2', after: '0.70.2', output: '' })).toBe('unchanged');
+    expect(harnessUpdateOutcome({ before: null, after: null, output: 'Done' })).toBe('done');
   });
 
   it('lists servers and hooks by name, each against the same harness’s of that name elsewhere', () => {
@@ -59,6 +65,36 @@ describe('the other harnesses homes', () => {
       ['linear', { a: ['pi:differs', 'droid:only'], b: ['pi:differs'] }],
     ]);
     expect(states('hook')).toEqual([['Stop', { a: ['droid:only'] }]]);
+
+    // With the setup repo: each server it sends or takes out says how it stands, and one a harness hasn't got is listed
+    // where it would go. Hooks never are.
+    const cell = (machineName: string, home: string, name: string, state: RegistryCell['state'], blocked: RegistryCell['blocked'] = null): RegistryCell => ({
+      machine: machineName, home, name, state, own: false, blocked,
+    });
+    const registry: McpRegistry = {
+      commit: 'a'.repeat(40), found: true, uncommitted: false, problems: [], servers: [],
+      cells: [
+        cell('a', '~/.pi/agent', 'linear', 'same'),
+        cell('a', '~/.factory', 'linear', 'update'),
+        cell('b', '~/.pi/agent', 'linear', 'extra'),
+        cell('b', '~/.pi/agent', 'sentry', 'add'),
+        cell('b', '~/.pi/agent', 'notion', 'add', 'broken'),
+        cell('a', '~/.claude', 'sentry', 'add'),
+      ],
+    };
+    const rows = harnessItemRows(fleet, 'mcp', registry);
+    const repo = rows.map((row) => [
+      row.name,
+      Object.fromEntries(Object.entries(row.on).map(([name, places]) => [name, places.map((place) => `${place.harness}:${place.repo?.state ?? '-'}:${harnessMcpAction(place) ?? '-'}`)])),
+    ]);
+    expect(repo).toEqual([
+      ['github', { a: ['pi:-:-'], b: ['pi:-:-'] }],
+      ['linear', { a: ['pi:same:-', 'droid:update:update'], b: ['pi:extra:remove'] }],
+      ['notion', { b: ['pi:add:-'] }],
+      ['sentry', { b: ['pi:add:add'] }],
+    ]);
+    expect(rows.find((row) => row.name === 'sentry')?.on.b?.[0]).toMatchObject({ item: null, state: null });
+    expect(harnessItemRows(fleet, 'hook', registry).flatMap((row) => Object.values(row.on).flat()).every((place) => place.repo === null)).toBe(true);
   });
 
   it('lists each skill once, with the harnesses each machine has it in', () => {

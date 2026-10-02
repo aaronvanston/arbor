@@ -223,7 +223,11 @@ const noHarnessHomes = params.get('harnessHomes') === 'none';
 const harnessHome = (harness: Harness, path: string, items: SetupItem[]): HarnessHome => ({ harness, path, items, skillsLink: null });
 const harnessHomes = (homes: HarnessHome[]) => (noHarnessHomes ? [] : homes);
 
-const harnessInstall = (harness: Harness, path: string, version: string | null): HarnessInstall => ({ harness, path, real: null, version });
+// Each updates with its own command, as the catalog names it.
+const HARNESS_UPDATE: Partial<Record<Harness, string>> = { pi: 'pi update', droid: 'droid update', openCode: 'opencode upgrade', amp: 'amp update', primeAgent: 'prime-agent update' };
+const harnessInstall = (harness: Harness, path: string, version: string | null): HarnessInstall => ({
+  harness, path, real: null, version, updateCommand: HARNESS_UPDATE[harness] ?? null,
+});
 const setupInstall = (agent: AgentKind, path: string, version: string | null, real: string | null = null): SetupInstall => ({ agent, path, real, version });
 
 export const setupMachines: SetupMachine[] = [
@@ -245,7 +249,7 @@ export const setupMachines: SetupMachine[] = [
         setupSkill('deploy', '~/.pi/agent/skills/deploy', 'pd1', 3),
         setupSkill('pdf', '~/.pi/agent/skills/pdf', 'k1', 4),
         setupItem('mcp', 'github', 'pg1', { value: 'stdio', note: 'npx' }),
-        setupItem('mcp', 'linear', 'pl1', { value: 'http', note: 'mcp.linear.app' }),
+        setupItem('mcp', 'linear', 'x1r-pi', { value: 'http', note: 'mcp.linear.app' }),
       ]),
       harnessHome('droid', '~/.factory', [
         setupFile('instructions', 'AGENTS.md', '~/.factory/AGENTS.md', 'dr1', 410),
@@ -303,6 +307,7 @@ export const setupMachines: SetupMachine[] = [
         setupSkill('deploy', '~/.pi/agent/skills/deploy', 'pd1', 3),
         setupItem('mcp', 'github', 'pg1', { value: 'stdio', note: 'npx' }),
         setupItem('mcp', 'linear', 'pl0', { value: 'http', note: 'mcp.linear.app' }),
+        setupItem('mcp', 'sentry', 'x5-pi', { value: 'http', note: 'mcp.sentry.dev' }),
       ]),
     ]),
     harnessInstalls: [harnessInstall('pi', '~/.npm-global/bin/pi', '0.68.0')],
@@ -890,13 +895,14 @@ const placeSyncedItem = (entry: SetupMachine, path: string, item: SetupItem | nu
 const mockStamp = (atMs = Date.now()) => `${new Date(atMs).toISOString().replace(/[-:]/g, '').slice(0, 15)}Z-${Math.floor(Math.random() * 65_536).toString(16).padStart(4, '0')}`;
 
 /** A settings file another feature changed on its own, as the list of changes has it. */
-export const recordEditMock = (machine: string, what: ChangeKind, files: { path: string; added: boolean }[], atMs = Date.now()) => {
-  if (!files.length) return;
+export const recordEditMock = (machine: string, what: ChangeKind, files: { path: string; added: boolean }[], atMs = Date.now()): string | null => {
+  if (!files.length) return null;
   const backup: MockSetupBackup = {
     id: mockStamp(atMs), atMs, what, commit: null, undoneAtMs: null, was: {}, left: {}, skills: [], skillWas: {}, skillLeft: {},
     files: files.map(({ path, added }) => ({ path, change: added ? 'added' : 'changed', skill: false })),
   };
   setupBackups[machine] = [backup, ...(setupBackups[machine] ?? [])].sort((a, b) => b.atMs - a.atMs).slice(0, 20);
+  return backup.id;
 };
 if (params.get('changes') !== 'none' && !freshInstall) {
   recordEditMock('casey-mbp', 'reporter', [{ path: '~/.claude/settings.json', added: false }, { path: '~/.codex/config.toml', added: false }], Date.now() - 3 * 86_400_000);
@@ -1242,7 +1248,10 @@ const mcpHealthMock = (entry: SetupMachine, path: string): McpHealth => {
 
 // The setup repo's MCP servers. linear is defined for both agents, kept to each machine's main homes, with a newer
 // Claude Code definition that reads LINEAR_API_KEY than the Mac's and ci-01's, and cedar-02's own (its variant B);
-// sentry is only in the repo, and notion's Claude Code definition holds a token, so it's refused. playwright and github are only on machines. Sums stand in for the
+// sentry is only in the repo, and notion's Claude Code definition holds a token, so it's refused. playwright and github are only on machines. linear
+// also goes to Pi and Droid, and sentry to Pi and OpenCode, each as Claude Code's definition in its own shape: the Mac's
+// Pi has linear as the repo does and its Droid an older one, ci-01's Pi an older one and sentry, which is kept off it,
+// and cedar-02's OpenCode hasn't got sentry. Sums stand in for the
 // fingerprints the backend compares. `?registry=none` starts with no file, `?registry=bad` with one Arbor can't
 // read, `?registry=fail` can't read the repo, and `?registry=dirty` has changes not committed. `?mcpapply=fail`
 // has Claude Code fail to set a replaced server up again, and Codex's config.toml change before it's written.
@@ -1250,7 +1259,7 @@ type MockDefinition = DefinitionView & { sum: string };
 
 type MockRegistryServer = {
   name: string; claude: MockDefinition | null; codex: MockDefinition | null; homes: string[] | null;
-  machines: Record<string, { claude?: MockDefinition | null; codex?: MockDefinition | null } | null>; problems: string[];
+  machines: Record<string, { claude?: MockDefinition | null; codex?: MockDefinition | null } | null>; agents: Harness[]; problems: string[];
 };
 
 const mockDefinition = (transport: string, place: string | null, variables: string[], sum: string): MockDefinition => ({ transport, place, variables, sum });
@@ -1264,6 +1273,7 @@ const mockRegistry: { found: boolean; servers: MockRegistryServer[] } = {
       codex: mockDefinition('http', 'mcp.linear.app', ['LINEAR_API_KEY'], 'x1c'),
       homes: ['~/.claude', '~/.codex'],
       machines: { 'cedar-02': { claude: mockDefinition('sse', 'mcp.linear.app', [], 'x1e') } },
+      agents: ['pi', 'droid'],
       problems: [],
     },
     {
@@ -1272,6 +1282,7 @@ const mockRegistry: { found: boolean; servers: MockRegistryServer[] } = {
       codex: mockDefinition('http', 'mcp.sentry.dev', ['SENTRY_TOKEN'], 'x5c'),
       homes: null,
       machines: { 'ci-01': null },
+      agents: ['pi', 'openCode'],
       problems: [],
     },
     {
@@ -1280,6 +1291,7 @@ const mockRegistry: { found: boolean; servers: MockRegistryServer[] } = {
       codex: null,
       homes: ['~/.claude'],
       machines: {},
+      agents: [],
       problems: ['claude: headers.Authorization looks like a secret. Refer to it with ${VAR} instead, so the repo never holds one.'],
     },
   ],
@@ -1315,7 +1327,36 @@ const registryCellsMock = (entry: SetupMachine) => entry.homes.filter((home) => 
   });
   const known = new Set(mockRegistry.servers.map((server) => server.name));
   return [...cells, ...[...present.keys()].filter((name) => !known.has(name)).map((name) => cell(name, 'extra', false, false))];
-});
+}).concat(harnessCellsMock(entry));
+
+/** The definition another agent's home should have, as Claude Code's in the agent's shape, and whether it's the machine's own. */
+const wantedHarnessMock = (server: MockRegistryServer, machine: string, harness: Harness): [MockDefinition, boolean] | null => {
+  if (!server.agents.includes(harness)) return null;
+  const choice = server.machines[machine];
+  if (choice === null) return null;
+  const [definition, own] = choice && 'claude' in choice ? [choice.claude ?? null, true] : [server.claude, false];
+  return definition ? [{ ...definition, sum: `${definition.sum}-${harness}` }, own] : null;
+};
+
+// The other agents' homes have only what the repo sends them.
+function harnessCellsMock(entry: SetupMachine): RegistryCell[] {
+  return entry.harnessHomes.flatMap((home) => {
+    const present = new Map(home.items.filter((item) => item.kind === 'mcp').map((item) => [item.name, item.sum]));
+    return mockRegistry.servers.flatMap((server): RegistryCell[] => {
+      const wanted = wantedHarnessMock(server, entry.machine, home.harness);
+      const found = present.has(server.name);
+      const cell = (state: RegistryState, own: boolean): RegistryCell => ({
+        machine: entry.machine, home: home.path, name: server.name, state, own, blocked: server.problems.length ? 'broken' : null,
+      });
+      if (wanted && !found) return [cell('add', wanted[1])];
+      if (wanted) return [cell(present.get(server.name) === wanted[0].sum ? 'same' : 'update', wanted[1])];
+      return found && server.agents.includes(home.harness) ? [cell('extra', false)] : [];
+    });
+  });
+}
+
+/** Where each agent keeps its MCP servers, in its home. */
+const HARNESS_MCP_FILE: Partial<Record<Harness, string>> = { pi: 'mcp.json', droid: 'mcp.json', openCode: 'opencode.json', amp: 'settings.json' };
 
 // Hooks the repo keeps (.agents/hooks.json), with `?hooks=sample`: guard on every machine's Claude Code homes, and
 // notify in Claude Code and Codex, kept off ci-01.
@@ -1449,7 +1490,7 @@ const registryReply = (path: string): McpRegistry => {
     uncommitted: params.get('registry') === 'dirty',
     problems: bad ? [".agents/mcp-servers.json isn't a JSON object Arbor can read"] : [],
     servers: bad ? [] : mockRegistry.servers.map((server) => ({
-      name: server.name, claude: view(server.claude), codex: view(server.codex), homes: server.homes,
+      name: server.name, claude: view(server.claude), codex: view(server.codex), homes: server.homes, agents: server.agents,
       own: Object.entries(server.machines).filter(([, choice]) => choice && Object.values(choice).some(Boolean)).map(([machine]) => machine),
       off: Object.entries(server.machines).filter(([, choice]) => choice === null || Object.values(choice).some((definition) => definition === null)).map(([machine]) => machine),
       problems: server.problems,
@@ -1461,6 +1502,12 @@ const registryReply = (path: string): McpRegistry => {
 const applyMcpMock = (entry: SetupMachine, changes: McpChange[]): McpResult[] => {
   const failing = params.get('mcpapply') === 'fail';
   const cells = registryCellsMock(entry);
+  const theirs = changes.filter((change) => entry.harnessHomes.some((home) => home.path === change.home));
+  if (theirs.length) {
+    const others = applyHarnessMcpMock(entry, theirs, cells, failing);
+    const rest = changes.filter((change) => !theirs.includes(change));
+    return rest.length ? [...others, ...applyMcpMock(entry, rest)] : others;
+  }
   const sorted = [...changes].sort((a, b) => Number(entry.homes.find((home) => home.path === a.home)?.agent !== 'claude') - Number(entry.homes.find((home) => home.path === b.home)?.agent !== 'claude'));
   for (const change of sorted) {
     const cell = cells.find((candidate) => candidate.home === change.home && candidate.name === change.name);
@@ -1491,6 +1538,31 @@ const applyMcpMock = (entry: SetupMachine, changes: McpChange[]): McpResult[] =>
   recordEditMock(entry.machine, 'mcp', [...edited].map((path) => ({ path, added: false })));
   scanSetupMock(entry.machine, false);
   return results;
+};
+
+/** Changes to the other agents' files: guarded edits, kept in one backup the toast's Undo takes them back from. */
+const applyHarnessMcpMock = (entry: SetupMachine, changes: McpChange[], cells: RegistryCell[], failing: boolean): McpResult[] => {
+  for (const change of changes) {
+    const cell = cells.find((candidate) => candidate.home === change.home && candidate.name === change.name);
+    const fits = { add: 'add', update: 'update', remove: 'extra' }[change.action] === cell?.state && !cell?.blocked;
+    if (!fits) throw `Arbor can't ${change.action === 'add' ? 'set up' : change.action} ${change.name} in ${change.home} as it is`;
+  }
+  const edited = new Set<string>();
+  const results = changes.map((change): McpResult => {
+    const home = entry.harnessHomes.find((candidate) => candidate.path === change.home)!;
+    const file = `${home.path}/${HARNESS_MCP_FILE[home.harness] ?? 'mcp.json'}`;
+    const result = (outcome: McpOutcome, message: string): McpResult => ({ home: change.home, name: change.name, action: change.action, outcome, message });
+    if (failing) return result('changed', `${file} changed after Arbor read it, so nothing in it was changed. Scan and try again.`);
+    const server = mockRegistry.servers.find((candidate) => candidate.name === change.name);
+    const wanted = server ? wantedHarnessMock(server, entry.machine, home.harness)?.[0] ?? null : null;
+    home.items = home.items.filter((item) => !(item.kind === 'mcp' && item.name === change.name));
+    if (change.action !== 'remove') home.items = [...home.items, setupItem('mcp', change.name, wanted?.sum ?? null, { value: wanted?.transport ?? null, note: wanted?.place ?? null })];
+    edited.add(file);
+    return result('done', '');
+  });
+  const backup = recordEditMock(entry.machine, 'mcp', [...edited].map((path) => ({ path, added: false })));
+  scanSetupMock(entry.machine, false);
+  return results.map((result) => (result.outcome === 'done' && backup ? { ...result, backup } : result));
 };
 
 // github's Claude Code definition on ci-01 sends a token in a header, so it's refused like the app refuses it.
@@ -1912,7 +1984,7 @@ const takeMcpMock = (path: string, machine: string, homePath: string, name: stri
   const definition = mockDefinition(item.value ?? 'stdio', item.note, [], item.sum ?? '');
   let server = mockRegistry.servers.find((candidate) => candidate.name === name);
   if (!server) {
-    server = { name, claude: null, codex: null, homes: null, machines: {}, problems: [] };
+    server = { name, claude: null, codex: null, homes: null, machines: {}, agents: [], problems: [] };
     mockRegistry.servers.push(server);
     mockRegistry.servers.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -1945,7 +2017,7 @@ const setMcpWantedMock = (path: string, name: string, machine: string | null, wa
   if (machine === null) {
     if (wanted !== 'removed') throw "Every machine's value is a definition: take one into the repo from a home";
     const index = mockRegistry.servers.findIndex((candidate) => candidate.name === name);
-    const removed: MockRegistryServer = { name, claude: null, codex: null, homes: null, machines: {}, problems: [] };
+    const removed: MockRegistryServer = { name, claude: null, codex: null, homes: null, machines: {}, agents: mockRegistry.servers[index]?.agents ?? [], problems: [] };
     if (index >= 0) mockRegistry.servers[index] = removed;
     else mockRegistry.servers = [...mockRegistry.servers, removed].sort((a, b) => a.name.localeCompare(b.name));
     message = `Remove MCP server ${name} from all machines`;

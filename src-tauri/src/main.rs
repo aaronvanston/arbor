@@ -1861,6 +1861,7 @@ fn main() {
             usage::machine_health::runs::cancel_run,
             usage::machine_health::runs::open_run,
             usage::machine_health::agents::update_machine_agent,
+            usage::machine_health::harness_update::update_machine_harness,
             usage::machine_health::fix_session::open_fix_session,
             usage::machine_health::agent_releases::get_agent_latest_versions,
             usage::machine_health::agent_releases::get_t3_compatibility,

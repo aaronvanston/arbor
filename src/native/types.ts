@@ -1671,6 +1671,10 @@ export type HarnessInstall = {
    * From its version command; None when it printed nothing that reads as one.
    */
   version: string | null,
+  /**
+   * Its own command that updates it, which the page shows before running it; none when Arbor doesn't update it.
+   */
+  updateCommand: string | null,
 };
 
 export type HarnessRun = {
@@ -1723,6 +1727,18 @@ export type HarnessSetup = {
    */
   name: string | null,
   enabled: boolean,
+};
+
+/**
+ * What an update did, for the page.
+ */
+export type HarnessUpdate = {
+  before: string | null,
+  after: string | null,
+  /**
+   * The end of what the update printed.
+   */
+  output: string,
 };
 
 /**
@@ -2466,6 +2482,10 @@ export type McpResult = {
   action: McpAction,
   outcome: McpOutcome,
   message: string,
+  /**
+   * The backup a change to another agent's file is kept in, which Sync's undo takes it back from.
+   */
+  backup?: string,
 };
 
 export type McpServerHealth = {
@@ -3673,6 +3693,10 @@ export type ServerView = {
    * The homes it's kept to.
    */
   homes: Array<string> | null,
+  /**
+   * The other agents it goes to.
+   */
+  agents: Array<Harness>,
   /**
    * Machines with their own definition, and machines it's kept off.
    */

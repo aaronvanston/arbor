@@ -5,6 +5,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { TableCard, TableEmpty, TableHeadLabel } from '../components/ui/data-table';
 import { NameCell } from './SetupNameCell';
+import { HarnessItemsSection } from './SetupHarnessHomes';
 import { ProjectMcpCard } from './SetupMcpProjects';
 import { ProjectPluginsCard } from './SetupPluginProjects';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
@@ -808,6 +809,8 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
       )}
 
       {repo && found && registry ? <ProjectMcpCard repo={repo} registry={registry} machines={machines} /> : null}
+
+      <HarnessItemsSection machines={machines} kind="mcp" registry={found ? registry : null} repo={repo} />
 
       <ReviewDialog
         open={reviewing}

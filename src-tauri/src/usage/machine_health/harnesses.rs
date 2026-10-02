@@ -130,6 +130,9 @@ pub(crate) struct HarnessSpec {
     pub(crate) hooks: Option<&'static str>,
     /// What prints its version after its command.
     pub(crate) version_arg: &'static str,
+    /// Its own command that updates it, after its command; none for one Arbor updates another way (Claude Code and
+    /// Codex, by how they were installed) or not at all.
+    pub(crate) update_arg: Option<&'static str>,
     pub(crate) launcher: Option<Launcher>,
 }
 
@@ -148,6 +151,7 @@ const OTHER: HarnessSpec = HarnessSpec {
     mcp: None,
     hooks: None,
     version_arg: "--version",
+    update_arg: None,
     launcher: None,
 };
 
@@ -170,6 +174,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: Some(McpConfig { path: "~/.claude.json", format: McpFormat::Json, key: "mcpServers" }),
         hooks: None,
         version_arg: "--version",
+        update_arg: None,
         launcher: Some(Launcher::Claude),
     },
     HarnessSpec {
@@ -187,6 +192,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: Some(McpConfig { path: "config.toml", format: McpFormat::Toml, key: "mcp_servers" }),
         hooks: None,
         version_arg: "--version",
+        update_arg: None,
         launcher: Some(Launcher::Codex),
     },
     HarnessSpec {
@@ -204,6 +210,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: Some(McpConfig { path: "mcp.json", format: McpFormat::Json, key: "mcpServers" }),
         hooks: None,
         version_arg: "--version",
+        update_arg: Some("update"),
         launcher: Some(Launcher::Pi { binary: "pi", cwd_flag: false, thinking: false }),
     },
     HarnessSpec {
@@ -222,6 +229,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: Some(McpConfig { path: "settings.json", format: McpFormat::Json, key: "mcpServers" }),
         hooks: None,
         version_arg: "--version",
+        update_arg: Some("update"),
         launcher: Some(Launcher::Pi { binary: "prime-agent", cwd_flag: true, thinking: true }),
     },
     HarnessSpec {
@@ -241,6 +249,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: Some(McpConfig { path: "opencode.json", format: McpFormat::Json, key: "mcp" }),
         hooks: None,
         version_arg: "--version",
+        update_arg: Some("upgrade"),
         launcher: None,
     },
     HarnessSpec {
@@ -258,6 +267,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: Some(McpConfig { path: "mcp.json", format: McpFormat::Json, key: "mcpServers" }),
         hooks: Some("hooks.json"),
         version_arg: "--version",
+        update_arg: Some("update"),
         launcher: Some(Launcher::Droid),
     },
     HarnessSpec {
@@ -276,6 +286,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: Some(McpConfig { path: "settings.json", format: McpFormat::Json, key: "amp.mcpServers" }),
         hooks: None,
         version_arg: "version",
+        update_arg: Some("update"),
         launcher: None,
     },
     HarnessSpec {
@@ -294,6 +305,7 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         mcp: None,
         hooks: None,
         version_arg: "--version",
+        update_arg: None,
         launcher: None,
     },
 ];

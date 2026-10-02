@@ -11,11 +11,16 @@ import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { Spinner } from '../components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { toast } from '../components/ui/toast';
+import { useConfirmation } from '../components/ConfirmationDialog';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import {
   harnessHomeRows,
   harnessItemRows,
+  harnessMcpAction,
+  harnessUpdateOutcome,
+  updateMachineHarness,
+  type HarnessHomeRow,
   harnessSkillChange,
   harnessSkillRows,
   type HarnessItemPlace,
@@ -24,10 +29,12 @@ import {
   type HarnessSkillStanding,
   type InstructionsState,
 } from '../services/harnessHomes';
+import { scanSetup } from '../services/setupInventory';
 import { formatBytes } from '../services/machineHealth';
 import { applySkillChanges } from '../services/setupSkills';
+import { applyMcpChanges } from '../services/setupMcp';
 import { undoSetupSync } from '../services/setupSync';
-import type { SetupMachine, SkillAction, SyncOutcome } from '../native/types';
+import type { McpAction, McpRegistry, RegistryState, SetupMachine, SkillAction, SyncOutcome } from '../native/types';
 
 const STATE: Record<InstructionsState, { label: MessageKey; variant: 'success' | 'warning' | 'muted' } | null> = {
   same: { label: 'setup.harnessHomes.same', variant: 'success' },
@@ -42,11 +49,58 @@ const STATE: Record<InstructionsState, { label: MessageKey; variant: 'success' |
  * a scan finds one.
  */
 export function HarnessHomesSection({ machines }: { machines: SetupMachine[] }) {
-  const { t } = useI18n();
+  const { t, tRich } = useI18n();
+  const harnessName = useHarnessName();
+  const { askConfirmation } = useConfirmation();
   const rows = useMemo(() => harnessHomeRows(machines), [machines]);
+  const [pending, setPending] = useState<string[]>([]);
+  const [failed, setFailed] = useState<{ text: string; output: string } | null>(null);
   if (!rows.length) return null;
+
+  // An update runs the harness's own command on the machine, which Arbor can't take back, so it asks first.
+  const update = async (row: HarnessHomeRow) => {
+    const command = row.updateCommand;
+    if (!command) return;
+    const agent = harnessName(row.harness);
+    const confirmed = await askConfirmation({
+      title: tRich('machines.agents.updateTitle', { agent, machine: <MachinePill name={row.machine} size="lg" /> }),
+      message: t('machines.agents.updateMessage', { command }),
+      details: [{ label: t('machines.agents.detail.version'), value: row.version ?? t('machines.agents.unknownVersion') }],
+      confirmText: t('machines.agents.update'),
+    });
+    if (!confirmed) return;
+    const key = `${row.machine}\t${row.harness}`;
+    setFailed(null);
+    setPending((current) => [...current, key]);
+    try {
+      const result = await updateMachineHarness(row.machine, row.harness, command);
+      const outcome = harnessUpdateOutcome(result);
+      toast({
+        kind: 'success',
+        title: outcome === 'updated'
+          ? t('machines.agents.updated', { agent, before: result.before ?? '', after: result.after ?? '' })
+          : outcome === 'unchanged'
+          ? t('machines.agents.unchanged', { agent, version: result.after ?? '' })
+          : t('machines.agents.updateDone', { agent }),
+        description: <MachinePill name={row.machine} size="sm" />,
+      });
+      // The scan reads the version it ended up on.
+      void scanSetup(row.machine, false).catch(() => undefined);
+    } catch (error) {
+      setFailed({ text: t('machines.agents.updateFailed', { agent }), output: String(error) });
+    } finally {
+      setPending((current) => current.filter((entry) => entry !== key));
+    }
+  };
+
   return (
     <SettingsSection title={t('setup.harnessHomes.title')} description={t('setup.harnessHomes.description')}>
+      {failed ? (
+        <div className="px-4 pt-3 text-xs text-error-foreground" role="alert">
+          <p>{failed.text}</p>
+          <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-2xs">{failed.output}</pre>
+        </div>
+      ) : null}
       <Table>
         <TableHeader>
           <TableRow>
@@ -66,7 +120,23 @@ export function HarnessHomesSection({ machines }: { machines: SetupMachine[] }) 
                 <TableCell><HarnessName harness={row.harness} className="w-max" /></TableCell>
                 <TableCell><MachinePill name={row.machine} /></TableCell>
                 <TableCell className="max-w-64"><MiddleTruncate value={row.path} className="font-mono text-xs" /></TableCell>
-                <TableCell className="font-mono text-xs">{row.version ?? <span className="font-sans text-muted-foreground">—</span>}</TableCell>
+                <TableCell>
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{row.version ?? <span className="font-sans text-muted-foreground">—</span>}</span>
+                    {row.updateCommand ? (
+                      <Button
+                        variant="ghost-muted"
+                        size="xs"
+                        disabled={pending.includes(`${row.machine}\t${row.harness}`)}
+                        aria-label={t('setup.harnessHomes.updateLabel', { agent: harnessName(row.harness), machine: row.machine })}
+                        onClick={() => void update(row)}
+                      >
+                        {pending.includes(`${row.machine}\t${row.harness}`) ? <Spinner className="size-3" /> : null}
+                        {t('machines.agents.update')}
+                      </Button>
+                    ) : null}
+                  </span>
+                </TableCell>
                 <TableCell>
                   {row.instructions ? (
                     <span className="flex items-center gap-2">
@@ -255,16 +325,62 @@ const ITEMS: Record<'mcp' | 'hook', { title: MessageKey; description: MessageKey
 /**
  * Sync › MCP & plugins and Sync › Hooks: the MCP servers or hooks in the other harnesses' homes, with where each machine
  * has each and whether it matches the same harness's elsewhere. Only names, how a server is reached and handler counts
- * are shown; commands, headers and environments never reach the window. Left out until a scan finds one.
+ * are shown; commands, headers and environments never reach the window. Left out until a scan finds one, or for MCP
+ * servers, until the setup repo sends one. A server the repo sends a harness can be set up, replaced or taken out from
+ * here; the change is a guarded edit of the harness's file, made at once and undone from the toast or Arbor's changes.
  */
-export function HarnessItemsSection({ machines, kind }: { machines: SetupMachine[]; kind: 'mcp' | 'hook' }) {
-  const { t } = useI18n();
-  const rows = useMemo(() => harnessItemRows(machines, kind), [machines, kind]);
+export function HarnessItemsSection({ machines, kind, registry = null, repo = null }: {
+  machines: SetupMachine[];
+  kind: 'mcp' | 'hook';
+  registry?: McpRegistry | null;
+  repo?: string | null;
+}) {
+  const { t, tRich } = useI18n();
+  const harnessName = useHarnessName();
+  const rows = useMemo(() => harnessItemRows(machines, kind, registry), [machines, kind, registry]);
   const columns = useMemo(() => machines.filter((entry) => entry.harnessHomes.length).map((entry) => entry.machine), [machines]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   if (!rows.length) return null;
   const text = ITEMS[kind];
+  const commit = registry?.commit ?? null;
+
+  const undo = async (machine: string, backup: string) => {
+    try {
+      const outcome = await undoSetupSync(machine, backup);
+      if (outcome.failed.length) setNotice(t('setup.harnessMcp.undoFailed', { error: outcome.failed.map((failed) => failed.path).join(', ') }));
+      else toast({ kind: 'success', title: tRich('setup.harnessMcp.undone', { machine: <MachinePill name={machine} size="sm" /> }) });
+    } catch (error) {
+      setNotice(t('setup.harnessMcp.undoFailed', { error: String(error) }));
+    }
+  };
+
+  const apply = async (machine: string, name: string, place: HarnessItemPlace, action: McpAction) => {
+    if (!repo || !commit) return;
+    setNotice(null);
+    setBusy(`${machine}\t${place.home}\t${name}`);
+    try {
+      const [result] = await applyMcpChanges(repo, commit, machine, [{ home: place.home, name, action }]);
+      if (result?.outcome !== 'done') setNotice(result?.message || t('setup.harnessMcp.failed', { name }));
+      else {
+        const backup = result.backup;
+        toast({
+          kind: 'success',
+          title: t(DONE[action], { name, agent: harnessName(place.harness) }),
+          description: <MachinePill name={machine} size="sm" />,
+          action: backup ? { label: t('common.undo'), onClick: () => void undo(machine, backup) } : undefined,
+        });
+      }
+    } catch (error) {
+      setNotice(t('setup.harnessMcp.error', { error: String(error) }));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <SettingsSection title={t(text.title)} description={t(text.description)}>
+      {notice ? <p className="px-4 pt-3 text-sm text-error-foreground" role="alert">{notice}</p> : null}
       <Table>
         <TableHeader>
           <TableRow>
@@ -282,7 +398,22 @@ export function HarnessItemsSection({ machines, kind }: { machines: SetupMachine
                   <TableCell key={machine}>
                     {places ? (
                       <span className="flex flex-col items-start gap-1">
-                        {places.map((place) => <ItemPlace key={place.home} place={place} />)}
+                        {places.map((place) => {
+                          const key = `${machine}\t${place.home}\t${row.name}`;
+                          const action = repo && commit ? harnessMcpAction(place) : null;
+                          return (
+                            <ItemPlace
+                              key={place.home}
+                              name={row.name}
+                              machine={machine}
+                              place={place}
+                              action={action}
+                              busy={busy === key}
+                              disabled={busy !== null}
+                              onApply={(picked) => void apply(machine, row.name, place, picked)}
+                            />
+                          );
+                        })}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">{t('setup.harnessSkills.notHere')}</span>
@@ -298,21 +429,67 @@ export function HarnessItemsSection({ machines, kind }: { machines: SetupMachine
   );
 }
 
-/** A harness's server or hook on one machine: whose it is, how it's reached or how many handlers it runs, and how it stands. */
-function ItemPlace({ place }: { place: HarnessItemPlace }) {
+const DONE: Record<McpAction, MessageKey> = {
+  add: 'setup.harnessMcp.done.add',
+  update: 'setup.harnessMcp.done.update',
+  remove: 'setup.harnessMcp.done.remove',
+};
+
+const ACTION: Record<McpAction, MessageKey> = {
+  add: 'setup.harnessMcp.action.add',
+  update: 'setup.harnessMcp.action.update',
+  remove: 'setup.harnessMcp.action.remove',
+};
+
+const REPO_STATE: Record<RegistryState, { label: MessageKey; variant: 'success' | 'warning' | 'muted' }> = {
+  same: { label: 'setup.harnessMcp.repo.same', variant: 'success' },
+  add: { label: 'setup.harnessMcp.repo.add', variant: 'warning' },
+  update: { label: 'setup.harnessMcp.repo.update', variant: 'warning' },
+  extra: { label: 'setup.harnessMcp.repo.extra', variant: 'warning' },
+};
+
+/**
+ * A harness's server or hook on one machine: whose it is, how it's reached or how many handlers it runs, how it stands
+ * against the setup repo or else against the same harness's elsewhere, and what brings it in line with the repo.
+ */
+function ItemPlace({ name, machine, place, action, busy, disabled, onApply }: {
+  name: string;
+  machine: string;
+  place: HarnessItemPlace;
+  action: McpAction | null;
+  busy: boolean;
+  disabled: boolean;
+  onApply: (action: McpAction) => void;
+}) {
   const { t } = useI18n();
-  const state = ITEM_STATE[place.state];
-  const { item } = place;
-  const handlers = item.count ?? 1;
-  const detail = item.kind === 'hook'
-    ? t(handlers === 1 ? 'setup.detail.handlers.one' : 'setup.detail.handlers.other', { count: handlers })
-    : [item.value, item.note].filter(Boolean).join(' · ');
+  const harnessName = useHarnessName();
+  const { item, repo } = place;
+  const state = repo ? (repo.blocked ? { label: 'setup.harnessMcp.repo.blocked' as const, variant: 'muted' as const } : REPO_STATE[repo.state]) : place.state ? ITEM_STATE[place.state] : null;
+  const handlers = item?.count ?? 1;
+  const detail = !item
+    ? null
+    : item.kind === 'hook'
+      ? t(handlers === 1 ? 'setup.detail.handlers.one' : 'setup.detail.handlers.other', { count: handlers })
+      : [item.value, item.note].filter(Boolean).join(' · ');
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <HarnessName harness={place.harness} className="w-max" />
       {detail ? <span className="truncate text-xs text-muted-foreground">{detail}</span> : null}
-      {item.enabled === false ? <Badge variant="muted" size="sm" className="shrink-0">{t('setup.harnessMcp.off')}</Badge> : null}
+      {item?.enabled === false ? <Badge variant="muted" size="sm" className="shrink-0">{t('setup.harnessMcp.off')}</Badge> : null}
       {state ? <Badge variant={state.variant} size="sm" className="shrink-0">{t(state.label)}</Badge> : null}
+      {busy ? <Spinner className="size-3 text-muted-foreground" /> : null}
+      {action && !busy ? (
+        <Button
+          variant={action === 'remove' ? 'destructive-outline' : 'outline'}
+          size="xs"
+          className="shrink-0"
+          disabled={disabled}
+          aria-label={t('setup.harnessMcp.actionLabel', { action: t(ACTION[action]), name, agent: harnessName(place.harness), machine })}
+          onClick={() => onApply(action)}
+        >
+          {t(ACTION[action])}
+        </Button>
+      ) : null}
     </span>
   );
 }

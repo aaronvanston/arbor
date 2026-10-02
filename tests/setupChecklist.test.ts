@@ -266,7 +266,7 @@ describe('MCP servers from the repo', () => {
   const definition = { transport: 'http', place: 'mcp.linear.app', variables: [] };
   const registry = (cells: RegistryCell[], fields: Partial<McpRegistry> = {}): McpRegistry => ({
     commit: 'b'.repeat(40), found: true, uncommitted: false, problems: [],
-    servers: ['linear', 'sentry', 'bad'].map((name) => ({ name, claude: definition, codex: null, homes: null, own: [], off: [], problems: [] })),
+    servers: ['linear', 'sentry', 'bad'].map((name) => ({ name, claude: definition, codex: null, homes: null, agents: [], own: [], off: [], problems: [] })),
     cells, ...fields,
   });
 

@@ -131,6 +131,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::agent_releases::T3Policy>();
         types.visit::<crate::usage::machine_health::agents::AgentKind>();
         types.visit::<crate::usage::machine_health::agents::AgentUpdate>();
+        types.visit::<crate::usage::machine_health::harness_update::HarnessUpdate>();
         types.visit::<crate::usage::machine_health::attention::AgentAttentionReport>();
         types.visit::<crate::usage::machine_health::attention::ReporterSetup>();
         types.visit::<crate::usage::machine_health::attention::SettingsEdit>();

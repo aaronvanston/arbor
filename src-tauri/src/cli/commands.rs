@@ -753,6 +753,16 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "update_machine_harness",
+        access: Access::Confirm,
+        summary: "Updates a harness on the machine with its own update command. `command` is what its user was shown, and nothing runs if the harness now updates another way. The page scans the machine again afterwards for the version it ended up on.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "harness", ts_type: "Harness", optional: false },
+            ArgSpec { name: "command", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_agent_latest_versions",
         access: Access::Read,
         summary: "Claude Code's and Codex's latest releases on npm, each None when npm couldn't be asked.",
@@ -2028,6 +2038,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "cancel_run" => async { done(Box::pin(crate::usage::machine_health::runs::cancel_run(app.clone(), arg(&args, "id")?)).await) }.await,
         "open_run" => async { done(Box::pin(crate::usage::machine_health::runs::open_run(app.clone(), arg(&args, "id")?)).await) }.await,
         "update_machine_agent" => async { done(Box::pin(crate::usage::machine_health::agents::update_machine_agent(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "command")?)).await) }.await,
+        "update_machine_harness" => async { done(Box::pin(crate::usage::machine_health::harness_update::update_machine_harness(app.state(), arg(&args, "machine")?, arg(&args, "harness")?, arg(&args, "command")?)).await) }.await,
         "get_agent_latest_versions" => done(Box::pin(crate::usage::machine_health::agent_releases::get_agent_latest_versions(app.state())).await),
         "get_t3_compatibility" => done(Box::pin(crate::usage::machine_health::agent_releases::get_t3_compatibility(app.state())).await),
         "set_t3_threads_enabled" => async { done(Box::pin(crate::usage::machine_health::t3_threads::set_t3_threads_enabled(arg(&args, "enabled")?, app.state())).await) }.await,

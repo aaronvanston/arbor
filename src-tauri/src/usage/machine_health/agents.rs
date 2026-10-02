@@ -24,12 +24,13 @@ const OUTPUT_CHARS: usize = 2_000;
 
 // Non-interactive shells leave out the directories installers put the agents
 // in, so those go first, the way a login shell would order them, with version
-// managers' Node installs, pnpm's global binaries and mise's shims last.
+// managers' Node installs, pnpm's global binaries, mise's shims and the folders
+// other agents' own installers use last.
 // Nothing may read stdin: the script arrives on it.
 pub(super) const AGENT_ENV: &str = r##"set -u
 export LC_ALL=C NO_COLOR=1 TERM=dumb
 PATH="$HOME/.local/bin:$HOME/.claude/local:$HOME/.npm-global/bin:$HOME/.bun/bin:$HOME/.volta/bin:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
-for d in "$HOME/.local/share/fnm/aliases/default/bin" "$HOME/Library/Application Support/fnm/aliases/default/bin" "$HOME"/.nvm/versions/node/*/bin "$HOME/Library/pnpm" "$HOME/.local/share/pnpm" "$HOME/.local/share/mise/shims"; do
+for d in "$HOME/.local/share/fnm/aliases/default/bin" "$HOME/Library/Application Support/fnm/aliases/default/bin" "$HOME"/.nvm/versions/node/*/bin "$HOME/Library/pnpm" "$HOME/.local/share/pnpm" "$HOME/.local/share/mise/shims" "$HOME/.opencode/bin" "$HOME/.amp/bin"; do
   if [ -d "$d" ]; then PATH="$PATH:$d"; fi
 done
 export PATH
@@ -656,7 +657,7 @@ pub(super) fn strip_terminal_codes(raw: &str) -> String {
 
 /// The last lines of what a command printed, as plain text. A progress line that redraws itself
 /// keeps only its last state.
-fn output_tail(raw: &str) -> String {
+pub(super) fn output_tail(raw: &str) -> String {
     let plain = strip_terminal_codes(raw);
     let lines: Vec<&str> = plain
         .lines()

@@ -78,8 +78,9 @@
  * `?homes=fresh` for no machine looked at for agent homes yet (Settings › Agent homes lists only the standard homes
  * until Look again fills each machine's list), `?homes=fail` for cedar-02's last look failing, and `?homes=none` for
  * looks that found nothing more to suggest;
- * `?harnessHomes=none` for no other harness's home (Pi's, Droid's, OpenCode's) on any machine, so Sync › Agents and
- * Skills leave their cards for them out;
+ * `?harnessHomes=none` for no other harness's home (Pi's, Droid's, OpenCode's) on any machine, so Sync › Agents,
+ * Skills, MCP & plugins and Hooks leave their cards for them out, and `?harnessupdate=fail` for updating one of
+ * them failing, as an agent without its update command does;
  * `?harness=none` for no T3 Code or Orca on any machine (each machine's page says no harness was found), and
  * `?t3=stopped` for T3 Code installed but not running on casey-mbp too;
  * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every
@@ -175,7 +176,7 @@
  * scan of the Mac that ran out of time;
  * `?registry=none`, `?registry=bad`, `?registry=fail` or `?registry=dirty` for a setup repo with no MCP servers file,
  * one Arbor can't read, a repo it can't read, or changes not committed; `?mcpapply=fail` to have Claude Code fail to
- * set a replaced MCP server up again, and Codex's config.toml change fail before it's written;
+ * set a replaced MCP server up again, and Codex's config.toml and the other agents' MCP files change before they're written;
  * `?skillmachines=sample` for a setup repo keeping pdf off ci-01 and leaving cedar-02 its own frontend-design;
  * `?skillprojects=sample` for skills turned on or off in casey/arbor's checkouts (pdf off, frontend-design on, which
  * only casey-mbp has), or `?skillprojects=seen` for that with cedar-02's worktrees where Git would see a new

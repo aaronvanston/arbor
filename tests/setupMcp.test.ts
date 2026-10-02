@@ -35,7 +35,7 @@ const machines = [
 
 const definition = { transport: 'http', place: 'mcp.linear.app', variables: ['LINEAR_API_KEY'] };
 const view = (name: string, fields: Partial<ServerView> = {}): ServerView => ({
-  name, claude: definition, codex: null, homes: null, own: [], off: [], problems: [], ...fields,
+  name, claude: definition, codex: null, homes: null, agents: [], own: [], off: [], problems: [], ...fields,
 });
 const cell = (machine: string, home: string, name: string, state: RegistryCell['state'], fields: Partial<RegistryCell> = {}): RegistryCell => ({
   machine, home, name, state, own: false, blocked: null, ...fields,

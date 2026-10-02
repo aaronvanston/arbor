@@ -766,6 +766,8 @@ pub(crate) struct HarnessInstall {
     real: Option<String>,
     /// From its version command; None when it printed nothing that reads as one.
     version: Option<String>,
+    /// Its own command that updates it, which the page shows before running it; none when Arbor doesn't update it.
+    update_command: Option<String>,
 }
 
 /// What the last scan of a machine found. A failed scan keeps what the last good one found.
@@ -1728,7 +1730,10 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
                     "claude" => scan.installs.push(SetupInstall { agent: AgentKind::Claude, path, real, version }),
                     "codex" => scan.installs.push(SetupInstall { agent: AgentKind::Codex, path, real, version }),
                     other => match Harness::ALL.into_iter().find(|harness| harness.spec().binary == other) {
-                        Some(harness) => scan.harness_installs.push(HarnessInstall { harness, path, real, version }),
+                        Some(harness) => {
+                            let update_command = super::harness_update::update_command(harness);
+                            scan.harness_installs.push(HarnessInstall { harness, path, real, version, update_command });
+                        }
                         None => continue,
                     },
                 }
@@ -2122,6 +2127,17 @@ impl MachineSetup {
             .map(|item| (item.name.as_str(), item.sum.as_deref()))
             .collect()
     }
+
+    /// The other harnesses' homes, each with its MCP servers' fingerprints by name.
+    pub(super) fn harness_servers(&self) -> Vec<(Harness, &str, BTreeMap<&str, Option<&str>>)> {
+        self.harness_homes
+            .iter()
+            .map(|home| {
+                let servers = home.items.iter().filter(|item| item.kind == ItemKind::Mcp).map(|item| (item.name.as_str(), item.sum.as_deref())).collect();
+                (home.harness, home.path.as_str(), servers)
+            })
+            .collect()
+    }
 }
 
 /// Whose home `path` is, as a machine's last scan names it.
@@ -2213,6 +2229,15 @@ impl MachineSetup {
         let dir = self.home_dir.clone();
         if let Some(home) = self.homes.iter_mut().find(|home| home.path == path) {
             home.items.push(mcp_item(home.agent, name, server, &dir, SALT.as_slice()));
+        }
+        self
+    }
+
+    /// The same, with a server in the MCP file of another harness's home at `path`.
+    pub(super) fn with_harness_mcp(mut self, path: &str, name: &str, server: &Value) -> Self {
+        let dir = self.home_dir.clone();
+        if let Some(home) = self.harness_homes.iter_mut().find(|home| home.path == path) {
+            home.items.push(mcp_item(HomeAgent::Shared, name, server, &dir, SALT.as_slice()));
         }
         self
     }

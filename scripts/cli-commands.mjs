@@ -74,6 +74,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'remove_pool',
   'start_pool_run',
   'update_machine_agent',
+  'update_machine_harness',
   'set_agent_reporter',
   'set_agent_telemetry',
   'set_machine_telemetry',
