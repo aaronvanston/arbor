@@ -2721,6 +2721,7 @@ mod tests {
             window_width: None,
             window_height: None,
             zoom_step: 0,
+            app_icon: crate::app_icon::AppIconChoice::Auto,
             auth_dir: String::new(),
             api_keys: Vec::new(),
             paused_api_keys: Vec::new(),

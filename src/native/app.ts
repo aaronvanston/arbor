@@ -1,4 +1,6 @@
 import type {
+  AppIconChoice,
+  AppIconSetting,
   AppUpdateInfo,
   AppUpdateTask,
   DevBuildStatus,
@@ -30,6 +32,8 @@ export type AppCommands = {
   set_quit_guard: { args: { enabled: boolean }; result: void };
   get_zoom_level: { result: ZoomLevel };
   set_zoom_level: { args: { step: number }; result: ZoomLevel };
+  get_app_icon: { result: AppIconSetting };
+  set_app_icon: { args: { choice: AppIconChoice }; result: AppIconSetting };
   open_external_url: { args: { url: string }; result: void };
 
   get_product_analytics: { result: ProductAnalyticsSettings };

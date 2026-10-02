@@ -24,6 +24,8 @@ export const LEFT_OUT = {
   set_quit_guard: 'the window owns ⌘Q',
   get_zoom_level: 'the window owns its zoom',
   set_zoom_level: 'the window owns its zoom',
+  get_app_icon: 'the Dock icon is picked on Settings › Appearance',
+  set_app_icon: 'the Dock icon is picked on Settings › Appearance',
   get_product_analytics: 'analytics belong to the window',
   set_product_analytics: 'analytics belong to the window',
   mark_product_analytics_notice_shown: 'analytics belong to the window',

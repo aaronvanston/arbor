@@ -130,6 +130,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('appearance', 'color', 'appearance.window.title', 'appearance.color.title', { description: 'appearance.color.description', keywords: 'settingsSearch.keywords.color' }),
   row('appearance', 'sidebar-art', 'appearance.window.title', 'appearance.sidebarArt.title', { description: 'appearance.sidebarArt.description', keywords: 'settingsSearch.keywords.sidebarArt' }),
   row('appearance', 'sidebar-art-motion', 'appearance.window.title', 'appearance.sidebarArtMotion.title', { description: 'appearance.sidebarArtMotion.description', keywords: 'settingsSearch.keywords.sidebarArtMotion' }),
+  row('appearance', 'app-icon', 'appearance.window.title', 'appearance.appIcon.title', { description: 'appearance.appIcon.description', keywords: 'settingsSearch.keywords.appIcon' }),
   row('appearance', 'zoom', 'appearance.window.title', 'appearance.zoom.title', { description: 'appearance.zoom.description', keywords: 'settingsSearch.keywords.zoom' }),
   row('appearance', 'sidebar-limits', 'appearance.sidebarTray.title', 'interface.sidebarLimits.title', { description: 'interface.sidebarLimits.description' }),
   row('appearance', 'sidebar-machines', 'appearance.sidebarTray.title', 'interface.sidebarMachines.title', { description: 'interface.sidebarMachines.description' }),

@@ -4,7 +4,7 @@ import { PHONE_ALERT_SECRETS } from '../../services/phoneAlerts';
 import { QUIT_GUARD_ARMED_EVENT, QUIT_GUARD_WINDOW_MS, pressQuit } from '../../services/quitGuard';
 import { nearestZoomStep, ZOOM_CHANGED_EVENT, zoomLevelAt } from '../../services/zoom';
 import type { AppCommands } from '../../native/app';
-import type { DevBuildStatus, PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, UpdateChannel, ZoomLevel } from '../../native/types';
+import type { AppIconChoice, AppIconSetting, DevBuildStatus, PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, UpdateChannel, ZoomLevel } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { configSettings, coreStatus } from './core';
 import { freshInstall, mockLog, params } from './scenario';
@@ -27,6 +27,10 @@ let productAnalytics: ProductAnalyticsSettings = {
   blockedByEnv: params.get('usagedata') === 'env',
   available: params.get('usagedata') !== 'source',
 };
+
+/** The Dock icon the build shows on Auto, as `?build=` makes it (app_icon.rs's `build_icon`). */
+const mockBuildIcon: AppIconChoice = params.get('build') === 'nightly' ? 'amber' : params.get('build') === 'dev' ? 'sky' : 'forest';
+let appIcon: AppIconSetting = { choice: 'auto', shown: mockBuildIcon };
 
 let quitGuard: { enabled: boolean; armedAt: number | null } = { enabled: true, armedAt: null };
 
@@ -252,6 +256,12 @@ export const appAnswers: CommandAnswers<AppCommands> = {
   track_event: (args) => { mockLog('track_event', args.event); return null; },
   report_exception: (args) => { mockLog('report_exception', args.report); return null; },
   set_zoom_level: (args) => setMockZoom(args.step),
+  get_app_icon: () => appIcon,
+  set_app_icon: (args) => {
+    appIcon = { choice: args.choice, shown: args.choice === 'auto' ? mockBuildIcon : args.choice };
+    mockLog('app_icon', appIcon);
+    return appIcon;
+  },
   get_phone_alert_secrets: () => {
     if (params.get('phone') === 'unreadable') throw PHONE_SECRETS_UNREADABLE;
     return phoneSecretStatus();

@@ -102,7 +102,20 @@ RUSTFLAGS="$release_rustflags" cargo build --quiet --release --locked --manifest
 mkdir -p bundled-core/plugins
 cp core-plugins/arbor-models/target/release/libarbor_models.dylib bundled-core/plugins/arbor-models.dylib
 
-RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json
+# A nightly or dev build is packaged with its own icon (src-tauri/icons/channels/), so Finder, Launchpad and the Dock
+# tell it from stable even while it's closed; src-tauri/src/app_icon.rs matches it while it runs.
+icon_config=()
+case "$version" in
+  *-nightly.*) icon_channel=nightly ;;
+  *-dev.*) icon_channel=dev ;;
+  *) icon_channel= ;;
+esac
+if [[ -n "$icon_channel" ]]; then
+  icons="icons/channels/$icon_channel"
+  icon_config=(--config "{\"bundle\":{\"icon\":[\"$icons/icon.png\",\"$icons/32x32.png\",\"$icons/128x128.png\",\"$icons/128x128@2x.png\",\"$icons/icon.icns\"]}}")
+fi
+
+RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json ${icon_config[@]+"${icon_config[@]}"}
 
 app_path="$repo_dir/src-tauri/target/release/bundle/macos/Arbor.app"
 # Versions up to 1.0 ran as Contents/MacOS/cpa-gui. Their updater installs a new version only when it has that file, and

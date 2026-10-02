@@ -60,6 +60,9 @@ fn take_in_gui_config_change(
     validate_arbor_settings(&config)?;
     let replaced = gui_state.replace_external(config.clone())?;
     crate::zoom::follow_external_zoom(app, replaced.zoom_step, config.zoom_step);
+    if replaced.app_icon != config.app_icon {
+        crate::app_icon::show_app_icon(app, config.app_icon);
+    }
     if replaced.management_secret_key != config.management_secret_key {
         patch_core_management_secret_key(&config.management_secret_key)?;
     }

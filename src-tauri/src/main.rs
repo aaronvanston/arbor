@@ -1,4 +1,5 @@
 mod agents;
+mod app_icon;
 mod app_identity;
 mod app_settings;
 mod app_update;
@@ -405,6 +406,9 @@ struct GuiConfigFile {
     window_height: Option<u32>,
     /// The window's zoom as a step (zoom.rs); 0 is actual size.
     zoom_step: i32,
+    /// The Dock icon's color (app_icon.rs); auto follows the build that's running.
+    #[serde(deserialize_with = "app_icon::deserialize_app_icon")]
+    app_icon: app_icon::AppIconChoice,
     auth_dir: String,
     #[serde(deserialize_with = "deserialize_gui_api_keys")]
     api_keys: Vec<GuiApiKeyEntry>,
@@ -512,6 +516,7 @@ impl Default for GuiConfigFile {
             window_width: Some(DEFAULT_MAIN_WINDOW_WIDTH),
             window_height: Some(DEFAULT_MAIN_WINDOW_HEIGHT),
             zoom_step: 0,
+            app_icon: app_icon::AppIconChoice::Auto,
             auth_dir: DEFAULT_AUTH_DIR.to_string(),
             // config.yaml has the client keys. A first start writes one made by `ensure_first_client_key`.
             api_keys: Vec::new(),
@@ -1630,7 +1635,7 @@ fn main() {
             if let Err(error) = configure_initial_main_window(app.handle(), start_hidden) {
                 eprintln!("Failed to configure startup window state: {error}");
             }
-            build_channel::apply_dock_badge(app.handle());
+            app_icon::apply_saved_app_icon(app.handle());
 
             if let Err(error) =
                 configuration_watcher::start_configuration_file_watcher(app.handle().clone())
@@ -1744,6 +1749,8 @@ fn main() {
             quit_guard::set_quit_guard,
             zoom::get_zoom_level,
             zoom::set_zoom_level,
+            app_icon::get_app_icon,
+            app_icon::set_app_icon,
             get_software_settings,
             save_software_settings,
             product_analytics::get_product_analytics,

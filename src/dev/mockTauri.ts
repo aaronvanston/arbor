@@ -325,7 +325,8 @@
  * Its Agent skill row: this Mac's agents have the skill by default (not on a fresh install); `?cliSkill=missing`,
  * `outdated` for an older Arbor's skill, or `failed` for adding it failing.
  * `?build=nightly` or `?build=dev` to run as a nightly or dev build: the sidebar's wordmark, Settings › About and
- * Settings › Updates mark it (a stable build, the default, has no mark).
+ * Settings › Updates mark it (a stable build, the default, has no mark), and Settings › Appearance's App icon on Auto
+ * shows its Amber or Sky icon, as About does.
  */
 import { emit } from '@tauri-apps/api/event';
 import { clearMocks, mockWindows } from '@tauri-apps/api/mocks';

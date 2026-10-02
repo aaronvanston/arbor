@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { invokeCommand } from '../native/commands';
 import { ExternalLink } from '../components/ui/icons';
-import appLogo from '../assets/arbor-icon.png';
+import { appIconImage } from '../components/AppIconPicker';
+import { useAppIcon } from '../services/appIcon';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Button } from '../components/ui/button';
@@ -139,9 +140,11 @@ export function AboutHeader({ version }: { version: string | null }) {
   const { t } = useI18n();
   const build = useBuildChannel();
   const buildLabel = buildChannelLabel(build);
+  // The icon in the Dock, so a nightly's About shows its Amber one.
+  const { shown } = useAppIcon();
   return (
     <div className="flex items-center gap-3 px-4">
-      <img src={appLogo} alt="" className="size-10 shrink-0 rounded-[9px] shadow-xs/10" />
+      <img src={appIconImage(shown)} alt="" className="size-10 shrink-0 rounded-[9px] shadow-xs/10" />
       <div className="min-w-0">
         <h1 className="flex items-baseline gap-2 text-sm font-medium tracking-title text-foreground">
           {t('app.brandName')}

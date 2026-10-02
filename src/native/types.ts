@@ -132,6 +132,19 @@ export type AntiburnStatus = {
   thisMachine: string,
 };
 
+/**
+ * A color for the icon, or auto for the running build's own.
+ */
+export type AppIconChoice = "auto" | "forest" | "amber" | "sky" | "ember" | "signal" | "paper" | "mono";
+
+/**
+ * What's saved, and the icon it shows in the Dock (never auto).
+ */
+export type AppIconSetting = {
+  choice: AppIconChoice,
+  shown: AppIconChoice,
+};
+
 export type AppUpdateInfo = {
   currentVersion: string,
   latestVersion: string,

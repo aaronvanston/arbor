@@ -19,6 +19,7 @@ import {
   zoomPercent,
   type ZoomFailure,
 } from '../services/zoom';
+import { AppIconRow } from '../components/AppIconPicker';
 import { MachinePicker, ProviderPicker } from '../components/GlancePicks';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Button } from '../components/ui/button';
@@ -168,6 +169,7 @@ export function AppearanceSettingsPage({ theme, onThemeChange }: { theme: ThemeP
               }
             />
           ) : null}
+          <AppIconRow />
           <ZoomRow />
         </SettingsSection>
         <SettingsSection title={t('appearance.sidebarTray.title')} description={t('appearance.sidebarTray.description')}>

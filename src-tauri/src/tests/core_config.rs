@@ -1214,6 +1214,7 @@ fn startup_leaves_an_existing_config_yaml_as_it_is_apart_from_the_management_key
         window_width: None,
         window_height: None,
         zoom_step: 0,
+        app_icon: crate::app_icon::AppIconChoice::Auto,
         auth_dir: path_to_string(&fixed_oauth_dir().unwrap()),
         api_keys: vec![
             new_default_api_key_entry().unwrap(),
