@@ -107,7 +107,7 @@ main() {
       # The builder updates itself: the next run is main's copy of this script and its helper.
       if [[ -n "${ARBOR_DEV_INSTALL_DIR:-}" ]]; then
         local file
-        for file in dev-build.sh dev-build.mjs; do
+        for file in dev-build.sh dev-build.mjs version.mjs; do
           cp "$checkout/scripts/$file" "$ARBOR_DEV_INSTALL_DIR/$file.new"
           chmod 755 "$ARBOR_DEV_INSTALL_DIR/$file.new"
           mv "$ARBOR_DEV_INSTALL_DIR/$file.new" "$ARBOR_DEV_INSTALL_DIR/$file"
@@ -145,12 +145,18 @@ helper() {
   fi
 }
 
+# status.json is this script's own bookkeeping, so it goes through the helper installed with it, never the checkout's,
+# which can be older or newer than the script and know other fields.
+own_helper() {
+  node "$(dirname "${BASH_SOURCE[0]}")/dev-build.mjs" "$@"
+}
+
 status_set() {
-  helper status "$@"
+  own_helper status "$@"
 }
 
 status_get() {
-  helper get "$1" "$2" 2>/dev/null || true
+  own_helper get "$1" "$2" 2>/dev/null || true
 }
 
 fail_status() {

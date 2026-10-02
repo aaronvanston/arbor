@@ -60,7 +60,8 @@ if [[ ! -d "$checkout/.git" ]]; then
   git -C "$checkout" fetch --quiet origin main
   git -C "$checkout" checkout --quiet --detach origin/main
 fi
-for file in dev-build.sh dev-build.mjs; do
+# dev-build.mjs imports version.mjs, so the three go together.
+for file in dev-build.sh dev-build.mjs version.mjs; do
   install -m 755 "$script_dir/$file" "$install_dir/$file"
 done
 # The app shows it, and turns the builder back on from it.
