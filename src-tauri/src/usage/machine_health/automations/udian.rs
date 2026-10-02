@@ -23,6 +23,8 @@ use std::path::{Path, PathBuf};
 const BIN: &str = "\"$HOME/.ultradian/bin/udian\"";
 /// The group every schedule Arbor writes is in, so Arbor reads back only its own.
 const GROUP: &str = "arbor";
+/// Every schedule Arbor places starts with this, which is how its runs are told from the machine's others.
+const SCHEDULE_PREFIX: &str = "arbor-";
 const VERSION_FILE: &str = "udian-version.txt";
 /// In the app's Resources, and in a checkout for a dev build.
 const RESOURCES_FOLDER: &str = "udian";
@@ -166,8 +168,8 @@ pub(super) fn install_script(archive: &[u8]) -> String {
          chmod 755 \"$tmp/ultradian\"\n\
          \"$tmp/ultradian\" version --json </dev/null >/dev/null\n\
          mv -f \"$tmp/ultradian\" \"$bin/udian\"\n\
-         {BIN} daemon install --yes --json </dev/null >/dev/null\n\
-         {BIN} daemon restart --yes --json </dev/null >/dev/null\n\
+         {BIN} daemon install --json </dev/null >/dev/null\n\
+         {BIN} daemon restart --json </dev/null >/dev/null\n\
          {BIN} version --json </dev/null\n"
     )
 }
@@ -181,7 +183,7 @@ pub(super) async fn install(machine: &Machine, archive: &[u8]) -> Result<(), Str
 /// The schedule's name in udian, and its folder's under `~/.arbor/automations`: `arbor-` and the id's letters.
 pub(super) fn schedule_name(id: &str) -> String {
     let word: String = id.trim_start_matches("arbor:").chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').map(|c| c.to_ascii_lowercase()).take(57).collect();
-    format!("arbor-{word}")
+    format!("{SCHEDULE_PREFIX}{word}")
 }
 
 /// This Mac's time zone by its IANA name, which an automation's times are read in unless it names its own.
@@ -325,12 +327,12 @@ pub(super) fn place_script(id: &str, input: &AutomationInput, enabled: bool, zon
          printf '%s' {precheck} | unbase >\"$here/precheck\"\n\
          printf '%s' {gate_file} | unbase >\"$here/gate.sh\"\n\
          printf '%s' {run_file} | unbase >\"$here/run.sh\"\n\
-         if {BIN} list --group {GROUP} --json </dev/null | grep -q {quoted_name}; then\n\
-         \x20 {BIN} set {name_word}{options}{gate} --cwd \"$here\" --yes --json -- /bin/sh \"$here/run.sh\" </dev/null >/dev/null\n\
+         if {BIN} list --json </dev/null | grep -q {quoted_name}; then\n\
+         \x20 {BIN} set {name_word}{options}{gate} --cwd \"$here\" --json -- /bin/sh \"$here/run.sh\" </dev/null >/dev/null\n\
          else\n\
          \x20 {BIN} add {name_word}{options}{add_gate} --group {GROUP} --cwd \"$here\" --yes --json -- /bin/sh \"$here/run.sh\" </dev/null >/dev/null\n\
          fi\n\
-         {BIN} {pause} {name_word} --yes --json </dev/null >/dev/null\n",
+         {BIN} {pause} {name_word} --json </dev/null >/dev/null\n",
         folder = shell_quote(&name),
         prompt = file(&input.prompt),
         precheck = file(input.precheck.as_deref().unwrap_or_default()),
@@ -353,11 +355,11 @@ pub(super) fn remove_script(id: &str) -> String {
 }
 
 pub(super) fn run_now_script(id: &str) -> String {
-    format!("{BIN} run {} --detach --yes --json </dev/null\n", shell_quote(&schedule_name(id)))
+    format!("{BIN} run {} --detach --json </dev/null\n", shell_quote(&schedule_name(id)))
 }
 
 pub(super) fn cancel_script(run_id: &str) -> String {
-    format!("{BIN} cancel {} --yes --json </dev/null >/dev/null\n", shell_quote(run_id))
+    format!("{BIN} cancel {} --json </dev/null >/dev/null\n", shell_quote(run_id))
 }
 
 pub(super) async fn call(machine: &Machine, script: &str) -> Result<String, String> {
@@ -382,7 +384,7 @@ pub(super) fn sync_script(since: Option<&str>) -> String {
     let since = since.map(|since| format!(" --since {}", shell_quote(since))).unwrap_or_default();
     format!(
         "[ -x \"$HOME/.ultradian/bin/udian\" ] || exit 0\n{REMOVE_FOLDER}\
-         printf 'J\\t%s\\n' \"$({BIN} runs --group {GROUP}{since} --limit 500 --json </dev/null 2>/dev/null | base64 | tr -d '\\n')\"\n\
+         printf 'J\\t%s\\n' \"$({BIN} runs{since} --limit 500 --json </dev/null 2>/dev/null | base64 | tr -d '\\n')\"\n\
          for d in \"$HOME/.arbor/automation-runs\"/*/; do\n\
          \x20 [ -f \"$d/by-udian\" ] || continue\n\
          \x20 id=$(basename \"$d\")\n\
@@ -447,6 +449,10 @@ pub(super) fn parse_sync(stdout: &str) -> (Vec<UdianRun>, BTreeMap<String, RunFi
                 for run in list {
                     let text = |key: &str| run.get(key).and_then(serde_json::Value::as_str).map(str::to_string);
                     let (Some(id), Some(schedule)) = (text("run_id"), text("schedule")) else { continue };
+                    // udian lists every run on the machine; only Arbor's own schedules are Arbor's to read.
+                    if !schedule.starts_with(SCHEDULE_PREFIX) {
+                        continue;
+                    }
                     let trigger = run.get("trigger").map(|trigger| trigger.get("kind").and_then(serde_json::Value::as_str).or(trigger.as_str()).unwrap_or_default().to_string()).unwrap_or_default();
                     runs.push(UdianRun {
                         id,
@@ -789,7 +795,13 @@ mod tests {
         executable(&bin.join("claude"), "#!/bin/sh\ncat >\"$HOME/prompt-seen\"\nprintf '%s' \"$*\" >\"$HOME/args-seen\"\nexit 0\n");
         executable(
             &udian_bin.join("udian"),
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/udian-calls\"\ncase $1 in\n list) echo '{\"data\":[]}' ;;\n runs) echo '{\"data\":{\"cursor\":\"c1\",\"runs\":[{\"run_id\":\"r1\",\"schedule\":\"arbor-a\",\"status\":\"succeeded\",\"action_exit\":0}]}}' ;;\nesac\n",
+            // It refuses the options the real one refuses, per command, so a call udian would reject fails here too.
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/udian-calls\"\n\
+             case \" $* \" in\n\
+             \x20 *' --yes '*) case $1 in add|rm) ;; *) echo \"unknown option '--yes'\" >&2; exit 2 ;; esac ;;\n\
+             esac\n\
+             case $1 in list|runs|run|cancel|set) case \" $* \" in *' --group '*) [ \"$1\" = set ] || { echo \"unknown option '--group'\" >&2; exit 2; } ;; esac ;; esac\n\
+             case $1 in\n list) echo '{\"data\":[]}' ;;\n runs) echo '{\"data\":{\"cursor\":\"c1\",\"runs\":[{\"run_id\":\"r1\",\"schedule\":\"arbor-a\",\"status\":\"succeeded\",\"action_exit\":0},{\"run_id\":\"x9\",\"schedule\":\"backup\",\"status\":\"succeeded\",\"action_exit\":0}]}}' ;;\nesac\n",
         );
         let sh = |script: &str, run: Option<&str>| {
             let mut command = std::process::Command::new("sh");
@@ -824,7 +836,10 @@ mod tests {
         let files = files.get("r1").unwrap();
         assert_eq!((files.precheck_exit, files.exit), (Some(0), Some(0)));
         assert_eq!(files.session.as_ref().map(String::len), Some(36));
+        assert_eq!(runs.len(), 1, "the machine's own schedules aren't Arbor's");
         assert_eq!(runs[0].schedule, "arbor-a");
+        assert_eq!(sh(&run_now_script("arbor:a"), None).0, Some(0));
+        assert_eq!(sh(&cancel_script("r1"), None).0, Some(0));
         assert!(!home.join(".arbor/automation-runs/r1").exists(), "an ended run's folder goes once read");
         // A precheck that fails stops there: no agent, and the folder goes once read.
         std::fs::remove_file(home.join("prompt-seen")).unwrap();
@@ -851,5 +866,83 @@ mod tests {
         let mut paused = input();
         paused.precheck = None;
         assert!(place_script("arbor:a", &paused, false, None).unwrap().contains(" pause 'arbor-a'"));
+    }
+
+    /// The same round trip against a real ultradian build, with its daemon: place, run now, read back, remove. It's
+    /// ignored because it needs that build, named by ARBOR_UDIAN_BIN; run it before pinning a version in
+    /// udian-version.txt. Everything happens under a temporary HOME, and the daemon it starts is stopped at the end.
+    #[test]
+    #[ignore]
+    fn a_real_udian_runs_what_arbor_places() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let Ok(binary) = std::env::var("ARBOR_UDIAN_BIN") else { panic!("set ARBOR_UDIAN_BIN to an ultradian build") };
+        let home = std::env::temp_dir().join(format!("arbor-real-udian-{}-{}", std::process::id(), runner::new_uuid()));
+        assert!(home.starts_with(std::env::temp_dir()));
+        let (project, bin, udian_bin) = (home.join("code/billing"), home.join(".local/bin"), home.join(".ultradian/bin"));
+        for dir in [&project, &bin, &udian_bin] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::copy(&binary, udian_bin.join("udian")).unwrap();
+        std::fs::write(bin.join("claude"), "#!/bin/sh\ncat >\"$HOME/prompt-seen\"\nexit 0\n").unwrap();
+        std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let sh = |script: &str| {
+            let mut child = std::process::Command::new("sh")
+                .env("HOME", &home)
+                .env("ULTRADIAN_HOME", home.join(".ultradian"))
+                .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(script.as_bytes()).unwrap();
+            let output = child.wait_with_output().unwrap();
+            (output.status.code(), String::from_utf8_lossy(&output.stdout).into_owned(), String::from_utf8_lossy(&output.stderr).into_owned())
+        };
+        let finish = |home: &std::path::Path| {
+            let _ = sh(&format!("{BIN} daemon stop --json"));
+            let _ = std::fs::remove_dir_all(home);
+        };
+        let probe = parse_probe(&sh(PROBE_SCRIPT).1).unwrap();
+        assert!(probe.version.is_some() && !probe.live, "{probe:?}");
+        let (code, _, err) = sh(&format!("{BIN} daemon start --json"));
+        assert_eq!(code, Some(0), "{err}");
+        let mut item = input();
+        item.project_path = project.display().to_string();
+        item.precheck = Some("echo 3 new issues".into());
+        let (code, _, err) = sh(&place_script("arbor:a", &item, true, None).unwrap());
+        assert_eq!(code, Some(0), "placing: {err}");
+        // Placing again edits the schedule in place.
+        let (code, _, err) = sh(&place_script("arbor:a", &item, false, None).unwrap());
+        assert_eq!(code, Some(0), "placing again: {err}");
+        let (code, _, err) = sh(&place_script("arbor:a", &item, true, None).unwrap());
+        assert_eq!(code, Some(0), "resuming: {err}");
+        let (code, out, err) = sh(&run_now_script("arbor:a"));
+        assert_eq!(code, Some(0), "run now: {err}");
+        assert!(out.contains("\"run_id\""), "{out}");
+        let mut seen = None;
+        for _ in 0..120 {
+            let (runs, files, _) = parse_sync(&sh(&sync_script(None)).1);
+            if let Some(run) = runs.iter().find(|run| run.status == "succeeded") {
+                seen = Some((run.clone(), files.get(&run.id).cloned()));
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        let Some((run, files)) = seen else {
+            finish(&home);
+            panic!("the run never finished");
+        };
+        assert_eq!(run.schedule, "arbor-a");
+        assert!(run.manual);
+        let files = files.expect("the run's folder was read");
+        assert_eq!((files.precheck_exit, files.exit), (Some(0), Some(0)));
+        let prompt = std::fs::read_to_string(home.join("prompt-seen")).unwrap_or_default();
+        assert!(prompt.contains("The precheck found:\n3 new issues"), "{prompt}");
+        let (code, _, err) = sh(&remove_script("arbor:a"));
+        assert_eq!(code, Some(0), "removing: {err}");
+        assert!(!home.join(".arbor/automations/arbor-a").exists());
+        finish(&home);
     }
 }
