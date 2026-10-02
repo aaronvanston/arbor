@@ -17,7 +17,8 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
  * two failed and a machine couldn't be scanned. `?orca=none`: Orca isn't on any machine, so none of its show.
  * `?draft=fail`: the drafting model can't be reached (the core has no key); `?draft=slow` takes four seconds.
  * The background runner: casey-mbp and cedar-02 have it and ci-01 doesn't. `?runner=old`: cedar-02's is older than
- * the one Arbor carries. `?runner=failing`: writing cedar-02's schedules failed. `?runner=none`: this build carries none.
+ * the one Arbor carries, and `?runner=legacy` from before it kept only 30 days of runs. `?runner=failing`: writing
+ * cedar-02's schedules failed. `?runner=none`: this build carries none.
  */
 const scenario = params.get('automations');
 const failing = scenario === 'failing';
@@ -26,7 +27,7 @@ const runner = params.get('runner');
 const BUNDLED_RUNNER = runner === 'none' ? null : '1.0.0';
 const runnerOn = new Map<string, UdianOnMachine>([
   ['casey-mbp', { target: 'darwin-arm64', version: '1.0.0', live: true }],
-  ['cedar-02', { target: 'linux-x64', version: runner === 'old' ? '0.9.2' : '1.0.0', live: true }],
+  ['cedar-02', { target: 'linux-x64', version: runner === 'old' ? '0.9.2' : runner === 'legacy' ? '0.1.0' : '1.0.0', live: true }],
   ['ci-01', { target: 'linux-arm64', version: null, live: false }],
 ]);
 

@@ -5,10 +5,12 @@ import {
   RUNNER_STATE_LABEL,
   RUNNER_STATE_TONE,
   canInstallRunner,
+  runnerPrunesHistory,
   runnerState,
   showAutomations,
   useAutomations,
 } from '../../services/automations';
+import { useConfirmation } from '../ConfirmationDialog';
 import { MachinePill } from '../identity/Identity';
 import { SettingsRow, SettingsSection } from '../layout/settings';
 import { Button } from '../ui/button';
@@ -25,6 +27,7 @@ const EFFORTS = ['low', 'medium', 'high'] as const;
 export function AutomationSettings() {
   const { t } = useI18n();
   const { list } = useAutomations();
+  const { askConfirmation } = useConfirmation();
   const [model, setModel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -51,7 +54,12 @@ export function AutomationSettings() {
     toast({ title: t('automations.settings.modelSaved') });
   });
 
-  const install = async (machine: string, update: boolean) => {
+  const install = async (machine: string, update: boolean, prunes: boolean) => {
+    if (prunes && !(await askConfirmation({
+      title: t('automations.runner.prune.title', { machine }),
+      message: t('automations.runner.prune.message', { machine }),
+      confirmText: t('automations.runner.prune.confirm'),
+    }))) return;
     setInstalling(machine);
     setInstallError(null);
     try {
@@ -88,7 +96,7 @@ export function AutomationSettings() {
                     {scan.udian?.version ? <span className="tabular-nums">· {scan.udian.version}</span> : null}
                   </span>
                   {bundled && canInstallRunner(state) ? (
-                    <Button size="xs" variant="outline" disabled={installing !== null} onClick={() => void install(scan.machine, state !== 'missing')}>
+                    <Button size="xs" variant="outline" disabled={installing !== null} onClick={() => void install(scan.machine, state !== 'missing', runnerPrunesHistory(scan))}>
                       {busy ? <Spinner /> : null}
                       {t(state === 'missing' ? 'automations.runner.install' : state === 'stopped' ? 'automations.runner.restart' : 'automations.runner.update')}
                     </Button>

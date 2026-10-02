@@ -8,6 +8,7 @@ import {
   automationModels,
   backgroundRunnerCheck,
   canInstallRunner,
+  runnerPrunesHistory,
   filterAutomations,
   olderVersion,
   runnerState,
@@ -154,6 +155,13 @@ describe('the background runner', () => {
     expect(canInstallRunner('ready')).toBe(false);
     expect(canInstallRunner('unsupported')).toBe(false);
     expect(canInstallRunner('outdated')).toBe(true);
+  });
+
+  it('asks before an update that starts pruning a machine\'s older runs', () => {
+    expect(runnerPrunesHistory(scan('a', { target: 'linux-x64', version: '0.1.0', live: true }))).toBe(true);
+    expect(runnerPrunesHistory(scan('a', { target: 'linux-x64', version: '0.2.0', live: true }))).toBe(false);
+    expect(runnerPrunesHistory(scan('a', { target: 'linux-x64', version: null, live: false }))).toBe(false);
+    expect(runnerPrunesHistory(undefined)).toBe(false);
   });
 
   it('lets an automation run on its machine only with one machine, a usual schedule and a runner there', () => {

@@ -152,6 +152,22 @@ pub(super) fn ready(udian: Option<&UdianOnMachine>) -> bool {
 
 /// Puts udian on the machine, or replaces an older one, and has the machine start its daemon at login. The archive
 /// goes in the script as base64; the new binary takes the old one's place in one rename, and the daemon restarts on it.
+/// Before the new runner first opens a machine's existing database, a copy of it as it stands, once: ultradian 0.2 moves
+/// an older database to its new shape and keeps 30 days of runs, so this is the only place older history survives.
+/// SQLite's own backup when the machine has sqlite3 or Python, so a database being written is copied whole, and a plain
+/// copy of the file and its journal otherwise. A copy that failed partway is taken out so the next install tries again.
+const KEEP_HISTORY: &str = r#"db="$HOME/.ultradian/ultradian.db"
+keep="$HOME/.ultradian/backup-before-arbor"
+if [ -f "$db" ] && [ ! -e "$keep/ultradian.db" ]; then
+  mkdir -p "$keep" && chmod 700 "$keep"
+  sqlite3 "$db" ".backup '$keep/ultradian.db'" </dev/null >/dev/null 2>&1 \
+    || python3 -c 'import sqlite3, sys; d = sqlite3.connect(sys.argv[2]); sqlite3.connect(sys.argv[1]).backup(d); d.close()' "$db" "$keep/ultradian.db" </dev/null >/dev/null 2>&1 \
+    || { cp "$db" "$keep/ultradian.db" && { [ ! -f "$db-wal" ] || cp "$db-wal" "$keep/ultradian.db-wal"; }; } \
+    || rm -f "$keep/ultradian.db" "$keep/ultradian.db-wal"
+  chmod 600 "$keep"/ultradian.db* 2>/dev/null || true
+fi
+"#;
+
 pub(super) fn install_script(archive: &[u8]) -> String {
     let encoded = STANDARD.encode(archive);
     let mut lines = String::with_capacity(encoded.len() + encoded.len() / 76 + 1024);
@@ -170,6 +186,7 @@ pub(super) fn install_script(archive: &[u8]) -> String {
          tar -xzf \"$tmp/udian.tar.gz\" -C \"$tmp\"\n\
          chmod 755 \"$tmp/ultradian\"\n\
          \"$tmp/ultradian\" version --json </dev/null >/dev/null\n\
+         {KEEP_HISTORY}\
          mv -f \"$tmp/ultradian\" \"$bin/udian\"\n\
          {BIN} daemon install --json </dev/null >/dev/null\n\
          {BIN} daemon restart --json </dev/null >/dev/null\n\
@@ -867,6 +884,64 @@ mod tests {
         assert!(!home.join("prompt-seen").exists());
         assert!(!home.join(".arbor/automation-runs/r2").exists());
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_install_keeps_a_copy_of_the_history_already_there_once() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("arbor-udian-install-{}-{}", std::process::id(), runner::new_uuid()));
+        // The archive holds a stand-in runner that only notes what it's asked.
+        let staging = root.join("staging");
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("ultradian"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/calls\"\nexit 0\n").unwrap();
+        let tar = std::process::Command::new("tar").args(["-czf", "-", "-C"]).arg(&staging).arg("ultradian").output().unwrap();
+        let script = install_script(&tar.stdout);
+        // A PATH with only what the script needs besides sqlite3 and python3, for the plain copy.
+        let bare = root.join("bare-bin");
+        std::fs::create_dir_all(&bare).unwrap();
+        for tool in ["sh", "tar", "gzip", "base64", "mktemp", "mv", "chmod", "cp", "rm", "mkdir"] {
+            if let Ok(found) = std::process::Command::new("sh").args(["-c", &format!("command -v {tool}")]).output() {
+                let path = String::from_utf8_lossy(&found.stdout).trim().to_string();
+                if !path.is_empty() {
+                    let _ = std::os::unix::fs::symlink(path, bare.join(tool));
+                }
+            }
+        }
+        let install = |home: &std::path::Path, path: Option<&std::path::Path>| {
+            let mut command = std::process::Command::new("sh");
+            command.env("HOME", home).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null());
+            if let Some(path) = path {
+                command.env("PATH", path);
+            }
+            let mut child = command.spawn().unwrap();
+            std::io::Write::write_all(&mut child.stdin.take().unwrap(), script.as_bytes()).unwrap();
+            assert!(child.wait().unwrap().success());
+        };
+        let count = |file: &std::path::Path| rusqlite::Connection::open(file).unwrap().query_row("SELECT count(*) FROM runs", [], |row| row.get::<_, i64>(0)).unwrap();
+        for (label, path) in [("sqlite", None), ("plain copy", Some(bare.as_path()))] {
+            let home = root.join(label.replace(' ', "-"));
+            std::fs::create_dir_all(home.join(".ultradian")).unwrap();
+            let live = home.join(".ultradian/ultradian.db");
+            let db = rusqlite::Connection::open(&live).unwrap();
+            db.execute_batch("PRAGMA journal_mode = WAL; CREATE TABLE runs (id TEXT); INSERT INTO runs VALUES ('r1'), ('r2');").unwrap();
+            install(&home, path);
+            let kept = home.join(".ultradian/backup-before-arbor/ultradian.db");
+            assert_eq!(count(&kept), 2, "{label}");
+            assert_eq!(std::fs::metadata(&kept).unwrap().permissions().mode() & 0o777, 0o600, "{label}");
+            assert_eq!(std::fs::metadata(kept.parent().unwrap()).unwrap().permissions().mode() & 0o777, 0o700, "{label}");
+            // The first copy is the one kept: it has the history the runner's own pruning would take.
+            db.execute("DELETE FROM runs", []).unwrap();
+            install(&home, path);
+            assert_eq!(count(&kept), 2, "{label}");
+            let calls = std::fs::read_to_string(home.join("calls")).unwrap();
+            assert!(calls.contains("daemon install"), "{label}: {calls}");
+        }
+        // A machine without a database gets no copy.
+        let fresh = root.join("fresh");
+        std::fs::create_dir_all(&fresh).unwrap();
+        install(&fresh, None);
+        assert!(!fresh.join(".ultradian/backup-before-arbor").exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -347,6 +347,11 @@ export function runnerState(scan: AutomationScan | undefined, bundled: string | 
   return bundled && olderVersion(udian.version, bundled) ? 'outdated' : 'ready';
 }
 
+/** Whether putting the runner Arbor carries on a machine starts pruning its history: ultradian before 0.2 kept every
+ *  run, and from 0.2 it keeps 30 days. Arbor's install keeps a copy first, and asks before it goes ahead. */
+export const runnerPrunesHistory = (scan: AutomationScan | undefined): boolean =>
+  Boolean(scan?.udian?.version && olderVersion(scan.udian.version, '0.2.0'));
+
 /** Whether Arbor can put or update the runner Arbor carries on the machine. */
 export const canInstallRunner = (state: RunnerState) => state === 'missing' || state === 'outdated' || state === 'stopped';
 
