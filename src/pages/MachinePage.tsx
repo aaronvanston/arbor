@@ -86,7 +86,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
   // A machine never scanned isn't in the inventory yet: the checklist starts from it known only by its name, and its
   // first step says why it isn't answering (no host, or not yet).
   const standIn: SetupMachine = scanned ?? {
-    machine: name, local: false, reachable: false, homes: [], harnessHomes: [], installs: [], policy: null, scannedAt: null, error: null, scanning: false,
+    machine: name, local: false, reachable: false, homes: [], harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt: null, error: null, scanning: false,
   };
   const checklistMachines = scanned ? setupMachines : [...setupMachines, standIn];
 

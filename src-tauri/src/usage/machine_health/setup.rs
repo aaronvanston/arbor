@@ -313,13 +313,13 @@ if [ -d "$HOME/.agents" ]; then
 fi
 "##;
 
-// Follows HELPERS. `emit_installs` takes a PATH and lists each Claude Code and
-// Codex along it, first to last, so the first of each is the one that runs:
+// Follows HELPERS and `harnesses::installs_script`. `emit_installs` takes a PATH and lists each
+// agent's command along it, first to last, so the first of each is the one that runs:
 // `B agent path real version`, where `real` is the file the path leads to. A
 // file reached twice, by a link or a directory listed twice, is listed once;
 // directories that aren't absolute are passed over.
 const INSTALLS_SCRIPT: &str = r##"emit_installs() {
-  for agent in claude codex; do
+  for agent in $install_agents; do
     seen=$nl
     old_ifs=$IFS
     IFS=:
@@ -332,7 +332,7 @@ const INSTALLS_SCRIPT: &str = r##"emit_installs() {
         real=$(realpath "$bin" 2>/dev/null || readlink -f "$bin" 2>/dev/null || printf '%s' "$bin")
         case "$seen" in *"$nl$real$nl"*) continue ;; esac
         seen="$seen$real$nl"
-        version=$("$bin" --version </dev/null 2>/dev/null | head -n 1 | tr -d '\t')
+        version=$(install_version "$agent" "$bin" </dev/null 2>/dev/null | head -n 1 | tr -d '\t')
         printf 'B\t%s\t%s\t%s\t%s\n' "$agent" "$bin" "$real" "$version"
       fi
     done
@@ -755,14 +755,28 @@ pub(crate) struct SetupInstall {
     version: Option<String>,
 }
 
+/// Another harness's command on the machine's PATH. The first of each harness is the one that runs.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HarnessInstall {
+    harness: Harness,
+    /// With the machine's home as ~.
+    path: String,
+    /// The file `path` leads to, when that's somewhere else.
+    real: Option<String>,
+    /// From its version command; None when it printed nothing that reads as one.
+    version: Option<String>,
+}
+
 /// What the last scan of a machine found. A failed scan keeps what the last good one found.
 #[derive(Clone, Debug, Default, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MachineSetup {
     homes: Vec<SetupHome>,
-    /// The other harnesses' homes, read for their own instructions and skills alone.
+    /// The other harnesses' homes, read for their own instructions, skills, MCP servers and hooks.
     harness_homes: Vec<HarnessHome>,
     installs: Vec<SetupInstall>,
+    harness_installs: Vec<HarnessInstall>,
     /// Claude Code's managed-settings policy, when the machine has one.
     policy: Option<ClaudePolicy>,
     scanned_at: Option<i64>,
@@ -852,6 +866,7 @@ struct Scan {
     homes: Vec<SetupHome>,
     harness_homes: Vec<HarnessHome>,
     installs: Vec<SetupInstall>,
+    harness_installs: Vec<HarnessInstall>,
     policy: Option<ClaudePolicy>,
 }
 
@@ -1008,6 +1023,8 @@ fn url_place(url: &str) -> Option<String> {
 /// A home's findings as they come in, turned into items once the home's done.
 struct HomeParts {
     agent: HomeAgent,
+    /// The harness, for a home that isn't Claude Code's, Codex's or the shared one.
+    harness: Option<Harness>,
     /// As the machine has it.
     path: String,
     items: Vec<SetupItem>,
@@ -1042,6 +1059,7 @@ impl HomeParts {
     fn new(agent: HomeAgent, path: &str) -> Self {
         Self {
             agent,
+            harness: None,
             path: path.to_string(),
             items: Vec::new(),
             problems: Vec::new(),
@@ -1181,6 +1199,14 @@ impl HomeParts {
                     self.items.push(mcp_item(self.agent, name, server, home, salt));
                 }
             }
+            // Another harness's MCP file: its servers sit under the key the catalog gives, and the rest of the file
+            // is dropped here.
+            "harnessmcp" => {
+                let key = self.harness.and_then(|harness| harness.spec().mcp).map(|mcp| mcp.key);
+                for (name, server) in key.and_then(|key| value.get(key)).and_then(Value::as_object).into_iter().flatten() {
+                    self.items.push(mcp_item(self.agent, name, server, home, salt));
+                }
+            }
             "plugins" => {
                 for (id, installs) in value.get("plugins").and_then(Value::as_object).into_iter().flatten() {
                     let user = installs
@@ -1212,6 +1238,8 @@ impl HomeParts {
                     self.hooks(events, home, salt);
                 }
             }
+            // A hooks file keyed by event at its top, as Droid's is.
+            "eventhooks" => self.hooks(&value, home, salt),
             "skilllock" => {
                 for (name, skill) in value.get("skills").and_then(Value::as_object).into_iter().flatten() {
                     if let Some(source) = skill.get("source").and_then(Value::as_str) {
@@ -1513,7 +1541,7 @@ pub(super) fn normalized_mcp(agent: HomeAgent, server: &Value) -> Value {
     for (key, value) in fields {
         let empty = match value {
             Value::Null => true,
-            Value::Object(entries) => entries.is_empty() && matches!(key.as_str(), "env" | "headers" | "http_headers" | "env_http_headers"),
+            Value::Object(entries) => entries.is_empty() && matches!(key.as_str(), "env" | "environment" | "headers" | "http_headers" | "env_http_headers"),
             Value::Array(items) => items.is_empty() && matches!(key.as_str(), "args" | "env_vars"),
             _ => false,
         };
@@ -1590,11 +1618,20 @@ pub(super) fn hook_sum(matcher: Option<&str>, handler: &Value, home: &str) -> St
 /// headers and environment can hold secrets, so they're never shown.
 fn mcp_item(agent: HomeAgent, name: &str, server: &Value, home: &str, salt: &[u8]) -> SetupItem {
     let url = server.get("url").and_then(Value::as_str);
-    let command = server.get("command").and_then(Value::as_str);
+    // OpenCode gives the command and its arguments as one list.
+    let command = server
+        .get("command")
+        .and_then(|command| command.as_str().or_else(|| command.as_array()?.first()?.as_str()));
     let mut item = SetupItem::new(ItemKind::Mcp, name);
     item.value = server
         .get("type")
         .and_then(Value::as_str)
+        // OpenCode's words for the two.
+        .map(|kind| match kind {
+            "local" => "stdio",
+            "remote" => "http",
+            other => other,
+        })
         .map(str::to_string)
         .or_else(|| url.map(|_| "http".to_string()))
         .or_else(|| command.map(|_| "stdio".to_string()));
@@ -1646,7 +1683,8 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
                     "codex" => HomeAgent::Codex,
                     "shared" => HomeAgent::Shared,
                     other => match AgentHomeKind::parse(other).filter(|kind| kind.syncs() && !kind.has_settings()) {
-                        // Its lines are only instructions and skills, which a home of any agent takes the same way.
+                        // Its instructions, skills and hooks come as a home of any agent's do; its MCP file is read
+                        // by its harness.
                         Some(kind) => {
                             harness = Some(kind.harness());
                             HomeAgent::Shared
@@ -1654,7 +1692,9 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
                         None => continue,
                     },
                 };
-                current = Some(HomeParts::new(agent, path));
+                let mut parts = HomeParts::new(agent, path);
+                parts.harness = harness;
+                current = Some(parts);
             }
             ["K", entry, link] => {
                 if let Some(parts) = current.as_mut().filter(|parts| parts.agent == HomeAgent::Codex) {
@@ -1682,13 +1722,16 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
                 }
             }
             ["B", agent, path, real, version] => {
-                let agent = match *agent {
-                    "claude" => AgentKind::Claude,
-                    "codex" => AgentKind::Codex,
-                    _ => continue,
-                };
                 let (path, real) = (tilde(path, &home), tilde(real, &home));
-                scan.installs.push(SetupInstall { agent, real: (real != path).then_some(real), path, version: parse_version(version) });
+                let (real, version) = ((real != path).then_some(real), parse_version(version));
+                match *agent {
+                    "claude" => scan.installs.push(SetupInstall { agent: AgentKind::Claude, path, real, version }),
+                    "codex" => scan.installs.push(SetupInstall { agent: AgentKind::Codex, path, real, version }),
+                    other => match Harness::ALL.into_iter().find(|harness| harness.spec().binary == other) {
+                        Some(harness) => scan.harness_installs.push(HarnessInstall { harness, path, real, version }),
+                        None => continue,
+                    },
+                }
             }
             ["J", kind, path, size] => {
                 let mut encoded = String::new();
@@ -1757,7 +1800,8 @@ fn parse_scan(stdout: &str, salt: &[u8]) -> Result<Scan, String> {
 fn scan_script_with(machine: &str, policy: &str, installs: &str) -> String {
     let homes = agent_homes::shell_function(machine, HomeUse::Files);
     let harness_homes = harnesses::files_script();
-    format!("set -u\nexport LC_ALL=C\n{homes}{HELPERS}{EMIT_FUNCTIONS}{harness_homes}{policy}{SCAN_SCRIPT}{INSTALLS_SCRIPT}{installs}")
+    let agents = harnesses::installs_script();
+    format!("set -u\nexport LC_ALL=C\n{homes}{HELPERS}{EMIT_FUNCTIONS}{harness_homes}{policy}{SCAN_SCRIPT}{agents}{INSTALLS_SCRIPT}{installs}")
 }
 
 /// Installs are looked for along the PATH the agents check uses, which puts the
@@ -1847,6 +1891,7 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
             setup.homes = scan.homes;
             setup.harness_homes = scan.harness_homes;
             setup.installs = scan.installs;
+            setup.harness_installs = scan.harness_installs;
             setup.policy = scan.policy;
             setup.home_dir = scan.home_dir;
             setup.error = None;
@@ -2946,6 +2991,7 @@ notifications = true
             homes: vec![claude_home(vec![watched(ItemKind::Mcp, "github", sum)], &[])],
             harness_homes: vec![],
             installs: vec![],
+            harness_installs: vec![],
             policy: None,
         };
         let mut setup = MachineSetup::default();
@@ -2996,6 +3042,7 @@ notifications = true
             homes: MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude")]).homes,
             harness_homes: vec![],
             installs: vec![SetupInstall { agent: AgentKind::Claude, path: "~/.local/bin/claude".into(), real: None, version: Some("2.1.281".into()) }],
+            harness_installs: vec![],
             policy: None,
         };
         record(&state, &Target::Series("up".into()), &host("up"), now, now, Ok(found));
@@ -3111,7 +3158,16 @@ notifications = true
             write(&pi.join("AGENTS.md"), "Pi rules.\n");
             write(&pi.join("skills/deploy/SKILL.md"), "---\nname: deploy\ndescription: Ship it.\n---\n");
             write(&pi.join("settings.json"), &format!("{{ \"apiKey\": \"{SECRET}\" }}"));
-            write(&home.join(".factory/AGENTS.md"), "Droid rules.\n");
+            // Their MCP servers and hooks give names, how each is reached and fingerprints, never their secrets.
+            write(&pi.join("mcp.json"), &format!(r#"{{ "mcpServers": {{ "github": {{ "command": "npx", "args": ["-y", "gh"], "env": {{ "TOKEN": "{SECRET}" }} }} }} }}"#));
+            let droid = home.join(".factory");
+            write(&droid.join("AGENTS.md"), "Droid rules.\n");
+            write(&droid.join("mcp.json"), r#"{ "mcpServers": { "linear": { "type": "http", "url": "https://mcp.linear.app/mcp", "disabled": true } } }"#);
+            write(&droid.join("hooks.json"), &format!(r#"{{ "PreToolUse": [{{ "matcher": "Execute", "hooks": [{{ "type": "command", "command": "echo {SECRET}" }}] }}] }}"#));
+            write(
+                &home.join(".config/opencode/opencode.json"),
+                &format!(r#"{{ "theme": "dark", "mcp": {{ "fs": {{ "type": "local", "command": ["npx", "fs"], "environment": {{ "KEY": "{SECRET}" }} }} }} }}"#),
+            );
             // Stand-ins for the agents, so the test never runs the real ones.
             let program = |path: PathBuf, prints: &str, mode: u32| {
                 write(&path, &format!("#!/bin/sh\necho '{prints}'\n"));
@@ -3123,6 +3179,10 @@ notifications = true
             symlink(home.join("bin-a/claude"), home.join("bin-b/claude")).unwrap();
             program(home.join("bin-c/claude"), "2.1.270 (Claude Code)", 0o755);
             program(home.join("bin-c/codex"), "codex-cli 0.156.1", 0o755);
+            program(home.join("bin-a/pi"), "0.70.2", 0o755);
+            // Amp prints its version for `amp version`, and only that is asked.
+            write(&home.join("bin-c/amp"), "#!/bin/sh\n[ \"$1\" = version ] && echo '0.0.1751 (released 2026-09-30)'\n");
+            fs::set_permissions(home.join("bin-c/amp"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 
             for shell in shells() {
                 check_scan(shell, &home, instructions);
@@ -3136,7 +3196,7 @@ notifications = true
             assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
             let stdout = String::from_utf8_lossy(&output.stdout);
             let sent = payloads(&stdout);
-            assert_eq!(sent.len(), 4, "settings.json, .claude.json's servers, config.toml and the skill lock");
+            assert_eq!(sent.len(), 8, "settings.json, .claude.json's servers, config.toml, the skill lock, and Pi's, Droid's and OpenCode's MCP files and Droid's hooks");
             for payload in &sent {
                 assert!(!payload.contains(PRIVATE) && !payload.contains("oauthAccount") && !payload.contains("project-only"), "{payload}");
             }
@@ -3152,9 +3212,20 @@ notifications = true
                 .map(|found| (found.harness, found.path.as_str(), found.items.iter().map(|item| (item.kind, item.name.as_str())).collect::<Vec<_>>()))
                 .collect();
             assert_eq!(read, [
-                (Harness::Pi, "~/.pi/agent", vec![(ItemKind::Instructions, "AGENTS.md"), (ItemKind::Skill, "deploy")]),
-                (Harness::Droid, "~/.factory", vec![(ItemKind::Instructions, "AGENTS.md")]),
+                (Harness::Pi, "~/.pi/agent", vec![(ItemKind::Instructions, "AGENTS.md"), (ItemKind::Skill, "deploy"), (ItemKind::Mcp, "github")]),
+                (Harness::OpenCode, "~/.config/opencode", vec![(ItemKind::Mcp, "fs")]),
+                (Harness::Droid, "~/.factory", vec![(ItemKind::Instructions, "AGENTS.md"), (ItemKind::Hook, "PreToolUse"), (ItemKind::Mcp, "linear")]),
             ], "{shell}");
+            let server = |harness: Harness, name: &str| {
+                let found = scan.harness_homes.iter().find(|found| found.harness == harness).unwrap();
+                let item = found.items.iter().find(|item| item.kind == ItemKind::Mcp && item.name == name).unwrap();
+                (item.value.clone(), item.note.clone(), item.enabled)
+            };
+            assert_eq!(server(Harness::Pi, "github"), (Some("stdio".into()), Some("npx".into()), None));
+            assert_eq!(server(Harness::OpenCode, "fs"), (Some("stdio".into()), Some("npx".into()), None), "OpenCode's own words and command list");
+            assert_eq!(server(Harness::Droid, "linear"), (Some("http".into()), Some("mcp.linear.app".into()), Some(false)));
+            let installs: Vec<_> = scan.harness_installs.iter().map(|install| (install.harness, install.path.as_str(), install.version.as_deref())).collect();
+            assert_eq!(installs, [(Harness::Pi, "~/bin-a/pi", Some("0.70.2")), (Harness::Amp, "~/bin-c/amp", Some("0.0.1751"))], "{shell}");
             assert!(scan.homes.iter().all(|found| !found.path.starts_with("~/.pi") && found.path != "~/.factory"));
 
             let claude = scan.homes.iter().find(|found| found.path == "~/.claude").unwrap();

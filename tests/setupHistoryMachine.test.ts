@@ -3,7 +3,7 @@ import { historyMachine } from '../src/pages/SetupHistory';
 import type { SetupMachine } from '../src/native/types';
 
 const machine = (name: string, local = false): SetupMachine => ({
-  machine: name, local, reachable: true, homes: [], harnessHomes: [], installs: [], policy: null, scannedAt: null, error: null, scanning: false,
+  machine: name, local, reachable: true, homes: [], harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt: null, error: null, scanning: false,
 });
 
 describe('the machine Arbor’s changes shows', () => {

@@ -11,7 +11,7 @@ const home = (agent: SetupHome['agent'], path: string, items: SetupItem[]): Setu
   agent, path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null,
 });
 const machine = (name: string, homes: SetupHome[], scannedAt: number | null = 1): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt, error: null, scanning: false,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt, error: null, scanning: false,
 });
 
 describe('Sync’s scope', () => {

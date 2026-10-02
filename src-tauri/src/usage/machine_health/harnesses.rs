@@ -125,6 +125,11 @@ pub(crate) struct HarnessSpec {
     /// The folders it loads skills from, from `~/`.
     pub(crate) skills: &'static [&'static str],
     pub(crate) mcp: Option<McpConfig>,
+    /// The file in its home it keeps hooks in, keyed by event the way Claude Code's are; none for one whose hooks
+    /// are code (Pi's extensions, OpenCode's and Amp's plugins), which Sync doesn't read.
+    pub(crate) hooks: Option<&'static str>,
+    /// What prints its version after its command.
+    pub(crate) version_arg: &'static str,
     pub(crate) launcher: Option<Launcher>,
 }
 
@@ -141,6 +146,8 @@ const OTHER: HarnessSpec = HarnessSpec {
     project_instructions: &[],
     skills: &[],
     mcp: None,
+    hooks: None,
+    version_arg: "--version",
     launcher: None,
 };
 
@@ -161,6 +168,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &["CLAUDE.md", ".claude/CLAUDE.md"],
         skills: &["~/.claude/skills"],
         mcp: Some(McpConfig { path: "~/.claude.json", format: McpFormat::Json, key: "mcpServers" }),
+        hooks: None,
+        version_arg: "--version",
         launcher: Some(Launcher::Claude),
     },
     HarnessSpec {
@@ -176,6 +185,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &["AGENTS.md"],
         skills: &["~/.agents/skills", "~/.codex/skills"],
         mcp: Some(McpConfig { path: "config.toml", format: McpFormat::Toml, key: "mcp_servers" }),
+        hooks: None,
+        version_arg: "--version",
         launcher: Some(Launcher::Codex),
     },
     HarnessSpec {
@@ -191,6 +202,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.pi/agent/skills", "~/.agents/skills"],
         mcp: Some(McpConfig { path: "mcp.json", format: McpFormat::Json, key: "mcpServers" }),
+        hooks: None,
+        version_arg: "--version",
         launcher: Some(Launcher::Pi { binary: "pi", cwd_flag: false, thinking: false }),
     },
     HarnessSpec {
@@ -207,6 +220,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.prime/agent/skills", "~/.agents/skills"],
         mcp: Some(McpConfig { path: "settings.json", format: McpFormat::Json, key: "mcpServers" }),
+        hooks: None,
+        version_arg: "--version",
         launcher: Some(Launcher::Pi { binary: "prime-agent", cwd_flag: true, thinking: true }),
     },
     HarnessSpec {
@@ -224,6 +239,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"],
         mcp: Some(McpConfig { path: "opencode.json", format: McpFormat::Json, key: "mcp" }),
+        hooks: None,
+        version_arg: "--version",
         launcher: None,
     },
     HarnessSpec {
@@ -239,6 +256,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &["AGENTS.md", "CLAUDE.md"],
         skills: &["~/.factory/skills", "~/.agents/skills"],
         mcp: Some(McpConfig { path: "mcp.json", format: McpFormat::Json, key: "mcpServers" }),
+        hooks: Some("hooks.json"),
+        version_arg: "--version",
         launcher: Some(Launcher::Droid),
     },
     HarnessSpec {
@@ -255,6 +274,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &["AGENTS.md", "AGENT.md", "CLAUDE.md"],
         skills: &["~/.config/amp/skills", "~/.config/agents/skills", "~/.agents/skills", "~/.claude/skills"],
         mcp: Some(McpConfig { path: "settings.json", format: McpFormat::Json, key: "amp.mcpServers" }),
+        hooks: None,
+        version_arg: "version",
         launcher: None,
     },
     HarnessSpec {
@@ -271,6 +292,8 @@ pub(crate) const CATALOG: &[HarnessSpec] = &[
         project_instructions: &[],
         skills: &[],
         mcp: None,
+        hooks: None,
+        version_arg: "--version",
         launcher: None,
     },
 ];
@@ -319,11 +342,36 @@ pub(crate) fn files_script() -> String {
         if let Some(folder) = spec.skills.iter().find_map(|path| spec.in_own_home(path)) {
             reads.push(format!("emit_skills \"$2/{folder}\""));
         }
+        // The whole file goes back, to be read in Arbor: only the servers' names, how each is reached and a
+        // fingerprint of the rest come out of it.
+        if let Some(mcp) = spec.mcp.filter(|mcp| !mcp.path.starts_with("~/") && !mcp.path.starts_with('/')) {
+            reads.push(format!("emit_data harnessmcp \"$2/{}\"", mcp.path));
+        }
+        // Without its hooks file, it reads the hooks in its settings.
+        if let Some(file) = spec.hooks {
+            reads.push(format!(
+                "if [ -f \"$2/{file}\" ]; then emit_data eventhooks \"$2/{file}\"; else emit_data hooks \"$2/settings.json\"; fi"
+            ));
+        }
         if !reads.is_empty() {
             script.push_str(&format!("    {}) {} ;;\n", kind.shell_name(), reads.join("; ")));
         }
     }
     script.push_str("  esac\n}\n");
+    script
+}
+
+/// `install_version`, which prints the version of the agent whose command is `$1`, run from `$2`, and the commands
+/// the installs scan looks for: Claude Code's and Codex's, then every other harness Sync reads.
+pub(crate) fn installs_script() -> String {
+    let others: Vec<&HarnessSpec> = CATALOG.iter().filter(|spec| spec.home_kind.is_some_and(|kind| !kind.has_settings())).collect();
+    let mut script = String::from("install_version() {\n  case \"$1\" in\n");
+    for spec in others.iter().filter(|spec| spec.version_arg != "--version") {
+        script.push_str(&format!("    {}) \"$2\" {} ;;\n", spec.binary, spec.version_arg));
+    }
+    script.push_str("    *) \"$2\" --version ;;\n  esac\n}\n");
+    let binaries: Vec<&str> = ["claude", "codex"].into_iter().chain(others.iter().map(|spec| spec.binary)).collect();
+    script.push_str(&format!("install_agents='{}'\n", binaries.join(" ")));
     script
 }
 
@@ -446,12 +494,22 @@ mod tests {
     }
 
     #[test]
-    fn the_other_harnesses_homes_are_read_for_their_own_instructions_and_skills() {
+    fn the_other_harnesses_homes_are_read_for_their_own_instructions_skills_servers_and_hooks() {
         let script = files_script();
-        assert!(script.contains(r#"pi-agent) emit_file instructions "$2/AGENTS.md"; emit_skills "$2/skills" ;;"#), "{script}");
-        assert!(script.contains(r#"opencode) emit_file instructions "$2/AGENTS.md"; emit_skills "$2/skills" ;;"#), "{script}");
+        assert!(script.contains(r#"pi-agent) emit_file instructions "$2/AGENTS.md"; emit_skills "$2/skills"; "#), "{script}");
+        assert!(script.contains(r#"opencode) emit_file instructions "$2/AGENTS.md"; emit_skills "$2/skills"; "#), "{script}");
         assert!(!script.contains("claude)") && !script.contains("codex)"), "{script}");
         assert!(!script.contains("gemini"), "{script}");
+        assert!(script.contains(r#"emit_data harnessmcp "$2/mcp.json""#) && script.contains(r#"emit_data harnessmcp "$2/opencode.json""#), "{script}");
+        assert!(script.contains(r#"if [ -f "$2/hooks.json" ]; then emit_data eventhooks "$2/hooks.json"; else emit_data hooks "$2/settings.json"; fi"#), "{script}");
+        assert_eq!(script.matches("eventhooks").count(), 1, "only Droid keeps hooks in a file: {script}");
+    }
+
+    #[test]
+    fn the_installs_scan_looks_for_every_agent_sync_reads_and_asks_each_its_own_way() {
+        let script = installs_script();
+        assert!(script.contains("install_agents='claude codex pi prime-agent opencode droid amp'"), "{script}");
+        assert!(script.contains(r#"    amp) "$2" version ;;"#) && script.contains(r#"    *) "$2" --version ;;"#), "{script}");
     }
 
     #[test]

@@ -59,7 +59,7 @@ import { SetupPlugins } from './SetupPlugins';
 import { historyMachine, rememberHistoryMachine, SetupHistory } from './SetupHistory';
 import { SetupCost } from './SetupCost';
 import { SetupAgents } from './SetupAgents';
-import { HarnessHomesSection, HarnessSkillsSection } from './SetupHarnessHomes';
+import { HarnessHomesSection, HarnessItemsSection, HarnessSkillsSection } from './SetupHarnessHomes';
 import { SetupHooks } from './SetupHooks';
 import { SetupToolchain } from './SetupToolchain';
 import { SetupSkills } from './SetupSkills';
@@ -550,9 +550,15 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             <HarnessSkillsSection machines={machines} />
           </>
         ) : tab === 'plugins' ? (
-          <SetupPlugins machines={machines} homeLabel={(key) => homeLabel(key, t)} />
+          <>
+            <SetupPlugins machines={machines} homeLabel={(key) => homeLabel(key, t)} />
+            <HarnessItemsSection machines={machines} kind="mcp" />
+          </>
         ) : tab === 'hooks' ? (
-          <SetupHooks machines={machines} />
+          <>
+            <SetupHooks machines={machines} />
+            <HarnessItemsSection machines={machines} kind="hook" />
+          </>
         ) : tab === 'toolchain' ? (
           <SetupToolchain machines={machines} />
         ) : tab === 'cost' ? (

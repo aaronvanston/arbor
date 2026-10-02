@@ -1654,6 +1654,25 @@ export type HarnessInfo = {
   limitsEdits: boolean,
 };
 
+/**
+ * Another harness's command on the machine's PATH. The first of each harness is the one that runs.
+ */
+export type HarnessInstall = {
+  harness: Harness,
+  /**
+   * With the machine's home as ~.
+   */
+  path: string,
+  /**
+   * The file `path` leads to, when that's somewhere else.
+   */
+  real: string | null,
+  /**
+   * From its version command; None when it printed nothing that reads as one.
+   */
+  version: string | null,
+};
+
 export type HarnessRun = {
   id: string,
   trigger: string | null,
@@ -4031,10 +4050,11 @@ export type SetupMachine = {
   reachable: boolean,
   homes: Array<SetupHome>,
   /**
-   * The other harnesses' homes, read for their own instructions and skills alone.
+   * The other harnesses' homes, read for their own instructions, skills, MCP servers and hooks.
    */
   harnessHomes: Array<HarnessHome>,
   installs: Array<SetupInstall>,
+  harnessInstalls: Array<HarnessInstall>,
   /**
    * Claude Code's managed-settings policy, when the machine has one.
    */

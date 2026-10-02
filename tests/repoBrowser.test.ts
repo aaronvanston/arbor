@@ -27,7 +27,7 @@ const item = (path: string, sum: string): SetupItem => ({
 });
 const home = (items: SetupItem[]): SetupHome => ({ agent: 'claude', path: '~/.claude', items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const machine = (name: string, homes: SetupHome[], scannedAt: number | null = 1_000): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt, error: null, scanning: false,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt, error: null, scanning: false,
 });
 const repoFile = (path: string, sum: string): SetupRepoFile => ({ path, kind: syncKind(path)!, sum, ck: 'c1-120', size: 120 });
 const repo = (files: SetupRepoFile[], head = true): SetupRepo => ({

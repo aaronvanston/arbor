@@ -12,7 +12,7 @@ const home = (items: SetupItem[], skillOverrides: SkillOverride[] = []): SetupHo
   agent: 'claude', path: '~/.claude', items, problems: [], skillsLink: null, skillOverrides, ignoredOverrides: [], deniedMcp: [], shares: null,
 });
 const machine = (name: string, homes: SetupHome[]): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt: 1, error: null, scanning: false,
 });
 const checkout = (machineName: string, path: string, skills: CheckoutSkill[] = [], ignoredOverrides: string[] = [], localSeen = false): ProjectCheckout => ({
   machine: machineName, path, main: false, plugins: [], skills, ignoredOverrides, localSeen, mcpDenied: [], mcpLocal: [], mcpDisabled: [], instructions: [], agentsMd: null, claudeMd: false,

@@ -15,8 +15,11 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import {
   harnessHomeRows,
+  harnessItemRows,
   harnessSkillChange,
   harnessSkillRows,
+  type HarnessItemPlace,
+  type HarnessItemState,
   type HarnessSkillPlace,
   type HarnessSkillStanding,
   type InstructionsState,
@@ -50,6 +53,7 @@ export function HarnessHomesSection({ machines }: { machines: SetupMachine[] }) 
             <TableHead>{t('setup.harnessHomes.agent')}</TableHead>
             <TableHead>{t('setup.agents.column.machine')}</TableHead>
             <TableHead>{t('setup.harnessHomes.home')}</TableHead>
+            <TableHead>{t('setup.harnessHomes.version')}</TableHead>
             <TableHead>{t('setup.harnessHomes.instructions')}</TableHead>
             <TableHead className={TABLE_NUMERIC_CLASS}>{t('setup.harnessHomes.skills')}</TableHead>
           </TableRow>
@@ -62,6 +66,7 @@ export function HarnessHomesSection({ machines }: { machines: SetupMachine[] }) 
                 <TableCell><HarnessName harness={row.harness} className="w-max" /></TableCell>
                 <TableCell><MachinePill name={row.machine} /></TableCell>
                 <TableCell className="max-w-64"><MiddleTruncate value={row.path} className="font-mono text-xs" /></TableCell>
+                <TableCell className="font-mono text-xs">{row.version ?? <span className="font-sans text-muted-foreground">—</span>}</TableCell>
                 <TableCell>
                   {row.instructions ? (
                     <span className="flex items-center gap-2">
@@ -234,4 +239,80 @@ function SkillPlace({ name, machine, place, busy, disabled, onPick }: {
 function actionLabel(action: SkillAction, standing: HarnessSkillStanding): MessageKey {
   if (action === 'adopt') return standing === 'differs' ? 'setup.harnessSkills.action.replaceStore' : 'setup.harnessSkills.action.adopt';
   return standing === 'sameAsStore' || standing === 'differs' ? 'setup.harnessSkills.action.useStore' : 'setup.harnessSkills.action.remove';
+}
+
+const ITEM_STATE: Record<HarnessItemState, { label: MessageKey; variant: 'warning' | 'muted' } | null> = {
+  same: null,
+  differs: { label: 'setup.harnessHomes.differs', variant: 'warning' },
+  only: { label: 'setup.harnessHomes.only', variant: 'muted' },
+};
+
+const ITEMS: Record<'mcp' | 'hook', { title: MessageKey; description: MessageKey; column: MessageKey }> = {
+  mcp: { title: 'setup.harnessMcp.title', description: 'setup.harnessMcp.description', column: 'setup.harnessMcp.server' },
+  hook: { title: 'setup.harnessHooks.title', description: 'setup.harnessHooks.description', column: 'setup.harnessHooks.event' },
+};
+
+/**
+ * Sync › MCP & plugins and Sync › Hooks: the MCP servers or hooks in the other harnesses' homes, with where each machine
+ * has each and whether it matches the same harness's elsewhere. Only names, how a server is reached and handler counts
+ * are shown; commands, headers and environments never reach the window. Left out until a scan finds one.
+ */
+export function HarnessItemsSection({ machines, kind }: { machines: SetupMachine[]; kind: 'mcp' | 'hook' }) {
+  const { t } = useI18n();
+  const rows = useMemo(() => harnessItemRows(machines, kind), [machines, kind]);
+  const columns = useMemo(() => machines.filter((entry) => entry.harnessHomes.length).map((entry) => entry.machine), [machines]);
+  if (!rows.length) return null;
+  const text = ITEMS[kind];
+  return (
+    <SettingsSection title={t(text.title)} description={t(text.description)}>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t(text.column)}</TableHead>
+            {columns.map((machine) => <TableHead key={machine}><MachinePill name={machine} size="sm" /></TableHead>)}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.name}>
+              <TableCell className="font-mono text-xs">{row.name}</TableCell>
+              {columns.map((machine) => {
+                const places = row.on[machine];
+                return (
+                  <TableCell key={machine}>
+                    {places ? (
+                      <span className="flex flex-col items-start gap-1">
+                        {places.map((place) => <ItemPlace key={place.home} place={place} />)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">{t('setup.harnessSkills.notHere')}</span>
+                    )}
+                  </TableCell>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </SettingsSection>
+  );
+}
+
+/** A harness's server or hook on one machine: whose it is, how it's reached or how many handlers it runs, and how it stands. */
+function ItemPlace({ place }: { place: HarnessItemPlace }) {
+  const { t } = useI18n();
+  const state = ITEM_STATE[place.state];
+  const { item } = place;
+  const handlers = item.count ?? 1;
+  const detail = item.kind === 'hook'
+    ? t(handlers === 1 ? 'setup.detail.handlers.one' : 'setup.detail.handlers.other', { count: handlers })
+    : [item.value, item.note].filter(Boolean).join(' · ');
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <HarnessName harness={place.harness} className="w-max" />
+      {detail ? <span className="truncate text-xs text-muted-foreground">{detail}</span> : null}
+      {item.enabled === false ? <Badge variant="muted" size="sm" className="shrink-0">{t('setup.harnessMcp.off')}</Badge> : null}
+      {state ? <Badge variant={state.variant} size="sm" className="shrink-0">{t(state.label)}</Badge> : null}
+    </span>
+  );
 }

@@ -16,7 +16,7 @@ const setting = (name: string, value: string | null = null) => item('setting', n
 const home = (agent: SetupHome['agent'], path: string, items: SetupItem[], problems: string[] = []): SetupHome => ({ agent, path, items, problems, skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const install = (agent: SetupInstall['agent'], path: string, version: string | null): SetupInstall => ({ agent, path, real: null, version });
 const machine = (name: string, homes: SetupHome[], fields: Partial<SetupMachine> = {}): SetupMachine => ({
-  machine: name, local: false, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false, ...fields,
+  machine: name, local: false, reachable: true, homes, harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false, ...fields,
 });
 const find = (checks: SetupCheck[], kind: SetupCheck['kind'], home?: string) =>
   checks.filter((check) => check.kind === kind && (home === undefined || check.home === home));

@@ -51,7 +51,7 @@ describe('the hooks grid', () => {
     const home = (agent: SetupHome['agent'], path: string, items: SetupItem[]): SetupHome =>
       ({ agent, path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
     const machine: SetupMachine = {
-      machine: 'mac', local: true, reachable: true, scannedAt: 1, error: null, scanning: false, policy: null, harnessHomes: [], installs: [],
+      machine: 'mac', local: true, reachable: true, scannedAt: 1, error: null, scanning: false, policy: null, harnessHomes: [], harnessInstalls: [], installs: [],
       homes: [
         home('claude', '~/.claude', [item({ name: 'PreToolUse', count: 2 }), item({ name: 'Stop', count: 1 })]),
         home('codex', '~/.codex', [item({ count: 5 })]),

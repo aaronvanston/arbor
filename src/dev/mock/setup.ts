@@ -20,6 +20,7 @@ import type {
   DefinitionView,
   Harness,
   HarnessHome,
+  HarnessInstall,
   HiddenReason,
   HomeAgent,
   ItemKind,
@@ -222,6 +223,7 @@ const noHarnessHomes = params.get('harnessHomes') === 'none';
 const harnessHome = (harness: Harness, path: string, items: SetupItem[]): HarnessHome => ({ harness, path, items, skillsLink: null });
 const harnessHomes = (homes: HarnessHome[]) => (noHarnessHomes ? [] : homes);
 
+const harnessInstall = (harness: Harness, path: string, version: string | null): HarnessInstall => ({ harness, path, real: null, version });
 const setupInstall = (agent: AgentKind, path: string, version: string | null, real: string | null = null): SetupInstall => ({ agent, path, real, version });
 
 export const setupMachines: SetupMachine[] = [
@@ -242,12 +244,22 @@ export const setupMachines: SetupMachine[] = [
         setupFile('instructions', 'AGENTS.md', '~/.pi/agent/AGENTS.md', 'pi1', 820),
         setupSkill('deploy', '~/.pi/agent/skills/deploy', 'pd1', 3),
         setupSkill('pdf', '~/.pi/agent/skills/pdf', 'k1', 4),
+        setupItem('mcp', 'github', 'pg1', { value: 'stdio', note: 'npx' }),
+        setupItem('mcp', 'linear', 'pl1', { value: 'http', note: 'mcp.linear.app' }),
       ]),
       harnessHome('droid', '~/.factory', [
         setupFile('instructions', 'AGENTS.md', '~/.factory/AGENTS.md', 'dr1', 410),
         setupSkill('review-pr', '~/.factory/skills/review-pr', 'dr2', 2),
+        setupItem('mcp', 'linear', 'dl1', { value: 'http', note: 'mcp.linear.app', enabled: false }),
+        setupItem('hook', 'PreToolUse', 'dh1', { count: 1 }),
+        setupItem('hook', 'SessionStart', 'dh2', { count: 2 }),
       ]),
     ]),
+    harnessInstalls: [
+      harnessInstall('pi', '~/.npm-global/bin/pi', '0.70.2'),
+      harnessInstall('droid', '~/.local/bin/droid', '0.22.1'),
+      harnessInstall('amp', '~/.amp/bin/amp', '0.0.1751'),
+    ],
     installs: [
       setupInstall('claude', '~/.local/bin/claude', '2.1.281', '~/.local/share/claude/versions/2.1.281'),
       setupInstall('codex', '~/.npm-global/bin/codex', '0.156.0', '~/.npm-global/lib/node_modules/@openai/codex/bin/codex.js'),
@@ -289,8 +301,11 @@ export const setupMachines: SetupMachine[] = [
       harnessHome('pi', '~/.pi/agent', [
         setupFile('instructions', 'AGENTS.md', '~/.pi/agent/AGENTS.md', 'pi0', 612),
         setupSkill('deploy', '~/.pi/agent/skills/deploy', 'pd1', 3),
+        setupItem('mcp', 'github', 'pg1', { value: 'stdio', note: 'npx' }),
+        setupItem('mcp', 'linear', 'pl0', { value: 'http', note: 'mcp.linear.app' }),
       ]),
     ]),
+    harnessInstalls: [harnessInstall('pi', '~/.npm-global/bin/pi', '0.68.0')],
     installs: [
       setupInstall('claude', '~/.local/bin/claude', '2.1.270', '~/.local/share/claude/versions/2.1.270'),
       setupInstall('codex', '~/.npm-global/bin/codex', '0.153.3', '~/.npm-global/lib/node_modules/@openai/codex/bin/codex.js'),
@@ -313,8 +328,12 @@ export const setupMachines: SetupMachine[] = [
       ]),
     ],
     harnessHomes: harnessHomes([
-      harnessHome('openCode', '~/.config/opencode', [setupFile('instructions', 'AGENTS.md', '~/.config/opencode/AGENTS.md', 'oc1', 233)]),
+      harnessHome('openCode', '~/.config/opencode', [
+        setupFile('instructions', 'AGENTS.md', '~/.config/opencode/AGENTS.md', 'oc1', 233),
+        setupItem('mcp', 'fs', 'of1', { value: 'stdio', note: 'npx' }),
+      ]),
     ]),
+    harnessInstalls: [harnessInstall('openCode', '~/.opencode/bin/opencode', '0.15.3')],
     installs: [
       setupInstall('claude', '~/.local/bin/claude', '2.1.281', '~/.local/share/claude/versions/2.1.281'),
       setupInstall('claude', '~/.npm-global/bin/claude', '1.0.128', '~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/cli.js'),
@@ -1979,7 +1998,7 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
   const at = Date.now();
   const scannedAt = arrived ? at - 60_000 : null;
   const entry: SetupMachine = {
-    machine: name, local: false, reachable: arrived, scannedAt, error: null, scanning: false, policy: null, harnessHomes: [],
+    machine: name, local: false, reachable: arrived, scannedAt, error: null, scanning: false, policy: null, harnessHomes: [], harnessInstalls: [],
     homes: [
       setupHome('claude', '~/.claude', [
         setupFile('instructions', 'CLAUDE.md', '~/.claude/CLAUDE.md', 'c1a7', 298),

@@ -27,7 +27,7 @@ const facts = (fields: Partial<SkillFacts> = {}): SkillFacts => ({
 const skill = (name: string, fields: Partial<SkillFacts> = {}) => item('skill', name, { skill: facts(fields) });
 const home = (agent: SetupHome['agent'], path: string, items: SetupItem[]): SetupHome => ({ agent, path, items, problems: [], skillsLink: null, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 const machine = (homes: SetupHome[]): SetupMachine => ({
-  machine: 'mbp', local: true, reachable: true, homes, harnessHomes: [], installs: [], policy: null, scannedAt: NOW, error: null, scanning: false,
+  machine: 'mbp', local: true, reachable: true, homes, harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt: NOW, error: null, scanning: false,
 });
 
 describe('percentiles', () => {

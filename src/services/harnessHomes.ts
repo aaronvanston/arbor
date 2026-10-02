@@ -2,8 +2,8 @@ import { placeState } from './setupSkills';
 import type { Harness, SetupItem, SetupMachine, SkillAction, SkillChange } from '../native/types';
 
 /**
- * The other harnesses' homes (Pi's, Droid's, OpenCode's…) as the setup scan reads them: their own instructions file and
- * the skills in their own folder, nothing else. Every one of them loads the machine's store (~/.agents/skills) itself,
+ * The other harnesses' homes (Pi's, Droid's, OpenCode's…) as the setup scan reads them: their own instructions file,
+ * the skills in their own folder, their MCP servers and, for one that keeps them in a file, their hooks. Every one of them loads the machine's store (~/.agents/skills) itself,
  * as Codex does, so a skill of its own can move into the store, or go when the store has it.
  */
 
@@ -27,6 +27,8 @@ export type HarnessHomeRow = {
   state: InstructionsState;
   /** The skills in its own folder. */
   skills: number;
+  /** The version of the harness that runs on the machine, when the scan found it. */
+  version: string | null;
 };
 
 const ownInstructions = (items: SetupItem[]) => items.find((item) => item.kind === 'instructions' && item.sum !== null) ?? null;
@@ -44,7 +46,8 @@ export function harnessHomeRows(machines: SetupMachine[]): HarnessHomeRow[] {
       const instructions = ownInstructions(home.items);
       const all = sums.get(home.harness) ?? [];
       const state: InstructionsState = !instructions ? 'missing' : all.length === 1 ? 'only' : new Set(all).size === 1 ? 'same' : 'differs';
-      return { machine, harness: home.harness, path: home.path, instructions, state, skills: home.items.filter((item) => item.kind === 'skill').length };
+      const version = machines.find((entry) => entry.machine === machine)?.harnessInstalls.find((install) => install.harness === home.harness)?.version ?? null;
+      return { machine, harness: home.harness, path: home.path, instructions, state, skills: home.items.filter((item) => item.kind === 'skill').length, version };
     })
     .sort((a, b) => byHarness(a.harness, b.harness) || a.machine.localeCompare(b.machine) || a.path.localeCompare(b.path));
 }
@@ -116,4 +119,39 @@ export function harnessSkillChange(name: string, place: HarnessSkillPlace, actio
   const storeBefore = placeState(place.store);
   if (homeBefore === null || storeBefore === null || !place.actions.includes(action)) return null;
   return { home: place.home, name, action, homeBefore, storeBefore };
+}
+
+/** How a harness's server or hook stands against the same harness's of the same name on the other machines. */
+export type HarnessItemState = 'same' | 'differs' | 'only';
+
+export type HarnessItemPlace = {
+  harness: Harness;
+  /** The home, as the scan names it. */
+  home: string;
+  item: SetupItem;
+  state: HarnessItemState;
+};
+
+export type HarnessItemRow = {
+  name: string;
+  /** Where each machine has it, by machine, in the catalog's order. */
+  on: Record<string, HarnessItemPlace[]>;
+};
+
+/** Every MCP server or hook in another harness's home, by name, with where each machine has it. */
+export function harnessItemRows(machines: SetupMachine[], kind: 'mcp' | 'hook'): HarnessItemRow[] {
+  const found = machines.flatMap((entry) =>
+    entry.harnessHomes.flatMap((home) => home.items.filter((item) => item.kind === kind).map((item) => ({ machine: entry.machine, home, item }))));
+  const sums = new Map<string, (string | null)[]>();
+  const key = (harness: Harness, name: string) => `${harness}\t${name}`;
+  for (const { home, item } of found) sums.set(key(home.harness, item.name), [...(sums.get(key(home.harness, item.name)) ?? []), item.sum]);
+  const rows = new Map<string, HarnessItemRow>();
+  for (const { machine, home, item } of found) {
+    const all = sums.get(key(home.harness, item.name)) ?? [];
+    const state: HarnessItemState = all.length === 1 ? 'only' : new Set(all).size === 1 ? 'same' : 'differs';
+    const row = rows.get(item.name) ?? { name: item.name, on: {} };
+    row.on[machine] = [...(row.on[machine] ?? []), { harness: home.harness, home: home.path, item, state }].sort((a, b) => byHarness(a.harness, b.harness));
+    rows.set(item.name, row);
+  }
+  return [...rows.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
