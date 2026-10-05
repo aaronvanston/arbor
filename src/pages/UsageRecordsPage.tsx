@@ -661,7 +661,8 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   };
   const closeSession = () => show({ openSession: null }, 'return');
   const openProjectSessions: OpenSessions = ({ project: nextProject, branch: nextBranch = '', search: nextSearch = '' }) => {
-    show({ project: nextProject, tab: 'sessions' });
+    // A step of its own, so Back returns to Projects.
+    show({ project: nextProject, tab: 'sessions' }, 'push');
     setBranch(nextBranch);
     setSearchDraft(nextSearch);
     setSearch(nextSearch);
