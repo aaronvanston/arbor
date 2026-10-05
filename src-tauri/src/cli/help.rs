@@ -28,10 +28,21 @@ case.
     (
         "pools",
         "arbor pools
+arbor pools start <pool> (--repo <owner/name> | --folder <path>) --agent <claude|codex> --prompt <text|->
+                  [--cli] [--model <model>] [--title <title>] [--no-worktree] [--fallback]
+arbor pools recent [pool]
 arbor pools connect <pool> [host]
 
 Each machine pool, who would most likely take its next run, and why each other member couldn't now (full, busy, not
 answering). Pools are made and changed in Arbor's Settings › Pools.
+
+`pools start` starts a session on whichever member has room and a checkout of the repository, in its own copy
+wherever that is on the machine, in a worktree of its own off the default branch (--no-worktree works in the
+checkout). It runs in Orca there, or on the agent's own command line with --cli (--fallback lets Orca's fall back to
+it on a member without Orca); a model can only be chosen on the command line. A repository is named owner/name when
+the members' scans show one match, or in full as host/owner/name. --prompt - reads the prompt from stdin; Arbor hands
+it over and doesn't keep it. Like New session in Arbor, it asks first: run it again with --yes once agreed. A pool
+that's full waits, spills or refuses as it's set to. `pools recent` lists the sessions started on pools.
 
 `pools connect` carries one SSH connection to the member Arbor picks, as the ProxyCommand of the pool's host in
 Arbor's SSH config: connect with `ssh arbor-<pool>` rather than running it yourself. A host name stays on the member
@@ -41,6 +52,9 @@ the connection starts here.
 
   arbor pools
   arbor pools --json
+  arbor pools start builds --repo acme/storefront --agent claude --prompt 'Fix the flaky upload test'
+  arbor pools start builds --folder ~/src/notes --agent codex --cli --model gpt-5.5 --prompt - < task.md
+  arbor pools recent builds
   ssh arbor-builds
 ",
     ),

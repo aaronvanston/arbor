@@ -109,6 +109,82 @@ pub(crate) fn machines(snapshot: &Value) -> String {
     table(&["MACHINE", "STATUS", "SCORE", "LAST OK", "PROBLEM"], &rows)
 }
 
+/// Why a run didn't start or stopped, from its reason and the code its harness or machine gave.
+fn run_reason(run: &Value) -> String {
+    let detail = field(run, "detail");
+    match field(run, "reason").as_str() {
+        "noPool" => "the pool was removed".into(),
+        "noRoom" => "every member was busy, unreachable or out of date".into(),
+        "noHarness" => "members had room, but none had the harness running with that agent".into(),
+        "noFolder" if run.get("detail").is_some_and(|detail| !detail.is_null()) => format!("no member that could take it has the folder (looked on {detail})"),
+        "noFolder" => "the folder isn't on the machine it went to".into(),
+        "noModel" => "T3 Code needs a model".into(),
+        "handOffFailed" => format!("the harness didn't take it ({detail})"),
+        "arborRestarted" => "Arbor quit while it was waiting".into(),
+        "canceled" => "it was taken out of the queue".into(),
+        "agentFailed" => "the agent stopped with an error".into(),
+        _ => "it didn't start".into(),
+    }
+}
+
+/// Where a session went and what it works in, for the line that says it started.
+fn run_place(run: &Value) -> String {
+    let harness = match field(run, "used").as_str() {
+        "orca" => "Orca",
+        "headless" => "the command line",
+        "t3" => "T3 Code",
+        _ => "the harness",
+    };
+    let worktree = run.pointer("/handle/worktree").and_then(Value::as_str).map(|name| format!(", in its own worktree {name}")).unwrap_or_default();
+    format!("{} on {}: {}{worktree}", harness, field(run, "machine"), field(run, "folder"))
+}
+
+/// `start_pool_run`'s answer, worded: where the session went, that it waits, or why it didn't start (an error, so the
+/// exit code says so too).
+pub(crate) fn run_started(run: &Value) -> Result<String, String> {
+    match field(run, "state").as_str() {
+        "handedOff" | "running" => Ok(format!("Started in {}.", run_place(run))),
+        "queued" => Ok(format!("Waiting in the pool's queue: {}. It starts once a member has room.", run_reason(run))),
+        _ => Err(format!("The session didn't start: {}.", run_reason(run))),
+    }
+}
+
+/// What `arbor pools start` would do, in a line, for the person to agree to before it runs with --yes. The prompt
+/// isn't repeated: they just wrote it.
+pub(crate) fn session_plan(request: &Value, pool: &str) -> String {
+    let runs_in = if field(request, "harness") == "headless" { "on its own command line" } else { "in Orca" };
+    let worktree = if request.get("worktree") == Some(&Value::Bool(true)) { ", in a worktree of its own" } else { "" };
+    let start = match request.get("repo").and_then(Value::as_str) {
+        Some(repo) => format!("{runs_in} on whichever member of {pool} has room and a checkout of {repo}{worktree}"),
+        None => format!("{runs_in} in {}{worktree}, on whichever member of {pool} has room", field(request, "folder")),
+    };
+    format!("This would start {} {start}.\nNothing has changed. Run it again with --yes to go ahead.", field(request, "setup"))
+}
+
+/// The latest sessions started on pools (`get_runs`), newest first, narrowed to one pool when `pool` is its id.
+pub(crate) fn recent_runs(runs: &Value, pool: Option<&str>) -> String {
+    let now = now_ms();
+    let rows: Vec<Vec<String>> = runs
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|run| pool.is_none_or(|pool| field(run, "pool") == pool || field(run, "ranPool") == pool))
+        .take(20)
+        .map(|run| {
+            let place = match run.get("repo").and_then(Value::as_str) {
+                Some(repo) if field(run, "machine") == "–" => repo.to_string(),
+                _ => field(run, "folder"),
+            };
+            vec![field(run, "state"), field(run, "title"), field(run, "machine"), place, ago(run.get("queuedAtMs").unwrap_or(&Value::Null), now)]
+        })
+        .collect();
+    if rows.is_empty() {
+        return "No sessions started on a pool yet. Start one with arbor pools start.".into();
+    }
+    table(&["STATE", "TITLE", "MACHINE", "WHERE", "STARTED"], &rows)
+}
+
 /// Each pool from `get_pools`, with who would take its next run and how each member stands, from `preview_pools`.
 pub(crate) fn pools(value: &Value) -> String {
     let pools = items(value, "pools");
@@ -348,6 +424,27 @@ pub(crate) fn skill_install(answer: &Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_pool_session_says_where_it_went_that_it_waits_or_why_it_didnt_start() {
+        let started = json!({ "state": "handedOff", "used": "orca", "machine": "cedar-02", "folder": "/home/casey/storefront", "handle": { "worktree": "arbor-5e1f0a2b" } });
+        assert_eq!(run_started(&started).unwrap(), "Started in Orca on cedar-02: /home/casey/storefront, in its own worktree arbor-5e1f0a2b.");
+        assert!(run_started(&json!({ "state": "queued", "reason": "noRoom" })).unwrap().starts_with("Waiting in the pool's queue: every member was busy"));
+        let refused = json!({ "state": "refused", "reason": "noFolder", "detail": "cedar-02, ci-01" });
+        assert_eq!(run_started(&refused).unwrap_err(), "The session didn't start: no member that could take it has the folder (looked on cedar-02, ci-01).");
+        let runs = json!([
+            { "state": "handedOff", "title": "Fix it", "pool": "p1", "machine": "cedar-02", "folder": "/home/casey/storefront", "repo": "github.com/acme/storefront", "queuedAtMs": 0 },
+            { "state": "refused", "title": "Elsewhere", "pool": "p2", "machine": null, "folder": "", "repo": "github.com/acme/uploads", "queuedAtMs": 0 },
+        ]);
+        let all = recent_runs(&runs, None);
+        assert!(all.contains("/home/casey/storefront") && all.contains("github.com/acme/uploads"), "{all}");
+        assert!(!recent_runs(&runs, Some("p1")).contains("Elsewhere"));
+        assert!(recent_runs(&json!([]), None).starts_with("No sessions"));
+        let request = json!({ "harness": "orca", "setup": "claude", "repo": "github.com/acme/storefront", "worktree": true, "prompt": "secret plan" });
+        let plan = session_plan(&request, "Builds");
+        assert!(plan.starts_with("This would start claude in Orca on whichever member of Builds has room and a checkout of github.com/acme/storefront, in a worktree of its own."), "{plan}");
+        assert!(!plan.contains("secret plan"));
+    }
 
     #[test]
     fn a_table_lines_up_and_leaves_no_trailing_space() {

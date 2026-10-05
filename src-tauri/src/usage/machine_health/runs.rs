@@ -1030,8 +1030,12 @@ async fn save(run: HarnessRun) -> Result<(), String> {
     run_usage_task(move || write_run(&open_usage_database()?, &run)).await
 }
 
-/// Starts a run on a pool: the machine it picks gets it, handed to the harness named, or queued,
-/// spilled or refused as the pool says when nobody can take it.
+/// Starts a session on a pool: the member it picks gets it, or it's queued, spilled or refused as the pool says when
+/// nobody can take it. `request` is { pool: the pool's id, harness: "orca" or "headless" (the agent's own command
+/// line), setup: the agent ("claude" or "codex"), repo: "host/owner/name" (each member works in its own checkout of
+/// it, and members without one are left out) or folder: "~/path", worktree: true for a worktree of its own off the
+/// default branch, prompt, and optionally model (command line only), title, and fallback (an Orca session may go to
+/// the command line on a member without Orca) }.
 #[tauri::command]
 pub(crate) async fn start_pool_run(app: tauri::AppHandle, request: RunRequest) -> Result<HarnessRun, String> {
     let repo = request.repo.as_deref().map(str::trim).filter(|repo| !repo.is_empty()).map(str::to_string);

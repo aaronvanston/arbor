@@ -23,6 +23,7 @@ any other machine, say so instead of trying.
 | --- | --- |
 | Machine health | `arbor machines`, or `arbor machines <name>` for one in full |
 | Machine pools and who would take each one's next run | `arbor pools` |
+| Sessions started on pools, and how each went | `arbor pools recent`, or `arbor pools recent <pool>` |
 | Connect to a pool over SSH | `ssh arbor-<pool>`, once its page in Arbor says it's ready; `arbor pools connect` is that host's ProxyCommand, not something to run yourself. Each host name stays on its first machine; `arbor call forget_pool_ssh_name --args '{"poolId":"<id>","name":"<host>"}'` lets it pick again |
 | Sessions | `arbor sessions` (recent), `arbor sessions --live` (running now, with cost per hour) |
 | Usage and cost | `arbor usage today`, `arbor usage 7d`, `arbor usage 30d` |
@@ -63,7 +64,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Set up or update the background runner on a machine, so its automations run with Arbor closed | `arbor call install_background_runner machine=<name>` (needs `--yes`) |
 | Give automations their proxy key (Claude and Codex automations reach the proxy with it, whatever a machine is signed in to) | `arbor call add_automations_key` (needs `--yes`) |
 | Set the address machines try first to reach the proxy, or clear it | `arbor call set_automation_proxy_address address=<url>` (`address=` clears it) |
-| Hand a run to a harness on whichever pool member has room | `arbor call start_pool_run --args '{"request":{"pool":"<pool id>","harness":"t3","setup":"codex","folder":"~/src/app","prompt":"…","fallback":false}}'` (asks first; `arbor call get_runs` lists runs) |
+| Start a session on whichever pool member has room and the repository | `arbor pools start <pool> --repo <owner/name> --agent claude --prompt "…"` (asks first). It works in its own worktree off the default branch, in Orca there, or add `--cli` for the agent's own command line (and `--model`). `--folder <path>` instead of `--repo`; `--prompt -` reads stdin. Over MCP it's the `start_pool_run` tool |
 
 Stopping or restarting the proxy cuts off every agent using it for a moment, on every machine. Say so when you show
 the plan.

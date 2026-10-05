@@ -95,6 +95,56 @@ pub(crate) fn method_name(word: &str) -> String {
     }
 }
 
+/// What `arbor pools start` was given, past the pool's name.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct PoolStart {
+    pub(crate) prompt: String,
+    /// `host/owner/name`, or `owner/name` for the client to find among the members' repositories.
+    pub(crate) repo: Option<String>,
+    pub(crate) folder: Option<String>,
+    pub(crate) agent: String,
+    /// On the agent's own command line rather than in Orca.
+    pub(crate) cli: bool,
+    pub(crate) model: Option<String>,
+    pub(crate) title: Option<String>,
+    /// In the checkout itself rather than a worktree of its own.
+    pub(crate) no_worktree: bool,
+    /// Orca's run may fall back to the command line on a member without Orca.
+    pub(crate) fallback: bool,
+}
+
+/// Reads `arbor pools start`'s own flags. A session needs a prompt, an agent, and a repository or a folder.
+pub(crate) fn pool_start(words: &[&str]) -> Result<PoolStart, String> {
+    let mut start = PoolStart::default();
+    let mut rest = words.iter();
+    while let Some(word) = rest.next() {
+        let mut value = |flag: &str| rest.next().map(|value| value.to_string()).ok_or(format!("{flag} needs a value"));
+        match *word {
+            "--prompt" | "-p" => start.prompt = value("--prompt")?,
+            "--repo" => start.repo = Some(value("--repo")?),
+            "--folder" => start.folder = Some(value("--folder")?),
+            "--agent" => start.agent = value("--agent")?,
+            "--model" => start.model = Some(value("--model")?),
+            "--title" => start.title = Some(value("--title")?),
+            "--cli" => start.cli = true,
+            "--no-worktree" => start.no_worktree = true,
+            "--fallback" => start.fallback = true,
+            other => return Err(format!("arbor pools start doesn't take {other}. Run arbor help pools to see what it does.")),
+        }
+    }
+    if start.prompt.trim().is_empty() {
+        return Err("Say what the agent should do with --prompt \"…\", or --prompt - to read it from stdin.".into());
+    }
+    if start.agent.trim().is_empty() {
+        return Err("Name the agent with --agent claude or --agent codex.".into());
+    }
+    match (&start.repo, &start.folder) {
+        (Some(_), Some(_)) => Err("Give a repository or a folder, not both.".into()),
+        (None, None) => Err("Name the repository with --repo owner/name, or a folder with --folder ~/path.".into()),
+        _ => Ok(start),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +172,19 @@ mod tests {
         assert_eq!(args, json!({ "query": { "page": 2 }, "pageSize": 5 }));
         assert!(command_arguments(&words("loose")).is_err());
         assert!(command_arguments(&["--args".into(), "[1]".into()]).is_err());
+    }
+
+    #[test]
+    fn a_pool_session_needs_a_prompt_an_agent_and_a_repo_or_a_folder() {
+        let start = pool_start(&["--repo", "acme/storefront", "--agent", "claude", "--prompt", "Fix the upload test", "--cli"]).unwrap();
+        assert_eq!(start.repo.as_deref(), Some("acme/storefront"));
+        assert_eq!((start.agent.as_str(), start.cli, start.no_worktree), ("claude", true, false));
+        assert!(pool_start(&["--repo", "acme/x", "--agent", "codex"]).unwrap_err().contains("--prompt"));
+        assert!(pool_start(&["--folder", "~/src", "--prompt", "Go"]).unwrap_err().contains("--agent"));
+        assert!(pool_start(&["--agent", "codex", "--prompt", "Go"]).unwrap_err().contains("--repo"));
+        assert!(pool_start(&["--repo", "a/b", "--folder", "~/a", "--agent", "codex", "--prompt", "Go"]).unwrap_err().contains("not both"));
+        assert!(pool_start(&["--repo"]).unwrap_err().contains("needs a value"));
+        assert!(pool_start(&["--loud"]).unwrap_err().contains("--loud"));
     }
 
     #[test]

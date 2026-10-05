@@ -715,7 +715,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "start_pool_run",
         access: Access::Confirm,
-        summary: "Starts a run on a pool: the machine it picks gets it, handed to the harness named, or queued, spilled or refused as the pool says when nobody can take it.",
+        summary: "Starts a session on a pool: the member it picks gets it, or it's queued, spilled or refused as the pool says when nobody can take it. `request` is { pool: the pool's id, harness: \"orca\" or \"headless\" (the agent's own command line), setup: the agent (\"claude\" or \"codex\"), repo: \"host/owner/name\" (each member works in its own checkout of it, and members without one are left out) or folder: \"~/path\", worktree: true for a worktree of its own off the default branch, prompt, and optionally model (command line only), title, and fallback (an Orca session may go to the command line on a member without Orca) }.",
         args: &[
             ArgSpec { name: "request", ts_type: "RunRequest", optional: false },
         ],

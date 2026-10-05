@@ -195,6 +195,9 @@ Usage: arbor [command] [flags]
   machines [name]              Every machine's health, or one machine in full
   pools                        Machine pools and who would take each one's next run
   pools connect <pool> [host]  Carry an SSH connection to a pool member (ssh's ProxyCommand)
+  pools start <pool> --repo owner/name --agent claude --prompt '…'
+                               Start a session on whichever member has room
+  pools recent [pool]          Sessions started on pools, and how each went
   sessions [--live]            Recent sessions, or the ones running now
   usage [today|7d|30d]         Requests, tokens and cost
   accounts [refresh]           Signed-in accounts and their limits (refresh reads them again)
@@ -288,6 +291,101 @@ fn matching_machine(hosts: &Value, typed: &str) -> Option<String> {
         .map(machine)
 }
 
+/// The pool typed, by its id or its name in any case: its id, name and members.
+fn matching_pool(pools: &Value, typed: &str) -> Result<(String, String, Vec<String>), Failure> {
+    let loose = |text: &str| text.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect::<String>();
+    let all = pools.as_array().map(Vec::as_slice).unwrap_or(&[]);
+    let pool = all
+        .iter()
+        .find(|pool| render::field(pool, "id") == typed)
+        .or_else(|| all.iter().find(|pool| loose(&render::field(pool, "name")) == loose(typed)))
+        .ok_or_else(|| Failure::new(exit::FAILED, format!("Arbor has no pool called {typed}. arbor pools lists them.")))?;
+    let members = render::items(pool, "members").iter().map(|member| render::field(member, "machine")).collect();
+    Ok((render::field(pool, "id"), render::field(pool, "name"), members))
+}
+
+/// A repository typed as `owner/name`, found among the members' checkouts as their Projects scans saw them, as the
+/// `host/owner/name` a run names. One typed in full is taken as it is.
+fn matching_repo(projects: &Value, members: &[String], pool: &str, typed: &str) -> Result<String, Failure> {
+    let typed = typed.trim().trim_end_matches(".git").to_ascii_lowercase();
+    if typed.split('/').count() >= 3 {
+        return Ok(typed);
+    }
+    let mut found: Vec<String> = projects
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|scan| members.contains(&render::field(scan, "machine")))
+        .flat_map(|scan| render::items(scan, "repos"))
+        .filter_map(|repo| repo.get("remote").and_then(Value::as_str))
+        .map(|remote| remote.trim_end_matches(".git").to_ascii_lowercase())
+        .filter(|remote| remote.ends_with(&format!("/{typed}")))
+        .collect();
+    found.sort();
+    found.dedup();
+    match found.as_slice() {
+        [one] => Ok(one.clone()),
+        [] => Err(Failure::new(
+            exit::FAILED,
+            format!("No member of {pool} has a checkout of {typed} that Arbor has seen. Give it in full, like github.com/{typed}, and Arbor looks on the members it hasn't scanned yet."),
+        )),
+        many => Err(usage_error(format!("{typed} could be {}. Give the one you mean in full.", many.join(" or ")))),
+    }
+}
+
+/// Starts a session on a pool: Arbor picks the member, which works in its own checkout of the repository (or the
+/// folder), in a worktree of its own unless asked not to. Like the window's New session it asks first.
+fn pool_start(options: &args::Options, pool: &str, rest: &[&str]) -> Result<(), Failure> {
+    let mut start = args::pool_start(rest).map_err(usage_error)?;
+    if start.prompt == "-" {
+        let mut prompt = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut prompt).map_err(|error| Failure::new(exit::FAILED, format!("Couldn't read the prompt: {error}")))?;
+        start.prompt = prompt;
+    }
+    let mut client = connect(options)?;
+    let (pool_id, pool_name, members) = matching_pool(&client.read("get_pools", Value::Null)?, pool)?;
+    let repo = match &start.repo {
+        Some(typed) => Some(matching_repo(&client.read("get_projects", Value::Null)?, &members, &pool_name, typed)?),
+        None => None,
+    };
+    let request = json!({
+        "pool": pool_id,
+        "harness": if start.cli { "headless" } else { "orca" },
+        "setup": start.agent,
+        "folder": start.folder.unwrap_or_default(),
+        "repo": repo,
+        "worktree": !start.no_worktree,
+        "prompt": start.prompt,
+        "model": start.model,
+        "fallback": start.fallback,
+        "title": start.title,
+    });
+    let run = match client.ask("start_pool_run", json!({ "request": request }), options.yes)? {
+        Answer::Ok(run) => run,
+        Answer::Plan(plan) => {
+            if options.json {
+                print_json(&json!({ "needsConfirmation": true, "plan": plan }));
+            } else {
+                println!("{}", render::session_plan(&request, &pool_name));
+            }
+            return Err(Failure::new(exit::NEEDS_YES, ""));
+        }
+    };
+    if options.json {
+        print_json(&run);
+    }
+    match render::run_started(&run) {
+        Ok(line) => {
+            if !options.json {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        Err(line) => Err(Failure::new(exit::FAILED, if options.json { String::new() } else { line })),
+    }
+}
+
 fn connect(options: &args::Options) -> Result<Client, Failure> {
     Client::connect("cli", !options.no_launch, Duration::from_secs(options.timeout))
 }
@@ -368,6 +466,17 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
             Ok(())
         }
         ["pools" | "pool", "connect", pool, host @ ..] => pool_connect(options, pool, host.first().copied().unwrap_or_default()),
+        ["pools" | "pool", "start", pool, rest @ ..] => pool_start(options, pool, rest),
+        ["pools" | "pool", "recent", pool @ ..] => {
+            let mut client = connect(options)?;
+            let pool = match pool.first() {
+                Some(typed) => Some(matching_pool(&client.read("get_pools", Value::Null)?, typed)?.0),
+                None => None,
+            };
+            let runs = client.read("get_runs", Value::Null)?;
+            show(options, &runs, |runs| render::recent_runs(runs, pool.as_deref()));
+            Ok(())
+        }
         ["pools"] => {
             let mut client = connect(options)?;
             let pools = client.read("get_pools", Value::Null)?;
@@ -701,6 +810,33 @@ fn doctor(options: &args::Options) -> Result<(), Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pool_is_found_by_id_or_name_and_a_repo_by_owner_and_name_on_its_members() {
+        let pools = json!([
+            { "id": "p1", "name": "Builds", "members": [{ "machine": "casey-mbp" }, { "machine": "cedar-02" }] },
+            { "id": "p2", "name": "Overflow", "members": [{ "machine": "ci-01" }] },
+        ]);
+        assert_eq!(matching_pool(&pools, "p2").unwrap().1, "Overflow");
+        let (id, _, members) = matching_pool(&pools, "builds").unwrap();
+        assert_eq!((id.as_str(), members.clone()), ("p1", vec!["casey-mbp".to_string(), "cedar-02".to_string()]));
+        assert!(matching_pool(&pools, "nowhere").is_err());
+
+        let projects = json!([
+            { "machine": "casey-mbp", "repos": [{ "remote": "github.com/acme/storefront.git" }, { "remote": "github.com/acme/docs" }] },
+            { "machine": "cedar-02", "repos": [{ "remote": "github.com/Acme/storefront" }, { "remote": "gitlab.com/other/docs" }] },
+            // Not a member, so its repos don't count.
+            { "machine": "ci-01", "repos": [{ "remote": "github.com/acme/billing" }] },
+        ]);
+        let found = |typed: &str| matching_repo(&projects, &members, "Builds", typed);
+        assert_eq!(found("acme/storefront").unwrap(), "github.com/acme/storefront");
+        assert_eq!(found("github.com/acme/billing").unwrap(), "github.com/acme/billing");
+        assert!(found("acme/billing").unwrap_err().message.contains("github.com/acme/billing"));
+        // Two hosts with the same owner and name: say which, and ask for one in full.
+        assert!(matching_repo(&projects, &members, "Builds", "docs").is_err());
+        let both = json!([{ "machine": "casey-mbp", "repos": [{ "remote": "github.com/acme/docs" }, { "remote": "gitlab.com/acme/docs" }] }]);
+        assert!(matching_repo(&both, &members, "Builds", "acme/docs").unwrap_err().message.contains(" or "));
+    }
 
     #[test]
     fn a_range_starts_at_midnight_some_days_back() {
