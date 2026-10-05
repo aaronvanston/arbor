@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
+import { useCoreRuntime } from '../coreRuntime';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
 import { useAccountLimitPrefs } from '../services/accountLimits';
@@ -36,6 +37,7 @@ const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slic
  */
 export function AccountOrderSection() {
   const { files } = useAccountsStore();
+  const coreReady = Boolean(useCoreRuntime().status?.ready);
   const [error, setError] = useState('');
   useEffect(() => {
     void loadAccountFiles().then((listed) => {
@@ -46,7 +48,7 @@ export function AccountOrderSection() {
   return (
     <>
       {error ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{error}</AlertDescription></Alert> : null}
-      <AccountRouting files={files} onError={setError} />
+      <AccountRouting files={files} onError={setError} coreReady={coreReady} />
     </>
   );
 }
@@ -56,10 +58,12 @@ export function AccountOrderSection() {
  * button to apply them and a switch to keep them applied. Nothing shows until a provider has accounts
  * to order.
  */
-export function AccountRouting({ files, onError }: {
+export function AccountRouting({ files, onError, coreReady = true }: {
   /** The core's whole listing; only the accounts in use are ordered. */
   files: AuthFile[];
   onError: (message: string) => void;
+  /** Priorities are the running core's, so there's nothing to apply them to while it's stopped. */
+  coreReady?: boolean;
 }) {
   const { t } = useI18n();
   const quotas = useQuotaCache();
@@ -73,12 +77,12 @@ export function AccountRouting({ files, onError }: {
   if (!routings.length) return null;
   return (
     <SettingsSection settingId="routing.accounts" title={t('accounts.routing.title')} description={t('accounts.routing.description')}>
-      {routings.map((routing) => <ProviderRoutingBlock key={routing.provider} routing={routing} onError={onError} />)}
+      {routings.map((routing) => <ProviderRoutingBlock key={routing.provider} routing={routing} onError={onError} coreReady={coreReady} />)}
     </SettingsSection>
   );
 }
 
-function ProviderRoutingBlock({ routing: { provider, window, plan }, onError }: { routing: ProviderRouting; onError: (message: string) => void }) {
+function ProviderRoutingBlock({ routing: { provider, window, plan }, onError, coreReady }: { routing: ProviderRouting; onError: (message: string) => void; coreReady: boolean }) {
   const { t } = useI18n();
   const now = useQuotaClock();
   const profiles = useAccountProfiles();
@@ -122,7 +126,7 @@ function ProviderRoutingBlock({ routing: { provider, window, plan }, onError }: 
             <TooltipPopup>{t('accounts.routing.autoHint')}</TooltipPopup>
           </Tooltip>
           {plan.changes.length ? (
-            <Button variant="outline" size="xs" onClick={() => void apply()} disabled={applying} aria-label={t('accounts.routing.applyAria', { provider: label })}>
+            <Button variant="outline" size="xs" onClick={() => void apply()} disabled={applying || !coreReady} disabledReason={coreReady ? undefined : t('accounts.routing.coreStopped')} aria-label={t('accounts.routing.applyAria', { provider: label })}>
               {applying ? <Spinner className="size-3" /> : null}
               {t('accounts.routing.apply')}
             </Button>

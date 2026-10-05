@@ -505,6 +505,8 @@ function apiCall(body: Json): Json {
 }
 
 function managementRequest(request: ManagementRequest): unknown {
+  // A core that isn't up answers nothing, so every request fails as the native side's would.
+  if (!coreStatus.ready) throw { kind: 'failed', message: 'Management API request failed: error sending request (connection refused)' };
   const method = String(request.method ?? 'GET');
   const path = String(request.path ?? '');
   const query = (request.query ?? {}) as Record<string, string>;

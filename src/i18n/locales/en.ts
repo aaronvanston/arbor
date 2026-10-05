@@ -1391,6 +1391,7 @@ export const en = {
   'accounts.routing.title': 'Account order',
   'accounts.routing.description': 'Suggested priorities that use up the accounts resetting soonest first and keep nearly empty ones for last. The core sends requests to the highest priority it can use and moves down when an account hits a limit.',
   'accounts.routing.window': 'ranked by the {window}',
+  'accounts.routing.coreStopped': 'Start the core to apply this order.',
   'accounts.routing.apply': 'Apply',
   'accounts.routing.applyAria': 'Apply the suggested {provider} priorities',
   'accounts.routing.matches': 'Priorities match',
