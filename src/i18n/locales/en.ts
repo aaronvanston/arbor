@@ -488,6 +488,7 @@ export const en = {
   'fleet.menu.snoozeTonight': 'Tonight',
   'fleet.menu.snoozeTomorrow': 'Tomorrow',
   'fleet.menu.unsnooze': 'Unsnooze',
+  'fleet.snoozedOne': 'Snoozed “{name}” until {time}',
   'fleet.t3Off': 'T3 Code threads are off, so T3 Code’s sessions show only through the proxy and reporters.',
   'fleet.t3Off.action': 'Turn on',
   'fleet.t3Off.done': 'T3 Code threads are on',

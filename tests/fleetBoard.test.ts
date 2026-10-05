@@ -727,6 +727,13 @@ describe('the snooze and seen stores', () => {
     expect(JSON.parse(storage.values.get('arbor.fleet-seen.v1') ?? '')).toEqual({ [`claude:${CLAUDE_ID}`]: now });
     unsnoozeFleetSession(T3_KEY);
     expect(JSON.parse(storage.values.get('arbor.fleet-snoozes.v1') ?? '')).toEqual({});
+    // Undo puts a snooze back the way it was: gone, or the one it replaced.
+    snoozeFleetSession(T3_KEY, now + 2 * HOUR, now)();
+    expect(JSON.parse(storage.values.get('arbor.fleet-snoozes.v1') ?? '')).toEqual({});
+    snoozeFleetSession(T3_KEY, now + HOUR, now);
+    snoozeFleetSession(T3_KEY, now + 2 * HOUR, now)();
+    expect(JSON.parse(storage.values.get('arbor.fleet-snoozes.v1') ?? '')).toEqual({ [T3_KEY]: { untilMs: now + HOUR, atMs: now } });
+    unsnoozeFleetSession(T3_KEY);
     // Each read keeps when a question was first seen, and nothing more.
     setFleetSources(sources({ nowMs: now, t3: [channel('casey-mbp', [thread({ pendingQuestions: 1, questionSeenAtMs: now - MINUTE })])] }));
     expect(JSON.parse(storage.values.get('arbor.fleet-asked.v1') ?? '')).toEqual({ [T3_KEY]: now - MINUTE });

@@ -733,8 +733,14 @@ const seenStore = storedMap(SEEN_KEY, pruneSeen);
 const askedStore = storedMap(ASKED_KEY, pruneSeen);
 
 /** Hides a row until `untilMs`, or until something new comes up. */
-export function snoozeFleetSession(key: string, untilMs: number, now = Date.now()) {
+/** Snoozes a row until `untilMs`, and returns what puts its snooze back the way it was, for an Undo. */
+export function snoozeFleetSession(key: string, untilMs: number, now = Date.now()): () => void {
+  const before = snoozeStore.read()[key];
   snoozeStore.write({ ...snoozeStore.read(), [key]: { untilMs, atMs: now } });
+  return () => {
+    if (before) snoozeStore.write({ ...snoozeStore.read(), [key]: before });
+    else unsnoozeFleetSession(key);
+  };
 }
 
 export function unsnoozeFleetSession(key: string) {

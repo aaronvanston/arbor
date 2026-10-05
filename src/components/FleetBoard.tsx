@@ -192,6 +192,11 @@ export function FleetRow({ row, now, place = false, onOpen }: { row: FleetSessio
 function FleetRowMenu({ row, name }: { row: FleetSession; name: string }) {
   const { t } = useI18n();
   const [options, setOptions] = useState(() => snoozeOptions(Date.now()));
+  // A snooze hides the row at once and is as easily undone, so it says so with Undo.
+  const snooze = (untilMs: number) => {
+    const undo = snoozeFleetSession(row.key, untilMs);
+    toast({ title: t('fleet.snoozedOne', { name, time: formatTime(untilMs) }), action: { label: t('common.undo'), onClick: undo } });
+  };
   return (
     <Menu onOpenChange={(open) => { if (open) setOptions(snoozeOptions(Date.now())); }}>
       <MenuTrigger render={<Button variant="ghost-muted" size="icon-sm" aria-label={t('fleet.menu.label', { name })} />}>
@@ -210,7 +215,7 @@ function FleetRowMenu({ row, name }: { row: FleetSession; name: string }) {
         <MenuGroup>
           <MenuGroupLabel>{t('fleet.menu.snooze')}</MenuGroupLabel>
           {options.map((option) => (
-            <MenuItem key={option.id} onClick={() => snoozeFleetSession(row.key, option.untilMs)}>
+            <MenuItem key={option.id} onClick={() => snooze(option.untilMs)}>
               <AlarmClock />
               <span className="min-w-0 flex-1 truncate">{t(SNOOZE_LABEL[option.id])}</span>
               <span className="shrink-0 text-xs text-muted-foreground">{formatTime(option.untilMs)}</span>
