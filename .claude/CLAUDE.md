@@ -248,7 +248,7 @@ What the workflow does, all on the release Mac's self-hosted runner (label
 `arbor-release`, set up and updated by `scripts/install-release-runner.sh`), since
 GitHub bills a private repository's hosted minutes:
 
-- Every half hour it checks for a nightly (`scripts/release-plan.mjs`). One goes out
+- Every hour it checks for a nightly (`scripts/release-plan.mjs`). One goes out
   when main has something past the newest build besides release commits and the newest
   nightly is at least six hours old: `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the
   patch after the newest release, with fixed notes, nothing committed. Only apps on
@@ -258,7 +258,10 @@ GitHub bills a private repository's hosted minutes:
   for up to three changes) checks the notes and starts the workflow. It promotes the
   newest nightly's commit as X.Y.Z, so stable is always a build nightly users already
   ran, publishes it as the latest release, and then commits `Release Arbor X.Y.Z`
-  (version and notes) to main as github-actions.
+  (version and notes) to main as github-actions. X.Y.Z is the nightly's patch unless
+  `ARBOR_RELEASE_BUMP=minor` or `major` asks for the next minor or major after the
+  newest release, which is how a release that adds features or breaks something
+  gets its number; nobody edits the version for it.
 - Each run verifies, builds with `scripts/build-release.sh` and publishes with
   `scripts/publish-workflow-release.sh` in one job, so the DMG never becomes a GitHub
   artifact.

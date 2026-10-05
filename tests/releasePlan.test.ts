@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { compareSemver, NIGHTLY_GAP_MS, planRelease } from '../scripts/release-plan.mjs';
+import { compareSemver, NIGHTLY_GAP_MS, planRelease, stableVersion } from '../scripts/release-plan.mjs';
 
 const notes = [{ version: '1.0.0', summary: 'Arbor is open source.', changes: [] }];
 const now = Date.parse('2026-10-01T12:00:00Z');
@@ -69,6 +69,24 @@ describe('a stable release', () => {
       ref: 'nightly',
       promotes: '1.0.1-nightly.20261001.6',
     });
+  });
+
+  test('promotes the same nightly as the next minor or major when asked', () => {
+    const stable = (bump: string) => plan({ channel: 'stable', scheduled: false, releases, pending, bump });
+    expect(stable('minor')).toEqual({ version: '1.1.0', tag: 'arbor-v1.1.0', prerelease: false, ref: 'nightly', promotes: '1.0.1-nightly.20261001.6' });
+    expect(stable('major')).toMatchObject({ version: '2.0.0', ref: 'nightly' });
+    expect(stable('patch')).toMatchObject({ version: '1.0.1' });
+    expect(() => stable('huge')).toThrow('Unknown bump');
+    // A nightly already promoted can't go out again under a bigger number.
+    expect(() => plan({ channel: 'stable', scheduled: false, pending, bump: 'minor', releases: [...releases, { version: '1.0.1', commit: 'nightly' }] }))
+      .toThrow('no nightly has been built since');
+  });
+
+  test("a bump counts from the newest release, and never goes below the nightly's own version", () => {
+    expect(stableVersion('1.0.27-nightly.20261005.30', '1.0.26', 'minor')).toBe('1.1.0');
+    expect(stableVersion('1.1.0-nightly.20261005.30', '1.0.26', 'minor')).toBe('1.1.0');
+    expect(stableVersion('1.0.0-nightly.20261005.1', undefined, 'major')).toBe('2.0.0');
+    expect(() => stableVersion('2.0.0-nightly.20261005.30', '1.0.26', 'minor')).toThrow('already past 1.1.0');
   });
 
   test('needs a nightly built since the newest release, and notes that can be published', () => {

@@ -4,8 +4,10 @@ type Release = { version: string; summary: string; changes: string[] };
 
 export const NIGHTLY_GAP_MS: number;
 export function compareSemver(a: string, b: string): number;
+export function stableVersion(nightlyVersion: string, latestVersion?: string, bump?: string): string;
 export function planRelease(options: {
   channel: string;
+  bump?: string;
   cargoVersion: string;
   notes: Release[];
   releases: { version: string; commit?: string; publishedAt?: string }[];

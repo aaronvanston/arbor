@@ -431,7 +431,7 @@ release runs `bun run verify` and `bun run verify:rust`, builds with
 `scripts/build-release.sh` and publishes with `scripts/publish-workflow-release.sh`,
 in one job so the DMG stays on that Mac.
 
-- Nightly: checked every half hour and published once main has moved past the
+- Nightly: checked every hour and published once main has moved past the
   newest build (release commits alone don't count) and six hours have passed since
   the newest nightly (`scripts/release-plan.mjs`). Its version is
   `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the patch after the newest release,
@@ -441,7 +441,10 @@ in one job so the DMG stays on that Mac.
   `ARBOR_RELEASE_SUMMARY="…" [ARBOR_RELEASE_CHANGES=…] ./scripts/release-stable.sh`
   checks the notes and starts the workflow, which promotes the newest nightly: the
   same commit, built as X.Y.Z, so stable ships only what nightly users already run.
-  Once it's published, the workflow commits `Release Arbor X.Y.Z` (the version and
+  X.Y.Z is the nightly's own patch version; with `ARBOR_RELEASE_BUMP=minor` or
+  `major` it's the next minor or major after the newest release instead, for a
+  release with new features or breaking changes, so versions are never edited by
+  hand for one. Once it's published, the workflow commits `Release Arbor X.Y.Z` (the version and
   notes) to main. The release becomes the latest, which every app reads.
 
 Its secrets are `ARBOR_RELEASE_SIGNING_KEY` (the Keychain's signing key as base64

@@ -6,10 +6,12 @@
 // skipped until main has moved past the newest nightly or release with something besides release commits, and until
 // six hours have passed since the newest nightly, so a busy day gives a few nightlies, not one per push.
 // A stable release promotes the newest nightly: the same commit, as X.Y.Z, so it ships only what nightly users already
-// run. Its notes come with the run (ARBOR_RELEASE_SUMMARY, ARBOR_RELEASE_CHANGES), and the workflow commits them and
-// the version to main once it's out.
+// run. X.Y.Z is the nightly's own version for a patch release; ARBOR_RELEASE_BUMP=minor or major makes it the next
+// minor or major after the newest release instead, for a release that adds features or breaks something, which a
+// nightly can't know about when it's built. Its notes come with the run (ARBOR_RELEASE_SUMMARY, ARBOR_RELEASE_CHANGES),
+// and the workflow commits them and the version to main once it's out.
 //
-//   ARBOR_RELEASE_CHANNEL=nightly|stable node scripts/release-plan.mjs
+//   ARBOR_RELEASE_CHANNEL=nightly|stable [ARBOR_RELEASE_BUMP=patch|minor|major] node scripts/release-plan.mjs
 //
 // reads the commit, run number, event and repository from GitHub's variables, the releases with gh (GH_TOKEN), and
 // writes version, tag, prerelease and ref, or skip, to $GITHUB_OUTPUT.
@@ -54,6 +56,22 @@ export function compareSemver(a, b) {
 
 const isStable = (version) => /^\d+\.\d+\.\d+$/.test(version);
 
+/**
+ * The X.Y.Z a stable release promotes `nightlyVersion` as: its own X.Y.Z for a patch release, or the next minor or major
+ * after `latestVersion` (the newest release, if any). Never older than the nightly, which installs already run.
+ */
+export function stableVersion(nightlyVersion, latestVersion, bump = 'patch') {
+  const own = validateAppVersion(nightlyVersion).replace(/[-+].*$/, '');
+  if (bump === 'patch') return own;
+  if (bump !== 'minor' && bump !== 'major') throw new Error(`Unknown bump: ${bump}. Use patch, minor or major.`);
+  const [major, minor] = parts(latestVersion ?? own).main;
+  const version = bump === 'major' ? `${major + 1}.0.0` : `${major}.${minor + 1}.0`;
+  if (compareSemver(version, own) < 0) {
+    throw new Error(`Arbor ${nightlyVersion} is already past ${version}; release it as a patch, or bump further.`);
+  }
+  return version;
+}
+
 function newest(releases) {
   return releases.reduce((best, release) => (!best || compareSemver(release.version, best.version) > 0 ? release : best), null);
 }
@@ -61,20 +79,22 @@ function newest(releases) {
 /**
  * What a run builds. `releases` are the published ones, `{ version, commit, publishedAt }`, where only the newest
  * nightly's and the newest release's commit and time matter. `commit` is main's; `newCommits` are the subjects of
- * main's commits since the newest of those two was built (null when main isn't ahead of it); `pending` is a stable
- * release's notes, `{ summary, changes }`; `date` is YYYYMMDD and `now` milliseconds. Returns `{ skip }` when a
+ * main's commits since the newest of those two was built (null when main isn't ahead of it); `bump` is a stable
+ * release's patch, minor or major (patch when left out); `pending` is a stable release's notes, `{ summary, changes }`; `date` is YYYYMMDD and `now` milliseconds. Returns `{ skip }` when a
  * scheduled nightly isn't due, and throws when a stable release can't go out.
  */
-export function planRelease({ channel, cargoVersion, notes, releases, commit, newCommits, pending, scheduled, date, run, now }) {
+export function planRelease({ channel, bump, cargoVersion, notes, releases, commit, newCommits, pending, scheduled, date, run, now }) {
   const stable = releases.filter((release) => isStable(release.version));
   const latest = newest(stable);
   const nightly = newest(releases.filter((release) => isNightly(release.version)));
   if (channel === 'stable') {
     if (!nightly) throw new Error('No nightly is out yet. A stable release promotes the newest nightly.');
-    const version = nightly.version.replace(/-.*$/, '');
-    if (latest && compareSemver(version, latest.version) <= 0) {
+    // Compared on the nightly, not the version it becomes: a minor bump would otherwise promote a nightly that's
+    // already out as a release.
+    if (latest && compareSemver(nightly.version.replace(/-.*$/, ''), latest.version) <= 0) {
       throw new Error(`Arbor ${latest.version} is out and no nightly has been built since. Wait for the next nightly.`);
     }
+    const version = stableVersion(nightly.version, latest?.version, bump);
     if (!nightly.commit) throw new Error(`Couldn't find the commit Arbor ${nightly.version} was built from.`);
     // Refuses notes missing a summary or naming what's never published, and a version release-notes.json already has.
     withRelease(notes, releaseEntry({ version, summary: pending?.summary, changes: pending?.changes ?? [] }));
@@ -152,6 +172,7 @@ function main() {
   const newCommits = scheduled && lastBuilt ? commitsSince(repository, lastBuilt.commit, commit) : undefined;
   const plan = planRelease({
     channel,
+    bump: env.ARBOR_RELEASE_BUMP || 'patch',
     cargoVersion: parseCargoPackageVersion(readFileSync(join(repoDir, 'src-tauri', 'Cargo.toml'), 'utf8')),
     notes: readReleaseNotes(),
     releases,
