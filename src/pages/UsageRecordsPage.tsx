@@ -985,7 +985,8 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         <div className={cn('flex flex-col', requestsPage ? 'gap-3 px-5 empty:hidden' : 'contents')}>
           {error ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{error}</AlertDescription></Alert> : null}
           {variant !== 'pricing' ? <ProxyChecksBanner onNavigate={onNavigate} /> : null}
-          {variant !== 'pricing' ? <UsageCollectorBanner onOpenData={onNavigate ? () => onNavigate({ kind: 'settings', page: 'data' }) : undefined} /> : null}
+          {/* Prices too: each model's requests and cost come from the recorded usage, which goes stale with it. */}
+          <UsageCollectorBanner onOpenData={onNavigate ? () => onNavigate({ kind: 'settings', page: 'data' }) : undefined} />
           {variant === 'usage' || variant === 'value' ? <ProviderStatusBanner /> : null}
           {variant === 'usage' || variant === 'sessions' ? <HeavySessionBanner machine={machineCrumb ? machine : ''} onOpenSession={openSession} /> : null}
           {variant === 'sessions' ? <ArchiveBanner onOpen={onNavigate ? () => onNavigate({ kind: 'settings', page: 'session-archive' }) : undefined} /> : null}
