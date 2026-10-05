@@ -1427,51 +1427,35 @@ fn load_usage_sessions(
             .map(from_sql_i64)
             .map_err(|error| format!("Failed to count usage records without a session: {error}"))?
     };
-    let session_read::SelectedSessions { sessions, facets } = session_read::select_sessions(
+    let page_size = query.page_size.unwrap_or(50).clamp(20, 200);
+    let requested_page = query.page.unwrap_or(1);
+    let offset = requested_page.saturating_sub(1).saturating_mul(page_size);
+    let page = session_read::select_session_page(
         connection,
         config,
         now_ms,
-        &session_read::SessionSelect {
-            query,
-            only_active: false,
-            order: session_read::SessionOrder::named(query.sort.as_deref()),
-            limit: None,
-            transcripts: false,
-        },
+        query,
+        session_read::SessionOrder::named(query.sort.as_deref()),
+        offset,
+        page_size,
     )?;
-
-    let mut summary = UsageSessionSummary {
-        sessions: sessions.len(),
-        untracked_requests,
-        ..UsageSessionSummary::default()
-    };
-    for session in &sessions {
-        summary.subagent_threads += session.subagents;
-        summary.active += usize::from(session.active);
-        summary.requests = summary
-            .requests
-            .saturating_add(session.root.totals.requests);
-        summary.total_tokens = summary
-            .total_tokens
-            .saturating_add(session.root.totals.total_tokens);
-        summary.estimated_cost += session.root.totals.estimated_cost;
-        summary.priced_requests = summary
-            .priced_requests
-            .saturating_add(session.root.totals.priced_requests);
-    }
-
-    let total = sessions.len();
-    let page_size = query.page_size.unwrap_or(50).clamp(20, 200);
+    let session_read::SessionPage { selected, total, summary: selected_summary } = page;
+    let session_read::SelectedSessions { mut sessions, facets } = selected;
     let total_pages = total.div_ceil(page_size).max(1);
-    let page = query.page.unwrap_or(1).clamp(1, total_pages);
-    let mut items = sessions
-        .into_iter()
-        .skip((page - 1).saturating_mul(page_size))
-        .take(page_size)
-        .collect::<Vec<_>>();
-    session_read::complete_sessions(connection, &mut items)?;
+    let page = requested_page.clamp(1, total_pages);
+    session_read::complete_sessions(connection, &mut sessions)?;
+    let summary = UsageSessionSummary {
+        sessions: selected_summary.sessions,
+        subagent_threads: selected_summary.subagent_threads,
+        active: selected_summary.active,
+        requests: selected_summary.requests,
+        total_tokens: selected_summary.total_tokens,
+        estimated_cost: selected_summary.estimated_cost,
+        priced_requests: selected_summary.priced_requests,
+        untracked_requests,
+    };
     Ok(UsageSessionPage {
-        items,
+        items: sessions,
         total,
         page,
         page_size,
@@ -4739,6 +4723,48 @@ mod tests {
     fn load_test_sessions(connection: &Connection, query: UsageQuery) -> UsageSessionPage {
         let now_ms = SESSION_T0 + 24 * 3_600_000;
         load_usage_sessions(connection, &query, &GuiConfigFile::default(), now_ms).unwrap()
+    }
+
+    #[test]
+    fn bounded_session_page_matches_the_full_reader_on_sample_data() {
+        let connection = session_test_database(&[
+            session_row("page-a", None, SESSION_T0),
+            session_row("page-b", None, SESSION_T0 + 1_000),
+            session_row("page-c", None, SESSION_T0 + 2_000),
+            session_row("page-d", None, SESSION_T0 + 3_000),
+        ]);
+        let query = UsageQuery { page: Some(2), page_size: Some(2), sort: Some("tokens".into()), ..UsageQuery::default() };
+        let now_ms = SESSION_T0 + 24 * 3_600_000;
+        let old = session_read::select_sessions(
+            &connection,
+            &GuiConfigFile::default(),
+            now_ms,
+            &session_read::SessionSelect {
+                query: &query,
+                only_active: false,
+                order: session_read::SessionOrder::named(query.sort.as_deref()),
+                limit: None,
+                transcripts: false,
+            },
+        )
+        .unwrap();
+        let old_total = old.sessions.len();
+        let mut old_items = old.sessions.into_iter().skip(2).take(2).collect::<Vec<_>>();
+        session_read::complete_sessions(&connection, &mut old_items).unwrap();
+        let new = session_read::select_session_page(
+            &connection,
+            &GuiConfigFile::default(),
+            now_ms,
+            &query,
+            session_read::SessionOrder::named(query.sort.as_deref()),
+            2,
+            2,
+        )
+        .unwrap();
+        let mut new_items = new.selected.sessions;
+        session_read::complete_sessions(&connection, &mut new_items).unwrap();
+        assert_eq!(new.total, old_total);
+        assert_eq!(serde_json::to_value(old_items).unwrap(), serde_json::to_value(new_items).unwrap());
     }
 
     fn rfc3339_millis(timestamp_ms: i64) -> String {

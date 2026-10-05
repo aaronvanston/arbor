@@ -56,6 +56,23 @@ pub(super) struct SelectedSessions {
     pub(super) facets: Option<SessionFacets>,
 }
 
+#[derive(Default)]
+pub(super) struct SessionSummaryTotals {
+    pub(super) sessions: usize,
+    pub(super) subagent_threads: usize,
+    pub(super) active: usize,
+    pub(super) requests: u64,
+    pub(super) total_tokens: u64,
+    pub(super) estimated_cost: f64,
+    pub(super) priced_requests: u64,
+}
+
+pub(super) struct SessionPage {
+    pub(super) selected: SelectedSessions,
+    pub(super) total: usize,
+    pub(super) summary: SessionSummaryTotals,
+}
+
 /// One of a thread's requests, as far as its conversation goes.
 pub(super) struct ThreadRequest {
     pub(super) timestamp_ms: i64,
@@ -93,6 +110,136 @@ pub(super) fn select_sessions(
         fill_missing_transcripts(connection, &mut sessions)?;
     }
     Ok(SelectedSessions { sessions, facets })
+}
+
+/// Select a page while only constructing the requested session trees. The
+/// request aggregates still cover the full result so the summary stays exact.
+pub(super) fn select_session_page(
+    connection: &Connection,
+    config: &GuiConfigFile,
+    now_ms: i64,
+    query: &UsageQuery,
+    order: SessionOrder,
+    offset: usize,
+    limit: usize,
+) -> Result<SessionPage, String> {
+    let filters = SessionFilters::from_query(query);
+    if !filters.is_empty() || query.facets == Some(true) {
+        let mut selected = select_sessions(
+            connection,
+            config,
+            now_ms,
+            &SessionSelect {
+                query,
+                only_active: false,
+                order,
+                limit: None,
+                transcripts: false,
+            },
+        )?;
+        let total = selected.sessions.len();
+        let summary = summarize_sessions(&selected.sessions, now_ms);
+        let facets = selected.facets.take();
+        let last_offset = total.div_ceil(limit).saturating_sub(1).saturating_mul(limit);
+        let actual_offset = offset.min(last_offset);
+        let sessions = selected.sessions.into_iter().skip(actual_offset).take(limit).collect();
+        return Ok(SessionPage { selected: SelectedSessions { sessions, facets }, total, summary });
+    }
+
+    let assignments = machines::load_assignments(connection, config)?;
+    let prices = load_model_prices(connection)?;
+    let filter = usage_filter_and(
+        &build_usage_filter(&UsageQuery { machine: None, ..query.clone() }),
+        "session_id <> ''",
+    );
+    let tallies = load_usage_session_tallies(connection, &filter, &prices)?;
+    let parent_of = resolve_session_parents(connection, &tallies)?;
+    let mut trees = HashMap::<&str, Vec<Vec<&str>>>::new();
+    for id in tallies.keys() {
+        let ancestry = session_ancestry(id, &parent_of);
+        let root = ancestry.last().copied().unwrap_or(id.as_str());
+        trees.entry(root).or_default().push(ancestry);
+    }
+    let active_since = now_ms.saturating_sub(ACTIVE_SESSION_WINDOW_MS);
+    let mut summary = SessionSummaryTotals::default();
+    let mut candidates = trees
+        .iter()
+        .map(|(&root, ancestries)| {
+            let (totals, has_own_requests) = tree_totals(ancestries, &tallies);
+            summary.sessions += 1;
+            summary.subagent_threads += ancestries.len() - usize::from(has_own_requests);
+            summary.active += usize::from(totals.last_active_at_ms >= active_since);
+            summary.requests = summary.requests.saturating_add(totals.requests);
+            summary.total_tokens = summary.total_tokens.saturating_add(totals.total_tokens);
+            summary.estimated_cost += totals.estimated_cost;
+            summary.priced_requests = summary.priced_requests.saturating_add(totals.priced_requests);
+            SessionCandidate { root, ancestries, totals }
+        })
+        .collect::<Vec<_>>();
+    let total = candidates.len();
+    let last_offset = total.div_ceil(limit).saturating_sub(1).saturating_mul(limit);
+    let actual_offset = offset.min(last_offset);
+    let keep = actual_offset.saturating_add(limit).min(total);
+    if keep < candidates.len() {
+        candidates.select_nth_unstable_by(keep.saturating_sub(1), |left, right| compare_candidates(left, right, order));
+        candidates.truncate(keep);
+    }
+    candidates.sort_by(|left, right| compare_candidates(left, right, order));
+    let sessions = candidates
+        .into_iter()
+        .skip(actual_offset)
+        .take(limit)
+        .map(|candidate| build_usage_session(candidate.root, candidate.ancestries, &tallies, &parent_of, &assignments, active_since))
+        .collect();
+    Ok(SessionPage { selected: SelectedSessions { sessions, facets: None }, total, summary })
+}
+
+struct SessionCandidate<'a> {
+    root: &'a str,
+    ancestries: &'a [Vec<&'a str>],
+    totals: UsageSessionTotals,
+}
+
+fn tree_totals(ancestries: &[Vec<&str>], tallies: &HashMap<String, UsageSessionTally>) -> (UsageSessionTotals, bool) {
+    let root = ancestries.iter().find_map(|ancestry| ancestry.last().copied());
+    let mut totals = UsageSessionTotals::default();
+    let mut has_own_requests = false;
+    for ancestry in ancestries {
+        if ancestry.first().copied() == root {
+            has_own_requests = true;
+        }
+        if let Some(id) = ancestry.first() {
+            if let Some(tally) = tallies.get(*id) {
+                totals.add(&tally.totals);
+            }
+        }
+    }
+    (totals, has_own_requests)
+}
+
+fn compare_candidates(left: &SessionCandidate<'_>, right: &SessionCandidate<'_>, order: SessionOrder) -> std::cmp::Ordering {
+    let recent = || right.totals.last_active_at_ms.cmp(&left.totals.last_active_at_ms).then_with(|| left.root.cmp(right.root));
+    match order {
+        SessionOrder::Recent => recent(),
+        SessionOrder::Cost => right.totals.estimated_cost.total_cmp(&left.totals.estimated_cost).then_with(recent),
+        SessionOrder::Tokens => right.totals.total_tokens.cmp(&left.totals.total_tokens).then_with(recent),
+        SessionOrder::Requests => right.totals.requests.cmp(&left.totals.requests).then_with(recent),
+        SessionOrder::CostThenOldest => right.totals.estimated_cost.total_cmp(&left.totals.estimated_cost).then(left.totals.started_at_ms.cmp(&right.totals.started_at_ms)).then(left.root.cmp(right.root)),
+    }
+}
+
+fn summarize_sessions(sessions: &[UsageSession], now_ms: i64) -> SessionSummaryTotals {
+    let active_since = now_ms.saturating_sub(ACTIVE_SESSION_WINDOW_MS);
+    let mut summary = SessionSummaryTotals { sessions: sessions.len(), ..SessionSummaryTotals::default() };
+    for session in sessions {
+        summary.subagent_threads += session.subagents;
+        summary.active += usize::from(session.active || session.root.totals.last_active_at_ms >= active_since);
+        summary.requests = summary.requests.saturating_add(session.root.totals.requests);
+        summary.total_tokens = summary.total_tokens.saturating_add(session.root.totals.total_tokens);
+        summary.estimated_cost += session.root.totals.estimated_cost;
+        summary.priced_requests = summary.priced_requests.saturating_add(session.root.totals.priced_requests);
+    }
+    summary
 }
 
 /// These sessions over all their requests, each with the subagent threads descended from it, the most recently

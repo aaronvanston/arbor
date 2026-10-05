@@ -179,6 +179,31 @@ fn time<T>(label: &str, mut read: impl FnMut() -> Result<T, String>) {
     println!("{label:<44} {:>9.1} ms   (slowest {:>9.1} ms)", samples[0], samples[2]);
 }
 
+fn time_bytes<T: serde::Serialize>(label: &str, mut read: impl FnMut() -> Result<T, String>) {
+    let mut samples = Vec::with_capacity(3);
+    let mut bytes = 0;
+    for _ in 0..3 {
+        let started = Instant::now();
+        let value = read().unwrap();
+        bytes = serde_json::to_vec(&value).unwrap().len();
+        samples.push(started.elapsed().as_secs_f64() * 1_000.0);
+    }
+    samples.sort_by(f64::total_cmp);
+    println!("{label:<44} {:>9.1} ms   {:>9} bytes (slowest {:>9.1} ms)", samples[0], bytes, samples[2]);
+}
+
+fn time_count<T>(label: &str, mut read: impl FnMut() -> Result<Vec<T>, String>) {
+    let mut samples = Vec::with_capacity(3);
+    let mut count = 0;
+    for _ in 0..3 {
+        let started = Instant::now();
+        count = read().unwrap().len();
+        samples.push(started.elapsed().as_secs_f64() * 1_000.0);
+    }
+    samples.sort_by(f64::total_cmp);
+    println!("{label:<44} {:>9.1} ms   {:>9} groups (slowest {:>9.1} ms)", samples[0], count, samples[2]);
+}
+
 fn since(now_ms: i64, back_ms: i64) -> Option<String> {
     DateTime::<chrono::Utc>::from_timestamp_millis(now_ms - back_ms).map(|start| start.to_rfc3339())
 }
@@ -249,6 +274,7 @@ fn page_reads_at_volume() {
     println!("usage.db: {} (mapped up to {} MB)", root.join(USAGE_DATABASE_FILE).display(), mapped >> 20);
     time("open usage.db", || open().map(|_| ()));
     time("overview, all time", || load_usage_overview(&open()?, &all));
+    time_count("cost groups, all time", || load_usage_cost_groups(&open()?, &build_usage_filter(&all)));
     time("overview, 7 days", || load_usage_overview(&open()?, &week));
     time("overview, 24 hours", || load_usage_overview(&open()?, &day));
     time("overview, 7 days, one model", || load_usage_overview(&open()?, &opus_week));
@@ -274,6 +300,10 @@ fn page_reads_at_volume() {
     });
     time("pricing, 7 days", || load_usage_pricing(&open()?, &week));
     time("sessions, all time", || load_usage_sessions(&open()?, &all, &config, now_ms));
+    for page in [1, 50] {
+        let query = UsageQuery { page: Some(page), page_size: Some(20), ..all.clone() };
+        time_bytes(&format!("sessions page {page}, all time"), || load_usage_sessions(&open()?, &query, &config, now_ms));
+    }
     time("sessions, 7 days", || load_usage_sessions(&open()?, &week, &config, now_ms));
     time("sessions, 7 days, one machine", || load_usage_sessions(&open()?, &studio_week, &config, now_ms));
     time("sessions, 7 days, with facets", || {
