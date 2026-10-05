@@ -267,7 +267,7 @@ describe('an item’s own page', () => {
   it('says for each machine what the repo wants there, its own value, and which homes have it', () => {
     const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on', { ci01: 'off' })])), 'review');
     expect(row.places).toEqual({
-      'casey-mbp': { own: null, wanted: true, homes: ['~/.claude'] },
+      'cam-mbp': { own: null, wanted: true, homes: ['~/.claude'] },
       'ci-01': { own: 'off', wanted: false, homes: ['~/.claude'] },
       'cedar-02': { own: null, wanted: true, homes: [] },
     });
@@ -303,7 +303,7 @@ describe('an item’s own page', () => {
     const server = (removed: boolean): ServerView => ({ name: 'linear', claude: removed ? null : definition, codex: null, homes: null, agents: [], own: [], off: [], allOff: false, problems: [] });
     const answer = (removed: boolean): McpRegistry => ({
       commit: 'c'.repeat(40), found: true, uncommitted: false, problems: [], servers: [server(removed)],
-      cells: [{ machine: 'casey-mbp', home: '~/.claude', name: 'linear', state: removed ? 'extra' : 'same', own: false, blocked: null }],
+      cells: [{ machine: 'cam-mbp', home: '~/.claude', name: 'linear', state: removed ? 'extra' : 'same', own: false, blocked: null }],
     });
     mockCommands({
       set_mcp_wanted: ({ wanted }) => { calls.push(`set ${wanted}`); return answer(true); },
@@ -313,9 +313,9 @@ describe('an item’s own page', () => {
         return changes.map((change) => ({ ...change, outcome: 'removed' as const, message: '' }));
       },
     });
-    const machines = [machine('casey-mbp', [item('mcp', 'linear', { value: 'http', sum: 'x1' })])];
+    const machines = [machine('cam-mbp', [item('mcp', 'linear', { value: 'http', sum: 'x1' })])];
     const run = await removeEverywhere('/repo', machines, { kind: 'mcp', name: 'linear' });
-    expect(run.changed).toEqual(['casey-mbp']);
+    expect(run.changed).toEqual(['cam-mbp']);
     await run.undo();
     expect(calls).toEqual(['set removed', 'apply remove', 'put back']);
   });
