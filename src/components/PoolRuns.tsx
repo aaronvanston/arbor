@@ -18,6 +18,7 @@ import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { toast } from './ui/toast';
 import { SettingsBlock } from './layout/settings';
+import { useConfirmation } from './ConfirmationDialog';
 import { HARNESS_LABEL } from '../services/harnesses';
 import { useFleetHealth } from '../services/fleetHealth';
 import { SETUP_PROJECTS_UPDATED_EVENT, getProjects, scanProjects } from '../services/setupProjects';
@@ -104,7 +105,18 @@ export function RunDetails({ run, nowMs }: { run: HarnessRun; nowMs: number }) {
 export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: HarnessRun[]; nowMs?: number; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
   const reason = useReason();
+  const { askConfirmation } = useConfirmation();
   const [busy, setBusy] = useState<string | null>(null);
+  // Arbor never keeps a run's prompt, so one taken out of the queue can't be put back: it's asked first.
+  const cancel = async (run: HarnessRun) => {
+    const confirmed = await askConfirmation({
+      title: t('runs.cancelConfirm.title', { title: run.title }),
+      message: t('runs.cancelConfirm.message'),
+      confirmText: t('runs.cancelConfirm.confirm'),
+      variant: 'danger',
+    });
+    if (confirmed) await act(run.id, () => cancelRun(run.id), t('runs.canceled', { title: run.title }));
+  };
   const act = async (id: string, action: () => Promise<unknown>, done?: string) => {
     setBusy(id);
     try {
@@ -151,7 +163,7 @@ export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: 
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               {run.state === 'queued' ? (
-                <Button variant="outline" size="xs" disabled={busy === run.id} onClick={() => void act(run.id, () => cancelRun(run.id), t('runs.canceled', { title: run.title }))}>
+                <Button variant="outline" size="xs" disabled={busy === run.id} onClick={() => void cancel(run)}>
                   <X />{t('runs.cancel')}
                 </Button>
               ) : null}
