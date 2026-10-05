@@ -230,11 +230,21 @@ export async function refreshAccountQuotas(targets: AuthFile[]): Promise<void> {
   }
 }
 
-/** Loads the file list once and fetches limits for any account that has never been queried. */
-export async function ensureAccountsLoaded(): Promise<void> {
-  const files = state.loaded && !state.error ? state.files : await loadAccountFiles();
-  const snapshot = getQuotaCacheSnapshot();
-  await refreshAccountQuotas(files.filter((file) => (snapshot[quotaKey(file)]?.status ?? 'idle') === 'idle'));
+let ensuring: Promise<void> | null = null;
+
+/**
+ * Loads the file list once and fetches limits for any account that has never been queried. The sidebar, Home and the
+ * monitors all ask as the core becomes ready, in the same tick, so they share one load rather than each listing.
+ */
+export function ensureAccountsLoaded(): Promise<void> {
+  ensuring ??= (async () => {
+    const files = state.loaded && !state.error ? state.files : await loadAccountFiles();
+    const snapshot = getQuotaCacheSnapshot();
+    await refreshAccountQuotas(files.filter((file) => (snapshot[quotaKey(file)]?.status ?? 'idle') === 'idle'));
+  })().finally(() => {
+    ensuring = null;
+  });
+  return ensuring;
 }
 
 export const setAccountsError = (error: string) => emit({ error });
