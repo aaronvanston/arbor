@@ -740,6 +740,9 @@ pub(crate) struct HarnessHome {
     items: Vec<SetupItem>,
     /// Where its skills folder leads, when that's a link: every skill in it is then that folder's.
     skills_link: Option<String>,
+    /// Files it couldn't read, kept only so change alerts can tell an unreadable file from everything in it going.
+    #[serde(skip)]
+    problems: Vec<String>,
 }
 
 /// A Claude Code or Codex on the machine's PATH. The first of each agent is the one that runs.
@@ -798,8 +801,7 @@ pub(crate) struct MachineSetup {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SetupChange {
-    agent: HomeAgent,
-    /// The home it's in, with the machine's home as ~.
+    /// The home it's in, any agent's, with the machine's home as ~.
     home: String,
     kind: ItemKind,
     name: String,
@@ -827,26 +829,42 @@ pub(crate) const SETUP_CHANGED_EVENT: &str = "setup-changed";
 /// own, so only a plugin coming or going counts.
 const WATCHED: [ItemKind; 4] = [ItemKind::Hook, ItemKind::Mcp, ItemKind::Marketplace, ItemKind::Plugin];
 
+/// One home as change alerts see it: Claude Code's, Codex's, the shared one or another harness's.
+struct WatchedHome<'a> {
+    path: &'a str,
+    problems: &'a [String],
+    items: &'a [SetupItem],
+}
+
+/// Every home a scan found, each path once.
+fn watched_homes<'a>(homes: &'a [SetupHome], harness_homes: &'a [HarnessHome]) -> Vec<WatchedHome<'a>> {
+    homes
+        .iter()
+        .map(|home| WatchedHome { path: &home.path, problems: &home.problems, items: &home.items })
+        .chain(harness_homes.iter().map(|home| WatchedHome { path: &home.path, problems: &home.problems, items: &home.items }))
+        .collect()
+}
+
 /// The watched things that came, went or changed from one scan's homes to the next. A home whose
 /// unreadable files differ between the two is left out, since a file that couldn't be read looks
 /// like everything in it going away.
-fn watched_changes(before: &[SetupHome], after: &[SetupHome]) -> Vec<SetupChange> {
-    let watched = |home: &SetupHome| -> BTreeMap<(ItemKind, String), Option<String>> {
+fn watched_changes(before: &[WatchedHome], after: &[WatchedHome]) -> Vec<SetupChange> {
+    let watched = |home: &WatchedHome| -> BTreeMap<(ItemKind, String), Option<String>> {
         home.items.iter().filter(|item| WATCHED.contains(&item.kind)).map(|item| ((item.kind, item.name.clone()), item.sum.clone())).collect()
     };
     let none = BTreeMap::new();
     let mut changes = Vec::new();
-    let homes: BTreeSet<(HomeAgent, &str)> = before.iter().chain(after).map(|home| (home.agent, home.path.as_str())).collect();
-    for (agent, path) in homes {
-        let old = before.iter().find(|home| home.agent == agent && home.path == path);
-        let new = after.iter().find(|home| home.agent == agent && home.path == path);
-        if old.map_or(&[][..], |home| home.problems.as_slice()) != new.map_or(&[][..], |home| home.problems.as_slice()) {
+    let paths: BTreeSet<&str> = before.iter().chain(after).map(|home| home.path).collect();
+    for path in paths {
+        let old = before.iter().find(|home| home.path == path);
+        let new = after.iter().find(|home| home.path == path);
+        if old.map_or(&[][..], |home| home.problems) != new.map_or(&[][..], |home| home.problems) {
             continue;
         }
         let (old_items, new_items) = (old.map(watched), new.map(watched));
         let (old_items, new_items) = (old_items.as_ref().unwrap_or(&none), new_items.as_ref().unwrap_or(&none));
         let mut change = |(kind, name): &(ItemKind, String), change: ChangeKind| {
-            changes.push(SetupChange { agent, home: path.to_string(), kind: *kind, name: name.clone(), change });
+            changes.push(SetupChange { home: path.to_string(), kind: *kind, name: name.clone(), change });
         };
         for (key, sum) in new_items {
             match old_items.get(key) {
@@ -1651,7 +1669,13 @@ impl Scan {
     fn finish_home(&mut self, parts: HomeParts, harness: Option<Harness>, home: &str, salt: &[u8]) {
         let done = parts.finish(home, salt);
         match harness {
-            Some(harness) => self.harness_homes.push(HarnessHome { harness, path: done.path, items: done.items, skills_link: done.skills_link }),
+            Some(harness) => self.harness_homes.push(HarnessHome {
+                harness,
+                path: done.path,
+                items: done.items,
+                skills_link: done.skills_link,
+                problems: done.problems,
+            }),
             None => self.homes.push(done),
         }
     }
@@ -1888,7 +1912,12 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
         Ok(scan) => {
             match setup.arbor_wrote_ms {
                 // The first good scan has nothing to compare with.
-                None if !setup.home_dir.is_empty() => recorded.changes = watched_changes(&setup.homes, &scan.homes),
+                None if !setup.home_dir.is_empty() => {
+                    recorded.changes = watched_changes(
+                        &watched_homes(&setup.homes, &setup.harness_homes),
+                        &watched_homes(&scan.homes, &scan.harness_homes),
+                    )
+                }
                 None => {}
                 Some(wrote_ms) if wrote_ms < started_ms => setup.arbor_wrote_ms = None,
                 Some(_) => recorded.again = true,
@@ -2179,7 +2208,7 @@ impl MachineSetup {
 
     /// The same, with an empty home of another harness at `path`.
     pub(super) fn with_harness_home(mut self, harness: Harness, path: &str) -> Self {
-        self.harness_homes.push(HarnessHome { harness, path: path.to_string(), items: Vec::new(), skills_link: None });
+        self.harness_homes.push(HarnessHome { harness, path: path.to_string(), items: Vec::new(), skills_link: None, problems: Vec::new() });
         self
     }
 
@@ -2954,7 +2983,10 @@ notifications = true
     }
 
     fn changes(before: &[SetupHome], after: &[SetupHome]) -> Vec<(ItemKind, String, ChangeKind)> {
-        watched_changes(before, after).into_iter().map(|change| (change.kind, change.name, change.change)).collect()
+        watched_changes(&watched_homes(before, &[]), &watched_homes(after, &[]))
+            .into_iter()
+            .map(|change| (change.kind, change.name, change.change))
+            .collect()
     }
 
     #[test]
@@ -3007,6 +3039,28 @@ notifications = true
         let unreadable = vec![claude_home(vec![], &["~/.claude.json isn't JSON Arbor can read"])];
         assert!(changes(&before, &unreadable).is_empty());
         assert!(changes(&unreadable, &before).is_empty());
+    }
+
+    #[test]
+    fn other_agents_servers_and_hooks_are_watched_too() {
+        let pi = |items: Vec<SetupItem>, problems: &[&str]| HarnessHome {
+            harness: Harness::Pi,
+            path: "~/.pi/agent".into(),
+            items,
+            skills_link: None,
+            problems: problems.iter().map(|problem| problem.to_string()).collect(),
+        };
+        let homes = [claude_home(vec![watched(ItemKind::Mcp, "github", "m1")], &[])];
+        let before = [pi(vec![watched(ItemKind::Mcp, "linear", "l1")], &[])];
+        let after = [pi(vec![watched(ItemKind::Mcp, "linear", "l2"), watched(ItemKind::Hook, "PreToolUse", "h1")], &[])];
+        let found = watched_changes(&watched_homes(&homes, &before), &watched_homes(&homes, &after));
+        assert_eq!(
+            found.iter().map(|change| (change.home.as_str(), change.kind, change.name.as_str(), change.change)).collect::<Vec<_>>(),
+            [("~/.pi/agent", ItemKind::Hook, "PreToolUse", ChangeKind::Added), ("~/.pi/agent", ItemKind::Mcp, "linear", ChangeKind::Changed)]
+        );
+        // Its MCP file going unreadable isn't its servers going away.
+        let unreadable = [pi(vec![], &["~/.pi/agent/mcp.json isn't JSON Arbor can read"])];
+        assert!(watched_changes(&watched_homes(&homes, &before), &watched_homes(&homes, &unreadable)).is_empty());
     }
 
     #[test]

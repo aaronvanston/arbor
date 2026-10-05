@@ -6,7 +6,7 @@ import { phoneAlertFor } from '../src/services/notify';
 import { setupChangeNotification, type SetupChange } from '../src/services/setupChanges';
 
 const t = (key: MessageKey, variables?: MessageVariables) => translate(key, variables);
-const change = (fields: Partial<SetupChange> & Pick<SetupChange, 'kind' | 'name' | 'change'>): SetupChange => ({ agent: 'claude', home: '~/.claude', ...fields });
+const change = (fields: Partial<SetupChange> & Pick<SetupChange, 'kind' | 'name' | 'change'>): SetupChange => ({ home: '~/.claude', ...fields });
 
 describe('setupChangeNotification', () => {
   it('names what changed on the Mac, and only counts it by kind for the phone', () => {
@@ -28,7 +28,7 @@ describe('setupChangeNotification', () => {
         change({ kind: 'hook', name: 'PreToolUse', change: 'added' }),
         change({ kind: 'plugin', name: 'deploy@acme', change: 'added' }),
         change({ kind: 'marketplace', name: 'acme', change: 'changed' }),
-        change({ kind: 'mcp', name: 'sentry', change: 'removed', agent: 'codex', home: '~/.codex' }),
+        change({ kind: 'mcp', name: 'sentry', change: 'removed', home: '~/.codex' }),
         change({ kind: 'mcp', name: 'github', change: 'added' }),
       ],
     }, t);

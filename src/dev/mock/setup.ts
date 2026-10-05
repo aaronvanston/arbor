@@ -591,18 +591,20 @@ const scannedSetupItem = (machine: string, path: string) => {
 };
 
 // With `?setupchange=1`, a scan finds ci-01's linear MCP server changed five seconds after the page loads, as if
-// someone edited it there; `many` adds a new hook, a plugin and a marketplace, and takes a server away.
+// someone edited it there; `many` adds a new hook, a plugin and a marketplace, takes a server away and adds one to
+// Pi's home.
 const setupChangeScenario = params.get('setupchange');
 if (setupChangeScenario) {
   window.setTimeout(() => {
     const changes = [
-      { agent: 'claude', home: '~/.claude', kind: 'mcp', name: 'linear', change: 'changed' },
+      { home: '~/.claude', kind: 'mcp', name: 'linear', change: 'changed' },
       ...(setupChangeScenario === 'many'
         ? [
-            { agent: 'claude', home: '~/.claude', kind: 'hook', name: 'PreToolUse', change: 'added' },
-            { agent: 'claude', home: '~/.claude', kind: 'plugin', name: 'deploy@acme-tools', change: 'added' },
-            { agent: 'claude', home: '~/.claude', kind: 'marketplace', name: 'acme-tools', change: 'added' },
-            { agent: 'codex', home: '~/.codex', kind: 'mcp', name: 'sentry', change: 'removed' },
+            { home: '~/.claude', kind: 'hook', name: 'PreToolUse', change: 'added' },
+            { home: '~/.claude', kind: 'plugin', name: 'deploy@acme-tools', change: 'added' },
+            { home: '~/.claude', kind: 'marketplace', name: 'acme-tools', change: 'added' },
+            { home: '~/.codex', kind: 'mcp', name: 'sentry', change: 'removed' },
+            { home: '~/.pi/agent', kind: 'mcp', name: 'browser', change: 'added' },
           ]
         : []),
     ];

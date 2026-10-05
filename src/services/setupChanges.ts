@@ -1,6 +1,6 @@
 import type { MessageKey, MessageVariables } from '../i18n/resources';
 import type { SystemNotification } from './notify';
-import type { HomeAgent, SetupItem } from '../native/types';
+import type { SetupItem } from '../native/types';
 
 /**
  * Change alerts (see `watched_changes` in setup.rs): a hook, MCP server, plugin marketplace or plugin that came, went or
@@ -12,7 +12,7 @@ export type WatchedKind = Extract<SetupItem['kind'], 'hook' | 'mcp' | 'marketpla
 export type ChangeKind = 'added' | 'removed' | 'changed';
 
 /** Mirrors `setup::SetupChange`. */
-export type SetupChange = { agent: HomeAgent; home: string; kind: WatchedKind; name: string; change: ChangeKind };
+export type SetupChange = { home: string; kind: WatchedKind; name: string; change: ChangeKind };
 /** Mirrors `setup::SetupChanged`, the `setup-changed` event's payload. */
 export type SetupChanged = { machine: string; changes: SetupChange[] };
 
