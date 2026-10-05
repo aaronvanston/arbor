@@ -306,7 +306,6 @@ export const en = {
   'addAccount.refreshed': 'Signed in again',
   'addAccount.another': 'Sign in another',
   'addAccount.failed': 'Sign-in failed: {error}',
-  'accounts.profile.edit': 'Edit profile',
   'accounts.reorder': 'Reorder {name}',
   'accounts.reorder.button': 'Reorder',
   'accounts.reorder.done': 'Done',

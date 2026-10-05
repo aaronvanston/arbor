@@ -535,7 +535,14 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                   <PausedBlock items={paused} columns={labels.filter((label) => !hidden.includes(label))} reserves={reserves} failures={reserveFailures} flash={flash} />
                 ) : null}
                 {off.length && reordering !== provider ? (
-                  <OffBlock items={off} columns={labels.filter((label) => !hidden.includes(label))} availabilityOf={availabilityOf} commands={commands} flash={flash} />
+                  <OffBlock
+                    items={off}
+                    columns={labels.filter((label) => !hidden.includes(label))}
+                    availabilityOf={availabilityOf}
+                    commands={commands}
+                    flash={flash}
+                    onEdit={(item) => setProfileTarget({ key: item.key, fileName: fileName(item.file), profile: profiles[item.key] })}
+                  />
                 ) : null}
               </SettingsSection>
             ))}
@@ -618,13 +625,15 @@ function PausedBlock({ items, columns, reserves, failures, flash }: {
 }
 
 /** Accounts turned off by hand: Enable up front, and the rest of what each takes in its ⋯ menu. */
-function OffBlock({ items, columns, availabilityOf, commands, flash }: {
+function OffBlock({ items, columns, availabilityOf, commands, flash, onEdit }: {
   items: Off[];
   /** The provider's windows being shown, so the grayed-out limits line up with the accounts in use. */
   columns: string[];
   availabilityOf: (file: AuthFile) => AuthFileAvailability;
   commands: AuthFileCommands;
   flash: string | null;
+  /** Opens the account's name and avatar, which a turned-off account keeps too. */
+  onEdit: (item: Off) => void;
 }) {
   const { t } = useI18n();
   const now = useQuotaClock();
@@ -654,6 +663,11 @@ function OffBlock({ items, columns, availabilityOf, commands, flash }: {
                     <MoreHorizontal />
                   </MenuTrigger>
                   <MenuPopup className="w-64">
+                    <MenuItem onClick={() => onEdit(item)}>
+                      <Pencil />
+                      {t('signIns.menu.editProfile')}
+                    </MenuItem>
+                    <MenuSeparator />
                     <AuthFileMenuItems file={item.file} availability={availability} commands={commands} />
                   </MenuPopup>
                 </Menu>
@@ -1099,7 +1113,7 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
               ) : null}
               <MenuItem onClick={onEdit}>
                 <Pencil />
-                {t('accounts.profile.edit')}
+                {t('signIns.menu.editProfile')}
               </MenuItem>
               <MenuSeparator />
               <AuthFileMenuItems file={account.file} availability={availability} commands={commands} />
