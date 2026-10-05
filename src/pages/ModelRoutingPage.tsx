@@ -16,6 +16,7 @@ import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { useI18n } from '../i18n';
 import { useUnsavedChanges } from '../services/unsavedChanges';
+import { plainError } from '../services/plainError';
 import { cn } from '../lib/utils';
 import { thinkingAliasSourceKindLabel } from '../services/modelAliases';
 import type { ModelOverrideEntry, ThinkingAliasSource } from '../native/types';
@@ -95,7 +96,7 @@ export function ModelRoutingPage() {
       setSources(nextSources);
       setSourceId((current) => (nextSources.some((source) => source.id === current) ? current : ''));
     } catch (requestError) {
-      setError(String(requestError));
+      setError(plainError(requestError, t));
     } finally {
       setLoading(false);
     }
@@ -144,7 +145,7 @@ export function ModelRoutingPage() {
       setNotice(t('overrides.created', { requested: nextRequested, upstream: source.model }));
       setRequested('');
     } catch (requestError) {
-      setError(String(requestError));
+      setError(plainError(requestError, t));
     } finally {
       setBusy('');
     }
@@ -164,7 +165,7 @@ export function ModelRoutingPage() {
       setOverrides(await invokeCommand('delete_model_override', { requestedModel: entry.requestedModel, oauthChannel: entry.oauthChannel }));
       setNotice(t('overrides.deleted', { requested: entry.requestedModel }));
     } catch (requestError) {
-      setError(String(requestError));
+      setError(plainError(requestError, t));
     } finally {
       setBusy('');
     }
