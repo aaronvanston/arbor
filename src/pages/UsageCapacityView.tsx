@@ -298,10 +298,15 @@ function CostCell({ account, money }: { account: CapacityAccount; money: (amount
   const { t } = useI18n();
   const [draft, setDraft] = useState<string | null>(null);
   const label = t('usage.capacity.cost.edit', { name: account.name });
+  // The editor opens on the cost shown, the plan's list price included.
+  const shown = account.monthlyCost === null ? '' : String(account.monthlyCost);
   if (draft !== null) {
-    const commit = () => {
-      const text = draft.trim();
-      setPlanCost(account.key, text === '' ? null : Number(text));
+    // The field's own text decides an empty one: the field reports a cleared number only once it's done editing,
+    // which can be after Enter. Emptied, the account goes back to its list price, or to no cost.
+    const commit = (input: HTMLInputElement) => {
+      const text = input.value.trim() === '' ? '' : draft.trim();
+      // A list price left as it was stays the list price rather than becoming a cost set by hand.
+      if (text !== shown || account.costSet) setPlanCost(account.key, text === '' ? null : Number(text));
       setDraft(null);
     };
     return (
@@ -316,9 +321,9 @@ function CostCell({ account, money }: { account: CapacityAccount; money: (amount
         wrapperClassName="w-24"
         startAddon="$"
         onValueChange={(next) => setDraft(draftFromNumber(next))}
-        onBlur={commit}
+        onBlur={(event) => commit(event.currentTarget)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') commit();
+          if (event.key === 'Enter') commit(event.currentTarget);
           if (event.key === 'Escape') setDraft(null);
         }}
       />
@@ -338,7 +343,7 @@ function CostCell({ account, money }: { account: CapacityAccount; money: (amount
             size="xs"
             className={cn('-ms-2 tabular-nums', account.monthlyCost === null && 'font-sans text-warning-foreground')}
             aria-label={label}
-            onClick={() => setDraft(account.costSet && account.monthlyCost !== null ? String(account.monthlyCost) : '')}
+            onClick={() => setDraft(shown)}
           />
         }
       >
