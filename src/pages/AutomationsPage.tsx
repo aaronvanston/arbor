@@ -49,6 +49,7 @@ import {
 } from '../services/automations';
 import { invokeCommand } from '../native/commands';
 import { useQuotaClock } from '../services/quotaTime';
+import { plainError } from '../services/plainError';
 import { AutomationPage } from './AutomationPage';
 
 /**
@@ -144,7 +145,7 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
         {failedScans.map((scan) => (
           <p key={scan.machine} className="flex items-center gap-1.5 text-xs text-warning-foreground">
             <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
-            {t('automations.scanFailed', { machine: scan.machine, error: scan.error ?? '' })}
+            {t('automations.scanFailed', { machine: scan.machine, error: plainError(scan.error ?? '', t) })}
           </p>
         ))}
         {error && !list ? <p className="text-sm text-error-foreground">{error}</p> : null}

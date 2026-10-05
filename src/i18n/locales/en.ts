@@ -5721,7 +5721,7 @@ export const en = {
   'tree.pools.keywords': 'Pools load balancing room full queue spill weights',
   'automations.new': 'New automation',
   'automations.scan': 'Look for automations again',
-  'automations.scanFailed': 'Couldn’t look on {machine}: {error}',
+  'automations.scanFailed': 'Couldn’t look for automations on {machine}. {error}',
   'automations.search': 'Search automations',
   'automations.whileOpen': 'Automations set to run on the machine run there whether Arbor is open or not. The rest run while Arbor is open on this Mac; one that’s due while it’s closed starts when it opens, if that’s within its grace window.',
   'automations.empty.title': 'No automations yet',

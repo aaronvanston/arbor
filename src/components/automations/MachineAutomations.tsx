@@ -2,18 +2,20 @@ import type { ReactNode } from 'react';
 import { useI18n } from '../../i18n';
 import { formatWhen } from '../../lib/format';
 import { automationsView, automationView, type AppView } from '../../navigation';
-import { filterAutomations, RUN_STATUS_LABEL, scheduleWords, SOURCE_LABEL, useAutomations } from '../../services/automations';
+import { filterAutomations, RUN_STATUS_LABEL, scanAutomations, scheduleWords, SOURCE_LABEL, useAutomations } from '../../services/automations';
+import { errorWords, plainError } from '../../services/plainError';
 import { HarnessMark } from '../identity/Harness';
 import { SettingsBlock, SettingsSection } from '../layout/settings';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { ArrowUpRight, TimeSchedule } from '../ui/icons';
+import { ArrowUpRight, TimeSchedule, TriangleAlert } from '../ui/icons';
 
 /** A machine's page: what's scheduled to run there, Arbor's own first, each opening its own page. */
 export function MachineAutomations({ machine, small, onNavigate }: { machine: string; small: ReactNode; onNavigate: (view: AppView) => void }) {
   const { t, tRich } = useI18n();
   const { list } = useAutomations();
   if (!list) return null;
+  const scan = list.scans.find((entry) => entry.machine === machine);
   const here = filterAutomations(list.automations.filter((item) => item.target.kind === 'machine'), { search: '', source: 'all', machine });
   return (
     <SettingsSection
@@ -58,9 +60,19 @@ export function MachineAutomations({ machine, small, onNavigate }: { machine: st
             </button>
           ))}
         </div>
-      ) : (
+      ) : scan?.error ? null : (
         <SettingsBlock className="text-xs text-muted-foreground">{tRich('automations.machine.none', { machine: small })}</SettingsBlock>
       )}
+      {/* A failed look means the other apps' automations here aren't known, so "nothing scheduled" would be a guess. */}
+      {scan?.error ? (
+        <SettingsBlock className="flex items-start justify-between gap-3">
+          <p className="flex items-start gap-1.5 text-xs text-warning-foreground" title={errorWords(scan.error)}>
+            <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+            {t('automations.scanFailed', { machine, error: plainError(scan.error, t) })}
+          </p>
+          <Button variant="outline" size="xs" disabled={scan.scanning} onClick={() => void scanAutomations(machine)}>{t('common.tryAgain')}</Button>
+        </SettingsBlock>
+      ) : null}
     </SettingsSection>
   );
 }
