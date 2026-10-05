@@ -91,16 +91,36 @@ export function skillCopies(machines: SetupMachine[], name: string, first: strin
   for (const machine of ordered) {
     const row = skillsView(machine).rows.find((entry) => entry.name === name);
     if (!row) continue;
-    const found = [
-      ...(row.storePlace === 'store' && row.store ? [{ home: STORE, agent: null, item: row.store }] : []),
-      ...row.cells.filter((cell) => COPY_PLACES.has(cell.place)).map((cell) => ({ home: cell.home.path, agent: cell.home.agent, item: cell.item })),
-    ];
-    for (const { home, agent, item } of found) {
-      if (!item?.path || !item.sum || item.skill?.hasDoc === false || copies.some((copy) => copy.sum === item.sum)) continue;
-      copies.push({ name, machine: machine.machine, home, agent, path: item.path, sum: item.sum });
+    for (const copy of rowCopies(machine.machine, row)) {
+      if (!copies.some((other) => other.sum === copy.sum)) copies.push(copy);
     }
   }
   return copies;
+}
+
+/** One machine's copies of a skill the repo could take. */
+function rowCopies(machine: string, row: SkillRow): SkillCopy[] {
+  const found = [
+    ...(row.storePlace === 'store' && row.store ? [{ home: STORE, agent: null, item: row.store }] : []),
+    ...row.cells.filter((cell) => COPY_PLACES.has(cell.place)).map((cell) => ({ home: cell.home.path, agent: cell.home.agent, item: cell.item })),
+  ];
+  return found.flatMap(({ home, agent, item }) => !item?.path || !item.sum || item.skill?.hasDoc === false
+    ? []
+    : [{ name: row.name, machine, home, agent, path: item.path, sum: item.sum }]);
+}
+
+/**
+ * The skills some machine has a copy of the repo could take, read once for a whole table: a skill that's only ever a
+ * link or a folder without a SKILL.md can't be added to the repo.
+ */
+export function takeableSkills(machines: SetupMachine[]): Set<string> {
+  const names = new Set<string>();
+  for (const machine of machines.filter(scanned)) {
+    for (const row of skillsView(machine).rows) {
+      if (!names.has(row.name) && rowCopies(machine.machine, row).length) names.add(row.name);
+    }
+  }
+  return names;
 }
 
 const planned = (row: SkillRow, cell: SkillCell, action: SkillAction): PlannedSkill => ({ row, cell, action });

@@ -2135,6 +2135,7 @@ export const en = {
   'setup.skills.repo.offHere': 'Kept off here',
   'setup.skills.repo.ownHere': 'Own copy here',
   'setup.skills.repo.add': 'Add to repo',
+  'setup.skills.repo.noCopy': 'No machine has a copy the repo can take, only links or folders without a SKILL.md.',
   'setup.skills.repo.putOn': 'Put on every machine',
   'setup.skills.repo.removeLeft': 'Take it off every machine',
   'setup.skills.repo.noRepo': 'Choose a setup repo on Sync › Repo first.',

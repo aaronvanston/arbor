@@ -59,6 +59,7 @@ import {
   runSkillPlan,
   runSucceeded,
   startActivity,
+  takeableSkills,
   tickRows,
   touchedSkills,
   undoSkillRun,
@@ -400,6 +401,8 @@ export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
     }
   };
 
+  // Read once for the table, rather than per row.
+  const takeable = useMemo(() => takeableSkills(machines), [machines]);
   const onRepo = (skill: string, action: RepoAction) => setRequest({ kind: action, names: [skill], first: name });
 
   const needle = query.trim().toLowerCase();
@@ -506,6 +509,7 @@ export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
                 homeLabel={homeLabel}
                 onPick={(row, cell, action) => void pick(machine, view, row, cell, action)}
                 onRepo={onRepo}
+                canTake={(skill) => takeable.has(skill)}
                 onCompare={(row, cell) => {
                   if (!row.store || !cell.item) return;
                   onCompare({
@@ -661,6 +665,7 @@ function FleetSkillsCard({ machines, repo, selected, onTick, onTickAll, activity
   const [query, setQuery] = useState('');
   const removed = useMemo(() => new Set(repo?.removedSkills ?? []), [repo]);
   const fleet = useMemo(() => fleetSkills(machines), [machines]);
+  const takeable = useMemo(() => takeableSkills(machines), [machines]);
   const grid = useMemo(() => fleetSkillGrid(fleet, onlyLook, query, removed), [fleet, onlyLook, query, removed]);
   const order = useMemo(() => grid.rows.map((row) => row.name), [grid]);
   const byName = useMemo(() => new Map(machines.map((machine) => [machine.machine, machine])), [machines]);
@@ -730,7 +735,7 @@ function FleetSkillsCard({ machines, repo, selected, onTick, onTickAll, activity
                 </TableCell>
                 {repo ? (
                   <TableCell className="text-xs">
-                    <SkillRepoMenu name={row.name} state={repoSkillState(repo, row.name)} wanted={null} onAction={(action) => onRepo(row.name, action)} />
+                    <SkillRepoMenu name={row.name} state={repoSkillState(repo, row.name)} wanted={null} takeable={takeable.has(row.name)} onAction={(action) => onRepo(row.name, action)} />
                   </TableCell>
                 ) : null}
                 <TableCell className="text-xs">
@@ -830,10 +835,12 @@ const REPO_STATE: Record<RepoSkillState, MessageKey> = {
  * copy into the repo first when it hasn't got one, or putting back one it removed), or take it off every machine.
  * `wanted` is the repo's own value for the machine shown, if it has one.
  */
-function SkillRepoMenu({ name, state, wanted, onAction }: {
+function SkillRepoMenu({ name, state, wanted, takeable, onAction }: {
   name: string;
   state: RepoSkillState;
   wanted: 'off' | 'own' | null;
+  /** Whether some machine has a copy the repo could take, for a skill the repo hasn't got. */
+  takeable: boolean;
   onAction: (action: RepoAction) => void;
 }) {
   const { t } = useI18n();
@@ -845,7 +852,9 @@ function SkillRepoMenu({ name, state, wanted, onAction }: {
         <ChevronDown />
       </MenuTrigger>
       <MenuPopup align="start" className="min-w-60">
-        {state === 'absent' ? <MenuItem onClick={() => onAction('add')}>{t('setup.skills.repo.add')}</MenuItem> : null}
+        {state === 'absent' ? (
+          <MenuItem disabledReason={takeable ? undefined : t('setup.skills.repo.noCopy')} onClick={() => onAction('add')}>{t('setup.skills.repo.add')}</MenuItem>
+        ) : null}
         {state === 'synced' ? <MenuItem onClick={() => onAction('add')}>{t('setup.skills.repo.putOn')}</MenuItem> : null}
         {state === 'removed' ? <MenuItem onClick={() => onAction('add')}>{t('setup.skills.repo.putBack')}</MenuItem> : null}
         <MenuSeparator />
@@ -857,7 +866,7 @@ function SkillRepoMenu({ name, state, wanted, onAction }: {
   );
 }
 
-function SkillsTable({ machine, view, rows, repo, selected, onTick, onTickAll, busy, used, usage, usageError, homeLabel, onPick, onRepo, onCompare }: {
+function SkillsTable({ machine, view, rows, repo, selected, onTick, onTickAll, busy, used, usage, usageError, homeLabel, onPick, onRepo, onCompare, canTake }: {
   machine: SetupMachine;
   view: SkillsView;
   rows: SkillRow[];
@@ -873,6 +882,7 @@ function SkillsTable({ machine, view, rows, repo, selected, onTick, onTickAll, b
   onPick: (row: SkillRow, cell: SkillCell, action: SkillAction) => void;
   onRepo: (name: string, action: RepoAction) => void;
   onCompare: (row: SkillRow, cell: SkillCell) => void;
+  canTake: (name: string) => boolean;
 }) {
   const { t } = useI18n();
   const now = Date.now();
@@ -947,7 +957,7 @@ function SkillsTable({ machine, view, rows, repo, selected, onTick, onTickAll, b
               </TableCell>
               {repo ? (
                 <TableCell className="text-xs">
-                  <SkillRepoMenu name={row.name} state={repoSkillState(repo, row.name)} wanted={wanted} onAction={(action) => onRepo(row.name, action)} />
+                  <SkillRepoMenu name={row.name} state={repoSkillState(repo, row.name)} wanted={wanted} takeable={canTake(row.name)} onAction={(action) => onRepo(row.name, action)} />
                 </TableCell>
               ) : null}
               <TableCell className="max-w-48 text-xs">

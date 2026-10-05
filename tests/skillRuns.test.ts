@@ -9,6 +9,7 @@ import {
   runSkillPlan,
   runSucceeded,
   skillCopies,
+  takeableSkills,
   tickRows,
   touchedSkills,
   undoSkillRun,
@@ -89,6 +90,17 @@ describe('planning a skill change across machines', () => {
     const plan = planSkills('add', ['notes', 'ghost'], machines, repo([]), 'casey-mbp', { notes: theirs });
     expect(plan.takes.map((take) => [take.machine, take.home])).toEqual([['ci-01', CODEX]]);
     expect([plan.names, plan.uncopied]).toEqual([['notes'], ['ghost']]);
+  });
+
+  it('knows which skills some machine has a copy of the repo could take', () => {
+    const machines = notesFleet();
+    // A link and a folder without a SKILL.md are no copy to take.
+    machines.push(machine('cedar-02', [home('shared', STORE, []), home('claude', CLAUDE, [
+      skill(CLAUDE, 'browser', sha('5'), { link: '~/src/browser' }),
+      skill(CLAUDE, 'draft', sha('6'), { skill: { ...facts, hasDoc: false } }),
+    ])]));
+    expect([...takeableSkills(machines)]).toEqual(['notes']);
+    expect(skillCopies(machines, 'browser')).toEqual([]);
   });
 
   it('puts a skill the repo has on the machines missing it without a commit', () => {
