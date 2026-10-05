@@ -104,15 +104,19 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
   ) : null;
 
   // Narrowed to a machine the archive counted nothing on, the rest of the archive may still have plenty.
+  // Claude Code's own count of its days without transcripts still belongs to it, so it stays under the note.
   if (state === 'waiting' && machine) {
     return (
-      <SettingsSection title={t('usage.lifetime.title')}>
-        <Empty size="sm">
-          <EmptyMedia><Archive /></EmptyMedia>
-          <EmptyTitle>{t('usage.lifetime.noneOn.title')}</EmptyTitle>
-          <EmptyDescription>{tRich('usage.lifetime.noneOn.description', { machine: <MachinePill name={machine} /> })}</EmptyDescription>
-        </Empty>
-      </SettingsSection>
+      <div className="flex flex-col gap-6">
+        <SettingsSection title={t('usage.lifetime.title')}>
+          <Empty size="sm">
+            <EmptyMedia><Archive /></EmptyMedia>
+            <EmptyTitle>{t('usage.lifetime.noneOn.title')}</EmptyTitle>
+            <EmptyDescription>{tRich('usage.lifetime.noneOn.description', { machine: <MachinePill name={machine} /> })}</EmptyDescription>
+          </Empty>
+        </SettingsSection>
+        {recovered.machines.length ? <RecoveredDays summary={recovered} /> : null}
+      </div>
     );
   }
 

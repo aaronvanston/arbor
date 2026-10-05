@@ -135,6 +135,12 @@ describe('all-time tokens', () => {
     expect(none).not.toContain('Not in the total');
   });
 
+  it('keeps Claude Code’s own count on a machine whose transcripts the archive never counted', () => {
+    const shown = render(lifetime({ months: [], days: [], sources: [], ...recovered() }), undefined, 'cedar');
+    expect(shown).toContain('Nothing counted on this machine');
+    expect(shown).toContain('Days without transcripts');
+  });
+
   it('says whether there is anything to count, and whether it is still counting', () => {
     expect(countingState(lifetime({ archived: false, months: [] }))).toBe('off');
     expect(countingState(lifetime({ months: [] }))).toBe('waiting');
