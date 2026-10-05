@@ -7,6 +7,7 @@ import type {
   AutomationRunStatus,
   AutomationSource,
   AutomationSummary,
+  MachinePool,
   ScheduleSummary,
 } from '../native/types';
 import { formatTime } from '../lib/format';
@@ -55,6 +56,19 @@ export async function scanAutomations(machine: string | null = null) {
 
 export function useAutomations(): AutomationsState {
   return useSyncExternalStore(subscribe, () => state, () => state);
+}
+
+/**
+ * Why an Arbor automation has nowhere to run, or null when it has: its target is the old "Best machine", which Arbor no
+ * longer picks for it, or a pool that's been removed. Each of its runs would fail until it's given another. A pool is
+ * only called gone once the pools have been read.
+ */
+export function automationTargetGone(item: Pick<AutomationSummary, 'source' | 'target'>, pools: readonly MachinePool[] | null): 'best' | 'pool' | null {
+  const { source, target } = item;
+  if (source !== 'arbor') return null;
+  if (target.kind === 'best') return 'best';
+  if (target.kind === 'pool' && pools && !pools.some((pool) => pool.id === target.id)) return 'pool';
+  return null;
 }
 
 /** Sent by the native side whenever an automation, a run or a machine's look changes. */

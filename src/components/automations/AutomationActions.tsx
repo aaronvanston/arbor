@@ -3,7 +3,8 @@ import { useI18n } from '../../i18n';
 import { automationView, automationsView, type AppView } from '../../navigation';
 import { invokeCommand } from '../../native/commands';
 import type { AutomationSummary } from '../../native/types';
-import { loadAutomations, showAutomations } from '../../services/automations';
+import { automationTargetGone, loadAutomations, showAutomations } from '../../services/automations';
+import { usePools } from '../../services/pools';
 import { useConfirmation } from '../ConfirmationDialog';
 import { Button } from '../ui/button';
 import { CirclePause, CirclePlay, Copy, MoreHorizontal, Pencil, Play, Trash2 } from '../ui/icons';
@@ -25,6 +26,10 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const { abilities } = item;
+  // One with nowhere to run can't be started by hand either; it says why until it's given a machine or a pool.
+  const { pools } = usePools();
+  const gone = automationTargetGone(item, pools);
+  const goneReason = gone ? t(gone === 'best' ? 'automations.note.bestGone' : 'automations.note.poolGone') : undefined;
 
   const act = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -95,7 +100,7 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
 
   const menuItems = (
     <>
-      {compact && abilities.runNow ? <MenuItem onClick={() => void runNow()}><Play />{t('automations.runNow.action')}</MenuItem> : null}
+      {compact && abilities.runNow ? <MenuItem disabled={Boolean(gone)} onClick={() => void runNow()}><Play />{t('automations.runNow.action')}</MenuItem> : null}
       {compact && abilities.edit ? <MenuItem onClick={() => setEditing(true)}><Pencil />{t('automations.edit')}</MenuItem> : null}
       {compact && abilities.pause ? (
         <MenuItem onClick={() => void setEnabled(!item.enabled)}>
@@ -119,7 +124,7 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
   return (
     <div className="flex items-center justify-end gap-2">
       {!compact && abilities.runNow ? (
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => void runNow()}>
+        <Button variant="outline" size="sm" disabled={busy || Boolean(gone)} disabledReason={goneReason} onClick={() => void runNow()}>
           <Play />
           {t('automations.runNow.action')}
         </Button>

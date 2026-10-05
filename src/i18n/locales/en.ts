@@ -5795,6 +5795,8 @@ export const en = {
   'automations.note.arbor': 'Arbor starts this on {machine} over SSH while Arbor is open. If {machine} can’t be reached when it’s due, the run is recorded as Machine away.',
   'automations.note.machine': 'The background runner on {machine} starts this when it’s due, whether Arbor is open or not. Arbor places it there and reads back how each run went.',
   'automations.note.best': 'Arbor picks the machine when it’s due.',
+  'automations.note.bestGone': 'Arbor no longer picks a machine on its own, so this can’t run. Edit it to choose a machine or a pool.',
+  'automations.note.poolGone': 'Its pool was removed, so this can’t run. Edit it to choose a machine or another pool.',
   'automations.note.pool': 'Arbor starts this over SSH while Arbor is open, on whichever member of the pool has room and the agent when it’s due. When none does, the pool’s own setting decides: wait, try its overflow pool, or record the run as failed.',
   'automations.note.codex': 'The Codex app keeps this one, in {path}, and runs it. Arbor can pause it there or copy it into Arbor.',
   'automations.note.claude': 'Claude keeps this one, in {path}, and its schedule. Arbor shows it and can copy it into Arbor.',

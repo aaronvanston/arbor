@@ -24,8 +24,9 @@ import { cn } from '../lib/utils';
 import { automationsView, sessionsView, type AppView } from '../navigation';
 import { invokeCommand } from '../native/commands';
 import type { Automation, AutomationRun } from '../native/types';
-import { AUTOMATION_APPS, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
+import { AUTOMATION_APPS, automationTargetGone, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
 import { useQuotaClock } from '../services/quotaTime';
+import { usePools } from '../services/pools';
 
 /** How many runs the page lists. */
 const RUNS_SHOWN = 50;
@@ -34,6 +35,7 @@ const RUNS_SHOWN = 50;
 export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (view: AppView) => void }) {
   const { t } = useI18n();
   const { list } = useAutomations();
+  const { pools } = usePools();
   const now = useQuotaClock();
   const [automation, setAutomation] = useState<Automation | null>(null);
   const [runs, setRuns] = useState<AutomationRun[] | null>(null);
@@ -72,6 +74,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   }
 
   const arbor = summary.source === 'arbor';
+  const gone = automationTargetGone(summary, pools);
 
   return (
     <Page width="main">
@@ -90,9 +93,11 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
           </p>
         </header>
 
-        <Alert icon={<Info />}>
+        <Alert icon={<Info />} variant={gone ? 'warning' : undefined}>
           <AlertDescription>
-            {arbor
+            {gone
+              ? t(gone === 'best' ? 'automations.note.bestGone' : 'automations.note.poolGone')
+              : arbor
               ? summary.target.kind === 'best'
                 ? t('automations.note.best')
                 : summary.target.kind === 'pool'

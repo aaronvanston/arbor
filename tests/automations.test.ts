@@ -3,6 +3,7 @@ import { translate } from '../src/i18n';
 import { alertDestination } from '../src/services/alertHistory';
 import {
   automationMachines,
+  automationTargetGone,
   choiceSummary,
   failedRunAlerts,
   automationModels,
@@ -19,7 +20,7 @@ import {
   stateCounts,
   switchSchedule,
 } from '../src/services/automations';
-import type { AutomationList, AutomationScan, AutomationSummary } from '../src/native/types';
+import type { AutomationList, AutomationScan, AutomationSummary, MachinePool } from '../src/native/types';
 import { itemAt } from './support/items';
 
 const t = (key: Parameters<typeof translate>[0], variables?: Record<string, string | number>) => translate(key, variables);
@@ -182,5 +183,18 @@ describe('the background runner', () => {
     expect(backgroundRunnerCheck(runners, 'ready-box', 'custom')).toBe('automations.runsOn.why.custom');
     expect(backgroundRunnerCheck(runners, 'bare-box', 'daily')).toBe('automations.runsOn.why.notSetUp');
     expect(backgroundRunnerCheck(null, 'ready-box', 'daily')).toBe('automations.runsOn.why.notSetUp');
+  });
+});
+
+describe('an automation with nowhere to run', () => {
+  const pool = { id: 'builds' } as MachinePool;
+  it('is one aimed at the old best machine or a removed pool', () => {
+    expect(automationTargetGone(summary({ target: { kind: 'best' } }), [pool])).toBe('best');
+    expect(automationTargetGone(summary({ target: { kind: 'pool', id: 'gone' } }), [pool])).toBe('pool');
+    expect(automationTargetGone(summary({ target: { kind: 'pool', id: 'builds' } }), [pool])).toBeNull();
+    expect(automationTargetGone(summary({ target: { kind: 'machine', name: 'ci-01' } }), [])).toBeNull();
+    // Until the pools are read, a pool isn't called gone; another app's automation runs where that app says.
+    expect(automationTargetGone(summary({ target: { kind: 'pool', id: 'gone' } }), null)).toBeNull();
+    expect(automationTargetGone(summary({ source: 'codexApp', target: { kind: 'best' } }), [pool])).toBeNull();
   });
 });
