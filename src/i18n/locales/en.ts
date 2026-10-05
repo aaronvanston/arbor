@@ -5328,7 +5328,6 @@ export const en = {
   'authFiles.turnedOff': 'Turned off {name}',
   'authFiles.turnedOn': 'Turned on {name}',
   'authFiles.reauth.done': 'Credentials refreshed in “{name}”',
-  'authFiles.reauth.doneTransplanted': 'Credentials refreshed in “{name}”. The core’s temporary copy “{from}” was cleaned up.',
   'authFiles.reauth.doneRenamed': 'Credentials refreshed and saved as “{name}”. The core replaced “{from}” with this file and kept its settings.',
   'authFiles.reauth.missing': 'Sign-in finished, but “{name}” is no longer in the auth folder and no new credential for {account} was found. Refresh the list to see what the core saved.',
   'authFiles.reauth.mismatch': 'You signed in as {accounts}, which does not match {account}. The new credential was kept as its own file and “{name}” was left unchanged.',

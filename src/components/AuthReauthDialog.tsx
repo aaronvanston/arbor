@@ -38,8 +38,10 @@ export function AuthReauthDialog({
     else cancel();
   }, [cancel, start, target]);
 
-  // Names and addresses are hidden with the rest while Hide email addresses is on.
-  const hide = (text: string) => shown(text, { fileName: text });
+  // Names and addresses are hidden with the rest while Hide email addresses is on. The core's file names repeat the
+  // account's email, which is told to the mask so a prefix like `codex-9f1e2a3b-` isn't taken in as part of it.
+  const email = target ? readString(target.file, 'email') : '';
+  const hide = (text: string) => shown(text, { fileName: text, email });
   const name = target ? hide(readString(target.file, 'name')) : '';
   const account = target ? shown(authAccountLabel(target.file), { email: readString(target.file, 'email') }) : '';
   const busy = flow.phase === 'starting' || flow.phase === 'finishing';
@@ -49,15 +51,16 @@ export function AuthReauthDialog({
   const outcomeMessage = (outcome: ReauthOutcome) => {
     const done = hide(outcome.name);
     switch (outcome.kind) {
-      case 'in-place': return t('authFiles.reauth.done', { name: done });
-      case 'transplanted': return t('authFiles.reauth.doneTransplanted', { name: done, from: hide(outcome.from) });
+      // The core's temporary copy is cleaned up out of sight, so a transplant reads like a refresh in place.
+      case 'in-place':
+      case 'transplanted': return t('authFiles.reauth.done', { name: done });
       case 'renamed': return t('authFiles.reauth.doneRenamed', { name: done, from: hide(outcome.from) });
       case 'mismatch': return t('authFiles.reauth.mismatch', {
         name: done,
         account,
         accounts: outcome.signedInAs.map((email) => shown(email, { email })).join(', ') || t('authFiles.reauth.unknownAccount'),
       });
-      case 'other-workspace': return t('authFiles.reauth.otherWorkspace', { name: done, saved: outcome.saved, account: account || t('authFiles.reauth.unknownAccount') });
+      case 'other-workspace': return t('authFiles.reauth.otherWorkspace', { name: done, saved: hide(outcome.saved), account: account || t('authFiles.reauth.unknownAccount') });
       case 'missing': return t('authFiles.reauth.missing', { name: done, account: account || t('authFiles.reauth.unknownAccount') });
       case 'none': return t('authFiles.reauth.none', { name: done });
     }

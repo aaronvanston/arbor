@@ -41,6 +41,7 @@ import {
   type AuthFileModelLimits,
 } from '../services/authFiles';
 import { reauthProviderForFile, type ReauthOutcome } from '../services/authReauth';
+import { shownIdentity } from '../services/emailPrivacy';
 import { managementApi, readBoolean, readString } from '../services/managementApi';
 import { modelMatchesRule, normalizeOAuthExcludedRules, openOAuthModelNames, setOAuthModelsExcluded, type OAuthModelDefinition } from '../services/oauthModels';
 import { loadOAuthModelSettings, saveOAuthModelSettings, type OAuthModelSettings, type OAuthModelTarget } from '../services/oauthModelSettings';
@@ -326,10 +327,12 @@ export function useAuthFileCommands(listing: AuthFile[]) {
   };
 
   const reauthCompleted = (outcome: ReauthOutcome) => {
-    if (outcome.kind === 'in-place') succeeded('authFiles.reauth.done', { name: outcome.name });
-    else if (outcome.kind === 'transplanted' || outcome.kind === 'renamed') {
-      succeeded(outcome.kind === 'transplanted' ? 'authFiles.reauth.doneTransplanted' : 'authFiles.reauth.doneRenamed', { name: outcome.name, from: outcome.from });
-    }
+    // Names are hidden with the account's own email, which the core's file names repeat.
+    const email = reauthTarget ? readString(reauthTarget.file, 'email') : '';
+    const hide = (text: string) => shownIdentity(text, { fileName: text, email });
+    // The core's temporary copy is cleaned up out of sight, so a transplant reads like a refresh in place.
+    if (outcome.kind === 'in-place' || outcome.kind === 'transplanted') succeeded('authFiles.reauth.done', { name: hide(outcome.name) });
+    else if (outcome.kind === 'renamed') succeeded('authFiles.reauth.doneRenamed', { name: hide(outcome.name), from: hide(outcome.from) });
     void loadAccountFiles();
   };
 

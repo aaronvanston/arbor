@@ -17,6 +17,8 @@ describe('maskEmail', () => {
 describe('maskEmailsIn', () => {
   it("hides an address in a file name without taking in the provider's prefix", () => {
     expect(maskEmailsIn('claude-samrivera.alt@example.com', ['samrivera.alt@example.com'])).toBe('claude-s•••t@example.com');
+    // The core's own file names put a hash before the address and the plan after it.
+    expect(maskEmailsIn('codex-9f1e2a3b-casey@example.com-pro.json', ['casey@example.com'])).toBe('codex-9f1e2a3b-c•••y@example.com-pro.json');
   });
 
   it("hides the account's name where a file name repeats it without the domain", () => {
