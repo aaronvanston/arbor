@@ -152,7 +152,9 @@ mkdir -p bundled-core/plugins
 cp core-plugins/arbor-models/target/release/libarbor_models.dylib bundled-core/plugins/arbor-models.dylib
 
 # A nightly or dev build is packaged with its own icon (src-tauri/icons/channels/), so Finder, Launchpad and the Dock
-# tell it from stable even while it's closed; src-tauri/src/app_icon.rs matches it while it runs.
+# tell it from stable even while it's closed; src-tauri/src/app_icon.rs matches it while it runs. Each Arbor.icon is
+# the Icon Composer version macOS 26 and later show, with its own dark colors so dark mode doesn't swap the tile for
+# black; Tauri compiles it with Xcode 26's actool and falls back to the icns without one.
 icon_config=()
 case "$version" in
   *-nightly.*) icon_channel=nightly ;;
@@ -161,7 +163,7 @@ case "$version" in
 esac
 if [[ -n "$icon_channel" ]]; then
   icons="icons/channels/$icon_channel"
-  icon_config=(--config "{\"bundle\":{\"icon\":[\"$icons/icon.png\",\"$icons/32x32.png\",\"$icons/128x128.png\",\"$icons/128x128@2x.png\",\"$icons/icon.icns\"]}}")
+  icon_config=(--config "{\"bundle\":{\"icon\":[\"$icons/icon.png\",\"$icons/32x32.png\",\"$icons/128x128.png\",\"$icons/128x128@2x.png\",\"$icons/icon.icns\",\"$icons/Arbor.icon\"]}}")
 fi
 
 RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json ${icon_config[@]+"${icon_config[@]}"}
