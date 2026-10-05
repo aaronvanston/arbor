@@ -1263,14 +1263,16 @@ function SkillPlanDialog({ request, machines, repo, homeLabel, onClose, onDone }
     setFrozen(plan);
     const keys = planKeys(plan);
     startActivity(keys);
+    let touched: string[] = [];
     try {
       const result = await runSkillPlan(plan, repo, setProgress);
+      touched = result.touched;
       if (runSucceeded(result)) onDone(result);
       else setDone(result);
     } catch (error) {
-      setDone({ kind: plan.kind, names: plan.names, repo: repo?.path ?? null, repoSteps: [], backups: [], problems: {}, repoError: String(error) });
+      setDone({ kind: plan.kind, names: plan.names, repo: repo?.path ?? null, repoSteps: [], backups: [], problems: {}, repoError: String(error), touched: [] });
     } finally {
-      endActivity(keys);
+      endActivity(keys, touched);
     }
   };
 

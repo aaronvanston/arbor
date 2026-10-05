@@ -295,6 +295,8 @@ export type SkillRunDone = {
   backups: { machine: string; backup: string }[];
   problems: Record<string, RunProblem>;
   repoError: string | null;
+  /** The machines a write was sent to; only those are read again, so only their rows wait for it. */
+  touched: string[];
 };
 
 export const runSucceeded = (done: SkillRunDone) => done.repoError === null && !Object.keys(done.problems).length;
@@ -357,7 +359,7 @@ export async function runSkillPlan(plan: SkillPlan, repo: SetupRepo | null, onPr
   };
   const report = () => onProgress({ ...progress, machines: { ...progress.machines } });
   // Only what it changes, so a skill left out (no copy to take) isn't counted as done.
-  const done: SkillRunDone = { kind: plan.kind, names: touchedSkills(plan), repo: repo?.path ?? null, repoSteps: [], backups: [], problems: {}, repoError: null };
+  const done: SkillRunDone = { kind: plan.kind, names: touchedSkills(plan), repo: repo?.path ?? null, repoSteps: [], backups: [], problems: {}, repoError: null, touched: [] };
   let current = repo;
 
   if (repoStep) {
@@ -407,6 +409,7 @@ export async function runSkillPlan(plan: SkillPlan, repo: SetupRepo | null, onPr
       report();
     };
     const made = (outcome: SyncOutcome) => {
+      if (!done.touched.includes(name)) done.touched.push(name);
       if (outcome.backup) done.backups.push({ machine: name, backup: outcome.backup });
       const problem = problemOf(outcome);
       if (problem) set('failed', problem);
@@ -504,12 +507,17 @@ export const useSkillActivity = () => useSyncExternalStore(subscribe, snapshot, 
 
 const activityKey = (machine: string, name: string) => `${machine}\u0000${name}`;
 
-function markActivity(keys: { machine: string; name: string }[], running: boolean) {
+function markActivity(keys: { machine: string; name: string }[], running: boolean, touched?: ReadonlySet<string>) {
   const at = Date.now();
   const next: Record<string, { running: boolean; since: number }> = {};
   // Ones whose machine has long been read again are let go.
   for (const [key, entry] of Object.entries(activity)) if (at - entry.since < 10 * 60_000) next[key] = entry;
-  for (const { machine, name } of keys) next[activityKey(machine, name)] = { running, since: running ? at : next[activityKey(machine, name)]?.since ?? at };
+  for (const { machine, name } of keys) {
+    const key = activityKey(machine, name);
+    // A machine nothing was written to isn't read again, so its rows would otherwise wait for good.
+    if (!running && touched && !touched.has(machine)) delete next[key];
+    else next[key] = { running, since: running ? at : next[key]?.since ?? at };
+  }
   activity = next;
   listeners.forEach((listener) => listener());
 }
@@ -518,7 +526,8 @@ function markActivity(keys: { machine: string; name: string }[], running: boolea
 export const planKeys = (plan: SkillPlan) => plan.machines.flatMap((machine) => plan.names.map((name) => ({ machine: machine.machine, name })));
 
 export const startActivity = (keys: { machine: string; name: string }[]) => markActivity(keys, true);
-export const endActivity = (keys: { machine: string; name: string }[]) => markActivity(keys, false);
+/** Ends a change; with `touched`, rows on machines outside it are let go at once rather than waiting for a scan. */
+export const endActivity = (keys: { machine: string; name: string }[], touched?: Iterable<string>) => markActivity(keys, false, touched ? new Set(touched) : undefined);
 
 /** Whether a skill on a machine is being changed, or was and the machine hasn't been read since. */
 export function isBusy(current: Activity, machine: SetupMachine, name: string): boolean {
