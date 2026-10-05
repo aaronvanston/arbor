@@ -377,7 +377,8 @@ export function VersionManagementPage() {
   const appVersionStatusLabel: string | null = appUpdateTask.running
     ? t(`appUpdate.phase.${appUpdateTask.phase}` as Parameters<typeof t>[0])
     : appUpdateError
-      ? t('kernel.update.failed')
+      // A failed download or install isn't a failed check.
+      ? t(appUpdateTask.phase === 'failed' ? 'appUpdate.phase.failed' : 'kernel.update.failed')
       : appHasUpdate
         ? t('appUpdate.available', { version: latestAppVersion })
         : checkingAppUpdate || !appUpdate

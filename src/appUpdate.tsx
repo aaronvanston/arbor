@@ -104,6 +104,11 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       setTask(event.payload);
       if (event.payload.phase === 'failed') {
         setError(event.payload.message || translate('appUpdate.phase.failed'));
+        // The install checks the feed again first, and may have found the update gone from it; what's offered should
+        // say so too. The task keeps its failure, so only the feed's answer is taken.
+        void invokeCommand('check_app_update')
+          .then((result) => { if (!disposed) setInfo(result); })
+          .catch(() => undefined);
       } else if (event.payload.phase !== 'canceled') {
         setError('');
       }
