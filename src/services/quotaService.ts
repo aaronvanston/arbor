@@ -8,6 +8,7 @@ import {
 } from './managementApi';
 import { authFileName, canonicalProvider } from './authFiles';
 import { readCommandError } from './commandError';
+import { plainErrorReason } from './plainError';
 import {
   codexConsumeOutcome, codexRedeemRequestId, nextCodexResetCredit, rememberCodexRedeem, settleCodexRedeem,
   unsettledCodexRedeem, type UnsettledCodexRedeem,
@@ -1252,7 +1253,7 @@ async function consumeCodexResetCreditSnapshot(file: AuthFile): Promise<QuotaSta
   rememberCodexRedeem(attempt, redeem);
   const unsettled = (error = '') => finish('error', quotaText(
     retry ? 'quota.codexReset.result.stillUnconfirmed' : 'quota.codexReset.result.unconfirmed',
-    { detail: error ? ` (${error})` : '' },
+    { detail: error ? ` ${error}` : '' },
   ));
 
   let response: Record<string, unknown>;
@@ -1269,7 +1270,7 @@ async function consumeCodexResetCreditSnapshot(file: AuthFile): Promise<QuotaSta
     }, { timeoutMs: 25_000 });
   } catch (error) {
     // The redemption may have reached Codex before the reply was lost.
-    return unsettled(error instanceof Error ? error.message : String(error));
+    return unsettled(plainErrorReason(error, quotaText));
   }
   const httpStatus = Number(response.status_code ?? response.statusCode ?? 0);
   if (httpStatus === 401 || httpStatus === 403 || (httpStatus === 429 && !retry)) {
@@ -1277,7 +1278,7 @@ async function consumeCodexResetCreditSnapshot(file: AuthFile): Promise<QuotaSta
     if (!retry) settleCodexRedeem(attempt);
     return finish('not-used', quotaText(httpStatus === 429 ? 'quota.codexReset.result.rateLimited' : 'quota.codexReset.result.auth'));
   }
-  if (httpStatus < 200 || httpStatus >= 300) return unsettled(apiCallErrorMessage(response));
+  if (httpStatus < 200 || httpStatus >= 300) return unsettled(quotaText('quota.reset.providerAnswered', { message: apiCallErrorMessage(response).replace(/\.+$/, '') }));
   const outcome = codexConsumeOutcome(parseBody(response.body ?? response.bodyText));
   if (!outcome) return unsettled();
   settleCodexRedeem(attempt);
@@ -1361,7 +1362,7 @@ async function claimClaudeBankedResetSnapshot(
   const unsettled = (error = '') => {
     unsettledClaudeClaims.set(key, { grantId: expected.grantId, requestId, atMs: retry?.atMs ?? Date.now() });
     return finish('error', quotaText(retry ? 'quota.bankedReset.result.stillUnconfirmed' : 'quota.bankedReset.result.unconfirmed', {
-      detail: error ? ` (${error})` : '',
+      detail: error ? ` ${error}` : '',
     }));
   };
   let response: Record<string, unknown>;
@@ -1375,7 +1376,7 @@ async function claimClaudeBankedResetSnapshot(
     }, { timeoutMs: 25_000 });
   } catch (error) {
     // The claim may have reached Claude before the reply was lost.
-    return unsettled(error instanceof Error ? error.message : String(error));
+    return unsettled(plainErrorReason(error, quotaText));
   }
   const httpStatus = Number(response.status_code ?? response.statusCode ?? 0);
   if (httpStatus === 429) {
@@ -1384,7 +1385,7 @@ async function claimClaudeBankedResetSnapshot(
       : finish('not-used', quotaText('quota.bankedReset.result.rateLimited'));
   }
   if (httpStatus === 401 || httpStatus === 403) return finish('not-used', quotaText('quota.bankedReset.result.auth'));
-  if (httpStatus < 200 || httpStatus >= 300) return unsettled(apiCallErrorMessage(response));
+  if (httpStatus < 200 || httpStatus >= 300) return unsettled(quotaText('quota.reset.providerAnswered', { message: apiCallErrorMessage(response).replace(/\.+$/, '') }));
   const body = parseBody(response.body ?? response.bodyText);
   if (!isRecord(body)) return unsettled();
   const result = readString(body, 'result');

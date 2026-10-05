@@ -191,11 +191,11 @@ describe('using a Codex reset credit', () => {
 
   it('resends an unconfirmed redemption unchanged, even once its credit has left the list', async () => {
     const file = codexFile();
-    consumeReply = () => { throw new Error('Management API error (502): request failed'); };
+    consumeReply = () => { throw { kind: 'core', status: 502, reason: 'request failed', message: 'Management API error (502): request failed' }; };
     const first = await consumeCodexResetCredit(file);
     expect(first.actionResult).toMatchObject({
       status: 'error',
-      message: 'Couldn’t confirm the reset went through (Management API error (502): request failed). Refresh in a moment; if the limits weren’t refilled, try again.',
+      message: 'Couldn’t confirm the reset went through. The core couldn’t finish the request. Refresh in a moment; if the limits weren’t refilled, try again.',
     });
     // It went through: the credit is spent, so the list now offers the next one.
     creditList = () => success({ credits: [credit({ id: 'rlrc_later' })] });
@@ -225,7 +225,7 @@ describe('using a Codex reset credit', () => {
     const seatA = seat('seat-a');
     const seatB = seat('seat-b');
     creditList = () => success({ credits: [credit({ id: 'rlrc_seat-a' })] });
-    consumeReply = () => { throw new Error('Management API error (502): request failed'); };
+    consumeReply = () => { throw { kind: 'core', status: 502, reason: 'request failed', message: 'Management API error (502): request failed' }; };
     expect((await consumeCodexResetCredit(seatA)).actionResult?.status).toBe('error');
     // Seat B's reset reads its own credits and redeems its own, never seat A's lost try.
     calls = [];
@@ -249,7 +249,7 @@ describe('using a Codex reset credit', () => {
     const file = codexFile();
     creditList = () => ({ status_code: 503, body: 'overloaded' });
     consumeReply = () => ({ status_code: 502, body: 'bad gateway' });
-    expect((await consumeCodexResetCredit(file)).actionResult).toMatchObject({ status: 'error', message: expect.stringContaining('(bad gateway)') });
+    expect((await consumeCodexResetCredit(file)).actionResult).toMatchObject({ status: 'error', message: expect.stringContaining('The provider answered: bad gateway.') });
     creditList = () => success({ credits: [credit()] });
     consumeReply = () => success({ code: 'reset' });
     expect((await consumeCodexResetCredit(file)).actionResult?.status).toBe('success');

@@ -133,7 +133,7 @@ describe('quota action confirmation with fully mocked IPC', () => {
     consumeError = true;
     expect(await resetCodexQuotaWithConfirmation(file, async () => true)).toBe('error');
     expect(getQuotaCacheSnapshot()[key]).toMatchObject({
-      actionResult: { action: 'reset', status: 'error', message: expect.stringContaining('(reset denied)') },
+      actionResult: { action: 'reset', status: 'error', message: expect.stringContaining('The provider answered: reset denied.') },
     });
     expect(canResetCodexQuota(file, present(getQuotaCacheSnapshot()[key], 'the cached quota'))).toBe(false);
     expect(await resetCodexQuotaWithConfirmation(file, async () => true)).toBe('canceled');

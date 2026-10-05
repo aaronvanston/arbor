@@ -283,7 +283,7 @@ describe('quota request synchronization', () => {
       : success(request.url.endsWith('/usage') ? codexUsage : { available_count: 1 });
     const reset = consumeCodexResetCredit(file);
     const refresh = loadQuota(file);
-    expect((await reset).actionResult).toMatchObject({ status: 'error', message: expect.stringContaining('(reset denied)') });
+    expect((await reset).actionResult).toMatchObject({ status: 'error', message: expect.stringContaining('The provider answered: reset denied.') });
     expect(await refresh).toEqual(await reset);
     expect((await loadQuota(file)).status).toBe('success');
   });
@@ -291,9 +291,9 @@ describe('quota request synchronization', () => {
   it('names the host when the core’s request got no answer, but only for reads', async () => {
     handler = () => { throw coreFailure(502, 'request failed'); };
     expect(await loadQuota(codexFile)).toMatchObject({ status: 'error', error: 'Couldn’t reach chatgpt.com. Check the network or DNS.' });
-    // A reset may have gone through before the answer was lost, so it keeps the core's own words.
+    // A reset may have gone through before the answer was lost, so it doesn't blame the host, only says the core didn't finish.
     expect((await consumeCodexResetCredit({ ...codexFile, name: 'codex-lost.json' })).actionResult?.message)
-      .toContain('(Management API error (502): request failed)');
+      .toContain('The core couldn’t finish the request.');
     // Other failures are left as the core put them.
     handler = () => { throw coreFailure(502, 'failed to read response'); };
     expect(await loadQuota(codexFile)).toMatchObject({ status: 'error', error: 'Management API error (502): failed to read response' });

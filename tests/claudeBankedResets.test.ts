@@ -295,7 +295,7 @@ describe('claiming a Claude banked reset', () => {
     const file = claudeFile();
     claimReply = () => ({ status_code: 502, body: 'bad gateway' });
     const first = await claimClaudeBankedReset(file, { grantId: 'launch_week', earlyUse: false });
-    expect(first.actionResult).toMatchObject({ status: 'error', message: 'Couldn’t confirm the reset went through (bad gateway). Refresh in a moment; if the limits weren’t refilled, try again.' });
+    expect(first.actionResult).toMatchObject({ status: 'error', message: 'Couldn’t confirm the reset went through. The provider answered: bad gateway. Refresh in a moment; if the limits weren’t refilled, try again.' });
     claimReply = () => success({ result: 'something new' });
     const second = await claimClaudeBankedReset(file, { grantId: 'launch_week', earlyUse: false });
     expect(second.actionResult).toMatchObject({ status: 'error', message: expect.stringMatching(/^Still couldn’t confirm the reset\. Nothing more was used\./) });
@@ -322,7 +322,7 @@ describe('claiming a Claude banked reset', () => {
       return success(liveStatus()) as never;
     });
     expect((await claimClaudeBankedReset(file, { grantId: 'launch_week', earlyUse: false })).actionResult)
-      .toMatchObject({ status: 'error', message: expect.stringContaining('(connection reset)') });
+      .toMatchObject({ status: 'error', message: expect.stringContaining('went through. connection reset. Refresh') });
     claimReply = () => success({ result: 'cooldown' });
     expect((await claimClaudeBankedReset(file, { grantId: 'launch_week', earlyUse: false })).actionResult)
       .toMatchObject({ status: 'not-used', message: expect.stringContaining('may still be going through') });
