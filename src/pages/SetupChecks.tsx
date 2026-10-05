@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { clearFocusRequest, useFocusRequest } from '../focusRequests';
 import { CircleAlert, CircleCheck, Info, TriangleAlert, type AppIcon } from '../components/ui/icons';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { FixMenu } from '../components/FixMenu';
@@ -119,8 +120,18 @@ export function SetupChecks({ checks, machines, homeLabel, onShow, onCompare }: 
 }) {
   const { t, tRich } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  // One level only, picked from its count in the title, or by following Sync's count in the sidebar, which is the problems.
+  const [only, setOnly] = useState<SetupCheckLevel | null>(null);
+  const asked = useFocusRequest('setup-checks');
+  useEffect(() => {
+    if (asked !== 'problem' && asked !== 'warning' && asked !== 'note') return;
+    setOnly(asked);
+    setExpanded(true);
+    clearFocusRequest('setup-checks');
+  }, [asked]);
   const counts = checkCounts(checks);
-  const shown = expanded ? checks : checks.slice(0, COLLAPSED);
+  const listed = only && counts[only] ? checks.filter((check) => check.level === only) : checks;
+  const shown = expanded ? listed : listed.slice(0, COLLAPSED);
   const levels = (['problem', 'warning', 'note'] as const).filter((level) => counts[level]);
   return (
     <SettingsSection
@@ -128,7 +139,13 @@ export function SetupChecks({ checks, machines, homeLabel, onShow, onCompare }: 
         <>
           {t('setup.checks.title')}
           {levels.map((level) => (
-            <Badge key={level} variant={LEVEL_LOOK[level].badge} size="sm">
+            <Badge
+              key={level}
+              variant={LEVEL_LOOK[level].badge}
+              size="sm"
+              className={cn('cursor-pointer outline-none ring-ring focus-visible:ring-2', only && only !== level && 'opacity-45', only === level && 'ring-1')}
+              render={<button type="button" aria-pressed={only === level} title={t(only === level ? 'setup.checks.filter.clear' : 'setup.checks.filter.only')} onClick={() => setOnly(only === level ? null : level)} />}
+            >
               {t(LEVEL_LOOK[level].count[counts[level] === 1 ? 0 : 1], { count: counts[level] })}
             </Badge>
           ))}
@@ -140,13 +157,22 @@ export function SetupChecks({ checks, machines, homeLabel, onShow, onCompare }: 
           {shown.map((check) => (
             <CheckRow key={check.id} check={check} homeLabel={homeLabel} onShow={onShow} onCompare={onCompare} />
           ))}
-          {checks.length > COLLAPSED ? (
+          {only && listed.length < checks.length ? (
+            <button
+              type="button"
+              className="w-full px-4 py-2 text-center text-xs text-muted-foreground outline-none transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent"
+              onClick={() => setOnly(null)}
+            >
+              {t('setup.checks.filter.showAll', { count: checks.length })}
+            </button>
+          ) : null}
+          {listed.length > COLLAPSED ? (
             <button
               type="button"
               className="w-full px-4 py-2 text-center text-xs text-muted-foreground outline-none transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent"
               onClick={() => setExpanded(!expanded)}
             >
-              {expanded ? t('setup.checks.fewer') : t('setup.checks.all', { count: checks.length })}
+              {expanded ? t('setup.checks.fewer') : t('setup.checks.all', { count: listed.length })}
             </button>
           ) : null}
         </>

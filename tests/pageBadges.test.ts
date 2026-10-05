@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { en } from '../src/i18n/locales/en';
-import { accountsBadge, machinesBadge, setupBadge } from '../src/services/pageBadges';
+import { accountsBadge, badgeDestination, machinesBadge, setupBadge } from '../src/services/pageBadges';
 import { present } from './support/items';
 
 const now = Date.parse('2026-09-26T09:00:00Z');
@@ -55,5 +55,26 @@ describe('the Setup link’s count', () => {
   it('reads one problem in the singular', () => {
     expect(setupBadge([{ level: 'problem' }])).toEqual({ tone: 'warning', count: 1, label: 'sidebar.badge.setup.one' });
     expect(en['sidebar.badge.setup.one'].replace('{count}', '1')).toBe('1 setup problem');
+  });
+});
+
+describe('where a sidebar badge leads', () => {
+  it('opens Sync’s Checks showing only the problems it counts', () => {
+    const badge = present(setupBadge([{ level: 'problem' }, { level: 'warning' }]));
+    expect(badgeDestination('setup', badge)).toEqual({
+      view: { kind: 'main', page: 'setup', params: { tab: 'overview' } },
+      place: 'sidebar.badge.place.checks',
+      focus: { target: 'setup-checks', id: 'problem' },
+    });
+  });
+
+  it('opens Sign-ins for an account to sign in again, and Limits for one turned off', () => {
+    expect(badgeDestination('accounts', { tone: 'warning', label: 'sidebar.badge.accounts.signIn' })?.place).toBe('sidebar.badge.place.signIns');
+    expect(badgeDestination('accounts', { tone: 'warning', label: 'sidebar.badge.accounts.off' })?.place).toBe('sidebar.badge.place.limits');
+  });
+
+  it('names each place in words the tooltip can show', () => {
+    expect(en['sidebar.badge.place.checks']).toBe('Sync › Checks');
+    expect(badgeDestination('machines', present(machinesBadge(['degraded'])))?.place).toBe('sidebar.badge.place.machines');
   });
 });

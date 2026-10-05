@@ -166,7 +166,7 @@ const ROW_CLASS = cn(
  * the badge while ⌘ is held. `current` marks the open page whose view is lit under it rather than the row itself, and
  * `rowProps` are for the tree's keyboard (data attributes) and a chevron's room at the end.
  */
-export function SidebarRow({ icon: Icon, label, active, current = false, locked, lockedHint, onClick, badge = null, shortcut, hint = false, className, rowProps }: {
+export function SidebarRow({ icon: Icon, label, active, current = false, locked, lockedHint, onClick, badge = null, badgeLink = null, shortcut, hint = false, className, rowProps }: {
   icon: AppIcon;
   label: string;
   active: boolean;
@@ -175,6 +175,11 @@ export function SidebarRow({ icon: Icon, label, active, current = false, locked,
   lockedHint: string;
   onClick: () => void;
   badge?: PageBadge | null;
+  /**
+   * Makes the badge a button of its own, beside the row rather than in it, that opens what it counts. `end` is its
+   * distance from the row's end, past a chevron there. The row's parent places it, so it must be positioned.
+   */
+  badgeLink?: { place: string; onOpen: () => void; end: 'chevron' | 'edge' } | null;
   shortcut?: ShortcutId;
   hint?: boolean;
   className?: string;
@@ -208,20 +213,50 @@ export function SidebarRow({ icon: Icon, label, active, current = false, locked,
         </>
       ) : hint && shortcut ? (
         <ShortcutKbd id={shortcut} />
+      ) : badge && badgeLink ? (
+        // Keeps the badge's room in the row, so the label truncates the same; the badge itself is laid over it.
+        <span aria-hidden="true" className="invisible"><PageBadgeMark badge={badge} label="" /></span>
       ) : badge ? (
         <PageBadgeMark badge={badge} label={t(badge.label, { count: badge.count ?? 0 })} />
       ) : null}
     </button>
   );
+  const what = badge ? t(badge.label, { count: badge.count ?? 0 }) : '';
+  const link = badge && badgeLink && !locked && !(hint && shortcut) ? (
+    <Tooltip>
+      <TooltipTrigger
+        render={(
+          <button
+            type="button"
+            aria-label={`${what}. ${t('sidebar.badge.opens', { place: badgeLink.place })}`}
+            className={cn(
+              'absolute top-1 flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-1 outline-none ring-ring transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2',
+              badgeLink.end === 'chevron' ? 'right-7' : 'right-1.5',
+            )}
+            onClick={badgeLink.onOpen}
+          />
+        )}
+      >
+        <PageBadgeMark badge={badge} label="" />
+      </TooltipTrigger>
+      <TooltipPopup side="right" className="flex flex-col gap-0.5">
+        <span>{what}</span>
+        <span className="text-muted-foreground">{t('sidebar.badge.opens', { place: badgeLink.place })}</span>
+      </TooltipPopup>
+    </Tooltip>
+  ) : null;
   // The row is its own tooltip's trigger, so focus shows the tooltip as hovering does. It's kept in the tooltip even
   // with nothing to show, so the row isn't remounted, dropping the focus, as the core stops and starts.
   return (
-    <Tooltip>
-      <TooltipTrigger render={row} disabled={!locked && !shortcut} />
-      {locked || shortcut ? (
-        <TooltipPopup side="right">{locked ? lockedHint : shortcut ? <WithShortcut id={shortcut}>{label}</WithShortcut> : label}</TooltipPopup>
-      ) : null}
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger render={row} disabled={!locked && !shortcut} />
+        {locked || shortcut ? (
+          <TooltipPopup side="right">{locked ? lockedHint : shortcut ? <WithShortcut id={shortcut}>{label}</WithShortcut> : label}</TooltipPopup>
+        ) : null}
+      </Tooltip>
+      {link}
+    </>
   );
 }
 
@@ -230,13 +265,13 @@ function PageBadgeMark({ badge, label }: { badge: PageBadge; label: string }) {
     return (
       <span className="shrink-0 text-xs font-medium tabular-nums text-warning-foreground">
         <span aria-hidden="true">{badge.count}</span>
-        <span className="sr-only">{label}</span>
+        {label ? <span className="sr-only">{label}</span> : null}
       </span>
     );
   }
   return (
     <span className={cn('size-1.5 shrink-0 rounded-full', badge.tone === 'error' ? 'bg-error' : 'bg-warning')}>
-      <span className="sr-only">{label}</span>
+      {label ? <span className="sr-only">{label}</span> : null}
     </span>
   );
 }

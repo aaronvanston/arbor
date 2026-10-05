@@ -9,7 +9,7 @@ import { requestFocus } from '../../focusRequests';
 import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
 import { useFleetHealth } from '../../services/fleetHealth';
-import { accountsBadge, machinesBadge, poolsBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
+import { accountsBadge, badgeDestination, machinesBadge, poolsBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
 import { POOL_STANDING_LABEL, poolStanding, usePools, type PoolStanding } from '../../services/pools';
 import { useQuotaClock } from '../../services/quotaTime';
 import { setupChecks } from '../../services/setupChecks';
@@ -336,6 +336,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
   const active = current && (!shown || !underneath);
   const listId = `tree-${page.id}`;
   const Icon = PAGE_ICONS[page.id];
+  const destination = badge ? badgeDestination(page.id, badge) : null;
 
   return (
     <li className="flex flex-col">
@@ -348,6 +349,14 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
           locked={locked}
           lockedHint={lockedHint}
           badge={badge}
+          badgeLink={destination ? {
+            place: t(destination.place),
+            end: expandable ? 'chevron' : 'edge',
+            onOpen: () => {
+              if (destination.focus) requestFocus(destination.focus.target, destination.focus.id);
+              onNavigate(destination.view);
+            },
+          } : null}
           shortcut={`go.${page.id}`}
           hint={hint}
           className={expandable ? 'pr-8' : undefined}
