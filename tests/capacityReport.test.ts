@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { capacityReport, longLimitWindows } from '../src/services/capacityReport';
+import { capacityGap, capacityReport, longLimitWindows } from '../src/services/capacityReport';
 import { listPrice } from '../src/services/planCosts';
 import { quotaKey, type QuotaState } from '../src/services/quotaService';
 import type { AccountValue, CapacityReport, LimitCoverage, LimitCycle } from '../src/native/types';
@@ -126,5 +126,18 @@ describe('capacity report', () => {
   it('asks for the limit windows a day or longer', () => {
     expect(longLimitWindows(quotas)).toEqual([WEEKLY]);
     expect(longLimitWindows({ a: { status: 'success', rows: [{ label: 'Weekly limit', remainingPercent: 5 }, { label: '5-hour limit', remainingPercent: 1 }] } })).toEqual(['Weekly limit']);
+  });
+});
+
+describe('why Value is empty', () => {
+  const listed = { loaded: true, error: '', files: [], disabled: [] };
+  it('offers adding an account only when the core has none', () => {
+    expect(capacityGap(false, listed)).toBe('coreStopped');
+    expect(capacityGap(true, { ...listed, loaded: false })).toBe('loading');
+    expect(capacityGap(true, { ...listed, disabled: [{ name: 'claude.json' }] })).toBe('off');
+    expect(capacityGap(true, { ...listed, error: 'Management API error (503): unavailable' })).toBe('failed');
+    expect(capacityGap(null, listed)).toBe('none');
+    // Accounts listed, none of them a subscription.
+    expect(capacityGap(true, { ...listed, files: [{ name: 'gemini-key.json' }] })).toBe('subscriptions');
   });
 });

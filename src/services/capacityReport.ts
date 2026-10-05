@@ -3,6 +3,7 @@ import { displayRows, freshRows, windowDurationMs } from './accountLimits';
 import type { AccountOrder } from './accountOrder';
 import type { AccountProfile } from './accountProfiles';
 import { isOAuthCredentialFile } from './authFiles';
+import { accountsGap, type AccountsGap } from './accountsStore';
 import { normalizeAuthIndex } from './managementApi';
 import { listPrice } from './planCosts';
 import { providerLimits } from './providerLimits';
@@ -236,3 +237,14 @@ const longWindowsKey = () => longLimitWindows(getQuotaCacheSnapshot()).join('\n'
 
 /** The long limit windows as one string, so a component re-renders only when the set changes. */
 export const useLongLimitWindowsKey = () => useSyncExternalStore(subscribeQuotaCache, longWindowsKey, longWindowsKey);
+
+/**
+ * Why Value has no subscription account to show, so it can say so rather than offer adding one: the core isn't
+ * running (it lists the accounts), the list is still loading or failed, every account is turned off, or the core has
+ * none (`accountsGap`). `subscriptions` when accounts are listed but none is a subscription, the one case where
+ * adding one is the answer, as it is for `none`.
+ */
+export function capacityGap(coreRunning: boolean | null, accounts: Parameters<typeof accountsGap>[0]): 'coreStopped' | AccountsGap | 'subscriptions' {
+  if (coreRunning === false) return 'coreStopped';
+  return accountsGap(accounts) ?? 'subscriptions';
+}

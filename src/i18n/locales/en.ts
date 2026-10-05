@@ -1335,6 +1335,8 @@ export const en = {
   'heavySession.resumeFailed': 'Couldn’t resume the key: {error}',
   'usage.capacity.title': 'Value',
   'usage.capacity.empty.title': 'No subscription accounts',
+  'usage.capacity.coreStopped.title': 'The core isn’t running',
+  'usage.capacity.coreStopped.description': 'Value lists your subscription accounts from the core. Start it to see what each one is worth.',
   'usage.capacity.empty.description': 'Sign in to a Claude or Codex subscription to see what it’s worth at API prices and how much of its limits you use.',
   'usage.capacity.empty.open': 'Add account',
   'usage.capacity.perMonth': '{amount}/mo',

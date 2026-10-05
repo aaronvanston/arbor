@@ -1,12 +1,20 @@
-import { useMemo, useState } from 'react';
-import { KeyRound, Lightbulb, Pencil } from '../components/ui/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { KeyRound, Lightbulb, Pencil, Play, ServerCog } from '../components/ui/icons';
 import { useI18n } from '../i18n';
 import { formatDate, formatMoney, formatNumber } from '../lib/format';
 import { useAccountLimitPrefs } from '../services/accountLimits';
 import { useAccountOrder } from '../services/accountOrder';
 import { fileProfile, useAccountProfiles, type ResolvedProfile } from '../services/accountProfiles';
-import { useAccountsStore } from '../services/accountsStore';
+import { ensureAccountsLoaded, loadAccountFiles, useAccountsStore } from '../services/accountsStore';
+import { useCoreRuntime } from '../coreRuntime';
+import { runCoreProcess } from '../services/coreProcess';
+import { plainError } from '../services/plainError';
+import { AccountsEmpty } from '../components/AccountsEmpty';
+import { Skeleton } from '../components/ui/skeleton';
+import { Spinner } from '../components/ui/spinner';
+import type { AppView } from '../navigation';
 import {
+  capacityGap,
   capacityReport,
   TARGET_PERCENT,
   type CapacityAccount,
@@ -39,9 +47,27 @@ const formatRatio = (ratio: number) => `${ratio >= 10 ? Math.round(ratio) : rati
  * against what it costs, how much of its long limit it uses, and which
  * accounts the others could cover.
  */
-export function CapacityView({ data, onAddAccount }: { data: CapacityReport; onAddAccount?: () => void }) {
+export function CapacityView({ data, onAddAccount, onNavigate }: { data: CapacityReport; onAddAccount?: () => void; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
-  const { files } = useAccountsStore();
+  const accountsStore = useAccountsStore();
+  const { files } = accountsStore;
+  const { status: coreStatus, publishStatus, refreshStatus } = useCoreRuntime();
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
+  const coreReady = coreStatus?.ready ?? false;
+  // Value opens while the core is stopped, so the accounts may never have been asked for; ask once it answers.
+  useEffect(() => {
+    if (coreReady) void ensureAccountsLoaded();
+  }, [coreReady]);
+  const startCore = async () => {
+    setStarting(true);
+    setStartError('');
+    try {
+      setStartError((await runCoreProcess('start_core_process', { publishStatus, refreshStatus })) ?? '');
+    } finally {
+      setStarting(false);
+    }
+  };
   const quotas = useQuotaCache();
   const profiles = useAccountProfiles();
   const prefs = useAccountLimitPrefs();
@@ -58,16 +84,46 @@ export function CapacityView({ data, onAddAccount }: { data: CapacityReport; onA
   const money = formatMoney;
 
   if (providers.length === 0) {
+    // Only a core with no subscription account is a reason to add one; say what else is in the way when it's that.
+    const gap = capacityGap(coreStatus ? coreStatus.running : null, accountsStore);
     return (
       <SettingsSection title={t('usage.capacity.title')}>
-        <Empty size="sm">
-          <EmptyMedia><KeyRound /></EmptyMedia>
-          <EmptyTitle>{t('usage.capacity.empty.title')}</EmptyTitle>
-          <EmptyDescription>{t('usage.capacity.empty.description')}</EmptyDescription>
-          {onAddAccount ? (
-            <Button variant="outline" size="sm" className="mt-2" onClick={onAddAccount}>{t('usage.capacity.empty.open')}</Button>
-          ) : null}
-        </Empty>
+        {gap === 'coreStopped' ? (
+          <Empty size="sm">
+            <EmptyMedia><ServerCog /></EmptyMedia>
+            <div>
+              <EmptyTitle>{t('usage.capacity.coreStopped.title')}</EmptyTitle>
+              <EmptyDescription>{t('usage.capacity.coreStopped.description')}</EmptyDescription>
+            </div>
+            <Button variant="outline" size="sm" disabled={starting} onClick={() => void startCore()}>
+              {starting ? <Spinner /> : <Play />}
+              {t(starting ? 'app.coreLocked.starting' : 'app.coreLocked.start')}
+            </Button>
+            {startError ? <p className="text-xs text-error-foreground" role="alert">{startError}</p> : null}
+          </Empty>
+        ) : gap === 'loading' ? (
+          <SettingsBlock aria-hidden="true"><Skeleton className="h-16 w-full" /></SettingsBlock>
+        ) : gap === 'off' || gap === 'failed' ? (
+          <AccountsEmpty
+            gap={gap}
+            icon={<KeyRound />}
+            description={t('usage.capacity.empty.description')}
+            error={accountsStore.error ? plainError(accountsStore.error, t) : undefined}
+            retrying={accountsStore.loading}
+            onRetry={() => void loadAccountFiles()}
+            onNavigate={onNavigate}
+            onAddAccount={onAddAccount}
+          />
+        ) : (
+          <Empty size="sm">
+            <EmptyMedia><KeyRound /></EmptyMedia>
+            <EmptyTitle>{t('usage.capacity.empty.title')}</EmptyTitle>
+            <EmptyDescription>{t('usage.capacity.empty.description')}</EmptyDescription>
+            {onAddAccount ? (
+              <Button variant="outline" size="sm" className="mt-2" onClick={onAddAccount}>{t('usage.capacity.empty.open')}</Button>
+            ) : null}
+          </Empty>
+        )}
       </SettingsSection>
     );
   }

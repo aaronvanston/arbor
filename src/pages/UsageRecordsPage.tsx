@@ -1093,7 +1093,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           />
         ) : null}
         {hasCurrentSnapshot && activeTab === 'capacity' && capacity ? (
-          <CapacityView data={capacity} onAddAccount={onNavigate ? () => addAccount(onNavigate) : undefined} />
+          <CapacityView data={capacity} onAddAccount={onNavigate ? () => addAccount(onNavigate) : undefined} onNavigate={onNavigate} />
         ) : null}
         {hasCurrentSnapshot && activeTab === 'pricing' && pricing ? (
           <PricingView pricing={pricing} query={buildQueries().query} onChanged={() => loadData(true)} />
