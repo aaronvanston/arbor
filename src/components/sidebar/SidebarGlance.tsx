@@ -115,7 +115,8 @@ function MachineChip({ item, onOpen }: { item: HomeMachine; onOpen: () => void }
               'min-w-0 gap-1 border-[color-mix(in_srgb,var(--machine-color)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--machine-color)_12%,transparent)]',
             )}
             style={style}
-            aria-label={t('glance.machine.aria', { machine: name, status: condition ? `${healthText}, ${condition}` : healthText, agents })}
+            // The reason is a sentence of its own, with its own full stop, which the label's "{status}." would double.
+            aria-label={t('glance.machine.aria', { machine: name, status: condition ? `${healthText}. ${condition.replace(/\.+$/, '')}` : healthText, agents })}
             onClick={onOpen}
           />
         }

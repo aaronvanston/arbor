@@ -191,7 +191,7 @@ export function PricingView({
 
       <SettingsSection
         title={t('usage.pricing.tableTitle')}
-        description={t('usage.pricing.perMillion')}
+        description={t('usage.pricing.about')}
         headerAction={
           <div className="flex items-center gap-2">
             <Input

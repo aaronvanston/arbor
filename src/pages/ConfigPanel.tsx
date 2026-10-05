@@ -503,7 +503,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
     try {
       await invokeCommand('open_core_logs_directory');
     } catch (error) {
-      loggingFeedback.showNotice({ key: 'config.diagnostics.error.openLogs', variables: { error: String(error) } }, 'error');
+      loggingFeedback.showNotice({ key: 'config.diagnostics.error.openLogs', variables: { error: plainError(error, t) } }, 'error');
     } finally {
       setBusyAction(null);
     }
@@ -555,7 +555,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
         url: webUiManagementUrl(latestSettings.port, latestTlsSettings.enabled, latestSettings.host),
       });
     } catch (error) {
-      managementFeedback.showNotice({ key: 'config.webuiKey.error.openFailed', variables: { error: String(error) } }, 'error');
+      managementFeedback.showNotice({ key: 'config.webuiKey.error.openFailed', variables: { error: plainError(error, t) } }, 'error');
     }
   };
 
@@ -671,7 +671,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
           saved('config.notice.networkRestarted');
         } catch (error) {
           await refreshStatus();
-          networkFeedback.showNotice({ key: 'config.error.networkRestartFailed', variables: { error: String(error) } }, 'error');
+          networkFeedback.showNotice({ key: 'config.error.networkRestartFailed', variables: { error: plainError(error, t) } }, 'error');
         }
       } else if (networkChanged) {
         saved('config.notice.networkNextStart');
@@ -1391,7 +1391,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
               </SettingsBlock>
             ) : null}
             <SettingsBlock className="flex items-center justify-between gap-4 bg-muted/40 py-2.5 dark:bg-input/10">
-              <span className="text-xs text-muted-foreground">{t('config.diagnostics.fileLogging.description')}</span>
+              <span className="text-xs text-muted-foreground">{t('config.diagnostics.openLogsHint')}</span>
               <Button variant="outline" size="sm" disabled={controlsDisabled} onClick={() => void openCoreLogsDirectory()}>
                 <FolderOpen />
                 {t('config.diagnostics.openLogs')}

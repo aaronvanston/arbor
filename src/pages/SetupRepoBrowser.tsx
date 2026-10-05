@@ -365,7 +365,7 @@ function TreeMenu({ item, entry, onNewFile, onRename, onDelete, onDiscard }: {
     <>
       <MenuItem onClick={onNewFile}><Plus />{t('repo.new.file')}</MenuItem>
       <MenuItem onClick={onRename}><Pencil />{t('repo.file.rename')}</MenuItem>
-      <MenuItem onClick={() => void copy(item.path, { label: t('repo.file.copyPath') })}><Copy />{t('repo.file.copyPath')}</MenuItem>
+      <MenuItem onClick={() => void copy(item.path, { label: t('repo.file.pathCopied') })}><Copy />{t('repo.file.copyPath')}</MenuItem>
       {entry && entry.status !== 'same' ? <MenuItem onClick={onDiscard}><RotateCcw />{t('repo.file.discard')}</MenuItem> : null}
       <MenuSeparator />
       <MenuItem variant="destructive" onClick={onDelete}><Trash2 />{t('repo.file.delete')}</MenuItem>
@@ -510,7 +510,7 @@ function FilePane({ repo, machines, entry, sources, onTree, onRepo, onReview, on
                   </MenuTrigger>
                   <MenuPopup align="end" className="min-w-56">
                     {!deleted ? <MenuItem onClick={onRename}><Pencil />{t('repo.file.rename')}</MenuItem> : null}
-                    <MenuItem onClick={() => void copy(entry.path, { label: t('repo.file.copyPath') })}><Copy />{t('repo.file.copyPath')}</MenuItem>
+                    <MenuItem onClick={() => void copy(entry.path, { label: t('repo.file.pathCopied') })}><Copy />{t('repo.file.copyPath')}</MenuItem>
                     {entry.status !== 'same' ? <MenuItem onClick={onDiscard}><RotateCcw />{t('repo.file.discard')}</MenuItem> : null}
                     {removable ? (
                       <>
