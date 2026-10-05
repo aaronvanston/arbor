@@ -363,6 +363,7 @@ export function VersionManagementPage() {
   const currentVersion = coreStatus?.currentVersion ?? '';
   const coreNotes = coreHasUpdate ? releaseNotesToShow(latest?.releases, currentVersion, latestVersion, { versions: 3 }) : NO_RELEASE_NOTES;
   const coreInstalled = Boolean(coreStatus?.installed);
+  const coreRunning = Boolean(coreStatus?.running);
   const coreProcessBusy = Boolean(coreStatus?.starting);
   const busy = checkingLatest || installing || coreProcessBusy;
   const installDisabled = busy || installing;
@@ -630,16 +631,28 @@ export function VersionManagementPage() {
                       <Button
                         variant={latestVersion && (!coreInstalled || coreHasUpdate) ? 'default' : 'outline'}
                         size="sm"
-                        disabled={!latestVersion || busy}
+                        // Once the core is current there's nothing newer to take; Reinstall puts the same version back.
+                        disabled={!latestVersion || busy || (coreInstalled && !coreHasUpdate)}
                         focusableWhenDisabled
-                        onClick={() => void guardRestart({ kind: 'core', version: latestVersion }, () => void installVersion(latestVersion), () => setConfirmUpdateOpen(true))}
+                        // Only a running core is stopped, so only then is there anything to confirm.
+                        onClick={() => void guardRestart(
+                          { kind: 'core', version: latestVersion },
+                          () => void installVersion(latestVersion),
+                          coreRunning ? () => setConfirmUpdateOpen(true) : () => void installVersion(latestVersion),
+                        )}
                       />
                     }
                   >
                     <Download />
-                    {!coreInstalled ? t('kernel.versions.installLatestMissing') : t('kernel.versions.installLatest')}
+                    {t(!coreInstalled ? 'kernel.versions.installLatestMissing' : coreRunning ? 'kernel.versions.installLatest' : 'kernel.versions.updateLatest')}
                   </TooltipTrigger>
-                  <TooltipPopup>{latestVersion ? t('kernel.versions.stopAndUpdateVersion', { version: latestVersion }) : t('kernel.versions.installLatest')}</TooltipPopup>
+                  <TooltipPopup>
+                    {coreInstalled && !coreHasUpdate && latestVersion
+                      ? t('kernel.update.latest')
+                      : latestVersion
+                        ? t(coreRunning ? 'kernel.versions.stopAndUpdateVersion' : 'kernel.versions.installVersion', { version: latestVersion })
+                        : t('kernel.versions.installLatest')}
+                  </TooltipPopup>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger

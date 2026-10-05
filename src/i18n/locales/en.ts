@@ -5528,6 +5528,8 @@ export const en = {
   'kernel.versions.confirmUpdateTitle': 'Stop and update core',
   'kernel.versions.stopAndConfirmDescription': 'Updating the core will stop the currently running core process and install version {version}. You can restart the core after the update. Do you want to continue?',
   'kernel.versions.stopAndUpdateVersion': 'Stop and update to {version}',
+  'kernel.versions.updateLatest': 'Update',
+  'kernel.versions.installVersion': 'Install {version}',
   'kernel.versions.reinstallTitle': 'Reinstall the current version',
   'kernel.versions.reinstall': 'Reinstall',
   'kernel.versions.coreSourceHint': "From CLIProxyAPI's GitHub releases, each checked against the checksums the release publishes.",
