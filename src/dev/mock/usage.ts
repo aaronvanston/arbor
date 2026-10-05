@@ -169,6 +169,15 @@ const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
     estimatedCost: Math.round(usageOverview.estimatedCost * scale * 100) / 100,
     pricedRequests: noPrices ? 0 : Math.max(0, sum.requests - Math.round(120 * scale)),
     timeline: points,
+    // Each machine's share holds whatever the range, so the Machines page's figures follow the range picked.
+    machines: usageOverview.machines.map((machine) => ({
+      ...machine,
+      requests: Math.round(machine.requests * scale),
+      tokens: Math.round(machine.tokens * scale),
+      success: Math.round(machine.success * scale),
+      failures: Math.round(machine.failures * scale),
+      canceled: Math.round(machine.canceled * scale),
+    })),
   };
 };
 
@@ -655,7 +664,7 @@ const mockThreadRequests = (thread: UsageSessionThread, main: boolean): SessionR
     }
     const cacheWrite = claude ? Math.max(0, input - cacheRead - between(200, 900)) : 0;
     const longContext = Boolean(threshold && input > threshold);
-    const price = timelinePrices[model];
+    const price = noPrices ? undefined : timelinePrices[model];
     const scale = (serviceTier === 'priority' ? 2 : 1) / 1_000_000;
     const inputScale = scale * (longContext ? 2 : 1);
     requests.push({
@@ -698,8 +707,21 @@ for (const session of usageSessions) {
       compactions: own.filter((request) => request.step === 'compacted').length,
     };
   };
-  session.threads.forEach((thread) => Object.assign(thread, stats(thread.id)));
-  Object.assign(session, stats(session.id));
+  // Tokens and cost too, so a session's row, its Threads table and its page's header add up the same requests,
+  // as the real app's do through one read.
+  const sums = (picked: SessionRequest[]) => {
+    const total = (key: 'inputTokens' | 'outputTokens' | 'reasoningTokens' | 'cacheReadTokens' | 'cacheCreationTokens') => picked.reduce((sum, request) => sum + request[key], 0);
+    const priced = picked.filter((request) => request.cost);
+    return {
+      inputTokens: total('inputTokens'), outputTokens: total('outputTokens'), reasoningTokens: total('reasoningTokens'),
+      cacheReadTokens: total('cacheReadTokens'), cacheCreationTokens: total('cacheCreationTokens'),
+      totalTokens: total('inputTokens') + total('outputTokens'),
+      estimatedCost: priced.reduce((sum, request) => sum + (request.cost ? request.cost.input + request.cost.cacheRead + request.cost.cacheWrite + request.cost.output : 0), 0),
+      pricedRequests: priced.length,
+    };
+  };
+  session.threads.forEach((thread) => Object.assign(thread, stats(thread.id), sums(requests.filter((request) => request.threadId === thread.id))));
+  Object.assign(session, stats(session.id), sums(requests));
 }
 
 // What each session's transcript says, as the machines' transcript scans store it. Two weren't found: a codex exec run
@@ -1237,6 +1259,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   get_usage_machine_assignments: () => freshInstall ? [] : [
     { api_key_hash: 'a1b2', label: 'Casey laptop', machine: 'casey-mbp', pool: 'dev' },
     { api_key_hash: 'c3d4', label: 'CI runner', machine: 'ci-01', pool: 'ci' },
+    { api_key_hash: 'e5f6', label: 'GitHub runner', machine: 'ci-runner', pool: 'ci' },
   ],
   save_usage_machine_assignments: () => null,
   record_limit_samples: (args) => { mockLog('limit_history', args.samples); return args.samples.length; },

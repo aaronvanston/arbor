@@ -107,6 +107,10 @@ const healthHosts: MachineHost[] = [
   { machine: 'ci-01', endpoint: 'ci-01', port: 22, enabled: true, source: 'seed' },
   { machine: 'cedar-02', endpoint: 'cedar-02', port: 22, enabled: true, source: 'seed' },
   { machine: 'lab-box', endpoint: '', port: 22, enabled: true, source: 'seed' },
+  // Machines seen only through their requests and sessions: a key assigned to one, or a transcript from one, gives
+  // it a host to fill in, as Rust's seed_hosts does, rather than leaving its page saying it was removed.
+  { machine: 'ci-runner', endpoint: '', port: 22, enabled: true, source: 'seed' },
+  { machine: 'studio', endpoint: '', port: 22, enabled: true, source: 'seed' },
 ];
 // `?machines=many` adds a rack of fourteen build machines, one with no host yet, so the sidebar's list of machines is
 // longer than a short window has room for.

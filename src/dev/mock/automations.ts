@@ -7,8 +7,10 @@ import type {
   AutomationRun,
   AutomationRunStatus,
   AutomationSummary,
+  ScheduleSummary,
   UdianOnMachine,
 } from '../../native/types';
+import { choiceSummary, scheduleChoice } from '../../services/automations';
 import type { CommandAnswers } from './answers';
 import { freshInstall, later, mockLog, now, params } from './scenario';
 
@@ -45,6 +47,44 @@ const ORCA_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: 
 const SUPERSET_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: true, delete: false, copy: true };
 
 type Seed = Omit<Automation, 'summary'> & { summary: AutomationSummary };
+
+/**
+ * When a schedule next comes round after `from`, in this Mac's time, as Rust works it out from the rule; null for one
+ * whose times aren't known here (custom rules, other apps' own).
+ */
+function nextRun(schedule: ScheduleSummary, from: number): number | null {
+  const at = new Date(from);
+  switch (schedule.kind) {
+    case 'everyMinutes': {
+      const step = Math.max(1, schedule.minutes) * MINUTE;
+      return Math.floor(from / step) * step + step;
+    }
+    case 'everyHours': {
+      at.setMinutes(schedule.minute, 0, 0);
+      while (at.getTime() <= from) at.setHours(at.getHours() + Math.max(1, schedule.hours));
+      return at.getTime();
+    }
+    case 'daily':
+    case 'weekdays':
+    case 'weekly': {
+      const days = schedule.kind === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : schedule.kind === 'weekdays' ? [1, 2, 3, 4, 5] : schedule.days;
+      at.setHours(schedule.hour, schedule.minute, 0, 0);
+      for (let step = 0; step < 8; step += 1) {
+        if (at.getTime() > from && days.includes(at.getDay())) return at.getTime();
+        at.setDate(at.getDate() + 1);
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** A seed whose next run follows its schedule, for one that has a next run at all. */
+const scheduled = (item: Seed): Seed => {
+  if (item.summary.nextRunAtMs === null) return item;
+  return { ...item, summary: { ...item.summary, nextRunAtMs: nextRun(item.summary.schedule, now) ?? item.summary.nextRunAtMs } };
+};
 
 const machine = (name: string) => ({ kind: 'machine' as const, name });
 
@@ -182,7 +222,7 @@ const SEEDS: Seed[] = [
   ] : []),
 ];
 
-let automations: Seed[] = freshInstall || scenario === 'empty' ? [] : SEEDS.map((item) => structuredClone(item));
+let automations: Seed[] = freshInstall || scenario === 'empty' ? [] : SEEDS.map((item) => scheduled(structuredClone(item)));
 let running = params.get('automations') !== 'off';
 
 const RUN_STATUSES: AutomationRunStatus[] = ['done', 'skipped', 'done', 'skipped', 'skipped', 'done', 'failed', 'done', 'missed', 'done', 'skipped', 'unreachable'];
@@ -295,7 +335,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
       summary: {
         id, source: 'arbor', name: input.name, enabled: input.enabled, machine: machineName, target: input.target,
         project: input.projectPath ? projectName(input.projectPath) : null, agent: input.agent, model: input.model ?? existing?.summary.model ?? null,
-        schedule: existing?.summary.schedule ?? { kind: 'custom' }, nextRunAtMs: input.enabled ? now + HOUR : null,
+        schedule: choiceSummary(scheduleChoice(input.rrule)), nextRunAtMs: input.enabled ? nextRun(choiceSummary(scheduleChoice(input.rrule)), Date.now()) : null,
         lastRun: existing?.summary.lastRun ?? null, hasPrecheck: Boolean(input.precheck), abilities: ARBOR_ABILITIES, runsOn: input.runsOn,
       },
       prompt: input.prompt, rrule: input.rrule, timezone: input.timezone ?? null, projectPath: input.projectPath,
@@ -317,7 +357,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
     mockLog('set_automation_enabled', { id, enabled });
     const item = find(id);
     item.summary.enabled = enabled;
-    item.summary.nextRunAtMs = enabled ? now + HOUR : null;
+    item.summary.nextRunAtMs = enabled ? nextRun(item.summary.schedule, Date.now()) : null;
     return list();
   },
   run_automation_now: ({ id }) => {

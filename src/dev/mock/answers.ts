@@ -45,6 +45,9 @@ export function mockCommands(answers: Partial<CommandAnswers<Commands>>, { plugi
     };
     if (!delayMs) return reply();
     const result = reply();
+    // A failing answer is a rejected promise from the start; marking it handled now keeps the browser from calling
+    // it unhandled during the delay. The chain below still hands the failure to the caller.
+    if (result instanceof Promise) result.catch(() => undefined);
     return new Promise((resolve) => window.setTimeout(resolve, delayMs)).then(() => result);
   }, { shouldMockEvents: events });
   return calls;

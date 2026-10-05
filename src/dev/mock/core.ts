@@ -158,7 +158,7 @@ export const configSettings: CoreConfigView = {
   logsMaxTotalSizeMb: 512,
   errorLogsMaxFiles: 20,
   usageStatisticsEnabled: true,
-  redisUsageQueueRetentionSeconds: 604800,
+  redisUsageQueueRetentionSeconds: 3600,
   requestLog: false,
   pluginsEnabled: false,
   host: '127.0.0.1',
@@ -789,6 +789,8 @@ export const coreAnswers: CommandAnswers<CoreCommands> = {
   get_speed_alias_sources: () => aliasSourcesWhere((source) => source.supportsFast),
   create_thinking_alias: (args) => {
     const source = aliasSourceFor(args.sourceId);
+    // As Rust does, an alias name that's taken is refused rather than replacing the one there.
+    if (thinkingAliases.some((entry) => entry.alias.toLowerCase() === args.alias.trim().toLowerCase())) throw `Alias model ${args.alias.trim()} already exists`;
     thinkingAliases = [...thinkingAliases, { sourceModel: source.model, alias: args.alias, effort: args.effort ?? null, provider: source.provider, kind: source.kind, oauthChannel: source.protocol }];
     return thinkingAliases;
   },

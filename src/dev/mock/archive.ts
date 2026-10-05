@@ -50,10 +50,10 @@ const fleetHomes = (share: number): ArchiveSource[] => archiveMachinesScenario =
 ];
 const DESKTOP = '~/Library/Application Support/Claude/local-agent-mode-sessions';
 const archiveHomes = (share: number): ArchiveSource[] => [
-  { machine: 'mac-mini', label: '~/.claude', agent: 'claude', files: 5210, kept: Math.round(5210 * share), gone: share > 0 ? 214 : 0, retentionDays: 36_500 },
-  { machine: 'mac-mini', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null },
-  { machine: 'mac-mini', label: '~/.agent-app/homes/claude-proxy', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
-  { machine: 'mac-mini', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
+  { machine: 'casey-mbp', label: '~/.claude', agent: 'claude', files: 5210, kept: Math.round(5210 * share), gone: share > 0 ? 214 : 0, retentionDays: 36_500 },
+  { machine: 'casey-mbp', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null },
+  { machine: 'casey-mbp', label: '~/.agent-app/homes/claude-proxy', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
+  { machine: 'casey-mbp', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
   ...fleetHomes(share),
 ];
 
@@ -72,12 +72,12 @@ function mockArchiveImports(scenario: string): ArchiveImport[] {
   const started = now - 3 * 86_400_000;
   return [
     {
-      id: 3, path: '/Volumes/Backup/Mac backups/old-mac', machine: 'mac-mini', machines: ['mac-mini'], homes: 5,
+      id: 3, path: '/Volumes/Backup/Mac backups/old-mac', machine: 'casey-mbp', machines: ['casey-mbp'], homes: 5,
       files: importsScenario === 'starting' ? 0 : 9_034, kept: importsScenario === 'starting' ? 0 : 3_702, sessions: importsScenario === 'starting' ? 0 : 1_880,
       addedAt: now - 20 * 60_000, finishedAt: null, connected: importsScenario !== 'away', failures: 0, error: null,
     },
     {
-      id: 2, path: '/Volumes/Backup/Old files/dot-claude', machine: 'mac-mini', machines: ['mac-mini'], homes: 1,
+      id: 2, path: '/Volumes/Backup/Old files/dot-claude', machine: 'casey-mbp', machines: ['casey-mbp'], homes: 1,
       files: 12_480, kept: importsScenario === 'failed' ? 12_477 : 12_480, sessions: 1_618, addedAt: started, finishedAt: started + 41 * 60_000, connected: true,
       failures: importsScenario === 'failed' ? 3 : 0, error: importsScenario === 'failed' ? 'Couldn’t read a session file: Permission denied (os error 13)' : null,
     },
@@ -114,7 +114,7 @@ function mockImportPreview(path: string): ImportPreview {
     firstAt: fresh.length ? new Date(2026, 0, 6).getTime() : null,
     lastAt: fresh.length ? new Date(2026, 6, 1).getTime() : null,
     partial: importPreviewScenario === 'partial',
-    machines: ['mac-mini', 'casey-mbp', 'cedar-02', 'ci-01'],
+    machines: ['casey-mbp', 'cedar-02', 'ci-01'],
   };
 }
 
@@ -190,7 +190,7 @@ const recoveredScenario = params.get('recovered') ?? (freshInstall ? 'none' : 's
 
 /**
  * cedar-02 and casey-mbp have a stretch six weeks back whose transcripts were cleared before the archive
- * kept them, and mac-mini has days from before the year counted with only a count of sessions.
+ * kept them, and casey-mbp has days from before the year counted with only a count of sessions.
  */
 function mockRecovered(): Pick<LifetimeTokens, 'recovered' | 'recoveredOverlap'> {
   if (recoveredScenario === 'none') return { recovered: [], recoveredOverlap: { claudeCode: 0, transcripts: 0 } };
@@ -203,12 +203,12 @@ function mockRecovered(): Pick<LifetimeTokens, 'recovered' | 'recoveredOverlap'>
   const recovered: RecoveredDay[] = [
     ...Array.from({ length: 10 }, (_, n): RecoveredDay => ({ day: ago(52 - n), machine: 'cedar-02', tokens: Math.round((0.55 + 0.45 * Math.abs(Math.sin(n * 7.1))) * 1.5e9), sessions: 3 + (n % 4) })),
     ...Array.from({ length: 7 }, (_, n): RecoveredDay => ({ day: ago(48 - n), machine: 'casey-mbp', tokens: Math.round((0.5 + 0.5 * Math.abs(Math.sin(n * 3.3))) * 3.2e8), sessions: 1 + (n % 3) })),
-    ...Array.from({ length: 29 }, (_, n): RecoveredDay => ({ day: ago(480 - n * 3), machine: 'mac-mini', tokens: 0, sessions: 1 + (n % 5) })),
+    ...Array.from({ length: 29 }, (_, n): RecoveredDay => ({ day: ago(480 - n * 3), machine: 'casey-mbp', tokens: 0, sessions: 1 + (n % 5) })),
   ];
   return { recovered: recovered.sort((left, right) => left.day.localeCompare(right.day)), recoveredOverlap: { claudeCode: 176_400_000_000, transcripts: 100_200_000_000 } };
 }
 
-/** Every call is mac-mini's, so narrowing to another machine leaves its homes and Claude Code's own days. */
+/** Every call is casey-mbp's, so narrowing to another machine leaves its homes and Claude Code's own days. */
 function mockLifetimeTokens(machine = ''): LifetimeTokens {
   const archived = archiveScenario !== 'off';
   const counted = archived && archiveScenario !== 'empty' && tokensScenario !== 'waiting';
@@ -247,7 +247,7 @@ function mockLifetimeTokens(machine = ''): LifetimeTokens {
         reasoning: codex ? Math.round(tokens * 0.009) : 0,
       };
       const rowKey = `${month}|${maker.home}|${maker.model}`;
-      const row: MonthRow = months.get(rowKey) ?? { month, machine: 'mac-mini', home: maker.home, agent: maker.agent, model: maker.model, calls: 0, input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: 0 };
+      const row: MonthRow = months.get(rowKey) ?? { month, machine: 'casey-mbp', home: maker.home, agent: maker.agent, model: maker.model, calls: 0, input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: 0 };
       for (const field of Object.keys(counts) as (keyof typeof counts)[]) {
         row[field] += counts[field];
         today[field] += counts[field];
@@ -257,7 +257,7 @@ function mockLifetimeTokens(machine = ''): LifetimeTokens {
     days.push(today);
   }
   const on = <T extends { machine: string }>(rows: T[]) => (machine ? rows.filter((row) => row.machine === machine) : rows);
-  const own = !machine || machine === 'mac-mini';
+  const own = !machine || machine === 'casey-mbp';
   const recovered = counted ? mockRecovered() : { recovered: [], recoveredOverlap: { claudeCode: 0, transcripts: 0 } };
   return {
     archived,
