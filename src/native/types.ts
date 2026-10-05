@@ -149,6 +149,11 @@ export type AppIconSetting = {
   shown: AppIconChoice,
 };
 
+/**
+ * What an app menu item asks the window to do.
+ */
+export type AppMenuAction = "checkForUpdates" | "openSettings";
+
 export type AppUpdateInfo = {
   currentVersion: string,
   latestVersion: string,

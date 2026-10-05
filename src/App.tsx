@@ -44,6 +44,7 @@ import { SidebarGlance, SidebarMachines } from './components/sidebar/SidebarGlan
 import { leafView, PALETTE_VIEWS, TREE_PAGES } from './services/sidebarTree';
 import { AlertsUtility, CoreDownRow, CoreUtility, SettingsBack, SettingsUtility, UpdateUtility } from './components/sidebar/SidebarFooter';
 import { useAppShortcuts } from './hooks/useAppShortcuts';
+import { watchAppMenuActions, type AppMenuHandlers } from './services/appMenu';
 import { useModifierHold } from './hooks/useShortcuts';
 import { SETTINGS_PAGE_LABEL, indexSettings, settingEntry, type SettingEntry } from './services/settingsIndex';
 import { requestFocus } from './focusRequests';
@@ -240,8 +241,8 @@ function App() {
 function AppContent() {
   const { t, tRich } = useI18n();
   usePagePrefetch();
-  const { info: appUpdateInfo, hasUpdate, processing: appUpdateProcessing } = useAppUpdate();
-  const { latest: coreLatest, hasUpdate: coreHasUpdate } = useCoreUpdate();
+  const { info: appUpdateInfo, hasUpdate, processing: appUpdateProcessing, checking: checkingAppUpdate, check: checkAppUpdate } = useAppUpdate();
+  const { latest: coreLatest, hasUpdate: coreHasUpdate, check: checkCoreUpdate } = useCoreUpdate();
   const history = useViewHistory();
   const view = currentView(history);
   // Where Settings opens, and where leaving it returns to: the last page on each side, as it was left.
@@ -454,6 +455,20 @@ function AppContent() {
   // stopped since.
   const openSettings = () => goTo({ kind: 'settings', page: lastSettingsPage.current }, 'return');
   const leaveSettings = () => goTo(lastMainView.current, 'return');
+  // The app menu's Settings… takes ⌘, before the page sees it, so it does what the shortcut does, nothing while in
+  // Settings. Check for Updates… opens Settings › Updates and asks GitHub again for both Arbor and the core, as a
+  // check the person asked for rather than the page's occasional one.
+  const menuHandlers: AppMenuHandlers = {
+    openSettings: () => { if (!inSettings) openSettings(); },
+    checkForUpdates: () => {
+      goTo({ kind: 'settings', page: 'updates' }, 'return');
+      if (!checkingAppUpdate && !appUpdateProcessing) void checkAppUpdate();
+      void checkCoreUpdate(true);
+    },
+  };
+  const appMenuHandlers = useRef(menuHandlers);
+  appMenuHandlers.current = menuHandlers;
+  useEffect(() => watchAppMenuActions(() => appMenuHandlers.current), []);
   // A page that needs the core is passed over while it's down, rather than landed on locked.
   const canOpen = (next: AppView) => canOpenView(next, coreReady);
   useAppShortcuts({

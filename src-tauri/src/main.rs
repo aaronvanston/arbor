@@ -1,5 +1,6 @@
 mod agents;
 mod app_icon;
+mod app_menu;
 mod app_identity;
 mod app_settings;
 mod app_update;
@@ -1567,6 +1568,8 @@ fn main() {
                 quit_guard::press_quit(app_handle);
             } else if let Some(change) = zoom::menu_zoom_change(id) {
                 zoom::press_zoom(app_handle, change);
+            } else {
+                app_menu::run_app_menu_action(app_handle, id);
             }
         });
 

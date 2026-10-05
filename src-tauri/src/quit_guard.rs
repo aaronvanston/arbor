@@ -89,7 +89,7 @@ struct QuitGuardArmed {
     window_ms: u64,
 }
 
-/// Tauri's default macOS menu with Arbor's own Quit and zoom items. The built-in Quit ends the app
+/// Tauri's default macOS menu with Arbor's own Quit, zoom, Check for Updates and Settings items. The built-in Quit ends the app
 /// without asking the event loop first, so nothing could hold it back.
 #[cfg(target_os = "macos")]
 pub(crate) fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
@@ -119,6 +119,21 @@ pub(crate) fn app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::R
         true,
         &[
             &PredefinedMenuItem::about(app, None, Some(about))?,
+            &MenuItem::with_id(
+                app,
+                app_menu::CHECK_FOR_UPDATES_MENU_ID,
+                "Check for Updates…",
+                true,
+                None::<&str>,
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(
+                app,
+                app_menu::SETTINGS_MENU_ID,
+                "Settings…",
+                true,
+                Some(app_menu::SETTINGS_ACCELERATOR),
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, None)?,
             &PredefinedMenuItem::separator(app)?,

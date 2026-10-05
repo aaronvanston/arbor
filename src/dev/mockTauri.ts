@@ -281,6 +281,7 @@
  * scopes it to a project too, and `?overrides=sample` also gives casey/arbor a heavy-session threshold of its own and
  * turns waiting alerts off for acme/proxy on casey-mbp.
  * ⌘Q acts like the app's Quit menu item (a quit is logged, not done); `?quit=armed` shows its warning for 10 seconds.
+ * `?menu=updates` and `?menu=settings` pick the app menu's Check for Updates… and Settings… a second after loading.
  * `?chrome=mac` draws the Mac window's title bar (room for the window buttons, top rows drag, and three drawn window
  * buttons at x 16–68, so screenshots show what the sidebar button and the wordmark clear), and
  * `?chrome=mac-fullscreen` starts that window in full screen; `window.__mockFullscreen(true | false)` moves it in or out.
@@ -347,6 +348,8 @@
 import { emit } from '@tauri-apps/api/event';
 import { clearMocks, mockWindows } from '@tauri-apps/api/mocks';
 import { QUIT_GUARD_ARMED_EVENT } from '../services/quitGuard';
+import { APP_MENU_ACTION_EVENT } from '../services/appMenu';
+import type { AppMenuAction } from '../native/types';
 import { getAlertHistory, recordAlerts } from '../services/alertHistory';
 import { notify, type SystemNotification } from '../services/notify';
 import { previewMacTitleBar } from '../services/windowChrome';
@@ -547,6 +550,9 @@ export function installTauriMock() {
   });
   startMockZoom();
   if (params.get('quit') === 'armed') window.setTimeout(() => void emit(QUIT_GUARD_ARMED_EVENT, { windowMs: 10_000 }), 1_000);
+  const menuScenario = params.get('menu');
+  const menuAction: AppMenuAction | null = menuScenario === 'updates' ? 'checkForUpdates' : menuScenario === 'settings' ? 'openSettings' : null;
+  if (menuAction) window.setTimeout(() => void emit(APP_MENU_ACTION_EVENT, menuAction), 1_000);
   if (chromeScenario === 'mac' || chromeScenario === 'mac-fullscreen') previewMacTitleBar();
   if (chromeScenario === 'mac') drawTrafficLights();
   const artScenario = params.get('art');
