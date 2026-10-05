@@ -313,7 +313,8 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden border-t p-6 md:border-t-0 md:border-s">
                   <AgentField value={form.agent} onChange={(agent) => update({ agent })} />
-                  <MachineField machine={form.machine} onChange={(next) => update({ machine: next, projectPath: next === form.machine ? form.projectPath : '' })} />
+                  {/* A path picked on one machine may not exist on another; a pool's members share one, so moving onto or off a pool keeps it. */}
+                  <MachineField machine={form.machine} onChange={(next) => update({ machine: next, projectPath: next === form.machine || !isMachine(next) || !isMachine(form.machine) ? form.projectPath : '' })} />
                   <Field
                     label={t('automations.fact.runsOn')}
                     hint={runsOnBlocked ? t(runsOnBlocked, { machine: form.machine }) : t(runsOn === 'machine' ? 'automations.runsOn.machineHint' : 'automations.runsOn.appHint')}
@@ -325,7 +326,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
                       onChange={(next) => update({ runsOn: next })}
                     />
                   </Field>
-                  <ProjectField machine={isMachine(form.machine) ? form.machine : ''} value={form.projectPath} onChange={(projectPath) => update({ projectPath })} />
+                  <ProjectField target={form.machine} value={form.projectPath} onChange={(projectPath) => update({ projectPath })} />
                   <Field label={t('automations.fact.workspace')} hint={t(form.workspace === 'newWorktree' ? 'automations.workspace.newWorktreeHint' : 'automations.workspace.checkoutHint')}>
                     <Segmented
                       label={t('automations.fact.workspace')}
@@ -501,26 +502,42 @@ function MachineField({ machine, onChange }: { machine: string; onChange: (machi
   );
 }
 
-/** The project's folder: one of the repos Arbor found on the machine, or a path typed in. */
-function ProjectField({ machine, value, onChange }: { machine: string; value: string; onChange: (path: string) => void }) {
+/**
+ * The project's folder: one of the repos Arbor found on the machine, or a path typed in.
+ * A pool's run lands on any member, so its suggestions are the folders found on every
+ * member, written from the home folder so the one path works on each.
+ */
+function ProjectField({ target, value, onChange }: { target: string; value: string; onChange: (path: string) => void }) {
   const { t } = useI18n();
   const listId = useId();
+  const { pools } = usePools();
   const [projects, setProjects] = useState<MachineProjects[] | null>(null);
   useEffect(() => {
     let current = true;
     getProjects().then((next) => { if (current) setProjects(next); }).catch(() => { if (current) setProjects([]); });
     return () => { current = false; };
   }, []);
-  const found = projects?.find((entry) => entry.machine === machine);
-  const paths = (found?.repos ?? []).filter((repo) => !repo.bare).map((repo) => tilde(repo.path, found?.homeDir ?? ''));
+  const pool = poolOf(target);
+  const machines = pool !== null
+    ? (pools ?? []).find((entry) => entry.id === pool)?.members.map((member) => member.machine) ?? []
+    : isMachine(target) ? [target] : [];
+  const pathsOn = (machine: string) => {
+    const found = projects?.find((entry) => entry.machine === machine);
+    return (found?.repos ?? []).filter((repo) => !repo.bare).map((repo) => tilde(repo.path, found?.homeDir ?? ''));
+  };
+  const [first, ...rest] = machines;
+  const paths = first === undefined ? [] : pathsOn(first).filter((path) => rest.every((machine) => pathsOn(machine).includes(path)));
+  const hint = pool !== null
+    ? (paths.length ? t('automations.form.projectHintPool') : t('automations.form.projectHintPoolNone'))
+    : paths.length ? t('automations.form.projectHint') : t('automations.form.projectHintNone');
   return (
-    <Field label={t('automations.fact.project')} htmlFor="automation-project" hint={paths.length ? t('automations.form.projectHint') : t('automations.form.projectHintNone')}>
+    <Field label={t('automations.fact.project')} htmlFor="automation-project" hint={hint}>
       <Input
         id="automation-project"
         font="mono"
         list={listId}
         value={value}
-        disabled={!machine}
+        disabled={!target || target === BEST}
         onChange={(event) => onChange(event.target.value)}
         placeholder={t('automations.form.projectPlaceholder')}
       />

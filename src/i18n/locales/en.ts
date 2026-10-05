@@ -5876,6 +5876,8 @@ export const en = {
   'automations.form.schedule.customHint': 'An RRULE, like the Codex app and Orca use.',
   'automations.form.schedule.every': 'Every',
   'automations.form.schedule.minute': 'At minute',
+  'automations.form.projectHintPool': 'A repo Arbor found on every member, or any folder that’s at the same place on each.',
+  'automations.form.projectHintPoolNone': 'A folder at the same place on every member, from its home folder.',
   'automations.form.schedule.days': 'Days',
   'automations.form.schedule.time': 'Time',
   'automations.form.schedule.rule': 'Rule',
