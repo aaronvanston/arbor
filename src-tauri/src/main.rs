@@ -1956,6 +1956,7 @@ fn main() {
             usage::machine_health::setup_mcp::apply_mcp_changes,
             usage::machine_health::setup_mcp::take_mcp_server,
             usage::machine_health::setup_mcp::set_mcp_wanted,
+            usage::machine_health::setup_mcp::put_back_mcp_server,
             usage::machine_health::setup_hooks::get_hook_registry,
             usage::machine_health::setup_hooks::set_hook_wanted,
             usage::machine_health::setup_hooks::take_hook,

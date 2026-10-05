@@ -17,6 +17,8 @@ export const applyMcpChanges = (repo: string, commit: string, machine: string, c
 /** Sets what the repo wants of a server, for every machine (`machine` null) or one, as a commit of the file alone. */
 export const setMcpWanted = (repo: string, name: string, machine: string | null, wanted: McpWanted) =>
   invokeCommand('set_mcp_wanted', { repo, name, machine, wanted });
+/** Puts back a server removed from every machine, as the repo's history last defined it. */
+export const putBackMcpServer = (repo: string, name: string) => invokeCommand('put_back_mcp_server', { repo, name });
 /** Commits a home's server to the repo, as its agent's definition for every machine or as the machine's own. */
 export const takeMcpServer = (repo: string, machine: string, home: string, name: string, own: boolean) =>
   invokeCommand('take_mcp_server', { repo, machine, home, name, own });

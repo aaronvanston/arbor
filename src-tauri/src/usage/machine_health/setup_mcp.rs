@@ -2301,6 +2301,53 @@ pub(crate) async fn set_mcp_wanted(
     Ok(registry_view(commit, found, uncommitted, &registry, &machines))
 }
 
+/// Whether a server's entry in the file defines it anywhere: for every machine, or as one machine's own.
+fn defines_server(entry: &Value) -> bool {
+    let set = |key: &str| entry.get(key).is_some_and(|value| !value.is_null());
+    set("claude") || set("codex") || entry.get("machines").and_then(Value::as_object).is_some_and(|machines| machines.values().any(Value::is_object))
+}
+
+/// Puts back a server removed from every machine as the repo last defined it, from the newest commit of the file
+/// that has a definition, and commits the file alone. It's read from the repo's history here, so a definition's
+/// secrets never pass through the window.
+async fn put_back_server(folder: &Path, name: &str, git_config: &[&str]) -> Result<(), String> {
+    let mut file = read_file_to_change(folder).await?;
+    if file.get("servers").and_then(|servers| servers.get(name)).is_some_and(defines_server) {
+        return Ok(());
+    }
+    let pathspec = format!("./{MCP_FILE}");
+    let commits = git_out(folder, &["log", "--format=%H", "-n", "500", "--", &pathspec]).await?;
+    let mut found = None;
+    for commit in commits.lines().map(str::trim).filter(|commit| is_commit(commit)) {
+        let Ok(bytes) = repo_file(folder, commit, MCP_FILE).await else { continue };
+        let entry = serde_json::from_slice::<Value>(&bytes).ok().and_then(|old| old.get("servers")?.get(name).cloned());
+        if let Some(entry) = entry.filter(defines_server) {
+            found = Some(entry);
+            break;
+        }
+    }
+    let entry = found.ok_or_else(|| format!("The repo's history has no definition of {name} to put back"))?;
+    let root = file.as_object_mut().ok_or_else(unreadable)?;
+    root.entry("version").or_insert(Value::from(FILE_VERSION));
+    let servers = root.entry("servers").or_insert_with(|| serde_json::json!({})).as_object_mut().ok_or_else(unreadable)?;
+    servers.insert(name.to_string(), entry);
+    let text = serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n";
+    take_into_repo(folder, MCP_FILE, text.as_bytes(), &format!("Put back MCP server {name}"), git_config).await
+}
+
+/// Puts back a server removed from every machine, as the repo last had it: Undo, and the removed row's menu.
+#[tauri::command]
+pub(crate) async fn put_back_mcp_server(state: tauri::State<'_, MachineHealthState>, repo: String, name: String) -> Result<McpRegistry, String> {
+    if !is_server_name(&name) {
+        return Err(RegistryBlock::Name.message().into());
+    }
+    let folder = Path::new(&repo);
+    put_back_server(folder, &name, &[]).await?;
+    let (commit, found, uncommitted, registry) = load_registry(folder, None).await?;
+    let machines = scanned_machines(&state.lock());
+    Ok(registry_view(commit, found, uncommitted, &registry, &machines))
+}
+
 /// Puts `definition` in the repo's file as `name`'s for `agent`, or as `machine`'s own when `own`,
 /// so that `home` on `machine` has it as the repo does, and commits the file alone.
 #[allow(clippy::too_many_arguments)]
@@ -3388,6 +3435,21 @@ exit 0"#;
             assert_eq!(file["servers"]["fs"]["machines"], json!({ "ci": { "codex": null } }));
             assert_eq!(file["servers"]["fs"]["homes"], json!(["~/.claude", "~/.agent-app/homes/claude-proxy"]));
             assert_eq!(file["servers"]["fs"]["claude"]["command"], "b");
+
+            // Removed from every machine, then put back from the history as it was, secrets' names and all.
+            let before: Value = serde_json::from_str(&fs::read_to_string(folder.join(MCP_FILE)).unwrap()).unwrap();
+            let mut file = before.clone();
+            set_wanted(&mut file, "fs", None, McpWanted::Removed).unwrap();
+            fs::write(folder.join(MCP_FILE), serde_json::to_string_pretty(&file).unwrap()).unwrap();
+            commit("Remove MCP server fs from all machines");
+            block(put_back_server(&folder, "fs", &IDENTITY)).unwrap();
+            let after: Value = serde_json::from_str(&fs::read_to_string(folder.join(MCP_FILE)).unwrap()).unwrap();
+            assert_eq!(after["servers"]["fs"], before["servers"]["fs"]);
+            assert_eq!(log(&folder).first().map(String::as_str), Some("Put back MCP server fs"));
+            // One that's defined already is left alone; one the history never defined can't come back.
+            block(put_back_server(&folder, "fs", &IDENTITY)).unwrap();
+            assert_eq!(log(&folder).first().map(String::as_str), Some("Put back MCP server fs"));
+            assert!(block(put_back_server(&folder, "never", &IDENTITY)).unwrap_err().contains("no definition"));
 
             fs::write(folder.join(MCP_FILE), "{ not json").unwrap();
             commit("Broken");

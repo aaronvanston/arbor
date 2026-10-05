@@ -36,6 +36,7 @@ import {
   isRemovedServer,
   mcpWantedOn,
   setMcpWanted,
+  putBackMcpServer,
   withRegistry,
   type McpSuggestion,
   type PendingMcp,
@@ -77,6 +78,7 @@ import {
 import { ownValues, PLUGINS_FILE, pluginRepoSuggestions, setSetupCodexPlugin, setSetupPlugin, wantedOn, withCodexPluginRepo, withPluginRepo } from '../services/setupPluginRepo';
 import { leftoversByMachine, machineColumns, machineLooks, pluginGrid, type PluginGrid } from '../services/pluginGrid';
 import { toast } from '../components/ui/toast';
+import { machineName } from '../services/machineNames';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { ACTION_LABEL, CodexPluginsCard, MachineStrip, MarketplaceGrid, McpGridCard, PluginGridCard, PluginSheet } from './SetupPluginGrid';
 import { mcpGrid, mcpMachineLooks } from '../services/mcpGrid';
@@ -318,12 +320,46 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
     }
   };
   // A server's value for every machine or one, committed to the repo straight away, as plugins' are.
-  const setServerWanted = async (name: string, machine: string | null, wanted: McpWanted) => {
-    if (!repo) return;
+  const setServerWanted = async (name: string, machine: string | null, wanted: McpWanted): Promise<boolean> => {
+    if (!repo) return false;
     setSavingServer(true);
     setServerRepoError(null);
     try {
       setRegistry(await setMcpWanted(repo, name, machine, wanted));
+      return true;
+    } catch (error) {
+      setServerRepoError(String(error));
+      return false;
+    } finally {
+      setSavingServer(false);
+    }
+  };
+  // Removing a server from every machine shows where it comes off first, then happens with Undo, which puts the
+  // repo's last definition back from its history; the removed row's menu does the same later.
+  const removeServerEverywhere = async (row: McpRow) => {
+    if (!repo) return;
+    const machinesWith = [...new Set(row.cells.filter((cell) => cell.item).map((cell) => cell.home.machine))];
+    const confirmed = await askConfirmation({
+      title: t('setup.mcp.remove.title', { name: row.name }),
+      message: machinesWith.length
+        ? t('setup.mcp.remove.message', { name: row.name, machines: machinesWith.map(machineName).join(', ') })
+        : t('setup.mcp.remove.messageNone', { name: row.name }),
+      confirmText: t('setup.mcp.repo.remove'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    if (!await setServerWanted(row.name, null, 'removed')) return;
+    toast({
+      title: t('setup.mcp.remove.done', { name: row.name }),
+      action: { label: t('common.undo'), onClick: () => { void putBackServer(row.name); } },
+    });
+  };
+  const putBackServer = async (name: string) => {
+    if (!repo) return;
+    setSavingServer(true);
+    setServerRepoError(null);
+    try {
+      setRegistry(await putBackMcpServer(repo, name));
     } catch (error) {
       setServerRepoError(String(error));
     } finally {
@@ -766,8 +802,14 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
           renderRepo={found ? (row) => (
             <span className="flex w-56 min-w-0 items-center gap-1">
               <span className="flex min-w-0 flex-1 overflow-hidden"><RepoView row={row} /></span>
-              {row.origin === 'config' && !(row.repo && isRemovedServer(row.repo)) ? (
-                <ServerRepoMenu name={row.name} busy={savingServer} onRemove={() => void setServerWanted(row.name, null, 'removed')} />
+              {row.origin === 'config' || (row.repo && isRemovedServer(row.repo)) ? (
+                <ServerRepoMenu
+                  name={row.name}
+                  busy={savingServer}
+                  removed={Boolean(row.repo && isRemovedServer(row.repo))}
+                  onRemove={() => void removeServerEverywhere(row)}
+                  onPutBack={() => void putBackServer(row.name)}
+                />
               ) : null}
             </span>
           ) : null}
@@ -1240,7 +1282,7 @@ function McpGridFooter({ inLine, error, onShowAll }: { inLine: number; error: st
 }
 
 /** A server's menu in the repo's column: removing it from every machine, which Match and the review then carry out. */
-function ServerRepoMenu({ name, busy, onRemove }: { name: string; busy: boolean; onRemove: () => void }) {
+function ServerRepoMenu({ name, busy, removed, onRemove, onPutBack }: { name: string; busy: boolean; removed: boolean; onRemove: () => void; onPutBack: () => void }) {
   const { t } = useI18n();
   return (
     <Menu>
@@ -1248,7 +1290,9 @@ function ServerRepoMenu({ name, busy, onRemove }: { name: string; busy: boolean;
         <ChevronDown />
       </MenuTrigger>
       <MenuPopup align="start" className="min-w-60">
-        <MenuItem variant="destructive" onClick={onRemove}>{t('setup.mcp.repo.remove')}</MenuItem>
+        {removed
+          ? <MenuItem onClick={onPutBack}>{t('setup.mcp.repo.putBack')}</MenuItem>
+          : <MenuItem variant="destructive" onClick={onRemove}>{t('setup.mcp.repo.remove')}</MenuItem>}
       </MenuPopup>
     </Menu>
   );

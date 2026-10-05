@@ -1583,6 +1583,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "put_back_mcp_server",
+        access: Access::Write,
+        summary: "Puts back a server removed from every machine, as the repo last had it: Undo, and the removed row's menu.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+            ArgSpec { name: "name", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_hook_registry",
         access: Access::Read,
         summary: "The repo's hooks, and how every machine's Claude Code and Codex homes stand against them as their last scans found them.",
@@ -2132,6 +2141,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "apply_mcp_changes" => async { done(Box::pin(crate::usage::machine_health::setup_mcp::apply_mcp_changes(app.clone(), app.state(), arg(&args, "repo")?, arg(&args, "commit")?, arg(&args, "machine")?, arg(&args, "changes")?)).await) }.await,
         "take_mcp_server" => async { done(Box::pin(crate::usage::machine_health::setup_mcp::take_mcp_server(app.state(), arg(&args, "repo")?, arg(&args, "machine")?, arg(&args, "home")?, arg(&args, "name")?, arg(&args, "own")?)).await) }.await,
         "set_mcp_wanted" => async { done(Box::pin(crate::usage::machine_health::setup_mcp::set_mcp_wanted(app.state(), arg(&args, "repo")?, arg(&args, "name")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
+        "put_back_mcp_server" => async { done(Box::pin(crate::usage::machine_health::setup_mcp::put_back_mcp_server(app.state(), arg(&args, "repo")?, arg(&args, "name")?)).await) }.await,
         "get_hook_registry" => async { done(Box::pin(crate::usage::machine_health::setup_hooks::get_hook_registry(app.state(), arg(&args, "repo")?)).await) }.await,
         "set_hook_wanted" => async { done(Box::pin(crate::usage::machine_health::setup_hooks::set_hook_wanted(app.state(), arg(&args, "repo")?, arg(&args, "name")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
         "take_hook" => async { done(Box::pin(crate::usage::machine_health::setup_hooks::take_hook(app.state(), arg(&args, "repo")?, arg(&args, "machine")?, arg(&args, "home")?, arg(&args, "event")?, arg(&args, "script")?)).await) }.await,

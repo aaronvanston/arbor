@@ -2013,6 +2013,24 @@ const takeMcpMock = (path: string, machine: string, homePath: string, name: stri
   return registryReply(path);
 };
 
+/** Servers removed from every machine, as the repo last defined them. */
+const mockRemovedServers = new Map<string, MockRegistryServer>();
+
+const putBackMcpMock = (path: string, name: string) => {
+  const repo = mockRepo(path);
+  const index = mockRegistry.servers.findIndex((candidate) => candidate.name === name);
+  const current = mockRegistry.servers[index];
+  if (current && (current.claude || current.codex || Object.values(current.machines).some(Boolean))) return registryReply(path);
+  const was = mockRemovedServers.get(name);
+  if (!was) throw `The repo's history has no definition of ${name} to put back`;
+  if (index >= 0) mockRegistry.servers[index] = was;
+  else mockRegistry.servers = [...mockRegistry.servers, was].sort((a, b) => a.name.localeCompare(b.name));
+  mockRemovedServers.delete(name);
+  const head = repoHead(repo);
+  repo.commits.push(repoCommit(`Put back MCP server ${name}`, Date.now(), head?.files ?? [], head?.skills ?? []));
+  return registryReply(path);
+};
+
 const setMcpWantedMock = (path: string, name: string, machine: string | null, wanted: McpWanted) => {
   const repo = mockRepo(path);
   let message: string;
@@ -2020,6 +2038,9 @@ const setMcpWantedMock = (path: string, name: string, machine: string | null, wa
     if (wanted !== 'removed') throw "Every machine's value is a definition: take one into the repo from a home";
     const index = mockRegistry.servers.findIndex((candidate) => candidate.name === name);
     const removed: MockRegistryServer = { name, claude: null, codex: null, homes: null, machines: {}, agents: mockRegistry.servers[index]?.agents ?? [], problems: [] };
+    // The repo's history keeps the definition, which putting it back reads.
+    const was = mockRegistry.servers[index];
+    if (was && (was.claude || was.codex || Object.values(was.machines).some(Boolean))) mockRemovedServers.set(name, was);
     if (index >= 0) mockRegistry.servers[index] = removed;
     else mockRegistry.servers = [...mockRegistry.servers, removed].sort((a, b) => a.name.localeCompare(b.name));
     message = `Remove MCP server ${name} from all machines`;
@@ -2953,6 +2974,11 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     const { repo, name, machine, wanted } = args;
     mockLog('set_mcp_wanted', { repo, name, machine, wanted });
     return later(500, () => setMcpWantedMock(repo, name, machine ?? null, wanted));
+  },
+  put_back_mcp_server: (args) => {
+    const { repo, name } = args;
+    mockLog('put_back_mcp_server', { repo, name });
+    return later(500, () => putBackMcpMock(repo, name));
   },
   get_hook_registry: (args) => later(250, () => hookRegistryReply(args.repo)),
   set_hook_wanted: (args) => {

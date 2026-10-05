@@ -125,6 +125,7 @@ export type SetupCommands = {
     args: { repo: string; name: string; machine: string | null; wanted: McpWanted };
     result: McpRegistry;
   };
+  put_back_mcp_server: { args: { repo: string; name: string }; result: McpRegistry };
   get_hook_registry: { args: { repo: string }; result: HookRegistry };
   set_hook_wanted: {
     args: { repo: string; name: string; machine: string | null; wanted: HookWanted };
