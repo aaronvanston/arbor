@@ -10,7 +10,9 @@ import highlightLanguages from './src/services/highlightLanguages.json' with { t
  * Hugeicons Pro's duotone icons, for the selected sidebar row. They install only with HUGEICONS_LICENSE_KEY in the
  * repo's .env (see .npmrc); without them the free stroke set stands in and a selected row keeps its line icon.
  */
-function duotoneIcons() {
+function duotoneIcons(mode) {
+  // The demo build is served publicly on the website, which the Pro license doesn't cover, so it always takes the free set.
+  if (mode === 'demo') return fileURLToPath(new URL('./src/components/ui/iconsDuotoneFallback.ts', import.meta.url));
   try {
     createRequire(import.meta.url).resolve('@hugeicons-pro/core-duotone-rounded');
     return '@hugeicons-pro/core-duotone-rounded';
@@ -57,10 +59,16 @@ function eagerModules(getModuleIds, getModuleInfo) {
 
 let eager = null;
 
-export default defineConfig({
+/**
+ * `vite build --mode demo` (bun run build:demo) builds the browser mock as a static site in dist-demo/, for the
+ * website's clickable demo: main.tsx installs the mock in it as in a dev build, and its paths are relative so it can
+ * sit in any folder.
+ */
+export default defineConfig(({ mode }) => ({
+  base: mode === 'demo' ? './' : '/',
   plugins: [onlyListedGrammars(), react(), tailwindcss()],
   resolve: {
-    alias: { 'arbor-duotone-icons': duotoneIcons() },
+    alias: { 'arbor-duotone-icons': duotoneIcons(mode) },
   },
   clearScreen: false,
   server: {
@@ -68,8 +76,9 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    target: 'es2020',
-    outDir: 'dist',
+    // main.tsx loads the mock with a top-level await, which ES2020 doesn't have; the demo runs in current browsers.
+    target: mode === 'demo' ? 'es2022' : 'es2020',
+    outDir: mode === 'demo' ? 'dist-demo' : 'dist',
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
@@ -92,4 +101,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

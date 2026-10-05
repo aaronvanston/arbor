@@ -18,7 +18,8 @@ import './styles.css';
 // Nothing reads saved state while modules load (savedStore waits until asked), so this still comes first.
 renameLegacySavedKeys();
 
-if (import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)) {
+// The demo build (vite.config.js) is the mock for the website, so it installs it too.
+if ((import.meta.env.DEV || import.meta.env.MODE === 'demo') && !('__TAURI_INTERNALS__' in window)) {
   const { installTauriMock } = await import('./dev/mockTauri');
   installTauriMock();
 }

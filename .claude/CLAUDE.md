@@ -73,6 +73,7 @@ What each `package.json` script runs:
 | `verify:rust` | `cd src-tauri && cargo test`. Includes the bindings test, which fails when `src/native/types.ts` is out of date. |
 | `bindings` | That test with `ARBOR_WRITE_BINDINGS=1`, which rewrites the file. |
 | `build` | `tsc && vite build`, into the gitignored `dist/`. `verify` doesn't run it, and it's the only gate that compiles `src/styles.css`. |
+| `build:demo` | `tsc && vite build --mode demo`, into the gitignored `dist-demo/`: the mock as a static site (relative paths, free icons only, since Hugeicons Pro can't go on a public website) for the website's clickable demo. Production builds still leave the mock out. |
 
 Before it downloads, versions or builds anything, `scripts/publish-local-update.sh`
 runs `bun run verify`, then `bun run verify:rust`, and gives up if either fails.

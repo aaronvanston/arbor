@@ -11,7 +11,7 @@ type ChunkWindow = Window & { __mockChunkDelayMs?: number; __mockChunkFail?: str
 // The browser mock's `?chunks=slow` holds the viewers back, so the placeholder shown while they load can be seen, and
 // its `?chunks=fail` has them fail to load, so what shows in their place can be.
 const mockable = <T,>(load: () => Promise<T>) => () => {
-  const mock = import.meta.env.DEV ? (window as ChunkWindow) : null;
+  const mock = import.meta.env.DEV || import.meta.env.MODE === 'demo' ? (window as ChunkWindow) : null;
   if (mock?.__mockChunkFail) return Promise.reject(new TypeError(mock.__mockChunkFail));
   const delay = mock?.__mockChunkDelayMs ?? 0;
   return delay ? new Promise<void>((resolve) => window.setTimeout(resolve, delay)).then(load) : load();

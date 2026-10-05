@@ -227,6 +227,10 @@ The gates are `package.json` scripts:
 - `build`: `tsc && vite build`, writing the gitignored `dist/`. `verify` doesn't run
   it, and it's the only gate that compiles `src/styles.css`, so a bad Tailwind
   utility passes `verify` and fails here.
+- `build:demo`: `tsc && vite build --mode demo`, writing the gitignored `dist-demo/`:
+  the browser mock as a static site with relative paths and the free icon set (the
+  Pro license doesn't cover a public website), which the website's clickable demo is
+  built from. The production build still never includes the mock.
 
 `scripts/publish-local-update.sh` runs `bun run verify` and then
 `bun run verify:rust` before it downloads, versions or builds anything, and stops if
