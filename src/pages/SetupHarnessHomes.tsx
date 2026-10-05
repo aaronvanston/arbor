@@ -11,15 +11,15 @@ import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { Spinner } from '../components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { toast } from '../components/ui/toast';
-import { useConfirmation } from '../components/ConfirmationDialog';
+import { ArrowUpCircle } from '../components/ui/icons';
+import { AgentCard, RunResults, UpdatingNow, type AgentRun } from './AgentRollout';
+import type { HarnessGroup } from '../services/agentFleet';
+import { cn } from '../lib/utils';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import {
-  harnessHomeRows,
   harnessItemRows,
   harnessMcpAction,
-  harnessUpdateOutcome,
-  updateMachineHarness,
   type HarnessHomeRow,
   harnessSkillChange,
   harnessSkillRows,
@@ -29,7 +29,6 @@ import {
   type HarnessSkillStanding,
   type InstructionsState,
 } from '../services/harnessHomes';
-import { scanSetup } from '../services/setupInventory';
 import { formatBytes } from '../services/machineHealth';
 import { applySkillChanges } from '../services/setupSkills';
 import { applyMcpChanges } from '../services/setupMcp';
@@ -44,97 +43,70 @@ const STATE: Record<InstructionsState, { label: MessageKey; variant: 'success' |
 };
 
 /**
- * Sync › Agents: the other harnesses' homes on each machine (Pi's, Droid's…), with their instructions file against the
- * same harness's elsewhere and how many skills they keep. Claude Code's and Codex's are the rest of Sync. Left out until
- * a scan finds one.
+ * Another agent's card on Sync › Agents (Pi's, Droid's…): each home of it on each machine, with its version, its
+ * instructions file against the same agent's elsewhere and how many skills it keeps. Arbor doesn't know these agents'
+ * releases, so the ones behind are behind the newest the fleet runs; "Update all" runs each machine's own update.
  */
-export function HarnessHomesSection({ machines }: { machines: SetupMachine[] }) {
-  const { t, tRich } = useI18n();
+export function HarnessCard({ group, run, onUpdateAll, onUpdate, onOpen }: {
+  group: HarnessGroup;
+  run: AgentRun | undefined;
+  onUpdateAll: () => void;
+  onUpdate: (row: HarnessHomeRow) => void;
+  onOpen: (machine: string) => void;
+}) {
+  const { t } = useI18n();
   const harnessName = useHarnessName();
-  const { askConfirmation } = useConfirmation();
-  const rows = useMemo(() => harnessHomeRows(machines), [machines]);
-  const [pending, setPending] = useState<string[]>([]);
-  const [failed, setFailed] = useState<{ text: string; output: string } | null>(null);
-  if (!rows.length) return null;
-
-  // An update runs the harness's own command on the machine, which Arbor can't take back, so it asks first.
-  const update = async (row: HarnessHomeRow) => {
-    const command = row.updateCommand;
-    if (!command) return;
-    const agent = harnessName(row.harness);
-    const confirmed = await askConfirmation({
-      title: tRich('machines.agents.updateTitle', { agent, machine: <MachinePill name={row.machine} size="lg" /> }),
-      message: t('machines.agents.updateMessage', { command }),
-      details: [{ label: t('machines.agents.detail.version'), value: row.version ?? t('machines.agents.unknownVersion') }],
-      confirmText: t('machines.agents.update'),
-    });
-    if (!confirmed) return;
-    const key = `${row.machine}\t${row.harness}`;
-    setFailed(null);
-    setPending((current) => [...current, key]);
-    try {
-      const result = await updateMachineHarness(row.machine, row.harness, command);
-      const outcome = harnessUpdateOutcome(result);
-      toast({
-        kind: 'success',
-        title: outcome === 'updated'
-          ? t('machines.agents.updated', { agent, before: result.before ?? '', after: result.after ?? '' })
-          : outcome === 'unchanged'
-          ? t('machines.agents.unchanged', { agent, version: result.after ?? '' })
-          : t('machines.agents.updateDone', { agent }),
-        description: <MachinePill name={row.machine} size="sm" />,
-      });
-      // The scan reads the version it ended up on.
-      void scanSetup(row.machine, false).catch(() => undefined);
-    } catch (error) {
-      setFailed({ text: t('machines.agents.updateFailed', { agent }), output: String(error) });
-    } finally {
-      setPending((current) => current.filter((entry) => entry !== key));
-    }
-  };
-
+  const name = harnessName(group.harness);
+  const busy = Boolean(run?.current);
+  const here = run?.current?.group === group.harness ? run.current.machine : null;
+  const machines = new Set(group.rows.map((row) => row.machine)).size;
+  const versions = new Set(group.rows.flatMap((row) => (row.version ? [row.version] : [])));
+  const behind = new Set(group.behind.map((row) => row.machine));
+  const summary = !group.newest
+    ? t('rollout.unknown')
+    : versions.size === 1
+    ? t(machines === 1 ? 'rollout.even.one' : 'rollout.even.other', { version: group.newest, count: machines })
+    : t('agents.summary.newest', { version: group.newest });
   return (
-    <SettingsSection title={t('setup.harnessHomes.title')} description={t('setup.harnessHomes.description')}>
-      {failed ? (
-        <div className="px-4 pt-3 text-xs text-error-foreground" role="alert">
-          <p>{failed.text}</p>
-          <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-2xs">{failed.output}</pre>
-        </div>
+    <AgentCard
+      harness={group.harness}
+      title={name}
+      badge={group.behind.length ? (
+        <Badge variant="warning" size="sm">{t(group.behind.length === 1 ? 'agents.standing.behind.one' : 'agents.standing.behind.other', { count: group.behind.length })}</Badge>
       ) : null}
-      <Table>
+      summary={summary}
+      // One machine's update is its row's own button; the card's is for bringing several up at once.
+      actions={here ? <UpdatingNow machine={here} /> : group.updatable.length > 1 ? (
+        <Button variant={group.behind.length ? 'default' : 'outline'} size="sm" disabled={busy} onClick={onUpdateAll}>
+          <ArrowUpCircle />
+          {t('agents.updateAll.plain', { count: group.updatable.length })}
+        </Button>
+      ) : null}
+      footer={<RunResults run={run} group={group.harness} />}
+    >
+      <Table density="compact">
         <TableHeader>
           <TableRow>
-            <TableHead>{t('setup.harnessHomes.agent')}</TableHead>
             <TableHead>{t('setup.agents.column.machine')}</TableHead>
             <TableHead>{t('setup.harnessHomes.home')}</TableHead>
             <TableHead>{t('setup.harnessHomes.version')}</TableHead>
             <TableHead>{t('setup.harnessHomes.instructions')}</TableHead>
             <TableHead className={TABLE_NUMERIC_CLASS}>{t('setup.harnessHomes.skills')}</TableHead>
+            <TableHead className="w-0"><span className="sr-only">{t('agents.column.actions')}</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => {
+          {group.rows.map((row) => {
             const state = STATE[row.state];
+            const lagging = behind.has(row.machine) && group.behind.some((entry) => entry.path === row.path && entry.machine === row.machine);
             return (
               <TableRow key={`${row.machine}\t${row.path}`}>
-                <TableCell><HarnessName harness={row.harness} className="w-max" /></TableCell>
-                <TableCell><MachinePill name={row.machine} /></TableCell>
+                <TableCell><MachinePill name={row.machine} onClick={() => onOpen(row.machine)} label={t('setup.agents.open', { machine: row.machine })} /></TableCell>
                 <TableCell className="max-w-64"><MiddleTruncate value={row.path} className="font-mono text-xs" /></TableCell>
                 <TableCell>
                   <span className="flex items-center gap-2">
-                    <span className="font-mono text-xs">{row.version ?? <span className="font-sans text-muted-foreground">—</span>}</span>
-                    {row.updateCommand ? (
-                      <Button
-                        variant="ghost-muted"
-                        size="xs"
-                        disabled={pending.includes(`${row.machine}\t${row.harness}`)}
-                        aria-label={t('setup.harnessHomes.updateLabel', { agent: harnessName(row.harness), machine: row.machine })}
-                        onClick={() => void update(row)}
-                      >
-                        {pending.includes(`${row.machine}\t${row.harness}`) ? <Spinner className="size-3" /> : null}
-                        {t('machines.agents.update')}
-                      </Button>
-                    ) : null}
+                    <span className={cn('font-mono text-xs', lagging && 'text-warning-foreground')}>{row.version ?? <span className="font-sans text-muted-foreground">—</span>}</span>
+                    {lagging ? <span className="text-xs text-warning-foreground">{t('agents.machine.behind')}</span> : null}
                   </span>
                 </TableCell>
                 <TableCell>
@@ -149,12 +121,25 @@ export function HarnessHomesSection({ machines }: { machines: SetupMachine[] }) 
                   )}
                 </TableCell>
                 <TableCell className={TABLE_NUMERIC_CLASS}>{row.skills || '—'}</TableCell>
+                <TableCell className="text-end">
+                  {row.updateCommand ? (
+                    <Button
+                      variant="ghost-muted"
+                      size="xs"
+                      disabled={busy}
+                      aria-label={t('setup.harnessHomes.updateLabel', { agent: name, machine: row.machine })}
+                      onClick={() => onUpdate(row)}
+                    >
+                      {t('machines.agents.update')}
+                    </Button>
+                  ) : null}
+                </TableCell>
               </TableRow>
             );
           })}
         </TableBody>
       </Table>
-    </SettingsSection>
+    </AgentCard>
   );
 }
 

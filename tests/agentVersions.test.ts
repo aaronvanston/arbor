@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { agentsBehind, agentVersionRows, compareVersions, newestAgents, runningAgents } from '../src/services/agentVersions';
+import { agentsBehind, compareVersions, newestAgents, runningAgents } from '../src/services/agentVersions';
 import { itemAt } from './support/items';
 import type { AgentInstall, HealthPoint, MachineAgents, MachineHealth } from '../src/native/types';
 
@@ -74,30 +74,5 @@ describe('agent versions', () => {
     expect(runningAgents(machine('ci-01', { latest, status: 'unreachable' }))).toBeNull();
     expect(runningAgents(machine('ci-01', { latest: { claudeRunning: null, codexRunning: null } as HealthPoint }))).toBeNull();
     expect(runningAgents(machine('lab-box'))).toBeNull();
-  });
-
-  it('lists each machine with a host, its agents side by side and how far behind, for Sync › Agents', () => {
-    const fleet = [
-      machine('casey-mbp', { agents: agents({ claude: install('2.1.281'), codex: install('0.156.0', '/usr/local/bin/codex') }), latest: { claudeRunning: 2, codexRunning: 1 } as HealthPoint }),
-      machine('ci-01', { agents: agents({ claude: install(null) }), status: 'unreachable' }),
-      machine('cedar-02', { agents: agents({ checkedAt: null }) }),
-      machine('lab-box', { status: 'unconfigured' }),
-    ];
-    const rows = agentVersionRows(fleet, newestAgents(fleet, { claude: '2.1.283', codex: null }));
-    // lab-box has no host, so nothing checks its agents.
-    expect(rows.map((row) => row.machine)).toEqual(['casey-mbp', 'ci-01', 'cedar-02']);
-    expect(itemAt(rows, 0)).toEqual({
-      machine: 'casey-mbp',
-      status: 'healthy',
-      agents: {
-        claude: { state: 'installed', version: '2.1.281', newer: { version: '2.1.283', machine: null } },
-        codex: { state: 'installed', version: '0.156.0', newer: null },
-      },
-      running: { claude: 2, codex: 1 },
-    });
-    // A version that can't be read is never behind; an agent looked for and not found differs from one not looked for.
-    expect(itemAt(rows, 1).agents).toEqual({ claude: { state: 'installed', version: null, newer: null }, codex: { state: 'missing' } });
-    expect(itemAt(rows, 1).running).toBeNull();
-    expect(itemAt(rows, 2).agents).toEqual({ claude: { state: 'unchecked' }, codex: { state: 'unchecked' } });
   });
 });

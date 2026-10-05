@@ -1,46 +1,35 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowUpCircle, FlaskConical } from '../components/ui/icons';
-import { useConfirmation } from '../components/ConfirmationDialog';
-import { SettingsSection } from '../components/layout/settings';
+import type { ReactNode } from 'react';
+import { ArrowUpCircle, FlaskConical, MoreHorizontal } from '../components/ui/icons';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '../components/ui/collapsible';
+import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuTrigger } from '../components/ui/menu';
+import { Progress } from '../components/ui/progress';
 import { TABLE_NUMERIC_CLASS } from '../components/ui/data-table';
 import { Spinner } from '../components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { HarnessMark } from '../components/identity/Harness';
+import { MachinePill, MachinePills } from '../components/identity/Identity';
+import { CommandLine } from '../components/CommandLine';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { formatCount, formatPercent, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
 import {
-  agentRollout,
-  atLatest,
   errorsOf,
-  getClientVersions,
   rollbackCommand,
   ROLLOUT_DAYS,
   shareOf,
   TRIAL_MIN_REQUESTS,
-  trialMachine,
   type AgentRollout,
-  type RolloutMachine,
   type RolloutVerdict,
-  type Tally,
+  type VersionUse,
 } from '../services/agentRollout';
-import { useLatestAgentVersions } from '../services/agentReleases';
+import { rolloutStanding, rolloutTarget, rolloutTargets, untried } from '../services/agentFleet';
 import { compareVersions } from '../services/agentVersions';
-import { AGENT_KINDS, fetchMachineHealth, updateMachineAgent } from '../services/machineHealth';
-import { AGENT_NAME, updateOutcomeText, UpdateOutcomeView, type UpdateOutcome } from './MachineAgents';
-import { CommandLine } from '../components/CommandLine';
-import type { AgentKind, ClientVersions, MachineHealth } from '../native/types';
-import { MachinePill, MachinePills } from '../components/identity/Identity';
-
-const DAY_MS = 86_400_000;
-const HOUR_MS = 3_600_000;
-const MACHINES_POLL_MS = 15_000;
-// A week of requests by agent version, which a few minutes more hardly moves; each read walks all of it.
-const VERSIONS_POLL_MS = 5 * 60_000;
+import { AGENT_NAME, UpdateOutcomeView, type UpdateOutcome } from './MachineAgents';
+import type { AgentKind, Harness } from '../native/types';
 
 const VERDICT: Record<RolloutVerdict, { label: MessageKey; variant: 'muted' | 'success' | 'warning' }> = {
   waiting: { label: 'rollout.verdict.waitingLabel', variant: 'muted' },
@@ -49,383 +38,339 @@ const VERDICT: Record<RolloutVerdict, { label: MessageKey; variant: 'muted' | 's
   noBaseline: { label: 'rollout.verdict.noBaselineLabel', variant: 'muted' },
 };
 
-/** Updates one after another, stopping at the first that fails. */
-type Run = { current: string | null; results: (UpdateOutcome & { machine: string })[]; notTried: number };
+/** Updates run one after another across the page, stopping at the first that fails; each card shows its own. */
+export type AgentRun = {
+  /** The agent and machine updating now. */
+  current: { group: Harness; machine: string } | null;
+  results: (UpdateOutcome & { group: Harness; machine: string })[];
+  /** Where it stopped, and how many weren't tried after it. */
+  stopped: { group: Harness; count: number } | null;
+};
 
 const rate = (count: number, requests: number) => formatPercent(shareOf(count, requests), 1);
 
 /**
- * Agent updates, atop Sync › Agents (it was on Machines): a new Claude Code or Codex goes on one machine first, its
- * requests through the proxy are compared with the version the others still run, and only then do the rest update,
- * one at a time.
+ * One agent's card on Sync › Agents: its header (where the fleet stands, and one way to bring every machine up), then,
+ * inset under it, what belongs to it alone: the trial while one runs, each machine's version, and the versions seen.
+ * Claude Code's and Codex's cards and the other agents' share this frame, so every agent reads the same way.
  */
-export function AgentRolloutSection() {
-  const { t, tRich } = useI18n();
-  const { askConfirmation } = useConfirmation();
-  const [machines, setMachines] = useState<MachineHealth[] | null>(null);
-  const [versions, setVersions] = useState<ClientVersions | null>(null);
-  const [versionsError, setVersionsError] = useState<string | null>(null);
-  const [runs, setRuns] = useState<Partial<Record<AgentKind, Run>>>({});
-  const [chosen, setChosen] = useState<Partial<Record<AgentKind, string>>>({});
-
-  const loadMachines = useCallback(async () => {
-    try {
-      setMachines((await fetchMachineHealth(Date.now(), 1_000, true)).machines);
-    } catch {
-      // The versions table below says why; this keeps what it had.
-    }
-  }, []);
-  const loadVersions = useCallback(async () => {
-    const now = Date.now();
-    try {
-      setVersions(await getClientVersions(now - ROLLOUT_DAYS * DAY_MS, now + HOUR_MS));
-      setVersionsError(null);
-    } catch (error) {
-      setVersionsError(String(error));
-    }
-  }, []);
-  useEffect(() => {
-    void loadMachines();
-    void loadVersions();
-    const machinesTimer = window.setInterval(() => { if (!document.hidden) void loadMachines(); }, MACHINES_POLL_MS);
-    const versionsTimer = window.setInterval(() => { if (!document.hidden) void loadVersions(); }, VERSIONS_POLL_MS);
-    return () => {
-      window.clearInterval(machinesTimer);
-      window.clearInterval(versionsTimer);
-    };
-  }, [loadMachines, loadVersions]);
-
-  const latest = useLatestAgentVersions();
-  const rollouts = useMemo(
-    () => (machines ? AGENT_KINDS.flatMap((agent) => agentRollout(agent, machines, versions, latest[agent]) ?? []) : []),
-    [machines, versions, latest],
-  );
-
-  const run = async (agent: AgentKind, targets: RolloutMachine[]) => {
-    setRuns((current) => ({ ...current, [agent]: { current: targets[0]?.machine ?? null, results: [], notTried: 0 } }));
-    const update = (change: (run: Run) => Run) => setRuns((current) => {
-      const previous = current[agent];
-      return previous ? { ...current, [agent]: change(previous) } : current;
-    });
-    for (const [index, { machine, command }] of targets.entries()) {
-      update((previous) => ({ ...previous, current: machine }));
-      try {
-        const result = await updateMachineAgent(machine, agent, command);
-        update((previous) => ({ ...previous, results: [...previous.results, { machine, ok: true, text: updateOutcomeText(t, agent, result), output: result.output }] }));
-      } catch (error) {
-        const failed = { machine, ok: false, text: t('machines.agents.updateFailed', { agent: t(AGENT_NAME[agent]) }), output: String(error) };
-        update((previous) => ({ ...previous, results: [...previous.results, failed], notTried: targets.length - index - 1 }));
-        break;
-      } finally {
-        await loadMachines();
-      }
-    }
-    update((previous) => ({ ...previous, current: null }));
-    void loadVersions();
-  };
-
-  const tryFirst = async (rollout: AgentRollout, machine: string) => {
-    const entry = [...rollout.ahead, ...rollout.behind].find((candidate) => candidate.machine === machine);
-    if (!entry) return;
-    const name = t(AGENT_NAME[rollout.agent]);
-    const confirmed = await askConfirmation({
-      title: tRich('rollout.try.title', { machine: <MachinePill name={machine} size="lg" /> }),
-      message: tRich('rollout.try.message', { command: entry.command, machine: <MachinePill name={machine} size="md" /> }),
-      details: [{ label: t('machines.agents.detail.version'), value: entry.version ?? t('machines.agents.unknownVersion') }],
-      warning: entry.running
-        ? t(entry.running === 1 ? 'machines.agents.runningWarning.one' : 'machines.agents.runningWarning.other', { count: entry.running, agent: name })
-        : undefined,
-      confirmText: t('machines.agents.update'),
-    });
-    if (confirmed) await run(rollout.agent, [entry]);
-  };
-
-  const updateRest = async (rollout: AgentRollout) => {
-    const targets = rollout.behind.filter((entry) => entry.reachable);
-    if (!targets.length || !rollout.newest) return;
-    const name = t(AGENT_NAME[rollout.agent]);
-    const verdict = rollout.comparison?.verdict;
-    const running = targets.reduce((sum, entry) => sum + (entry.running ?? 0), 0);
-    const warnings = [
-      verdict === 'worse' ? t('rollout.rest.warning.worse', { version: rollout.newest }) : null,
-      verdict === 'waiting' ? t('rollout.rest.warning.waiting', { version: rollout.newest }) : null,
-      verdict === 'noBaseline' ? t('rollout.rest.warning.noBaseline', { version: rollout.newest }) : null,
-      running ? t(running === 1 ? 'rollout.rest.warning.running.one' : 'rollout.rest.warning.running.other', { count: running, agent: name }) : null,
-    ].filter((text): text is string => text !== null);
-    // Machines installed different ways update with different commands, so each is shown against its machine.
-    const commands = new Set(targets.map((entry) => entry.command));
-    const [command] = commands;
-    const confirmed = await askConfirmation({
-      title: t(targets.length === 1 ? 'rollout.rest.title.one' : 'rollout.rest.title.other', { agent: name, count: targets.length }),
-      message: commands.size === 1 && command ? t('rollout.rest.message', { command }) : t('rollout.rest.messageMixed'),
-      details: [
-        {
-          label: t('rollout.rest.machines'),
-          value: (
-            <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-              {targets.map((entry) => (
-                <span key={entry.machine} className="inline-flex items-center gap-1">
-                  <MachinePill name={entry.machine} size="sm" />
-                  {entry.version ?? t('machines.agents.unknownVersion')}
-                </span>
-              ))}
-            </span>
-          ),
-        },
-        {
-          label: t('rollout.rest.tried'),
-          value: (
-            <span className="inline-flex items-center gap-1">
-              {rollout.newest}
-              <MachinePills names={rollout.ahead.map((entry) => entry.machine)} />
-            </span>
-          ),
-        },
-        ...(commands.size > 1 ? targets.map((entry) => ({ label: <MachinePill name={entry.machine} size="sm" />, value: entry.command })) : []),
-      ],
-      warning: warnings.length ? warnings.join(' ') : undefined,
-      confirmText: t('machines.agents.update'),
-      variant: verdict === 'worse' ? 'danger' : 'primary',
-    });
-    if (confirmed) await run(rollout.agent, targets);
-  };
-
-  if (!machines || !rollouts.length) return null;
+export function AgentCard({ harness, title, badge, summary, actions, children, footer }: {
+  harness: Harness;
+  title: string;
+  badge?: ReactNode;
+  summary?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
   return (
-    <SettingsSection title={t('rollout.title')} description={t('rollout.description')}>
-      <div className="divide-y divide-border/50">
-        {rollouts.map((rollout) => (
-          <RolloutRow
-            key={rollout.agent}
-            rollout={rollout}
-            run={runs[rollout.agent]}
-            chosen={chosen[rollout.agent] ?? null}
-            onChoose={(machine) => setChosen((current) => ({ ...current, [rollout.agent]: machine }))}
-            onTry={(machine) => void tryFirst(rollout, machine)}
-            onUpdateRest={() => void updateRest(rollout)}
-          />
-        ))}
+    <div className="flex flex-col gap-3 px-4 py-4" data-slot="agent-card">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="flex items-center gap-2">
+          <HarnessMark harness={harness} className="size-4" />
+          <span className="text-sm font-medium text-foreground">{title}</span>
+        </span>
+        {badge}
+        {summary ? <span className="min-w-0 text-xs text-muted-foreground">{summary}</span> : null}
+        {actions ? <span className="ms-auto flex flex-wrap items-center gap-2">{actions}</span> : null}
       </div>
-      <div className="flex flex-col gap-1 border-t border-border/50 px-4 py-3 text-xs text-muted-foreground">
-        <p>{t('rollout.note', { days: ROLLOUT_DAYS })}</p>
-        {versions?.truncated ? <p>{t('rollout.truncated')}</p> : null}
-        {versionsError ? <p className="text-error-foreground">{t('rollout.failed', { error: versionsError })}</p> : null}
+      <div className="overflow-hidden rounded-xl border border-border/60 bg-muted/30 [&>*+*]:border-t [&>*+*]:border-border/50 dark:bg-muted/15">
+        {children}
       </div>
-    </SettingsSection>
+      {footer}
+    </div>
   );
 }
 
-/** One agent's rollout: where each version runs, how the newest compares, and what to do next. */
-export function RolloutRow({
-  rollout,
-  run,
-  chosen,
-  onChoose,
-  onTry,
-  onUpdateRest,
-}: {
+/** Where an update is now, beside the card's title in place of its buttons. */
+export function UpdatingNow({ machine }: { machine: string }) {
+  const { tRich } = useI18n();
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+      <Spinner />
+      <span>{tRich('rollout.updating', { machine: <MachinePill name={machine} size="sm" /> })}</span>
+    </span>
+  );
+}
+
+/** What a run did on this card's machines, and where it stopped. */
+export function RunResults({ run, group, agent }: { run: AgentRun | undefined; group: Harness; agent?: AgentKind }) {
+  const { t } = useI18n();
+  const results = run?.results.filter((result) => result.group === group) ?? [];
+  const stopped = run?.stopped?.group === group ? run.stopped.count : 0;
+  if (!results.length && !stopped) return null;
+  return (
+    <ul className="flex flex-col gap-2">
+      {results.map((result) => (
+        <li key={result.machine} className="flex flex-col items-start gap-1">
+          <MachinePill name={result.machine} />
+          <UpdateOutcomeView outcome={result} fix={agent ? { machine: result.machine, agent } : undefined} />
+        </li>
+      ))}
+      {stopped ? <li className="text-xs text-muted-foreground">{t(stopped === 1 ? 'rollout.stopped.one' : 'rollout.stopped.other', { count: stopped })}</li> : null}
+    </ul>
+  );
+}
+
+/** One machine's agent under its card: the version, how it stands against the target, and its own update. */
+export type AgentMachineRow = {
+  machine: string;
+  version: string | null;
+  state: 'current' | 'behind' | 'trying' | 'away' | 'missing' | 'unchecked' | 'unknown';
+  running: number | null;
+  /** Its own update, when it's one Arbor can run now. */
+  onUpdate?: () => void;
+};
+
+const MACHINE_STATE: Record<AgentMachineRow['state'], { label: MessageKey; className: string } | null> = {
+  current: { label: 'agents.machine.current', className: 'text-success-foreground' },
+  behind: { label: 'agents.machine.behind', className: 'text-warning-foreground' },
+  trying: { label: 'agents.machine.trying', className: 'text-info-foreground' },
+  away: { label: 'agents.machine.away', className: 'text-muted-foreground' },
+  missing: { label: 'agents.machine.missing', className: 'text-muted-foreground' },
+  unchecked: null,
+  unknown: null,
+};
+
+/** The machines under Claude Code's or Codex's card. */
+export function AgentMachinesTable({ agent, rows, busy, onOpen }: { agent: AgentKind; rows: AgentMachineRow[]; busy: boolean; onOpen: (machine: string) => void }) {
+  const { t } = useI18n();
+  const name = t(AGENT_NAME[agent]);
+  return (
+    <Table density="compact">
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t('setup.agents.column.machine')}</TableHead>
+          <TableHead>{t('rollout.table.version')}</TableHead>
+          <TableHead>{t('agents.column.status')}</TableHead>
+          <TableHead className={TABLE_NUMERIC_CLASS}>{t('setup.agents.column.running')}</TableHead>
+          <TableHead className="w-0"><span className="sr-only">{t('agents.column.actions')}</span></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => {
+          const state = MACHINE_STATE[row.state];
+          return (
+            <TableRow key={row.machine}>
+              <TableCell><MachinePill name={row.machine} onClick={() => onOpen(row.machine)} label={t('setup.agents.open', { machine: row.machine })} /></TableCell>
+              <TableCell className="font-mono text-xs">
+                {row.state === 'missing' || row.state === 'unchecked' ? <span className="font-sans text-muted-foreground">—</span> : row.version ?? t('machines.agents.unknownVersion')}
+              </TableCell>
+              <TableCell className={cn('text-xs', state?.className)}>{state ? t(state.label) : null}</TableCell>
+              <TableCell className={cn(TABLE_NUMERIC_CLASS, 'text-muted-foreground')}>{row.running ?? '—'}</TableCell>
+              <TableCell className="text-end">
+                {row.onUpdate ? (
+                  <Button variant="ghost-muted" size="xs" disabled={busy} aria-label={t('setup.harnessHomes.updateLabel', { agent: name, machine: row.machine })} onClick={row.onUpdate}>
+                    {t('machines.agents.update')}
+                  </Button>
+                ) : null}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+/**
+ * Claude Code's or Codex's card. Its main action brings every machine below the target up to it; trying the new version
+ * on one machine first, as the comparison needs, is in the menu beside it, and offered again in the confirmation while
+ * nobody has run it.
+ */
+export function RolloutCard({ rollout, machines, run, onUpdateAll, onTry, onOpen }: {
   rollout: AgentRollout;
-  run: Run | undefined;
-  chosen: string | null;
-  onChoose: (machine: string) => void;
+  /** Each machine's row, the ones without the agent included. */
+  machines: AgentMachineRow[];
+  run: AgentRun | undefined;
+  onUpdateAll: () => void;
   onTry: (machine: string) => void;
-  onUpdateRest: () => void;
+  onOpen: (machine: string) => void;
 }) {
   const { t, tRich } = useI18n();
-  const { agent, newest, latest, ahead, behind, previous, comparison } = rollout;
+  const { agent, newest, ahead, behind, previous, comparison } = rollout;
   const name = t(AGENT_NAME[agent]);
+  const standing = rolloutStanding(rollout);
+  const target = rolloutTarget(rollout);
+  const targets = rolloutTargets(rollout);
   const busy = Boolean(run?.current);
-  const even = behind.length === 0;
-  // Trying the latest on a fleet already at the release would only leave it unchanged.
-  const current = even && atLatest(rollout);
-  const candidates = [...ahead, ...behind].filter((entry) => entry.reachable);
-  const target = chosen && candidates.some((entry) => entry.machine === chosen) ? chosen : trialMachine(rollout);
-  const rest = behind.filter((entry) => entry.reachable);
-  const away = behind.filter((entry) => !entry.reachable);
-  const verdict = comparison ? VERDICT[comparison.verdict] : null;
-  const newestUse = rollout.uses.find((use) => use.version === newest);
+  const here = run?.current?.group === agent ? run.current.machine : null;
+  const total = ahead.length + behind.length;
   const rollback = comparison?.verdict === 'worse' && previous ? rollbackCommand(agent, previous) : null;
+  // Trying first only means something while nobody has run the version, and there's more than one machine to bring up.
+  const tryable = untried(rollout) && targets.length > 1;
 
-  const mixed = new Set(behind.map((entry) => entry.version)).size > 1;
-  const placement: ReactNode = !newest
-    ? t('rollout.unknown')
-    : even
-    ? [
-        t(ahead.length === 1 ? 'rollout.even.one' : 'rollout.even.other', { version: newest, count: ahead.length }),
-        current ? t('rollout.latest.current') : latest && compareVersions(latest, newest) > 0 ? t('rollout.latest.out', { version: latest }) : null,
-      ].filter((part): part is string => part !== null).join(' · ')
-    : (
-      <>
-        {tRich('rollout.ahead', { version: newest, machines: <MachinePills names={ahead.map((entry) => entry.machine)} /> })}
-        {' · '}
-        {t(mixed ? 'rollout.behind.mixed' : behind.length === 1 ? 'rollout.behind.one' : 'rollout.behind.other', {
-          count: behind.length,
-          version: previous ?? t('machines.agents.unknownVersion'),
-        })}
-      </>
-    );
+  const badge =
+    standing === 'trial' && comparison ? <Badge variant={VERDICT[comparison.verdict].variant} size="sm">{t(VERDICT[comparison.verdict].label)}</Badge>
+    : standing === 'current' ? <Badge variant="success" size="sm">{t('agents.standing.current')}</Badge>
+    : standing === 'releaseOut' && rollout.latest ? <Badge variant="warning" size="sm">{t('rollout.latest.out', { version: rollout.latest })}</Badge>
+    : standing === 'mixed' ? <Badge variant="warning" size="sm">{t(behind.length === 1 ? 'agents.standing.behind.one' : 'agents.standing.behind.other', { count: behind.length })}</Badge>
+    : null;
+  const summary =
+    !newest ? t('rollout.unknown')
+    : standing === 'trial' ? t('agents.summary.trying', { version: newest, count: ahead.length, total })
+    : standing === 'mixed' ? t('agents.summary.mixed', { version: newest, count: ahead.length, total })
+    : t(ahead.length === 1 ? 'rollout.even.one' : 'rollout.even.other', { version: newest, count: ahead.length });
+
+  const actions = here ? <UpdatingNow machine={here} /> : target && targets.length ? (
+    <>
+      {tryable ? (
+        <Menu>
+          <MenuTrigger render={<Button variant="outline" size="icon-sm" disabled={busy} aria-label={t('agents.tryMenu', { version: target })} />}>
+            <MoreHorizontal />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuGroup>
+              <MenuGroupLabel>{t('agents.tryMenu', { version: target })}</MenuGroupLabel>
+              {targets.map((entry) => (
+                <MenuItem key={entry.machine} onClick={() => onTry(entry.machine)}>
+                  <FlaskConical />
+                  <MachinePill name={entry.machine} />
+                </MenuItem>
+              ))}
+            </MenuGroup>
+          </MenuPopup>
+        </Menu>
+      ) : null}
+      <Button variant={comparison?.verdict === 'worse' ? 'outline' : 'default'} size="sm" disabled={busy} onClick={onUpdateAll}>
+        <ArrowUpCircle />
+        {t('agents.updateAll', { version: target, count: targets.length })}
+      </Button>
+    </>
+  ) : null;
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="text-sm font-medium text-foreground">{name}</span>
-        {verdict ? <Badge variant={verdict.variant} size="sm">{t(verdict.label)}</Badge> : null}
-        <span className="min-w-0 text-xs text-muted-foreground">{placement}</span>
-        <span className="ms-auto flex flex-wrap items-center gap-2">
-          {busy ? (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
-              <Spinner />
-              <span>{tRich('rollout.updating', { machine: <MachinePill name={run?.current} size="sm" /> })}</span>
-            </span>
-          ) : !newest || current ? null : even ? (
-            candidates.length && target ? (
-              <>
-                <Select value={target} onValueChange={(value) => { if (value) onChoose(String(value)); }}>
-                  <SelectTrigger size="sm" className="w-auto min-w-36" aria-label={t('rollout.try.machine')}>
-                    <SelectValue><MachinePill name={target} /></SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end">
-                    {candidates.map((entry) => <SelectItem key={entry.machine} value={entry.machine}><MachinePill name={entry.machine} /></SelectItem>)}
-                  </SelectPopup>
-                </Select>
-                <Button variant="outline" size="sm" onClick={() => onTry(target)}>
-                  <FlaskConical />
-                  {t('rollout.try.button')}
-                </Button>
-              </>
-            ) : null
-          ) : (
-            <Button
-              variant={comparison?.verdict === 'fine' ? 'default' : 'outline'}
-              size="sm"
-              disabled={!rest.length}
-              disabledReason={rest.length ? undefined : t('rollout.rest.unreachable')}
-              onClick={onUpdateRest}
-            >
-              <ArrowUpCircle />
-              {t('rollout.rest.button', { count: rest.length })}
-            </Button>
-          )}
-        </span>
-      </div>
-
-      {comparison && newest ? (
-        comparison.since === null ? (
-          <p className="text-xs text-muted-foreground">{t('rollout.compare.none', { version: newest })}</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs text-muted-foreground">{t('rollout.compare.since', { time: formatWhen(comparison.since), version: newest })}</p>
-            {/* Two rows under a sentence, read as part of this agent's block rather than a table of their own. */}
-            <Table density="compact">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('rollout.table.version')}</TableHead>
-                  <TableHead className={TABLE_NUMERIC_CLASS}>{t('rollout.table.requests')}</TableHead>
-                  <TableHead className={TABLE_NUMERIC_CLASS}>{t('rollout.table.failed')}</TableHead>
-                  <TableHead className={TABLE_NUMERIC_CLASS}>{t('rollout.table.rateLimited')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TallyRow label={newest} version note={<MachinePills names={ahead.map((entry) => entry.machine)} />} tally={comparison.newer} highlight={comparison.worse} />
-                <TallyRow
-                  label={t('rollout.table.older')}
-                  note={t(comparison.baseline === 'same' ? 'rollout.table.sameHours' : 'rollout.table.hoursBefore')}
-                  tally={comparison.older}
-                  highlight={[]}
-                />
-              </TableBody>
-            </Table>
-          </div>
-        )
-      ) : null}
-
-      {comparison && newest ? <VerdictText rollout={rollout} /> : null}
-      {even && newestUse ? (
-        <p className="text-xs text-muted-foreground">
-          {t('rollout.even.requests', { requests: formatCount(newestUse.requests), days: ROLLOUT_DAYS, rate: rate(errorsOf(newestUse), newestUse.requests) })}
-        </p>
-      ) : null}
-      {away.length && !even ? (
-        <p className="text-xs text-muted-foreground">
-          {tRich(away.length === 1 ? 'rollout.away.one' : 'rollout.away.other', { machines: <MachinePills names={away.map((entry) => entry.machine)} /> })}
-        </p>
-      ) : null}
-
-      {rollback && previous ? (
-        <Alert variant="warning">
-          <AlertTitle>{tRich('rollout.rollback.title', { machines: <MachinePills names={ahead.map((entry) => entry.machine)} size="md" />, version: previous })}</AlertTitle>
-          <AlertDescription className="flex flex-col gap-2">
-            <span>{t('rollout.rollback.description')}</span>
-            <CommandLine command={rollback} />
-            {agent === 'claude' ? <span>{t('rollout.rollback.claude')}</span> : null}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      {run?.results.length ? (
-        <ul className="flex flex-col gap-2">
-          {run.results.map((result) => (
-            <li key={result.machine} className="flex flex-col items-start gap-1">
-              <MachinePill name={result.machine} />
-              <UpdateOutcomeView outcome={result} fix={{ machine: result.machine, agent }} />
-            </li>
-          ))}
-          {run.notTried ? (
-            <li className="text-xs text-muted-foreground">{t(run.notTried === 1 ? 'rollout.stopped.one' : 'rollout.stopped.other', { count: run.notTried })}</li>
+    <AgentCard
+      harness={agent}
+      title={name}
+      badge={badge}
+      summary={summary}
+      actions={actions}
+      footer={(
+        <>
+          {rollback && previous ? (
+            <Alert variant="warning">
+              <AlertTitle>{tRich('rollout.rollback.title', { machines: <MachinePills names={ahead.map((entry) => entry.machine)} size="md" />, version: previous })}</AlertTitle>
+              <AlertDescription className="flex flex-col gap-2">
+                <span>{t('rollout.rollback.description')}</span>
+                <CommandLine command={rollback} />
+                {agent === 'claude' ? <span>{t('rollout.rollback.claude')}</span> : null}
+              </AlertDescription>
+            </Alert>
           ) : null}
-        </ul>
-      ) : null}
+          <RunResults run={run} group={agent} agent={agent} />
+        </>
+      )}
+    >
+      {comparison && newest ? <TrialPanel rollout={rollout} /> : null}
+      <AgentMachinesTable agent={agent} rows={machines} busy={busy} onOpen={onOpen} />
+      {rollout.uses.length ? <VersionHistory uses={rollout.uses} target={target} /> : null}
+    </AgentCard>
+  );
+}
 
-      {rollout.uses.length ? (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground">{t('rollout.versions', { days: ROLLOUT_DAYS })}</summary>
-          <Table density="compact" className="mt-1.5">
+/**
+ * The trial at the top of a card: the new version's requests against the older versions', with how far it is toward
+ * enough to judge, and what that says.
+ */
+function TrialPanel({ rollout }: { rollout: AgentRollout }) {
+  const { t, tRich } = useI18n();
+  const { comparison, newest, ahead } = rollout;
+  if (!comparison || !newest) return null;
+  const { newer, older, verdict } = comparison;
+  const worseErrors = comparison.worse.includes('errors');
+  const worseLimits = comparison.worse.includes('rateLimits');
+  return (
+    <div className="flex flex-col gap-2 px-3 py-2.5 text-xs">
+      <p className="text-muted-foreground">
+        {comparison.since === null
+          ? t('rollout.compare.none', { version: newest })
+          : tRich('agents.trial.since', { version: <span className="font-mono text-foreground">{newest}</span>, machines: <MachinePills names={ahead.map((entry) => entry.machine)} />, time: formatWhen(comparison.since) })}
+      </p>
+      {comparison.since !== null ? (
+        <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-muted-foreground">{t('agents.trial.requests')}</span>
+            <span className="flex items-center gap-2">
+              <span className="tabular-nums text-foreground">
+                {newer.requests < TRIAL_MIN_REQUESTS ? t('agents.trial.progress', { count: formatCount(newer.requests), min: formatCount(TRIAL_MIN_REQUESTS) }) : formatCount(newer.requests)}
+              </span>
+              {verdict === 'waiting' ? <Progress value={(newer.requests / TRIAL_MIN_REQUESTS) * 100} className="w-20" /> : null}
+            </span>
+          </div>
+          <TrialMeasure label={t('rollout.table.failed')} value={rate(errorsOf(newer), newer.requests)} base={rate(errorsOf(older), older.requests)} worse={worseErrors} />
+          <TrialMeasure label={t('rollout.table.rateLimited')} value={rate(newer.rateLimited, newer.requests)} base={rate(older.rateLimited, older.requests)} worse={worseLimits} />
+        </div>
+      ) : null}
+      <VerdictText rollout={rollout} />
+    </div>
+  );
+}
+
+function TrialMeasure({ label, value, base, worse }: { label: string; value: string; base: string; worse: boolean }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tabular-nums">
+        <span className={cn('text-foreground', worse && 'font-medium text-warning-foreground')}>{value}</span>
+        <span className="text-muted-foreground"> {t('agents.trial.against', { rate: base })}</span>
+      </span>
+    </div>
+  );
+}
+
+/** Every version seen in the window, folded away under the machines: the history, not what to do now. */
+export function VersionHistory({ uses, target }: { uses: VersionUse[]; target: string | null }) {
+  const { t } = useI18n();
+  const most = Math.max(1, ...uses.map((use) => use.requests));
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-accent/40 hover:text-foreground focus-visible:bg-accent/40">
+        <span className="text-foreground/80">{t('agents.history.title')}</span>
+        <span>{t(uses.length === 1 ? 'agents.history.summary.one' : 'agents.history.summary.other', { count: uses.length, days: ROLLOUT_DAYS })}</span>
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="border-t border-border/50 bg-background/40 ps-6">
+          <Table density="compact">
             <TableHeader>
               <TableRow>
                 <TableHead>{t('rollout.table.version')}</TableHead>
                 <TableHead>{t('rollout.table.machines')}</TableHead>
                 <TableHead className={TABLE_NUMERIC_CLASS}>{t('rollout.table.requests')}</TableHead>
                 <TableHead className={TABLE_NUMERIC_CLASS}>{t('rollout.table.failed')}</TableHead>
-                <TableHead className={TABLE_NUMERIC_CLASS}>{t('rollout.table.rateLimited')}</TableHead>
                 <TableHead className="text-end">{t('rollout.table.lastSeen')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rollout.uses.map((use) => (
+              {uses.map((use) => (
                 <TableRow key={use.version}>
-                  <TableCell className="font-mono">{use.version}</TableCell>
-                  <TableCell className="text-muted-foreground">{use.machines.length ? <MachinePills names={use.machines} /> : t('rollout.table.noMachine')}</TableCell>
-                  <TableCell className={TABLE_NUMERIC_CLASS}>{formatCount(use.requests)}</TableCell>
+                  <TableCell>
+                    <span className="flex items-center gap-2">
+                      <span className={cn('font-mono', target && compareVersions(use.version, target) < 0 ? 'text-muted-foreground' : 'text-foreground')}>{use.version}</span>
+                      {target === use.version ? <Badge variant="muted" size="sm">{t('agents.history.target')}</Badge> : null}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {use.machines.length ? t(use.machines.length === 1 ? 'agents.history.machines.one' : 'agents.history.machines.other', { count: use.machines.length }) : t('rollout.table.noMachine')}
+                  </TableCell>
+                  <TableCell className={TABLE_NUMERIC_CLASS}>
+                    <span className="inline-flex items-center justify-end gap-2" title={use.machines.join(', ')}>
+                      <span className="hidden h-1 w-16 overflow-hidden rounded-full bg-input/60 sm:inline-block">
+                        <span className="block h-full rounded-full bg-foreground/30" style={{ width: `${(use.requests / most) * 100}%` }} />
+                      </span>
+                      {formatCount(use.requests)}
+                    </span>
+                  </TableCell>
                   <TableCell className={TABLE_NUMERIC_CLASS}>{rate(errorsOf(use), use.requests)}</TableCell>
-                  <TableCell className={TABLE_NUMERIC_CLASS}>{rate(use.rateLimited, use.requests)}</TableCell>
                   <TableCell className="text-end text-muted-foreground">{formatWhen(use.lastMs)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
-function TallyRow({ label, note, tally, highlight, version = false }: { label: string; note: ReactNode; tally: Tally; highlight: string[]; version?: boolean }) {
-  return (
-    <TableRow>
-      <TableCell>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className={cn('text-foreground', version && 'font-mono')}>{label}</span>
-          {note ? <span className="text-muted-foreground">{note}</span> : null}
-        </span>
-      </TableCell>
-      <TableCell className={TABLE_NUMERIC_CLASS}>{formatCount(tally.requests)}</TableCell>
-      <TableCell className={cn(TABLE_NUMERIC_CLASS, highlight.includes('errors') && 'font-medium text-warning-foreground')}>
-        {rate(errorsOf(tally), tally.requests)}
-      </TableCell>
-      <TableCell className={cn(TABLE_NUMERIC_CLASS, highlight.includes('rateLimits') && 'font-medium text-warning-foreground')}>
-        {rate(tally.rateLimited, tally.requests)}
-      </TableCell>
-    </TableRow>
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -448,7 +393,7 @@ function VerdictText({ rollout }: { rollout: AgentRollout }) {
       ? [t('rollout.verdict.fine', { version: newest })]
       : [t('rollout.verdict.noBaseline', { version: newest })];
   return (
-    <div className={cn('flex flex-col gap-0.5 text-xs', comparison.verdict === 'worse' ? 'text-warning-foreground' : 'text-muted-foreground')}>
+    <div className={cn('flex flex-col gap-0.5', comparison.verdict === 'worse' ? 'text-warning-foreground' : 'text-muted-foreground')}>
       {lines.map((line) => <p key={line}>{line}</p>)}
     </div>
   );

@@ -1,5 +1,5 @@
 import { AGENT_KINDS } from './machineHealth';
-import type { AgentKind, HealthStatus, LatestVersions, MachineHealth } from '../native/types';
+import type { AgentKind, LatestVersions, MachineHealth } from '../native/types';
 
 const versionParts = (version: string) => {
   const [main = '', ...pre] = version.split('+')[0]!.split('-');
@@ -59,35 +59,4 @@ export function runningAgents(item: MachineHealth): Record<AgentKind, number> | 
   const latest = item.latest;
   if (item.status === 'unreachable' || !latest || (latest.claudeRunning === null && latest.codexRunning === null)) return null;
   return { claude: latest.claudeRunning ?? 0, codex: latest.codexRunning ?? 0 };
-}
-
-/** One agent on one machine as Sync › Agents lists it: its version and the newer one to be at, not there, or not looked for yet. */
-export type AgentVersionCell =
-  | { state: 'installed'; version: string | null; newer: { version: string; machine: string | null } | null }
-  | { state: 'missing' }
-  | { state: 'unchecked' };
-
-export type AgentVersionRow = {
-  machine: string;
-  status: HealthStatus;
-  agents: Record<AgentKind, AgentVersionCell>;
-  /** Each agent running at the last sample, null while that sample is out of date. */
-  running: Record<AgentKind, number> | null;
-};
-
-/**
- * Each machine's agents side by side, in the order the machines come. A machine with no host is left out: nothing
- * checks its agents, so its row would only ever be empty.
- */
-export function agentVersionRows(machines: MachineHealth[], newest: NewestAgents): AgentVersionRow[] {
-  return machines.filter((item) => item.status !== 'unconfigured').map((item) => {
-    const behind = agentsBehind(item, newest);
-    const cell = (agent: AgentKind): AgentVersionCell => {
-      const install = item.agents[agent];
-      if (!install) return item.agents.checkedAt === null ? { state: 'unchecked' } : { state: 'missing' };
-      const lag = behind.find((entry) => entry.agent === agent);
-      return { state: 'installed', version: install.version, newer: lag ? { version: lag.newest, machine: lag.machine } : null };
-    };
-    return { machine: item.machine, status: item.status, agents: { claude: cell('claude'), codex: cell('codex') }, running: runningAgents(item) };
-  });
 }
