@@ -4,6 +4,8 @@ import { invokeCommand } from '../native/commands';
 import type { MessageKey } from '../i18n/resources';
 import type { HarnessRun, MachineHealth, MachinePool, RunHarness, RunReason, RunRequest, RunState } from '../native/types';
 import { type HarnessSetupRow, machineHarnesses } from './harnesses';
+import { sshCommand } from './fixPrompt';
+import { shellPath, shellWord } from './setupChecklist';
 
 /**
  * Harness runs (see `runs.rs`): work started on a pool and handed to T3 Code, Orca or, as a last resort, an agent's own
@@ -74,6 +76,7 @@ export function reasonMessage(run: Pick<HarnessRun, 'reason' | 'detail' | 'used'
   const harness = run.used ?? run.harness;
   // The members the run looked on, when every one that could take it lacked the folder.
   if (run.reason === 'noFolder' && run.detail) return { key: 'runs.reason.noFolderOn', values: { machines: run.detail }, harness };
+  if (run.reason === 'agentFailed' && run.detail) return exitMessage(run.detail, harness);
   if (run.reason === 'handOffFailed' && run.detail) {
     const known = DETAIL_LABEL[run.detail];
     if (known) return { key: known, values: {}, harness };
@@ -84,8 +87,39 @@ export function reasonMessage(run: Pick<HarnessRun, 'reason' | 'detail' | 'used'
   return { key: REASON_LABEL[run.reason], values: {}, harness };
 }
 
+/** What an agent's exit code (or `gone`, when it left none) says about how it stopped. */
+function exitMessage(detail: string, harness: RunHarness): { key: MessageKey; values: Record<string, string>; harness: RunHarness } {
+  if (detail === 'gone') return { key: 'runs.exit.gone', values: {}, harness };
+  // 127 is the shell's "command not found"; 130, 137 and 143 are an interrupt, a kill and a terminate.
+  if (detail === '127') return { key: 'runs.exit.notFound', values: {}, harness };
+  if (detail === '130' || detail === '137' || detail === '143') return { key: 'runs.exit.killed', values: { code: detail }, harness };
+  return { key: 'runs.exit.code', values: { code: detail }, harness };
+}
+
 /** Whether Arbor can bring the run up where it runs: only Orca can be told to show one terminal. */
 export const canOpenRun = (run: HarnessRun) => Boolean(run.handle.terminal && run.machine && run.used === 'orca');
+
+const loose = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * Commands to type to look into a run on the command line, run from this Mac: its log (what the agent printed, which
+ * stays on the machine and Arbor never reads), and picking up a Claude Code run's session where it left off. Null for
+ * each when there's nothing to look at, or the machine isn't on the Machines list to say how to reach it.
+ */
+export function runCommands(
+  run: Pick<HarnessRun, 'machine' | 'folder' | 'setup' | 'used' | 'handle'>,
+  health: readonly MachineHealth[] | null,
+): { log: string | null; resume: string | null } {
+  const machine = run.machine ? (health ?? []).find((item) => loose(item.machine) === loose(run.machine ?? '')) : undefined;
+  if (run.used !== 'headless' || !machine) return { log: null, resume: null };
+  // On another machine the command goes to its shell in one word, so `~` is its home, not this Mac's.
+  const on = (command: string, terminal = false) => (machine.local ? command : `${sshCommand(machine, terminal ? ['-t'] : [])} ${shellWord(command)}`);
+  const log = run.handle.log ? on(`cat ${shellPath(run.handle.log)}`) : null;
+  const resume = run.setup === 'claude' && run.handle.sessionId
+    ? on(`cd ${run.folder === '~' ? '~' : shellPath(run.folder)} && claude --resume ${shellWord(run.handle.sessionId)}`, true)
+    : null;
+  return { log, resume };
+}
 
 /** The runs started on a pool or spilled into it, newest first. */
 export const poolRuns = (runs: readonly HarnessRun[], poolId: string, limit = 6) =>
@@ -100,7 +134,6 @@ export type RunSetupChoice = HarnessSetupRow & {
 
 /** The setups a run on this pool could name for a harness, from what each member's last agents check found. */
 export function runSetupChoices(pool: Pick<MachinePool, 'members'>, health: readonly MachineHealth[] | null, harness: RunHarness): RunSetupChoice[] {
-  const loose = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
   const members = new Set(pool.members.filter((member) => member.weight !== 'manual').map((member) => loose(member.machine)));
   const choices = new Map<string, RunSetupChoice>();
   for (const machine of health ?? []) {

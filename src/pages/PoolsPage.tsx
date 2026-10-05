@@ -65,7 +65,7 @@ export function PoolsPage({ params, onNavigate }: { params?: PoolsParams; onNavi
         </PageTopbar>
         <PageBody gap="gap-4">
           {open ? (
-            <PoolDetail pool={open} pools={pools ?? []} preview={previewOf(open)} runs={runsOf(open)} />
+            <PoolDetail pool={open} pools={pools ?? []} preview={previewOf(open)} runs={runsOf(open)} onNavigate={onNavigate} />
           ) : pools ? (
             <p className="text-sm text-muted-foreground">{t('pools.page.gone')}</p>
           ) : (
@@ -189,7 +189,7 @@ function PoolCard({ pool, pools, preview, actions, onOpen }: {
  * A pool's own page: its standing and limits, its members with where the next run would go, and its recent runs.
  * Connecting over SSH is set up once, so it lives behind the Connect button instead of on the page.
  */
-function PoolDetail({ pool, pools, preview, runs }: { pool: MachinePool; pools: MachinePool[]; preview: PoolPreview | undefined; runs: HarnessRun[] | null }) {
+function PoolDetail({ pool, pools, preview, runs, onNavigate }: { pool: MachinePool; pools: MachinePool[]; preview: PoolPreview | undefined; runs: HarnessRun[] | null; onNavigate: (view: AppView) => void }) {
   const { t } = useI18n();
   const whenFull = useWhenFull(pool, pools);
   return (
@@ -221,7 +221,7 @@ function PoolDetail({ pool, pools, preview, runs }: { pool: MachinePool; pools: 
       {runs ? (
         <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5">
           <h3 className="border-b border-border/50 px-4 py-3 text-sm font-medium">{t('runs.recent')}</h3>
-          <PoolRunsBlock runs={runs} />
+          <PoolRunsBlock runs={runs} onNavigate={onNavigate} />
         </section>
       ) : null}
     </>

@@ -10,6 +10,8 @@
 //!
 //! The record keeps ids, the machine, the folder, times and how it went. The prompt is held in memory
 //! only while a run waits, and goes into the script that hands it over; it's never stored or logged.
+//! What an agent on the command line prints stays in a private log on its machine for the person to
+//! read there; Arbor keeps only where that log is.
 
 use super::agents::AgentKind;
 use super::pools::{self, MachinePool, PoolWhenFull};
@@ -212,6 +214,10 @@ pub(crate) struct RunHandle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     session_id: Option<String>,
+    /// Where a run on the command line leaves what the agent printed, on its machine, from `~/`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    log: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -232,7 +238,8 @@ pub(crate) struct HarnessRun {
     title: String,
     state: RunState,
     reason: Option<RunReason>,
-    /// What the harness or the machine said when it failed.
+    /// What the harness or the machine said when it failed: a script's failure code, the members
+    /// looked on, or for an agent that failed its exit code (`gone` when it left none).
     detail: Option<String>,
     handle: RunHandle,
     #[ts(type = "number")]
@@ -471,19 +478,34 @@ fn headless_command(agent: AgentKind, request: &RunRequest, session_id: &str) ->
     parts.join(" ")
 }
 
+/// Where a run's log sits on its machine.
+fn log_path(run_id: &str) -> String {
+    format!("~/.arbor/runs/{run_id}.log")
+}
+
+/// How long a run's log and exit code stay on its machine.
+const LOG_KEPT_DAYS: u32 = 7;
+
 /// Starts the agent's command line in the folder, detached, and leaves its exit code where a later
-/// check finds it. What the agent prints goes nowhere: Arbor never reads a run's conversation.
+/// check finds it. What the agent prints goes to a log only its owner can read, on the machine, for
+/// the person to look at there when a run fails: Arbor never reads it, since it's the conversation.
+/// Logs and exit codes older than a week are cleared as each run starts.
 fn headless_script(run_id: &str, agent: AgentKind, request: &RunRequest, session_id: &str) -> String {
     format!(
         "{env}{folder}if ! cd \"$folder\" 2>/dev/null; then printf 'no_folder\\n'; exit 0; fi
 runs=\"$HOME/.arbor/runs\"
 mkdir -p \"$runs\"
+find \"$runs\" -type f \\( -name '*.log' -o -name '*.exit' \\) -mtime +{kept} -exec rm -f {{}} + 2>/dev/null
 exit_file=\"$runs\"/{id}.exit
+log_file=\"$runs\"/{id}.log
 rm -f \"$exit_file\"
+# Only the log is made private: a umask for the whole script would reach the agent's own files too.
+(umask 077; : > \"$log_file\") || {{ printf 'failed=no_log\\n'; exit 0; }}
 command={command}
-nohup sh -c \"$command\"' </dev/null >/dev/null 2>&1; printf \"%s\\n\" \"$?\" > \"$1\"' arbor-run \"$exit_file\" </dev/null >/dev/null 2>&1 &
+nohup sh -c \"$command\"' </dev/null >\"$2\" 2>&1; printf \"%s\\n\" \"$?\" > \"$1\"' arbor-run \"$exit_file\" \"$log_file\" </dev/null >/dev/null 2>&1 &
 printf 'pid=%s\\n' \"$!\"
 ",
+        kept = LOG_KEPT_DAYS,
         env = agents::AGENT_ENV,
         folder = folder_line(&request.folder),
         id = shell_quote(run_id),
@@ -513,6 +535,7 @@ fn parse_hand_off(stdout: &str) -> Result<RunHandle, (RunReason, Option<String>)
         terminal: text("terminal"),
         pid: fields.get("pid").and_then(|pid| pid.parse().ok()),
         session_id: None,
+        log: None,
     };
     if handle == RunHandle::default() {
         return Err((RunReason::HandOffFailed, None));
@@ -537,6 +560,9 @@ async fn hand_off(machine: &Machine, offer: Offer, run_id: &str, request: &RunRe
         .await
         .map_err(|_| (RunReason::HandOffFailed, Some("unreachable".to_string())))?;
     let mut handle = parse_hand_off(&stdout)?;
+    if harness == Harness::Headless {
+        handle.log = Some(log_path(run_id));
+    }
     handle.session_id = session_id;
     Ok((harness, handle))
 }
@@ -1041,18 +1067,11 @@ async fn check_running(app: &tauri::AppHandle, running: Vec<HarnessRun>) -> Resu
             continue;
         };
         let now_ms = Local::now().timestamp_millis();
-        for (mut run, outcome) in parse_checks(&stdout, runs) {
-            match outcome {
-                Checked::Running => continue,
-                Checked::Exited(0) => run.state = RunState::Exited,
-                Checked::Exited(_) | Checked::Gone => {
-                    run.state = RunState::Failed;
-                    run.reason = Some(RunReason::AgentFailed);
-                }
+        for (run, outcome) in parse_checks(&stdout, runs) {
+            if let Some(run) = after_check(run, outcome, now_ms) {
+                save(run).await?;
+                changed = true;
             }
-            run.ended_at_ms = Some(now_ms);
-            save(run).await?;
-            changed = true;
         }
     }
     Ok(changed)
@@ -1064,6 +1083,26 @@ enum Checked {
     Exited(i32),
     /// No exit code and no process: the machine restarted, or the run was killed.
     Gone,
+}
+
+/// The run once a check found it ended, keeping a failed agent's exit code; None while it's still going.
+fn after_check(mut run: HarnessRun, outcome: Checked, now_ms: i64) -> Option<HarnessRun> {
+    match outcome {
+        Checked::Running => return None,
+        Checked::Exited(0) => run.state = RunState::Exited,
+        Checked::Exited(code) => {
+            run.state = RunState::Failed;
+            run.reason = Some(RunReason::AgentFailed);
+            run.detail = Some(code.to_string());
+        }
+        Checked::Gone => {
+            run.state = RunState::Failed;
+            run.reason = Some(RunReason::AgentFailed);
+            run.detail = Some("gone".into());
+        }
+    }
+    run.ended_at_ms = Some(now_ms);
+    Some(run)
 }
 
 fn check_script(runs: &[HarnessRun]) -> String {

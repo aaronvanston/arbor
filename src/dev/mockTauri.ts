@@ -33,6 +33,7 @@
  * requests with their statuses and what went wrong, and `telemetry` Sync › Cost); `?page=machine:ci-01` starts on
  * ci-01's own page, as its leaf in the sidebar opens it (`machine:lab-box` for one with no host, only its checklist);
  * `?page=automation:arbor:sentry-watch` starts on one automation's page (any id the Automations list has);
+ * `?page=pool:mock-builds` starts on one pool's page (with `?runs=failed`, its runs that went wrong);
  * `?automations=empty` for nothing scheduled anywhere, `?automations=failing` for runs that failed and ci-01's look failing,
  * `?automations=off` for Arbor's automations turned off in Settings, `?automations=nokey` for no Automations proxy key yet; `?orca=none` for no machine with Orca; `?superset=none` for none with Superset;
  * `?draft=fail` for drafting an automation failing (no client key), `?draft=slow` for a draft that takes four seconds;
@@ -359,7 +360,7 @@ import { isSidebarArt } from '../services/sidebarArt';
 import { isAppColor } from '../services/appColor';
 import { previewAppPreference } from '../appPreferences';
 import { goToView, resetViewHistory } from '../services/viewHistory';
-import { automationView, failedRequestsView, machinesView, mainPageView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
+import { automationView, failedRequestsView, machinesView, mainPageView, poolsView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
 import type { Commands } from '../native/commands';
 import { mockCommands, type CommandAnswers } from './mock/answers';
 import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
@@ -386,6 +387,7 @@ function mockStartView(page: string | null, tab = params.get('tab'), lens = para
   if (settingsView) return settingsView;
   if (page.startsWith('machine:')) return machinesView(page.slice('machine:'.length));
   if (page.startsWith('automation:')) return automationView(page.slice('automation:'.length));
+  if (page.startsWith('pool:')) return poolsView(page.slice('pool:'.length));
   return mainPageView(page, tab, { lens });
 }
 

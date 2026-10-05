@@ -105,6 +105,18 @@ fn checks_read_each_runs_exit_code() {
 }
 
 #[test]
+fn a_failed_agent_keeps_its_exit_code() {
+    let running = || run("a", RunState::Running);
+    assert_eq!(after_check(running(), Checked::Running, 9_000), None);
+    let done = after_check(running(), Checked::Exited(0), 9_000).unwrap();
+    assert_eq!((done.state, done.reason, done.detail, done.ended_at_ms), (RunState::Exited, None, None, Some(9_000)));
+    let failed = after_check(running(), Checked::Exited(127), 9_000).unwrap();
+    assert_eq!((failed.state, failed.reason, failed.detail.as_deref()), (RunState::Failed, Some(RunReason::AgentFailed), Some("127")));
+    let gone = after_check(running(), Checked::Gone, 9_000).unwrap();
+    assert_eq!(gone.detail.as_deref(), Some("gone"));
+}
+
+#[test]
 fn runs_round_trip_through_usage_db() {
     let connection = schema::test_database();
     let mut first = run("first", RunState::Running);
@@ -161,13 +173,19 @@ fn secret_the_prompt_and_token_stay_out_of_records_and_scripts_print_only_ids() 
 }
 
 #[test]
-fn the_command_line_runs_detached_with_its_output_thrown_away() {
+fn the_command_line_runs_detached_with_its_output_kept_on_the_machine() {
     let mut asked = request(Harness::Headless, "claude");
     asked.model = Some("opus".into());
     assert_eq!(headless_command(AgentKind::Claude, &asked, "sess-1"), format!("claude -p --session-id 'sess-1' --model 'opus' {}", shell_quote(PROMPT)));
     let script = headless_script("run-1", AgentKind::Claude, &asked, "sess-1");
-    assert!(script.contains(">/dev/null 2>&1"));
     assert!(script.contains("$runs\"/'run-1'.exit"));
+    assert!(script.contains("$runs\"/'run-1'.log"));
+    // The log is the only thing made private, and nothing the agent prints reaches what Arbor reads.
+    assert!(script.contains("(umask 077; : > \"$log_file\")"));
+    assert!(!script.lines().any(|line| line.trim() == "umask 077"));
+    let printed: Vec<&str> = script.lines().filter(|line| line.trim_start().starts_with("printf '")).collect();
+    assert!(printed.iter().all(|line| line.contains("no_folder") || line.contains("pid=")), "{printed:?}");
+    assert_eq!(log_path("run-1"), "~/.arbor/runs/run-1.log");
     assert!(headless_command(AgentKind::Codex, &request(Harness::Headless, "codex"), "").starts_with("codex exec '"));
 }
 
@@ -260,6 +278,32 @@ fn hand_off_scripts_run_against_stand_ins() {
         let mut missing = request(Harness::Orca, "claude");
         missing.folder = "~/nowhere".into();
         assert_eq!(parse_hand_off(&run_script(&handoff::orca_script("id", &missing, "x")).0), Err((RunReason::NoFolder, None)));
+
+        // The command line: what the agent prints lands in its private log, the exit code beside it, a week-old log
+        // goes, and the agent's own files keep the usual permissions.
+        use std::os::unix::fs::PermissionsExt;
+        script("claude", "printf 'API Error: 401\\n' >&2; : > made-by-agent; exit 3\n".into());
+        let runs = home.join(".arbor/runs");
+        std::fs::create_dir_all(&runs).unwrap();
+        let old_log = runs.join("old.log");
+        std::fs::write(&old_log, "old").unwrap();
+        assert!(std::process::Command::new("touch").args(["-t", "202001010000"]).arg(&old_log).status().unwrap().success());
+        let id = format!("cli-{shell}");
+        let (stdout, stderr) = run_script(&format!("umask 022\n{}", headless_script(&id, AgentKind::Claude, &request(Harness::Headless, "claude"), "sess-1")));
+        assert!(parse_hand_off(&stdout).is_ok_and(|handle| handle.pid.is_some()), "{shell}: {stdout} {stderr}");
+        let exit = runs.join(format!("{id}.exit"));
+        for _ in 0..100 {
+            if std::fs::read_to_string(&exit).is_ok_and(|code| code.ends_with('\n')) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert_eq!(std::fs::read_to_string(&exit).unwrap().trim(), "3", "{shell}");
+        let log_file = runs.join(format!("{id}.log"));
+        assert_eq!(std::fs::read_to_string(&log_file).unwrap(), "API Error: 401\n", "{shell}");
+        assert_eq!(std::fs::metadata(&log_file).unwrap().permissions().mode() & 0o777, 0o600, "{shell}");
+        assert!(!old_log.exists(), "{shell}");
+        assert_eq!(std::fs::metadata(home.join("src/app/made-by-agent")).unwrap().permissions().mode() & 0o777, 0o644, "{shell}");
     }
     let _ = std::fs::remove_dir_all(home);
 }

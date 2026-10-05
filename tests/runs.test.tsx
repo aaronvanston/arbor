@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PoolRunsBlock } from '../src/components/PoolRuns';
 import { I18nProvider } from '../src/i18n';
 import type { HarnessRun, MachineAgents, MachineHealth, MachinePool } from '../src/native/types';
-import { canOpenRun, newRunRequest, poolRuns, reasonMessage, runDraftProblem, runSetupChoices } from '../src/services/runs';
+import { canOpenRun, newRunRequest, poolRuns, reasonMessage, runCommands, runDraftProblem, runSetupChoices } from '../src/services/runs';
 import { itemAt } from './support/items';
 
 const run = (fields: Partial<HarnessRun> = {}): HarnessRun => ({
@@ -30,6 +30,35 @@ describe('harness runs', () => {
     expect(reasonMessage(run({ state: 'failed', reason: 'handOffFailed', detail: 'no_cli', used: 'orca' }))).toEqual({ key: 'runs.detail.noCli', values: {}, harness: 'orca' });
     expect(reasonMessage(run({ state: 'failed', reason: 'handOffFailed', detail: 'turn_500' }))).toEqual({ key: 'runs.detail.status', values: { status: '500' }, harness: 't3' });
     expect(reasonMessage(run({ state: 'failed', reason: 'handOffFailed', detail: 'orca_selector_ambiguous' }))?.values).toEqual({ code: 'orca_selector_ambiguous' });
+  });
+
+  it('says how an agent on the command line stopped, by its exit code', () => {
+    const failed = (detail: string | null) => reasonMessage(run({ state: 'failed', reason: 'agentFailed', used: 'headless', detail }));
+    expect(failed(null)?.key).toBe('runs.reason.agentFailed');
+    expect(failed('1')).toEqual({ key: 'runs.exit.code', values: { code: '1' }, harness: 'headless' });
+    expect(failed('127')?.key).toBe('runs.exit.notFound');
+    expect(failed('137')).toEqual({ key: 'runs.exit.killed', values: { code: '137' }, harness: 'headless' });
+    expect(failed('gone')?.key).toBe('runs.exit.gone');
+  });
+
+  it('gives commands to read a command-line run’s log and pick up its session on its machine', () => {
+    const host = (endpoint: string, port = 22, local = false) => ({ machine: 'Cedar 02', host: { endpoint, port }, local }) as unknown as MachineHealth;
+    const headless = run({ machine: 'cedar-02', used: 'headless', harness: 'headless', setup: 'claude', folder: '~/src/it’s here', handle: { pid: 1, log: '~/.arbor/runs/r1.log', sessionId: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7' } });
+    expect(runCommands(headless, [host('casey@cedar-02.local')])).toEqual({
+      log: "ssh casey@cedar-02.local 'cat ~/.arbor/runs/r1.log'",
+      resume: "ssh -t casey@cedar-02.local 'cd ~/'\\''src/it’s here'\\'' && claude --resume a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7'",
+    });
+    // This Mac needs no ssh, and a home folder stays bare so the shell expands it.
+    expect(runCommands({ ...headless, folder: '~' }, [host('localhost', 22, true)])).toEqual({
+      log: 'cat ~/.arbor/runs/r1.log',
+      resume: 'cd ~ && claude --resume a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7',
+    });
+    expect(runCommands(headless, [host('cedar-02', 2222)]).log).toBe("ssh -p 2222 cedar-02 'cat ~/.arbor/runs/r1.log'");
+    // Codex has no session id to resume by, a run from before logs has no log, and an unlisted machine has no way in.
+    expect(runCommands({ ...headless, setup: 'codex', handle: { pid: 1, log: '~/.arbor/runs/r1.log' } }, [host('cedar-02')]).resume).toBeNull();
+    expect(runCommands({ ...headless, handle: { pid: 1 } }, [host('cedar-02')]).log).toBeNull();
+    expect(runCommands(headless, [])).toEqual({ log: null, resume: null });
+    expect(runCommands({ ...headless, used: 't3' }, [host('cedar-02')])).toEqual({ log: null, resume: null });
   });
 
   it('offers the setups members have, ready ones first, leaving out manual-only members', () => {
@@ -66,11 +95,13 @@ describe('harness runs', () => {
         <PoolRunsBlock
           nowMs={60_000}
           runs={[
-            run({ id: 'q', state: 'queued', machine: null, used: null, reason: 'noRoom', waitUntilMs: 600_000 }),
+            run({ id: 'q', state: 'queued', machine: null, used: null, reason: 'noRoom', startedAtMs: null, waitUntilMs: 600_000 }),
             run({ id: 'o', used: 'orca', harness: 'orca', setup: 'claude', handle: { terminal: 'term_1' } }),
             run({ id: 'h', used: 'headless', harness: 'orca', setup: 'claude', state: 'exited' }),
             run({ id: 'f', state: 'failed', reason: 'handOffFailed', detail: 'not_running' }),
+            run({ id: 'a', used: 'headless', harness: 'headless', setup: 'claude', state: 'failed', reason: 'agentFailed', detail: '1', handle: { pid: 1, sessionId: 's-1', log: '~/.arbor/runs/a.log' } }),
           ]}
+          onNavigate={() => undefined}
         />
       </I18nProvider>,
     );
@@ -81,6 +112,11 @@ describe('harness runs', () => {
     expect(itemAt(rows, 1)).toContain('Open in Orca');
     expect(itemAt(rows, 2)).toContain('wasn’t running, so it went to the command line');
     expect(itemAt(rows, 3)).toContain('T3 Code isn’t running on the machine.');
+    expect(itemAt(rows, 4)).toContain('The agent stopped with an error (exit code 1).');
+    expect(itemAt(rows, 4)).toContain('Session');
+    expect(itemAt(rows, 4)).toContain('Details');
+    // A run that never started has nothing more to show.
+    expect(itemAt(rows, 0)).not.toContain('Details');
     expect(text(renderToStaticMarkup(<I18nProvider><PoolRunsBlock runs={[]} /></I18nProvider>))).toContain('No runs yet');
   });
 });

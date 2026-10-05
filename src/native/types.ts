@@ -1723,7 +1723,8 @@ export type HarnessRun = {
   state: RunState,
   reason: RunReason | null,
   /**
-   * What the harness or the machine said when it failed.
+   * What the harness or the machine said when it failed: a script's failure code, the members
+   * looked on, or for an agent that failed its exit code (`gone` when it left none).
    */
   detail: string | null,
   handle: RunHandle,
@@ -3651,6 +3652,10 @@ export type RunHandle = {
    * The session id given to a Claude Code run on the command line, which Sessions finds it by.
    */
   sessionId?: string,
+  /**
+   * Where a run on the command line leaves what the agent printed, on its machine, from `~/`.
+   */
+  log?: string,
 };
 
 /**

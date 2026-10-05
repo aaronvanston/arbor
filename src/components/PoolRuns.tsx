@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
-import { formatAgo, formatRelative } from '../lib/format';
+import { formatAgo, formatDateTime, formatDuration, formatRelative } from '../lib/format';
+import { sessionsView, type AppView } from '../navigation';
+import { CommandLine } from './CommandLine';
 import { MachinePill } from './identity/Identity';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from './ui/collapsible';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from './ui/dialog';
-import { ExternalLink, X } from './ui/icons';
+import { ArrowUpRight, ExternalLink, X } from './ui/icons';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from './ui/select';
@@ -25,6 +28,7 @@ import {
   newRunRequest,
   openRun,
   reasonMessage,
+  runCommands,
   runDraftProblem,
   runSetupChoices,
   setupLabel,
@@ -42,10 +46,57 @@ function useReason() {
 }
 
 /**
- * A pool's latest runs: how each went, where it went, and what can still be done with it (taking a waiting one out of
- * the queue, or bringing an Orca run's terminal to the front).
+ * What a run's details show: when it ran, its session, and for one on the command line the commands that read its log
+ * and pick up its session on the machine.
  */
-export function PoolRunsBlock({ runs, nowMs = Date.now() }: { runs: HarnessRun[]; nowMs?: number }) {
+export function RunDetails({ run, nowMs }: { run: HarnessRun; nowMs: number }) {
+  const { t } = useI18n();
+  const health = useFleetHealth();
+  const { log, resume } = runCommands(run, health);
+  const ended = run.endedAtMs ?? (run.state === 'running' ? nowMs : null);
+  const facts: { label: string; value: string }[] = [
+    ...(run.startedAtMs ? [{ label: t('runs.info.started'), value: formatDateTime(run.startedAtMs, { seconds: true }) }] : []),
+    ...(run.endedAtMs ? [{ label: t('runs.info.ended'), value: formatDateTime(run.endedAtMs, { seconds: true }) }] : []),
+    ...(run.startedAtMs && ended ? [{ label: t('runs.info.took'), value: formatDuration(Math.max(0, ended - run.startedAtMs)) }] : []),
+    ...(run.handle.sessionId ? [{ label: t('runs.info.session'), value: run.handle.sessionId }] : []),
+  ];
+  return (
+    <div className="flex flex-col gap-3 pt-2" data-slot="run-details">
+      {facts.length > 0 ? (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+          {facts.map((fact) => (
+            <div key={fact.label} className="contents">
+              <dt className="text-muted-foreground">{fact.label}</dt>
+              <dd className="min-w-0 truncate font-mono tabular-nums text-foreground">{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {log ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium">{t('runs.info.log')}</span>
+          <CommandLine command={log} />
+          <span className="text-xs text-muted-foreground">{t('runs.info.logHint')}</span>
+        </div>
+      ) : run.used === 'headless' && !run.handle.log && run.state === 'failed' ? (
+        <p className="text-xs text-muted-foreground">{t('runs.info.noLog')}</p>
+      ) : null}
+      {resume ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium">{t('runs.info.resume')}</span>
+          <CommandLine command={resume} />
+          <span className="text-xs text-muted-foreground">{t('runs.info.resumeHint')}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A pool's latest runs: how each went, where it went, and what can still be done with it (taking a waiting one out of
+ * the queue, bringing an Orca run's terminal to the front, opening its session), with details to look into it.
+ */
+export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: HarnessRun[]; nowMs?: number; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
   const reason = useReason();
   const [busy, setBusy] = useState<string | null>(null);
@@ -67,7 +118,7 @@ export function PoolRunsBlock({ runs, nowMs = Date.now() }: { runs: HarnessRun[]
         const why = reason(run);
         const harness = run.used ?? run.harness;
         return (
-          <li key={run.id} className="flex items-start gap-3 px-4 py-2.5" data-run-state={run.state}>
+          <Collapsible key={run.id} render={<li />} className="flex items-start gap-3 px-4 py-2.5" data-run-state={run.state}>
             <Badge variant={RUN_STATE_TONE[run.state]} className="mt-0.5 shrink-0">{t(RUN_STATE_LABEL[run.state])}</Badge>
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -86,6 +137,11 @@ export function PoolRunsBlock({ runs, nowMs = Date.now() }: { runs: HarnessRun[]
               </p>
               {why ? <p className={run.state === 'failed' ? 'text-xs text-error-foreground' : 'text-xs text-warning-foreground'}>{why}</p> : null}
               {run.state === 'queued' && run.waitUntilMs ? <p className="text-xs text-muted-foreground">{t('runs.waitsUntil', { when: formatRelative(run.waitUntilMs, nowMs) })}</p> : null}
+              {run.startedAtMs ? (
+                <CollapsiblePanel>
+                  <RunDetails run={run} nowMs={nowMs} />
+                </CollapsiblePanel>
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               {run.state === 'queued' ? (
@@ -98,8 +154,18 @@ export function PoolRunsBlock({ runs, nowMs = Date.now() }: { runs: HarnessRun[]
                   {busy === run.id ? <Spinner /> : <ExternalLink />}{t('runs.open')}
                 </Button>
               ) : null}
+              {run.handle.sessionId && onNavigate ? (
+                <Button variant="ghost-muted" size="xs" onClick={() => onNavigate(sessionsView({ session: run.handle.sessionId }))}>
+                  {t('runs.openSession')}<ArrowUpRight />
+                </Button>
+              ) : null}
+              {run.startedAtMs ? (
+                <CollapsibleTrigger chevron="end" render={<Button variant="ghost-muted" size="xs" />}>
+                  {t('runs.details')}
+                </CollapsibleTrigger>
+              ) : null}
             </div>
-          </li>
+          </Collapsible>
         );
       })}
     </ul>

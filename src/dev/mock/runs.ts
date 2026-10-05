@@ -27,7 +27,7 @@ const fixtures = (): HarnessRun[] => {
     }),
     base('run-headless', {
       machine: 'ci-01', harness: 'orca', used: 'headless', setup: 'codex', title: 'Bump dependencies and run the suite', state: 'exited',
-      handle: { pid: 81_244 }, queuedAtMs: now - 3 * 60 * minute, startedAtMs: now - 3 * 60 * minute + 3_000, endedAtMs: now - 2 * 60 * minute,
+      handle: { pid: 81_244, log: '~/.arbor/runs/run-headless.log' }, queuedAtMs: now - 3 * 60 * minute, startedAtMs: now - 3 * 60 * minute + 3_000, endedAtMs: now - 2 * 60 * minute,
     }),
     base('run-spilled', {
       ranPool: 'mock-overflow', machine: 'ci-01', harness: 't3', used: 't3', setup: 'claudeAgent', title: 'Nightly lint sweep',
@@ -52,7 +52,13 @@ const fixtures = (): HarnessRun[] => {
       base('run-no-folder', { machine: null, ranPool: null, used: null, state: 'refused', reason: 'noFolder', detail: 'cedar-02, ci-01', title: 'Fix the flaky upload test', startedAtMs: null, queuedAtMs: now - 5 * minute, endedAtMs: now - 5 * minute + 4_000 }),
       base('run-model', { state: 'failed', reason: 'noModel', detail: 'no_model', title: 'Write release notes', handle: {}, queuedAtMs: now - 8 * minute, endedAtMs: now - 8 * minute + 3_000 }),
       base('run-hand-off', { machine: 'cedar-02', state: 'failed', reason: 'handOffFailed', detail: 'not_running', title: 'Clean up feature flags', handle: {}, queuedAtMs: now - 20 * minute, endedAtMs: now - 20 * minute + 2_000 }),
-      base('run-agent', { machine: 'ci-01', used: 'headless', setup: 'claude', state: 'failed', reason: 'agentFailed', title: 'Profile the import job', handle: { pid: 4_410 }, queuedAtMs: now - 70 * minute, endedAtMs: now - 50 * minute }),
+      base('run-agent', {
+        machine: 'cedar-02', harness: 'headless', used: 'headless', setup: 'claude', folder: '~', state: 'failed', reason: 'agentFailed', detail: '1', title: 'Hello',
+        handle: { pid: 4_410, log: '~/.arbor/runs/run-agent.log', sessionId: 'e5d4c3b2-a190-4f8e-9d7c-6b5a4f3e2d1c' },
+        queuedAtMs: now - minute, startedAtMs: now - minute + 2_000, endedAtMs: now - 20_000,
+      }),
+      // Started before runs kept logs, and its machine restarted under it.
+      base('run-agent-old', { machine: 'ci-01', used: 'headless', setup: 'claude', state: 'failed', reason: 'agentFailed', detail: 'gone', title: 'Profile the import job', handle: { pid: 4_411 }, queuedAtMs: now - 70 * minute, endedAtMs: now - 50 * minute }),
       base('run-timed-out', { pool: 'mock-overflow', ranPool: null, machine: null, used: null, state: 'timedOut', reason: 'noRoom', title: 'Re-run the visual diff', startedAtMs: null, queuedAtMs: now - 4 * 60 * minute, endedAtMs: now - 3 * 60 * minute }),
     );
   }
