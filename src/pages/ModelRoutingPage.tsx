@@ -16,7 +16,7 @@ import { Switch } from '../components/ui/switch';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { useI18n } from '../i18n';
 import { useUnsavedChanges } from '../services/unsavedChanges';
-import { plainError } from '../services/plainError';
+import { errorWords, plainError } from '../services/plainError';
 import { cn } from '../lib/utils';
 import { thinkingAliasSourceKindLabel } from '../services/modelAliases';
 import type { ModelOverrideEntry, ThinkingAliasSource } from '../native/types';
@@ -96,7 +96,7 @@ export function ModelRoutingPage() {
       setSources(nextSources);
       setSourceId((current) => (nextSources.some((source) => source.id === current) ? current : ''));
     } catch (requestError) {
-      setError(plainError(requestError, t));
+      setError(errorWords(requestError));
     } finally {
       setLoading(false);
     }
