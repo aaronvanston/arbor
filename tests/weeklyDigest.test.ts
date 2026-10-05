@@ -4,16 +4,16 @@ import { mockCommands } from '../src/dev/mock/answers';
 import { translate } from '../src/i18n';
 import { getFormatRegion, setFormatRegion } from '../src/lib/format';
 import type { CapacityAccount, CapacityProvider } from '../src/services/capacityReport';
-import { digestFileName, digestPage } from '../src/services/digestPage';
+import { digestFileName, digestPage as digestPageAsWritten } from '../src/services/digestPage';
 import {
   changeText,
-  digestNotification,
+  digestNotification as digestNotificationAsWritten,
   digestWeek,
   dueDigestWeek,
   loadWeeklyDigest,
   mergedHint,
   reloadDigestPullRequests,
-  weekDays,
+  weekDays as weekDaysAsWritten,
   weeklyDigest,
   weekStart,
   type DigestOverview,
@@ -29,6 +29,14 @@ import type {
   UsageSession,
 } from '../src/native/types';
 import { present } from './support/items';
+import { macDates } from './support/macDates';
+
+const weekDays = (...args: Parameters<typeof weekDaysAsWritten>) => macDates(weekDaysAsWritten(...args));
+const digestPage = (...args: Parameters<typeof digestPageAsWritten>) => macDates(digestPageAsWritten(...args));
+const digestNotification = (...args: Parameters<typeof digestNotificationAsWritten>) => {
+  const notification = digestNotificationAsWritten(...args);
+  return { ...notification, title: macDates(notification.title) };
+};
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;

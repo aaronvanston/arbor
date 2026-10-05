@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { getFormatRegion, setFormatRegion } from '../src/lib/format';
 import { formatQuotaReset, quotaResetFor, quotaResetInstant, resetCreditsExpiry } from '../src/services/quotaTime';
 import { formatQuotaTimestamp } from '../src/services/quotaService';
+import { macDates } from './support/macDates';
 
 const resetMs = Date.parse('2030-01-01T00:00:00Z');
 
@@ -44,9 +45,9 @@ describe('quota reset instants', () => {
     const region = getFormatRegion();
     const reset = new Date(2030, 8, 29, 17, 36).getTime();
     setFormatRegion({ locale: 'en-AU', hourCycle: 'h12' });
-    expect(formatQuotaReset(reset, undefined, reset - 2 * 3_600_000).replace(/\s+/g, ' ')).toBe('29 Sep, 5:36 pm · in 2h');
+    expect(macDates(formatQuotaReset(reset, undefined, reset - 2 * 3_600_000).replace(/\s+/g, ' '))).toBe('29 Sep, 5:36 pm · in 2h');
     setFormatRegion({ locale: 'en-AU', hourCycle: 'h23' });
-    expect(formatQuotaReset(reset, undefined, reset - 2 * 3_600_000)).toBe('29 Sep, 17:36 · in 2h');
+    expect(macDates(formatQuotaReset(reset, undefined, reset - 2 * 3_600_000))).toBe('29 Sep, 17:36 · in 2h');
     setFormatRegion(region);
   });
 });

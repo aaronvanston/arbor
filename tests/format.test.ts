@@ -21,13 +21,14 @@ import {
   setFormatRegion,
   type FormatRegion,
 } from '../src/lib/format';
+import { macDates } from './support/macDates';
 
 const AU12: FormatRegion = { locale: 'en-AU', hourCycle: 'h12' };
 const AU24: FormatRegion = { locale: 'en-AU', hourCycle: 'h23' };
 const US: FormatRegion = { locale: 'en-US', hourCycle: 'h12' };
 
 // ICU puts a narrow or thin no-break space around AM/PM and range dashes in some versions.
-const plain = (text: string) => text.replace(/\s+/g, ' ');
+const plain = (text: string) => macDates(text.replace(/\s+/g, ' '));
 
 const NOW = new Date(2026, 8, 30, 12).getTime();
 const EVENING = new Date(2026, 8, 29, 17, 36, 7);
@@ -38,12 +39,12 @@ const DAY = 24 * HOUR;
 
 describe('dates in the region', () => {
   it('puts the day first in Australia and leaves the year off for this year', () => {
-    expect(formatDate(EVENING, { region: AU12, now: NOW })).toBe('29 Sep');
-    expect(formatDate(LAST_YEAR, { region: AU12, now: NOW })).toBe('29 Sep 2025');
-    expect(formatDate(EVENING, { region: AU12, now: NOW, year: 'always' })).toBe('29 Sep 2026');
-    expect(formatDate(LAST_YEAR, { region: AU12, now: NOW, year: 'never' })).toBe('29 Sep');
-    expect(formatDate(EVENING, { region: US, now: NOW })).toBe('Sep 29');
-    expect(formatDate(LAST_YEAR, { region: US, now: NOW })).toBe('Sep 29, 2025');
+    expect(plain(formatDate(EVENING, { region: AU12, now: NOW }))).toBe('29 Sep');
+    expect(plain(formatDate(LAST_YEAR, { region: AU12, now: NOW }))).toBe('29 Sep 2025');
+    expect(plain(formatDate(EVENING, { region: AU12, now: NOW, year: 'always' }))).toBe('29 Sep 2026');
+    expect(plain(formatDate(LAST_YEAR, { region: AU12, now: NOW, year: 'never' }))).toBe('29 Sep');
+    expect(plain(formatDate(EVENING, { region: US, now: NOW }))).toBe('Sep 29');
+    expect(plain(formatDate(LAST_YEAR, { region: US, now: NOW }))).toBe('Sep 29, 2025');
   });
 
   it('writes the time on the clock the user picked', () => {
@@ -58,7 +59,7 @@ describe('dates in the region', () => {
 
   it('joins the date and time with a comma, never in US order in Australia', () => {
     expect(plain(formatDateTime(EVENING, { region: AU12, now: NOW }))).toBe('29 Sep, 5:36 pm');
-    expect(formatDateTime(EVENING, { region: AU24, now: NOW })).toBe('29 Sep, 17:36');
+    expect(plain(formatDateTime(EVENING, { region: AU24, now: NOW }))).toBe('29 Sep, 17:36');
     expect(plain(formatDateTime(EVENING, { region: US, now: NOW }))).toBe('Sep 29, 5:36 PM');
     expect(plain(formatDateTime(LAST_YEAR, { region: AU12, now: NOW }))).toBe('29 Sep 2025, 5:36 pm');
   });
@@ -66,14 +67,14 @@ describe('dates in the region', () => {
   it('shows just the time for today and the date too before that', () => {
     const lunch = new Date(2026, 8, 30, 12, 30);
     expect(plain(formatWhen(lunch, { region: AU12, now: NOW }))).toBe('12:30 pm');
-    expect(formatWhen(lunch, { region: AU24, now: NOW })).toBe('12:30');
+    expect(plain(formatWhen(lunch, { region: AU24, now: NOW }))).toBe('12:30');
     expect(plain(formatWhen(EVENING, { region: AU12, now: NOW }))).toBe('29 Sep, 5:36 pm');
   });
 
   it('writes a range of days the way the region does', () => {
     expect(plain(formatDateRange(new Date(2026, 8, 15), new Date(2026, 8, 21), { region: AU12, now: NOW }))).toBe('15 – 21 Sep');
     expect(plain(formatDateRange(new Date(2026, 8, 28), new Date(2026, 9, 4), { region: AU12, now: NOW }))).toBe('28 Sep – 4 Oct');
-    expect(formatDateRange(new Date(2026, 8, 21, 9), new Date(2026, 8, 21, 17), { region: AU12, now: NOW })).toBe('21 Sep');
+    expect(plain(formatDateRange(new Date(2026, 8, 21, 9), new Date(2026, 8, 21, 17), { region: AU12, now: NOW }))).toBe('21 Sep');
     expect(plain(formatDateRange(new Date(2025, 11, 29), new Date(2026, 0, 4), { region: AU12, now: NOW }))).toBe('29 Dec 2025 – 4 Jan 2026');
     expect(plain(formatDateRange(new Date(2026, 8, 15), new Date(2026, 8, 21), { region: US, now: NOW }))).toBe('Sep 15 – 21');
   });
@@ -81,13 +82,13 @@ describe('dates in the region', () => {
   it('keeps other shapes in the region and on its clock', () => {
     expect(formatDateWith(EVENING, { month: 'long', year: 'numeric' }, AU12)).toBe('September 2026');
     expect(formatDateWith(EVENING, { hour: 'numeric' }, AU24)).toBe('17');
-    expect(formatDate(new Date(2026, 8, 28), { region: AU12, weekday: 'long', month: 'long', now: NOW })).toBe('Monday 28 September');
-    expect(formatDate(new Date(2026, 8, 28), { region: US, weekday: 'long', month: 'long', now: NOW })).toBe('Monday, September 28');
+    expect(plain(formatDate(new Date(2026, 8, 28), { region: AU12, weekday: 'long', month: 'long', now: NOW }))).toBe('Monday 28 September');
+    expect(plain(formatDate(new Date(2026, 8, 28), { region: US, weekday: 'long', month: 'long', now: NOW }))).toBe('Monday, September 28');
   });
 
   it('says a dash for a date it cannot read', () => {
-    expect(formatDate('not a date', { region: AU12 })).toBe('—');
-    expect(formatDateTime(Number.NaN, { region: AU12 })).toBe('—');
+    expect(plain(formatDate('not a date', { region: AU12 }))).toBe('—');
+    expect(plain(formatDateTime(Number.NaN, { region: AU12 }))).toBe('—');
     expect(formatTime('', { region: AU12 })).toBe('—');
   });
 });
@@ -214,7 +215,7 @@ describe('the region setting', () => {
   it('is what the formatters use when not told otherwise', () => {
     setFormatRegion(AU24);
     expect(getFormatRegion()).toEqual(AU24);
-    expect(formatDateTime(EVENING, { now: NOW })).toBe('29 Sep, 17:36');
+    expect(plain(formatDateTime(EVENING, { now: NOW }))).toBe('29 Sep, 17:36');
     setFormatRegion(US);
     expect(plain(formatDateTime(EVENING, { now: NOW }))).toBe('Sep 29, 5:36 PM');
   });

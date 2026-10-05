@@ -18,6 +18,7 @@ import {
   trendValueAxis,
 } from '../src/services/usageTrend';
 import { itemAt, lastItem } from './support/items';
+import { macDates } from './support/macDates';
 import type { UsageTimelinePoint } from '../src/native/types';
 
 const HOUR = 3_600_000;
@@ -40,7 +41,7 @@ const point = (
 const range = (start: Date, end?: Date) => ({ start: start.toISOString(), end: end?.toISOString() });
 
 // ICU versions differ: some put a narrow no-break space before AM/PM, and some join date and time with "at".
-const plain = (text: string) => text.replace(/\s+/g, ' ').replace(' at ', ', ');
+const plain = (text: string) => macDates(text.replace(/\s+/g, ' ').replace(' at ', ', '));
 
 // DST rules depend on the zone, so the DST tests pin theirs rather than use the machine's. The last
 // four change clocks at midnight, which leaves days that start at 01:00.

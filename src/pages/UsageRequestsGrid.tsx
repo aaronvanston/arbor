@@ -187,7 +187,9 @@ function useRequestColumns(): DataGridColumnDef<UsageRecord>[] {
 }
 
 const getRowId = (record: UsageRecord) => record.id;
-const initialLayout = () => legacyRequestsLayout(localStorage);
+// No localStorage before the page has a window (a server render, a test) reads as nothing saved.
+const noStorage: Pick<Storage, 'getItem'> = { getItem: () => null };
+const initialLayout = () => legacyRequestsLayout(typeof localStorage === 'undefined' ? noStorage : localStorage);
 
 /**
  * Usage › Requests: one page of requests, as the server paged them, in a grid whose columns can be picked, moved,
