@@ -74,14 +74,23 @@ export function PricingView({
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [localError, setLocalError] = useState('');
+  // Said beside the field, in the dialog, rather than on the page behind it.
+  const [modelMissing, setModelMissing] = useState(false);
   const visibleRows = pricing.rows.filter((row) => {
     const keyword = search.trim().toLowerCase();
     return !keyword || row.model.toLowerCase().includes(keyword);
   });
 
+  // What the editor said goes with it, so the next one opens clean.
+  const closeEditor = () => {
+    setDraft(null);
+    setModelMissing(false);
+    setLocalError('');
+  };
+
   const savePrice = async () => {
     if (!draft?.model.trim()) {
-      setLocalError(t('usage.pricing.modelRequired'));
+      setModelMissing(true);
       return;
     }
     setSaving(true);
@@ -176,7 +185,7 @@ export function PricingView({
         <StatBlock label={t('usage.pricing.savedPrices')} value={formatCount(pricing.savedPrices)} hint={t('usage.pricing.savedPricesHint')} />
       </StatsGrid>
 
-      {localError ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{localError}</AlertDescription></Alert> : null}
+      {localError && draft === null ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{localError}</AlertDescription></Alert> : null}
       {message ? <Alert variant="success" icon={<CircleCheck />}><AlertDescription>{message}</AlertDescription></Alert> : null}
 
       <SettingsSection
@@ -273,7 +282,7 @@ export function PricingView({
         )}
       </SettingsSection>
 
-      <Dialog open={draft !== null} onOpenChange={(open) => { if (!open) setDraft(null); }}>
+      <Dialog open={draft !== null} onOpenChange={(open) => { if (!open) closeEditor(); }}>
         <DialogPopup className="max-w-xl">
           <DialogHeader>
             <DialogTitle>{t('usage.pricing.editorTitle')}</DialogTitle>
@@ -295,9 +304,12 @@ export function PricingView({
                   font="mono"
                   autoFocus
                   value={draft?.model ?? ''}
-                  onChange={(event) => draft && setDraft({ ...draft, model: event.currentTarget.value })}
+                  onChange={(event) => { setModelMissing(false); if (draft) setDraft({ ...draft, model: event.currentTarget.value }); }}
                   placeholder="gpt-5.6-terra"
+                  aria-invalid={modelMissing || undefined}
+                  aria-describedby={modelMissing ? 'usage-price-model-error' : undefined}
                 />
+                {modelMissing ? <p id="usage-price-model-error" className="text-xs text-error-foreground">{t('usage.pricing.modelRequired')}</p> : null}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 {priceField(t('usage.pricing.prompt'), 'prompt')}
@@ -306,10 +318,11 @@ export function PricingView({
                 {priceField(t('usage.pricing.cacheCreation'), 'cacheCreation', t('usage.pricing.optional'))}
                 {priceField(t('usage.pricing.cache'), 'cache', t('usage.pricing.optional'))}
               </div>
+              {localError ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{localError}</AlertDescription></Alert> : null}
             </form>
           </DialogPanel>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDraft(null)}>{t('common.cancel')}</Button>
+            <Button variant="outline" onClick={closeEditor}>{t('common.cancel')}</Button>
             <Button type="submit" form="usage-price-form" disabled={saving}>
               {saving ? <Spinner /> : null}
               {saving ? t('usage.pricing.saving') : t('common.save')}
