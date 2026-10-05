@@ -3,6 +3,7 @@ import { machineColumns, pluginSummary } from './pluginGrid';
 import { mcpSummary } from './mcpGrid';
 import { HOOK_AGENT_KINDS, hookAgents, hookRows, hookSummary } from './setupHooks';
 import { isRemovedServer } from './setupMcp';
+import { removableKind } from './setupSync';
 import { isCodexOwnMarketplace, type ExtensionsView, type PluginRow } from './setupPlugins';
 import { fleetSkills, repoSkillState } from './setupSkills';
 import type { HookRegistry, SetupMachine, SetupRepo } from '../native/types';
@@ -25,8 +26,16 @@ export type LibraryAgent = 'claude' | 'codex';
  */
 export type LibraryState = 'on' | 'off' | 'removed' | 'unlisted';
 
-/** What a row's switch changes, for the kinds whose switch works yet. */
-export type LibraryToggle = { kind: 'plugin'; codex: boolean; row: PluginRow };
+/**
+ * What a row's switch changes: a plugin (Claude Code's or Codex's), an MCP server, a hook, a skill, or a rule, subagent
+ * or command by its path. Only what the repo lists has one; the rest are taken in under By machine first.
+ */
+export type LibraryToggle =
+  | { kind: 'plugin'; codex: boolean; row: PluginRow }
+  | { kind: 'mcp'; name: string }
+  | { kind: 'hook'; name: string }
+  | { kind: 'skill'; name: string }
+  | { kind: 'file'; path: string };
 
 export type LibraryRow = {
   /** Unique across kinds and agents. */
@@ -85,7 +94,7 @@ function serverRows(view: ExtensionsView, found: boolean): LibraryRow[] {
   return view.servers.filter((row) => row.origin === 'config').map((row): LibraryRow => {
     const summaries = columns.map((column) => mcpSummary(row, column, found, {}));
     const server = row.repo;
-    const state: LibraryState = !server ? 'unlisted' : isRemovedServer(server) ? 'removed' : 'on';
+    const state: LibraryState = !server ? 'unlisted' : isRemovedServer(server) ? 'removed' : server.allOff ? 'off' : 'on';
     const agents = unique(row.cells.filter((cell) => cell.item).map((cell) => cell.home.agent));
     if (server?.claude && !agents.includes('claude')) agents.push('claude');
     if (server?.codex && !agents.includes('codex')) agents.push('codex');
@@ -100,7 +109,7 @@ function serverRows(view: ExtensionsView, found: boolean): LibraryRow[] {
       fleet: fleetOf(view.mcpHomes),
       behind: summaries.filter((summary) => summary.differs).map((summary) => summary.machine),
       exceptions: server ? server.off.length + server.own.length : 0,
-      toggle: null,
+      toggle: state === 'on' || state === 'off' ? { kind: 'mcp', name: row.name } : null,
     };
   });
 }
@@ -109,6 +118,7 @@ function skillRows(machines: SetupMachine[], repo: SetupRepo | null): LibraryRow
   const fleet = fleetSkills(machines);
   return fleet.rows.map((row): LibraryRow => {
     const state = repo ? repoSkillState(repo, row.name) : 'absent';
+    const off = state === 'synced' && Boolean(repo?.offSkills.includes(row.name));
     const cells = Object.entries(row.cells).flatMap(([machine, cell]) => (cell ? [{ machine, cell }] : []));
     const agents = unique(cells.flatMap(({ cell }) => cell.row.cells.filter((entry) => entry.place !== 'none').map((entry) => entry.home.agent)));
     return {
@@ -117,12 +127,12 @@ function skillRows(machines: SetupMachine[], repo: SetupRepo | null): LibraryRow
       name: row.name,
       detail: row.source,
       agents: agents.sort(),
-      state: state === 'synced' ? 'on' : state === 'removed' ? 'removed' : 'unlisted',
+      state: off ? 'off' : state === 'synced' ? 'on' : state === 'removed' ? 'removed' : 'unlisted',
       on: cells.filter(({ cell }) => cell.loads > 0).map(({ machine }) => machine),
       fleet: fleet.machines,
       behind: cells.filter(({ cell }) => cell.look).map(({ machine }) => machine),
       exceptions: Object.keys(repo?.skillMachines[row.name] ?? {}).length,
-      toggle: null,
+      toggle: state === 'synced' ? { kind: 'skill', name: row.name } : null,
     };
   });
 }
@@ -137,33 +147,35 @@ function hookLibraryRows(registry: HookRegistry, machines: readonly string[]): L
       name: view?.name ?? row.script.split('/').pop() ?? row.script,
       detail: view?.matcher ? `${row.event} · ${view.matcher}` : row.event,
       agents: view ? HOOK_AGENT_KINDS[hookAgents(view)] : unique(summaries.flatMap(({ summary }) => summary.cells.map((cell): LibraryAgent => cell.agent))),
-      state: !view ? 'unlisted' : view.removed ? 'removed' : 'on',
+      state: !view ? 'unlisted' : view.removed ? 'removed' : view.allOff ? 'off' : 'on',
       on: summaries.filter(({ summary }) => ['same', 'update', 'extra', 'mixed'].includes(summary.state)).map(({ machine }) => machine),
       fleet: [...machines],
       behind: summaries.filter(({ summary }) => summary.differs).map(({ machine }) => machine),
       exceptions: view?.off.length ?? 0,
-      toggle: null,
+      toggle: view && !view.removed ? { kind: 'hook', name: view.name } : null,
     };
   });
 }
 
 function fileRows(repo: SetupRepo, machines: readonly string[]): LibraryRow[] {
   const removed = repo.removedFiles.map((path) => ({ path, removed: true }));
-  const files = repo.files.filter((file) => file.kind !== 'hookScript').map((file) => ({ path: file.path, removed: false }));
-  return [...files, ...removed].map(({ path, removed: gone }): LibraryRow => {
+  const files = repo.files.filter((file) => file.kind !== 'hookScript').map((file) => ({ path: file.path, removed: false, kind: file.kind }));
+  return [...files, ...removed.map((entry) => ({ ...entry, kind: null }))].map(({ path, removed: gone, kind }): LibraryRow => {
     const offHere = Object.entries(repo.fileMachines[path] ?? {}).filter(([, value]) => value === 'off').map(([machine]) => machine);
+    const off = !gone && repo.offFiles.includes(path);
     return {
       key: `file:${path}`,
       kind: 'instructions',
       name: path.split('/').pop() ?? path,
       detail: path,
       agents: [path.startsWith('~/.codex/') ? 'codex' : 'claude'],
-      state: gone ? 'removed' : 'on',
-      on: gone ? [] : machines.filter((machine) => !offHere.includes(machineLookKey(machine))),
+      state: gone ? 'removed' : off ? 'off' : 'on',
+      on: gone || off ? [] : machines.filter((machine) => !offHere.includes(machineLookKey(machine))),
       fleet: [...machines],
       behind: [],
       exceptions: Object.keys(repo.fileMachines[path] ?? {}).length,
-      toggle: null,
+      // An agent's instructions are every machine's own, so they're changed in the repo, never switched off.
+      toggle: !gone && kind !== null && removableKind(kind) ? { kind: 'file', path } : null,
     };
   });
 }

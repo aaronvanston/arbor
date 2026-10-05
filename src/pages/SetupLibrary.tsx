@@ -18,7 +18,7 @@ import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
 import { LIBRARY_KINDS, libraryCounts, libraryList, libraryRows, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
-import { togglePlugin, undoToggle, type ToggleRun } from '../services/libraryToggle';
+import { switchFile, switchHook, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
 import { getHookRegistry } from '../services/setupHooks';
 import { getMcpRegistry, withRegistry } from '../services/setupMcp';
 import { withCodexPluginRepo, withPluginRepo } from '../services/setupPluginRepo';
@@ -116,6 +116,17 @@ function ScopeText({ row }: { row: LibraryRow }) {
 
 type Sources = { repo: SetupRepo | null; registry: McpRegistry | null; hooks: HookRegistry | null };
 
+/** Flips a row's switch with its kind's own switch. */
+function switchRow(repo: string, machines: SetupMachine[], toggle: LibraryToggle, on: boolean): Promise<LibrarySwitch> {
+  switch (toggle.kind) {
+    case 'plugin': return switchPlugin(repo, toggle.row, toggle.codex, on);
+    case 'mcp': return switchServer(repo, machines, toggle.name, on);
+    case 'hook': return switchHook(repo, machines, toggle.name, on);
+    case 'skill': return switchSkill(repo, machines, toggle.name, on);
+    case 'file': return switchFile(repo, machines, toggle.path, on);
+  }
+}
+
 /** What a switch is doing, and what it did, so the row can say so and Undo can take it back. */
 type Running = { key: string; on: boolean };
 type Problem = { key: string; text: string };
@@ -172,22 +183,29 @@ export function SetupLibrary({ machines, kind, onOpenByMachine, onOpenRepo, onCo
   useEffect(() => { onCounts(counts); }, [counts, onCounts]);
   const shown = useMemo(() => libraryList(rows, { kind, agent, query }), [rows, kind, agent, query]);
 
-  const failedText = (run: Pick<ToggleRun, 'failed' | 'needsYou'>, name: string) => [
-    ...run.failed.map((result) => t('library.toggle.machineFailed', { name, machine: result.machine, home: result.home, message: result.message })),
-    ...(run.needsYou.length ? [t('library.toggle.needsYou', { name, machines: [...new Set(run.needsYou.map((result) => result.machine))].join(', ') })] : []),
+  const failedText = (failed: SwitchFailure[], needsYou: string[], name: string) => [
+    ...failed.map((entry) => t('library.toggle.machineFailed', { name, machine: entry.machine, message: entry.message })),
+    ...(needsYou.length ? [t('library.toggle.needsYou', { name, machines: needsYou.join(', ') })] : []),
   ];
+  // What a switch read back replaces what was read, so the row shows its new state straight away.
+  const keep = (next: SwitchSources) => setSources((current) => ({
+    repo: next.repo ?? current.repo,
+    registry: next.registry ?? current.registry,
+    hooks: next.hooks ?? current.hooks,
+  }));
+  const report = (key: string, texts: string[]) =>
+    setProblems((current) => [...current.filter((problem) => problem.key !== key), ...texts.map((text) => ({ key, text }))]);
 
-  const undo = async (row: LibraryRow, toggle: LibraryToggle, run: ToggleRun) => {
-    if (!repoPath) return;
-    setRunning({ key: row.key, on: run.before === 'on' });
+  const undo = async (row: LibraryRow, on: boolean, run: LibrarySwitch) => {
+    setRunning({ key: row.key, on: !on });
     try {
-      const { repo, failed } = await undoToggle(repoPath, toggle.row, toggle.codex, run);
-      setSources((current) => ({ ...current, repo }));
-      const texts = failedText({ failed, needsYou: [] }, row.name);
-      setProblems((current) => [...current.filter((problem) => problem.key !== row.key), ...texts.map((text) => ({ key: row.key, text }))]);
+      const back = await run.undo();
+      keep(back);
+      const texts = failedText(back.failed, [], row.name);
+      report(row.key, texts);
       if (!texts.length) toast({ kind: 'success', title: t('library.undo.done', { name: row.name }) });
     } catch (error) {
-      setProblems((current) => [...current.filter((problem) => problem.key !== row.key), { key: row.key, text: t('library.undo.failed', { name: row.name, error: String(error) }) }]);
+      report(row.key, [t('library.undo.failed', { name: row.name, error: String(error) })]);
     } finally {
       setRunning(null);
     }
@@ -197,24 +215,23 @@ export function SetupLibrary({ machines, kind, onOpenByMachine, onOpenRepo, onCo
     const target = row.toggle;
     if (!repoPath || !target || running) return;
     setRunning({ key: row.key, on });
-    setProblems((current) => current.filter((problem) => problem.key !== row.key));
+    report(row.key, []);
     try {
-      const run = await togglePlugin(repoPath, target.row, target.codex, on);
-      setSources((current) => ({ ...current, repo: run.repo }));
-      const texts = failedText(run, row.name);
-      if (texts.length) setProblems((current) => [...current, ...texts.map((text) => ({ key: row.key, text }))]);
-      const machinesChanged = new Set(run.done.map((change) => change.machine)).size;
+      const run = await switchRow(repoPath, machines, target, on);
+      keep(run);
+      const texts = failedText(run.failed, run.needsYou, row.name);
+      report(row.key, texts);
       toast({
         kind: texts.length ? 'warning' : 'success',
         title: t(on ? 'library.toggle.on' : 'library.toggle.off', { name: row.name }),
         description: [
-          t(machinesChanged === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: machinesChanged }),
+          t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
           run.skipped.length ? t('library.toggle.skipped', { machines: run.skipped.join(', ') }) : null,
         ].filter(Boolean).join(' '),
-        action: { label: t('common.undo'), onClick: () => { void undo(row, target, run); } },
+        action: { label: t('common.undo'), onClick: () => { void undo(row, on, run); } },
       });
     } catch (error) {
-      setProblems((current) => [...current, { key: row.key, text: t('library.toggle.failed', { name: row.name, error: String(error) }) }]);
+      report(row.key, [t('library.toggle.failed', { name: row.name, error: String(error) })]);
     } finally {
       setRunning(null);
     }

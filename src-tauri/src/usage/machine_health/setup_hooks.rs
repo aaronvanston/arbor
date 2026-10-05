@@ -87,6 +87,9 @@ struct Hook {
     homes: Option<Vec<String>>,
     /// Taken off every machine: each home's copy is the repo's to remove.
     removed: bool,
+    /// Turned off on every machine (`"all": "off"`), kept in the repo: each home's copy is the repo's to remove until
+    /// it's turned on again.
+    off_everywhere: bool,
     /// Machines it's kept off, as the file spells them; names compare loosely, as plugins.json's do.
     off: BTreeSet<String>,
     problems: Vec<String>,
@@ -114,6 +117,7 @@ impl Hook {
     /// Whether `agent`'s home at `home` on `machine` should have it.
     fn wanted(&self, machine: &str, agent: AgentKind, home: &str) -> bool {
         !self.removed
+            && !self.off_everywhere
             && !self.is_off(machine)
             && self.agents.contains(&agent)
             && self.homes.as_ref().is_none_or(|homes| homes.iter().any(|listed| listed == home))
@@ -154,6 +158,7 @@ fn read_hook(name: &str, entry: &Value, scripts: &BTreeSet<String>) -> Hook {
         agents: vec![AgentKind::Claude],
         homes: None,
         removed: false,
+        off_everywhere: false,
         off: BTreeSet::new(),
         problems: Vec::new(),
     };
@@ -206,6 +211,10 @@ fn read_hook(name: &str, entry: &Value, scripts: &BTreeSet<String>) -> Hook {
             "removed" => match value.as_bool() {
                 Some(removed) => hook.removed = removed,
                 None => hook.problems.push("removed should be true or false".into()),
+            },
+            "all" => match value.as_str() {
+                Some("off") => hook.off_everywhere = true,
+                _ => hook.problems.push("all should be \"off\", or left out for on".into()),
             },
             "machines" => {
                 let Some(machines) = value.as_object() else {
@@ -382,6 +391,8 @@ pub(crate) struct HookView {
     agents: Vec<AgentKind>,
     homes: Option<Vec<String>>,
     removed: bool,
+    /// Turned off on every machine, kept in the repo.
+    all_off: bool,
     /// Machines it's kept off.
     off: Vec<String>,
     problems: Vec<String>,
@@ -416,6 +427,7 @@ fn registry_view(commit: Option<String>, found: bool, uncommitted: bool, registr
             agents: hook.agents.clone(),
             homes: hook.homes.clone(),
             removed: hook.removed,
+            all_off: hook.off_everywhere,
             // As the scan names them, so the page finds each machine's choice however the file spells it.
             off: hook
                 .off
@@ -533,9 +545,11 @@ fn hooks_of(file: &mut Value) -> Result<&mut serde_json::Map<String, Value>, Str
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum HookWanted {
-    /// As every machine has it: for one machine, no longer kept off it; for every machine, back from being removed.
+    /// As every machine has it: for one machine, no longer kept off it; for every machine, back from being removed or
+    /// turned off.
     Default,
-    /// One machine: kept off it, so its homes' copies are the repo's to remove.
+    /// One machine: kept off it, so its homes' copies are the repo's to remove. Every machine: turned off everywhere,
+    /// kept in the repo, so every home's copy is the repo's to remove until it's turned on again.
     Off,
     /// Every machine: the repo keeps the hook but marks it removed, so every home's copy is the repo's to remove.
     Removed,
@@ -550,8 +564,14 @@ fn set_wanted(file: &mut Value, name: &str, machine: Option<&str>, wanted: HookW
         }
         (None, HookWanted::Default) => {
             hook.remove("removed");
+            hook.remove("all");
         }
-        (None, HookWanted::Off) => return Err("A hook is kept off one machine, or removed from every one".into()),
+        (None, HookWanted::Off) => {
+            if hook.get("removed").and_then(Value::as_bool) == Some(true) {
+                return Err(format!("{name} is removed from every machine. Put it back first."));
+            }
+            hook.insert("all".into(), Value::from("off"));
+        }
         (Some(_), HookWanted::Removed) => return Err("A hook is removed from every machine, or kept off one".into()),
         (Some(machine), wanted) => {
             let machines = hook.entry("machines").or_insert_with(|| serde_json::json!({}));
@@ -597,6 +617,7 @@ pub(crate) async fn set_hook_wanted(
     set_wanted(&mut file, &name, machine.as_deref(), wanted)?;
     let message = match (&machine, wanted) {
         (None, HookWanted::Removed) => format!("Remove hook {name} from all machines"),
+        (None, HookWanted::Off) => format!("Turn hook {name} off on all machines"),
         (None, _) => format!("Put hook {name} back on all machines"),
         (Some(machine), HookWanted::Off) => format!("Keep hook {name} off {machine}"),
         (Some(machine), _) => format!("Give {machine} hook {name} as every machine has it"),
@@ -911,7 +932,19 @@ mod tests {
         assert!(!registry(file.clone()).hook("guard").unwrap().wanted("mac", AgentKind::Claude, "~/.claude"));
         set_wanted(&mut file, "guard", None, HookWanted::Default).unwrap();
         assert!(registry(file.clone()).hook("guard").unwrap().wanted("mac", AgentKind::Claude, "~/.claude"));
+        // Off everywhere keeps it in the repo, on no machine, until it's turned on again.
+        set_wanted(&mut file, "guard", None, HookWanted::Off).unwrap();
+        assert_eq!(file["hooks"]["guard"]["all"], "off");
+        let off = registry(file.clone());
+        assert!(off.hook("guard").unwrap().problems.is_empty());
+        assert!(!off.hook("guard").unwrap().wanted("mac", AgentKind::Claude, "~/.claude"));
+        set_wanted(&mut file, "guard", None, HookWanted::Default).unwrap();
+        assert!(file["hooks"]["guard"].get("all").is_none());
+        assert!(registry(file.clone()).hook("guard").unwrap().wanted("mac", AgentKind::Claude, "~/.claude"));
+        // A removed hook is put back before it's turned off.
+        set_wanted(&mut file, "guard", None, HookWanted::Removed).unwrap();
         assert!(set_wanted(&mut file, "guard", None, HookWanted::Off).is_err());
+        set_wanted(&mut file, "guard", None, HookWanted::Default).unwrap();
         assert!(set_wanted(&mut file, "guard", Some("mac"), HookWanted::Removed).is_err());
         assert!(set_wanted(&mut file, "other", Some("mac"), HookWanted::Off).is_err());
     }

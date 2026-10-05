@@ -1,6 +1,12 @@
+import { mcpSummary } from './mcpGrid';
+import { machineColumns } from './pluginGrid';
+import { planSkills, runSkillPlan, undoSkillRun, type RunProblem } from './skillRuns';
+import { applyHooks, hookChanges, setHookWanted } from './setupHooks';
+import { applyMcpChanges, mcpChanges, plannedMcp, setMcpWanted, withRegistry, type PendingMcp } from './setupMcp';
 import { codexRepoChanges, differs, repoAction, setSetupCodexPlugin, setSetupPlugin, wantedOn } from './setupPluginRepo';
-import { applyCodexPluginChanges, applyPluginChanges, type PluginCell, type PluginRow } from './setupPlugins';
-import type { PluginAction, PluginResult, PluginWanted, RepoPlugin, SetupRepo } from '../native/types';
+import { applyCodexPluginChanges, applyPluginChanges, extensionsView, type PluginCell, type PluginRow } from './setupPlugins';
+import { applySetupSync, setSetupFileOff, setSetupSkillOff, syncChanges, syncPlan, undoSetupSync } from './setupSync';
+import type { HookRegistry, McpRegistry, PluginAction, PluginResult, PluginWanted, RepoPlugin, SetupMachine, SetupRepo } from '../native/types';
 
 /**
  * A Library switch, made straight away: the repo's word for every machine committed, then each machine that answers
@@ -125,4 +131,200 @@ export async function undoToggle(repo: string, row: PluginRow, codex: boolean, r
   }
   const { failed } = await runChanges(byMachine, codex);
   return { repo: next, failed };
+}
+
+// ---------------------------------------------------------------------------
+// Every kind's switch
+// ---------------------------------------------------------------------------
+
+/** A machine a switch couldn't change, with what it said. */
+export type SwitchFailure = { machine: string; message: string };
+
+/** What a switch changed and the sources it read back, so the Library shows the new state without another read. */
+export type SwitchSources = { repo?: SetupRepo; registry?: McpRegistry; hooks?: HookRegistry };
+
+export type LibrarySwitch = SwitchSources & {
+  /** Machines changed. */
+  changed: string[];
+  failed: SwitchFailure[];
+  /** Machines where a plugin's install waits on its user. */
+  needsYou: string[];
+  /** Machines that didn't answer, left for Overview's Bring in line. */
+  skipped: string[];
+  /** Puts the repo's word back, then each machine as it was. */
+  undo: () => Promise<SwitchSources & { failed: SwitchFailure[] }>;
+};
+
+const unique = (values: string[]) => [...new Set(values)];
+const reachableMachines = (machines: SetupMachine[]) => machines.filter((machine) => machine.reachable);
+const unreachableOf = (machines: SetupMachine[], among: (machine: SetupMachine) => boolean) =>
+  machines.filter((machine) => !machine.reachable && among(machine)).map((machine) => machine.machine);
+const failure = (machine: string, error: unknown): SwitchFailure => ({ machine, message: String(error) });
+
+/** Brings each answering machine's homes in line with the registry's word on one server. */
+async function lineUpServer(repo: string, machines: SetupMachine[], registry: McpRegistry, name: string) {
+  const found = registry.found && registry.problems.length === 0;
+  const view = withRegistry(extensionsView(machines), registry);
+  const row = view.servers.find((entry) => entry.name === name);
+  const changed: string[] = [];
+  const failed: SwitchFailure[] = [];
+  if (!row || !registry.commit) return { changed, failed };
+  const pending: PendingMcp = {};
+  for (const column of machineColumns(view.mcpHomes)) {
+    if (column.reachable) Object.assign(pending, mcpSummary(row, column, found, {}).toRepo);
+  }
+  for (const [machine, planned] of plannedMcp({ ...view, servers: [row] }, pending)) {
+    try {
+      const results = await applyMcpChanges(repo, registry.commit, machine, mcpChanges(planned));
+      if (results.some((result) => result.outcome === 'done' || result.outcome === 'removed')) changed.push(machine);
+      failed.push(...results.filter((result) => result.outcome === 'failed' || result.outcome === 'changed').map((result) => ({ machine, message: result.message })));
+    } catch (error) {
+      failed.push(failure(machine, error));
+    }
+  }
+  return { changed, failed };
+}
+
+/** Turns an MCP server on or off for every machine, its definitions kept either way. */
+export async function switchServer(repo: string, machines: SetupMachine[], name: string, on: boolean): Promise<LibrarySwitch> {
+  const registry = await setMcpWanted(repo, name, null, on ? 'default' : 'off');
+  const ran = await lineUpServer(repo, machines, registry, name);
+  const has = (machine: SetupMachine) => machine.homes.some((home) => home.items.some((item) => item.kind === 'mcp' && item.name === name));
+  return {
+    registry,
+    ...ran,
+    needsYou: [],
+    skipped: unreachableOf(machines, (machine) => on || has(machine)),
+    undo: async () => {
+      const back = await setMcpWanted(repo, name, null, on ? 'off' : 'default');
+      return { registry: back, failed: (await lineUpServer(repo, machines, back, name)).failed };
+    },
+  };
+}
+
+/** Brings each answering machine with a home out of step on the hook in line: its hooks, as the repo has them. */
+async function lineUpHook(repo: string, machines: SetupMachine[], registry: HookRegistry, name: string) {
+  const changed: string[] = [];
+  const failed: SwitchFailure[] = [];
+  if (!registry.commit) return { changed, failed };
+  for (const machine of reachableMachines(machines)) {
+    if (!hookChanges(registry, machine.machine).some((cell) => cell.name === name)) continue;
+    try {
+      const edits = await applyHooks(repo, registry.commit, machine.machine);
+      if (edits.some((edit) => edit.written)) changed.push(machine.machine);
+      failed.push(...edits.flatMap((edit) => (edit.error ? [{ machine: machine.machine, message: edit.error }] : [])));
+    } catch (error) {
+      failed.push(failure(machine.machine, error));
+    }
+  }
+  return { changed, failed };
+}
+
+/** Turns a hook on or off for every machine, kept in the repo either way. */
+export async function switchHook(repo: string, machines: SetupMachine[], name: string, on: boolean): Promise<LibrarySwitch> {
+  const hooks = await setHookWanted(repo, name, null, on ? 'default' : 'off');
+  const ran = await lineUpHook(repo, machines, hooks, name);
+  return {
+    hooks,
+    ...ran,
+    needsYou: [],
+    skipped: unreachableOf(machines, (machine) => hooks.cells.some((cell) => cell.machine === machine.machine && cell.name === name && cell.state !== 'same')),
+    undo: async () => {
+      const back = await setHookWanted(repo, name, null, on ? 'off' : 'default');
+      return { hooks: back, failed: (await lineUpHook(repo, machines, back, name)).failed };
+    },
+  };
+}
+
+/** What a skill run left undone, by machine. */
+const runFailures = (problems: Record<string, RunProblem>): SwitchFailure[] =>
+  Object.entries(problems).map(([machine, problem]) => ({
+    machine,
+    message: problem.kind === 'error' ? problem.detail : problem.kind === 'unread' ? 'unread' : problem.paths.join(', '),
+  }));
+
+/**
+ * Turns a skill on or off for every machine, kept in the repo either way: off takes it out of every Claude Code home
+ * and every store, as removing it everywhere does; on puts it back in every store and turns it on in every home.
+ */
+export async function switchSkill(repo: string, machines: SetupMachine[], name: string, on: boolean): Promise<LibrarySwitch> {
+  const next = await setSetupSkillOff(repo, name, !on);
+  // The repo's word is set already, so the plan only changes the machines.
+  const plan = { ...planSkills(on ? 'add' : 'remove', [name], reachableMachines(machines), next), marks: [] };
+  const done = await runSkillPlan(plan, next, () => undefined);
+  return {
+    repo: next,
+    changed: done.touched,
+    failed: runFailures(done.problems),
+    needsYou: [],
+    skipped: unreachableOf(machines, () => true),
+    undo: async () => {
+      const problems = await undoSkillRun(done);
+      const back = await setSetupSkillOff(repo, name, on);
+      return { repo: back, failed: runFailures(problems.machines) };
+    },
+  };
+}
+
+/** Writes or takes out one file on each answering machine, as the repo now has it, keeping each machine's backup. */
+async function lineUpFile(setup: SetupRepo, machines: SetupMachine[], path: string) {
+  const changed: string[] = [];
+  const failed: SwitchFailure[] = [];
+  const backups: { machine: string; backup: string }[] = [];
+  if (!setup.head) return { changed, failed, backups };
+  for (const machine of reachableMachines(machines)) {
+    const changes = syncChanges(syncPlan(setup, machine).filter((file) => file.path === path));
+    if (!changes.length) continue;
+    try {
+      const outcome = await applySetupSync(setup.path, setup.head.sha, machine.machine, changes);
+      if (outcome.backup) backups.push({ machine: machine.machine, backup: outcome.backup });
+      if (outcome.done.length) changed.push(machine.machine);
+      failed.push(...outcome.failed.map((entry) => ({ machine: machine.machine, message: entry.reason })));
+    } catch (error) {
+      failed.push(failure(machine.machine, error));
+    }
+  }
+  return { changed, failed, backups };
+}
+
+/** Turns a rule, subagent or command on or off for every machine, kept in the repo either way. */
+export async function switchFile(repo: string, machines: SetupMachine[], path: string, on: boolean): Promise<LibrarySwitch> {
+  const next = await setSetupFileOff(repo, path, !on);
+  const { changed, failed, backups } = await lineUpFile(next, machines, path);
+  return {
+    repo: next,
+    changed,
+    failed,
+    needsYou: [],
+    skipped: unreachableOf(machines, () => true),
+    undo: async () => {
+      const undone: SwitchFailure[] = [];
+      for (const { machine, backup } of [...backups].reverse()) {
+        try {
+          const outcome = await undoSetupSync(machine, backup);
+          undone.push(...outcome.failed.map((entry) => ({ machine, message: entry.reason })));
+        } catch (error) {
+          undone.push(failure(machine, error));
+        }
+      }
+      return { repo: await setSetupFileOff(repo, path, on), failed: undone };
+    },
+  };
+}
+
+/** A plugin's switch in the same shape as the others'. */
+export async function switchPlugin(repo: string, row: PluginRow, codex: boolean, on: boolean): Promise<LibrarySwitch> {
+  const run = await togglePlugin(repo, row, codex, on);
+  const asFailure = (result: MachineResult): SwitchFailure => ({ machine: result.machine, message: result.message });
+  return {
+    repo: run.repo,
+    changed: unique(run.done.map((change) => change.machine)),
+    failed: run.failed.map(asFailure),
+    needsYou: unique(run.needsYou.map((result) => result.machine)),
+    skipped: run.skipped,
+    undo: async () => {
+      const undone = await undoToggle(repo, row, codex, run);
+      return { repo: undone.repo, failed: undone.failed.map(asFailure) };
+    },
+  };
 }

@@ -27,7 +27,7 @@ const sha = (seed: string) => seed.repeat(64).slice(0, 64);
 const repoFile = (path: string, sum: string, ck = 'c1-120'): SetupRepoFile => ({ path, kind: syncKind(path)!, sum, ck, size: 120 });
 const repo = (files: SetupRepoFile[], skills: SetupRepoSkill[] = []): SetupRepo => ({
   path: '/Users/casey/src/agent-setup', branch: 'main', head: { sha: sha('ab'), subject: 'Start', atMs: 1_000 },
-  upstream: null, uncommitted: [], files, skills, ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
+  upstream: null, uncommitted: [], files, skills, ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
     plugins: [], codexPlugins: [],
 });
 const repoSkill = (name: string, sum: string | null, fields: Partial<SetupRepoSkill> = {}): SetupRepoSkill => ({
@@ -322,6 +322,36 @@ describe('a file the repo removed from every machine', () => {
     ]);
     expect(syncChanges(plan)).toEqual([{ path: '~/.claude/agents/old.md', remove: true, before: sha('1') }]);
     expect([removableKind('subagent'), removableKind('instructions')]).toEqual([true, false]);
+  });
+});
+
+describe('a file or skill the repo keeps but turned off on every machine', () => {
+  it('takes the machine’s copy out by default, and says it’s off where there’s none, unless the machine keeps its own', () => {
+    const agents = home('claude', '~/.claude', [item('subagent', '~/.claude/agents/review.md', sha('1'))]);
+    const store = home('shared', '~/.agents', [storeSkill('pdf', sha('3'))]);
+    const setup = {
+      ...repo([repoFile('~/.claude/agents/review.md', sha('1')), repoFile('~/.claude/commands/ship.md', sha('2'))], [repoSkill('pdf', sha('3')), repoSkill('notes', sha('4'))]),
+      offFiles: ['~/.claude/agents/review.md', '~/.claude/commands/ship.md'],
+      offSkills: ['pdf', 'notes'],
+    };
+    const plan = syncPlan(setup, machine([agents, store]));
+    expect(states(plan)).toEqual([
+      ['~/.agents/skills/notes', 'offHere'],
+      ['~/.agents/skills/pdf', 'removed'],
+      ['~/.claude/agents/review.md', 'removed'],
+      ['~/.claude/commands/ship.md', 'offHere'],
+    ]);
+    expect(syncChanges(plan)).toEqual([
+      { path: '~/.agents/skills/pdf', remove: true, before: sha('3') },
+      { path: '~/.claude/agents/review.md', remove: true, before: sha('1') },
+    ]);
+    // Off everywhere isn't out of step once the copies are gone.
+    expect(inStep(syncCounts(syncPlan(setup, machine([home('claude', '~/.claude', []), home('shared', '~/.agents', [])]))))).toBe(true);
+    const own = { ...setup, fileMachines: { '~/.claude/agents/review.md': { ci01: 'own' as const } }, skillMachines: { pdf: { ci01: 'own' as const } } };
+    expect(states(syncPlan(own, machine([agents, store]))).filter(([path]) => path === '~/.agents/skills/pdf' || path === '~/.claude/agents/review.md')).toEqual([
+      ['~/.agents/skills/pdf', 'own'],
+      ['~/.claude/agents/review.md', 'own'],
+    ]);
   });
 });
 

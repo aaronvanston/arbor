@@ -2028,7 +2028,7 @@ export const en = {
   'library.toggle.machines.other': 'Committed to the repo, and {count} machines changed.',
   'library.toggle.skipped': '{machines} didn’t answer; Overview brings them in line later.',
   'library.toggle.failed': 'Couldn’t change {name}: {error}',
-  'library.toggle.machineFailed': '{name} on {machine} ({home}): {message}',
+  'library.toggle.machineFailed': '{name} on {machine}: {message}',
   'library.toggle.needsYou': '{name} needs you on {machines}: its install runs a command its marketplace declares. Install it there under By machine.',
   'library.undo.done': '{name} is back as it was',
   'library.undo.failed': 'Couldn’t put {name} back: {error}',

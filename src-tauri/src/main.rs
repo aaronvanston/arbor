@@ -1929,6 +1929,8 @@ fn main() {
             usage::machine_health::setup_repo_skills::set_setup_skill_removed,
             usage::machine_health::setup_repo_skills::drop_setup_skills,
             usage::machine_health::setup_sync::set_setup_file_removed,
+            usage::machine_health::setup_sync::set_setup_skill_off,
+            usage::machine_health::setup_sync::set_setup_file_off,
             usage::machine_health::setup_wanted::set_setup_file_machine,
             usage::machine_health::setup_wanted::set_setup_plugin,
             usage::machine_health::setup_wanted::set_setup_codex_plugin,

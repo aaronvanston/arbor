@@ -934,6 +934,9 @@ enum Wanted {
     Own(Value),
 }
 
+/// What a machine without a choice of its own gets of a server that's off everywhere.
+static OFF: Wanted = Wanted::Off;
+
 #[derive(Clone, Debug, PartialEq)]
 struct Server {
     name: String,
@@ -945,10 +948,21 @@ struct Server {
     machines: BTreeMap<String, [Wanted; 2]>,
     /// The other agents it goes to, each in every home of it, as the machine's Claude Code homes have it.
     agents: Vec<Harness>,
+    /// Turned off on every machine (`"all": "off"`): its definitions are kept, and only a machine with its own gets it.
+    off_everywhere: bool,
     problems: Vec<String>,
 }
 
 impl Server {
+    /// What a machine's homes of one agent get: its own choice, else every machine's, which is nothing while the
+    /// server is off everywhere.
+    fn choice(&self, machine: &str, slot: usize) -> Option<&Wanted> {
+        match self.machines.get(machine).map(|choices| &choices[slot]) {
+            Some(Wanted::Default) | None if self.off_everywhere => Some(&OFF),
+            choice => choice,
+        }
+    }
+
     fn definition(&self, agent: HomeAgent) -> Option<&Value> {
         match agent {
             HomeAgent::Claude => self.claude.as_ref(),
@@ -967,7 +981,7 @@ impl Server {
             HomeAgent::Codex => 1,
             HomeAgent::Shared => return None,
         };
-        match self.machines.get(machine).map(|choices| &choices[slot]) {
+        match self.choice(machine, slot) {
             Some(Wanted::Off) => None,
             Some(Wanted::Own(definition)) => Some((definition, true)),
             _ => self.definition(agent).map(|definition| (definition, false)),
@@ -980,7 +994,7 @@ impl Server {
         if !self.agents.contains(&harness) {
             return None;
         }
-        let (definition, own) = match self.machines.get(machine).map(|choices| &choices[0]) {
+        let (definition, own) = match self.choice(machine, 0) {
             Some(Wanted::Off) => return None,
             Some(Wanted::Own(definition)) => (definition, true),
             _ => (self.claude.as_ref()?, false),
@@ -1048,7 +1062,16 @@ fn read_definition(agent: HomeAgent, value: &Value, at: &str, problems: &mut Vec
 }
 
 fn read_server(name: &str, entry: &Value) -> Server {
-    let mut server = Server { name: name.to_string(), claude: None, codex: None, homes: None, machines: BTreeMap::new(), agents: Vec::new(), problems: Vec::new() };
+    let mut server = Server {
+        name: name.to_string(),
+        claude: None,
+        codex: None,
+        homes: None,
+        machines: BTreeMap::new(),
+        agents: Vec::new(),
+        off_everywhere: false,
+        problems: Vec::new(),
+    };
     if !is_server_name(name) {
         server.problems.push("Arbor keeps servers named with letters, digits, - and _, starting with a letter or digit, up to 64 long".into());
     }
@@ -1104,6 +1127,10 @@ fn read_server(name: &str, entry: &Value) -> Server {
                     server.machines.insert(machine.clone(), choices);
                 }
             }
+            "all" => match value.as_str() {
+                Some("off") => server.off_everywhere = true,
+                _ => server.problems.push("all should be \"off\", or left out for on".into()),
+            },
             "agents" => {
                 let Some(ids) = value.as_array().and_then(|ids| ids.iter().map(Value::as_str).collect::<Option<Vec<&str>>>()) else {
                     server.problems.push("agents should list agents by id, like \"pi\" or \"opencode\"".into());
@@ -1338,6 +1365,8 @@ pub(crate) struct ServerView {
     /// Machines with their own definition, and machines it's kept off.
     own: Vec<String>,
     off: Vec<String>,
+    /// Turned off on every machine, its definitions kept: only a machine with its own gets it.
+    all_off: bool,
     problems: Vec<String>,
 }
 
@@ -1378,6 +1407,7 @@ fn registry_view(commit: Option<String>, found: bool, uncommitted: bool, registr
                 agents: server.agents.clone(),
                 own,
                 off,
+                all_off: server.off_everywhere,
                 problems: server.problems.clone(),
             }
         })
@@ -2229,9 +2259,11 @@ async fn read_file_to_change(folder: &Path) -> Result<Value, String> {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum McpWanted {
-    /// One machine: as every machine has it, dropping the machine's own definition or its being kept off.
+    /// One machine: as every machine has it, dropping the machine's own definition or its being kept off. Every
+    /// machine: on again after being turned off everywhere.
     Default,
-    /// One machine: kept off it, so its homes' copies are the repo's to remove.
+    /// One machine: kept off it, so its homes' copies are the repo's to remove. Every machine: turned off everywhere,
+    /// its definitions kept, so every home's copy is the repo's to remove until it's turned on again.
     Off,
     /// Every machine: the repo keeps the server's name with no definition, so every home's copy is the repo's to
     /// remove and none is set up. Taking a home's server into the repo brings it back.
@@ -2252,7 +2284,17 @@ fn set_wanted(file: &mut Value, name: &str, machine: Option<&str>, wanted: McpWa
             }
             servers.insert(name.to_string(), removed);
         }
-        (None, _) => return Err("Every machine's value is a definition: take one into the repo from a home".into()),
+        (None, wanted) => {
+            let server = servers.get_mut(name).and_then(Value::as_object_mut).ok_or_else(|| format!("The repo hasn't got {name}"))?;
+            if !defines_server(&Value::Object(server.clone())) {
+                return Err(format!("{name} is removed from every machine. Put it back first."));
+            }
+            if wanted == McpWanted::Off {
+                server.insert("all".into(), Value::from("off"));
+            } else {
+                server.remove("all");
+            }
+        }
         (Some(_), McpWanted::Removed) => return Err("A server is removed from every machine, or kept off one".into()),
         (Some(machine), wanted) => {
             let server = servers.get_mut(name).and_then(Value::as_object_mut).ok_or_else(|| format!("The repo hasn't got {name}"))?;
@@ -2291,7 +2333,9 @@ pub(crate) async fn set_mcp_wanted(
     set_wanted(&mut file, &name, machine.as_deref(), wanted)?;
     let text = serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n";
     let message = match (&machine, wanted) {
-        (None, _) => format!("Remove MCP server {name} from all machines"),
+        (None, McpWanted::Removed) => format!("Remove MCP server {name} from all machines"),
+        (None, McpWanted::Off) => format!("Turn MCP server {name} off on all machines"),
+        (None, McpWanted::Default) => format!("Turn MCP server {name} on for all machines"),
         (Some(machine), McpWanted::Off) => format!("Keep MCP server {name} off {machine}"),
         (Some(machine), _) => format!("Give {machine} MCP server {name} as every machine has it"),
     };
@@ -2487,14 +2531,34 @@ mod tests {
         // Back to as every machine has it, which leaves no machines at all.
         set_wanted(&mut file, "linear", Some("ci-01"), McpWanted::Default).unwrap();
         assert!(file["servers"]["linear"].get("machines").is_none());
+        // Off everywhere keeps the definition, gives no machine the server but one with its own, and turns back on.
+        file["servers"]["linear"]["machines"] = json!({ "cedar": { "claude": { "type": "sse", "url": "https://mcp.linear.app/sse" } } });
+        set_wanted(&mut file, "linear", None, McpWanted::Off).unwrap();
+        assert_eq!(file["servers"]["linear"]["all"], "off");
+        assert_eq!(file["servers"]["linear"]["claude"], definition);
+        let off = registry(file.clone());
+        let server = off.server("linear").unwrap();
+        assert!(server.problems.is_empty());
+        assert!(server.wanted("mac", HomeAgent::Claude, "~/.claude").is_none());
+        assert!(matches!(server.wanted("cedar", HomeAgent::Claude, "~/.claude"), Some((_, true))));
+        assert!(off.checkout_definition("mac", "/Users/casey", "linear").unwrap().is_none());
+        set_wanted(&mut file, "linear", None, McpWanted::Default).unwrap();
+        assert!(file["servers"]["linear"].get("all").is_none());
+        assert!(registry(file.clone()).server("linear").unwrap().wanted("mac", HomeAgent::Claude, "~/.claude").is_some());
+        file["servers"]["linear"].as_object_mut().unwrap().remove("machines");
+        // Anything but off is a mistake in the file.
+        let mut odd = file.clone();
+        odd["servers"]["linear"]["all"] = json!("on");
+        assert_eq!(registry(odd).server("linear").unwrap().problems, ["all should be \"off\", or left out for on"]);
         // Removed everywhere: the name stays with no definition, so no home is given it and every copy is extra.
         set_wanted(&mut file, "linear", None, McpWanted::Removed).unwrap();
         assert_eq!(file["servers"]["linear"], json!({ "claude": null, "codex": null }));
         let removed = registry(file.clone());
         assert!(removed.problems.is_empty() && removed.server("linear").unwrap().problems.is_empty());
         assert!(removed.server("linear").unwrap().wanted("mac", HomeAgent::Codex, "~/.codex").is_none());
-        // Only a definition taken from a home is every machine's value, and a machine is kept off rather than removed.
+        // A removed server has nothing to turn off or on until it's put back, and a machine is kept off rather than removed.
         assert!(set_wanted(&mut file, "linear", None, McpWanted::Off).is_err());
+        assert!(set_wanted(&mut file, "linear", None, McpWanted::Default).is_err());
         assert!(set_wanted(&mut file, "linear", Some("mac"), McpWanted::Removed).is_err());
         assert!(set_wanted(&mut file, "sentry", Some("mac"), McpWanted::Off).is_err());
 

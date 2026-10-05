@@ -826,6 +826,9 @@ const mockRemovedSkills = new Set<string>();
 const removedRepoSkills = new Map<string, SetupRepoSkill>();
 /** Rules, subagents and commands the repo has taken off every machine, and what the repo had of each, to put back. */
 const mockRemovedFiles = new Set<string>();
+/** Skills and rules, subagents and commands the repo keeps but has turned off on every machine. */
+const mockOffSkills = new Set<string>();
+const mockOffFiles = new Set<string>();
 /** Machines' own values for a rule, subagent or command: path → normalized machine → value. */
 const mockFileMachines: Record<string, Record<string, SkillWanted>> = {};
 const removedRepoFiles = new Map<string, SetupRepoFile>();
@@ -851,6 +854,8 @@ const setupRepoReply = (path: string): SetupRepo => {
     skillMachines: structuredClone(mockSkillMachines),
     removedSkills: [...mockRemovedSkills].filter((name) => !head?.skills.some((skill) => skill.name === name)),
     removedFiles: [...mockRemovedFiles].filter((path) => !head?.files.some((file) => file.path === path)),
+    offSkills: [...mockOffSkills].filter((name) => head?.skills.some((skill) => skill.name === name)),
+    offFiles: [...mockOffFiles].filter((path) => head?.files.some((file) => file.path === path)),
     fileMachines: structuredClone(mockFileMachines),
     skillProjects: structuredClone(mockSkillProjects),
     mcpProjects: structuredClone(mockMcpProjects),
@@ -1275,6 +1280,8 @@ type MockDefinition = DefinitionView & { sum: string };
 type MockRegistryServer = {
   name: string; claude: MockDefinition | null; codex: MockDefinition | null; homes: string[] | null;
   machines: Record<string, { claude?: MockDefinition | null; codex?: MockDefinition | null } | null>; agents: Harness[]; problems: string[];
+  /** Turned off on every machine, its definitions kept. */
+  allOff?: boolean;
 };
 
 const mockDefinition = (transport: string, place: string | null, variables: string[], sum: string): MockDefinition => ({ transport, place, variables, sum });
@@ -1323,6 +1330,7 @@ const wantedMock = (server: MockRegistryServer, machine: string, agent: AgentKin
     const own = choice[agent];
     return own ? [own, true] : null;
   }
+  if (server.allOff) return null;
   return server[agent] ? [server[agent], false] : null;
 };
 
@@ -1379,7 +1387,7 @@ const HARNESS_MCP_FILE: Partial<Record<Harness, string>> = { pi: 'mcp.json', dro
 // machine in step fail as if a settings file changed since the scan, and `?hooktake=secret` has taking one refused.
 type MockHook = {
   name: string; event: string; matcher: string | null; command: string; script: string; timeout: number | null;
-  agents: AgentKind[]; homes: string[] | null; removed: boolean; off: string[]; problems: string[];
+  agents: AgentKind[]; homes: string[] | null; removed: boolean; off: string[]; problems: string[]; allOff?: boolean;
 };
 const mockHooks: { found: boolean; hooks: MockHook[] } = {
   found: hooksSample || params.get('hooks') === 'bad',
@@ -1399,7 +1407,7 @@ const mockHomeHooks: Record<string, { event: string; script: string; same: boole
 } : {};
 
 const hookWantedMock = (hook: MockHook, machine: string, agent: AgentKind, home: string) =>
-  !hook.removed && !hook.off.includes(machine) && hook.agents.includes(agent) && (hook.homes === null || hook.homes.includes(home));
+  !hook.removed && !hook.allOff && !hook.off.includes(machine) && hook.agents.includes(agent) && (hook.homes === null || hook.homes.includes(home));
 
 /** The homes whose hooks the repo keeps, with the agent each is. */
 const hookHomesMock = (entry: SetupMachine) =>
@@ -1431,7 +1439,7 @@ const hookRegistryReply = (path: string): HookRegistry => {
     problems: bad ? [".agents/hooks.json isn't a JSON object Arbor can read"] : [],
     hooks: bad ? [] : mockHooks.hooks.map((hook) => ({
       name: hook.name, event: hook.event, matcher: hook.matcher, command: hook.command, script: hook.script, timeout: hook.timeout,
-      agents: hook.agents, homes: hook.homes, removed: hook.removed, off: hook.off, problems: hook.problems,
+      agents: hook.agents, homes: hook.homes, removed: hook.removed, allOff: hook.allOff === true, off: hook.off, problems: hook.problems,
     })),
     cells: bad ? [] : setupMachines.filter((entry) => entry.scannedAt !== null).flatMap(hookCellsMock),
   };
@@ -1441,8 +1449,9 @@ const setHookWantedMock = (path: string, name: string, machine: string | null, w
   const hook = mockHooks.hooks.find((candidate) => candidate.name === name);
   if (!hook) throw `The repo hasn't got ${name}`;
   if (machine === null) {
-    if (wanted === 'off') throw 'A hook is kept off one machine, or removed from every one';
-    hook.removed = wanted === 'removed';
+    if (wanted === 'off' && hook.removed) throw `${name} is removed from every machine. Put it back first.`;
+    hook.allOff = wanted === 'off';
+    if (wanted !== 'off') hook.removed = wanted === 'removed';
   } else {
     if (wanted === 'removed') throw 'A hook is removed from every machine, or kept off one';
     hook.off = wanted === 'off' ? [...new Set([...hook.off, machine])] : hook.off.filter((one) => one !== machine);
@@ -1508,6 +1517,7 @@ const registryReply = (path: string): McpRegistry => {
       name: server.name, claude: view(server.claude), codex: view(server.codex), homes: server.homes, agents: server.agents,
       own: Object.entries(server.machines).filter(([, choice]) => choice && Object.values(choice).some(Boolean)).map(([machine]) => machine),
       off: Object.entries(server.machines).filter(([, choice]) => choice === null || Object.values(choice).some((definition) => definition === null)).map(([machine]) => machine),
+      allOff: server.allOff === true,
       problems: server.problems,
     })),
     cells: bad ? [] : setupMachines.filter((entry) => entry.scannedAt !== null).flatMap(registryCellsMock),
@@ -2058,8 +2068,13 @@ const setMcpWantedMock = (path: string, name: string, machine: string | null, wa
   othersAtStart();
   const repo = mockRepo(path);
   let message: string;
-  if (machine === null) {
-    if (wanted !== 'removed') throw "Every machine's value is a definition: take one into the repo from a home";
+  if (machine === null && wanted !== 'removed') {
+    const server = mockRegistry.servers.find((candidate) => candidate.name === name);
+    if (!server) throw `The repo hasn't got ${name}`;
+    if (!server.claude && !server.codex && !Object.values(server.machines).some(Boolean)) throw `${name} is removed from every machine. Put it back first.`;
+    server.allOff = wanted === 'off';
+    message = wanted === 'off' ? `Turn MCP server ${name} off on all machines` : `Turn MCP server ${name} on for all machines`;
+  } else if (machine === null) {
     const index = mockRegistry.servers.findIndex((candidate) => candidate.name === name);
     const removed: MockRegistryServer = { name, claude: null, codex: null, homes: null, machines: {}, agents: mockRegistry.servers[index]?.agents ?? [], problems: [] };
     // The repo's history keeps the definition, which putting it back reads.
@@ -2524,6 +2539,37 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
         repo.commits.push(repoCommit(subject, Date.now(), head?.files ?? [], kept));
         if (repo.upstream) repo.upstream = { ...repo.upstream, ahead: repo.upstream.ahead + 1 };
       }
+      return setupRepoReply(path);
+    });
+  },
+  set_setup_skill_off: (args) => {
+    const { repo: path, skill, off } = args;
+    mockLog('set_setup_skill_off', args);
+    const repo = mockRepo(path);
+    const head = repoHead(repo);
+    if (off && !head?.skills.some((entry) => entry.name === skill)) throw `The repo hasn't got ${skill}`;
+    // `?skilloff=fail`: .agents/machines.json has changes in the repo that aren't committed.
+    if (params.get('skilloff') === 'fail') return later(500, () => { throw ".agents/machines.json has changes in the repo that aren't committed. Commit or drop them, then try again."; });
+    return later(500, () => {
+      if (off) mockOffSkills.add(skill);
+      else mockOffSkills.delete(skill);
+      repo.commits.push(repoCommit(off ? `Turn skill ${skill} off on all machines` : `Turn skill ${skill} on for all machines`, Date.now(), head?.files ?? [], head?.skills ?? []));
+      if (repo.upstream) repo.upstream = { ...repo.upstream, ahead: repo.upstream.ahead + 1 };
+      return setupRepoReply(path);
+    });
+  },
+  set_setup_file_off: (args) => {
+    const { repo: path, path: file, off } = args;
+    mockLog('set_setup_file_off', args);
+    const repo = mockRepo(path);
+    const head = repoHead(repo);
+    if (!/^~\/\.(claude\/(agents|commands|rules)|codex\/prompts)\/.+\.md$/.test(file)) throw `${file} is every machine's own, so Arbor changes it rather than turning it off`;
+    if (off && !head?.files.some((entry) => entry.path === file)) throw `The repo hasn't got ${file}`;
+    return later(500, () => {
+      if (off) mockOffFiles.add(file);
+      else mockOffFiles.delete(file);
+      repo.commits.push(repoCommit(off ? `Turn ${file.slice(2)} off on all machines` : `Turn ${file.slice(2)} on for all machines`, Date.now(), head?.files ?? [], head?.skills ?? []));
+      if (repo.upstream) repo.upstream = { ...repo.upstream, ahead: repo.upstream.ahead + 1 };
       return setupRepoReply(path);
     });
   },

@@ -64,7 +64,9 @@ export const isRemovedServer = (server: ServerView) => !server.claude && !server
 export function mcpWantedOn(server: ServerView, machine: string): 'removed' | 'default' | 'own' | 'off' {
   if (isRemovedServer(server)) return 'removed';
   if (server.off.includes(machine)) return 'off';
-  return server.own.includes(machine) ? 'own' : 'default';
+  if (server.own.includes(machine)) return 'own';
+  // Off everywhere: only a machine with its own definition has it.
+  return server.allOff ? 'off' : 'default';
 }
 
 // ---------------------------------------------------------------------------

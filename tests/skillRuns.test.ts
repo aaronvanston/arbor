@@ -39,7 +39,7 @@ const repoSkill = (name: string, sum: string): SetupRepoSkill => ({
 });
 const repo = (skills: SetupRepoSkill[], fields: Partial<SetupRepo> = {}): SetupRepo => ({
   path: '/Users/casey/src/agent-setup', branch: 'main', head: { sha: sha('ab'), subject: 'Start', atMs: 1_000 },
-  upstream: null, uncommitted: [], files: [], skills, ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], fileMachines: {},
+  upstream: null, uncommitted: [], files: [], skills, ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
   skillProjects: {}, mcpProjects: {}, instructions: [], plugins: [], codexPlugins: [], ...fields,
 });
 

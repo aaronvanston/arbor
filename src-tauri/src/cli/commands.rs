@@ -1315,6 +1315,26 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "set_setup_skill_off",
+        access: Access::Write,
+        summary: "Turns a skill the repo has off on every machine, keeping it in the repo, or on again, and commits .agents/machines.json alone. Each machine's store copy goes with its review, as a removed skill's does, and comes back the same way.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+            ArgSpec { name: "skill", ts_type: "string", optional: false },
+            ArgSpec { name: "off", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "set_setup_file_off",
+        access: Access::Write,
+        summary: "Turns a rule, subagent or command the repo has off on every machine, keeping it in the repo, or on again, and commits .agents/machines.json alone. Instructions are every machine's own, so they're never off.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+            ArgSpec { name: "path", ts_type: "string", optional: false },
+            ArgSpec { name: "off", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "set_setup_file_machine",
         access: Access::Write,
         summary: "Gives `machine` its own value for the rule, subagent or command at `path` (~/.claude/agents/x.md): kept off it, or its own copy kept; with `None` it's back on every machine's. Commits .agents/machines.json alone.",
@@ -2123,6 +2143,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "set_setup_skill_removed" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::set_setup_skill_removed(arg(&args, "repo")?, arg(&args, "skill")?, arg(&args, "removed")?)).await) }.await,
         "drop_setup_skills" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::drop_setup_skills(arg(&args, "repo")?, arg(&args, "skills")?)).await) }.await,
         "set_setup_file_removed" => async { done(Box::pin(crate::usage::machine_health::setup_sync::set_setup_file_removed(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "removed")?)).await) }.await,
+        "set_setup_skill_off" => async { done(Box::pin(crate::usage::machine_health::setup_sync::set_setup_skill_off(arg(&args, "repo")?, arg(&args, "skill")?, arg(&args, "off")?)).await) }.await,
+        "set_setup_file_off" => async { done(Box::pin(crate::usage::machine_health::setup_sync::set_setup_file_off(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "off")?)).await) }.await,
         "set_setup_file_machine" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_file_machine(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
         "set_setup_plugin" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_plugin(arg(&args, "repo")?, arg(&args, "plugin")?, arg(&args, "source")?, arg(&args, "project")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
         "set_setup_codex_plugin" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_codex_plugin(arg(&args, "repo")?, arg(&args, "plugin")?, arg(&args, "source")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,

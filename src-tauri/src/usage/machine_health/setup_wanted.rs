@@ -217,6 +217,38 @@ pub(super) fn parse_removed(bytes: &[u8]) -> Vec<String> {
         .collect()
 }
 
+/// Skills turned off on every machine, `"all": "off"` in their entry: the repo keeps their folders, and each machine's
+/// copy in its store is the repo's to take out until they're turned on again.
+pub(super) fn parse_off(bytes: &[u8]) -> Vec<String> {
+    marked(bytes, SKILLS_SECTION, "off").into_iter().filter(|skill| is_skill_name(skill)).collect()
+}
+
+/// The rules, subagents and commands turned off on every machine, as the scan names them (~/.claude/agents/old.md).
+pub(super) fn parse_off_files(bytes: &[u8]) -> Vec<String> {
+    marked(bytes, FILES_SECTION, "off").into_iter().filter(|rel| removable_file(rel)).map(|rel| format!("~/{rel}")).collect()
+}
+
+/// The names in `section` whose every-machine value (`"all"`) is `mark`.
+fn marked(bytes: &[u8], section: &str, mark: &str) -> Vec<String> {
+    let Ok(Value::Object(root)) = serde_json::from_slice::<Value>(bytes) else {
+        return Vec::new();
+    };
+    let Some(Value::Object(names)) = root.get(section) else {
+        return Vec::new();
+    };
+    names.iter().filter(|(_, entry)| entry.get("all").and_then(Value::as_str) == Some(mark)).map(|(name, _)| name.clone()).collect()
+}
+
+/// `text` with `skill` turned off on every machine, or on again, keeping whatever else the file holds.
+pub(super) fn with_skill_off(text: Option<&[u8]>, skill: &str, off: bool) -> Result<String, String> {
+    with_all_mark(text, SKILLS_SECTION, skill, off.then_some("off"))
+}
+
+/// `text` with the file at `rel` turned off on every machine, or on again, keeping the rest.
+pub(super) fn with_file_off(text: Option<&[u8]>, rel: &str, off: bool) -> Result<String, String> {
+    with_all_mark(text, FILES_SECTION, rel, off.then_some("off"))
+}
+
 /// `text` with `skill` marked removed from every machine, or the mark taken out, keeping whatever else the file holds.
 pub(super) fn with_skill_removed(text: Option<&[u8]>, skill: &str, removed: bool) -> Result<String, String> {
     with_removed_mark(text, SKILLS_SECTION, skill, removed)
@@ -255,6 +287,12 @@ pub(super) fn with_file_removed(text: Option<&[u8]>, rel: &str, removed: bool) -
 /// `text` with `name` in `section` marked removed from every machine, or the mark taken out, keeping whatever else the
 /// file holds. A machine's own values for it stay, so one keeping its own copy still keeps it.
 fn with_removed_mark(text: Option<&[u8]>, section: &str, name: &str, removed: bool) -> Result<String, String> {
+    with_all_mark(text, section, name, removed.then_some("removed"))
+}
+
+/// `text` with `name`'s every-machine value in `section` set to `mark` (removed or off), or taken out for as the repo
+/// has it, keeping the machines' own values and whatever else the file holds.
+fn with_all_mark(text: Option<&[u8]>, section: &str, name: &str, mark: Option<&str>) -> Result<String, String> {
     let unreadable = || format!("{MACHINES_FILE} isn't JSON Arbor can read. Fix it, then try again.");
     let mut file = match text {
         Some(bytes) => serde_json::from_slice::<Value>(bytes).ok().filter(Value::is_object).ok_or_else(unreadable)?,
@@ -264,8 +302,8 @@ fn with_removed_mark(text: Option<&[u8]>, section: &str, name: &str, removed: bo
     root.entry("version").or_insert(Value::from(FILE_VERSION));
     let names = object_at(root, section);
     let entry = object_at(names, name);
-    if removed {
-        entry.insert("all".into(), Value::from("removed"));
+    if let Some(mark) = mark {
+        entry.insert("all".into(), Value::from(mark));
     } else {
         entry.remove("all");
     }
@@ -594,7 +632,7 @@ fn with_machine_value(text: Option<&[u8]>, section: &str, skill: &str, machine: 
     Ok(serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n")
 }
 
-fn is_skill_name(name: &str) -> bool {
+pub(super) fn is_skill_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 128 && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) && !name.starts_with('.')
 }
 
@@ -872,6 +910,23 @@ mod tests {
         assert!(parse(off.as_bytes()).is_empty());
         // What the repo doesn't sync is skipped.
         assert!(parse_file_machines(br#"{"files":{".claude/CLAUDE.md":{"machines":{"ci":"off"}}}}"#).is_empty());
+    }
+
+    #[test]
+    fn a_skill_or_file_turned_off_everywhere_is_marked_apart_from_removed_and_turned_on_again() {
+        let off = with_skill_off(Some(br#"{"version":1,"skills":{"pdf":{"machines":{"ci01":"own"}}}}"#), "pdf", true).unwrap();
+        let value: Value = serde_json::from_str(&off).unwrap();
+        assert_eq!(value["skills"]["pdf"], serde_json::json!({ "all": "off", "machines": { "ci01": "own" } }));
+        assert_eq!(parse_off(off.as_bytes()), vec!["pdf".to_string()]);
+        assert!(parse_removed(off.as_bytes()).is_empty(), "off isn't removed");
+        let on = with_skill_off(Some(off.as_bytes()), "pdf", false).unwrap();
+        assert!(parse_off(on.as_bytes()).is_empty());
+        assert_eq!(serde_json::from_str::<Value>(&on).unwrap()["skills"]["pdf"], serde_json::json!({ "machines": { "ci01": "own" } }));
+        let file = with_file_off(None, ".claude/commands/review.md", true).unwrap();
+        assert_eq!(parse_off_files(file.as_bytes()), vec!["~/.claude/commands/review.md".to_string()]);
+        assert!(parse_removed_files(file.as_bytes()).is_empty());
+        // Instructions are every machine's own, so they're never off everywhere.
+        assert!(parse_off_files(br#"{"files":{".claude/CLAUDE.md":{"all":"off"}}}"#).is_empty());
     }
 
     #[test]

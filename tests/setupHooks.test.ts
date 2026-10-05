@@ -4,7 +4,7 @@ import type { HookCell, HookRegistry, HookView, SetupHome, SetupItem, SetupMachi
 import { present } from './support/items';
 
 const view = (name: string, fields: Partial<HookView> = {}): HookView => ({
-  name, event: 'PreToolUse', matcher: null, command: `~/.agents/hooks/${name}.sh`, script: `${name}.sh`, timeout: null, agents: ['claude'], homes: null, removed: false, off: [], problems: [], ...fields,
+  name, event: 'PreToolUse', matcher: null, command: `~/.agents/hooks/${name}.sh`, script: `${name}.sh`, timeout: null, agents: ['claude'], homes: null, removed: false, allOff: false, off: [], problems: [], ...fields,
 });
 const cell = (machine: string, home: string, name: string | null, script: string, state: HookCell['state']): HookCell =>
   ({ machine, agent: 'claude', home, name, event: 'PreToolUse', script, state, blocked: null });

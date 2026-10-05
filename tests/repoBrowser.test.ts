@@ -32,7 +32,7 @@ const machine = (name: string, homes: SetupHome[], scannedAt: number | null = 1_
 const repoFile = (path: string, sum: string): SetupRepoFile => ({ path, kind: syncKind(path)!, sum, ck: 'c1-120', size: 120 });
 const repo = (files: SetupRepoFile[], head = true): SetupRepo => ({
   path: '/Users/casey/src/agent-setup', branch: 'main', head: head ? { sha: 'ab'.repeat(20), subject: 'Start', atMs: 1_000 } : null,
-  upstream: null, uncommitted: [], files, skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], fileMachines: {},
+  upstream: null, uncommitted: [], files, skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
   skillProjects: {}, mcpProjects: {}, instructions: [], plugins: [], codexPlugins: [],
 });
 

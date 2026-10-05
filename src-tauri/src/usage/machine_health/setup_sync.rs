@@ -189,6 +189,11 @@ pub(crate) struct SetupRepo {
     /// Rules, subagents and commands the repo has taken off every machine, as the scan names them. A file back in the
     /// repo isn't listed.
     removed_files: Vec<String>,
+    /// Skills the repo keeps but has turned off on every machine (.agents/machines.json), so each machine's store copy
+    /// is the repo's to take out until they're turned on again.
+    off_skills: Vec<String>,
+    /// Rules, subagents and commands the repo keeps but has turned off on every machine, as the scan names them.
+    off_files: Vec<String>,
     /// Machines with a value of their own for a rule, subagent or command, from .agents/machines.json: path as the scan
     /// names it → normalized machine → value.
     file_machines: SkillMachines,
@@ -327,7 +332,11 @@ async fn uncommitted(folder: &Path, prefix: &str) -> Result<Vec<String>, String>
 }
 
 /// The files and skills the repo syncs as `commit` has them, and the others it holds under the agents' folders.
-async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<(Vec<RepoFile>, Vec<RepoSkill>, Vec<String>, (SkillMachines, Vec<String>, Vec<String>, SkillMachines), (SkillProjects, SkillProjects), (Vec<RepoPlugin>, Vec<RepoPlugin>)), String> {
+/// What a commit's tree holds: files, skills, what's ignored, the machines' values and removed marks, what's off
+/// everywhere, projects' values and plugins.
+type Tree = (Vec<RepoFile>, Vec<RepoSkill>, Vec<String>, (SkillMachines, Vec<String>, Vec<String>, SkillMachines), (Vec<String>, Vec<String>), (SkillProjects, SkillProjects), (Vec<RepoPlugin>, Vec<RepoPlugin>));
+
+async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String> {
     let listing = git_out(folder, &["ls-tree", "-r", "-l", "-z", "--full-name", commit, "--", "."]).await?;
     let mut synced: Vec<(String, SyncFileKind, String)> = Vec::new();
     let mut skills = Vec::new();
@@ -406,6 +415,11 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<(Vec<RepoFile
         .filter(|path| !files.iter().any(|file| &file.path == path))
         .collect();
     let file_machines = machines_bytes.as_deref().map(wanted::parse_file_machines).unwrap_or_default();
+    // Only what the repo has can be off; a mark left on one it no longer has says nothing.
+    let off_skills: Vec<String> =
+        machines_bytes.as_deref().map(wanted::parse_off).unwrap_or_default().into_iter().filter(|name| skills.iter().any(|skill| skill.name() == name)).collect();
+    let off_files: Vec<String> =
+        machines_bytes.as_deref().map(wanted::parse_off_files).unwrap_or_default().into_iter().filter(|path| files.iter().any(|file| &file.path == path)).collect();
     let skill_projects = machines_bytes.as_deref().map(|bytes| wanted::parse_projects(bytes, wanted::SKILLS_SECTION)).unwrap_or_default();
     let mcp_projects = machines_bytes.as_deref().map(|bytes| wanted::parse_projects(bytes, wanted::MCP_SECTION)).unwrap_or_default();
     let plugins_bytes = match plugins_file {
@@ -414,7 +428,7 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<(Vec<RepoFile
     };
     let plugins = plugins_bytes.as_deref().map(wanted::parse_plugins).unwrap_or_default();
     let codex_plugins = plugins_bytes.as_deref().map(wanted::parse_codex_plugins).unwrap_or_default();
-    Ok((files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (skill_projects, mcp_projects), (plugins, codex_plugins)))
+    Ok((files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (skill_projects, mcp_projects), (plugins, codex_plugins)))
 }
 
 /// What the repo in `folder` holds and where its branch stands.
@@ -436,9 +450,17 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         .filter(|branch| !branch.is_empty());
     let last = git(folder, &["log", "-1", "--format=%H%x00%s%x00%ct"], GIT_TIMEOUT).await?;
     let head = last.status.success().then(|| parse_commit(&String::from_utf8_lossy(&last.stdout))).flatten();
-    let (files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (skill_projects, mcp_projects), (plugins, codex_plugins)) = match &head {
+    let (files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (skill_projects, mcp_projects), (plugins, codex_plugins)) = match &head {
         Some(head) => tree(folder, &prefix, &head.sha).await?,
-        None => (Vec::new(), Vec::new(), Vec::new(), (SkillMachines::new(), Vec::new(), Vec::new(), SkillMachines::new()), (SkillProjects::new(), SkillProjects::new()), (Vec::new(), Vec::new())),
+        None => (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            (SkillMachines::new(), Vec::new(), Vec::new(), SkillMachines::new()),
+            (Vec::new(), Vec::new()),
+            (SkillProjects::new(), SkillProjects::new()),
+            (Vec::new(), Vec::new()),
+        ),
     };
     let instructions = match &head {
         Some(head) => instructions::list(folder, &prefix, &head.sha).await?,
@@ -456,6 +478,8 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         skill_machines,
         removed_skills,
         removed_files,
+        off_skills,
+        off_files,
         file_machines,
         skill_projects,
         mcp_projects,
@@ -1077,6 +1101,52 @@ pub(super) async fn remove_file(folder: &Path, path: &str, removed: bool, git_co
     commit.extend(paths.iter().map(String::as_str));
     run(with(&commit)).await?;
     Ok(())
+}
+
+/// Turns a skill the repo has off on every machine, keeping it in the repo, or on again, and commits .agents/machines.json
+/// alone. Each machine's store copy goes with its review, as a removed skill's does, and comes back the same way.
+#[tauri::command]
+pub(crate) async fn set_setup_skill_off(repo: String, skill: String, off: bool) -> Result<SetupRepo, String> {
+    let folder = Path::new(&repo);
+    if !wanted::is_skill_name(&skill) {
+        return Err("Arbor keeps skills named with letters, digits, ., - and _".into());
+    }
+    let current = read_repo(folder).await?;
+    if off && !current.skills.iter().any(|entry| entry.name() == skill) {
+        return Err(format!("The repo hasn't got {skill}"));
+    }
+    let message = if off { format!("Turn skill {skill} off on all machines") } else { format!("Turn skill {skill} on for all machines") };
+    let marked = wanted::with_skill_off(machines_file_now(folder)?.as_deref(), &skill, off)?;
+    take_into_repo(folder, MACHINES_FILE, marked.as_bytes(), &message, &[]).await?;
+    read_repo(folder).await
+}
+
+/// Turns a rule, subagent or command the repo has off on every machine, keeping it in the repo, or on again, and
+/// commits .agents/machines.json alone. Instructions are every machine's own, so they're never off.
+#[tauri::command]
+pub(crate) async fn set_setup_file_off(repo: String, path: String, off: bool) -> Result<SetupRepo, String> {
+    let folder = Path::new(&repo);
+    let rel = home_relative(&path)?;
+    if !wanted::removable_file(rel) {
+        return Err(format!("{path} is every machine's own, so Arbor changes it rather than turning it off"));
+    }
+    let current = read_repo(folder).await?;
+    if off && !current.files.iter().any(|file| file.path == path) {
+        return Err(format!("The repo hasn't got {path}"));
+    }
+    let message = if off { format!("Turn {rel} off on all machines") } else { format!("Turn {rel} on for all machines") };
+    let marked = wanted::with_file_off(machines_file_now(folder)?.as_deref(), rel, off)?;
+    take_into_repo(folder, MACHINES_FILE, marked.as_bytes(), &message, &[]).await?;
+    read_repo(folder).await
+}
+
+/// .agents/machines.json as it is in the repo's folder, or None before it's there.
+fn machines_file_now(folder: &Path) -> Result<Option<Vec<u8>>, String> {
+    match fs::read(folder.join(MACHINES_FILE)) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("Arbor couldn't read {MACHINES_FILE}: {error}")),
+    }
 }
 
 /// Takes a rule, subagent or command off every machine in the repo, or puts it back, and commits it (see

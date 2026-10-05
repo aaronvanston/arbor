@@ -167,6 +167,15 @@ export const skillWanted = (repo: SetupRepo, path: string, machine: string): Ski
 export const setSetupFileRemoved = (repo: string, path: string, removed: boolean) =>
   invokeCommand('set_setup_file_removed', { repo, path, removed });
 
+/**
+ * Turns a skill the repo has off on every machine, kept in the repo (each machine's store copy goes with its review), or
+ * on again; commits .agents/machines.json alone.
+ */
+export const setSetupSkillOff = (repo: string, skill: string, off: boolean) => invokeCommand('set_setup_skill_off', { repo, skill, off });
+
+/** Turns a rule, subagent or command the repo has off on every machine, kept in the repo, or on again. */
+export const setSetupFileOff = (repo: string, path: string, off: boolean) => invokeCommand('set_setup_file_off', { repo, path, off });
+
 /** A file the repo can take off every machine: not an agent's instructions, which every machine has its own of. */
 export const removableKind = (kind: SyncFileKind) => kind !== 'instructions';
 
@@ -204,6 +213,8 @@ export function syncPlan(repo: SetupRepo, machine: SetupMachine): SyncFile[] {
       if (item.path && SYNC_KINDS.has(item.kind) && syncKind(item.path)) present.set(item.path, item);
     }
   }
+  const offFiles = new Set(repo.offFiles ?? []);
+  const offSkills = new Set(repo.offSkills ?? []);
   const files: SyncFile[] = repo.files.map((file) => {
     const item = present.get(file.path) ?? null;
     const home = file.kind === 'hookScript'
@@ -211,7 +222,9 @@ export function syncPlan(repo: SetupRepo, machine: SetupMachine): SyncFile[] {
       : [...SYNC_HOMES, ...HARNESS_SYNC_HOMES].find((sync) => file.path.startsWith(`${sync.path}/`))?.path ?? '';
     const wanted = fileWanted(repo, file.path, machine.machine);
     let state: SyncState;
-    if (wanted === 'off') state = 'offHere';
+    // Off everywhere: a copy the machine has is the repo's to take out, as a removed file's is, unless it keeps its own.
+    if (offFiles.has(file.path) && wanted !== 'own') state = item && item.link === null && item.sum !== null ? 'removed' : 'offHere';
+    else if (wanted === 'off') state = 'offHere';
     else if (wanted === 'own' && item && item.link === null && item.sum !== null) state = 'own';
     else if (home !== null && !homes.has(home)) state = 'noHome';
     else if (!item) state = 'add';
@@ -237,7 +250,8 @@ export function syncPlan(repo: SetupRepo, machine: SetupMachine): SyncFile[] {
     const wanted = skillWanted(repo, skill.path, machine.machine);
     let state: SyncState;
     let problem: SyncFile['problem'] = null;
-    if (wanted === 'off') state = 'offHere';
+    if (offSkills.has(skill.name) && wanted !== 'own') state = item && item.link === null && item.sum !== null && item.skill?.hasDoc ? 'removed' : 'offHere';
+    else if (wanted === 'off') state = 'offHere';
     else if (wanted === 'own' && item && item.link === null && item.sum !== null) state = 'own';
     else if (skill.problem) [state, problem] = ['blocked', skill.problem];
     else if (!item) state = 'add';

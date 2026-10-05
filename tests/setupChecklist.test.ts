@@ -206,7 +206,7 @@ describe('the setup repo', () => {
   const sha = 'a'.repeat(40);
   const repo = (sum: string): SetupRepo => ({
     path: '/Users/casey/src/agent-setup', branch: 'main', head: { sha, subject: 'Start', atMs: NOW }, upstream: null, uncommitted: [],
-    files: [{ path: '~/.claude/CLAUDE.md', kind: 'instructions', sum, ck: 'c1-10', size: 10 }], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
+    files: [{ path: '~/.claude/CLAUDE.md', kind: 'instructions', sum, ck: 'c1-10', size: 10 }], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
     plugins: [], codexPlugins: [],
   });
 
@@ -275,7 +275,7 @@ describe('MCP servers from the repo', () => {
   const definition = { transport: 'http', place: 'mcp.linear.app', variables: [] };
   const registry = (cells: RegistryCell[], fields: Partial<McpRegistry> = {}): McpRegistry => ({
     commit: 'b'.repeat(40), found: true, uncommitted: false, problems: [],
-    servers: ['linear', 'sentry', 'bad'].map((name) => ({ name, claude: definition, codex: null, homes: null, agents: [], own: [], off: [], problems: [] })),
+    servers: ['linear', 'sentry', 'bad'].map((name) => ({ name, claude: definition, codex: null, homes: null, agents: [], own: [], off: [], allOff: false, problems: [] })),
     cells, ...fields,
   });
 

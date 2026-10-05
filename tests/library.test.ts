@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { libraryCounts, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { lineUp, relisted, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { lineUp, relisted, switchFile, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { withRegistry } from '../src/services/setupMcp';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
 import { extensionsView, type PluginRow } from '../src/services/setupPlugins';
 import { present } from './support/items';
-import type { PluginChange, PluginResult, RepoPlugin, SetupHome, SetupItem, SetupMachine, SetupRepo } from '../src/native/types';
+import type { McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, fields: Partial<SetupItem> = {}): SetupItem => ({
   kind, name, path: null, sum: null, size: null, link: null, value: null, note: null, count: null, enabled: null,
@@ -25,7 +26,7 @@ const machine = (name: string, items: SetupItem[], reachable = true): SetupMachi
 const listing = (id: string, all: RepoPlugin['all'], machines: RepoPlugin['machines'] = {}): RepoPlugin => ({ id, source: 'acme/agent-tools', all, machines, projects: {} });
 const repo = (plugins: RepoPlugin[], fields: Partial<SetupRepo> = {}): SetupRepo => ({
   path: '/Users/casey/src/agent-setup', branch: 'main', head: { sha: 'ab'.repeat(32), subject: 'Start', atMs: 1_000 },
-  upstream: null, uncommitted: [], files: [], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], fileMachines: {},
+  upstream: null, uncommitted: [], files: [], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
   skillProjects: {}, mcpProjects: {}, instructions: [], plugins, codexPlugins: [], ...fields,
 });
 
@@ -170,6 +171,85 @@ describe('a plugin’s switch', () => {
     expect(run.done).toEqual([]);
     expect(run.failed.map((result) => [result.machine, result.action, result.message])).toEqual([
       ['casey-mbp', 'disable', 'ssh: connect to host casey-mbp: Connection refused'],
+    ]);
+  });
+});
+
+describe('every kind’s switch', () => {
+  const definition = { transport: 'http', place: 'mcp.linear.app', variables: [] };
+  const server = (fields: Partial<ServerView> = {}): ServerView => ({ name: 'linear', claude: definition, codex: null, homes: null, agents: [], own: [], off: [], allOff: false, problems: [], ...fields });
+  const registry = (fields: Partial<McpRegistry> = {}): McpRegistry => ({ commit: 'c'.repeat(40), found: true, uncommitted: false, problems: [], servers: [server()], cells: [], ...fields });
+  const withServer = (name: string) => machine('casey-mbp', [item('mcp', name, { value: 'http', sum: 'x1' })]);
+
+  it('gives what the repo lists a switch and its off state, but never an agent’s instructions or what it only has on a machine', () => {
+    const file = (path: string, kind: SetupRepo['files'][number]['kind']) => ({ path, kind, sum: 'x', ck: 'y', size: 10 });
+    const setup = repo([], {
+      files: [file('~/.claude/CLAUDE.md', 'instructions'), file('~/.claude/commands/ship.md', 'command')],
+      offFiles: ['~/.claude/commands/ship.md'],
+    });
+    const rows = libraryRows({
+      machines: [withServer('linear'), withServer('mine')],
+      view: withRegistry(extensionsView([withServer('linear'), withServer('mine')]), registry({ servers: [server({ allOff: true })] })),
+      repo: setup, registryFound: true, hooks: null,
+    });
+    const by = (name: string) => rowFor(rows, name);
+    expect([by('linear').state, by('linear').toggle]).toEqual(['off', { kind: 'mcp', name: 'linear' }]);
+    expect([by('mine').state, by('mine').toggle]).toEqual(['unlisted', null]);
+    expect([by('ship.md').state, by('ship.md').toggle]).toEqual(['off', { kind: 'file', path: '~/.claude/commands/ship.md' }]);
+    expect([by('CLAUDE.md').state, by('CLAUDE.md').toggle]).toEqual(['on', null]);
+  });
+
+  it('turns a server off for every machine, takes it out of each one that answers, and Undo turns it back on', async () => {
+    const wanted: unknown[] = [];
+    const applied: { machine: string; actions: string[] }[] = [];
+    mockCommands({
+      set_mcp_wanted: ({ machine: name, wanted: value }) => {
+        wanted.push([name, value]);
+        const off = value === 'off';
+        return registry({ servers: [server({ allOff: off })], cells: [{ machine: 'casey-mbp', home: '~/.claude', name: 'linear', state: off ? 'extra' : 'same', own: false, blocked: null }] });
+      },
+      apply_mcp_changes: ({ machine: name, changes }) => {
+        applied.push({ machine: name, actions: changes.map((change) => change.action) });
+        return changes.map((change) => ({ ...change, outcome: change.action === 'remove' ? 'removed' as const : 'done' as const, message: '' }));
+      },
+    });
+    const machines = [withServer('linear'), machine('far-01', [item('mcp', 'linear', { value: 'http', sum: 'x1' })], false)];
+    const run = await switchServer('/repo', machines, 'linear', false);
+    expect(wanted).toEqual([[null, 'off']]);
+    expect(applied).toEqual([{ machine: 'casey-mbp', actions: ['remove'] }]);
+    expect(run.changed).toEqual(['casey-mbp']);
+    expect(run.skipped).toEqual(['far-01']);
+    const back = await run.undo();
+    expect(wanted).toEqual([[null, 'off'], [null, 'default']]);
+    expect(back.registry?.servers[0]?.allOff).toBe(false);
+  });
+
+  it('turns a command off for every machine, takes each answering machine’s copy out, and Undo puts the copies back first', async () => {
+    const calls: unknown[] = [];
+    const command = { path: '~/.claude/commands/ship.md', kind: 'command' as const, sum: 's1', ck: 'c1-10', size: 10 };
+    mockCommands({
+      set_setup_file_off: ({ path, off }) => {
+        calls.push(['off', path, off]);
+        return repo([], { files: [command], offFiles: off ? [path] : [] });
+      },
+      apply_setup_sync: ({ machine: name, changes }) => {
+        calls.push(['apply', name, changes]);
+        return { backup: 'b1', done: changes.map((change) => change.path), failed: [] };
+      },
+      undo_setup_sync: ({ machine: name, backup }) => {
+        calls.push(['undo', name, backup]);
+        return { backup: null, done: [command.path], failed: [] };
+      },
+    });
+    const machines = [machine('casey-mbp', [item('command', 'ship.md', { path: command.path, sum: 's1' })])];
+    const run = await switchFile('/repo', machines, command.path, false);
+    expect(run.changed).toEqual(['casey-mbp']);
+    await run.undo();
+    expect(calls).toEqual([
+      ['off', command.path, true],
+      ['apply', 'casey-mbp', [{ path: command.path, remove: true, before: 's1' }]],
+      ['undo', 'casey-mbp', 'b1'],
+      ['off', command.path, false],
     ]);
   });
 });

@@ -1898,6 +1898,10 @@ export type HookView = {
   homes: Array<string> | null,
   removed: boolean,
   /**
+   * Turned off on every machine, kept in the repo.
+   */
+  allOff: boolean,
+  /**
    * Machines it's kept off.
    */
   off: Array<string>,
@@ -3762,6 +3766,10 @@ export type ServerView = {
    */
   own: Array<string>,
   off: Array<string>,
+  /**
+   * Turned off on every machine, its definitions kept: only a machine with its own gets it.
+   */
+  allOff: boolean,
   problems: Array<string>,
 };
 
@@ -4189,6 +4197,15 @@ export type SetupRepo = {
    * repo isn't listed.
    */
   removedFiles: Array<string>,
+  /**
+   * Skills the repo keeps but has turned off on every machine (.agents/machines.json), so each machine's store copy
+   * is the repo's to take out until they're turned on again.
+   */
+  offSkills: Array<string>,
+  /**
+   * Rules, subagents and commands the repo keeps but has turned off on every machine, as the scan names them.
+   */
+  offFiles: Array<string>,
   /**
    * Machines with a value of their own for a rule, subagent or command, from .agents/machines.json: path as the scan
    * names it → normalized machine → value.
