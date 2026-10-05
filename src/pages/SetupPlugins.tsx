@@ -110,6 +110,7 @@ import type {
 } from '../native/types';
 import { FixMenu } from '../components/FixMenu';
 import { mcpServerProblem } from '../services/fixPrompt';
+import { errorWords, plainError } from '../services/plainError';
 import { MachinePill, MachinePills } from '../components/identity/Identity';
 
 /** How far back use is counted. */
@@ -694,7 +695,12 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
             homeLabel={homeLabel}
             onAdd={(keys) => setPending((current) => ({ ...withSettled(current, settlePlugins(view, current), shownMachines), ...keys }))}
             onOpen={(row) => setSheet(row.id)}
-            footer={grid.inLine || grid.leftovers.length || pluginRepoError ? <GridFooter grid={grid} onShowAll={() => setOnlyDifferences(false)} error={pluginRepoError} /> : null}
+            footer={grid.inLine || grid.leftovers.length || pluginRepoError || anyFailed(view.claudeHomes, costErrors) ? (
+              <>
+                {grid.inLine || grid.leftovers.length || pluginRepoError ? <GridFooter grid={grid} onShowAll={() => setOnlyDifferences(false)} error={pluginRepoError} /> : null}
+                <HomeFailures homes={view.claudeHomes} errors={costErrors} message="setup.plugins.cost.failedIn" />
+              </>
+            ) : null}
           />
           {sheetRow ? (
             <PluginSheet
@@ -821,7 +827,12 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
           renderHome={serverHome}
           homeLabel={homeLabel}
           onAdd={(keys) => setPendingMcp((current) => ({ ...withSettled(current, settleMcp(view, found, current), shownMachines), ...keys }))}
-          footer={servers.inLine || serverRepoError ? <McpGridFooter inLine={servers.inLine} error={serverRepoError} onShowAll={() => setMcpOnlyDifferences(false)} /> : null}
+          footer={servers.inLine || serverRepoError || anyFailed(view.mcpHomes, healthErrors) ? (
+            <>
+              {servers.inLine || serverRepoError ? <McpGridFooter inLine={servers.inLine} error={serverRepoError} onShowAll={() => setMcpOnlyDifferences(false)} /> : null}
+              <HomeFailures homes={view.mcpHomes} errors={healthErrors} message="setup.plugins.check.failedIn" />
+            </>
+          ) : null}
         />
       ) : (
         <TableCard title={mcpTitle} count={t(view.servers.length === 1 ? 'setup.plugins.mcp.count.one' : 'setup.plugins.mcp.count.other', { count: view.servers.length })} toolbar={checkButton}>
@@ -1007,6 +1018,30 @@ function CostNote({ home, total, errors, measuring }: {
   if (errors[key]) return <span className="truncate text-2xs font-normal text-error-foreground" title={errors[key]}>{t('setup.plugins.cost.failed')}</span>;
   if (!total) return null;
   return <span className="text-2xs font-normal text-muted-foreground">{t('setup.plugins.cost.homeTotal', { tokens: formatTokens(total.tokens) })}</span>;
+}
+
+/**
+ * The homes a connection check or cost measure failed in, said in full. The grid's columns are machines, not homes, so
+ * the home-head note the single-machine table shows has nowhere to go there, and a failure would show nothing at all.
+ */
+const anyFailed = (homes: ExtHome[], errors: Record<string, string>) => homes.some((home) => Boolean(errors[columnKey(home)]));
+
+function HomeFailures({ homes, errors, message }: { homes: ExtHome[]; errors: Record<string, string>; message: MessageKey }) {
+  const { t } = useI18n();
+  const failed = homes.filter((home) => errors[columnKey(home)]);
+  if (!failed.length) return null;
+  return (
+    <div className="flex min-w-0 flex-col gap-1" role="alert">
+      {failed.map((home) => {
+        const error = errors[columnKey(home)] ?? '';
+        return (
+          <p key={columnKey(home)} className="text-xs text-error-foreground" title={errorWords(error)}>
+            {t(message, { machine: home.machine, home: home.path, error: plainError(error, t) })}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 function CheckNote({ home, health, errors, checking }: {
