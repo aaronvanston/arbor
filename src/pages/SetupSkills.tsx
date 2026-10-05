@@ -267,6 +267,8 @@ export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
   // The setup repo says which skills every machine gets, and which it took off them all.
   const [repoPath] = useState(storedSetupRepo);
   const [repo, setRepo] = useState<SetupRepo | null>(null);
+  // Until a chosen repo's first read is back, the page doesn't ask for one to be chosen.
+  const [repoRead, setRepoRead] = useState(false);
   const scans = machines.map((entry) => `${entry.machine}:${entry.scannedAt ?? ''}`).join('\n');
   const readRepo = useCallback(async () => {
     if (!repoPath) return;
@@ -275,6 +277,8 @@ export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
       setRepo(next.head ? next : null);
     } catch {
       setRepo(null);
+    } finally {
+      setRepoRead(true);
     }
   }, [repoPath]);
   useEffect(() => { void readRepo(); }, [readRepo, scans]);
@@ -434,7 +438,7 @@ export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
 
   return (
     <div className="flex flex-col gap-4">
-      <SkillsHow repo={repo !== null} />
+      <SkillsHow repo={repo !== null} reading={Boolean(repoPath) && !repoRead} />
       {notice ? (
         <p className={cn('text-sm', notice.ok ? 'text-muted-foreground' : 'text-error-foreground')} role="status">{notice.text}</p>
       ) : null}
@@ -559,7 +563,7 @@ export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
 }
 
 /** How a skill reaches an agent: the repo lists it, each machine's store keeps it, and homes load it from there. */
-function SkillsHow({ repo }: { repo: boolean }) {
+function SkillsHow({ repo, reading }: { repo: boolean; reading: boolean }) {
   const { t } = useI18n();
   const steps = [
     { icon: FolderGit2, title: 'setup.skills.how.repo', detail: 'setup.skills.how.repoDetail' },
@@ -582,7 +586,7 @@ function SkillsHow({ repo }: { repo: boolean }) {
           </li>
         ))}
       </ol>
-      <p className="text-xs text-muted-foreground">{t(repo ? 'setup.skills.how.note' : 'setup.skills.how.noRepo')}</p>
+      {reading ? null : <p className="text-xs text-muted-foreground">{t(repo ? 'setup.skills.how.note' : 'setup.skills.how.noRepo')}</p>}
     </div>
   );
 }
