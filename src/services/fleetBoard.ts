@@ -759,14 +759,34 @@ export function markFleetSeen(key: string, now = Date.now()) {
   seenStore.write({ ...seenStore.read(), [key]: now });
 }
 
+/**
+ * What the board shows, less the time it was built: two reads that give the same one change nothing on screen. Every
+ * read comes back a new object with a new `nowMs` and `readAtMs`, so comparing the sources themselves never matches,
+ * while the board takes from `readAtMs` only whether a machine has gone quiet and whether a wait came after the read.
+ */
+export function fleetBoardFingerprint(board: FleetBoard): string {
+  return JSON.stringify([board.t3Enabled, board.t3Found, board.thisMachine, board.rows, board.machines.map((machine) => machine.skipped)]);
+}
+
+/** The newest read, which boards are built from. */
 let sources: FleetSources | null = null;
+/**
+ * The read the screen last changed for: it's what components subscribe to, so a read that leaves the board as it was
+ * renders nothing (a read every minute while hidden, or every few seconds while agents run).
+ */
+let shown: FleetSources | null = null;
+let shownFingerprint = '';
 let failure = '';
-const sourceListeners = new Set<() => void>();
-const subscribeSources = (listener: () => void) => {
-  sourceListeners.add(listener);
-  return () => sourceListeners.delete(listener);
+const readListeners = new Set<() => void>();
+const changeListeners = new Set<() => void>();
+const subscribe = (listeners: Set<() => void>) => (listener: () => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 };
+const subscribeReads = subscribe(readListeners);
+const subscribeChanges = subscribe(changeListeners);
 const getSources = () => sources;
+const getShown = () => shown;
 const getFailure = () => failure;
 
 export function setFleetSources(next: FleetSources) {
@@ -774,21 +794,32 @@ export function setFleetSources(next: FleetSources) {
   const remembered = rememberQuestions(asked, next);
   if (remembered !== asked) askedStore.write(remembered);
   sources = next;
+  const fingerprint = fleetBoardFingerprint(buildFleetBoard(next, { now: Date.now(), snoozes: snoozeStore.read(), seen: seenStore.read(), asked: remembered }));
+  const changed = shown === null || failure !== '' || fingerprint !== shownFingerprint;
   failure = '';
-  sourceListeners.forEach((listener) => listener());
+  if (changed) {
+    shown = next;
+    shownFingerprint = fingerprint;
+    changeListeners.forEach((listener) => listener());
+  }
+  readListeners.forEach((listener) => listener());
 }
 
 /** The sources as last read, or null before the first read. */
 export const currentFleetSources = getSources;
 
-/** Calls `listener` after each read of the sources, and after one fails. */
-export const onFleetSources = subscribeSources;
+/** Calls `listener` after each read of the sources, and after one fails, whether or not anything changed. */
+export const onFleetSources = subscribeReads;
+
+/** Calls `listener` when a read changes what the board shows, or a read fails or works again. */
+export const onFleetBoardChange = subscribeChanges;
 
 /** A failed read keeps the last board, and says why. */
 export function setFleetFailure(error: string) {
   if (error === failure) return;
   failure = error;
-  sourceListeners.forEach((listener) => listener());
+  changeListeners.forEach((listener) => listener());
+  readListeners.forEach((listener) => listener());
 }
 
 /** Reads the sources again, for the monitor and a Retry. */
@@ -815,8 +846,8 @@ export function snoozedWaitIds(board: FleetBoard | null) {
 
 /** The live board, rebuilt as the sources, snoozes and seen marks change and once a minute. Null before the first read. */
 export function useFleetBoard(): { board: FleetBoard | null; failure: string; now: number } {
-  const current = useSyncExternalStore(subscribeSources, getSources, getSources);
-  const error = useSyncExternalStore(subscribeSources, getFailure, getFailure);
+  const current = useSyncExternalStore(subscribeChanges, getShown, getShown);
+  const error = useSyncExternalStore(subscribeChanges, getFailure, getFailure);
   const snoozes = useSyncExternalStore(snoozeStore.subscribe, snoozeStore.read, snoozeStore.read);
   const seen = useSyncExternalStore(seenStore.subscribe, seenStore.read, seenStore.read);
   const asked = useSyncExternalStore(askedStore.subscribe, askedStore.read, askedStore.read);
@@ -827,13 +858,14 @@ export function useFleetBoard(): { board: FleetBoard | null; failure: string; no
 
 /** Whether some machine has T3 Code, so its threads' switch is worth showing. False before the first read. */
 export function useT3Found() {
-  return useSyncExternalStore(subscribeSources, getT3Found, getT3Found);
+  return useSyncExternalStore(subscribeChanges, getT3Found, getT3Found);
 }
-const getT3Found = () => sources?.t3Found ?? false;
+const getT3Found = () => shown?.t3Found ?? false;
 
 /**
  * The last board built, for every component showing it at once (a Sessions list asks once per row): it's built again
- * only when the sources, a mark or the minute changes.
+ * only when the shown read, a mark or the minute changes. It's built from the newest read, so the minute's rebuild
+ * judges a machine quiet by when it was last read, not by when the board last changed.
  */
 let shared: { current: FleetSources | null; marks: FleetMarks; clock: number; board: FleetBoard | null; now: number } | null = null;
 function sharedBoard(current: FleetSources | null, marks: FleetMarks, clock: number) {
@@ -841,7 +873,8 @@ function sharedBoard(current: FleetSources | null, marks: FleetMarks, clock: num
     && shared.marks.snoozes === marks.snoozes && shared.marks.seen === marks.seen && shared.marks.asked === marks.asked;
   if (!shared || !same) {
     const now = Math.max(clock, Date.now());
-    shared = { current, marks, clock, now, board: current ? buildFleetBoard(current, { now, ...marks }) : null };
+    const newest = current ? (sources ?? current) : null;
+    shared = { current, marks, clock, now, board: newest ? buildFleetBoard(newest, { now, ...marks }) : null };
   }
   return shared;
 }

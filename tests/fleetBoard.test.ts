@@ -14,9 +14,12 @@ import {
   needsYouBySession,
   needsYouRows,
   needsYouSummary,
+  onFleetBoardChange,
+  onFleetSources,
   pruneSeen,
   pruneSnoozes,
   rememberQuestions,
+  setFleetFailure,
   setFleetSources,
   snoozeFleetSession,
   snoozedWaitIds,
@@ -719,6 +722,36 @@ describe('the snooze and seen stores', () => {
   afterAll(() => {
     if (original) Object.defineProperty(globalThis, 'localStorage', original);
     else Reflect.deleteProperty(globalThis, 'localStorage');
+  });
+
+  it('tell the screen only when a read changes the board, and the monitors after every read', () => {
+    const now = Date.now();
+    const quietThread = (id: string) => thread({ threadId: id, updatedAtMs: now - MINUTE, sessionUpdatedAtMs: now - MINUTE });
+    const one = [quietThread('7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f')];
+    const two = [...one, quietThread('8d2e3f4a-5b6c-4d7e-9f8a-0b1c2d3e4f5a')];
+    // Every read is a new object with its own time and read time, as the native side sends it.
+    const read = (threads: T3Thread[], readAgoMs: number) =>
+      sources({ nowMs: now - readAgoMs, t3: [channel('cedar-02', threads, { readAtMs: now - readAgoMs })] });
+    let changes = 0;
+    let reads = 0;
+    setFleetSources(read(one, 3 * SECOND));
+    const stopChanges = onFleetBoardChange(() => { changes += 1; });
+    const stopReads = onFleetSources(() => { reads += 1; });
+    setFleetSources(read(one, SECOND));
+    expect({ changes, reads }).toEqual({ changes: 0, reads: 1 });
+    setFleetSources(read(two, SECOND));
+    expect({ changes, reads }).toEqual({ changes: 1, reads: 2 });
+    // The same threads, but cedar-02 last answered three minutes ago: its rows are now old news.
+    setFleetSources(read(two, 3 * MINUTE));
+    expect(changes).toBe(2);
+    // A failed read says so, and the next good one clears it even with nothing new.
+    setFleetFailure('Failed to read');
+    expect({ changes, reads }).toEqual({ changes: 3, reads: 4 });
+    setFleetSources(read(two, 3 * MINUTE));
+    expect({ changes, reads }).toEqual({ changes: 4, reads: 5 });
+    stopChanges();
+    stopReads();
+    setFleetSources(sources());
   });
 
   it('keep ids and times only, and forget old ones', () => {
