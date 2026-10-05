@@ -54,6 +54,16 @@ export function agentsBehind(item: MachineHealth, newest: NewestAgents): AgentBe
   });
 }
 
+/**
+ * Whether a machine's agent is already on its latest release, so updating it would do nothing. Only a known release
+ * says so: being the newest in the fleet doesn't, since a newer release may be out.
+ */
+export function agentUpToDate(item: MachineHealth, agent: AgentKind, newest: NewestAgents): boolean {
+  const version = item.agents[agent]?.version;
+  const top = newest[agent];
+  return Boolean(version && top && top.machine === null && compareVersions(version, top.version) >= 0);
+}
+
 /** Agents running at the machine's last sample. Null while it's unreachable, since that sample is out of date. */
 export function runningAgents(item: MachineHealth): Record<AgentKind, number> | null {
   const latest = item.latest;

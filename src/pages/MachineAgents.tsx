@@ -12,7 +12,7 @@ import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { MachinePill } from '../components/identity/Identity';
 import { cn } from '../lib/utils';
 import { useT3Compatibility } from '../services/agentReleases';
-import { agentsBehind, runningAgents, type AgentBehind, type NewestAgents } from '../services/agentVersions';
+import { agentsBehind, agentUpToDate, runningAgents, type AgentBehind, type NewestAgents } from '../services/agentVersions';
 import { AGENT_KINDS, updateMachineAgent } from '../services/machineHealth';
 import { t3Advisory, type T3Advisory } from '../services/t3Compat';
 import { agentBehindProblem, agentCheckFailedProblem, agentUpdateFailedProblem, duplicateInstallProblem, t3AdvisoryProblem } from '../services/fixPrompt';
@@ -313,7 +313,8 @@ export function MachineAgentsBlock({ item, newest, embedded = false }: { item: M
                       problem={lag ? agentBehindProblem(lag, item, t) : t3AdvisoryProblem(agent, advisoryText ?? '', t)}
                     />
                   ) : null}
-                  {install ? (
+                  {/* An agent already on its latest release has nothing to update to. */}
+                  {install && !agentUpToDate(item, agent, newest) ? (
                     <Button
                       variant="outline"
                       size="xs"

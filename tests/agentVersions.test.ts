@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { agentsBehind, compareVersions, newestAgents, runningAgents } from '../src/services/agentVersions';
+import { agentsBehind, agentUpToDate, compareVersions, newestAgents, runningAgents } from '../src/services/agentVersions';
 import { itemAt } from './support/items';
 import type { AgentInstall, HealthPoint, MachineAgents, MachineHealth } from '../src/native/types';
 
@@ -19,6 +19,17 @@ const withAgents = (name: string, claude: string | null, codex: string | null) =
   machine(name, { agents: agents({ claude: claude ? install(claude) : null, codex: codex ? install(codex, '/usr/local/bin/codex') : null }) });
 
 describe('agent versions', () => {
+  it('calls an agent up to date only against its known release', () => {
+    const fleet = [withAgents('casey-mbp', '2.1.281', '0.156.0'), withAgents('ci-01', '2.1.270', null)];
+    const released = newestAgents(fleet, { claude: '2.1.281', codex: '0.157.0' });
+    expect(agentUpToDate(itemAt(fleet, 0), 'claude', released)).toBe(true);
+    expect(agentUpToDate(itemAt(fleet, 0), 'codex', released)).toBe(false);
+    expect(agentUpToDate(itemAt(fleet, 1), 'claude', released)).toBe(false);
+    expect(agentUpToDate(itemAt(fleet, 1), 'codex', released)).toBe(false);
+    // The fleet's newest isn't proof: a newer release may be out.
+    expect(agentUpToDate(itemAt(fleet, 0), 'claude', newestAgents(fleet))).toBe(false);
+  });
+
   it('compares versions part by part, with pre-releases before their release', () => {
     expect(compareVersions('2.1.281', '2.1.90')).toBe(1);
     expect(compareVersions('2.1.90', '2.1.281')).toBe(-1);
