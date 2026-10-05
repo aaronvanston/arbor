@@ -136,7 +136,8 @@ const loadSessionsTab = (): SessionsTabId => {
 const loadRange = (): UsageRange => {
   try {
     const saved = localStorage.getItem(RANGE_KEY) as UsageRange | null;
-    return ['4h', '24h', 'today', '7d', '30d', 'all', 'custom'].includes(saved ?? '')
+    // A custom range's dates aren't kept, so it isn't either: it would come back empty, reading as all time.
+    return ['4h', '24h', 'today', '7d', '30d', 'all'].includes(saved ?? '')
       ? (saved as UsageRange)
       : '24h';
   } catch {
@@ -164,6 +165,14 @@ const rangeQuery = (range: UsageRange, customStart: string, customEnd: string): 
     start: new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString(),
     end: now.toISOString(),
   };
+};
+
+/** An ISO time as a datetime-local field takes it: this Mac's local date and time, to the minute. */
+const localInputValue = (iso: string | undefined) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
 const filterOptions = (items: UsageCategory[]) => items.filter((item) => item.key && item.label);
@@ -328,6 +337,12 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   }, [searchDraft, search]);
 
   const changeRange = (next: UsageRange) => {
+    // Custom starts on the span shown so far rather than on empty dates, which would read as all time.
+    if (next === 'custom' && range !== 'custom' && !customStart && !customEnd) {
+      const shown = rangeQuery(range, '', '');
+      setCustomStart(localInputValue(shown.start));
+      setCustomEnd(localInputValue(shown.end));
+    }
     setRange(next);
     try {
       localStorage.setItem(RANGE_KEY, next);
