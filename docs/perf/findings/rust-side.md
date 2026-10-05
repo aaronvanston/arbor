@@ -13,16 +13,18 @@ When Arbor is running, sample only `pgrep -x Arbor`, `ps -o pid,rss,%cpu,nlwp -p
 
 ## Results
 
-Release benchmark command: `cd src-tauri && ARBOR_BENCH_DIR=/tmp/arbor-rust-side-bench cargo test --release usage::bench -- --ignored --nocapture`, with one million synthetic requests over 90 days. The database was reused for the after run.
+Release benchmark command: `cd src-tauri && ARBOR_BENCH_DIR=/tmp/arbor-rust-side-bench cargo test --release usage::bench -- --ignored --nocapture`, with one million synthetic requests over 90 days. The same filled database was used for both commits. Each benchmark run reports the fastest of three samples; the table reports the median of five parent-commit runs and six current-commit runs (the first exploratory run is excluded). The range shows the fastest-sample spread, so these reads are visibly noisy on a shared development machine.
 
-| Read | Before | After | Result bytes after |
+| Read | Before median (range) | After median (range) | Result bytes after |
 | --- | ---: | ---: | ---: |
-| Overview, all time | 568 ms | 620 ms | — |
-| Cost groups, all time | not recorded | 320 ms | 6 groups |
-| Analysis, all time | 404 ms | 434 ms | — |
-| Sessions, all time | 626 ms | 603 ms | — |
-| Sessions page 1 | included in all-time read | 595 ms | 35,253 |
-| Sessions page 50 | included in all-time read | 583 ms | 36,885 |
+| Overview, all time | 615 ms (602–975) | 576 ms (548–676) | — |
+| Cost groups, all time | 336 ms (322–492) | 325 ms (309–628) | 6 groups |
+| Analysis, all time | 462 ms (392–494) | 422 ms (401–464) | — |
+| Sessions, all time | 659 ms (607–747) | 627 ms (569–902) | — |
+| Sessions page 1 | 643 ms (607–1,394) | 597 ms (571–695) | 35,253–35,254 |
+| Sessions page 50 | 700 ms (617–1,251) | 601 ms (597–678) | 36,882–36,885 |
+
+The earlier single run showed overview and analysis increasing; the repeated paired runs do not reproduce that increase. The session-page result is the useful signal: selecting the page before constructing and completing session objects lowers the median and removes the large page-1/page-50 outliers seen in the parent. The benchmark does not yet count SQLite rows visited or peak RSS, so it does not claim a memory or I/O reduction from those counters.
 
 The session change keeps the full request aggregate needed for the summary, but selects only the requested top-K session trees before building `UsageSession` values and running `complete_sessions`. The sample equivalence test covers ordering, pagination and completed session fields. The all-time wall time is still dominated by folding one million request rows, so the main gain is bounded session object and completion work rather than a large latency drop.
 
