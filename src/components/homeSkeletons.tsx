@@ -20,9 +20,14 @@ export const MACHINES_GRID_CLASS = 'grid gap-3 overflow-visible rounded-none bor
 /** Today's figures bring their own card (StatsGrid), so the section's is left bare. */
 export const TODAY_CARD_CLASS = 'border-0 bg-transparent shadow-none dark:bg-transparent [&>*+*]:border-t-0';
 
-/** A line of text's box (its line height), with a bar standing in for the text. */
-function Line({ box, bar, className }: { box: string; bar: string; className?: string }) {
-  return <span className={cn('flex items-center', box, className)}><Skeleton className={cn(bar, BAR)} /></span>;
+/**
+ * A bar standing in for a line of text: `bar` px tall, centered in the text's `line` height by its margins, so it
+ * takes the line's room as one element (the first screen lays out hundreds of these before the window shows).
+ * `above` adds space over it, as the text's own top margin would.
+ */
+function Line({ line, bar, above = 0, className }: { line: number; bar: number; above?: number; className?: string }) {
+  const margin = (line - bar) / 2;
+  return <div className={cn('shrink-0 rounded-sm bg-muted-foreground/15', className)} style={{ height: bar, marginTop: margin + above, marginBottom: margin }} />;
 }
 
 /** One provider's pooled accounts, as HomeAccounts' ProviderAccounts lays them out. */
@@ -32,21 +37,21 @@ export function ProviderSkeleton({ accounts }: { accounts: number }) {
     <div className="flex flex-col gap-3 px-4 py-3.5" data-slot="settings-block" data-boot-provider>
       <div className="flex items-center gap-3">
         <Skeleton className={cn('size-8 shrink-0 rounded-md', BAR)} />
-        <div className="min-w-0 flex-1">
-          <Line box="h-5" bar="h-3 w-20" />
-          <Line box="h-4" bar="h-2.5 w-56 max-w-full" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Line line={20} bar={12} className="w-20" />
+          <Line line={16} bar={10} className="w-56 max-w-full" />
         </div>
         <span className="flex h-6 w-24 shrink-0" />
-        <Line box="h-6" bar="h-5 w-16" className="shrink-0" />
+        <Line line={24} bar={20} className="w-16" />
       </div>
       <ul className="grid grid-cols-[auto_minmax(5rem,1fr)_minmax(4rem,10rem)_2.75rem_minmax(0,12.5rem)] items-center gap-x-3 gap-y-2 ps-11">
         {Array.from({ length: accounts }, (_, index) => (
           <li key={index} className="contents" data-boot-account>
             <Skeleton className={cn('size-5 rounded-md', BAR)} />
-            <Line box="h-5" bar="h-3 w-28" />
+            <Line line={20} bar={12} className="w-28" />
             <Skeleton className={cn('h-1.5 rounded-full', BAR)} />
-            <Line box="h-4" bar="ms-auto h-2.5 w-7" />
-            <Line box="h-4" bar="ms-auto h-2.5 w-20" />
+            <Line line={16} bar={10} className="ms-auto w-7" />
+            <Line line={16} bar={10} className="ms-auto w-20" />
           </li>
         ))}
       </ul>
@@ -65,12 +70,12 @@ function NeedsYouRowSkeleton() {
     <div className="flex items-center gap-1 pe-2" data-boot-attention-row>
       <div className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2.5 ps-4">
         <Skeleton className={cn('size-8 shrink-0 rounded-md', BAR)} />
-        <span className="block min-w-0 flex-1">
-          <Line box="h-5" bar="h-3 w-48 max-w-full" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <Line line={20} bar={12} className="w-48 max-w-full" />
           {/* The meta line holds a small machine pill, a little taller than its text. */}
-          <Line box="h-4.5" bar="h-2.5 w-64 max-w-full" className="mt-0.5" />
+          <Line line={18} bar={10} above={2} className="w-64 max-w-full" />
         </span>
-        <Line box="h-5" bar="h-3 w-20" className="shrink-0" />
+        <Line line={20} bar={12} className="w-20" />
       </div>
       <span className="size-7 shrink-0" />
     </div>
@@ -82,7 +87,7 @@ export function NeedsYouSkeleton({ rows, more }: { rows: number; more: boolean }
   return (
     <>
       {Array.from({ length: rows }, (_, index) => <NeedsYouRowSkeleton key={index} />)}
-      {more ? <div className="px-4 py-2" data-slot="settings-block" data-boot-attention-more><Line box="h-4" bar="h-2.5 w-28" /></div> : null}
+      {more ? <div className="flex flex-col px-4 py-2" data-slot="settings-block" data-boot-attention-more><Line line={16} bar={10} className="w-28" /></div> : null}
     </>
   );
 }
@@ -96,23 +101,23 @@ export function MachineSkeleton() {
     <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 bg-card p-4 shadow-xs/5" data-boot-machine>
       <span className="flex min-w-0 items-start gap-3">
         <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <Line box="h-5" bar="h-5 w-24 rounded-md" />
-          <Line box="h-4" bar="h-2.5 w-32" />
+          <Line line={20} bar={20} className="w-24 rounded-md" />
+          <Line line={16} bar={10} className="w-32" />
         </span>
-        <Line box="h-4" bar="h-2.5 w-14" className="shrink-0" />
+        <Line line={16} bar={10} className="w-14" />
       </span>
       <span className="grid grid-cols-2 gap-3 border-t border-border/50 pt-3">
         {[0, 1].map((column) => (
-          <span key={column} className="min-w-0">
-            <Line box="h-4" bar="h-2.5 w-10" />
-            <Line box="h-5" bar="h-3 w-16" />
+          <span key={column} className="flex min-w-0 flex-col">
+            <Line line={16} bar={10} className="w-10" />
+            <Line line={20} bar={12} className="w-16" />
             <span className="block h-4" />
           </span>
         ))}
       </span>
       <span className="flex min-w-0 flex-col gap-0.5 border-t border-border/50 pt-3">
-        <Line box="h-4" bar="h-2.5 w-40 max-w-full" />
-        <Line box="h-4" bar="h-2.5 w-28" />
+        <Line line={16} bar={10} className="w-40 max-w-full" />
+        <Line line={16} bar={10} className="w-28" />
       </span>
     </div>
   );
@@ -127,10 +132,10 @@ export function TodaySkeleton() {
   return (
     <StatsGrid columns={4}>
       {Array.from({ length: 4 }, (_, index) => (
-        <div key={index} className="min-w-0 px-4 py-4" aria-hidden="true">
-          <Line box="h-4" bar="h-2.5 w-16" />
-          <Line box="h-7" bar="h-5 w-20" className="mt-1" />
-          <Line box="h-4" bar="h-2.5 w-28" className="mt-1" />
+        <div key={index} className="flex min-w-0 flex-col px-4 py-4" aria-hidden="true">
+          <Line line={16} bar={10} className="w-16" />
+          <Line line={28} bar={20} above={4} className="w-20" />
+          <Line line={16} bar={10} above={4} className="w-28" />
         </div>
       ))}
     </StatsGrid>
@@ -142,9 +147,9 @@ export function ProxySkeleton() {
   const end = (
     <span className="flex min-w-0 items-center gap-3">
       <Skeleton className={cn('size-8 shrink-0 rounded-lg', BAR)} />
-      <span className="min-w-0 flex-1">
-        <Line box="h-5" bar="h-3 w-24" />
-        <Line box="h-4" bar="h-2.5 w-32" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <Line line={20} bar={12} className="w-24" />
+        <Line line={16} bar={10} className="w-32" />
       </span>
     </span>
   );
@@ -155,9 +160,9 @@ export function ProxySkeleton() {
         <span className="size-4" />
         <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2 dark:bg-input/20">
           <Skeleton className={cn('size-8 shrink-0 rounded-lg', BAR)} />
-          <span className="min-w-0 flex-1">
-            <Line box="h-5" bar="h-3 w-20" />
-            <Line box="h-4" bar="h-2.5 w-28" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <Line line={20} bar={12} className="w-20" />
+            <Line line={16} bar={10} className="w-28" />
           </span>
         </div>
         <span className="size-4" />
@@ -166,7 +171,7 @@ export function ProxySkeleton() {
       <SettingsBlock className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
         {[0, 1].map((field) => (
           <span key={field} className="flex items-center gap-2">
-            <Line box="h-7" bar="h-2.5 w-10" />
+            <Line line={28} bar={10} className="w-10" />
             <Skeleton className={cn('h-7 w-44 rounded-md', BAR)} />
           </span>
         ))}

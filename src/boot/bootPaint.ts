@@ -68,21 +68,6 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
     shell.querySelector<HTMLElement>('main')?.style.setProperty('--topbar-start', 'var(--workspace-titlebar-content-left)');
   }
 
-  // The groups React's first frame opens: every one left open by hand, less those that don't fit the window, as
-  // SidebarTree fits them. Machines and Pools have nothing to list until their reads answer, so they stay closed.
-  const nav = shell.querySelector<HTMLElement>('[data-boot-box="tree"]');
-  if (nav && shown) {
-    const style = getComputedStyle(nav);
-    const rem = parseFloat(getComputedStyle(root).fontSize) || 16;
-    const available = (nav.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / rem;
-    for (const page of fitOpenGroups(wantedOpen('home', parseOpenChoices(read('arbor.sidebar.tree.v1'))), 'home', available)) {
-      const leaves = nav.querySelector<HTMLElement>(`[data-boot-leaves="${page}"]`);
-      if (!leaves) continue;
-      leaves.hidden = false;
-      nav.querySelector(`[data-boot-chevron="${page}"]`)?.classList.add('rotate-90');
-    }
-  }
-
   // Home's skeletons with the rows the content had last time: a provider block per provider, with a row per account,
   // and a card per machine, copied from the ones the build drew.
   const { home } = readBootState(read(BOOT_KEY));
@@ -143,6 +128,22 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
     }
   };
 
+  // The groups React's first frame opens: every one left open by hand, less those that don't fit the window, as
+  // SidebarTree fits them. Machines and Pools have nothing to list until their reads answer, so they stay closed.
+  const openGroups = () => {
+    const nav = shell.querySelector<HTMLElement>('[data-boot-box="tree"]');
+    if (!nav || !shown) return;
+    const style = getComputedStyle(nav);
+    const rem = parseFloat(getComputedStyle(root).fontSize) || 16;
+    const available = (nav.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / rem;
+    for (const page of fitOpenGroups(wantedOpen('home', parseOpenChoices(read('arbor.sidebar.tree.v1'))), 'home', available)) {
+      const leaves = nav.querySelector<HTMLElement>(`[data-boot-leaves="${page}"]`);
+      if (!leaves) continue;
+      leaves.hidden = false;
+      nav.querySelector(`[data-boot-chevron="${page}"]`)?.classList.add('rotate-90');
+    }
+  };
+
   // Shown once it has painted: two frames, or a short wait, as a window that isn't on screen yet may run no frames
   // (windowChrome.ts's afterFirstPaint).
   let done = false;
@@ -155,10 +156,13 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
       // main.tsx asks again once React has painted, and the shell shows the window by itself after a short wait.
     });
   };
+  // Everything that reads the layout waits for the first frame, when the page has been laid out once anyway: read
+  // while the page is still parsing, it would lay the whole page out early, and again after these changes.
   let drawn = false;
   const draw = () => {
     if (drawn) return;
     drawn = true;
+    openGroups();
     drawArt();
   };
   requestAnimationFrame(() => {
