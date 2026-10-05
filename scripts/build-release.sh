@@ -155,18 +155,26 @@ cp core-plugins/arbor-models/target/release/libarbor_models.dylib bundled-core/p
 # tell it from stable even while it's closed; src-tauri/src/app_icon.rs matches it while it runs. Each Arbor.icon is
 # the Icon Composer version macOS 26 and later show, with its own dark colors so dark mode doesn't swap the tile for
 # black; Tauri compiles it with Xcode 26's actool and falls back to the icns without one.
-icon_config=()
 case "$version" in
-  *-nightly.*) icon_channel=nightly ;;
-  *-dev.*) icon_channel=dev ;;
-  *) icon_channel= ;;
+  *-nightly.*) icons=icons/channels/nightly ;;
+  *-dev.*) icons=icons/channels/dev ;;
+  *) icons=icons ;;
 esac
-if [[ -n "$icon_channel" ]]; then
-  icons="icons/channels/$icon_channel"
-  icon_config=(--config "{\"bundle\":{\"icon\":[\"$icons/icon.png\",\"$icons/32x32.png\",\"$icons/128x128.png\",\"$icons/128x128@2x.png\",\"$icons/icon.icns\",\"$icons/Arbor.icon\"]}}")
+# Tauri only falls back when actool is missing or older than 26. An actool that's there but can't compile the icon (one
+# Xcode 27 build fails every Icon Composer file, Xcode's own template too, with "Bad file descriptor") fails the whole
+# bundle, so the icon is compiled once here first and left out, keeping the icns, when that fails.
+icon_composer=",\"$icons/Arbor.icon\""
+actool_check="$(mktemp -d)"
+if ! xcrun actool "src-tauri/$icons/Arbor.icon" --compile "$actool_check" --platform macosx \
+  --minimum-deployment-target 11.0 --app-icon Arbor --output-partial-info-plist "$actool_check/info.plist" \
+  >"$actool_check/actool.log" 2>&1 </dev/null || [[ ! -f "$actool_check/Assets.car" ]]; then
+  echo "actool couldn't compile src-tauri/$icons/Arbor.icon, so this build uses the icns icon alone." >&2
+  icon_composer=
 fi
+rm -rf "$actool_check"
+icon_config=(--config "{\"bundle\":{\"icon\":[\"$icons/icon.png\",\"$icons/32x32.png\",\"$icons/128x128.png\",\"$icons/128x128@2x.png\",\"$icons/icon.icns\"$icon_composer]}}")
 
-RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json ${icon_config[@]+"${icon_config[@]}"}
+RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json "${icon_config[@]}"
 
 app_path="$repo_dir/src-tauri/target/release/bundle/macos/Arbor.app"
 # Versions up to 1.0 ran as Contents/MacOS/cpa-gui. Their updater installs a new version only when it has that file, and
