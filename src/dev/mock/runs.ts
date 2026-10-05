@@ -49,6 +49,7 @@ const fixtures = (): HarnessRun[] => {
   if (runsScenario === 'failed') {
     runs.unshift(
       base('run-refused', { machine: null, ranPool: null, used: null, state: 'refused', reason: 'noRoom', title: 'Rebuild the docs site', startedAtMs: null, queuedAtMs: now - 3 * minute, endedAtMs: now - 3 * minute }),
+      base('run-no-folder', { machine: null, ranPool: null, used: null, state: 'refused', reason: 'noFolder', detail: 'cedar-02, ci-01', title: 'Fix the flaky upload test', startedAtMs: null, queuedAtMs: now - 5 * minute, endedAtMs: now - 5 * minute + 4_000 }),
       base('run-model', { state: 'failed', reason: 'noModel', detail: 'no_model', title: 'Write release notes', handle: {}, queuedAtMs: now - 8 * minute, endedAtMs: now - 8 * minute + 3_000 }),
       base('run-hand-off', { machine: 'cedar-02', state: 'failed', reason: 'handOffFailed', detail: 'not_running', title: 'Clean up feature flags', handle: {}, queuedAtMs: now - 20 * minute, endedAtMs: now - 20 * minute + 2_000 }),
       base('run-agent', { machine: 'ci-01', used: 'headless', setup: 'claude', state: 'failed', reason: 'agentFailed', title: 'Profile the import job', handle: { pid: 4_410 }, queuedAtMs: now - 70 * minute, endedAtMs: now - 50 * minute }),

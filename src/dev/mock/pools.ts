@@ -106,6 +106,7 @@ export const poolAnswers = (
     return pools;
   },
   report_working_sessions: ({ counts }) => {
+    // The mock holds no slots for runs, so the ids that would let them go have nothing to do here.
     if (JSON.stringify(counts) === JSON.stringify(working)) return;
     working = counts;
     void emit('machine-pools-updated', Date.now());

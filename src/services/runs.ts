@@ -72,6 +72,8 @@ const DETAIL_LABEL: Record<string, MessageKey> = {
 export function reasonMessage(run: Pick<HarnessRun, 'reason' | 'detail' | 'used' | 'harness'>): { key: MessageKey; values: Record<string, string>; harness: RunHarness } | null {
   if (!run.reason) return null;
   const harness = run.used ?? run.harness;
+  // The members the run looked on, when every one that could take it lacked the folder.
+  if (run.reason === 'noFolder' && run.detail) return { key: 'runs.reason.noFolderOn', values: { machines: run.detail }, harness };
   if (run.reason === 'handOffFailed' && run.detail) {
     const known = DETAIL_LABEL[run.detail];
     if (known) return { key: known, values: {}, harness };

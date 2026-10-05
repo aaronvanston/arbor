@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useAppPreferences } from '../appPreferences';
-import { loadFleetSources, useFleetBoard, waitingCount, workingByMachine } from '../services/fleetBoard';
+import { loadFleetSources, recentSessionIds, useFleetBoard, waitingCount, workingByMachine } from '../services/fleetBoard';
 import { reportWorkingSessions } from '../services/pools';
 import { setT3ThreadsEnabled, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
 
@@ -94,13 +94,15 @@ export function FleetMonitor() {
   }, [waiting]);
 
   // Pools count a machine's agents as its sessions working now, so they read the same as the sidebar and Home; the
-  // native side picks for automations even while the window is hidden, which this keeps reporting through.
-  const working = board ? JSON.stringify(workingByMachine(board)) : null;
+  // native side picks for automations even while the window is hidden, which this keeps reporting through. The ids of
+  // sessions just started let go of the slots the pools held for them.
+  const working = board ? JSON.stringify({ counts: workingByMachine(board), seen: recentSessionIds(board) }) : null;
   const reportedRef = useRef<string | null>(null);
   useEffect(() => {
     if (working === null || working === reportedRef.current) return;
     reportedRef.current = working;
-    reportWorkingSessions(JSON.parse(working) as Record<string, number>).catch((error) => {
+    const { counts, seen } = JSON.parse(working) as { counts: Record<string, number>; seen: string[] };
+    reportWorkingSessions(counts, seen).catch((error) => {
       reportedRef.current = null;
       console.warn('Failed to tell the pools which sessions are working', error);
     });

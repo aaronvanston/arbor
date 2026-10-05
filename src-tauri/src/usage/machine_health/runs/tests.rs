@@ -263,3 +263,35 @@ fn hand_off_scripts_run_against_stand_ins() {
     }
     let _ = std::fs::remove_dir_all(home);
 }
+
+#[test]
+fn a_slot_counts_on_its_machine_until_it_lapses_or_is_let_go() {
+    let mut slots = Reservations::default();
+    let first = slots.take("Cedar-02", 1_000);
+    slots.take("cedar-02", 2_000);
+    slots.take("ci-01", 2_000);
+    assert_eq!(slots.counts(500), BTreeMap::from([(normalize_machine_name("cedar-02"), 2), (normalize_machine_name("ci-01"), 1)]));
+    // The first lapses; one let go stops counting at once.
+    assert_eq!(slots.counts(1_000), BTreeMap::from([(normalize_machine_name("cedar-02"), 1), (normalize_machine_name("ci-01"), 1)]));
+    slots.release(first);
+    let ci = slots.held.iter().find(|slot| slot.machine == normalize_machine_name("ci-01")).map(|slot| slot.id).unwrap_or_default();
+    slots.release(ci);
+    assert_eq!(slots.counts(1_500), BTreeMap::from([(normalize_machine_name("cedar-02"), 1)]));
+}
+
+#[test]
+fn a_started_run_holds_its_slot_until_the_board_shows_its_id() {
+    let mut slots = Reservations::default();
+    let run = slots.take("cedar-02", 1_000);
+    let other = slots.take("cedar-02", 1_000);
+    slots.started(run, vec!["thread-1".into()], 9_000);
+    // Its hold runs from the hand-off now, not the pick.
+    assert_eq!(slots.counts(2_000), BTreeMap::from([(normalize_machine_name("cedar-02"), 1)]));
+    assert!(!slots.seen(&BTreeSet::from(["thread-2".to_string()])));
+    assert!(slots.seen(&BTreeSet::from(["thread-1".to_string()])));
+    assert!(slots.counts(2_000).is_empty());
+    // A slot with no ids is never let go by the board, only by lapsing.
+    assert!(!slots.seen(&BTreeSet::from([String::new()])));
+    // The other was never handed off, and lapsed with its pick.
+    assert!(slots.held.iter().all(|slot| slot.id != other));
+}

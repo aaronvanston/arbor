@@ -560,6 +560,23 @@ export function workingByMachine(board: Pick<FleetBoard, 'rows'>): Record<string
   return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
 }
 
+/** How far back a session counts as just started, for letting go of the slot a pool held for it. */
+const JUST_STARTED_MS = 10 * 60_000;
+
+/**
+ * The T3 Code thread ids and agent session ids of the sessions active in the last few minutes, sorted. A pool holds a
+ * slot for each run it sends until the board shows the run's id, and counts it from then.
+ */
+export function recentSessionIds(board: Pick<FleetBoard, 'rows' | 'nowMs'>): string[] {
+  const ids = new Set<string>();
+  for (const row of board.rows) {
+    if (row.lastActiveMs < board.nowMs - JUST_STARTED_MS) continue;
+    if (row.t3ThreadId) ids.add(row.t3ThreadId);
+    if (row.agentSessionId) ids.add(row.agentSessionId);
+  }
+  return [...ids].sort();
+}
+
 export const waitingCount = (board: FleetBoard) => board.rows.filter((row) => row.countsAsWaiting).length;
 
 /** Whether a row belongs in Needs you: asking for something, failed or done, and not snoozed. */

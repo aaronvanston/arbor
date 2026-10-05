@@ -4670,6 +4670,7 @@ export const en = {
   'runs.reason.noRoom': 'Every member was busy, unreachable or out of date.',
   'runs.reason.noHarness': 'Members had room, but none had {harness} running with this setup.',
   'runs.reason.noFolder': 'The folder isn’t on the machine it went to.',
+  'runs.reason.noFolderOn': 'The folder isn’t on any member that could take it. Looked on {machines}.',
   'runs.reason.noModel': 'T3 Code needs a model. Name one, or set a default for the project in T3 Code.',
   'runs.reason.handOffFailed': '{harness} didn’t take the run.',
   'runs.reason.arborRestarted': 'Arbor quit while it was waiting. Start it again.',

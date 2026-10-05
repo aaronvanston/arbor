@@ -22,6 +22,7 @@ import {
   snoozedWaitIds,
   snoozeOptions,
   unsnoozeFleetSession,
+  recentSessionIds,
   waitingCount,
   workingByMachine,
   type FleetBoard,
@@ -616,6 +617,21 @@ describe('the working count each pool goes by', () => {
     // In name order, so the same counts are never sent twice.
     expect(Object.entries(workingByMachine(built))).toEqual([['casey-mbp', 1], ['cedar-02', 2]]);
     expect(workingByMachine({ rows: [] })).toEqual({});
+  });
+
+  it('sends the ids of sessions active lately, so a pool lets go of the slot it held for one', () => {
+    const built = board({
+      t3: [
+        channel('cedar-02', [
+          thread({ threadId: 'started', sessionStatus: 'running', turn: running(1) }),
+          thread({ threadId: 'done', turn: completed(4) }),
+          thread({ threadId: 'old', turn: completed(90), updatedAtMs: NOW - 90 * MINUTE, sessionUpdatedAtMs: NOW - 90 * MINUTE }),
+        ]),
+      ],
+    });
+    // Sorted, so the same ids are never sent twice; a session quiet for long is no run that just started.
+    expect(recentSessionIds(built)).toEqual(['done', 'started']);
+    expect(recentSessionIds({ rows: [], nowMs: NOW })).toEqual([]);
   });
 });
 

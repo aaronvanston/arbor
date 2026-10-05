@@ -404,6 +404,11 @@ impl MachineAgents {
         &self.reporter
     }
 
+    /// When the last check finished, as Unix milliseconds.
+    pub(super) fn checked_at(&self) -> Option<i64> {
+        self.checked_at
+    }
+
     pub(super) fn t3(&self) -> Option<&T3Install> {
         self.t3.as_ref()
     }

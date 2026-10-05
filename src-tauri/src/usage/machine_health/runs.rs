@@ -302,17 +302,13 @@ struct Placement {
     reason: RunReason,
 }
 
-fn place(inner: &Inner, pool: &MachinePool, offer_for: &dyn Fn(&agents::MachineAgents) -> Offer, recent: &BTreeMap<String, u32>, roll: f64) -> Placement {
-    place_where(inner, pool, offer_for, &|_| true, recent, roll)
-}
-
-/// `place`, leaving out members `ready` turns down by name as though they lacked the harness.
+/// Where a run would go, leaving out members `ready` turns down by name as though they lacked the harness.
 fn place_where(
     inner: &Inner,
     pool: &MachinePool,
     offer_for: &dyn Fn(&agents::MachineAgents) -> Offer,
     ready: &dyn Fn(&str) -> bool,
-    recent: &BTreeMap<String, u32>,
+    reserved: &BTreeMap<String, u32>,
     roll: f64,
 ) -> Placement {
     let now_ms = Local::now().timestamp_millis();
@@ -325,7 +321,7 @@ fn place_where(
             (key, agents.map_or(Offer::Nothing, offer_for))
         })
         .collect();
-    let verdicts = pools::assess_with(pool, &pools::readings(inner), recent, now_ms, inner.interval_ms, |machine| {
+    let verdicts = pools::assess_with(pool, &pools::readings(inner), reserved, now_ms, inner.interval_ms, |machine| {
         ready(machine) && offers.get(&normalize_machine_name(machine)).is_some_and(|offer| *offer != Offer::Nothing)
     });
     let Some(chosen) = pools::choose(&verdicts, roll) else {
@@ -370,11 +366,9 @@ pub(super) async fn pick_for_automation(app: &tauri::AppHandle, pool_id: &str, a
             let pool = pools_saved.iter().find(|pool| pool.id == pool_id).ok_or("The automation's pool was removed. Choose a pool or machine for it")?;
             visited.insert(pool.id.clone());
             let state = app.state::<MachineHealthState>();
-            let since = Local::now().timestamp_millis() - state.lock().interval_ms as i64 * 2;
-            let recent = recent_counts(since);
-            let placement = place(&state.lock(), pool, &has_agent, &recent, roll());
+            // Automations run the agent themselves and keep no id the board shows, so the slot simply lapses.
+            let (placement, _) = place_reserved(&state.lock(), pool, &has_agent, &|_| true, RUN_HOLD_MS);
             if let Some((machine, _)) = placement.machine {
-                lock_held().recent.push((normalize_machine_name(machine.name()), Local::now().timestamp_millis()));
                 return Ok(machine);
             }
             match (&pool.when_full, &pool.spill_pool) {
@@ -394,19 +388,18 @@ pub(super) async fn pick_for_automation(app: &tauri::AppHandle, pool_id: &str, a
 }
 
 /// The member an SSH connection to a pool goes to, among those `ready` for one, following the pool's spill, with the
-/// pool it came from. A pool that queues refuses instead: ssh can't wait in a queue. The pick counts as a run just
-/// sent, so a burst of new connections spreads the way runs do.
+/// pool it came from. A pool that queues refuses instead: ssh can't wait in a queue. The pick holds a slot until the
+/// member's next couple of samples, so a burst of new connections spreads the way runs do; a connection isn't a
+/// session, so nothing on the board lets it go sooner.
 pub(super) fn pick_for_connection(inner: &Inner, pools_saved: &[MachinePool], pool_id: &str, ready: &dyn Fn(&str) -> bool) -> Result<(String, Machine), String> {
-    let now_ms = Local::now().timestamp_millis();
-    let recent = recent_counts(now_ms - inner.interval_ms as i64 * 2);
+    let hold_ms = inner.interval_ms as i64 * 2;
     let mut pool_id = pool_id.to_string();
     let mut visited = BTreeSet::new();
     loop {
         let pool = pools_saved.iter().find(|pool| pool.id == pool_id).ok_or("That pool was removed. Pick another on Arbor's Pools page")?;
         visited.insert(pool.id.clone());
-        let placement = place_where(inner, pool, &|_| Offer::Harness, ready, &recent, roll());
+        let (placement, _) = place_reserved(inner, pool, &|_| Offer::Harness, ready, hold_ms);
         if let Some((machine, _)) = placement.machine {
-            lock_held().recent.push((normalize_machine_name(machine.name()), now_ms));
             return Ok((pool.id.clone(), machine));
         }
         match (&pool.when_full, &pool.spill_pool) {
@@ -626,15 +619,20 @@ fn read_runs(connection: &Connection, filter: &str) -> Result<Vec<HarnessRun>, S
 // Starting, the queue, and checks
 // ---------------------------------------------------------------------------
 
-/// What's held in memory alone: queued runs' requests (their prompts), and runs just sent to each
-/// machine, which count as running there until its next sample sees them.
+/// What's held in memory alone: queued runs' requests (their prompts), and the slots picks have taken.
 #[derive(Default)]
 struct Held {
-    waiting: HashMap<String, RunRequest>,
-    recent: Vec<(String, i64)>,
+    waiting: HashMap<String, Waiting>,
+    reservations: Reservations,
     last_check_ms: i64,
     /// Runs whose queue entries from before this launch were marked, once.
     swept: bool,
+}
+
+/// A queued run's request, and the members found without its folder (normalized name to name), which later tries skip.
+struct Waiting {
+    request: RunRequest,
+    skip: BTreeMap<String, String>,
 }
 
 fn held() -> &'static StdMutex<Held> {
@@ -646,15 +644,95 @@ fn lock_held() -> std::sync::MutexGuard<'static, Held> {
     held().lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Runs sent to each machine since `since_ms`, by normalized name.
-fn recent_counts(since_ms: i64) -> BTreeMap<String, u32> {
-    let mut held = lock_held();
-    held.recent.retain(|(_, at)| *at >= since_ms);
-    let mut counts = BTreeMap::new();
-    for (machine, _) in &held.recent {
-        *counts.entry(machine.clone()).or_insert(0) += 1;
+/// How long a run's slot is held for it: the live board reads other machines' T3 Code threads every 30 seconds and
+/// itself every 15, so a session that started shows there well within this.
+const RUN_HOLD_MS: i64 = 3 * 60_000;
+
+/// A slot a pick took on a machine. It counts as running there until the live board shows what started in it, the
+/// start fails, or it lapses, so two picks at once can't both take a member's last slot, and a session is never
+/// counted twice once the board has it.
+#[derive(Clone, Debug, PartialEq)]
+struct Reservation {
+    id: u64,
+    /// By normalized name.
+    machine: String,
+    until_ms: i64,
+    /// The thread or session ids the harness gave back, which the board's rows carry.
+    ids: Vec<String>,
+}
+
+#[derive(Default)]
+struct Reservations {
+    next: u64,
+    held: Vec<Reservation>,
+}
+
+impl Reservations {
+    /// Slots held on each machine at `now_ms`, by normalized name; lapsed ones are let go.
+    fn counts(&mut self, now_ms: i64) -> BTreeMap<String, u32> {
+        self.held.retain(|reservation| reservation.until_ms > now_ms);
+        let mut counts = BTreeMap::new();
+        for reservation in &self.held {
+            *counts.entry(reservation.machine.clone()).or_insert(0) += 1;
+        }
+        counts
     }
-    counts
+
+    fn take(&mut self, machine: &str, until_ms: i64) -> u64 {
+        self.next += 1;
+        self.held.push(Reservation { id: self.next, machine: normalize_machine_name(machine), until_ms, ids: Vec::new() });
+        self.next
+    }
+
+    fn release(&mut self, id: u64) {
+        self.held.retain(|reservation| reservation.id != id);
+    }
+
+    /// The harness took it: the slot is held under the ids it gave back until the board shows one of them.
+    fn started(&mut self, id: u64, ids: Vec<String>, until_ms: i64) {
+        if let Some(reservation) = self.held.iter_mut().find(|reservation| reservation.id == id) {
+            reservation.ids = ids;
+            reservation.until_ms = until_ms;
+        }
+    }
+
+    /// Lets go of the slots whose sessions the board now shows, which counts them itself from here.
+    fn seen(&mut self, seen: &BTreeSet<String>) -> bool {
+        let before = self.held.len();
+        self.held.retain(|reservation| !reservation.ids.iter().any(|id| seen.contains(id)));
+        self.held.len() != before
+    }
+}
+
+/// Slots held on each machine now, for the pools' previews.
+pub(super) fn reserved_counts() -> BTreeMap<String, u32> {
+    lock_held().reservations.counts(Local::now().timestamp_millis())
+}
+
+/// The ids of the sessions on the live board lately: slots held for any of them are let go. Whether any were.
+pub(super) fn board_saw(ids: &[String]) -> bool {
+    let seen: BTreeSet<String> = ids.iter().filter(|id| !id.is_empty()).cloned().collect();
+    !seen.is_empty() && lock_held().reservations.seen(&seen)
+}
+
+fn release(reservation: u64) {
+    lock_held().reservations.release(reservation);
+}
+
+/// Picks a member and takes a slot on it in one step, under the lock every pick takes, so the next pick counts it.
+fn place_reserved(
+    inner: &Inner,
+    pool: &MachinePool,
+    offer_for: &dyn Fn(&agents::MachineAgents) -> Offer,
+    ready: &dyn Fn(&str) -> bool,
+    hold_ms: i64,
+) -> (Placement, Option<u64>) {
+    let now_ms = Local::now().timestamp_millis();
+    let mut held = lock_held();
+    let counts = held.reservations.counts(now_ms);
+    let placement = place_where(inner, pool, offer_for, ready, &counts, roll());
+    let reservation = placement.machine.as_ref().map(|(machine, _)| held.reservations.take(machine.name(), now_ms + hold_ms));
+    (placement, reservation)
 }
 
 fn roll() -> f64 {
@@ -667,10 +745,36 @@ fn publish(app: &tauri::AppHandle) {
     let _ = app.emit(HARNESS_RUNS_UPDATED_EVENT, ());
 }
 
-/// Tries to start a run on its pool, following spills; records how it went.
-async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequest, pools_saved: &[MachinePool]) {
+/// How old a machine's agents check may be when a run is handed to its harness. Checks come every 10 minutes, and
+/// T3 Code or Orca may have quit since; handing over to one that's gone fails the run.
+const HARNESS_FRESH_MS: i64 = 2 * 60_000;
+
+/// Whether a member's agents were last checked too long ago to hand a run to its harness on that alone.
+fn harness_stale(inner: &Inner, key: &str, now_ms: i64) -> bool {
+    inner
+        .series
+        .values()
+        .find(|series| normalize_machine_name(&series.host.machine) == key)
+        .is_some_and(|series| series.agents.checked_at().is_none_or(|at| now_ms - at > HARNESS_FRESH_MS))
+}
+
+/// What a member offers a run by its agents as checked now.
+fn offer_now(inner: &Inner, key: &str, request: &RunRequest) -> Offer {
+    inner
+        .series
+        .values()
+        .find(|series| normalize_machine_name(&series.host.machine) == key)
+        .map_or(Offer::Nothing, |series| offer(&series.agents, request))
+}
+
+/// Tries to start a run on its pool, following spills; records how it went. A member found without the run's folder
+/// goes into `skip` (normalized name to name), so the run tries the next and later tries leave it out; when every
+/// member that could take it lacked the folder, the run doesn't start and says where it looked.
+async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequest, pools_saved: &[MachinePool], skip: &mut BTreeMap<String, String>) {
     let mut pool_id = run.pool.clone();
     let mut visited = BTreeSet::new();
+    // Members whose harness turned out to be gone when checked again, left out of this try only: it may come back.
+    let mut passed: BTreeSet<String> = BTreeSet::new();
     loop {
         let Some(pool) = pools_saved.iter().find(|pool| pool.id == pool_id) else {
             run.state = RunState::Refused;
@@ -679,24 +783,45 @@ async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequ
         };
         visited.insert(pool.id.clone());
         let state = app.state::<MachineHealthState>();
-        let since = Local::now().timestamp_millis() - state.lock().interval_ms as i64 * 2;
-        let recent = recent_counts(since);
-        let placement = place(&state.lock(), pool, &|agents| offer(agents, request), &recent, roll());
-        match placement.machine {
-            Some((machine, offer)) => {
+        let ready = |machine: &str| {
+            let key = normalize_machine_name(machine);
+            !skip.contains_key(&key) && !passed.contains(&key)
+        };
+        let (placement, reservation) = place_reserved(&state.lock(), pool, &|agents| offer(agents, request), &ready, RUN_HOLD_MS);
+        match (placement.machine, reservation) {
+            (Some((machine, mut chosen)), Some(reservation)) => {
+                let key = normalize_machine_name(machine.name());
+                if chosen == Offer::Harness && harness_stale(&state.lock(), &key, Local::now().timestamp_millis()) {
+                    agents::recheck(app, &state, &machine).await;
+                    chosen = offer_now(&state.lock(), &key, request);
+                    if chosen == Offer::Nothing {
+                        release(reservation);
+                        passed.insert(key);
+                        continue;
+                    }
+                }
                 run.ran_pool = Some(pool.id.clone());
                 run.machine = Some(machine.name().to_string());
                 run.state = RunState::Starting;
-                lock_held().recent.push((normalize_machine_name(machine.name()), Local::now().timestamp_millis()));
-                match hand_off(&machine, offer, &run.id, request).await {
+                match hand_off(&machine, chosen, &run.id, request).await {
                     Ok((used, handle)) => {
+                        let ids = [handle.thread_id.clone(), handle.session_id.clone()].into_iter().flatten().collect();
+                        lock_held().reservations.started(reservation, ids, Local::now().timestamp_millis() + RUN_HOLD_MS);
                         run.used = Some(used);
                         run.handle = handle;
                         run.state = if used == Harness::Headless { RunState::Running } else { RunState::HandedOff };
                         run.reason = None;
                         run.detail = None;
                     }
+                    Err((RunReason::NoFolder, _)) => {
+                        release(reservation);
+                        skip.insert(key, machine.name().to_string());
+                        run.ran_pool = None;
+                        run.machine = None;
+                        continue;
+                    }
                     Err((reason, detail)) => {
+                        release(reservation);
                         run.state = RunState::Failed;
                         run.reason = Some(reason);
                         run.detail = detail;
@@ -707,11 +832,14 @@ async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequ
                 run.wait_until_ms = None;
                 return;
             }
-            None => match pool.when_full {
-                PoolWhenFull::Spill if pool.spill_pool.as_ref().is_some_and(|next| !visited.contains(next)) => {
+            _ => {
+                if pool.when_full == PoolWhenFull::Spill && pool.spill_pool.as_ref().is_some_and(|next| !visited.contains(next)) {
                     pool_id = pool.spill_pool.clone().unwrap_or_default();
+                    continue;
                 }
-                PoolWhenFull::Queue => {
+                // Queued only while a member that might have the folder could still free up.
+                let unchecked = pool.members.iter().any(|member| !skip.contains_key(&normalize_machine_name(&member.machine)));
+                if pool.when_full == PoolWhenFull::Queue && (skip.is_empty() || unchecked) {
                     run.state = RunState::Queued;
                     run.reason = Some(placement.reason);
                     if run.wait_until_ms.is_none() {
@@ -719,13 +847,17 @@ async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequ
                     }
                     return;
                 }
-                _ => {
-                    run.state = RunState::Refused;
+                run.state = RunState::Refused;
+                run.ended_at_ms = Some(Local::now().timestamp_millis());
+                run.wait_until_ms = None;
+                if skip.is_empty() {
                     run.reason = Some(placement.reason);
-                    run.ended_at_ms = Some(Local::now().timestamp_millis());
-                    return;
+                } else {
+                    run.reason = Some(RunReason::NoFolder);
+                    run.detail = Some(skip.values().cloned().collect::<Vec<_>>().join(", "));
                 }
-            },
+                return;
+            }
         }
     }
 }
@@ -769,9 +901,10 @@ pub(crate) async fn start_pool_run(app: tauri::AppHandle, request: RunRequest) -
     };
     save(run.clone()).await?;
     publish(&app);
-    attempt(&app, &mut run, &request, &pools_saved).await;
+    let mut skip = BTreeMap::new();
+    attempt(&app, &mut run, &request, &pools_saved, &mut skip).await;
     if run.state == RunState::Queued {
-        lock_held().waiting.insert(run.id.clone(), request);
+        lock_held().waiting.insert(run.id.clone(), Waiting { request, skip });
     }
     save(run.clone()).await?;
     publish(&app);
@@ -852,8 +985,8 @@ async fn drain(app: &tauri::AppHandle, now_ms: i64) -> Result<(), String> {
     let pools_saved = run_usage_task(|| pools::read_pools(&open_usage_database()?)).await?;
     let mut changed = false;
     for mut run in open.iter().filter(|run| run.state == RunState::Queued || run.state == RunState::Starting).cloned() {
-        let request = lock_held().waiting.get(&run.id).cloned();
-        let Some(request) = request else {
+        let waiting = lock_held().waiting.get(&run.id).map(|waiting| (waiting.request.clone(), waiting.skip.clone()));
+        let Some((request, mut skip)) = waiting else {
             if sweep {
                 run.state = RunState::Failed;
                 run.reason = Some(RunReason::ArborRestarted);
@@ -872,8 +1005,12 @@ async fn drain(app: &tauri::AppHandle, now_ms: i64) -> Result<(), String> {
             changed = true;
             continue;
         }
-        attempt(app, &mut run, &request, &pools_saved).await;
-        if run.state != RunState::Queued {
+        attempt(app, &mut run, &request, &pools_saved, &mut skip).await;
+        if run.state == RunState::Queued {
+            if let Some(waiting) = lock_held().waiting.get_mut(&run.id) {
+                waiting.skip = skip;
+            }
+        } else {
             lock_held().waiting.remove(&run.id);
             save(run).await?;
             changed = true;

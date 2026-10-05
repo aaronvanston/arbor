@@ -314,9 +314,10 @@ pub(super) fn choose(verdicts: &[MemberVerdict], roll: f64) -> Option<&MemberVer
     eligible.last().copied()
 }
 
-/// The most likely member for each of the next `runs` runs, each one counted as running on its member for the next.
-fn plan(pool: &MachinePool, readings: &BTreeMap<String, Reading>, now_ms: i64, interval_ms: u64, runs: usize) -> Vec<Option<String>> {
-    let mut recent: BTreeMap<String, u32> = BTreeMap::new();
+/// The most likely member for each of the next `runs` runs, each one counted as running on its member for the next,
+/// after the slots picks hold now.
+fn plan(pool: &MachinePool, readings: &BTreeMap<String, Reading>, reserved: &BTreeMap<String, u32>, now_ms: i64, interval_ms: u64, runs: usize) -> Vec<Option<String>> {
+    let mut recent = reserved.clone();
     (0..runs)
         .map(|_| {
             let next = likely(&assess(pool, readings, &recent, now_ms, interval_ms));
@@ -579,29 +580,33 @@ pub(crate) async fn preview_pools(state: tauri::State<'_, MachineHealthState>, w
         let inner = state.lock();
         (readings(&inner), inner.interval_ms)
     };
+    // Slots picks hold count as running, so a member a run was just sent to reads as busy before the board shows it.
+    let reserved = super::runs::reserved_counts();
     let now_ms = Local::now().timestamp_millis();
     Ok(pools
         .iter()
         .map(|pool| {
-            let members = assess(pool, &readings, &BTreeMap::new(), now_ms, interval_ms);
+            let members = assess(pool, &readings, &reserved, now_ms, interval_ms);
             PoolPreview {
                 pool: pool.id.clone(),
                 likely: likely(&members),
                 members,
                 fresh_for_ms: fresh_for_ms(interval_ms),
-                plan: plan(pool, &readings, now_ms, interval_ms, PLAN_RUNS),
+                plan: plan(pool, &readings, &reserved, now_ms, interval_ms, PLAN_RUNS),
             }
         })
         .collect())
 }
 
-/// The window's live board, counted: sessions working now on each machine. Pools count a member's
-/// agents by it; a change tells the pages showing pools to look again.
+/// The window's live board, counted: sessions working now on each machine, and the thread and session ids of the
+/// sessions on it lately. Pools count a member's agents by the first; a slot held for a run is let go once the second
+/// has the run's id, since the board counts it from then. A change tells the pages showing pools to look again.
 #[tauri::command]
 pub(crate) fn report_working_sessions(
     app: tauri::AppHandle,
     state: tauri::State<'_, MachineHealthState>,
     counts: BTreeMap<String, u32>,
+    seen: Vec<String>,
 ) {
     let counts: BTreeMap<String, u32> = counts.into_iter().map(|(machine, count)| (normalize_machine_name(&machine), count)).collect();
     let changed = {
@@ -610,7 +615,8 @@ pub(crate) fn report_working_sessions(
         inner.working_sessions = Some(counts);
         changed
     };
-    if changed {
+    let released = super::runs::board_saw(&seen);
+    if changed || released {
         let _ = app.emit(MACHINE_POOLS_UPDATED_EVENT, ());
     }
 }
@@ -739,11 +745,11 @@ mod tests {
         let mut pool = pool(&[("a", PoolWeight::Prefer), ("b", PoolWeight::Normal)]);
         pool.max_agents = Some(2);
         let idle = readings(&[("a", healthy(0)), ("b", healthy(1))]);
-        let planned = plan(&pool, &idle, NOW, 5_000, 5);
+        let planned = plan(&pool, &idle, &BTreeMap::new(), NOW, 5_000, 5);
         let named: Vec<Option<&str>> = planned.iter().map(|entry| entry.as_deref()).collect();
         assert_eq!(named, vec![Some("a"), Some("a"), Some("b"), None, None]);
         pool.max_agents = None;
-        let open: Vec<String> = plan(&pool, &idle, NOW, 5_000, 4).into_iter().flatten().collect();
+        let open: Vec<String> = plan(&pool, &idle, &BTreeMap::new(), NOW, 5_000, 4).into_iter().flatten().collect();
         assert_eq!(open.len(), 4);
         assert!(open.contains(&"b".to_string()), "a burst reaches the normal member too: {open:?}");
     }

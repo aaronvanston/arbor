@@ -255,4 +255,4 @@ export function usePoolsWatching() {
 }
 
 /** Sessions working now on each machine, from the live board: the agents a pool counts against its limit. */
-export const reportWorkingSessions = (counts: Record<string, number>) => invokeCommand('report_working_sessions', { counts });
+export const reportWorkingSessions = (counts: Record<string, number>, seen: string[]) => invokeCommand('report_working_sessions', { counts, seen });

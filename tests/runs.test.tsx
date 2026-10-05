@@ -25,6 +25,8 @@ describe('harness runs', () => {
   it('words why a run stopped, with the harness’s failure code made plain', () => {
     expect(reasonMessage(run())).toBeNull();
     expect(reasonMessage(run({ state: 'failed', reason: 'noModel' }))?.key).toBe('runs.reason.noModel');
+    expect(reasonMessage(run({ state: 'refused', reason: 'noFolder' }))?.key).toBe('runs.reason.noFolder');
+    expect(reasonMessage(run({ state: 'refused', reason: 'noFolder', detail: 'cedar-02, ci-01' }))).toEqual({ key: 'runs.reason.noFolderOn', values: { machines: 'cedar-02, ci-01' }, harness: 't3' });
     expect(reasonMessage(run({ state: 'failed', reason: 'handOffFailed', detail: 'no_cli', used: 'orca' }))).toEqual({ key: 'runs.detail.noCli', values: {}, harness: 'orca' });
     expect(reasonMessage(run({ state: 'failed', reason: 'handOffFailed', detail: 'turn_500' }))).toEqual({ key: 'runs.detail.status', values: { status: '500' }, harness: 't3' });
     expect(reasonMessage(run({ state: 'failed', reason: 'handOffFailed', detail: 'orca_selector_ambiguous' }))?.values).toEqual({ code: 'orca_selector_ambiguous' });
