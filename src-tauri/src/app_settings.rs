@@ -25,51 +25,89 @@ pub(crate) fn get_gui_settings(
     Ok(GuiSettings::from(&config))
 }
 
-pub(crate) fn app_autostart_enabled(app: &tauri::AppHandle) -> Result<bool, String> {
-    app.autolaunch()
-        .is_enabled()
-        .map_err(|error| format!("Failed to read system autostart state: {error}"))
+/// Open at login is the app itself registered with macOS (SMAppService), which Login Items lists under Arbor's own
+/// name and icon. Turning it off in System Settings leaves it needing approval there, which reads as off here.
+pub(crate) fn app_autostart_enabled(_app: &tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_service_management::{SMAppService, SMAppServiceStatus};
+        // SAFETY: the main app's service is a plain query with no arguments.
+        let status = unsafe { SMAppService::mainAppService().status() };
+        Ok(status == SMAppServiceStatus::Enabled)
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(false)
 }
 
 pub(crate) fn set_app_autostart_enabled(
-    app: &tauri::AppHandle,
+    _app: &tauri::AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
-    let manager = app.autolaunch();
-    if enabled {
-        manager
-            .enable()
-            .map_err(|error| format!("Failed to enable autostart: {error}"))
-    } else {
-        manager
-            .disable()
-            .map_err(|error| format!("Failed to disable autostart: {error}"))
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_service_management::SMAppService;
+        // SAFETY: registering or unregistering the running app's own login item; neither takes arguments.
+        let service = unsafe { SMAppService::mainAppService() };
+        let result = if enabled {
+            unsafe { service.registerAndReturnError() }
+        } else {
+            unsafe { service.unregisterAndReturnError() }
+        };
+        result.map_err(|error| {
+            let verb = if enabled { "turn on" } else { "turn off" };
+            format!(
+                "Couldn't {verb} Open at login: {}. Check Arbor in System Settings › General › Login Items.",
+                error.localizedDescription()
+            )
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = enabled;
+        Err("Open at login is only available on macOS".to_string())
     }
 }
 
-/// Versions up to 1.0 ran as Contents/MacOS/cpa-gui, and an open-at-login item they made starts the app by that name,
-/// which later versions keep only as a link to Arbor. Writing the item again points it at Arbor itself, the name Login
-/// Items then shows. Only an item that starts this copy of the app through the old name is rewritten.
-pub(crate) fn repoint_legacy_login_item(app: &tauri::AppHandle) {
+/// Whether an open-at-login plist starts the app in `macos_dir`: by its own name, or by cpa-gui, the name versions up
+/// to 1.0 ran as and later ones keep only as a link to Arbor. The autostart plugin that wrote it put each argument in
+/// a plain <string>, the program first.
+fn legacy_login_item_starts(contents: &str, macos_dir: &Path, app_name: &str) -> bool {
+    [app_name, "cpa-gui"].iter().any(|program| {
+        contents.contains(&format!(
+            "<string>{}</string>",
+            macos_dir.join(program).display()
+        ))
+    })
+}
+
+/// Earlier versions opened at login through a LaunchAgent plist that ran the app's binary, which Login Items
+/// lists as an anonymous program with a generic icon. One that starts this copy of the app is swapped for the app's
+/// own registration. The plist's job is left loaded, since it may be what started this very process; it goes at the
+/// next sign-in.
+pub(crate) fn move_legacy_login_item(app: &tauri::AppHandle) {
     let Ok(executable) = env::current_exe().and_then(fs::canonicalize) else {
         return;
     };
     let (Some(macos_dir), Some(home)) = (executable.parent(), env::var_os("HOME")) else {
         return;
     };
+    let app_name = &app.package_info().name;
     let item = PathBuf::from(home)
         .join("Library")
         .join("LaunchAgents")
-        .join(format!("{}.plist", app.package_info().name));
+        .join(format!("{app_name}.plist"));
     let Ok(contents) = fs::read_to_string(&item) else {
         return;
     };
-    // The autostart plugin writes each of the item's arguments as a plain <string>, the program first.
-    let legacy_program = format!("<string>{}</string>", macos_dir.join("cpa-gui").display());
-    if contents.contains(&legacy_program) {
-        if let Err(error) = set_app_autostart_enabled(app, true) {
-            eprintln!("Couldn't point the open-at-login item at Arbor: {error}");
-        }
+    if !legacy_login_item_starts(&contents, macos_dir, app_name) {
+        return;
+    }
+    if let Err(error) = set_app_autostart_enabled(app, true) {
+        eprintln!("Couldn't move Open at login to Login Items: {error}");
+        return;
+    }
+    if let Err(error) = fs::remove_file(&item) {
+        eprintln!("Couldn't remove the old open-at-login item: {error}");
     }
 }
 
@@ -135,4 +173,38 @@ pub(crate) fn save_software_settings(
     };
 
     software_settings(&app, &config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_legacy_login_item_moves_only_when_it_starts_this_app() {
+        let dir = Path::new("/Applications/Arbor.app/Contents/MacOS");
+        let item = |program: &str| {
+            format!("<plist><dict><key>ProgramArguments</key><array><string>{program}</string></array></dict></plist>")
+        };
+        assert!(legacy_login_item_starts(
+            &item("/Applications/Arbor.app/Contents/MacOS/Arbor"),
+            dir,
+            "Arbor"
+        ));
+        assert!(legacy_login_item_starts(
+            &item("/Applications/Arbor.app/Contents/MacOS/cpa-gui"),
+            dir,
+            "Arbor"
+        ));
+        // Another copy of the app keeps its own item.
+        assert!(!legacy_login_item_starts(
+            &item("/Users/casey/Applications/Arbor.app/Contents/MacOS/Arbor"),
+            dir,
+            "Arbor"
+        ));
+        assert!(!legacy_login_item_starts(
+            &item("/Applications/Arbor.app/Contents/MacOS/Arbor-helper"),
+            dir,
+            "Arbor"
+        ));
+    }
 }

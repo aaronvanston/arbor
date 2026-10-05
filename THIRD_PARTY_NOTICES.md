@@ -2071,7 +2071,6 @@ Every crate compiled into the app and its core plugin, for aarch64-apple-darwin:
 | alloc-stdlib | 0.2.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib |
 | anyhow | 1.0.103 | MIT OR Apache-2.0 | https://github.com/dtolnay/anyhow |
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/atomic-waker |
-| auto-launch | 0.5.0 | MIT | https://github.com/zzzgydi/auto-launch |
 | base64 | 0.21.7 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 |
 | base64 | 0.22.1 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 |
 | bit-set | 0.8.0 | Apache-2.0 OR MIT | https://github.com/contain-rs/bit-set |
@@ -2115,9 +2114,7 @@ Every crate compiled into the app and its core plugin, for aarch64-apple-darwin:
 | derive_more | 2.1.1 | MIT | https://github.com/JelteF/derive_more |
 | derive_more-impl | 2.1.1 | MIT | https://github.com/JelteF/derive_more |
 | digest | 0.10.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
-| dirs | 4.0.0 | MIT OR Apache-2.0 | https://github.com/soc/dirs-rs |
 | dirs | 6.0.0 | MIT OR Apache-2.0 | https://github.com/soc/dirs-rs |
-| dirs-sys | 0.3.7 | MIT OR Apache-2.0 | https://github.com/dirs-dev/dirs-sys-rs |
 | dirs-sys | 0.5.0 | MIT OR Apache-2.0 | https://github.com/dirs-dev/dirs-sys-rs |
 | dispatch2 | 0.3.1 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
 | displaydoc | 0.2.6 | MIT OR Apache-2.0 | https://github.com/yaahc/displaydoc |
@@ -2227,6 +2224,8 @@ Every crate compiled into the app and its core plugin, for aarch64-apple-darwin:
 | objc2-foundation | 0.3.2 | MIT | https://github.com/madsmtm/objc2 |
 | objc2-io-surface | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
 | objc2-quartz-core | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
+| objc2-security | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
+| objc2-service-management | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
 | objc2-web-kit | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | https://github.com/matklad/once_cell |
 | open | 5.4.0 | MIT | https://github.com/Byron/open-rs |
@@ -2329,7 +2328,6 @@ Every crate compiled into the app and its core plugin, for aarch64-apple-darwin:
 | tauri | 2.11.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-codegen | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-macros | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| tauri-plugin-autostart | 2.5.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-plugin-dialog | 2.7.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-plugin-fs | 2.5.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-plugin-notification | 2.4.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
@@ -2631,7 +2629,7 @@ limitations under the License.
 
 #### Apache-2.0
 
-Used by ahash 0.8.12, anyhow 1.0.103, atomic-waker 1.1.2, base64 0.21.7, base64 0.22.1, bit-set 0.8.0, bit-vec 0.8.0, bitflags 1.3.2, bitflags 2.13.0, block-buffer 0.10.4, bs58 0.5.1, bumpalo 3.20.3, camino 1.2.4, cfg-if 1.0.4, chacha20 0.10.1, cookie 0.18.1, core-foundation 0.10.1, core-foundation-sys 0.8.7, core-graphics 0.25.0, core-graphics-types 0.2.0, countme 3.0.1, cpufeatures 0.2.17, crc32fast 1.5.0, crossbeam-channel 0.5.16, crossbeam-utils 0.8.22, crypto-common 0.1.7, ctor 0.8.0, ctor-proc-macro 0.0.7, deranged 0.5.8, digest 0.10.7, displaydoc 0.2.6, dpi 0.1.2, dtoa 1.0.11, dtor 0.3.0, dtor-proc-macro 0.0.6, dyn-clone 1.0.20, embed_plist 1.2.2, equivalent 1.0.2, erased-serde 0.4.10, errno 0.3.14, fallible-iterator 0.3.0, fallible-streaming-iterator 0.1.9, fastrand 2.4.1, fdeflate 0.3.7, filetime 0.2.29, flate2 1.1.9, fnv 1.0.7, foreign-types 0.5.0, foreign-types-macros 0.2.3, foreign-types-shared 0.3.1, form_urlencoded 1.2.2, futures-channel 0.3.32, futures-core 0.3.32, futures-io 0.3.32, futures-macro 0.3.32, futures-sink 0.3.32, futures-task 0.3.32, futures-util 0.3.32, getrandom 0.2.17, getrandom 0.3.4, getrandom 0.4.3, glob 0.3.3, hashbrown 0.12.3, hashbrown 0.14.5, hashbrown 0.17.1, hashlink 0.9.1, heck 0.5.0, hex 0.4.3, html5ever 0.38.0, http 1.4.2, httparse 1.10.1, hyper-rustls 0.27.9, iana-time-zone 0.1.65, idna 1.1.0, idna_adapter 1.2.2, indexmap 1.9.3, indexmap 2.14.0, indexmap 2.14.2, ipnet 2.12.0, itoa 1.0.18, json-patch 3.0.1, jsonptr 0.6.3, keyboard-types 0.7.0, libc 0.2.186, lock_api 0.4.14, log 0.4.33, lru-slab 0.1.2, markup5ever 0.38.0, mime 0.3.17, miniz_oxide 0.8.9, muda 0.19.3, notify-rust 4.18.0, notify-types 1.0.1, num-conv 0.2.2, num-traits 0.2.19, once_cell 1.21.4, parking_lot 0.12.5, parking_lot_core 0.9.12, percent-encoding 2.3.2, pin-project-lite 0.2.17, png 0.17.16, png 0.18.1, powerfmt 0.2.0, ppv-lite86 0.2.21, proc-macro2 1.0.106, proc-macro2 1.0.107, quinn 0.11.11, quinn-proto 0.11.16, quinn-udp 0.5.15, quote 1.0.46, quote 1.0.47, rand 0.9.5, rand 0.10.2, rand_chacha 0.9.0, rand_core 0.9.5, rand_core 0.10.1, rand_pcg 0.10.2, raw-window-handle 0.6.2, ref-cast 1.0.25, ref-cast-impl 1.0.25, regex 1.13.0, regex-automata 0.4.15, regex-syntax 0.8.11, reqwest 0.12.28, rowan 0.16.1, rustc-hash 1.1.0, rustc-hash 2.1.3, rustix 1.1.4, rustls 0.23.42, rustls-pki-types 1.15.0, ryu 1.0.23, scopeguard 1.2.0, semver 1.0.28, serde 1.0.228, serde 1.0.229, serde-untagged 0.1.9, serde_core 1.0.228, serde_core 1.0.229, serde_derive 1.0.228, serde_derive 1.0.229, serde_derive_internals 0.29.1, serde_json 1.0.150, serde_json 1.0.151, serde_norway 0.9.42, serde_repr 0.1.20, serde_spanned 0.6.9, serde_spanned 1.1.1, serde_urlencoded 0.7.1, serde_with 3.21.0, serde_with_macros 3.21.0, serde_yaml 0.9.34+deprecated, serialize-to-javascript 0.1.2, serialize-to-javascript-impl 0.1.2, servo_arc 0.4.3, sha1 0.10.7, sha2 0.10.9, signal-hook-registry 1.4.8, smallvec 1.15.2, socket2 0.6.5, stable_deref_trait 1.2.1, string_cache 0.9.0, swift-rs 1.0.7, syn 2.0.118, syn 3.0.6, sync_wrapper 1.0.2, tao 0.35.3, tar 0.4.46, tauri 2.11.5, tauri-codegen 2.6.3, tauri-macros 2.6.3, tauri-plugin-autostart 2.5.1, tauri-plugin-dialog 2.7.2, tauri-plugin-fs 2.5.1, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.4, tauri-runtime 2.11.3, tauri-runtime-wry 2.11.4, tauri-utils 2.9.3, tendril 0.5.1, text-size 1.1.1, thiserror 1.0.69, thiserror 2.0.18, thiserror-impl 1.0.69, thiserror-impl 2.0.18, time 0.3.53, time-core 0.1.9, time-macros 0.2.31, tinyvec 1.12.0, tinyvec_macros 0.1.1, tokio-rustls 0.26.4, toml 0.8.2, toml 1.1.3+spec-1.1.0, toml_datetime 0.6.3, toml_datetime 1.1.1+spec-1.1.0, toml_edit 0.20.2, toml_parser 1.1.2+spec-1.1.0, toml_writer 1.1.2+spec-1.1.0, tray-icon 0.24.1, typeid 1.0.3, typenum 1.20.1, unicode-ident 1.0.24, unicode-ident 1.0.26, unicode-segmentation 1.13.3, url 2.5.8, utf8_iter 1.0.4, uuid 1.23.5, web_atoms 0.2.5, window-vibrancy 0.6.0, wry 0.55.1, xattr 1.6.1, yaml-serde-edit 0.1.0, zerocopy 0.8.54, zeroize 1.9.0, zopfli 0.8.3.
+Used by ahash 0.8.12, anyhow 1.0.103, atomic-waker 1.1.2, base64 0.21.7, base64 0.22.1, bit-set 0.8.0, bit-vec 0.8.0, bitflags 1.3.2, bitflags 2.13.0, block-buffer 0.10.4, bs58 0.5.1, bumpalo 3.20.3, camino 1.2.4, cfg-if 1.0.4, chacha20 0.10.1, cookie 0.18.1, core-foundation 0.10.1, core-foundation-sys 0.8.7, core-graphics 0.25.0, core-graphics-types 0.2.0, countme 3.0.1, cpufeatures 0.2.17, crc32fast 1.5.0, crossbeam-channel 0.5.16, crossbeam-utils 0.8.22, crypto-common 0.1.7, ctor 0.8.0, ctor-proc-macro 0.0.7, deranged 0.5.8, digest 0.10.7, displaydoc 0.2.6, dpi 0.1.2, dtoa 1.0.11, dtor 0.3.0, dtor-proc-macro 0.0.6, dyn-clone 1.0.20, embed_plist 1.2.2, equivalent 1.0.2, erased-serde 0.4.10, errno 0.3.14, fallible-iterator 0.3.0, fallible-streaming-iterator 0.1.9, fastrand 2.4.1, fdeflate 0.3.7, filetime 0.2.29, flate2 1.1.9, fnv 1.0.7, foreign-types 0.5.0, foreign-types-macros 0.2.3, foreign-types-shared 0.3.1, form_urlencoded 1.2.2, futures-channel 0.3.32, futures-core 0.3.32, futures-io 0.3.32, futures-macro 0.3.32, futures-sink 0.3.32, futures-task 0.3.32, futures-util 0.3.32, getrandom 0.2.17, getrandom 0.3.4, getrandom 0.4.3, glob 0.3.3, hashbrown 0.12.3, hashbrown 0.14.5, hashbrown 0.17.1, hashlink 0.9.1, heck 0.5.0, hex 0.4.3, html5ever 0.38.0, http 1.4.2, httparse 1.10.1, hyper-rustls 0.27.9, iana-time-zone 0.1.65, idna 1.1.0, idna_adapter 1.2.2, indexmap 1.9.3, indexmap 2.14.0, indexmap 2.14.2, ipnet 2.12.0, itoa 1.0.18, json-patch 3.0.1, jsonptr 0.6.3, keyboard-types 0.7.0, libc 0.2.186, lock_api 0.4.14, log 0.4.33, lru-slab 0.1.2, markup5ever 0.38.0, mime 0.3.17, miniz_oxide 0.8.9, muda 0.19.3, notify-rust 4.18.0, notify-types 1.0.1, num-conv 0.2.2, num-traits 0.2.19, once_cell 1.21.4, parking_lot 0.12.5, parking_lot_core 0.9.12, percent-encoding 2.3.2, pin-project-lite 0.2.17, png 0.17.16, png 0.18.1, powerfmt 0.2.0, ppv-lite86 0.2.21, proc-macro2 1.0.106, proc-macro2 1.0.107, quinn 0.11.11, quinn-proto 0.11.16, quinn-udp 0.5.15, quote 1.0.46, quote 1.0.47, rand 0.9.5, rand 0.10.2, rand_chacha 0.9.0, rand_core 0.9.5, rand_core 0.10.1, rand_pcg 0.10.2, raw-window-handle 0.6.2, ref-cast 1.0.25, ref-cast-impl 1.0.25, regex 1.13.0, regex-automata 0.4.15, regex-syntax 0.8.11, reqwest 0.12.28, rowan 0.16.1, rustc-hash 1.1.0, rustc-hash 2.1.3, rustix 1.1.4, rustls 0.23.42, rustls-pki-types 1.15.0, ryu 1.0.23, scopeguard 1.2.0, semver 1.0.28, serde 1.0.228, serde 1.0.229, serde-untagged 0.1.9, serde_core 1.0.228, serde_core 1.0.229, serde_derive 1.0.228, serde_derive 1.0.229, serde_derive_internals 0.29.1, serde_json 1.0.150, serde_json 1.0.151, serde_norway 0.9.42, serde_repr 0.1.20, serde_spanned 0.6.9, serde_spanned 1.1.1, serde_urlencoded 0.7.1, serde_with 3.21.0, serde_with_macros 3.21.0, serde_yaml 0.9.34+deprecated, serialize-to-javascript 0.1.2, serialize-to-javascript-impl 0.1.2, servo_arc 0.4.3, sha1 0.10.7, sha2 0.10.9, signal-hook-registry 1.4.8, smallvec 1.15.2, socket2 0.6.5, stable_deref_trait 1.2.1, string_cache 0.9.0, swift-rs 1.0.7, syn 2.0.118, syn 3.0.6, sync_wrapper 1.0.2, tao 0.35.3, tar 0.4.46, tauri 2.11.5, tauri-codegen 2.6.3, tauri-macros 2.6.3, tauri-plugin-dialog 2.7.2, tauri-plugin-fs 2.5.1, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.4, tauri-runtime 2.11.3, tauri-runtime-wry 2.11.4, tauri-utils 2.9.3, tendril 0.5.1, text-size 1.1.1, thiserror 1.0.69, thiserror 2.0.18, thiserror-impl 1.0.69, thiserror-impl 2.0.18, time 0.3.53, time-core 0.1.9, time-macros 0.2.31, tinyvec 1.12.0, tinyvec_macros 0.1.1, tokio-rustls 0.26.4, toml 0.8.2, toml 1.1.3+spec-1.1.0, toml_datetime 0.6.3, toml_datetime 1.1.1+spec-1.1.0, toml_edit 0.20.2, toml_parser 1.1.2+spec-1.1.0, toml_writer 1.1.2+spec-1.1.0, tray-icon 0.24.1, typeid 1.0.3, typenum 1.20.1, unicode-ident 1.0.24, unicode-ident 1.0.26, unicode-segmentation 1.13.3, url 2.5.8, utf8_iter 1.0.4, uuid 1.23.5, web_atoms 0.2.5, window-vibrancy 0.6.0, wry 0.55.1, xattr 1.6.1, yaml-serde-edit 0.1.0, zerocopy 0.8.54, zeroize 1.9.0, zopfli 0.8.3.
 
 Copyright lines in their copies of this license:
 
@@ -3765,7 +3763,7 @@ limitations under the License.
 
 #### Apache-2.0
 
-Used by dirs 4.0.0, dirs 6.0.0, dirs-sys 0.3.7, dirs-sys 0.5.0.
+Used by dirs 6.0.0, dirs-sys 0.5.0.
 
 ```text
                               Apache License
@@ -5030,34 +5028,6 @@ THE SOFTWARE.
 
 #### MIT
 
-Used by auto-launch 0.5.0.
-
-```text
-MIT License
-
-Copyright (c) 2022 zzzgydi
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-#### MIT
-
 Used by base64 0.21.7, base64 0.22.1.
 
 ```text
@@ -5696,7 +5666,7 @@ DEALINGS IN THE SOFTWARE.
 
 #### MIT
 
-Used by dirs 4.0.0, dirs 6.0.0, dirs-sys 0.3.7, dirs-sys 0.5.0.
+Used by dirs 6.0.0, dirs-sys 0.5.0.
 
 ```text
 Copyright (c) 2018-2019 dirs-rs contributors
@@ -8284,7 +8254,7 @@ DEALINGS IN THE SOFTWARE.
 
 #### MIT
 
-Used by tauri 2.11.5, tauri-codegen 2.6.3, tauri-macros 2.6.3, tauri-plugin-autostart 2.5.1, tauri-plugin-dialog 2.7.2, tauri-plugin-fs 2.5.1, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.4, tauri-runtime 2.11.3, tauri-runtime-wry 2.11.4, tauri-utils 2.9.3.
+Used by tauri 2.11.5, tauri-codegen 2.6.3, tauri-macros 2.6.3, tauri-plugin-dialog 2.7.2, tauri-plugin-fs 2.5.1, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.4, tauri-runtime 2.11.3, tauri-runtime-wry 2.11.4, tauri-utils 2.9.3.
 
 ```text
 MIT License
@@ -9942,7 +9912,7 @@ Creator: Person: Daniel Thompson-Yvetot
 
 #### SPDX summary
 
-Used by tauri-plugin-autostart 2.5.1, tauri-plugin-dialog 2.7.2, tauri-plugin-fs 2.5.1, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.4.
+Used by tauri-plugin-dialog 2.7.2, tauri-plugin-fs 2.5.1, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.4.
 
 ```text
 SPDXVersion: SPDX-2.1
@@ -10203,6 +10173,8 @@ These don't include a license file; their declared license applies, with its sta
 - objc2-foundation 0.3.2: MIT
 - objc2-io-surface 0.3.2: Zlib OR Apache-2.0 OR MIT
 - objc2-quartz-core 0.3.2: Zlib OR Apache-2.0 OR MIT
+- objc2-security 0.3.2: Zlib OR Apache-2.0 OR MIT
+- objc2-service-management 0.3.2: Zlib OR Apache-2.0 OR MIT
 - objc2-web-kit 0.3.2: Zlib OR Apache-2.0 OR MIT
 - selectors 0.36.1: MPL-2.0
 - ts-rs 12.0.1: MIT

@@ -74,7 +74,6 @@ use tar::Archive;
 #[cfg(target_os = "macos")]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, LogicalSize, Manager};
-use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 use tray::*;
@@ -1539,10 +1538,6 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
         .plugin(
             tauri_plugin_opener::Builder::new()
                 .open_js_links_on_click(false)
@@ -1622,7 +1617,7 @@ fn main() {
 
     let app = app
         .setup(move |app| {
-            repoint_legacy_login_item(app.handle());
+            move_legacy_login_item(app.handle());
             if let Err(error) = restore_main_window_size(app.handle()) {
                 eprintln!("{error}");
             }

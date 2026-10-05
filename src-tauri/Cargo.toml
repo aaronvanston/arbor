@@ -29,7 +29,6 @@ sha1 = "0.10"
 sha2 = { version = "0.10", features = ["compress"] }
 tar = "0.4"
 tauri = { version = "~2.11", features = ["tray-icon"] }
-tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
@@ -50,6 +49,7 @@ libc = "0.2"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSImage", "NSResponder", "NSRunningApplication", "NSStatusBarButton", "NSStatusItem", "NSView"] }
 objc2-foundation = "0.3"
+objc2-service-management = { version = "0.3", default-features = false, features = ["std", "objc2", "objc2-foundation", "SMAppService"] }
 
 [dev-dependencies]
 # The same muda Tauri builds its menus with, so a test can check which menu accelerators it reads.
