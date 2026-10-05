@@ -730,9 +730,11 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
     source: shownSources(optionsAnalysis.sources, shownIdentity),
     apiKeyHash: optionsAnalysis.apiKeys,
   };
-  // The machine filter's chip shows the machine's pill; Unassigned isn't a machine, so it stays words.
+  // The machine filter's chip shows the machine's pill; Unassigned isn't a machine, so it stays words. The model's
+  // shows it with its mark, as the menu does.
   const filterChips = usageFilterChips(filters, chippedUsageFilters(variant, activeTab, filters, offeredFilters), t, filterNames)
-    .map((chip) => (chip.id === 'machine' && filters.machine && filters.machine !== '__unassigned__' ? { ...chip, machine: filters.machine } : chip));
+    .map((chip) => (chip.id === 'machine' && filters.machine && filters.machine !== '__unassigned__' ? { ...chip, machine: filters.machine }
+      : chip.id === 'model' && filters.model ? { ...chip, model: filters.model } : chip));
   /** One filter's menu in the Filters popover, labeled with the filter's name. */
   const filterMenu = (id: UsageFilterId, display: ReactNode, items: ReactNode) => {
     const fieldId = `usage-filter-${id}`;

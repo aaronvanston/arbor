@@ -2,7 +2,7 @@ import { FilterX, ListFilter, X } from './ui/icons';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
-import { MachinePill } from './identity/Identity';
+import { MachinePill, ModelName } from './identity/Identity';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
@@ -15,6 +15,8 @@ export type FilterChip<Id extends string = string> = {
   value: string;
   /** The machine the filter picks, shown as its pill rather than as `value`'s words. */
   machine?: string;
+  /** The model the filter picks, shown with its mark as the page's menus and tables show it. */
+  model?: string;
 };
 
 /**
@@ -72,7 +74,9 @@ export function FilterBar<Id extends string>({ chips, onRemove, onClearAll, chil
           {/* Both ends, so fix/cache-main-20260918 keeps the date that tells it from its neighbors. */}
           {chip.machine
             ? <MachinePill name={chip.machine} className="min-w-0" />
-            : <MiddleTruncate value={chip.value} className="font-medium text-foreground" />}
+            : chip.model
+              ? <ModelName model={chip.model} className="min-w-0" />
+              : <MiddleTruncate value={chip.value} className="font-medium text-foreground" />}
           <Button
             variant="ghost-muted"
             size="icon-micro"
