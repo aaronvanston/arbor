@@ -1057,6 +1057,7 @@ export const en = {
   'sessionArchive.folder.title': 'Kept in',
   'sessionArchive.folder.free': '{size} free on the drive',
   'sessionArchive.folder.notConnected': 'The drive isn’t connected.',
+  'sessionArchive.folder.holdsOther': 'The folder holds something else now.',
   'sessionArchive.folder.reveal': 'Show in Finder',
   'sessionArchive.folder.find': 'Find archive…',
   'sessionArchive.folder.findTitle': 'Choose the archive’s folder',

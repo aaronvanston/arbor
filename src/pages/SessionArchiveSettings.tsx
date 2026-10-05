@@ -354,7 +354,8 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
           status={
             connected
               ? main?.freeBytes !== null && main?.freeBytes !== undefined ? t('sessionArchive.folder.free', { size: formatBytes(main.freeBytes) }) : null
-              : <span className="text-warning-foreground">{t('sessionArchive.folder.notConnected')}</span>
+              // Not connected also covers a folder that's there but holds something else, which the state names.
+              : <span className="text-warning-foreground">{t(status.state === 'foreign' ? 'sessionArchive.folder.holdsOther' : 'sessionArchive.folder.notConnected')}</span>
           }
           control={
             connected ? (
