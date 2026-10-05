@@ -4,7 +4,7 @@ import { Check, ChevronDown, FolderGit2, Layers } from '../ui/icons';
 import { APP_PREFERENCE_DEFAULTS, setAppPreference, useAppPreferences, type AppPreferences } from '../../appPreferences';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/utils';
-import { fetchMachineHealth } from '../../services/machineHealth';
+import { readFleetHealth } from '../../services/machineHealth';
 import {
   clearOverridesFor,
   clearProjectOverridesFor,
@@ -43,7 +43,7 @@ export function useFleetMachines(): FleetMachine[] {
   const [machines, setMachines] = useState(fleet);
   useEffect(() => {
     let live = true;
-    fleetRead ??= fetchMachineHealth(null, 1_000, true)
+    fleetRead ??= readFleetHealth()
       .then((snapshot) => {
         fleet = snapshot.machines
           .map((health) => ({ machine: health.machine, local: health.local, reachable: health.status !== 'unreachable' && health.status !== 'unconfigured' }))

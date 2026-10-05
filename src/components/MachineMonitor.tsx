@@ -10,7 +10,7 @@ import {
   sleptBetween,
   type MachineAlertState,
 } from '../services/machineAlerts';
-import { fetchMachineHealth } from '../services/machineHealth';
+import { readFleetHealth } from '../services/machineHealth';
 import { isWindowHidden, pacedInterval, pacedMs } from '../services/hiddenPace';
 import { notify } from '../services/notify';
 
@@ -98,7 +98,7 @@ export function MachineMonitor() {
       tick();
       lastCheckMs = Date.now();
       try {
-        const snapshot = await fetchMachineHealth(Date.now(), 1_000, true);
+        const snapshot = await readFleetHealth();
         if (disposed) return;
         const next = nextMachineNotifications(state, snapshot.machines, snapshot.now, {
           offline: !navigator.onLine,

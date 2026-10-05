@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { fetchMachineHealth } from '../services/machineHealth';
+import { readFleetHealth } from '../services/machineHealth';
 import { identitiesByMachine, type MachineIdentity } from '../services/machineIdentity';
 
 const HEALTH_UPDATED_EVENT = 'machine-health-updated';
@@ -18,7 +18,7 @@ async function read() {
   reading = true;
   readAt = Date.now();
   try {
-    const snapshot = await fetchMachineHealth(null, 1_000, true);
+    const snapshot = await readFleetHealth();
     identities = identitiesByMachine(snapshot.machines);
     listeners.forEach((listener) => listener());
   } catch {
@@ -50,8 +50,7 @@ const getIdentities = () => identities;
 /**
  * What each machine is (a MacBook Pro, a Mac mini, a Linux box), for places that name machines without the health
  * snapshot at hand. One copy serves everything on screen, however many rows name a machine. Its reads are passive and
- * take only the latest second of history, so they neither hold the sampler on its fast interval nor carry the charts'
- * points.
+ * take no history, so they neither hold the sampler on its fast interval nor carry the charts' points.
  */
 export function useMachineIdentities(): Map<string, MachineIdentity> {
   return useSyncExternalStore(subscribe, getIdentities, getIdentities);

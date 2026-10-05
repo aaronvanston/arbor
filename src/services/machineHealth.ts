@@ -19,6 +19,32 @@ export type HealthWindowId = (typeof HEALTH_WINDOWS)[number]['id'];
 export const fetchMachineHealth = (since: number | null, windowMs: number, passive = false) =>
   invokeCommand('get_machine_health', { since, windowMs, passive: passive || isWindowHidden() });
 
+/**
+ * How long a background read of the fleet answers for others. The sampler's rounds are at least 5 seconds apart, so a
+ * read this fresh is the latest round's; and the timestamp it carries, which alerts time outages by, is still close.
+ */
+const SHARED_READ_MS = 2_000;
+let sharedRead: { read: Promise<MachineHealthSnapshot>; settledAt: number | null } | null = null;
+
+/**
+ * Every machine as the sampler last saw it, its latest reading without history, read passively. What watches the
+ * fleet in the background (the sidebar and Home's machines, machine icons, machine alerts, scoped settings) reads it
+ * through here, so one sampling round, which wakes all of them at once, is read once: a read in flight is shared, and
+ * so is one that answered in the last two seconds.
+ */
+export function readFleetHealth(): Promise<MachineHealthSnapshot> {
+  const now = Date.now();
+  if (sharedRead && (sharedRead.settledAt === null || now - sharedRead.settledAt < SHARED_READ_MS)) return sharedRead.read;
+  const entry: NonNullable<typeof sharedRead> = { read: fetchMachineHealth(now, 1_000, true), settledAt: null };
+  sharedRead = entry;
+  entry.read.then(
+    () => { entry.settledAt = Date.now(); },
+    // A failed read isn't shared beyond its callers: the next one tries again.
+    () => { if (sharedRead === entry) sharedRead = null; },
+  );
+  return entry.read;
+}
+
 export const fetchMachineHosts = () => invokeCommand('get_machine_hosts');
 const hostsSaved = new Set<() => void>();
 /** Calls `listener` each time the machine list is saved from this window; returns what stops it. */
@@ -30,6 +56,8 @@ export function onMachineHostsSaved(listener: () => void): () => void {
 /** Adds or updates `hosts`, and takes the machines named in `removed` off the list; their history stays, and saving one again brings it back. */
 export async function saveMachineHosts(hosts: MachineHost[], removed: string[] = []) {
   const saved = await tracked('machines-saved', invokeCommand('save_machine_hosts', { hosts, removed }), { count: hosts.length });
+  // The list changed, so a read from before it no longer answers for anyone.
+  sharedRead = null;
   for (const listener of hostsSaved) listener();
   return saved;
 }

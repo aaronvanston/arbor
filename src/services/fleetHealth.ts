@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { MachineHealth } from '../native/types';
 import { useFleetBoard } from './fleetBoard';
 import { homeMachines, type HomeMachine } from './homeOverview';
-import { fetchMachineHealth, onMachineHostsSaved } from './machineHealth';
+import { onMachineHostsSaved, readFleetHealth } from './machineHealth';
 import { sharedStore } from './savedStore';
 
 /** A machine's status changes slowly, and the sampler's rounds come every 5 seconds while Machines is open. */
@@ -36,7 +36,7 @@ export function watchFleetHealth(): () => void {
   let readAt = 0;
   const read = () => {
     readAt = Date.now();
-    fetchMachineHealth(null, 1_000, true)
+    readFleetHealth()
       .then((snapshot) => { if (!disposed) store.set(snapshot.machines); })
       // A failed first read still settles, so what waits on it says there's nothing rather than loading for good.
       .catch(() => { if (!disposed && store.get() === null) store.set([]); });
