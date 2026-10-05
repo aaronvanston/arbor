@@ -77,6 +77,7 @@ export const ExternalLink = icon(stroke.ExternalLinkIcon);
 export const Eye = icon(stroke.EyeIcon);
 export const EyeOff = icon(stroke.EyeOffIcon);
 export const FileCode = icon(stroke.FileCodeIcon);
+export const FileText = icon(stroke.File01Icon);
 export const FilterX = icon(stroke.FilterRemoveIcon);
 export const Flame = icon(stroke.FlameIcon);
 export const FlaskConical = icon(stroke.FlaskConicalIcon);
@@ -142,7 +143,8 @@ export const Radar = icon(stroke.RadarIcon);
 export const Radio = icon(stroke.RadioIcon);
 export const RadioTower = icon(stroke.RadioTowerIcon);
 export const RefreshCw = icon(stroke.RefreshCwIcon);
-export const RotateCcw = icon(stroke.RotateCcwIcon);
+// Hugeicons' RotateCcw is drawn with a dashed tail that reads as a loader, so undo, restore and restart take the solid arrow.
+export const RotateCcw = icon(stroke.Undo02Icon);
 export const Route = icon(stroke.RouteIcon, duotone.RouteIcon);
 export const Rows2 = icon(stroke.Rows2Icon);
 export const Scan = icon(stroke.ScanIcon);

@@ -229,7 +229,8 @@ function App() {
     <AppUpdateProvider>
       <CoreRuntimeProvider>
         <CoreUpdateProvider>
-          <TooltipProvider delay={500}>
+          {/* Hints open quickly and, once one is open, the next opens at once, so reading a row of them doesn't keep you waiting. */}
+          <TooltipProvider delay={150} closeDelay={0}>
             <AppContent />
           </TooltipProvider>
         </CoreUpdateProvider>

@@ -106,7 +106,8 @@ export function SectionAbout({ title, description }: { title: ReactNode; descrip
       >
         <Info />
       </TooltipTrigger>
-      <TooltipPopup className="max-w-80 text-balance">{description}</TooltipPopup>
+      {/* Beside the mark, level with the title, rather than over the card above. */}
+      <TooltipPopup side="right" sideOffset={6} className="max-w-80 text-balance">{description}</TooltipPopup>
     </Tooltip>
   );
 }

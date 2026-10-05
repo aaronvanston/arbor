@@ -3,7 +3,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { AlertCircle, Download, ExternalLink, FileCode, Info, RotateCcw } from '../components/ui/icons';
+import { AlertCircle, Download, ExternalLink, FileText, Hammer, Info, RotateCcw } from '../components/ui/icons';
 import { useCoreRuntime } from '../coreRuntime';
 import { useCoreUpdate } from '../coreUpdate';
 import { useI18n } from '../i18n';
@@ -569,13 +569,13 @@ export function VersionManagementPage() {
                 <>
                   {devBuild.installed && devBuild.hasLog ? (
                     <Button variant="ghost-muted" size="sm" onClick={() => void openDevBuildLog()}>
-                      <FileCode />
+                      <FileText />
                       {t('appUpdate.devBuild.showLog')}
                     </Button>
                   ) : null}
                   {devBuild.installed ? (
                     <Button variant="outline" size="sm" disabled={devBuildStarting || devLine.busy} onClick={() => void buildLatestMain()}>
-                      <RefreshIcon refreshing={devBuildStarting || devLine.busy} />
+                      {devBuildStarting || devLine.busy ? <Spinner /> : <Hammer />}
                       {t('appUpdate.devBuild.buildNow')}
                     </Button>
                   ) : null}
