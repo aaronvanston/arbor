@@ -80,10 +80,50 @@ function nextRun(schedule: ScheduleSummary, from: number): number | null {
   }
 }
 
-/** A seed whose next run follows its schedule, for one that has a next run at all. */
+/** The schedule's last time at or before `at`, or null for one whose times aren't known here. */
+function previousRun(schedule: ScheduleSummary, at: number): number | null {
+  const time = new Date(at);
+  switch (schedule.kind) {
+    case 'everyMinutes': {
+      const step = Math.max(1, schedule.minutes) * MINUTE;
+      return Math.floor(at / step) * step;
+    }
+    case 'everyHours': {
+      time.setMinutes(schedule.minute, 0, 0);
+      while (time.getTime() > at) time.setHours(time.getHours() - Math.max(1, schedule.hours));
+      return time.getTime();
+    }
+    case 'daily':
+    case 'weekdays':
+    case 'weekly': {
+      const days = schedule.kind === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : schedule.kind === 'weekdays' ? [1, 2, 3, 4, 5] : schedule.days;
+      time.setHours(schedule.hour, schedule.minute, 0, 0);
+      for (let step = 0; step < 8; step += 1) {
+        if (time.getTime() <= at && days.includes(time.getDay())) return time.getTime();
+        time.setDate(time.getDate() - 1);
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * A seed whose next run follows its schedule, for one that has a next run at all, and whose last run sits on one of
+ * the schedule's times, so the times on its runs fit the schedule they're listed under.
+ */
 const scheduled = (item: Seed): Seed => {
-  if (item.summary.nextRunAtMs === null) return item;
-  return { ...item, summary: { ...item.summary, nextRunAtMs: nextRun(item.summary.schedule, now) ?? item.summary.nextRunAtMs } };
+  const { schedule, lastRun, nextRunAtMs } = item.summary;
+  const lastAt = lastRun ? previousRun(schedule, lastRun.atMs) : null;
+  return {
+    ...item,
+    summary: {
+      ...item.summary,
+      nextRunAtMs: nextRunAtMs === null ? null : nextRun(schedule, now) ?? nextRunAtMs,
+      lastRun: lastRun && lastAt !== null ? { ...lastRun, atMs: lastAt } : lastRun,
+    },
+  };
 };
 
 const machine = (name: string) => ({ kind: 'machine' as const, name });
@@ -227,16 +267,37 @@ let running = params.get('automations') !== 'off';
 
 const RUN_STATUSES: AutomationRunStatus[] = ['done', 'skipped', 'done', 'skipped', 'skipped', 'done', 'failed', 'done', 'missed', 'done', 'skipped', 'unreachable'];
 
-/** Each automation's recent runs, newest first, from its schedule's spacing. */
+// What each precheck printed: a run it let through, and one it skipped (null when the check prints nothing, as a
+// `test` does, so the run shows only its exit code).
+const PRECHECK_OUTPUT: Record<string, { ran: string | null; skipped: string | null }> = {
+  'arbor:sentry-watch': { ran: '3 unresolved issues: BILLING-412, BILLING-415, BILLING-420', skipped: 'no unresolved issues in the last hour' },
+  'orca:7c1f': { ran: '14 strings missing: de (9), fr (5)', skipped: null },
+};
+
+// Sessions the mock's usage has, by agent, for the runs that started one to open. The app links a run to the session
+// its agent reported, and every run goes through the proxy, so Arbor has that session's requests.
+const RUN_SESSIONS: Record<string, string[]> = {
+  claude: ['6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', 'd4c3b2a1-7f6e-4d5c-9b8a-e1f2a3b4c5d6', 'b7e24c19-0d3a-4f6e-9b21-c4d5e6f7a8b9'],
+  codex: ['0199a0f4-6e21-7c3d-9a8b-1c2d3e4f5a6b', '0199a05d-91c2-7b4a-8e6f-2d3e4f5a6b7c'],
+};
+
+/** Each automation's recent runs, newest first, at its schedule's times. */
 function seedRuns(item: Seed): AutomationRun[] {
   const last = item.summary.lastRun;
   if (!last) return [];
-  const step = item.summary.schedule.kind === 'everyHours' ? HOUR : item.summary.schedule.kind === 'everyMinutes' ? 30 * MINUTE : DAY;
+  const { schedule, hasPrecheck } = item.summary;
+  const step = schedule.kind === 'everyHours' ? HOUR : schedule.kind === 'everyMinutes' ? 30 * MINUTE : DAY;
+  let scheduledAtMs = last.atMs + 1;
+  let sessionIndex = 0;
   return RUN_STATUSES.map((fallback, index) => {
-    const status = index === 0 ? last.status : fallback;
-    const scheduledAtMs = last.atMs - index * step;
+    // Only a precheck can skip a run; one without lets every due run start its agent.
+    const status = index === 0 ? last.status : fallback === 'skipped' && !hasPrecheck ? 'done' : fallback;
+    scheduledAtMs = previousRun(schedule, scheduledAtMs - 1) ?? scheduledAtMs - 1 - step;
     const ran = status === 'done' || status === 'failed';
     const checked = ran || status === 'skipped';
+    const output = PRECHECK_OUTPUT[item.summary.id];
+    const sessions = item.summary.agent ? RUN_SESSIONS[item.summary.agent] ?? [] : [];
+    const sessionId = ran ? sessions[sessionIndex++ % Math.max(1, sessions.length)] ?? null : null;
     return {
       id: `${item.summary.id}:run:${index}`,
       automationId: item.summary.id,
@@ -246,12 +307,10 @@ function seedRuns(item: Seed): AutomationRun[] {
       startedAtMs: status === 'missed' || status === 'unreachable' ? null : scheduledAtMs + 2_000,
       finishedAtMs: status === 'missed' || status === 'unreachable' ? null : scheduledAtMs + (ran ? (6 + index) * MINUTE : 4_000),
       manual: index === 3,
-      precheckExit: checked && item.summary.hasPrecheck ? (status === 'skipped' ? 1 : 0) : null,
-      precheckOutput: checked && item.summary.hasPrecheck
-        ? status === 'skipped' ? 'nothing new since the last run' : '3 unresolved issues: BILLING-412, BILLING-415, BILLING-420'
-        : null,
+      precheckExit: checked && hasPrecheck ? (status === 'skipped' ? 1 : 0) : null,
+      precheckOutput: checked && hasPrecheck ? (status === 'skipped' ? output?.skipped : output?.ran) ?? null : null,
       exitCode: ran ? (status === 'failed' ? 1 : 0) : null,
-      sessionId: ran ? `5f2c${index}e1a-7d4b-4c1e-9a0f-0c6b2d8e${String(index).padStart(4, '0')}` : null,
+      sessionId,
       error: status === 'failed' ? 'The agent stopped with exit code 1.' : status === 'unreachable' ? 'cedar-02 didn\'t answer over SSH.' : null,
     };
   });
@@ -366,7 +425,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
     const run: AutomationRun = {
       id: `${id}:run:now-${Date.now()}`, automationId: id, machine: item.summary.machine ?? 'cedar-02', status: 'running',
       scheduledAtMs: Date.now(), startedAtMs: Date.now(), finishedAtMs: null, manual: true,
-      precheckExit: item.summary.hasPrecheck ? 0 : null, precheckOutput: item.summary.hasPrecheck ? '2 unresolved issues' : null,
+      precheckExit: item.summary.hasPrecheck ? 0 : null, precheckOutput: item.summary.hasPrecheck ? PRECHECK_OUTPUT[id]?.ran ?? null : null,
       exitCode: null, sessionId: null, error: null,
     };
     runs.set(id, [run, ...(runs.get(id) ?? [])]);
