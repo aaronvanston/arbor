@@ -122,6 +122,8 @@ export const automationView = (automation: string): AppView => automationsView({
 export const checkoutsView = (): AppView => sessionsView({ tab: 'projects', lens: 'checkouts' });
 /** The live board: every machine's sessions working, waiting on their user or done, on the Sessions page. */
 export const liveBoardView = (): AppView => sessionsView({ tab: 'live' });
+/** The live board narrowed to one machine: what a machine page's Live section opens. */
+export const machineLiveView = (machine: string): AppView => sessionsView({ tab: 'live', machine });
 /** A machine's sessions, listed on the Sessions page; `__unassigned__` is those Arbor couldn't place. */
 export const machineSessionsView = (machine: string): AppView => sessionsView({ tab: 'sessions', machine });
 /** A machine's requests, listed on the Usage page. */

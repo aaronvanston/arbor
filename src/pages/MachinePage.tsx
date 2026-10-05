@@ -5,7 +5,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { formatAgo, formatCount, formatDateTime, formatMoney, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
-import { machineSessionsView, setupChecksView, setupView, type AppView } from '../navigation';
+import { machineLiveView, machineSessionsView, setupChecksView, setupView, type AppView } from '../navigation';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { newestAgents } from '../services/agentVersions';
 import { useFleetBoard } from '../services/fleetBoard';
@@ -139,6 +139,13 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
       <ArrowUpRight />
     </Button>
   );
+  // Live's own link opens the live board on this machine, not its list of sessions.
+  const allLive = (
+    <Button variant="ghost-muted" size="sm" onClick={() => onNavigate(machineLiveView(name))}>
+      {t('machines.sessions.viewAll')}
+      <ArrowUpRight />
+    </Button>
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -214,11 +221,11 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
               now={boardNow}
               title={t('machine.live.title')}
               description={t('machine.live.description')}
-              action={allSessions}
+              action={allLive}
               onOpen={onOpenSession}
             />
           ) : (
-            <SettingsSection title={t('machine.live.title')} description={t('machine.live.description')} headerAction={allSessions}>
+            <SettingsSection title={t('machine.live.title')} description={t('machine.live.description')} headerAction={allLive}>
               <SettingsBlock className="text-xs text-muted-foreground">{tRich(board ? 'machine.live.none' : 'machine.live.loading', { machine: small })}</SettingsBlock>
             </SettingsSection>
           )}

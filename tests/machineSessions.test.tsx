@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../src/i18n';
 import { MachinePage } from '../src/pages/MachinePage';
 import { UsageRecordsPage } from '../src/pages/UsageRecordsPage';
-import { machineRequestsView, machineSessionsView, usageView, type AppView } from '../src/navigation';
+import { machineLiveView, machineRequestsView, machineSessionsView, usageView, type AppView } from '../src/navigation';
 import type { MachineSessions, SessionTranscript, UsageSession } from '../src/native/types';
 
 const MINUTE = 60_000;
@@ -83,6 +83,8 @@ describe('a machine’s sessions', () => {
     expect(breadcrumb(unassigned)).toBe('Sessions / All sessions / Unassigned');
     expect(text(unassigned)).not.toContain('Clear all');
     expect(breadcrumb(page(machineSessionsView('casey-mbp')))).toBe('Sessions / All sessions / casey-mbp');
+    // A machine page's Live section opens the live board on that machine.
+    expect(machineLiveView('casey-mbp')).toEqual({ kind: 'main', page: 'sessions', params: { tab: 'live', machine: 'casey-mbp' } });
     // A machine's requests are Usage's own pick, and the Sessions page's doesn't follow it there.
     const requests = page(machineRequestsView('casey-mbp'));
     expect(breadcrumb(requests)).toBe('Usage / Requests / casey-mbp');
