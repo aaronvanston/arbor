@@ -1,7 +1,7 @@
 # Arbor's releases, modeled on T3 Code's. Sessions only push to main; this workflow does the releasing.
 #
-# Nightly: checked every hour, and published as X.Y.Z-nightly.YYYYMMDD.N, a prerelease that apps on the nightly
-# channel take, once main has moved past the newest build and six hours have passed since the newest nightly
+# Nightly: checked once a day, and published as X.Y.Z-nightly.YYYYMMDD.N, a prerelease that apps on the nightly channel
+# take, once main has moved past the newest build and 20 hours have passed since the newest nightly
 # (scripts/release-plan.mjs). Nothing is committed for it.
 #
 # Stable: run by hand (scripts/release-stable.sh, or Run workflow with channel stable and the notes). It promotes the
@@ -9,10 +9,11 @@
 # nightly users already run. Once it's out,
 # the version and its notes are committed to main as `Release Arbor X.Y.Z`.
 #
-# Every job runs on the self-hosted runner on the release Mac (scripts/install-release-runner.sh), labeled
-# arbor-release: GitHub bills a private repository's hosted minutes, macOS ones tenfold. Building and publishing share a
-# job so the DMG never leaves the Mac as an artifact, which GitHub would also bill for storing. The build keeps
-# src-tauri/target between runs (checkout's clean: false), so Rust builds are incremental.
+# Planning and the release commit need only git, Node and gh, so they run on GitHub's Linux runners. Building needs a
+# Mac (the app links against AppKit, and bundling uses Xcode's tools), so that job runs on GitHub's macOS runner, which
+# a private repository pays for by the minute and a public one doesn't; no build runs on anyone's own machine.
+# Building and publishing share a job so the DMG never becomes an artifact, which GitHub would bill for storing. The
+# runner is new each time, so rust-cache keeps the Rust builds between runs.
 #
 # Secrets: ARBOR_RELEASE_SIGNING_KEY signs the update list and is given only to the publish step. HUGEICONS_LICENSE_KEY
 # installs the Pro icons, ARBOR_POSTHOG_KEY builds in usage data and crash reports, and POSTHOG_CLI_API_KEY, if set,
@@ -21,8 +22,8 @@ name: Release
 
 on:
   schedule:
-    # Avoids minute zero, when GitHub's scheduled jobs are busiest.
-    - cron: '8 * * * *'
+    # Once a day, early morning in Australia (17:23 UTC). Off minute zero, when GitHub's scheduled jobs are busiest.
+    - cron: '23 17 * * *'
   workflow_dispatch:
     inputs:
       channel:
@@ -56,7 +57,7 @@ concurrency:
 jobs:
   plan:
     if: github.repository == 'aaronvanston/arbor'
-    runs-on: [self-hosted, arbor-release]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       version: ${{ steps.plan.outputs.version }}
@@ -65,7 +66,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          clean: false
       - id: plan
         env:
           ARBOR_RELEASE_CHANNEL: ${{ inputs.channel || 'nightly' }}
@@ -78,7 +78,7 @@ jobs:
   release:
     needs: plan
     if: needs.plan.outputs.version != ''
-    runs-on: [self-hosted, arbor-release]
+    runs-on: macos-latest
     timeout-minutes: 120
     permissions:
       contents: write # creates the release and its tag
@@ -90,10 +90,16 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.ref }}
           persist-credentials: false
-          clean: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
+      # dmgbuild lays out the DMG's window; without uv the build falls back to a plain DMG.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            src-tauri
+            core-plugins/arbor-models
       # The commit being promoted predates its notes, so the build carries them from the run.
       - name: Add the stable release's notes
         if: inputs.channel == 'stable'
@@ -132,7 +138,7 @@ jobs:
   finalize:
     needs: [plan, release]
     if: inputs.channel == 'stable' && needs.release.result == 'success'
-    runs-on: [self-hosted, arbor-release]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write # pushes the release commit to main
@@ -142,7 +148,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
-          clean: false
       - name: Commit the release to main
         env:
           ARBOR_RELEASE_SUMMARY: ${{ inputs.summary }}

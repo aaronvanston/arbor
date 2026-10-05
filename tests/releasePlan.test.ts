@@ -39,17 +39,17 @@ describe('a nightly', () => {
     expect(plan({ newCommits: null })).toEqual({ skip: "main isn't ahead of the newest build" });
   });
 
-  test('on the schedule, waits six hours after the newest nightly; run by hand, it goes out at once', () => {
+  test('on the schedule, waits 20 hours after the newest nightly; run by hand, it goes out at once', () => {
     const releases = (hours: number) => [
       { version: '1.0.0', commit: 'released', publishedAt: hoursAgo(48) },
       { version: '1.0.1-nightly.20261001.6', commit: 'nightly', publishedAt: hoursAgo(hours) },
     ];
-    expect(NIGHTLY_GAP_MS).toBe(6 * 60 * 60 * 1000);
+    expect(NIGHTLY_GAP_MS).toBe(20 * 60 * 60 * 1000);
     expect(plan({ releases: releases(2) })).toEqual({
-      skip: 'Arbor 1.0.1-nightly.20261001.6 came out less than six hours ago; the next nightly is due in about 4 h',
+      skip: 'Arbor 1.0.1-nightly.20261001.6 came out less than 20 hours ago; the next nightly is due in about 18 h',
     });
     expect(plan({ releases: releases(2), scheduled: false })).toMatchObject({ version: '1.0.1-nightly.20261001.7' });
-    expect(plan({ releases: releases(6) })).toMatchObject({ version: '1.0.1-nightly.20261001.7' });
+    expect(plan({ releases: releases(20) })).toMatchObject({ version: '1.0.1-nightly.20261001.7' });
   });
 });
 

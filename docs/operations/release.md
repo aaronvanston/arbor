@@ -6,14 +6,15 @@ the maintainer's to run.
 
 ## The workflow
 
-Every job runs on a self-hosted runner on the release Mac, labeled `arbor-release`
-(`scripts/install-release-runner.sh` sets it up, and rerunning it updates it), because GitHub bills a private
-repository's hosted macOS minutes tenfold. Each release runs `bun run verify` and `bun run verify:rust`, builds with
-`scripts/build-release.sh` and publishes with `scripts/publish-workflow-release.sh`, in one job so the DMG never
-becomes a GitHub artifact.
+Planning a release and committing a stable one run on GitHub's Linux runners. The build needs a Mac, so it runs on
+GitHub's macOS runner (`macos-latest`, paid by the minute while the repository is private, free once it's public),
+never on anyone's own machine. Each release runs `bun run verify` and `bun run verify:rust` (the only place the Rust
+tests run), builds with `scripts/build-release.sh` and publishes with `scripts/publish-workflow-release.sh`, in one job
+so the DMG never becomes a GitHub artifact. The runner is new each time; rust-cache keeps the Rust builds between runs.
 
-- **Nightly.** Checked every hour by `scripts/release-plan.mjs`. One goes out once main has moved past the newest build
-  (release commits alone don't count) and six hours have passed since the newest nightly. Its version is
+- **Nightly.** Checked once a day (17:23 UTC) by `scripts/release-plan.mjs`. One goes out once main has moved past the
+  newest build (release commits alone don't count) and 20 hours have passed since the newest nightly, so a nightly
+  started by hand that day holds back the scheduled one. Its version is
   `X.Y.Z-nightly.YYYYMMDD.N`: a prerelease of the patch after the newest release (or of `Cargo.toml`'s version if
   that's newer), where `N` is the workflow's run number. It has fixed notes, and nothing is committed for it. Only apps
   on the nightly channel (Settings › Updates) take it. Started by hand (channel nightly), it skips both waits.
@@ -35,12 +36,16 @@ Versions follow semver and are only ever changed by the workflow (or the emergen
 
 `ARBOR_RELEASE_SIGNING_KEY` (the Keychain's update-list signing key as base64 PKCS#8, seen only by the publish step),
 `HUGEICONS_LICENSE_KEY`, `ARBOR_POSTHOG_KEY` and, for source maps, `POSTHOG_CLI_API_KEY`.
-`.github/workflows/arbor-checks.yml` runs the checks on GitHub's Macs for pull requests and pushes to main once the
-repository is public; without the Hugeicons key it installs the free icons and still passes.
+`.github/workflows/arbor-checks.yml` runs `bun run verify`, the notices check and `bun run build` on GitHub's Linux
+runners for every pull request and push to main; without the Hugeicons key it installs the free icons and still
+passes. Bun on Linux writes some dates unlike the Mac (`Sept`, `14–20`), so tests compare dates through `macDates`
+(`tests/support/macDates.ts`).
 
-## The runner guards itself
+## The old runner
 
-A pull request can change workflow files and ask for the runner by its labels, and GitHub can't tie a personal
+No job uses the self-hosted runner on the release Mac (label `arbor-release`, `scripts/install-release-runner.sh`) any
+more. While it's still installed it guards itself: a pull request can change workflow files and ask for the runner by
+its labels, and GitHub can't tie a personal
 repository's runner to one workflow. So `scripts/release-runner-guard.sh`, installed as the runner's job-started hook,
 fails any job before its first step unless it's `arbor-release.yml` as committed on main, started by the schedule or by
 hand (`tests/releaseRunnerGuard.test.ts`). Never point another workflow at the `arbor-release` label. With the

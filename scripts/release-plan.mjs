@@ -4,7 +4,8 @@
 // A nightly is `X.Y.Z-nightly.YYYYMMDD.N`, a prerelease of the next release: the patch after the newest release, or the
 // version in Cargo.toml if that's newer. It's built from main, and nothing is committed for it. On the schedule it's
 // skipped until main has moved past the newest nightly or release with something besides release commits, and until
-// six hours have passed since the newest nightly, so a busy day gives a few nightlies, not one per push.
+// 20 hours have passed since the newest nightly. The schedule runs once a day, so that's one nightly a day, and a
+// nightly run by hand that day holds back the scheduled one (20, not 24, so the schedule's own lateness doesn't skip a day).
 // A stable release promotes the newest nightly: the same commit, as X.Y.Z, so it ships only what nightly users already
 // run. X.Y.Z is the nightly's own version for a patch release; ARBOR_RELEASE_BUMP=minor or major makes it the next
 // minor or major after the newest release instead, for a release that adds features or breaks something, which a
@@ -25,7 +26,7 @@ import { parseCargoPackageVersion, validateAppVersion } from './version.mjs';
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The least time between scheduled nightlies. */
-export const NIGHTLY_GAP_MS = 6 * 60 * 60 * 1000;
+export const NIGHTLY_GAP_MS = 20 * 60 * 60 * 1000;
 
 /** The subject of the commit a stable release leaves on main; commits with only this subject don't call for a nightly. */
 const RELEASE_COMMIT = /^Release Arbor \d+\.\d+\.\d+$/;
@@ -111,7 +112,7 @@ export function planRelease({ channel, bump, cargoVersion, notes, releases, comm
     const since = nightly?.publishedAt ? now - Date.parse(nightly.publishedAt) : Infinity;
     if (since < NIGHTLY_GAP_MS) {
       const hours = Math.ceil((NIGHTLY_GAP_MS - since) / (60 * 60 * 1000));
-      return { skip: `Arbor ${nightly.version} came out less than six hours ago; the next nightly is due in about ${hours} h` };
+      return { skip: `Arbor ${nightly.version} came out less than 20 hours ago; the next nightly is due in about ${hours} h` };
     }
   }
   const [major, minor, patch] = parts(cargoVersion).main;
