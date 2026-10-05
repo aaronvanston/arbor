@@ -450,6 +450,9 @@ const usageStorage = {
 };
 if (freshInstall) Object.assign(usageStorage, { fileBytes: 229_376, walBytes: 0, freeBytes: 0, recordCount: 0, oldestTimestamp: null });
 
+/** What Settings › Data's repair would still find. */
+const usageRepairsLeft = { repaired: 12, deleted: 3 };
+
 const usageRecordBytes = (usageStorage.fileBytes - usageStorage.freeBytes) / usageStorage.recordCount;
 
 const expiredUsageRecords = (retentionDays: number) => {
@@ -1330,7 +1333,9 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   get_capacity_report: (args) => capacityReportFor(args.query),
   get_usage_collector_status: () => {
     if (collectorError) return { state: 'error', message: 'The core’s usage queue returned HTTP 401: invalid management key', lastCollectedAt: iso(-42 * 60_000), totalRecords: usageStorage.recordCount };
-    return { state: coreStatus.ready ? 'collecting' : 'waiting-core', message: coreStatus.ready ? 'Collecting from 127.0.0.1:8317' : 'Waiting for the core to start', lastCollectedAt: iso(-5_000), totalRecords: usageStorage.recordCount };
+    // The collector only notes a time when it saves a record, so a new install's has none.
+    const lastCollectedAt = usageStorage.recordCount ? iso(-5_000) : null;
+    return { state: coreStatus.ready ? 'collecting' : 'waiting-core', message: coreStatus.ready ? 'Collecting from 127.0.0.1:8317' : 'Waiting for the core to start', lastCollectedAt, totalRecords: usageStorage.recordCount };
   },
   get_usage_overview: (args) => usageOverviewFor(timelineBetween(args.query.start, args.query.end)),
   get_usage_analysis: () => usageAnalysis,
@@ -1405,7 +1410,21 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     return { items, total: pool.length, page, pageSize, totalPages: Math.ceil(pool.length / pageSize) };
   },
   get_usage_pricing: ({ query }) => pricingFor(timelineBetween(query.start, query.end)),
-  repair_usage_cache_records: () => ({ scanned: 18_420, repaired: 12, deleted: 3, backupPath: '/Users/casey/Library/Application Support/onl.arbor.app/usage.backup.db' }),
+  // Like the backend, it counts only the records that look wrong (12 Claude ones with their cache left out of their input,
+  // 3 with an unknown model), backs the database up first, and has nothing left to do the next time.
+  repair_usage_cache_records: () => {
+    const repaired = Math.min(usageRepairsLeft.repaired, usageStorage.recordCount);
+    const deleted = Math.min(usageRepairsLeft.deleted, usageStorage.recordCount - repaired);
+    if (!repaired && !deleted) return { scanned: 0, repaired: 0, deleted: 0, backupPath: null };
+    usageRepairsLeft.repaired = 0;
+    usageRepairsLeft.deleted = 0;
+    usageStorage.recordCount -= deleted;
+    void emit('usage-records-updated', new Date().toISOString());
+    return {
+      scanned: repaired + deleted, repaired, deleted,
+      backupPath: `/Users/casey/Library/Application Support/onl.arbor.app/usage-records/backups/usage-before-history-repair-v2-${Date.now()}000000.db`,
+    };
+  },
   get_usage_storage_info: () => ({ ...usageStorage }),
   set_usage_retention: (args) => {
     const retentionDays = Number(args.retentionDays);
