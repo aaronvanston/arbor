@@ -74,7 +74,7 @@ export type SessionsParams = { tab?: SessionsTabId; session?: string; machine?: 
  * What Sync shows: one of its views, the Library's kind, how the view looks at it, and the machine Cost's Claude Code
  * spend is narrowed to, or whose changes the Repo's Arbor's changes lists.
  */
-export type SetupParams = { tab?: SetupTabId; kind?: LibraryKind; lens?: SetupLens; machine?: string };
+export type SetupParams = { tab?: SetupTabId; kind?: LibraryKind; lens?: SetupLens; machine?: string; item?: string };
 export type AccountsParams = { tab?: AccountsTabId };
 /** What Machines shows: the fleet at a glance, or one machine's own page. */
 export type MachinesParams = { machine?: string };
@@ -113,6 +113,8 @@ export const setupView = (params: SetupParams = {}): AppView => ({ kind: 'main',
  * or a scan asked for opens, rather than the view Sync was left on, which may show none of it (Software, Cost).
  */
 export const setupChecksView = (): AppView => setupView({ tab: 'overview' });
+/** One Library row's own page, by its key (`plugin:claude:review@acme`, `mcp:linear`, `file:~/.claude/…`). */
+export const libraryItemView = (kind: LibraryKind, item: string): AppView => setupView({ tab: 'library', kind, item });
 /** Sync › Library on a kind, as a list, or by machine with `lens`. */
 export const libraryView = (kind?: LibraryKind, lens?: Extract<SetupLens, 'machines' | 'cost'>): AppView =>
   setupView({ tab: 'library', ...(kind ? { kind } : {}), ...(lens ? { lens } : {}) });

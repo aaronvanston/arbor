@@ -26,8 +26,8 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { requestFocus } from '../focusRequests';
-import { isSetupTab, libraryView, savedSetupView, setupView, type AppView, type LibraryKind, type SetupParams, type SetupTabId } from '../navigation';
-import { isLibraryKind } from '../services/library';
+import { isSetupTab, libraryItemView, libraryView, savedSetupView, setupView, type AppView, type LibraryKind, type SetupParams, type SetupTabId } from '../navigation';
+import { isLibraryKind, libraryItemName } from '../services/library';
 import { KIND_LABEL as LIBRARY_KIND_LABEL, LibraryBar, SetupLibrary, type LibraryLens } from './SetupLibrary';
 import { leafLabel } from '../services/sidebarTree';
 import type { ViewChange } from '../services/viewHistory';
@@ -375,6 +375,8 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   useEffect(() => { if (tab === 'library') store(KIND_KEY, kind); }, [tab, kind]);
   const libraryLens: LibraryLens = tab === 'library' && (params?.lens === 'machines' || params?.lens === 'cost') ? params.lens : 'list';
   const costLens = tab === 'library' && libraryLens === 'cost';
+  // One row's own page, opened from the list; it has no lens of its own.
+  const libraryItem = tab === 'library' && libraryLens === 'list' ? params?.item ?? null : null;
   const repoChanges = tab === 'repo' && params?.lens === 'changes';
   const [libraryCounts, setLibraryCounts] = useState<Record<LibraryKind, number> | null>(null);
   const chooseLibrary = (next: LibraryKind, lens: LibraryLens) =>
@@ -522,6 +524,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             ...(repoChanges ? [t('setup.tab.history')] : []),
             ...(costLens ? [t('setup.tab.cost')] : []),
             ...(libraryLens === 'machines' ? [t(LIBRARY_KIND_LABEL[kind])] : []),
+            ...(libraryItem !== null ? [t(LIBRARY_KIND_LABEL[kind]), libraryItemName(libraryItem)] : []),
             ...(repoChanges && historyPick ? [
               <MachineCrumb
                 key="machine"
@@ -551,7 +554,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             <AlertDescription>{t('setup.loadFailed', { error: loadError })}</AlertDescription>
           </Alert>
         ) : null}
-        {tab === 'library' ? <LibraryBar kind={kind} lens={libraryLens} counts={libraryCounts} onChange={chooseLibrary} /> : null}
+        {tab === 'library' && libraryItem === null ? <LibraryBar kind={kind} lens={libraryLens} counts={libraryCounts} onChange={chooseLibrary} /> : null}
         {/* The scope sentence, for the grids a project or a machine can have values of its own on. */}
         {libraryLens === 'machines' && (kind === 'skills' || kind === 'plugins' || kind === 'mcps') ? <SyncScopeSentence /> : null}
         {tab === 'software' ? (
@@ -598,6 +601,12 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
           <SetupLibrary
             machines={machines}
             kind={kind}
+            item={libraryItem}
+            onOpenItem={(key) => onViewChange?.(libraryItemView(kind, key), 'push')}
+            onOpenInRepo={(path) => {
+              requestFocus('repo-file', path);
+              onNavigate(setupView({ tab: 'repo' }));
+            }}
             onCounts={setLibraryCounts}
             onOpenByMachine={() => chooseLibrary(kind, 'machines')}
             onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}

@@ -1,0 +1,252 @@
+import { useEffect, useState } from 'react';
+import { useConfirmation } from '../components/ConfirmationDialog';
+import { MachinePill } from '../components/identity/Identity';
+import { SettingsSection } from '../components/layout/settings';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { TableEmpty } from '../components/ui/data-table';
+import { MoreHorizontal } from '../components/ui/icons';
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '../components/ui/menu';
+import { Spinner } from '../components/ui/spinner';
+import { Switch } from '../components/ui/switch';
+import { useI18n } from '../i18n';
+import type { MessageKey } from '../i18n/resources';
+import { formatAgo, formatCount } from '../lib/format';
+import { cn } from '../lib/utils';
+import { libraryScope, type LibraryPlace, type LibraryRow } from '../services/library';
+import { getMcpUsage, measurePluginCosts, toolSafe } from '../services/setupPlugins';
+import { getSkillUsage } from '../services/setupSkills';
+import type { ComponentCost, ExtensionUsage, PluginCost, SetupMachine } from '../native/types';
+import { AgentMarks, LibraryMark, ScopeText } from './SetupLibrary';
+
+/** How many days of sessions a row's use is counted over. */
+const USAGE_DAYS = 30;
+
+/** What the page asks the Library to run, so a switch here and one in the list share one runner and its Undo. */
+export type LibraryActions = {
+  running: string | null;
+  problems: string[];
+  /** The row's own switch: on or off for every machine. */
+  onToggle: (on: boolean) => void;
+  /** One machine's switch. */
+  onMachine: (machine: string, on: boolean) => void;
+  onRemove: () => void;
+  onOpenByMachine: () => void;
+  /** The row's file in the Repo, for what the repo keeps as files. */
+  onOpenInRepo: (() => void) | null;
+};
+
+/** Why a machine's switch can't be flipped, or null when it can. */
+function heldReason(row: LibraryRow, place: LibraryPlace, machine: SetupMachine | undefined): MessageKey | null {
+  if (!machine?.reachable) return 'library.item.held.unreachable';
+  if (place.own === 'own') return 'library.item.held.own';
+  // Only a plugin keeps an on of a machine's own while it's off everywhere.
+  if (row.state === 'off' && row.kind !== 'plugins' && !place.wanted) return 'library.item.held.offEverywhere';
+  return null;
+}
+
+/** What a machine has of a row, in words, against what the repo wants there. */
+function placeWords(place: LibraryPlace, on: boolean, machine: SetupMachine | undefined): MessageKey {
+  if (!machine?.reachable) return 'library.item.place.unreachable';
+  if (place.own === 'own') return 'library.item.place.own';
+  if (place.wanted) return on ? 'library.item.place.on' : 'library.item.place.missing';
+  return on ? 'library.item.place.left' : place.own === 'off' ? 'library.item.place.offHere' : 'library.item.place.off';
+}
+
+/**
+ * One Library row's own page: the switch for every machine, where it's on with each machine's own switch, what it's
+ * used for and costs, and taking it off every machine.
+ */
+export function LibraryItemPage({ row, machines, actions }: { row: LibraryRow; machines: SetupMachine[]; actions: LibraryActions }) {
+  const { t } = useI18n();
+  const { askConfirmation } = useConfirmation();
+  const busy = actions.running !== null;
+  const listed = row.state !== 'unlisted' && row.state !== 'removed';
+
+  const remove = async () => {
+    const confirmed = await askConfirmation({
+      title: t('library.item.remove.title', { name: row.name }),
+      message: row.on.length
+        ? t('library.item.remove.message', { name: row.name, machines: row.on.join(', ') })
+        : t('library.item.remove.messageNone', { name: row.name }),
+      confirmText: t('library.item.remove.confirm'),
+      variant: 'danger',
+    });
+    if (confirmed) actions.onRemove();
+  };
+
+  return (
+    <div className="flex flex-col gap-8">
+      <header className="flex items-start gap-4">
+        <LibraryMark name={row.name} size="lg" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h1 className="flex min-w-0 items-center gap-2 text-lg font-medium text-foreground">
+            <span className="truncate">{row.name}</span>
+            <AgentMarks agents={row.agents} />
+          </h1>
+          {row.detail ? <p className="truncate font-mono text-xs text-muted-foreground">{row.detail}</p> : null}
+          <ScopeText row={row} className="justify-start" />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Menu>
+            <MenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t('library.item.more', { name: row.name })} />}><MoreHorizontal /></MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={actions.onOpenByMachine}>{t('library.item.byMachine')}</MenuItem>
+              {actions.onOpenInRepo ? <MenuItem onClick={actions.onOpenInRepo}>{t('library.item.openInRepo')}</MenuItem> : null}
+              {row.toggle && listed ? (
+                <>
+                  <MenuSeparator />
+                  <MenuItem variant="destructive" disabled={busy} onClick={() => void remove()}>{t('library.item.remove.menu')}</MenuItem>
+                </>
+              ) : null}
+            </MenuPopup>
+          </Menu>
+          {row.toggle && listed ? (
+            <label className="flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm text-foreground">
+              {t('library.item.everyMachine')}
+              {actions.running === row.key ? <Spinner className="size-4" /> : (
+                <Switch checked={row.state === 'on'} disabled={busy} onCheckedChange={actions.onToggle} aria-label={t('library.switch.label', { name: row.name })} />
+              )}
+            </label>
+          ) : null}
+        </div>
+      </header>
+      {actions.problems.map((text) => <p key={text} className="-mt-5 text-xs text-error-foreground">{text}</p>)}
+      {row.state === 'unlisted' ? <p className="-mt-4 text-sm text-muted-foreground">{t('library.item.unlisted')}</p> : null}
+      {row.state === 'removed' ? <p className="-mt-4 text-sm text-muted-foreground">{t('library.item.removed')}</p> : null}
+
+      <SettingsSection title={t('library.item.where')} description={t('library.item.whereAbout')} summary={libraryScope(row).kind === 'all' ? t('library.scope.all') : null}>
+        {row.fleet.length ? (
+          <ul className="divide-y divide-border/50">
+            {row.fleet.map((name) => {
+              const place = row.places[name] ?? { own: null, wanted: false, homes: [] };
+              const machine = machines.find((entry) => entry.machine === name);
+              const on = row.on.includes(name);
+              const held = heldReason(row, place, machine);
+              const key = `${row.key}\u0000${name}`;
+              return (
+                <li key={name} className="flex items-center gap-4 px-4 py-3" data-library-machine={name}>
+                  <span className="w-40 shrink-0"><MachinePill name={name} /></span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex items-center gap-2 text-sm text-foreground">
+                      {t(placeWords(place, on, machine))}
+                      {row.behind.includes(name) ? <Badge variant="warning" size="sm">{t('library.item.behind')}</Badge> : null}
+                    </span>
+                    {place.homes.length ? <span className="truncate font-mono text-xs text-muted-foreground">{place.homes.join(' · ')}</span> : null}
+                  </span>
+                  {row.toggle && listed ? (
+                    <span className="flex w-10 justify-end" title={held ? t(held) : undefined}>
+                      {actions.running === key ? <Spinner className="size-4" /> : (
+                        <Switch
+                          checked={place.wanted}
+                          disabled={busy || held !== null}
+                          onCheckedChange={(next) => actions.onMachine(name, next)}
+                          aria-label={t('library.item.machineSwitch', { name: row.name, machine: name })}
+                        />
+                      )}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : <TableEmpty>{t('library.item.noMachines')}</TableEmpty>}
+      </SettingsSection>
+
+      <UseAndCost row={row} machines={machines} />
+    </div>
+  );
+}
+
+function Stat({ label, value, note }: { label: string; value: string; note?: string | null }) {
+  return (
+    <div className="flex flex-col gap-0.5 px-4 py-3">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-foreground">{value}</span>
+      {note ? <span className="text-xs text-muted-foreground">{note}</span> : null}
+    </div>
+  );
+}
+
+/** A row's use over the last month, and for a plugin what it adds to every session, measured on request. */
+function UseAndCost({ row, machines }: { row: LibraryRow; machines: SetupMachine[] }) {
+  const { t } = useI18n();
+  const [usage, setUsage] = useState<Pick<ExtensionUsage, 'sessions' | 'calls' | 'lastMs'> | null | undefined>(undefined);
+  const [usageError, setUsageError] = useState<string | null>(null);
+  const [cost, setCost] = useState<PluginCost | null>(null);
+  const [measuring, setMeasuring] = useState(false);
+  const [costError, setCostError] = useState<string | null>(null);
+  const counted = row.kind === 'plugins' || row.kind === 'mcps' || row.kind === 'skills';
+
+  useEffect(() => {
+    if (!counted) return undefined;
+    let current = true;
+    const read = row.kind === 'skills'
+      ? getSkillUsage(USAGE_DAYS).then((report) => report.skills.find((entry) => entry.name === row.name) ?? null)
+      : getMcpUsage(USAGE_DAYS, row.kind === 'plugins' ? [row.name] : []).then((report) =>
+        (row.kind === 'plugins' ? report.plugins.find((entry) => entry.name === row.name) : report.servers.find((entry) => entry.name === toolSafe(row.name))) ?? null);
+    read
+      .then((found) => { if (current) setUsage(found); })
+      .catch((error) => { if (current) setUsageError(String(error)); });
+    return () => { current = false; };
+  }, [counted, row.kind, row.name]);
+
+  if (!counted) return null;
+  const plugin = row.toggle?.kind === 'plugin' ? row.toggle : null;
+  // Measured in a home that has it, on a machine that answers; Claude Code's own command reads it.
+  const where = plugin && !plugin.codex
+    ? row.fleet.flatMap((name) => (machines.find((entry) => entry.machine === name)?.reachable ? (row.places[name]?.homes ?? []).map((home) => ({ machine: name, home })) : []))[0] ?? null
+    : null;
+  const measure = async () => {
+    if (!where || !plugin) return;
+    setMeasuring(true);
+    setCostError(null);
+    try {
+      const measured = await measurePluginCosts(where.machine, where.home);
+      const found = measured.plugins.find((entry) => entry.id === plugin.row.id) ?? null;
+      setCost(found);
+      if (found?.error) setCostError(found.error);
+    } catch (error) {
+      setCostError(String(error));
+    } finally {
+      setMeasuring(false);
+    }
+  };
+  const tokens = (estimate: { tokens: number; under: boolean } | null) =>
+    estimate ? t(estimate.under ? 'library.item.tokensUnder' : 'library.item.tokens', { count: formatCount(estimate.tokens) }) : '—';
+
+  return (
+    <SettingsSection
+      title={t('library.item.use')}
+      description={t('library.item.useAbout', { days: USAGE_DAYS })}
+      headerAction={where ? (
+        <Button variant="outline" size="sm" disabled={measuring} onClick={() => void measure()}>
+          {measuring ? <Spinner className="size-3.5" /> : null}
+          {t(cost ? 'library.item.measureAgain' : 'library.item.measure')}
+        </Button>
+      ) : undefined}
+    >
+      <div className={cn('grid divide-x divide-border/50', cost ? 'grid-cols-4' : 'grid-cols-3')}>
+        <Stat label={t('library.item.sessions')} value={usage === undefined ? '…' : formatCount(usage?.sessions ?? 0)} />
+        <Stat label={t('library.item.calls')} value={usage === undefined ? '…' : formatCount(usage?.calls ?? 0)} />
+        <Stat label={t('library.item.lastUsed')} value={usage?.lastMs ? formatAgo(usage.lastMs) : t('library.item.never')} />
+        {cost ? <Stat label={t('library.item.startingContext')} value={tokens(cost.alwaysOn)} note={where ? t('library.item.measuredOn', { machine: where.machine }) : null} /> : null}
+      </div>
+      {usageError ? <p className="border-t border-border/50 px-4 py-3 text-xs text-error-foreground">{t('library.item.usageFailed', { error: usageError })}</p> : null}
+      {costError ? <p className="border-t border-border/50 px-4 py-3 text-xs text-error-foreground">{t('library.item.measureFailed', { error: costError })}</p> : null}
+      {cost?.components.length ? (
+        <div className="border-t border-border/50 px-4 py-3">
+          <p className="mb-2 text-xs text-muted-foreground">{t('library.item.brings', { count: cost.components.length })}</p>
+          <ul className="grid grid-cols-2 gap-x-6 gap-y-1">
+            {cost.components.map((component: ComponentCost) => (
+              <li key={component.name} className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate font-mono text-foreground">{component.name}</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{tokens(component.alwaysOn)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </SettingsSection>
+  );
+}

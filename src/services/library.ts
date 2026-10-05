@@ -53,8 +53,16 @@ export type LibraryRow = {
   behind: string[];
   /** Machines with a value of their own, where the repo's word for every machine doesn't apply. */
   exceptions: number;
+  /** Each machine of `fleet`, by name: what the repo wants there and which of its homes have it. */
+  places: Record<string, LibraryPlace>;
   toggle: LibraryToggle | null;
 };
+
+/**
+ * One machine's part of a row. `own`: the machine's own value in the repo (on, off, its own copy, removed), when it has
+ * one. `wanted`: the repo wants it on there. `homes`: the homes that have it, as the scan names them.
+ */
+export type LibraryPlace = { own: string | null; wanted: boolean; homes: string[] };
 
 const unique = <T,>(values: T[]) => [...new Set(values)];
 
@@ -83,6 +91,12 @@ function pluginRows(view: ExtensionsView, codex: boolean): LibraryRow[] {
         fleet,
         behind: summaries.filter((summary) => summary.differs && columns.find((column) => column.machine === summary.machine)?.reachable).map((summary) => summary.machine),
         exceptions: row.repo ? Object.keys(row.repo.machines).length : 0,
+        places: Object.fromEntries(columns.map((column) => {
+          const own = row.repo?.machines[machineLookKey(column.machine)] ?? null;
+          const value = own ?? row.repo?.all ?? null;
+          const homes = row.cells.filter((cell) => cell.home.machine === column.machine && (cell.place === 'on' || cell.place === 'off')).map((cell) => cell.home.path);
+          return [column.machine, { own, wanted: value === 'on', homes }];
+        })),
         toggle: { kind: 'plugin', codex, row },
       };
     });
@@ -109,6 +123,11 @@ function serverRows(view: ExtensionsView, found: boolean): LibraryRow[] {
       fleet: fleetOf(view.mcpHomes),
       behind: summaries.filter((summary) => summary.differs).map((summary) => summary.machine),
       exceptions: server ? server.off.length + server.own.length : 0,
+      places: Object.fromEntries(columns.map((column) => {
+        const own = !server ? null : server.off.includes(column.machine) ? 'off' : server.own.includes(column.machine) ? 'own' : null;
+        const wanted = state === 'on' ? own !== 'off' : own === 'own';
+        return [column.machine, { own, wanted, homes: row.cells.filter((cell) => cell.home.machine === column.machine && cell.item).map((cell) => cell.home.path) }];
+      })),
       toggle: state === 'on' || state === 'off' ? { kind: 'mcp', name: row.name } : null,
     };
   });
@@ -132,6 +151,12 @@ function skillRows(machines: SetupMachine[], repo: SetupRepo | null): LibraryRow
       fleet: fleet.machines,
       behind: cells.filter(({ cell }) => cell.look).map(({ machine }) => machine),
       exceptions: Object.keys(repo?.skillMachines[row.name] ?? {}).length,
+      places: Object.fromEntries(fleet.machines.map((machine) => {
+        const own = repo?.skillMachines[row.name]?.[machineLookKey(machine)] ?? null;
+        const cell = row.cells[machine];
+        const homes = cell ? [...(cell.row.store ? ['~/.agents'] : []), ...cell.row.cells.filter((entry) => entry.place !== 'none').map((entry) => entry.home.path)] : [];
+        return [machine, { own, wanted: state === 'synced' && !off ? own !== 'off' : own === 'own', homes }];
+      })),
       toggle: state === 'synced' ? { kind: 'skill', name: row.name } : null,
     };
   });
@@ -152,6 +177,11 @@ function hookLibraryRows(registry: HookRegistry, machines: readonly string[]): L
       fleet: [...machines],
       behind: summaries.filter(({ summary }) => summary.differs).map(({ machine }) => machine),
       exceptions: view?.off.length ?? 0,
+      places: Object.fromEntries(summaries.map(({ machine, summary }) => {
+        const own = view?.off.includes(machine) ? 'off' : null;
+        const wanted = Boolean(view && !view.removed && !view.allOff && own !== 'off');
+        return [machine, { own, wanted, homes: unique(summary.cells.filter((cell) => cell.state !== 'add').map((cell) => cell.home)) }];
+      })),
       toggle: view && !view.removed ? { kind: 'hook', name: view.name } : null,
     };
   });
@@ -174,6 +204,10 @@ function fileRows(repo: SetupRepo, machines: readonly string[]): LibraryRow[] {
       fleet: [...machines],
       behind: [],
       exceptions: Object.keys(repo.fileMachines[path] ?? {}).length,
+      places: Object.fromEntries(machines.map((machine) => {
+        const own = repo.fileMachines[path]?.[machineLookKey(machine)] ?? null;
+        return [machine, { own, wanted: !gone && !off && own !== 'off', homes: [] }];
+      })),
       // An agent's instructions are every machine's own, so they're changed in the repo, never switched off.
       toggle: !gone && kind !== null && removableKind(kind) ? { kind: 'file', path } : null,
     };
@@ -204,6 +238,16 @@ export function libraryRows({ machines, view, repo, registryFound, hooks }: Libr
     ...(repo ? fileRows(repo, names) : []),
   ];
   return rows.map((row) => (row.state === 'unlisted' && row.behind.length ? { ...row, behind: [] } : row));
+}
+
+/** A row's name from its key, for the breadcrumb before the row is read: what follows the kind (and agent). */
+export function libraryItemName(key: string): string {
+  const [kind, ...rest] = key.split(':');
+  const name = (kind === 'plugin' || kind === 'hook' ? rest.slice(1) : rest).join(':');
+  if (kind === 'plugin') return name.slice(0, name.lastIndexOf('@') > 0 ? name.lastIndexOf('@') : undefined);
+  if (kind === 'file') return name.split('/').pop() ?? name;
+  if (kind === 'hook' && name.includes('\u0000')) return name.split('\u0000').pop()?.split('/').pop() ?? name;
+  return name;
 }
 
 export type LibraryFilter = { kind: LibraryKind; agent: LibraryAgent | null; query: string };

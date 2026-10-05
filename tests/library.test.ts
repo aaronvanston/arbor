@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
-import { libraryCounts, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { lineUp, relisted, switchFile, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { libraryCounts, libraryItemName, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
+import { lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
 import { extensionsView, type PluginRow } from '../src/services/setupPlugins';
@@ -251,5 +251,72 @@ describe('every kind’s switch', () => {
       ['undo', 'cam-mbp', 'b1'],
       ['off', command.path, false],
     ]);
+  });
+});
+
+describe('an item’s own page', () => {
+  it('names an item from its key before it’s read', () => {
+    expect(libraryItemName('plugin:claude:review@acme-tools')).toBe('review');
+    expect(libraryItemName('mcp:linear')).toBe('linear');
+    expect(libraryItemName('skill:pdf')).toBe('pdf');
+    expect(libraryItemName('hook:repo:guard')).toBe('guard');
+    expect(libraryItemName('hook:extra:SessionStart\u0000old.sh')).toBe('old.sh');
+    expect(libraryItemName('file:~/.claude/commands/ship.md')).toBe('ship.md');
+  });
+
+  it('says for each machine what the repo wants there, its own value, and which homes have it', () => {
+    const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on', { ci01: 'off' })])), 'review');
+    expect(row.places).toEqual({
+      'casey-mbp': { own: null, wanted: true, homes: ['~/.claude'] },
+      'ci-01': { own: 'off', wanted: false, homes: ['~/.claude'] },
+      'cedar-02': { own: null, wanted: true, homes: [] },
+    });
+  });
+
+  it('turns a plugin on for one machine as a value of its own, changes only that machine, and Undo takes the value out', async () => {
+    const set: unknown[] = [];
+    const applied: string[] = [];
+    mockCommands({
+      set_setup_plugin: ({ machine: name, wanted }) => {
+        set.push([name, wanted]);
+        return repo([listing(REVIEW, 'on', wanted ? { ci01: wanted } : {})]);
+      },
+      apply_plugin_changes: ({ machine: name, changes }) => {
+        applied.push(name);
+        return changes.map((change): PluginResult => ({ ...change, checkout: null, outcome: 'done', message: '' }));
+      },
+    });
+    const machines = fleet();
+    const row = pluginRow(machines, repo([listing(REVIEW, 'on', { ci01: 'off' })]));
+    const run = await switchMachine('/repo', machines, { kind: 'plugin', codex: false, row }, 'ci-01', true);
+    // On is every machine's value already, so the machine's own goes rather than repeating it.
+    expect(set).toEqual([['ci-01', null]]);
+    expect(applied).toEqual(['ci-01']);
+    expect(run.changed).toEqual(['ci-01']);
+    await run.undo();
+    expect(set).toEqual([['ci-01', null], ['ci-01', 'off']]);
+  });
+
+  it('removes a server from every machine and Undo puts the repo’s last definition back', async () => {
+    const calls: string[] = [];
+    const definition = { transport: 'http', place: 'mcp.linear.app', variables: [] };
+    const server = (removed: boolean): ServerView => ({ name: 'linear', claude: removed ? null : definition, codex: null, homes: null, agents: [], own: [], off: [], allOff: false, problems: [] });
+    const answer = (removed: boolean): McpRegistry => ({
+      commit: 'c'.repeat(40), found: true, uncommitted: false, problems: [], servers: [server(removed)],
+      cells: [{ machine: 'casey-mbp', home: '~/.claude', name: 'linear', state: removed ? 'extra' : 'same', own: false, blocked: null }],
+    });
+    mockCommands({
+      set_mcp_wanted: ({ wanted }) => { calls.push(`set ${wanted}`); return answer(true); },
+      put_back_mcp_server: () => { calls.push('put back'); return answer(false); },
+      apply_mcp_changes: ({ changes }) => {
+        calls.push(`apply ${changes.map((change) => change.action).join(',')}`);
+        return changes.map((change) => ({ ...change, outcome: 'removed' as const, message: '' }));
+      },
+    });
+    const machines = [machine('casey-mbp', [item('mcp', 'linear', { value: 'http', sum: 'x1' })])];
+    const run = await removeEverywhere('/repo', machines, { kind: 'mcp', name: 'linear' });
+    expect(run.changed).toEqual(['casey-mbp']);
+    await run.undo();
+    expect(calls).toEqual(['set removed', 'apply remove', 'put back']);
   });
 });

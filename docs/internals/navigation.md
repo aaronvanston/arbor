@@ -40,7 +40,9 @@ machine's things go on its page; comparing machines is Sync's.
 Sync has four views. Overview is the checks. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
 plugin, MCP server, skill, hook and instruction file the setup repo gives the agents, one row each, with the repo's word
 for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
-brings each answering machine in line straight away, with Undo. Software has the agent rollout, every machine's
+brings each answering machine in line straight away, with Undo. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its
+own switch (a value of that machine's own in the repo, applied there at once, `switchMachine`), use and a plugin's
+measured cost, and Remove from every machine (`removeEverywhere`), confirmed first and undone with Undo. Software has the agent rollout, every machine's
 versions and the toolchain. Repo is the setup repo's files, with Arbor's changes on each machine beside them.
 
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the

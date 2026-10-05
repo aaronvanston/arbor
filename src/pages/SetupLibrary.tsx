@@ -18,7 +18,9 @@ import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
 import { LIBRARY_KINDS, libraryCounts, libraryList, libraryRows, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
-import { switchFile, switchHook, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
+import { removeEverywhere, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
+import { skillFolder } from '../services/repoBrowser';
+import { LibraryItemPage, type LibraryActions } from './SetupLibraryItem';
 import { getHookRegistry } from '../services/setupHooks';
 import { getMcpRegistry, withRegistry } from '../services/setupMcp';
 import { withCodexPluginRepo, withPluginRepo } from '../services/setupPluginRepo';
@@ -71,13 +73,13 @@ export function LibraryBar({ kind, lens, counts, onChange }: {
 }
 
 /** A row's mark: its first letter in a color its name always gets, until things have icons of their own. */
-function LibraryMark({ name }: { name: string }) {
+export function LibraryMark({ name, size = 'md' }: { name: string; size?: 'md' | 'lg' }) {
   let hash = 0;
   for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   const color = identityColors[hash % identityColors.length] ?? 'slate';
   return (
     <span
-      className="account-chip account-fill squircle inline-flex size-8 shrink-0 items-center justify-center text-sm font-semibold"
+      className={cn('account-chip account-fill squircle inline-flex shrink-0 items-center justify-center font-semibold', size === 'lg' ? 'size-12 text-xl' : 'size-8 text-sm')}
       style={{ '--account-color': identityColorCss(color) } as CSSProperties}
       data-fill="soft"
       aria-hidden="true"
@@ -87,7 +89,7 @@ function LibraryMark({ name }: { name: string }) {
   );
 }
 
-function AgentMarks({ agents }: { agents: LibraryAgent[] }) {
+export function AgentMarks({ agents }: { agents: LibraryAgent[] }) {
   return (
     <span className="flex shrink-0 items-center gap-1">
       {agents.map((agent) => <ProviderMark key={agent} provider={agent} className="size-3.5" />)}
@@ -95,7 +97,7 @@ function AgentMarks({ agents }: { agents: LibraryAgent[] }) {
   );
 }
 
-function ScopeText({ row }: { row: LibraryRow }) {
+export function ScopeText({ row, className }: { row: LibraryRow; className?: string }) {
   const { t } = useI18n();
   const scope = libraryScope(row);
   const words = scope.kind === 'all' ? t('library.scope.all')
@@ -103,7 +105,7 @@ function ScopeText({ row }: { row: LibraryRow }) {
       : scope.kind === 'off' ? t('library.scope.off')
         : scope.on ? t('library.scope.unlisted', { on: scope.on, of: scope.of }) : t('library.scope.unlistedNone');
   return (
-    <span className="flex shrink-0 items-center justify-end gap-2 text-xs">
+    <span className={cn('flex shrink-0 items-center justify-end gap-2 text-xs', className)}>
       {row.behind.length ? (
         <Badge variant="warning" size="sm" title={t('library.behind.title', { machines: row.behind.join(', ') })}>
           {t('library.behind', { count: row.behind.length })}
@@ -135,9 +137,14 @@ type Problem = { key: string; text: string };
  * Sync › Library as a list: one row for each thing the repo gives the machines' agents, with where it's on and, for
  * what can be switched yet, a switch that changes every machine straight away.
  */
-export function SetupLibrary({ machines, kind, onOpenByMachine, onOpenRepo, onCounts }: {
+export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine, onOpenRepo, onOpenInRepo, onCounts }: {
   machines: SetupMachine[];
   kind: LibraryKind;
+  /** The row whose own page is open, by its key. */
+  item: string | null;
+  onOpenItem: (key: string) => void;
+  /** Opens a file of the repo's in the Repo. */
+  onOpenInRepo: (path: string) => void;
   /** Opens the kind's grid, where a row without a switch is changed. */
   onOpenByMachine: () => void;
   onOpenRepo: () => void;
@@ -196,8 +203,8 @@ export function SetupLibrary({ machines, kind, onOpenByMachine, onOpenRepo, onCo
   const report = (key: string, texts: string[]) =>
     setProblems((current) => [...current.filter((problem) => problem.key !== key), ...texts.map((text) => ({ key, text }))]);
 
-  const undo = async (row: LibraryRow, on: boolean, run: LibrarySwitch) => {
-    setRunning({ key: row.key, on: !on });
+  const undo = async (row: LibraryRow, runKey: string, on: boolean, run: LibrarySwitch) => {
+    setRunning({ key: runKey, on: !on });
     try {
       const back = await run.undo();
       keep(back);
@@ -211,30 +218,56 @@ export function SetupLibrary({ machines, kind, onOpenByMachine, onOpenRepo, onCo
     }
   };
 
-  const toggle = async (row: LibraryRow, on: boolean) => {
-    const target = row.toggle;
-    if (!repoPath || !target || running) return;
-    setRunning({ key: row.key, on });
+  /**
+   * Runs one change to a row, one at a time since each walks every machine: what it changed, what it couldn't, and
+   * Undo in its toast. `runKey` is what shows the spinner: the row, or one of its machines.
+   */
+  const perform = async (row: LibraryRow, runKey: string, on: boolean, title: string, start: (repo: string) => Promise<LibrarySwitch>) => {
+    if (!repoPath || running) return;
+    setRunning({ key: runKey, on });
     report(row.key, []);
     try {
-      const run = await switchRow(repoPath, machines, target, on);
+      const run = await start(repoPath);
       keep(run);
       const texts = failedText(run.failed, run.needsYou, row.name);
       report(row.key, texts);
       toast({
         kind: texts.length ? 'warning' : 'success',
-        title: t(on ? 'library.toggle.on' : 'library.toggle.off', { name: row.name }),
+        title,
         description: [
           t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
           run.skipped.length ? t('library.toggle.skipped', { machines: run.skipped.join(', ') }) : null,
         ].filter(Boolean).join(' '),
-        action: { label: t('common.undo'), onClick: () => { void undo(row, on, run); } },
+        action: { label: t('common.undo'), onClick: () => { void undo(row, runKey, on, run); } },
       });
     } catch (error) {
       report(row.key, [t('library.toggle.failed', { name: row.name, error: String(error) })]);
     } finally {
       setRunning(null);
     }
+  };
+  const toggle = (row: LibraryRow, on: boolean) => {
+    const target = row.toggle;
+    if (target) void perform(row, row.key, on, t(on ? 'library.toggle.on' : 'library.toggle.off', { name: row.name }), (repo) => switchRow(repo, machines, target, on));
+  };
+  const actionsFor = (row: LibraryRow): LibraryActions => {
+    const target = row.toggle;
+    const repoFile = row.kind === 'skills' ? `${skillFolder(row.name)}/SKILL.md` : row.kind === 'instructions' && row.detail ? row.detail.replace(/^~\//, '') : null;
+    return {
+      running: running?.key ?? null,
+      problems: problems.filter((problem) => problem.key === row.key).map((problem) => problem.text),
+      onToggle: (on) => toggle(row, on),
+      onMachine: (machine, on) => {
+        if (!target) return;
+        const title = t(on ? 'library.item.machineOn' : 'library.item.machineOff', { name: row.name, machine });
+        void perform(row, `${row.key}\u0000${machine}`, on, title, (repo) => switchMachine(repo, machines, target, machine, on));
+      },
+      onRemove: () => {
+        if (target) void perform(row, row.key, false, t('library.item.removedToast', { name: row.name }), (repo) => removeEverywhere(repo, machines, target));
+      },
+      onOpenByMachine,
+      onOpenInRepo: repoFile && row.state !== 'unlisted' ? () => onOpenInRepo(repoFile) : null,
+    };
   };
 
   if (!repoPath) {
@@ -243,6 +276,13 @@ export function SetupLibrary({ machines, kind, onOpenByMachine, onOpenRepo, onCo
         <TableEmpty action={<Button variant="outline" size="sm" onClick={onOpenRepo}>{t('library.noRepo.open')}</Button>}>{t('library.noRepo')}</TableEmpty>
       </TableCard>
     );
+  }
+
+  if (item !== null) {
+    const row = rows.find((entry) => entry.key === item);
+    if (!loaded) return <TableEmpty><span className="inline-flex items-center gap-2"><Spinner />{t('library.loading')}</span></TableEmpty>;
+    if (!row) return <TableEmpty>{t('library.item.gone')}</TableEmpty>;
+    return <LibraryItemPage row={row} machines={machines} actions={actionsFor(row)} />;
   }
 
   const search = t('library.search');
@@ -286,25 +326,28 @@ export function SetupLibrary({ machines, kind, onOpenByMachine, onOpenRepo, onCo
                 running={running?.key === row.key ? running : null}
                 held={running !== null && running.key !== row.key}
                 problems={problems.filter((problem) => problem.key === row.key).map((problem) => problem.text)}
-                onToggle={(on) => void toggle(row, on)}
+                onToggle={(on) => toggle(row, on)}
+                onOpen={() => onOpenItem(row.key)}
                 onOpenByMachine={onOpenByMachine}
               />
             ))}
           </ul>
         )}
       </TableCard>
-      {shown.removed.length ? <RemovedRows rows={shown.removed} /> : null}
+      {shown.removed.length ? <RemovedRows rows={shown.removed} onOpen={onOpenItem} /> : null}
     </div>
   );
 }
 
-function LibraryItem({ row, running, held, problems, onToggle, onOpenByMachine }: {
+function LibraryItem({ row, running, held, problems, onToggle, onOpen, onOpenByMachine }: {
   row: LibraryRow;
   running: Running | null;
   /** Another switch is running; one at a time, since each walks every machine. */
   held: boolean;
   problems: string[];
   onToggle: (on: boolean) => void;
+  /** Opens the row's own page. */
+  onOpen: () => void;
   onOpenByMachine: () => void;
 }) {
   const { t } = useI18n();
@@ -313,7 +356,7 @@ function LibraryItem({ row, running, held, problems, onToggle, onOpenByMachine }
   return (
     <li className="flex flex-col gap-2 px-4 py-3" data-library-row={row.key}>
       <div className="flex items-center gap-4">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onOpen} aria-label={t('library.item.open', { name: row.name })}>
           <LibraryMark name={row.name} />
           <span className="flex min-w-0 flex-col">
             <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
@@ -322,7 +365,7 @@ function LibraryItem({ row, running, held, problems, onToggle, onOpenByMachine }
             </span>
             {row.detail ? <span className="truncate font-mono text-xs text-muted-foreground">{row.detail}</span> : null}
           </span>
-        </div>
+        </button>
         <ScopeText row={row} />
         {row.toggle ? (
           <span className="flex w-10 justify-end">
@@ -347,7 +390,7 @@ function LibraryItem({ row, running, held, problems, onToggle, onOpenByMachine }
   );
 }
 
-function RemovedRows({ rows }: { rows: LibraryRow[] }) {
+function RemovedRows({ rows, onOpen }: { rows: LibraryRow[]; onOpen: (key: string) => void }) {
   const { t } = useI18n();
   return (
     <Collapsible>
@@ -356,7 +399,11 @@ function RemovedRows({ rows }: { rows: LibraryRow[] }) {
       </CollapsibleTrigger>
       <CollapsiblePanel>
         <ul className="mt-2 flex flex-wrap gap-1.5">
-          {rows.map((row) => <li key={row.key}><Badge variant="muted">{row.name}</Badge></li>)}
+          {rows.map((row) => (
+            <li key={row.key}>
+              <Badge variant="muted" render={<button type="button" onClick={() => onOpen(row.key)} aria-label={t('library.item.open', { name: row.name })} />}>{row.name}</Badge>
+            </li>
+          ))}
         </ul>
       </CollapsiblePanel>
     </Collapsible>

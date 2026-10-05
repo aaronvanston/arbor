@@ -2,10 +2,13 @@ import { mcpSummary } from './mcpGrid';
 import { machineColumns } from './pluginGrid';
 import { planSkills, runSkillPlan, undoSkillRun, type RunProblem } from './skillRuns';
 import { applyHooks, hookChanges, setHookWanted } from './setupHooks';
-import { applyMcpChanges, mcpChanges, plannedMcp, setMcpWanted, withRegistry, type PendingMcp } from './setupMcp';
+import { applyMcpChanges, mcpChanges, plannedMcp, putBackMcpServer, setMcpWanted, withRegistry, type PendingMcp } from './setupMcp';
 import { codexRepoChanges, differs, repoAction, setSetupCodexPlugin, setSetupPlugin, wantedOn } from './setupPluginRepo';
 import { applyCodexPluginChanges, applyPluginChanges, extensionsView, type PluginCell, type PluginRow } from './setupPlugins';
-import { applySetupSync, setSetupFileOff, setSetupSkillOff, syncChanges, syncPlan, undoSetupSync } from './setupSync';
+import { applySetupSync, getSetupRepo, setSetupFileMachine, setSetupFileOff, setSetupFileRemoved, setSetupSkillMachine, setSetupSkillOff, syncChanges, syncPlan, undoSetupSync } from './setupSync';
+import { skillsView, STORE } from './setupSkills';
+import { machineLookKey } from './machineLook';
+import type { LibraryToggle } from './library';
 import type { HookRegistry, McpRegistry, PluginAction, PluginResult, PluginWanted, RepoPlugin, SetupMachine, SetupRepo } from '../native/types';
 
 /**
@@ -162,7 +165,7 @@ const unreachableOf = (machines: SetupMachine[], among: (machine: SetupMachine) 
 const failure = (machine: string, error: unknown): SwitchFailure => ({ machine, message: String(error) });
 
 /** Brings each answering machine's homes in line with the registry's word on one server. */
-async function lineUpServer(repo: string, machines: SetupMachine[], registry: McpRegistry, name: string) {
+async function lineUpServer(repo: string, machines: SetupMachine[], registry: McpRegistry, name: string, only: string | null = null) {
   const found = registry.found && registry.problems.length === 0;
   const view = withRegistry(extensionsView(machines), registry);
   const row = view.servers.find((entry) => entry.name === name);
@@ -171,7 +174,7 @@ async function lineUpServer(repo: string, machines: SetupMachine[], registry: Mc
   if (!row || !registry.commit) return { changed, failed };
   const pending: PendingMcp = {};
   for (const column of machineColumns(view.mcpHomes)) {
-    if (column.reachable) Object.assign(pending, mcpSummary(row, column, found, {}).toRepo);
+    if (column.reachable && (only === null || column.machine === only)) Object.assign(pending, mcpSummary(row, column, found, {}).toRepo);
   }
   for (const [machine, planned] of plannedMcp({ ...view, servers: [row] }, pending)) {
     try {
@@ -203,11 +206,12 @@ export async function switchServer(repo: string, machines: SetupMachine[], name:
 }
 
 /** Brings each answering machine with a home out of step on the hook in line: its hooks, as the repo has them. */
-async function lineUpHook(repo: string, machines: SetupMachine[], registry: HookRegistry, name: string) {
+async function lineUpHook(repo: string, machines: SetupMachine[], registry: HookRegistry, name: string, only: string | null = null) {
   const changed: string[] = [];
   const failed: SwitchFailure[] = [];
   if (!registry.commit) return { changed, failed };
   for (const machine of reachableMachines(machines)) {
+    if (only !== null && machine.machine !== only) continue;
     if (!hookChanges(registry, machine.machine).some((cell) => cell.name === name)) continue;
     try {
       const edits = await applyHooks(repo, registry.commit, machine.machine);
@@ -267,12 +271,13 @@ export async function switchSkill(repo: string, machines: SetupMachine[], name: 
 }
 
 /** Writes or takes out one file on each answering machine, as the repo now has it, keeping each machine's backup. */
-async function lineUpFile(setup: SetupRepo, machines: SetupMachine[], path: string) {
+async function lineUpFile(setup: SetupRepo, machines: SetupMachine[], path: string, only: string | null = null) {
   const changed: string[] = [];
   const failed: SwitchFailure[] = [];
   const backups: { machine: string; backup: string }[] = [];
   if (!setup.head) return { changed, failed, backups };
   for (const machine of reachableMachines(machines)) {
+    if (only !== null && machine.machine !== only) continue;
     const changes = syncChanges(syncPlan(setup, machine).filter((file) => file.path === path));
     if (!changes.length) continue;
     try {
@@ -327,4 +332,210 @@ export async function switchPlugin(repo: string, row: PluginRow, codex: boolean,
       return { repo: undone.repo, failed: undone.failed.map(asFailure) };
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// One machine's switch, and removing from every machine
+// ---------------------------------------------------------------------------
+
+const noSwitch = (failed: SwitchFailure[], changed: string[], sources: SwitchSources, undo: LibrarySwitch['undo']): LibrarySwitch =>
+  ({ ...sources, changed, failed, needsYou: [], skipped: [], undo });
+
+/** Runs a plugin's changes on the machines `lineUp` gives, the one machine's alone when `only` names it. */
+async function lineUpPlugin(row: PluginRow, plugin: RepoPlugin | null, codex: boolean, only: string | null) {
+  const byMachine = lineUp(relisted(row, plugin), codex);
+  if (only !== null) for (const machine of byMachine.keys()) if (machine !== only) byMachine.delete(machine);
+  return runChanges(byMachine, codex);
+}
+
+/**
+ * The store copy and home links of a skill on one machine taken out, as removing it does there, keeping each backup:
+ * a machine's own value of off leaves its copy alone, so turning it off there takes the copy out by hand.
+ */
+async function takeSkillOff(setup: SetupRepo, machine: SetupMachine, name: string) {
+  const done = await runSkillPlan({ ...planSkills('remove', [name], [machine], setup), marks: [] }, setup, () => undefined);
+  const failed = runFailures(done.problems);
+  const backups = done.backups.map((entry) => entry.backup);
+  const store = skillsView(machine).rows.find((row) => row.name === name)?.store ?? null;
+  if (store?.sum && !store.link && setup.head) {
+    try {
+      const outcome = await applySetupSync(setup.path, setup.head.sha, machine.machine, [{ path: `${STORE}/${name}`, remove: true, before: store.sum }]);
+      if (outcome.backup) backups.push(outcome.backup);
+      failed.push(...outcome.failed.map((entry) => ({ machine: machine.machine, message: entry.reason })));
+    } catch (error) {
+      failed.push(failure(machine.machine, error));
+    }
+  }
+  return { changed: done.touched.length || backups.length ? [machine.machine] : [], failed, backups };
+}
+
+/** Puts back a machine's backups, the last first. */
+async function undoBackups(machine: string, backups: string[]): Promise<SwitchFailure[]> {
+  const failed: SwitchFailure[] = [];
+  for (const backup of [...backups].reverse()) {
+    try {
+      failed.push(...(await undoSetupSync(machine, backup)).failed.map((entry) => ({ machine, message: entry.reason })));
+    } catch (error) {
+      failed.push(failure(machine, error));
+    }
+  }
+  return failed;
+}
+
+/**
+ * Turns a row on or off on one machine: that machine's own value in the repo, then the machine brought in line. On one
+ * machine while it's off everywhere only a plugin can be; the other kinds keep no such value.
+ */
+export async function switchMachine(repo: string, machines: SetupMachine[], toggle: LibraryToggle, machine: string, on: boolean): Promise<LibrarySwitch> {
+  const entry = machines.find((candidate) => candidate.machine === machine);
+  if (!entry) throw new Error(`${machine} hasn't been read yet`);
+  switch (toggle.kind) {
+    case 'plugin': {
+      const { row, codex } = toggle;
+      const listing = row.repo;
+      if (!listing) throw new Error(`The repo doesn't list ${row.id}`);
+      const set = (value: PluginWanted | null) => (codex ? setSetupCodexPlugin : setSetupPlugin)(repo, row.id, row.source, machine, value);
+      const before = listing.machines[machineLookKey(machine)] ?? null;
+      const wanted: PluginWanted = on ? 'on' : 'off';
+      const next = await set(wanted === listing.all ? null : wanted);
+      const ran = await lineUpPlugin(row, listingOf(next, row, codex), codex, machine);
+      const asFailure = (result: MachineResult): SwitchFailure => ({ machine: result.machine, message: result.message });
+      return {
+        repo: next,
+        changed: unique(ran.done.map((change) => change.machine)),
+        failed: ran.failed.map(asFailure),
+        needsYou: unique(ran.needsYou.map((result) => result.machine)),
+        skipped: [],
+        undo: async () => {
+          const back = await set(before);
+          return { repo: back, failed: (await lineUpPlugin(row, listingOf(back, row, codex), codex, machine)).failed.map(asFailure) };
+        },
+      };
+    }
+    case 'mcp': {
+      const registry = await setMcpWanted(repo, toggle.name, machine, on ? 'default' : 'off');
+      const ran = await lineUpServer(repo, machines, registry, toggle.name, machine);
+      return noSwitch(ran.failed, ran.changed, { registry }, async () => {
+        const back = await setMcpWanted(repo, toggle.name, machine, on ? 'off' : 'default');
+        return { registry: back, failed: (await lineUpServer(repo, machines, back, toggle.name, machine)).failed };
+      });
+    }
+    case 'hook': {
+      const hooks = await setHookWanted(repo, toggle.name, machine, on ? 'default' : 'off');
+      const ran = await lineUpHook(repo, machines, hooks, toggle.name, machine);
+      return noSwitch(ran.failed, ran.changed, { hooks }, async () => {
+        const back = await setHookWanted(repo, toggle.name, machine, on ? 'off' : 'default');
+        return { hooks: back, failed: (await lineUpHook(repo, machines, back, toggle.name, machine)).failed };
+      });
+    }
+    case 'skill': {
+      const { name } = toggle;
+      if (on) {
+        const next = await setSetupSkillMachine(repo, name, machine, null);
+        const done = await runSkillPlan(planSkills('add', [name], [entry], next), next, () => undefined);
+        return noSwitch(runFailures(done.problems), done.touched, { repo: next }, async () => {
+          const problems = await undoSkillRun(done);
+          return { repo: await setSetupSkillMachine(repo, name, machine, 'off'), failed: runFailures(problems.machines) };
+        });
+      }
+      const next = await setSetupSkillMachine(repo, name, machine, 'off');
+      const ran = await takeSkillOff(next, entry, name);
+      return noSwitch(ran.failed, ran.changed, { repo: next }, async () => {
+        const failed = await undoBackups(machine, ran.backups);
+        return { repo: await setSetupSkillMachine(repo, name, machine, null), failed };
+      });
+    }
+    case 'file': {
+      const { path } = toggle;
+      if (on) {
+        const next = await setSetupFileMachine(repo, path, machine, null);
+        const ran = await lineUpFile(next, machines, path, machine);
+        return noSwitch(ran.failed, ran.changed, { repo: next }, async () => {
+          const failed = await undoBackups(machine, ran.backups.map((backup) => backup.backup));
+          return { repo: await setSetupFileMachine(repo, path, machine, 'off'), failed };
+        });
+      }
+      const next = await setSetupFileMachine(repo, path, machine, 'off');
+      // Kept off a machine, its copy is no longer the repo's business, so it's taken out here by hand.
+      const copy = entry.homes.flatMap((home) => home.items).find((item) => item.path === path && item.link === null && item.sum !== null);
+      const failed: SwitchFailure[] = [];
+      const backups: string[] = [];
+      if (copy?.sum && next.head) {
+        try {
+          const outcome = await applySetupSync(next.path, next.head.sha, machine, [{ path, remove: true, before: copy.sum }]);
+          if (outcome.backup) backups.push(outcome.backup);
+          failed.push(...outcome.failed.map((item) => ({ machine, message: item.reason })));
+        } catch (error) {
+          failed.push(failure(machine, error));
+        }
+      }
+      return noSwitch(failed, backups.length ? [machine] : [], { repo: next }, async () => {
+        const undone = await undoBackups(machine, backups);
+        return { repo: await setSetupFileMachine(repo, path, machine, null), failed: undone };
+      });
+    }
+  }
+}
+
+/**
+ * Takes a row off every machine and out of the repo, kept only in its history: the repo's word first, then each machine
+ * that answers. Undo puts the repo's back and each machine with it.
+ */
+export async function removeEverywhere(repo: string, machines: SetupMachine[], toggle: LibraryToggle): Promise<LibrarySwitch> {
+  const skipped = unreachableOf(machines, () => true);
+  switch (toggle.kind) {
+    case 'plugin': {
+      const { row, codex } = toggle;
+      const before = row.repo?.all ?? null;
+      const set = (value: PluginWanted | null) => setListing(repo, row, codex, value);
+      const next = await set('removed');
+      const ran = await lineUpPlugin(row, listingOf(next, row, codex), codex, null);
+      const asFailure = (result: MachineResult): SwitchFailure => ({ machine: result.machine, message: result.message });
+      return {
+        repo: next,
+        changed: unique(ran.done.map((change) => change.machine)),
+        failed: ran.failed.map(asFailure),
+        needsYou: [],
+        skipped,
+        undo: async () => {
+          const back = await set(before);
+          return { repo: back, failed: (await lineUpPlugin(row, listingOf(back, row, codex), codex, null)).failed.map(asFailure) };
+        },
+      };
+    }
+    case 'mcp': {
+      const registry = await setMcpWanted(repo, toggle.name, null, 'removed');
+      const ran = await lineUpServer(repo, machines, registry, toggle.name);
+      return { ...noSwitch(ran.failed, ran.changed, { registry }, async () => {
+        const back = await putBackMcpServer(repo, toggle.name);
+        return { registry: back, failed: (await lineUpServer(repo, machines, back, toggle.name)).failed };
+      }), skipped };
+    }
+    case 'hook': {
+      const hooks = await setHookWanted(repo, toggle.name, null, 'removed');
+      const ran = await lineUpHook(repo, machines, hooks, toggle.name);
+      return { ...noSwitch(ran.failed, ran.changed, { hooks }, async () => {
+        const back = await setHookWanted(repo, toggle.name, null, 'default');
+        return { hooks: back, failed: (await lineUpHook(repo, machines, back, toggle.name)).failed };
+      }), skipped };
+    }
+    case 'skill': {
+      const current = await getSetupRepo(repo);
+      const done = await runSkillPlan(planSkills('remove', [toggle.name], reachableMachines(machines), current), current, () => undefined);
+      if (done.repoError) throw new Error(done.repoError);
+      return { ...noSwitch(runFailures(done.problems), done.touched, { repo: await getSetupRepo(repo) }, async () => {
+        const problems = await undoSkillRun(done);
+        return { repo: await getSetupRepo(repo), failed: runFailures(problems.machines) };
+      }), skipped };
+    }
+    case 'file': {
+      const next = await setSetupFileRemoved(repo, toggle.path, true);
+      const { changed, failed, backups } = await lineUpFile(next, machines, toggle.path);
+      return { ...noSwitch(failed, changed, { repo: next }, async () => {
+        const undone: SwitchFailure[] = [];
+        for (const { machine, backup } of [...backups].reverse()) undone.push(...await undoBackups(machine, [backup]));
+        return { repo: await setSetupFileRemoved(repo, toggle.path, false), failed: undone };
+      }), skipped };
+    }
+  }
 }
