@@ -5,6 +5,7 @@ import {
   archiveMachines,
   archiveKeepsMachine,
   archiveNotification,
+  archiveSwitchSaver,
   archiveTrouble,
   compression,
   deletesAfterDays,
@@ -12,6 +13,7 @@ import {
   nextArchiveAlert,
   sourcesByMachine,
   type ArchiveAlertState,
+  type ArchiveSwitches,
   type ArchiveTrouble,
 } from '../src/services/sessionArchive';
 import { translate } from '../src/i18n';
@@ -170,5 +172,47 @@ describe('the session archive', () => {
     expect(away.title).toBe('Session archive drive isn’t connected');
     expect(away.body).toContain('sessions deleted before then won’t be kept');
     expect(archiveNotification({ kind: 'foreign', since: 0 }, status({ state: 'foreign' }), HOUR, t).kind).toBe('archiveAway');
+  });
+});
+
+describe('saving the archive switches', () => {
+  it('keeps a switch flipped while the other one was still saving', async () => {
+    const saved: ArchiveSwitches[] = [];
+    let backend: ArchiveSwitches = { gentle: false, otherMachines: true };
+    const releases: (() => void)[] = [];
+    const save = archiveSwitchSaver((settings) => new Promise((resolve) => {
+      releases.push(() => {
+        saved.push(settings);
+        backend = settings;
+        resolve({ ...backend } as unknown as ArchiveStatus);
+      });
+    }));
+    // Both flipped before either save answered, so the page's status still shows the old values for both.
+    const before = { ...backend };
+    const first = save(before, { gentle: true });
+    const second = save(before, { otherMachines: false });
+    await Promise.resolve();
+    itemAt(releases, 0)();
+    await first;
+    // The second save waits for the first, then goes out.
+    for (let tick = 0; tick < 5; tick += 1) await Promise.resolve();
+    itemAt(releases, 1)();
+    await second;
+    expect(saved).toEqual([{ gentle: true, otherMachines: true }, { gentle: true, otherMachines: false }]);
+    expect(backend).toEqual({ gentle: true, otherMachines: false });
+  });
+
+  it('starts from the status again once a save failed', async () => {
+    const saved: ArchiveSwitches[] = [];
+    let fail = true;
+    const save = archiveSwitchSaver(async (settings) => {
+      if (fail) throw new Error('disk busy');
+      saved.push(settings);
+      return settings as unknown as ArchiveStatus;
+    });
+    await expect(save({ gentle: false, otherMachines: true }, { gentle: true })).rejects.toThrow('disk busy');
+    fail = false;
+    await save({ gentle: false, otherMachines: true }, { otherMachines: false });
+    expect(saved).toEqual([{ gentle: false, otherMachines: false }]);
   });
 });

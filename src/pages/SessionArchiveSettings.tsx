@@ -27,6 +27,7 @@ import { ArchiveImports } from './SessionArchiveImports';
 import {
   adoptSessionArchive,
   archiveStateKey,
+  archiveSwitchSaver,
   archiveTone,
   checkSessionArchiveFolder,
   compression,
@@ -36,7 +37,6 @@ import {
   getSessionArchiveStatus,
   revealSessionArchive,
   runSessionArchiveNow,
-  saveSessionArchiveSettings,
   setSessionArchiveMachine,
   setSessionArchivePaused,
   setSessionArchiveProject,
@@ -207,6 +207,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
   // Set by Check now to the scheduled pass it asked ahead of; the loop reschedules after every pass.
   const [askedBefore, setAskedBefore] = useState<number | null | undefined>(undefined);
   const asked = askedBefore !== undefined;
+  const [saveSwitches] = useState(() => archiveSwitchSaver());
   const act = async (task: () => Promise<ArchiveStatus | void>) => {
     setError(null);
     try {
@@ -242,7 +243,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
     // This Mac is always kept, which a project on it inherits; it only differs from All when other machines aren't kept.
     own: (at) => (at.project ? projectValue(at) : at.machine === thisMac ? (status.otherMachines ? undefined : true) : at.machine ? status.machineOverrides[machineLookKey(at.machine)] : undefined),
     label: onOffLabel(t),
-    setAll: (checked) => void act(() => saveSessionArchiveSettings({ gentle: status.gentle, otherMachines: checked })),
+    setAll: (checked) => void act(() => saveSwitches(status, { otherMachines: checked })),
     setOwn: ({ project: at, machine }, checked) => {
       if (at) void act(() => setSessionArchiveProject(at, machine, checked));
       else if (machine) void act(() => setSessionArchiveMachine(machine, checked));
@@ -401,7 +402,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
           control={
             <Switch
               checked={status.gentle}
-              onCheckedChange={(checked) => void act(() => saveSessionArchiveSettings({ gentle: checked, otherMachines: status.otherMachines }))}
+              onCheckedChange={(checked) => void act(() => saveSwitches(status, { gentle: checked }))}
               aria-label={t('sessionArchive.gentle.title')}
             />
           }

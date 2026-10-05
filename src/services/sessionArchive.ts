@@ -44,8 +44,28 @@ export const setSessionArchiveMachine = (machine: string, keep: boolean | null) 
  */
 export const setSessionArchiveProject = (project: string, machine: string | null, keep: boolean | null) =>
   invokeCommand('set_session_archive_project', { project, machine, keep });
-export const saveSessionArchiveSettings = (settings: { gentle: boolean; otherMachines: boolean }) =>
+export type ArchiveSwitches = { gentle: boolean; otherMachines: boolean };
+export const saveSessionArchiveSettings = (settings: ArchiveSwitches) =>
   invokeCommand('save_session_archive_settings', settings);
+
+/**
+ * Saves the archive's two switches, which go to the backend together. Each save carries every change asked for so far
+ * and waits for the one before it: a switch flipped while the other's save was out would otherwise send the status's
+ * old value for the first, and put it back.
+ */
+export function archiveSwitchSaver(save: (settings: ArchiveSwitches) => Promise<ArchiveStatus> = saveSessionArchiveSettings) {
+  let wanted: ArchiveSwitches | null = null;
+  let queue: Promise<unknown> = Promise.resolve();
+  return (current: ArchiveSwitches, change: Partial<ArchiveSwitches>): Promise<ArchiveStatus> => {
+    const settings = { ...(wanted ?? current), ...change };
+    wanted = settings;
+    const run = queue.then(() => save(settings));
+    // Once the newest change is saved, or failed, the status reads true again.
+    const settle = () => { if (wanted === settings) wanted = null; };
+    queue = run.then(settle, settle);
+    return run;
+  };
+}
 export const revealSessionArchive = () => invokeCommand('reveal_session_archive');
 export const previewSessionImport = (path: string) => invokeCommand('preview_session_import', { path });
 export const addSessionImport = (path: string, machine: string) => invokeCommand('add_session_import', { path, machine });
