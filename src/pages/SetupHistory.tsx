@@ -112,6 +112,10 @@ export function SetupHistory({ machines, picked }: {
           busy={undoing !== null}
           undoing={undoing}
           onUndo={(backup) => void undo(backup)}
+          onRetry={() => {
+            setError(null);
+            void load(machine.machine);
+          }}
           limit={BACKUPS_KEPT}
         />
       )}

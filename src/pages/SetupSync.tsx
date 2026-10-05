@@ -7,6 +7,7 @@ import { ChangesHeader, FileChanges as FileChangesView, type CopyLabels } from '
 import { SettingsSection } from '../components/layout/settings';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { errorWords, plainError } from '../services/plainError';
 import { Checkbox } from '../components/ui/checkbox';
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from '../components/ui/menu';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '../components/ui/collapsible';
@@ -944,7 +945,7 @@ const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
  * The changes Arbor made on a machine, newest first, each with Undo: setup sync's files and skills, the Skills tab's
  * skills, and settings files other features changed. `limit` is how many to show.
  */
-export function BackupList({ machine, backups, error, busy, undoing, onUndo, limit = 5 }: {
+export function BackupList({ machine, backups, error, busy, undoing, onUndo, onRetry, limit = 5 }: {
   machine: string;
   backups: SetupBackup[] | null;
   error: string | null;
@@ -952,10 +953,19 @@ export function BackupList({ machine, backups, error, busy, undoing, onUndo, lim
   /** The backup being undone now. */
   undoing: string | null;
   onUndo: (backup: SetupBackup) => void;
+  /** Lists the changes again after a failure; without it, the failure has no button beside it. */
+  onRetry?: () => void;
   limit?: number;
 }) {
   const { t, tRich } = useI18n();
-  if (error) return <p className="text-xs text-muted-foreground">{t('setup.sync.history.failed', { error })}</p>;
+  if (error) {
+    return (
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-muted-foreground" title={errorWords(error)}>{t('setup.sync.history.failed', { error: plainError(error, t) })}</p>
+        {onRetry ? <Button type="button" variant="outline" size="xs" onClick={onRetry}>{t('common.tryAgain')}</Button> : null}
+      </div>
+    );
+  }
   if (!backups?.length) return null;
   return (
     <section className="flex flex-col gap-1.5">
