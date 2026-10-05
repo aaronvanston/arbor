@@ -92,8 +92,9 @@ export function TablePage({ toolbar, footer, children, label }: {
     <section className="flex min-h-0 flex-1 flex-col" aria-label={label} data-slot="table-page">
       <div className="flex shrink-0 flex-wrap items-center gap-2 px-5 pb-3">{toolbar}</div>
       <div className="relative flex min-h-0 flex-1 flex-col border-t border-border/60">{children}</div>
+      {/* The footer sits below the rows, never over them, so it has nothing to blur: no backdrop filter, and no layer for one. */}
       {footer ? (
-        <footer className="flex min-h-12 shrink-0 items-center gap-3 border-t border-border/60 bg-background/95 px-5 py-2 backdrop-blur">
+        <footer className="flex min-h-12 shrink-0 items-center gap-3 border-t border-border/60 bg-background/95 px-5 py-2">
           {footer}
         </footer>
       ) : null}
