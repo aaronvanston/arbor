@@ -1976,6 +1976,8 @@ const scanToolchainMock = (machine: string) => {
 };
 
 const takeMcpMock = (path: string, machine: string, homePath: string, name: string, own: boolean) => {
+  // How the repo started is read before the registry changes, so the commit shows what this one changed.
+  othersAtStart();
   const repo = mockRepo(path);
   const entry = setupMachines.find((candidate) => candidate.machine === machine);
   const home = entry?.homes.find((candidate) => candidate.path === homePath);
@@ -2014,8 +2016,7 @@ const takeMcpMock = (path: string, machine: string, homePath: string, name: stri
     }
   }
   mockRegistry.found = true;
-  const head = repoHead(repo);
-  repo.commits.push(repoCommit(own ? `Take ${machine}'s own MCP server ${name}` : `Take MCP server ${name} from ${machine}`, Date.now(), head?.files ?? [], head?.skills ?? []));
+  commitRegistry(repo, own ? `Take ${machine}'s own MCP server ${name}` : `Take MCP server ${name} from ${machine}`);
   return registryReply(path);
 };
 
@@ -2023,6 +2024,8 @@ const takeMcpMock = (path: string, machine: string, homePath: string, name: stri
 const mockRemovedServers = new Map<string, MockRegistryServer>();
 
 const putBackMcpMock = (path: string, name: string) => {
+  // How the repo started is read before the registry changes, so the commit shows what this one changed.
+  othersAtStart();
   const repo = mockRepo(path);
   const index = mockRegistry.servers.findIndex((candidate) => candidate.name === name);
   const current = mockRegistry.servers[index];
@@ -2032,12 +2035,13 @@ const putBackMcpMock = (path: string, name: string) => {
   if (index >= 0) mockRegistry.servers[index] = was;
   else mockRegistry.servers = [...mockRegistry.servers, was].sort((a, b) => a.name.localeCompare(b.name));
   mockRemovedServers.delete(name);
-  const head = repoHead(repo);
-  repo.commits.push(repoCommit(`Put back MCP server ${name}`, Date.now(), head?.files ?? [], head?.skills ?? []));
+  commitRegistry(repo, `Put back MCP server ${name}`);
   return registryReply(path);
 };
 
 const setMcpWantedMock = (path: string, name: string, machine: string | null, wanted: McpWanted) => {
+  // How the repo started is read before the registry changes, so the commit shows what this one changed.
+  othersAtStart();
   const repo = mockRepo(path);
   let message: string;
   if (machine === null) {
@@ -2059,8 +2063,7 @@ const setMcpWantedMock = (path: string, name: string, machine: string | null, wa
     message = wanted === 'off' ? `Keep MCP server ${name} off ${machine}` : `Give ${machine} MCP server ${name} as every machine has it`;
   }
   mockRegistry.found = true;
-  const head = repoHead(repo);
-  repo.commits.push(repoCommit(message, Date.now(), head?.files ?? [], head?.skills ?? []));
+  commitRegistry(repo, message);
   return registryReply(path);
 };
 
@@ -2204,6 +2207,7 @@ const othersAtStart = () => {
     '.agents/machines.json': textBlob(`${JSON.stringify({ skills: mockSkillMachines, files: mockFileMachines }, null, 2)}\n`),
     '.claude/settings.json': textBlob('{\n  "permissions": {\n    "allow": ["Bash(bun test:*)"]\n  }\n}\n'),
     '.agents/commands/review.md': textBlob('---\ndescription: Review the current branch\n---\n\nRead the diff and list what would break.\n'),
+    ...(mockRegistry.found ? { '.agents/mcp-servers.json': registryFile() } : {}),
     ...instructionFilesOf(mockInstructions),
   };
   return startedOthers;
@@ -2212,20 +2216,50 @@ const othersAtStart = () => {
 /** The rest of the folder as the browser's commits left it, by commit. */
 const commitOthers = new Map<string, Record<string, MockBlob>>();
 
+/** The rest of the folder as of a commit: the last one the browser's commits left, else how the repo started. */
+const othersAt = (repo: MockRepo, at: number): Record<string, MockBlob> => {
+  for (let back = at; back >= 0; back -= 1) {
+    const kept = commitOthers.get(repo.commits[back]?.sha ?? '');
+    if (kept) return kept;
+  }
+  return othersAtStart();
+};
+
+/** .agents/mcp-servers.json as the registry stands, each definition written the way its agent's settings take it. */
+const registryFile = (): MockBlob => {
+  const written = (definition: MockDefinition | null | undefined) => {
+    if (!definition) return null;
+    const place = definition.transport === 'stdio' ? { command: definition.place } : { url: `https://${definition.place ?? ''}` };
+    return { type: definition.transport, ...place, ...(definition.variables.length ? { env_vars: definition.variables } : {}) };
+  };
+  const servers = Object.fromEntries(mockRegistry.servers.map((server) => [server.name, {
+    ...(server.claude ? { claude: written(server.claude) } : {}),
+    ...(server.codex ? { codex: written(server.codex) } : {}),
+    ...(server.homes ? { homes: server.homes } : {}),
+    ...(Object.keys(server.machines).length ? {
+      machines: Object.fromEntries(Object.entries(server.machines).map(([machine, choice]) => [
+        machine, choice === null ? null : Object.fromEntries(Object.entries(choice).map(([agent, definition]) => [agent, written(definition)])),
+      ])),
+    } : {}),
+  }]));
+  return textBlob(`${JSON.stringify({ version: 1, servers }, null, 2)}\n`);
+};
+
+/** Commits the registry as it now stands, alone, as the backend's takes and changes to it do. */
+const commitRegistry = (repo: MockRepo, subject: string) => {
+  const head = repoHead(repo);
+  const others = othersAt(repo, repo.commits.length - 1);
+  const commit = repoCommit(subject, Date.now(), head?.files ?? [], head?.skills ?? []);
+  repo.commits.push(commit);
+  commitOthers.set(commit.sha, { ...others, '.agents/mcp-servers.json': registryFile() });
+};
+
 /** Every file in a commit, by its path in the repo. */
 const commitSnapshot = (repo: MockRepo, at: number): Map<string, MockBlob> => {
   const commit = repo.commits[at];
   const files = new Map<string, MockBlob>();
   if (!commit) return files;
-  let others = othersAtStart();
-  for (let back = at; back >= 0; back -= 1) {
-    const kept = commitOthers.get(repo.commits[back]?.sha ?? '');
-    if (kept) {
-      others = kept;
-      break;
-    }
-  }
-  for (const [path, blob] of Object.entries(others)) files.set(path, blob);
+  for (const [path, blob] of Object.entries(othersAt(repo, at))) files.set(path, blob);
   const sources = Object.fromEntries(commit.skills.flatMap((skill) => (skill.source ? [[skill.name, skill.source]] : [])));
   if (Object.keys(sources).length && !commitOthers.has(commit.sha)) files.set('.agents/skill-sources.json', textBlob(`${JSON.stringify({ version: 1, skills: sources }, null, 2)}\n`));
   for (const file of commit.files) files.set(file.path.slice(2), textBlob(setupTexts[file.sum] ?? ''));
