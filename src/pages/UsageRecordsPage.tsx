@@ -240,6 +240,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         machine: next.machine,
         project: next.project,
       }), how);
+      if (change.result !== undefined) setOwnResult(change.result);
     } else if (variant === 'pricing') {
       if (change.machine !== undefined) onViewChange?.(usageView({ tab: 'prices', machine: next.machine || undefined }), how);
       if (change.result !== undefined) setOwnResult(change.result);
@@ -389,6 +390,11 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         setLoadedScopeKey(scopeKey);
         setError('');
         setLoading(false);
+        // Weekly's machine menu still lists the machines, which opening it straight away wouldn't have read yet.
+        if (activeTab === 'digest') {
+          const nextAssignments = await invokeCommand('get_usage_machine_assignments').catch(() => null);
+          if (nextAssignments && requestId === requestIdRef.current) setAssignments(nextAssignments);
+        }
         return;
       }
       const { timeQuery, query } = buildQueries();
@@ -455,7 +461,8 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           const [nextOptions, nextEvents, nextOverview] = await Promise.all([
             optionsRequest,
             invokeCommand('get_usage_events', {
-              query: { ...query, page, page_size: pageSize, request_order: requestOrder ?? undefined },
+              // Failed on keeps newest first: its grid has no sort of its own, so All's would apply unseen.
+              query: { ...query, page, page_size: pageSize, request_order: failedOnly ? undefined : requestOrder ?? undefined },
             }),
             failedOnly ? invokeCommand('get_usage_overview', { query: { ...query, failed: undefined, canceled: undefined } }) : null,
           ]);
