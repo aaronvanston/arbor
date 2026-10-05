@@ -10,6 +10,7 @@ import type { MessageKey } from '../i18n/resources';
 import { InlineNotice, useAppNotice } from '../appNotice';
 import { webUiManagementUrl } from '../services/clientAccess';
 import { clientKeyName, maskApiKey, newClientKey } from '../services/clientKeys';
+import { proxyUrlProblem, sessionTtlProblem } from '../services/coreSettingsInput';
 import { useUnsavedChanges } from '../services/unsavedChanges';
 import { CORE_CONFIG_DEFAULTS as CORE, changedFromDefaults, onOffLabel, resetOffer } from '../services/settingDefaults';
 import { confirmSettingsInEffect, notLoadedNotice } from '../services/settingsInEffect';
@@ -647,6 +648,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
     }
 
     const proxyUrl = proxyUrlDraft.trim();
+    if (proxyUrlProblem(proxyUrl)) return;
     const networkChanged = port !== settings.port || host !== settings.host;
     setHostError('');
     setPortError('');
@@ -733,6 +735,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
     routingFeedback.clearNotice();
     if (!settings || busyAction !== null) return;
     const routingSessionAffinityTtl = sessionTtlDraft.trim();
+    if (sessionTtlProblem(routingSessionAffinityTtl)) return;
     setBusyAction('routing');
     try {
       const result = await invokeCommand('save_session_routing_settings', {
@@ -755,6 +758,9 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
   };
 
   const controlsDisabled = loading || settings === null || busyAction !== null;
+  // Shown as they're typed, and kept from being saved.
+  const proxyUrlError = proxyUrlProblem(proxyUrlDraft);
+  const sessionTtlError = sessionTtlProblem(sessionTtlDraft);
   const networkSettingsDirty = Boolean(settings) && (
     hostDraft.trim() !== settings?.host
     || portDraft !== String(settings?.port)
@@ -1020,7 +1026,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
 
           <SettingsSection
             title={t('config.network.networkSection')}
-            headerAction={saveButton(t('config.network.save'), busyAction === 'network', controlsDisabled || !networkSettingsDirty, () => void saveNetworkEndpointSettings())}
+            headerAction={saveButton(t('config.network.save'), busyAction === 'network', controlsDisabled || !networkSettingsDirty || Boolean(proxyUrlError), () => void saveNetworkEndpointSettings())}
           >
             <SettingsRow
               settingId="general.port"
@@ -1063,10 +1069,12 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
               reset={resetOffer(proxyUrlDraft, CORE.proxyUrl, t('settings.reset.none'), () => { markDraftDirty('proxyUrl'); setProxyUrlDraft(CORE.proxyUrl); }, controlsDisabled)}
               title={t('config.network.proxyUrl')}
               description={t('config.network.proxyHint')}
+              status={proxyUrlError ? <span className="text-error-foreground">{t(proxyUrlError)}</span> : null}
               control={
                 <Input
                   type="text"
                   value={proxyUrlDraft}
+                  aria-invalid={Boolean(proxyUrlError) || undefined}
                   disabled={controlsDisabled}
                   placeholder={t('config.network.proxyPlaceholder')}
                   aria-label={t('config.network.proxyUrl')}
@@ -1394,7 +1402,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
         <PageBody>
           <SettingsSection
             title={t('config.network.routingSection')}
-            headerAction={saveButton(t('config.network.save'), busyAction === 'routing', controlsDisabled || !sessionRoutingDirty, () => void saveSessionRoutingSettings())}
+            headerAction={saveButton(t('config.network.save'), busyAction === 'routing', controlsDisabled || !sessionRoutingDirty || Boolean(sessionTtlError), () => void saveSessionRoutingSettings())}
           >
             <SettingsRow
               settingId="routing.session-affinity"
@@ -1407,10 +1415,12 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
               settingId="routing.session-ttl"
               title={t('config.network.sessionTtl')}
               description={t('config.network.sessionTtlHint')}
+              status={sessionTtlError ? <span className="text-error-foreground">{t(sessionTtlError)}</span> : null}
               control={
                 <Input
                   type="text"
                   value={sessionTtlDraft}
+                  aria-invalid={Boolean(sessionTtlError) || undefined}
                   disabled={controlsDisabled}
                   placeholder="1h"
                   aria-label={t('config.network.sessionTtl')}

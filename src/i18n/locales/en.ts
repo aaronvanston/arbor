@@ -5024,6 +5024,8 @@ export const en = {
   'config.error.duplicateKey': 'This authentication key already exists',
   'config.error.remarkTooLong': 'The remark cannot exceed 80 characters',
   'config.error.portRange': 'The port must be an integer from 1 to 65535',
+  'config.error.proxyUrl': 'Use an http, https or socks5 URL, such as socks5://127.0.0.1:7890, or leave it blank',
+  'config.error.sessionTtl': 'Use a length of time such as 30m or 1h30m, or leave it blank for the core default',
   'config.error.hostRequired': 'Enter a valid listen IP address',
   'config.error.retryRange': 'Retry settings must be integers from 0 to 4294967295',
   'config.error.networkRestartFailed': 'Settings were saved, but the core failed to restart: {error}',
