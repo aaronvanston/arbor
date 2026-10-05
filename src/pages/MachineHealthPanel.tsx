@@ -30,7 +30,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot, StatusPill, type StatusTone } from '../components/ui/status-dot';
 import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
-import { formatDuration, formatTime } from '../lib/format';
+import { formatAgo, formatDuration, formatTime } from '../lib/format';
 import { cn } from '../lib/utils';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { MachinePill } from '../components/identity/Identity';
@@ -364,9 +364,13 @@ const rateParts = (bytesPerSecond: number | null) => {
 };
 
 /** What's wrong with a machine, or that nothing is: its status, or the reading that set it. */
-export function machineHeadline(item: MachineHealth, t: Translate): string {
+export function machineHeadline(item: MachineHealth, t: Translate, now = Date.now()): string {
   if (item.status === 'unconfigured') return t('machines.health.unconfiguredHint');
-  if (item.status === 'unreachable') return [t('machines.health.status.unreachable'), unreachableReason(item.error, t)].filter(Boolean).join(' · ');
+  if (item.status === 'unreachable') {
+    // How long it's been down says whether it's a blip or something to look at.
+    const since = item.lastOkAt !== null ? t('machines.health.lastAnswered', { ago: formatAgo(item.lastOkAt, now) }) : null;
+    return [t('machines.health.status.unreachable'), unreachableReason(item.error, t), since].filter(Boolean).join(' · ');
+  }
   if (item.status === 'pending') return t('machines.health.status.pending');
   const latest = item.latest;
   if (!item.reason || !latest) return t('machines.health.allClear');

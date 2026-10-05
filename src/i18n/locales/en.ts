@@ -4325,6 +4325,7 @@ export const en = {
   'machines.health.status.pending': 'Waiting for the first sample',
   'machines.health.status.unconfigured': 'No host configured',
   'machines.health.allClear': 'All systems nominal',
+  'machines.health.lastAnswered': 'Last answered {ago}',
   'machines.health.unconfiguredHint': 'Add an SSH endpoint so this machine can be sampled.',
   'machines.health.reason.disk': 'Disk space low · {free} free',
   'machines.health.reason.memory': 'Memory pressure · {value}% used',
