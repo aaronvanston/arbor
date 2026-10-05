@@ -1979,6 +1979,10 @@ const takeMcpMock = (path: string, machine: string, homePath: string, name: stri
   const home = entry?.homes.find((candidate) => candidate.path === homePath);
   const item = home?.items.find((candidate) => candidate.kind === 'mcp' && candidate.name === name);
   if (!entry || !home || !item) throw 'Arbor can only take a server its last scan of this machine found. Scan again.';
+  // As read_file_to_change refuses: the take would commit someone's unfinished edit along with it.
+  if (params.get('registry') === 'dirty') {
+    throw ".agents/mcp-servers.json has changes in the repo that aren't committed. Commit or drop them, then try again.";
+  }
   if (name === 'github') {
     throw "Arbor didn't take github: headers.Authorization looks like a secret, and the repo mustn't hold one. Change them there to ${VAR} references, then take it again.";
   }
