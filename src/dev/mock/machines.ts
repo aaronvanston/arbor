@@ -730,6 +730,9 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
       if (before && before !== after) agentMoves[machine] = { ...agentMoves[machine], [agent]: { from: before, at: Date.now() } };
       install.version = after;
       agents.checkedAt = Date.now();
+      // The new version is what the machine's next setup scan finds, as the real one's does.
+      const scanned = setupMachines.find((entry) => entry.machine === machine)?.installs.find((found) => found.agent === agent);
+      if (scanned) scanned.version = after;
       resolve({ before, after, output: before === after ? `${agent} is up to date (${after})` : `Current version: ${before}\nUpdating to ${after}…\nSuccessfully updated from ${before} to version ${after}` });
     }, 1_500));
   },

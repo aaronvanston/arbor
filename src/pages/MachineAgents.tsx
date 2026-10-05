@@ -14,6 +14,7 @@ import { cn } from '../lib/utils';
 import { useT3Compatibility } from '../services/agentReleases';
 import { agentsBehind, agentUpToDate, runningAgents, type AgentBehind, type NewestAgents } from '../services/agentVersions';
 import { AGENT_KINDS, updateMachineAgent } from '../services/machineHealth';
+import { scanSetup } from '../services/setupInventory';
 import { t3Advisory, type T3Advisory } from '../services/t3Compat';
 import { agentBehindProblem, agentCheckFailedProblem, agentUpdateFailedProblem, duplicateInstallProblem, t3AdvisoryProblem } from '../services/fixPrompt';
 import { FixMenu } from '../components/FixMenu';
@@ -123,6 +124,9 @@ export function useAgentUpdate(item: MachineHealth) {
     try {
       const result = await updateMachineAgent(item.machine, agent, install.updateCommand);
       setOutcomes((current) => ({ ...current, [agent]: { ok: true, text: updateOutcomeText(t, agent, result), output: result.output } }));
+      // The checklist reads versions from the machine's setup scan, not its health check: read it again so its agents
+      // step stops saying the agent is behind.
+      void scanSetup(item.machine, false).catch(() => undefined);
     } catch (error) {
       setOutcomes((current) => ({ ...current, [agent]: { ok: false, text: t('machines.agents.updateFailed', { agent: name }), output: String(error) } }));
     } finally {
