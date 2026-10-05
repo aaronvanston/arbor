@@ -297,6 +297,15 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
       document.querySelector(`[data-account-key="${window.CSS.escape(focus)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, 0);
   }, [focus, loaded]);
+  // A provider's limit alert opens on that provider's accounts.
+  const providerFocus = useFocusRequest('provider');
+  useEffect(() => {
+    if (!providerFocus || !loaded) return;
+    clearFocusRequest('provider');
+    window.setTimeout(() => {
+      document.querySelector(`[data-accounts-provider="${window.CSS.escape(providerFocus)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }, 0);
+  }, [providerFocus, loaded]);
   useEffect(() => {
     if (!flash) return;
     // As long as the row-highlight animation in styles.css.
@@ -408,7 +417,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
               <SettingsSection
                 key={provider}
                 title={
-                  <span className="inline-flex items-center gap-2" title={t('accounts.description')}>
+                  <span className="inline-flex items-center gap-2" title={t('accounts.description')} data-accounts-provider={provider}>
                     <ProviderMark provider={provider} decorative className="size-4" />
                     {providerMeta[provider].label}
                   </span>

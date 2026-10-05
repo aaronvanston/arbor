@@ -153,11 +153,11 @@ describe('the alert history', () => {
 
   it('opens the account, machine, session or status page an alert was about', () => {
     expect(alertDestination({ kind: 'accountPaused', subject: { account: 'work.json::work' } })).toEqual({ kind: 'accounts', account: 'work.json::work' });
-    expect(alertDestination({ kind: 'limitWarning', subject: { provider: 'claude' } })).toEqual({ kind: 'accounts', account: undefined });
+    expect(alertDestination({ kind: 'limitWarning', subject: { provider: 'claude' } })).toEqual({ kind: 'accounts', provider: 'claude' });
     expect(alertDestination({ kind: 'machineUp', subject: { machine: 'ci-01' } })).toEqual({ kind: 'machines', machine: 'ci-01' });
     expect(alertDestination({ kind: 'agentPermission', subject: { session: 'a3f1', machine: 'casey-mbp' } })).toEqual({ kind: 'session', session: 'a3f1' });
-    // Many sessions at once, or one Arbor didn't see: the Sessions page.
-    expect(alertDestination({ kind: 'agentWaiting', subject: { machine: 'casey-mbp' } })).toEqual({ kind: 'sessions' });
+    // One Arbor didn't see: the live board on its machine.
+    expect(alertDestination({ kind: 'agentWaiting', subject: { machine: 'casey-mbp' } })).toEqual({ kind: 'sessions', machine: 'casey-mbp' });
     expect(alertDestination({ kind: 'heavySession', subject: { session: 'b7' } })).toEqual({ kind: 'session', session: 'b7' });
     expect(alertDestination({ kind: 'outage', subject: { url: 'https://status.claude.com/incidents/x' } })).toEqual({ kind: 'url', url: 'https://status.claude.com/incidents/x' });
     expect(alertDestination({ kind: 'outage' })).toEqual({ kind: 'home' });

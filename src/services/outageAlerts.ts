@@ -45,6 +45,7 @@ export function outageNotification({ provider, incident }: OutageAlert, t: Trans
     body: state ? t('notifications.outage.body', { incident: incident.name, state: t(state) }) : incident.name,
     kind: 'outage',
     urgent: isOutage(incident.indicator),
-    subject: { url: incident.url },
+    // Without a link to the incident, it opens the provider's accounts.
+    subject: { url: incident.url, affects: provider },
   };
 }

@@ -16,7 +16,7 @@ describe('setupChangeNotification', () => {
       body: 'MCP server linear changed in ~/.claude.',
       phoneBody: '1 change on ci-01 (MCP servers). Open Arbor’s Sync page to see it.',
       kind: 'setupChanged',
-      subject: { machine: 'ci-01' },
+      subject: { machine: 'ci-01', changed: ['mcp'] },
     });
     expect(phoneAlertFor(message!).body).not.toContain('linear');
   });

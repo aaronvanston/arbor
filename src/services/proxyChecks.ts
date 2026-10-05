@@ -105,5 +105,7 @@ export function proxyProblemNotification(problem: ProxyProblem, t: Translate): S
     body: t(text.body, variables),
     kind: 'proxySettings',
     urgent: problem.kind !== 'openToNetwork',
+    // Opens the setting it's fixed on; a file the core didn't load is shown on Home, with the line.
+    ...(problem.kind === 'settingsNotLoaded' ? {} : { subject: { setting: PROXY_PROBLEM_SETTING[problem.kind] } }),
   };
 }

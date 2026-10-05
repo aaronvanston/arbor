@@ -45,7 +45,7 @@ describe('outage alerts', () => {
       body: 'Elevated errors for multiple models · Investigating',
       kind: 'outage',
       urgent: true,
-      subject: { url: 'https://status.claude.com/' },
+      subject: { url: 'https://status.claude.com/', affects: 'claude' },
     });
     // A minor incident isn't urgent, and a state without a label is left off.
     expect(outageNotification({ provider: 'codex', incident: incident('b', { name: 'Increased latency in Codex CLI', status: 'postmortem', indicator: 'minor' }) }, t)).toEqual({
@@ -53,7 +53,7 @@ describe('outage alerts', () => {
       body: 'Increased latency in Codex CLI',
       kind: 'outage',
       urgent: false,
-      subject: { url: 'https://status.claude.com/' },
+      subject: { url: 'https://status.claude.com/', affects: 'codex' },
     });
   });
 });

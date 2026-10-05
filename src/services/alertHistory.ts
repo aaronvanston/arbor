@@ -20,6 +20,15 @@ export type AlertSubject = {
   on?: string;
   /** An automation, by its id. */
   automation?: string;
+  /**
+   * What opening it shows, beyond what it's about, so these don't count when telling a repeat from news: the provider
+   * whose accounts an outage affects, the kinds of setup item a setup change touched (`hook`, `mcp`, `plugin`,
+   * `marketplace`), and the setting (by its id in settingsIndex.ts) a proxy problem is fixed on. Alerts saved before
+   * these existed open as they always did.
+   */
+  affects?: string;
+  changed?: string[];
+  setting?: string;
 };
 
 /** An alert as it fired, and how it got out. */
@@ -91,31 +100,86 @@ const CATEGORY: Record<AlertKind, AlertCategory | null> = {
 };
 export const alertCategory = (kind: AlertKind) => CATEGORY[kind];
 
+// Read from storage too, so a list that isn't one counts as naming nothing.
+const ids = (...values: unknown[]) =>
+  values.flatMap((value) => (Array.isArray(value) ? value : [value])).filter((id): id is string => typeof id === 'string' && id !== '');
+
+/** The Sync views a setup change opens on: Hooks, or MCP & plugins, which has MCP servers, plugins and marketplaces. */
+export type SetupChangeView = 'hooks' | 'plugins';
+
 /** Where opening an alert goes. */
 export type AlertDestination =
-  | { kind: 'accounts'; account?: string }
+  | { kind: 'accounts'; account?: string; provider?: string }
   | { kind: 'machines'; machine?: string }
   | { kind: 'automation'; automation: string }
-  | { kind: 'setup' }
+  | { kind: 'setup'; tab?: SetupChangeView; machine?: string }
   | { kind: 'archive' }
   | { kind: 'session'; session: string }
-  | { kind: 'sessions' }
+  | { kind: 'sessions'; machine?: string }
+  | { kind: 'setting'; setting: string }
   | { kind: 'digest' }
   | { kind: 'home' }
   | { kind: 'url'; url: string };
 
-/** The page an alert is about, and the row on it when the alert names one. */
+/** The one thing in a field and a list of them, or nothing when there are none or several. */
+function onlyOne(one: unknown, many: unknown): string | undefined {
+  const [first, ...others] = [...new Set(ids(one, many))];
+  return first !== undefined && !others.length ? first : undefined;
+}
+
+/** The first thing named in fields and lists of them, when they name any. */
+const firstOf = (...values: unknown[]): string | undefined => ids(...values)[0];
+
+const SETUP_CHANGE_VIEW: Readonly<Record<string, SetupChangeView>> = { hook: 'hooks', mcp: 'plugins', plugin: 'plugins', marketplace: 'plugins' };
+
+/**
+ * Where a setup change opens: the Sync view that has everything that changed, on the machine it changed on; the
+ * machine's own page when the changes span views; and Checks for one saved before alerts said what changed.
+ */
+function setupChangeDestination(subject: AlertSubject | undefined): AlertDestination {
+  const machine = onlyOne(subject?.machine, subject?.machines);
+  const views = [...new Set(ids(subject?.changed).flatMap((kind) => SETUP_CHANGE_VIEW[kind] ?? []))];
+  const [view, ...others] = views;
+  if (!view) return { kind: 'setup' };
+  if (!others.length) return { kind: 'setup', tab: view, ...(machine ? { machine } : {}) };
+  return machine ? { kind: 'machines', machine } : { kind: 'setup' };
+}
+
+/**
+ * The page an alert is about, and the row on it when the alert names one: an account (the first when it names
+ * several) or a provider's accounts, one machine's page, one machine's live sessions, the setting a proxy problem is
+ * fixed on. An alert about several machines opens the page that shows them all.
+ */
 export function alertDestination({ kind, subject }: Pick<AlertRecord, 'kind' | 'subject'>): AlertDestination | null {
-  // What changed shows on Sync, not on the machine's row.
-  if (kind === 'setupChanged') return { kind: 'setup' };
+  if (kind === 'setupChanged') return setupChangeDestination(subject);
   if (kind === 'automationFailed' && subject?.automation) return { kind: 'automation', automation: subject.automation };
   // What's wrong with the archive, and what to do, is on its settings page.
   if (kind === 'archiveAway' || kind === 'archiveFailing') return { kind: 'archive' };
+  // Fixed on its row in Settings › Proxy; a settings file the proxy didn't load is shown, with its line, on Home.
+  if (kind === 'proxySettings') {
+    const setting = firstOf(subject?.setting);
+    return setting ? { kind: 'setting', setting } : { kind: 'home' };
+  }
   switch (CATEGORY[kind]) {
-    case 'limits': return { kind: 'accounts', account: subject?.account };
-    case 'sessions': return subject?.session ? { kind: 'session', session: subject.session } : { kind: 'sessions' };
-    case 'machines': return { kind: 'machines', machine: subject?.machine };
-    case 'outages': return subject?.url ? { kind: 'url', url: subject.url } : { kind: 'home' };
+    case 'limits': {
+      const account = firstOf(subject?.account, subject?.accounts);
+      const provider = firstOf(subject?.provider);
+      return { kind: 'accounts', ...(account ? { account } : provider ? { provider } : {}) };
+    }
+    case 'sessions': {
+      if (typeof subject?.session === 'string' && subject.session) return { kind: 'session', session: subject.session };
+      const machine = onlyOne(subject?.machine, subject?.machines);
+      return machine ? { kind: 'sessions', machine } : { kind: 'sessions' };
+    }
+    case 'machines': {
+      const machine = onlyOne(subject?.machine, subject?.machines);
+      return machine ? { kind: 'machines', machine } : { kind: 'machines' };
+    }
+    case 'outages': {
+      if (typeof subject?.url === 'string' && subject.url) return { kind: 'url', url: subject.url };
+      const provider = firstOf(subject?.affects);
+      return provider ? { kind: 'accounts', provider } : { kind: 'home' };
+    }
     case 'digests': return { kind: 'digest' };
     default: return null;
   }
@@ -127,10 +191,6 @@ export function withAlerts(history: AlertHistory, records: AlertRecord[], nowMs:
   const entries = [...records, ...history.entries].filter((entry) => entry.atMs >= cutoff).slice(0, ALERT_HISTORY_LIMIT);
   return { ...history, entries };
 }
-
-// Read from storage too, so a list that isn't one counts as naming nothing.
-const ids = (...values: unknown[]) =>
-  values.flatMap((value) => (Array.isArray(value) ? value : [value])).filter((id): id is string => typeof id === 'string' && id !== '');
 
 /** Each thing an alert is about, such as `machine:ci-01`, to tell a repeat from news. None when it names nothing. */
 function aboutThings(subject: AlertSubject | undefined): string[] {

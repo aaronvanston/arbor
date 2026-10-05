@@ -54,6 +54,7 @@ export function setupChangeNotification({ machine, changes }: SetupChanged, t: T
     body: more ? t('setupChange.bodyMore', { changes: named.join('; '), count: more }) : t('setupChange.body', { changes: named.join('; ') }),
     phoneBody: t(changes.length === 1 ? 'setupChange.phone.one' : 'setupChange.phone.other', { count: changes.length, kinds: kinds.join(', '), machine }),
     kind: 'setupChanged',
-    subject: { machine },
+    // Opens the Sync view that lists what changed.
+    subject: { machine, changed: [...new Set(changes.map((change) => change.kind))] },
   };
 }

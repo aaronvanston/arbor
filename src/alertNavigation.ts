@@ -1,7 +1,9 @@
 import { invokeCommand } from './native/commands';
-import { requestFocus } from './focusRequests';
-import { accountLimitsView, automationView, machinesView, sessionsView, setupChecksView, usageView, type AppView } from './navigation';
+import { requestFocus, type FocusTarget } from './focusRequests';
+import { accountLimitsView, automationView, machinesView, sessionsView, setupChecksView, setupView, usageView, type AppView } from './navigation';
 import type { AlertDestination } from './services/alertHistory';
+import { settingEntry } from './services/settingsIndex';
+import { setSyncMachine } from './services/syncScope';
 
 /** The page an alert opens on, or null for a status page, which opens in the browser. */
 export function alertDestinationView(destination: AlertDestination): AppView | null {
@@ -9,14 +11,36 @@ export function alertDestinationView(destination: AlertDestination): AppView | n
     case 'accounts': return accountLimitsView();
     case 'machines': return machinesView(destination.machine);
     case 'automation': return automationView(destination.automation);
-    // What changed is in Checks' table of each machine's setup.
-    case 'setup': return setupChecksView();
+    // A change of one kind opens the Sync view that lists that kind; others, Checks' table of each machine's setup.
+    case 'setup': return destination.tab ? setupView({ tab: destination.tab }) : setupChecksView();
     case 'archive': return { kind: 'settings', page: 'session-archive' };
     case 'session': return sessionsView({ session: destination.session });
-    case 'sessions': return { kind: 'main', page: 'sessions' };
+    // An agent waiting on one machine is on the live board, narrowed to that machine.
+    case 'sessions': return destination.machine ? sessionsView({ tab: 'live', machine: destination.machine }) : { kind: 'main', page: 'sessions' };
+    // Every proxy problem's setting is on Settings › Proxy, which is where an id the index no longer has opens too.
+    case 'setting': return { kind: 'settings', page: settingEntry(destination.setting)?.page ?? 'general' };
     case 'digest': return usageView({ tab: 'digest' });
     case 'home': return { kind: 'main', page: 'home' };
     case 'url': return null;
+  }
+}
+
+/**
+ * What the page an alert opens is asked to bring into view, and the machine Sync is shown on, which, unlike a view's
+ * params, outlast the visit: an account's row or a provider's accounts, a machine's page, a setting's row.
+ */
+export type AlertFocus = { focus?: { target: FocusTarget; id: string }; syncMachine?: string };
+
+export function alertDestinationFocus(destination: AlertDestination): AlertFocus {
+  switch (destination.kind) {
+    case 'accounts':
+      if (destination.account) return { focus: { target: 'account', id: destination.account } };
+      return destination.provider ? { focus: { target: 'provider', id: destination.provider } } : {};
+    case 'machines': return destination.machine ? { focus: { target: 'machine', id: destination.machine } } : {};
+    case 'setting': return { focus: { target: 'setting', id: destination.setting } };
+    // Only MCP & plugins can be narrowed to one machine; Hooks shows each machine side by side.
+    case 'setup': return destination.tab === 'plugins' && destination.machine ? { syncMachine: destination.machine } : {};
+    default: return {};
   }
 }
 
@@ -29,8 +53,9 @@ export function openAlertDestination(destination: AlertDestination, navigate: (v
     invokeCommand('open_external_url', { url: destination.url }).catch((error) => console.warn('Failed to open the status page', error));
     return;
   }
-  if (destination.kind === 'accounts' && destination.account) requestFocus('account', destination.account);
-  if (destination.kind === 'machines' && destination.machine) requestFocus('machine', destination.machine);
+  const { focus, syncMachine } = alertDestinationFocus(destination);
+  if (focus) requestFocus(focus.target, focus.id);
+  if (syncMachine) setSyncMachine(syncMachine);
   const view = alertDestinationView(destination);
   if (view) navigate(view);
 }
