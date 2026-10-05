@@ -20,7 +20,7 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
  * two failed and a machine couldn't be scanned. `?orca=none`: Orca isn't on any machine, so none of its show, and
  * `?superset=none` the same for Superset, whose cloud one (no machine, no prompt to copy) runs in its own workspace.
  * `?draft=fail`: the drafting model can't be reached (the core has no key); `?draft=slow` takes four seconds.
- * The background runner: casey-mbp and cedar-02 have it and ci-01 doesn't. `?runner=old`: cedar-02's is older than
+ * The background runner: cam-mbp and cedar-02 have it and ci-01 doesn't. `?runner=old`: cedar-02's is older than
  * the one Arbor carries, and `?runner=legacy` from before it kept only 30 days of runs. `?runner=failing`: writing
  * cedar-02's schedules failed. `?runner=none`: this build carries none. `?automations=nokey`: the proxy has no
  * Automations key yet, so Settings offers to add one.
@@ -32,7 +32,7 @@ const withSuperset = params.get('superset') !== 'none';
 const runner = params.get('runner');
 const BUNDLED_RUNNER = runner === 'none' ? null : '1.0.0';
 const runnerOn = new Map<string, UdianOnMachine>([
-  ['casey-mbp', { target: 'darwin-arm64', version: '1.0.0', live: true }],
+  ['cam-mbp', { target: 'darwin-arm64', version: '1.0.0', live: true }],
   ['cedar-02', { target: 'linux-x64', version: runner === 'old' ? '0.9.2' : runner === 'legacy' ? '0.1.0' : '1.0.0', live: true }],
   ['ci-01', { target: 'linux-arm64', version: null, live: false }],
 ]);
@@ -171,16 +171,16 @@ const SEEDS: Seed[] = [
       '- Link each branch and the issues it closes.',
       '- Don\'t resolve issues in Sentry; the fix landing does that.',
     ].join('\n'),
-    rrule: 'FREQ=HOURLY;INTERVAL=1;BYMINUTE=15', projectPath: '/home/casey/src/billing', workspace: 'newWorktree',
+    rrule: 'FREQ=HOURLY;INTERVAL=1;BYMINUTE=15', projectPath: '/home/cam/src/billing', workspace: 'newWorktree',
     precheck: './scripts/sentry-unresolved.sh --since 1h', precheckTimeoutSecs: 60, graceMinutes: 30, model: 'claude-sonnet-5', effort: 'high',
   }),
   seed({
-    id: 'arbor:daily-changelog', source: 'arbor', name: 'Daily changelog', enabled: true, machine: 'casey-mbp', project: 'arbor', agent: 'codex', runsOn: 'machine', model: 'gpt-6-sol',
+    id: 'arbor:daily-changelog', source: 'arbor', name: 'Daily changelog', enabled: true, machine: 'cam-mbp', project: 'arbor', agent: 'codex', runsOn: 'machine', model: 'gpt-6-sol',
     schedule: { kind: 'daily', hour: 17, minute: 0 }, nextRunAtMs: now + 7 * HOUR,
     lastRun: { status: 'done', atMs: now - 17 * HOUR }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {
     prompt: 'Write today\'s changelog from the commits merged to main since the last entry. Keep it to what a user would notice.',
-    rrule: 'FREQ=DAILY;BYHOUR=17;BYMINUTE=0', projectPath: '/Users/casey/src/arbor',
+    rrule: 'FREQ=DAILY;BYHOUR=17;BYMINUTE=0', projectPath: '/Users/cam/src/arbor',
     precheck: 'git fetch -q && test -n "$(git log --since=1.day --oneline origin/main)"', precheckTimeoutSecs: 30, graceMinutes: 720,
     session: 'reuse',
   }),
@@ -191,7 +191,7 @@ const SEEDS: Seed[] = [
     lastRun: { status: failing ? 'failed' : 'skipped', atMs: now - 4 * HOUR }, hasPrecheck: true, abilities: ARBOR_ABILITIES,
   }, {
     prompt: 'Run the test suite and the benchmarks. If anything got slower or started failing since yesterday, find the commit and open an issue with what you found.',
-    rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=6;BYMINUTE=0', projectPath: '/home/casey/src/proxy',
+    rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=6;BYMINUTE=0', projectPath: '/home/cam/src/proxy',
     precheck: 'git fetch -q && test "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)"', precheckTimeoutSecs: 60,
   }),
   seed({
@@ -203,7 +203,7 @@ const SEEDS: Seed[] = [
     rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=3;BYMINUTE=0', projectPath: '~/src/docs',
   }),
   seed({
-    id: 'codexApp:casey-mbp:inbox-triage', source: 'codexApp', name: 'Inbox triage', enabled: true, machine: 'casey-mbp', project: null, agent: 'codex', model: 'gpt-6-sol',
+    id: 'codexApp:cam-mbp:inbox-triage', source: 'codexApp', name: 'Inbox triage', enabled: true, machine: 'cam-mbp', project: null, agent: 'codex', model: 'gpt-6-sol',
     schedule: { kind: 'everyMinutes', minutes: 30 }, nextRunAtMs: now + 11 * MINUTE,
     lastRun: null, hasPrecheck: false, abilities: CODEX_ABILITIES,
   }, {
@@ -211,7 +211,7 @@ const SEEDS: Seed[] = [
     rrule: 'RRULE:FREQ=MINUTELY;INTERVAL=30', sourcePath: '~/.codex/automations/inbox-triage/automation.toml',
   }),
   seed({
-    id: 'codexApp:casey-mbp:history-compactor', source: 'codexApp', name: 'History compactor', enabled: false, machine: 'casey-mbp', project: null, agent: 'codex',
+    id: 'codexApp:cam-mbp:history-compactor', source: 'codexApp', name: 'History compactor', enabled: false, machine: 'cam-mbp', project: null, agent: 'codex',
     schedule: { kind: 'daily', hour: 1, minute: 0 }, nextRunAtMs: null,
     lastRun: null, hasPrecheck: false, abilities: CODEX_ABILITIES,
   }, {
@@ -219,7 +219,7 @@ const SEEDS: Seed[] = [
     rrule: 'RRULE:FREQ=DAILY;INTERVAL=1;BYHOUR=1;BYMINUTE=0;BYSECOND=0', sourcePath: '~/.codex/automations/history-compactor/automation.toml',
   }),
   seed({
-    id: 'claudeDesktop:casey-mbp:meeting-notes', source: 'claudeDesktop', name: 'Meeting notes to wiki', enabled: true, machine: 'casey-mbp', project: null, agent: 'claude',
+    id: 'claudeDesktop:cam-mbp:meeting-notes', source: 'claudeDesktop', name: 'Meeting notes to wiki', enabled: true, machine: 'cam-mbp', project: null, agent: 'claude',
     schedule: { kind: 'elsewhere' }, nextRunAtMs: null,
     lastRun: null, hasPrecheck: false, abilities: CLAUDE_ABILITIES,
   }, {
@@ -254,7 +254,7 @@ const SEEDS: Seed[] = [
       rrule: 'FREQ=DAILY;BYHOUR=2;BYMINUTE=0', timezone: 'Australia/Melbourne', session: 'reuse',
     }),
     seed({
-      id: 'superset:9b8a7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d', source: 'superset', name: 'Docs refresh', enabled: false, machine: null, target: machine('casey-mbp'), project: null, agent: 'codex',
+      id: 'superset:9b8a7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d', source: 'superset', name: 'Docs refresh', enabled: false, machine: null, target: machine('cam-mbp'), project: null, agent: 'codex',
       schedule: { kind: 'weekly', days: [5], hour: 16, minute: 0 }, nextRunAtMs: null,
       lastRun: { status: 'unreachable', atMs: now - 6 * DAY }, hasPrecheck: false, abilities: { ...SUPERSET_ABILITIES, copy: false },
     }, {
@@ -332,7 +332,7 @@ const notOff = (apps: AutomationSource[]) => apps.filter((app) => !appsOff.inclu
 const list = (): AutomationList => ({
   automations: automations.map((item) => item.summary).filter((summary) => !appsOff.includes(summary.source)),
   scans: [
-    { machine: 'casey-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff(['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('casey-mbp') ?? null, placingError: null },
+    { machine: 'cam-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff(['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('cam-mbp') ?? null, placingError: null },
     {
       machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff([...(withOrca ? ['orca' as const] : []), ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('cedar-02') ?? null,
       placingError: runner === 'failing' ? 'cedar-02 didn\'t answer over SSH.' : null,

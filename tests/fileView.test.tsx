@@ -24,16 +24,16 @@ const render = (node: ReactNode) => renderToStaticMarkup(<I18nProvider>{node}</I
 
 describe('the changes header', () => {
   it('offers Preview and Source for a file that can be previewed, and the layout for any', () => {
-    const markdown = render(<ChangesHeader before="casey-mbp" after="ci-01" path="~/.claude/CLAUDE.md" view="source" onView={() => {}} />);
-    expect(markdown).toContain('casey-mbp');
+    const markdown = render(<ChangesHeader before="cam-mbp" after="ci-01" path="~/.claude/CLAUDE.md" view="source" onView={() => {}} />);
+    expect(markdown).toContain('cam-mbp');
     expect(markdown).toContain('ci-01');
     expect(markdown).toContain('Preview');
     expect(markdown).toContain('Source');
     expect(markdown).toContain('aria-label="Layout"');
     // The − and + are only drawn, so a screen reader hears which copy is which in the words each line is read with.
-    expect(markdown).toContain('<span class="sr-only">Removed: </span>casey-mbp');
+    expect(markdown).toContain('<span class="sr-only">Removed: </span>cam-mbp');
     expect(markdown).toContain('<span class="sr-only">Added: </span>ci-01');
-    const settings = render(<ChangesHeader before="casey-mbp" after="ci-01" path="~/.claude/settings.json" view="source" onView={() => {}} />);
+    const settings = render(<ChangesHeader before="cam-mbp" after="ci-01" path="~/.claude/settings.json" view="source" onView={() => {}} />);
     expect(settings).not.toContain('Preview');
     expect(settings).toContain('aria-label="Layout"');
   });

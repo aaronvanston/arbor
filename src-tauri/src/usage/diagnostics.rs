@@ -803,8 +803,8 @@ mod tests {
         assert_eq!(core_call("GET", "/", Duration::ZERO, CoreReply::Unreachable).outcome, Outcome::Failed);
 
         assert_eq!(core_operation("GET", "/v0/management/model-definitions/codex"), "GET /model-definitions/codex");
-        assert_eq!(core_operation("DELETE", "auth-files?name=casey@example.com.json"), "DELETE /auth-files");
-        assert_eq!(core_operation("PATCH", "/v0/management/auth-files/casey%40example.com.json/fields"), "PATCH /auth-files/*/fields");
+        assert_eq!(core_operation("DELETE", "auth-files?name=cam@example.com.json"), "DELETE /auth-files");
+        assert_eq!(core_operation("PATCH", "/v0/management/auth-files/cam%40example.com.json/fields"), "PATCH /auth-files/*/fields");
         assert_eq!(core_operation("GET", "/v0/management/api-keys/12345"), "GET /api-keys/*");
         assert_eq!(core_operation("GET", "/v0/management/keys/sk-AbC123dEf456"), "GET /keys/*");
         assert_eq!(core_operation("GET", "/v0/management/a/b/c/d/e/f"), "GET /a/b/c/d");
@@ -1004,7 +1004,7 @@ mod tests {
         assert_eq!(calls.len(), 1);
         calls.push(core_call(
             "GET",
-            "/v0/management/auth-files/casey@example.com.json?token=sk-live-arbor-secret-token",
+            "/v0/management/auth-files/cam@example.com.json?token=sk-live-arbor-secret-token",
             Duration::from_millis(12),
             CoreReply::Status(401),
         ));
@@ -1012,13 +1012,13 @@ mod tests {
         write_calls(&mut connection, &calls, now_ms()).unwrap();
         let all = everything_stored(&connection);
         assert!(all.contains("setup scan") && all.contains(machine) && all.contains("GET /auth-files/*"));
-        for secret in [ARGUMENT, "arbor-secret-script", OUTPUT, STDERR, "arbor-secret-env", "exit 3", "casey@example.com", "sk-live", "token"] {
+        for secret in [ARGUMENT, "arbor-secret-script", OUTPUT, STDERR, "arbor-secret-env", "exit 3", "cam@example.com", "sk-live", "token"] {
             assert!(!all.contains(secret), "{secret} reached the diagnostics table: {all}");
         }
         // Nor does it reach what the page reads.
         let (read, _) = read_calls(&connection, now_ms()).unwrap();
         let shown = serde_json::to_string(&read).unwrap();
-        for secret in [ARGUMENT, OUTPUT, STDERR, "casey@example.com", "sk-live"] {
+        for secret in [ARGUMENT, OUTPUT, STDERR, "cam@example.com", "sk-live"] {
             assert!(!shown.contains(secret));
         }
     }

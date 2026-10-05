@@ -743,10 +743,10 @@ mod tests {
         let mut run = runner::new_run("arbor:a", Some("cedar-02".into()), 5, false);
         run.status = AutomationRunStatus::Skipped;
         store::write_run(&connection, &store::StoredRun { run, worktree: None }).unwrap();
-        let stdout = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgo=\n";
-        let (found, _) = discover::parse_scan("casey-mbp", stdout);
-        let finds = BTreeMap::from([("casey-mbp".to_string(), MachineFind { scanned_at_ms: Some(1), found, ..Default::default() })]);
-        let list = list_from(&connection, &finds, &["casey-mbp".into(), "cedar-02".into()]).unwrap();
+        let stdout = "H\t/Users/cam\nC\t/Users/cam/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgo=\n";
+        let (found, _) = discover::parse_scan("cam-mbp", stdout);
+        let finds = BTreeMap::from([("cam-mbp".to_string(), MachineFind { scanned_at_ms: Some(1), found, ..Default::default() })]);
+        let list = list_from(&connection, &finds, &["cam-mbp".into(), "cedar-02".into()]).unwrap();
         assert_eq!(list.automations.len(), 2);
         let arbor = &list.automations[0];
         assert_eq!(arbor.project.as_deref(), Some("billing"));
@@ -787,20 +787,20 @@ mod tests {
 
         // A Codex app automation's model is its thread's.
         request(&connection, "e-3", "t-1", "gpt-5.6-sol", 10);
-        let linked = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtMSIK\n";
-        let (found, _) = discover::parse_scan("casey-mbp", linked);
+        let linked = "H\t/Users/cam\nC\t/Users/cam/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtMSIK\n";
+        let (found, _) = discover::parse_scan("cam-mbp", linked);
         let item = with_project(&connection, found[0].clone()).unwrap();
         assert_eq!(item.automation.summary.model.as_deref(), Some("gpt-5.6-sol"));
     }
 
     #[test]
     fn a_copy_starts_paused_on_the_machine_it_was_found_on() {
-        let stdout = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgpycnVsZSA9ICJSUlVMRTpGUkVRPUhPVVJMWTtJTlRFUlZBTD0yIgo=\n";
-        let (found, _) = discover::parse_scan("casey-mbp", stdout);
+        let stdout = "H\t/Users/cam\nC\t/Users/cam/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgpycnVsZSA9ICJSUlVMRTpGUkVRPUhPVVJMWTtJTlRFUlZBTD0yIgo=\n";
+        let (found, _) = discover::parse_scan("cam-mbp", stdout);
         let copy = copied_input(&found[0].automation);
         assert!(!copy.enabled);
         assert_eq!(copy.rrule, "FREQ=HOURLY;INTERVAL=2");
-        assert_eq!(copy.target, AutomationTarget::Machine { name: "casey-mbp".into() });
+        assert_eq!(copy.target, AutomationTarget::Machine { name: "cam-mbp".into() });
         assert_eq!(copy.agent, Harness::Codex);
     }
 
@@ -809,21 +809,21 @@ mod tests {
         let connection = crate::usage::schema::test_database();
         connection
             .execute(
-                "INSERT INTO usage_session_transcripts (session_id, machine, agent, repo_root, main_repo) VALUES ('t-1', 'casey-mbp', 'codex', '/Users/casey/code/billing-wt', '/Users/casey/code/billing')",
+                "INSERT INTO usage_session_transcripts (session_id, machine, agent, repo_root, main_repo) VALUES ('t-1', 'cam-mbp', 'codex', '/Users/cam/code/billing-wt', '/Users/cam/code/billing')",
                 [],
             )
             .unwrap();
         // `target_thread_id = "t-1"`, and one with a thread Arbor has no transcript for.
-        let linked = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtMSIK\n";
-        let unknown = "H\t/Users/casey\nC\t/Users/casey/.codex/automations/y/automation.toml\tbmFtZSA9ICJZIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtOSIK\n";
-        let (mut found, _) = discover::parse_scan("casey-mbp", linked);
-        found.extend(discover::parse_scan("casey-mbp", unknown).0);
-        let finds = BTreeMap::from([("casey-mbp".to_string(), MachineFind { scanned_at_ms: Some(1), found: found.clone(), ..Default::default() })]);
-        let list = list_from(&connection, &finds, &["casey-mbp".into()]).unwrap();
+        let linked = "H\t/Users/cam\nC\t/Users/cam/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtMSIK\n";
+        let unknown = "H\t/Users/cam\nC\t/Users/cam/.codex/automations/y/automation.toml\tbmFtZSA9ICJZIgp0YXJnZXRfdGhyZWFkX2lkID0gInQtOSIK\n";
+        let (mut found, _) = discover::parse_scan("cam-mbp", linked);
+        found.extend(discover::parse_scan("cam-mbp", unknown).0);
+        let finds = BTreeMap::from([("cam-mbp".to_string(), MachineFind { scanned_at_ms: Some(1), found: found.clone(), ..Default::default() })]);
+        let list = list_from(&connection, &finds, &["cam-mbp".into()]).unwrap();
         let projects: Vec<_> = list.automations.iter().map(|item| item.project.as_deref()).collect();
         assert_eq!(projects, [Some("billing"), None]);
         let item = with_project(&connection, found[0].clone()).unwrap();
-        assert_eq!(item.automation.project_path.as_deref(), Some("/Users/casey/code/billing"));
-        assert_eq!(copied_input(&item.automation).project_path, "/Users/casey/code/billing");
+        assert_eq!(item.automation.project_path.as_deref(), Some("/Users/cam/code/billing"));
+        assert_eq!(copied_input(&item.automation).project_path, "/Users/cam/code/billing");
     }
 }

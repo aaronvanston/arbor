@@ -11,7 +11,7 @@ import { quotaKey, type AuthFile } from '../src/services/quotaService';
 const account = (name: string, provider: string): AuthFile =>
   ({ name: `${name}.json`, provider, auth_index: name, source: 'file', account_type: 'oauth' }) as AuthFile;
 
-const listing = [account('casey@example.com', 'claude'), account('casey-work@example.com', 'codex')];
+const listing = [account('cam@example.com', 'claude'), account('cam-work@example.com', 'codex')];
 const [claude] = listing;
 
 let originalWindow: PropertyDescriptor | undefined;

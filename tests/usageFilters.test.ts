@@ -70,7 +70,7 @@ describe('what is set', () => {
   });
 
   test('lists the set filters in the order they are offered, leaving out ones the tab does not offer', () => {
-    const set = filters({ result: 'canceled', machine: 'casey-mbp', model: 'grok-4', client: 'Codex' });
+    const set = filters({ result: 'canceled', machine: 'cam-mbp', model: 'grok-4', client: 'Codex' });
     expect(activeUsageFilters(set, offeredUsageFilters('usage', 'events', set))).toEqual(['model', 'machine', 'result']);
     expect(activeUsageFilters(set, offeredUsageFilters('machines', 'overview', set))).toEqual([]);
     expect(activeUsageFilters(set, offeredUsageFilters('sessions', 'sessions', set))).toEqual(['machine', 'client', 'model', 'result']);
@@ -139,7 +139,7 @@ describe('changing and clearing', () => {
   });
 
   test('Clear all clears every filter, including ones the tab does not show', () => {
-    const cleared = { ...filters({ model: 'grok-4', machine: 'casey-mbp', result: 'failed' }), ...clearAllUsageFilters() };
+    const cleared = { ...filters({ model: 'grok-4', machine: 'cam-mbp', result: 'failed' }), ...clearAllUsageFilters() };
     expect(cleared).toEqual(noUsageFilters);
     expect(activeUsageFilters(cleared, offeredUsageFilters('sessions', 'sessions', cleared))).toEqual([]);
   });

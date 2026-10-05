@@ -144,9 +144,9 @@ mod tests {
 
     #[test]
     fn a_remote_session_crosses_as_base64_and_reads_the_terminal() {
-        let launch = Launch::Remote { endpoint: " casey@casey-mbp ".into(), port: 2222, program: "~/bin/codex".into() };
+        let launch = Launch::Remote { endpoint: " cam@cam-mbp ".into(), port: 2222, program: "~/bin/codex".into() };
         let script = session_script(&launch, "Look at \"$HOME\" and `disk`");
-        assert!(script.contains("exec ssh -t -p 2222 -- 'casey@casey-mbp' 'echo "));
+        assert!(script.contains("exec ssh -t -p 2222 -- 'cam@cam-mbp' 'echo "));
         assert!(script.contains(" | base64 -d | sh'\n"));
         let remote = decoded_remote(&script);
         assert!(remote.starts_with("exec </dev/tty\n"));
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn the_remote_script_runs_under_sh() {
-        let launch = Launch::Remote { endpoint: "casey-mbp".into(), port: 22, program: "/bin/echo".into() };
+        let launch = Launch::Remote { endpoint: "cam-mbp".into(), port: 22, program: "/bin/echo".into() };
         let remote = decoded_remote(&session_script(&launch, "it's fine"));
         // Without the terminal and login shell: the rest of the script, as the far side's sh reads it.
         let body = remote.lines().skip(4).collect::<Vec<_>>().join("\n");
@@ -173,17 +173,17 @@ mod tests {
 
     #[test]
     fn a_session_on_a_machine_needs_its_agent_there() {
-        let state = state_with("casey-mbp", "casey-mbp", false);
+        let state = state_with("cam-mbp", "cam-mbp", false);
         let inner = state.lock();
-        let error = plan_launch(&inner, "casey-mbp", AgentKind::Claude, true).unwrap_err();
-        assert_eq!(error, "Claude Code isn't installed on casey-mbp");
+        let error = plan_launch(&inner, "cam-mbp", AgentKind::Claude, true).unwrap_err();
+        assert_eq!(error, "Claude Code isn't installed on cam-mbp");
         assert!(plan_launch(&inner, "nobody", AgentKind::Claude, true).is_err());
     }
 
     #[test]
     fn a_session_off_the_machine_runs_here_by_the_agents_name() {
-        let state = state_with("casey-mbp", "casey-mbp", false);
-        assert_eq!(plan_launch(&state.lock(), "casey-mbp", AgentKind::Codex, false).unwrap(), Launch::Local { program: "codex".into() });
+        let state = state_with("cam-mbp", "cam-mbp", false);
+        assert_eq!(plan_launch(&state.lock(), "cam-mbp", AgentKind::Codex, false).unwrap(), Launch::Local { program: "codex".into() });
         let local = state_with("this-mac", "localhost", true);
         assert_eq!(plan_launch(&local.lock(), "this-mac", AgentKind::Claude, true).unwrap(), Launch::Local { program: "claude".into() });
     }

@@ -165,7 +165,7 @@ mod tests {
 
     fn channel(threads: Vec<T3Thread>) -> T3Channel {
         T3Channel {
-            machine: "casey-mbp".into(),
+            machine: "cam-mbp".into(),
             channel: t3_threads::T3ChannelKind::Userdata,
             read_at_ms: 0,
             server_running: true,

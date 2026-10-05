@@ -1814,9 +1814,9 @@ mod tests {
                 ],
             );
         };
-        project("project-arbor", "/Users/casey/src/arbor", false);
-        project("project-quoted", "/Users/casey/src/a b\"c#d%e", false);
-        project("project-gone", "/Users/casey/src/gone", true);
+        project("project-arbor", "/Users/cam/src/arbor", false);
+        project("project-quoted", "/Users/cam/src/a b\"c#d%e", false);
+        project("project-gone", "/Users/cam/src/gone", true);
         insert(connection, "orchestration_events", &[("event_id", text("event-1")), ("payload_json", text(&format!(r#"{{"text":"{SECRET}"}}"#)))]);
         insert(connection, "auth_sessions", &[("session_id", text("auth-1")), ("token_hash", text(SECRET)), ("client_label", text(SECRET))]);
         let minute = 60_000;
@@ -1947,7 +1947,7 @@ mod tests {
         let mut watch = log.watch.clone();
         let scans = scan_local(&mut watch, &present, home, None, now);
         log.watch = watch;
-        apply_local(log, "casey-mbp", scans, now)
+        apply_local(log, "cam-mbp", scans, now)
     }
 
     fn thread<'a>(channel: &'a T3Channel, id: &str) -> &'a T3Thread {
@@ -1990,7 +1990,7 @@ mod tests {
         let serialized = serde_json::to_string(&log.channels).unwrap();
         assert!(!serialized.contains(SECRET), "{serialized}");
         let [channel] = &log.channels[..] else { panic!("{:?}", log.channels) };
-        assert_eq!((channel.machine.as_str(), channel.channel), ("casey-mbp", T3ChannelKind::Userdata));
+        assert_eq!((channel.machine.as_str(), channel.channel), ("cam-mbp", T3ChannelKind::Userdata));
         assert!(channel.server_running);
         assert_eq!(channel.read_mode, ReadMode::Readonly);
         assert_eq!(channel.skipped, None);
@@ -2000,7 +2000,7 @@ mod tests {
         assert_eq!(approval.pending_approvals, 2);
         assert_eq!(approval.session_status.as_deref(), Some("running"));
         assert_eq!(approval.provider.as_deref(), Some("claudeAgent"));
-        assert_eq!(approval.workspace_root.as_deref(), Some("/Users/casey/src/arbor"));
+        assert_eq!(approval.workspace_root.as_deref(), Some("/Users/cam/src/arbor"));
         assert!(approval.approval_since_ms.is_some_and(|since| (since - (now - 3 * 60_000)).abs() < 5), "the oldest pending one");
         assert!(approval.latest_approval_at_ms.is_some_and(|at| (at - (now - 60_000)).abs() < 5), "the newest pending one");
         assert_eq!(approval.agent_session_id.as_deref(), Some(CLAUDE_SESSION), "Claude's resume id, never the cursor's threadId");
@@ -2012,7 +2012,7 @@ mod tests {
         assert_eq!(question.pending_questions, 1);
         assert_eq!(question.question_seen_at_ms, Some(now), "first seen asking now");
         assert_eq!(question.agent_session_id.as_deref(), Some(CLAUDE_LEGACY), "older Claude rows keep it as sessionId");
-        assert_eq!(question.workspace_root.as_deref(), Some("/Users/casey/src/a b\"c#d%e"));
+        assert_eq!(question.workspace_root.as_deref(), Some("/Users/cam/src/a b\"c#d%e"));
 
         let done = thread(channel, "thread-done");
         assert_eq!(done.agent_session_id, None, "a cursor that isn't JSON gives no id, and the row still comes");
@@ -2281,7 +2281,7 @@ mod tests {
     #[test]
     fn the_script_s_lines_are_read_by_tag_and_everything_odd_is_dropped() {
         let updated = "\"2026-09-26T00:10:00.000Z\"";
-        let good = t_line("\"thread-1\"", r#""\/Users\/casey\/a b\"c#d""#, &format!("\"{CODEX_THREAD}\""), updated);
+        let good = t_line("\"thread-1\"", r#""\/Users\/cam\/a b\"c#d""#, &format!("\"{CODEX_THREAD}\""), updated);
         let stdout = [
             "now\t1790000000\n".to_string(),
             // Before any state folder: dropped.
@@ -2298,8 +2298,8 @@ mod tests {
             t_line("\"thread-2\"", "null", "\"../../etc\"", updated),
             t_line("\"thread-3\"", "null", "null", "\"not a time\""),
             // Roots that aren't folders: a line break or a tab in one, or one that isn't absolute.
-            t_line("\"thread-5\"", r#""\/Users\/casey\/a\nb""#, "null", updated),
-            t_line("\"thread-6\"", r#""\/Users\/casey\/a\tb""#, "null", updated),
+            t_line("\"thread-5\"", r#""\/Users\/cam\/a\nb""#, "null", updated),
+            t_line("\"thread-6\"", r#""\/Users\/cam\/a\tb""#, "null", updated),
             t_line("\"thread-7\"", r#""src\/arbor""#, "null", updated),
             "T\t\"thread-4\"\n".into(),
             good.replace("\"thread-1\"", "{\"thread\""),
@@ -2331,7 +2331,7 @@ mod tests {
             assert_eq!(thread(userdata, id).workspace_root, None, "{id}'s root isn't a folder");
         }
         let first = thread(userdata, "thread-1");
-        assert_eq!(first.workspace_root.as_deref(), Some("/Users/casey/a b\"c#d"));
+        assert_eq!(first.workspace_root.as_deref(), Some("/Users/cam/a b\"c#d"));
         assert_eq!(first.agent_session_id.as_deref(), Some(CODEX_THREAD));
         assert_eq!(first.provider.as_deref(), Some("codex"));
         assert_eq!(first.pending_questions, 2);

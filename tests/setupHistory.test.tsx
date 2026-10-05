@@ -17,7 +17,7 @@ const backup = (id: string, what: SetupBackup['what'], files: string[], undone =
 const render = (backups: SetupBackup[], limit?: number) =>
   renderToStaticMarkup(
     <I18nProvider>
-      <BackupList machine="casey-mbp" backups={backups} error={null} busy={false} undoing={null} onUndo={() => {}} limit={limit} />
+      <BackupList machine="cam-mbp" backups={backups} error={null} busy={false} undoing={null} onUndo={() => {}} limit={limit} />
     </I18nProvider>,
   );
 

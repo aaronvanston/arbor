@@ -49,7 +49,7 @@ const CLAUDE_ID = 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7';
 const CODEX_ID = '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
 
 const thread = (fields: Partial<T3Thread> = {}): T3Thread => ({
-  threadId: '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', projectId: 'b1c2d3e4', workspaceRoot: '/Users/casey/src/arbor', provider: 'claudeAgent',
+  threadId: '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', projectId: 'b1c2d3e4', workspaceRoot: '/Users/cam/src/arbor', provider: 'claudeAgent',
   sessionStatus: 'ready', sessionUpdatedAtMs: NOW - 10 * MINUTE, pendingApprovals: 0, pendingQuestions: 0, approvalSinceMs: null, latestApprovalAtMs: null,
   questionSeenAtMs: null, interactionMode: 'default', hasActionablePlan: false, turn: null, latestUserMessageAtMs: null, settled: false,
   t3SnoozedUntilMs: null, t3SnoozedAtMs: null, updatedAtMs: NOW - 10 * MINUTE, agentSessionId: null, arborSession: null, title: null,
@@ -63,8 +63,8 @@ const channel = (machine: string, threads: T3Thread[], fields: Partial<T3Channel
 });
 
 const transcript = (fields: Partial<SessionTranscript> = {}): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/src/arbor', repoRoot: '/Users/casey/src/arbor',
-  mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '', cwd: '/Users/cam/src/arbor', repoRoot: '/Users/cam/src/arbor',
+  mainRepo: '/Users/cam/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
   pullRequests: [], linesAdded: null, linesRemoved: null, compactions: [], toolUsage: null, readAtMs: 0,
   ...fields,
 });
@@ -74,17 +74,17 @@ const session = (id: string, fields: Partial<UsageSession> = {}): UsageSession =
   startedAtMs: NOW - HOUR, lastActiveAtMs: NOW - 20 * MINUTE, requests: 40, failures: 0, canceled: 0,
   inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
   totalTokens: 0, estimatedCost: 0, pricedRequests: 0, peakContext: 0, compactions: 0,
-  provider: 'claude', machine: 'casey-mbp', pool: '', apiKeyHash: '', active: false, hasOwnRequests: true, subagents: 0, threads: [],
+  provider: 'claude', machine: 'cam-mbp', pool: '', apiKeyHash: '', active: false, hasOwnRequests: true, subagents: 0, threads: [],
   transcript: null,
   ...fields,
 });
 
 const wait = (fields: Partial<AttentionItem> = {}): AttentionItem => ({
-  machine: 'casey-mbp', agent: 'claude', sessionId: CLAUDE_ID, kind: 'permission', sinceMs: NOW - 3 * MINUTE, session: null, ...fields,
+  machine: 'cam-mbp', agent: 'claude', sessionId: CLAUDE_ID, kind: 'permission', sinceMs: NOW - 3 * MINUTE, session: null, ...fields,
 });
 
 const sources = (fields: Partial<FleetSources> = {}): FleetSources => ({
-  nowMs: NOW, thisMachine: 'casey-mbp', t3Enabled: true, t3Found: true, t3: [], attention: { items: [], reporting: ['casey-mbp'] }, sessions: [], ...fields,
+  nowMs: NOW, thisMachine: 'cam-mbp', t3Enabled: true, t3Found: true, t3: [], attention: { items: [], reporting: ['cam-mbp'] }, sessions: [], ...fields,
 });
 const board = (input: Partial<FleetSources>, options: { now?: number; snoozes?: FleetSnoozes; seen?: Record<string, number>; asked?: Record<string, number> } = {}) =>
   buildFleetBoard(sources(input), { now: NOW, ...options });
@@ -94,9 +94,9 @@ const only = (built: FleetBoard) => {
   return itemAt(built.rows, 0);
 };
 const t3Row = (fields: Partial<T3Thread>, channelFields: Partial<T3Channel> = {}, options = {}) =>
-  only(board({ t3: [channel('casey-mbp', [thread(fields)], channelFields)] }, options));
+  only(board({ t3: [channel('cam-mbp', [thread(fields)], channelFields)] }, options));
 const pick = (row: FleetSession) => ({ status: row.status, sinceMs: row.sinceMs, note: row.note });
-const T3_KEY = 't3:casey-mbp:userdata:7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+const T3_KEY = 't3:cam-mbp:userdata:7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
 
 describe('a T3 Code thread’s status, as T3 Code’s sidebar has it', () => {
   it('asks for approval ahead of a question, and both ahead of running', () => {
@@ -137,7 +137,7 @@ describe('a T3 Code thread’s status, as T3 Code’s sidebar has it', () => {
     expect(ready({ turn: completed(12), sessionStatus: 'running' }).status).toBe('working');
     expect(ready({ turn: completed(12), pendingQuestions: 1 }).status).toBe('question');
     // T3 Code ranks it above a turn that's only finished.
-    const built = board({ t3: [channel('casey-mbp', [
+    const built = board({ t3: [channel('cam-mbp', [
       thread({ threadId: 'finished', turn: completed(2) }),
       thread({ threadId: 'plan', ...plan, turn: completed(30) }),
     ])] });
@@ -164,7 +164,7 @@ describe('a T3 Code thread’s status, as T3 Code’s sidebar has it', () => {
 describe('a T3 Code that has stopped', () => {
   it('shows its work as failed, since nothing can be running, and keeps what it asked for without counting it', () => {
     const built = board({
-      t3: [channel('casey-mbp', [
+      t3: [channel('cam-mbp', [
         thread({ threadId: 'working', sessionStatus: 'running', turn: running(8), sessionUpdatedAtMs: NOW - 20 * MINUTE, updatedAtMs: NOW - 3 * MINUTE }),
         thread({ threadId: 'asking', pendingApprovals: 1, approvalSinceMs: NOW - 2 * MINUTE, sessionStatus: 'running' }),
       ], { serverRunning: false })],
@@ -180,8 +180,8 @@ describe('a T3 Code that has stopped', () => {
 
   it('doesn’t count its agent’s own request for permission either, since T3 Code ran the agent', () => {
     const row = only(board({
-      t3: [channel('casey-mbp', [thread({ agentSessionId: CLAUDE_ID, sessionStatus: 'running', turn: running(5) })], { serverRunning: false })],
-      attention: { items: [wait()], reporting: ['casey-mbp'] },
+      t3: [channel('cam-mbp', [thread({ agentSessionId: CLAUDE_ID, sessionStatus: 'running', turn: running(5) })], { serverRunning: false })],
+      attention: { items: [wait()], reporting: ['cam-mbp'] },
     }));
     expect(pick(row)).toEqual({ status: 'approval', sinceMs: NOW - 3 * MINUTE, note: 't3Stopped' });
     expect(row.countsAsWaiting).toBe(false);
@@ -190,7 +190,7 @@ describe('a T3 Code that has stopped', () => {
   it('never lets its agent’s recent requests say it’s still working', () => {
     const linked = { id: CLAUDE_ID, lastActiveAtMs: NOW - MINUTE, lastRequestFailed: false };
     const stopped = (fields: Partial<T3Thread>, failed = false) => only(board({
-      t3: [channel('casey-mbp', [thread({ agentSessionId: CLAUDE_ID, arborSession: linked, ...fields })], { serverRunning: false })],
+      t3: [channel('cam-mbp', [thread({ agentSessionId: CLAUDE_ID, arborSession: linked, ...fields })], { serverRunning: false })],
       sessions: [{ session: session(CLAUDE_ID, { lastActiveAtMs: NOW - MINUTE }), lastRequestFailed: failed }],
     }));
     // Quit mid-turn, a minute after its last request.
@@ -207,7 +207,7 @@ describe('a T3 Code that has stopped', () => {
     expect(quiet.note).toBe('machineQuiet');
     expect(quiet.countsAsWaiting).toBe(false);
     // This Mac is read every few seconds whatever changed, so its read time isn't a sign.
-    expect(only(board({ t3: [channel('casey-mbp', [thread({ pendingApprovals: 1 })], { readAtMs: NOW - 3 * MINUTE })] })).note).toBeNull();
+    expect(only(board({ t3: [channel('cam-mbp', [thread({ pendingApprovals: 1 })], { readAtMs: NOW - 3 * MINUTE })] })).note).toBeNull();
     expect(t3Row({ turn: completed(3) }, { readMode: 'immutable', serverRunning: false }).note).toBeNull();
   });
 });
@@ -224,12 +224,12 @@ describe('done and seen', () => {
 
   it('leaves the board after six hours quiet, unless it’s asking for something or working', () => {
     const old = NOW - 7 * HOUR;
-    expect(board({ t3: [channel('casey-mbp', [thread({ turn: completed(7 * 60), updatedAtMs: old, sessionUpdatedAtMs: old })])] }).rows).toEqual([]);
-    expect(only(board({ t3: [channel('casey-mbp', [thread({ pendingApprovals: 1, updatedAtMs: old, sessionUpdatedAtMs: old })])] })).status).toBe('approval');
+    expect(board({ t3: [channel('cam-mbp', [thread({ turn: completed(7 * 60), updatedAtMs: old, sessionUpdatedAtMs: old })])] }).rows).toEqual([]);
+    expect(only(board({ t3: [channel('cam-mbp', [thread({ pendingApprovals: 1, updatedAtMs: old, sessionUpdatedAtMs: old })])] })).status).toBe('approval');
   });
 
   it('marks a reporter’s done turn seen too', () => {
-    const done = { attention: { items: [wait({ kind: 'waiting', sinceMs: NOW - 8 * MINUTE })], reporting: ['casey-mbp'] } };
+    const done = { attention: { items: [wait({ kind: 'waiting', sinceMs: NOW - 8 * MINUTE })], reporting: ['cam-mbp'] } };
     expect(only(board(done)).status).toBe('done');
     const seen = only(board(done, { seen: { [`claude:${CLAUDE_ID}`]: NOW - MINUTE } }));
     expect(pick(seen)).toEqual({ status: 'idle', sinceMs: NOW - 8 * MINUTE, note: null });
@@ -240,16 +240,16 @@ describe('merging the sources', () => {
   it('makes one row of a T3 Code thread, its reporter wait and its proxy session with the same id', () => {
     const proxied = session(CLAUDE_ID, { transcript: transcript({ title: 'Fix the login redirect loop' }), lastActiveAtMs: NOW - MINUTE });
     const row = only(board({
-      t3: [channel('casey-mbp', [thread({
+      t3: [channel('cam-mbp', [thread({
         pendingApprovals: 1, approvalSinceMs: NOW - 3 * MINUTE, sessionStatus: 'running', turn: running(9), agentSessionId: CLAUDE_ID,
         arborSession: { id: CLAUDE_ID, lastActiveAtMs: NOW - MINUTE, lastRequestFailed: false },
       })])],
-      attention: { items: [wait({ session: proxied })], reporting: ['casey-mbp'] },
+      attention: { items: [wait({ session: proxied })], reporting: ['cam-mbp'] },
       sessions: [{ session: proxied, lastRequestFailed: false }],
     }));
     expect(row).toMatchObject({
-      key: T3_KEY, client: 't3code', clientLabel: 'T3 Code', agent: 'claudeAgent', machine: 'casey-mbp', status: 'approval',
-      countsAsWaiting: true, arborSessionId: CLAUDE_ID, agentSessionId: CLAUDE_ID, project: { key: '/Users/casey/src/arbor', name: 'arbor' },
+      key: T3_KEY, client: 't3code', clientLabel: 'T3 Code', agent: 'claudeAgent', machine: 'cam-mbp', status: 'approval',
+      countsAsWaiting: true, arborSessionId: CLAUDE_ID, agentSessionId: CLAUDE_ID, project: { key: '/Users/cam/src/arbor', name: 'arbor' },
       sources: ['t3', 'reporter', 'proxy', 'transcript'],
     });
     expect(fleetSessionName(row, t)).toBe('Fix the login redirect loop');
@@ -258,8 +258,8 @@ describe('merging the sources', () => {
   it('keeps sessions apart that share a project, a machine and a time but not an id', () => {
     const other = '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b';
     const built = board({
-      t3: [channel('casey-mbp', [thread({ pendingApprovals: 1, approvalSinceMs: NOW - 3 * MINUTE, agentSessionId: CLAUDE_ID })])],
-      attention: { items: [wait({ sessionId: other, sinceMs: NOW - 3 * MINUTE })], reporting: ['casey-mbp'] },
+      t3: [channel('cam-mbp', [thread({ pendingApprovals: 1, approvalSinceMs: NOW - 3 * MINUTE, agentSessionId: CLAUDE_ID })])],
+      attention: { items: [wait({ sessionId: other, sinceMs: NOW - 3 * MINUTE })], reporting: ['cam-mbp'] },
       sessions: [{ session: session('9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a', { transcript: transcript(), lastActiveAtMs: NOW - 3 * MINUTE }), lastRequestFailed: false }],
     });
     expect(built.rows.map((row) => row.key).sort()).toEqual([
@@ -271,8 +271,8 @@ describe('merging the sources', () => {
 
   it('compares ids as they’re stored, so ones that differ only in case stay apart', () => {
     const built = board({
-      t3: [channel('casey-mbp', [thread({ agentSessionId: CLAUDE_ID.toUpperCase(), sessionStatus: 'running', turn: running(2) })])],
-      attention: { items: [wait()], reporting: ['casey-mbp'] },
+      t3: [channel('cam-mbp', [thread({ agentSessionId: CLAUDE_ID.toUpperCase(), sessionStatus: 'running', turn: running(2) })])],
+      attention: { items: [wait()], reporting: ['cam-mbp'] },
     });
     expect(built.rows).toHaveLength(2);
   });
@@ -282,10 +282,10 @@ describe('merging the sources', () => {
     const linked = { id: CLAUDE_ID, lastActiveAtMs: NOW - MINUTE, lastRequestFailed: false };
     const built = board({
       t3: [
-        channel('casey-mbp', [thread({ threadId: 'first', agentSessionId: CLAUDE_ID, arborSession: linked, turn: completed(30) })]),
-        channel('casey-mbp', [thread({ threadId: 'imported', agentSessionId: CLAUDE_ID, arborSession: linked, turn: completed(40) })], { channel: 'custom' }),
+        channel('cam-mbp', [thread({ threadId: 'first', agentSessionId: CLAUDE_ID, arborSession: linked, turn: completed(30) })]),
+        channel('cam-mbp', [thread({ threadId: 'imported', agentSessionId: CLAUDE_ID, arborSession: linked, turn: completed(40) })], { channel: 'custom' }),
       ],
-      attention: { items: [wait()], reporting: ['casey-mbp'] },
+      attention: { items: [wait()], reporting: ['cam-mbp'] },
       sessions: [{ session: proxied, lastRequestFailed: false }],
     });
     expect(built.rows).toHaveLength(3);
@@ -300,8 +300,8 @@ describe('merging the sources', () => {
   it('links a Codex thread by its thread id, and lets a live T3 Code say it’s done', () => {
     const proxied = session(CODEX_ID, { provider: 'codex', userAgent: 'codex_cli_rs/0.156.0', lastActiveAtMs: NOW - 2 * MINUTE });
     const row = only(board({
-      t3: [channel('casey-mbp', [thread({ provider: 'codex', agentSessionId: CODEX_ID, turn: completed(8) })])],
-      attention: { items: [wait({ agent: 'codex', sessionId: CODEX_ID, kind: 'waiting', sinceMs: NOW - 8 * MINUTE })], reporting: ['casey-mbp'] },
+      t3: [channel('cam-mbp', [thread({ provider: 'codex', agentSessionId: CODEX_ID, turn: completed(8) })])],
+      attention: { items: [wait({ agent: 'codex', sessionId: CODEX_ID, kind: 'waiting', sinceMs: NOW - 8 * MINUTE })], reporting: ['cam-mbp'] },
       // Its latest request was within the last few minutes, but T3 Code knows the turn ended.
       sessions: [{ session: proxied, lastRequestFailed: true }],
     }));
@@ -310,8 +310,8 @@ describe('merging the sources', () => {
 
   it('lets a reporter’s request for permission outrank a live T3 Code’s working until T3 Code is read again', () => {
     const asked = (sinceMs: number) => only(board({
-      t3: [channel('casey-mbp', [thread({ agentSessionId: CLAUDE_ID, sessionStatus: 'running', turn: running(5) })], { readAtMs: NOW - 3 * SECOND })],
-      attention: { items: [wait({ sinceMs })], reporting: ['casey-mbp'] },
+      t3: [channel('cam-mbp', [thread({ agentSessionId: CLAUDE_ID, sessionStatus: 'running', turn: running(5) })], { readAtMs: NOW - 3 * SECOND })],
+      attention: { items: [wait({ sinceMs })], reporting: ['cam-mbp'] },
     }));
     const fresh = asked(NOW - SECOND);
     expect(pick(fresh)).toEqual({ status: 'approval', sinceMs: NOW - SECOND, note: null });
@@ -322,8 +322,8 @@ describe('merging the sources', () => {
     expect(answered.countsAsWaiting).toBe(false);
     // A question the same way.
     expect(only(board({
-      t3: [channel('casey-mbp', [thread({ agentSessionId: CLAUDE_ID, sessionStatus: 'running', turn: running(5) })])],
-      attention: { items: [wait({ kind: 'question', sinceMs: NOW - MINUTE })], reporting: ['casey-mbp'] },
+      t3: [channel('cam-mbp', [thread({ agentSessionId: CLAUDE_ID, sessionStatus: 'running', turn: running(5) })])],
+      attention: { items: [wait({ kind: 'question', sinceMs: NOW - MINUTE })], reporting: ['cam-mbp'] },
     })).status).toBe('working');
   });
 
@@ -337,7 +337,7 @@ describe('merging the sources', () => {
     expect(cli({ lastActiveAtMs: NOW - 20 * MINUTE }).client).toBe('claudeCode');
     // Its turn ended after its latest request, so it's done rather than working.
     const done = only(board({
-      attention: { items: [wait({ kind: 'waiting', sinceMs: NOW - MINUTE })], reporting: ['casey-mbp'] },
+      attention: { items: [wait({ kind: 'waiting', sinceMs: NOW - MINUTE })], reporting: ['cam-mbp'] },
       sessions: [{ session: session(CLAUDE_ID, { lastActiveAtMs: NOW - 2 * MINUTE }), lastRequestFailed: false }],
     }));
     expect(done.status).toBe('done');
@@ -349,7 +349,7 @@ describe('merging the sources', () => {
     // With Thread names on, the native side sends the title, and it names the row.
     expect(fleetSessionName(t3Row({ provider: 'codex', turn: completed(5), title: 'Fix the login test' }), t)).toBe('Fix the login test');
     expect(fleetSessionName(t3Row({ workspaceRoot: null, provider: null }), t)).toBe('Agent · 7c1d2e3f');
-    const reporterOnly = only(board({ attention: { items: [wait({ agent: 'codex', sessionId: CODEX_ID })], reporting: ['casey-mbp'] } }));
+    const reporterOnly = only(board({ attention: { items: [wait({ agent: 'codex', sessionId: CODEX_ID })], reporting: ['cam-mbp'] } }));
     expect(fleetSessionName(reporterOnly, t)).toBe('Codex 0199a1b2');
   });
 });
@@ -360,25 +360,25 @@ describe('grouping', () => {
   it('puts this Mac first, then machines by name, and projects by path with the most urgent first and Other last', () => {
     const built = board({
       t3: [
-        channel('cedar-02', [row('cedar-02', '/home/casey/src/billing', { threadId: 'e1', sessionStatus: 'running', turn: running(3) })]),
-        channel('casey-mbp', [
-          row('casey-mbp', '/Users/casey/src/arbor', { threadId: 'a1', turn: completed(5) }),
-          row('casey-mbp', '/Users/casey/src/arbor', { threadId: 'a2', sessionStatus: 'running', turn: running(3) }),
-          row('casey-mbp', '/Users/casey/src/proxy', { threadId: 'p1', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
+        channel('cedar-02', [row('cedar-02', '/home/cam/src/billing', { threadId: 'e1', sessionStatus: 'running', turn: running(3) })]),
+        channel('cam-mbp', [
+          row('cam-mbp', '/Users/cam/src/arbor', { threadId: 'a1', turn: completed(5) }),
+          row('cam-mbp', '/Users/cam/src/arbor', { threadId: 'a2', sessionStatus: 'running', turn: running(3) }),
+          row('cam-mbp', '/Users/cam/src/proxy', { threadId: 'p1', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
           // Same folder name, different path: a different project.
-          row('casey-mbp', '/Users/casey/work/arbor', { threadId: 'w1', turn: completed(2) }),
-          row('casey-mbp', null, { threadId: 'o1', pendingQuestions: 1, questionSeenAtMs: NOW - MINUTE }),
-          row('casey-mbp', '/Users/casey/src/arbor', { threadId: 'i1', updatedAtMs: NOW - HOUR, sessionUpdatedAtMs: NOW - HOUR }),
+          row('cam-mbp', '/Users/cam/work/arbor', { threadId: 'w1', turn: completed(2) }),
+          row('cam-mbp', null, { threadId: 'o1', pendingQuestions: 1, questionSeenAtMs: NOW - MINUTE }),
+          row('cam-mbp', '/Users/cam/src/arbor', { threadId: 'i1', updatedAtMs: NOW - HOUR, sessionUpdatedAtMs: NOW - HOUR }),
         ]),
         channel('ci-01', [row('ci-01', '/home/ci/src/arbor', { threadId: 'c1', sessionStatus: 'error' })]),
       ],
     });
-    expect(built.machines.map((group) => [group.machine, group.thisMachine])).toEqual([['casey-mbp', true], ['cedar-02', false], ['ci-01', false]]);
+    expect(built.machines.map((group) => [group.machine, group.thisMachine])).toEqual([['cam-mbp', true], ['cedar-02', false], ['ci-01', false]]);
     const mac = itemAt(built.machines, 0);
     expect(mac.projects.map((project) => [project.key, project.rows.map((item) => item.t3ThreadId)])).toEqual([
-      ['/Users/casey/src/proxy', ['p1']],
-      ['/Users/casey/src/arbor', ['a2', 'a1']],
-      ['/Users/casey/work/arbor', ['w1']],
+      ['/Users/cam/src/proxy', ['p1']],
+      ['/Users/cam/src/arbor', ['a2', 'a1']],
+      ['/Users/cam/work/arbor', ['w1']],
       [null, ['o1']],
     ]);
     expect(mac.idle.map((item) => item.t3ThreadId)).toEqual(['i1']);
@@ -387,7 +387,7 @@ describe('grouping', () => {
 
   it('puts the longest waiting first and the latest failure first', () => {
     const built = board({
-      t3: [channel('casey-mbp', [
+      t3: [channel('cam-mbp', [
         thread({ threadId: 'newer', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
         thread({ threadId: 'older', pendingApprovals: 1, approvalSinceMs: NOW - 5 * MINUTE }),
         thread({ threadId: 'failed-old', sessionStatus: 'error', sessionUpdatedAtMs: NOW - HOUR }),
@@ -398,22 +398,22 @@ describe('grouping', () => {
   });
 
   it('lists a machine whose T3 Code wasn’t read for the note, even with nothing on it, and rows no machine claims last', () => {
-    const groups = groupFleet([], 'casey-mbp', [{ machine: 'ci-01', channel: 'userdata', reason: 'noSqlite3', migration: null }]);
+    const groups = groupFleet([], 'cam-mbp', [{ machine: 'ci-01', channel: 'userdata', reason: 'noSqlite3', migration: null }]);
     expect(groups.map((group) => [group.machine, group.skipped.length])).toEqual([['ci-01', 1]]);
     const unknown = only(board({ sessions: [{ session: session(CLAUDE_ID, { machine: '', lastActiveAtMs: NOW - MINUTE }), lastRequestFailed: false }] }));
-    const grouped = groupFleet([unknown, t3Row({ sessionStatus: 'running', turn: running(1) })], 'casey-mbp');
-    expect(grouped.map((group) => group.machine)).toEqual(['casey-mbp', '']);
+    const grouped = groupFleet([unknown, t3Row({ sessionStatus: 'running', turn: running(1) })], 'cam-mbp');
+    expect(grouped.map((group) => group.machine)).toEqual(['cam-mbp', '']);
   });
 });
 
 describe('the board for one machine', () => {
   const built = () => board({
     t3: [
-      channel('casey-mbp', [
-        thread({ threadId: 'a1', workspaceRoot: '/Users/casey/src/arbor', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
-        thread({ threadId: 'a2', workspaceRoot: '/Users/casey/src/arbor', sessionStatus: 'running', turn: running(3) }),
+      channel('cam-mbp', [
+        thread({ threadId: 'a1', workspaceRoot: '/Users/cam/src/arbor', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
+        thread({ threadId: 'a2', workspaceRoot: '/Users/cam/src/arbor', sessionStatus: 'running', turn: running(3) }),
       ]),
-      channel('cedar-02', [thread({ threadId: 'e1', workspaceRoot: '/home/casey/src/billing', sessionStatus: 'running', turn: running(2) })]),
+      channel('cedar-02', [thread({ threadId: 'e1', workspaceRoot: '/home/cam/src/billing', sessionStatus: 'running', turn: running(2) })]),
     ],
   });
 
@@ -435,10 +435,10 @@ describe('the board for one machine', () => {
   });
 
   it('leaves a machine’s snoozed sessions out of its counts but keeps them folded', () => {
-    const snoozed = board({ t3: [channel('casey-mbp', [thread({ threadId: 'a1', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE })])] }, {
-      snoozes: { 't3:casey-mbp:userdata:a1': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } },
+    const snoozed = board({ t3: [channel('cam-mbp', [thread({ threadId: 'a1', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE })])] }, {
+      snoozes: { 't3:cam-mbp:userdata:a1': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } },
     });
-    const mac = boardForMachine(snoozed, 'casey-mbp');
+    const mac = boardForMachine(snoozed, 'cam-mbp');
     expect(mac.snoozed.map((row) => row.t3ThreadId)).toEqual(['a1']);
     expect(mac.counts.approval).toBe(0);
   });
@@ -447,13 +447,13 @@ describe('the board for one machine', () => {
 describe('what a skipped T3 Code database says', () => {
   it('names the version and what to update', () => {
     const say = (reason: 'noSqlite3' | 'migrationRange' | 'schema' | 'unreadable', migration: number | null) => {
-      const { key, variables } = fleetSkipNote({ machine: 'casey-mbp', channel: 'userdata', reason, migration });
+      const { key, variables } = fleetSkipNote({ machine: 'cam-mbp', channel: 'userdata', reason, migration });
       return t(key, variables);
     };
-    expect(say('migrationRange', 57)).toBe('T3 Code on casey-mbp moved to database version 57. Arbor reads up to 54; update Arbor to see its threads.');
-    expect(say('migrationRange', 33)).toBe('T3 Code on casey-mbp is on database version 33, older than Arbor reads (34 to 54). Update T3 Code to see its threads.');
-    expect(say('schema', 54)).toBe('T3 Code on casey-mbp has a database Arbor doesn’t recognize, so its threads aren’t shown.');
-    expect(say('noSqlite3', null)).toBe('casey-mbp has T3 Code but no sqlite3, so its threads can’t be read. Install sqlite3 there to see them.');
+    expect(say('migrationRange', 57)).toBe('T3 Code on cam-mbp moved to database version 57. Arbor reads up to 54; update Arbor to see its threads.');
+    expect(say('migrationRange', 33)).toBe('T3 Code on cam-mbp is on database version 33, older than Arbor reads (34 to 54). Update T3 Code to see its threads.');
+    expect(say('schema', 54)).toBe('T3 Code on cam-mbp has a database Arbor doesn’t recognize, so its threads aren’t shown.');
+    expect(say('noSqlite3', null)).toBe('cam-mbp has T3 Code but no sqlite3, so its threads can’t be read. Install sqlite3 there to see them.');
     expect(say('unreadable', null)).toContain('couldn’t be read');
   });
 });
@@ -504,7 +504,7 @@ describe('snoozing', () => {
     });
   });
 
-  const asking = { t3: [channel('casey-mbp', [thread({ pendingApprovals: 1, approvalSinceMs: NOW - 5 * MINUTE, sessionStatus: 'running' })])] };
+  const asking = { t3: [channel('cam-mbp', [thread({ pendingApprovals: 1, approvalSinceMs: NOW - 5 * MINUTE, sessionStatus: 'running' })])] };
 
   it('leaves a snoozed row out of the count and the machines, until its time', () => {
     const snoozes = { [T3_KEY]: { untilMs: NOW + HOUR, atMs: NOW - MINUTE } };
@@ -528,10 +528,10 @@ describe('snoozing', () => {
     // A second approval asked for after it wakes it, though the first still waits.
     const second = { status: 'approval' as const, sinceMs: NOW - 5 * MINUTE, raisedAtMs: NOW - 30 * SECOND };
     expect(effectiveSnooze(second, { arbor: { untilMs: NOW + HOUR, atMs: NOW - MINUTE }, now: NOW })).toBeNull();
-    const pair = { t3: [channel('casey-mbp', [thread({ pendingApprovals: 2, approvalSinceMs: NOW - 5 * MINUTE, latestApprovalAtMs: NOW - 30 * SECOND })])] };
+    const pair = { t3: [channel('cam-mbp', [thread({ pendingApprovals: 2, approvalSinceMs: NOW - 5 * MINUTE, latestApprovalAtMs: NOW - 30 * SECOND })])] };
     const woken = only(board(pair, { snoozes: { [T3_KEY]: { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } }));
     expect(woken).toMatchObject({ status: 'approval', sinceMs: NOW - 5 * MINUTE, snoozedBy: null, countsAsWaiting: true });
-    const both = { t3: [channel('casey-mbp', [thread({ pendingApprovals: 2, approvalSinceMs: NOW - 5 * MINUTE, latestApprovalAtMs: NOW - 2 * MINUTE })])] };
+    const both = { t3: [channel('cam-mbp', [thread({ pendingApprovals: 2, approvalSinceMs: NOW - 5 * MINUTE, latestApprovalAtMs: NOW - 2 * MINUTE })])] };
     expect(only(board(both, { snoozes: { [T3_KEY]: { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } })).snoozedBy).toBe('arbor');
     // Work going on doesn't wake it.
     expect(effectiveSnooze({ status: 'working', sinceMs: NOW - 30 * SECOND }, { arbor: { untilMs: NOW + HOUR, atMs: NOW - MINUTE }, now: NOW })?.by).toBe('arbor');
@@ -540,7 +540,7 @@ describe('snoozing', () => {
   it('keeps a question snoozed across a restart, when the backend has only just seen it', () => {
     const snoozes = { [T3_KEY]: { untilMs: NOW + HOUR, atMs: NOW - 10 * MINUTE } };
     // Arbor restarted, so the backend first saw the question just now; it was asking before the snooze.
-    const restarted = { t3: [channel('casey-mbp', [thread({ pendingQuestions: 1, questionSeenAtMs: NOW - 3 * SECOND })])] };
+    const restarted = { t3: [channel('cam-mbp', [thread({ pendingQuestions: 1, questionSeenAtMs: NOW - 3 * SECOND })])] };
     expect(only(board(restarted, { snoozes })).snoozedBy).toBeNull();
     const row = only(board(restarted, { snoozes, asked: { [T3_KEY]: NOW - 20 * MINUTE } }));
     expect(row).toMatchObject({ status: 'question', sinceMs: NOW - 20 * MINUTE, snoozedBy: 'arbor', countsAsWaiting: false });
@@ -548,7 +548,7 @@ describe('snoozing', () => {
 
   it('remembers when each question was first seen, and forgets it once the thread stops asking', () => {
     const asking = (questionSeenAtMs: number | null, pendingQuestions = 1) =>
-      sources({ t3: [channel('casey-mbp', [thread({ pendingQuestions, questionSeenAtMs }), thread({ threadId: 'other' })])] });
+      sources({ t3: [channel('cam-mbp', [thread({ pendingQuestions, questionSeenAtMs }), thread({ threadId: 'other' })])] });
     const first = rememberQuestions({}, asking(NOW - MINUTE));
     expect(first).toEqual({ [T3_KEY]: NOW - MINUTE });
     // A later time from a restarted backend doesn't move it, and nothing changed comes back as it was.
@@ -561,7 +561,7 @@ describe('snoozing', () => {
   });
 
   it('finds what each Arbor session needs you for, as the board has it, and drops it once snoozed', () => {
-    const asking = { t3: [channel('casey-mbp', [thread({
+    const asking = { t3: [channel('cam-mbp', [thread({
       agentSessionId: CLAUDE_ID, pendingApprovals: 1, approvalSinceMs: NOW - 3 * MINUTE, sessionStatus: 'running',
       arborSession: { id: CLAUDE_ID, lastActiveAtMs: NOW - MINUTE, lastRequestFailed: false },
     }), thread({ threadId: 'quiet', turn: completed(30) })])] };
@@ -572,7 +572,7 @@ describe('snoozing', () => {
   });
 
   it('silences the alerts only for a wait that landed on a snoozed row', () => {
-    const merged = { t3: [channel('casey-mbp', [thread({ agentSessionId: CLAUDE_ID, pendingApprovals: 1, approvalSinceMs: NOW - 5 * MINUTE })])], attention: { items: [wait()], reporting: ['casey-mbp'] } };
+    const merged = { t3: [channel('cam-mbp', [thread({ agentSessionId: CLAUDE_ID, pendingApprovals: 1, approvalSinceMs: NOW - 5 * MINUTE })])], attention: { items: [wait()], reporting: ['cam-mbp'] } };
     const snoozed = { [T3_KEY]: { untilMs: NOW + HOUR, atMs: NOW - MINUTE } };
     expect(snoozedWaitIds(board(merged, { snoozes: snoozed }))).toEqual(new Set([CLAUDE_ID]));
     expect(snoozedWaitIds(board(merged))).toEqual(new Set());
@@ -580,12 +580,12 @@ describe('snoozing', () => {
 
     // Two threads claim the same id, so its wait gets a row of its own; snoozing one thread leaves that row's alerts.
     const shared = board({
-      t3: [channel('casey-mbp', [
+      t3: [channel('cam-mbp', [
         thread({ threadId: 'first', agentSessionId: CLAUDE_ID, turn: completed(30) }),
         thread({ threadId: 'imported', agentSessionId: CLAUDE_ID, turn: completed(40) }),
       ])],
-      attention: { items: [wait()], reporting: ['casey-mbp'] },
-    }, { snoozes: { 't3:casey-mbp:userdata:first': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } });
+      attention: { items: [wait()], reporting: ['cam-mbp'] },
+    }, { snoozes: { 't3:cam-mbp:userdata:first': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } });
     expect(shared.snoozed.map((row) => row.t3ThreadId)).toEqual(['first']);
     expect(present(shared.rows.find((row) => row.key === `claude:${CLAUDE_ID}`)).countsAsWaiting).toBe(true);
     expect(snoozedWaitIds(shared).has(CLAUDE_ID)).toBe(false);
@@ -613,11 +613,11 @@ describe('the working count each pool goes by', () => {
           thread({ threadId: 'snoozed', sessionStatus: 'running', turn: running(2) }),
           thread({ threadId: 'done', turn: completed(3) }),
         ]),
-        channel('casey-mbp', [thread({ threadId: 'c', sessionStatus: 'running', turn: running(4) })]),
+        channel('cam-mbp', [thread({ threadId: 'c', sessionStatus: 'running', turn: running(4) })]),
       ],
     }, { snoozes: { 't3:cedar-02:userdata:snoozed': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } });
     // In name order, so the same counts are never sent twice.
-    expect(Object.entries(workingByMachine(built))).toEqual([['casey-mbp', 1], ['cedar-02', 2]]);
+    expect(Object.entries(workingByMachine(built))).toEqual([['cam-mbp', 1], ['cedar-02', 2]]);
     expect(workingByMachine({ rows: [] })).toEqual({});
   });
 
@@ -641,7 +641,7 @@ describe('the waiting count', () => {
   it('counts approval and questions, not snoozed ones, not stale ones, and nothing else', () => {
     const built = board({
       t3: [
-        channel('casey-mbp', [
+        channel('cam-mbp', [
           thread({ threadId: 'approval', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
           thread({ threadId: 'question', pendingQuestions: 1, questionSeenAtMs: NOW - MINUTE }),
           thread({ threadId: 'snoozed', pendingApprovals: 1, approvalSinceMs: NOW - 5 * MINUTE }),
@@ -651,8 +651,8 @@ describe('the waiting count', () => {
         channel('cedar-02', [thread({ threadId: 'quiet', pendingApprovals: 1 })], { readAtMs: NOW - 5 * MINUTE }),
         channel('ci-01', [thread({ threadId: 'stopped', pendingQuestions: 1 })], { serverRunning: false }),
       ],
-      attention: { items: [wait({ sessionId: CODEX_ID, agent: 'codex', kind: 'question' })], reporting: ['casey-mbp'] },
-    }, { snoozes: { 't3:casey-mbp:userdata:snoozed': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } });
+      attention: { items: [wait({ sessionId: CODEX_ID, agent: 'codex', kind: 'question' })], reporting: ['cam-mbp'] },
+    }, { snoozes: { 't3:cam-mbp:userdata:snoozed': { untilMs: NOW + HOUR, atMs: NOW - MINUTE } } });
     expect(waitingCount(built)).toBe(3);
     // The line above the board names every row asking for something: the ones that can't be answered apart.
     expect(fleetSummary(built, t)).toBe('3 waiting on you · 2 can’t be answered now · 1 working · 1 done');
@@ -660,23 +660,23 @@ describe('the waiting count', () => {
   });
 
   it('never says nothing is waiting above a request that can’t be answered', () => {
-    const stopped = board({ t3: [channel('casey-mbp', [thread({ pendingApprovals: 1, approvalSinceMs: NOW - MINUTE })], { serverRunning: false })] });
+    const stopped = board({ t3: [channel('cam-mbp', [thread({ pendingApprovals: 1, approvalSinceMs: NOW - MINUTE })], { serverRunning: false })] });
     expect(fleetSummary(stopped, t)).toBe('1 can’t be answered now');
     expect(fleetSummary(board({}), t)).toBe('Nothing is waiting on you or working.');
   });
 
   it('gives Home the rows that need you, snoozed ones left out, at most four, and how many more there are', () => {
     const threads = Array.from({ length: 9 }, (_, index) => thread({ threadId: `t${index}`, pendingApprovals: 1, approvalSinceMs: NOW - index * MINUTE }));
-    const built = board({ t3: [channel('casey-mbp', [...threads, thread({ threadId: 'working', sessionStatus: 'running', turn: running(1) })])] });
+    const built = board({ t3: [channel('cam-mbp', [...threads, thread({ threadId: 'working', sessionStatus: 'running', turn: running(1) })])] });
     const { rows, more } = needsYouRows(built, NOW);
     expect(rows.map((row) => row.t3ThreadId)).toEqual(['t8', 't7', 't6', 't5']);
     expect(more).toBe(5);
-    const done = board({ t3: [channel('casey-mbp', [thread({ turn: completed(3) })])] }, { snoozes: { [T3_KEY]: { untilMs: NOW + HOUR, atMs: NOW } } });
+    const done = board({ t3: [channel('cam-mbp', [thread({ turn: completed(3) })])] }, { snoozes: { [T3_KEY]: { untilMs: NOW + HOUR, atMs: NOW } } });
     expect(needsYouRows(done, NOW)).toEqual({ rows: [], more: 0 });
   });
 
   it('keeps Home’s list to the last two hours, counting the older ones among the board’s others', () => {
-    const built = board({ t3: [channel('casey-mbp', [
+    const built = board({ t3: [channel('cam-mbp', [
       thread({ threadId: 'asking', pendingApprovals: 1, approvalSinceMs: NOW - 3 * HOUR }),
       thread({ threadId: 'finished', turn: completed(119) }),
       thread({ threadId: 'yesterday', turn: completed(24 * 60) }),
@@ -690,7 +690,7 @@ describe('the waiting count', () => {
   });
 
   it('names what Home’s list shows, and nothing it leaves out', () => {
-    const built = board({ t3: [channel('casey-mbp', [
+    const built = board({ t3: [channel('cam-mbp', [
       thread({ threadId: 'asking', pendingApprovals: 1, approvalSinceMs: NOW - MINUTE }),
       thread({ threadId: 'finished', turn: completed(10) }),
       thread({ threadId: 'yesterday', turn: completed(24 * 60) }),
@@ -737,9 +737,9 @@ describe('the snooze and seen stores', () => {
     expect(JSON.parse(storage.values.get('arbor.fleet-snoozes.v1') ?? '')).toEqual({ [T3_KEY]: { untilMs: now + HOUR, atMs: now } });
     unsnoozeFleetSession(T3_KEY);
     // Each read keeps when a question was first seen, and nothing more.
-    setFleetSources(sources({ nowMs: now, t3: [channel('casey-mbp', [thread({ pendingQuestions: 1, questionSeenAtMs: now - MINUTE })])] }));
+    setFleetSources(sources({ nowMs: now, t3: [channel('cam-mbp', [thread({ pendingQuestions: 1, questionSeenAtMs: now - MINUTE })])] }));
     expect(JSON.parse(storage.values.get('arbor.fleet-asked.v1') ?? '')).toEqual({ [T3_KEY]: now - MINUTE });
-    setFleetSources(sources({ nowMs: now, t3: [channel('casey-mbp', [thread()])] }));
+    setFleetSources(sources({ nowMs: now, t3: [channel('cam-mbp', [thread()])] }));
     expect(JSON.parse(storage.values.get('arbor.fleet-asked.v1') ?? '')).toEqual({});
     setFleetSources(sources());
 

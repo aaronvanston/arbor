@@ -1241,9 +1241,9 @@ mod tests {
     fn a_scan_reads_tools_kept_versions_and_each_project() {
         let used = HashMap::from([("/src/app".to_string(), 42)]);
         let stdout = [
-            "H\t/home/casey".to_string(),
+            "H\t/home/cam".to_string(),
             "U\tLinux\tx86_64".into(),
-            "V\tnode\t/home/casey/.nvm/versions/node/v22.17.0/bin/node\tv22.17.0".into(),
+            "V\tnode\t/home/cam/.nvm/versions/node/v22.17.0/bin/node\tv22.17.0".into(),
             "V\tnode\t/usr/bin/node\tv18.0.0".into(),
             "V\tpnpm\t/usr/bin/pnpm\t".into(),
             "V\tevil\t/usr/bin/evil\t1.0".into(),
@@ -1254,7 +1254,7 @@ mod tests {
             "M\tpython\tpyenv\tanaconda3-2024".into(),
             "M\trust\trustup\tstable-x86_64-unknown-linux-gnu\trustc 1.88.0 (6b00bc388 2026-06-23)".into(),
             "R\t/src/app\tok".into(),
-            "O\thttps://token:x-oauth@github.com/Casey/App.git".into(),
+            "O\thttps://token:x-oauth@github.com/Cam/App.git".into(),
             format!("P\tpackage.json\t80\t{}", b64(r#"{"engines":{"node":">=22"},"dependencies":{"react":"^19.1.0"}}"#)),
             "P\tpyproject.toml\t90000\t-".into(),
             format!("P\t../etc/passwd\t10\t{}", b64("root")),
@@ -1266,13 +1266,13 @@ mod tests {
         ]
         .join("\n");
         let scanned = parse_scan(&stdout, &used);
-        assert_eq!(scanned.home_dir, "/home/casey");
+        assert_eq!(scanned.home_dir, "/home/cam");
         assert_eq!((scanned.os.as_str(), scanned.arch.as_str()), ("Linux", "x86_64"));
         assert!(scanned.partial);
         assert_eq!(
             scanned.tools,
             vec![
-                ToolFound { tool: "node".into(), path: "/home/casey/.nvm/versions/node/v22.17.0/bin/node".into(), version: Some("22.17.0".into()) },
+                ToolFound { tool: "node".into(), path: "/home/cam/.nvm/versions/node/v22.17.0/bin/node".into(), version: Some("22.17.0".into()) },
                 ToolFound { tool: "pnpm".into(), path: "/usr/bin/pnpm".into(), version: None },
             ]
         );
@@ -1285,7 +1285,7 @@ mod tests {
             ]
         );
         let [app, gone] = scanned.projects.as_slice() else { panic!("two projects") };
-        assert_eq!(app.remote.as_deref(), Some("github.com/casey/app"));
+        assert_eq!(app.remote.as_deref(), Some("github.com/cam/app"));
         assert_eq!(app.last_used_ms, Some(42));
         assert_eq!(app.unread, vec!["pyproject.toml".to_string()]);
         assert_eq!(

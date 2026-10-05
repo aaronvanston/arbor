@@ -47,30 +47,30 @@ describe('naming the client behind a session', () => {
 });
 
 const transcript = (fields: Partial<SessionTranscript>): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '', repoRoot: '', mainRepo: '', branch: '', commitHash: '', repositoryUrl: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '', cwd: '', repoRoot: '', mainRepo: '', branch: '', commitHash: '', repositoryUrl: '',
   title: '', titleSource: '', pullRequests: [], linesAdded: null, linesRemoved: null, compactions: [], toolUsage: null, readAtMs: 0, ...fields,
 });
 
 describe('where a session ran', () => {
   it('names the project after the main checkout, and a linked worktree after its own folder', () => {
     expect(sessionPlace(transcript({
-      cwd: '/Users/casey/.agent-app/worktrees/arbor/login-loop/src', repoRoot: '/Users/casey/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop',
+      cwd: '/Users/cam/.agent-app/worktrees/arbor/login-loop/src', repoRoot: '/Users/cam/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/cam/src/arbor', branch: 'fix/login-loop',
     }))).toEqual({ folder: '~/.agent-app/worktrees/arbor/login-loop/src', project: 'arbor', worktree: 'login-loop', branch: 'fix/login-loop', repository: null });
-    expect(sessionPlace(transcript({ cwd: '/Users/casey/src/proxy', repoRoot: '/Users/casey/src/proxy', mainRepo: '/Users/casey/src/proxy' })))
+    expect(sessionPlace(transcript({ cwd: '/Users/cam/src/proxy', repoRoot: '/Users/cam/src/proxy', mainRepo: '/Users/cam/src/proxy' })))
       .toMatchObject({ folder: '~/src/proxy', project: 'proxy', worktree: null });
   });
 
   it('prefers the repository the agent recorded, or the one it opened a pull request in', () => {
     expect(sessionPlace(transcript({ cwd: '/work/checkout', repoRoot: '/work/checkout', mainRepo: '/work/checkout', repositoryUrl: 'git@github.com:acme/proxy.git' })))
       .toMatchObject({ folder: '/work/checkout', project: 'proxy', repository: 'acme/proxy' });
-    expect(sessionPlace(transcript({ cwd: '/Users/casey/tmp/x', pullRequests: [{ number: 4, url: 'https://github.com/acme/arbor/pull/4', repository: 'acme/arbor' }] })))
+    expect(sessionPlace(transcript({ cwd: '/Users/cam/tmp/x', pullRequests: [{ number: 4, url: 'https://github.com/acme/arbor/pull/4', repository: 'acme/arbor' }] })))
       .toMatchObject({ project: 'arbor', repository: 'acme/arbor' });
   });
 
   it('falls back to the folder’s own name once the folder is gone, and to nothing without a transcript', () => {
-    expect(sessionPlace(transcript({ cwd: '/Users/casey/.local/share/reviews/review-7/review-7', branch: 'review-7' })))
+    expect(sessionPlace(transcript({ cwd: '/Users/cam/.local/share/reviews/review-7/review-7', branch: 'review-7' })))
       .toEqual({ folder: '~/.local/share/reviews/review-7/review-7', project: 'review-7', worktree: null, branch: 'review-7', repository: null });
-    expect(sessionPlace(transcript({ cwd: '/Users/caseyr/src' }))?.folder).toBe('/Users/caseyr/src');
+    expect(sessionPlace(transcript({ cwd: '/Users/camr/src' }))?.folder).toBe('/Users/camr/src');
     expect(sessionPlace(transcript({ cwd: '' }))).toBeNull();
     expect(sessionPlace(null)).toBeNull();
   });
@@ -116,7 +116,7 @@ describe('the names the Sessions filters match on', () => {
       ['  git@github.com:acme/arbor  ', 'acme/arbor'],
       ['https://gitlab.com/group/sub/site', null],
       ['file:///srv/arbor', null],
-      ['/Users/casey/src/arbor', null],
+      ['/Users/cam/src/arbor', null],
       ['', null],
     ];
     for (const [url, name] of cases) expect([url, repositoryName(url)]).toEqual([url, name]);
@@ -128,11 +128,11 @@ describe('the names the Sessions filters match on', () => {
       pullRequests: pullRequest ? [{ number: 7, url: '', repository: pullRequest }] : [],
     }))?.project ?? null;
     expect(project('', '', 'git@github.com:acme/arbor.git')).toBeNull();
-    expect(project('/Users/casey/src/arbor/src', '/Users/casey/src/arbor', 'git@github.com:acme/arbor-app.git')).toBe('arbor-app');
-    expect(project('/Users/casey/.agent-app/worktrees/arbor/login', '/Users/casey/src/arbor', '')).toBe('arbor');
-    expect(project('/Users/casey/src/site', '/Users/casey/src/site', 'https://gitlab.com/group/sub/site', 'acme/website')).toBe('website');
+    expect(project('/Users/cam/src/arbor/src', '/Users/cam/src/arbor', 'git@github.com:acme/arbor-app.git')).toBe('arbor-app');
+    expect(project('/Users/cam/.agent-app/worktrees/arbor/login', '/Users/cam/src/arbor', '')).toBe('arbor');
+    expect(project('/Users/cam/src/site', '/Users/cam/src/site', 'https://gitlab.com/group/sub/site', 'acme/website')).toBe('website');
     expect(project('/srv/mirror.git', '', '')).toBe('mirror');
-    expect(project('/Users/casey/scratch', '', '')).toBe('scratch');
+    expect(project('/Users/cam/scratch', '', '')).toBe('scratch');
     expect(project('/', '', '')).toBe('/');
   });
 });

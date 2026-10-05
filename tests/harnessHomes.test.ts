@@ -18,16 +18,16 @@ const machine = (name: string, harnessHomes: HarnessHome[], harnessInstalls: Har
 describe('the other harnesses homes', () => {
   const fleet = [
     machine('cedar-02', [home('droid', '~/.factory', 'd1'), home('pi', '~/.pi/agent', 'p1', ['deploy'])]),
-    machine('casey-mbp', [home('pi', '~/.pi/agent', 'p2', ['deploy', 'pdf']), home('openCode', '~/.config/opencode', null)]),
+    machine('cam-mbp', [home('pi', '~/.pi/agent', 'p2', ['deploy', 'pdf']), home('openCode', '~/.config/opencode', null)]),
     machine('ci-01', [home('pi', '~/.pi/agent', 'p2')]),
   ];
 
   it('lists each by harness then machine, and says how its instructions stand against the same harness elsewhere', () => {
     expect(harnessHomeRows(fleet).map((row) => [row.harness, row.machine, row.state, row.skills])).toEqual([
-      ['pi', 'casey-mbp', 'differs', 2],
+      ['pi', 'cam-mbp', 'differs', 2],
       ['pi', 'cedar-02', 'differs', 1],
       ['pi', 'ci-01', 'differs', 0],
-      ['openCode', 'casey-mbp', 'missing', 0],
+      ['openCode', 'cam-mbp', 'missing', 0],
       ['droid', 'cedar-02', 'only', 0],
     ]);
     const same = [machine('a', [home('pi', '~/.pi/agent', 'p')]), machine('b', [home('pi', '~/.pi/agent', 'p')])];
@@ -101,8 +101,8 @@ describe('the other harnesses homes', () => {
     const rows = harnessSkillRows([...fleet, machine('ci-02', [home('droid', '~/.factory', null, ['deploy']), home('pi', '~/.pi/agent', null, ['deploy'])])]);
     const where = rows.map((row) => [row.name, Object.fromEntries(Object.entries(row.on).map(([name, places]) => [name, places.map((place) => place.harness)]))]);
     expect(where).toEqual([
-      ['deploy', { 'cedar-02': ['pi'], 'casey-mbp': ['pi'], 'ci-02': ['pi', 'droid'] }],
-      ['pdf', { 'casey-mbp': ['pi'] }],
+      ['deploy', { 'cedar-02': ['pi'], 'cam-mbp': ['pi'], 'ci-02': ['pi', 'droid'] }],
+      ['pdf', { 'cam-mbp': ['pi'] }],
     ]);
   });
 

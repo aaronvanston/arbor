@@ -7,7 +7,7 @@ const COMMIT = '7c41e2a9d03b5f68a1e4c2b7d9f0e3a6b5c8d1f2';
 const NEXT = 'e93b07d4a1c6f2e85b0d7a3c9e1f4b6a8d2c5e70';
 
 const status = (overrides: Partial<DevBuildStatus> = {}): DevBuildStatus => ({
-  installed: true, repository: '/Users/casey/src/arbor', state: 'idle', commit: COMMIT, step: null, startedAt: null, finishedAt: null, error: null,
+  installed: true, repository: '/Users/cam/src/arbor', state: 'idle', commit: COMMIT, step: null, startedAt: null, finishedAt: null, error: null,
   hasLog: false, requested: false, settlesAt: null, builtVersion: '1.0.27-dev.4123', builtCommit: COMMIT, builtAt: '2026-10-02T11:48:00Z',
   ...overrides,
 });

@@ -1019,7 +1019,7 @@ mod tests {
         let on = with_plugin(None, "context7@official", None, None, Some(PluginWanted::On)).unwrap();
         let gone_here = with_plugin(Some(on.as_bytes()), "context7@official", None, Some("CI 01"), Some(PluginWanted::Removed)).unwrap();
         assert_eq!(parse_plugins(gone_here.as_bytes())[0].machines.get("ci01"), Some(&PluginWanted::Removed));
-        assert!(with_plugin_project(Some(on.as_bytes()), "context7@official", "casey/arbor", None, Some(PluginWanted::Removed)).is_err());
+        assert!(with_plugin_project(Some(on.as_bytes()), "context7@official", "cam/arbor", None, Some(PluginWanted::Removed)).is_err());
         // A project value of "removed" in the file is skipped when read.
         let odd = parse_plugins(br#"{"plugins":{"x@m":{"all":"on","projects":{"a/b":{"all":"removed"}}}}}"#);
         assert!(odd[0].projects.is_empty());
@@ -1028,16 +1028,16 @@ mod tests {
     #[test]
     fn a_project_turns_a_listed_plugin_on_or_off_everywhere_or_on_one_machine() {
         let listed = with_plugin(None, "context7@official", None, None, Some(PluginWanted::On)).unwrap();
-        assert!(with_plugin_project(Some(listed.as_bytes()), "other@official", "casey/arbor", None, Some(PluginWanted::Off)).is_err(), "only a listed plugin");
-        assert!(with_plugin_project(Some(listed.as_bytes()), "context7@official", "casey/arbor", None, Some(PluginWanted::Own)).is_err());
-        let off = with_plugin_project(Some(listed.as_bytes()), "context7@official", "Casey/Arbor", None, Some(PluginWanted::Off)).unwrap();
-        let on_ci = with_plugin_project(Some(off.as_bytes()), "context7@official", "casey/arbor", Some("CI 01"), Some(PluginWanted::On)).unwrap();
+        assert!(with_plugin_project(Some(listed.as_bytes()), "other@official", "cam/arbor", None, Some(PluginWanted::Off)).is_err(), "only a listed plugin");
+        assert!(with_plugin_project(Some(listed.as_bytes()), "context7@official", "cam/arbor", None, Some(PluginWanted::Own)).is_err());
+        let off = with_plugin_project(Some(listed.as_bytes()), "context7@official", "Cam/Arbor", None, Some(PluginWanted::Off)).unwrap();
+        let on_ci = with_plugin_project(Some(off.as_bytes()), "context7@official", "cam/arbor", Some("CI 01"), Some(PluginWanted::On)).unwrap();
         let parsed = parse_plugins(on_ci.as_bytes());
-        let project = &parsed[0].projects["casey/arbor"];
+        let project = &parsed[0].projects["cam/arbor"];
         assert_eq!((project.all, project.machines.get("ci01")), (Some(PluginWanted::Off), Some(&PluginWanted::On)));
         // Taking both values out takes the project out, and the plugin's projects with it.
-        let cleared = with_plugin_project(Some(on_ci.as_bytes()), "context7@official", "casey/arbor", Some("ci-01"), None).unwrap();
-        let cleared = with_plugin_project(Some(cleared.as_bytes()), "context7@official", "casey/arbor", None, None).unwrap();
+        let cleared = with_plugin_project(Some(on_ci.as_bytes()), "context7@official", "cam/arbor", Some("ci-01"), None).unwrap();
+        let cleared = with_plugin_project(Some(cleared.as_bytes()), "context7@official", "cam/arbor", None, None).unwrap();
         let value: Value = serde_json::from_str(&cleared).unwrap();
         assert!(value["plugins"]["context7@official"].get("projects").is_none());
         // A project value of "own", or a key that isn't owner/name, is skipped when read.
@@ -1048,21 +1048,21 @@ mod tests {
     #[test]
     fn a_project_turns_a_skill_on_or_off_beside_the_machines_own_values() {
         let machines = with_skill_machine(None, "pdf", "ci-01", Some(SkillWanted::Off)).unwrap();
-        let off = with_skill_project(Some(machines.as_bytes()), "pdf", "Casey/Arbor", None, Some(PluginWanted::Off)).unwrap();
-        let on_cedar = with_skill_project(Some(off.as_bytes()), "pdf", "casey/arbor", Some("Cedar"), Some(PluginWanted::On)).unwrap();
+        let off = with_skill_project(Some(machines.as_bytes()), "pdf", "Cam/Arbor", None, Some(PluginWanted::Off)).unwrap();
+        let on_cedar = with_skill_project(Some(off.as_bytes()), "pdf", "cam/arbor", Some("Cedar"), Some(PluginWanted::On)).unwrap();
         // A skill the file doesn't name yet gets an entry of its own.
-        let other = with_skill_project(Some(on_cedar.as_bytes()), "frontend-design", "casey/api", None, Some(PluginWanted::On)).unwrap();
-        assert!(with_skill_project(Some(other.as_bytes()), "pdf", "casey/arbor", None, Some(PluginWanted::Own)).is_err());
+        let other = with_skill_project(Some(on_cedar.as_bytes()), "frontend-design", "cam/api", None, Some(PluginWanted::On)).unwrap();
+        assert!(with_skill_project(Some(other.as_bytes()), "pdf", "cam/arbor", None, Some(PluginWanted::Own)).is_err());
         let projects = parse_projects(other.as_bytes(), SKILLS_SECTION);
-        let arbor = &projects["pdf"]["casey/arbor"];
+        let arbor = &projects["pdf"]["cam/arbor"];
         assert_eq!((arbor.all, arbor.machines.get("cedar")), (Some(PluginWanted::Off), Some(&PluginWanted::On)));
-        assert_eq!(projects["frontend-design"]["casey/api"].all, Some(PluginWanted::On));
+        assert_eq!(projects["frontend-design"]["cam/api"].all, Some(PluginWanted::On));
         // The machines' own values are read as before, beside the projects'.
         assert_eq!(parse(other.as_bytes())["pdf"].get("ci01"), Some(&SkillWanted::Off));
         // Clearing the project's values leaves the machine's alone, and a skill with nothing left goes.
-        let cleared = with_skill_project(Some(other.as_bytes()), "pdf", "casey/arbor", Some("cedar"), None).unwrap();
-        let cleared = with_skill_project(Some(cleared.as_bytes()), "pdf", "casey/arbor", None, None).unwrap();
-        let cleared = with_skill_project(Some(cleared.as_bytes()), "frontend-design", "casey/api", None, None).unwrap();
+        let cleared = with_skill_project(Some(other.as_bytes()), "pdf", "cam/arbor", Some("cedar"), None).unwrap();
+        let cleared = with_skill_project(Some(cleared.as_bytes()), "pdf", "cam/arbor", None, None).unwrap();
+        let cleared = with_skill_project(Some(cleared.as_bytes()), "frontend-design", "cam/api", None, None).unwrap();
         let value: Value = serde_json::from_str(&cleared).unwrap();
         assert_eq!(value["skills"], serde_json::json!({ "pdf": { "machines": { "ci-01": "off" } } }));
         assert!(parse_projects(cleared.as_bytes(), SKILLS_SECTION).is_empty());
@@ -1070,15 +1070,15 @@ mod tests {
 
     #[test]
     fn a_projects_mcp_servers_sit_beside_its_skills_and_go_when_cleared() {
-        let skills = with_skill_project(None, "pdf", "casey/arbor", None, Some(PluginWanted::Off)).unwrap();
-        let mcp = with_project_value(Some(skills.as_bytes()), MCP_SECTION, "linear", "casey/arbor", Some("mac-mini"), Some(PluginWanted::Off)).unwrap();
-        assert_eq!(parse_projects(mcp.as_bytes(), MCP_SECTION)["linear"]["casey/arbor"].machines.get("macmini"), Some(&PluginWanted::Off));
+        let skills = with_skill_project(None, "pdf", "cam/arbor", None, Some(PluginWanted::Off)).unwrap();
+        let mcp = with_project_value(Some(skills.as_bytes()), MCP_SECTION, "linear", "cam/arbor", Some("mac-mini"), Some(PluginWanted::Off)).unwrap();
+        assert_eq!(parse_projects(mcp.as_bytes(), MCP_SECTION)["linear"]["cam/arbor"].machines.get("macmini"), Some(&PluginWanted::Off));
         // Skills and servers don't read each other's values.
         assert!(!parse_projects(mcp.as_bytes(), SKILLS_SECTION).contains_key("linear"));
         assert!(!parse_projects(mcp.as_bytes(), MCP_SECTION).contains_key("pdf"));
-        let cleared = with_project_value(Some(mcp.as_bytes()), MCP_SECTION, "linear", "casey/arbor", Some("mac-mini"), None).unwrap();
+        let cleared = with_project_value(Some(mcp.as_bytes()), MCP_SECTION, "linear", "cam/arbor", Some("mac-mini"), None).unwrap();
         let value: Value = serde_json::from_str(&cleared).unwrap();
         assert!(value.get("mcp").is_none());
-        assert_eq!(value["skills"]["pdf"]["projects"]["casey/arbor"]["all"], "off");
+        assert_eq!(value["skills"]["pdf"]["projects"]["cam/arbor"]["all"], "off");
     }
 }

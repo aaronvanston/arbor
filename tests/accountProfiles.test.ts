@@ -53,7 +53,7 @@ describe('avatarText', () => {
 
 describe('defaultAccountColor', () => {
   it('keeps the color an account always had now that accounts share the machines’ palette', () => {
-    expect(['claude-max.json::claude-1', 'codex-team.json::codex-2', 'codex-casey.json::codex-1'].map(defaultAccountColor)).toEqual(['slate', 'amber', 'blue']);
+    expect(['claude-max.json::claude-1', 'codex-team.json::codex-2', 'codex-cam.json::codex-1'].map(defaultAccountColor)).toEqual(['slate', 'amber', 'green']);
   });
 });
 
@@ -105,7 +105,7 @@ describe('accountInitials', () => {
 
   it("skips the id the core puts in the name of a file it saved", () => {
     expect(accountInitials('claude-5772b8d7-sam.side@example.com.json')).toBe('SS');
-    expect(accountInitials('codex-9f1e2a3b-casey@example.com-pro.json')).toBe('CA');
+    expect(accountInitials('codex-9f1e2a3b-cam@example.com-pro.json')).toBe('CA');
     // A word made of the letters a to f is still a name.
     expect(accountInitials('claude-facade.json')).toBe('FA');
   });

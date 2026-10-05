@@ -9,7 +9,7 @@ import { savedStore, storedRecord } from './savedStore';
  */
 export type MachineNames = Readonly<Record<string, string>>;
 
-/** Long enough for "Casey's MacBook Pro (work)", short enough for a pill in a table. */
+/** Long enough for "Cam's MacBook Pro (work)", short enough for a pill in a table. */
 export const MACHINE_NAME_MAX = 40;
 
 /** A name as it's kept: trimmed, with runs of spaces made one, or null when there's nothing left or it's too long. */

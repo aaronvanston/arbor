@@ -66,7 +66,7 @@ function mockCalls(scenario: string): DiagnosticCall[] {
   const mixed = scenario === 'mixed';
   for (let index = 0; index < 50; index += 1) {
     const ago = index * minute + 20_000;
-    add('machine', 'casey-mbp', 'health check', 10_000, ago, wobble(index, 140, 40));
+    add('machine', 'cam-mbp', 'health check', 10_000, ago, wobble(index, 140, 40));
     add('machine', 'cedar-02', 'health check', 10_000, ago + 3_000, wobble(index, 520, 180));
     add('machine', 'cedar-02', 'needs-you check', 10_000, ago + 9_000, wobble(index, 310, 90));
     if (fail && index < 15) {
@@ -90,10 +90,10 @@ function mockCalls(scenario: string): DiagnosticCall[] {
     const ago = index * 3_600_000 + 5 * minute;
     if (fail && index === 0) add('machine', 'cedar-02', 'setup scan', 60_000, ago, 60_000, 'timedOut');
     else add('machine', 'cedar-02', 'setup scan', 60_000, ago, wobble(index, 6_100, 900));
-    add('machine', 'casey-mbp', 'transcript scan', 60_000, ago + 2 * minute, slow && index === 1 ? 75_300 : wobble(index, 2_400, 500));
+    add('machine', 'cam-mbp', 'transcript scan', 60_000, ago + 2 * minute, slow && index === 1 ? 75_300 : wobble(index, 2_400, 500));
     add('core', 'core', 'GET /config.yaml', 3_000, ago + 6 * minute, wobble(index, 35, 10));
   }
-  if (fail) add('machine', 'casey-mbp', 'agent update', 180_000, 2 * 3_600_000, 48_200, 'failed', 1);
+  if (fail) add('machine', 'cam-mbp', 'agent update', 180_000, 2 * 3_600_000, 48_200, 'failed', 1);
   return calls.sort((a, b) => b.atMs - a.atMs);
 }
 
@@ -104,7 +104,7 @@ let diagnosticsClearedAt: number | null = null;
 // Machine health: a synthetic fleet with one hour of five-second history so
 // the sparklines, statuses, and reasons all render in the browser.
 const healthHosts: MachineHost[] = [
-  { machine: 'casey-mbp', endpoint: 'localhost', port: 22, enabled: true, source: 'seed' },
+  { machine: 'cam-mbp', endpoint: 'localhost', port: 22, enabled: true, source: 'seed' },
   { machine: 'ci-01', endpoint: 'ci-01', port: 22, enabled: true, source: 'seed' },
   { machine: 'cedar-02', endpoint: 'cedar-02', port: 22, enabled: true, source: 'seed' },
   { machine: 'lab-box', endpoint: '', port: 22, enabled: true, source: 'seed' },
@@ -126,16 +126,16 @@ if (params.get('machines') === 'unhosted') for (const host of healthHosts) host.
 // A fresh install lists no machine at all, this Mac included.
 if (freshInstall) healthHosts.length = 0;
 /** This Mac's name in the mock, the one it's listed under by default. */
-const MOCK_THIS_MAC = 'casey-mbp';
+const MOCK_THIS_MAC = 'cam-mbp';
 
 const healthPoint = (name: string, t: number): HealthPoint => {
   const phase = t / 60_000;
   const wave = (k: number, offset = 0) => (Math.sin(phase * k + offset) + 1) / 2;
   const cpu = name === 'ci-01' ? 70 + 28 * wave(1.7) : 8 + 30 * wave(0.9, name.length);
-  const mem = name === 'casey-mbp' ? 58 + 4 * wave(0.4) : name === 'ci-01' ? 84 + 10 * wave(0.6) : 30 + 5 * wave(0.5);
-  const disk = name === 'casey-mbp' ? 91.2 : name === 'ci-01' ? 61 : 22.7;
+  const mem = name === 'cam-mbp' ? 58 + 4 * wave(0.4) : name === 'ci-01' ? 84 + 10 * wave(0.6) : 30 + 5 * wave(0.5);
+  const disk = name === 'cam-mbp' ? 91.2 : name === 'ci-01' ? 61 : 22.7;
   const score = Math.round(Math.max(0, 100 - (disk > 82 ? 30 * Math.min(1, (disk - 82) / 14) : 0) - (mem > 78 ? 35 * Math.min(1, (mem - 78) / 18) : 0) - (cpu > 75 ? 35 * Math.min(1, (cpu - 75) / 23) : 0)));
-  const memTotal = name === 'casey-mbp' ? 67_108_864 : 64_308_204;
+  const memTotal = name === 'cam-mbp' ? 67_108_864 : 64_308_204;
   const diskTotal = name === 'cedar-02' ? 980_760_096 : 482_797_652;
   return {
     t, score, cpu: Math.round(cpu * 10) / 10, mem: Math.round(mem * 10) / 10, memUsedKb: Math.round((memTotal * mem) / 100),
@@ -143,24 +143,24 @@ const healthPoint = (name: string, t: number): HealthPoint => {
     disk, diskFreeKb: Math.round((diskTotal * (100 - disk)) / 100), load1: 3.6 + 2 * wave(1.1), load5: 3.1, load15: 2.4,
     rxBps: 74_000 + 220_000 * wave(2.3, 1), txBps: 307_000 + 90_000 * wave(1.9),
     // ci-01 is relayed and drops the odd ping; `?ping=none` makes it ignore pings altogether.
-    latencyMs: name === 'casey-mbp' || (name === 'ci-01' && (params.get('ping') === 'none' || Math.floor(t / 5_000) % 41 === 0))
+    latencyMs: name === 'cam-mbp' || (name === 'ci-01' && (params.get('ping') === 'none' || Math.floor(t / 5_000) % 41 === 0))
       ? null
       : Math.round((name === 'ci-01' ? 38 + 22 * wave(1.6, 2) : 2.2 + 3.5 * wave(2.7)) * 10) / 10,
-    cpuTemp: name === 'casey-mbp' ? null : Math.round(48 + 30 * wave(1.3)), gpuTemp: name === 'cedar-02' ? Math.round(52 + 8 * wave(0.8)) : null,
+    cpuTemp: name === 'cam-mbp' ? null : Math.round(48 + 30 * wave(1.3)), gpuTemp: name === 'cedar-02' ? Math.round(52 + 8 * wave(0.8)) : null,
     gpuUtil: name === 'cedar-02' ? Math.round(5 + 40 * wave(2.1)) : null, gpuMemUsedMb: null,
-    claudeRunning: name === 'casey-mbp' ? 3 : name === 'ci-01' ? 1 : 0, codexRunning: name === 'casey-mbp' ? 2 : name === 'cedar-02' ? 1 : 0,
+    claudeRunning: name === 'cam-mbp' ? 3 : name === 'ci-01' ? 1 : 0, codexRunning: name === 'cam-mbp' ? 2 : name === 'cedar-02' ? 1 : 0,
   };
 };
 
-// Arbor's reporter on each machine, as the agents check finds it: casey-mbp reports from its own homes and a second pair,
+// Arbor's reporter on each machine, as the agents check finds it: cam-mbp reports from its own homes and a second pair,
 // cedar-02 from Claude Code's, and ci-01 hasn't been set up. ?reporter=partial has a second Codex home that stopped
 // reporting; ?reporter=fail makes a change fail.
 const reporterHomes: Record<string, ReporterHome[]> = {
-  'casey-mbp': [
+  'cam-mbp': [
     { agent: 'claude', home: '~/.claude', reporting: true },
     { agent: 'codex', home: '~/.codex', reporting: true },
-    { agent: 'claude', home: '~/.agent-app/homes/claude-proxy', reporting: true },
-    { agent: 'codex', home: '~/.agent-app/homes/codex-proxy', reporting: params.get('reporter') !== 'partial' },
+    { agent: 'claude', home: '~/.agent-app/homes/claude-other', reporting: true },
+    { agent: 'codex', home: '~/.agent-app/homes/codex-other', reporting: params.get('reporter') !== 'partial' },
   ],
   'ci-01': [{ agent: 'claude', home: '~/.claude', reporting: false }, { agent: 'codex', home: '~/.codex', reporting: false }],
   'cedar-02': [{ agent: 'claude', home: '~/.claude', reporting: true }],
@@ -171,7 +171,7 @@ const reporterStatus = (machine: string): ReporterStatus => ({ installed: report
 const reporterPlan = (machine: string, enabled: boolean): ReporterSetup => ({
   reporterChanged: false,
   files: (reporterHomes[machine] ?? []).map(({ agent, home, reporting }) => {
-    const created = home.includes('claude-proxy') && enabled && !reporting;
+    const created = home.includes('claude-other') && enabled && !reporting;
     return {
       agent, home, path: `${home}/${agent === 'claude' ? 'settings.json' : 'config.toml'}`,
       change: enabled === reporting && reporterInstalled[machine] === enabled ? 'none' : created ? 'create' : 'edit',
@@ -192,7 +192,7 @@ const telemetryState: { enabled: boolean; port: number; machines: SendingMachine
   enabled: telemetryScenario !== 'off',
   port: 8319,
   machines: telemetryScenario === 'off' || telemetryScenario === 'none' ? [] : [
-    { machine: 'casey-mbp', sinceMs: Date.now() - 12 * 86_400_000, lastMs: telemetryScenario === 'quiet' ? null : Date.now() - 3 * 60_000, requests: telemetryScenario === 'quiet' ? 0 : 412, cumulative: false, port: 8319 },
+    { machine: 'cam-mbp', sinceMs: Date.now() - 12 * 86_400_000, lastMs: telemetryScenario === 'quiet' ? null : Date.now() - 3 * 60_000, requests: telemetryScenario === 'quiet' ? 0 : 412, cumulative: false, port: 8319 },
     { machine: 'cedar-02', sinceMs: Date.now() - 9 * 86_400_000, lastMs: Date.now() - (telemetryScenario === 'quiet' ? 2 * 86_400_000 : 21 * 60_000), requests: 188, cumulative: telemetryScenario === 'cumulative', port: telemetryScenario === 'stale' ? 8320 : 8319 },
   ],
 };
@@ -219,7 +219,7 @@ const TELEMETRY_DAY: Record<string, [string, number, number][]> = {
   versions: [['2.4.12', 30.4, 22], ['2.4.11', 17.82, 11]],
 };
 
-const TELEMETRY_SHARE: Record<string, number> = { 'casey-mbp': 0.72, 'cedar-02': 0.28 };
+const TELEMETRY_SHARE: Record<string, number> = { 'cam-mbp': 0.72, 'cedar-02': 0.28 };
 
 const telemetrySpend = (cost: number, sessions: number): Spend => ({
   cost: Math.round(cost * 100) / 100,
@@ -292,10 +292,10 @@ function mockInstallAt(agent: AgentKind, version: string | null, home: string, m
   }
 }
 
-// T3 Code keeps its home on casey-mbp and cedar-02 (0.0.42, from its app); `?t3compat=broken` puts it on ci-01 too,
-// with a version Arbor couldn't read. Harnesses a run can be handed to: T3 Code runs on casey-mbp with a setup of its own
-// beside the built-ins, and is installed but stopped on cedar-02; Orca runs on casey-mbp and is installed on ci-01.
-// `?harness=none` has neither anywhere, and `?t3=stopped` stops T3 Code on casey-mbp too.
+// T3 Code keeps its home on cam-mbp and cedar-02 (0.0.42, from its app); `?t3compat=broken` puts it on ci-01 too,
+// with a version Arbor couldn't read. Harnesses a run can be handed to: T3 Code runs on cam-mbp with a setup of its own
+// beside the built-ins, and is installed but stopped on cedar-02; Orca runs on cam-mbp and is installed on ci-01.
+// `?harness=none` has neither anywhere, and `?t3=stopped` stops T3 Code on cam-mbp too.
 const t3Scenario = params.get('t3compat');
 const harnessScenario = params.get('harness');
 const t3Stopped = params.get('t3') === 'stopped';
@@ -304,8 +304,8 @@ const orcaOn = (install: OrcaInstall): OrcaInstall | null => (harnessScenario ==
 
 // Each machine's agents as its last check found them; the reporter's state is added as the snapshot is read.
 const healthAgents: Record<string, Omit<MachineAgents, 'reporter'>> = {
-  'casey-mbp': {
-    claude: mockInstall('claude', '2.1.281', '/Users/casey', true), codex: mockInstall('codex', '0.156.0', '/Users/casey', true), checkedAt: Date.now() - 4 * 60_000, error: null, updating: [],
+  'cam-mbp': {
+    claude: mockInstall('claude', '2.1.281', '/Users/cam', true), codex: mockInstall('codex', '0.156.0', '/Users/cam', true), checkedAt: Date.now() - 4 * 60_000, error: null, updating: [],
     t3: t3On({
       version: '0.0.42', running: !t3Stopped,
       setups: [
@@ -323,7 +323,7 @@ const healthAgents: Record<string, Omit<MachineAgents, 'reporter'>> = {
     orca: orcaOn({ version: null, running: false, agents: ['claude', 'codex'] }),
   },
   'cedar-02': {
-    claude: mockInstall('claude', '2.1.281', '/home/casey', false), codex: null, checkedAt: Date.now() - 2 * 60_000, error: null, updating: [],
+    claude: mockInstall('claude', '2.1.281', '/home/cam', false), codex: null, checkedAt: Date.now() - 2 * 60_000, error: null, updating: [],
     t3: t3On({ version: '0.0.42', running: false, setups: [{ id: 'claudeAgent', driver: 'claudeAgent', name: null, enabled: true }] }),
     orca: null,
   },
@@ -352,12 +352,12 @@ const mockT3Policies = (): T3Policy[] | null => {
 };
 
 // `?duplicate=claude` or `?duplicate=codex` leaves an older copy of that agent from a Homebrew cask further along
-// casey-mbp's PATH.
+// cam-mbp's PATH.
 const duplicateScenario = params.get('duplicate');
 if (duplicateScenario === 'claude' || duplicateScenario === 'codex') {
   const cask = duplicateScenario === 'claude' ? 'claude-code' : 'codex';
   const version = duplicateScenario === 'claude' ? '2.1.270' : '0.153.3';
-  healthAgents['casey-mbp']?.[duplicateScenario]?.copies.push({
+  healthAgents['cam-mbp']?.[duplicateScenario]?.copies.push({
     path: `/opt/homebrew/bin/${duplicateScenario}`, real: `/opt/homebrew/Caskroom/${cask}/${version}/${duplicateScenario}`, version,
   });
 }
@@ -370,7 +370,7 @@ const agentsOf = (machine: string): MachineAgents => {
 };
 
 // Agent updates: the versions an update brings, and when each machine's agents last changed version. By default
-// Claude Code 2.1.281 reached casey-mbp and cedar-02 30 hours ago and Codex 0.156.0 reached casey-mbp 5 hours ago,
+// Claude Code 2.1.281 reached cam-mbp and cedar-02 30 hours ago and Codex 0.156.0 reached cam-mbp 5 hours ago,
 // while ci-01 still runs the older ones. With `?rollout=even` every machine is on the same versions already.
 const rolloutScenario = params.get('rollout') ?? '';
 
@@ -383,7 +383,7 @@ if (rolloutScenario === 'even') {
 }
 
 const agentMoves: Record<string, Partial<Record<AgentKind, { from: string; at: number }>>> = rolloutScenario === 'even' ? {} : {
-  'casey-mbp': { claude: { from: '2.1.270', at: Date.now() - 30 * 3_600_000 }, codex: { from: '0.153.3', at: Date.now() - 5 * 3_600_000 } },
+  'cam-mbp': { claude: { from: '2.1.270', at: Date.now() - 30 * 3_600_000 }, codex: { from: '0.153.3', at: Date.now() - 5 * 3_600_000 } },
   'cedar-02': { claude: { from: '2.1.270', at: Date.now() - 30 * 3_600_000 } },
 };
 
@@ -420,13 +420,13 @@ function mockClientVersions(fromMs: number, toMs: number): ClientVersions {
   return { hours, truncated: false };
 }
 
-// `?model=<id>` gives casey-mbp that model identifier and no product name, as an Intel Mac or one Arbor's list doesn't
+// `?model=<id>` gives cam-mbp that model identifier and no product name, as an Intel Mac or one Arbor's list doesn't
 // know yet would report.
 const modelOverride = params.get('model');
 
 const healthFacts = (name: string): MachineFacts =>
-  name === 'casey-mbp'
-    ? { hostname: 'Caseys-MacBook-Pro.local', os: 'Darwin', osVersion: '27.0', arch: 'arm64', model: modelOverride ?? 'Mac16,8', productName: modelOverride === null ? 'MacBook Pro (14-inch, 2024)' : '', chip: 'Apple M4 Pro', gpu: 'Apple M4 Pro', cores: 12, memTotalKb: 67_108_864, diskTotalKb: 482_797_652, swapTotalKb: 5_242_880, gpuMemTotalMb: null, ip: '192.168.1.151', uptimeS: 820_696, batteryPct: null, batteryState: '' }
+  name === 'cam-mbp'
+    ? { hostname: 'Cams-MacBook-Pro.local', os: 'Darwin', osVersion: '27.0', arch: 'arm64', model: modelOverride ?? 'Mac16,8', productName: modelOverride === null ? 'MacBook Pro (14-inch, 2024)' : '', chip: 'Apple M4 Pro', gpu: 'Apple M4 Pro', cores: 12, memTotalKb: 67_108_864, diskTotalKb: 482_797_652, swapTotalKb: 5_242_880, gpuMemTotalMb: null, ip: '192.168.1.151', uptimeS: 820_696, batteryPct: null, batteryState: '' }
     : name === 'cedar-02'
     ? { hostname: 'cedar-02', os: 'Linux', osVersion: 'Ubuntu 26.04 LTS', arch: 'x86_64', model: 'NUC 14', productName: '', chip: 'AMD Ryzen 7 8845HS w/ Radeon 780M Graphics', gpu: 'AMD Raphael', cores: 32, memTotalKb: 29_953_392, diskTotalKb: 980_760_096, swapTotalKb: null, gpuMemTotalMb: null, ip: '192.168.1.40', uptimeS: 2_901_035, batteryPct: null, batteryState: '' }
     // `?machine=new`'s cedar-03: another NUC, set up an hour ago. Its memory and disk are what the readings above assume.
@@ -465,7 +465,7 @@ const machineHealthSnapshot = (since: number | null, windowMs: number): MachineH
       const points: HealthPoint[] = [];
       for (let t = Math.ceil(floor / 5_000) * 5_000; t <= at; t += 5_000) if (since === null || t > since) points.push(healthPoint(host.machine, t));
       const latest = healthPoint(host.machine, at);
-      const reason = host.machine === 'casey-mbp' ? { metric: 'disk' as const, value: latest.disk } : host.machine === 'ci-01' ? { metric: 'memory' as const, value: latest.mem } : null;
+      const reason = host.machine === 'cam-mbp' ? { metric: 'disk' as const, value: latest.disk } : host.machine === 'ci-01' ? { metric: 'memory' as const, value: latest.mem } : null;
       const local = host.endpoint === 'localhost';
       return { machine: host.machine, host, local, status: latest.score >= 75 ? 'healthy' : latest.score >= 45 ? 'degraded' : 'critical', score: latest.score, reason, facts: healthFacts(host.machine), latest, points, error: null, lastOkAt: at - 800, lastAttemptAt: at - 800, pingTarget: local ? null : `${host.endpoint}.tailc0ffee.ts.net`, path: healthPath(host.machine), agents: agentsOf(host.machine) };
     }),
@@ -494,7 +494,7 @@ const discoveredHosts = (): DiscoveredHost[] => {
     discovered('build-arm', 'build-arm', { hostName: '10.0.4.21', user: 'ubuntu', port: 2200 }),
     discovered('ci-01', 'ci-01', { hostName: 'ci-01.tailc0ffee.ts.net', user: 'ci', sources: ['sshConfig', 'tailscale', 'knownHosts'], os: 'linux', online: true }),
     discovered('cedar-02', 'cedar-02.tailc0ffee.ts.net', { sources: ['tailscale'], os: 'linux', online: true }),
-    discovered('cedar-03', 'cedar-03', { hostName: 'cedar-03.tailc0ffee.ts.net', user: 'casey', sources: ['sshConfig', 'tailscale', 'knownHosts'], os: 'linux', online: true }),
+    discovered('cedar-03', 'cedar-03', { hostName: 'cedar-03.tailc0ffee.ts.net', user: 'cam', sources: ['sshConfig', 'tailscale', 'knownHosts'], os: 'linux', online: true }),
     discovered('lab-box', 'lab-box.local', { port: 2222, sources: ['knownHosts'] }),
     discovered('mac-studio', 'mac-studio.tailc0ffee.ts.net', { sources: ['tailscale'], os: 'macOS', online: false }),
     discovered('', '192.168.1.77', { addresses: ['192.168.1.77'], sources: ['knownHosts'] }),
@@ -506,7 +506,7 @@ const discoveredHosts = (): DiscoveredHost[] => {
 // after it's saved.
 const joinMockMachine = (name: string, arrived: boolean) => {
   if (!joinSetupMachine(name, arrived)) return;
-  healthAgents[name] = { claude: mockInstall('claude', '2.1.270', '/home/casey', false), codex: null, checkedAt: Date.now(), error: null, updating: [], t3: null, orca: null };
+  healthAgents[name] = { claude: mockInstall('claude', '2.1.270', '/home/cam', false), codex: null, checkedAt: Date.now(), error: null, updating: [], t3: null, orca: null };
   reporterHomes[name] = [{ agent: 'claude', home: '~/.claude', reporting: false }];
   reporterInstalled[name] = false;
 };
@@ -537,7 +537,7 @@ const savedHome = (machine: string, agent: AgentHomeKind, path: string, sync: bo
 
 // What the last look made of each home and suggestion, by machine, then agent and folder.
 const homeGuesses: Record<string, Record<string, HomeGuess>> = {
-  'casey-mbp': {
+  'cam-mbp': {
     'claude ~/.agent-app/homes/*': { role: 'active', reason: 'recent' },
     'codex ~/.agent-app/homes/*': { role: 'active', reason: 'recent' },
     [`claude-desktop ${DESKTOP_HOMES}`]: { role: 'history', reason: 'idle' },
@@ -557,14 +557,14 @@ const homesLookedAgain = new Set<string>();
 
 // What each machine's first look found, which it added to the list, and what it found beside that.
 const firstLooks: Record<string, { homes: AgentHome[]; suggested: FoundHome[] }> = {
-  'casey-mbp': {
+  'cam-mbp': {
     homes: [
-      savedHome('casey-mbp', 'claude', '~/.agent-app/homes/*', true),
-      savedHome('casey-mbp', 'codex', '~/.agent-app/homes/*', true),
-      savedHome('casey-mbp', 'claude-desktop', DESKTOP_HOMES, false),
-      savedHome('casey-mbp', 'claude', `${DESKTOP_HOMES}/local_*/.claude`, false),
+      savedHome('cam-mbp', 'claude', '~/.agent-app/homes/*', true),
+      savedHome('cam-mbp', 'codex', '~/.agent-app/homes/*', true),
+      savedHome('cam-mbp', 'claude-desktop', DESKTOP_HOMES, false),
+      savedHome('cam-mbp', 'claude', `${DESKTOP_HOMES}/local_*/.claude`, false),
       // Kept active by hand, though nothing ran there lately.
-      savedHome('casey-mbp', 'claude', '~/.agent-tool/workspace', true, true),
+      savedHome('cam-mbp', 'claude', '~/.agent-tool/workspace', true, true),
     ],
     suggested: [{ agent: 'claude', path: '~/Library/Application Support/AcmeCode/claude', folders: 1, guess: null }],
   },
@@ -757,7 +757,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
   }),
   discover_machine_hosts: () => {
     return new Promise<DiscoveredHost[]>((resolve, reject) => window.setTimeout(() => {
-      if (discoverScenario === 'fail') reject('Couldn’t read /Users/casey/.ssh/config: Permission denied (os error 13)');
+      if (discoverScenario === 'fail') reject('Couldn’t read /Users/cam/.ssh/config: Permission denied (os error 13)');
       else resolve(discoveredHosts());
     }, 700));
   },
@@ -835,7 +835,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     const files = entry.homes.filter((home) => home.agent === 'claude').map((home): SettingsEdit => ({
       home: home.path,
       path: `${home.path}/settings.json`,
-      change: !enabled && !on ? 'none' : enabled && !on && home.path.includes('claude-proxy') ? 'create' : 'edit',
+      change: !enabled && !on ? 'none' : enabled && !on && home.path.includes('claude-other') ? 'create' : 'edit',
       written: false,
       error: null,
     }));

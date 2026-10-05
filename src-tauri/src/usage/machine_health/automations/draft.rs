@@ -173,7 +173,7 @@ mod tests {
     use std::io::{Read, Write};
 
     fn input() -> AutomationDraftInput {
-        AutomationDraftInput { description: "Hourly check of Sentry issues, fix what needs it".into(), machine: Some("casey-mbp".into()), project_path: None }
+        AutomationDraftInput { description: "Hourly check of Sentry issues, fix what needs it".into(), machine: Some("cam-mbp".into()), project_path: None }
     }
 
     fn answer(draft: serde_json::Value) -> serde_json::Value {
@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(body["model"], "gpt-6-luna");
         assert_eq!(body["reasoning"]["effort"], "low");
         assert_eq!(body["text"]["format"]["strict"], true);
-        assert!(body["input"].as_str().unwrap().contains("Machine: casey-mbp"));
+        assert!(body["input"].as_str().unwrap().contains("Machine: cam-mbp"));
     }
 
     #[test]

@@ -702,7 +702,7 @@ pub(crate) mod tests {
         let main = format!(".claude/projects/-Users-me-app/{SID}.jsonl");
         fixture.write(&main, &claude_lines(3));
         // The same session in a second home is the same session, stored once.
-        fixture.write(&format!(".agent-app/homes/claude-proxy/projects/-Users-me-app/{SID}.jsonl"), &claude_lines(3));
+        fixture.write(&format!(".agent-app/homes/claude-other/projects/-Users-me-app/{SID}.jsonl"), &claude_lines(3));
         fixture.write(&format!(".claude/projects/-Users-me-app/{SID}/subagents/agent-a1.jsonl"), &claude_lines(1));
         fixture.write(".claude/history.jsonl", &format!("{{\"display\":\"{SECRET_TEXT}\"}}\n"));
         fixture.write(".claude/settings.json", "{\"env\":{\"TOKEN\":\"not-a-session\"}}");

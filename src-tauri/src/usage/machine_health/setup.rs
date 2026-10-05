@@ -2460,10 +2460,10 @@ mod tests {
 
     #[test]
     fn fingerprints_ignore_key_order_and_where_the_home_is() {
-        let mac = serde_json::json!({ "command": "bash /Users/casey/.claude/statusline.sh", "type": "command" });
-        let linux = serde_json::json!({ "type": "command", "command": "bash /home/casey/.claude/statusline.sh" });
-        assert_eq!(fingerprint(&mac, "/Users/casey", SALT), fingerprint(&linux, "/home/casey", SALT));
-        assert_ne!(fingerprint(&mac, "/Users/casey", SALT), fingerprint(&mac, "/Users/casey", b"another-salt"));
+        let mac = serde_json::json!({ "command": "bash /Users/cam/.claude/statusline.sh", "type": "command" });
+        let linux = serde_json::json!({ "type": "command", "command": "bash /home/cam/.claude/statusline.sh" });
+        assert_eq!(fingerprint(&mac, "/Users/cam", SALT), fingerprint(&linux, "/home/cam", SALT));
+        assert_ne!(fingerprint(&mac, "/Users/cam", SALT), fingerprint(&mac, "/Users/cam", b"another-salt"));
         assert_ne!(
             fingerprint(&serde_json::json!("a"), "/h", SALT),
             fingerprint(&serde_json::json!(["a"]), "/h", SALT),
@@ -2476,8 +2476,8 @@ mod tests {
         assert_eq!(normalize_path("/a/./b//c/"), "/a/b/c");
         assert_eq!(link_target("/Users/a/.claude/skills/x", "../../.agents/skills/x"), "/Users/a/.agents/skills/x");
         assert_eq!(link_target("/Users/a/.claude/CLAUDE.md", "/Users/a/dotfiles/CLAUDE.md"), "/Users/a/dotfiles/CLAUDE.md");
-        assert_eq!(untilde("~/.claude/CLAUDE.md", "/home/casey"), "/home/casey/.claude/CLAUDE.md");
-        assert_eq!(untilde("/etc/codex", "/home/casey"), "/etc/codex");
+        assert_eq!(untilde("~/.claude/CLAUDE.md", "/home/cam"), "/home/cam/.claude/CLAUDE.md");
+        assert_eq!(untilde("/etc/codex", "/home/cam"), "/etc/codex");
         assert_eq!(url_host("https://user:pass@mcp.example.com:8443/sse?key=abc"), Some("mcp.example.com:8443".into()));
         assert_eq!(url_place("https://token@github.com/org/repo.git?x=1"), Some("github.com/org/repo.git".into()));
         assert!(looks_secret("/Users/a/.agents/skills/x/.env.local"));
@@ -2488,41 +2488,41 @@ mod tests {
     #[test]
     fn a_scan_lists_each_homes_files_skills_and_imports() {
         let stdout = [
-            "H\t/Users/casey",
-            "A\tclaude\t/Users/casey/.claude",
-            "F\tinstructions\t/Users/casey/.claude/CLAUDE.md\taaa\t1700\t-",
-            "I\t1\t/Users/casey/.claude/CLAUDE.md\t~/notes/style.md\t/Users/casey/notes/style.md\tbbb",
-            "I\t1\t/Users/casey/.claude/CLAUDE.md\tmissing.md\t/Users/casey/.claude/missing.md\t-",
-            "I\t2\t/Users/casey/notes/style.md\t../notes/style.md\t/Users/casey/notes/../notes/style.md\tbbb",
-            "F\trule\t/Users/casey/.claude/rules/web/react.md\tccc\t200\t-",
-            "F\tsubagent\t/Users/casey/.claude/agents/reviewer.md\tddd\t300\t-",
-            "F\tcommand\t/Users/casey/.claude/commands/git/ship.md\teee\t100\t-",
-            "S\t/Users/casey/.claude/skills/pdf\tfff\t3\t../../.agents/skills/pdf\t1\tpdf\t120\t40\t0",
-            "S\t/Users/casey/.claude/skills/deploy\tddd\t1\t-\t1\tdeploy\t60\t0\t1",
-            "S\t/Users/casey/.claude/skills/everything\t-\t0\t/Users/casey/.agents/skills\t0\t\t\t\t",
-            "S\t/Users/casey/.claude/skills/gone\t-\t0\t../../src/gone\t-\t\t\t\t",
-            "A\tcodex\t/Users/casey/.codex",
-            "F\tinstructions\t/Users/casey/.codex/AGENTS.override.md\tggg\t20\t-",
-            "F\tinstructions\t/Users/casey/.codex/AGENTS.md\thhh\t414\t-",
-            "F\trule\t/Users/casey/.codex/rules/default.rules\tiii\t90\t-",
-            "F\tcommand\t/Users/casey/.codex/prompts/review.md\tjjj\t50\t-",
-            "F\tprofile\t/Users/casey/.codex/review.config.toml\tkkk\t80\t-",
-            "SL\t/Users/casey/.codex/skills\t../.agents/skills",
-            "A\tshared\t/Users/casey/.agents",
-            "S\t/Users/casey/.agents/skills/pdf\tfff\t3\t-\t1\tpdf\t120\t40\t0",
-            "F\thookscript\t/Users/casey/.agents/hooks/guard.sh\tlll\t30\t-",
-            "B\tclaude\t/Users/casey/.local/bin/claude\t/Users/casey/.local/share/claude/versions/2.1.281\t2.1.281 (Claude Code)",
-            "B\tcodex\t/Users/casey/.npm-global/bin/codex\t/Users/casey/.npm-global/bin/codex\tcodex-cli 0.156.1",
+            "H\t/Users/cam",
+            "A\tclaude\t/Users/cam/.claude",
+            "F\tinstructions\t/Users/cam/.claude/CLAUDE.md\taaa\t1700\t-",
+            "I\t1\t/Users/cam/.claude/CLAUDE.md\t~/notes/style.md\t/Users/cam/notes/style.md\tbbb",
+            "I\t1\t/Users/cam/.claude/CLAUDE.md\tmissing.md\t/Users/cam/.claude/missing.md\t-",
+            "I\t2\t/Users/cam/notes/style.md\t../notes/style.md\t/Users/cam/notes/../notes/style.md\tbbb",
+            "F\trule\t/Users/cam/.claude/rules/web/react.md\tccc\t200\t-",
+            "F\tsubagent\t/Users/cam/.claude/agents/reviewer.md\tddd\t300\t-",
+            "F\tcommand\t/Users/cam/.claude/commands/git/ship.md\teee\t100\t-",
+            "S\t/Users/cam/.claude/skills/pdf\tfff\t3\t../../.agents/skills/pdf\t1\tpdf\t120\t40\t0",
+            "S\t/Users/cam/.claude/skills/deploy\tddd\t1\t-\t1\tdeploy\t60\t0\t1",
+            "S\t/Users/cam/.claude/skills/everything\t-\t0\t/Users/cam/.agents/skills\t0\t\t\t\t",
+            "S\t/Users/cam/.claude/skills/gone\t-\t0\t../../src/gone\t-\t\t\t\t",
+            "A\tcodex\t/Users/cam/.codex",
+            "F\tinstructions\t/Users/cam/.codex/AGENTS.override.md\tggg\t20\t-",
+            "F\tinstructions\t/Users/cam/.codex/AGENTS.md\thhh\t414\t-",
+            "F\trule\t/Users/cam/.codex/rules/default.rules\tiii\t90\t-",
+            "F\tcommand\t/Users/cam/.codex/prompts/review.md\tjjj\t50\t-",
+            "F\tprofile\t/Users/cam/.codex/review.config.toml\tkkk\t80\t-",
+            "SL\t/Users/cam/.codex/skills\t../.agents/skills",
+            "A\tshared\t/Users/cam/.agents",
+            "S\t/Users/cam/.agents/skills/pdf\tfff\t3\t-\t1\tpdf\t120\t40\t0",
+            "F\thookscript\t/Users/cam/.agents/hooks/guard.sh\tlll\t30\t-",
+            "B\tclaude\t/Users/cam/.local/bin/claude\t/Users/cam/.local/share/claude/versions/2.1.281\t2.1.281 (Claude Code)",
+            "B\tcodex\t/Users/cam/.npm-global/bin/codex\t/Users/cam/.npm-global/bin/codex\tcodex-cli 0.156.1",
             "B\tcodex\t/opt/homebrew/bin/codex\t/opt/homebrew/Caskroom/codex/0.153.3/codex\t",
             "B\tgemini\t/usr/local/bin/gemini\t/usr/local/bin/gemini\t1.0.0",
         ]
         .join("\n");
         let stdout = format!(
             "{stdout}\n{}",
-            data("skilllock", "/Users/casey/.agents/.skill-lock.json", r#"{"skills":{"pdf":{"source":"anthropics/skills","sourceType":"github"}}}"#),
+            data("skilllock", "/Users/cam/.agents/.skill-lock.json", r#"{"skills":{"pdf":{"source":"anthropics/skills","sourceType":"github"}}}"#),
         );
         let scan = parse_scan(&stdout, SALT).unwrap();
-        assert_eq!(scan.home_dir, "/Users/casey");
+        assert_eq!(scan.home_dir, "/Users/cam");
         assert_eq!(scan.homes.iter().map(|home| home.path.as_str()).collect::<Vec<_>>(), ["~/.claude", "~/.codex", "~/.agents"]);
 
         let claude = &scan.homes[0];
@@ -2585,13 +2585,13 @@ mod tests {
   "model": "opus",
   "effortLevel": "high",
   "autoCompactEnabled": false,
-  "apiKeyHelper": "/Users/casey/bin/key --token {SECRET}",
+  "apiKeyHelper": "/Users/cam/bin/key --token {SECRET}",
   "env": {{ "ANTHROPIC_AUTH_TOKEN": "{SECRET}", "ANTHROPIC_BASE_URL": "http://127.0.0.1:8317" }},
   "permissions": {{ "defaultMode": "acceptEdits", "allow": ["Bash(git:*)", "Read"] }},
   "hooks": {{
     "Stop": [{{ "hooks": [{{ "type": "command", "command": "\"$HOME/.arbor/bin/arbor-agent-event\" claude" }}] }}],
     "PreToolUse": [{{ "matcher": "Bash", "hooks": [{{ "type": "command", "command": "guard.sh" }}, {{ "type": "command", "command": "\"$HOME/.arbor/bin/arbor-agent-event\" claude" }}] }}],
-    "SessionStart": [{{ "hooks": [{{ "type": "command", "command": "bash /Users/casey/.agents/hooks/start.sh --token {SECRET}" }}] }}]
+    "SessionStart": [{{ "hooks": [{{ "type": "command", "command": "bash /Users/cam/.agents/hooks/start.sh --token {SECRET}" }}] }}]
   }},
   "enabledPlugins": {{ "codex@openai-codex": true, "paper@paper": false, "ghost@nowhere": true }},
   "extraKnownMarketplaces": {{ "team": {{ "source": {{ "source": "git", "url": "https://{SECRET}@git.example.com/team/plugins.git" }}, "autoUpdate": true }} }},
@@ -2607,11 +2607,11 @@ mod tests {
   "odd":{"source":{"source":"github","repo":"someone/odd"},"lastUpdated":"not a time $(id)"},
   "team":{"source":{"source":"git","url":"https://git.example.com/team/plugins.git"},"autoUpdate":false}}"#;
         let stdout = format!(
-            "H\t/Users/casey\nA\tclaude\t/Users/casey/.claude\n{}{}{}{}",
-            data("settings", "/Users/casey/.claude/settings.json", &settings),
-            data("mcp", "/Users/casey/.claude.json", &mcp),
-            data("plugins", "/Users/casey/.claude/plugins/installed_plugins.json", plugins),
-            data("marketplaces", "/Users/casey/.claude/plugins/known_marketplaces.json", marketplaces),
+            "H\t/Users/cam\nA\tclaude\t/Users/cam/.claude\n{}{}{}{}",
+            data("settings", "/Users/cam/.claude/settings.json", &settings),
+            data("mcp", "/Users/cam/.claude.json", &mcp),
+            data("plugins", "/Users/cam/.claude/plugins/installed_plugins.json", plugins),
+            data("marketplaces", "/Users/cam/.claude/plugins/known_marketplaces.json", marketplaces),
         );
         let scan = parse_scan(&stdout, SALT).unwrap();
         let home = &scan.homes[0];
@@ -2632,7 +2632,7 @@ mod tests {
         // A hook running a script in ~/.agents/hooks is the setup repo's: kept apart, by fingerprint only.
         assert_eq!(home.repo_hooks.iter().map(|found| (found.event.as_str(), found.script.as_str())).collect::<Vec<_>>(), [("SessionStart", "start.sh")]);
         let handler = serde_json::json!({ "type": "command", "command": format!("bash ~/.agents/hooks/start.sh --token {SECRET}") });
-        assert_eq!(home.repo_hooks[0].sum, hook_sum_with(None, &handler, "/Users/casey", SALT), "the home folder counts as ~");
+        assert_eq!(home.repo_hooks[0].sum, hook_sum_with(None, &handler, "/Users/cam", SALT), "the home folder counts as ~");
 
         let linear = item(home, ItemKind::Mcp, "linear");
         assert_eq!((linear.value.as_deref(), linear.note.as_deref()), (Some("http"), Some("mcp.linear.app")));
@@ -2658,7 +2658,7 @@ mod tests {
     #[test]
     fn skill_overrides_are_read_per_skill_and_dropped_whole_as_claude_code_does() {
         let settings = r#"{ "model": "opus", "skillOverrides": { "pdf": "off", "deploy": "user-invocable-only", "notes": "name-only", "docs": "on" } }"#;
-        let stdout = format!("H\t/Users/casey\nA\tclaude\t/Users/casey/.claude\n{}", data("settings", "/Users/casey/.claude/settings.json", settings));
+        let stdout = format!("H\t/Users/cam\nA\tclaude\t/Users/cam/.claude\n{}", data("settings", "/Users/cam/.claude/settings.json", settings));
         let scan = parse_scan(&stdout, SALT).unwrap();
         let home = &scan.homes[0];
         let overrides: Vec<(&str, OverrideState)> = home.skill_overrides.iter().map(|entry| (entry.name.as_str(), entry.state)).collect();
@@ -2675,10 +2675,10 @@ mod tests {
         // One value Claude Code doesn't know, or a boolean, and it ignores every override in the file.
         for odd in [r#"{ "pdf": "off", "deploy": "disabled" }"#, r#"{ "pdf": false }"#, r#"["pdf"]"#] {
             let settings = format!(r#"{{ "skillOverrides": {odd} }}"#);
-            let stdout = format!("H\t/h\nA\tclaude\t/h/.agent-app/homes/claude-proxy\n{}", data("settings", "/h/.agent-app/homes/claude-proxy/settings.json", &settings));
+            let stdout = format!("H\t/h\nA\tclaude\t/h/.agent-app/homes/claude-other\n{}", data("settings", "/h/.agent-app/homes/claude-other/settings.json", &settings));
             let home = &parse_scan(&stdout, SALT).unwrap().homes[0];
             assert!(home.skill_overrides.is_empty(), "{odd}");
-            assert_eq!(home.ignored_overrides, ["~/.agent-app/homes/claude-proxy/settings.json"], "{odd}");
+            assert_eq!(home.ignored_overrides, ["~/.agent-app/homes/claude-other/settings.json"], "{odd}");
             assert!(home.problems.is_empty(), "the file itself reads fine");
         }
     }
@@ -2757,7 +2757,7 @@ mod tests {
     #[test]
     fn a_shadow_homes_links_leave_what_they_hold_to_the_home_it_shares() {
         let codex = "/h/.codex";
-        let shadow = "/h/.agent-app/homes/codex-proxy";
+        let shadow = "/h/.agent-app/homes/codex-other";
         let lines = [
             format!("H\t/h"),
             format!("A\tcodex\t{codex}"),
@@ -2792,17 +2792,17 @@ mod tests {
         let items: Vec<(ItemKind, &str)> = t3.items.iter().map(|item| (item.kind, item.name.as_str())).collect();
         assert_eq!(items, [(ItemKind::Command, "ship"), (ItemKind::Profile, "fast")], "only what it doesn't share is its own");
         assert_eq!(t3.skills_link.as_deref(), Some("~/.codex/skills"), "its skills folder still reads as a link, so nothing changes skills through it");
-        assert_eq!(t3.problems, ["~/.agent-app/homes/codex-proxy/hooks.json isn't JSON Arbor can read"], "a file of its own is still read");
+        assert_eq!(t3.problems, ["~/.agent-app/homes/codex-other/hooks.json isn't JSON Arbor can read"], "a file of its own is still read");
 
         // A Codex home that links into one Arbor didn't find is read as it is, and Claude Code homes never share.
         let alone = format!("H\t/h\nA\tcodex\t{shadow}\nK\tconfig.toml\t{codex}/config.toml\nA\tclaude\t/h/.claude\nK\tskills\t{codex}/skills\n");
         let scan = parse_scan(&alone, SALT).unwrap();
         assert!(scan.homes.iter().all(|home| home.shares.is_none()));
 
-        let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/homes/codex-proxy")])
-            .with_shared("~/.agent-app/homes/codex-proxy", "~/.codex", &["config.toml"]);
-        assert!(setup.shares("~/.agent-app/homes/codex-proxy", "config.toml"));
-        assert!(!setup.shares("~/.agent-app/homes/codex-proxy", "skills"));
+        let setup = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/homes/codex-other")])
+            .with_shared("~/.agent-app/homes/codex-other", "~/.codex", &["config.toml"]);
+        assert!(setup.shares("~/.agent-app/homes/codex-other", "config.toml"));
+        assert!(!setup.shares("~/.agent-app/homes/codex-other", "skills"));
         assert!(!setup.shares("~/.codex", "config.toml"));
     }
 
@@ -2827,7 +2827,7 @@ mod tests {
 
 [marketplaces.openai-bundled]
 source_type = "local"
-source = "/Users/casey/.codex/.tmp/bundled-marketplaces/openai-bundled"
+source = "/Users/cam/.codex/.tmp/bundled-marketplaces/openai-bundled"
 
 [marketplaces.team]
 source_type = "git"
@@ -2849,7 +2849,7 @@ enabled = false
 
 [plugins."pdf@team"]
 "#;
-        let stdout = format!("H\t/Users/casey\nA\tcodex\t/Users/casey/.codex\n{}", data("config", "/Users/casey/.codex/config.toml", config));
+        let stdout = format!("H\t/Users/cam\nA\tcodex\t/Users/cam/.codex\n{}", data("config", "/Users/cam/.codex/config.toml", config));
         let scan = parse_scan(&stdout, SALT).unwrap();
         let home = &scan.homes[0];
         assert_eq!(names(home, ItemKind::Plugin), ["chrome@openai-bundled", "pdf@team", "sketch@team"]);
@@ -2873,7 +2873,7 @@ enabled = false
             r#"model = "gpt-5.5"
 approval_policy = "on-request"
 experimental_bearer_token = "{SECRET}"
-notify = ["/Users/casey/.arbor/bin/arbor-agent-event", "codex", "--then", "say", "done"]
+notify = ["/Users/cam/.arbor/bin/arbor-agent-event", "codex", "--then", "say", "done"]
 
 [mcp_servers.linear]
 url = "https://mcp.linear.app/mcp"
@@ -2891,7 +2891,7 @@ env_key = "PROXY_KEY"
 [profiles.fast]
 model = "gpt-5.5-mini"
 
-[projects."/Users/casey/src/app"]
+[projects."/Users/cam/src/app"]
 trust_level = "trusted"
 
 [tui]
@@ -2900,9 +2900,9 @@ notifications = true
         );
         let hooks = r#"{"hooks":{"PreToolUse":[{"matcher":"shell","hooks":[{"type":"command","command":"guard.sh"}]}]}}"#;
         let stdout = format!(
-            "H\t/Users/casey\nA\tcodex\t/Users/casey/.codex\n{}{}",
-            data("config", "/Users/casey/.codex/config.toml", &config),
-            data("hooks", "/Users/casey/.codex/hooks.json", hooks),
+            "H\t/Users/cam\nA\tcodex\t/Users/cam/.codex\n{}{}",
+            data("config", "/Users/cam/.codex/config.toml", &config),
+            data("hooks", "/Users/cam/.codex/hooks.json", hooks),
         );
         let scan = parse_scan(&stdout, SALT).unwrap();
         let home = &scan.homes[0];
@@ -2922,7 +2922,7 @@ notifications = true
         let stdout = format!("H\t/home/a\nA\tcodex\t/home/a/.codex\n{}", data("config", "/home/a/.codex/config.toml", reporter_only));
         let scan = parse_scan(&stdout, SALT).unwrap();
         assert!(scan.homes[0].items.is_empty());
-        let chained = fingerprint(&serde_json::json!(["say", "done"]), "/Users/casey", SALT);
+        let chained = fingerprint(&serde_json::json!(["say", "done"]), "/Users/cam", SALT);
         assert_eq!(item(home, ItemKind::Setting, "notify").sum.as_deref(), Some(chained.as_str()));
     }
 
@@ -3372,7 +3372,7 @@ notifications = true
                 agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
                 agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, true),
             ]);
-            let shadow = home.join(".agent-app/homes/codex-proxy");
+            let shadow = home.join(".agent-app/homes/codex-other");
             fs::create_dir_all(&shadow).unwrap();
             for entry in ["AGENTS.md", "config.toml", "skills", "sessions"] {
                 symlink(codex.join(entry), shadow.join(entry)).unwrap();
@@ -3387,7 +3387,7 @@ notifications = true
                 let scan = parse_scan(&stdout, SALT).unwrap();
                 let main = scan.homes.iter().find(|found| found.path == "~/.codex").unwrap();
                 assert_eq!((names(main, ItemKind::Instructions), names(main, ItemKind::Skill)), (vec!["AGENTS.md"], vec!["pdf"]), "{shell}");
-                let shadow = scan.homes.iter().find(|found| found.path == "~/.agent-app/homes/codex-proxy").unwrap();
+                let shadow = scan.homes.iter().find(|found| found.path == "~/.agent-app/homes/codex-other").unwrap();
                 let shared = shadow.shares.as_ref().unwrap();
                 assert_eq!((shared.home.as_str(), shared.entries.as_slice()), ("~/.codex", &["AGENTS.md".to_string(), "config.toml".into(), "sessions".into(), "skills".into()][..]), "{shell}");
                 assert!(shadow.items.is_empty() && shadow.problems.is_empty(), "{shell}: {:?}", shadow.items);
@@ -3411,7 +3411,7 @@ notifications = true
                 agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
                 agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, true),
             ]);
-            write(&home.join(".agent-app/homes/claude-proxy/.claude.json"), "{}");
+            write(&home.join(".agent-app/homes/claude-other/.claude.json"), "{}");
             let policy = "policy=\"$HOME/Application Support/ClaudeCode/managed-settings.json\"\n";
             for shell in shells() {
                 let output = run_in(shell, &home, &scan_script_with("", policy, ""));
@@ -3424,7 +3424,7 @@ notifications = true
                 let shown = serde_json::to_string(&(&scan.policy, &scan.homes)).unwrap();
                 assert!(!shown.contains(SECRET) && !shown.contains(PRIVATE) && !shown.contains("curl"), "{shell}: {shown}");
                 // The policy's override wins over the home's own, in every Claude Code home.
-                for path in ["~/.claude", "~/.agent-app/homes/claude-proxy"] {
+                for path in ["~/.claude", "~/.agent-app/homes/claude-other"] {
                     let claude = scan.homes.iter().find(|found| found.path == path).unwrap();
                     let overrides: Vec<_> = claude.skill_overrides.iter().map(|entry| (entry.name.as_str(), entry.state, entry.source)).collect();
                     let mut expected = vec![("pdf", OverrideState::Off, OverrideSource::Policy)];

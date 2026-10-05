@@ -304,7 +304,7 @@ pub(crate) mod tests {
         write(&home.join(".claude/shell-snapshots/snap.sh"), "export X=1\n");
         write(&home.join(".codex/sessions/2026/09/25/rollout-2026-09-25T10-00-00-thread1.jsonl"), "{}\n");
         write(&home.join(".codex/auth.json"), "{}");
-        write(&home.join(".agent-app/homes/claude-proxy/projects/-x/b.jsonl"), "{}\n");
+        write(&home.join(".agent-app/homes/claude-other/projects/-x/b.jsonl"), "{}\n");
         write(&home.join(".agent-tool/profiles/work2/projects/-y/c.jsonl"), "{}\n");
         // A folder a pattern matches that doesn't look like a home isn't one.
         write(&home.join(".agent-tool/profiles/notes/todo.md"), "- x\n");
@@ -344,7 +344,7 @@ pub(crate) mod tests {
                 ("claude", format!("{home_text}/.claude").as_str()),
                 ("codex", format!("{home_text}/.codex").as_str()),
                 ("pi", format!("{home_text}/.pi/agent/sessions").as_str()),
-                ("claude", format!("{home_text}/.agent-app/homes/claude-proxy").as_str()),
+                ("claude", format!("{home_text}/.agent-app/homes/claude-other").as_str()),
                 ("claude", format!("{home_text}/.agent-tool/profiles/work2").as_str()),
                 ("claude", elsewhere.to_string_lossy().as_ref()),
             ]

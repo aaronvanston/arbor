@@ -7,7 +7,7 @@ import { canOpenRun, newRunRequest, poolRepos, poolRuns, reasonMessage, repoName
 import { itemAt } from './support/items';
 
 const run = (fields: Partial<HarnessRun> = {}): HarnessRun => ({
-  id: 'r1', trigger: null, pool: 'builds', ranPool: 'builds', machine: 'casey-mbp', harness: 't3', used: 't3', setup: 'codex_work',
+  id: 'r1', trigger: null, pool: 'builds', ranPool: 'builds', machine: 'cam-mbp', harness: 't3', used: 't3', setup: 'codex_work',
   folder: '~/src/app', repo: null, title: 'Tidy the tests', state: 'handedOff', reason: null, detail: null, handle: {}, queuedAtMs: 0,
   startedAtMs: 1_000, endedAtMs: null, waitUntilMs: null, ...fields,
 });
@@ -44,9 +44,9 @@ describe('harness runs', () => {
   it('gives commands to read a command-line run’s log and pick up its session on its machine', () => {
     const host = (endpoint: string, port = 22, local = false) => ({ machine: 'Cedar 02', host: { endpoint, port }, local }) as unknown as MachineHealth;
     const headless = run({ machine: 'cedar-02', used: 'headless', harness: 'headless', setup: 'claude', folder: '~/src/it’s here', handle: { pid: 1, log: '~/.arbor/runs/r1.log', sessionId: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7' } });
-    expect(runCommands(headless, [host('casey@cedar-02.local')])).toEqual({
-      log: "ssh casey@cedar-02.local 'cat ~/.arbor/runs/r1.log'",
-      resume: "ssh -t casey@cedar-02.local 'cd ~/'\\''src/it’s here'\\'' && claude --resume a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7'",
+    expect(runCommands(headless, [host('cam@cedar-02.local')])).toEqual({
+      log: "ssh cam@cedar-02.local 'cat ~/.arbor/runs/r1.log'",
+      resume: "ssh -t cam@cedar-02.local 'cd ~/'\\''src/it’s here'\\'' && claude --resume a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7'",
     });
     // This Mac needs no ssh, and a home folder stays bare so the shell expands it.
     expect(runCommands({ ...headless, folder: '~' }, [host('localhost', 22, true)])).toEqual({
@@ -63,13 +63,13 @@ describe('harness runs', () => {
 
   it('offers the setups members have, ready ones first, leaving out manual-only members', () => {
     const health = [
-      machine('casey-mbp', { t3: { version: null, running: true, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Work', enabled: true }, { id: 'cursor', driver: 'cursor', name: null, enabled: false }] } }),
+      machine('cam-mbp', { t3: { version: null, running: true, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Work', enabled: true }, { id: 'cursor', driver: 'cursor', name: null, enabled: false }] } }),
       machine('cedar-02', { t3: { version: null, running: false, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Work', enabled: true }] } }),
       machine('ci-01', { t3: { version: null, running: true, setups: [{ id: 'claudeAgent', driver: 'claudeAgent', name: null, enabled: true }] } }),
     ];
-    const choices = runSetupChoices(pool([{ machine: 'casey-mbp', weight: 'prefer' }, { machine: 'Cedar 02', weight: 'normal' }, { machine: 'ci-01', weight: 'manual' }]), health, 't3');
+    const choices = runSetupChoices(pool([{ machine: 'cam-mbp', weight: 'prefer' }, { machine: 'Cedar 02', weight: 'normal' }, { machine: 'ci-01', weight: 'manual' }]), health, 't3');
     expect(choices.map((choice) => [choice.id, choice.ready, choice.found])).toEqual([['codex_work', 1, 2], ['cursor', 0, 1]]);
-    expect(runSetupChoices(pool([{ machine: 'casey-mbp', weight: 'normal' }]), health, 'orca')).toEqual([]);
+    expect(runSetupChoices(pool([{ machine: 'cam-mbp', weight: 'normal' }]), health, 'orca')).toEqual([]);
     expect(runSetupChoices(pool([]), null, 't3')).toEqual([]);
   });
 
@@ -77,7 +77,7 @@ describe('harness runs', () => {
     const t = (key: string) => (key === 'harness.driver.claudeAgent' ? 'Claude' : key);
     const health = [
       machine('cedar-02', { t3: { version: null, running: true, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Old name', enabled: true }] } }),
-      machine('casey-mbp', { t3: { version: null, running: true, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Work', enabled: true }] } }),
+      machine('cam-mbp', { t3: { version: null, running: true, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Work', enabled: true }] } }),
     ];
     // The machine it went to names it first.
     expect(runSetupLabel(run(), health, t)).toBe('Codex · Work');
@@ -105,17 +105,17 @@ describe('harness runs', () => {
   it('lists the repos the members have, those on the most members first, and who hasn’t been looked at', () => {
     const repo = (path: string, remote: string | null, extra: Partial<ProjectRepo> = {}) => ({ path, remote, state: 'ok', bare: false, ...extra }) as ProjectRepo;
     const scan = (machine: string, repos: ProjectRepo[], scannedAt: number | null = 1) => ({ machine, scannedAt, repos }) as MachineProjects;
-    const pool = { members: [{ machine: 'casey-mbp', weight: 'normal' }, { machine: 'cedar-02', weight: 'prefer' }, { machine: 'ci-01', weight: 'manual' }, { machine: 'lab-box', weight: 'normal' }] } as MachinePool;
+    const pool = { members: [{ machine: 'cam-mbp', weight: 'normal' }, { machine: 'cedar-02', weight: 'prefer' }, { machine: 'ci-01', weight: 'manual' }, { machine: 'lab-box', weight: 'normal' }] } as MachinePool;
     const projects = [
-      scan('casey-mbp', [repo('/Users/casey/src/docs', 'github.com/acme/docs'), repo('/Users/casey/src/storefront', 'github.com/acme/storefront')]),
-      scan('cedar-02', [repo('/home/casey/storefront', 'github.com/Acme/storefront.git'), repo('/home/casey/old', 'github.com/acme/old', { state: 'missing' }), repo('/home/casey/notes', null)]),
+      scan('cam-mbp', [repo('/Users/cam/src/docs', 'github.com/acme/docs'), repo('/Users/cam/src/storefront', 'github.com/acme/storefront')]),
+      scan('cedar-02', [repo('/home/cam/storefront', 'github.com/Acme/storefront.git'), repo('/home/cam/old', 'github.com/acme/old', { state: 'missing' }), repo('/home/cam/notes', null)]),
       // Kept for picking by hand, so its repos don't count.
       scan('ci-01', [repo('/srv/docs', 'github.com/acme/docs')]),
       scan('lab-box', [], null),
     ];
     expect(poolRepos(pool, projects)).toEqual([
-      { repo: 'github.com/acme/storefront', machines: ['casey-mbp', 'cedar-02'] },
-      { repo: 'github.com/acme/docs', machines: ['casey-mbp'] },
+      { repo: 'github.com/acme/storefront', machines: ['cam-mbp', 'cedar-02'] },
+      { repo: 'github.com/acme/docs', machines: ['cam-mbp'] },
     ]);
     expect(unscannedMembers(pool, projects)).toEqual(['lab-box']);
     expect(repoName('github.com/acme/storefront.git')).toBe('acme/storefront');

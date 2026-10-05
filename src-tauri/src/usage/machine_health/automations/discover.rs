@@ -222,16 +222,16 @@ mod tests {
     #[test]
     fn each_app_reads_its_own_lines_and_says_it_is_there() {
         let stdout = format!(
-            "H\t/Users/casey\nC\t/Users/casey/.codex/automations/x/automation.toml\t{}\nS\t/Users/casey/.claude/scheduled-tasks/notes/SKILL.md\t{}\nSL\t{}\n",
+            "H\t/Users/cam\nC\t/Users/cam/.codex/automations/x/automation.toml\t{}\nS\t/Users/cam/.claude/scheduled-tasks/notes/SKILL.md\t{}\nSL\t{}\n",
             b64("name = \"X\"\n"),
             b64("Add the newest notes to the wiki.\n"),
             b64("[]"),
         );
-        let (found, there) = parse_scan("casey-mbp", &stdout);
+        let (found, there) = parse_scan("cam-mbp", &stdout);
         assert_eq!(found.iter().map(|item| item.automation.summary.source).collect::<Vec<_>>(), [AutomationSource::CodexApp, AutomationSource::ClaudeDesktop]);
         assert_eq!(there, [AutomationSource::CodexApp, AutomationSource::ClaudeDesktop, AutomationSource::Superset]);
-        assert_eq!(parse_scan("casey-mbp", "H\t/Users/casey\n"), (Vec::new(), Vec::new()));
-        let (found, there) = parse_scan_without("casey-mbp", &stdout, &[AutomationSource::CodexApp]);
+        assert_eq!(parse_scan("cam-mbp", "H\t/Users/cam\n"), (Vec::new(), Vec::new()));
+        let (found, there) = parse_scan_without("cam-mbp", &stdout, &[AutomationSource::CodexApp]);
         assert_eq!(found.iter().map(|item| item.automation.summary.source).collect::<Vec<_>>(), [AutomationSource::ClaudeDesktop]);
         assert_eq!(there, [AutomationSource::ClaudeDesktop, AutomationSource::Superset]);
     }
@@ -254,14 +254,14 @@ mod tests {
 
     #[test]
     fn the_scan_holds_every_apps_part_and_the_probe() {
-        let script = scan_script("casey-mbp", &[]);
+        let script = scan_script("cam-mbp", &[]);
         assert!(script.contains("orca automations list --json </dev/null"));
         assert!(script.contains("superset automations list --json </dev/null"));
         assert!(script.contains("automations/*/automation.toml"));
         assert!(script.contains("scheduled-tasks/*/SKILL.md"));
         assert!(script.contains(udian::PROBE_SCRIPT));
         // An app turned off is never asked, and what it printed anyway is left out.
-        let script = scan_script("casey-mbp", &[AutomationSource::Orca, AutomationSource::CodexApp]);
+        let script = scan_script("cam-mbp", &[AutomationSource::Orca, AutomationSource::CodexApp]);
         assert!(!script.contains("orca automations list") && !script.contains("automations/*/automation.toml"));
         assert!(script.contains("superset automations list --json </dev/null") && script.contains("scheduled-tasks/*/SKILL.md"));
     }

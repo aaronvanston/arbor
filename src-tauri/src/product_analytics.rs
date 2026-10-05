@@ -897,9 +897,9 @@ mod tests {
 
     #[test]
     fn scrubs_what_names_the_owner() {
-        let home = "/Users/casey";
+        let home = "/Users/cam";
         assert_eq!(
-            scrub_with_home("Couldn't read /Users/casey/.claude/settings.json: denied", home),
+            scrub_with_home("Couldn't read /Users/cam/.claude/settings.json: denied", home),
             "Couldn't read ~/.claude/settings.json: denied"
         );
         assert_eq!(scrub_with_home("open /Users/someone/x failed", home), "open ~/x failed");

@@ -118,7 +118,7 @@ const session = (id: string, estimatedCost: number): UsageSession => ({
   startedAtMs: at(22), lastActiveAtMs: at(23), requests: 40, failures: 0, canceled: 0,
   inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
   totalTokens: 0, estimatedCost, pricedRequests: estimatedCost ? 40 : 0, peakContext: 0, compactions: 0,
-  provider: 'claude', machine: 'casey-mbp', pool: '', apiKeyHash: '', active: false, hasOwnRequests: true, subagents: 2, threads: [], transcript: null,
+  provider: 'claude', machine: 'cam-mbp', pool: '', apiKeyHash: '', active: false, hasOwnRequests: true, subagents: 2, threads: [], transcript: null,
 });
 
 const account = (key: string, name: string, percent: number | null): CapacityAccount => ({
@@ -293,7 +293,7 @@ describe('the shareable page', () => {
     expect(text).toContain('Sessions 60 +25% 48 the week before');
     expect(text).toContain('Change 3 acme/arbor#3 · arbor · merged Sun, 20 Sep +120 −30 $40.00');
     expect(text).toContain('arbor acme/arbor 10 1 +1,000 −200 $700.00 billing acme/billing 10 — — $300.00');
-    expect(text).toContain('Claude Code 2.1.280 a · casey-mbp 25% of spend $312.00');
+    expect(text).toContain('Claude Code 2.1.280 a · cam-mbp 25% of spend $312.00');
     expect(text).toContain('Claude 7-day · 2 of 3 accounts measured · Home Max could go 40% used on average 6.5× cost');
     expect(text).toContain('Cache misses 14 requests sent 2M tokens of context again uncached $56.20 −30%');
     expect(text).toContain('Made with Arbor on 24 September 2026.');

@@ -58,30 +58,30 @@ describe('machine-scoped settings', () => {
 describe('a project’s own values', () => {
   const machines: MachineOverrideMap = { cedar02: { heavySessionTokens: 500 * M, agentWaitingAlerts: false } };
   const projects: ProjectOverrideMap = {
-    'casey/arbor': { all: { heavySessionTokens: 250 * M }, machines: { cedar02: { heavySessionTokens: 50 * M } } },
-    'acme/proxy': { machines: { caseymbp: { agentWaitingAlerts: false } } },
+    'cam/arbor': { all: { heavySessionTokens: 250 * M }, machines: { cedar02: { heavySessionTokens: 50 * M } } },
+    'acme/proxy': { machines: { cammbp: { agentWaitingAlerts: false } } },
   };
   const at = (project: string | null, machine: string | null) => ({ project, machine });
 
   it('win nearest first: the project on the machine, the project, the machine, then All', () => {
-    expect(resolveScoped(prefs(), machines, projects, at('Casey/Arbor', 'cedar-02'), 'heavySessionTokens')).toEqual({ value: 50 * M, source: 'projectMachine' });
-    expect(resolveScoped(prefs(), machines, projects, at('casey/arbor', 'ci-01'), 'heavySessionTokens')).toEqual({ value: 250 * M, source: 'project' });
+    expect(resolveScoped(prefs(), machines, projects, at('Cam/Arbor', 'cedar-02'), 'heavySessionTokens')).toEqual({ value: 50 * M, source: 'projectMachine' });
+    expect(resolveScoped(prefs(), machines, projects, at('cam/arbor', 'ci-01'), 'heavySessionTokens')).toEqual({ value: 250 * M, source: 'project' });
     expect(resolveScoped(prefs(), machines, projects, at('acme/proxy', 'cedar-02'), 'heavySessionTokens')).toEqual({ value: 500 * M, source: 'machine' });
     expect(resolveScoped(prefs(), machines, projects, at(null, 'ci-01'), 'heavySessionTokens').source).toBe('default');
-    expect(resolveScoped(prefs(), machines, projects, at('acme/proxy', 'casey-mbp'), 'agentWaitingAlerts').value).toBe(false);
+    expect(resolveScoped(prefs(), machines, projects, at('acme/proxy', 'cam-mbp'), 'agentWaitingAlerts').value).toBe(false);
     expect(resolveScoped(prefs(), machines, projects, at('acme/proxy', 'ci-01'), 'agentWaitingAlerts').value).toBe(true);
   });
 
   it('only exist for settings about a session', () => {
-    const odd = { 'casey/arbor': { all: { machineNotifications: false } } } as ProjectOverrideMap;
-    expect(valueAt({}, odd, at('casey/arbor', null), 'machineNotifications')).toBeUndefined();
-    expect(sanitizeProjectOverrides({ 'casey/arbor': { all: { machineNotifications: false, heavySessionTokens: 'x' } }, junk: 3 })).toEqual({});
+    const odd = { 'cam/arbor': { all: { machineNotifications: false } } } as ProjectOverrideMap;
+    expect(valueAt({}, odd, at('cam/arbor', null), 'machineNotifications')).toBeUndefined();
+    expect(sanitizeProjectOverrides({ 'cam/arbor': { all: { machineNotifications: false, heavySessionTokens: 'x' } }, junk: 3 })).toEqual({});
     expect(sanitizeProjectOverrides(projects)).toEqual(projects);
   });
 
   it('keep an alert’s monitor running when only a project turns it on', () => {
     const off = prefs({ agentWaitingAlerts: false });
     expect(raisedAnywhere(off, {}, 'agentWaitingAlerts')).toBe(false);
-    expect(raisedAnywhere(off, {}, 'agentWaitingAlerts', { 'casey/arbor': { machines: { ci01: { agentWaitingAlerts: true } } } })).toBe(true);
+    expect(raisedAnywhere(off, {}, 'agentWaitingAlerts', { 'cam/arbor': { machines: { ci01: { agentWaitingAlerts: true } } } })).toBe(true);
   });
 });

@@ -125,9 +125,9 @@ mod tests {
 
     #[test]
     fn each_place_is_reported_by_what_happened_there() {
-        let stdout = "H\t/Users/casey\nP\t0\t/Users/casey/.agents/skills/arbor/SKILL.md\nE\t0\tok\n\
-                      P\t1\t/Users/casey/.claude/skills/arbor/SKILL.md\nE\t1\tsame\n\
-                      P\t2\t/Users/casey/.agent-app/homes/work/skills/arbor/SKILL.md\nE\t2\tchanged\nK\tstamp\n";
+        let stdout = "H\t/Users/cam\nP\t0\t/Users/cam/.agents/skills/arbor/SKILL.md\nE\t0\tok\n\
+                      P\t1\t/Users/cam/.claude/skills/arbor/SKILL.md\nE\t1\tsame\n\
+                      P\t2\t/Users/cam/.agent-app/homes/work/skills/arbor/SKILL.md\nE\t2\tchanged\nK\tstamp\n";
         assert_eq!(
             parse_install(stdout),
             CliSkillInstall {
@@ -153,11 +153,11 @@ mod tests {
         symlink(home.join(".agents/skills"), home.join(".agent-app/homes/linked/skills")).unwrap();
         use agent_homes::{tests::{home as saved_home, save_on_this_thread}, AgentHomeKind};
         save_on_this_thread(vec![
-            saved_home("casey-mbp", AgentHomeKind::Claude, "~/.claude", true, true),
-            saved_home("casey-mbp", AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
-            saved_home("casey-mbp", AgentHomeKind::Codex, "~/.codex", true, true),
+            saved_home("cam-mbp", AgentHomeKind::Claude, "~/.claude", true, true),
+            saved_home("cam-mbp", AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
+            saved_home("cam-mbp", AgentHomeKind::Codex, "~/.codex", true, true),
         ]);
-        let script = install_script("casey-mbp", "20261002T000000Z-0001", b"# arbor\n");
+        let script = install_script("cam-mbp", "20261002T000000Z-0001", b"# arbor\n");
         // A clean environment, so no CLAUDE_CONFIG_DIR or CODEX_HOME of whoever runs the tests is a home here; and
         // under dash as well as sh, since machines run either.
         let run = |shell: &str, script: &str| {

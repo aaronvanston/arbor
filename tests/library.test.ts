@@ -25,15 +25,15 @@ const machine = (name: string, items: SetupItem[], reachable = true): SetupMachi
 });
 const listing = (id: string, all: RepoPlugin['all'], machines: RepoPlugin['machines'] = {}): RepoPlugin => ({ id, source: 'acme/agent-tools', all, machines, projects: {} });
 const repo = (plugins: RepoPlugin[], fields: Partial<SetupRepo> = {}): SetupRepo => ({
-  path: '/Users/casey/src/agent-setup', branch: 'main', head: { sha: 'ab'.repeat(32), subject: 'Start', atMs: 1_000 },
+  path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha: 'ab'.repeat(32), subject: 'Start', atMs: 1_000 },
   upstream: null, uncommitted: [], files: [], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
   skillProjects: {}, mcpProjects: {}, instructions: [], plugins, codexPlugins: [], ...fields,
 });
 
 const REVIEW = 'review@acme-tools';
-// casey-mbp has the plugin on, ci-01 has it off, cedar-02 hasn't got it (but has its marketplace).
+// cam-mbp has the plugin on, ci-01 has it off, cedar-02 hasn't got it (but has its marketplace).
 const fleet = () => [
-  machine('casey-mbp', [plugin(REVIEW), marketplace('acme-tools')]),
+  machine('cam-mbp', [plugin(REVIEW), marketplace('acme-tools')]),
   machine('ci-01', [plugin(REVIEW, false), marketplace('acme-tools')]),
   machine('cedar-02', [marketplace('acme-tools')]),
 ];
@@ -59,8 +59,8 @@ afterEach(() => {
 describe('the Library’s rows', () => {
   it('sums a plugin up across machines: the repo’s word, where it’s on and which machines aren’t as the repo has it', () => {
     const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on')])), 'review');
-    expect(row).toMatchObject({ kind: 'plugins', detail: 'acme-tools', agents: ['claude'], state: 'on', on: ['casey-mbp'], exceptions: 0 });
-    expect(row.fleet).toEqual(['casey-mbp', 'ci-01', 'cedar-02']);
+    expect(row).toMatchObject({ kind: 'plugins', detail: 'acme-tools', agents: ['claude'], state: 'on', on: ['cam-mbp'], exceptions: 0 });
+    expect(row.fleet).toEqual(['cam-mbp', 'ci-01', 'cedar-02']);
     expect(row.behind).toEqual(['ci-01', 'cedar-02']);
     expect(libraryScope(row)).toEqual({ kind: 'all' });
     expect(row.toggle?.kind).toBe('plugin');
@@ -82,7 +82,7 @@ describe('the Library’s rows', () => {
   });
 
   it('keeps a removed plugin out of the list and out of the counts, under Removed', () => {
-    const rows = rowsOf([machine('casey-mbp', [])], repo([listing(REVIEW, 'removed')]));
+    const rows = rowsOf([machine('cam-mbp', [])], repo([listing(REVIEW, 'removed')]));
     expect(libraryCounts(rows).plugins).toBe(0);
     const list = libraryList(rows, { kind: 'plugins', agent: null, query: '' });
     expect(list.rows).toEqual([]);
@@ -102,7 +102,7 @@ describe('the Library’s rows', () => {
       ['~/.codex/AGENTS.md', 'on', ['codex']],
       ['~/.claude/commands/old.md', 'removed', ['claude']],
     ]);
-    expect(present(rows[0]).on).toEqual(['casey-mbp', 'cedar-02']);
+    expect(present(rows[0]).on).toEqual(['cam-mbp', 'cedar-02']);
   });
 
   it('narrows a tab to an agent and a search, by name or what else names it', () => {
@@ -118,7 +118,7 @@ describe('a plugin’s switch', () => {
     const machines = [...fleet(), machine('far-01', [], false)];
     const row = relisted(pluginRow(machines, null), listing(REVIEW, 'off'));
     expect(Object.fromEntries(lineUp(row, false))).toEqual({
-      'casey-mbp': [{ machine: 'casey-mbp', home: '~/.claude', action: 'disable', target: REVIEW, source: null }],
+      'cam-mbp': [{ machine: 'cam-mbp', home: '~/.claude', action: 'disable', target: REVIEW, source: null }],
     });
     const on = relisted(pluginRow(machines, null), listing(REVIEW, 'on'));
     expect(Object.fromEntries(lineUp(on, false))).toEqual({
@@ -128,7 +128,7 @@ describe('a plugin’s switch', () => {
   });
 
   it('adds the marketplace first where an install needs it and its repository is known', () => {
-    const machines = [machine('casey-mbp', [plugin(REVIEW), marketplace('acme-tools')]), machine('ci-01', [])];
+    const machines = [machine('cam-mbp', [plugin(REVIEW), marketplace('acme-tools')]), machine('ci-01', [])];
     const row = relisted(pluginRow(machines, null), listing(REVIEW, 'on'));
     expect(lineUp(row, false).get('ci-01')?.map((change) => change.action)).toEqual(['addMarketplace', 'install']);
   });
@@ -165,12 +165,12 @@ describe('a plugin’s switch', () => {
   it('keeps a machine’s failure with the machine it was on', async () => {
     mockCommands({
       set_setup_plugin: () => repo([listing(REVIEW, 'off')]),
-      apply_plugin_changes: () => Promise.reject('ssh: connect to host casey-mbp: Connection refused'),
+      apply_plugin_changes: () => Promise.reject('ssh: connect to host cam-mbp: Connection refused'),
     });
     const run = await togglePlugin('/repo', pluginRow(fleet(), null), false, false);
     expect(run.done).toEqual([]);
     expect(run.failed.map((result) => [result.machine, result.action, result.message])).toEqual([
-      ['casey-mbp', 'disable', 'ssh: connect to host casey-mbp: Connection refused'],
+      ['cam-mbp', 'disable', 'ssh: connect to host cam-mbp: Connection refused'],
     ]);
   });
 });
@@ -179,7 +179,7 @@ describe('every kind’s switch', () => {
   const definition = { transport: 'http', place: 'mcp.linear.app', variables: [] };
   const server = (fields: Partial<ServerView> = {}): ServerView => ({ name: 'linear', claude: definition, codex: null, homes: null, agents: [], own: [], off: [], allOff: false, problems: [], ...fields });
   const registry = (fields: Partial<McpRegistry> = {}): McpRegistry => ({ commit: 'c'.repeat(40), found: true, uncommitted: false, problems: [], servers: [server()], cells: [], ...fields });
-  const withServer = (name: string) => machine('casey-mbp', [item('mcp', name, { value: 'http', sum: 'x1' })]);
+  const withServer = (name: string) => machine('cam-mbp', [item('mcp', name, { value: 'http', sum: 'x1' })]);
 
   it('gives what the repo lists a switch and its off state, but never an agent’s instructions or what it only has on a machine', () => {
     const file = (path: string, kind: SetupRepo['files'][number]['kind']) => ({ path, kind, sum: 'x', ck: 'y', size: 10 });
@@ -206,7 +206,7 @@ describe('every kind’s switch', () => {
       set_mcp_wanted: ({ machine: name, wanted: value }) => {
         wanted.push([name, value]);
         const off = value === 'off';
-        return registry({ servers: [server({ allOff: off })], cells: [{ machine: 'casey-mbp', home: '~/.claude', name: 'linear', state: off ? 'extra' : 'same', own: false, blocked: null }] });
+        return registry({ servers: [server({ allOff: off })], cells: [{ machine: 'cam-mbp', home: '~/.claude', name: 'linear', state: off ? 'extra' : 'same', own: false, blocked: null }] });
       },
       apply_mcp_changes: ({ machine: name, changes }) => {
         applied.push({ machine: name, actions: changes.map((change) => change.action) });
@@ -216,8 +216,8 @@ describe('every kind’s switch', () => {
     const machines = [withServer('linear'), machine('far-01', [item('mcp', 'linear', { value: 'http', sum: 'x1' })], false)];
     const run = await switchServer('/repo', machines, 'linear', false);
     expect(wanted).toEqual([[null, 'off']]);
-    expect(applied).toEqual([{ machine: 'casey-mbp', actions: ['remove'] }]);
-    expect(run.changed).toEqual(['casey-mbp']);
+    expect(applied).toEqual([{ machine: 'cam-mbp', actions: ['remove'] }]);
+    expect(run.changed).toEqual(['cam-mbp']);
     expect(run.skipped).toEqual(['far-01']);
     const back = await run.undo();
     expect(wanted).toEqual([[null, 'off'], [null, 'default']]);
@@ -241,14 +241,14 @@ describe('every kind’s switch', () => {
         return { backup: null, done: [command.path], failed: [] };
       },
     });
-    const machines = [machine('casey-mbp', [item('command', 'ship.md', { path: command.path, sum: 's1' })])];
+    const machines = [machine('cam-mbp', [item('command', 'ship.md', { path: command.path, sum: 's1' })])];
     const run = await switchFile('/repo', machines, command.path, false);
-    expect(run.changed).toEqual(['casey-mbp']);
+    expect(run.changed).toEqual(['cam-mbp']);
     await run.undo();
     expect(calls).toEqual([
       ['off', command.path, true],
-      ['apply', 'casey-mbp', [{ path: command.path, remove: true, before: 's1' }]],
-      ['undo', 'casey-mbp', 'b1'],
+      ['apply', 'cam-mbp', [{ path: command.path, remove: true, before: 's1' }]],
+      ['undo', 'cam-mbp', 'b1'],
       ['off', command.path, false],
     ]);
   });

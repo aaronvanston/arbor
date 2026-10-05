@@ -54,7 +54,7 @@ const thread = (id: string, parentId: string | null, startedMinute: number, over
 
 const session = (threads: UsageSessionThread[]): UsageSession => ({
   ...thread('main', null, 0),
-  provider: 'claude', machine: 'casey-mbp', pool: '', apiKeyHash: 'hash', active: false, hasOwnRequests: true,
+  provider: 'claude', machine: 'cam-mbp', pool: '', apiKeyHash: 'hash', active: false, hasOwnRequests: true,
   subagents: threads.length - 1, threads, transcript: null,
 });
 
@@ -85,7 +85,7 @@ describe('a thread’s context line and events', () => {
 
   it('says what started each compaction the transcript recorded, and adds the ones the requests didn’t show', () => {
     const transcript: SessionTranscript = {
-      machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/src/arbor', repoRoot: '', mainRepo: '', branch: '', commitHash: '',
+      machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '', cwd: '/Users/cam/src/arbor', repoRoot: '', mainRepo: '', branch: '', commitHash: '',
       repositoryUrl: '', title: '', titleSource: '', pullRequests: [], linesAdded: null, linesRemoved: null, toolUsage: null, readAtMs: T0,
       compactions: [
         { atMs: T0 + 2 * MINUTE - 20_000, trigger: 'auto', preTokens: 361_000, postTokens: 79_000, durationMs: 41_000 },

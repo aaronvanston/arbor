@@ -811,10 +811,10 @@ mod tests {
     #[test]
     fn checks_name_each_agent_and_where_it_lives() {
         let found = parse_check(
-            "claude_path=/home/casey/.local/bin/claude\nclaude_version=2.1.281 (Claude Code)\n\
+            "claude_path=/home/cam/.local/bin/claude\nclaude_version=2.1.281 (Claude Code)\n\
              codex_path=/usr/local/bin/codex\ncodex_version=\n",
         );
-        assert_eq!(found.claude, install("2.1.281", "/home/casey/.local/bin/claude"));
+        assert_eq!(found.claude, install("2.1.281", "/home/cam/.local/bin/claude"));
         assert_eq!(
             found.codex,
             Some(install_at(None, "/usr/local/bin/codex", None)),

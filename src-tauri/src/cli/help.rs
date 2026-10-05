@@ -22,7 +22,7 @@ Every machine's health, or one machine in full (as JSON). A machine can be named
 case.
 
   arbor machines
-  arbor machines casey-mbp
+  arbor machines cam-mbp
 ",
     ),
     (
@@ -128,9 +128,9 @@ first: it prints the plan and needs --yes. Every file is backed up before it cha
 undo it.
 
   arbor sync
-  arbor sync casey-mbp
-  arbor sync apply casey-mbp             (prints the plan)
-  arbor sync apply casey-mbp --yes
+  arbor sync cam-mbp
+  arbor sync apply cam-mbp             (prints the plan)
+  arbor sync apply cam-mbp --yes
 ",
     ),
     (

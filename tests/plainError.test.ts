@@ -26,10 +26,10 @@ describe('errorWords', () => {
 
 describe('plainError', () => {
   it('names the machine ssh couldn’t reach and why', () => {
-    expect(plainError('ssh: connect to host casey-mbp port 22: Operation timed out', t)).toBe('casey-mbp didn’t answer over SSH. Check that it’s on and connected.');
+    expect(plainError('ssh: connect to host cam-mbp port 22: Operation timed out', t)).toBe('cam-mbp didn’t answer over SSH. Check that it’s on and connected.');
     expect(plainError('ssh: connect to host ci-01 port 22: Connection refused', t)).toBe('ci-01 refused the SSH connection. Check that its SSH server is running.');
     expect(plainError('ssh: Could not resolve hostname ci-01: nodename nor servname provided', t)).toBe('Couldn’t find ci-01 on the network. Check its name in your SSH config.');
-    expect(plainError('casey@cedar-02: Permission denied (publickey).', t)).toBe('cedar-02 didn’t accept Arbor’s SSH key.');
+    expect(plainError('cam@cedar-02: Permission denied (publickey).', t)).toBe('cedar-02 didn’t accept Arbor’s SSH key.');
   });
 
   it('says a renamed machine by the name it’s shown by', () => {
@@ -38,8 +38,8 @@ describe('plainError', () => {
   });
 
   it('turns OS errors into what happened, with the file in question', () => {
-    expect(plainError('Couldn’t read /Users/casey/.ssh/config: Permission denied (os error 13)', t)).toBe('Arbor isn’t allowed to open ~/.ssh/config. Check its permissions, then try again.');
-    expect(plainError('Failed to write configuration directly /Users/casey/Library/Application Support/onl.arbor.app/config.toml: Permission denied (os error 13)', t))
+    expect(plainError('Couldn’t read /Users/cam/.ssh/config: Permission denied (os error 13)', t)).toBe('Arbor isn’t allowed to open ~/.ssh/config. Check its permissions, then try again.');
+    expect(plainError('Failed to write configuration directly /Users/cam/Library/Application Support/onl.arbor.app/config.toml: Permission denied (os error 13)', t))
       .toBe('Arbor isn’t allowed to open ~/Library/Application Support/onl.arbor.app/config.toml. Check its permissions, then try again.');
     expect(plainError('Couldn’t read a session file: Permission denied (os error 13)', t)).toBe('Arbor isn’t allowed to open a file it needs. Check its permissions, then try again.');
     expect(plainError('Couldn’t read a kept chunk: No such file or directory (os error 2)', t)).toBe('A file Arbor needs is missing.');

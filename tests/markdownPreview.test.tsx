@@ -58,7 +58,7 @@ describe('front matter', () => {
       '  and carries on',
       'metadata:',
       '  version: 2',
-      '  owner: casey',
+      '  owner: cam',
       '...',
       'Body',
     ].join('\n'));
@@ -69,7 +69,7 @@ describe('front matter', () => {
       { key: 'literal', value: 'First line\n# still text\n\nLast line' },
       { key: 'folded', value: 'One sentence.\nNext.' },
       { key: 'long', value: 'starts here and carries on' },
-      { key: 'metadata', value: 'version: 2\nowner: casey' },
+      { key: 'metadata', value: 'version: 2\nowner: cam' },
     ]);
   });
 });

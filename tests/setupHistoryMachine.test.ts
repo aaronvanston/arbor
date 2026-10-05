@@ -8,11 +8,11 @@ const machine = (name: string, local = false): SetupMachine => ({
 
 describe('the machine Arbor’s changes shows', () => {
   test('is the one the breadcrumb named, else this Mac, else the first, and never every machine', () => {
-    const fleet = [machine('ci-01'), machine('casey-mbp', true), machine('cedar-02')];
+    const fleet = [machine('ci-01'), machine('cam-mbp', true), machine('cedar-02')];
     expect(historyMachine(fleet, 'cedar-02')).toBe('cedar-02');
-    expect(historyMachine(fleet, undefined)).toBe('casey-mbp');
+    expect(historyMachine(fleet, undefined)).toBe('cam-mbp');
     // A machine Sync no longer checks falls back the same way.
-    expect(historyMachine(fleet, 'old-box')).toBe('casey-mbp');
+    expect(historyMachine(fleet, 'old-box')).toBe('cam-mbp');
     expect(historyMachine([machine('ci-01')], undefined)).toBe('ci-01');
     expect(historyMachine([], undefined)).toBeNull();
   });

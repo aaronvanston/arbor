@@ -155,7 +155,7 @@ over a socket and runs the same commands, so the window and the CLI agree. Detai
 - Configuration lives in Settings. Main pages stay compact and show state.
 - Copy is plain, short and sentence case: say what happened and what to do next. US English everywhere (color,
   canceled, gray); `scripts/us-spelling.mjs` guards it. Other programs' names keep their spelling.
-- Test and mock data use made-up names: `casey-mbp`, `~/.agent-app/homes/…`, `/Volumes/Backup`.
+- Test and mock data use made-up names: `cam-mbp`, `~/.agent-app/homes/…`, `/Volumes/Backup`.
 - Comments say why.
 - If a rule here fights the task in front of you, say so plainly and get the maintainer's sign-off before breaking it.
 

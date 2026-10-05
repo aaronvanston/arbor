@@ -86,7 +86,7 @@ describe('heavy sessions per machine', () => {
     const hour = page([
       session('ci', 300 * M, { machine: 'ci-01' }),
       session('cedar', 300 * M, { machine: 'cedar-02' }),
-      session('laptop', 120 * M, { machine: 'casey-mbp' }),
+      session('laptop', 120 * M, { machine: 'cam-mbp' }),
     ]);
     const threshold = ({ machine }: { machine: string }) => ({ 'ci-01': 0, 'cedar-02': 500 * M })[machine] ?? 100 * M;
     expect(heavySessions(hour, threshold).map((item) => item.id)).toEqual(['laptop']);

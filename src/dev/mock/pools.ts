@@ -13,7 +13,7 @@ const mockPools: MachinePool[] = poolsScenario === 'none' || freshInstall ? [] :
   {
     id: 'mock-builds', name: 'Builds', maxAgents: 6, cpuCeiling: 95, memFloor: 5, whenFull: 'spill', spillPool: 'mock-overflow', queueTimeoutMin: 30,
     members: [
-      { machine: 'casey-mbp', weight: 'prefer' },
+      { machine: 'cam-mbp', weight: 'prefer' },
       { machine: 'cedar-02', weight: 'normal' },
       { machine: 'ci-01', weight: 'less' },
       { machine: 'lab-box', weight: 'normal' },
@@ -23,7 +23,7 @@ const mockPools: MachinePool[] = poolsScenario === 'none' || freshInstall ? [] :
     id: 'mock-overflow', name: 'Overflow', maxAgents: 2, cpuCeiling: 90, memFloor: 10, whenFull: 'queue', spillPool: null, queueTimeoutMin: 45,
     members: [
       { machine: 'ci-01', weight: 'normal' },
-      { machine: 'casey-mbp', weight: 'manual' },
+      { machine: 'cam-mbp', weight: 'manual' },
     ],
   },
 ];
@@ -131,7 +131,7 @@ function readinessOf(machine: string): PoolSshReadiness {
   if (sshScenario === 'nokeys') return 'noHostKey';
   if (loose(machine) === 'labbox') return 'noHostKey';
   if (loose(machine) === 'cedar02') return 'otherUser';
-  if (loose(machine) === 'caseymbp') return 'thisMac';
+  if (loose(machine) === 'cammbp') return 'thisMac';
   return 'ready';
 }
 
@@ -158,7 +158,7 @@ export const poolSshAnswers = (): Pick<CommandAnswers<MachineCommands>, 'get_poo
       commandReady: sshScenario !== 'nocli',
       includeLine: 'Include ~/.arbor/ssh/pools.conf',
       included: sshIncluded,
-      user: sshScenario === 'nokeys' ? null : 'casey',
+      user: sshScenario === 'nokeys' ? null : 'cam',
       members,
       connections: connectionsOf(pool),
     };
@@ -166,7 +166,7 @@ export const poolSshAnswers = (): Pick<CommandAnswers<MachineCommands>, 'get_poo
   add_pool_ssh_include: () => {
     mockLog('add_pool_ssh_include', {});
     sshIncluded = true;
-    recordEditMock('casey-mbp', 'ssh', [{ path: '~/.ssh/config', added: false }]);
+    recordEditMock('cam-mbp', 'ssh', [{ path: '~/.ssh/config', added: false }]);
     void emit('pool-ssh-updated', Date.now());
   },
   forget_pool_ssh_name: ({ poolId, name }) => {

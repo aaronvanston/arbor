@@ -1302,24 +1302,24 @@ mod tests {
 
     #[test]
     fn a_projects_value_turns_a_plugin_on_or_off_in_a_known_checkout_only() {
-        let checkouts = ["/home/casey/src/app".to_string()];
+        let checkouts = ["/home/cam/src/app".to_string()];
         let in_checkout = |action, target: &str, checkout: &str| PluginChange { checkout: Some(checkout.into()), ..change("~/.claude", action, target) };
         // An installed plugin that's on in the home can still be turned off, or on, in a checkout.
-        let planned = plan(&setup(), vec![in_checkout(PluginAction::Disable, "context7@official", "/home/casey/src/app"), in_checkout(PluginAction::Enable, "paper@official", "/home/casey/src/app")], &checkouts).unwrap();
-        assert!(planned.iter().all(|change| change.checkout.as_deref() == Some("/home/casey/src/app")));
+        let planned = plan(&setup(), vec![in_checkout(PluginAction::Disable, "context7@official", "/home/cam/src/app"), in_checkout(PluginAction::Enable, "paper@official", "/home/cam/src/app")], &checkouts).unwrap();
+        assert!(planned.iter().all(|change| change.checkout.as_deref() == Some("/home/cam/src/app")));
         let script = apply_script(&planned);
-        assert!(script.contains("if cd -- '/home/casey/src/app' 2>/dev/null; then change 1 '' plugin disable 'context7@official' --scope local --json; cd /;"), "{script}");
+        assert!(script.contains("if cd -- '/home/cam/src/app' 2>/dev/null; then change 1 '' plugin disable 'context7@official' --scope local --json; cd /;"), "{script}");
         assert!(script.contains("plugin enable 'paper@official' --scope local --json"));
         assert!(script.contains(r#"else printf 'R\t1\t1\t%s\n' 'The checkout isn'\''t there any more'; fi"#), "{script}");
         // Not a checkout the scan found, not turning on or off, or not installed to turn on.
         assert!(plan(&setup(), vec![in_checkout(PluginAction::Disable, "context7@official", "/tmp/elsewhere")], &checkouts).is_err());
-        assert!(plan(&setup(), vec![in_checkout(PluginAction::Uninstall, "context7@official", "/home/casey/src/app")], &checkouts).is_err());
-        assert!(plan(&setup(), vec![in_checkout(PluginAction::Enable, "ghost@official", "/home/casey/src/app")], &checkouts).is_err());
+        assert!(plan(&setup(), vec![in_checkout(PluginAction::Uninstall, "context7@official", "/home/cam/src/app")], &checkouts).is_err());
+        assert!(plan(&setup(), vec![in_checkout(PluginAction::Enable, "ghost@official", "/home/cam/src/app")], &checkouts).is_err());
         // The same plugin in the home and in a checkout are two changes, not one twice.
-        assert!(plan(&setup(), vec![change("~/.claude", PluginAction::Disable, "context7@official"), in_checkout(PluginAction::Disable, "context7@official", "/home/casey/src/app")], &checkouts).is_ok());
+        assert!(plan(&setup(), vec![change("~/.claude", PluginAction::Disable, "context7@official"), in_checkout(PluginAction::Disable, "context7@official", "/home/cam/src/app")], &checkouts).is_ok());
         // A checkout gone since the scan says so, for that change alone.
         let results = parse_results("R\t0\t1\tThe checkout isn't there any more\n", &planned[..1]);
-        assert_eq!((results[0].outcome, results[0].checkout.as_deref()), (PluginOutcome::Failed, Some("/home/casey/src/app")));
+        assert_eq!((results[0].outcome, results[0].checkout.as_deref()), (PluginOutcome::Failed, Some("/home/cam/src/app")));
     }
 
     #[test]
@@ -1705,9 +1705,9 @@ esac"#,
             );
             assert_eq!(fs::read_to_string(home.join("where")).unwrap(), "/|\n", "run for ~/.claude, away from any project");
 
-            let output = run(shell, &home, &health_script(Some(".agent-app/homes/claude-proxy")));
+            let output = run(shell, &home, &health_script(Some(".agent-app/homes/claude-other")));
             assert!(output.status.success());
-            assert_eq!(fs::read_to_string(home.join("where")).unwrap(), format!("/|{}\n", home.join(".agent-app/homes/claude-proxy").display()));
+            assert_eq!(fs::read_to_string(home.join("where")).unwrap(), format!("/|{}\n", home.join(".agent-app/homes/claude-other").display()));
             let output = run(shell, &home, &health_script(config_dir("/srv/agents/claude").as_deref()));
             assert!(output.status.success());
             assert_eq!(fs::read_to_string(home.join("where")).unwrap(), "/|/srv/agents/claude\n", "a home kept elsewhere is given whole");

@@ -157,11 +157,11 @@ mod tests {
     #[test]
     fn reads_orca_with_its_projects_hosts_and_last_runs() {
         let list = r#"{"ok":true,"result":{"automations":[{"id":"a-1","name":"Repo audit","prompt":"Audit PRs.","rrule":"FREQ=HOURLY;BYMINUTE=0","enabled":true,"agentId":"codex","projectId":"p-1","executionTargetType":"ssh","executionTargetId":"ssh-9","workspaceMode":"existing","reuseSession":true,"nextRunAt":1790900000000,"missedRunGraceMinutes":720,"precheck":{"command":"gh pr list | grep -q .","timeoutSeconds":60}}]}}"#;
-        let projects = r#"{"result":{"projects":[{"id":"github:casey/billing","displayName":"billing","sourceRepoIds":["r-0","p-1"]}]}}"#;
+        let projects = r#"{"result":{"projects":[{"id":"github:cam/billing","displayName":"billing","sourceRepoIds":["r-0","p-1"]}]}}"#;
         let hosts = r#"{"result":{"hosts":[{"id":"ssh-9","name":"cedar-02"}]}}"#;
         let runs = r#"{"a-1":{"status":"skipped_precheck","at":1790899506005,"model":"claude-opus-5"}}"#;
-        let stdout = format!("H\t/Users/casey\nO\t{}\nP\t{}\nT\t{}\nR\t{}\n", b64(list), b64(projects), b64(hosts), b64(runs));
-        let found = Orca.parse(&ScanLines::new("casey-mbp", &stdout)).unwrap();
+        let stdout = format!("H\t/Users/cam\nO\t{}\nP\t{}\nT\t{}\nR\t{}\n", b64(list), b64(projects), b64(hosts), b64(runs));
+        let found = Orca.parse(&ScanLines::new("cam-mbp", &stdout)).unwrap();
         let automation = &found[0].automation;
         assert_eq!(automation.summary.id, "orca:a-1");
         assert_eq!(automation.summary.machine.as_deref(), Some("cedar-02"));
@@ -172,22 +172,22 @@ mod tests {
         assert!(automation.summary.has_precheck);
         assert_eq!(automation.session, AutomationSession::Reuse);
         assert_eq!(automation.grace_minutes, 720);
-        assert_eq!(found[0].found_on, "casey-mbp");
+        assert_eq!(found[0].found_on, "cam-mbp");
         assert_eq!(found[0].keeper, Keeper::Id("a-1".into()));
     }
 
     #[test]
     fn an_orca_that_answers_badly_is_there_with_nothing_listed() {
         let stdout = format!("O\t{}\n", b64("not json"));
-        assert_eq!(Orca.parse(&ScanLines::new("casey-mbp", &stdout)), Some(Vec::new()));
-        assert_eq!(Orca.parse(&ScanLines::new("casey-mbp", "H\t/Users/casey\n")), None);
+        assert_eq!(Orca.parse(&ScanLines::new("cam-mbp", &stdout)), Some(Vec::new()));
+        assert_eq!(Orca.parse(&ScanLines::new("cam-mbp", "H\t/Users/cam\n")), None);
     }
 
     #[test]
     fn pauses_and_runs_by_its_id_quoted() {
         let item = Found {
-            automation: found_automation(summary("orca:a 1".into(), AutomationSource::Orca, "A".into(), true, "casey-mbp", AutomationAbilities::default()), String::new(), None),
-            found_on: "casey-mbp".into(),
+            automation: found_automation(summary("orca:a 1".into(), AutomationSource::Orca, "A".into(), true, "cam-mbp", AutomationAbilities::default()), String::new(), None),
+            found_on: "cam-mbp".into(),
             keeper: Keeper::Id("a 1".into()),
             session: None,
         };

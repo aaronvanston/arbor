@@ -22,16 +22,16 @@ const shown = (fields: Partial<HarnessAppsInput>) => harnessApps(input(fields)).
 
 describe('Settings › Harnesses', () => {
   it('finds each app on the machines its agents check or automation scan saw it on', () => {
-    const health = [machine('cedar-02', { t3, orca }), machine('casey-mbp', { t3 }), machine('ci-01', {})];
-    const scans = [scan('casey-mbp', ['codexApp', 'claudeDesktop']), scan('cedar-02', ['orca', 'superset'])];
+    const health = [machine('cedar-02', { t3, orca }), machine('cam-mbp', { t3 }), machine('ci-01', {})];
+    const scans = [scan('cam-mbp', ['codexApp', 'claudeDesktop']), scan('cedar-02', ['orca', 'superset'])];
     expect(harnessAppMachines(health, scans)).toEqual({
-      t3: ['casey-mbp', 'cedar-02'], orca: ['cedar-02'], superset: ['cedar-02'], codexApp: ['casey-mbp'], claudeDesktop: ['casey-mbp'],
+      t3: ['cam-mbp', 'cedar-02'], orca: ['cedar-02'], superset: ['cedar-02'], codexApp: ['cam-mbp'], claudeDesktop: ['cam-mbp'],
     });
   });
 
   it('shows an app only once it is found, and keeps one with something turned off so it can be turned back on', () => {
     expect(shown({})).toEqual([]);
-    expect(shown({ health: [machine('casey-mbp', { orca })] })).toEqual(['orca:casey-mbp']);
+    expect(shown({ health: [machine('cam-mbp', { orca })] })).toEqual(['orca:cam-mbp']);
     // T3 Code on this Mac alone counts, as the live board found it.
     expect(shown({ t3Found: true })).toEqual(['t3:']);
     expect(shown({ appsOff: ['superset'] })).toEqual(['superset:']);
@@ -41,7 +41,7 @@ describe('Settings › Harnesses', () => {
   });
 
   it('keeps the apps in the page’s order', () => {
-    const scans = [scan('casey-mbp', ['claudeDesktop', 'superset', 'codexApp', 'orca'])];
+    const scans = [scan('cam-mbp', ['claudeDesktop', 'superset', 'codexApp', 'orca'])];
     expect(harnessApps(input({ scans, t3Found: true })).map((row) => row.app)).toEqual(['t3', 'orca', 'superset', 'codexApp', 'claudeDesktop']);
   });
 

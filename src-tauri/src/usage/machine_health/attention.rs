@@ -1493,7 +1493,7 @@ model = "gpt-5.5"
 notify = ["/Applications/Sky.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"] # keeps the dock badge
 approval_policy = "on-request"
 
-[projects."/Users/casey/src/arbor"]
+[projects."/Users/cam/src/arbor"]
 trust_level = "trusted"
 
 [hooks.state]
@@ -1555,7 +1555,7 @@ trust_level = "trusted"
 
     #[test]
     fn an_older_reporter_hook_is_replaced_and_a_hook_someone_shared_keeps_its_group() {
-        let older = r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/home/casey/.arbor/bin/arbor-agent-event claude"},{"type":"command","command":"say done"}]}],"SubagentStop":[{"hooks":[{"type":"command","command":"/home/casey/.arbor/bin/arbor-agent-event claude"}]}]}}"#;
+        let older = r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/home/cam/.arbor/bin/arbor-agent-event claude"},{"type":"command","command":"say done"}]}],"SubagentStop":[{"hooks":[{"type":"command","command":"/home/cam/.arbor/bin/arbor-agent-event claude"}]}]}}"#;
         let installed = claude_settings(Some(older), true).unwrap().expect("a change");
         assert_eq!(claude_commands(&installed, "Stop"), ["say done", CLAUDE_COMMAND]);
         assert!(!installed.contains("SubagentStop"), "an event only the reporter used goes");
@@ -1566,7 +1566,7 @@ trust_level = "trusted"
 
     #[test]
     fn codex_notify_runs_the_reporter_first_and_goes_back_to_what_it_was() {
-        let reporter = "/Users/casey/.arbor/bin/arbor-agent-event";
+        let reporter = "/Users/cam/.arbor/bin/arbor-agent-event";
         let installed = codex_config(Some(CODEX_CONFIG), reporter, true).unwrap().expect("a change");
         let document = installed.parse::<toml_edit::Document>().unwrap();
         let notify: Vec<&str> = document["notify"].as_array().unwrap().iter().filter_map(|value| value.as_str()).collect();
@@ -1593,16 +1593,16 @@ trust_level = "trusted"
         use base64::{engine::general_purpose::STANDARD, Engine as _};
         let body = STANDARD.encode("{}\n");
         let stdout = format!(
-            "H\t/home/casey\nF\tclaude\t/home/casey/.claude\t/home/casey/.claude/settings.json\tc123-3\n{body}\n.\n\
-             F\tcodex\t/home/casey/.codex\t/home/casey/.codex/config.toml\t-\n.\n"
+            "H\t/home/cam\nF\tclaude\t/home/cam/.claude\t/home/cam/.claude/settings.json\tc123-3\n{body}\n.\n\
+             F\tcodex\t/home/cam/.codex\t/home/cam/.codex/config.toml\t-\n.\n"
         );
         let read = parse_read(&stdout).unwrap();
-        assert_eq!(read.home, "/home/casey");
+        assert_eq!(read.home, "/home/cam");
         assert_eq!(read.files[0].content.as_deref(), Some("{}\n"));
         assert_eq!(read.files[0].sum.as_deref(), Some("c123-3"));
         assert_eq!(read.files[1].content, None);
         let short = stdout.replace("c123-3", "c123-4");
-        assert_eq!(parse_read(&short).unwrap_err(), "/home/casey/.claude/settings.json came back incomplete");
+        assert_eq!(parse_read(&short).unwrap_err(), "/home/cam/.claude/settings.json came back incomplete");
         assert_eq!(parse_read("F\tclaude\n").unwrap_err(), "The machine returned an unreadable settings list");
     }
 
@@ -1705,8 +1705,8 @@ trust_level = "trusted"
     #[test]
     fn the_agents_check_says_where_the_reporter_runs() {
         let status = parse_status(
-            "claude_path=/usr/local/bin/claude\nhome=/home/casey\nreporter=1\nreporter_home=claude\t1\t/home/casey/.claude\n\
-             reporter_home=codex\t0\t/home/casey/.agent-app/homes/codex proxy\nreporter_home=gemini\t1\t/x\n",
+            "claude_path=/usr/local/bin/claude\nhome=/home/cam\nreporter=1\nreporter_home=claude\t1\t/home/cam/.claude\n\
+             reporter_home=codex\t0\t/home/cam/.agent-app/homes/codex proxy\nreporter_home=gemini\t1\t/x\n",
         );
         assert!(status.installed());
         assert_eq!(
@@ -1809,8 +1809,8 @@ trust_level = "trusted"
                 agent_homes::tests::home("", agent_homes::AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
                 agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, true),
             ]);
-            fs::create_dir_all(home.join(".agent-app/homes/claude-proxy/projects")).unwrap();
-            fs::create_dir_all(home.join(".agent-app/homes/codex-proxy/sessions")).unwrap();
+            fs::create_dir_all(home.join(".agent-app/homes/claude-other/projects")).unwrap();
+            fs::create_dir_all(home.join(".agent-app/homes/codex-other/sessions")).unwrap();
             // A home whose settings link to the default's is edited once, through the link.
             fs::create_dir_all(home.join(".agent-app/homes/claude-linked/projects")).unwrap();
             std::os::unix::fs::symlink(&claude, home.join(".agent-app/homes/claude-linked/settings.json")).unwrap();
@@ -1822,8 +1822,8 @@ trust_level = "trusted"
                 [
                     ("~/.claude/settings.json", FileChange::Edit, false),
                     ("~/.codex/config.toml", FileChange::Edit, true),
-                    ("~/.agent-app/homes/claude-proxy/settings.json", FileChange::Create, false),
-                    ("~/.agent-app/homes/codex-proxy/config.toml", FileChange::Create, false),
+                    ("~/.agent-app/homes/claude-other/settings.json", FileChange::Create, false),
+                    ("~/.agent-app/homes/codex-other/config.toml", FileChange::Create, false),
                 ],
             );
             assert!(!home.join(".arbor").exists(), "a plan changes nothing");
@@ -1837,7 +1837,7 @@ trust_level = "trusted"
             assert!(fs::symlink_metadata(home.join(".agent-app/homes/claude-linked/settings.json")).unwrap().file_type().is_symlink());
             assert!(!claude.with_extension("json.arbor-backup").exists(), "the copy before goes into the list of changes");
             assert_eq!(fs::metadata(&codex).unwrap().permissions().mode() & 0o777, 0o600, "a file keeps its mode");
-            let created = home.join(".agent-app/homes/codex-proxy/config.toml");
+            let created = home.join(".agent-app/homes/codex-other/config.toml");
             assert_eq!(fs::read_to_string(&created).unwrap(), format!("notify = [\"{}\", \"codex\"]\n", reporter.display()));
             assert_eq!(fs::metadata(&created).unwrap().permissions().mode() & 0o777, 0o600);
 
@@ -1855,7 +1855,7 @@ trust_level = "trusted"
             assert!(removed.reporter_changed);
             assert_eq!(fs::read_to_string(&claude).unwrap(), CLAUDE_SETTINGS);
             assert_eq!(fs::read_to_string(&codex).unwrap(), CODEX_CONFIG);
-            assert_eq!(fs::read_to_string(home.join(".agent-app/homes/claude-proxy/settings.json")).unwrap(), "{}\n");
+            assert_eq!(fs::read_to_string(home.join(".agent-app/homes/claude-other/settings.json")).unwrap(), "{}\n");
             assert_eq!(fs::read_to_string(&created).unwrap(), "");
             assert!(!home.join(".arbor/bin").exists() && !home.join(".arbor/agent-events").exists(), "the reporter and its events go too");
             // Setting it up and taking it away are each a change on the list, which can undo them.

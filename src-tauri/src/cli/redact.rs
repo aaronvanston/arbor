@@ -72,7 +72,7 @@ mod tests {
         let answer = json!({
             "managementSecretKey": "abc123",
             "apiKeys": ["first-key", "second-key"],
-            "clients": [{ "key": "c3a5f1e2", "name": "casey-mbp" }],
+            "clients": [{ "key": "c3a5f1e2", "name": "cam-mbp" }],
             "access_token": "eyJhbGciOi",
             "inputTokens": 1200,
             "totalTokens": 3400,
@@ -84,7 +84,7 @@ mod tests {
             json!({
                 "managementSecretKey": HIDDEN,
                 "apiKeys": [HIDDEN, HIDDEN],
-                "clients": [{ "key": HIDDEN, "name": "casey-mbp" }],
+                "clients": [{ "key": HIDDEN, "name": "cam-mbp" }],
                 "access_token": HIDDEN,
                 "inputTokens": 1200,
                 "totalTokens": 3400,

@@ -4984,8 +4984,8 @@ mod tests {
             .execute(
                 "INSERT INTO usage_session_transcripts (session_id, machine, agent, file_size, read_at_ms, home, cwd, repo_root,
                      main_repo, branch, commit_hash, repository_url, title, title_source, pull_requests, lines_added, lines_removed, compactions)
-                 VALUES (?1, 'mini', 'claude', 52000, 5, '/Users/casey', '/Users/casey/src/arbor', '/Users/casey/src/arbor',
-                     '/Users/casey/src/arbor', 'main', '', '', 'Fix the login loop', 'ai', '[]', 210, 35, ?2)",
+                 VALUES (?1, 'mini', 'claude', 52000, 5, '/Users/cam', '/Users/cam/src/arbor', '/Users/cam/src/arbor',
+                     '/Users/cam/src/arbor', 'main', '', '', 'Fix the login loop', 'ai', '[]', 210, 35, ?2)",
                 rusqlite::params![
                     CLAUDE_MAIN,
                     r#"[{"atMs":1,"trigger":"auto","preTokens":360000,"postTokens":80000,"durationMs":40000},
@@ -4997,7 +4997,7 @@ mod tests {
         assert_eq!(page.items[0].root.compactions, 2, "compactions the requests didn't show still count");
         let json = serde_json::to_value(&page.items[0]).unwrap();
         assert_eq!(json["transcript"]["title"], "Fix the login loop");
-        assert_eq!(json["transcript"]["mainRepo"], "/Users/casey/src/arbor");
+        assert_eq!(json["transcript"]["mainRepo"], "/Users/cam/src/arbor");
         assert_eq!(json["transcript"]["linesAdded"], 210);
         assert_eq!(json["transcript"]["compactions"][1]["trigger"], "manual");
         assert!(json["transcript"]["compactions"][1]["preTokens"].is_null());
@@ -5050,8 +5050,8 @@ mod tests {
             [
                 CLAUDE_MAIN,
                 "Mac Mini",
-                "/Users/casey/.t3/worktrees/arbor/login-loop",
-                "/Users/casey/src/arbor",
+                "/Users/cam/.agent-app/worktrees/arbor/login-loop",
+                "/Users/cam/src/arbor",
                 "fix/login-loop",
                 "",
                 "Fix the login redirect loop",
@@ -5060,8 +5060,8 @@ mod tests {
             [
                 CODEX_ROOT,
                 "studio",
-                "/Users/casey/src/proxy",
-                "/Users/casey/src/proxy",
+                "/Users/cam/src/proxy",
+                "/Users/cam/src/proxy",
                 "main",
                 "git@github.com:acme/proxy.git",
                 "Rate limiter for the proxy",
@@ -5070,8 +5070,8 @@ mod tests {
             [
                 SETTINGS,
                 "Mac Mini",
-                "/Users/casey/src/arbor",
-                "/Users/casey/src/arbor",
+                "/Users/cam/src/arbor",
+                "/Users/cam/src/arbor",
                 "main",
                 "",
                 "Tidy the settings page",
@@ -5082,7 +5082,7 @@ mod tests {
                 .execute(
                     "INSERT INTO usage_session_transcripts (session_id, machine, agent, file_size, read_at_ms, home, cwd, repo_root,
                          main_repo, branch, commit_hash, repository_url, title, title_source, pull_requests, lines_added, lines_removed, compactions)
-                     VALUES (?1, ?2, 'claude', 1, 1, '/Users/casey', ?3, ?3, ?4, ?5, '', ?6, ?7, 'ai', ?8, NULL, NULL, '[]')",
+                     VALUES (?1, ?2, 'claude', 1, 1, '/Users/cam', ?3, ?3, ?4, ?5, '', ?6, ?7, 'ai', ?8, NULL, NULL, '[]')",
                     rusqlite::params![id, machine, cwd, main_repo, branch, repository_url, title, pull_requests],
                 )
                 .unwrap();
@@ -5214,34 +5214,34 @@ mod tests {
             (
                 CLAUDE_MAIN,
                 "claude",
-                "/Users/casey/.t3/worktrees/arbor/login-loop",
-                "/Users/casey/src/arbor",
+                "/Users/cam/.agent-app/worktrees/arbor/login-loop",
+                "/Users/cam/src/arbor",
                 "fix/login-loop",
                 "",
                 r#"[{"number":412,"url":"https://github.com/acme/arbor/pull/412","repository":"acme/arbor"}]"#,
                 Some((210, 35)),
             ),
             // Codex carries on with the same branch, and its transcripts don't record pull requests.
-            ("CODEX", "codex", "/Users/casey/src/arbor", "/Users/casey/src/arbor", "fix/login-loop", "git@github.com:acme/arbor.git", "[]", None),
+            ("CODEX", "codex", "/Users/cam/src/arbor", "/Users/cam/src/arbor", "fix/login-loop", "git@github.com:acme/arbor.git", "[]", None),
             (
                 SETTINGS,
                 "claude",
-                "/Users/casey/src/arbor",
-                "/Users/casey/src/arbor",
+                "/Users/cam/src/arbor",
+                "/Users/cam/src/arbor",
                 "main",
                 "",
                 r#"[{"number":413,"url":"https://github.com/acme/arbor/pull/413","repository":"acme/arbor"},
                     {"number":414,"url":"https://github.com/acme/arbor/pull/414","repository":""}]"#,
                 Some((40, 10)),
             ),
-            (PROXY, "codex", "/Users/casey/src/proxy", "/Users/casey/src/proxy", "main", "git@github.com:acme/proxy.git", "[]", None),
+            (PROXY, "codex", "/Users/cam/src/proxy", "/Users/cam/src/proxy", "main", "git@github.com:acme/proxy.git", "[]", None),
         ] {
             let id = if id == "CODEX" { CODEX_ROOT } else { id };
             connection
                 .execute(
                     "INSERT INTO usage_session_transcripts (session_id, machine, agent, file_size, read_at_ms, home, cwd, repo_root,
                          main_repo, branch, commit_hash, repository_url, title, title_source, pull_requests, lines_added, lines_removed, compactions)
-                     VALUES (?1, 'Mac Mini', ?2, 1, 1, '/Users/casey', ?3, ?3, ?4, ?5, '', ?6, '', '', ?7, ?8, ?9, '[]')",
+                     VALUES (?1, 'Mac Mini', ?2, 1, 1, '/Users/cam', ?3, ?3, ?4, ?5, '', ?6, '', '', ?7, ?8, ?9, '[]')",
                     rusqlite::params![
                         id,
                         agent,
@@ -5393,21 +5393,21 @@ mod tests {
         ]);
         let link = |number: u64| format!(r#"{{"number":{number},"url":"https://github.com/acme/arbor/pull/{number}","repository":"acme/arbor"}}"#);
         for (id, cwd, branch, repository_url, pull_requests) in [
-            (CLAUDE_MAIN, "/Users/casey/.t3/worktrees/arbor/login-loop", "fix/login-loop", "", format!("[{}]", link(412))),
+            (CLAUDE_MAIN, "/Users/cam/.agent-app/worktrees/arbor/login-loop", "fix/login-loop", "", format!("[{}]", link(412))),
             // On the merged one's branch without naming it: shared with the closed one from the same branch.
-            (CODEX_ROOT, "/Users/casey/src/arbor", "fix/login-loop", "git@github.com:acme/arbor.git", "[]".to_string()),
-            (REOPENED, "/Users/casey/src/arbor", "fix/login-loop", "", format!("[{}]", link(415))),
+            (CODEX_ROOT, "/Users/cam/src/arbor", "fix/login-loop", "git@github.com:acme/arbor.git", "[]".to_string()),
+            (REOPENED, "/Users/cam/src/arbor", "fix/login-loop", "", format!("[{}]", link(415))),
             // Shared between the merged one and one merged the week before.
-            (EXEC, "/Users/casey/src/arbor", "fix/other", "", format!("[{},{}]", link(412), link(416))),
-            (SETTINGS, "/Users/casey/src/arbor", "main", "", format!("[{},{}]", link(413), link(414))),
+            (EXEC, "/Users/cam/src/arbor", "fix/other", "", format!("[{},{}]", link(412), link(416))),
+            (SETTINGS, "/Users/cam/src/arbor", "main", "", format!("[{},{}]", link(413), link(414))),
             // The same branch name in another project.
-            (PROXY, "/Users/casey/src/proxy", "fix/login-loop", "git@github.com:acme/proxy.git", "[]".to_string()),
+            (PROXY, "/Users/cam/src/proxy", "fix/login-loop", "git@github.com:acme/proxy.git", "[]".to_string()),
         ] {
             connection
                 .execute(
                     "INSERT INTO usage_session_transcripts (session_id, machine, agent, file_size, read_at_ms, home, cwd, repo_root,
                          main_repo, branch, commit_hash, repository_url, title, title_source, pull_requests, lines_added, lines_removed, compactions)
-                     VALUES (?1, 'Mac Mini', 'claude', 1, 1, '/Users/casey', ?2, ?2, '/Users/casey/src/' || ?3, ?4, '', ?5, '', '', ?6, 30, 5, '[]')",
+                     VALUES (?1, 'Mac Mini', 'claude', 1, 1, '/Users/cam', ?2, ?2, '/Users/cam/src/' || ?3, ?4, '', ?5, '', '', ?6, 30, 5, '[]')",
                     rusqlite::params![id, cwd, if id == PROXY { "proxy" } else { "arbor" }, branch, repository_url, pull_requests],
                 )
                 .unwrap();
@@ -5513,7 +5513,7 @@ mod tests {
                 .execute(
                     "INSERT INTO usage_session_transcripts (session_id, machine, agent, file_size, read_at_ms, home, cwd, repo_root,
                          main_repo, branch, commit_hash, repository_url, title, title_source, pull_requests, lines_added, lines_removed, compactions)
-                     VALUES (?1, ?2, 'claude', 1, 1, '/Users/casey', '/Users/casey/src/arbor', '', '', 'main', '', '', '', '', '[]', NULL, NULL, '[]')",
+                     VALUES (?1, ?2, 'claude', 1, 1, '/Users/cam', '/Users/cam/src/arbor', '', '', 'main', '', '', '', '', '[]', NULL, NULL, '[]')",
                     rusqlite::params![id, machine],
                 )
                 .unwrap();
@@ -5590,7 +5590,7 @@ mod tests {
             .execute(
                 "INSERT INTO usage_session_transcripts (session_id, machine, agent, file_size, read_at_ms, home, cwd, repo_root,
                      main_repo, branch, commit_hash, repository_url, title, title_source, pull_requests, lines_added, lines_removed, compactions)
-                 VALUES (?1, 'mini', 'claude', 52000, 5, '/Users/casey', '', '', '', '', '', '', '', '', '[]', 0, 0, ?2)",
+                 VALUES (?1, 'mini', 'claude', 52000, 5, '/Users/cam', '', '', '', '', '', '', '', '', '[]', 0, 0, ?2)",
                 rusqlite::params![CLAUDE_MAIN, format!(r#"[{{"atMs":{},"trigger":"manual"}}]"#, now_ms - 30 * MINUTE)],
             )
             .unwrap();

@@ -1543,7 +1543,7 @@ mod tests {
             ("  git@github.com:acme/arbor  ", Some("acme/arbor")),
             ("https://gitlab.com/group/sub/site", None),
             ("file:///srv/arbor", None),
-            ("/Users/casey/src/arbor", None),
+            ("/Users/cam/src/arbor", None),
             ("", None),
         ] {
             assert_eq!(repository_name(url).as_deref(), name, "{url}");
@@ -1554,7 +1554,7 @@ mod tests {
     fn projects_are_named_like_the_sessions_page_names_them() {
         // The same cases as usageSessions.test.ts, so the project filter matches the list.
         let transcript = |cwd: &str, main_repo: &str, repository_url: &str, pull_request: Option<&str>| SessionTranscript {
-            home: "/Users/casey".into(),
+            home: "/Users/cam".into(),
             cwd: cwd.into(),
             repo_root: if main_repo.is_empty() { String::new() } else { cwd.into() },
             main_repo: main_repo.into(),
@@ -1566,11 +1566,11 @@ mod tests {
         };
         for (transcript, project) in [
             (transcript("", "", "git@github.com:acme/arbor.git", None), None),
-            (transcript("/Users/casey/src/arbor/src", "/Users/casey/src/arbor", "git@github.com:acme/arbor-app.git", None), Some("arbor-app")),
-            (transcript("/Users/casey/.t3/worktrees/arbor/login", "/Users/casey/src/arbor", "", None), Some("arbor")),
-            (transcript("/Users/casey/src/site", "/Users/casey/src/site", "https://gitlab.com/group/sub/site", Some("acme/website")), Some("website")),
+            (transcript("/Users/cam/src/arbor/src", "/Users/cam/src/arbor", "git@github.com:acme/arbor-app.git", None), Some("arbor-app")),
+            (transcript("/Users/cam/.agent-app/worktrees/arbor/login", "/Users/cam/src/arbor", "", None), Some("arbor")),
+            (transcript("/Users/cam/src/site", "/Users/cam/src/site", "https://gitlab.com/group/sub/site", Some("acme/website")), Some("website")),
             (transcript("/srv/mirror.git", "", "", None), Some("mirror")),
-            (transcript("/Users/casey/scratch", "", "", None), Some("scratch")),
+            (transcript("/Users/cam/scratch", "", "", None), Some("scratch")),
             (transcript("/", "", "", None), Some("/")),
         ] {
             assert_eq!(transcript.project().as_deref(), project, "{}", transcript.cwd);
@@ -1590,33 +1590,33 @@ mod tests {
     #[test]
     fn a_scan_reads_each_transcript_into_its_session() {
         let output = format!(
-            "H\t/home/casey\n\
+            "H\t/home/cam\n\
              S\tclaude\t{CLAUDE_ID}\t52000\n\
              R\t{{\"type\":\"pr-link\",\"sessionId\":\"{CLAUDE_ID}\",\"prNumber\":412,\"prUrl\":\"https://github.com/acme/arbor/pull/412\",\"prRepository\":\"acme/arbor\",\"timestamp\":\"2026-09-24T01:00:00.000Z\"}}\n\
              K\t2026-09-24T01:10:00.000Z\tauto\t364412\t74190\t41250\n\
              K\t2026-09-24T01:40:00.000Z\tmanual\t120000\t\t\n\
              R\t{{\"type\":\"ai-title\",\"aiTitle\":\"Fix the \\\"login\\\" loop\",\"sessionId\":\"{CLAUDE_ID}\"}}\n\
              R\t{{\"type\":\"cost-state\",\"sessionId\":\"{CLAUDE_ID}\",\"totalCostUSD\":3.2,\"totalLinesAdded\":210,\"totalLinesRemoved\":35}}\n\
-             P\t\"cwd\":\"/home/casey/src/arbor-wt\",\"sessionId\":\"{CLAUDE_ID}\",\"version\":\"2.1.280\",\"gitBranch\":\"fix/login\"\n\
+             P\t\"cwd\":\"/home/cam/src/arbor-wt\",\"sessionId\":\"{CLAUDE_ID}\",\"version\":\"2.1.280\",\"gitBranch\":\"fix/login\"\n\
              S\tcodex\t{CODEX_ID}\t9000\n\
-             M\t\"cwd\":\"/home/casey/src/api\"\n\
+             M\t\"cwd\":\"/home/cam/src/api\"\n\
              M\t\"commit_hash\":\"1a2b3c4d5e6f\"\n\
              M\t\"repository_url\":\"git@github.com:acme/api.git\"\n\
              C\t2026-09-24T02:00:00.000Z\n\
              N\t{{\"id\":\"{CODEX_ID}\",\"thread_name\":\"Old name\",\"updated_at\":\"2026-09-24T01:00:00Z\"}}\n\
              N\t{{\"id\":\"{CODEX_ID}\",\"thread_name\":\"Rate limiter\",\"updated_at\":\"2026-09-24T03:00:00Z\"}}\n\
-             G\t/home/casey/src/api\t/home/casey/src/api\t\tref: refs/heads/main\n\
-             G\t/home/casey/src/arbor-wt\t/home/casey/src/arbor-wt\t/home/casey/src/arbor/.git/worktrees/arbor-wt/../..\tref: refs/heads/fix/login\n\
+             G\t/home/cam/src/api\t/home/cam/src/api\t\tref: refs/heads/main\n\
+             G\t/home/cam/src/arbor-wt\t/home/cam/src/arbor-wt\t/home/cam/src/arbor/.git/worktrees/arbor-wt/../..\tref: refs/heads/fix/login\n\
              G\t/tmp/gone\n\
              G\t/opt/plain\t\t\t\n"
         );
         let scan = parse_scan(&output);
-        assert_eq!(scan.home, "/home/casey");
+        assert_eq!(scan.home, "/home/cam");
         assert_eq!(scan.files.len(), 2);
         let claude = &scan.files[0];
         assert_eq!(claude.size, 52_000);
         assert_eq!(claude.ai_title, "Fix the \"login\" loop");
-        assert_eq!(claude.cwd, "/home/casey/src/arbor-wt");
+        assert_eq!(claude.cwd, "/home/cam/src/arbor-wt");
         assert_eq!(claude.branch, "fix/login");
         assert_eq!(claude.lines, Some((210, 35)));
         assert_eq!(
@@ -1631,16 +1631,16 @@ mod tests {
             ]
         );
         let codex = &scan.files[1];
-        assert_eq!((codex.cwd.as_str(), codex.commit_hash.as_str()), ("/home/casey/src/api", "1a2b3c4d5e6f"));
+        assert_eq!((codex.cwd.as_str(), codex.commit_hash.as_str()), ("/home/cam/src/api", "1a2b3c4d5e6f"));
         assert_eq!(codex.repository_url, "git@github.com:acme/api.git");
         assert_eq!(codex.compactions.len(), 1);
         assert_eq!(scan.titles.get(CODEX_ID).map(String::as_str), Some("Rate limiter"));
         assert_eq!(scan.places["/tmp/gone"], FolderPlace::Gone);
         assert_eq!(scan.places["/opt/plain"], FolderPlace::Outside);
-        let FolderPlace::Checkout { root, common_dir, head } = &scan.places["/home/casey/src/arbor-wt"] else {
+        let FolderPlace::Checkout { root, common_dir, head } = &scan.places["/home/cam/src/arbor-wt"] else {
             panic!("the worktree is a checkout");
         };
-        assert_eq!(main_checkout(root, common_dir), "/home/casey/src/arbor");
+        assert_eq!(main_checkout(root, common_dir), "/home/cam/src/arbor");
         assert_eq!(head_branch(head), Some("fix/login"));
     }
 
@@ -1759,21 +1759,21 @@ mod tests {
         let mut connection = database();
         let now = 100 * 86_400_000;
         let mut scan = scan_of(vec![claude_read(52_000)]);
-        scan.agent_homes.insert(CLAUDE_ID.into(), "/home/casey/.agent-app/homes/claude-proxy".into());
+        scan.agent_homes.insert(CLAUDE_ID.into(), "/home/cam/.agent-app/homes/claude-other".into());
         store_scan(&mut connection, "mini", &scan, now).unwrap();
         let home = |connection: &Connection| -> String {
             connection.query_row("SELECT agent_home FROM usage_session_transcripts WHERE session_id = ?1", params![CLAUDE_ID], |row| row.get(0)).unwrap()
         };
-        assert_eq!(home(&connection), "~/.agent-app/homes/claude-proxy");
+        assert_eq!(home(&connection), "~/.agent-app/homes/claude-other");
         // A later scan that doesn't read it again still moves it, and another machine can't.
         let mut moved = scan_of(Vec::new());
-        moved.agent_homes.insert(CLAUDE_ID.into(), "/home/casey/.claude".into());
+        moved.agent_homes.insert(CLAUDE_ID.into(), "/home/cam/.claude".into());
         store_scan(&mut connection, "cedar", &moved, now + 1).unwrap();
-        assert_eq!(home(&connection), "~/.agent-app/homes/claude-proxy");
+        assert_eq!(home(&connection), "~/.agent-app/homes/claude-other");
         store_scan(&mut connection, "mini", &moved, now + 1).unwrap();
         assert_eq!(home(&connection), "~/.claude");
-        assert_eq!(tilde("/opt/claude", "/home/casey"), "/opt/claude");
-        assert_eq!(tilde("/home/caseyr/.claude", "/home/casey"), "/home/caseyr/.claude");
+        assert_eq!(tilde("/opt/claude", "/home/cam"), "/opt/claude");
+        assert_eq!(tilde("/home/camr/.claude", "/home/cam"), "/home/camr/.claude");
     }
 
     #[test]
@@ -1905,7 +1905,7 @@ mod tests {
         assert_eq!(main_checkout("/src/app-wt", "/src/app/.git/worktrees/app-wt/../.."), "/src/app");
         assert_eq!(main_checkout("/src/app-wt", "/src/app/.git"), "/src/app");
         assert_eq!(main_checkout("/src/wt", "/srv/app.git/worktrees/wt/../.."), "/srv/app.git");
-        assert_eq!(head_branch("ref: refs/heads/t3code/fold-in"), Some("t3code/fold-in"));
+        assert_eq!(head_branch("ref: refs/heads/codex/fold-in"), Some("codex/fold-in"));
         assert_eq!(head_branch("1a2b3c4d5e6f7a8b9c0d"), None);
     }
 
@@ -1914,7 +1914,7 @@ mod tests {
     }
 
     fn scan_of(files: Vec<TranscriptRead>) -> ScanOutput {
-        ScanOutput { home: "/home/casey".into(), files, ..ScanOutput::default() }
+        ScanOutput { home: "/home/cam".into(), files, ..ScanOutput::default() }
     }
 
     fn claude_read(size: u64) -> TranscriptRead {
@@ -1922,7 +1922,7 @@ mod tests {
             agent: TranscriptAgent::Claude,
             session_id: CLAUDE_ID.into(),
             size,
-            cwd: "/home/casey/src/arbor-wt".into(),
+            cwd: "/home/cam/src/arbor-wt".into(),
             branch: "fix/login".into(),
             ai_title: "Fix the login loop".into(),
             ..TranscriptRead::default()
@@ -1977,10 +1977,10 @@ mod tests {
         let now = 1_000_000;
         let mut first = scan_of(vec![claude_read(52_000)]);
         first.places.insert(
-            "/home/casey/src/arbor-wt".into(),
+            "/home/cam/src/arbor-wt".into(),
             FolderPlace::Checkout {
-                root: "/home/casey/src/arbor-wt".into(),
-                common_dir: "/home/casey/src/arbor/.git/worktrees/arbor-wt/../..".into(),
+                root: "/home/cam/src/arbor-wt".into(),
+                common_dir: "/home/cam/src/arbor/.git/worktrees/arbor-wt/../..".into(),
                 head: "ref: refs/heads/fix/login".into(),
             },
         );
@@ -1991,15 +1991,15 @@ mod tests {
         read.custom_title = "Login loop".into();
         read.compactions.push(TranscriptCompaction { at_ms: now, trigger: "manual".into(), pre_tokens: Some(200_000), post_tokens: None, duration_ms: None });
         let mut second = scan_of(vec![read]);
-        second.places.insert("/home/casey/src/arbor-wt".into(), FolderPlace::Gone);
+        second.places.insert("/home/cam/src/arbor-wt".into(), FolderPlace::Gone);
         assert_eq!(store_scan(&mut connection, "mini", &second, now + 1).unwrap(), 1);
 
         let stored = load_session_transcripts(&connection, &[CLAUDE_ID]).unwrap().remove(CLAUDE_ID).unwrap();
-        assert_eq!((stored.repo_root.as_str(), stored.main_repo.as_str()), ("/home/casey/src/arbor-wt", "/home/casey/src/arbor"));
+        assert_eq!((stored.repo_root.as_str(), stored.main_repo.as_str()), ("/home/cam/src/arbor-wt", "/home/cam/src/arbor"));
         assert_eq!((stored.title.as_str(), stored.title_source.as_str()), ("Login loop", "custom"));
         assert_eq!(stored.branch, "fix/login");
         assert_eq!(stored.compactions.len(), 1);
-        assert_eq!((stored.machine.as_str(), stored.home.as_str(), stored.read_at_ms), ("mini", "/home/casey", now + 1));
+        assert_eq!((stored.machine.as_str(), stored.home.as_str(), stored.read_at_ms), ("mini", "/home/cam", now + 1));
 
         // A transcript that grew without saying anything new isn't counted as a change.
         assert_eq!(store_scan(&mut connection, "mini", &second, now + 2).unwrap(), 0);
@@ -2170,7 +2170,7 @@ mod tests {
                 format!(r#"{{"timestamp":"2026-09-24T02:36:00.000Z","ordinal":9,"type":"response_item","payload":{{"type":"web_search_call","id":"ws_1","status":"completed","action":{{"type":"search","query":"{SECRET}"}}}}}}"#),
                 format!(r#"{{"timestamp":"2026-09-24T02:37:00.000Z","ordinal":10,"type":"response_item","payload":{{"type":"function_call","id":null,"name":"_create_pull_request","namespace":"mcp__codex_apps__github","arguments":"{{}}","call_id":"call_5"}}}}"#),
                 // Skills a person picked, beside what they typed and a mention that isn't a skill.
-                format!(r#"{{"timestamp":"2026-09-24T02:38:00.000Z","ordinal":11,"type":"event_msg","payload":{{"type":"item_completed","thread_id":"{id}","turn_id":"t2","item":{{"type":"UserMessage","id":"um_2","content":[{{"type":"text","text":"{SECRET} $pdf","text_elements":[]}},{{"type":"skill","name":"pdf","path":"/Users/casey/.agents/skills/pdf/SKILL.md"}},{{"type":"mention","name":"github","path":"app://github"}},{{"type":"mention","name":"release-notes","path":"skill://release-notes"}}]}}}}}}"#),
+                format!(r#"{{"timestamp":"2026-09-24T02:38:00.000Z","ordinal":11,"type":"event_msg","payload":{{"type":"item_completed","thread_id":"{id}","turn_id":"t2","item":{{"type":"UserMessage","id":"um_2","content":[{{"type":"text","text":"{SECRET} $pdf","text_elements":[]}},{{"type":"skill","name":"pdf","path":"/Users/cam/.agents/skills/pdf/SKILL.md"}},{{"type":"mention","name":"github","path":"app://github"}},{{"type":"mention","name":"release-notes","path":"skill://release-notes"}}]}}}}}}"#),
                 // The skill's instructions as they went to the model, and a skill quoted in a call's output.
                 format!(r#"{{"timestamp":"2026-09-24T02:38:01.000Z","ordinal":12,"type":"response_item","payload":{{"type":"message","role":"user","content":[{{"type":"input_text","text":"<skill>\n<name>{SECRET}</name>\n</skill>"}}],"internal_chat_message_metadata_passthrough":{{"content_item_kinds":["skills.selected_skill_instructions"]}}}}}}"#),
                 format!(r#"{{"timestamp":"2026-09-24T02:38:02.000Z","ordinal":13,"type":"response_item","payload":{{"type":"function_call_output","call_id":"call_6","output":"{{\"type\":\"skill\",\"name\":\"{SECRET}\"}}"}}}}"#),
@@ -2219,7 +2219,7 @@ mod tests {
             fs::write(home.join("src/api/.git/HEAD"), "ref: refs/heads/rate-limits\n").unwrap();
             fs::create_dir_all(&api).unwrap();
 
-            let project = home.join(".claude/projects/-home-casey-src-arbor-wt");
+            let project = home.join(".claude/projects/-home-cam-src-arbor-wt");
             write(&project.join(format!("{CLAUDE_ID}.jsonl")), &claude_transcript(CLAUDE_ID, &worktree));
             // Subagents' transcripts sit a level down and aren't sessions of their own here, but their calls count.
             let subagents = project.join(CLAUDE_ID).join("subagents");
@@ -2244,13 +2244,13 @@ mod tests {
                 agent_homes::tests::home("", agent_homes::AgentHomeKind::Codex, "~/.agent-app/homes/*", true, false),
             ]);
             let homes = home.join(".agent-app/homes");
-            write(&homes.join(format!("claude-proxy/projects/-home-casey-src-api/{proxied_claude}.jsonl")), &claude_transcript(proxied_claude, &api));
+            write(&homes.join(format!("claude-other/projects/-home-cam-src-api/{proxied_claude}.jsonl")), &claude_transcript(proxied_claude, &api));
             write(
-                &homes.join(format!("codex-proxy/sessions/2026/09/24/rollout-2026-09-24T04-00-00-{proxied_codex}.jsonl")),
+                &homes.join(format!("codex-other/sessions/2026/09/24/rollout-2026-09-24T04-00-00-{proxied_codex}.jsonl")),
                 &codex_rollout(proxied_codex, &api),
             );
             // One Codex has closed, and one still has open with its writes in the WAL.
-            drop(thread_database(&homes.join("codex-proxy/state_5.sqlite"), &[(proxied_codex, Some("Queue worker"), Some("feat/queue"))]));
+            drop(thread_database(&homes.join("codex-other/state_5.sqlite"), &[(proxied_codex, Some("Queue worker"), Some("feat/queue"))]));
             let open = thread_database(&home.join(".codex/state_5.sqlite"), &[(CODEX_ID, None, Some("rate-limits")), (unseen, Some(SECRET), Some(SECRET))]);
             write(
                 &home.join(".codex/session_index.jsonl"),
@@ -2269,8 +2269,8 @@ mod tests {
             let agent_home = |id: &str| scan.agent_homes.get(id).map(|path| tilde(path, &scan.home));
             assert_eq!(agent_home(CLAUDE_ID).as_deref(), Some("~/.claude"));
             assert_eq!(agent_home(CODEX_ID).as_deref(), Some("~/.codex"));
-            assert_eq!(agent_home(proxied_claude).as_deref(), Some("~/.agent-app/homes/claude-proxy"));
-            assert_eq!(agent_home(proxied_codex).as_deref(), Some("~/.agent-app/homes/codex-proxy"));
+            assert_eq!(agent_home(proxied_claude).as_deref(), Some("~/.agent-app/homes/claude-other"));
+            assert_eq!(agent_home(proxied_codex).as_deref(), Some("~/.agent-app/homes/codex-other"));
             assert_eq!(scan.agent_homes.len(), 4, "only the sessions asked for");
             for id in [proxied_claude, proxied_codex] {
                 let file = scan.files.iter().find(|file| file.session_id == id).expect("found in T3 Code's home");

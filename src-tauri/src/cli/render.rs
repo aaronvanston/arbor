@@ -427,17 +427,17 @@ mod tests {
 
     #[test]
     fn a_pool_session_says_where_it_went_that_it_waits_or_why_it_didnt_start() {
-        let started = json!({ "state": "handedOff", "used": "orca", "machine": "cedar-02", "folder": "/home/casey/storefront", "handle": { "worktree": "arbor-5e1f0a2b" } });
-        assert_eq!(run_started(&started).unwrap(), "Started in Orca on cedar-02: /home/casey/storefront, in its own worktree arbor-5e1f0a2b.");
+        let started = json!({ "state": "handedOff", "used": "orca", "machine": "cedar-02", "folder": "/home/cam/storefront", "handle": { "worktree": "arbor-5e1f0a2b" } });
+        assert_eq!(run_started(&started).unwrap(), "Started in Orca on cedar-02: /home/cam/storefront, in its own worktree arbor-5e1f0a2b.");
         assert!(run_started(&json!({ "state": "queued", "reason": "noRoom" })).unwrap().starts_with("Waiting in the pool's queue: every member was busy"));
         let refused = json!({ "state": "refused", "reason": "noFolder", "detail": "cedar-02, ci-01" });
         assert_eq!(run_started(&refused).unwrap_err(), "The session didn't start: no member that could take it has the folder (looked on cedar-02, ci-01).");
         let runs = json!([
-            { "state": "handedOff", "title": "Fix it", "pool": "p1", "machine": "cedar-02", "folder": "/home/casey/storefront", "repo": "github.com/acme/storefront", "queuedAtMs": 0 },
+            { "state": "handedOff", "title": "Fix it", "pool": "p1", "machine": "cedar-02", "folder": "/home/cam/storefront", "repo": "github.com/acme/storefront", "queuedAtMs": 0 },
             { "state": "refused", "title": "Elsewhere", "pool": "p2", "machine": null, "folder": "", "repo": "github.com/acme/uploads", "queuedAtMs": 0 },
         ]);
         let all = recent_runs(&runs, None);
-        assert!(all.contains("/home/casey/storefront") && all.contains("github.com/acme/uploads"), "{all}");
+        assert!(all.contains("/home/cam/storefront") && all.contains("github.com/acme/uploads"), "{all}");
         assert!(!recent_runs(&runs, Some("p1")).contains("Elsewhere"));
         assert!(recent_runs(&json!([]), None).starts_with("No sessions"));
         let request = json!({ "harness": "orca", "setup": "claude", "repo": "github.com/acme/storefront", "worktree": true, "prompt": "secret plan" });
@@ -470,16 +470,16 @@ mod tests {
     #[test]
     fn machines_and_the_core_read_plainly() {
         let snapshot = json!({ "machines": [
-            { "machine": "casey-mbp", "local": true, "status": "healthy", "score": 98, "lastOkAt": null, "error": null },
+            { "machine": "cam-mbp", "local": true, "status": "healthy", "score": 98, "lastOkAt": null, "error": null },
         ]});
-        assert!(machines(&snapshot).contains("casey-mbp (this Mac)  healthy"));
+        assert!(machines(&snapshot).contains("cam-mbp (this Mac)  healthy"));
         assert_eq!(machines(&json!({ "machines": [] })), "No machines yet. Add them in Arbor's Settings › Machines.");
         let pools_out = pools(&json!({
             "pools": [{ "id": "p1", "name": "Builds", "whenFull": "queue", "queueTimeoutMin": 30, "members": [
-                { "machine": "casey-mbp", "weight": "prefer" }, { "machine": "ci-01", "weight": "less" },
+                { "machine": "cam-mbp", "weight": "prefer" }, { "machine": "ci-01", "weight": "less" },
             ]}],
             "previews": [{ "pool": "p1", "likely": null, "members": [
-                { "machine": "casey-mbp", "kind": "agentsFull", "share": 0.0 }, { "machine": "ci-01", "kind": "cpuHigh", "share": 0.0 },
+                { "machine": "cam-mbp", "kind": "agentsFull", "share": 0.0 }, { "machine": "ci-01", "kind": "cpuHigh", "share": 0.0 },
             ]}],
         }));
         assert!(pools_out.starts_with("Builds (no member has room; a run would wait up to 30 min)"));

@@ -26,7 +26,7 @@ const machine = (homes: SetupHome[], fields: Partial<SetupMachine> = {}): SetupM
 const sha = (seed: string) => seed.repeat(64).slice(0, 64);
 const repoFile = (path: string, sum: string, ck = 'c1-120'): SetupRepoFile => ({ path, kind: syncKind(path)!, sum, ck, size: 120 });
 const repo = (files: SetupRepoFile[], skills: SetupRepoSkill[] = []): SetupRepo => ({
-  path: '/Users/casey/src/agent-setup', branch: 'main', head: { sha: sha('ab'), subject: 'Start', atMs: 1_000 },
+  path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha: sha('ab'), subject: 'Start', atMs: 1_000 },
   upstream: null, uncommitted: [], files, skills, ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
     plugins: [], codexPlugins: [],
 });
@@ -69,7 +69,7 @@ describe('what the repo syncs', () => {
   });
 
   it('only takes paths in the home, with nothing that climbs out of it', () => {
-    expect(syncKind('/Users/casey/.claude/CLAUDE.md')).toBeNull();
+    expect(syncKind('/Users/cam/.claude/CLAUDE.md')).toBeNull();
     expect(syncKind('.claude/CLAUDE.md')).toBeNull();
     expect(syncKind('~/CLAUDE.md')).toBeNull();
     expect(syncKind('~/.claude/rules/../../.ssh/config.md')).toBeNull();
@@ -99,7 +99,7 @@ const ci01 = machine([
     item('setting', 'model', 's1', { path: null, value: 'opus' }),
   ]),
   // Only the default homes are synced.
-  home('claude', '~/.agent-app/homes/claude-proxy', [item('instructions', '~/.agent-app/homes/claude-proxy/CLAUDE.md', sha('2'))]),
+  home('claude', '~/.agent-app/homes/claude-other', [item('instructions', '~/.agent-app/homes/claude-other/CLAUDE.md', sha('2'))]),
 ]);
 const plan = syncPlan(synced, ci01);
 

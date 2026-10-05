@@ -656,7 +656,7 @@ mod tests {
     #[test]
     fn a_member_is_left_out_for_the_first_limit_it_breaks() {
         let pool = pool(&[
-            ("casey-mbp", PoolWeight::Prefer),
+            ("cam-mbp", PoolWeight::Prefer),
             ("build-box", PoolWeight::Normal),
             ("studio", PoolWeight::Normal),
             ("old-mini", PoolWeight::Normal),
@@ -665,7 +665,7 @@ mod tests {
             ("spare", PoolWeight::Manual),
         ]);
         let readings = readings(&[
-            ("casey-mbp", healthy(1)),
+            ("cam-mbp", healthy(1)),
             ("Build Box", healthy(4)),
             ("studio", Reading { cpu: Some(97.0), ..healthy(0) }),
             ("old-mini", Reading { mem_used: Some(96.0), ..healthy(0) }),
@@ -686,14 +686,14 @@ mod tests {
             ]
         );
         assert_eq!(verdicts[0].share, 1.0);
-        assert_eq!(likely(&verdicts).as_deref(), Some("casey-mbp"));
+        assert_eq!(likely(&verdicts).as_deref(), Some("cam-mbp"));
     }
 
     #[test]
     fn a_member_with_room_but_not_what_the_run_needs_is_left_out() {
-        let pool = pool(&[("casey-mbp", PoolWeight::Prefer), ("cedar-02", PoolWeight::Normal), ("ci-01", PoolWeight::Normal)]);
-        let all = readings(&[("casey-mbp", healthy(0)), ("cedar-02", healthy(0)), ("ci-01", healthy(9))]);
-        let verdicts = assess_with(&pool, &all, &BTreeMap::new(), NOW, 5_000, |machine| machine != "casey-mbp");
+        let pool = pool(&[("cam-mbp", PoolWeight::Prefer), ("cedar-02", PoolWeight::Normal), ("ci-01", PoolWeight::Normal)]);
+        let all = readings(&[("cam-mbp", healthy(0)), ("cedar-02", healthy(0)), ("ci-01", healthy(9))]);
+        let verdicts = assess_with(&pool, &all, &BTreeMap::new(), NOW, 5_000, |machine| machine != "cam-mbp");
         // Full comes first: a busy member is busy whatever it has.
         assert_eq!(kinds(&verdicts), vec![VerdictKind::NoHarness, VerdictKind::Eligible, VerdictKind::AgentsFull]);
         assert_eq!(choose(&verdicts, 0.99).map(MemberVerdict::machine), Some("cedar-02"));
@@ -701,14 +701,14 @@ mod tests {
 
     #[test]
     fn a_reading_is_fresh_for_three_sampling_rounds() {
-        let pool = pool(&[("casey-mbp", PoolWeight::Normal)]);
-        let old = readings(&[("casey-mbp", Reading { last_ok_at: Some(NOW - 100_000), ..healthy(0) })]);
+        let pool = pool(&[("cam-mbp", PoolWeight::Normal)]);
+        let old = readings(&[("cam-mbp", Reading { last_ok_at: Some(NOW - 100_000), ..healthy(0) })]);
         // Sampling every 5 s: 100 s old is stale. Every minute (Machines closed): still good.
         assert_eq!(kinds(&assess(&pool, &old, &BTreeMap::new(), NOW, 5_000)), vec![VerdictKind::Stale]);
         assert_eq!(kinds(&assess(&pool, &old, &BTreeMap::new(), NOW, 60_000)), vec![VerdictKind::Eligible]);
-        let never = readings(&[("casey-mbp", Reading { last_ok_at: None, ..healthy(0) })]);
+        let never = readings(&[("cam-mbp", Reading { last_ok_at: None, ..healthy(0) })]);
         assert_eq!(kinds(&assess(&pool, &never, &BTreeMap::new(), NOW, 5_000)), vec![VerdictKind::NoReading]);
-        let off = readings(&[("casey-mbp", Reading { enabled: false, ..healthy(0) })]);
+        let off = readings(&[("cam-mbp", Reading { enabled: false, ..healthy(0) })]);
         assert_eq!(kinds(&assess(&pool, &off, &BTreeMap::new(), NOW, 5_000)), vec![VerdictKind::Off]);
     }
 
@@ -756,12 +756,12 @@ mod tests {
 
     #[test]
     fn agents_are_the_sessions_working_now_not_processes() {
-        let counts = BTreeMap::from([("casey-mbp".to_string(), 3)]);
-        assert_eq!(working_on(Some(&counts), "casey-mbp"), Some(3));
+        let counts = BTreeMap::from([("cam-mbp".to_string(), 3)]);
+        assert_eq!(working_on(Some(&counts), "cam-mbp"), Some(3));
         // A machine the board has nothing working on has no agents, not an unknown number.
         assert_eq!(working_on(Some(&counts), "cedar-02"), Some(0));
         // Before the window has counted, nobody knows.
-        assert_eq!(working_on(None, "casey-mbp"), None);
+        assert_eq!(working_on(None, "cam-mbp"), None);
     }
 
     #[test]
@@ -796,14 +796,14 @@ mod tests {
 
     #[test]
     fn a_pool_is_tidied_and_checked_before_it_is_saved() {
-        let mut draft = pool(&[("casey-mbp", PoolWeight::Prefer), ("Casey MBP", PoolWeight::Less), (" ", PoolWeight::Normal)]);
+        let mut draft = pool(&[("cam-mbp", PoolWeight::Prefer), ("Cam MBP", PoolWeight::Less), (" ", PoolWeight::Normal)]);
         draft.name = "  Builds ".into();
         draft.max_agents = Some(0);
         draft.cpu_ceiling = Some(500);
         draft.queue_timeout_min = 0;
         let saved = checked(draft.clone(), &[]).unwrap();
         assert_eq!(saved.name, "Builds");
-        assert_eq!(saved.members, vec![PoolMember { machine: "casey-mbp".into(), weight: PoolWeight::Prefer }]);
+        assert_eq!(saved.members, vec![PoolMember { machine: "cam-mbp".into(), weight: PoolWeight::Prefer }]);
         assert_eq!((saved.max_agents, saved.cpu_ceiling, saved.queue_timeout_min), (Some(1), Some(100), 1));
 
         let mut other = pool(&[]);
@@ -840,7 +840,7 @@ mod tests {
     #[test]
     fn pools_round_trip_through_usage_db_and_removal_unhooks_spills() {
         let mut connection = crate::usage::schema::test_database();
-        let mut builds = pool(&[("casey-mbp", PoolWeight::Prefer), ("build-box", PoolWeight::Manual)]);
+        let mut builds = pool(&[("cam-mbp", PoolWeight::Prefer), ("build-box", PoolWeight::Manual)]);
         let mut overflow = pool(&[("studio", PoolWeight::Normal)]);
         overflow.id = "p2".into();
         overflow.name = "Overflow".into();

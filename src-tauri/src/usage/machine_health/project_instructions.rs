@@ -406,25 +406,25 @@ mod tests {
 
     #[test]
     fn only_the_projects_files_are_instructions() {
-        assert_eq!(instructions_file(".agents/projects/Casey/Arbor/instructions.md"), Some(("casey/arbor".into(), None)));
-        assert_eq!(instructions_file(".agents/projects/casey/arbor/machines/macmini.md"), Some(("casey/arbor".into(), Some("macmini".into()))));
-        assert_eq!(instructions_file(".agents/projects/casey/arbor/machines/Mac-Mini.md"), None);
-        assert_eq!(instructions_file(".agents/projects/casey/arbor/notes.md"), None);
-        assert_eq!(instructions_file(".agents/projects/casey/instructions.md"), None);
+        assert_eq!(instructions_file(".agents/projects/Cam/Arbor/instructions.md"), Some(("cam/arbor".into(), None)));
+        assert_eq!(instructions_file(".agents/projects/cam/arbor/machines/macmini.md"), Some(("cam/arbor".into(), Some("macmini".into()))));
+        assert_eq!(instructions_file(".agents/projects/cam/arbor/machines/Mac-Mini.md"), None);
+        assert_eq!(instructions_file(".agents/projects/cam/arbor/notes.md"), None);
+        assert_eq!(instructions_file(".agents/projects/cam/instructions.md"), None);
         assert_eq!(instructions_file(".agents/projects/../x/instructions.md"), None);
-        assert_eq!(instructions_rel("Casey/Arbor", Some("Mac-Mini")), ".agents/projects/casey/arbor/machines/macmini.md");
+        assert_eq!(instructions_rel("Cam/Arbor", Some("Mac-Mini")), ".agents/projects/cam/arbor/machines/macmini.md");
     }
 
     #[test]
     fn claude_local_imports_agents_md_only_where_claude_code_would_read_it() {
         let agents = Found { missing: false, agents: Some(("c1-5".into(), b"# Repo\n".to_vec())), ..Found::default() };
         let text = b"Use the mock.\n";
-        let local = String::from_utf8(compose(InstructionFile::ClaudeLocal, "casey/arbor", Some(text), &agents)).unwrap();
+        let local = String::from_utf8(compose(InstructionFile::ClaudeLocal, "cam/arbor", Some(text), &agents)).unwrap();
         let lines: Vec<&str> = local.lines().collect();
         assert!(lines[0].starts_with(MARKER) && lines[0].contains(&format!("text={}", text_hash(text))) && lines[0].contains("import=1"));
         assert_eq!(&lines[1..], ["@AGENTS.md", "", "Use the mock."]);
         let with_claude = Found { claude_md: true, ..agents.clone() };
-        let local = String::from_utf8(compose(InstructionFile::ClaudeLocal, "casey/arbor", Some(text), &with_claude)).unwrap();
+        let local = String::from_utf8(compose(InstructionFile::ClaudeLocal, "cam/arbor", Some(text), &with_claude)).unwrap();
         assert!(local.contains("import=0") && !local.contains("@AGENTS.md"));
         // The scan reads the fields back from the first line.
         let first = local.lines().next().unwrap();
@@ -434,18 +434,18 @@ mod tests {
     #[test]
     fn agents_override_copies_agents_md_before_the_projects_text() {
         let agents = Found { missing: false, agents: Some(("c9-6".into(), b"# Repo".to_vec())), ..Found::default() };
-        let out = String::from_utf8(compose(InstructionFile::AgentsOverride, "casey/arbor", Some(b"Mine."), &agents)).unwrap();
+        let out = String::from_utf8(compose(InstructionFile::AgentsOverride, "cam/arbor", Some(b"Mine."), &agents)).unwrap();
         let lines: Vec<&str> = out.lines().collect();
         assert!(lines[0].contains("agents=c9-6"));
         assert_eq!(&lines[1..], ["# Repo", "", "Mine."]);
-        let none = String::from_utf8(compose(InstructionFile::AgentsOverride, "casey/arbor", Some(b"Mine."), &Found::default())).unwrap();
+        let none = String::from_utf8(compose(InstructionFile::AgentsOverride, "cam/arbor", Some(b"Mine."), &Found::default())).unwrap();
         assert!(none.lines().next().unwrap().contains("agents=-"));
         // Once the text is taken out, the file is the checkout's AGENTS.md again, and says so.
-        let emptied = String::from_utf8(compose(InstructionFile::AgentsOverride, "casey/arbor", None, &agents)).unwrap();
+        let emptied = String::from_utf8(compose(InstructionFile::AgentsOverride, "cam/arbor", None, &agents)).unwrap();
         let lines: Vec<&str> = emptied.lines().collect();
         assert!(lines[0].contains("text=- "));
         assert_eq!(&lines[1..], ["# Repo"]);
-        let local = String::from_utf8(compose(InstructionFile::ClaudeLocal, "casey/arbor", None, &agents)).unwrap();
+        let local = String::from_utf8(compose(InstructionFile::ClaudeLocal, "cam/arbor", None, &agents)).unwrap();
         assert_eq!(&local.lines().skip(1).collect::<Vec<_>>(), &["@AGENTS.md"]);
     }
 

@@ -68,7 +68,7 @@ function emulatePageZoom(factor: number) {
 }
 
 /** What zoom.rs hands back when the settings file can't take the new level (`?zoomsave=fail`). */
-const ZOOM_UNSAVED = 'Failed to write configuration directly /Users/casey/Library/Application Support/onl.arbor.app/config.toml: Permission denied (os error 13)';
+const ZOOM_UNSAVED = 'Failed to write configuration directly /Users/cam/Library/Application Support/onl.arbor.app/config.toml: Permission denied (os error 13)';
 
 function setMockZoom(step: number): ZoomLevel {
   // As in zoom.rs, the level is saved first and only then put on the window, so a refused save leaves it where it was.
@@ -98,7 +98,7 @@ export function pressMockZoom(key: '=' | '-' | '0') {
 const phoneSecrets: Record<PhoneAlertSecret, string> = { ntfyToken: '', pushoverUserKey: '', pushoverAppToken: '', telegramBotToken: '', webhookUrl: '' };
 
 const PHONE_SECRETS_UNREADABLE =
-  "The saved alert secrets in /Users/casey/Library/Application Support/onl.arbor.app/phone-alert-secrets.json can't be read. Delete the file and enter them again.";
+  "The saved alert secrets in /Users/cam/Library/Application Support/onl.arbor.app/phone-alert-secrets.json can't be read. Delete the file and enter them again.";
 const phoneSecretStatus = () =>
   Object.fromEntries(PHONE_ALERT_SECRETS.map((secret) => [secret, Boolean(phoneSecrets[secret])])) as Record<PhoneAlertSecret, boolean>;
 
@@ -114,7 +114,7 @@ function mockDevBuildStatus(): DevBuildStatus {
   const scenario = params.get('devbuild');
   const built = { builtVersion: '1.0.27-dev.4123', builtCommit: DEV_COMMIT, builtAt: minutesAgo(12) };
   const base: DevBuildStatus = {
-    installed: true, repository: '/Users/casey/src/arbor', state: 'idle', commit: DEV_COMMIT, step: null, startedAt: minutesAgo(21), finishedAt: minutesAgo(12),
+    installed: true, repository: '/Users/cam/src/arbor', state: 'idle', commit: DEV_COMMIT, step: null, startedAt: minutesAgo(21), finishedAt: minutesAgo(12),
     error: null, hasLog: true, requested: false, settlesAt: null, ...built,
   };
   if (scenario === 'none') {

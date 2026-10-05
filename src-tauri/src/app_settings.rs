@@ -197,7 +197,7 @@ mod tests {
         ));
         // Another copy of the app keeps its own item.
         assert!(!legacy_login_item_starts(
-            &item("/Users/casey/Applications/Arbor.app/Contents/MacOS/Arbor"),
+            &item("/Users/cam/Applications/Arbor.app/Contents/MacOS/Arbor"),
             dir,
             "Arbor"
         ));

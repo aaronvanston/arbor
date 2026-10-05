@@ -18,19 +18,19 @@ const sent = ({ kind, title, body, subject }: SystemNotification) => alert({ kin
 
 describe('machine mentions', () => {
   it('cuts the words around each machine named, keeping the rest as it was', () => {
-    expect(machineMentions('Fix the login redirect loop on casey-mbp', ['casey-mbp'])).toEqual([
+    expect(machineMentions('Fix the login redirect loop on cam-mbp', ['cam-mbp'])).toEqual([
       { text: 'Fix the login redirect loop on ' },
-      { machine: 'casey-mbp' },
+      { machine: 'cam-mbp' },
     ]);
-    expect(read(machineMentions('casey-mbp, cedar-02 and mac-mini answer again.', ['mac-mini', 'casey-mbp', 'cedar-02'])))
-      .toBe('[casey-mbp], [cedar-02] and [mac-mini] answer again.');
+    expect(read(machineMentions('cam-mbp, cedar-02 and mac-mini answer again.', ['mac-mini', 'cam-mbp', 'cedar-02'])))
+      .toBe('[cam-mbp], [cedar-02] and [mac-mini] answer again.');
     expect(read(machineMentions('ci-01’s alerts reporter', ['ci-01']))).toBe('[ci-01]’s alerts reporter');
   });
 
   it('only takes whole names, the longest where one holds another', () => {
     expect(read(machineMentions('ci-010 and old-ci-01 are not ci-01.', ['ci-01']))).toBe('ci-010 and old-ci-01 are not [ci-01].');
     expect(read(machineMentions('On mac-mini-2', ['mac-mini', 'mac-mini-2']))).toBe('On [mac-mini-2]');
-    expect(read(machineMentions('Casey’s MacBook Pro is back', ['Casey’s MacBook Pro']))).toBe('[Casey’s MacBook Pro] is back');
+    expect(read(machineMentions('Cam’s MacBook Pro is back', ['Cam’s MacBook Pro']))).toBe('[Cam’s MacBook Pro] is back');
   });
 
   it('finds a machine by the name it’s shown by too, and keeps its own name for the pill', () => {
@@ -64,9 +64,9 @@ describe('alert mentions', () => {
     ({ machine: name, kind, downSinceMs: now - 6 * 60_000, error, failure: kind === 'up' ? null : sshFailure(error) });
 
   it('goes by the machines its subject names, never by the words', () => {
-    const waiting = alertMentions(alert({ title: 'Codex is waiting for you', body: 'Fix the ci-01 deploy on casey-mbp', subject: { session: 's', machine: 'casey-mbp' } }));
+    const waiting = alertMentions(alert({ title: 'Codex is waiting for you', body: 'Fix the ci-01 deploy on cam-mbp', subject: { session: 's', machine: 'cam-mbp' } }));
     expect(read(waiting.title)).toBe('Codex is waiting for you');
-    expect(read(waiting.body)).toBe('Fix the ci-01 deploy on [casey-mbp]');
+    expect(read(waiting.body)).toBe('Fix the ci-01 deploy on [cam-mbp]');
     // No subject, so nothing is a machine, however much it reads like one.
     expect(read(alertMentions(alert({ title: 'Heavy session on ci-01' })).title)).toBe('Heavy session on ci-01');
   });

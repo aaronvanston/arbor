@@ -23,14 +23,14 @@ describe('machine colors', () => {
 
   it('keeps the color a machine always had by default as the palette grows', () => {
     // The first seven colors, in their original order, so the same hash lands on the same color.
-    expect(['ci-01', 'cedar-02', 'lab-box', 'casey-mbp', 'Mac Mini'].map(defaultMachineColor)).toEqual(['violet', 'pink', 'indigo', 'fuchsia', 'pink']);
+    expect(['ci-01', 'cedar-02', 'lab-box', 'cam-mbp', 'Mac Mini'].map(defaultMachineColor)).toEqual(['violet', 'pink', 'indigo', 'fuchsia', 'pink']);
   });
 
   it('gives a machine the same color every time, however its name is written', () => {
     expect(defaultMachineColor('Mac Mini')).toBe(defaultMachineColor('mac-mini'));
-    expect(identityColors).toContain(defaultMachineColor('casey-mbp'));
+    expect(identityColors).toContain(defaultMachineColor('cam-mbp'));
     // Slate reads as no color, so it's only ever picked.
-    expect(['ci-01', 'cedar-02', 'lab-box', 'casey-mbp', 'Mac Mini'].map(defaultMachineColor)).not.toContain('slate');
+    expect(['ci-01', 'cedar-02', 'lab-box', 'cam-mbp', 'Mac Mini'].map(defaultMachineColor)).not.toContain('slate');
     expect(machineLookKey('Mac Mini')).toBe(machineLookKey('mac_mini'));
   });
 

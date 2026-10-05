@@ -1517,11 +1517,11 @@ mod tests {
             write(&root.join("README.md"), b"# Dotfiles\n");
             git_in(&root, &["add", "--all"]);
             git_in(&root, &["commit", "--quiet", "-m", "First"]);
-            let every = ".agents/projects/casey/arbor/instructions.md";
-            let one = ".agents/projects/casey/arbor/machines/macmini.md";
+            let every = ".agents/projects/cam/arbor/instructions.md";
+            let one = ".agents/projects/cam/arbor/machines/macmini.md";
             block_on(take_into_repo(&root, every, b"Use the mock.\n", "Set", &IDENTITY)).unwrap();
             block_on(take_into_repo(&root, one, b"Mini only.\n", "Set", &IDENTITY)).unwrap();
-            assert!(block_on(take_into_repo(&root, ".agents/projects/casey/arbor/notes.md", b"x", "Set", &IDENTITY)).is_err());
+            assert!(block_on(take_into_repo(&root, ".agents/projects/cam/arbor/notes.md", b"x", "Set", &IDENTITY)).is_err());
             let repo = block_on(read_repo(&root)).unwrap();
             assert!(repo.ignored.is_empty(), "{:?}", repo.ignored);
             let listed: Vec<(Option<&str>, &str)> = repo.instructions.iter().map(|found| (found.machine(), found.hash())).collect();
@@ -1593,8 +1593,8 @@ mod tests {
             write(&home.join(".agents/.skill-lock.json"), br#"{"version":3,"skills":{"pdf":{"source":"acme/skills","sourceType":"github","skillPath":"skills/pdf/SKILL.md"},"leaky":{"source":"acme/leaky","sourceType":"github"}}}"#);
             let folder = temp_dir("start").join("setup");
 
-            let repo = block_on(start_repo(&folder, &home, "casey-mbp", &IDENTITY)).unwrap();
-            assert_eq!(repo.head.as_ref().map(|head| head.subject.as_str()), Some("Start from casey-mbp"));
+            let repo = block_on(start_repo(&folder, &home, "cam-mbp", &IDENTITY)).unwrap();
+            assert_eq!(repo.head.as_ref().map(|head| head.subject.as_str()), Some("Start from cam-mbp"));
             assert_eq!(
                 repo.files.iter().map(|file| file.path.as_str()).collect::<Vec<_>>(),
                 ["~/.claude/CLAUDE.md", "~/.claude/commands/git/ship.md", "~/.codex/AGENTS.md"],
@@ -1606,7 +1606,7 @@ mod tests {
             assert_eq!((&started["skills"][0]["name"], &started["skills"][0]["files"]), (&Value::from("pdf"), &Value::from(2)));
             assert_eq!(started["skills"][0]["source"]["source"], "acme/skills");
             assert!(!folder.join(".agents/skills/leaky").exists());
-            assert!(block_on(start_repo(&folder, &home, "casey-mbp", &IDENTITY)).unwrap_err().contains("already has agent files"));
+            assert!(block_on(start_repo(&folder, &home, "cam-mbp", &IDENTITY)).unwrap_err().contains("already has agent files"));
 
             block_on(take_into_repo(&folder, ".claude/CLAUDE.md", b"# From ci-01\n", "Take ~/.claude/CLAUDE.md from ci-01", &IDENTITY)).unwrap();
             let taken = block_on(read_repo(&folder)).unwrap();

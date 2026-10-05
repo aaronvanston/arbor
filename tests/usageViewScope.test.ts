@@ -40,7 +40,7 @@ describe('usage view scope', () => {
 
   test('invalidates snapshots when the machine filter changes', () => {
     const base = usageViewScopeKey(allModelsScope);
-    const machineScope = usageViewScopeKey({ ...allModelsScope, machine: 'casey-mbp' });
+    const machineScope = usageViewScopeKey({ ...allModelsScope, machine: 'cam-mbp' });
 
     expect(machineScope).not.toBe(base);
     expect(usageViewScopeKey({ ...allModelsScope, machine: '__unassigned__' })).not.toBe(machineScope);

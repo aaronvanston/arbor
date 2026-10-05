@@ -26,8 +26,8 @@ describe('what an agent update says it did', () => {
 describe('an agent installed more than once', () => {
   const install: AgentInstall = {
     version: '0.156.0',
-    path: '/Users/casey/.npm-global/bin/codex',
-    real: '/Users/casey/.npm-global/lib/node_modules/@openai/codex/bin/codex.js',
+    path: '/Users/cam/.npm-global/bin/codex',
+    real: '/Users/cam/.npm-global/lib/node_modules/@openai/codex/bin/codex.js',
     method: 'npm',
     updateCommand: 'npm install -g @openai/codex@latest',
     copies: [],
@@ -48,7 +48,7 @@ describe('an agent installed more than once', () => {
     });
     expect(html).toContain('Codex is installed 3 times here');
     // A path is split to be cut in the middle, so each is found by where it leads, shown on hover.
-    const first = html.indexOf('title="/Users/casey/.npm-global/lib/node_modules/@openai/codex/bin/codex.js"');
+    const first = html.indexOf('title="/Users/cam/.npm-global/lib/node_modules/@openai/codex/bin/codex.js"');
     const cask = html.indexOf('title="/opt/homebrew/Caskroom/codex/0.153.3/codex"');
     expect(first).toBeGreaterThan(-1);
     expect(cask).toBeGreaterThan(first);

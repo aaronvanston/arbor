@@ -814,16 +814,16 @@ mod tests {
     #[test]
     fn a_pool_is_found_by_id_or_name_and_a_repo_by_owner_and_name_on_its_members() {
         let pools = json!([
-            { "id": "p1", "name": "Builds", "members": [{ "machine": "casey-mbp" }, { "machine": "cedar-02" }] },
+            { "id": "p1", "name": "Builds", "members": [{ "machine": "cam-mbp" }, { "machine": "cedar-02" }] },
             { "id": "p2", "name": "Overflow", "members": [{ "machine": "ci-01" }] },
         ]);
         assert_eq!(matching_pool(&pools, "p2").unwrap().1, "Overflow");
         let (id, _, members) = matching_pool(&pools, "builds").unwrap();
-        assert_eq!((id.as_str(), members.clone()), ("p1", vec!["casey-mbp".to_string(), "cedar-02".to_string()]));
+        assert_eq!((id.as_str(), members.clone()), ("p1", vec!["cam-mbp".to_string(), "cedar-02".to_string()]));
         assert!(matching_pool(&pools, "nowhere").is_err());
 
         let projects = json!([
-            { "machine": "casey-mbp", "repos": [{ "remote": "github.com/acme/storefront.git" }, { "remote": "github.com/acme/docs" }] },
+            { "machine": "cam-mbp", "repos": [{ "remote": "github.com/acme/storefront.git" }, { "remote": "github.com/acme/docs" }] },
             { "machine": "cedar-02", "repos": [{ "remote": "github.com/Acme/storefront" }, { "remote": "gitlab.com/other/docs" }] },
             // Not a member, so its repos don't count.
             { "machine": "ci-01", "repos": [{ "remote": "github.com/acme/billing" }] },
@@ -834,7 +834,7 @@ mod tests {
         assert!(found("acme/billing").unwrap_err().message.contains("github.com/acme/billing"));
         // Two hosts with the same owner and name: say which, and ask for one in full.
         assert!(matching_repo(&projects, &members, "Builds", "docs").is_err());
-        let both = json!([{ "machine": "casey-mbp", "repos": [{ "remote": "github.com/acme/docs" }, { "remote": "gitlab.com/acme/docs" }] }]);
+        let both = json!([{ "machine": "cam-mbp", "repos": [{ "remote": "github.com/acme/docs" }, { "remote": "gitlab.com/acme/docs" }] }]);
         assert!(matching_repo(&both, &members, "Builds", "acme/docs").unwrap_err().message.contains(" or "));
     }
 
@@ -849,13 +849,13 @@ mod tests {
     #[test]
     fn a_machine_is_found_by_its_name_or_its_host_however_it_is_typed() {
         let hosts = json!([
-            { "machine": "Casey dev 01", "endpoint": "casey-dev-01" },
-            { "machine": "studio", "endpoint": "casey-studio.local" },
+            { "machine": "Cam dev 01", "endpoint": "cam-dev-01" },
+            { "machine": "studio", "endpoint": "cam-studio.local" },
         ]);
-        assert_eq!(matching_machine(&hosts, "Casey dev 01").as_deref(), Some("Casey dev 01"));
-        assert_eq!(matching_machine(&hosts, "casey-dev-01").as_deref(), Some("Casey dev 01"));
+        assert_eq!(matching_machine(&hosts, "Cam dev 01").as_deref(), Some("Cam dev 01"));
+        assert_eq!(matching_machine(&hosts, "cam-dev-01").as_deref(), Some("Cam dev 01"));
         assert_eq!(matching_machine(&hosts, "STUDIO").as_deref(), Some("studio"));
-        assert_eq!(matching_machine(&hosts, "casey-studio.local").as_deref(), Some("studio"));
+        assert_eq!(matching_machine(&hosts, "cam-studio.local").as_deref(), Some("studio"));
         assert_eq!(matching_machine(&hosts, "nowhere"), None);
     }
 

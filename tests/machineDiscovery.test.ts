@@ -30,7 +30,7 @@ describe('machine discovery', () => {
       host('ci-01 box', 'ci@100.64.0.23'),
       host('cedar-02', 'CEDAR-02.tailc0ffee.ts.net.'),
       host('mac-mini', 'studio.local'),
-      host('casey-mbp', 'localhost'),
+      host('cam-mbp', 'localhost'),
     ];
     expect(newSuggestions(suggestions, hosts).map((item) => item.endpoint)).toEqual(['nas.local', '100.64.0.24', 'build-arm']);
   });

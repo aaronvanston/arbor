@@ -5,7 +5,7 @@ import { I18nProvider } from '../src/i18n';
 
 const render = (machine: string) => renderToStaticMarkup(
   <I18nProvider>
-    <MachineCrumb machine={machine} machines={['casey-mbp', 'ci-01']} unassigned onChange={() => {}} />
+    <MachineCrumb machine={machine} machines={['cam-mbp', 'ci-01']} unassigned onChange={() => {}} />
   </I18nProvider>,
 );
 

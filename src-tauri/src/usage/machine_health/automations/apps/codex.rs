@@ -120,10 +120,10 @@ mod tests {
 
     #[test]
     fn reads_an_automation_with_its_schedule_status_and_thread() {
-        let stdout = format!("H\t/Users/casey\nC\t/Users/casey/.codex/automations/inbox-triage/automation.toml\t{}\n", STANDARD.encode(CODEX));
-        let found = CodexApp.parse(&ScanLines::new("casey-mbp", &stdout)).unwrap();
+        let stdout = format!("H\t/Users/cam\nC\t/Users/cam/.codex/automations/inbox-triage/automation.toml\t{}\n", STANDARD.encode(CODEX));
+        let found = CodexApp.parse(&ScanLines::new("cam-mbp", &stdout)).unwrap();
         let codex = &found[0].automation;
-        assert_eq!(codex.summary.id, "codexApp:casey-mbp:inbox-triage");
+        assert_eq!(codex.summary.id, "codexApp:cam-mbp:inbox-triage");
         assert_eq!(codex.summary.name, "Inbox triage");
         assert!(!codex.summary.enabled);
         assert_eq!(codex.summary.schedule, ScheduleSummary::EveryMinutes { minutes: 30 });
@@ -132,7 +132,7 @@ mod tests {
         assert_eq!(codex.source_path.as_deref(), Some("~/.codex/automations/inbox-triage/automation.toml"));
         assert_eq!(codex.created_at_ms, Some(1783121815383));
         assert_eq!(found[0].session.as_deref(), Some("t-1"));
-        assert!(CodexApp.parse(&ScanLines::new("casey-mbp", "H\t/Users/casey\n")).is_none(), "none found, so not listed as there");
+        assert!(CodexApp.parse(&ScanLines::new("cam-mbp", "H\t/Users/cam\n")).is_none(), "none found, so not listed as there");
     }
 
     #[test]

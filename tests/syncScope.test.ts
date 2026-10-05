@@ -16,7 +16,7 @@ const machine = (name: string, homes: SetupHome[], scannedAt: number | null = 1)
 
 describe('Sync’s scope', () => {
   it('reads a saved scope, and anything else as All projects on All machines', () => {
-    expect(parseSyncScope('{"project":"casey/arbor","machine":"ci-01"}')).toEqual({ project: 'casey/arbor', machine: 'ci-01' });
+    expect(parseSyncScope('{"project":"cam/arbor","machine":"ci-01"}')).toEqual({ project: 'cam/arbor', machine: 'ci-01' });
     expect(parseSyncScope('{"project":"","machine":3}')).toEqual({ project: null, machine: null });
     expect(parseSyncScope('not json')).toEqual({ project: null, machine: null });
     expect(parseSyncScope(null)).toEqual({ project: null, machine: null });

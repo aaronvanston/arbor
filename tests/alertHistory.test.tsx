@@ -125,15 +125,15 @@ describe('the alert history', () => {
   });
 
   it('narrows to the alerts on one machine, and clears only those', () => {
-    const heavy = record('heavy', 4_000, { kind: 'heavySession', subject: { session: 's-1', on: 'casey-mbp' } });
+    const heavy = record('heavy', 4_000, { kind: 'heavySession', subject: { session: 's-1', on: 'cam-mbp' } });
     const down = record('down', 3_000, { subject: { machine: 'ci-01' } });
-    const both = record('both', 2_000, { subject: { machines: ['ci-01', 'casey-mbp'] } });
+    const both = record('both', 2_000, { subject: { machines: ['ci-01', 'cam-mbp'] } });
     const none = record('none', 1_000, { kind: 'outage', subject: { url: 'https://status.example.com' } });
-    expect(alertMachines(heavy)).toEqual(['casey-mbp']);
+    expect(alertMachines(heavy)).toEqual(['cam-mbp']);
     expect(alertMachines(none)).toEqual([]);
     const entries = [heavy, down, both, none];
     expect(alertsOn(entries, '').map((entry) => entry.id)).toEqual(['heavy', 'down', 'both', 'none']);
-    expect(alertsOn(entries, 'casey-mbp').map((entry) => entry.id)).toEqual(['heavy', 'both']);
+    expect(alertsOn(entries, 'cam-mbp').map((entry) => entry.id)).toEqual(['heavy', 'both']);
     expect(alertsOn(entries, 'ci-01').map((entry) => entry.id)).toEqual(['down', 'both']);
 
     resetAlertHistory({ seenAtMs: 0, entries });
@@ -145,8 +145,8 @@ describe('the alert history', () => {
   });
 
   it('still folds a session alert that notes the machine it happened on', () => {
-    const first = withAlert({ entries: [], seenAtMs: 0 }, record('one', 1_000, { kind: 'heavySession', subject: { session: 's-1', on: 'casey-mbp' } }), 1_000);
-    const again = withAlert(first.history, record('two', 2_000, { kind: 'heavySession', subject: { session: 's-1', on: 'casey-mbp' } }), 2_000);
+    const first = withAlert({ entries: [], seenAtMs: 0 }, record('one', 1_000, { kind: 'heavySession', subject: { session: 's-1', on: 'cam-mbp' } }), 1_000);
+    const again = withAlert(first.history, record('two', 2_000, { kind: 'heavySession', subject: { session: 's-1', on: 'cam-mbp' } }), 2_000);
     expect(again.history.entries).toHaveLength(1);
     expect(itemAt(again.history.entries, 0).count).toBe(2);
   });
@@ -155,9 +155,9 @@ describe('the alert history', () => {
     expect(alertDestination({ kind: 'accountPaused', subject: { account: 'work.json::work' } })).toEqual({ kind: 'accounts', account: 'work.json::work' });
     expect(alertDestination({ kind: 'limitWarning', subject: { provider: 'claude' } })).toEqual({ kind: 'accounts', provider: 'claude' });
     expect(alertDestination({ kind: 'machineUp', subject: { machine: 'ci-01' } })).toEqual({ kind: 'machines', machine: 'ci-01' });
-    expect(alertDestination({ kind: 'agentPermission', subject: { session: 'a3f1', machine: 'casey-mbp' } })).toEqual({ kind: 'session', session: 'a3f1' });
+    expect(alertDestination({ kind: 'agentPermission', subject: { session: 'a3f1', machine: 'cam-mbp' } })).toEqual({ kind: 'session', session: 'a3f1' });
     // One Arbor didn't see: the live board on its machine.
-    expect(alertDestination({ kind: 'agentWaiting', subject: { machine: 'casey-mbp' } })).toEqual({ kind: 'sessions', machine: 'casey-mbp' });
+    expect(alertDestination({ kind: 'agentWaiting', subject: { machine: 'cam-mbp' } })).toEqual({ kind: 'sessions', machine: 'cam-mbp' });
     expect(alertDestination({ kind: 'heavySession', subject: { session: 'b7' } })).toEqual({ kind: 'session', session: 'b7' });
     expect(alertDestination({ kind: 'outage', subject: { url: 'https://status.claude.com/incidents/x' } })).toEqual({ kind: 'url', url: 'https://status.claude.com/incidents/x' });
     expect(alertDestination({ kind: 'outage' })).toEqual({ kind: 'home' });

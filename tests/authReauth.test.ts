@@ -12,7 +12,7 @@ import type { AccountKeyRename } from '../src/services/accountKeys';
 import { snapshotAuthFiles } from '../src/services/authFiles';
 import type { ManagementJson } from '../src/services/managementApi';
 
-const target = { name: 'CX-W1-casey.json', type: 'codex', email: 'casey@example.com', account_id: 'acct-1', priority: 10 };
+const target = { name: 'CX-W1-cam.json', type: 'codex', email: 'cam@example.com', account_id: 'acct-1', priority: 10 };
 
 /** `listings` is either one listing, or one per successive GET (the last repeats). */
 const fast = { attempts: 3, pollMs: 0, sleep: async () => {} };
@@ -50,7 +50,7 @@ const fakeApi = (
 describe('re-authenticating an existing credential', () => {
   it('matches the fresh credential by account id before falling back to email', () => {
     const byId = { name: 'codex-1.json', account_id: 'acct-1', email: 'other@example.com' };
-    const byEmail = { name: 'codex-2.json', account_id: 'acct-9', email: 'CASEY@example.com' };
+    const byEmail = { name: 'codex-2.json', account_id: 'acct-9', email: 'CAM@example.com' };
     expect(matchReauthCredential(target, [byEmail, byId])).toBe(byId);
     expect(matchReauthCredential(target, [byEmail])).toBe(byEmail);
     expect(matchReauthCredential(target, [{ name: 'codex-3.json', email: 'nobody@example.com' }])).toBeNull();
@@ -69,7 +69,7 @@ describe('re-authenticating an existing credential', () => {
 
   it('copies a differently named login into the existing file and removes the duplicate', async () => {
     const before = snapshotAuthFiles([target]);
-    const fresh = { name: 'codex-abc-casey@example.com-pro.json', type: 'codex', email: 'casey@example.com', account_id: 'acct-1' };
+    const fresh = { name: 'codex-abc-cam@example.com-pro.json', type: 'codex', email: 'cam@example.com', account_id: 'acct-1' };
     const { name: _targetName, ...targetContent } = target;
     const { name: _freshName, ...freshContent } = fresh;
     const { api, calls } = fakeApi([target, fresh], {
@@ -81,7 +81,7 @@ describe('re-authenticating an existing credential', () => {
     const upload = calls.find((call) => call.method === 'UPLOAD');
     expect(upload?.name).toBe(target.name);
     expect(JSON.parse(upload?.text ?? '{}')).toEqual({
-      type: 'codex', email: 'casey@example.com', account_id: 'acct-1',
+      type: 'codex', email: 'cam@example.com', account_id: 'acct-1',
       access_token: 'new', refresh_token: 'new-r', priority: 10, excluded_models: ['gpt-x'],
     });
     expect(calls.find((call) => call.method === 'DELETE')?.name).toBe(fresh.name);
@@ -114,7 +114,7 @@ describe('re-authenticating an existing credential', () => {
       cooldowns: [{ reason: 'quota', retry_at: '2026-09-19T08:51:05Z' }],
       quota: { observed_at: '2026-09-17T07:50:00Z' },
     };
-    const fresh = { name: 'claude-5772b8d7-casey@example.com.json', type: 'codex', email: 'casey@example.com', account_id: 'acct-1' };
+    const fresh = { name: 'claude-5772b8d7-cam@example.com.json', type: 'codex', email: 'cam@example.com', account_id: 'acct-1' };
     const { name: _freshName, ...freshContent } = fresh;
     const { name: _targetName, ...targetContent } = target;
     const { api, calls } = fakeApi([churned, fresh], {
@@ -128,7 +128,7 @@ describe('re-authenticating an existing credential', () => {
 
   it('waits for the core to finish writing the new credential', async () => {
     const before = snapshotAuthFiles([target]);
-    const fresh = { name: 'codex-abc-casey@example.com-pro.json', type: 'codex', email: 'casey@example.com', account_id: 'acct-1' };
+    const fresh = { name: 'codex-abc-cam@example.com-pro.json', type: 'codex', email: 'cam@example.com', account_id: 'acct-1' };
     const { name: _freshName, ...freshContent } = fresh;
     const { name: _targetName, ...targetContent } = target;
     const { api } = fakeApi([[target], [target], [target, fresh]], {
@@ -146,8 +146,8 @@ describe('re-authenticating an existing credential', () => {
   });
 
   // The core lists no account ids, so these credentials only have an email, like real listings.
-  const work = { name: 'codex-casey-work.json', type: 'codex', email: 'casey@example.com', modtime: 1 };
-  const personal = { name: 'codex-casey-personal.json', type: 'codex', email: 'casey@example.com', modtime: 1 };
+  const work = { name: 'codex-cam-work.json', type: 'codex', email: 'cam@example.com', modtime: 1 };
+  const personal = { name: 'codex-cam-personal.json', type: 'codex', email: 'cam@example.com', modtime: 1 };
 
   it('never folds a same-email credential into a target the sign-in rewrote in place', async () => {
     // A second workspace for the same email refreshed its token meanwhile. It
@@ -161,7 +161,7 @@ describe('re-authenticating an existing credential', () => {
 
   it('prefers a file the sign-in created over an existing same-email credential that changed', async () => {
     const before = snapshotAuthFiles([work, personal]);
-    const fresh = { name: 'codex-9f1e-casey@example.com-team.json', type: 'codex', email: 'casey@example.com', modtime: 2 };
+    const fresh = { name: 'codex-9f1e-cam@example.com-team.json', type: 'codex', email: 'cam@example.com', modtime: 2 };
     const { api, calls } = fakeApi([work, { ...personal, modtime: 2 }, fresh], {
       [work.name]: { type: 'codex', access_token: 'old' },
       [fresh.name]: { type: 'codex', access_token: 'new' },
@@ -173,7 +173,7 @@ describe('re-authenticating an existing credential', () => {
   it('keeps waiting while only unrelated credentials changed', async () => {
     const other = { name: 'codex-team.json', type: 'codex', email: 'team@example.com', modtime: 1 };
     const before = snapshotAuthFiles([target, other]);
-    const fresh = { name: 'codex-abc-casey@example.com-pro.json', type: 'codex', email: 'casey@example.com', modtime: 2 };
+    const fresh = { name: 'codex-abc-cam@example.com-pro.json', type: 'codex', email: 'cam@example.com', modtime: 2 };
     const { name: _freshName, ...freshContent } = fresh;
     const { name: _targetName, ...targetContent } = target;
     const refreshed = { ...other, modtime: 2 };
@@ -189,7 +189,7 @@ describe('re-authenticating an existing credential', () => {
     // Taking the sibling at the first listing would copy its tokens into the
     // target and delete it, while the real login lands a moment later.
     const before = snapshotAuthFiles([work, personal]);
-    const fresh = { name: 'codex-9f1e-casey@example.com-team.json', type: 'codex', email: 'casey@example.com', modtime: 2 };
+    const fresh = { name: 'codex-9f1e-cam@example.com-team.json', type: 'codex', email: 'cam@example.com', modtime: 2 };
     const refreshed = { ...personal, modtime: 2 };
     const { api, calls } = fakeApi([[work, refreshed], [work, refreshed, fresh]], {
       [work.name]: { type: 'codex', access_token: 'old' },
@@ -201,8 +201,8 @@ describe('re-authenticating an existing credential', () => {
 
   it('takes an existing file the login rewrote only once the wait ends with nothing new', async () => {
     // An earlier sign-in already left a copy under the core's own name for the account.
-    const listedTarget = { name: target.name, type: 'codex', email: 'casey@example.com', priority: 10, modtime: 1 };
-    const canonical = { name: 'codex-abc-casey@example.com-pro.json', type: 'codex', email: 'casey@example.com', modtime: 1 };
+    const listedTarget = { name: target.name, type: 'codex', email: 'cam@example.com', priority: 10, modtime: 1 };
+    const canonical = { name: 'codex-abc-cam@example.com-pro.json', type: 'codex', email: 'cam@example.com', modtime: 1 };
     const before = snapshotAuthFiles([listedTarget, canonical]);
     const { api, calls } = fakeApi([listedTarget, { ...canonical, modtime: 2 }], {
       [target.name]: { type: 'codex', account_id: 'acct-1', access_token: 'old', priority: 10 },
@@ -217,9 +217,9 @@ describe('re-authenticating an existing credential', () => {
   it('skips a same-email credential from another workspace that changed alongside the account’s own file', async () => {
     // The account's file under the core's name existed already, and the other
     // workspace's file sorts ahead of it.
-    const listedTarget = { name: target.name, type: 'codex', email: 'casey@example.com', modtime: 1 };
-    const team = { name: 'codex-0000-casey@example.com-team.json', type: 'codex', email: 'casey@example.com', modtime: 1 };
-    const canonical = { name: 'codex-abc-casey@example.com-pro.json', type: 'codex', email: 'casey@example.com', modtime: 1 };
+    const listedTarget = { name: target.name, type: 'codex', email: 'cam@example.com', modtime: 1 };
+    const team = { name: 'codex-0000-cam@example.com-team.json', type: 'codex', email: 'cam@example.com', modtime: 1 };
+    const canonical = { name: 'codex-abc-cam@example.com-pro.json', type: 'codex', email: 'cam@example.com', modtime: 1 };
     const before = snapshotAuthFiles([listedTarget, team, canonical]);
     const { api, calls } = fakeApi([listedTarget, { ...team, modtime: 2 }, { ...canonical, modtime: 2 }], {
       [target.name]: { type: 'codex', account_id: 'acct-1', access_token: 'old' },
@@ -234,7 +234,7 @@ describe('re-authenticating an existing credential', () => {
 
   it('keeps a login to another workspace or organization of the same email as its own file', async () => {
     // The listing cannot tell them apart; the files record the workspace or organization.
-    const fresh = { name: 'codex-9f1e-casey@example.com-team.json', type: 'codex', email: 'casey@example.com', modtime: 2 };
+    const fresh = { name: 'codex-9f1e-cam@example.com-team.json', type: 'codex', email: 'cam@example.com', modtime: 2 };
     for (const [existing, signedIn] of [
       [{ account_id: 'ws-work' }, { account_id: 'ws-team' }],
       [{ account_uuid: 'uuid-1', organization_uuid: 'org-work' }, { account_uuid: 'uuid-1', organization_uuid: 'org-team' }],
@@ -254,12 +254,12 @@ describe('credentials the core saved under a new name', () => {
   // Core 7.2.158+ saves Claude logins as claude-<hash>-<email>.json, carries the
   // old file's settings over and deletes the old file itself.
   const legacy = {
-    name: 'claude-casey.json', type: 'claude', email: 'casey@example.com', account_uuid: 'uuid-1',
-    auth_index: 'idx-old', source: 'file', path: '/auths/claude-casey.json', priority: 10,
+    name: 'claude-cam.json', type: 'claude', email: 'cam@example.com', account_uuid: 'uuid-1',
+    auth_index: 'idx-old', source: 'file', path: '/auths/claude-cam.json', priority: 10,
   };
   const canonical = {
-    name: 'claude-5772b8d7-casey@example.com.json', type: 'claude', email: 'casey@example.com', account_uuid: 'uuid-1',
-    auth_index: 'idx-new', source: 'file', path: '/auths/claude-5772b8d7-casey@example.com.json', priority: 10,
+    name: 'claude-5772b8d7-cam@example.com.json', type: 'claude', email: 'cam@example.com', account_uuid: 'uuid-1',
+    auth_index: 'idx-new', source: 'file', path: '/auths/claude-5772b8d7-cam@example.com.json', priority: 10,
   };
   const recording = () => {
     const renames: AccountKeyRename[][] = [];
@@ -273,7 +273,7 @@ describe('credentials the core saved under a new name', () => {
     expect(await completeReauth(legacy, 'claude', before, api, options))
       .toEqual({ kind: 'renamed', name: canonical.name, from: legacy.name });
     expect(calls.map((call) => call.method)).toEqual(['GET']);
-    expect(renames).toEqual([[{ from: 'claude-casey.json::idx-old', to: `${canonical.name}::idx-new`, name: 'claude-casey' }]]);
+    expect(renames).toEqual([[{ from: 'claude-cam.json::idx-old', to: `${canonical.name}::idx-new`, name: 'claude-cam' }]]);
   });
 
   it('still reports a rename while the deleted file lingers in the listing from memory', async () => {
@@ -325,14 +325,14 @@ describe('credentials the core saved under a new name', () => {
     const { renames, options } = recording();
     expect(await completeReauth(legacy, 'claude', before, api, options))
       .toEqual({ kind: 'renamed', name: canonical.name, from: legacy.name });
-    expect(renames).toEqual([[{ from: 'claude-casey.json::idx-old', to: `${canonical.name}::idx-new`, name: 'claude-casey' }]]);
+    expect(renames).toEqual([[{ from: 'claude-cam.json::idx-old', to: `${canonical.name}::idx-new`, name: 'claude-cam' }]]);
   });
 
   it('prefers the new file when a same-email credential also changed during a plain sign-in', () => {
     // As listed by the core: no account ids, so both candidates match by email.
     const { account_uuid: _legacyId, ...listedLegacy } = legacy;
     const { account_uuid: _canonicalId, ...listedCanonical } = canonical;
-    const sibling = { ...listedLegacy, name: 'claude-1111-casey@example.com.json', auth_index: 'idx-sibling', path: '/auths/claude-1111.json', modtime: 1 };
+    const sibling = { ...listedLegacy, name: 'claude-1111-cam@example.com.json', auth_index: 'idx-sibling', path: '/auths/claude-1111.json', modtime: 1 };
     expect(renamedCredentials([listedLegacy, sibling], [{ ...sibling, modtime: 2 }, listedCanonical], 'claude'))
       .toEqual([{ from: listedLegacy, to: listedCanonical }]);
   });
@@ -348,7 +348,7 @@ describe('credentials the core saved under a new name', () => {
     // As listed by the core: no account ids, so the sibling matches by email too.
     const { account_uuid: _legacyId, ...listedLegacy } = legacy;
     const { account_uuid: _canonicalId, ...listedCanonical } = canonical;
-    const sibling = { ...listedLegacy, name: 'claude-1111-casey@example.com.json', auth_index: 'idx-sibling', path: '/auths/claude-1111.json', modtime: 1 };
+    const sibling = { ...listedLegacy, name: 'claude-1111-cam@example.com.json', auth_index: 'idx-sibling', path: '/auths/claude-1111.json', modtime: 1 };
     const lingering = { ...listedLegacy, source: 'memory' };
     const refreshed = { ...sibling, modtime: 2 };
     const { api, calls } = fakeApi([[lingering, refreshed], [lingering, refreshed, listedCanonical]], {});

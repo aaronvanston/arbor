@@ -10,8 +10,8 @@ const MINUTE = 60_000;
 const now = Date.parse('2026-09-24T07:20:00Z');
 
 const transcript = (fields: Partial<SessionTranscript>): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/src/arbor', repoRoot: '/Users/casey/src/arbor',
-  mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '', cwd: '/Users/cam/src/arbor', repoRoot: '/Users/cam/src/arbor',
+  mainRepo: '/Users/cam/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
   pullRequests: [], linesAdded: null, linesRemoved: null, compactions: [], toolUsage: null, readAtMs: 0,
   ...fields,
 });
@@ -21,7 +21,7 @@ const session = (id: string, fields: Partial<UsageSession> = {}): UsageSession =
   startedAtMs: now - 60 * MINUTE, lastActiveAtMs: now - 2 * MINUTE, requests: 40, failures: 0, canceled: 0,
   inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
   totalTokens: 1_200_000, estimatedCost: 12.4, pricedRequests: 40, peakContext: 0, compactions: 0,
-  provider: 'claude', machine: 'casey-mbp', pool: '', apiKeyHash: '', active: false, hasOwnRequests: true, subagents: 0, threads: [],
+  provider: 'claude', machine: 'cam-mbp', pool: '', apiKeyHash: '', active: false, hasOwnRequests: true, subagents: 0, threads: [],
   transcript: null,
   ...fields,
 });
@@ -58,8 +58,8 @@ describe('a machine’s sessions', () => {
     });
     // A few minutes past the hour: the page counts from the live board's clock, which can be a moment behind this one.
     const older = session('6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', { lastActiveAtMs: Date.now() - (3 * 60 + 5) * MINUTE, pricedRequests: 0, estimatedCost: 0 });
-    const html = text(render('casey-mbp', [
-      machine('casey-mbp', [login, older], { sessions: 9, subagents: 3, running: 1, estimatedCost: 41.5 }),
+    const html = text(render('cam-mbp', [
+      machine('cam-mbp', [login, older], { sessions: 9, subagents: 3, running: 1, estimatedCost: 41.5 }),
       machine('ci-01', [session('0199a05d-91c2-7b4a-8e6f-2d3e4f5a6b7c', { machine: 'ci-01', transcript: transcript({ title: 'Someone else’s' }) })]),
     ]));
     expect(html).toContain('Sessions 9 sessions · 3 subagents · 1 running View all');
@@ -82,12 +82,12 @@ describe('a machine’s sessions', () => {
     // The machine is the breadcrumb's last step, its picker, rather than a filter chip.
     expect(breadcrumb(unassigned)).toBe('Sessions / All sessions / Unassigned');
     expect(text(unassigned)).not.toContain('Clear all');
-    expect(breadcrumb(page(machineSessionsView('casey-mbp')))).toBe('Sessions / All sessions / casey-mbp');
+    expect(breadcrumb(page(machineSessionsView('cam-mbp')))).toBe('Sessions / All sessions / cam-mbp');
     // A machine page's Live section opens the live board on that machine.
-    expect(machineLiveView('casey-mbp')).toEqual({ kind: 'main', page: 'sessions', params: { tab: 'live', machine: 'casey-mbp' } });
+    expect(machineLiveView('cam-mbp')).toEqual({ kind: 'main', page: 'sessions', params: { tab: 'live', machine: 'cam-mbp' } });
     // A machine's requests are Usage's own pick, and the Sessions page's doesn't follow it there.
-    const requests = page(machineRequestsView('casey-mbp'));
-    expect(breadcrumb(requests)).toBe('Usage / Requests / casey-mbp');
+    const requests = page(machineRequestsView('cam-mbp'));
+    expect(breadcrumb(requests)).toBe('Usage / Requests / cam-mbp');
     expect(text(requests)).not.toContain('Filters 1');
     const unfiltered = text(page(usageView({ tab: 'events' })));
     expect(unfiltered).toContain('Last 24 hours Filters');

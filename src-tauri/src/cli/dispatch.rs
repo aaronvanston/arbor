@@ -202,8 +202,8 @@ mod tests {
 
     #[test]
     fn a_plan_shows_the_arguments_with_secrets_hidden() {
-        let plan = plan_for("save_machine_hosts", "Saves the hosts", &json!({ "hosts": ["casey-mbp"] }));
-        assert_eq!(plan["args"]["hosts"], json!(["casey-mbp"]));
+        let plan = plan_for("save_machine_hosts", "Saves the hosts", &json!({ "hosts": ["cam-mbp"] }));
+        assert_eq!(plan["args"]["hosts"], json!(["cam-mbp"]));
         let plan = plan_for("x", "y", &json!({ "apiKey": "sk-abcdefghijklmnop" }));
         assert_eq!(plan["args"]["apiKey"], json!(redact::HIDDEN));
     }

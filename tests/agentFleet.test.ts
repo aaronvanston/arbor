@@ -24,22 +24,22 @@ const home = (name: string, version: string | null, extra: Partial<HarnessHomeRo
 
 describe('updating Claude Code or Codex everywhere', () => {
   it('aims at the latest release when it’s known, and brings up every machine that answers below it', () => {
-    const fleet = rollout([machine('casey-mbp', '2.1.282'), machine('ci-01', '2.1.281'), machine('cedar-02', '2.1.281', 'unreachable')], '2.1.283');
+    const fleet = rollout([machine('cam-mbp', '2.1.282'), machine('ci-01', '2.1.281'), machine('cedar-02', '2.1.281', 'unreachable')], '2.1.283');
     expect(rolloutTarget(fleet)).toBe('2.1.283');
-    expect(rolloutTargets(fleet).map((entry) => entry.machine)).toEqual(['casey-mbp', 'ci-01']);
+    expect(rolloutTargets(fleet).map((entry) => entry.machine)).toEqual(['cam-mbp', 'ci-01']);
     expect(untried(fleet)).toBe(true);
   });
 
   it('aims at the fleet’s newest while the release isn’t known, leaving the machines that have it', () => {
-    const fleet = rollout([machine('casey-mbp', '2.1.282'), machine('ci-01', '2.1.281')]);
+    const fleet = rollout([machine('cam-mbp', '2.1.282'), machine('ci-01', '2.1.281')]);
     expect(rolloutTarget(fleet)).toBe('2.1.282');
     expect(rolloutTargets(fleet).map((entry) => entry.machine)).toEqual(['ci-01']);
-    // casey-mbp already runs it, so it isn't untried.
+    // cam-mbp already runs it, so it isn't untried.
     expect(untried(fleet)).toBe(false);
   });
 
   it('includes a machine whose version couldn’t be read, which an update settles', () => {
-    expect(rolloutTargets(rollout([machine('casey-mbp', '2.1.282'), machine('ci-01', null)])).map((entry) => entry.machine)).toEqual(['ci-01']);
+    expect(rolloutTargets(rollout([machine('cam-mbp', '2.1.282'), machine('ci-01', null)])).map((entry) => entry.machine)).toEqual(['ci-01']);
   });
 
   it('says where the fleet stands', () => {
@@ -57,7 +57,7 @@ describe('updating Claude Code or Codex everywhere', () => {
 describe('the other agents across the fleet', () => {
   it('groups homes by agent, behind the newest the fleet runs, one update per machine', () => {
     const groups = harnessGroups([
-      home('casey-mbp', '0.70.2'),
+      home('cam-mbp', '0.70.2'),
       home('ci-01', '0.68.0'),
       home('ci-01', '0.68.0', { path: '~/.pi/agent-work' }),
       home('cedar-02', '0.15.3', { harness: 'openCode', updateCommand: null }),
@@ -66,7 +66,7 @@ describe('the other agents across the fleet', () => {
     const [pi, openCode] = groups;
     expect(pi?.newest).toBe('0.70.2');
     expect(pi?.rows.length).toBe(3);
-    expect(pi?.updatable.map((row) => row.machine)).toEqual(['casey-mbp', 'ci-01']);
+    expect(pi?.updatable.map((row) => row.machine)).toEqual(['cam-mbp', 'ci-01']);
     expect(pi?.behind.map((row) => row.machine)).toEqual(['ci-01']);
     // Arbor can't update this one, so it's never offered.
     expect(openCode?.updatable).toEqual([]);
@@ -75,8 +75,8 @@ describe('the other agents across the fleet', () => {
 
 describe('updating everything', () => {
   it('lists what’s behind, agent by agent, and nothing that’s current', () => {
-    const claude = rollout([machine('casey-mbp', '2.1.282'), machine('ci-01', '2.1.281')]);
-    const groups = harnessGroups([home('casey-mbp', '0.70.2'), home('ci-01', '0.68.0')]);
+    const claude = rollout([machine('cam-mbp', '2.1.282'), machine('ci-01', '2.1.281')]);
+    const groups = harnessGroups([home('cam-mbp', '0.70.2'), home('ci-01', '0.68.0')]);
     expect(fleetUpdates([claude], groups)).toEqual([
       { kind: 'agent', agent: 'claude', machine: 'ci-01', command: 'claude update', version: '2.1.281' },
       { kind: 'harness', harness: 'pi', machine: 'ci-01', command: 'pi update', version: '0.68.0' },

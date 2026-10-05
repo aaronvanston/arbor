@@ -205,7 +205,7 @@ describe('reaching the proxy', () => {
 describe('the setup repo', () => {
   const sha = 'a'.repeat(40);
   const repo = (sum: string): SetupRepo => ({
-    path: '/Users/casey/src/agent-setup', branch: 'main', head: { sha, subject: 'Start', atMs: NOW }, upstream: null, uncommitted: [],
+    path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha, subject: 'Start', atMs: NOW }, upstream: null, uncommitted: [],
     files: [{ path: '~/.claude/CLAUDE.md', kind: 'instructions', sum, ck: 'c1-10', size: 10 }], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
     plugins: [], codexPlugins: [],
   });
@@ -423,10 +423,10 @@ describe('reads that failed or haven’t happened', () => {
 describe('tools', () => {
   const found = (tool: string, version: string): ToolFound => ({ tool, path: `/usr/bin/${tool}`, version });
   const project = (needs: ProjectToolchain['needs']): ProjectToolchain => ({
-    path: '/home/casey/src/app', missing: false, remote: 'github.com/casey/app', lastUsedMs: NOW, needs, libraries: [], librariesMore: 0, packages: [], unread: [],
+    path: '/home/cam/src/app', missing: false, remote: 'github.com/cam/app', lastUsedMs: NOW, needs, libraries: [], librariesMore: 0, packages: [], unread: [],
   });
   const tools = (name: string, list: ToolFound[], projects: ProjectToolchain[] = [], fields: Partial<MachineToolchain> = {}): MachineToolchain => ({
-    machine: name, homeDir: '/home/casey', os: 'Linux', arch: 'x86_64', scannedAt: NOW, partial: false, scanning: false, error: null,
+    machine: name, homeDir: '/home/cam', os: 'Linux', arch: 'x86_64', scannedAt: NOW, partial: false, scanning: false, error: null,
     tools: list, kept: [], projects, ...fields,
   });
 
@@ -462,38 +462,38 @@ describe('projects', () => {
   const projects = (name: string, homeDir: string, repos: ProjectRepo[], scannedAt: number | null = NOW, error: string | null = null): MachineProjects => ({
     machine: name, homeDir, scannedAt, partial: false, fetchedAt: null, measuredAt: null, scanning: false, measuring: false, removing: false, error, repos,
   });
-  const theirs = projects('mbp', '/Users/casey', [
-    repo('/Users/casey/src/arbor', 'github.com/casey/arbor', { lastUsedMs: NOW - 60_000 }),
-    repo('/Users/casey/src/My App', 'github.com/casey/my-app', { lastUsedMs: NOW }),
-    repo('/Users/casey/src/notes', null),
-    repo('/Users/casey/src/mirror.git', 'github.com/casey/mirror', { bare: true }),
-    repo('/Users/casey/src/gone', 'github.com/casey/gone', { state: 'missing' }),
-    repo('/Users/casey/src/local', '/Users/casey/bare/local.git'),
+  const theirs = projects('mbp', '/Users/cam', [
+    repo('/Users/cam/src/arbor', 'github.com/cam/arbor', { lastUsedMs: NOW - 60_000 }),
+    repo('/Users/cam/src/My App', 'github.com/cam/my-app', { lastUsedMs: NOW }),
+    repo('/Users/cam/src/notes', null),
+    repo('/Users/cam/src/mirror.git', 'github.com/cam/mirror', { bare: true }),
+    repo('/Users/cam/src/gone', 'github.com/cam/gone', { state: 'missing' }),
+    repo('/Users/cam/src/local', '/Users/cam/bare/local.git'),
   ]);
 
   it('lists the reference’s projects that aren’t here, the last used first, with a command to clone each', () => {
-    const step = projectsStep(fresh, reference, [theirs, projects('cedar-03', '/home/casey', [repo('/home/casey/code/arbor', 'github.com/casey/arbor')])]);
+    const step = projectsStep(fresh, reference, [theirs, projects('cedar-03', '/home/cam', [repo('/home/cam/code/arbor', 'github.com/cam/arbor')])]);
     expect(step.state).toBe('todo');
     expect(step.missing.map((entry) => [entry.name, entry.path, entry.command])).toEqual([
-      ['my-app', '~/src/My App', "git clone https://github.com/casey/my-app.git ~/'src/My App'"],
+      ['my-app', '~/src/My App', "git clone https://github.com/cam/my-app.git ~/'src/My App'"],
     ]);
   });
 
   it('waits for both machines’ scans', () => {
     expect(projectsStep(fresh, reference, null).why).toBe('loading');
     expect(projectsStep(fresh, reference, [theirs]).why).toBe('notScanned');
-    expect(projectsStep(fresh, reference, [projects('cedar-03', '/home/casey', [])]).why).toBe('referenceNotScanned');
+    expect(projectsStep(fresh, reference, [projects('cedar-03', '/home/cam', [])]).why).toBe('referenceNotScanned');
     expect(projectsStep(fresh, null, []).state).toBe('skip');
   });
 
   it('says when a scan failed instead of waiting on it', () => {
-    expect(projectsStep(fresh, reference, [theirs, projects('cedar-03', '/home/casey', [], null, 'timed out')])).toMatchObject({ state: 'unknown', why: 'failed', error: 'timed out' });
-    expect(projectsStep(fresh, reference, [projects('mbp', '/Users/casey', [], null, 'denied'), projects('cedar-03', '/home/casey', [])])).toMatchObject({ state: 'unknown', why: 'referenceFailed' });
+    expect(projectsStep(fresh, reference, [theirs, projects('cedar-03', '/home/cam', [], null, 'timed out')])).toMatchObject({ state: 'unknown', why: 'failed', error: 'timed out' });
+    expect(projectsStep(fresh, reference, [projects('mbp', '/Users/cam', [], null, 'denied'), projects('cedar-03', '/home/cam', [])])).toMatchObject({ state: 'unknown', why: 'referenceFailed' });
   });
 
   it('leaves out a home folder that’s a repo, and gives an SSH alias no HTTPS command', () => {
-    const odd = projects('mbp', '/Users/casey', [repo('/Users/casey', 'github.com/casey/dotfiles'), repo('/Users/casey/src/work', 'github-work/acme/work')]);
-    const step = projectsStep(fresh, reference, [odd, projects('cedar-03', '/home/casey', [])]);
+    const odd = projects('mbp', '/Users/cam', [repo('/Users/cam', 'github.com/cam/dotfiles'), repo('/Users/cam/src/work', 'github-work/acme/work')]);
+    const step = projectsStep(fresh, reference, [odd, projects('cedar-03', '/home/cam', [])]);
     expect(step.missing.map((entry) => [entry.path, entry.command])).toEqual([['~/src/work', null]]);
   });
 

@@ -267,8 +267,8 @@ mod tests {
             ]),
         );
         // Another home's older copy has less for one day, and more for another: each day takes the most.
-        fixture.write(".agent-app/homes/claude-proxy/.claude.json", "{}");
-        fixture.write(".agent-app/homes/claude-proxy/stats-cache.json", &stats(&[("2026-08-02", &[("claude-opus-5-5", 8_000)], 3), ("2026-08-03", &[("claude-opus-5-5", 3_500)], 1)]));
+        fixture.write(".agent-app/homes/claude-other/.claude.json", "{}");
+        fixture.write(".agent-app/homes/claude-other/stats-cache.json", &stats(&[("2026-08-02", &[("claude-opus-5-5", 8_000)], 3), ("2026-08-03", &[("claude-opus-5-5", 3_500)], 1)]));
         assert!(fixture.pass().complete);
         let report = count_pass(&fixture.db, &fixture.places, &everything(), &|| false).unwrap();
         assert!(report.complete && report.failures == 0, "{report:?}");

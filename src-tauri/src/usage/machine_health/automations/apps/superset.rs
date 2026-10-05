@@ -192,7 +192,7 @@ mod tests {
     fn scan() -> String {
         let id = "6f1c0d2e-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
         format!(
-            "H\t/Users/casey\nSL\t{}\nSH\t{}\nSP\t{id}\t{}\nSR\t{id}\tskipped_offline\t2026-10-02T16:00:00.000Z\nSR\tcloud-1\tdispatched\t2026-10-01T16:00:00.000Z\n",
+            "H\t/Users/cam\nSL\t{}\nSH\t{}\nSP\t{id}\t{}\nSR\t{id}\tskipped_offline\t2026-10-02T16:00:00.000Z\nSR\tcloud-1\tdispatched\t2026-10-01T16:00:00.000Z\n",
             b64(LIST),
             b64(r#"[{"id":"host-7","name":"cedar-02","online":"yes"}]"#),
             b64(&format!(r#"{{"id":"{id}","prompt":"Triage the new issues."}}"#)),
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn reads_its_automations_with_hosts_prompts_and_last_runs() {
         let stdout = scan();
-        let found = Superset.parse(&ScanLines::new("casey-mbp", &stdout)).unwrap();
+        let found = Superset.parse(&ScanLines::new("cam-mbp", &stdout)).unwrap();
         assert_eq!(found.len(), 2);
         let triage = &found[0].automation;
         assert_eq!(triage.summary.id, "superset:6f1c0d2e-1a2b-4c3d-8e9f-0a1b2c3d4e5f");
@@ -221,7 +221,7 @@ mod tests {
         // In Superset's cloud: no machine, paused so no next run, and no prompt asked for, so it can't be copied.
         let cloud = &found[1].automation;
         assert_eq!(cloud.summary.machine, None);
-        assert_eq!(cloud.summary.target, AutomationTarget::Machine { name: "casey-mbp".into() });
+        assert_eq!(cloud.summary.target, AutomationTarget::Machine { name: "cam-mbp".into() });
         assert_eq!(cloud.summary.next_run_at_ms, None);
         assert_eq!(cloud.summary.schedule, ScheduleSummary::Custom);
         assert_eq!(cloud.summary.last_run.as_ref().map(|run| run.status), Some(AutomationRunStatus::Done));
@@ -230,15 +230,15 @@ mod tests {
 
     #[test]
     fn another_programs_superset_is_no_superset() {
-        assert_eq!(Superset.parse(&ScanLines::new("casey-mbp", "SL\t\nSH\t\n")), None);
-        assert_eq!(Superset.parse(&ScanLines::new("casey-mbp", &format!("SL\t{}\n", b64("Usage: superset [OPTIONS]")))), None);
-        assert_eq!(Superset.parse(&ScanLines::new("casey-mbp", &format!("SL\t{}\n", b64("[]")))), Some(Vec::new()));
+        assert_eq!(Superset.parse(&ScanLines::new("cam-mbp", "SL\t\nSH\t\n")), None);
+        assert_eq!(Superset.parse(&ScanLines::new("cam-mbp", &format!("SL\t{}\n", b64("Usage: superset [OPTIONS]")))), None);
+        assert_eq!(Superset.parse(&ScanLines::new("cam-mbp", &format!("SL\t{}\n", b64("[]")))), Some(Vec::new()));
     }
 
     #[test]
     fn pauses_resumes_and_runs_by_its_id_quoted() {
         let stdout = scan();
-        let found = Superset.parse(&ScanLines::new("casey-mbp", &stdout)).unwrap();
+        let found = Superset.parse(&ScanLines::new("cam-mbp", &stdout)).unwrap();
         let Ok(Change::Script(pause)) = Superset.set_enabled(&found[1], false) else { panic!("a script") };
         assert!(pause.ends_with("superset automations pause 'cloud-1' </dev/null >/dev/null\n"), "{pause}");
         let Ok(Change::Script(resume)) = Superset.set_enabled(&found[1], true) else { panic!("a script") };
@@ -272,7 +272,7 @@ esac
         assert_eq!(runs, ["SR\ta-1\tdispatched\t2026-10-02T16:00:00.000Z"]);
         assert_eq!(stdout.lines().filter(|line| line.starts_with("SP\t")).count(), 1, "the id that isn't plain is skipped");
         assert!(!stdout.contains("title"));
-        let found = Superset.parse(&ScanLines::new("casey-mbp", &stdout)).unwrap();
+        let found = Superset.parse(&ScanLines::new("cam-mbp", &stdout)).unwrap();
         assert_eq!(found[0].automation.prompt, "Do it.");
         let _ = fs::remove_dir_all(&home);
     }

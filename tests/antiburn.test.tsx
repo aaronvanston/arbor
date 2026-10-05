@@ -5,10 +5,10 @@ import type { AntiburnStatus, SessionTranscript } from '../src/native/types';
 import { AntiburnRow } from '../src/pages/SessionAntiburn';
 import { antiburnReach } from '../src/services/antiburn';
 
-const installed: AntiburnStatus = { installed: true, thisMachine: 'casey-mbp' };
+const installed: AntiburnStatus = { installed: true, thisMachine: 'cam-mbp' };
 
 const transcript = (fields: Partial<SessionTranscript> = {}): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '~/.claude', cwd: '/Users/casey/src/proxy', repoRoot: '', mainRepo: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '~/.claude', cwd: '/Users/cam/src/proxy', repoRoot: '', mainRepo: '',
   branch: '', commitHash: '', repositoryUrl: '', title: '', titleSource: '', pullRequests: [], linesAdded: null, linesRemoved: null,
   compactions: [], toolUsage: null, readAtMs: 0,
   ...fields,

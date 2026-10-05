@@ -1417,10 +1417,10 @@ mod tests {
 
     #[test]
     fn a_home_is_pointed_at_this_mac_the_way_its_agents_reach_it() {
-        let settings = "{\n  \"model\": \"opus\",\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"http://casey-mbp.tail1234.ts.net:8317\",\n    \"ANTHROPIC_AUTH_TOKEN\": \"secret\"\n  }\n}\n";
+        let settings = "{\n  \"model\": \"opus\",\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"http://cam-mbp.tail1234.ts.net:8317\",\n    \"ANTHROPIC_AUTH_TOKEN\": \"secret\"\n  }\n}\n";
         let (result, endpoints) = apply(Some(settings), Some(&export(false, Some("192.168.1.20"))));
         let written = result.unwrap().unwrap();
-        assert_eq!(endpoints, ["http://casey-mbp.tail1234.ts.net:8319/v1/metrics"]);
+        assert_eq!(endpoints, ["http://cam-mbp.tail1234.ts.net:8319/v1/metrics"]);
         let value: Value = serde_json::from_str(&written).unwrap();
         assert_eq!(value["model"], "opus");
         assert_eq!(value["env"]["ANTHROPIC_AUTH_TOKEN"], "secret");

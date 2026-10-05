@@ -60,7 +60,7 @@ describe('Claude Code checks', () => {
     skill('design', 'd-shared', {}, null, '~/.agents/skills'),
     skill('notes', 'n-same', {}, null, '~/.agents/skills'),
   ]);
-  const second = home('claude', '~/.agent-app/homes/claude-proxy', [item('plugin', 'superpowers@market', 'p')]);
+  const second = home('claude', '~/.agent-app/homes/claude-other', [item('plugin', 'superpowers@market', 'p')]);
   const checks = setupChecks([machine('mac', [claude, shared, second])]);
   const at = 'claude:~/.claude';
 
@@ -96,8 +96,8 @@ describe('Claude Code checks', () => {
   });
 
   it('notes a Claude Code home without skills while ~/.claude has them', () => {
-    expect(find(checks, 'noSkills')).toMatchObject([{ home: 'claude:~/.agent-app/homes/claude-proxy', facts: { count: 5 } }]);
-    const alone = setupChecks([machine('solo', [home('claude', '~/.agent-app/homes/claude-proxy', [])])]);
+    expect(find(checks, 'noSkills')).toMatchObject([{ home: 'claude:~/.agent-app/homes/claude-other', facts: { count: 5 } }]);
+    const alone = setupChecks([machine('solo', [home('claude', '~/.agent-app/homes/claude-other', [])])]);
     expect(find(alone, 'noSkills')).toEqual([]);
   });
 
@@ -160,12 +160,12 @@ describe('session cleanup', () => {
   it('warns about a Claude Code home that deletes old sessions, and says after how long', () => {
     const checks = setupChecks([machine('mac', [
       home('claude', '~/.claude', [setting('cleanupPeriodDays', '36500')]),
-      home('claude', '~/.agent-app/homes/claude-proxy', []),
+      home('claude', '~/.agent-app/homes/claude-other', []),
       home('claude', '~/.agent-tool/profiles/work2', [setting('cleanupPeriodDays', '90')]),
       home('codex', '~/.codex', []),
     ])]);
     expect(find(checks, 'sessionCleanup').map((check) => [check.home, check.facts])).toEqual([
-      ['claude:~/.agent-app/homes/claude-proxy', { count: 30, home: '~/.agent-app/homes/claude-proxy' }],
+      ['claude:~/.agent-app/homes/claude-other', { count: 30, home: '~/.agent-app/homes/claude-other' }],
       ['claude:~/.agent-tool/profiles/work2', { count: 90, home: '~/.agent-tool/profiles/work2' }],
     ]);
     expect(find(checks, 'sessionCleanup')[0]!.level).toBe('note');

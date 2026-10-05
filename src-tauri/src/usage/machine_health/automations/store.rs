@@ -242,7 +242,7 @@ mod tests {
             agent: Harness::Claude,
             model: None,
             effort: None,
-            target: AutomationTarget::Machine { name: "casey-mbp".into() },
+            target: AutomationTarget::Machine { name: "cam-mbp".into() },
             project_path: "~/src/arbor".into(),
             workspace: AutomationWorkspace::Checkout,
             session: AutomationSession::Fresh,
@@ -262,7 +262,7 @@ mod tests {
             run: AutomationRun {
                 id: id.into(),
                 automation_id: automation.into(),
-                machine: Some("casey-mbp".into()),
+                machine: Some("cam-mbp".into()),
                 status,
                 scheduled_at_ms: at,
                 started_at_ms: Some(at),

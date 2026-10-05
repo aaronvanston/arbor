@@ -43,9 +43,9 @@ describe('a project’s skills in its checkouts', () => {
 
   it('lists the changes each checkout needs, and why one can’t be made', () => {
     const values: Record<string, Record<string, RepoProjectValue>> = {
-      pdf: { 'casey/arbor': { all: 'off', machines: {} } },
-      'frontend-design': { 'casey/arbor': { all: 'on', machines: {} } },
-      review: { 'casey/arbor': { all: null, machines: { ci01: 'off' } } },
+      pdf: { 'cam/arbor': { all: 'off', machines: {} } },
+      'frontend-design': { 'cam/arbor': { all: 'on', machines: {} } },
+      review: { 'cam/arbor': { all: null, machines: { ci01: 'off' } } },
     };
     const checkouts = [
       checkout('mac-mini', '/src/arbor', [{ name: 'pdf', state: 'off', local: true }]),
@@ -53,7 +53,7 @@ describe('a project’s skills in its checkouts', () => {
       checkout('ci-01', '/home/ci/arbor'),
       checkout('ci-01', '/home/ci/arbor-wt', [], [], true),
     ];
-    const changes = projectSkillChanges(['frontend-design', 'pdf', 'review'], values, checkouts, 'Casey/Arbor', (name, skillName) => homeSkill(machines, name, skillName));
+    const changes = projectSkillChanges(['frontend-design', 'pdf', 'review'], values, checkouts, 'Cam/Arbor', (name, skillName) => homeSkill(machines, name, skillName));
     expect(changes).toEqual([
       // frontend-design is off in the Mac's home settings, so both its checkouts turn it on; ci-01 hasn't it at all.
       { machine: 'mac-mini', checkout: '/src/arbor', target: 'frontend-design', on: true, blocked: null },

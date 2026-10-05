@@ -97,7 +97,7 @@ describe('another agent’s card on Sync › Agents', () => {
   };
 
   it('lists every machine’s home under one card, marking the ones behind the newest', () => {
-    const html = renderGroup([home('casey-mbp', '0.70.2'), home('ci-01', '0.68.0')]);
+    const html = renderGroup([home('cam-mbp', '0.70.2'), home('ci-01', '0.68.0')]);
     expect(html.match(/data-slot="agent-card"/g)?.length).toBe(1);
     expect(html).toContain('1 behind');
     expect(html).toContain('Newest is 0.70.2');
@@ -106,9 +106,9 @@ describe('another agent’s card on Sync › Agents', () => {
   });
 
   it('leaves a lone machine’s update to its own row', () => {
-    const html = renderGroup([home('casey-mbp', '0.70.2')]);
+    const html = renderGroup([home('cam-mbp', '0.70.2')]);
     expect(html).toContain('0.70.2 on 1 machine');
     expect(html).not.toContain('Update all');
-    expect(html).toContain('aria-label="Update Pi on casey-mbp"');
+    expect(html).toContain('aria-label="Update Pi on cam-mbp"');
   });
 });

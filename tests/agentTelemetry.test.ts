@@ -31,7 +31,7 @@ const spend = (cost: number, tokens = 0, sessions = 1): Spend => ({
 describe('machineTelemetryState', () => {
   it('is off before the status has loaded, or for a machine never set up', () => {
     expect(machineTelemetryState(null, 'ci-01', NOW)).toEqual({ state: 'off', entry: null });
-    expect(machineTelemetryState(status([entry('casey-mbp', NOW)]), 'ci-01', NOW).state).toBe('off');
+    expect(machineTelemetryState(status([entry('cam-mbp', NOW)]), 'ci-01', NOW).state).toBe('off');
   });
 
   it('waits for a machine set up that has sent nothing yet', () => {

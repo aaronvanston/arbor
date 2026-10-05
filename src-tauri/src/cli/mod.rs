@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn the_link_and_the_cli_word_are_the_command_line_and_a_dev_build_is_the_app() {
-        assert_eq!(cli_arguments("/Users/casey/.local/bin/arbor", Some("Arbor"), rest(&["status"])), Some(rest(&["status"])));
+        assert_eq!(cli_arguments("/Users/cam/.local/bin/arbor", Some("Arbor"), rest(&["status"])), Some(rest(&["status"])));
         assert_eq!(cli_arguments("arbor", Some("Arbor"), rest(&[])), Some(rest(&[])));
         assert_eq!(cli_arguments("target/debug/arbor", Some("arbor"), rest(&[])), None);
         assert_eq!(cli_arguments("/Applications/Arbor.app/Contents/MacOS/Arbor", Some("Arbor"), rest(&[])), None);

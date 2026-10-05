@@ -625,7 +625,7 @@ mod tests {
         }
     }
 
-    const HOME: &str = "/Users/casey";
+    const HOME: &str = "/Users/cam";
 
     const CONFIG: &str = r#"# Everything first-match-wins, as ssh reads it.
 Include config.d/*
@@ -633,7 +633,7 @@ Include ~/.orbstack/ssh/config
 
 Host cedar-01 cedar-02
     HostName %h.tailc0ffee.ts.net
-    User casey
+    User cam
     IdentityFile ~/.ssh/id_ed25519_cedar
 
 Host build-arm
@@ -671,12 +671,12 @@ Host *
 
     fn samples() -> Samples {
         Samples::new(&[
-            ("/Users/casey/.ssh/config", CONFIG),
-            ("/Users/casey/.ssh/config.d/10-lab", "Host lab-box\n  HostName lab-box.local\n  Port 2222\n"),
-            ("/Users/casey/.ssh/config.d/20-loop", "Include config\nHost loopback\n  HostName 127.0.0.1\n"),
-            ("/Users/casey/.ssh/config.d/.hidden", "Host hidden\n"),
-            ("/Users/casey/.orbstack/ssh/config", "Host orb\n  HostName localhost\n  Port 32222\n"),
-            ("/Users/casey/.ssh/bastion.conf", "User jump\nHost behind-bastion\n  User inner\n"),
+            ("/Users/cam/.ssh/config", CONFIG),
+            ("/Users/cam/.ssh/config.d/10-lab", "Host lab-box\n  HostName lab-box.local\n  Port 2222\n"),
+            ("/Users/cam/.ssh/config.d/20-loop", "Include config\nHost loopback\n  HostName 127.0.0.1\n"),
+            ("/Users/cam/.ssh/config.d/.hidden", "Host hidden\n"),
+            ("/Users/cam/.orbstack/ssh/config", "Host orb\n  HostName localhost\n  Port 32222\n"),
+            ("/Users/cam/.ssh/bastion.conf", "User jump\nHost behind-bastion\n  User inner\n"),
         ])
     }
 
@@ -701,7 +701,7 @@ Host *
         let resolved = |alias: &str| config.resolve(alias);
         assert_eq!(
             resolved("cedar-02"),
-            Resolved { host_name: Some("cedar-02.tailc0ffee.ts.net".into()), user: Some("casey".into()), port: Some(22) },
+            Resolved { host_name: Some("cedar-02.tailc0ffee.ts.net".into()), user: Some("cam".into()), port: Some(22) },
             "%h is the alias, and Host * fills in what's left",
         );
         assert_eq!(resolved("build-arm"), Resolved { host_name: Some("10.0.4.21".into()), user: Some("ubuntu".into()), port: Some(2200) });
@@ -712,7 +712,7 @@ Host *
         assert_eq!(resolved("bastion").user.as_deref(), Some("jump"), "an include in a block applies with it");
         assert_eq!(resolved("bastion").port, Some(2222));
         assert_eq!(resolved("behind-bastion").user.as_deref(), Some("fallback"), "a block included under another needs both to match");
-        assert_eq!(resolved("CEDAR-01").user.as_deref(), Some("casey"), "hosts match without regard to case");
+        assert_eq!(resolved("CEDAR-01").user.as_deref(), Some("cam"), "hosts match without regard to case");
     }
 
     #[test]
@@ -769,12 +769,12 @@ localhost ssh-ed25519 AAAAC3Nza9
 
     fn status() -> Value {
         serde_json::json!({
-            "Self": { "HostName": "Caseys-MacBook-Pro", "DNSName": "caseys-macbook-pro.tailc0ffee.ts.net.", "OS": "macOS", "TailscaleIPs": ["100.64.0.1"] },
-            "User": { "123": { "LoginName": "casey@example.com" } },
+            "Self": { "HostName": "Cams-MacBook-Pro", "DNSName": "cams-macbook-pro.tailc0ffee.ts.net.", "OS": "macOS", "TailscaleIPs": ["100.64.0.1"] },
+            "User": { "123": { "LoginName": "cam@example.com" } },
             "Peer": {
                 "nodekey:1": { "HostName": "cedar-02", "DNSName": "cedar-02.tailc0ffee.ts.net.", "OS": "linux", "TailscaleIPs": ["100.64.0.23", "fd7a:115c:a1e0::1"], "Online": true, "PublicKey": "nodekey:secret" },
                 "nodekey:2": { "HostName": "Mac-Studio", "DNSName": "mac-studio.tailc0ffee.ts.net.", "OS": "macOS", "TailscaleIPs": ["100.64.0.7"], "Online": false },
-                "nodekey:3": { "HostName": "Casey's iPhone", "DNSName": "caseys-iphone.tailc0ffee.ts.net.", "OS": "iOS", "TailscaleIPs": ["100.64.0.8"], "Online": true },
+                "nodekey:3": { "HostName": "Cam's iPhone", "DNSName": "cams-iphone.tailc0ffee.ts.net.", "OS": "iOS", "TailscaleIPs": ["100.64.0.8"], "Online": true },
                 "nodekey:4": { "HostName": "au-syd-wg-001", "DNSName": "au-syd-wg-001.mullvad.ts.net.", "OS": "linux", "TailscaleIPs": ["100.64.0.9"], "Online": true },
                 "nodekey:5": { "HostName": "cedar-01", "DNSName": "cedar-01.tailc0ffee.ts.net.", "OS": "linux", "TailscaleIPs": ["100.64.0.21"], "Online": true },
                 "nodekey:6": { "HostName": "", "DNSName": "", "OS": "linux", "TailscaleIPs": [], "Online": true }
@@ -816,7 +816,7 @@ localhost ssh-ed25519 AAAAC3Nza9
         );
         let cedar = &found[4];
         assert_eq!(cedar.host_name.as_deref(), Some("cedar-02.tailc0ffee.ts.net"));
-        assert_eq!(cedar.user.as_deref(), Some("casey"));
+        assert_eq!(cedar.user.as_deref(), Some("cam"));
         assert_eq!(cedar.os.as_deref(), Some("linux"));
         assert_eq!(cedar.online, Some(true));
         assert!(cedar.addresses.contains(&"100.64.0.23".to_string()));
@@ -828,7 +828,7 @@ localhost ssh-ed25519 AAAAC3Nza9
         let config = read_ssh_config(&samples(), Path::new(HOME));
         let found = discovered_hosts(&config, &parse_known_hosts(KNOWN_HOSTS), &peers_from_status(&status()));
         let json = serde_json::to_string(&found).unwrap();
-        for secret in ["id_ed25519", "id_work", "keys/build", "AAAA", "nodekey", "casey@example.com", "JfKTdBh7"] {
+        for secret in ["id_ed25519", "id_work", "keys/build", "AAAA", "nodekey", "cam@example.com", "JfKTdBh7"] {
             assert!(!json.contains(secret), "{secret} leaked into {json}");
         }
     }

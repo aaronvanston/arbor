@@ -25,7 +25,7 @@ fn run(id: &str, state: RunState) -> HarnessRun {
         trigger: None,
         pool: "builds".into(),
         ran_pool: Some("builds".into()),
-        machine: Some("casey-mbp".into()),
+        machine: Some("cam-mbp".into()),
         harness: Harness::Headless,
         used: Some(Harness::Headless),
         setup: "claude".into(),

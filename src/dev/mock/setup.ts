@@ -93,10 +93,10 @@ import { freshInstall, hours, later, mockLog, params } from './scenario';
 const contextScenario = params.get('context') ?? (freshInstall ? 'none' : null);
 
 const CONTEXT_HOMES: { machine: string; agent: AgentKind; home: string; tokens: number; perDay: number; model: string; repos: string[] }[] = [
-  { machine: 'casey-mbp', agent: 'claude', home: '~/.claude', tokens: 38_400, perDay: 3, model: 'claude-opus-5-5', repos: ['/Users/casey/src/arbor', '/Users/casey/src/proxy', ''] },
-  { machine: 'casey-mbp', agent: 'claude', home: '~/.agent-app/homes/claude-proxy', tokens: 24_100, perDay: 2, model: 'claude-opus-5-5', repos: ['/Users/casey/src/arbor'] },
-  { machine: 'casey-mbp', agent: 'codex', home: '~/.codex', tokens: 17_900, perDay: 2, model: 'gpt-6-sol', repos: ['/Users/casey/src/api', '/Users/casey/src/arbor'] },
-  { machine: 'cedar-02', agent: 'claude', home: '~/.claude', tokens: 52_300, perDay: 1.5, model: 'claude-opus-5-5', repos: ['/home/casey/src/arbor', '/home/casey/src/infra'] },
+  { machine: 'cam-mbp', agent: 'claude', home: '~/.claude', tokens: 38_400, perDay: 3, model: 'claude-opus-5-5', repos: ['/Users/cam/src/arbor', '/Users/cam/src/proxy', ''] },
+  { machine: 'cam-mbp', agent: 'claude', home: '~/.agent-app/homes/claude-other', tokens: 24_100, perDay: 2, model: 'claude-opus-5-5', repos: ['/Users/cam/src/arbor'] },
+  { machine: 'cam-mbp', agent: 'codex', home: '~/.codex', tokens: 17_900, perDay: 2, model: 'gpt-6-sol', repos: ['/Users/cam/src/api', '/Users/cam/src/arbor'] },
+  { machine: 'cedar-02', agent: 'claude', home: '~/.claude', tokens: 52_300, perDay: 1.5, model: 'claude-opus-5-5', repos: ['/home/cam/src/arbor', '/home/cam/src/infra'] },
   { machine: 'ci-01', agent: 'claude', home: '~/.claude', tokens: 29_800, perDay: 0.5, model: 'claude-sonnet-5', repos: ['/home/ci/work/arbor'] },
 ];
 
@@ -208,7 +208,7 @@ const codexItems: SetupItem[] = [
 ];
 
 const sharedItems: SetupItem[] = [
-  setupSkill('agents-md', '~/.agents/skills/agents-md', 'q1', 3, 'casey/skills'),
+  setupSkill('agents-md', '~/.agents/skills/agents-md', 'q1', 3, 'cam/skills'),
   setupSkill('find-skills', '~/.agents/skills/find-skills', 'q2', 1, 'vercel-labs/skills'),
   setupSkill('frontend-design', '~/.agents/skills/frontend-design', 'q3', 4, 'anthropics/skills'),
   setupSkill('pdf', '~/.agents/skills/pdf', 'k1', 4, 'anthropics/skills'),
@@ -232,12 +232,12 @@ const setupInstall = (agent: AgentKind, path: string, version: string | null, re
 
 export const setupMachines: SetupMachine[] = [
   {
-    machine: 'casey-mbp', local: true, reachable: true, scannedAt: Date.now() - 3 * 60_000, error: null, scanning: false, policy: null,
+    machine: 'cam-mbp', local: true, reachable: true, scannedAt: Date.now() - 3 * 60_000, error: null, scanning: false, policy: null,
     homes: [
       setupHome('claude', '~/.claude', [...claudeItems, setupSkill('frontend-design', '~/.claude/skills/frontend-design', 'q3-mine', 3)]),
       setupHome('codex', '~/.codex', codexItems),
       setupHome('shared', '~/.agents', sharedItems),
-      setupHome('claude', '~/.agent-app/homes/claude-proxy', [
+      setupHome('claude', '~/.agent-app/homes/claude-other', [
         setupItem('plugin', 'superpowers@superpowers-marketplace', 'p1', { value: '4.1.0', enabled: true, note: mockAgo(3) }),
         setupItem('plugin', 'context7@claude-plugins-official', 'pg', { value: null, enabled: true }),
         setupItem('marketplace', 'superpowers-marketplace', 'mk1', { note: 'obra/superpowers-marketplace', value: mockAgo(3) }),
@@ -328,7 +328,7 @@ export const setupMachines: SetupMachine[] = [
       })),
       setupHome('shared', '~/.agents', [
         ...sharedItems,
-        setupSkill('db-migrate', '~/.agents/skills/db-migrate', 'e7', 3, 'casey/skills'),
+        setupSkill('db-migrate', '~/.agents/skills/db-migrate', 'e7', 3, 'cam/skills'),
         setupSkill('log-triage', '~/.agents/skills/log-triage', 'e8', 2),
       ]),
     ],
@@ -349,7 +349,7 @@ export const setupMachines: SetupMachine[] = [
 /** `?fresh=1`: only this Mac, which isn't listed as a machine yet, as the scan finds it anyway. */
 const keepThisMacOnly = <T extends { machine: string }>(entries: T[]) => {
   if (!freshInstall) return;
-  const kept = entries.filter((entry) => entry.machine === 'casey-mbp');
+  const kept = entries.filter((entry) => entry.machine === 'cam-mbp');
   entries.splice(0, entries.length, ...kept);
 };
 keepThisMacOnly(setupMachines);
@@ -380,7 +380,7 @@ if (params.get('pluginrepo') === 'sample') {
 if (hooksSample) {
   const shared = (machine: string) => setupMachines.find((entry) => entry.machine === machine)?.homes.find((home) => home.path === '~/.agents');
   const script = (name: string, sum: string, size: number) => setupFile('hook', name, `~/.agents/hooks/${name}`, sum, size);
-  shared('casey-mbp')?.items.push(script('guard.sh', 'hs1', 96), script('notify.py', 'hs2', 88));
+  shared('cam-mbp')?.items.push(script('guard.sh', 'hs1', 96), script('notify.py', 'hs2', 88));
   shared('ci-01')?.items.push(script('guard.sh', 'hs1', 96), script('notify.py', 'hs2', 88), script('old.sh', 'hs9', 40));
 }
 
@@ -391,19 +391,19 @@ const setupScenario = params.get('setup');
 if (setupScenario === 'overrides') {
   const homeOf = (machine: string, path: string) => setupMachines.find((entry) => entry.machine === machine)?.homes.find((home) => home.path === path);
   const override = (name: string, state: SkillOverride['state'], file = '~/.claude/settings.json'): SkillOverride => ({ name, state, source: 'settings', file });
-  const mac = homeOf('casey-mbp', '~/.claude');
+  const mac = homeOf('cam-mbp', '~/.claude');
   if (mac) mac.skillOverrides = [override('pdf', 'nameOnly'), override('release-notes', 'off')];
   const ci = homeOf('ci-01', '~/.claude');
   if (ci) ci.skillOverrides = [override('browser-check', 'off')];
-  const second = homeOf('casey-mbp', '~/.agent-app/homes/claude-proxy');
-  if (second) second.ignoredOverrides = ['~/.agent-app/homes/claude-proxy/settings.json'];
+  const second = homeOf('cam-mbp', '~/.agent-app/homes/claude-other');
+  if (second) second.ignoredOverrides = ['~/.agent-app/homes/claude-other/settings.json'];
 }
 // With `?setup=policy`, Claude Code's managed-settings policy on this Mac sets how long sessions are kept, the model,
 // a deny list, its telemetry, a hook and a plugin, and turns frontend-design off in every Claude Code home; ci-01's
 // can't be read; and cedar-02's has skill overrides Claude Code ignores.
 if (setupScenario === 'policy') {
   const machineOf = (machine: string) => setupMachines.find((entry) => entry.machine === machine);
-  const mac = machineOf('casey-mbp');
+  const mac = machineOf('cam-mbp');
   const macFile = '/Library/Application Support/ClaudeCode/managed-settings.json';
   if (mac) {
     const keys: [ItemKind, string][] = [
@@ -424,9 +424,9 @@ if (setupScenario === 'policy') {
 // With `?setup=shadow`, this Mac has a shadow Codex home whose entries link into ~/.codex, so what it shares
 // shows under Codex and the shadow home has nothing of its own to compare.
 if (setupScenario === 'shadow') {
-  const mac = setupMachines.find((entry) => entry.machine === 'casey-mbp');
+  const mac = setupMachines.find((entry) => entry.machine === 'cam-mbp');
   if (mac) {
-    const shadow = setupHome('codex', '~/.agent-app/homes/codex-proxy', [], [], '~/.codex/skills');
+    const shadow = setupHome('codex', '~/.agent-app/homes/codex-other', [], [], '~/.codex/skills');
     shadow.shares = { home: '~/.codex', entries: ['AGENTS.md', 'archived_sessions', 'config.toml', 'prompts', 'rules', 'sessions', 'skills', 'sqlite'] };
     mac.homes.push(shadow);
   }
@@ -462,7 +462,7 @@ const designDoc = (lines: string[]) => `---\nname: frontend-design\ndescription:
 
 const setupSkills: Record<string, Record<string, SetupSkillFile[]>> = {
   '~/.claude/skills/release-notes': {
-    'casey-mbp': [
+    'cam-mbp': [
       skillFile('SKILL.md', 'n2', releaseNotesDoc(['List the commits since the last tag.', 'Group them by what changed for people using the app.', 'Leave out refactors nobody would notice.', 'Keep each line under 80 characters.'])),
       skillFile('template.md', 't1', '## What’s new\n\n## Fixed\n'),
     ],
@@ -473,7 +473,7 @@ const setupSkills: Record<string, Record<string, SetupSkillFile[]>> = {
     ],
   },
   '~/.agents/skills/frontend-design': {
-    'casey-mbp': [
+    'cam-mbp': [
       skillFile('SKILL.md', 'd2', designDoc(['Pick a clear direction before writing code.', 'Use the project’s tokens; never invent colors.', 'Check it in light and dark.'])),
       skillFile('reference/palette.md', 'pl', '# Palette\n\nNeutral first, one accent.\n'),
       skillFile('.env', 'env2', null, 'secret'),
@@ -487,23 +487,23 @@ const setupSkills: Record<string, Record<string, SetupSkillFile[]>> = {
     ],
   },
   '~/.claude/skills/frontend-design': {
-    'casey-mbp': [
+    'cam-mbp': [
       skillFile('SKILL.md', 'd0', designDoc(['Pick a clear direction before writing code.', 'Check it in light and dark.'])),
       skillFile('reference/palette.md', 'pl0', '# Palette\n\nNeutral first.\n'),
       skillFile('assets/logo.png', 'png', null, 'binary'),
     ],
   },
-  '~/.agents/skills/find-skills': Object.fromEntries(['casey-mbp', 'ci-01', 'cedar-02'].map((machine) => [machine, [
+  '~/.agents/skills/find-skills': Object.fromEntries(['cam-mbp', 'ci-01', 'cedar-02'].map((machine) => [machine, [
     skillFile('SKILL.md', 'f1', findSkillsDoc(['Search the skills directory for the task at hand.', 'Suggest the best match with its install command.'])),
   ]])),
   '~/.claude/skills/browser-check': {
-    'casey-mbp': [
+    'cam-mbp': [
       skillFile('SKILL.md', 'bh', '---\nname: browser-check\ndescription: Drive a real browser to check a page.\n---\n\nOpen the page, act, then take a snapshot.\n'),
       skillFile('scripts/run.sh', 'rs', '#!/bin/sh\nexec node ./run.mjs "$@"\n'),
     ],
   },
 };
-// With `?markdown=rich`, casey-mbp's CLAUDE.md (and the setup repo's) holds everything a preview has to handle: GitHub
+// With `?markdown=rich`, cam-mbp's CLAUDE.md (and the setup repo's) holds everything a preview has to handle: GitHub
 // tables and task lists, links of every kind, an image, prompt tags, and HTML that must never run. Its release-notes
 // SKILL.md gets front matter with lists and block text.
 if (params.get('markdown') === 'rich') {
@@ -542,7 +542,7 @@ if (params.get('markdown') === 'rich') {
     '```',
     '',
   ].join('\n');
-  const skill = setupSkills['~/.claude/skills/release-notes']?.['casey-mbp']?.[0];
+  const skill = setupSkills['~/.claude/skills/release-notes']?.['cam-mbp']?.[0];
   if (skill) {
     skill.content = [
       '---',
@@ -550,7 +550,7 @@ if (params.get('markdown') === 'rich') {
       'description: "Write release notes from the commits since the last tag. Use when: the user asks what changed."',
       'allowed-tools: [Read, "Bash(changelog:*)", Grep]',
       'metadata:',
-      '  owner: casey',
+      '  owner: cam',
       '  version: 3',
       'when_to_use: >',
       '  After a release is tagged,',
@@ -565,14 +565,14 @@ if (params.get('markdown') === 'rich') {
     ].join('\n');
   }
 }
-// With `?diff=far`, casey-mbp's and ci-01's CLAUDE.md are long and have nothing in common past their first lines, too
+// With `?diff=far`, cam-mbp's and ci-01's CLAUDE.md are long and have nothing in common past their first lines, too
 // far apart to line up, so the comparison shows everything between as removed and added.
 if (params.get('diff') === 'far') {
   const lines = (word: string) => Array.from({ length: 1_400 }, (_, index) => `- ${word} rule ${index + 1}: keep ${word} things tidy.`);
   setupTexts.c2b9 = ['# Working agreement', '', ...lines('local'), ''].join('\n');
   setupTexts.c1a7 = ['# Working agreement', '', ...lines('ci'), ''].join('\n');
 }
-// With `?diff=folded`, casey-mbp's and ci-01's CLAUDE.md are 260 lines long and differ by a word at lines 3, 36 and
+// With `?diff=folded`, cam-mbp's and ci-01's CLAUDE.md are 260 lines long and differ by a word at lines 3, 36 and
 // 250, so the comparison folds the unchanged lines between: 26 that open at once, 207 that open a hundred at a time,
 // and the 7 at the end.
 if (params.get('diff') === 'folded') {
@@ -682,7 +682,7 @@ const repoSkill = (name: string, sum: string, files: number, source: string | nu
 
 // The store's skills as this Mac had them; frontend-design was committed by hand with its .env, so it can't be synced.
 const startedSkills = [
-  repoSkill('agents-md', 'q1', 3, 'casey/skills'),
+  repoSkill('agents-md', 'q1', 3, 'cam/skills'),
   repoSkill('find-skills', 'q2', 1, 'vercel-labs/skills'),
   repoSkill('frontend-design', 'q3', 4, 'anthropics/skills', 'secret'),
   repoSkill('pdf', 'k1', 4, 'anthropics/skills'),
@@ -723,12 +723,12 @@ const tightenedFiles = [
   ...(hooksSample ? [repoFile('hookScript', '~/.agents/hooks/guard.sh', 'hs1'), repoFile('hookScript', '~/.agents/hooks/notify.py', 'hs2')] : []),
 ];
 
-export const MOCK_REPO = '/Users/casey/src/agent-setup';
+export const MOCK_REPO = '/Users/cam/src/agent-setup';
 
 const setupRepos: Record<string, MockRepo> = {
   [MOCK_REPO]: {
     commits: [
-      repoCommit('Start from casey-mbp', Date.now() - 6 * 86_400_000, startedFiles, startedSkills),
+      repoCommit('Start from cam-mbp', Date.now() - 6 * 86_400_000, startedFiles, startedSkills),
       repoCommit('Add a planner and tighten shipping', Date.now() - 26 * 3_600_000, tightenedFiles, startedSkills),
     ],
     incoming: [repoCommit('Add the review rule', Date.now() - 50 * 60_000, [...tightenedFiles, repoFile('rule', '~/.claude/rules/review.md', 'r8e2')], startedSkills)],
@@ -746,36 +746,36 @@ const mockSkillMachines: Record<string, Record<string, SkillWanted>> = params.ge
   : {};
 
 /**
- * Skills with a project's own value (.agents/machines.json). `?skillprojects=sample`: pdf off in casey/arbor on every
- * machine (the Mac's main checkout already has it off), frontend-design on there, which only casey-mbp has installed.
+ * Skills with a project's own value (.agents/machines.json). `?skillprojects=sample`: pdf off in cam/arbor on every
+ * machine (the Mac's main checkout already has it off), frontend-design on there, which only cam-mbp has installed.
  */
 const skillProjectsSample = ['sample', 'seen'].includes(params.get('skillprojects') ?? '');
 const mockSkillProjects: Record<string, Record<string, RepoProjectValue>> = skillProjectsSample
-  ? { pdf: { 'casey/arbor': { all: 'off', machines: {} } }, 'frontend-design': { 'casey/arbor': { all: 'on', machines: {} } } }
+  ? { pdf: { 'cam/arbor': { all: 'off', machines: {} } }, 'frontend-design': { 'cam/arbor': { all: 'on', machines: {} } } }
   : {};
 
 /**
- * MCP servers with a project's own value (.agents/machines.json). `?mcpprojects=sample`: linear off in casey/arbor on
+ * MCP servers with a project's own value (.agents/machines.json). `?mcpprojects=sample`: linear off in cam/arbor on
  * every machine (the Mac's main checkout already denies it), sentry on there, which the Mac sets up per checkout, ci-01
  * has no definition for, cedar-02's main checkout denies in its checked-in settings and brave-otter turned off with /mcp.
  */
 const mcpProjectsSample = params.get('mcpprojects') === 'sample';
 const mockMcpProjects: Record<string, Record<string, RepoProjectValue>> = mcpProjectsSample
-  ? { linear: { 'casey/arbor': { all: 'off', machines: {} } }, sentry: { 'casey/arbor': { all: 'on', machines: {} } } }
+  ? { linear: { 'cam/arbor': { all: 'off', machines: {} } }, sentry: { 'cam/arbor': { all: 'on', machines: {} } } }
   : {};
 
 /**
  * Plugins the repo lists (.agents/plugins.json). `?pluginrepo=sample`: agency removed everywhere (ci-01 has it),
  * superpowers on everywhere but off on cedar-02,
- * context7 on with ci-01 keeping its own, pr-review-toolkit off everywhere; for casey/arbor, context7 off on every machine
+ * context7 on with ci-01 keeping its own, pr-review-toolkit off everywhere; for cam/arbor, context7 off on every machine
  * and superpowers on ci-01 (P3: each arbor checkout's local settings).
  */
 const mockRepoPlugins: RepoPlugin[] = params.get('pluginrepo') === 'sample'
   ? [
     { id: 'agency@agency-skills', source: 'acme/agency-skills', all: 'removed', machines: {}, projects: {} },
-    { id: 'context7@claude-plugins-official', source: 'anthropics/claude-plugins-official', all: 'on', machines: { ci01: 'own' }, projects: { 'casey/arbor': { all: 'off', machines: {} } } },
+    { id: 'context7@claude-plugins-official', source: 'anthropics/claude-plugins-official', all: 'on', machines: { ci01: 'own' }, projects: { 'cam/arbor': { all: 'off', machines: {} } } },
     { id: 'pr-review-toolkit@claude-plugins-official', source: 'anthropics/claude-plugins-official', all: 'off', machines: {}, projects: {} },
-    { id: 'superpowers@superpowers-marketplace', source: 'obra/superpowers-marketplace', all: 'on', machines: { cedar02: 'off' }, projects: { 'casey/arbor': { all: null, machines: { ci01: 'on' } } } },
+    { id: 'superpowers@superpowers-marketplace', source: 'obra/superpowers-marketplace', all: 'on', machines: { cedar02: 'off' }, projects: { 'cam/arbor': { all: null, machines: { ci01: 'on' } } } },
   ]
   : [];
 
@@ -793,15 +793,15 @@ const mockCodexRepoPlugins: RepoPlugin[] = params.get('pluginrepo') === 'sample'
 
 /**
  * Projects' own instructions (.agents/projects/<owner>/<name>/), by `project\u0000machine` with '' for every machine.
- * `?projectinstructions=sample`: casey/arbor has text for every machine and ci-01 its own. The Mac's main checkout has
+ * `?projectinstructions=sample`: cam/arbor has text for every machine and ci-01 its own. The Mac's main checkout has
  * Arbor's CLAUDE.local.md from an older text, its projects-tab worktree a CLAUDE.local.md of someone's own, and
  * cedar-02's brave-otter worktree doesn't ignore one.
  */
 const projectInstructionsSample = params.get('projectinstructions') === 'sample';
 const mockInstructions: Record<string, string> = projectInstructionsSample
   ? {
-    'casey/arbor\u0000': '# Casey\'s notes for Arbor\n\n- Serve the mock on 127.0.0.1:1421, never `bun tauri dev`.\n- Share a design review before any look change ships.\n- Release the next free patch once verify, build and cargo test pass.\n',
-    'casey/arbor\u0000ci01': '# Arbor on ci-01\n\n- This machine only runs `bun run verify` and `cargo test`; never build a DMG here.\n',
+    'cam/arbor\u0000': '# Cam\'s notes for Arbor\n\n- Serve the mock on 127.0.0.1:1421, never `bun tauri dev`.\n- Share a design review before any look change ships.\n- Release the next free patch once verify, build and cargo test pass.\n',
+    'cam/arbor\u0000ci01': '# Arbor on ci-01\n\n- This machine only runs `bun run verify` and `cargo test`; never build a DMG here.\n',
   }
   : {};
 
@@ -925,8 +925,8 @@ export const recordEditMock = (machine: string, what: ChangeKind, files: { path:
   return backup.id;
 };
 if (params.get('changes') !== 'none' && !freshInstall) {
-  recordEditMock('casey-mbp', 'reporter', [{ path: '~/.claude/settings.json', added: false }, { path: '~/.codex/config.toml', added: false }], Date.now() - 3 * 86_400_000);
-  recordEditMock('casey-mbp', 'keepSessions', [{ path: '~/.agent-app/homes/claude-proxy/settings.json', added: true }], Date.now() - 26 * 3_600_000);
+  recordEditMock('cam-mbp', 'reporter', [{ path: '~/.claude/settings.json', added: false }, { path: '~/.codex/config.toml', added: false }], Date.now() - 3 * 86_400_000);
+  recordEditMock('cam-mbp', 'keepSessions', [{ path: '~/.agent-app/homes/claude-other/settings.json', added: true }], Date.now() - 26 * 3_600_000);
 }
 
 const applySetupMock = (entry: SetupMachine, commit: MockRepoCommit, changes: SyncChange[]): SyncOutcome => {
@@ -1085,9 +1085,9 @@ const undoSkillsMock = (entry: SetupMachine, backup: MockSetupBackup): SyncOutco
 // copy's own skill see little use, and a few sessions are still to be read.
 const skillUsage: SkillUsageReport = {
   skills: [
-    { name: 'pdf', sessions: 14, calls: 31, lastMs: Date.now() - 40 * 60_000, machines: { 'casey-mbp': 9, 'ci-01': 5 } },
-    { name: 'frontend-design', sessions: 6, calls: 11, lastMs: Date.now() - 3 * 3_600_000, machines: { 'casey-mbp': 6 } },
-    { name: 'agents-md', sessions: 3, calls: 0, lastMs: Date.now() - 26 * 3_600_000, machines: { 'casey-mbp': 2, 'cedar-02': 1 } },
+    { name: 'pdf', sessions: 14, calls: 31, lastMs: Date.now() - 40 * 60_000, machines: { 'cam-mbp': 9, 'ci-01': 5 } },
+    { name: 'frontend-design', sessions: 6, calls: 11, lastMs: Date.now() - 3 * 3_600_000, machines: { 'cam-mbp': 6 } },
+    { name: 'agents-md', sessions: 3, calls: 0, lastMs: Date.now() - 26 * 3_600_000, machines: { 'cam-mbp': 2, 'cedar-02': 1 } },
     { name: 'find-skills', sessions: 1, calls: 2, lastMs: Date.now() - 5 * 86_400_000, machines: { 'cedar-02': 1 } },
   ],
   counted: 212,
@@ -1097,14 +1097,14 @@ const skillUsage: SkillUsageReport = {
 // MCP and plugin use in the last 30 days, by tool names: playwright hasn't been called, so it reads as unused.
 const mcpUsage: McpUsageReport = {
   servers: [
-    { name: 'linear', sessions: 9, calls: 41, lastMs: Date.now() - 2 * 3_600_000, machines: { 'casey-mbp': 6, 'ci-01': 3 } },
-    { name: 'plugin_context7_context7', sessions: 5, calls: 12, lastMs: Date.now() - 5 * 3_600_000, machines: { 'casey-mbp': 5 } },
-    { name: 'codex_apps', sessions: 3, calls: 4, lastMs: Date.now() - 26 * 3_600_000, machines: { 'casey-mbp': 3 } },
+    { name: 'linear', sessions: 9, calls: 41, lastMs: Date.now() - 2 * 3_600_000, machines: { 'cam-mbp': 6, 'ci-01': 3 } },
+    { name: 'plugin_context7_context7', sessions: 5, calls: 12, lastMs: Date.now() - 5 * 3_600_000, machines: { 'cam-mbp': 5 } },
+    { name: 'codex_apps', sessions: 3, calls: 4, lastMs: Date.now() - 26 * 3_600_000, machines: { 'cam-mbp': 3 } },
     { name: 'github', sessions: 2, calls: 5, lastMs: Date.now() - 4 * 86_400_000, machines: { 'ci-01': 2 } },
   ],
   plugins: [
-    { name: 'superpowers', sessions: 11, calls: 17, lastMs: Date.now() - 50 * 60_000, machines: { 'casey-mbp': 8, 'ci-01': 3 } },
-    { name: 'context7', sessions: 5, calls: 12, lastMs: Date.now() - 5 * 3_600_000, machines: { 'casey-mbp': 5 } },
+    { name: 'superpowers', sessions: 11, calls: 17, lastMs: Date.now() - 50 * 60_000, machines: { 'cam-mbp': 8, 'ci-01': 3 } },
+    { name: 'context7', sessions: 5, calls: 12, lastMs: Date.now() - 5 * 3_600_000, machines: { 'cam-mbp': 5 } },
   ],
   counted: 212,
   pending: 4,
@@ -1401,8 +1401,8 @@ const mockHooks: { found: boolean; hooks: MockHook[] } = {
 };
 /** The hooks each Claude Code and Codex home runs from ~/.agents/hooks, by `machine\u0000home`, and whether each is the repo's copy. */
 const mockHomeHooks: Record<string, { event: string; script: string; same: boolean }[]> = hooksSample ? {
-  'casey-mbp\u0000~/.claude': [{ event: 'PreToolUse', script: 'guard.sh', same: true }, { event: 'Stop', script: 'notify.py', same: false }],
-  'casey-mbp\u0000~/.codex': [{ event: 'Stop', script: 'notify.py', same: false }],
+  'cam-mbp\u0000~/.claude': [{ event: 'PreToolUse', script: 'guard.sh', same: true }, { event: 'Stop', script: 'notify.py', same: false }],
+  'cam-mbp\u0000~/.codex': [{ event: 'Stop', script: 'notify.py', same: false }],
   'ci-01\u0000~/.claude': [{ event: 'PreToolUse', script: 'guard.sh', same: true }, { event: 'Stop', script: 'notify.py', same: true }, { event: 'SessionStart', script: 'old.sh', same: true }],
 } : {};
 
@@ -1632,44 +1632,44 @@ const arborFiles = (claude: string | null, agents: string | null) => [
 ];
 
 const projectRepos: Record<string, { homeDir: string; repos: ProjectRepo[] }> = {
-  'casey-mbp': {
-    homeDir: '/Users/casey',
+  'cam-mbp': {
+    homeDir: '/Users/cam',
     repos: [
-      projectRepo('/Users/casey/src/arbor', 'github.com/casey/arbor', [
+      projectRepo('/Users/cam/src/arbor', 'github.com/cam/arbor', [
         // Its own settings already keep context7 off, as the sample setup repo wants for arbor; its worktrees don't yet.
-        mainCheckout('/Users/casey/src/arbor', 'main', { behind: 2, lastUsedMs: hours(0.2), touchedAt: hours(0.2), plugins: [{ id: 'context7@claude-plugins-official', on: false, local: true }],
+        mainCheckout('/Users/cam/src/arbor', 'main', { behind: 2, lastUsedMs: hours(0.2), touchedAt: hours(0.2), plugins: [{ id: 'context7@claude-plugins-official', on: false, local: true }],
           skills: skillProjectsSample ? [{ name: 'pdf', state: 'off', local: true }] : [],
           mcpDenied: mcpProjectsSample ? [{ name: 'linear', local: true }] : [],
           ...(projectInstructionsSample ? { instructions: instructionFiles('arbor', 'none', 'a0c3e9d1beef') } : {}) }),
-        mockWorktree('/Users/casey/.agent-app/worktrees/arbor/login-loop', 'fix/login-loop', {
+        mockWorktree('/Users/cam/.agent-app/worktrees/arbor/login-loop', 'fix/login-loop', {
           merged: true, gone: true, upstream: 'origin/fix/login-loop', ahead: null, behind: null, lastUsedMs: hours(52),
           ignored: ['.env.local', 'dist/', 'node_modules/'], mcpLocal: mcpProjectsSample ? ['sentry'] : [],
         }),
-        // The one T3 Code made, in the folder T3 Code keeps its worktrees in, so the row shows whose it is; the others
+        // The one Codex made, in the folder Codex keeps its worktrees in, so the row shows whose it is; the others
         // sit in a made-up agent app's folder, which Arbor shows as plain worktrees.
-        mockWorktree('/Users/casey/.t3/worktrees/arbor/projects-tab', 't3code/projects-tab', {
+        mockWorktree('/Users/cam/.codex/worktrees/arbor/projects-tab', 'codex/projects-tab', {
           ahead: 3, changed: 4, untracked: 1, open: true, lastUsedMs: hours(0.05), touchedAt: hours(0.05), blocker: 'dirty',
           ...(projectInstructionsSample ? { instructions: instructionFiles('own', 'none') } : {}),
         }),
-        mockWorktree('/Users/casey/src/arbor/.claude/worktrees/quiet-fox', 'claude/quiet-fox', {
+        mockWorktree('/Users/cam/src/arbor/.claude/worktrees/quiet-fox', 'claude/quiet-fox', {
           gone: true, ahead: null, behind: null, lastUsedMs: hours(120), ignored: ['node_modules/'],
         }),
-        mockWorktree('/Users/casey/.agent-app/worktrees/arbor/tray-spike', 'spike/tray', { upstream: null, ahead: null, behind: null, lastUsedMs: hours(400), blocker: 'notMerged' }),
-        mockWorktree('/Users/casey/.agent-app/worktrees/arbor/local-config', 'chore/local-config', { merged: true, hidden: 2, lastUsedMs: hours(200), blocker: 'hidden' }),
+        mockWorktree('/Users/cam/.agent-app/worktrees/arbor/tray-spike', 'spike/tray', { upstream: null, ahead: null, behind: null, lastUsedMs: hours(400), blocker: 'notMerged' }),
+        mockWorktree('/Users/cam/.agent-app/worktrees/arbor/local-config', 'chore/local-config', { merged: true, hidden: 2, lastUsedMs: hours(200), blocker: 'hidden' }),
       ], { lastUsedMs: hours(0.05), files: arborFiles('arbor-a', 'agents-a') }),
-      projectRepo('/Users/casey/src/proxy', 'github.com/acme/proxy', [
-        mainCheckout('/Users/casey/src/proxy', 'feat/rate-limiter', { ahead: 2, changed: 3, merged: false }),
+      projectRepo('/Users/cam/src/proxy', 'github.com/acme/proxy', [
+        mainCheckout('/Users/cam/src/proxy', 'feat/rate-limiter', { ahead: 2, changed: 3, merged: false }),
       ], { lastUsedMs: hours(20), files: [{ name: 'AGENTS.md', sum: 'proxy-a', size: 2_140 }] }),
-      projectRepo('/Users/casey/src/notes', null, [mainCheckout('/Users/casey/src/notes', 'main', { upstream: null, ahead: null, behind: null })], {
+      projectRepo('/Users/cam/src/notes', null, [mainCheckout('/Users/cam/src/notes', 'main', { upstream: null, ahead: null, behind: null })], {
         lastUsedMs: hours(90), fetchedAt: null, files: [{ name: 'CLAUDE.md', sum: 'notes-a', size: 812 }],
       }),
-      projectRepo('/Users/casey/src/legacy-site', 'github.com/casey/legacy-site', [], { state: 'missing', lastUsedMs: hours(700) }),
+      projectRepo('/Users/cam/src/legacy-site', 'github.com/cam/legacy-site', [], { state: 'missing', lastUsedMs: hours(700) }),
     ],
   },
   'ci-01': {
     homeDir: '/home/ci',
     repos: [
-      projectRepo('/home/ci/src/arbor', 'github.com/casey/arbor', [mainCheckout('/home/ci/src/arbor', 'main', { behind: 14 })], {
+      projectRepo('/home/ci/src/arbor', 'github.com/cam/arbor', [mainCheckout('/home/ci/src/arbor', 'main', { behind: 14 })], {
         fetchedAt: hours(9 * 24), lastUsedMs: hours(30), files: arborFiles('arbor-b', 'agents-a'),
       }),
       projectRepo('/home/ci/work/proxy', 'github.com/acme/proxy', [mainCheckout('/home/ci/work/proxy', 'main')], {
@@ -1678,11 +1678,11 @@ const projectRepos: Record<string, { homeDir: string; repos: ProjectRepo[] }> = 
     ],
   },
   'cedar-02': {
-    homeDir: '/home/casey',
+    homeDir: '/home/cam',
     repos: [
-      projectRepo('/home/casey/src/arbor', 'github.com/casey/arbor', [
-        mainCheckout('/home/casey/src/arbor', 'main', { mcpDenied: mcpProjectsSample ? [{ name: 'sentry', local: false }] : [] }),
-        mockWorktree('/home/casey/src/arbor/.claude/worktrees/brave-otter', 'claude/brave-otter', {
+      projectRepo('/home/cam/src/arbor', 'github.com/cam/arbor', [
+        mainCheckout('/home/cam/src/arbor', 'main', { mcpDenied: mcpProjectsSample ? [{ name: 'sentry', local: false }] : [] }),
+        mockWorktree('/home/cam/src/arbor/.claude/worktrees/brave-otter', 'claude/brave-otter', {
           mcpDisabled: mcpProjectsSample ? ['sentry'] : [],
           merged: true, upstream: null, ahead: null, behind: null, lastUsedMs: hours(75), ignored: ['.env', 'target/'], ignoredMore: 12,
           // `?skillprojects=seen`: no settings.local.json yet, and Git wouldn't ignore one.
@@ -1690,7 +1690,7 @@ const projectRepos: Record<string, { homeDir: string; repos: ProjectRepo[] }> = 
           ...(projectInstructionsSample ? { instructions: instructionFiles('seen', 'seen') } : {}),
         }),
       ], { lastUsedMs: hours(3), files: arborFiles('arbor-a', null) }),
-      projectRepo('/home/casey/src/billing', 'github.com/casey/billing', [mainCheckout('/home/casey/src/billing', 'main')], {
+      projectRepo('/home/cam/src/billing', 'github.com/cam/billing', [mainCheckout('/home/cam/src/billing', 'main')], {
         fetchFailed: true, lastUsedMs: hours(12), files: [{ name: 'CLAUDE.md', sum: 'billing-a', size: 1_320 }],
       }),
     ],
@@ -1699,7 +1699,7 @@ const projectRepos: Record<string, { homeDir: string; repos: ProjectRepo[] }> = 
 
 const projectsState: MachineProjects[] = Object.entries(projectRepos).map(([machine, { homeDir, repos }]) => ({
   machine, homeDir, scannedAt: projectsScenario === 'fresh' ? null : Date.now() - 4 * 60_000,
-  partial: projectsScenario === 'partial' && machine === 'casey-mbp', fetchedAt: null, measuredAt: null, scanning: false, measuring: false,
+  partial: projectsScenario === 'partial' && machine === 'cam-mbp', fetchedAt: null, measuredAt: null, scanning: false, measuring: false,
   removing: false, error: null, repos: projectsScenario === 'fresh' || projectsScenario === 'none' ? [] : structuredClone(repos),
 }));
 keepThisMacOnly(projectsState);
@@ -1831,18 +1831,18 @@ const bunPackages = [{ dir: '', lockfile: 'bun.lock', modules: true }];
 const proxyNeeds = [toolNeed('go', '1.23', 'min', 'go.mod', 'go'), toolNeed('go', '1.24.4', 'pin', '.tool-versions', 'go')];
 
 const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scannedAt' | 'partial' | 'scanning' | 'error'>> = {
-  'casey-mbp': {
-    homeDir: '/Users/casey', os: 'Darwin', arch: 'arm64',
+  'cam-mbp': {
+    homeDir: '/Users/cam', os: 'Darwin', arch: 'arm64',
     tools: [
-      { tool: 'node', path: '/Users/casey/.nvm/versions/node/v22.17.0/bin/node', version: '22.17.0' },
-      { tool: 'npm', path: '/Users/casey/.nvm/versions/node/v22.17.0/bin/npm', version: '10.9.2' },
+      { tool: 'node', path: '/Users/cam/.nvm/versions/node/v22.17.0/bin/node', version: '22.17.0' },
+      { tool: 'npm', path: '/Users/cam/.nvm/versions/node/v22.17.0/bin/npm', version: '10.9.2' },
       { tool: 'pnpm', path: '/opt/homebrew/bin/pnpm', version: '10.12.1' },
-      { tool: 'bun', path: '/Users/casey/.bun/bin/bun', version: '1.3.2' },
-      { tool: 'python', path: '/Users/casey/.local/share/mise/shims/python3', version: '3.12.4' },
+      { tool: 'bun', path: '/Users/cam/.bun/bin/bun', version: '1.3.2' },
+      { tool: 'python', path: '/Users/cam/.local/share/mise/shims/python3', version: '3.12.4' },
       { tool: 'uv', path: '/opt/homebrew/bin/uv', version: '0.8.3' },
       { tool: 'go', path: '/opt/homebrew/bin/go', version: '1.24.4' },
-      { tool: 'rust', path: '/Users/casey/.cargo/bin/rustc', version: '1.88.0' },
-      { tool: 'cargo', path: '/Users/casey/.cargo/bin/cargo', version: '1.88.0' },
+      { tool: 'rust', path: '/Users/cam/.cargo/bin/rustc', version: '1.88.0' },
+      { tool: 'cargo', path: '/Users/cam/.cargo/bin/cargo', version: '1.88.0' },
       { tool: 'git', path: '/opt/homebrew/bin/git', version: '2.50.1' },
       { tool: 'gh', path: '/opt/homebrew/bin/gh', version: '2.74.0' },
       { tool: 'jq', path: '/usr/bin/jq', version: '1.7.1' },
@@ -1860,12 +1860,12 @@ const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scan
       { tool: 'rust', manager: 'rustup', version: '1.90.0-nightly', label: 'nightly-2026-09-01' },
     ],
     projects: [
-      toolchainProject('/Users/casey/src/arbor', 'github.com/casey/arbor', 0.05, { needs: arborNeeds, libraries: arborLibraries('19.1.1', '4.1.5'), packages: bunPackages }),
-      toolchainProject('/Users/casey/src/proxy', 'github.com/acme/proxy', 20, { needs: proxyNeeds }),
-      toolchainProject('/Users/casey/src/notes', null, 90, {
+      toolchainProject('/Users/cam/src/arbor', 'github.com/cam/arbor', 0.05, { needs: arborNeeds, libraries: arborLibraries('19.1.1', '4.1.5'), packages: bunPackages }),
+      toolchainProject('/Users/cam/src/proxy', 'github.com/acme/proxy', 20, { needs: proxyNeeds }),
+      toolchainProject('/Users/cam/src/notes', null, 90, {
         needs: [toolNeed('python', '3.11', 'pin', '.python-version'), toolNeed('python', '>=3.11', 'python', 'pyproject.toml', 'requires-python'), toolNeed('uv', '*', 'range', 'uv.lock')],
       }),
-      toolchainProject('/Users/casey/src/legacy-site', 'github.com/casey/legacy-site', 700, { missing: true }),
+      toolchainProject('/Users/cam/src/legacy-site', 'github.com/cam/legacy-site', 700, { missing: true }),
     ],
   },
   'ci-01': {
@@ -1883,23 +1883,23 @@ const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scan
     ],
     kept: [{ tool: 'rust', manager: 'rustup', version: '1.85.0', label: 'stable' }],
     projects: [
-      toolchainProject('/home/ci/src/arbor', 'github.com/casey/arbor', 30, {
+      toolchainProject('/home/ci/src/arbor', 'github.com/cam/arbor', 30, {
         needs: arborNeeds, libraries: arborLibraries('19.1.0', '3.25.76'), packages: bunPackages,
       }),
       toolchainProject('/home/ci/work/proxy', 'github.com/acme/proxy', 40, { needs: proxyNeeds, unread: ['mise.toml'] }),
     ],
   },
   'cedar-02': {
-    homeDir: '/home/casey', os: 'Linux', arch: 'aarch64',
+    homeDir: '/home/cam', os: 'Linux', arch: 'aarch64',
     tools: [
-      { tool: 'node', path: '/home/casey/.local/share/mise/shims/node', version: '22.12.0' },
-      { tool: 'npm', path: '/home/casey/.local/share/mise/shims/npm', version: '10.9.0' },
-      { tool: 'pnpm', path: '/home/casey/.local/share/pnpm/pnpm', version: '9.15.0' },
-      { tool: 'bun', path: '/home/casey/.bun/bin/bun', version: '1.3.0' },
+      { tool: 'node', path: '/home/cam/.local/share/mise/shims/node', version: '22.12.0' },
+      { tool: 'npm', path: '/home/cam/.local/share/mise/shims/npm', version: '10.9.0' },
+      { tool: 'pnpm', path: '/home/cam/.local/share/pnpm/pnpm', version: '9.15.0' },
+      { tool: 'bun', path: '/home/cam/.bun/bin/bun', version: '1.3.0' },
       { tool: 'python', path: '/usr/bin/python3', version: '3.12.3' },
-      { tool: 'uv', path: '/home/casey/.local/bin/uv', version: '0.7.20' },
-      { tool: 'rust', path: '/home/casey/.cargo/bin/rustc', version: '1.88.0' },
-      { tool: 'cargo', path: '/home/casey/.cargo/bin/cargo', version: '1.88.0' },
+      { tool: 'uv', path: '/home/cam/.local/bin/uv', version: '0.7.20' },
+      { tool: 'rust', path: '/home/cam/.cargo/bin/rustc', version: '1.88.0' },
+      { tool: 'cargo', path: '/home/cam/.cargo/bin/cargo', version: '1.88.0' },
       { tool: 'git', path: '/usr/bin/git', version: '2.45.2' },
       { tool: 'gh', path: '/usr/bin/gh', version: '2.63.0' },
       { tool: 'rg', path: '/usr/bin/rg', version: '14.1.0' },
@@ -1910,8 +1910,8 @@ const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scan
       { tool: 'rust', manager: 'rustup', version: '1.88.0', label: 'stable' },
     ],
     projects: [
-      toolchainProject('/home/casey/src/arbor', 'github.com/casey/arbor', 3, { needs: arborNeeds, libraries: arborLibraries('19.1.1', '4.1.5'), packages: bunPackages }),
-      toolchainProject('/home/casey/src/billing', 'github.com/casey/billing', 12, {
+      toolchainProject('/home/cam/src/arbor', 'github.com/cam/arbor', 3, { needs: arborNeeds, libraries: arborLibraries('19.1.1', '4.1.5'), packages: bunPackages }),
+      toolchainProject('/home/cam/src/billing', 'github.com/cam/billing', 12, {
         needs: [toolNeed('node', '>=20', 'range', 'package.json', 'engines.node'), toolNeed('pnpm', '9.15.0', 'pin', 'package.json', 'packageManager')],
         libraries: [lib('react', '^18.3.1', '18.3.1'), lib('stripe', '^18.0.0', '18.4.0'), lib('zod', '^3.23.0', '3.25.76'), lib('typescript', '~5.6.0', '5.6.3', true), lib('vite', '^6.0.0', null, true)],
         packages: [{ dir: '', lockfile: 'pnpm-lock.yaml', modules: true }],
@@ -1923,16 +1923,16 @@ const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scan
 // `?nodeversions=many` gives the Mac a crowd of Node versions under nvm and fnm, with a pinned one and patches of
 // the same lines to clean up.
 if (params.get('nodeversions') === 'many') {
-  const mac = toolchainMachines['casey-mbp'];
+  const mac = toolchainMachines['cam-mbp'];
   if (mac) {
     const extra = [['fnm', '24.12.0'], ['nvm', '22.21.1'], ['fnm', '22.18.0'], ['nvm', '22.13.1'], ['fnm', '22.13.1'], ['nvm', '20.15.1'], ['nvm', '20.12.2'], ['nvm', '19.8.1'], ['nvm', '18.20.4'], ['nvm', '18.15.0'], ['nvm', '18.10.0'], ['fnm', '16.20.2'], ['nvm', '16.14.0']] as const;
     mac.kept = [...mac.kept, ...extra.map(([manager, version]) => ({ tool: 'node', manager, version, label: null }))];
-    mac.projects = [...mac.projects, toolchainProject('/Users/casey/src/old-dash', 'github.com/casey/old-dash', 400, { needs: [toolNeed('node', '20.12.2', 'pin', '.nvmrc')] })];
+    mac.projects = [...mac.projects, toolchainProject('/Users/cam/src/old-dash', 'github.com/cam/old-dash', 400, { needs: [toolNeed('node', '20.12.2', 'pin', '.nvmrc')] })];
   }
 }
 
 const toolchainReply = (machine: string, entry: (typeof toolchainMachines)[string], scannedAt: number | null): MachineToolchain => ({
-  machine, scannedAt, partial: toolchainScenario === 'partial' && machine === 'casey-mbp', scanning: false, error: null,
+  machine, scannedAt, partial: toolchainScenario === 'partial' && machine === 'cam-mbp', scanning: false, error: null,
   ...structuredClone(entry),
   projects: toolchainScenario === 'none' || scannedAt === null ? [] : structuredClone(entry.projects),
   ...(scannedAt === null ? { tools: [], kept: [] } : {}),
@@ -2147,7 +2147,7 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
   if (!arrived) Object.assign(entry, { homes: [], installs: [] });
   setupMachines.push(entry);
   const toolchain = {
-    homeDir: '/home/casey', os: 'Linux', arch: 'x86_64', kept: [], projects: [],
+    homeDir: '/home/cam', os: 'Linux', arch: 'x86_64', kept: [], projects: [],
     tools: [
       { tool: 'node', path: '/usr/bin/node', version: '20.19.2' },
       { tool: 'npm', path: '/usr/bin/npm', version: '10.8.2' },
@@ -2157,9 +2157,9 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
   };
   toolchainMachines[name] = toolchain;
   toolchainState.push(toolchainReply(name, toolchain, scannedAt));
-  projectRepos[name] = { homeDir: '/home/casey', repos: [] };
+  projectRepos[name] = { homeDir: '/home/cam', repos: [] };
   projectsState.push({
-    machine: name, homeDir: '/home/casey', scannedAt, partial: false, fetchedAt: null, measuredAt: null,
+    machine: name, homeDir: '/home/cam', scannedAt, partial: false, fetchedAt: null, measuredAt: null,
     scanning: false, measuring: false, removing: false, error: null, repos: [],
   });
   if (!arrived) {
@@ -2200,7 +2200,7 @@ const committedSkillFiles = new WeakMap<SetupRepoSkill, SetupSkillFile[]>();
 const skillFilesOf = (skill: SetupRepoSkill): SetupSkillFile[] =>
   committedSkillFiles.get(skill)
   ?? (skill.sum ? repoSkillFiles[skill.sum] : undefined)
-  ?? setupSkills[skill.path]?.['casey-mbp']
+  ?? setupSkills[skill.path]?.['cam-mbp']
   ?? [skillFile('SKILL.md', `${skill.name}-doc`, `---\nname: ${skill.name}\ndescription: Kept in the setup repo.\n---\n\n# ${skill.name}\n`)];
 
 const hiddenBlob = (file: SetupSkillFile): MockBlob => ({ text: null, sum: file.sum, size: file.size, problem: file.hidden });
@@ -2755,7 +2755,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     const { name } = args;
     const skill = mockRepo(args.repo).commits.find((commit) => commit.sha === args.commit)?.skills.find((entry) => entry.name === name);
     if (!skill?.sum) throw `The repo's commit has no ${name} skill Arbor can sync`;
-    const files = repoSkillFiles[skill.sum] ?? setupSkills[skill.path]?.['casey-mbp'] ?? [skillFile('SKILL.md', 'sk', '# Skill\n')];
+    const files = repoSkillFiles[skill.sum] ?? setupSkills[skill.path]?.['cam-mbp'] ?? [skillFile('SKILL.md', 'sk', '# Skill\n')];
     return later(400, () => files);
   },
   list_setup_repo_tree: (args) => {

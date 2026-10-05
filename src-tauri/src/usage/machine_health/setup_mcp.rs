@@ -2541,7 +2541,7 @@ mod tests {
         assert!(server.problems.is_empty());
         assert!(server.wanted("mac", HomeAgent::Claude, "~/.claude").is_none());
         assert!(matches!(server.wanted("cedar", HomeAgent::Claude, "~/.claude"), Some((_, true))));
-        assert!(off.checkout_definition("mac", "/Users/casey", "linear").unwrap().is_none());
+        assert!(off.checkout_definition("mac", "/Users/cam", "linear").unwrap().is_none());
         set_wanted(&mut file, "linear", None, McpWanted::Default).unwrap();
         assert!(file["servers"]["linear"].get("all").is_none());
         assert!(registry(file.clone()).server("linear").unwrap().wanted("mac", HomeAgent::Claude, "~/.claude").is_some());
@@ -2585,7 +2585,7 @@ mod tests {
         assert_eq!(claude(json!({ "type": "http", "url": "https://x.example/s/3f2504e04f8911d39a0c0305e82c3301/mcp" })), ["url"], "a key-like part of the path");
         assert_eq!(claude(json!({ "command": "npx", "args": ["-y", "server", "--token", "abc"] })), ["args[3]"]);
         assert_eq!(claude(json!({ "command": "npx", "args": ["--api-key=abc", "--token-file", "/k", "--token=${T}"] })), ["args[0]"]);
-        assert_eq!(claude(json!({ "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casey/src/dev-tools/EasyCLIProxyAPI"] })), Vec::<String>::new());
+        assert_eq!(claude(json!({ "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/cam/src/dev-tools/EasyCLIProxyAPI"] })), Vec::<String>::new());
         assert_eq!(claude(json!({ "command": "run", "args": ["sk-ant-api03-abcdefghijklmnopqrstuvwxyz"] })), ["args[0]"]);
         assert_eq!(claude(json!({ "command": "run", "args": ["eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc"] })), ["args[0]"]);
         assert_eq!(claude(json!({ "command": "run", "args": ["disk-cache-size-limit-for-everything", "task-runner-with-a-long-name-here"] })), Vec::<String>::new());
@@ -2699,7 +2699,7 @@ mod tests {
         assert_eq!(linear.wanted("mac", HomeAgent::Claude, "~/.claude").map(|(definition, own)| (definition["type"].clone(), own)), Some((json!("http"), false)));
         assert_eq!(linear.wanted("cedar", HomeAgent::Claude, "~/.claude").map(|(definition, own)| (definition["type"].clone(), own)), Some((json!("sse"), true)));
         assert!(linear.wanted("ci-01", HomeAgent::Claude, "~/.claude").is_none());
-        assert!(linear.wanted("mac", HomeAgent::Claude, "~/.agent-app/homes/claude-proxy").is_none(), "kept to its homes");
+        assert!(linear.wanted("mac", HomeAgent::Claude, "~/.agent-app/homes/claude-other").is_none(), "kept to its homes");
         assert!(linear.wanted("mac", HomeAgent::Codex, "~/.codex").is_none(), "it has no Codex definition");
         let leaky = read.server("leaky").unwrap();
         assert_eq!(leaky.problems.len(), 2);
@@ -2716,11 +2716,11 @@ mod tests {
     fn machine() -> MachineSetup {
         MachineSetup::with_homes(&[
             (HomeAgent::Claude, "~/.claude"),
-            (HomeAgent::Claude, "~/.agent-app/homes/claude-proxy"),
+            (HomeAgent::Claude, "~/.agent-app/homes/claude-other"),
             (HomeAgent::Codex, "~/.codex"),
             (HomeAgent::Shared, "~/.agents"),
         ])
-        .with_home_dir("/Users/casey")
+        .with_home_dir("/Users/cam")
         // Written as Claude Code writes it: with the type and an empty env.
         .with_mcp("~/.claude", "context7", &json!({ "type": "stdio", "command": "npx", "args": ["-y", "@upstash/context7-mcp"], "env": {} }))
         .with_mcp("~/.claude", "linear", &json!({ "type": "http", "url": "https://mcp.linear.app/sse" }))
@@ -2754,9 +2754,9 @@ mod tests {
                 ("~/.claude", "context7", RegistryState::Same, None),
                 ("~/.claude", "linear", RegistryState::Update, None),
                 ("~/.claude", "playwright", RegistryState::Extra, None),
-                ("~/.agent-app/homes/claude-proxy", "broken", RegistryState::Add, Some(RegistryBlock::Broken)),
-                ("~/.agent-app/homes/claude-proxy", "context7", RegistryState::Add, None),
-                ("~/.agent-app/homes/claude-proxy", "linear", RegistryState::Add, None),
+                ("~/.agent-app/homes/claude-other", "broken", RegistryState::Add, Some(RegistryBlock::Broken)),
+                ("~/.agent-app/homes/claude-other", "context7", RegistryState::Add, None),
+                ("~/.agent-app/homes/claude-other", "linear", RegistryState::Add, None),
                 ("~/.codex", "context7", RegistryState::Same, None),
                 ("~/.codex", "linear", RegistryState::Add, None),
                 ("~/.codex", "odd.name", RegistryState::Extra, Some(RegistryBlock::Name)),
@@ -2769,7 +2769,7 @@ mod tests {
         own["servers"]["context7"]["homes"] = json!(["~/.claude", "~/.codex"]);
         let cells = machine_cells(&registry(own), "mac", &machine());
         let linear: Vec<(&str, RegistryState, bool)> = cells.iter().filter(|cell| cell.name == "linear").map(|cell| (cell.home.as_str(), cell.state, cell.own)).collect();
-        assert_eq!(linear, [("~/.claude", RegistryState::Same, true), ("~/.agent-app/homes/claude-proxy", RegistryState::Add, true)]);
+        assert_eq!(linear, [("~/.claude", RegistryState::Same, true), ("~/.agent-app/homes/claude-other", RegistryState::Add, true)]);
         assert!(!cells.iter().any(|cell| cell.name == "context7" && cell.home.starts_with("~/.t3")), "kept to its homes");
 
         // A machine's entry Arbor can't read isn't taken to keep the server off it.
@@ -2785,38 +2785,38 @@ mod tests {
 
     #[test]
     fn a_shadow_home_leaves_its_servers_to_the_home_it_shares() {
-        let shadow = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/homes/codex-proxy")])
-            .with_home_dir("/Users/casey")
-            .with_shared("~/.agent-app/homes/codex-proxy", "~/.codex", &["config.toml", "skills"]);
+        let shadow = MachineSetup::with_homes(&[(HomeAgent::Codex, "~/.codex"), (HomeAgent::Codex, "~/.agent-app/homes/codex-other")])
+            .with_home_dir("/Users/cam")
+            .with_shared("~/.agent-app/homes/codex-other", "~/.codex", &["config.toml", "skills"]);
         let cells = machine_cells(&registry(file()), "mac", &shadow);
         assert!(!cells.is_empty() && cells.iter().all(|cell| cell.home == "~/.codex"), "{:?}", states(&cells));
-        let add = McpChange { home: "~/.agent-app/homes/codex-proxy".into(), name: "linear".into(), action: McpAction::Add };
-        assert_eq!(plan(&registry(file()), "mac", &shadow, vec![add]).unwrap_err(), "Arbor can't set up linear in ~/.agent-app/homes/codex-proxy as it is");
+        let add = McpChange { home: "~/.agent-app/homes/codex-other".into(), name: "linear".into(), action: McpAction::Add };
+        assert_eq!(plan(&registry(file()), "mac", &shadow, vec![add]).unwrap_err(), "Arbor can't set up linear in ~/.agent-app/homes/codex-other as it is");
     }
 
     #[test]
     fn home_folders_are_kept_as_tilde_and_given_back_as_each_machines() {
-        assert_eq!(swap_home("/Users/casey/src/app", "/Users/casey", "~"), "~/src/app");
-        assert_eq!(swap_home("--root=/Users/casey/src:/Users/casey/lib", "/Users/casey", "~"), "--root=~/src:~/lib");
-        assert_eq!(swap_home("/Users/casey", "/Users/casey", "~"), "~");
-        assert_eq!(swap_home("https://x.example/Users/casey/y", "/Users/casey", "~"), "https://x.example/Users/casey/y", "not where a path starts");
-        assert_eq!(swap_home("/Users/caseyr/src", "/Users/casey", "~"), "/Users/caseyr/src");
-        assert_eq!(swap_home("~/src and ~/lib", "~", "/home/casey"), "/home/casey/src and /home/casey/lib");
-        assert_eq!(swap_home("~", "~", "/home/casey"), "/home/casey");
-        assert_eq!(swap_home("a~/b", "~", "/home/casey"), "a~/b");
+        assert_eq!(swap_home("/Users/cam/src/app", "/Users/cam", "~"), "~/src/app");
+        assert_eq!(swap_home("--root=/Users/cam/src:/Users/cam/lib", "/Users/cam", "~"), "--root=~/src:~/lib");
+        assert_eq!(swap_home("/Users/cam", "/Users/cam", "~"), "~");
+        assert_eq!(swap_home("https://x.example/Users/cam/y", "/Users/cam", "~"), "https://x.example/Users/cam/y", "not where a path starts");
+        assert_eq!(swap_home("/Users/camr/src", "/Users/cam", "~"), "/Users/camr/src");
+        assert_eq!(swap_home("~/src and ~/lib", "~", "/home/cam"), "/home/cam/src and /home/cam/lib");
+        assert_eq!(swap_home("~", "~", "/home/cam"), "/home/cam");
+        assert_eq!(swap_home("a~/b", "~", "/home/cam"), "a~/b");
         assert_eq!(swap_home("~/src", "~", ""), "~/src", "a machine whose home folder isn't known");
 
         // Taken on a Mac, the same on Linux, and set up there with Linux's home folder.
-        let mac = json!({ "command": "node", "args": ["/Users/casey/src/server/index.js", "--root=/Users/casey/src"] });
-        let kept = with_texts(&normalized_mcp(HomeAgent::Claude, &mac), &|text| swap_home(text, "/Users/casey", "~"));
+        let mac = json!({ "command": "node", "args": ["/Users/cam/src/server/index.js", "--root=/Users/cam/src"] });
+        let kept = with_texts(&normalized_mcp(HomeAgent::Claude, &mac), &|text| swap_home(text, "/Users/cam", "~"));
         assert_eq!(kept["args"], json!(["~/src/server/index.js", "--root=~/src"]));
         let registry = registry(json!({ "version": 1, "servers": { "server": { "claude": kept } } }));
-        let linux = || MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude")]).with_home_dir("/home/casey");
-        let there = linux().with_mcp("~/.claude", "server", &json!({ "type": "stdio", "command": "node", "args": ["/home/casey/src/server/index.js", "--root=/home/casey/src"] }));
+        let linux = || MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude")]).with_home_dir("/home/cam");
+        let there = linux().with_mcp("~/.claude", "server", &json!({ "type": "stdio", "command": "node", "args": ["/home/cam/src/server/index.js", "--root=/home/cam/src"] }));
         assert_eq!(states(&machine_cells(&registry, "linux", &there)), [("~/.claude", "server", RegistryState::Same, None)]);
         let add = McpChange { home: "~/.claude".into(), name: "server".into(), action: McpAction::Add };
         let planned = plan(&registry, "linux", &linux(), vec![add]).unwrap();
-        assert_eq!(planned[0].definition.as_ref().map(|definition| definition["args"].clone()), Some(json!(["/home/casey/src/server/index.js", "--root=/home/casey/src"])));
+        assert_eq!(planned[0].definition.as_ref().map(|definition| definition["args"].clone()), Some(json!(["/home/cam/src/server/index.js", "--root=/home/cam/src"])));
     }
 
     #[test]
@@ -2878,7 +2878,7 @@ mod tests {
 
         let playwright = json!({ "type": "stdio", "command": "npx", "args": ["@playwright/mcp"] });
         let as_scanned = BTreeMap::from([(0, json!({ "linear": { "type": "http", "url": "https://mcp.linear.app/sse" }, "playwright": playwright }).to_string().into_bytes())]);
-        let (fresh, stale) = still_as_scanned(planned, &as_scanned, &homes, "/Users/casey").unwrap();
+        let (fresh, stale) = still_as_scanned(planned, &as_scanned, &homes, "/Users/cam").unwrap();
         assert_eq!(fresh.len(), 3, "nothing's changed since");
         assert!(stale.is_empty());
 
@@ -2888,7 +2888,7 @@ mod tests {
             (1, b"[mcp_servers.linear]\nurl = \"https://mine.example/mcp\"\n".to_vec()),
         ]);
         let planned = plan(&registry, "mac", &machine(), changes()).unwrap();
-        let (fresh, stale) = still_as_scanned(planned, &since, &homes, "/Users/casey").unwrap();
+        let (fresh, stale) = still_as_scanned(planned, &since, &homes, "/Users/cam").unwrap();
         assert_eq!(fresh.iter().map(|change| change.name.as_str()).collect::<Vec<_>>(), ["playwright"]);
         let stale: Vec<(&str, &str, McpOutcome)> = stale.iter().map(|result| (result.home.as_str(), result.name.as_str(), result.outcome)).collect();
         assert_eq!(stale, [("~/.claude", "linear", McpOutcome::Changed), ("~/.codex", "linear", McpOutcome::Changed)]);
@@ -2929,7 +2929,7 @@ mod tests {
             vec![
                 change("~/.claude", "linear", McpAction::Update),
                 change("~/.claude", "playwright", McpAction::Remove),
-                change("~/.agent-app/homes/claude-proxy", "context7", McpAction::Add),
+                change("~/.agent-app/homes/claude-other", "context7", McpAction::Add),
                 change("~/.codex", "linear", McpAction::Add),
             ],
         )
@@ -3007,7 +3007,7 @@ mod tests {
 
     fn harness_machine() -> MachineSetup {
         MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude")])
-            .with_home_dir("/Users/casey")
+            .with_home_dir("/Users/cam")
             .with_harness_home(Harness::Pi, "~/.pi/agent")
             .with_harness_home(Harness::OpenCode, "~/.config/opencode")
             .with_harness_home(Harness::PrimeAgent, "~/.prime/agent")
@@ -3084,7 +3084,7 @@ mod tests {
             change("~/.config/opencode", "context7", McpAction::Add),
             change("~/.config/opencode", "linear", McpAction::Update),
             change("~/.config/opencode", "gone", McpAction::Remove),
-        ]).unwrap(), &files, &read, "/Users/casey");
+        ]).unwrap(), &files, &read, "/Users/cam");
         assert!(left.is_empty(), "{left:?}");
         assert_eq!(fresh.len(), 3);
         let written: Value = serde_json::from_str(&writes[0].content).unwrap();
@@ -3110,7 +3110,7 @@ mod tests {
         let mut since = as_scanned.clone();
         since["mcp"]["linear"]["url"] = json!("https://mine.example/mcp");
         let read = BTreeMap::from([(0, since.to_string().into_bytes())]);
-        let (fresh, writes, left) = harness_writes(planned, &files, &read, "/Users/casey");
+        let (fresh, writes, left) = harness_writes(planned, &files, &read, "/Users/cam");
         assert_eq!(fresh.iter().map(|change| change.name.as_str()).collect::<Vec<_>>(), ["context7", "gone"]);
         assert_eq!(left.iter().map(|result| (result.name.as_str(), result.outcome)).collect::<Vec<_>>(), [("linear", McpOutcome::Changed)]);
         assert_eq!(serde_json::from_str::<Value>(&writes[0].content).unwrap()["mcp"]["linear"]["url"], "https://mine.example/mcp");
@@ -3118,7 +3118,7 @@ mod tests {
         // A file with comments isn't JSON, so nothing in it is changed.
         let commented = BTreeMap::from([(0, b"{\n  // mine\n  \"mcp\": {}\n}\n".to_vec())]);
         let planned = plan(&registry, "mac", &harness_machine(), vec![change("~/.config/opencode", "context7", McpAction::Add)]).unwrap();
-        let (fresh, writes, left) = harness_writes(planned, &files, &commented, "/Users/casey");
+        let (fresh, writes, left) = harness_writes(planned, &files, &commented, "/Users/cam");
         assert!(fresh.is_empty() && writes.is_empty());
         assert_eq!((left[0].outcome, left[0].message.as_str()), (McpOutcome::Failed, "~/.config/opencode/opencode.json isn't JSON Arbor can read, so Arbor left it alone"));
     }
@@ -3192,7 +3192,7 @@ exit 0"#;
                 let context7 = json!({ "type": "stdio", "command": "npx", "args": ["-y", "it's"] });
                 let planned = vec![
                     planned(HomeAgent::Claude, "~/.claude", "context7", McpAction::Add, Some(context7.clone())),
-                    planned(HomeAgent::Claude, "~/.agent-app/homes/claude-proxy", "linear", McpAction::Update, Some(json!({ "type": "http", "url": "https://mcp.linear.app/mcp" }))),
+                    planned(HomeAgent::Claude, "~/.agent-app/homes/claude-other", "linear", McpAction::Update, Some(json!({ "type": "http", "url": "https://mcp.linear.app/mcp" }))),
                     planned(HomeAgent::Claude, "~/.claude", "playwright", McpAction::Remove, None),
                     planned(HomeAgent::Claude, "~/.claude", "flaky", McpAction::Update, Some(json!({ "type": "stdio", "command": "x" }))),
                 ];
@@ -3210,7 +3210,7 @@ exit 0"#;
                     ],
                     "{shell}"
                 );
-                let proxy = home.join(".agent-app/homes/claude-proxy").display().to_string();
+                let proxy = home.join(".agent-app/homes/claude-other").display().to_string();
                 let calls = fs::read_to_string(home.join("calls")).unwrap();
                 assert_eq!(
                     calls.lines().collect::<Vec<_>>(),
@@ -3281,7 +3281,7 @@ exit 0"#;
                     seen: None,
                 };
                 let planned = vec![add(Harness::OpenCode, "~/.config/opencode"), add(Harness::Pi, "~/.pi/agent")];
-                let (fresh, writes, left) = harness_writes(planned, &files, &read, "/Users/casey");
+                let (fresh, writes, left) = harness_writes(planned, &files, &read, "/Users/cam");
                 assert!(left.is_empty());
                 let output = run(shell, &home, &harness_apply_script("20260926T010203Z-00cc", &files, &writes));
                 assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
@@ -3494,10 +3494,10 @@ exit 0"#;
                 assert!(status.success());
             };
             commit("By hand");
-            block(record_server(&folder, "fs", HomeAgent::Claude, "ci", "~/.agent-app/homes/claude-proxy", false, json!({ "type": "stdio", "command": "b" }), &IDENTITY)).unwrap();
+            block(record_server(&folder, "fs", HomeAgent::Claude, "ci", "~/.agent-app/homes/claude-other", false, json!({ "type": "stdio", "command": "b" }), &IDENTITY)).unwrap();
             let file: Value = serde_json::from_str(&fs::read_to_string(folder.join(MCP_FILE)).unwrap()).unwrap();
             assert_eq!(file["servers"]["fs"]["machines"], json!({ "ci": { "codex": null } }));
-            assert_eq!(file["servers"]["fs"]["homes"], json!(["~/.claude", "~/.agent-app/homes/claude-proxy"]));
+            assert_eq!(file["servers"]["fs"]["homes"], json!(["~/.claude", "~/.agent-app/homes/claude-other"]));
             assert_eq!(file["servers"]["fs"]["claude"]["command"], "b");
 
             // Removed from every machine, then put back from the history as it was, secrets' names and all.

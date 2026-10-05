@@ -833,7 +833,7 @@ mod tests {
     use super::*;
     use super::super::pools::{PoolMember, PoolWeight, PoolWhenFull};
 
-    const SSH_G: &str = "host casey-mbp\nhostname casey-mbp.tail1234.ts.net\nport 22\nuser casey\nproxyjump none\n\
+    const SSH_G: &str = "host cam-mbp\nhostname cam-mbp.tail1234.ts.net\nport 22\nuser cam\nproxyjump none\n\
                          userknownhostsfile ~/.ssh/known_hosts ~/.ssh/known_hosts2\nglobalknownhostsfile /etc/ssh/ssh_known_hosts\n\
                          identityfile ~/.ssh/id_ed25519\nidentityfile ~/.ssh/id_rsa\nidentityagent SSH_AUTH_SOCK\n";
 
@@ -862,56 +862,56 @@ mod tests {
     #[test]
     fn ssh_settings_are_read_from_ssh_g() {
         let parsed = parse_ssh_settings(SSH_G).unwrap();
-        assert_eq!(parsed.hostname, "casey-mbp.tail1234.ts.net");
-        assert_eq!(parsed.user, "casey");
+        assert_eq!(parsed.hostname, "cam-mbp.tail1234.ts.net");
+        assert_eq!(parsed.user, "cam");
         assert!(!parsed.proxied);
         assert_eq!(parsed.known_hosts_files, ["~/.ssh/known_hosts", "~/.ssh/known_hosts2", "/etc/ssh/ssh_known_hosts"]);
         assert_eq!(parsed.identity_files, ["~/.ssh/id_ed25519", "~/.ssh/id_rsa"]);
         assert_eq!(parsed.identity_agent, None, "ssh's default agent isn't copied");
         let jumped = parse_ssh_settings(&SSH_G.replace("proxyjump none", "proxyjump bastion")).unwrap();
         assert!(jumped.proxied);
-        assert!(parse_ssh_settings("hostname -oProxyCommand=x\nuser casey\n").is_none(), "a host that reads as a flag is refused");
+        assert!(parse_ssh_settings("hostname -oProxyCommand=x\nuser cam\n").is_none(), "a host that reads as a flag is refused");
     }
 
     #[test]
     fn keys_are_looked_up_the_way_ssh_saves_them() {
         let mut found = parse_ssh_settings(SSH_G).unwrap();
-        assert_eq!(key_names(&found, "casey@casey-mbp"), ["casey-mbp.tail1234.ts.net", "casey-mbp"]);
+        assert_eq!(key_names(&found, "cam@cam-mbp"), ["cam-mbp.tail1234.ts.net", "cam-mbp"]);
         found.port = 2222;
-        assert_eq!(key_names(&found, "casey-mbp"), ["[casey-mbp.tail1234.ts.net]:2222", "[casey-mbp]:2222"]);
+        assert_eq!(key_names(&found, "cam-mbp"), ["[cam-mbp.tail1234.ts.net]:2222", "[cam-mbp]:2222"]);
         found.host_key_alias = Some("mbp".into());
-        assert_eq!(key_names(&found, "casey-mbp"), ["[mbp]:2222"]);
+        assert_eq!(key_names(&found, "cam-mbp"), ["[mbp]:2222"]);
     }
 
     #[test]
     fn found_keys_keep_type_and_key_and_skip_revoked_ones() {
-        let output = "# Host casey-mbp found: line 4\n|1|abc=|def= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB comment\n\
-                      @revoked casey-mbp ssh-rsa AAAAB3Nza\n@cert-authority * ssh-ed25519 AAAAC3Nz\ncasey-mbp ssh-rsa AAAA;rm\n";
+        let output = "# Host cam-mbp found: line 4\n|1|abc=|def= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB comment\n\
+                      @revoked cam-mbp ssh-rsa AAAAB3Nza\n@cert-authority * ssh-ed25519 AAAAC3Nz\ncam-mbp ssh-rsa AAAA;rm\n";
         assert_eq!(parse_found_keys(output), ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB"]);
     }
 
     #[test]
     fn a_member_is_ready_with_a_saved_key_and_the_pools_user_unless_its_this_mac() {
-        assert_eq!(readiness(None, Some("casey")), Readiness::NoAddress);
-        assert_eq!(readiness(Some(&MemberSsh::default()), Some("casey")), Readiness::NoAddress);
-        assert_eq!(readiness(Some(&member("casey", &[])), Some("casey")), Readiness::NoHostKey);
-        assert_eq!(readiness(Some(&member("casey", &["ssh-ed25519 AAAA"])), Some("ops")), Readiness::OtherUser);
-        assert_eq!(readiness(Some(&member("casey", &["ssh-ed25519 AAAA"])), Some("casey")), Readiness::Ready);
-        let resolved = BTreeMap::from([("caseymbp".to_string(), member("casey", &["ssh-ed25519 AAAA"])), ("labbox".to_string(), member("casey", &["ssh-ed25519 BBBB"]))]);
-        let this_mac = BTreeSet::from(["caseymbp".to_string()]);
-        assert_eq!(member_readiness(&this_mac, &resolved, Some("casey"), "Casey MBP"), Readiness::ThisMac, "the Mac the host is opened from is never picked");
-        assert_eq!(member_readiness(&this_mac, &resolved, Some("casey"), "lab-box"), Readiness::Ready);
+        assert_eq!(readiness(None, Some("cam")), Readiness::NoAddress);
+        assert_eq!(readiness(Some(&MemberSsh::default()), Some("cam")), Readiness::NoAddress);
+        assert_eq!(readiness(Some(&member("cam", &[])), Some("cam")), Readiness::NoHostKey);
+        assert_eq!(readiness(Some(&member("cam", &["ssh-ed25519 AAAA"])), Some("ops")), Readiness::OtherUser);
+        assert_eq!(readiness(Some(&member("cam", &["ssh-ed25519 AAAA"])), Some("cam")), Readiness::Ready);
+        let resolved = BTreeMap::from([("cammbp".to_string(), member("cam", &["ssh-ed25519 AAAA"])), ("labbox".to_string(), member("cam", &["ssh-ed25519 BBBB"]))]);
+        let this_mac = BTreeSet::from(["cammbp".to_string()]);
+        assert_eq!(member_readiness(&this_mac, &resolved, Some("cam"), "Cam MBP"), Readiness::ThisMac, "the Mac the host is opened from is never picked");
+        assert_eq!(member_readiness(&this_mac, &resolved, Some("cam"), "lab-box"), Readiness::Ready);
     }
 
     #[test]
     fn the_pools_user_is_the_one_most_members_use() {
         let resolved = BTreeMap::from([
             ("a".to_string(), member("ops", &["k1"])),
-            ("b".to_string(), member("casey", &["k2"])),
-            ("c".to_string(), member("casey", &["k3"])),
+            ("b".to_string(), member("cam", &["k2"])),
+            ("c".to_string(), member("cam", &["k3"])),
             ("d".to_string(), member("root", &[])),
         ]);
-        assert_eq!(pool_user(&pool("p", "Builds", &["a", "b", "c", "d"]), &resolved).as_deref(), Some("casey"));
+        assert_eq!(pool_user(&pool("p", "Builds", &["a", "b", "c", "d"]), &resolved).as_deref(), Some("cam"));
         assert_eq!(pool_user(&pool("p", "Builds", &["a", "b"]), &resolved).as_deref(), Some("ops"), "a tie goes to the first member");
         assert_eq!(pool_user(&pool("p", "Builds", &["d"]), &resolved), None, "a member without a key doesn't count");
     }
@@ -929,13 +929,13 @@ mod tests {
 
     #[test]
     fn the_config_routes_each_pool_through_arbor_and_its_own_known_hosts() {
-        let resolved = BTreeMap::from([("a".to_string(), member("casey", &["ssh-ed25519 AAAA"])), ("b".to_string(), member("casey", &["ssh-rsa BBBB"]))]);
+        let resolved = BTreeMap::from([("a".to_string(), member("cam", &["ssh-ed25519 AAAA"])), ("b".to_string(), member("cam", &["ssh-rsa BBBB"]))]);
         let pools = [pool("p1", "Builds", &["a"]), pool("p2", "Builds 2", &["a", "b"]), pool("p3", "Empty", &[])];
-        let config = render_config(&host_blocks(&pools, &resolved), Some("/Users/casey/.local/bin/arbor"));
-        assert!(config.contains("\nHost arbor-builds arbor-builds-*\n  ProxyCommand \"/Users/casey/.local/bin/arbor\" pools connect p1 %h\n"), "{config}");
+        let config = render_config(&host_blocks(&pools, &resolved), Some("/Users/cam/.local/bin/arbor"));
+        assert!(config.contains("\nHost arbor-builds arbor-builds-*\n  ProxyCommand \"/Users/cam/.local/bin/arbor\" pools connect p1 %h\n"), "{config}");
         assert!(config.find("Host arbor-builds-2").unwrap() < config.find("Host arbor-builds ").unwrap(), "the longer name matches first");
         assert!(config.contains("  HostKeyAlias arbor-pools\n  UserKnownHostsFile ~/.arbor/ssh/pools_known_hosts\n  StrictHostKeyChecking yes\n"));
-        assert!(config.contains("  User casey\n"));
+        assert!(config.contains("  User cam\n"));
         assert!(!config.contains("arbor-empty"), "a pool with no members gets no host");
         let without = render_config(&host_blocks(&pools, &resolved), None);
         assert!(!without.contains("Host "), "nothing to run without the arbor command");
@@ -957,10 +957,10 @@ mod tests {
     fn pins_are_saved_and_go_with_their_pool() {
         let connection = super::super::super::schema::test_database();
         let pin = |pool_id: &str, machine: &str| Pin { pool_id: pool_id.into(), machine: machine.into(), picked_at_ms: 7 };
-        save_pin(&connection, &("p1".into(), "arbor-builds".into()), &pin("p1", "casey-mbp")).unwrap();
+        save_pin(&connection, &("p1".into(), "arbor-builds".into()), &pin("p1", "cam-mbp")).unwrap();
         save_pin(&connection, &("p1".into(), "arbor-builds".into()), &pin("p1", "lab-box")).unwrap();
         save_pin(&connection, &("p1".into(), "arbor-builds-b".into()), &pin("p2", "cedar-02")).unwrap();
-        save_pin(&connection, &("p3".into(), "arbor-docs".into()), &pin("p3", "casey-mbp")).unwrap();
+        save_pin(&connection, &("p3".into(), "arbor-docs".into()), &pin("p3", "cam-mbp")).unwrap();
         let saved = read_pins(&connection).unwrap();
         assert_eq!(saved.len(), 3);
         assert_eq!(saved[&("p1".to_string(), "arbor-builds".to_string())], pin("p1", "lab-box"), "a new pick replaces the old");
@@ -1068,11 +1068,11 @@ mod tests {
 
     #[test]
     fn a_proxied_member_is_reached_through_ssh_and_the_rest_directly() {
-        let host = MachineHost { machine: "casey-mbp".into(), endpoint: " casey-mbp ".into(), port: 22, enabled: true, source: String::new() };
+        let host = MachineHost { machine: "cam-mbp".into(), endpoint: " cam-mbp ".into(), port: 22, enabled: true, source: String::new() };
         let mut found = parse_ssh_settings(SSH_G).unwrap();
-        assert_eq!(target_for("casey-mbp", &host, &found), ConnectTarget::Direct { machine: "casey-mbp".into(), host: "casey-mbp.tail1234.ts.net".into(), port: 22 });
+        assert_eq!(target_for("cam-mbp", &host, &found), ConnectTarget::Direct { machine: "cam-mbp".into(), host: "cam-mbp.tail1234.ts.net".into(), port: 22 });
         found.proxied = true;
-        assert_eq!(target_for("casey-mbp", &host, &found), ConnectTarget::Via { machine: "casey-mbp".into(), endpoint: "casey-mbp".into(), port: 22 });
+        assert_eq!(target_for("cam-mbp", &host, &found), ConnectTarget::Via { machine: "cam-mbp".into(), endpoint: "cam-mbp".into(), port: 22 });
     }
 
     #[test]
@@ -1080,8 +1080,8 @@ mod tests {
         assert!(includes_pools("Host *\n  ForwardAgent no\ninclude   ~/.arbor/ssh/pools.conf\n"));
         assert!(!includes_pools("Host arbor\n  HostName arbor.example\n"));
         assert_eq!(with_include(None), b"# Machine pools from Arbor\nInclude ~/.arbor/ssh/pools.conf\n");
-        let added = String::from_utf8(with_include(Some(b"Host casey-mbp\n  User casey\n".as_slice()))).unwrap();
-        assert_eq!(added, "# Machine pools from Arbor\nInclude ~/.arbor/ssh/pools.conf\n\nHost casey-mbp\n  User casey\n");
+        let added = String::from_utf8(with_include(Some(b"Host cam-mbp\n  User cam\n".as_slice()))).unwrap();
+        assert_eq!(added, "# Machine pools from Arbor\nInclude ~/.arbor/ssh/pools.conf\n\nHost cam-mbp\n  User cam\n");
         assert!(includes_pools(&added));
     }
 

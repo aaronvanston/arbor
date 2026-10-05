@@ -1184,9 +1184,9 @@ pub(crate) mod tests {
         let cedar = paths("cedar-01");
         assert!(cedar.contains(&("~/.claude".into(), false, true)), "switched off on cedar-01 alone");
         assert!(cedar.contains(&("/srv/pi/sessions".into(), true, false)), "Pi's sessions folder has no settings to sync");
-        assert!(paths("casey-mbp").contains(&("~/.claude".into(), true, true)));
-        assert!(paths("casey-mbp").contains(&("~/work/*".into(), true, true)));
-        assert!(!paths("casey-mbp").iter().any(|(path, ..)| path == "/srv/pi/sessions"));
+        assert!(paths("cam-mbp").contains(&("~/.claude".into(), true, true)));
+        assert!(paths("cam-mbp").contains(&("~/work/*".into(), true, true)));
+        assert!(!paths("cam-mbp").iter().any(|(path, ..)| path == "/srv/pi/sessions"));
     }
 
     #[test]
@@ -1248,12 +1248,12 @@ pub(crate) mod tests {
     fn the_scan_finds_folders_shaped_like_homes_and_skips_the_rest() {
         let root = temp_home("scan");
         for dir in [
-            ".claude/projects/-Users-casey-src",
+            ".claude/projects/-Users-cam-src",
             ".codex/sessions/2026/09/25",
-            ".tools/profiles/work/projects/-Users-casey-src",
-            ".tools/profiles/home/projects/-Users-casey-app",
+            ".tools/profiles/work/projects/-Users-cam-src",
+            ".tools/profiles/home/projects/-Users-cam-app",
             ".tools/profiles/codex/sessions/2026",
-            ".pi/agent/sessions/--Users-casey-src--",
+            ".pi/agent/sessions/--Users-cam-src--",
             "Library/Application Support/Claude/local-agent-mode-sessions/acct/org/local_1",
             "src/app/node_modules/pkg/.claude/projects/-x",
             "src/app/projects/website",
@@ -1264,8 +1264,8 @@ pub(crate) mod tests {
         fs::write(root.join(".claude.json"), "{}").unwrap();
         fs::write(root.join("Library/Application Support/Claude/local-agent-mode-sessions/acct/org/local_1/audit.jsonl"), "{}\n").unwrap();
         // A session written today in one profile, and one from long ago in the other.
-        fs::write(root.join(".tools/profiles/work/projects/-Users-casey-src/today.jsonl"), "{}\n").unwrap();
-        let old = root.join(".tools/profiles/home/projects/-Users-casey-app/old.jsonl");
+        fs::write(root.join(".tools/profiles/work/projects/-Users-cam-src/today.jsonl"), "{}\n").unwrap();
+        let old = root.join(".tools/profiles/home/projects/-Users-cam-app/old.jsonl");
         fs::write(&old, "{}\n").unwrap();
         let status = std::process::Command::new("touch").args(["-t", "202001010000"]).arg(&old).status().unwrap();
         assert!(status.success());

@@ -3,7 +3,7 @@ import { authFileActions, primaryAuthFileAction, type AuthFileActions } from '..
 import type { AuthFileAvailability } from '../src/services/authFiles';
 
 const now = Date.parse('2026-09-16T07:20:00Z');
-const codex = { name: 'codex-casey.json', provider: 'codex', source: 'file', account_type: 'oauth' };
+const codex = { name: 'codex-cam.json', provider: 'codex', source: 'file', account_type: 'oauth' };
 const ready: AuthFileAvailability = { kind: 'ready' };
 
 /** The row's actions as `id` or `id: reason`, the menu's groups split by `|`. */
@@ -30,7 +30,7 @@ describe('the fix a credential row offers up front', () => {
     for (const file of [
       { ...codex, runtime_only: true },
       { ...codex, account_type: 'api_key' },
-      { ...codex, source: 'memory', path: '/auths/codex-casey.json' },
+      { ...codex, source: 'memory', path: '/auths/codex-cam.json' },
     ]) {
       expect(primaryAuthFileAction(file, signin)).toBeNull();
       expect(primaryAuthFileAction(file, retrying)).toBeNull();
@@ -76,7 +76,7 @@ describe('a credential row’s actions', () => {
   });
 
   it('say a file that left the disk is on its way out', () => {
-    const removed = { ...codex, source: 'memory', path: '/auths/codex-casey.json' };
+    const removed = { ...codex, source: 'memory', path: '/auths/codex-cam.json' };
     expect(read(authFileActions(removed, ready))).toEqual({
       primary: null,
       menu: 'check-limits: authFiles.menu.removed, priority: authFiles.menu.removed'

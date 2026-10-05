@@ -15,7 +15,7 @@ import { freshInstall, hours, mockLog, params } from './scenario';
 const cliScenario = params.get('cli') ?? (freshInstall ? 'missing' : 'installed');
 
 const EXECUTABLE = '/Applications/Arbor.app/Contents/MacOS/Arbor';
-const LINK = '/Users/casey/.local/bin/arbor';
+const LINK = '/Users/cam/.local/bin/arbor';
 
 let installState: CliInstallState =
   cliScenario === 'missing' || cliScenario === 'elsewhere' || cliScenario === 'taken' ? cliScenario
@@ -30,7 +30,7 @@ let cliSettings: CliSettings = { enabled: cliScenario !== 'off', changes: cliSce
 const install = (): CliInstall => ({
   state: installState,
   linkPath: LINK,
-  target: installState === 'installed' ? EXECUTABLE : installState === 'elsewhere' ? '/Users/casey/Downloads/Arbor.app/Contents/MacOS/Arbor' : null,
+  target: installState === 'installed' ? EXECUTABLE : installState === 'elsewhere' ? '/Users/cam/Downloads/Arbor.app/Contents/MacOS/Arbor' : null,
   executable: installState === 'unavailable' ? null : EXECUTABLE,
 });
 

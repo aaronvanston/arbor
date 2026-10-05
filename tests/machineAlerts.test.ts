@@ -116,10 +116,10 @@ describe('machine alerts', () => {
   it('leaves out this Mac, machines without an address and ones no longer checked', () => {
     const now = 1_000 * MINUTE;
     const first = nextMachineNotifications({}, [
-      down('casey-mbp', null),
+      down('cam-mbp', null),
       machine('lab-box', { status: 'unconfigured' }),
       down('cedar-02', null),
-    ].map((item) => (item.machine === 'casey-mbp' ? { ...item, local: true } : item)), now);
+    ].map((item) => (item.machine === 'cam-mbp' ? { ...item, local: true } : item)), now);
     // Never seen answering: it counts from the first failed check.
     expect(first.state).toEqual({ 'cedar-02': { downSinceMs: now, notified: false } });
     expect(nextMachineNotifications(first.state, [down('cedar-02', null)], now + 4 * MINUTE).alerts).toEqual([]);
@@ -135,7 +135,7 @@ describe('machine alerts', () => {
       ['@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @', 'hostKey'],
       ['No ED25519 host key is known for ci-01 and you have requested strict checking.', 'hostKey'],
       ['ci@ci-01: Permission denied (publickey).', 'auth'],
-      ['casey@lab-box: Permission denied (publickey,password).', 'auth'],
+      ['cam@lab-box: Permission denied (publickey,password).', 'auth'],
       ['Received disconnect from 10.0.0.2 port 22:2: Too many authentication failures', 'auth'],
       ['ssh: Could not resolve hostname ci-01: nodename nor servname provided, or not known', 'dns'],
       ['ssh: Could not resolve hostname ci-01: Temporary failure in name resolution', 'dns'],
@@ -228,7 +228,7 @@ describe('machine alerts', () => {
 
   it('sends the phone the plain reason and never the error', () => {
     const now = 1_000 * MINUTE;
-    const error = 'casey@ci-01.tailc0ffee.ts.net: Permission denied (publickey).';
+    const error = 'cam@ci-01.tailc0ffee.ts.net: Permission denied (publickey).';
     const [message] = machineNotifications([{ machine: 'ci-01', kind: 'down', downSinceMs: now, error, failure: sshFailure(error) }], now, t);
     const phone = phoneAlertFor(message!);
     expect(phone).toEqual({

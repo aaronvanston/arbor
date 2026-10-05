@@ -32,13 +32,13 @@ const home = (agent: SetupHome['agent'], path: string, items: SetupItem[], skill
 });
 
 const CLAUDE = '~/.claude';
-const PROXY = '~/.agent-app/homes/claude-proxy';
+const PROXY = '~/.agent-app/homes/claude-other';
 const LINKED = '~/.agent-app/homes/claude-linked';
 const CODEX = '~/.codex';
 const STORE = '~/.agents';
 
 const machine: SetupMachine = {
-  machine: 'casey-mbp', local: true, reachable: true, harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false,
+  machine: 'cam-mbp', local: true, reachable: true, harnessHomes: [], harnessInstalls: [], installs: [], policy: null, scannedAt: 1_000, error: null, scanning: false,
   homes: [
     home('codex', CODEX, [
       skill(CODEX, 'pdf', sha('1')),
@@ -85,15 +85,15 @@ describe('where each skill stands', () => {
   });
 
   it('leaves out a shadow Codex home whose skills are another home’s', () => {
-    const shadow = home('codex', '~/.agent-app/homes/codex-proxy', [], '~/.codex/skills', { shares: { home: CODEX, entries: ['config.toml', 'skills'] } });
+    const shadow = home('codex', '~/.agent-app/homes/codex-other', [], '~/.codex/skills', { shares: { home: CODEX, entries: ['config.toml', 'skills'] } });
     const shared = skillsView({ ...machine, homes: [...machine.homes, shadow] });
     expect(shared.homes.map((entry) => entry.path)).toEqual(view.homes.map((entry) => entry.path));
-    expect(shared.sharing).toEqual([{ path: '~/.agent-app/homes/codex-proxy', home: CODEX }]);
+    expect(shared.sharing).toEqual([{ path: '~/.agent-app/homes/codex-other', home: CODEX }]);
     expect(view.sharing).toEqual([]);
   });
 
   it('reads links to the store as on, the store’s skills a home hasn’t got as off, and copies against the store’s', () => {
-    // Store, ~/.claude, claude-linked, claude-proxy, Codex.
+    // Store, ~/.claude, claude-linked, claude-other, Codex.
     expect(places('pdf')).toEqual(['store', 'linked', 'viaFolder', 'off', 'copy']);
     expect(places('design')).toEqual(['store', 'drifted', 'viaFolder', 'copy', 'loads']);
     expect(places('notes')).toEqual(['elsewhere', 'off', 'none', 'off', 'linked']);
@@ -293,7 +293,7 @@ describe('skills Claude Code’s settings override', () => {
 });
 
 describe('how much each skill is used', () => {
-  const usage = (name: string): SkillUsage => ({ name, sessions: 3, calls: 5, lastMs: 1_000, machines: { 'casey-mbp': 3 } });
+  const usage = (name: string): SkillUsage => ({ name, sessions: 3, calls: 5, lastMs: 1_000, machines: { 'cam-mbp': 3 } });
   const used = new Map([['pdf', usage('pdf')], ['browser-check', usage('browser-check')]]);
 
   it('finds a skill by its folder’s name, or the one its SKILL.md gives', () => {

@@ -784,8 +784,8 @@ mod tests {
         assert_eq!(role_of(".agents/skills/pdf/SKILL.md"), RepoRole::Skill);
         assert_eq!(role_of(".agents/skills/pdf/scripts/run.py"), RepoRole::Skill);
         assert_eq!(role_of(".agents/skills/pdf"), RepoRole::Other, "a file named like a skill's folder isn't a skill");
-        assert_eq!(role_of(".agents/projects/casey/arbor/instructions.md"), RepoRole::ProjectInstructions);
-        assert_eq!(role_of(".agents/projects/casey/arbor/machines/ci01.md"), RepoRole::ProjectInstructions);
+        assert_eq!(role_of(".agents/projects/cam/arbor/instructions.md"), RepoRole::ProjectInstructions);
+        assert_eq!(role_of(".agents/projects/cam/arbor/machines/ci01.md"), RepoRole::ProjectInstructions);
         assert_eq!(role_of(".agents/machines.json"), RepoRole::Record);
         assert_eq!(role_of(".agents/skill-sources.json"), RepoRole::Record);
         assert_eq!(role_of(".claude/settings.json"), RepoRole::Other);
@@ -845,7 +845,7 @@ mod tests {
             write(&folder.join(".agents/skills/pdf/SKILL.md"), b"---\nname: pdf\n---\n");
             write(&folder.join(".agents/skills/pdf/.env"), b"TOKEN=SECRET-VALUE-1\n");
             write(&folder.join(".agents/skills/pdf/logo.png"), &[0x89, b'P', b'N', b'G', 0, 0, 1]);
-            write(&folder.join(".agents/projects/casey/arbor/instructions.md"), b"# Arbor\n");
+            write(&folder.join(".agents/projects/cam/arbor/instructions.md"), b"# Arbor\n");
             write(&folder.join(".agents/machines.json"), b"{}\n");
             std::os::unix::fs::symlink(root.join("outside.md"), folder.join(".claude/agents-link.md")).unwrap();
             git_in(&root, &["init", "--quiet"]);
@@ -875,7 +875,7 @@ mod tests {
             assert_eq!(look(".agents/skills/pdf/SKILL.md"), Some((RepoStatus::Same, RepoRole::Skill, None)));
             assert_eq!(look(".agents/skills/pdf/.env"), Some((RepoStatus::Same, RepoRole::Skill, Some(FileProblem::Secret))));
             assert_eq!(look(".agents/skills/pdf/logo.png"), Some((RepoStatus::Same, RepoRole::Skill, Some(FileProblem::Binary))));
-            assert_eq!(look(".agents/projects/casey/arbor/instructions.md"), Some((RepoStatus::Same, RepoRole::ProjectInstructions, None)));
+            assert_eq!(look(".agents/projects/cam/arbor/instructions.md"), Some((RepoStatus::Same, RepoRole::ProjectInstructions, None)));
             assert_eq!(look(".agents/machines.json"), Some((RepoStatus::Same, RepoRole::Record, None)));
             assert_eq!(look(".claude/agents-link.md").map(|(_, _, problem)| problem), Some(Some(FileProblem::Link)));
             assert_eq!(look("notes/big.txt"), Some((RepoStatus::Added, RepoRole::Other, Some(FileProblem::Large))));
@@ -958,7 +958,7 @@ mod tests {
             write(&folder.join("staged.md"), b"# Staged\n");
             git_in(&folder, &["add", "--", "staged.md"]);
             block_on(discard(&folder, &[".agents/projects".into(), "scratch.md".into(), "staged.md".into()])).unwrap();
-            assert_eq!(fs::read(folder.join(".agents/projects/casey/arbor/instructions.md")).unwrap(), b"# Arbor\n");
+            assert_eq!(fs::read(folder.join(".agents/projects/cam/arbor/instructions.md")).unwrap(), b"# Arbor\n");
             assert!(!folder.join("scratch.md").exists() && !folder.join("staged.md").exists());
 
             // A commit takes the chosen files and leaves the rest waiting.

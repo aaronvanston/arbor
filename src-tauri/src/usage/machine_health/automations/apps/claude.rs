@@ -82,12 +82,12 @@ mod tests {
     #[test]
     fn reads_a_task_by_its_description_and_body() {
         let stdout = format!(
-            "H\t/Users/casey\nS\t/Users/casey/.claude/scheduled-tasks/notes/SKILL.md\t{}\n",
+            "H\t/Users/cam\nS\t/Users/cam/.claude/scheduled-tasks/notes/SKILL.md\t{}\n",
             STANDARD.encode("---\nname: notes\ndescription: Meeting notes to wiki\n---\n\nAdd the newest notes to the wiki.\n"),
         );
-        let found = Claude.parse(&ScanLines::new("casey-mbp", &stdout)).unwrap();
+        let found = Claude.parse(&ScanLines::new("cam-mbp", &stdout)).unwrap();
         let claude = &found[0].automation;
-        assert_eq!(claude.summary.id, "claudeDesktop:casey-mbp:notes");
+        assert_eq!(claude.summary.id, "claudeDesktop:cam-mbp:notes");
         assert_eq!(claude.summary.name, "Meeting notes to wiki");
         assert_eq!(claude.summary.schedule, ScheduleSummary::Elsewhere);
         assert_eq!(claude.prompt, "Add the newest notes to the wiki.");

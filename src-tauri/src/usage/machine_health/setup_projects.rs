@@ -1505,16 +1505,16 @@ mod tests {
         let projects = MachineProjects {
             scanned_at: Some(NOW),
             repos: vec![
-                repo("/home/casey/old/storefront", Some("github.com/acme/storefront"), RepoState::Missing),
-                repo("/home/casey/src/storefront", Some("github.com/Acme/storefront.git"), RepoState::Ok),
-                repo("/home/casey/src/docs", None, RepoState::Ok),
+                repo("/home/cam/old/storefront", Some("github.com/acme/storefront"), RepoState::Missing),
+                repo("/home/cam/src/storefront", Some("github.com/Acme/storefront.git"), RepoState::Ok),
+                repo("/home/cam/src/docs", None, RepoState::Ok),
             ],
             ..MachineProjects::default()
         };
         assert!(projects.scanned());
         // A checkout that's gone is passed over for one that's there.
-        assert_eq!(projects.repo_path("github.com/acme/storefront"), Some("/home/casey/src/storefront"));
-        assert_eq!(projects.repo_path("github.com/acme/storefront.git/"), Some("/home/casey/src/storefront"));
+        assert_eq!(projects.repo_path("github.com/acme/storefront"), Some("/home/cam/src/storefront"));
+        assert_eq!(projects.repo_path("github.com/acme/storefront.git/"), Some("/home/cam/src/storefront"));
         assert_eq!(projects.repo_path("github.com/acme/docs"), None);
         assert!(!MachineProjects::default().scanned());
     }
@@ -1590,22 +1590,22 @@ mod tests {
 
     #[test]
     fn a_scan_reads_each_repo_its_worktrees_and_files() {
-        let stdout = "H\t/home/casey\n\
-            R\t/home/casey/src/app\tok\n\
-            O\tgithub.com:casey/app.git\n\
+        let stdout = "H\t/home/cam\n\
+            R\t/home/cam/src/app\tok\n\
+            O\tgithub.com:cam/app.git\n\
             D\trefs/remotes/origin/main\n\
             F\t1700000000\n\
             B\trefs/heads/main\torigin/main\t[behind 3]\n\
             B\trefs/heads/fix\torigin/fix\t[gone]\n\
             B\trefs/heads/wip\t\t\n\
-            T\t/home/casey/src/app\tabc\tmain\t-\t1\n\
-            S\t2\t1\t1\t1700000100\t1700000200\t0\t0\t0\t0\t0\t/home/casey/src/app\n\
-            T\t/home/casey/.t3/worktrees/app/fix\tdef\tfix\t-\t0\n\
+            T\t/home/cam/src/app\tabc\tmain\t-\t1\n\
+            S\t2\t1\t1\t1700000100\t1700000200\t0\t0\t0\t0\t0\t/home/cam/src/app\n\
+            T\t/home/cam/.agent-app/worktrees/app/fix\tdef\tfix\t-\t0\n\
             S\t0\t0\t0\t1700000100\t1700000200\t0\t0\t0\t0\t0\t/real/fix\n\
             I\t.env.local\n\
             I\tnode_modules/\n\
             J\t4\n\
-            T\t/home/casey/src/app/.claude/worktrees/wip\t123\twip\tlocked,\t0\n\
+            T\t/home/cam/src/app/.claude/worktrees/wip\t123\twip\tlocked,\t0\n\
             S\t-\t-\t0\t-\t-\t1\t0\t0\t0\t0\t-\n\
             T\t/with\ttab\t999\tx\t-\t0\n\
             S\t9\t9\t0\t-\t-\t0\t0\t0\t0\t0\t-\n\
@@ -1613,19 +1613,19 @@ mod tests {
             T\t/gone/wt\t456\t-\tdetached,prunable,\t0\n\
             C\tAGENTS.md\t123\t45\n\
             C\tsecret.txt\t1\t1\n\
-            R\t/home/casey/src/old\tmissing\n\
+            R\t/home/cam/src/old\tmissing\n\
             R\t/srv/git/tools.git\tok\n\
             T\t/srv/git/tools.git\t-\t-\tbare,\t1\n\
-            T\t/home/casey/tools\t789\tmain\t-\t0\n\
+            T\t/home/cam/tools\t789\tmain\t-\t0\n\
             S\t0\t0\t1\t-\t-\t0\tx\t0\t0\t0\t-\n\
             Q\n";
         // The fix worktree's sessions recorded its folder with links resolved.
-        let used = HashMap::from([("/home/casey/src/app".to_string(), NOW - 10), ("/real/fix".to_string(), NOW - 2 * RECENT_MS)]);
+        let used = HashMap::from([("/home/cam/src/app".to_string(), NOW - 10), ("/real/fix".to_string(), NOW - 2 * RECENT_MS)]);
         let scanned = parse_scan(stdout, &used, NOW);
-        assert_eq!(scanned.home_dir, "/home/casey");
+        assert_eq!(scanned.home_dir, "/home/cam");
         assert!(scanned.partial);
         let [app, old, tools] = scanned.repos.as_slice() else { panic!("three repos: {:?}", scanned.repos) };
-        assert_eq!((app.remote.as_deref(), app.default_branch.as_deref(), app.fetched_at), (Some("github.com/casey/app"), Some("origin/main"), Some(1_700_000_000_000)));
+        assert_eq!((app.remote.as_deref(), app.default_branch.as_deref(), app.fetched_at), (Some("github.com/cam/app"), Some("origin/main"), Some(1_700_000_000_000)));
         assert_eq!(app.last_used_ms, Some(NOW - 10));
         assert_eq!(app.files, vec![ProjectFile { name: "AGENTS.md".into(), sum: "123".into(), size: 45 }]);
         let [main, fix, wip, gone] = app.worktrees.as_slice() else { panic!("four worktrees") };
@@ -1654,7 +1654,7 @@ mod tests {
         // base64 wraps at 76 on most machines; the lines are joined back.
         let (a, b) = local.split_at(40);
         let stdout = format!(
-            "H\t/home/casey\nR\t/home/casey/src/app\tok\nT\t/home/casey/src/app\tabc\tmain\t-\t1\n\
+            "H\t/home/cam\nR\t/home/cam/src/app\tok\nT\t/home/cam/src/app\tabc\tmain\t-\t1\n\
              S\t0\t0\t1\t-\t-\t0\t0\t0\t0\t0\t-\nP\t.claude/settings.local.json\n{a}\n{b}\n.\nP\t.claude/settings.json\n{shared}\n.\n\
              T\t/with\ttab\t999\tx\t-\t0\nP\t.claude/settings.json\n{shared}\n.\n"
         );
@@ -1678,7 +1678,7 @@ mod tests {
         // One value Claude Code doesn't know and it ignores the whole map, so none of it counts.
         let shared = STANDARD.encode(r#"{"skillOverrides":{"pdf":"on","review":"sometimes"}}"#);
         let stdout = format!(
-            "H\t/home/casey\nR\t/home/casey/src/app\tok\nT\t/home/casey/src/app\tabc\tmain\t-\t1\n\
+            "H\t/home/cam\nR\t/home/cam/src/app\tok\nT\t/home/cam/src/app\tabc\tmain\t-\t1\n\
              S\t0\t0\t1\t-\t-\t0\t0\t0\t0\t0\t-\nP\t.claude/settings.local.json\n{local}\n.\nP\t.claude/settings.json\n{shared}\n.\n"
         );
         let scanned = parse_scan(&stdout, &HashMap::new(), NOW);
@@ -1702,7 +1702,7 @@ mod tests {
         let local = STANDARD.encode(r#"{"deniedMcpServers":[{"serverName":"linear"},{"serverUrl":"https://secret.example.com/*"}]}"#);
         let shared = STANDARD.encode(r#"{"deniedMcpServers":[{"serverName":"sentry"}]}"#);
         let stdout = format!(
-            "H\t/home/casey\nR\t/home/casey/src/app\tok\nT\t/home/casey/src/app\tabc\tmain\t-\t1\n\
+            "H\t/home/cam\nR\t/home/cam/src/app\tok\nT\t/home/cam/src/app\tabc\tmain\t-\t1\n\
              S\t0\t0\t1\t-\t-\t0\t0\t0\t0\t0\t-\nP\t.claude/settings.local.json\n{local}\n.\nP\t.claude/settings.json\n{shared}\n.\n"
         );
         let scanned = parse_scan(&stdout, &HashMap::new(), NOW);
@@ -1710,14 +1710,14 @@ mod tests {
         assert_eq!(main.mcp_denied, [CheckoutMcpDeny { name: "linear".into(), local: true }, CheckoutMcpDeny { name: "sentry".into(), local: false }]);
         assert!(!serde_json::to_string(&scanned.repos).unwrap().contains("secret.example.com"));
         let projects = MachineProjects { repos: scanned.repos.clone(), ..MachineProjects::default() };
-        assert_eq!(projects.checkout_mcp("/home/casey/src/app", "sentry"), Some(CheckoutMcpState { local: false, disabled: false, denied_shared: true }));
-        assert_eq!(projects.checkout_mcp("/home/casey/src/app", "linear").map(|state| state.denied_shared), Some(false));
+        assert_eq!(projects.checkout_mcp("/home/cam/src/app", "sentry"), Some(CheckoutMcpState { local: false, disabled: false, denied_shared: true }));
+        assert_eq!(projects.checkout_mcp("/home/cam/src/app", "linear").map(|state| state.denied_shared), Some(false));
         assert_eq!(projects.checkout_mcp("/elsewhere", "linear"), None);
     }
 
     #[test]
     fn a_checkout_where_git_would_see_new_local_settings_says_so() {
-        let stdout = "H\t/home/casey\nR\t/home/casey/src/app\tok\nT\t/home/casey/src/app\tabc\tmain\t-\t1\n\
+        let stdout = "H\t/home/cam\nR\t/home/cam/src/app\tok\nT\t/home/cam/src/app\tabc\tmain\t-\t1\n\
                       S\t0\t0\t1\t-\t-\t0\t0\t0\t0\t0\t-\nG\n";
         let scanned = parse_scan(stdout, &HashMap::new(), NOW);
         let [repo] = scanned.repos.as_slice() else { panic!("one repo") };
@@ -2013,7 +2013,7 @@ mod tests {
             assert!(repo.worktrees.iter().all(|worktree| worktree.committed_at.is_some()));
             assert_eq!(git(&home, &app, &["status", "--porcelain"]), status_before);
             // A remote's user name, password and query never leave the machine.
-            git(&home, &app, &["remote", "set-url", "origin", "https://casey:ghp_secret@Example.com/Owner/App.git?token=x"]);
+            git(&home, &app, &["remote", "set-url", "origin", "https://cam:ghp_secret@Example.com/Owner/App.git?token=x"]);
             let output = run(shell, &home, &scan_script(&repos[..1], false));
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(!stdout.contains("ghp_secret") && !stdout.contains("token=x"), "{shell}: {stdout}");

@@ -11,7 +11,7 @@ const runsScenario = params.get('runs');
 const minute = 60_000;
 
 const base = (id: string, overrides: Partial<HarnessRun>): HarnessRun => ({
-  id, trigger: null, pool: 'mock-builds', ranPool: 'mock-builds', machine: 'casey-mbp', harness: 't3', used: 't3',
+  id, trigger: null, pool: 'mock-builds', ranPool: 'mock-builds', machine: 'cam-mbp', harness: 't3', used: 't3',
   setup: 'codex_work', folder: '~/src/storefront', repo: null, title: 'Tidy the flaky checkout tests', state: 'handedOff', reason: null,
   detail: null, handle: {}, queuedAtMs: now - 12 * minute, startedAtMs: now - 12 * minute + 4_000, endedAtMs: null, waitUntilMs: null,
   ...overrides,

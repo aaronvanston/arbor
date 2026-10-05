@@ -38,7 +38,7 @@ export const INSTALL_METHOD: Record<InstallMethod, MessageKey | null> = {
   unknown: null,
 };
 
-/** A home-directory path as the user would type it: /Users/casey/.local/bin/claude reads ~/.local/bin/claude. */
+/** A home-directory path as the user would type it: /Users/cam/.local/bin/claude reads ~/.local/bin/claude. */
 export const shortAgentPath = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+(?=\/)/, '~');
 
 function useBehindText() {

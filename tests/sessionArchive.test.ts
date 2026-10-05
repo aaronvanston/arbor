@@ -161,11 +161,11 @@ describe('the session archive', () => {
   });
 
   it('keeps what failed off the phone, and every alert opens the archive', () => {
-    const failing = status({ state: 'error', lastError: 'Couldn’t list /Users/casey/.codex/sessions', failingSince: 0 });
+    const failing = status({ state: 'error', lastError: 'Couldn’t list /Users/cam/.codex/sessions', failingSince: 0 });
     const alert = archiveNotification({ kind: 'failing', since: 0 }, failing, HOUR, t);
     expect(alert.kind).toBe('archiveFailing');
-    expect(alert.body).toContain('Couldn’t list /Users/casey/.codex/sessions');
-    expect(alert.phoneBody).not.toContain('/Users/casey');
+    expect(alert.body).toContain('Couldn’t list /Users/cam/.codex/sessions');
+    expect(alert.phoneBody).not.toContain('/Users/cam');
     expect(alert.phoneBody).toContain('Settings › Session archive');
     const away = archiveNotification({ kind: 'away', since: 0 }, status({ state: 'main-missing' }), HOUR, t);
     expect(away.kind).toBe('archiveAway');

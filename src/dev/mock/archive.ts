@@ -24,7 +24,7 @@ const archiveScenario = params.get('archive') ?? (freshInstall ? 'off' : 'ok');
 
 const archiveRoot = '/Volumes/Backup/arbor-session-archive.noindex';
 // `?archive=own-disk`: kept on this Mac's own disk.
-const OWN_DISK_ROOT = '/Users/casey/Arbor Session Archive.noindex';
+const OWN_DISK_ROOT = '/Users/cam/Arbor Session Archive.noindex';
 
 // The other machines kept over SSH, by `?archiveMachines=` (listed at the top).
 const archiveMachinesScenario = params.get('archiveMachines') ?? (freshInstall ? 'none' : 'some');
@@ -33,7 +33,7 @@ const archiveProjectsScenario = params.get('archiveProjects');
 const fleetRuns = (share: number): ArchiveMachineRun[] => {
   if (archiveMachinesScenario === 'none' || share === 0) return [];
   const runs: ArchiveMachineRun[] = [
-    { machine: 'casey-mbp', at: now - 3 * 60_000, complete: false, error: 'ssh: connect to host casey-mbp port 22: Operation timed out', lastOkAt: now - 20 * 60 * 60_000 },
+    { machine: 'cam-mbp', at: now - 3 * 60_000, complete: false, error: 'ssh: connect to host cam-mbp port 22: Operation timed out', lastOkAt: now - 20 * 60 * 60_000 },
     { machine: 'cedar-02', at: now - 3 * 60_000, complete: true, error: null, lastOkAt: now - 3 * 60_000 },
   ];
   if (archiveMachinesScenario === 'new') runs.push({ machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: Could not resolve hostname ci-01: nodename nor servname provided', lastOkAt: null });
@@ -43,17 +43,17 @@ const fleetRuns = (share: number): ArchiveMachineRun[] => {
 const fleetHomes = (share: number): ArchiveSource[] => archiveMachinesScenario === 'none' || share === 0 ? [] : [
   { machine: 'cedar-02', label: '~/.claude', agent: 'claude', files: 3480, kept: 3480, gone: 41, retentionDays: 36_500 },
   { machine: 'cedar-02', label: '~/.codex', agent: 'codex', files: 925, kept: 925, gone: 0, retentionDays: null },
-  { machine: 'casey-mbp', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null },
+  { machine: 'cam-mbp', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null },
   // Claude's desktop app: an audit log for each local session, and each session's own Claude Code home.
-  { machine: 'casey-mbp', label: `${DESKTOP}/acct/org`, agent: 'claude-desktop', files: 96, kept: 96, gone: 0, retentionDays: null },
-  ...Array.from({ length: 3 }, (_, n): ArchiveSource => ({ machine: 'casey-mbp', label: `${DESKTOP}/acct/org/local_${n}/.claude`, agent: 'claude', files: 12 + n, kept: 12 + n, gone: 0, retentionDays: null })),
+  { machine: 'cam-mbp', label: `${DESKTOP}/acct/org`, agent: 'claude-desktop', files: 96, kept: 96, gone: 0, retentionDays: null },
+  ...Array.from({ length: 3 }, (_, n): ArchiveSource => ({ machine: 'cam-mbp', label: `${DESKTOP}/acct/org/local_${n}/.claude`, agent: 'claude', files: 12 + n, kept: 12 + n, gone: 0, retentionDays: null })),
 ];
 const DESKTOP = '~/Library/Application Support/Claude/local-agent-mode-sessions';
 const archiveHomes = (share: number): ArchiveSource[] => [
-  { machine: 'casey-mbp', label: '~/.claude', agent: 'claude', files: 5210, kept: Math.round(5210 * share), gone: share > 0 ? 214 : 0, retentionDays: 36_500 },
-  { machine: 'casey-mbp', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null },
-  { machine: 'casey-mbp', label: '~/.agent-app/homes/claude-proxy', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
-  { machine: 'casey-mbp', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
+  { machine: 'cam-mbp', label: '~/.claude', agent: 'claude', files: 5210, kept: Math.round(5210 * share), gone: share > 0 ? 214 : 0, retentionDays: 36_500 },
+  { machine: 'cam-mbp', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null },
+  { machine: 'cam-mbp', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
+  { machine: 'cam-mbp', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
   ...fleetHomes(share),
 ];
 
@@ -72,12 +72,12 @@ function mockArchiveImports(scenario: string): ArchiveImport[] {
   const started = now - 3 * 86_400_000;
   return [
     {
-      id: 3, path: '/Volumes/Backup/Mac backups/old-mac', machine: 'casey-mbp', machines: ['casey-mbp'], homes: 5,
+      id: 3, path: '/Volumes/Backup/Mac backups/old-mac', machine: 'cam-mbp', machines: ['cam-mbp'], homes: 5,
       files: importsScenario === 'starting' ? 0 : 9_034, kept: importsScenario === 'starting' ? 0 : 3_702, sessions: importsScenario === 'starting' ? 0 : 1_880,
       addedAt: now - 20 * 60_000, finishedAt: null, connected: importsScenario !== 'away', failures: 0, error: null,
     },
     {
-      id: 2, path: '/Volumes/Backup/Old files/dot-claude', machine: 'casey-mbp', machines: ['casey-mbp'], homes: 1,
+      id: 2, path: '/Volumes/Backup/Old files/dot-claude', machine: 'cam-mbp', machines: ['cam-mbp'], homes: 1,
       files: 12_480, kept: importsScenario === 'failed' ? 12_477 : 12_480, sessions: 1_618, addedAt: started, finishedAt: started + 41 * 60_000, connected: true,
       failures: importsScenario === 'failed' ? 3 : 0, error: importsScenario === 'failed' ? 'Couldn’t read a session file: Permission denied (os error 13)' : null,
     },
@@ -85,11 +85,11 @@ function mockArchiveImports(scenario: string): ArchiveImport[] {
 }
 
 function mockImportPreview(path: string): ImportPreview {
-  const user = `${path}/old-mac/filesystem/Users/casey`;
+  const user = `${path}/old-mac/filesystem/Users/cam`;
   const home = (agent: string, root: string, files: number, sessions: number, state: ImportHomeState = 'new', layout = 'home'): ImportPreviewHome =>
     ({ agent, root, layout, state, files, bytes: files * 410_000, sessions });
   const homes = importPreviewScenario === 'none' ? [] : importPreviewScenario === 'kept'
-    ? [home('claude', `${path}/dot-claude`, 0, 0, 'imported'), home('claude', '/Users/casey/.claude', 0, 0, 'live')]
+    ? [home('claude', `${path}/dot-claude`, 0, 0, 'imported'), home('claude', '/Users/cam/.claude', 0, 0, 'live')]
     : importPreviewScenario === 'others'
     ? [
         home('openclaw', `${path}/openclaw-agents/main`, 14_061, 6_904, 'new', 'openclaw'),
@@ -101,7 +101,7 @@ function mockImportPreview(path: string): ImportPreview {
         home('codex', `${user}/.codex`, 4_517, 4_517),
         home('codex', `${user}/.codex-2`, 210, 210),
         home('claude', `${user}/.agent-tool/profiles/work2`, 2_925, 331),
-        home('claude', `${user}/.agent-app/homes/claude-proxy`, 9_312, 1_024),
+        home('claude', `${user}/.agent-app/homes/claude-other`, 9_312, 1_024),
       ];
   const fresh = homes.filter((entry) => entry.state === 'new');
   return {
@@ -114,7 +114,7 @@ function mockImportPreview(path: string): ImportPreview {
     firstAt: fresh.length ? new Date(2026, 0, 6).getTime() : null,
     lastAt: fresh.length ? new Date(2026, 6, 1).getTime() : null,
     partial: importPreviewScenario === 'partial',
-    machines: ['casey-mbp', 'cedar-02', 'ci-01'],
+    machines: ['cam-mbp', 'cedar-02', 'ci-01'],
   };
 }
 
@@ -146,16 +146,16 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
     running: scenario === 'empty',
     lastPassAt: scenario === 'empty' ? null : now - 3 * 60_000,
     nextPassAt: now + 2 * 60_000,
-    lastError: scenario === 'error' ? 'Couldn’t list the agent homes: find: /Users/casey/.codex/sessions: Operation not permitted' : null,
+    lastError: scenario === 'error' ? 'Couldn’t list the agent homes: find: /Users/cam/.codex/sessions: Operation not permitted' : null,
     failingSince: scenario === 'error' ? now - 2 * 60 * 60_000 : null,
     paused: scenario === 'paused',
     gentle: false,
     otherMachines: archiveMachinesScenario !== 'off',
     // `?archiveMachines=own`: ci-01 is left out whatever All machines says.
     machineOverrides: archiveMachinesScenario === 'own' ? { ci01: false } : {},
-    // `?archiveProjects=sample`: casey/billing left out everywhere, and casey/arbor left out on ci-01 alone.
+    // `?archiveProjects=sample`: cam/billing left out everywhere, and cam/arbor left out on ci-01 alone.
     projectOverrides: archiveProjectsScenario === 'sample'
-      ? { 'casey/billing': { all: false, machines: {} }, 'casey/arbor': { all: null, machines: { ci01: false } } }
+      ? { 'cam/billing': { all: false, machines: {} }, 'cam/arbor': { all: null, machines: { ci01: false } } }
       : {},
     warnings: scenario === 'noowners' ? ['noowners'] : scenario === 'own-disk' ? ['own-disk'] : [],
   };
@@ -189,8 +189,8 @@ const tokensScenario = params.get('tokens') ?? 'done';
 const recoveredScenario = params.get('recovered') ?? (freshInstall ? 'none' : 'some');
 
 /**
- * cedar-02 and casey-mbp have a stretch six weeks back whose transcripts were cleared before the archive
- * kept them, and casey-mbp has days from before the year counted with only a count of sessions.
+ * cedar-02 and cam-mbp have a stretch six weeks back whose transcripts were cleared before the archive
+ * kept them, and cam-mbp has days from before the year counted with only a count of sessions.
  */
 function mockRecovered(): Pick<LifetimeTokens, 'recovered' | 'recoveredOverlap'> {
   if (recoveredScenario === 'none') return { recovered: [], recoveredOverlap: { claudeCode: 0, transcripts: 0 } };
@@ -202,13 +202,13 @@ function mockRecovered(): Pick<LifetimeTokens, 'recovered' | 'recoveredOverlap'>
   };
   const recovered: RecoveredDay[] = [
     ...Array.from({ length: 10 }, (_, n): RecoveredDay => ({ day: ago(52 - n), machine: 'cedar-02', tokens: Math.round((0.55 + 0.45 * Math.abs(Math.sin(n * 7.1))) * 1.5e9), sessions: 3 + (n % 4) })),
-    ...Array.from({ length: 7 }, (_, n): RecoveredDay => ({ day: ago(48 - n), machine: 'casey-mbp', tokens: Math.round((0.5 + 0.5 * Math.abs(Math.sin(n * 3.3))) * 3.2e8), sessions: 1 + (n % 3) })),
-    ...Array.from({ length: 29 }, (_, n): RecoveredDay => ({ day: ago(480 - n * 3), machine: 'casey-mbp', tokens: 0, sessions: 1 + (n % 5) })),
+    ...Array.from({ length: 7 }, (_, n): RecoveredDay => ({ day: ago(48 - n), machine: 'cam-mbp', tokens: Math.round((0.5 + 0.5 * Math.abs(Math.sin(n * 3.3))) * 3.2e8), sessions: 1 + (n % 3) })),
+    ...Array.from({ length: 29 }, (_, n): RecoveredDay => ({ day: ago(480 - n * 3), machine: 'cam-mbp', tokens: 0, sessions: 1 + (n % 5) })),
   ];
   return { recovered: recovered.sort((left, right) => left.day.localeCompare(right.day)), recoveredOverlap: { claudeCode: 176_400_000_000, transcripts: 100_200_000_000 } };
 }
 
-/** Every call is casey-mbp's, so narrowing to another machine leaves its homes and Claude Code's own days. */
+/** Every call is cam-mbp's, so narrowing to another machine leaves its homes and Claude Code's own days. */
 function mockLifetimeTokens(machine = ''): LifetimeTokens {
   const archived = archiveScenario !== 'off';
   const counted = archived && archiveScenario !== 'empty' && tokensScenario !== 'waiting';
@@ -217,7 +217,7 @@ function mockLifetimeTokens(machine = ''): LifetimeTokens {
     { home: '~/.claude', agent: 'claude', model: 'claude-opus-4-6', weight: 0.46, until: '2026-05' },
     { home: '~/.claude', agent: 'claude', model: 'claude-opus-5-5', weight: 0.5, from: '2026-05' },
     { home: '~/.claude', agent: 'claude', model: 'claude-haiku-4-5-20251001', weight: 0.03 },
-    { home: '~/.agent-app/homes/claude-proxy', agent: 'claude', model: 'claude-sonnet-5', weight: 0.14, from: '2026-02' },
+    { home: '~/.agent-app/homes/claude-other', agent: 'claude', model: 'claude-sonnet-5', weight: 0.14, from: '2026-02' },
     { home: '~/.codex', agent: 'codex', model: 'gpt-5.5-codex', weight: 0.2, until: '2026-07' },
     { home: '~/.codex', agent: 'codex', model: 'gpt-6-sol', weight: 0.24, from: '2026-07' },
     { home: '~/.codex', agent: 'codex', model: '', weight: 0.004 },
@@ -247,7 +247,7 @@ function mockLifetimeTokens(machine = ''): LifetimeTokens {
         reasoning: codex ? Math.round(tokens * 0.009) : 0,
       };
       const rowKey = `${month}|${maker.home}|${maker.model}`;
-      const row: MonthRow = months.get(rowKey) ?? { month, machine: 'casey-mbp', home: maker.home, agent: maker.agent, model: maker.model, calls: 0, input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: 0 };
+      const row: MonthRow = months.get(rowKey) ?? { month, machine: 'cam-mbp', home: maker.home, agent: maker.agent, model: maker.model, calls: 0, input: 0, cacheWrite: 0, cacheRead: 0, output: 0, reasoning: 0 };
       for (const field of Object.keys(counts) as (keyof typeof counts)[]) {
         row[field] += counts[field];
         today[field] += counts[field];
@@ -257,7 +257,7 @@ function mockLifetimeTokens(machine = ''): LifetimeTokens {
     days.push(today);
   }
   const on = <T extends { machine: string }>(rows: T[]) => (machine ? rows.filter((row) => row.machine === machine) : rows);
-  const own = !machine || machine === 'casey-mbp';
+  const own = !machine || machine === 'cam-mbp';
   const recovered = counted ? mockRecovered() : { recovered: [], recoveredOverlap: { claudeCode: 0, transcripts: 0 } };
   return {
     archived,

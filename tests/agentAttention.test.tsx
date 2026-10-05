@@ -18,8 +18,8 @@ const t = (key: Parameters<typeof translate>[0], variables?: Record<string, stri
 const both = { permission: true, waiting: true };
 
 const transcript = (fields: Partial<SessionTranscript>): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/src/arbor', repoRoot: '/Users/casey/src/arbor',
-  mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '', cwd: '/Users/cam/src/arbor', repoRoot: '/Users/cam/src/arbor',
+  mainRepo: '/Users/cam/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
   pullRequests: [], linesAdded: null, linesRemoved: null, compactions: [], toolUsage: null, readAtMs: 0,
   ...fields,
 });
@@ -29,13 +29,13 @@ const session = (id: string, fields: Partial<UsageSession> = {}): UsageSession =
   startedAtMs: 0, lastActiveAtMs: 0, requests: 40, failures: 0, canceled: 0,
   inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
   totalTokens: 0, estimatedCost: 12.4, pricedRequests: 40, peakContext: 0, compactions: 0,
-  provider: 'claude', machine: 'casey-mbp', pool: '', apiKeyHash: '', active: true, hasOwnRequests: true, subagents: 0, threads: [],
+  provider: 'claude', machine: 'cam-mbp', pool: '', apiKeyHash: '', active: true, hasOwnRequests: true, subagents: 0, threads: [],
   transcript: null,
   ...fields,
 });
 
 const wait = (fields: Partial<AttentionItem> = {}): AttentionItem => ({
-  machine: 'casey-mbp', agent: 'claude', sessionId: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', kind: 'permission', sinceMs: 0,
+  machine: 'cam-mbp', agent: 'claude', sessionId: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', kind: 'permission', sinceMs: 0,
   session: session('a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', { transcript: transcript({ title: 'Fix the login redirect loop' }) }),
   ...fields,
 });
@@ -78,20 +78,20 @@ describe('needs-you alerts', () => {
   test('alerts name the session and the machine, and pile up into one past three', () => {
     const codex = wait({
       agent: 'codex', kind: 'waiting', sessionId: '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', machine: 'cedar-02',
-      session: session('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', { provider: 'codex', userAgent: 'codex_cli_rs/0.156.0', transcript: transcript({ branch: 'main', repoRoot: '/home/casey/src/api', mainRepo: '/home/casey/src/api', cwd: '/home/casey/src/api' }) }),
+      session: session('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', { provider: 'codex', userAgent: 'codex_cli_rs/0.156.0', transcript: transcript({ branch: 'main', repoRoot: '/home/cam/src/api', mainRepo: '/home/cam/src/api', cwd: '/home/cam/src/api' }) }),
     });
     const unknown = wait({ kind: 'question', sessionId: 'e5d4c3b2-a190-4f8e-9d7c-6b5a4f3e2d1c', session: null });
     expect(attentionNotifications([wait(), codex, unknown], t)).toEqual([
       {
-        title: 'Claude Code needs permission', body: 'Fix the login redirect loop on casey-mbp', kind: 'agentPermission', urgent: true,
-        subject: { session: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', machine: 'casey-mbp' },
+        title: 'Claude Code needs permission', body: 'Fix the login redirect loop on cam-mbp', kind: 'agentPermission', urgent: true,
+        subject: { session: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', machine: 'cam-mbp' },
       },
       {
         title: 'Codex is waiting for you', body: 'api · main on cedar-02', kind: 'agentWaiting', urgent: false,
         subject: { session: '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', machine: 'cedar-02' },
       },
       // Its requests didn't come through Arbor, so there's no session to open.
-      { title: 'Claude Code has a question', body: 'Claude Code e5d4c3b2 on casey-mbp', kind: 'agentPermission', urgent: true, subject: { machine: 'casey-mbp' } },
+      { title: 'Claude Code has a question', body: 'Claude Code e5d4c3b2 on cam-mbp', kind: 'agentPermission', urgent: true, subject: { machine: 'cam-mbp' } },
     ]);
     const many = attentionNotifications([codex, codex, codex, codex], t);
     expect(many).toHaveLength(1);
@@ -121,7 +121,7 @@ describe('the reporter on a machine', () => {
   });
 
   const machine = (reporter: ReporterStatus): MachineHealth => ({
-    machine: 'casey-mbp', host: { machine: 'casey-mbp', endpoint: 'localhost', port: 22, enabled: true, source: '' }, local: true,
+    machine: 'cam-mbp', host: { machine: 'cam-mbp', endpoint: 'localhost', port: 22, enabled: true, source: '' }, local: true,
     status: 'healthy', score: 96, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: 0, lastAttemptAt: 0,
     pingTarget: null, path: null,
     agents: { claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter, t3: null, orca: null },
@@ -131,12 +131,12 @@ describe('the reporter on a machine', () => {
   test('the row says where the reporter runs, and which homes stopped', () => {
     const homes = [
       { agent: 'claude' as const, home: '~/.claude', reporting: true },
-      { agent: 'claude' as const, home: '~/.agent-app/homes/claude-proxy', reporting: true },
+      { agent: 'claude' as const, home: '~/.agent-app/homes/claude-other', reporting: true },
       { agent: 'codex' as const, home: '~/.codex', reporting: true },
     ];
     expect(reporterHomesText({ installed: true, homes }, t)).toBe('Claude Code (2 homes) · Codex (1 home)');
     expect(row({ installed: true, homes })).toBe('Alerts Claude Code (2 homes) · Codex (1 home) Remove');
-    const stopped = [...homes, { agent: 'codex' as const, home: '~/.agent-app/homes/codex-proxy', reporting: false }];
+    const stopped = [...homes, { agent: 'codex' as const, home: '~/.agent-app/homes/codex-other', reporting: false }];
     expect(row({ installed: true, homes: stopped })).toBe('Alerts Claude Code (2 homes) · Codex (1 home) · 1 home isn’t reporting Set up again Remove');
     expect(row({ installed: false, homes: homes.map((home) => ({ ...home, reporting: false })) }))
       .toBe('Alerts Off. Set up Arbor’s reporter to hear when an agent here needs you. Set up');

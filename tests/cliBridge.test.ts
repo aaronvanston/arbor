@@ -13,7 +13,7 @@ const ask = (action: string, args: unknown = {}, confirm = false) => answerCliRe
 
 describe('the window’s answers to the command line', () => {
   test('run the action and send back only JSON', async () => {
-    expect(await ask('demo.read', { name: 'casey-mbp' })).toEqual({ result: { got: 'casey-mbp' }, error: null });
+    expect(await ask('demo.read', { name: 'cam-mbp' })).toEqual({ result: { got: 'cam-mbp' }, error: null });
     expect(await ask('demo.read', ['not', 'an', 'object'])).toEqual({ result: { got: null }, error: null });
   });
 
@@ -34,10 +34,10 @@ describe('the window’s answers to the command line', () => {
   });
 
   test('name each account by a short id that keeps its email out', () => {
-    const key = 'casey@example.com.json::7';
+    const key = 'cam@example.com.json::7';
     expect(accountId(key)).toMatch(/^a[0-9a-f]{6}$/);
     expect(accountId(key)).toBe(accountId(key));
-    expect(accountId(key)).not.toBe(accountId('casey@example.com.json::8'));
+    expect(accountId(key)).not.toBe(accountId('cam@example.com.json::8'));
   });
 
   test('read their arguments strictly', () => {

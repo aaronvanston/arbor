@@ -53,8 +53,8 @@ describe('a project’s MCP servers in its checkouts', () => {
 
   it('lists the changes each checkout needs, and why one can’t be made', () => {
     const values: Record<string, Record<string, RepoProjectValue>> = {
-      linear: { 'casey/arbor': { all: 'off', machines: {} } },
-      sentry: { 'casey/arbor': { all: 'on', machines: { ci01: 'on' } } },
+      linear: { 'cam/arbor': { all: 'off', machines: {} } },
+      sentry: { 'cam/arbor': { all: 'on', machines: { ci01: 'on' } } },
     };
     const checkouts = [
       checkout('mac-mini', '/src/arbor', { mcpDenied: [{ name: 'linear', local: true }] }),
@@ -64,7 +64,7 @@ describe('a project’s MCP servers in its checkouts', () => {
       checkout('ci-01', '/home/ci/arbor'),
     ];
     const changes = projectMcpChanges(
-      ['linear', 'sentry'], values, checkouts, 'Casey/Arbor',
+      ['linear', 'sentry'], values, checkouts, 'Cam/Arbor',
       (name, server) => homeServer(machines, name, server),
       (name, server) => repoDefines(registry, name, server),
     );
@@ -84,8 +84,8 @@ describe('a project’s MCP servers in its checkouts', () => {
   });
 
   it('won’t turn on a server a checked-in deny keeps out', () => {
-    const values: Record<string, Record<string, RepoProjectValue>> = { linear: { 'casey/arbor': { all: 'on', machines: {} } } };
-    const changes = projectMcpChanges(['linear'], values, [checkout('mac-mini', '/a', { mcpDenied: [{ name: 'linear', local: false }] })], 'casey/arbor',
+    const values: Record<string, Record<string, RepoProjectValue>> = { linear: { 'cam/arbor': { all: 'on', machines: {} } } };
+    const changes = projectMcpChanges(['linear'], values, [checkout('mac-mini', '/a', { mcpDenied: [{ name: 'linear', local: false }] })], 'cam/arbor',
       (name, server) => homeServer(machines, name, server), () => true);
     expect(changes.map((change) => change.blocked)).toEqual(['denied']);
   });

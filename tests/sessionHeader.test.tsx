@@ -8,8 +8,8 @@ const MINUTE = 60_000;
 const now = Date.now();
 
 const transcript = (fields: Partial<SessionTranscript> = {}): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/.agent-app/worktrees/arbor/login-loop',
-  repoRoot: '/Users/casey/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop', commitHash: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '', cwd: '/Users/cam/.agent-app/worktrees/arbor/login-loop',
+  repoRoot: '/Users/cam/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/cam/src/arbor', branch: 'fix/login-loop', commitHash: '',
   repositoryUrl: '', title: 'Fix the login redirect loop', titleSource: 'ai',
   pullRequests: [{ url: 'https://github.com/aaronvanston/arbor/pull/412', repository: 'aaronvanston/arbor', number: 412 }],
   linesAdded: 214, linesRemoved: 37, compactions: [], toolUsage: null, readAtMs: now - 2 * MINUTE,
@@ -21,7 +21,7 @@ const session = (fields: Partial<UsageSession> = {}): UsageSession => ({
   userAgent: 'claude-cli/2.1.280 (external, cli)', startedAtMs: now - 90 * MINUTE, lastActiveAtMs: now - 2 * MINUTE, requests: 40,
   failures: 0, canceled: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
   totalTokens: 1_200_000, estimatedCost: 12.4, pricedRequests: 40, peakContext: 0, compactions: 0, provider: 'claude',
-  machine: 'casey-mbp', pool: '', apiKeyHash: '', active: true, hasOwnRequests: true, subagents: 0, threads: [],
+  machine: 'cam-mbp', pool: '', apiKeyHash: '', active: true, hasOwnRequests: true, subagents: 0, threads: [],
   transcript: transcript(),
   ...fields,
 });
@@ -45,7 +45,7 @@ describe('session header', () => {
     const html = text(render(session()));
     expect(html).toContain('Fix the login redirect loop a3f1c2d4');
     expect(html).toContain('View requests');
-    expect(html).toContain('casey-mbp Claude Code 2.1.280 Claude');
+    expect(html).toContain('cam-mbp Claude Code 2.1.280 Claude');
     expect(html).toContain('Project arbor / Worktree login-loop Branch fix/login-loop');
     expect(html).toContain('#412');
     expect(html).toContain('+214 −37');
@@ -70,6 +70,6 @@ describe('session header', () => {
     expect(html).toContain('Folder ~/.agent-app/worktrees/arbor/login-loop');
     expect(html).toContain('Session ID a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7');
     expect(html).toContain('User agent claude-cli/2.1.280 (external, cli)');
-    expect(html).toContain('From its transcript on casey-mbp , read 2m ago');
+    expect(html).toContain('From its transcript on cam-mbp , read 2m ago');
   });
 });

@@ -43,21 +43,21 @@ const agents = (sum: string) => ({ name: 'AGENTS.md', sum, size: 100 });
 const claude = (sum: string) => ({ name: '.claude/CLAUDE.md', sum, size: 200 });
 
 const fleet = [
-  machine('mbp', '/Users/casey', [
-    repo('/Users/casey/src/arbor', 'github.com/casey/arbor', [
-      main('/Users/casey/src/arbor', { sizeKb: 900, behind: 2 }),
-      worktree('/Users/casey/src/arbor/.claude/worktrees/fox', { merged: true, blocker: null, sizeKb: 300, ignored: ['.env.local', 'node_modules/'] }),
-      worktree('/Users/casey/.agent-app/worktrees/arbor/login', { gone: true, blocker: null, sizeKb: 200 }),
-      worktree('/Users/casey/.agent-app/worktrees/arbor/wip', { untracked: 2, blocker: 'dirty' }),
+  machine('mbp', '/Users/cam', [
+    repo('/Users/cam/src/arbor', 'github.com/cam/arbor', [
+      main('/Users/cam/src/arbor', { sizeKb: 900, behind: 2 }),
+      worktree('/Users/cam/src/arbor/.claude/worktrees/fox', { merged: true, blocker: null, sizeKb: 300, ignored: ['.env.local', 'node_modules/'] }),
+      worktree('/Users/cam/.agent-app/worktrees/arbor/login', { gone: true, blocker: null, sizeKb: 200 }),
+      worktree('/Users/cam/.agent-app/worktrees/arbor/wip', { untracked: 2, blocker: 'dirty' }),
     ], { lastUsedMs: NOW - 1_000, files: [claude('a'), agents('x')] }),
-    repo('/Users/casey/src/notes', null, [main('/Users/casey/src/notes')], { lastUsedMs: NOW - 50_000, files: [agents('n')] }),
+    repo('/Users/cam/src/notes', null, [main('/Users/cam/src/notes')], { lastUsedMs: NOW - 50_000, files: [agents('n')] }),
   ]),
   machine('ci', '/home/ci', [
-    repo('/home/ci/src/arbor', 'github.com/casey/arbor', [main('/home/ci/src/arbor')], { lastUsedMs: NOW - 5_000, files: [claude('b'), agents('x')] }),
+    repo('/home/ci/src/arbor', 'github.com/cam/arbor', [main('/home/ci/src/arbor')], { lastUsedMs: NOW - 5_000, files: [claude('b'), agents('x')] }),
     repo('/home/ci/src/notes', null, [main('/home/ci/src/notes')], { lastUsedMs: NOW - 90_000 }),
   ]),
-  machine('cedar', '/home/casey', [
-    repo('/home/casey/src/arbor', 'github.com/casey/arbor', [main('/home/casey/src/arbor')], { files: [claude('a')] }),
+  machine('cedar', '/home/cam', [
+    repo('/home/cam/src/arbor', 'github.com/cam/arbor', [main('/home/cam/src/arbor')], { files: [claude('a')] }),
   ]),
 ];
 
@@ -66,7 +66,7 @@ describe('projects across machines', () => {
     const rows = buildProjects(fleet);
     expect(rows.map((row) => row.name)).toEqual(['arbor', 'notes', 'notes']);
     const arbor = itemAt(rows, 0);
-    expect(arbor.note).toBe('github.com/casey');
+    expect(arbor.note).toBe('github.com/cam');
     expect(Object.keys(arbor.places)).toEqual(['mbp', 'ci', 'cedar']);
     expect(arbor.lastUsedMs).toBe(NOW - 1_000);
     expect(itemAt(rows, 1).note).toBe('~/src');
@@ -102,21 +102,21 @@ describe('projects across machines', () => {
     expect(needsLook(present(notes))).toBe(false);
     expect(canClean(present(arbor))).toBe(true);
     expect(canClean(present(ciNotes))).toBe(false);
-    const gone = buildProjects([machine('mbp', '/Users/casey', [repo('/Users/casey/src/old', null, [], { state: 'missing' })])]);
+    const gone = buildProjects([machine('mbp', '/Users/cam', [repo('/Users/cam/src/old', null, [], { state: 'missing' })])]);
     expect(needsLook(itemAt(gone, 0))).toBe(true);
     expect(matchesProject(present(arbor), 'LOGIN')).toBe(true);
     expect(matchesProject(present(arbor), 'billing')).toBe(false);
     expect(matchesProject(present(arbor), 'feature')).toBe(true);
-    expect(matchesProject(present(arbor), 'casey/arbor')).toBe(true);
+    expect(matchesProject(present(arbor), 'cam/arbor')).toBe(true);
   });
 
   it('names who keeps a worktree and writes home paths from ~', () => {
-    expect(worktreeOwner('/Users/casey/.t3/worktrees/arbor/x', '/Users/casey')).toBe('t3');
-    expect(worktreeOwner('/Users/casey/.codex/worktrees/1a2b/arbor', '/Users/casey')).toBe('codex');
-    expect(worktreeOwner('/srv/app/.claude/worktrees/fox', '/Users/casey')).toBe('claude');
-    expect(worktreeOwner('/Users/casey/src/arbor-2', '/Users/casey')).toBeNull();
-    expect(tilde('/Users/casey/src/x', '/Users/casey')).toBe('~/src/x');
-    expect(tilde('/Users/caseyr/src', '/Users/casey')).toBe('/Users/caseyr/src');
+    expect(worktreeOwner('/Users/cam/.t3/worktrees/arbor/x', '/Users/cam')).toBe('t3');
+    expect(worktreeOwner('/Users/cam/.codex/worktrees/1a2b/arbor', '/Users/cam')).toBe('codex');
+    expect(worktreeOwner('/srv/app/.claude/worktrees/fox', '/Users/cam')).toBe('claude');
+    expect(worktreeOwner('/Users/cam/src/arbor-2', '/Users/cam')).toBeNull();
+    expect(tilde('/Users/cam/src/x', '/Users/cam')).toBe('~/src/x');
+    expect(tilde('/Users/camr/src', '/Users/cam')).toBe('/Users/camr/src');
     expect(tilde('/srv/x', '')).toBe('/srv/x');
   });
 
@@ -129,9 +129,9 @@ describe('projects across machines', () => {
 
   it('plans removals only from what the last scan says can go', () => {
     const mbp = present(fleet[0]);
-    const chosen = chosenWorktrees(mbp, ['/Users/casey/src/arbor/.claude/worktrees/fox', '/Users/casey/.agent-app/worktrees/arbor/wip', '/Users/casey/src/arbor', '/nowhere']);
-    expect(chosen.map(({ worktree: entry }) => entry.path)).toEqual(['/Users/casey/src/arbor/.claude/worktrees/fox']);
-    expect(removalPlan(chosen)).toEqual([{ repo: '/Users/casey/src/arbor', path: '/Users/casey/src/arbor/.claude/worktrees/fox', head: 'abc' }]);
+    const chosen = chosenWorktrees(mbp, ['/Users/cam/src/arbor/.claude/worktrees/fox', '/Users/cam/.agent-app/worktrees/arbor/wip', '/Users/cam/src/arbor', '/nowhere']);
+    expect(chosen.map(({ worktree: entry }) => entry.path)).toEqual(['/Users/cam/src/arbor/.claude/worktrees/fox']);
+    expect(removalPlan(chosen)).toEqual([{ repo: '/Users/cam/src/arbor', path: '/Users/cam/src/arbor/.claude/worktrees/fox', head: 'abc' }]);
     expect(branchFate(worktree('/a', { merged: true }))).toBe('delete');
     expect(branchFate(worktree('/a', { gone: true }))).toBe('keep');
     expect(branchFate(worktree('/a', { branch: null, merged: true }))).toBeNull();

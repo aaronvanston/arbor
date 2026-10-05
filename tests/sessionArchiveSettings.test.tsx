@@ -13,7 +13,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   main: { root: '/Volumes/Backup/arbor-session-archive.noindex', connected: true, mountPoint: '/Volumes/Backup', freeBytes: 1.24e12, noowners: false, lastSeenAt: Date.now() - 3 * 60_000 },
   sources: [
     { machine: 'mini', label: '~/.claude', agent: 'claude', files: 5210, kept: 5210, gone: 214, retentionDays: 36_500 },
-    { machine: 'mini', label: '~/.agent-app/homes/claude-proxy', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: null },
+    { machine: 'mini', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: null },
   ],
   machines: [],
   imports: [],
@@ -88,9 +88,9 @@ describe('Settings › Session archive', () => {
   it('keeps or leaves out a project’s sessions, on every machine or on one', () => {
     const checked = (html: string) => html.match(/role="switch"[^>]*aria-checked="(true|false)"|aria-checked="(true|false)"[^>]*role="switch"/)?.slice(1).find(Boolean);
     const render = (fields: Partial<ArchiveStatus>) => renderToStaticMarkup(<I18nProvider><ArchiveOverview status={status(fields)} onStatus={() => undefined} /></I18nProvider>);
-    const projectOverrides = { 'casey/billing': { all: false, machines: {} }, 'casey/arbor': { all: null, machines: { ci01: false } } };
+    const projectOverrides = { 'cam/billing': { all: false, machines: {} }, 'cam/arbor': { all: null, machines: { ci01: false } } };
     try {
-      setSettingsProject('casey/billing');
+      setSettingsProject('cam/billing');
       const billing = render({ projectOverrides });
       expect(text(billing)).toContain('Keep this project’s sessions');
       expect(text(billing)).toContain('what’s kept already stays');
@@ -99,7 +99,7 @@ describe('Settings › Session archive', () => {
       expect(text(billing)).not.toContain('Show in Finder');
 
       // Nearest wins: arbor is left out on ci-01 alone, and kept everywhere else, this Mac included.
-      setSettingsProject('casey/arbor');
+      setSettingsProject('cam/arbor');
       setSettingsScope('ci-01');
       expect(checked(render({ projectOverrides }))).toBe('false');
       setSettingsScope('cedar-02');

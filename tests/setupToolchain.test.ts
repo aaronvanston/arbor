@@ -133,11 +133,11 @@ describe('versions', () => {
 
 describe('what a machine has for what a project asks', () => {
   it('says whether each machine can build a project, and what it would take', () => {
-    const mac = machine('mbp', '/Users/casey', {
+    const mac = machine('mbp', '/Users/cam', {
       tools: [
-        tool('node', '22.17.0', '/Users/casey/.nvm/versions/node/v22.17.0/bin/node'),
-        tool('python', '3.12.4', '/Users/casey/.local/share/mise/shims/python3'),
-        tool('rust', '1.88.0', '/Users/casey/.cargo/bin/rustc'),
+        tool('node', '22.17.0', '/Users/cam/.nvm/versions/node/v22.17.0/bin/node'),
+        tool('python', '3.12.4', '/Users/cam/.local/share/mise/shims/python3'),
+        tool('rust', '1.88.0', '/Users/cam/.cargo/bin/rustc'),
         tool('go', '1.24.4'),
         tool('pnpm', '10.2.0'),
         tool('bun', null),
@@ -158,8 +158,8 @@ describe('what a machine has for what a project asks', () => {
     expect(state(need('bun', '*'))).toBe('unknown');
     expect(state(need('node', 'lts/iron', 'range'))).toBe('unknown');
     // When nvm and mise both keep a fitting version, mise's shim is the one that picks it.
-    const both = machine('m', '/Users/casey', {
-      tools: [tool('node', '22.17.0', '/Users/casey/.local/share/mise/shims/node')],
+    const both = machine('m', '/Users/cam', {
+      tools: [tool('node', '22.17.0', '/Users/cam/.local/share/mise/shims/node')],
       kept: [kept('node', 'nvm', '20.19.0'), kept('node', 'mise', '20.19.0')],
     });
     expect(checkNeed(need('node', '20.19.0', 'pin', { file: '.tool-versions' }), both)).toMatchObject({ state: 'managed', using: { manager: 'mise' } });
@@ -191,17 +191,17 @@ describe('what a machine has for what a project asks', () => {
 });
 
 describe('rows', () => {
-  const mbp = machine('mbp', '/Users/casey', {
+  const mbp = machine('mbp', '/Users/cam', {
     tools: [tool('node', '22.17.0'), tool('git', '2.50.1'), tool('bun', '1.3.2')],
     kept: [kept('node', 'nvm', '20.19.0'), kept('node', 'nvm', '24.3.0')],
     projects: [
-      project('/Users/casey/src/arbor', 'github.com/casey/arbor', {
+      project('/Users/cam/src/arbor', 'github.com/cam/arbor', {
         lastUsedMs: NOW - 1_000,
         needs: [need('node', '>=22'), need('bun', '*', 'range', { file: 'bun.lock' })],
         packages: [{ dir: '', lockfile: 'bun.lock', modules: true }],
         libraries: [library('react', '^19.1.0', '19.1.1'), library('vite', '^7', '7.1.2', { dev: true })],
       }),
-      project('/Users/casey/src/site', 'github.com/casey/site', {
+      project('/Users/cam/src/site', 'github.com/cam/site', {
         lastUsedMs: NOW - 9_000,
         libraries: [library('react', '^18.3.0', '18.3.1'), library('vite', '^7', null, { dev: true })],
       }),
@@ -210,7 +210,7 @@ describe('rows', () => {
   const ci = machine('ci', '/home/ci', {
     tools: [tool('node', '20.19.0'), tool('git', '2.43.0')],
     projects: [
-      project('/home/ci/src/arbor', 'github.com/casey/arbor', {
+      project('/home/ci/src/arbor', 'github.com/cam/arbor', {
         lastUsedMs: NOW - 5_000,
         needs: [need('node', '>=22'), need('bun', '*', 'range', { file: 'bun.lock' })],
         packages: [{ dir: '', lockfile: 'bun.lock', modules: true }],

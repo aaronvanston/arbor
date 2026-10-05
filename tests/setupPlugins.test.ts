@@ -35,7 +35,7 @@ const OFFICIAL = 'claude-plugins-official';
 const machines = [
   machine('mbp', [
     home('codex', '~/.codex', [server('linear', 'codex-a')]),
-    home('claude', '~/.agent-app/homes/claude-proxy', [plugin(`context7@${OFFICIAL}`, '1.2.0'), market(OFFICIAL, 'anthropics/claude-plugins-official', ago(1), true)]),
+    home('claude', '~/.agent-app/homes/claude-other', [plugin(`context7@${OFFICIAL}`, '1.2.0'), market(OFFICIAL, 'anthropics/claude-plugins-official', ago(1), true)]),
     home('claude', '~/.claude', [
       plugin(`context7@${OFFICIAL}`, '1.2.0'),
       plugin(`review@${OFFICIAL}`, '2.0.0', false),
@@ -83,15 +83,15 @@ describe('the fleet view', () => {
 
   it('has a column for every Claude Code home, and Codex homes for MCP servers', () => {
     expect(view.claudeHomes.map((entry) => `${entry.machine} ${entry.path}`)).toEqual([
-      'mbp ~/.claude', 'mbp ~/.agent-app/homes/claude-proxy', 'ci ~/.claude', 'cedar ~/.claude',
+      'mbp ~/.claude', 'mbp ~/.agent-app/homes/claude-other', 'ci ~/.claude', 'cedar ~/.claude',
     ]);
     expect(view.mcpHomes.map((entry) => `${entry.machine} ${entry.path}`)).toEqual([
-      'mbp ~/.claude', 'mbp ~/.agent-app/homes/claude-proxy', 'mbp ~/.codex', 'ci ~/.claude', 'ci ~/.codex', 'cedar ~/.claude',
+      'mbp ~/.claude', 'mbp ~/.agent-app/homes/claude-other', 'mbp ~/.codex', 'ci ~/.claude', 'ci ~/.codex', 'cedar ~/.claude',
     ]);
   });
 
   it('leaves out a shadow Codex home whose config.toml is another home’s', () => {
-    const shadow = { ...home('codex', '~/.agent-app/homes/codex-proxy', []), shares: { home: '~/.codex', entries: ['config.toml'] } };
+    const shadow = { ...home('codex', '~/.agent-app/homes/codex-other', []), shares: { home: '~/.codex', entries: ['config.toml'] } };
     const withShadow = machines.map((entry) => (entry.machine === 'mbp' ? { ...entry, homes: [...entry.homes, shadow] } : entry));
     expect(extensionsView(withShadow, {}, NOW).mcpHomes.map((entry) => `${entry.machine} ${entry.path}`)).toEqual(view.mcpHomes.map((entry) => `${entry.machine} ${entry.path}`));
   });
@@ -186,9 +186,9 @@ describe('plugin changes', () => {
     const planned = plannedPlugins(view, pending);
     expect([...planned.keys()]).toEqual(['mbp', 'ci']);
     expect(pluginChanges(planned.get('mbp')!)).toEqual([
-      { home: '~/.agent-app/homes/claude-proxy', action: 'refresh', target: OFFICIAL },
-      { home: '~/.agent-app/homes/claude-proxy', action: 'addMarketplace', target: 'superpowers-marketplace', source: 'obra/superpowers-marketplace' },
-      { home: '~/.agent-app/homes/claude-proxy', action: 'install', target: 'superpowers@superpowers-marketplace' },
+      { home: '~/.agent-app/homes/claude-other', action: 'refresh', target: OFFICIAL },
+      { home: '~/.agent-app/homes/claude-other', action: 'addMarketplace', target: 'superpowers-marketplace', source: 'obra/superpowers-marketplace' },
+      { home: '~/.agent-app/homes/claude-other', action: 'install', target: 'superpowers@superpowers-marketplace' },
     ]);
     expect(planned.get('mbp')!.map((change) => change.auto)).toEqual([false, true, false]);
     expect(pluginChanges(planned.get('ci')!)).toEqual([

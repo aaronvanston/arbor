@@ -12,8 +12,8 @@ const context = (fields: Partial<LiveContext> = {}): LiveContext => ({
 });
 
 const transcript = (fields: Partial<SessionTranscript>): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/src/arbor', repoRoot: '/Users/casey/src/arbor',
-  mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '', cwd: '/Users/cam/src/arbor', repoRoot: '/Users/cam/src/arbor',
+  mainRepo: '/Users/cam/src/arbor', branch: 'fix/login-loop', commitHash: '', repositoryUrl: '', title: '', titleSource: '',
   pullRequests: [], linesAdded: null, linesRemoved: null, compactions: [], toolUsage: null, readAtMs: 0,
   ...fields,
 });
@@ -23,7 +23,7 @@ const session = (id: string, fields: Partial<LiveSession> = {}): LiveSession => 
   startedAtMs: 0, lastActiveAtMs: 0, requests: 40, failures: 0, canceled: 0,
   inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
   totalTokens: 0, estimatedCost: 12.4, pricedRequests: 40, peakContext: 0, compactions: 0,
-  provider: 'claude', machine: 'casey-mbp', pool: '', apiKeyHash: '', active: true, hasOwnRequests: true, subagents: 0, threads: [],
+  provider: 'claude', machine: 'cam-mbp', pool: '', apiKeyHash: '', active: true, hasOwnRequests: true, subagents: 0, threads: [],
   transcript: null, runningSinceMs: 0, context: context(),
   ...fields,
 });
@@ -64,7 +64,7 @@ describe('tray rows', () => {
       session('b', { context: context({ tokens: 341_000, compactsAt: 358_000, compactsInMs: 0 }), estimatedCost: 6.1 }),
       session('c', { context: context({ compactsAt: null, tokens: 96_300, compactsInMs: null }), estimatedCost: 0, pricedRequests: 0 }),
       session('d', { estimatedCost: 1.2, context: context({ compactsInMs: null }) }),
-    ], { running: 6 }), [], t, { machineName: (machine) => (machine === 'casey-mbp' ? 'Casey MBP' : machine) });
+    ], { running: 6 }), [], t, { machineName: (machine) => (machine === 'cam-mbp' ? 'Cam MBP' : machine) });
     expect(rows).toEqual([
       // Every amount shows cents, the $100-plus total included.
       { text: '6 sessions running · $104.70/h' },
@@ -77,7 +77,7 @@ describe('tray rows', () => {
         text: '3 more',
         dot: 'blank',
         children: [
-          { text: 'Claude Code · 58% context · $1.20/h · Casey MBP', dot: 'blank' },
+          { text: 'Claude Code · 58% context · $1.20/h · Cam MBP', dot: 'blank' },
           // The report lists twelve at most; the rest are only counted.
           { text: '…and 2 more' },
         ],
@@ -88,7 +88,7 @@ describe('tray rows', () => {
   test('sessions waiting on you come before the costliest, in amber', () => {
     const rows = liveTrayRows(
       report([session('a', { context: context({ compactsInMs: 45 * MINUTE }) })]),
-      [{ name: 'Fix the login loop', status: 'approval', machine: 'casey-mbp', sinceMs: 0 }],
+      [{ name: 'Fix the login loop', status: 'approval', machine: 'cam-mbp', sinceMs: 0 }],
       t,
       { nowMs: 4 * MINUTE },
     );
@@ -96,7 +96,7 @@ describe('tray rows', () => {
       '1 session running · $12.40/h',
       '1 Claude',
       'Waiting on you',
-      'Fix the login loop · Needs approval · casey-mbp · 4m',
+      'Fix the login loop · Needs approval · cam-mbp · 4m',
       'Costliest',
       'Claude Code · 58% context · $12.40/h',
     ]);

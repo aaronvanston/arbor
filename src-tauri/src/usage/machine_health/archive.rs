@@ -1088,7 +1088,7 @@ mod tests {
 
     #[test]
     fn a_projects_own_value_wins_over_its_machine_nearest_first() {
-        let sessions: Vec<(String, String, String)> = [("A1", "Cedar 02", "Casey/Arbor"), ("B1", "cedar-02", "acme/web"), ("A2", "ci-01", "casey/arbor"), ("C1", "mini", "acme/secret")]
+        let sessions: Vec<(String, String, String)> = [("A1", "Cedar 02", "Cam/Arbor"), ("B1", "cedar-02", "acme/web"), ("A2", "ci-01", "cam/arbor"), ("C1", "mini", "acme/secret")]
             .iter()
             .map(|(id, machine, repository)| (id.to_string(), machine.to_string(), repository.to_string()))
             .collect();
@@ -1103,7 +1103,7 @@ mod tests {
 
         // Kept everywhere but on one machine, where the machine's own value for the project wins.
         let arbor = ArchiveProjectKeep { all: Some(true), machines: BTreeMap::from([(normalize_machine_name("ci-01"), false)]) };
-        settings.projects.insert("casey/arbor".into(), arbor);
+        settings.projects.insert("cam/arbor".into(), arbor);
         assert!(!settings.session_filter("ci-01", false, &sessions).keeps(Some("a2")));
 
         // A machine that isn't kept still lists, for a project kept on it, and keeps only that

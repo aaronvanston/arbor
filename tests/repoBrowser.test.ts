@@ -31,7 +31,7 @@ const machine = (name: string, homes: SetupHome[], scannedAt: number | null = 1_
 });
 const repoFile = (path: string, sum: string): SetupRepoFile => ({ path, kind: syncKind(path)!, sum, ck: 'c1-120', size: 120 });
 const repo = (files: SetupRepoFile[], head = true): SetupRepo => ({
-  path: '/Users/casey/src/agent-setup', branch: 'main', head: head ? { sha: 'ab'.repeat(20), subject: 'Start', atMs: 1_000 } : null,
+  path: '/Users/cam/src/agent-setup', branch: 'main', head: head ? { sha: 'ab'.repeat(20), subject: 'Start', atMs: 1_000 } : null,
   upstream: null, uncommitted: [], files, skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
   skillProjects: {}, mcpProjects: {}, instructions: [], plugins: [], codexPlugins: [],
 });
@@ -46,11 +46,11 @@ describe('what a path in the repo is', () => {
   });
 
   it('reads a project’s own instructions for every machine or one, and nothing else under projects', () => {
-    expect(projectOf('.agents/projects/casey/arbor/instructions.md')).toEqual({ project: 'casey/arbor', machine: null });
-    expect(projectOf('.agents/projects/casey/arbor/machines/ci01.md')).toEqual({ project: 'casey/arbor', machine: 'ci01' });
-    expect(projectOf('.agents/projects/casey/arbor/notes.md')).toBeNull();
-    expect(projectOf('.agents/projects/casey/arbor/machines/.md')).toBeNull();
-    expect(projectOf('.agents/projects/casey')).toBeNull();
+    expect(projectOf('.agents/projects/cam/arbor/instructions.md')).toEqual({ project: 'cam/arbor', machine: null });
+    expect(projectOf('.agents/projects/cam/arbor/machines/ci01.md')).toEqual({ project: 'cam/arbor', machine: 'ci01' });
+    expect(projectOf('.agents/projects/cam/arbor/notes.md')).toBeNull();
+    expect(projectOf('.agents/projects/cam/arbor/machines/.md')).toBeNull();
+    expect(projectOf('.agents/projects/cam')).toBeNull();
   });
 
   it('says where a synced file or skill goes on each machine, and nothing for the rest', () => {
@@ -58,7 +58,7 @@ describe('what a path in the repo is', () => {
     expect(homePath({ path: '.agents/hooks/guard.sh', role: 'hookScript' })).toBe('~/.agents/hooks/guard.sh');
     expect(homePath({ path: '.agents/skills/pdf/scripts/run.py', role: 'skill' })).toBe('~/.agents/skills/pdf');
     expect(homePath({ path: '.agents/machines.json', role: 'record' })).toBeNull();
-    expect(homePath({ path: '.agents/projects/casey/arbor/instructions.md', role: 'projectInstructions' })).toBeNull();
+    expect(homePath({ path: '.agents/projects/cam/arbor/instructions.md', role: 'projectInstructions' })).toBeNull();
     expect(homePath({ path: 'README.md', role: 'other' })).toBeNull();
   });
 });
@@ -91,13 +91,13 @@ describe('the tree', () => {
 
 describe('how each machine’s copy stands', () => {
   const files = [repoFile('~/.claude/CLAUDE.md', 'aaa')];
-  const same = machine('casey-mbp', [home([item('~/.claude/CLAUDE.md', 'aaa')])]);
+  const same = machine('cam-mbp', [home([item('~/.claude/CLAUDE.md', 'aaa')])]);
   const different = machine('ci-01', [home([item('~/.claude/CLAUDE.md', 'bbb')])]);
   const unread = machine('cedar-02', [], null);
 
   it('compares the machines that have been scanned with the last commit', () => {
     const list = standings(repo(files), [same, different, unread], { path: '.claude/CLAUDE.md', role: 'instructions' });
-    expect(list.map((standing) => [standing.machine, standing.state])).toEqual([['casey-mbp', 'same'], ['ci-01', 'update'], ['cedar-02', 'unread']]);
+    expect(list.map((standing) => [standing.machine, standing.state])).toEqual([['cam-mbp', 'same'], ['ci-01', 'update'], ['cedar-02', 'unread']]);
     expect(settled(itemAt(list, 0).state)).toBe(true);
     expect(settled(itemAt(list, 1).state)).toBe(false);
   });

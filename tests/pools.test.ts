@@ -5,7 +5,7 @@ import { leftOut, limitWords, machinesToAdd, newPool, planSteps, poolDraftProble
 
 const pool = (patch: Partial<MachinePool> = {}): MachinePool => ({ ...newPool(), id: 'p1', name: 'Builds', ...patch });
 const verdict = (patch: Partial<PoolMemberVerdict>): PoolMemberVerdict => ({
-  machine: 'casey-mbp', weight: 'normal', kind: 'eligible', running: 1, cpu: 31.6, memFree: 42.2, readingAgeMs: 2_000, share: 0.5, ...patch,
+  machine: 'cam-mbp', weight: 'normal', kind: 'eligible', running: 1, cpu: 31.6, memFree: 42.2, readingAgeMs: 2_000, share: 0.5, ...patch,
 });
 const said = (entry: PoolMemberVerdict) => {
   const message = verdictMessage(entry);
@@ -44,8 +44,8 @@ describe('how a pool picks', () => {
   });
 
   it('shows the planned runs up to the first that finds no room', () => {
-    expect(planSteps(['casey-mbp', 'cedar-02', 'casey-mbp', null, null])).toEqual({ machines: ['casey-mbp', 'cedar-02', 'casey-mbp'], fills: true });
-    expect(planSteps(['casey-mbp', 'casey-mbp'])).toEqual({ machines: ['casey-mbp', 'casey-mbp'], fills: false });
+    expect(planSteps(['cam-mbp', 'cedar-02', 'cam-mbp', null, null])).toEqual({ machines: ['cam-mbp', 'cedar-02', 'cam-mbp'], fills: true });
+    expect(planSteps(['cam-mbp', 'cam-mbp'])).toEqual({ machines: ['cam-mbp', 'cam-mbp'], fills: false });
     expect(planSteps([null])).toEqual({ machines: [], fills: true });
   });
 });
@@ -69,12 +69,12 @@ describe('a pool draft', () => {
   });
 
   it('offers only machines not in it yet, matching names loosely', () => {
-    const draft = pool({ members: [{ machine: 'Casey MBP', weight: 'prefer' }] });
-    expect(machinesToAdd(draft, ['casey-mbp', 'ci-01', 'cedar-02'])).toEqual(['ci-01', 'cedar-02']);
+    const draft = pool({ members: [{ machine: 'Cam MBP', weight: 'prefer' }] });
+    expect(machinesToAdd(draft, ['cam-mbp', 'ci-01', 'cedar-02'])).toEqual(['ci-01', 'cedar-02']);
   });
 
   it('sums up its members that aren’t Normal', () => {
-    const draft = pool({ members: [{ machine: 'casey-mbp', weight: 'prefer' }, { machine: 'ci-01', weight: 'normal' }, { machine: 'lab-box', weight: 'manual' }] });
-    expect(poolSummary(draft).map((member) => `${member.machine} ${member.weight}`)).toEqual(['casey-mbp prefer', 'lab-box manual']);
+    const draft = pool({ members: [{ machine: 'cam-mbp', weight: 'prefer' }, { machine: 'ci-01', weight: 'normal' }, { machine: 'lab-box', weight: 'manual' }] });
+    expect(poolSummary(draft).map((member) => `${member.machine} ${member.weight}`)).toEqual(['cam-mbp prefer', 'lab-box manual']);
   });
 });

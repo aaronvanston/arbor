@@ -51,10 +51,10 @@ describe('machine identity', () => {
 
   it('maps sampled machines by name and leaves out ones not heard from', () => {
     const identities = identitiesByMachine([
-      { machine: 'casey-mbp', facts: { ...mac('Mac16,8', 'MacBook Pro (14-inch, 2024)') } as never },
+      { machine: 'cam-mbp', facts: { ...mac('Mac16,8', 'MacBook Pro (14-inch, 2024)') } as never },
       { machine: 'lab-box', facts: null },
     ]);
-    expect([...identities.keys()]).toEqual(['casey-mbp']);
-    expect(identities.get('casey-mbp')?.productName).toBe('MacBook Pro (14-inch, 2024)');
+    expect([...identities.keys()]).toEqual(['cam-mbp']);
+    expect(identities.get('cam-mbp')?.productName).toBe('MacBook Pro (14-inch, 2024)');
   });
 });

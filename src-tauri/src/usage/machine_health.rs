@@ -1664,10 +1664,10 @@ mod tests {
 
     #[test]
     fn local_endpoints_are_detected_loosely() {
-        let names = vec!["caseys-mac-mini-2".to_string(), "caseys-mac-mini-2.local".to_string()];
+        let names = vec!["cams-mac-mini-2".to_string(), "cams-mac-mini-2.local".to_string()];
         assert!(is_local_endpoint("localhost", &names));
-        assert!(is_local_endpoint("Caseys-Mac-mini-2.local", &names));
-        assert!(is_local_endpoint("caseys-mac-mini-2", &names));
+        assert!(is_local_endpoint("Cams-Mac-mini-2.local", &names));
+        assert!(is_local_endpoint("cams-mac-mini-2", &names));
         assert!(!is_local_endpoint("cedar-01", &names));
     }
 
@@ -1801,8 +1801,8 @@ mod tests {
         let program = &SAMPLE_SCRIPT[start..start + SAMPLE_SCRIPT[start..].find("' || true)").unwrap()];
         let processes = [
             // Claude Code: native, by its version-named build, through Node, and driven by an SDK.
-            "/Users/casey/.local/bin/claude --dangerously-skip-permissions",
-            "/Users/casey/.local/share/claude/versions/2.1.281 --resume",
+            "/Users/cam/.local/bin/claude --dangerously-skip-permissions",
+            "/Users/cam/.local/share/claude/versions/2.1.281 --resume",
             "node /usr/local/bin/claude",
             "/usr/bin/node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js -p hi",
             "claude --output-format stream-json --verbose",
@@ -1899,11 +1899,11 @@ mod tests {
         assert_eq!(reading.address, Some("fd7a:115c:a1e0::a17".parse().unwrap()));
         assert_eq!(reading.latency_ms, Some(6.5));
 
-        let windows = "Pinging casey-macbook-air [100.64.0.22] with 32 bytes of data:\r\n\
+        let windows = "Pinging cam-macbook-air [100.64.0.22] with 32 bytes of data:\r\n\
             Reply from 100.64.0.22: bytes=32 time=39ms TTL=64\r\n\
             Reply from 100.64.0.22: bytes=32 time<1ms TTL=64\r\n\
             Reply from 100.64.0.22: bytes=32 time=41ms TTL=64\r\n";
-        let reading = parse_ping("casey-macbook-air", windows);
+        let reading = parse_ping("cam-macbook-air", windows);
         assert_eq!(reading.address, Some(IpAddr::from([100, 64, 0, 22])));
         assert_eq!(reading.latency_ms, Some(39.0));
 
@@ -1919,12 +1919,12 @@ mod tests {
 
     #[test]
     fn ssh_config_names_the_ping_target_unless_a_proxy_sits_in_between() {
-        let config = "host cedar-01\nhostname cedar-01.tailc0ffee.ts.net\nport 22\nuser casey\nproxycommand none\n";
+        let config = "host cedar-01\nhostname cedar-01.tailc0ffee.ts.net\nport 22\nuser cam\nproxycommand none\n";
         assert_eq!(ping_target_from_ssh_config(config).as_deref(), Some("cedar-01.tailc0ffee.ts.net"));
         assert_eq!(ping_target_from_ssh_config(&format!("{config}proxyjump bastion\n")), None);
         assert_eq!(ping_target_from_ssh_config("hostname cedar\nproxycommand ssh -W %h:%p bastion\n"), None);
         assert_eq!(ping_target_from_ssh_config("hostname -oProxyCommand=x\n"), None);
-        assert_eq!(ping_target_from_ssh_config("user casey\n"), None);
+        assert_eq!(ping_target_from_ssh_config("user cam\n"), None);
     }
 
     #[test]

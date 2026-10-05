@@ -55,14 +55,14 @@ const report = (sessions: LiveSession[], running = sessions.length): LiveSession
 describe('what an update would cut', () => {
   test('counts the running sessions and the machines they are on', () => {
     expect(liveAgentLoad(report([
-      session('a', 'casey-mbp'),
-      session('b', 'casey-mbp'),
+      session('a', 'cam-mbp'),
+      session('b', 'cam-mbp'),
       session('c', '', 'ci-01'),
     ]))).toEqual({ sessions: 3, machines: 2 });
   });
 
   test('counts sessions the board does not list, and none with nothing running or no check yet', () => {
-    expect(liveAgentLoad(report([session('a', 'casey-mbp')], 14))).toEqual({ sessions: 14, machines: 1 });
+    expect(liveAgentLoad(report([session('a', 'cam-mbp')], 14))).toEqual({ sessions: 14, machines: 1 });
     expect(liveAgentLoad(report([session('a', '')]))).toEqual({ sessions: 1, machines: 0 });
     expect(liveAgentLoad(report([]))).toEqual({ sessions: 0, machines: 0 });
     expect(liveAgentLoad(null)).toEqual({ sessions: 0, machines: 0 });

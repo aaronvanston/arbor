@@ -118,7 +118,7 @@ function NamedMachine({ name, size, onClick, label, className }: Omit<MachinePil
 }
 
 /**
- * Several machines, each with its pill, for a list in a sentence or a table cell ("on casey-mbp, cedar-02"). The
+ * Several machines, each with its pill, for a list in a sentence or a table cell ("on cam-mbp, cedar-02"). The
  * pills stand apart on their own, so no commas; they wrap on a narrow line.
  */
 export function MachinePills({ names, size = 'sm', className }: { names: readonly string[]; size?: MachinePillSize; className?: string }) {

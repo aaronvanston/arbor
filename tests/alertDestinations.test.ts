@@ -31,10 +31,10 @@ describe('limit alerts', () => {
   });
 
   it('open an alert about several accounts on the first of them', () => {
-    expect(opens({ kind: 'resetReady', subject: { accounts: ['casey.json::a', 'casey.json::b'] } })).toEqual({
-      destination: { kind: 'accounts', account: 'casey.json::a' },
+    expect(opens({ kind: 'resetReady', subject: { accounts: ['cam.json::a', 'cam.json::b'] } })).toEqual({
+      destination: { kind: 'accounts', account: 'cam.json::a' },
       view: accountLimitsView(),
-      focus: { target: 'account', id: 'casey.json::a' },
+      focus: { target: 'account', id: 'cam.json::a' },
     });
   });
 
@@ -64,17 +64,17 @@ describe('machine alerts', () => {
 
 describe('agent alerts', () => {
   it('open the session when Arbor carried it', () => {
-    expect(opens({ kind: 'agentPermission', subject: { session: 'a3f1', machine: 'casey-mbp' } })?.view).toEqual(sessionsView({ session: 'a3f1' }));
+    expect(opens({ kind: 'agentPermission', subject: { session: 'a3f1', machine: 'cam-mbp' } })?.view).toEqual(sessionsView({ session: 'a3f1' }));
   });
 
   it('open the live board on the one machine they waited on', () => {
-    const live = sessionsView({ tab: 'live', machine: 'casey-mbp' });
-    expect(opens({ kind: 'agentWaiting', subject: { machine: 'casey-mbp' } })?.view).toEqual(live);
-    expect(opens({ kind: 'agentPermission', subject: { machines: ['casey-mbp'] } })?.view).toEqual(live);
+    const live = sessionsView({ tab: 'live', machine: 'cam-mbp' });
+    expect(opens({ kind: 'agentWaiting', subject: { machine: 'cam-mbp' } })?.view).toEqual(live);
+    expect(opens({ kind: 'agentPermission', subject: { machines: ['cam-mbp'] } })?.view).toEqual(live);
   });
 
   it('open Sessions for waits on several machines', () => {
-    expect(opens({ kind: 'agentWaiting', subject: { machines: ['casey-mbp', 'ci-01'] } })?.view).toEqual({ kind: 'main', page: 'sessions' });
+    expect(opens({ kind: 'agentWaiting', subject: { machines: ['cam-mbp', 'ci-01'] } })?.view).toEqual({ kind: 'main', page: 'sessions' });
   });
 });
 

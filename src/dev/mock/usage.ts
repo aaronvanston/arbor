@@ -188,7 +188,7 @@ const machineShare = (machine: string, pool: string, share: number, failureRate:
 };
 
 const machines = [
-  machineShare('casey-mbp', 'dev', 0.726, 0.025, 4, iso(-120_000)),
+  machineShare('cam-mbp', 'dev', 0.726, 0.025, 4, iso(-120_000)),
   machineShare('ci-01', 'ci', 0.251, 0.017, 0, iso(-900_000)),
   machineShare('', '', 0.023, 0, 0, iso(-5_400_000)),
 ];
@@ -256,7 +256,7 @@ const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
   };
 };
 
-export const reporterInstalled: Record<string, boolean> = freshInstall ? {} : { 'casey-mbp': true, 'ci-01': false, 'cedar-02': true };
+export const reporterInstalled: Record<string, boolean> = freshInstall ? {} : { 'cam-mbp': true, 'ci-01': false, 'cedar-02': true };
 
 /** A breakdown row with `share` of the last 24 hours' requests and tokens. */
 const category = (key: string, label: string, share: number, failureRate: number) => {
@@ -275,26 +275,26 @@ const usageAnalysis = {
     return { key: model, label: model, requests, failures: Math.round(requests * failureRate), tokens: splitByModel(totals.tokens)[index] ?? 0 };
   }),
   providers: [category('claude', 'Claude', 0.63, 0.014), category('codex', 'Codex', 0.37, 0.027)],
-  // The core records an account's email as its source, so these are the accounts below grouped by email: casey@'s
+  // The core records an account's email as its source, so these are the accounts below grouped by email: cam@'s
   // Claude and Codex requests are one row here.
   sources: [
-    category('casey@example.com', 'casey@example.com', 0.64, 0.018),
+    category('cam@example.com', 'cam@example.com', 0.64, 0.018),
     category('team@example.com', 'team@example.com', 0.2, 0.03),
     category('lapsed@example.com', 'lapsed@example.com', 0.09, 0.02),
     category('backup@example.com', 'backup@example.com', 0.04, 0.017),
     category('former@example.com', 'former@example.com', 0.03, 0.04),
   ],
-  // By credential: casey@ is signed in to Claude (claude-1) and Codex (codex-1), two accounts with one email, and the
+  // By credential: cam@ is signed in to Claude (claude-1) and Codex (codex-1), two accounts with one email, and the
   // last row's requests carried no auth index, so only their source names them.
   accounts: [
-    account('claude-1', 'casey@example.com', 0.52, 0.012),
+    account('claude-1', 'cam@example.com', 0.52, 0.012),
     account('codex-2', 'team@example.com', 0.2, 0.03),
-    account('codex-1', 'casey@example.com', 0.12, 0.026),
+    account('codex-1', 'cam@example.com', 0.12, 0.026),
     account('claude-2', 'lapsed@example.com', 0.09, 0.02),
     account('codex-3', 'backup@example.com', 0.04, 0.017),
     account('', 'former@example.com', 0.03, 0.04),
   ],
-  apiKeys: [category('a1b2', 'Casey laptop', 0.73, 0.025), category('c3d4', 'CI runner', 0.27, 0.016)],
+  apiKeys: [category('a1b2', 'Cam laptop', 0.73, 0.025), category('c3d4', 'CI runner', 0.27, 0.016)],
 };
 if (freshInstall) Object.values(usageAnalysis).forEach((rows) => { rows.length = 0; });
 
@@ -315,7 +315,7 @@ const usageRecords = Array.from({ length: 25 }, (_, index): UsageRecord => {
   const model = index % 3 === 0 ? 'gpt-6-luna' : index % 3 === 1 ? 'claude-opus-5-5' : 'gpt-6-sol';
   const claude = model.startsWith('claude');
   return {
-    machine: index % 4 === 0 ? 'ci-01' : 'casey-mbp',
+    machine: index % 4 === 0 ? 'ci-01' : 'cam-mbp',
     pool: index % 4 === 0 ? 'ci' : 'dev',
     user_agent: claude ? 'claude-cli/2.1.281 (external, cli)' : 'codex_cli_rs/0.156.0',
     client_ip: '127.0.0.1',
@@ -349,7 +349,7 @@ const usageRecords = Array.from({ length: 25 }, (_, index): UsageRecord => {
     endpoint: model.startsWith('claude') ? '/v1/messages' : '/v1/responses',
     api_key_hash: index % 4 === 0 ? 'c3d4' : 'a1b2',
     api_key_display: index % 4 === 0 ? 'sk-…0a2c' : 'sk-…3f5a',
-    api_key_remark: index % 4 === 0 ? 'CI runner' : 'Casey laptop',
+    api_key_remark: index % 4 === 0 ? 'CI runner' : 'Cam laptop',
     tokens: requestTokens(index, claude),
   };
 });
@@ -375,7 +375,7 @@ type MockCycle = { firstDays: number; resetDays: number; from: number; to: numbe
 const capacityHistory: Record<string, { provider: 'claude' | 'codex'; watchedDays: number; cycles: MockCycle[] }> = {
   'claude-max.json::claude-1': { provider: 'claude', watchedDays: 12, cycles: [{ firstDays: -12, resetDays: -3, from: 64, to: 8 }, { firstDays: -2.9, resetDays: 4, from: 100, to: 42 }] },
   'claude-lapsed.json::claude-2': { provider: 'claude', watchedDays: 2, cycles: [{ firstDays: -2, resetDays: 5, from: 100, to: 91 }] },
-  'codex-casey.json::codex-1': { provider: 'codex', watchedDays: 12, cycles: [{ firstDays: -12, resetDays: -4, from: 80, to: 70 }, { firstDays: -3.9, resetDays: 3, from: 100, to: 88 }] },
+  'codex-cam.json::codex-1': { provider: 'codex', watchedDays: 12, cycles: [{ firstDays: -12, resetDays: -4, from: 80, to: 70 }, { firstDays: -3.9, resetDays: 3, from: 100, to: 88 }] },
   'codex-team.json::codex-2': { provider: 'codex', watchedDays: 12, cycles: [{ firstDays: -12, resetDays: -4, from: 55, to: 0 }, { firstDays: -3.9, resetDays: 3, from: 100, to: 30 }] },
   'codex-backup.json::codex-3': { provider: 'codex', watchedDays: 12, cycles: [] },
 };
@@ -519,7 +519,7 @@ const mockSession = (id: string, threads: UsageSessionThread[], machine: string)
     inputTokens: sum('inputTokens'), outputTokens: sum('outputTokens'), reasoningTokens: sum('reasoningTokens'),
     cacheReadTokens: sum('cacheReadTokens'), cacheCreationTokens: sum('cacheCreationTokens'), totalTokens: sum('totalTokens'),
     estimatedCost: sum('estimatedCost'), pricedRequests: sum('pricedRequests'),
-    provider: byRequests('providers')[0] ?? '', machine, pool: machine ? 'Laptops' : '', apiKeyHash: machine ? 'hash-casey' : '',
+    provider: byRequests('providers')[0] ?? '', machine, pool: machine ? 'Laptops' : '', apiKeyHash: machine ? 'hash-cam' : '',
     active: lastActiveAtMs >= Date.now() - 5 * 60_000, hasOwnRequests: Boolean(own), subagents: threads.filter((thread) => thread.id !== id).length,
     threads, transcript: null,
   };
@@ -546,13 +546,13 @@ const usageSessions: UsageSession[] = [
     sessionThread('9c1e7a20-44b1-4d3e-9f10-3a4b5c6d7e8f', 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', 1, 'claude-haiku-4-5', sessionAgents.claudeCode, 80, 6, 82),
     sessionThread('3e8b0f51-7c2a-4e19-b6d4-4b5c6d7e8f90', '9c1e7a20-44b1-4d3e-9f10-3a4b5c6d7e8f', 2, 'claude-haiku-4-5', sessionAgents.claudeCode, 78, 3, 34),
     sessionThread('d0a47c93-18e5-4b2f-a7c1-5c6d7e8f9012', 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', 1, 'claude-sonnet-5', sessionAgents.claudeCode, 35, 12, 116),
-  ], 'casey-mbp'),
+  ], 'cam-mbp'),
   mockSession('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', [
     sessionThread('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', null, 0, 'gpt-6-sol', sessionAgents.codexHosted, 70, 45, 240),
-  ], 'casey-mbp'),
+  ], 'cam-mbp'),
   mockSession('6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', [
     sessionThread('6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', null, 0, 'claude-opus-5-5', sessionAgents.claudeCode, 320, 50, 310),
-  ], 'casey-mbp'),
+  ], 'cam-mbp'),
   mockSession('b7e24c19-0d3a-4f6e-9b21-c4d5e6f7a8b9', [
     sessionThread('b7e24c19-0d3a-4f6e-9b21-c4d5e6f7a8b9', null, 0, 'claude-opus-5-5', sessionAgents.agentSdk, 180, 40, 190),
     sessionThread('7d20c3b4-81e2-8a5f-b6c7-d8e9f0a1b2c3', 'b7e24c19-0d3a-4f6e-9b21-c4d5e6f7a8b9', 1, 'claude-haiku-4-5', sessionAgents.agentSdk, 150, 8, 44),
@@ -565,12 +565,12 @@ const usageSessions: UsageSession[] = [
   ], ''),
   mockSession('d4c3b2a1-7f6e-4d5c-9b8a-e1f2a3b4c5d6', [
     sessionThread('d4c3b2a1-7f6e-4d5c-9b8a-e1f2a3b4c5d6', null, 0, 'claude-sonnet-5', sessionAgents.claudePrint, 1_500, 2, 8),
-  ], 'casey-mbp'),
+  ], 'cam-mbp'),
   // Only its subagents made requests in the window, so the session itself has none of its own.
   mockSession('e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a8b', [
     sessionThread('1a2b3c4d-5e6f-8a7b-9c8d-0e1f2a3b4c5d', 'e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a8b', 1, 'claude-opus-5-5', sessionAgents.claudeCode, 2_900, 20, 180),
     sessionThread('7b6c5d4e-3f2a-4b1c-8d9e-1f2a3b4c5d6e', 'e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a8b', 1, 'claude-haiku-4-5', sessionAgents.claudeCode, 2_880, 10, 40),
-  ], 'casey-mbp'),
+  ], 'cam-mbp'),
 ];
 if (freshInstall) usageSessions.length = 0;
 
@@ -781,7 +781,7 @@ for (const session of usageSessions) {
 // What each session's transcript says, as the machines' transcript scans store it. Two weren't found: a codex exec run
 // with a throwaway CODEX_HOME, and a session seen only through its subagents.
 const mockTranscript = (fields: Partial<SessionTranscript>): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '~/.claude', cwd: '', repoRoot: '', mainRepo: '', branch: '', commitHash: '', repositoryUrl: '',
+  machine: 'cam-mbp', agent: 'claude', home: '/Users/cam', agentHome: '~/.claude', cwd: '', repoRoot: '', mainRepo: '', branch: '', commitHash: '', repositoryUrl: '',
   title: '', titleSource: '', pullRequests: [], linesAdded: null, linesRemoved: null, compactions: [], toolUsage: null, readAtMs: now - 2 * 60_000,
   ...fields,
 });
@@ -800,7 +800,7 @@ const toolUsage = (
 
 const sessionTranscripts: Record<string, SessionTranscript> = {
   '9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e': mockTranscript({
-    machine: 'Cedar 01', home: '/home/casey', cwd: '/home/casey/src/billing/worker', repoRoot: '/home/casey/src/billing', mainRepo: '/home/casey/src/billing',
+    machine: 'Cedar 01', home: '/home/cam', cwd: '/home/cam/src/billing/worker', repoRoot: '/home/cam/src/billing', mainRepo: '/home/cam/src/billing',
     branch: 'feat/queue-worker', title: 'Move the billing worker onto queues', titleSource: 'custom',
     pullRequests: [
       { number: 88, url: 'https://github.com/acme/billing/pull/88', repository: 'acme/billing' },
@@ -810,7 +810,7 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
     toolUsage: toolUsage({ Bash: 58, Read: 31, Edit: 12, Agent: 1, Skill: 3 }, { Read: 22, Grep: 9 }, { Explore: 1 }, { pdf: 2, 'superpowers:brainstorming': 1 }, ['release-notes']),
   }),
   'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7': mockTranscript({
-    agentHome: '~/.agent-app/homes/claude-proxy', cwd: '/Users/casey/.agent-app/worktrees/arbor/login-loop', repoRoot: '/Users/casey/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor',
+    agentHome: '~/.agent-app/homes/claude-other', cwd: '/Users/cam/.agent-app/worktrees/arbor/login-loop', repoRoot: '/Users/cam/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/cam/src/arbor',
     branch: 'fix/login-loop', title: 'Fix the login redirect loop', titleSource: 'ai',
     pullRequests: [
       { number: 412, url: 'https://github.com/acme/arbor/pull/412', repository: 'acme/arbor' },
@@ -825,12 +825,12 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
   }),
   // Codex carries on with the branch a Claude Code session opened a pull request from; Codex doesn't record pull requests.
   '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b': mockTranscript({
-    agent: 'codex', agentHome: '~/.codex', cwd: '/Users/casey/src/proxy', repoRoot: '/Users/casey/src/proxy', mainRepo: '/Users/casey/src/proxy', branch: 'feat/rate-limiter',
+    agent: 'codex', agentHome: '~/.codex', cwd: '/Users/cam/src/proxy', repoRoot: '/Users/cam/src/proxy', mainRepo: '/Users/cam/src/proxy', branch: 'feat/rate-limiter',
     commitHash: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', repositoryUrl: 'git@github.com:acme/proxy.git', title: 'Rate limiter for the proxy', titleSource: 'codex',
     toolUsage: toolUsage({ exec_command: 184, apply_patch: 37, update_plan: 9, web_search: 4, 'collaboration/spawn_agent': 2, 'collaboration/wait_agent': 2, 'mcp__codex_apps__github/_create_pull_request': 1 }),
   }),
   '6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c': mockTranscript({
-    cwd: '/Users/casey/src/proxy', repoRoot: '/Users/casey/src/proxy', mainRepo: '/Users/casey/src/proxy', branch: 'feat/rate-limiter',
+    cwd: '/Users/cam/src/proxy', repoRoot: '/Users/cam/src/proxy', mainRepo: '/Users/cam/src/proxy', branch: 'feat/rate-limiter',
     repositoryUrl: 'git@github.com:acme/proxy.git', title: 'Add a token bucket to the proxy', titleSource: 'ai',
     pullRequests: [
       { number: 57, url: 'https://github.com/acme/proxy/pull/57', repository: 'acme/proxy' },
@@ -846,13 +846,13 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
     toolUsage: toolUsage({ Bash: 12, Read: 6, Edit: 2 }),
   }),
   '0199a05d-91c2-7b4a-8e6f-2d3e4f5a6b7c': mockTranscript({
-    machine: 'studio', agent: 'codex', agentHome: '~/.codex', cwd: '/Users/casey/src/docs', repoRoot: '/Users/casey/src/docs', mainRepo: '/Users/casey/src/docs', branch: 'main',
+    machine: 'studio', agent: 'codex', agentHome: '~/.codex', cwd: '/Users/cam/src/docs', repoRoot: '/Users/cam/src/docs', mainRepo: '/Users/cam/src/docs', branch: 'main',
     repositoryUrl: 'https://github.com/acme/docs.git', title: 'Draft the 0.3 release notes', titleSource: 'codex', readAtMs: now - 3 * 60_000,
     toolUsage: toolUsage({}),
   }),
   // Its folder was a review worktree that was gone by the time Arbor looked, so only the transcript's branch is known.
   'd4c3b2a1-7f6e-4d5c-9b8a-e1f2a3b4c5d6': mockTranscript({
-    cwd: '/Users/casey/.local/share/reviews/review-7/review-7', branch: 'review-7', readAtMs: now - 23 * 3_600_000,
+    cwd: '/Users/cam/.local/share/reviews/review-7/review-7', branch: 'review-7', readAtMs: now - 23 * 3_600_000,
     pullRequests: [
       { number: 407, url: 'https://github.com/acme/arbor/pull/407', repository: 'acme/arbor' },
       { number: 409, url: 'https://github.com/acme/arbor/pull/409', repository: 'acme/arbor' },
@@ -943,8 +943,8 @@ const mockAgentAttention = (): AgentAttentionReport => {
   if (params.get('attention') === 'none') return { items: [], reporting };
   const session = (id: string) => usageSessions.find((item) => item.id === id) ?? null;
   const items: Omit<AttentionItem, 'session'>[] = [
-    { machine: 'casey-mbp', agent: 'claude', sessionId: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', kind: params.get('attention') === 'question' ? 'question' : 'permission', sinceMs: attentionStart - 3 * 60_000 - 12_000 },
-    { machine: 'casey-mbp', agent: 'codex', sessionId: '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', kind: 'waiting', sinceMs: attentionStart - 8 * 60_000 },
+    { machine: 'cam-mbp', agent: 'claude', sessionId: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', kind: params.get('attention') === 'question' ? 'question' : 'permission', sinceMs: attentionStart - 3 * 60_000 - 12_000 },
+    { machine: 'cam-mbp', agent: 'codex', sessionId: '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', kind: 'waiting', sinceMs: attentionStart - 8 * 60_000 },
     { machine: 'cedar-02', agent: 'claude', sessionId: 'e5d4c3b2-a190-4f8e-9d7c-6b5a4f3e2d1c', kind: 'waiting', sinceMs: attentionStart - 41 * 60_000 },
   ];
   return {
@@ -954,7 +954,7 @@ const mockAgentAttention = (): AgentAttentionReport => {
 };
 
 // What get_fleet_sources returns for the live fleet board: T3 Code's threads, the reporters' waits and the proxy
-// sessions active in the last six hours. On casey-mbp T3 Code has a Claude thread asking to run a command (the Claude
+// sessions active in the last six hours. On cam-mbp T3 Code has a Claude thread asking to run a command (the Claude
 // Code session a3f1…, whose reporter wait is the same one), one asking a question, a Codex plan ready to build and one
 // filed away; on cedar-02 a Codex thread is working. The reporters add a Codex session done with its turn and a
 // Claude Code session on cedar-02 whose requests didn't come through Arbor; the proxy adds a Codex run on ci-runner
@@ -983,21 +983,21 @@ const t3Channel = (machine: string, readAgoMs: number, threads: T3Thread[]): T3C
 const defaultT3Channels = (): T3Channel[] => {
   const proxied = usageSessions.find((item) => item.id === T3_PROXY_THREAD);
   return [
-    t3Channel('casey-mbp', 3_000, [
+    t3Channel('cam-mbp', 3_000, [
       t3Thread({
-        threadId: '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', projectId: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e', workspaceRoot: '/Users/casey/src/arbor',
+        threadId: '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', projectId: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e', workspaceRoot: '/Users/cam/src/arbor',
         sessionStatus: 'running', sessionUpdatedAtMs: now - 3 * 60_000, pendingApprovals: 1, approvalSinceMs: attentionStart - 3 * 60_000 - 12_000,
         latestApprovalAtMs: attentionStart - 3 * 60_000 - 12_000, turn: t3Turn('running', 9), latestUserMessageAtMs: now - 9 * 60_000, updatedAtMs: now - 3 * 60_000, agentSessionId: T3_PROXY_THREAD,
         arborSession: proxied ? { id: T3_PROXY_THREAD, lastActiveAtMs: proxied.lastActiveAtMs, lastRequestFailed: false } : null,
       }),
       t3Thread({
-        threadId: '2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d', projectId: 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f', workspaceRoot: '/Users/casey/src/proxy',
+        threadId: '2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d', projectId: 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f', workspaceRoot: '/Users/cam/src/proxy',
         sessionStatus: 'running', sessionUpdatedAtMs: now - 2 * 60_000, pendingQuestions: 1, questionSeenAtMs: attentionStart - 95_000,
         turn: t3Turn('running', 6), latestUserMessageAtMs: now - 6 * 60_000, updatedAtMs: now - 2 * 60_000,
         agentSessionId: '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b',
       }),
       t3Thread({
-        threadId: '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a', projectId: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e', workspaceRoot: '/Users/casey/src/arbor',
+        threadId: '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a', projectId: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e', workspaceRoot: '/Users/cam/src/arbor',
         provider: 'codex', sessionUpdatedAtMs: now - 12 * 60_000, interactionMode: 'plan', hasActionablePlan: true,
         turn: t3Turn('completed', 21, 12), latestUserMessageAtMs: now - 21 * 60_000, updatedAtMs: now - 12 * 60_000,
         agentSessionId: '0199a2c3-d4e5-7f6a-8b7c-9d0e1f2a3b4c',
@@ -1005,14 +1005,14 @@ const defaultT3Channels = (): T3Channel[] => {
         ...(fleetScenario === 'snoozed' ? { t3SnoozedUntilMs: now + 16 * 3_600_000, t3SnoozedAtMs: now - 10 * 60_000 } : {}),
       }),
       t3Thread({
-        threadId: '4f5e6d7c-8b9a-4f0e-9d1c-2b3a4f5e6d7c', projectId: 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f', workspaceRoot: '/Users/casey/src/proxy',
+        threadId: '4f5e6d7c-8b9a-4f0e-9d1c-2b3a4f5e6d7c', projectId: 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f', workspaceRoot: '/Users/cam/src/proxy',
         sessionStatus: 'stopped', sessionUpdatedAtMs: now - 170 * 60_000, turn: t3Turn('completed', 190, 172), settled: true,
         latestUserMessageAtMs: now - 190 * 60_000, updatedAtMs: now - 170 * 60_000, agentSessionId: '8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d',
       }),
     ]),
     t3Channel('cedar-02', 12_000, [
       t3Thread({
-        threadId: '6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e', projectId: 'd3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a', workspaceRoot: '/home/casey/src/billing',
+        threadId: '6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e', projectId: 'd3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a', workspaceRoot: '/home/cam/src/billing',
         provider: 'codex', sessionStatus: 'running', sessionUpdatedAtMs: now - 4 * 60_000, turn: t3Turn('running', 4),
         latestUserMessageAtMs: now - 4 * 60_000, updatedAtMs: now - 30_000, agentSessionId: '0199b7c8-d9e0-7f1a-8b2c-3d4e5f6a7b8c',
       }),
@@ -1023,7 +1023,7 @@ const defaultT3Channels = (): T3Channel[] => {
 // `?fleet=many`: ten threads on each of four machines, in every state, across a few projects.
 const manyT3Channels = (): T3Channel[] => {
   const states = ['approval', 'question', 'working', 'failed', 'done', 'idle', 'idle', 'working', 'done', 'idle'];
-  const roots: Record<string, string> = { 'casey-mbp': '/Users/casey/src', 'cedar-02': '/home/casey/src', 'ci-01': '/home/ci/src', 'lab-box': '/home/lab/src' };
+  const roots: Record<string, string> = { 'cam-mbp': '/Users/cam/src', 'cedar-02': '/home/cam/src', 'ci-01': '/home/ci/src', 'lab-box': '/home/lab/src' };
   return Object.entries(roots).map(([machine, root], machineIndex) => t3Channel(machine, 3_000 + machineIndex * 7_000, states.map((state, index) => {
     const minutes = 2 + index * 17 + machineIndex * 5;
     const id = `${String(machineIndex + 1).padStart(2, '0')}${String(index).padStart(6, '0')}-7c1d-4e2f-8a3b-4c5d6e7f8a9b`;
@@ -1076,7 +1076,7 @@ const skippedT3: Record<string, Skipped> = {
 
 // `?fleet=queued`: a message sent a few seconds ago that T3 Code hasn't started a turn for.
 const queuedT3Thread = () => t3Thread({
-  threadId: '3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a6b', projectId: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e', workspaceRoot: '/Users/casey/src/arbor',
+  threadId: '3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a6b', projectId: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e', workspaceRoot: '/Users/cam/src/arbor',
   sessionUpdatedAtMs: Date.now() - 8 * 60_000, turn: t3Turn('completed', 14, 8), latestUserMessageAtMs: Date.now() - 20_000,
   updatedAtMs: Date.now() - 20_000, agentSessionId: '6f7a8b9c-0d1e-4f2a-8b3c-4d5e6f7a8b9c',
 });
@@ -1087,27 +1087,27 @@ const mockFleetSources = (): FleetSources => {
   const nowMs = Date.now();
   const attention = mockAgentAttention();
   if (fleetScenario === 'empty') {
-    return { nowMs, thisMachine: 'casey-mbp', t3Enabled: mockT3Enabled, t3Found: mockT3Found, t3: [], attention: { items: [], reporting: attention.reporting }, sessions: [] };
+    return { nowMs, thisMachine: 'cam-mbp', t3Enabled: mockT3Enabled, t3Found: mockT3Found, t3: [], attention: { items: [], reporting: attention.reporting }, sessions: [] };
   }
   const t3 = !mockT3Enabled || !mockT3Found ? [] : (fleetScenario === 'many' ? manyT3Channels() : defaultT3Channels()).map((channel): T3Channel => {
     const { machine, threads } = channel;
     // T3 Code quit without cleaning up: its database still says running, but its process is gone.
     if (fleetScenario === 't3down') return { ...channel, serverRunning: false };
     const skipped = skippedT3[fleetScenario];
-    if (skipped && machine === 'casey-mbp') return { ...channel, skipped, threads: [] };
+    if (skipped && machine === 'cam-mbp') return { ...channel, skipped, threads: [] };
     if (fleetScenario === 'nosqlite' && machine === 'cedar-02') {
       return { ...channel, serverRunning: false, skipped: { reason: 'noSqlite3', migration: null }, threads: [] };
     }
     // Its last snapshot, from before it stopped answering.
     if (fleetScenario === 'quiet' && machine === 'cedar-02') return { ...channel, readAtMs: nowMs - 3 * 60_000 };
-    if (fleetScenario === 'queued' && machine === 'casey-mbp') return { ...channel, threads: [...threads, queuedT3Thread()] };
+    if (fleetScenario === 'queued' && machine === 'cam-mbp') return { ...channel, threads: [...threads, queuedT3Thread()] };
     return channel;
   }).map((channel) => (mockT3Titles ? titled(channel) : channel));
   const sessions = usageSessions
     .filter((session) => session.lastActiveAtMs >= nowMs - 6 * 3_600_000)
     .sort((a, b) => b.lastActiveAtMs - a.lastActiveAtMs)
     .map((session) => ({ session, lastRequestFailed: session.id === '0199a0f4-6e21-7c3d-9a8b-1c2d3e4f5a6b' }));
-  return { nowMs, thisMachine: 'casey-mbp', t3Enabled: mockT3Enabled, t3Found: mockT3Found, t3, attention, sessions };
+  return { nowMs, thisMachine: 'cam-mbp', t3Enabled: mockT3Enabled, t3Found: mockT3Found, t3, attention, sessions };
 };
 
 // The sessions a query's requests belong to, and those the Sessions page's own filters leave.
@@ -1337,7 +1337,7 @@ const mockProjectsReport = (sessions: UsageSession[], answered: boolean): Omit<S
 
 /** Which machine and pool each API key's requests count toward, as Settings › Machines last saved them. */
 let machineAssignments: MachineAssignment[] = freshInstall ? [] : [
-  { api_key_hash: 'a1b2', label: 'Casey laptop', machine: 'casey-mbp', pool: 'dev' },
+  { api_key_hash: 'a1b2', label: 'Cam laptop', machine: 'cam-mbp', pool: 'dev' },
   { api_key_hash: 'c3d4', label: 'CI runner', machine: 'ci-01', pool: 'ci' },
   { api_key_hash: 'e5f6', label: 'GitHub runner', machine: 'ci-runner', pool: 'ci' },
 ];
@@ -1453,7 +1453,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     void emit('usage-records-updated', new Date().toISOString());
     return {
       scanned: repaired + deleted, repaired, deleted,
-      backupPath: `/Users/casey/Library/Application Support/onl.arbor.app/usage-records/backups/usage-before-history-repair-v2-${Date.now()}000000.db`,
+      backupPath: `/Users/cam/Library/Application Support/onl.arbor.app/usage-records/backups/usage-before-history-repair-v2-${Date.now()}000000.db`,
     };
   },
   get_usage_storage_info: () => ({ ...usageStorage }),
@@ -1501,7 +1501,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   get_live_sessions: () => mockLiveSessions(),
   get_fleet_sources: () => mockFleetSources(),
   // ?antiburn=missing: a Mac without Antiburn.
-  get_antiburn: () => ({ installed: params.get('antiburn') !== 'missing' && !freshInstall, thisMachine: 'casey-mbp' }),
+  get_antiburn: () => ({ installed: params.get('antiburn') !== 'missing' && !freshInstall, thisMachine: 'cam-mbp' }),
   open_antiburn: () => { mockLog('open_antiburn', null); return null; },
   get_machine_sessions: (args) => mockMachineSessions(args.query),
   get_cache_misses: ({ query }) => {

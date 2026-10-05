@@ -18,7 +18,7 @@ describe('maskEmailsIn', () => {
   it("hides an address in a file name without taking in the provider's prefix", () => {
     expect(maskEmailsIn('claude-samrivera.alt@example.com', ['samrivera.alt@example.com'])).toBe('claude-s•••t@example.com');
     // The core's own file names put a hash before the address and the plan after it.
-    expect(maskEmailsIn('codex-9f1e2a3b-casey@example.com-pro.json', ['casey@example.com'])).toBe('codex-9f1e2a3b-c•••y@example.com-pro.json');
+    expect(maskEmailsIn('codex-9f1e2a3b-cam@example.com-pro.json', ['cam@example.com'])).toBe('codex-9f1e2a3b-c•••m@example.com-pro.json');
   });
 
   it("hides the account's name where a file name repeats it without the domain", () => {
@@ -27,7 +27,7 @@ describe('maskEmailsIn', () => {
   });
 
   it('hides an address it was not told about', () => {
-    expect(maskEmailsIn('claude-5772b8d7 casey@example.com', [])).toBe('claude-5772b8d7 c•••y@example.com');
+    expect(maskEmailsIn('claude-5772b8d7 cam@example.com', [])).toBe('claude-5772b8d7 c•••m@example.com');
   });
 
   it('leaves names under four letters, which would match ordinary words', () => {

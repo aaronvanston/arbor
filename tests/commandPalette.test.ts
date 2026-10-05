@@ -27,7 +27,7 @@ describe('the search palette', () => {
     expect(paletteScore(entry('pages', 'Machines'), 'mach')).toBe(0);
     expect(paletteScore(entry('projects', 'easy-cli-proxy'), 'proxy')).toBe(1);
     expect(paletteScore(entry('projects', 'arbor'), 'rbo')).toBe(2);
-    expect(paletteScore(entry('accounts', 'Work Max', { keywords: 'casey@example.com Claude' }), 'example')).toBe(3);
+    expect(paletteScore(entry('accounts', 'Work Max', { keywords: 'cam@example.com Claude' }), 'example')).toBe(3);
     // Every word has to be somewhere.
     expect(paletteScore(entry('accounts', 'Work Max', { keywords: 'Claude' }), 'work codex')).toBeNull();
     expect(paletteScore(entry('accounts', 'Work Max', { keywords: 'Claude' }), 'WORK claude')).toBe(1);

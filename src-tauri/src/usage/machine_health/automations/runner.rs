@@ -819,7 +819,7 @@ mod tests {
     #[test]
     fn reads_what_the_start_script_said() {
         let output = STANDARD.encode("3 new issues\n");
-        let started = parse_started(&format!("W\t/home/casey/.arbor/automation-worktrees/a/run\nP\t0\nO\t{output}\nS\t4242\n"));
+        let started = parse_started(&format!("W\t/home/cam/.arbor/automation-worktrees/a/run\nP\t0\nO\t{output}\nS\t4242\n"));
         assert_eq!(started.precheck_exit, Some(0));
         assert_eq!(started.precheck_output.as_deref(), Some("3 new issues"));
         assert_eq!(started.pid, Some(4242));
@@ -857,9 +857,9 @@ mod tests {
     #[test]
     fn the_poll_script_names_each_run_and_its_worktree() {
         let run = new_run("a", Some("cedar-02".into()), 1, false);
-        let stored = StoredRun { run: run.clone(), worktree: Some("/home/casey/.arbor/automation-worktrees/a/r".into()) };
+        let stored = StoredRun { run: run.clone(), worktree: Some("/home/cam/.arbor/automation-worktrees/a/r".into()) };
         let script = poll_script(&[stored]);
-        assert!(script.contains(&format!("look '{}' '/home/casey/.arbor/automation-worktrees/a/r'", run.id)));
+        assert!(script.contains(&format!("look '{}' '/home/cam/.arbor/automation-worktrees/a/r'", run.id)));
     }
 
     #[test]

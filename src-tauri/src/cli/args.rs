@@ -166,8 +166,8 @@ mod tests {
 
     #[test]
     fn arguments_are_json_when_they_read_as_json() {
-        let args = command_arguments(&words("passive=true window-ms=60000 machine=casey-mbp")).unwrap();
-        assert_eq!(args, json!({ "passive": true, "windowMs": 60000, "machine": "casey-mbp" }));
+        let args = command_arguments(&words("passive=true window-ms=60000 machine=cam-mbp")).unwrap();
+        assert_eq!(args, json!({ "passive": true, "windowMs": 60000, "machine": "cam-mbp" }));
         let args = command_arguments(&["--args".into(), r#"{"query":{"page":2}}"#.into(), "page_size=5".into()]).unwrap();
         assert_eq!(args, json!({ "query": { "page": 2 }, "pageSize": 5 }));
         assert!(command_arguments(&words("loose")).is_err());

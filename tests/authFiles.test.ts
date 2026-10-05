@@ -102,12 +102,12 @@ describe('authentication file priority', () => {
   });
 
   it('never picks a file the core just deleted, so priority 0 cannot write it back to disk', () => {
-    const legacy = { name: 'claude-casey.json', provider: 'claude', source: 'file', path: '/auths/claude-casey.json', priority: 0 };
+    const legacy = { name: 'claude-cam.json', provider: 'claude', source: 'file', path: '/auths/claude-cam.json', priority: 0 };
     const before = snapshotAuthFiles([legacy]);
     expect(changedOAuthAuthFileNames(before, [
       { ...legacy, source: 'memory' },
-      { name: 'claude-5772b8d7-casey@example.com.json', provider: 'claude', source: 'file', path: '/auths/claude-5772b8d7-casey@example.com.json' },
-    ], 'claude')).toEqual(['claude-5772b8d7-casey@example.com.json']);
+      { name: 'claude-5772b8d7-cam@example.com.json', provider: 'claude', source: 'file', path: '/auths/claude-5772b8d7-cam@example.com.json' },
+    ], 'claude')).toEqual(['claude-5772b8d7-cam@example.com.json']);
   });
 
   it('ignores credentials that only served requests, and runtime entries', () => {

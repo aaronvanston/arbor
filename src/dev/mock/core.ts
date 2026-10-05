@@ -138,15 +138,15 @@ export let coreStatus: CoreStatus = {
   managed: true,
   processId: coreProcessUp ? 48213 : null,
   currentVersion: coreScenario === 'missing' ? null : 'v8.0.4',
-  installDir: '/Users/casey/Library/Application Support/onl.arbor.app/core',
-  binaryPath: coreScenario === 'missing' ? null : '/Users/casey/Library/Application Support/onl.arbor.app/core/cli-proxy-api',
+  installDir: '/Users/cam/Library/Application Support/onl.arbor.app/core',
+  binaryPath: coreScenario === 'missing' ? null : '/Users/cam/Library/Application Support/onl.arbor.app/core/cli-proxy-api',
   message: '',
 };
 
 export const configSettings: CoreConfigView = {
   // A new install has no client key: the core's example keys are left out of the config it starts with.
   apiKeys: params.get('apikey') === 'none' || freshInstall ? [] : [
-    { apiKey: 'sk-4f1e9c2b7a8d4e6f9b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a', apiKeyHash: 'hash-casey', remark: 'Casey laptop' },
+    { apiKey: 'sk-4f1e9c2b7a8d4e6f9b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a', apiKeyHash: 'hash-cam', remark: 'Cam laptop' },
     { apiKey: 'sk-9b2d4f6a8c0e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e2a4c6e8a0c2e4a6c8e0a2c', apiKeyHash: 'hash-ci', remark: 'CI runner' },
     ...(heavyScenario ? [{ apiKey: 'sk-0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d', apiKeyHash: 'hash-desk-cedar', remark: 'desk-cedar-01' }] : []),
   ],
@@ -190,7 +190,7 @@ const saveCoreSettings = (command: string, settings: object) => {
 };
 
 const tlsSettings: CoreTlsSettings = params.get('tls') === 'on'
-  ? { enabled: true, cert: '/Users/casey/.arbor/tls/proxy.crt', key: '/Users/casey/.arbor/tls/proxy.key' }
+  ? { enabled: true, cert: '/Users/cam/.arbor/tls/proxy.crt', key: '/Users/cam/.arbor/tls/proxy.key' }
   : { enabled: false, cert: '', key: '' };
 
 let oauthLogin: { provider: string; polls: number } | null = null;
@@ -200,7 +200,7 @@ let oauthLogin: { provider: string; polls: number } | null = null;
  */
 const signInScenario = params.get('signin');
 
-const authDir = '/Users/casey/Library/Application Support/onl.arbor.app/auths';
+const authDir = '/Users/cam/Library/Application Support/onl.arbor.app/auths';
 
 /** A credential file as the core lists it: on disk, OAuth, with a path. */
 const fileEntry = (name: string, fields: Json): Json => ({
@@ -213,11 +213,11 @@ const fileEntry = (name: string, fields: Json): Json => ({
 // `modtime` is the file's own; account ids live in the files but are not listed.
 const authFiles: Json[] = [
   // Rejected refresh token: Sign In Again.
-  fileEntry('codex-casey.json', { provider: 'codex', email: 'casey@example.com', account_id: 'acct-casey', status: 'error', status_message: 'invalid_grant', unavailable: true, cooldowns: [], auth_index: 'codex-1', priority: 10, size: 2188, modtime: iso(-3_600_000), excluded_models: ['codex-mini-latest'] }),
+  fileEntry('codex-cam.json', { provider: 'codex', email: 'cam@example.com', account_id: 'acct-cam', status: 'error', status_message: 'invalid_grant', unavailable: true, cooldowns: [], auth_index: 'codex-1', priority: 10, size: 2188, modtime: iso(-3_600_000), excluded_models: ['codex-mini-latest'] }),
   // Account-wide usage limit.
   fileEntry('codex-team.json', { provider: 'codex', email: 'team@example.com', status: 'error', status_message: 'quota exhausted', unavailable: true, next_retry_after: iso(3 * 86_400_000), cooldowns: [{ scope: 'credential', reason: 'credential_quota', retry_at: iso(3 * 86_400_000) }, { scope: 'model', model_key: 'gpt-6-astra', reason: 'quota', retry_at: iso(3 * 86_400_000), backoff_level: 1, http_status: 429 }], auth_index: 'codex-2', priority: 0, size: 2190, modtime: iso(-86_400_000) }),
   // Still routed, with two models resting; the short rest ends while the page is open.
-  fileEntry('claude-max.json', { provider: 'claude', email: 'casey@example.com', account_uuid: 'uuid-casey', status: 'error', status_message: 'quota exhausted', unavailable: false, cooldowns: [{ scope: 'model', model_key: 'claude-opus-5-5', reason: 'quota', retry_at: iso(3 * 3_600_000), backoff_level: 0, http_status: 429 }, { scope: 'model', model_key: 'claude-fable-5-1', reason: 'transient_error', retry_at: iso(5 * 60_000), http_status: 503 }], auth_index: 'claude-1', priority: 5, size: 1672, modtime: iso(-7_200_000) }),
+  fileEntry('claude-max.json', { provider: 'claude', email: 'cam@example.com', account_uuid: 'uuid-cam', status: 'error', status_message: 'quota exhausted', unavailable: false, cooldowns: [{ scope: 'model', model_key: 'claude-opus-5-5', reason: 'quota', retry_at: iso(3 * 3_600_000), backoff_level: 0, http_status: 429 }, { scope: 'model', model_key: 'claude-fable-5-1', reason: 'transient_error', retry_at: iso(5 * 60_000), http_status: 503 }], auth_index: 'claude-1', priority: 5, size: 1672, modtime: iso(-7_200_000) }),
   // Every model resting after upstream errors: Retrying, with Refresh Now.
   fileEntry('codex-backup.json', { provider: 'codex', email: 'backup@example.com', account_id: 'acct-backup', status: 'error', status_message: 'transient upstream error', unavailable: true, next_retry_after: iso(4 * 60_000), cooldowns: [{ scope: 'model', model_key: 'gpt-6-sol', reason: 'transient_error', retry_at: iso(4 * 60_000), http_status: 502 }, { scope: 'model', model_key: 'gpt-6-luna', reason: 'transient_error', retry_at: iso(6 * 60_000), http_status: 502 }], auth_index: 'codex-3', priority: 0, size: 2204, modtime: iso(-10_800_000) }),
   // Plan or account refused.
@@ -824,10 +824,10 @@ export const coreAnswers: CommandAnswers<CoreCommands> = {
     const canonical = oauthLogin.provider === 'claude'
       ? fleetAccounts
         ? fileEntry('claude-3c9d41e2-sam.side@example.com.json', { provider: 'claude', email: 'sam.side@example.com', account_uuid: 'uuid-side', auth_index: 'cc-side', size: 1680 })
-        : fileEntry('claude-5772b8d7-casey@example.com.json', { provider: 'claude', email: 'casey@example.com', account_uuid: 'uuid-casey', auth_index: 'claude-9', size: 1680 })
+        : fileEntry('claude-5772b8d7-cam@example.com.json', { provider: 'claude', email: 'cam@example.com', account_uuid: 'uuid-cam', auth_index: 'claude-9', size: 1680 })
       : oauthLogin.provider === 'xai'
-        ? fileEntry('xai-4b2e-casey@example.com.json', { provider: 'xai', email: 'casey@example.com', account_id: 'acct-xai', auth_index: 'xai-9', size: 912 })
-        : fileEntry('codex-9f1e2a3b-casey@example.com-pro.json', { provider: 'codex', email: 'casey@example.com', account_id: 'acct-casey', auth_index: 'codex-9', size: 4483 });
+        ? fileEntry('xai-4b2e-cam@example.com.json', { provider: 'xai', email: 'cam@example.com', account_id: 'acct-xai', auth_index: 'xai-9', size: 912 })
+        : fileEntry('codex-9f1e2a3b-cam@example.com-pro.json', { provider: 'codex', email: 'cam@example.com', account_id: 'acct-cam', auth_index: 'codex-9', size: 4483 });
     const savedAt = new Date().toISOString();
     const saved = { status: 'active', status_message: '', unavailable: false, cooldowns: [], modtime: savedAt, updated_at: savedAt };
     // Core 7.2.158+ also carries an older Claude file's settings into the new

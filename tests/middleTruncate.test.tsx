@@ -27,7 +27,7 @@ describe('where a long path or branch is cut', () => {
 
   it('never cuts next to a space, which each half would drop, running two words together', () => {
     expect(splitForMiddleTruncate('Claude Sonnet 4.5')).toEqual({ head: 'Claud', tail: 'e Sonnet 4.5' });
-    expect(splitForMiddleTruncate('Casey laptop key')).toBeNull();
+    expect(splitForMiddleTruncate('Cam laptop key')).toBeNull();
     for (const value of [
       'Claude Sonnet 4.5',
       'studio cedar 01 laptop',

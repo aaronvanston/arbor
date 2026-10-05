@@ -11,9 +11,9 @@ const ssh = (fields: Partial<PoolSsh> = {}): PoolSsh => ({
   commandReady: true,
   includeLine: 'Include ~/.arbor/ssh/pools.conf',
   included: true,
-  user: 'casey',
+  user: 'cam',
   members: [
-    { machine: 'casey-mbp', readiness: 'ready' },
+    { machine: 'cam-mbp', readiness: 'ready' },
     { machine: 'lab-box', readiness: 'noHostKey' },
     { machine: 'cedar-02', readiness: 'otherUser' },
     { machine: 'home-mini', readiness: 'thisMac' },
@@ -23,7 +23,7 @@ const ssh = (fields: Partial<PoolSsh> = {}): PoolSsh => ({
 });
 
 const PICKED = Date.UTC(2026, 2, 14, 12);
-const connection = (fields: Partial<PoolSshConnection>): PoolSshConnection => ({ name: 'arbor-builds', machine: 'casey-mbp', open: 0, pickedAtMs: PICKED, ...fields });
+const connection = (fields: Partial<PoolSshConnection>): PoolSshConnection => ({ name: 'arbor-builds', machine: 'cam-mbp', open: 0, pickedAtMs: PICKED, ...fields });
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ').trim();
 const render = (value: PoolSsh | null, error: string | null = null) => text(renderToStaticMarkup(<I18nProvider><PoolSshBody poolId="p1" ssh={value} error={error} /></I18nProvider>));
 
@@ -47,9 +47,9 @@ describe('pools over SSH', () => {
   it('shows the host to open, each machine’s readiness and where each host name is pinned', () => {
     const page = render(ssh({ connections: [connection({ open: 2 }), connection({ name: 'arbor-builds-b', machine: 'lab-box' })] }));
     expect(page).toContain('ssh arbor-builds');
-    expect(page).toContain('Machines, connected to as casey');
+    expect(page).toContain('Machines, connected to as cam');
     expect(page).toContain('Connect to it over SSH once, so this Mac saves its host key');
-    expect(page).toContain('Reached as another user than casey');
+    expect(page).toContain('Reached as another user than cam');
     expect(page).toContain('This Mac. The host is opened from here, so it’s never picked');
     expect(page).toContain('2 connections open');
     expect(page).toContain(`Not connected now · Pinned ${formatDate(PICKED)}`);

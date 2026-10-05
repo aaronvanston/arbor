@@ -27,9 +27,9 @@ afterEach(() => {
 describe('account keys after the core renames a credential', () => {
   it('derives the old and new keys from file name and auth index', () => {
     expect(renamedCredentialKeys(
-      { name: 'claude-casey.json', auth_index: 'idx-old' },
-      { name: 'claude-5772b8d7-casey@example.com.json', auth_index: 'idx-new' },
-    )).toEqual({ from: 'claude-casey.json::idx-old', to: 'claude-5772b8d7-casey@example.com.json::idx-new', name: 'claude-casey' });
+      { name: 'claude-cam.json', auth_index: 'idx-old' },
+      { name: 'claude-5772b8d7-cam@example.com.json', auth_index: 'idx-new' },
+    )).toEqual({ from: 'claude-cam.json::idx-old', to: 'claude-5772b8d7-cam@example.com.json::idx-new', name: 'claude-cam' });
   });
 
   it('keeps a renamed credential in its place in the saved order', () => {
@@ -81,8 +81,8 @@ describe('account keys after the core renames a credential', () => {
   });
 
   it('keeps the name an account without a profile was known by, unless that name is an email', () => {
-    expect(renamedCredentialKeys({ name: 'casey@example.com.json', auth_index: 'a' }, { name: 'new.json', auth_index: 'b' }))
-      .toEqual({ from: 'casey@example.com.json::a', to: 'new.json::b' });
+    expect(renamedCredentialKeys({ name: 'cam@example.com.json', auth_index: 'a' }, { name: 'new.json', auth_index: 'b' }))
+      .toEqual({ from: 'cam@example.com.json::a', to: 'new.json::b' });
     const from = 'wp2-plain.json::idx-old';
     const to = 'wp2-plain-canonical.json::idx-new';
     migrateAccountKeys([{ from, to, name: 'wp2-plain' }]);
@@ -91,8 +91,8 @@ describe('account keys after the core renames a credential', () => {
   });
 
   it('does not show the replaced file as an account while the core still lists it', () => {
-    const canonical = { name: 'claude-5772b8d7-casey@example.com.json', provider: 'claude', source: 'file', path: '/auths/claude-5772b8d7-casey@example.com.json' };
-    const lingering = { name: 'claude-casey.json', provider: 'claude', source: 'memory', path: '/auths/claude-casey.json' };
+    const canonical = { name: 'claude-5772b8d7-cam@example.com.json', provider: 'claude', source: 'file', path: '/auths/claude-5772b8d7-cam@example.com.json' };
+    const lingering = { name: 'claude-cam.json', provider: 'claude', source: 'memory', path: '/auths/claude-cam.json' };
     const disabled = { name: 'codex-off.json', provider: 'codex', source: 'file', path: '/auths/codex-off.json', disabled: true };
     expect(accountFilesFromListing([canonical, lingering, disabled])).toEqual([canonical]);
   });
