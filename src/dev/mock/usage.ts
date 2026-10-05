@@ -799,7 +799,7 @@ for (const session of usageSessions) {
  * totals are the threads' own estimates.
  */
 const realSizeSessions = (): UsageSession[] => {
-  const fleet = ['casey-mbp', 'ci-01', 'cedar-02', ...realSizeBuildMachines];
+  const fleet = ['cam-mbp', 'ci-01', 'cedar-02', ...realSizeBuildMachines];
   const models = ['claude-opus-5-5', 'gpt-6-sol', 'claude-sonnet-5', 'gpt-6-luna'];
   return Array.from({ length: 400 }, (_, index) => {
     const id = `${(0x50000000 + index * 7_919).toString(16)}-4a5b-4c6d-8e7f-${String(index).padStart(12, '0')}`;

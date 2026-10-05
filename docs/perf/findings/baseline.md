@@ -3,6 +3,10 @@
 The first run of the benchmark (step 2 of `docs/perf/PROCESS.md`), at commit 72406e27 plus the perf tooling. Every
 later fix is checked against these numbers; `perf/baseline.json` holds them as ceilings.
 
+The tables below are from that first run. `perf/baseline.json` was recorded again on main after Sync became Overview,
+Library, Software and Repo, which moved the Sync journeys to those views and added the agents list (120 KB of
+`get_client_versions`) to Software. The ceilings, not these tables, are what a fix is held to.
+
 ## How it's measured
 
 `bun run perf` builds the mock as the demo site (`vite build --mode demo --sourcemap hidden` into `.perf/site/`), serves

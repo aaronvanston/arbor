@@ -44,21 +44,19 @@ type Size = { id: 'default' | 'real'; query: string };
 const SIZES: Size[] = [{ id: 'default', query: '' }, { id: 'real', query: 'size=real' }];
 
 /** The main pages and Sync's views, opened in this order from Home the way the sidebar would. */
-const PAGES: { id: string; page: string; tab?: string }[] = [
+const PAGES: { id: string; page: string; tab?: string; lens?: string }[] = [
   { id: 'machines', page: 'machines' },
   { id: 'machine', page: 'machine:ci-01' },
   { id: 'pools', page: 'pools' },
   { id: 'sessions', page: 'sessions' },
   { id: 'automations', page: 'automations' },
   { id: 'sync', page: 'setup' },
-  { id: 'sync-agents', page: 'setup', tab: 'agents' },
-  { id: 'sync-skills', page: 'setup', tab: 'skills' },
+  { id: 'sync-library', page: 'setup', tab: 'library' },
+  { id: 'sync-library-machines', page: 'setup', tab: 'library', lens: 'machines' },
+  { id: 'sync-library-cost', page: 'setup', tab: 'library', lens: 'cost' },
+  { id: 'sync-software', page: 'setup', tab: 'software' },
   { id: 'sync-repo', page: 'setup', tab: 'repo' },
-  { id: 'sync-plugins', page: 'setup', tab: 'plugins' },
-  { id: 'sync-hooks', page: 'setup', tab: 'hooks' },
-  { id: 'sync-toolchain', page: 'setup', tab: 'toolchain' },
-  { id: 'sync-cost', page: 'setup', tab: 'cost' },
-  { id: 'sync-history', page: 'setup', tab: 'history' },
+  { id: 'sync-repo-changes', page: 'setup', tab: 'repo', lens: 'changes' },
   { id: 'accounts', page: 'accounts' },
   { id: 'usage', page: 'usage' },
   { id: 'alerts', page: 'alerts' },
@@ -392,10 +390,11 @@ async function timingPass(browser: Browser, url: string): Promise<Timing> {
  */
 async function coldJs(browser: Browser, origin: string, sources: BuildSources) {
   const appBytes = (chunks: string[]) => sum(chunks.filter((chunk) => sources.mockShare(chunk) <= 0.5).map((chunk) => statSync(join(SITE, chunk)).size));
-  const coldStart = async (target?: { page: string; tab?: string }) => {
+  const coldStart = async (target?: { page: string; tab?: string; lens?: string }) => {
     const query = new URLSearchParams();
     if (target) query.set('page', target.page);
     if (target?.tab) query.set('tab', target.tab);
+    if (target?.lens) query.set('lens', target.lens);
     const run = await launch(browser, `${origin}/${target ? `?${query}` : ''}`, BEFORE_PREFETCH_MS);
     const chunks = [...run.scripts];
     await run.context.close();
@@ -444,10 +443,10 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   for (const target of PAGES) {
     await reset(navRun.page);
     const loadedBefore = navRun.scripts.length;
-    await navRun.page.evaluate(({ page, tab }) => {
-      const open = (window as Window & { __mockOpen?: (page: string, tab?: string) => void }).__mockOpen;
+    await navRun.page.evaluate(({ page, tab, lens }) => {
+      const open = (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => void }).__mockOpen;
       if (!open) throw new Error('The mock has no __mockOpen');
-      open(page, tab);
+      open(page, tab, lens);
     }, target);
     await quiet(navRun.page, navRun.network);
     await advance(navRun.page, navRun.network, NAVIGATION_MS, STEP_MS);
