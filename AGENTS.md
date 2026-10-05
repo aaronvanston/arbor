@@ -86,7 +86,7 @@ work done, walk this list and say which entries applied:
   which feeds Settings search and ⌘K.
 - **Machines.** Macs and Linux, this Mac and remote ones, one machine and all of them. A view that can narrow to one
   machine uses the machine picker.
-- **Reverse states.** A way in needs a way out: removal gets Undo, a change on a machine lands on Sync › Arbor's
+- **Reverse states.** A way in needs a way out: removal gets Undo, a change on a machine lands on Sync › Repo › Arbor's
   changes, a pause gets a resume.
 - **Moved views.** A view that moves keeps its old id landing somewhere ([Navigation](docs/internals/navigation.md)).
 - **Docs.** Check whether the change makes a doc wrong. Follow the documentation rules below before adding anything.

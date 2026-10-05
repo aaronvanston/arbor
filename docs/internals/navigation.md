@@ -12,26 +12,36 @@ top, Fleet (Machines with one leaf per machine, Pools with one leaf per pool, Se
 `src/navigation.ts`, in the tree's order that ⌘1–⌘8 follow (Alerts is ⌘9), and `ViewContent` in `App.tsx` maps each view
 to its page. Sync is still `setup` in ids and storage keys.
 
-Pages have no tabs: the tree picks the view and the breadcrumb reads "Page / View". A view that can be narrowed to one
-machine (`hasMachineScope`, plus Checkouts and Sync › Cost) ends its breadcrumb with the machine picker
+Pages have no tabs: the tree picks the view and the breadcrumb reads "Page / View". Sync › Library is the exception: a
+bar over it picks the kind it lists (`kind`: plugins, MCP servers, skills, hooks, instructions) and how it's shown
+(`lens`: the list, each kind's grid by machine, or Cost), and Repo has Files and Arbor's changes (`lens: 'changes'`) the
+same way. A view that can be narrowed to one machine (`hasMachineScope`, plus Checkouts and the Library's Cost) ends its breadcrumb with the machine picker
 (`components/layout/MachineCrumb.tsx`), and the page's other views keep that pick (`keepMachineScope`).
 
 ## Views that moved
 
 An old view id can still turn up in links, the palette's saved picks and the view a page was left on, so it has to
 land somewhere. `movedUsageView` sends Usage's old Capacity, Analysis, Failures and Claude Code (`telemetry`) to
-Accounts › Value, Overview, Requests with Failed on, and Sync › Cost. `movedSetupView` sends Sync's old Context to Cost,
-Projects to `checkoutsView()` (Sessions with `lens: 'checkouts'`) and Checklist to Machines. `savedUsageView` and
-`savedSetupView` read a page's saved last view through them. Sync's Checks and Arbor's changes kept their old ids,
-`overview` and `history`. `tests/movedViews.test.ts` covers all of it; extend these maps when you move a view.
+Accounts › Value, Overview, Requests with Failed on, and the Library's Cost. `movedSetupView` sends Sync's old Agents and
+Toolchain to Software; Skills, MCP & plugins and Hooks to their Library kind by machine (`libraryView(kind, 'machines')`);
+Cost and Context to the Library's Cost; Arbor's changes (`history`) to Repo with `lens: 'changes'`; Projects to
+`checkoutsView()` (Sessions with `lens: 'checkouts'`); and Checklist to Machines. `savedUsageView` and `savedSetupView`
+read a page's saved last view through them. Overview kept Checks' id, `overview`. `tests/movedViews.test.ts` covers all of it; extend these maps when you move a view.
 
 ## Machines and pools
 
 Machines is the fleet at a glance. `machinesView(name)` opens one machine's page (`pages/MachinePage.tsx`, rendered
 inside `UsageRecordsPage` for its range picker): health, live sessions, agents, usage, sessions, setup standing and
 checkouts, with the "Bring … in line" checklist on top when it's behind (`services/machinePage.ts` decides). One
-machine's things go on its page; comparing machines is Sync's. Sync › Agents has the agent rollout and every machine's
-versions.
+machine's things go on its page; comparing machines is Sync's.
+
+## Sync
+
+Sync has four views. Overview is the checks. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
+plugin, MCP server, skill, hook and instruction file the setup repo gives the agents, one row each, with the repo's word
+for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
+brings each answering machine in line straight away, with Undo. Software has the agent rollout, every machine's
+versions and the toolchain. Repo is the setup repo's files, with Arbor's changes on each machine beside them.
 
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the
 limits, the next run's chances, where a burst would go. Settings › Pools only edits them.

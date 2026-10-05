@@ -7,7 +7,7 @@ import type { McpRegistry, SetupMachine, SetupRepo } from '../native/types';
 import { ProjectCheckoutsCard, type ProjectRow } from './ProjectCheckoutsCard';
 
 /**
- * Sync › MCP & plugins, In a project: a project's own value for each Claude Code server the setup repo defines, denied
+ * Sync › Library › Plugins by machine, In a project: a project's own value for each Claude Code server the setup repo defines, denied
  * in each checkout's settings.local.json when off and set up in Claude Code's local scope there when on.
  */
 export function ProjectMcpCard({ repo, registry, machines }: { repo: string; registry: McpRegistry; machines: SetupMachine[] }) {

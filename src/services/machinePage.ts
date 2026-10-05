@@ -4,7 +4,7 @@ import { buildMatrix, homeKeys, machineDifferences, resolveReference } from './s
 
 /**
  * Where a machine's setup stands against the reference machine's: how many things differ, in which homes (most first,
- * as Sync › Checks counts them, one home at a time), and how many problems its last scan found.
+ * as Sync › Overview counts them, one home at a time), and how many problems its last scan found.
  */
 export type SetupStanding = {
   reference: string | null;

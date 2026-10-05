@@ -19,7 +19,7 @@ const button = (html: string, attribute: RegExp) => html.match(new RegExp(`<butt
 
 describe('the sidebar tree', () => {
   it('is the main navigation landmark, with a labeled list for each section', () => {
-    const html = render(setupView({ tab: 'skills' }));
+    const html = render(setupView({ tab: 'library' }));
     expect(html).toMatch(/^<nav[^>]*aria-label="Main navigation"/);
     expect(html).toContain('>Fleet</div>');
     expect(html).toContain('>Spend</div>');
@@ -27,7 +27,7 @@ describe('the sidebar tree', () => {
   });
 
   it('opens the current page’s views under a chevron that says so, and lights the view on screen', () => {
-    const html = render(setupView({ tab: 'skills' }));
+    const html = render(setupView({ tab: 'library' }));
     const chevron = button(html, /data-tree-chevron="setup"/);
     expect(chevron).toContain('aria-expanded="true"');
     expect(chevron).toContain('aria-controls="tree-setup"');

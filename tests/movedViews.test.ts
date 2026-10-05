@@ -13,6 +13,7 @@ import {
   movedUsageView,
   savedSetupView,
   savedUsageView,
+  libraryView,
   sessionsView,
   setupView,
   usageView,
@@ -108,44 +109,56 @@ describe('Usage’s Capacity, now Accounts › Value', () => {
   });
 });
 
-describe('Sync’s Context and Usage’s Claude Code, now Sync › Cost', () => {
-  it('opens Cost from either old id, in a link, a saved pick, a query string or where Sync was left', () => {
-    expect(movedSetupView('context')).toEqual(setupView({ tab: 'cost' }));
-    expect(movedUsageView('telemetry')).toEqual(setupView({ tab: 'cost' }));
-    expect(mainPageView('setup', 'context')).toEqual(setupView({ tab: 'cost' }));
-    expect(mainPageView('usage', 'telemetry')).toEqual(setupView({ tab: 'cost' }));
-    expect(savedSetupView('context')).toBe('cost');
-    expect(parseRecents(JSON.stringify(['page:main:setup:context', 'page:main:usage:telemetry', 'page:main:home']))).toEqual(['page:main:setup:cost', 'page:main:home']);
-    expect(palettePageId(setupView({ tab: 'cost' }))).toBe('page:main:setup:cost');
+describe('Sync’s Context and Usage’s Claude Code, then Sync › Cost, now the Library by cost', () => {
+  it('opens the Library by cost from every old id, in a link, a saved pick, a query string or where Sync was left', () => {
+    const cost = libraryView(undefined, 'cost');
+    expect(cost).toEqual(setupView({ tab: 'library', lens: 'cost' }));
+    expect(movedSetupView('context')).toEqual(cost);
+    expect(movedSetupView('cost')).toEqual(cost);
+    expect(movedUsageView('telemetry')).toEqual(cost);
+    expect(mainPageView('setup', 'context')).toEqual(cost);
+    expect(mainPageView('setup', 'cost')).toEqual(cost);
+    expect(mainPageView('usage', 'telemetry')).toEqual(cost);
+    expect(savedSetupView('context')).toBe('library');
+    expect(savedSetupView('cost')).toBe('library');
+    expect(parseRecents(JSON.stringify(['page:main:setup:context', 'page:main:usage:telemetry', 'page:main:home']))).toEqual(['page:main:setup:library', 'page:main:home']);
   });
 
   it('opens Usage on Overview when Claude Code was the view Usage was left on, rather than leaving the page', () => {
     expect(savedUsageView('telemetry')).toEqual({ tab: 'overview' });
   });
 
-  it('is found in the search palette by both old names, and by Setup', () => {
-    expect(leafFound('setup', 'cost', 'claude code')).toBe(true);
-    expect(leafFound('setup', 'cost', 'context')).toBe(true);
-    expect(leafFound('setup', 'cost', 'setup')).toBe(true);
-    expect(leafFound('setup', 'cost', 'telemetry')).toBe(true);
+  it('is found in the search palette by its old names, and by Setup', () => {
+    expect(leafFound('setup', 'library', 'claude code')).toBe(true);
+    expect(leafFound('setup', 'library', 'context')).toBe(true);
+    expect(leafFound('setup', 'library', 'cost')).toBe(true);
+    expect(leafFound('setup', 'library', 'setup')).toBe(true);
+    expect(leafFound('setup', 'library', 'telemetry')).toBe(true);
     expect(TREE_PAGES.find((page) => page.id === 'usage')?.leaves.some((leaf) => (leaf.tab as string) === 'telemetry')).toBe(false);
   });
 });
 
-describe('Machines’ Agent updates, now Sync › Agents', () => {
-  it('has a leaf of its own on Sync, right after Checks, which the palette finds by its old name', () => {
-    expect(mainPageView('setup', 'agents')).toEqual(setupView({ tab: 'agents' }));
-    expect(savedSetupView('agents')).toBe('agents');
-    expect(palettePageId(setupView({ tab: 'agents' }))).toBe('page:main:setup:agents');
-    expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.slice(0, 2).map((leaf) => leaf.tab)).toEqual(['overview', 'agents']);
-    expect(leafFound('setup', 'agents', 'agent updates')).toBe(true);
-    expect(leafFound('setup', 'agents', 'rollout')).toBe(true);
-    expect(leafFound('setup', 'agents', 'versions')).toBe(true);
+describe('Sync’s Agents and Toolchain, now Sync › Software', () => {
+  it('opens Software from either old id, which the palette still finds it by', () => {
+    expect(mainPageView('setup', 'agents')).toEqual(setupView({ tab: 'software' }));
+    expect(mainPageView('setup', 'toolchain')).toEqual(setupView({ tab: 'software' }));
+    expect(savedSetupView('agents')).toBe('software');
+    expect(savedSetupView('toolchain')).toBe('software');
+    expect(palettePageId(setupView({ tab: 'software' }))).toBe('page:main:setup:software');
+    expect(leafFound('setup', 'software', 'agent updates')).toBe(true);
+    expect(leafFound('setup', 'software', 'rollout')).toBe(true);
+    expect(leafFound('setup', 'software', 'versions')).toBe(true);
+    expect(leafFound('setup', 'software', 'toolchain')).toBe(true);
   });
+});
 
-  it('leaves Machines itself where it was, for its health and a machine an alert names', () => {
-    expect(mainPageView('machines')).toEqual(machinesView());
-    expect(alertDestinationView({ kind: 'machines', machine: 'ci-01' })).toEqual(machinesView('ci-01'));
+describe('Sync’s Skills, MCP & plugins and Hooks, now the Library’s kinds', () => {
+  it('opens each old view as its kind by machine, the grid it was', () => {
+    expect(mainPageView('setup', 'skills')).toEqual(libraryView('skills', 'machines'));
+    expect(mainPageView('setup', 'plugins')).toEqual(libraryView('plugins', 'machines'));
+    expect(mainPageView('setup', 'hooks')).toEqual(libraryView('hooks', 'machines'));
+    expect(savedSetupView('skills')).toBe('library');
+    for (const word of ['skills', 'plugins', 'mcp', 'hooks', 'marketplaces']) expect(leafFound('setup', 'library', word)).toBe(true);
   });
 });
 
@@ -207,27 +220,28 @@ describe('Sync’s Projects, now Sessions › Projects’ Checkouts', () => {
 });
 
 describe('Sync’s views that kept their ids', () => {
-  it('open Checks from `overview` and Arbor’s changes from `history`, however they’re named', () => {
+  it('open Overview from `overview`, and Arbor’s changes, now the Repo’s, from `history`', () => {
     expect(mainPageView('setup', 'overview')).toEqual(setupView({ tab: 'overview' }));
-    expect(mainPageView('setup', 'history')).toEqual(setupView({ tab: 'history' }));
+    expect(mainPageView('setup', 'history')).toEqual(setupView({ tab: 'repo', lens: 'changes' }));
     expect(savedSetupView('overview')).toBe('overview');
-    expect(savedSetupView('history')).toBe('history');
+    expect(savedSetupView('history')).toBe('repo');
     expect(movedSetupView('overview')).toBeNull();
-    expect(movedSetupView('history')).toBeNull();
-    expect(parseRecents(JSON.stringify(['page:main:setup:overview', 'page:main:setup:history']))).toEqual(['page:main:setup:overview', 'page:main:setup:history']);
-    expect(translate('setup.tab.overview')).toBe('Checks');
+    expect(parseRecents(JSON.stringify(['page:main:setup:overview', 'page:main:setup:history']))).toEqual(['page:main:setup:overview', 'page:main:setup:repo']);
+    expect(translate('setup.tab.overview')).toBe('Overview');
     expect(translate('setup.tab.history')).toBe('Arbor’s changes');
+    expect(leafFound('setup', 'repo', 'arbor’s changes')).toBe(true);
+    expect(leafFound('setup', 'overview', 'checks')).toBe(true);
   });
 
-  it('opens Checks for a saved view that was never Sync’s, or none', () => {
+  it('opens Overview for a saved view that was never Sync’s, or none', () => {
     expect(savedSetupView('nope')).toBe('overview');
     expect(savedSetupView(null)).toBe('overview');
     expect(movedSetupView('toString')).toBeNull();
   });
 
-  it('lists Sync’s views in the sidebar’s order, Checks first', () => {
+  it('lists Sync’s views in the sidebar’s order, Overview first', () => {
     expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.map((leaf) => translate(leaf.labelKey))).toEqual([
-      'Checks', 'Agents', 'Skills', 'MCP & plugins', 'Hooks', 'Toolchain', 'Repo', 'Cost', 'Arbor’s changes',
+      'Overview', 'Library', 'Software', 'Repo',
     ]);
   });
 

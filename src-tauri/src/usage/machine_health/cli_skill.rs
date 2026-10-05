@@ -3,7 +3,7 @@
 //! folder. `arbor` only reaches the Arbor running on this Mac, so the skill goes nowhere else.
 //!
 //! Each copy is written the way every change to a machine's files is (`guarded_writes`): backed up first, so the
-//! whole install is one entry in Sync › Arbor's changes and can be undone. A home whose skills folder leads to the
+//! whole install is one entry in Sync › Repo › Arbor's changes and can be undone. A home whose skills folder leads to the
 //! store gets the store's copy, written once.
 
 use super::agent_homes::{machines_to_scan, this_mac_name, tilde, HomeUse};
@@ -102,7 +102,7 @@ fn parse_install(stdout: &str) -> CliSkillInstall {
     result
 }
 
-/// Puts the skill in this Mac's store and its Claude Code homes, backed up so Sync › Arbor's changes can undo it.
+/// Puts the skill in this Mac's store and its Claude Code homes, backed up so Sync › Repo › Arbor's changes can undo it.
 #[tauri::command]
 pub(crate) async fn install_cli_skill(app: tauri::AppHandle, state: tauri::State<'_, MachineHealthState>) -> Result<CliSkillInstall, String> {
     let target = {

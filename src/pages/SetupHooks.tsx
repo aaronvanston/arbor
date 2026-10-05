@@ -73,7 +73,7 @@ function changeText(cell: HookCell, t: Translate): string {
 }
 
 /**
- * Sync › Hooks: the hooks the setup repo keeps, in .agents/hooks.json, and how each machine's Claude Code and Codex
+ * Sync › Library › Hooks: the hooks the setup repo keeps, in .agents/hooks.json, and how each machine's Claude Code and Codex
  * homes stand against them. Each repo hook runs a script from ~/.agents/hooks, which syncs with the repo's other files; every other
  * hook is the home's own and is only counted. A machine is brought in step once its changes have been read through.
  */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { alertDestinationFocus, alertDestinationView } from '../src/alertNavigation';
-import { accountLimitsView, machinesView, sessionsView, setupChecksView, setupView } from '../src/navigation';
+import { accountLimitsView, libraryView, machinesView, sessionsView, setupChecksView } from '../src/navigation';
 import { alertDestination, parseAlertHistory, type AlertRecord } from '../src/services/alertHistory';
 import { outageNotification } from '../src/services/outageAlerts';
 import { proxyProblemNotification } from '../src/services/proxyChecks';
@@ -82,14 +82,14 @@ describe('setup change alerts', () => {
   const alert = (kinds: ('hook' | 'mcp' | 'plugin' | 'marketplace')[]) =>
     setupChangeNotification({ machine: 'ci-01', changes: kinds.map((kind) => ({ home: '~/.agent-app', kind, name: 'x', change: 'added' })) }, t)!;
 
-  it('open Hooks for hooks', () => {
-    expect(opens(alert(['hook']))).toEqual({ destination: { kind: 'setup', tab: 'hooks', machine: 'ci-01' }, view: setupView({ tab: 'hooks' }) });
+  it('open the Library’s hooks by machine for hooks', () => {
+    expect(opens(alert(['hook']))).toEqual({ destination: { kind: 'setup', tab: 'hooks', machine: 'ci-01' }, view: libraryView('hooks', 'machines') });
   });
 
-  it('open MCP & plugins on the machine for MCP servers, plugins and marketplaces', () => {
+  it('open the Library’s plugins by machine, on the machine, for MCP servers, plugins and marketplaces', () => {
     expect(opens(alert(['mcp', 'plugin', 'marketplace']))).toEqual({
       destination: { kind: 'setup', tab: 'plugins', machine: 'ci-01' },
-      view: setupView({ tab: 'plugins' }),
+      view: libraryView('plugins', 'machines'),
       syncMachine: 'ci-01',
     });
   });

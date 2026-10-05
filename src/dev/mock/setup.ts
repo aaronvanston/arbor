@@ -1795,7 +1795,7 @@ const removeWorktreesMock = (machine: string, removals: WorktreeRemoval[]) => {
   });
 };
 
-// Each machine's tools and what its projects ask of them, for Sync › Toolchain. arbor needs Node 22 and Bun,
+// Each machine's tools and what its projects ask of them, for Sync › Software. arbor needs Node 22 and Bun,
 // which ci-01 lacks (and its zod is a release behind package.json); proxy's Go pin is newer than ci-01's Go, which
 // fetches it itself; notes pins Python 3.11, which mise keeps on the Mac. react is 19.1.1 on the Mac and cedar-02
 // but 19.1.0 on ci-01, and billing is still on React 18.

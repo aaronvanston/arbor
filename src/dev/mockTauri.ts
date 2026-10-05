@@ -30,7 +30,7 @@
  * sidebar), `?page=usage&tab=events` or `?page=sessions&tab=live` (a view a page doesn't have opens it on the view it
  * last had, and one that moved opens where it is now: `?page=usage&tab=capacity` opens Accounts › Value, `analysis`
  * Usage's Overview, whose Breakdown it was, `failures` Usage's Requests with Failed on, which lists the failed
- * requests with their statuses and what went wrong, and `telemetry` Sync › Cost); `?page=machine:ci-01` starts on
+ * requests with their statuses and what went wrong, and `telemetry` Sync › Library › Cost); `?page=machine:ci-01` starts on
  * ci-01's own page, as its leaf in the sidebar opens it (`machine:lab-box` for one with no host, only its checklist);
  * `?page=automation:arbor:sentry-watch` starts on one automation's page (any id the Automations list has);
  * `?page=pool:mock-builds` starts on one pool's page (with `?runs=failed`, its runs that went wrong);
@@ -71,16 +71,16 @@
  * five minutes of failed checks), `?health=hostkey` or `?health=auth` (ci-01's host key changed, or its login is
  * turned down: alerts once the first minute is up); `?health=pending` for every machine but this Mac not checked yet,
  * as in the first seconds after Arbor starts (a gray dot beside each in the sidebar); `?health=fail` for every read of the machines' health failing
- * (Machines and Sync › Agents say why, and the sidebar lists no machines), `failafter` for reads failing from ten
- * seconds after load (Sync › Agents keeps its table and, at its next read half a minute in, says it may be out of
- * date), or `slow` for each read taking four seconds (Sync › Agents says it's reading);
- * `?machines=unhosted` for no machine with a host yet, so Machines lists them waiting for one and Sync › Agents has
+ * (Machines and Sync › Software say why, and the sidebar lists no machines), `failafter` for reads failing from ten
+ * seconds after load (Sync › Software keeps its table and, at its next read half a minute in, says it may be out of
+ * date), or `slow` for each read taking four seconds (Sync › Software says it's reading);
+ * `?machines=unhosted` for no machine with a host yet, so Machines lists them waiting for one and Sync › Software has
  * no agents to list and offers Add hosts;
  * `?homes=fresh` for no machine looked at for agent homes yet (Settings › Agent homes lists only the standard homes
  * until Look again fills each machine's list), `?homes=fail` for cedar-02's last look failing, `?homes=none` for
  * looks that found nothing more to suggest, and `?homes=old` for homes saved before Arbor guessed their roles (all
  * active, no guess) until Look again sorts them;
- * `?harnessHomes=none` for no other harness's home (Pi's, Droid's, OpenCode's) on any machine, so Sync › Agents,
+ * `?harnessHomes=none` for no other harness's home (Pi's, Droid's, OpenCode's) on any machine, so Sync › Software,
  * Skills, MCP & plugins and Hooks leave their cards for them out, and `?harnessupdate=fail` for updating one of
  * them failing, as an agent without its update command does;
  * `?harness=none` for no T3 Code or Orca on any machine (each machine's page says no harness was found), and
@@ -136,7 +136,7 @@
  * their placeholder, or `?chunks=fail` to have them fail to load, so the viewer says it couldn't show the file;
  * `?skills=changed` or `?skills=fail` to have a change to skills refused, or its last skill fail to change;
  * `?keep=fail` to have keeping a Claude Code home's sessions refused because its settings changed;
- * Sync › Arbor’s changes lists casey-mbp's changes, two settings edits to start with (`?changes=none` for none, which says
+ * Sync › Repo › Arbor’s changes lists casey-mbp's changes, two settings edits to start with (`?changes=none` for none, which says
  * Arbor hasn't changed anything there, or `?changes=fail` for the list failing to load); the reporter, keeping
  * sessions, telemetry and Codex's MCP servers each add one when they change a file;
  * `?archive=off` (no session archive yet: `/Volumes/Backup/…` is empty, `/Users/…` is empty on this Mac's own disk, a path with
@@ -235,7 +235,7 @@
  * `?skillremove=fail` to have taking a skill off every machine in the repo fail on changes not committed;
  * `?skilldrop=fail` to have taking skills back out of the repo (Undo after adding them) fail on changes not committed;
  * `?leftovers=fail` to have cleaning up plugin leftovers fail as if a settings file changed since the scan;
- * `?hooks=sample` for a setup repo keeping two hooks and their scripts (Sync › Hooks): this Mac's notify differs,
+ * `?hooks=sample` for a setup repo keeping two hooks and their scripts (Sync › Library › Hooks): this Mac's notify differs,
  *   ci-01 keeps notify off and runs an old script the repo hasn't got, and cedar-02 lacks the scripts; `broken`
  *   gives notify a problem, `bad` makes .agents/hooks.json unreadable;
  * `?hookapply=fail` to have bringing a machine's hooks in step fail as if a settings file changed since the scan;
@@ -244,7 +244,7 @@
  * `?plugincost=fail` to have measuring cedar-02's plugins fail, or `old` for ci-01's Claude Code too old to say;
  * `?setupchange=1` for a change to ci-01's MCP servers found five seconds after the page loads (an alert), or `many`
  * for five changes at once;
- * Sync › Agents (`?page=setup&tab=agents`) has Agent updates and each machine's versions under it:
+ * Sync › Software (`?page=setup&tab=agents`) has Agent updates and each machine's versions under it:
  * `?rollout=worse` for Claude Code 2.1.281 failing more than 2.1.270 on its Agent updates, `limits` for it rate
  * limited more, `quiet` for ci-01 sending nothing since 2.1.281 arrived (compared with the hours before), `even` for
  * every machine on the same versions (an update brings 2.1.283 and 0.157.0), or `fail` for the proxy's records failing

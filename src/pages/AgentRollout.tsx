@@ -50,7 +50,7 @@ export type AgentRun = {
 const rate = (count: number, requests: number) => formatPercent(shareOf(count, requests), 1);
 
 /**
- * One agent's card on Sync › Agents: its header (where the fleet stands, and one way to bring every machine up), then,
+ * One agent's card on Sync › Software: its header (where the fleet stands, and one way to bring every machine up), then,
  * inset under it, what belongs to it alone: the trial while one runs, each machine's version, and the versions seen.
  * Claude Code's and Codex's cards and the other agents' share this frame, so every agent reads the same way.
  */

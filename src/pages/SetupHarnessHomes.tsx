@@ -43,7 +43,7 @@ const STATE: Record<InstructionsState, { label: MessageKey; variant: 'success' |
 };
 
 /**
- * Another agent's card on Sync › Agents (Pi's, Droid's…): each home of it on each machine, with its version, its
+ * Another agent's card on Sync › Software (Pi's, Droid's…): each home of it on each machine, with its version, its
  * instructions file against the same agent's elsewhere and how many skills it keeps. Arbor doesn't know these agents'
  * releases, so the ones behind are behind the newest the fleet runs; "Update all" runs each machine's own update.
  */
@@ -158,7 +158,7 @@ function failure(outcome: SyncOutcome, machine: string, t: ReturnType<typeof use
 }
 
 /**
- * Sync › Skills: the skills in the other harnesses' own folders, with where each machine has each. Each of them loads
+ * Sync › Library › Skills: the skills in the other harnesses' own folders, with where each machine has each. Each of them loads
  * the machine's store itself, so a copy of its own can move into the store, for every agent that loads it, or go
  * where the store has the skill. Changes happen at once and can be undone. Left out until a scan finds one.
  */
@@ -308,7 +308,7 @@ const ITEMS: Record<'mcp' | 'hook', { title: MessageKey; description: MessageKey
 };
 
 /**
- * Sync › MCP & plugins and Sync › Hooks: the MCP servers or hooks in the other harnesses' homes, with where each machine
+ * Sync › Library › Plugins and Sync › Library › Hooks: the MCP servers or hooks in the other harnesses' homes, with where each machine
  * has each and whether it matches the same harness's elsewhere. Only names, how a server is reached and handler counts
  * are shown; commands, headers and environments never reach the window. Left out until a scan finds one, or for MCP
  * servers, until the setup repo sends one. A server the repo sends a harness can be set up, replaced or taken out from

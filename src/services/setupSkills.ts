@@ -354,7 +354,7 @@ export type FleetSkillCell = { loads: number; homes: number; look: boolean; row:
 export type FleetSkillRow = { name: string; source: string | null; cells: Record<string, FleetSkillCell | null> };
 export type FleetSkills = { machines: string[]; rows: FleetSkillRow[]; views: Record<string, SkillsView> };
 
-/** Every skill any read machine has, and how it stands on each: Sync › Skills at All machines. */
+/** Every skill any read machine has, and how it stands on each: Sync › Library › Skills by machine, at All machines. */
 export function fleetSkills(machines: SetupMachine[]): FleetSkills {
   // A machine not read yet has nothing to say, as the Skills page on it says.
   const read = machines.filter((machine) => machine.scannedAt !== null || machine.homes.length > 0);

@@ -52,7 +52,7 @@ describe('views that carry what they show', () => {
   });
 
   it('carry Sync’s view, Accounts’ and the machine Machines has opened out', () => {
-    expect(sameView(setupView({ tab: 'skills' }), setupView({ tab: 'repo' }))).toBe(false);
+    expect(sameView(setupView({ tab: 'library' }), setupView({ tab: 'repo' }))).toBe(false);
     expect(sameView(setupView({}), setup)).toBe(true);
     expect(normalizeView(machinesView())).toEqual(machines);
     expect(normalizeView(machinesView('ci-01'))).toEqual({ kind: 'main', page: 'machines', params: { machine: 'ci-01' } });
@@ -61,7 +61,7 @@ describe('views that carry what they show', () => {
   });
 
   it('are named by a page’s id and its view’s, a view the page doesn’t have opening it where it was left', () => {
-    expect(mainPageView('setup', 'history')).toEqual(setupView({ tab: 'history' }));
+    expect(mainPageView('setup', 'repo')).toEqual(setupView({ tab: 'repo' }));
     expect(mainPageView('usage', 'lifetime')).toEqual(usageView({ tab: 'lifetime' }));
     expect(normalizeView(mainPageView('setup', 'nope') ?? home)).toEqual(setup);
     expect(mainPageView('accounts', 'limits')).toEqual(accountsView({ tab: 'limits' }));

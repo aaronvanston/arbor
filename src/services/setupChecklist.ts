@@ -607,7 +607,7 @@ export function projectsStep(machine: SetupMachine, reference: SetupMachine | nu
 
 export type ChecksStep = { state: StepState; checks: SetupCheck[] };
 
-/** Sync's checks' problems and warnings on this machine. Notes are left to Sync › Checks. */
+/** Sync's checks' problems and warnings on this machine. Notes are left to Sync › Overview. */
 export function checksStep(machine: SetupMachine): ChecksStep {
   if (!known(machine)) return { state: unread(machine), checks: [] };
   const checks = setupChecks([machine]).filter((check) => check.level !== 'note');

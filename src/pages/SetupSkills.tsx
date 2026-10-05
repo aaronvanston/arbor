@@ -644,7 +644,7 @@ function TickAll({ shown, selected, onTickAll }: { shown: readonly string[]; sel
 }
 
 /**
- * Sync › Skills at All machines: every skill any machine has, and in how many of each machine's homes it loads. A
+ * Sync › Library › Skills at All machines: every skill any machine has, and in how many of each machine's homes it loads. A
  * machine's cell opens to its homes, each changed as it's picked; a machine's column head opens that machine.
  */
 function FleetSkillsCard({ machines, repo, selected, onTick, onTickAll, activity, used, usage, usageError, homeLabel, onCompare, onOpenInRepo, onPick, onRepo }: {

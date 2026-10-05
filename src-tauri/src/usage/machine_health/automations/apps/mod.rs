@@ -17,7 +17,7 @@ use super::super::guarded_writes::Edit;
 pub(super) enum Change {
     /// A script run on the machine that keeps it.
     Script(String),
-    /// A guarded write of the app's own file, which Sync › Arbor's changes can undo.
+    /// A guarded write of the app's own file, which Sync › Repo › Arbor's changes can undo.
     Edit(Edit),
 }
 

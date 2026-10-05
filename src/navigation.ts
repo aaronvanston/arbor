@@ -40,11 +40,19 @@ export type SessionsTabId = 'live' | 'sessions' | 'projects';
  */
 export type ProjectsLens = 'checkouts';
 /**
- * Sync's views (the page's id is `setup`). `overview` is its Checks and `history` Arbor's changes, ids that saved
- * views hold, so they stay. Saved ids of views that now live elsewhere (Context, Projects, Checklist) open through
- * `movedSetupView`.
+ * Sync's views (the page's id is `setup`): Overview, its Checks (`overview`, the id saved views hold), Library,
+ * everything the repo gives the machines' agents, Software, their agents and tools, and Repo. Saved ids of views that
+ * now live elsewhere (Agents, Skills, MCP & plugins, Hooks, Toolchain, Cost, Arbor's changes, and before them Context,
+ * Projects and Checklist) open through `movedSetupView`.
  */
-export type SetupTabId = 'overview' | 'agents' | 'repo' | 'skills' | 'plugins' | 'hooks' | 'toolchain' | 'cost' | 'history';
+export type SetupTabId = 'overview' | 'library' | 'software' | 'repo';
+/** The Library's tabs: what kind of thing it lists. */
+export type LibraryKind = 'plugins' | 'mcps' | 'skills' | 'hooks' | 'instructions';
+/**
+ * How a Sync view looks at what it shows: the Library by machine (each kind's grid) or by what it costs, and the
+ * Repo as Arbor's changes on one machine, with its undo.
+ */
+export type SetupLens = 'machines' | 'cost' | 'changes';
 /**
  * The Accounts page's views: each account's limits, every sign-in the core has with what each takes, and what each
  * subscription is worth against what it costs.
@@ -61,8 +69,11 @@ export type UsageParams = { tab?: UsageTabId; machine?: string; session?: string
  * on Projects how it looks at them.
  */
 export type SessionsParams = { tab?: SessionsTabId; session?: string; machine?: string; project?: string; lens?: ProjectsLens };
-/** What Sync shows: one of its views, and on Cost the machine Claude Code's spend is narrowed to. */
-export type SetupParams = { tab?: SetupTabId; machine?: string };
+/**
+ * What Sync shows: one of its views, the Library's kind, how the view looks at it, and the machine Cost's Claude Code
+ * spend is narrowed to, or whose changes the Repo's Arbor's changes lists.
+ */
+export type SetupParams = { tab?: SetupTabId; kind?: LibraryKind; lens?: SetupLens; machine?: string };
 export type AccountsParams = { tab?: AccountsTabId };
 /** What Machines shows: the fleet at a glance, or one machine's own page. */
 export type MachinesParams = { machine?: string };
@@ -97,10 +108,13 @@ export const mainView = (page: MainPageId): AppView => ({ kind: 'main', page }) 
 export const usageView = (params: UsageParams = {}): AppView => ({ kind: 'main', page: 'usage', params });
 export const setupView = (params: SetupParams = {}): AppView => ({ kind: 'main', page: 'setup', params });
 /**
- * Sync's Checks: each machine's last scan and what it found, with a scan's progress. What a setup change or a scan
- * asked for opens, rather than the view Sync was left on, which may show none of it (Agents, Cost).
+ * Sync's Overview, its Checks: each machine's last scan and what it found, with a scan's progress. What a setup change
+ * or a scan asked for opens, rather than the view Sync was left on, which may show none of it (Software, Cost).
  */
 export const setupChecksView = (): AppView => setupView({ tab: 'overview' });
+/** Sync › Library on a kind, as a list, or by machine with `lens`. */
+export const libraryView = (kind?: LibraryKind, lens?: Extract<SetupLens, 'machines' | 'cost'>): AppView =>
+  setupView({ tab: 'library', ...(kind ? { kind } : {}), ...(lens ? { lens } : {}) });
 export const accountsView = (params: AccountsParams = {}): AppView => ({ kind: 'main', page: 'accounts', params });
 /** Accounts' limits, where an account's row is: what an account's alert, its palette row or a limit opens. */
 export const accountLimitsView = (): AppView => accountsView({ tab: 'limits' });
@@ -142,8 +156,9 @@ export function hasMachineScope(page: MainPageId, tab: string | undefined): bool
   return false;
 }
 
-/** Sync's views with a machine in their breadcrumb: Cost, and Arbor's changes, which shows one machine's at a time. */
-const setupMachineScope = (tab: string | undefined) => tab === 'cost' || tab === 'history';
+/** Sync's views with a machine in their breadcrumb: the Library's Cost, and the Repo's Arbor's changes, one machine's at a time. */
+const setupMachineScope = (params: SetupParams | undefined) =>
+  (params?.tab === 'library' && params.lens === 'cost') || (params?.tab === 'repo' && params.lens === 'changes');
 
 /**
  * The view `next` opens as, picked while `current` is on screen: a view of the same page that can be narrowed to a
@@ -154,14 +169,14 @@ export function keepMachineScope(current: AppView, next: AppView): AppView {
   if (next.page !== 'sessions' && next.page !== 'usage' && next.page !== 'setup') return next;
   const machine = current.params && 'machine' in current.params ? current.params.machine : undefined;
   const tab = next.params?.tab;
-  const scoped = next.page === 'setup' ? setupMachineScope(tab) : hasMachineScope(next.page, tab);
+  const scoped = next.page === 'setup' ? setupMachineScope(next.params) : hasMachineScope(next.page, tab);
   if (!machine || !scoped || next.params?.machine !== undefined) return next;
   return { ...next, params: { ...next.params, machine } } as AppView;
 }
 
 const usageTabIds: readonly string[] = ['overview', 'digest', 'lifetime', 'events', 'prices'] satisfies UsageTabId[];
 const sessionsTabIds: readonly string[] = ['live', 'sessions', 'projects'] satisfies SessionsTabId[];
-const setupTabIds: readonly string[] = ['overview', 'agents', 'repo', 'skills', 'plugins', 'hooks', 'toolchain', 'cost', 'history'] satisfies SetupTabId[];
+const setupTabIds: readonly string[] = ['overview', 'library', 'software', 'repo'] satisfies SetupTabId[];
 const accountsTabIds: readonly string[] = ['limits', 'sign-ins', 'value'] satisfies AccountsTabId[];
 export const isUsageTab = (tab: string | undefined | null): tab is UsageTabId => usageTabIds.includes(tab ?? '');
 export const isSessionsTab = (tab: string | undefined | null): tab is SessionsTabId => sessionsTabIds.includes(tab ?? '');
@@ -171,26 +186,34 @@ export const isAccountsTab = (tab: string | undefined | null): tab is AccountsTa
 /**
  * Where a Usage view that moved is now, by the id saved views, recent picks and links still name it: Capacity is
  * Accounts › Value, Analysis the Breakdown on Overview, Failures Requests with Failed on, and Claude Code (`telemetry`)
- * Sync › Cost. Null for any other id.
+ * Sync › Library › Cost. Null for any other id.
  */
 export function movedUsageView(tab: string | null | undefined): AppView | null {
   switch (tab) {
     case 'capacity': return accountsView({ tab: 'value' });
     case 'analysis': return usageView({ tab: 'overview' });
     case 'failures': return failedRequestsView();
-    case 'telemetry': return setupView({ tab: 'cost' });
+    case 'telemetry': return libraryView(undefined, 'cost');
     default: return null;
   }
 }
 
 /**
- * Where a Sync view that moved is now, by the id saved views, recent picks and links still name it: Context is Cost's
- * starting context, Projects Sessions › Projects' Checkouts, and Checklist the Machines page, where each machine's page
- * has its own. Null for any other id; Checks and Arbor's changes kept theirs (`overview`, `history`).
+ * Where a Sync view that moved is now, by the id saved views, recent picks and links still name it: Agents and
+ * Toolchain are Software; Skills, MCP & plugins and Hooks the Library's kind by machine, as their grids were; Cost
+ * (and Context before it) the Library by cost; Arbor's changes the Repo's; Projects Sessions › Projects' Checkouts;
+ * and Checklist the Machines page, where each machine's page has its own. Null for any other id.
  */
 export function movedSetupView(tab: string | null | undefined): AppView | null {
   switch (tab) {
-    case 'context': return setupView({ tab: 'cost' });
+    case 'agents':
+    case 'toolchain': return setupView({ tab: 'software' });
+    case 'skills': return libraryView('skills', 'machines');
+    case 'plugins': return libraryView('plugins', 'machines');
+    case 'hooks': return libraryView('hooks', 'machines');
+    case 'cost':
+    case 'context': return libraryView(undefined, 'cost');
+    case 'history': return setupView({ tab: 'repo', lens: 'changes' });
     case 'projects': return checkoutsView();
     case 'checklist': return machinesView();
     default: return null;

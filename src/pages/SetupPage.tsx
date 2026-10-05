@@ -26,7 +26,9 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { requestFocus } from '../focusRequests';
-import { isSetupTab, savedSetupView, setupView, type AppView, type SetupParams, type SetupTabId } from '../navigation';
+import { isSetupTab, libraryView, savedSetupView, setupView, type AppView, type LibraryKind, type SetupParams, type SetupTabId } from '../navigation';
+import { isLibraryKind } from '../services/library';
+import { KIND_LABEL as LIBRARY_KIND_LABEL, LibraryBar, SetupLibrary, type LibraryLens } from './SetupLibrary';
 import { leafLabel } from '../services/sidebarTree';
 import type { ViewChange } from '../services/viewHistory';
 import { formatBytes } from '../services/machineHealth';
@@ -71,6 +73,8 @@ const REFERENCE_KEY = 'arbor.setup.reference.v1';
 const HOME_KEY = 'arbor.setup.home.v1';
 /** The view last open, which the page opens on when it's opened without naming one. */
 const TAB_KEY = 'arbor.setup.tab.v1';
+/** The Library's kind last open. */
+const KIND_KEY = 'arbor.setup.library.kind.v1';
 
 type SetupTab = SetupTabId;
 
@@ -115,6 +119,10 @@ const store = (key: string, value: string) => {
  * Checks when none was, or it's one that left Sync.
  */
 const savedTab = (): SetupTab => savedSetupView(readStored(TAB_KEY));
+const savedKind = (): LibraryKind => {
+  const saved = readStored(KIND_KEY);
+  return isLibraryKind(saved) ? saved : 'plugins';
+};
 
 /** The machine Checks compares the others with, as it was last picked there. */
 export const storedSetupReference = () => readStored(REFERENCE_KEY);
@@ -362,6 +370,15 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
     if (params?.tab !== tab) onViewChangeRef.current?.(setupView({ tab }));
     store(TAB_KEY, tab);
   }, [params?.tab, tab]);
+  // The Library's kind, the one last open when the view doesn't name one, and how it's shown.
+  const kind: LibraryKind = isLibraryKind(params?.kind) ? params.kind : savedKind();
+  useEffect(() => { if (tab === 'library') store(KIND_KEY, kind); }, [tab, kind]);
+  const libraryLens: LibraryLens = tab === 'library' && (params?.lens === 'machines' || params?.lens === 'cost') ? params.lens : 'list';
+  const costLens = tab === 'library' && libraryLens === 'cost';
+  const repoChanges = tab === 'repo' && params?.lens === 'changes';
+  const [libraryCounts, setLibraryCounts] = useState<Record<LibraryKind, number> | null>(null);
+  const chooseLibrary = (next: LibraryKind, lens: LibraryLens) =>
+    onViewChange?.(libraryView(next, lens === 'list' ? undefined : lens), 'push');
   const tableRef = useRef<HTMLDivElement>(null);
   // Once the table's there, it's scrolled to, the once: after every render until then, as it waits on the scans.
   const scrolledToShown = useRef(asked === null);
@@ -373,7 +390,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
 
   const machines = useMemo(() => inventory?.machines ?? [], [inventory]);
   // Arbor's changes shows one machine's backups at a time; the breadcrumb picks which.
-  const historyPick = tab === 'history' ? historyMachine(machines, params?.machine) : null;
+  const historyPick = repoChanges ? historyMachine(machines, params?.machine) : null;
   const keys = useMemo(() => homeKeys(machines), [machines]);
   const reference = resolveReference(machines, chosenReference);
   const activeHome = chosenHome && keys.includes(chosenHome) ? chosenHome : keys[0] ?? null;
@@ -419,17 +436,16 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
     scanSetup(machine, false).catch((error) => setLoadError(String(error)));
   };
   const scanAll = () => {
-    // On Toolchain it looks at every answering machine; a scan already running there is left to finish.
-    if (tab === 'toolchain') for (const machine of machines) { if (machine.reachable) void scanToolchain(machine.machine).catch(() => undefined); }
+    // On Software it looks at every answering machine's tools; a scan already running there is left to finish.
+    if (tab === 'software') for (const machine of machines) { if (machine.reachable) void scanToolchain(machine.machine).catch(() => undefined); }
     else scan(null);
   };
-  // Agents reads the machines' agents rather than a scan, so Scan again isn't there.
-  const scans = machines.length > 0 && tab !== 'agents';
+  const scans = machines.length > 0;
   // Cost's Claude Code spend comes from what the machines send, not the scan, so it's read again at once, even with a
   // scan already running; the scan brings its starting context up to date.
   const [costReads, setCostReads] = useState(0);
   const refresh = () => {
-    if (tab === 'cost') setCostReads((count) => count + 1);
+    if (costLens) setCostReads((count) => count + 1);
     if (!scanning) scanAll();
   };
   useShortcut('page.refresh', refresh, scans);
@@ -503,7 +519,10 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             t('setup.title'),
             t(leafLabel('setup', tab) ?? 'setup.tab.overview'),
             // Cost is the one Sync view that's about spend rather than comparing machines, so it can be narrowed to one.
-            ...(tab === 'history' && historyPick ? [
+            ...(repoChanges ? [t('setup.tab.history')] : []),
+            ...(costLens ? [t('setup.tab.cost')] : []),
+            ...(libraryLens === 'machines' ? [t(LIBRARY_KIND_LABEL[kind])] : []),
+            ...(repoChanges && historyPick ? [
               <MachineCrumb
                 key="machine"
                 machine={historyPick}
@@ -511,32 +530,36 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
                 all={false}
                 onChange={(machine) => {
                   rememberHistoryMachine(machine);
-                  onViewChange?.(setupView({ tab: 'history', machine }));
+                  onViewChange?.(setupView({ tab: 'repo', lens: 'changes', machine }));
                 }}
               />,
             ] : []),
-            ...(tab === 'cost' ? [
+            ...(costLens ? [
               <MachineCrumb
                 key="machine"
                 machine={params?.machine ?? ''}
                 machines={machines.map((entry) => entry.machine)}
-                onChange={(machine) => onViewChange?.(setupView({ tab: 'cost', machine: machine || undefined }))}
+                onChange={(machine) => onViewChange?.(setupView({ tab: 'library', lens: 'cost', machine: machine || undefined }))}
               />,
             ] : []),
           ]}
         />
       </PageTopbar>
       <PageBody gap="gap-5">
-        {loadError && tab !== 'agents' ? (
+        {loadError ? (
           <Alert variant="error" icon={<TriangleAlert />}>
             <AlertDescription>{t('setup.loadFailed', { error: loadError })}</AlertDescription>
           </Alert>
         ) : null}
-        {/* The scope sentence, for the pages a project or a machine can have values of its own on. */}
-        {tab === 'skills' || tab === 'plugins' ? <SyncScopeSentence /> : null}
-        {tab === 'agents' ? (
+        {tab === 'library' ? <LibraryBar kind={kind} lens={libraryLens} counts={libraryCounts} onChange={chooseLibrary} /> : null}
+        {/* The scope sentence, for the grids a project or a machine can have values of its own on. */}
+        {libraryLens === 'machines' && (kind === 'skills' || kind === 'plugins' || kind === 'mcps') ? <SyncScopeSentence /> : null}
+        {tab === 'software' ? (
           // The fleet's agents come from the machines' health checks, not the setup scan, so they don't wait for it.
-          <SetupAgents onNavigate={onNavigate} setupMachines={machines} />
+          <>
+            <SetupAgents onNavigate={onNavigate} setupMachines={machines} />
+            {inventory === null ? null : <SetupToolchain machines={machines} />}
+          </>
         ) : inventory === null ? (
           <p className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
             <Spinner />
@@ -549,8 +572,37 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             <EmptyDescription>{t('setup.empty.description')}</EmptyDescription>
           </Empty>
         ) : tab === 'repo' ? (
-          <SetupRepoSection machines={machines} />
-        ) : tab === 'skills' ? (
+          <>
+            <ToggleGroup
+              className="self-start"
+              value={[repoChanges ? 'changes' : 'files']}
+              aria-label={t('setup.repo.lens.label')}
+              onValueChange={(values) => {
+                if (values[0]) onViewChange?.(setupView({ tab: 'repo', ...(values[0] === 'changes' ? { lens: 'changes' as const } : {}) }), 'push');
+              }}
+            >
+              <Toggle value="files">{t('setup.repo.lens.files')}</Toggle>
+              <Toggle value="changes">{t('setup.tab.history')}</Toggle>
+            </ToggleGroup>
+            {repoChanges ? <SetupHistory machines={machines} picked={historyPick} /> : <SetupRepoSection machines={machines} />}
+          </>
+        ) : costLens ? (
+          <SetupCost
+            machines={machines}
+            homeLabel={(key) => homeLabel(key, t)}
+            machine={params?.machine ?? null}
+            reads={costReads}
+            onNavigate={onNavigate}
+          />
+        ) : tab === 'library' && libraryLens === 'list' ? (
+          <SetupLibrary
+            machines={machines}
+            kind={kind}
+            onCounts={setLibraryCounts}
+            onOpenByMachine={() => chooseLibrary(kind, 'machines')}
+            onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}
+          />
+        ) : tab === 'library' && kind === 'skills' ? (
           <>
             <SetupSkills
               machines={machines}
@@ -563,25 +615,16 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             />
             <HarnessSkillsSection machines={machines} />
           </>
-        ) : tab === 'plugins' ? (
+        ) : tab === 'library' && (kind === 'plugins' || kind === 'mcps') ? (
           <SetupPlugins machines={machines} homeLabel={(key) => homeLabel(key, t)} />
-        ) : tab === 'hooks' ? (
+        ) : tab === 'library' && kind === 'hooks' ? (
           <>
             <SetupHooks machines={machines} />
             <HarnessItemsSection machines={machines} kind="hook" />
           </>
-        ) : tab === 'toolchain' ? (
-          <SetupToolchain machines={machines} />
-        ) : tab === 'cost' ? (
-          <SetupCost
-            machines={machines}
-            homeLabel={(key) => homeLabel(key, t)}
-            machine={params?.machine ?? null}
-            reads={costReads}
-            onNavigate={onNavigate}
-          />
-        ) : tab === 'history' ? (
-          <SetupHistory machines={machines} picked={historyPick} />
+        ) : tab === 'library' ? (
+          // Instructions, rules, subagents and commands reach each machine through the repo's review.
+          <SetupRepoSection machines={machines} />
         ) : (
           <>
             <p className="max-w-3xl text-xs leading-[1.5] text-muted-foreground">
@@ -721,7 +764,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             // Plugin changes are reviewed with every machine showing.
             setSyncMachine(null);
             requestSyncReview(next);
-            chooseTab('plugins');
+            onViewChange?.(libraryView('plugins', 'machines'), 'push');
           }}
         />
       </PageBody>

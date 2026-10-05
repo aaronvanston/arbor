@@ -11,7 +11,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from './tooltip';
 /**
  * Arbor's one table look, in two frames. A table is either a page's whole subject (Usage › Requests), filling the
  * window's width with its toolbar held at the top and its pager at the bottom while the rows scroll between, or one
- * part of a page (Sync › Skills), in a card with its title and toolbar in the card's head and a footer when it pages.
+ * part of a page (Sync › Library by machine), in a card with its title and toolbar in the card's head and a footer when it pages.
  * Both frames take either engine: the plain `Table` for a table that shows what it's given, or `DataGrid` for one
  * whose columns can be picked, moved, pinned and resized. Rows, headers and numbers look the same in all four.
  */

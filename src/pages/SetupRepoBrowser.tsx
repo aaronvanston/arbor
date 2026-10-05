@@ -157,7 +157,7 @@ export function RepoBrowser({ repo, machines, onRepo, onReview }: {
     setSelected(path);
   }, [selected, askConfirmation, t]);
 
-  // A file asked for elsewhere (a skill's name on Sync › Skills) opens once the tree has it.
+  // A file asked for elsewhere (a skill's name on Sync › Library › Skills) opens once the tree has it.
   const asked = useFocusRequest('repo-file');
   useEffect(() => {
     if (!asked || !tree) return;

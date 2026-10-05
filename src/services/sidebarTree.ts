@@ -72,17 +72,14 @@ export const SIDEBAR_TREE: readonly TreeSection[] = [
         labelKey: 'app.nav.setup',
         keywords: 'tree.sync.keywords',
         leaves: [
-          sync('overview', 'setup.tab.overview'),
-          // Machines' Agent updates, which the palette still finds it by, with each machine's versions.
-          sync('agents', 'setup.tab.agents', 'tree.sync.agentsKeywords'),
-          sync('skills', 'setup.tab.skills'),
-          sync('plugins', 'setup.tab.plugins'),
-          sync('hooks', 'setup.tab.hooks'),
-          sync('toolchain', 'setup.tab.toolchain'),
-          sync('repo', 'setup.tab.repo'),
-          // Context's starting context and Usage's Claude Code, which the palette still finds it by.
-          sync('cost', 'setup.tab.cost', 'tree.sync.costKeywords'),
-          sync('history', 'setup.tab.history'),
+          // Its Checks, which the palette still finds it by.
+          sync('overview', 'setup.tab.overview', 'tree.sync.overviewKeywords'),
+          // Skills, MCP & plugins, Hooks and Cost, which the palette still finds it by.
+          sync('library', 'setup.tab.library', 'tree.sync.libraryKeywords'),
+          // Agents (Machines' Agent updates once) and Toolchain, which the palette still finds it by.
+          sync('software', 'setup.tab.software', 'tree.sync.softwareKeywords'),
+          // With Arbor's changes on each machine, which the palette still finds it by.
+          sync('repo', 'setup.tab.repo', 'tree.sync.repoKeywords'),
         ],
       },
     ],

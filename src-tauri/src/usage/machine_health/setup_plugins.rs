@@ -860,7 +860,7 @@ fn leftovers_by_home(setup: &MachineSetup, leftovers: &[PluginLeftover]) -> Resu
 }
 
 /// Takes plugins that are gone out of the settings that still name them, home by home, the careful way: only while
-/// each file is as read, backed up first, and on Sync › Arbor's changes to undo. Then the machine is read again.
+/// each file is as read, backed up first, and on Sync › Repo › Arbor's changes to undo. Then the machine is read again.
 #[tauri::command]
 pub(crate) async fn forget_plugin_leftovers(
     app: tauri::AppHandle,
@@ -1098,7 +1098,7 @@ fn set_codex_plugin_enabled(content: Option<&str>, id: &str, on: bool) -> Result
 
 /// Makes the changes in a machine's Codex homes: installs and removals with Codex's own `plugin` command, so Codex
 /// keeps its records and cache as it would for a person there, then turning plugins on and off in each config.toml
-/// the careful way, only while it's as read, backed up first and on Sync › Arbor's changes to undo. The Codex app's
+/// the careful way, only while it's as read, backed up first and on Sync › Repo › Arbor's changes to undo. The Codex app's
 /// own marketplaces are left alone. Then the machine is read again.
 #[tauri::command]
 pub(crate) async fn apply_codex_plugin_changes(

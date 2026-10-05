@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { accountSignInsView, canOpenView, hasMachineScope, keepMachineScope, mainView, setupView, sessionsView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
+import { accountSignInsView, canOpenView, hasMachineScope, keepMachineScope, libraryView, mainView, setupView, sessionsView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
 
 describe('navigation', () => {
   test("pages that only read Arbor's own data open while the core is stopped, and the rest wait for it", () => {
@@ -48,14 +48,16 @@ describe('navigation', () => {
     expect(keepMachineScope(requests, usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview', machine: 'cedar-02' }));
     // Each page keeps its own choice.
     expect(keepMachineScope(live, usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview' }));
-    expect(keepMachineScope(live, setupView({ tab: 'skills' }))).toEqual(setupView({ tab: 'skills' }));
+    expect(keepMachineScope(live, setupView({ tab: 'library' }))).toEqual(setupView({ tab: 'library' }));
   });
 
-  test("Sync's Cost and Arbor's changes keep each other's machine", () => {
-    const cost = setupView({ tab: 'cost', machine: 'cedar-02' });
-    expect(keepMachineScope(cost, setupView({ tab: 'history' }))).toEqual(setupView({ tab: 'history', machine: 'cedar-02' }));
-    expect(keepMachineScope(setupView({ tab: 'history', machine: 'studio' }), setupView({ tab: 'cost' }))).toEqual(setupView({ tab: 'cost', machine: 'studio' }));
+  test("The Library's Cost and the Repo's Arbor's changes keep each other's machine", () => {
+    const cost = setupView({ tab: 'library', lens: 'cost', machine: 'cedar-02' });
+    const changes = (machine?: string) => setupView({ tab: 'repo', lens: 'changes', ...(machine ? { machine } : {}) });
+    expect(keepMachineScope(cost, changes())).toEqual(changes('cedar-02'));
+    expect(keepMachineScope(changes('studio'), libraryView(undefined, 'cost'))).toEqual(setupView({ tab: 'library', lens: 'cost', machine: 'studio' }));
     // Views without a machine in their breadcrumb don't take one.
-    expect(keepMachineScope(cost, setupView({ tab: 'toolchain' }))).toEqual(setupView({ tab: 'toolchain' }));
+    expect(keepMachineScope(cost, setupView({ tab: 'software' }))).toEqual(setupView({ tab: 'software' }));
+    expect(keepMachineScope(cost, libraryView('skills'))).toEqual(libraryView('skills'));
   });
 });

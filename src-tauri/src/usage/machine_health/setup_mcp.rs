@@ -2115,7 +2115,7 @@ struct HarnessWrite {
 }
 
 /// Makes the changes in the other agents' files, each still as the last scan found it, and says how each went: as
-/// guarded edits, kept in a backup that Sync › Arbor's changes can undo.
+/// guarded edits, kept in a backup that Sync › Repo › Arbor's changes can undo.
 async fn apply_harness_changes(target: &Machine, home_dir: &str, planned: Vec<Planned>) -> Result<Vec<McpResult>, String> {
     let files = harness_files(&planned);
     let read = read_blocks(&run_on(target, MachineOp::McpRead, &harness_read_script(&files)).await?)?;

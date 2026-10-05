@@ -54,7 +54,7 @@ function machineRows(rollout: AgentRollout, machines: MachineHealth[], busy: boo
 }
 
 /**
- * Sync › Agents: every agent the machines run, one card each. Claude Code and Codex first, with their trial (a new
+ * Sync › Software: every agent the machines run, one card each. Claude Code and Codex first, with their trial (a new
  * version on one machine, compared through the proxy with the rest) and every machine's version; then the other agents
  * the setup scan finds. Each card brings its machines up at once, and "Update everything" does every card's.
  */

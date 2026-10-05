@@ -37,7 +37,7 @@ export function rememberHistoryMachine(machine: string) {
 }
 
 /**
- * Sync › Arbor’s changes: every change Arbor made to files on one machine, newest first, each with Undo. Setup sync and the
+ * Sync › Repo › Arbor’s changes: every change Arbor made to files on one machine, newest first, each with Undo. Setup sync and the
  * Skills tab make changes here, and so do the features that change an agent's settings: the needs-you reporter,
  * keeping sessions, telemetry and MCP servers. Each was backed up on the machine first.
  */

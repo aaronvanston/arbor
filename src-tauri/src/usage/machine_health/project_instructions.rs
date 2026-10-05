@@ -18,7 +18,7 @@
 //! AGENTS.md it copied), so a scan can tell whether a checkout is in step without reading the file.
 //! A file without that line is someone's own, and Arbor leaves it; so is a checkout where Git would see a
 //! new one. Each write is the careful kind (guarded_writes): only while the file is as Arbor read it,
-//! backed up first, and listed on Sync › Arbor's changes to undo.
+//! backed up first, and listed on Sync › Repo › Arbor's changes to undo.
 
 use super::guarded_writes::{cksum, edit_call, edit_finish, edit_outcomes, edit_start, new_stamp, run_on, ChangeKind, Edit, EditFile, EditOutcome};
 use super::checkout_settings::CheckoutOutcome;

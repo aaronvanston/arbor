@@ -7,7 +7,7 @@ import type { SetupMachine, SetupRepo } from '../native/types';
 import { ProjectCheckoutsCard, type ProjectRow } from './ProjectCheckoutsCard';
 
 /**
- * Sync › Skills, In a project: a project's own value for each skill the setup repo has, set in each checkout's own
+ * Sync › Library › Skills by machine, In a project: a project's own value for each skill the setup repo has, set in each checkout's own
  * skillOverrides. Shown once there's a setup repo with skills.
  */
 export function ProjectSkillsCard({ machines }: { machines: SetupMachine[] }) {

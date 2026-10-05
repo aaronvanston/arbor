@@ -5,7 +5,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { formatAgo, formatCount, formatDateTime, formatMoney, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
-import { machineLiveView, machineSessionsView, setupChecksView, setupView, type AppView } from '../navigation';
+import { machineLiveView, machineSessionsView, movedSetupView, setupChecksView, setupView, type AppView } from '../navigation';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { newestAgents } from '../services/agentVersions';
 import { useFleetBoard } from '../services/fleetBoard';
@@ -112,9 +112,9 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
       document.getElementById(CHECKOUTS_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
-    // Sync opens on this machine.
+    // Sync opens on this machine, the Library's skills and plugins by machine, as their grids were.
     if (tab === 'skills' || tab === 'plugins') setSyncMachine(machine);
-    onNavigate(setupView({ tab }));
+    onNavigate(tab === 'repo' ? setupView({ tab }) : movedSetupView(tab) ?? setupView());
   };
   const openChecks = (reference: string | null, home: string | null) => {
     rememberSetupComparison({ reference, home });

@@ -37,7 +37,7 @@ describe('the sidebar tree', () => {
     const leaves = (id: MainPageId) => TREE_PAGES.find((page) => page.id === id)?.leaves.map((leaf) => leaf.tab);
     expect(leaves('usage')).toEqual(['overview', 'digest', 'lifetime', 'events', 'prices']);
     expect(leaves('sessions')).toEqual(['live', 'sessions', 'projects']);
-    expect(leaves('setup')).toEqual(['overview', 'agents', 'skills', 'plugins', 'hooks', 'toolchain', 'repo', 'cost', 'history']);
+    expect(leaves('setup')).toEqual(['overview', 'library', 'software', 'repo']);
     expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.map((leaf) => leaf.labelKey).slice(0, 1)).toEqual(['setup.tab.overview']);
     expect(leaves('accounts')).toEqual(['limits', 'sign-ins', 'value']);
     // Machines lists the machines themselves.
@@ -55,7 +55,7 @@ describe('the sidebar tree', () => {
 
   test('lights the leaf that is the view on screen, and none for a session open in place of the list', () => {
     expect(openLeaf(usageView({ tab: 'events', result: 'failed' }))?.tab).toBe('events');
-    expect(openLeaf(setupView({ tab: 'history' }))?.labelKey).toBe('setup.tab.history');
+    expect(openLeaf(setupView({ tab: 'repo', lens: 'changes' }))?.labelKey).toBe('setup.tab.repo');
     expect(openLeaf(sessionsView({ tab: 'projects', project: 'arbor' }))?.tab).toBe('projects');
     expect(openLeaf(sessionsView({ tab: 'sessions', session: 'a3f1' }))).toBeUndefined();
     // A page opened without naming a view has none lit until it writes the one it opened on into the view.
