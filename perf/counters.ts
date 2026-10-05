@@ -184,7 +184,12 @@ export function installCounters() {
       : '';
     return `${element.tagName.toLowerCase()}${label ? ` in ${named?.tagName.toLowerCase()}[${label.slice(0, 40)}]` : ''}`;
   };
-  const observer = new MutationObserver((records) => {
+  // Vite's <link rel="modulepreload"> (and a lazy chunk's stylesheet) going into <head> as code loads isn't the page
+  // drawing anything, and would count a page's first open differently from a later one.
+  const loadingCode = (record: MutationRecord) => record.target === document.head && record.removedNodes.length === 0
+    && Array.from(record.addedNodes).every((node) => node instanceof HTMLLinkElement);
+  const observer = new MutationObserver((all) => {
+    const records = all.filter((record) => !loadingCode(record));
     state.mutations += records.length;
     const now = Date.now();
     if (state.mutationTimes[state.mutationTimes.length - 1] !== now && state.mutationTimes.length < 5_000) state.mutationTimes.push(now);
