@@ -24,6 +24,13 @@ export const PAGE_ICONS: Record<MainPageId, AppIcon> = {
 /** The window's frame: the sidebar beside the page. */
 export const SHELL_CLASS = 'relative flex h-full w-full bg-background text-foreground';
 
+/** The sidebar button itself: as tall as the title row's controls, its icon in the button's own color. */
+export const TOGGLE_BUTTON_CLASS = 'size-(--workspace-titlebar-control-size) [--control-icon-color:currentColor] [-webkit-app-region:no-drag]';
+/** Over the artwork it takes the art's ink, with a halo. */
+export const TOGGLE_INK_CLASS = 'art-halo hover:bg-current/10';
+/** While the sidebar shows, beside the sidebar's own controls. */
+export const TOGGLE_SHOWN_CLASS = 'text-[var(--sidebar-icon-color)] hover:bg-sidebar-row-hover hover:text-sidebar-foreground';
+
 /** Where the one sidebar button sits, fixed to the window beside the Mac window buttons. */
 export const TOGGLE_SLOT_CLASS = 'pointer-events-none fixed top-0 left-[var(--workspace-controls-left)] z-50 flex h-[var(--workspace-topbar-height)] items-center';
 

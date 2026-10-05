@@ -22,7 +22,7 @@ import { sidebarArtChoice, sidebarArtHalo, sidebarArtInk } from './services/side
 import { appColorChoice, applyAppColor } from './services/appColor';
 import { SIDEBAR_ID, SidebarResizeHandle, SidebarToggle } from './components/SidebarControls';
 import { SidebarHeader, SidebarRow, SidebarSearchGroup, SidebarSearchRow } from './components/sidebar/SidebarChrome';
-import { FOOTER_UTILITIES_CLASS, MAIN_CLASS, SHELL_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, TOGGLE_SLOT_CLASS } from './components/sidebar/shellParts';
+import { FOOTER_UTILITIES_CLASS, MAIN_CLASS, SHELL_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, TOGGLE_SHOWN_CLASS, TOGGLE_SLOT_CLASS } from './components/sidebar/shellParts';
 import { PAGE_ICONS, SidebarTree } from './components/sidebar/SidebarTree';
 import { SidebarGlance, SidebarMachines } from './components/sidebar/SidebarGlance';
 import { leafView, PALETTE_VIEWS, TREE_PAGES } from './services/sidebarTree';
@@ -536,7 +536,7 @@ function AppContent({ navigateRef }: ShellProps) {
             onToggle={toggleSidebar}
             buttonRef={toggleRef}
             ink={sidebar.shown ? sidebarArtInk(sidebarArt, appliedTheme, appColor) : undefined}
-            className={cn('pointer-events-auto', sidebar.shown && 'text-[var(--sidebar-icon-color)] hover:bg-sidebar-row-hover hover:text-sidebar-foreground')}
+            className={cn('pointer-events-auto', sidebar.shown && TOGGLE_SHOWN_CLASS)}
           />
         </div>
 

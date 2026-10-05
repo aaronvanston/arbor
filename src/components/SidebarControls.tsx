@@ -6,6 +6,7 @@ import { draggedSidebarWidth, resetSidebarWidth, setSidebarWidth, SIDEBAR_MIN_WI
 import { WithShortcut } from './ShortcutKbd';
 import { Button } from './ui/button';
 import { Tooltip, TooltipPopup, TooltipTrigger } from './ui/tooltip';
+import { TOGGLE_BUTTON_CLASS, TOGGLE_INK_CLASS } from './sidebar/shellParts';
 
 /** The id the sidebar's buttons and resize handle point at. */
 export const SIDEBAR_ID = 'app-sidebar';
@@ -34,7 +35,7 @@ export function SidebarToggle({ shown, onToggle, className, buttonRef, ink }: {
             ref={buttonRef}
             variant="ghost-muted"
             size="icon-sm"
-            className={cn('size-(--workspace-titlebar-control-size) [--control-icon-color:currentColor] [-webkit-app-region:no-drag]', ink && 'art-halo hover:bg-current/10', className)}
+            className={cn(TOGGLE_BUTTON_CLASS, ink && TOGGLE_INK_CLASS, className)}
             style={ink ? { color: ink } : undefined}
             onClick={onToggle}
             aria-label={label}

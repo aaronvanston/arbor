@@ -4,7 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { BootShell } from '../src/boot/BootShell';
 import { BOOT_KEY, readBootState } from '../src/boot/bootState';
 import { PageBreadcrumb, PageTopbar } from '../src/components/layout/page';
+import { SidebarToggle } from '../src/components/SidebarControls';
 import { SidebarHeader, SidebarRow, SidebarSearchGroup, SidebarSearchRow } from '../src/components/sidebar/SidebarChrome';
+import { TOGGLE_SHOWN_CLASS } from '../src/components/sidebar/shellParts';
 import { House } from '../src/components/ui/icons';
 import { TooltipProvider } from '../src/components/ui/tooltip';
 import { I18nProvider } from '../src/i18n';
@@ -45,6 +47,16 @@ describe("index.html's static first screen", () => {
     const search = render(<SidebarSearchGroup><SidebarSearchRow coreReady lockedHint="" onSearch={() => {}} onNavigate={() => {}} onAddMachine={() => {}} /></SidebarSearchGroup>);
     expect(classesAt(boot, 'data-boot-box="search"')).toEqual(classesAt(search, 'data-slot="sidebar-search"'));
     expect(classesAt(boot, 'group/search')).toEqual(classesAt(search, 'group/search'));
+  });
+
+  it('draws the sidebar button as App.tsx does over the art', () => {
+    const real = render(<SidebarToggle shown onToggle={() => {}} ink="#27272a" className={`pointer-events-auto ${TOGGLE_SHOWN_CLASS}`} />);
+    expect(classesAt(boot, 'data-boot-box="toggle"')).toEqual(classesAt(real, 'aria-controls'));
+  });
+
+  it('shows the pages that need the core locked, as React’s first frame does before the core answers', () => {
+    expect(boot).toMatch(/aria-disabled="true" data-boot-box="row-accounts"/);
+    expect(boot).not.toMatch(/aria-disabled="true" data-boot-box="row-(home|usage)"/);
   });
 
   it('draws Home’s top bar and title with the real top bar’s classes', () => {

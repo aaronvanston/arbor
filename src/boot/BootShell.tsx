@@ -1,12 +1,13 @@
 import type { CSSProperties } from 'react';
 import { en, type MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
-import { PAGE_ICONS, FOOTER_UTILITIES_CLASS, HEADER_ICON_BUTTON, MAIN_CLASS, ROW_CLASS, ROW_ICON_CLASS, SEARCH_GROUP_CLASS, SEARCH_KBD_CLASS, SEARCH_ROW_CLASS, SHELL_CLASS, SIDEBAR_ART_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, SIDEBAR_HEADER_CLASS, TOGGLE_SLOT_CLASS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass, UTILITY_BUTTON, WORDMARK_CLASS } from '../components/sidebar/shellParts';
+import { PAGE_ICONS, FOOTER_UTILITIES_CLASS, TOGGLE_BUTTON_CLASS, TOGGLE_INK_CLASS, TOGGLE_SHOWN_CLASS, HEADER_ICON_BUTTON, MAIN_CLASS, ROW_CLASS, ROW_ICON_CLASS, SEARCH_GROUP_CLASS, SEARCH_KBD_CLASS, SEARCH_ROW_CLASS, SHELL_CLASS, SIDEBAR_ART_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, SIDEBAR_HEADER_CLASS, TOGGLE_SLOT_CLASS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass, UTILITY_BUTTON, WORDMARK_CLASS } from '../components/sidebar/shellParts';
 import { buttonVariants } from '../components/ui/button';
-import { ChevronRight, MonitorPlus, PanelLeft, PanelLeftClose, Search, Server, Settings, Bell, UserPlus } from '../components/ui/icons';
+import { ChevronRight, Lock, MonitorPlus, PanelLeft, PanelLeftClose, Search, Server, Settings, Bell, UserPlus } from '../components/ui/icons';
 import { Kbd } from '../components/ui/kbd';
 import { Skeleton } from '../components/ui/skeleton';
 import { SECTION_CARD, SECTION_HEADER } from '../components/layout/settings';
+import { accountSignInsView, canOpenView, mainView } from '../navigation';
 import { SIDEBAR_TREE } from '../services/sidebarTree';
 import { formatKeys, SHORTCUTS } from '../services/shortcuts';
 
@@ -24,7 +25,7 @@ export function BootShell() {
   return (
     <div className={SHELL_CLASS} data-app-shell data-boot-shell aria-hidden="true" inert>
       <div className={TOGGLE_SLOT_CLASS} data-boot-box="toggle-slot">
-        <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon-sm' }), 'size-(--workspace-titlebar-control-size) art-halo text-[var(--sidebar-icon-color)]')} data-boot-box="toggle" data-boot-ink>
+        <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon-sm' }), TOGGLE_BUTTON_CLASS, TOGGLE_INK_CLASS, 'pointer-events-auto', TOGGLE_SHOWN_CLASS)} data-boot-box="toggle" data-boot-ink>
           <span className="contents" data-boot-when="shown"><PanelLeftClose /></span>
           <span className="contents" data-boot-when="hidden" hidden><PanelLeft /></span>
         </span>
@@ -42,7 +43,8 @@ export function BootShell() {
               <Kbd className={cn('h-4.5 min-w-4.5 px-1 text-2xs', SEARCH_KBD_CLASS)}>{formatKeys(paletteKeys, { escape: t('shortcuts.key.escape'), ctrl: t('shortcuts.key.ctrl'), alt: t('shortcuts.key.alt'), shift: t('shortcuts.key.shift') }, true)}</Kbd>
             </span>
             <div className="flex shrink-0 items-center">
-              <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon-sm' }), HEADER_ICON_BUTTON)}><UserPlus /></span>
+              {/* Dimmed, as React first draws it, until the core says it's running. */}
+              <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon-sm' }), HEADER_ICON_BUTTON)} aria-disabled={canOpenView(accountSignInsView(), false) ? undefined : true}><UserPlus /></span>
               <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon-sm' }), HEADER_ICON_BUTTON)}><MonitorPlus /></span>
             </div>
           </div>
@@ -58,12 +60,15 @@ export function BootShell() {
                   // once there's a machine or pool to list, as in React's first frame.
                   const active = page.id === 'home';
                   const expandable = page.leaves.length > 0;
+                  // A page that needs the core shows locked until it answers, as in React's first frame.
+                  const locked = !canOpenView(mainView(page.id), false);
                   return (
                     <li key={page.id} className="flex flex-col">
                       <div className="relative">
-                        <span className={cn(ROW_CLASS, expandable && 'pr-8')} data-active={active} data-boot-box={`row-${page.id}`}>
+                        <span className={cn(ROW_CLASS, expandable && 'pr-8')} data-active={active} aria-disabled={locked || undefined} data-boot-box={`row-${page.id}`}>
                           <Icon aria-hidden="true" selected={active} className={ROW_ICON_CLASS} />
                           <span className="min-w-0 flex-1 truncate">{t(page.labelKey)}</span>
+                          {locked ? <Lock aria-hidden="true" className="size-3 shrink-0 text-[var(--sidebar-icon-color)]" /> : null}
                         </span>
                         {expandable ? <span className={TREE_CHEVRON_CLASS}><ChevronRight aria-hidden="true" className="size-3.5" /></span> : null}
                       </div>

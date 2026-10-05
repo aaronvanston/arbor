@@ -57,8 +57,10 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
     if (ink) element.style.color = ink;
     else element.classList.remove('art-halo');
   });
+  // As App.tsx draws it: the sidebar's icon color while the sidebar shows, the ink's halo over the art.
   const toggle = shell.querySelector<HTMLElement>('[data-boot-box="toggle"]');
-  if (!shown) toggle?.classList.remove('text-[var(--sidebar-icon-color)]');
+  if (!shown) toggle?.classList.remove('text-[var(--sidebar-icon-color)]', 'hover:bg-sidebar-row-hover', 'hover:text-sidebar-foreground');
+  if (!ink) toggle?.classList.remove('hover:bg-current/10');
   if (!shown) {
     shell.querySelector('aside')?.classList.add('hidden');
     shell.querySelector<HTMLElement>('main')?.style.setProperty('--topbar-start', 'var(--workspace-titlebar-content-left)');
