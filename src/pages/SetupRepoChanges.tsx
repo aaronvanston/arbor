@@ -35,6 +35,9 @@ const PROBLEM: Record<RepoFileProblem, MessageKey> = {
   link: 'repo.file.problem.link',
 };
 
+/** A file added or deleted with nothing in it. */
+const emptyFileChange = (change: RepoChange) => change.before !== change.after && !change.before && !change.after;
+
 function StatusLetter({ status }: { status: RepoStatus }) {
   const { t } = useI18n();
   if (status === 'same') return null;
@@ -212,7 +215,10 @@ function Diffs({ loaded, files, unshown, empty, renderActions }: {
   if (loaded.state === 'loading') return <div className="p-4"><ViewerSkeleton /></div>;
   if (loaded.state === 'error') return <p className="p-4 text-xs text-error-foreground" role="alert">{t('repo.changes.failed', { error: loaded.error })}</p>;
   if (!files.length && !unshown.length) return <p className="m-auto max-w-sm px-4 text-center text-sm text-muted-foreground">{empty}</p>;
-  const notes = unshown.length ? (
+  // An empty file added or deleted has no lines to draw, so it's named here instead of vanishing from the pane.
+  const blank = files.filter(emptyFileChange);
+  const drawn = files.filter((change) => !emptyFileChange(change));
+  const notes = unshown.length || blank.length ? (
     <div className="flex flex-col gap-1 px-4 pb-3 text-xs text-muted-foreground">
       {unshown.map((change) => (
         <p key={change.path} className="flex min-w-0 items-center gap-2">
@@ -221,12 +227,21 @@ function Diffs({ loaded, files, unshown, empty, renderActions }: {
           {change.problem ? <span>{t(PROBLEM[change.problem])}</span> : null}
         </p>
       ))}
+      {blank.map((change) => (
+        <div key={change.path} className="flex min-w-0 items-center gap-2">
+          <StatusLetter status={change.status} />
+          <span className="font-mono text-foreground">{change.path}</span>
+          <span className="me-auto">{t('repo.changes.emptyFile')}</span>
+          {renderActions?.(change.path)}
+        </div>
+      ))}
     </div>
   ) : null;
+  if (!drawn.length) return <div className="min-h-0 flex-1 overflow-y-auto pt-3">{notes}</div>;
   return (
     <div className="min-h-0 flex-1 px-3 pt-3">
       <Suspense fallback={<ViewerSkeleton />}>
-        <CodeChanges files={files} renderActions={renderActions} header={notes} />
+        <CodeChanges files={drawn} renderActions={renderActions} header={notes} />
       </Suspense>
     </div>
   );

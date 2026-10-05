@@ -1801,6 +1801,7 @@ export const en = {
   'repo.changes.title.other': '{count} files changed since the last commit',
   'repo.changes.titleNone': 'Nothing changed since the last commit',
   'repo.changes.failed': 'Arbor can’t read the changes: {error}',
+  'repo.changes.emptyFile': 'An empty file',
   'repo.changes.open': 'Open',
   'repo.changes.discard': 'Discard',
   'repo.commit.suggest.edit': 'Edit {name}',
