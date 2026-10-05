@@ -169,7 +169,10 @@ function TodayStats({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
       else stop = unlisten;
     }).catch(() => undefined);
     // Roll the "today" window forward without waiting for a new record.
-    const timer = window.setInterval(() => void load(), 5 * 60_000);
+    const timer = window.setInterval(() => {
+      if (document.hidden) missed = true;
+      else void load();
+    }, 5 * 60_000);
     return () => {
       disposed = true;
       stop?.();

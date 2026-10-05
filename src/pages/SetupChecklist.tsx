@@ -217,7 +217,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   }, []);
   useEffect(() => {
     void loadHealth();
-    const timer = window.setInterval(() => void loadHealth(), HEALTH_POLL_MS);
+    const timer = window.setInterval(() => { if (!document.hidden) void loadHealth(); }, HEALTH_POLL_MS);
     return () => window.clearInterval(timer);
   }, [loadHealth]);
 
@@ -318,7 +318,11 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   const looking = machine !== null && !machine.reachable && health?.find((entry) => entry.machine === target)?.status !== 'unconfigured';
   useEffect(() => {
     if (!looking) return undefined;
-    const timer = window.setInterval(() => { onReload(); void loadHealth(); }, JOIN_POLL_MS);
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      onReload();
+      void loadHealth();
+    }, JOIN_POLL_MS);
     return () => window.clearInterval(timer);
   }, [looking, onReload, loadHealth]);
 

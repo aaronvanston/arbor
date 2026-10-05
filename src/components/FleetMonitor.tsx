@@ -3,6 +3,7 @@ import type { RunHarness } from '../native/types';
 import { listen } from '@tauri-apps/api/event';
 import { useAppPreferences } from '../appPreferences';
 import { loadFleetSources, recentSessionIds, useFleetBoard, waitingCount, workingByMachine } from '../services/fleetBoard';
+import { isWindowHidden, pacedInterval, throttleWaitMs } from '../services/hiddenPace';
 import { reportWorkingSessions } from '../services/pools';
 import { setT3ThreadsEnabled, setT3ThreadTitles, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
 import { runHarnessesOff, setRunHarnessesOff } from '../services/runs';
@@ -16,7 +17,7 @@ const CHECK_INTERVAL_MS = 15_000;
 /**
  * Headless: keeps the live board fresh for Sessions › Live and Home, and the number of sessions waiting on you beside
  * the tray icon, and each machine's working sessions for the pools. It keeps reading while the window is hidden, since
- * then the tray is all that shows. It tells the backend whether to read T3 Code's threads, which it does nothing about
+ * then the tray is all that shows, but once a minute (services/hiddenPace.ts), and at once when it shows. It tells the backend whether to read T3 Code's threads, which it does nothing about
  * until told.
  */
 export function FleetMonitor() {
@@ -35,7 +36,7 @@ export function FleetMonitor() {
       pending = window.setTimeout(() => {
         pending = undefined;
         void check();
-      }, Math.max(0, lastCheckMs + CHECK_THROTTLE_MS - Date.now()));
+      }, throttleWaitMs(lastCheckMs, Date.now(), CHECK_THROTTLE_MS, isWindowHidden()));
     };
     const check = async () => {
       if (disposed) return;
@@ -60,12 +61,20 @@ export function FleetMonitor() {
         })
         .catch(() => undefined);
     }
-    const timer = window.setInterval(schedule, CHECK_INTERVAL_MS);
+    // A read waiting out the hidden minute comes forward when the window shows.
+    const stopTimer = pacedInterval(schedule, CHECK_INTERVAL_MS, {
+      onChange: (hidden) => {
+        if (hidden || pending === undefined) return;
+        window.clearTimeout(pending);
+        pending = undefined;
+        schedule();
+      },
+    });
     return () => {
       disposed = true;
       checkRef.current = () => undefined;
       stops.forEach((stop) => stop());
-      window.clearInterval(timer);
+      stopTimer();
       if (pending !== undefined) window.clearTimeout(pending);
     };
   }, []);

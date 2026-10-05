@@ -509,6 +509,9 @@ async function hiddenJourney(browser: Browser, url: string, sources: BuildSource
   const loadedBefore = run.scripts.length;
   await moveWindow(run.page, 'closed');
   await advance(run.page, run.network, HIDDEN_MINUTES * 60_000, IDLE_STEP_MS);
+  // The minute's checks land on the last step, each through a timer due at once; let them finish before counting what's
+  // still live.
+  await advance(run.page, run.network, STEP_MS, STEP_MS);
   const step = summarize(sources, await snapshot(run.page), run.scripts.slice(loadedBefore), [...run.scripts]);
   const hidden = await domNodes(run.page);
   const rssHiddenMb = rssMb(before);

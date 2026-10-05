@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { invokeCommand } from './native/commands';
 import { listen } from '@tauri-apps/api/event';
 import type { CoreStatus } from './native/types';
+import { pacedInterval } from './services/hiddenPace';
 
 /** A live core that isn't answering on its port yet reads as starting, as does one the app is still launching. */
 export function isCoreStarting(status: CoreStatus) {
@@ -68,7 +69,8 @@ export function CoreRuntimeProvider({ children }: { children: ReactNode }) {
     });
 
     void refreshStatus();
-    const timer = window.setInterval(() => {
+    // Not read while hidden, so the timer needn't wake every ten seconds then either.
+    const stopTimer = pacedInterval(() => {
       if (!document.hidden) {
         void refreshStatus();
       }
@@ -77,7 +79,7 @@ export function CoreRuntimeProvider({ children }: { children: ReactNode }) {
     return () => {
       disposed = true;
       unlisten?.();
-      window.clearInterval(timer);
+      stopTimer();
     };
   }, [publishStatus, refreshStatus]);
 

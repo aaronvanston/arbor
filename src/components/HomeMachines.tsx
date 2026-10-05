@@ -69,23 +69,37 @@ export function useHomeMachines(): HomeMachine[] | null {
     let pending: number | undefined;
     void loadSessions();
     // The same pacing as Today's figures: new records reload at most every ten seconds, and the day rolls forward.
+    // Out of sight it waits until the window is back, rather than reading for nobody.
+    let missed = false;
+    const loadUnlessHidden = () => {
+      if (disposed) return;
+      if (document.hidden) missed = true;
+      else void loadSessions();
+    };
     const scheduleLoad = () => {
       if (pending !== undefined) return;
       pending = window.setTimeout(() => {
         pending = undefined;
-        if (!disposed && !document.hidden) void loadSessions();
+        loadUnlessHidden();
       }, 10_000);
     };
+    const loadWhenVisible = () => {
+      if (document.hidden || !missed) return;
+      missed = false;
+      void loadSessions();
+    };
+    document.addEventListener('visibilitychange', loadWhenVisible);
     void listen('usage-records-updated', scheduleLoad).then((unlisten) => {
       if (disposed) unlisten();
       else stop = unlisten;
     }).catch(() => undefined);
-    const timer = window.setInterval(() => void loadSessions(), 5 * 60_000);
+    const timer = window.setInterval(loadUnlessHidden, 5 * 60_000);
     return () => {
       disposed = true;
       stop?.();
       window.clearInterval(timer);
       if (pending !== undefined) window.clearTimeout(pending);
+      document.removeEventListener('visibilitychange', loadWhenVisible);
     };
   }, [loadSessions]);
 

@@ -49,7 +49,7 @@ export function CommandLineSettings() {
   useEffect(() => {
     if (!logOpen) return undefined;
     void load();
-    const timer = setInterval(() => void load(), LOG_REFRESH_MS);
+    const timer = setInterval(() => { if (!document.hidden) void load(); }, LOG_REFRESH_MS);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logOpen]);

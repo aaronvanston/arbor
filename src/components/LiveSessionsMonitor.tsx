@@ -7,6 +7,7 @@ import { useI18n } from '../i18n';
 import { compareFleetRows, fleetSessionName, useFleetBoard } from '../services/fleetBoard';
 import { liveTrayRows, setLiveSessions, useLiveSessions, type TrayWaitingSession } from '../services/liveSessions';
 import { machineNameIn, useMachineNames } from '../services/machineNames';
+import { isWindowHidden, pacedInterval, throttleWaitMs } from '../services/hiddenPace';
 import { publishTrayRows } from '../services/trayMenu';
 
 const USAGE_UPDATED_EVENT = 'usage-records-updated';
@@ -17,7 +18,7 @@ const CHECK_INTERVAL_MS = 30_000;
 
 /**
  * Headless: keeps the running sessions fresh for Home's board and the tray menu. While the window is hidden it only
- * checks when the tray shows them.
+ * checks when the tray shows them, and then once a minute (services/hiddenPace.ts).
  */
 export function LiveSessionsMonitor() {
   const { t } = useI18n();
@@ -39,7 +40,7 @@ export function LiveSessionsMonitor() {
       pending = window.setTimeout(() => {
         pending = undefined;
         void check();
-      }, Math.max(0, lastCheckMs + CHECK_THROTTLE_MS - Date.now()));
+      }, throttleWaitMs(lastCheckMs, Date.now(), CHECK_THROTTLE_MS, isWindowHidden()));
     };
     const check = async () => {
       if (disposed || (document.hidden && !trayRef.current)) return;
@@ -65,17 +66,20 @@ export function LiveSessionsMonitor() {
         else stop = unlisten;
       })
       .catch(() => undefined);
-    const timer = window.setInterval(schedule, CHECK_INTERVAL_MS);
-    const checkWhenVisible = () => {
-      if (!document.hidden) schedule();
-    };
-    document.addEventListener('visibilitychange', checkWhenVisible);
+    // Shown again, it checks without waiting out the hidden minute.
+    const stopTimer = pacedInterval(schedule, CHECK_INTERVAL_MS, {
+      onChange: (hidden) => {
+        if (hidden) return;
+        if (pending !== undefined) window.clearTimeout(pending);
+        pending = undefined;
+        schedule();
+      },
+    });
     return () => {
       disposed = true;
       stop?.();
-      window.clearInterval(timer);
+      stopTimer();
       if (pending !== undefined) window.clearTimeout(pending);
-      document.removeEventListener('visibilitychange', checkWhenVisible);
     };
   }, []);
 

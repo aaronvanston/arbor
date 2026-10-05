@@ -11,6 +11,7 @@ import {
   type MachineAlertState,
 } from '../services/machineAlerts';
 import { fetchMachineHealth } from '../services/machineHealth';
+import { isWindowHidden, pacedInterval, pacedMs } from '../services/hiddenPace';
 import { notify } from '../services/notify';
 
 const STATE_KEY = 'arbor.machine-alerts.v1';
@@ -19,7 +20,7 @@ const HEALTH_UPDATED_EVENT = 'machine-health-updated';
 const CHECK_THROTTLE_MS = 30_000;
 /** In case a round's event is missed. */
 const CHECK_INTERVAL_MS = 2 * 60_000;
-/** How often the time is noted, to tell when this Mac has slept. */
+/** How often the time is noted, to tell when this Mac has slept: a minute apart while the window is hidden. */
 const WAKE_TICK_MS = 10_000;
 
 const readState = (): MachineAlertState => {
@@ -74,9 +75,10 @@ export function MachineMonitor() {
         schedule();
       }, SETTLE_AFTER_RESUME_MS);
     };
+    let tickMs = pacedMs(WAKE_TICK_MS, isWindowHidden());
     const tick = () => {
       const now = Date.now();
-      if (sleptBetween(lastTickMs, now, WAKE_TICK_MS)) resume(now);
+      if (sleptBetween(lastTickMs, now, tickMs)) resume(now);
       lastTickMs = now;
     };
     const schedule = () => {
@@ -123,7 +125,13 @@ export function MachineMonitor() {
     resume(resumedAtMs);
     void check();
     const timer = window.setInterval(() => void check(), CHECK_INTERVAL_MS);
-    const wakeTimer = window.setInterval(tick, WAKE_TICK_MS);
+    // The gap so far is judged by the pace it was ticking at, before the pace changes.
+    const stopWakeTimer = pacedInterval(tick, WAKE_TICK_MS, {
+      onChange: (hidden) => {
+        tick();
+        tickMs = pacedMs(WAKE_TICK_MS, hidden);
+      },
+    });
     const online = () => resume(Date.now());
     window.addEventListener('online', online);
     let stop: (() => void) | undefined;
@@ -137,7 +145,7 @@ export function MachineMonitor() {
       disposed = true;
       stop?.();
       window.clearInterval(timer);
-      window.clearInterval(wakeTimer);
+      stopWakeTimer();
       window.removeEventListener('online', online);
       if (pending !== undefined) window.clearTimeout(pending);
       if (settled !== undefined) window.clearTimeout(settled);

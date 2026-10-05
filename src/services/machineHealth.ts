@@ -1,5 +1,6 @@
 import { invokeCommand } from '../native/commands';
 import type { AgentKind, HealthPoint, MachineHealthSnapshot, MachineHost } from '../native/types';
+import { isWindowHidden } from './hiddenPace';
 import { tracked } from './productAnalytics';
 
 export const AGENT_KINDS: readonly AgentKind[] = ['claude', 'codex'];
@@ -11,9 +12,12 @@ export const HEALTH_WINDOWS = [
 ] as const;
 export type HealthWindowId = (typeof HEALTH_WINDOWS)[number]['id'];
 
-/** A passive read doesn't count as watching, so it leaves the sampler on its background interval. */
+/**
+ * A passive read doesn't count as watching, so it leaves the sampler on its background interval. Nobody watches a
+ * hidden window, so a page left open in one reads passively too, and doesn't hold the fleet on the fast interval.
+ */
 export const fetchMachineHealth = (since: number | null, windowMs: number, passive = false) =>
-  invokeCommand('get_machine_health', { since, windowMs, passive });
+  invokeCommand('get_machine_health', { since, windowMs, passive: passive || isWindowHidden() });
 
 export const fetchMachineHosts = () => invokeCommand('get_machine_hosts');
 const hostsSaved = new Set<() => void>();

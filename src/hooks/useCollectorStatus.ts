@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import type { UsageCollectorStatus } from '../native/types';
+import { pacedInterval } from '../services/hiddenPace';
 
 /**
  * The usage collector's status, read every `refreshMs` while the window is visible. It's a cheap read
@@ -26,12 +27,12 @@ export function useCollectorStatus(refreshMs: number) {
       setCheckedAt(Date.now());
     };
     void refresh();
-    const timer = window.setInterval(() => {
+    const stopTimer = pacedInterval(() => {
       if (!document.hidden) void refresh();
     }, refreshMs);
     return () => {
       canceled = true;
-      window.clearInterval(timer);
+      stopTimer();
     };
   }, [refreshMs]);
 
