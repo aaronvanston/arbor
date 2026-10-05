@@ -115,6 +115,8 @@ const SEARCH_DELAY_MS = 250;
 const RANGE_KEY = 'arbor.usage-records-range.v1';
 const emptyAnalysis: UsageAnalysis = { models: [], providers: [], sources: [], accounts: [], apiKeys: [] };
 const OPTIONS_KEPT_MS = 60_000;
+/** How soon Projects reads again while GitHub is being asked about its pull requests. */
+const GITHUB_RECHECK_MS = 3_000;
 
 const loadTab = (): SavedUsageView => {
   try {
@@ -583,6 +585,15 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [loadData]);
+
+  // A check with GitHub finishes without announcing itself, so while one runs Projects reads again every few seconds
+  // rather than leaving "Checking…" up until the minute's refresh.
+  const githubChecking = activeTab === 'projects' && Boolean(projects?.github.checking);
+  useEffect(() => {
+    if (!githubChecking) return undefined;
+    const recheck = window.setTimeout(() => void loadData(true), GITHUB_RECHECK_MS);
+    return () => window.clearTimeout(recheck);
+  }, [githubChecking, projects, loadData]);
 
   const filters: UsageFilters = { machine, session, project, branch, client, pullRequests, model, provider, source, apiKeyHash, result };
   // The filters this page and tab have, in the Filters popover and as chips when they're set.
