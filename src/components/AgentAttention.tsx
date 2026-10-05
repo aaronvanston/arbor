@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ArrowUpRight } from './ui/icons';
 import { useI18n } from '../i18n';
 import { liveBoardView, sessionsView, type AppView } from '../navigation';
@@ -5,6 +6,9 @@ import { needsYouRows, needsYouSummary, useFleetBoard } from '../services/fleetB
 import { FleetRow } from './FleetBoard';
 import { SettingsBlock, SettingsSection } from './layout/settings';
 import { Button } from './ui/button';
+import { useEffect } from 'react';
+import { launchHomeShape, needsYouLikely, rememberHomeShape } from '../boot/bootState';
+import { NeedsYouSkeleton, NeedsYouSummarySkeleton } from './homeSkeletons';
 
 /**
  * Home's short list of the sessions that need you, from the live board: asking for approval or an answer, failed, or
@@ -15,19 +19,20 @@ export function NeedsYouSection({ onNavigate }: { onNavigate?: (view: AppView) =
   const { t } = useI18n();
   const { board, now } = useFleetBoard();
   const { rows, more } = board ? needsYouRows(board, now) : { rows: [], more: 0 };
-  if (!board || !rows.length) return null;
+  // The next launch's first screen draws as many rows, while they're still likely to be there (counts and a minute).
+  const minute = Math.floor(now / 60_000);
+  useEffect(() => {
+    if (board) rememberHomeShape({ needsYou: { rows: rows.length, more: more > 0, at: minute * 60_000 } });
+  }, [board, rows.length, more, minute]);
+  if (!board) {
+    // Until the board is read: the rows the first screen drew, if it drew any, so the sections under them stay put.
+    const shape = launchHomeShape().needsYou;
+    return needsYouLikely(shape, now) ? <NeedsYouFrame onNavigate={onNavigate} summary={<NeedsYouSummarySkeleton />}><NeedsYouSkeleton rows={shape.rows} more={shape.more} /></NeedsYouFrame> : null;
+  }
+  if (!rows.length) return null;
   const openSession = onNavigate ? (id: string) => onNavigate(sessionsView({ session: id })) : undefined;
   return (
-    <SettingsSection
-      title={t('home.attention.title')}
-      summary={`${needsYouSummary(rows, t)} · ${t('home.attention.window')}`}
-      headerAction={onNavigate ? (
-        <Button variant="ghost-muted" size="sm" onClick={() => onNavigate(liveBoardView())}>
-          {t('home.attention.open')}
-          <ArrowUpRight />
-        </Button>
-      ) : undefined}
-    >
+    <NeedsYouFrame onNavigate={onNavigate} summary={`${needsYouSummary(rows, t)} · ${t('home.attention.window')}`}>
       {rows.map((row) => <FleetRow key={row.key} row={row} now={now} place onOpen={openSession} />)}
       {more > 0 ? (
         <SettingsBlock className="py-2 text-xs text-muted-foreground">
@@ -39,6 +44,25 @@ export function NeedsYouSection({ onNavigate }: { onNavigate?: (view: AppView) =
           ) : t(more === 1 ? 'home.attention.more.one' : 'home.attention.more.other', { count: more })}
         </SettingsBlock>
       ) : null}
+    </NeedsYouFrame>
+  );
+}
+
+/** The section around Needs you's rows, or its skeleton's: the title, its line of counts, and Open board. */
+export function NeedsYouFrame({ onNavigate, summary, children }: { onNavigate?: (view: AppView) => void; summary: ReactNode; children: ReactNode }) {
+  const { t } = useI18n();
+  return (
+    <SettingsSection
+      title={t('home.attention.title')}
+      summary={summary}
+      headerAction={onNavigate ? (
+        <Button variant="ghost-muted" size="sm" onClick={() => onNavigate(liveBoardView())}>
+          {t('home.attention.open')}
+          <ArrowUpRight />
+        </Button>
+      ) : undefined}
+    >
+      {children}
     </SettingsSection>
   );
 }

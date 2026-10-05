@@ -23,7 +23,8 @@ import { LimitSparkline } from './LimitSparkline';
 import { WithShortcut } from './ShortcutKbd';
 import { Button } from './ui/button';
 import { RefreshIcon } from './ui/refresh-icon';
-import { Skeleton } from './ui/skeleton';
+import { AccountsSkeleton } from './homeSkeletons';
+import { launchHomeShape, rememberHomeShape } from '../boot/bootState';
 import { Tooltip, TooltipPopup, TooltipTrigger } from './ui/tooltip';
 import { ProviderMark } from './identity/Identity';
 
@@ -41,7 +42,11 @@ const unknownBar = 'bg-[repeating-linear-gradient(-45deg,var(--color-muted-foreg
  * The first half of what Arbor does: every signed-in account, pooled by provider, with what's left of each one's
  * limit, so a glance says which accounts the proxy is leaning on and which have run low.
  */
-export const HomeAccounts = memo(function HomeAccounts({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+export const HomeAccounts = memo(function HomeAccounts({ onNavigate, waiting = false }: {
+  onNavigate?: (view: AppView) => void;
+  /** While Home doesn't know yet whether the core is running: the section stands ready, laid out, without asking it. */
+  waiting?: boolean;
+}) {
   const { t } = useI18n();
   const store = useAccountsStore();
   const { files, loading, refreshing, error } = store;
@@ -53,12 +58,17 @@ export const HomeAccounts = memo(function HomeAccounts({ onNavigate }: { onNavig
   const { paused } = useAccountReserves();
 
   useEffect(() => {
-    void ensureAccountsLoaded();
-  }, []);
+    if (!waiting) void ensureAccountsLoaded();
+  }, [waiting]);
 
   const limits = useMemo(() => providerLimits(files, quotas, profiles, prefs, now, order), [files, quotas, profiles, prefs, now, order]);
   const filesByKey = useMemo(() => new Map(files.map((file) => [quotaKey(file), file])), [files]);
-  const gap = accountsGap(store);
+  const gap = waiting ? 'loading' : accountsGap(store);
+  // The next launch's first screen draws as many rows as this has (counts only).
+  useEffect(() => {
+    if (gap || !limits.length) return;
+    rememberHomeShape({ providers: limits.map((limit) => homeAccounts(limit, now, filesByKey).length + Object.values(paused).filter((item) => item.provider === limit.provider).length) });
+  }, [gap, limits, now, filesByKey, paused]);
   const refresh = () => void refreshAccountQuotas(getAccountsSnapshot().files);
 
   return (
@@ -83,16 +93,7 @@ export const HomeAccounts = memo(function HomeAccounts({ onNavigate }: { onNavig
       }
     >
       {gap === 'loading' ? (
-        Array.from({ length: 2 }, (_, index) => (
-          <SettingsBlock key={index} className="flex flex-col gap-3" aria-hidden="true">
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-md" />
-              <Skeleton className="h-3.5 w-24" />
-              <Skeleton className="ms-auto h-6 w-14" />
-            </div>
-            <Skeleton className="h-2 w-full" />
-          </SettingsBlock>
-        ))
+        <AccountsSkeleton providers={launchHomeShape().providers} />
       ) : gap ? (
         <AccountsEmpty
           gap={gap}

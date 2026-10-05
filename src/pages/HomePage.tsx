@@ -10,7 +10,7 @@ import { IdleUpdateNotice } from '../components/UpdateWhenIdle';
 
 export function HomePage({ onNavigate, onAddMachine }: { onNavigate?: (view: AppView) => void; onAddMachine?: () => void }) {
   const { t } = useI18n();
-  const { status: coreStatus } = useCoreRuntime();
+  const { status: coreStatus, statusError } = useCoreRuntime();
 
   return (
     <Page width="main">
@@ -23,7 +23,7 @@ export function HomePage({ onNavigate, onAddMachine }: { onNavigate?: (view: App
         <HeavySessionBanner onOpenSession={onNavigate ? (id) => onNavigate(sessionsView({ session: id })) : undefined} />
         {/* Outside the dashboard: a restart that failed on its own can leave the core down. */}
         <IdleUpdateNotice />
-        <HomeDashboard coreReady={Boolean(coreStatus?.ready)} onNavigate={onNavigate} onAddMachine={onAddMachine} />
+        <HomeDashboard coreReady={Boolean(coreStatus?.ready)} coreChecking={coreStatus === null && !statusError} onNavigate={onNavigate} onAddMachine={onAddMachine} />
       </PageBody>
     </Page>
   );

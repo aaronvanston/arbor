@@ -1,14 +1,17 @@
 import type { CSSProperties } from 'react';
 import { en, type MessageKey } from '../i18n/resources';
+import { I18nProvider, useI18n } from '../i18n';
+import { AccountsSkeleton, MACHINES_GRID_CLASS, MachinesSkeleton, NeedsYouSkeleton, NeedsYouSummarySkeleton, ProxySkeleton, TODAY_CARD_CLASS, TodaySkeleton } from '../components/homeSkeletons';
+import { RefreshIcon } from '../components/ui/refresh-icon';
+import { Button, buttonVariants } from '../components/ui/button';
+import { DEFAULT_HOME_SHAPE } from './bootState';
 import { cn } from '../lib/utils';
-import { PAGE_ICONS, FOOTER_UTILITIES_CLASS, TOGGLE_BUTTON_CLASS, TOGGLE_INK_CLASS, TOGGLE_SHOWN_CLASS, HEADER_ICON_BUTTON, MAIN_CLASS, ROW_CLASS, ROW_ICON_CLASS, SEARCH_GROUP_CLASS, SEARCH_KBD_CLASS, SEARCH_ROW_CLASS, SHELL_CLASS, SIDEBAR_ART_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, SIDEBAR_HEADER_CLASS, TOGGLE_SLOT_CLASS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass, UTILITY_BUTTON, WORDMARK_CLASS } from '../components/sidebar/shellParts';
-import { buttonVariants } from '../components/ui/button';
-import { ChevronRight, Lock, MonitorPlus, PanelLeft, PanelLeftClose, Search, Server, Settings, Bell, UserPlus } from '../components/ui/icons';
+import { PAGE_ICONS, FOOTER_UTILITIES_CLASS, LEAF_CLASS, TREE_LEAVES_CLASS, TOGGLE_BUTTON_CLASS, TOGGLE_INK_CLASS, TOGGLE_SHOWN_CLASS, HEADER_ICON_BUTTON, MAIN_CLASS, ROW_CLASS, ROW_ICON_CLASS, SEARCH_GROUP_CLASS, SEARCH_KBD_CLASS, SEARCH_ROW_CLASS, SHELL_CLASS, SIDEBAR_ART_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, SIDEBAR_HEADER_CLASS, TOGGLE_SLOT_CLASS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass, UTILITY_BUTTON, WORDMARK_CLASS } from '../components/sidebar/shellParts';
+import { ArrowUpRight, ChevronRight, Lock, Play, MonitorPlus, PanelLeft, PanelLeftClose, Search, Server, Settings, Bell, UserPlus } from '../components/ui/icons';
 import { Kbd } from '../components/ui/kbd';
-import { Skeleton } from '../components/ui/skeleton';
-import { SECTION_CARD, SECTION_HEADER } from '../components/layout/settings';
+import { SettingsSection } from '../components/layout/settings';
 import { accountSignInsView, canOpenView, mainView } from '../navigation';
-import { SIDEBAR_TREE } from '../services/sidebarTree';
+import { leafView, SIDEBAR_TREE } from '../services/sidebarTree';
 import { formatKeys, SHORTCUTS } from '../services/shortcuts';
 
 /**
@@ -20,6 +23,10 @@ import { formatKeys, SHORTCUTS } from '../services/shortcuts';
  * `[data-boot-art]`. Rendered on the build machine: nothing here may read the window, a store or a Tauri API.
  */
 export function BootShell() {
+  return <I18nProvider><BootFrame /></I18nProvider>;
+}
+
+function BootFrame() {
   const t = (key: MessageKey) => en[key];
   const paletteKeys = SHORTCUTS.find((shortcut) => shortcut.id === 'palette.toggle')?.keys ?? 'mod+k';
   return (
@@ -70,8 +77,24 @@ export function BootShell() {
                           <span className="min-w-0 flex-1 truncate">{t(page.labelKey)}</span>
                           {locked ? <Lock aria-hidden="true" className="size-3 shrink-0 text-[var(--sidebar-icon-color)]" /> : null}
                         </span>
-                        {expandable ? <span className={TREE_CHEVRON_CLASS}><ChevronRight aria-hidden="true" className="size-3.5" /></span> : null}
+                        {expandable ? <span className={TREE_CHEVRON_CLASS}><ChevronRight aria-hidden="true" className="size-3.5 transition-transform duration-150" data-boot-chevron={page.id} /></span> : null}
                       </div>
+                      {/* Its views, for a group left open: index.html's script shows the ones React's first frame will. */}
+                      {expandable ? (
+                        <ul className={TREE_LEAVES_CLASS} data-boot-leaves={page.id} hidden>
+                          {page.leaves.map((leaf) => {
+                            const leafLocked = !canOpenView(leafView(leaf), false);
+                            return (
+                              <li key={leaf.tab}>
+                                <span className={cn(LEAF_CLASS, 'pr-2.5')} data-active={false} aria-disabled={leafLocked || undefined}>
+                                  <span className="min-w-0 flex-1 truncate">{t(leaf.labelKey)}</span>
+                                  {leafLocked ? <Lock aria-hidden="true" className="size-3 shrink-0 text-[var(--sidebar-icon-color)]" /> : null}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -95,10 +118,14 @@ export function BootShell() {
 }
 
 /**
- * Home's frame: its top bar and the column its sections sit in, from the real Page parts' classes, with each section
- * a header line over an empty card. Quiet on purpose: no shimmer, as it's on screen for a fraction of a second.
+ * Home as it first draws while it waits for the core: each section under its own header and actions, the real
+ * SettingsSection, over the skeletons Home itself shows (components/homeSkeletons.tsx), as many rows as the last
+ * launch had. index.html's script fits the counts to the saved shape; the defaults stand in until then.
  */
 function BootHome({ title }: { title: string }) {
+  const { t } = useI18n();
+  const open = (label: MessageKey) => <Button variant="ghost-muted" size="sm">{t(label)}<ArrowUpRight /></Button>;
+  const refresh = (label: MessageKey) => <Button variant="ghost-muted" size="icon-sm" disabled focusableWhenDisabled aria-label={t(label)}><RefreshIcon /></Button>;
   return (
     <div className="flex h-full min-h-0 flex-col" style={{ '--page-width': '87.5rem' } as CSSProperties} data-slot="page" data-width="main">
       <header className="flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-3 pr-[max(1.25rem,calc((100%_-_var(--page-width))/2_+_1.25rem))] pl-[max(var(--topbar-start,1.25rem),calc((100%_-_var(--page-width))/2_+_1.25rem))]" data-boot-box="topbar">
@@ -108,24 +135,49 @@ function BootHome({ title }: { title: string }) {
           </h1>
         </div>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-y-auto" data-slot="page-scroll">
         <div className="mx-auto flex w-full max-w-(--page-width) flex-col gap-8 px-5 pt-4 pb-12" data-boot-box="body">
-          {[3, 2].map((rows, index) => (
-            <section key={index} className="space-y-2.5">
-              <div className={SECTION_HEADER}><div className="flex min-h-7 items-center"><Skeleton className="h-3 w-24 motion-safe:animate-none" /></div></div>
-              <div className={SECTION_CARD}>
-                {Array.from({ length: rows }, (_, row) => (
-                  <div key={row} className="flex items-center gap-3 px-4 py-3.5">
-                    <Skeleton className="size-8 rounded-lg motion-safe:animate-none" />
-                    <div className="flex flex-1 flex-col gap-2">
-                      <Skeleton className="h-3 w-40 motion-safe:animate-none" />
-                      <Skeleton className="h-2.5 w-64 motion-safe:animate-none" />
-                    </div>
-                  </div>
-                ))}
+          {/* Hidden unless it listed rows within its window last time; the script then shows it with that many. */}
+          <div className="contents" data-boot-attention hidden>
+            <SettingsSection title={t('home.attention.title')} summary={<NeedsYouSummarySkeleton />} headerAction={open('home.attention.open')}>
+              <NeedsYouSkeleton rows={1} more />
+            </SettingsSection>
+          </div>
+          <SettingsSection
+            title={t('home.accounts.title')}
+            description={t('home.accounts.description')}
+            headerAction={<div className="flex items-center gap-1">{refresh('home.limits.refresh')}{open('home.limits.open')}</div>}
+          >
+            <AccountsSkeleton providers={DEFAULT_HOME_SHAPE.providers} />
+          </SettingsSection>
+          <SettingsSection
+            title={t('home.machines.title')}
+            description={t('home.machines.description')}
+            headerAction={open('home.machines.open')}
+            contentClassName={MACHINES_GRID_CLASS}
+          >
+            <MachinesSkeleton count={DEFAULT_HOME_SHAPE.machines} />
+          </SettingsSection>
+          <SettingsSection
+            title={t('home.stats.title')}
+            description={t('home.stats.description')}
+            headerAction={open('home.stats.openUsage')}
+            contentClassName={TODAY_CARD_CLASS}
+          >
+            <TodaySkeleton />
+          </SettingsSection>
+          <SettingsSection
+            title={t('home.proxy.title')}
+            description={t('home.proxy.description')}
+            headerAction={(
+              <div className="flex items-center gap-1.5">
+                {refresh('kernel.control.refresh')}
+                <Button size="sm" disabled><Play />{t('kernel.control.start')}</Button>
               </div>
-            </section>
-          ))}
+            )}
+          >
+            <ProxySkeleton />
+          </SettingsSection>
         </div>
       </div>
     </div>

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BootShell } from '../src/boot/BootShell';
-import { BOOT_KEY, readBootState } from '../src/boot/bootState';
+import { BOOT_KEY, DEFAULT_HOME_SHAPE, NEEDS_YOU_RECENT_MS, needsYouLikely, readBootState } from '../src/boot/bootState';
+import { NEEDS_YOU_WINDOW_MS } from '../src/services/fleetBoard';
+import { AccountsSkeleton } from '../src/components/homeSkeletons';
 import { PageBreadcrumb, PageTopbar } from '../src/components/layout/page';
 import { SidebarToggle } from '../src/components/SidebarControls';
 import { SidebarHeader, SidebarRow, SidebarSearchGroup, SidebarSearchRow } from '../src/components/sidebar/SidebarChrome';
@@ -85,14 +87,14 @@ describe("index.html's static first screen", () => {
 
 describe("the first screen's scripts", () => {
   it('read only look preferences from the window’s storage', () => {
-    const allowed = new Set(['arbor.theme', 'easy-cli-proxy-api.theme', 'arbor.preferences.v1', 'cpa-gui.preferences.v1', 'arbor.sidebar.v1', 'BOOT_KEY']);
+    const allowed = new Set(['arbor.theme', 'easy-cli-proxy-api.theme', 'arbor.preferences.v1', 'cpa-gui.preferences.v1', 'arbor.sidebar.v1', 'arbor.sidebar.tree.v1', 'BOOT_KEY']);
     // bootPaint.ts's `read(key, legacy)` helper is the one place a key arrives as a variable.
     const helper = new Set(['key', 'legacy']);
     for (const file of ['src/boot/bootHead.ts', 'src/boot/bootPaint.ts']) {
       const text = source(file);
       expect(text).not.toMatch(/localStorage\.(setItem|removeItem|key|clear)\b|sessionStorage|document\.cookie|indexedDB/);
       const reads = [...text.matchAll(/localStorage\.getItem\(\s*'?([\w.-]+)'?/g)].map((match) => match[1] ?? '');
-      const helperReads = [...text.matchAll(/\bread\(\s*'([\w.-]+)'(?:,\s*'([\w.-]+)')?/g)].flatMap((match) => [match[1], match[2]]).filter((key): key is string => Boolean(key));
+      const helperReads = [...text.matchAll(/\bread\(\s*'?([\w.-]+)'?(?:,\s*'([\w.-]+)')?/g)].flatMap((match) => [match[1], match[2]]).filter((key): key is string => Boolean(key));
       expect(reads.length + helperReads.length).toBeGreaterThan(0);
       for (const key of reads) expect(allowed.has(key) || helper.has(key)).toBe(true);
       for (const key of helperReads) expect(allowed.has(key)).toBe(true);
@@ -101,9 +103,39 @@ describe("the first screen's scripts", () => {
 
   it('keep the zoom only within the View menu’s range', () => {
     expect(BOOT_KEY).toBe('arbor.boot.v1');
-    expect(readBootState(null)).toEqual({ zoom: 1 });
-    expect(readBootState('{"zoom":1.2}')).toEqual({ zoom: 1.2 });
-    expect(readBootState('{"zoom":9}')).toEqual({ zoom: 1 });
-    expect(readBootState('not json')).toEqual({ zoom: 1 });
+    expect(readBootState(null).zoom).toBe(1);
+    expect(readBootState('{"zoom":1.2}').zoom).toBe(1.2);
+    expect(readBootState('{"zoom":9}').zoom).toBe(1);
+    expect(readBootState('not json').zoom).toBe(1);
+  });
+
+  it('keep Home’s shape as counts within bounds, and the defaults for anything else', () => {
+    expect(readBootState(null).home).toEqual(DEFAULT_HOME_SHAPE);
+    expect(readBootState('{"home":{"providers":[1,3],"machines":5}}').home).toMatchObject({ providers: [1, 3], machines: 5 });
+    expect(readBootState('{"home":{"providers":[40,2,2,2,2,2,2,2],"machines":99}}').home).toMatchObject({ providers: [8, 2, 2, 2, 2, 2], machines: 9 });
+    // Names or anything that isn't a count are dropped; no machines still keeps one card's room.
+    expect(readBootState('{"home":{"providers":["casey",0,-1],"machines":0,"needsYou":{"rows":"x"}}}').home)
+      .toEqual({ providers: DEFAULT_HOME_SHAPE.providers, machines: 1, needsYou: { rows: 0, more: false, at: 0 } });
+  });
+
+  it('draw Needs you only while the rows it last listed are still inside its window', () => {
+    expect(NEEDS_YOU_RECENT_MS).toBe(NEEDS_YOU_WINDOW_MS);
+    const at = 1_000_000_000;
+    expect(needsYouLikely({ rows: 3, more: false, at }, at + 60_000)).toBe(true);
+    expect(needsYouLikely({ rows: 3, more: false, at }, at + NEEDS_YOU_WINDOW_MS)).toBe(false);
+    expect(needsYouLikely({ rows: 0, more: false, at }, at)).toBe(false);
+  });
+});
+
+describe('Home while it waits', () => {
+  it('draws the same skeletons in the first screen as Home does, under the same section headers', () => {
+    for (const key of ['home.accounts.title', 'home.machines.title', 'home.stats.title', 'home.proxy.title'] as const) {
+      expect(boot).toContain(`${en[key]}<button`);
+    }
+    expect(boot.match(/data-boot-provider/g)?.length).toBe(DEFAULT_HOME_SHAPE.providers.length);
+    expect(boot.match(/data-boot-account/g)?.length).toBe(DEFAULT_HOME_SHAPE.providers.reduce((sum, count) => sum + count, 0));
+    expect(boot.match(/data-boot-machine/g)?.length).toBe(DEFAULT_HOME_SHAPE.machines);
+    const real = render(<AccountsSkeleton providers={DEFAULT_HOME_SHAPE.providers} />);
+    expect(boot).toContain(real);
   });
 });

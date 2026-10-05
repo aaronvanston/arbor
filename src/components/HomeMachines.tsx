@@ -19,7 +19,8 @@ import { FirstMachineActions } from './FirstMachineActions';
 import { SettingsBlock, SettingsSection } from './layout/settings';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { Skeleton } from './ui/skeleton';
+import { MACHINES_GRID_CLASS, MachinesSkeleton } from './homeSkeletons';
+import { launchHomeShape, rememberHomeShape } from '../boot/bootState';
 import { StatusDot, type StatusTone } from './ui/status-dot';
 
 const STATUS_TONE: Record<HealthStatus, StatusTone> = {
@@ -118,6 +119,10 @@ export function useHomeMachines(): HomeMachine[] | null {
  */
 export const HomeMachines = memo(function HomeMachines({ machines, onNavigate }: { machines: HomeMachine[] | null; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
+  // The next launch's first screen draws as many cards (a count only).
+  useEffect(() => {
+    if (machines) rememberHomeShape({ machines: machines.length });
+  }, [machines]);
   return (
     <SettingsSection
       title={t('home.machines.title')}
@@ -128,16 +133,10 @@ export const HomeMachines = memo(function HomeMachines({ machines, onNavigate }:
           <ArrowUpRight />
         </Button>
       ) : undefined}
-      contentClassName="grid gap-3 overflow-visible rounded-none border-0 bg-transparent shadow-none sm:grid-cols-2 xl:grid-cols-3 dark:bg-transparent [&>*+*]:border-t-0"
+      contentClassName={MACHINES_GRID_CLASS}
     >
       {machines === null
-        ? Array.from({ length: 3 }, (_, index) => (
-          <div key={index} className="space-y-3 rounded-2xl border border-border/70 bg-card p-4 shadow-xs/5" aria-hidden="true">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-3 w-40" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        ))
+        ? <MachinesSkeleton count={launchHomeShape().machines} />
         : machines.length === 0 ? (
           <SettingsBlock className="col-span-full flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/70 py-6 text-center">
             <span>

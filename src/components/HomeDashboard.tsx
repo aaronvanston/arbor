@@ -19,7 +19,7 @@ import { HomeProxy } from './HomeProxy';
 import { ConnectAgentDialog } from './ConnectAgentDialog';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
-import { Skeleton } from './ui/skeleton';
+import { TODAY_CARD_CLASS, TodaySkeleton } from './homeSkeletons';
 
 type TodayOverview = {
   totalRequests: number;
@@ -39,8 +39,13 @@ type TodayOverview = {
  * last. Until the core is ready the accounts, machines and today wait, and the proxy card is where it's started. With
  * no account signed in yet, the two steps that set Arbor up take the accounts' place.
  */
-export function HomeDashboard({ coreReady, onNavigate, onAddMachine }: {
+export function HomeDashboard({ coreReady, coreChecking = false, onNavigate, onAddMachine }: {
   coreReady: boolean;
+  /**
+   * The core's state isn't known yet, as for the first moments after launch: the accounts, machines and today stand
+   * ready as skeletons, as index.html's first screen draws them, rather than appearing only once it answers.
+   */
+  coreChecking?: boolean;
   onNavigate?: (view: AppView) => void;
   onAddMachine?: () => void;
 }) {
@@ -52,12 +57,19 @@ export function HomeDashboard({ coreReady, onNavigate, onAddMachine }: {
   useEffect(() => {
     if (coreReady) void ensureAccountsLoaded();
   }, [coreReady]);
+  const waiting = coreChecking && !coreReady;
   const firstRun = accountsGap(store) === 'none';
   return (
     <>
       {/* The board reads the machines, not the core: an agent can be waiting on you while the proxy is down. */}
       <NeedsYouSection onNavigate={onNavigate} />
-      {coreReady ? (
+      {waiting ? (
+        <>
+          <HomeAccounts onNavigate={onNavigate} waiting />
+          <HomeMachines machines={machines} onNavigate={onNavigate} />
+          <TodayStats onNavigate={onNavigate} waiting />
+        </>
+      ) : coreReady ? (
         <>
           {firstRun ? <GetStarted onNavigate={onNavigate} onAddMachine={onAddMachine} /> : <HomeAccounts onNavigate={onNavigate} />}
           <HomeMachines machines={machines} onNavigate={onNavigate} />
@@ -131,7 +143,7 @@ function StartStep({ icon, title, description, action }: { icon: ReactNode; titl
   );
 }
 
-const TodayStats = memo(function TodayStats({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+const TodayStats = memo(function TodayStats({ onNavigate, waiting = false }: { onNavigate?: (view: AppView) => void; waiting?: boolean }) {
   const { t } = useI18n();
   const [overview, setOverview] = useState<TodayOverview | null>(null);
   const [error, setError] = useState('');
@@ -148,6 +160,7 @@ const TodayStats = memo(function TodayStats({ onNavigate }: { onNavigate?: (view
   }, []);
 
   useEffect(() => {
+    if (waiting) return undefined;
     let disposed = false;
     let stop: (() => void) | null = null;
     let pending: number | undefined;
@@ -186,7 +199,7 @@ const TodayStats = memo(function TodayStats({ onNavigate }: { onNavigate?: (view
       if (pending !== undefined) window.clearTimeout(pending);
       document.removeEventListener('visibilitychange', loadWhenVisible);
     };
-  }, [load]);
+  }, [load, waiting]);
 
   const openUsage = () => onNavigate?.(usageView({ tab: 'overview' }));
   const openFailed = () => onNavigate?.(failedRequestsView());
@@ -205,13 +218,13 @@ const TodayStats = memo(function TodayStats({ onNavigate }: { onNavigate?: (view
           <ArrowUpRight />
         </Button>
       ) : undefined}
-      contentClassName="border-0 bg-transparent shadow-none dark:bg-transparent [&>*+*]:border-t-0"
+      contentClassName={TODAY_CARD_CLASS}
     >
       {error ? (
         <Alert variant="error" icon={<TriangleAlert />}>
           <AlertDescription>{t('home.stats.unavailable', { error })}</AlertDescription>
         </Alert>
-      ) : overview ? (
+      ) : overview && !waiting ? (
         <StatsGrid columns={4}>
           <StatBlock
             label={t('home.stats.requests')}
@@ -241,15 +254,7 @@ const TodayStats = memo(function TodayStats({ onNavigate }: { onNavigate?: (view
           />
         </StatsGrid>
       ) : (
-        <StatsGrid columns={4}>
-          {Array.from({ length: 4 }, (_, index) => (
-            <div key={index} className="space-y-2 px-4 py-3" aria-hidden="true">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-5 w-20" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-          ))}
-        </StatsGrid>
+        <TodaySkeleton />
       )}
     </SettingsSection>
   );

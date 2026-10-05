@@ -1,4 +1,6 @@
 import { appColorChoice } from '../services/appColor';
+import { BOOT_KEY, needsYouLikely, readBootState } from './bootState';
+import { fitOpenGroups, parseOpenChoices, wantedOpen } from '../services/sidebarTree';
 import { sidebarArtChoice, sidebarArtHalo, sidebarArtHeight, sidebarArtInk } from '../services/sidebarArt';
 import { drawScene, sceneRows, SCENE_STILL_SECONDS } from '../services/sidebarScenes';
 import { clampSidebarWidth, parseSidebarLayout, sidebarMaxWidth, sidebarShown, NARROW_WINDOW_WIDTH } from '../services/sidebarLayoutRules';
@@ -64,6 +66,56 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
   if (!shown) {
     shell.querySelector('aside')?.classList.add('hidden');
     shell.querySelector<HTMLElement>('main')?.style.setProperty('--topbar-start', 'var(--workspace-titlebar-content-left)');
+  }
+
+  // The groups React's first frame opens: every one left open by hand, less those that don't fit the window, as
+  // SidebarTree fits them. Machines and Pools have nothing to list until their reads answer, so they stay closed.
+  const nav = shell.querySelector<HTMLElement>('[data-boot-box="tree"]');
+  if (nav && shown) {
+    const style = getComputedStyle(nav);
+    const rem = parseFloat(getComputedStyle(root).fontSize) || 16;
+    const available = (nav.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / rem;
+    for (const page of fitOpenGroups(wantedOpen('home', parseOpenChoices(read('arbor.sidebar.tree.v1'))), 'home', available)) {
+      const leaves = nav.querySelector<HTMLElement>(`[data-boot-leaves="${page}"]`);
+      if (!leaves) continue;
+      leaves.hidden = false;
+      nav.querySelector(`[data-boot-chevron="${page}"]`)?.classList.add('rotate-90');
+    }
+  }
+
+  // Home's skeletons with the rows the content had last time: a provider block per provider, with a row per account,
+  // and a card per machine, copied from the ones the build drew.
+  const { home } = readBootState(read(BOOT_KEY));
+  const provider = shell.querySelector<HTMLElement>('[data-boot-provider]');
+  if (provider?.parentElement) {
+    const card = provider.parentElement;
+    const account = provider.querySelector('[data-boot-account]');
+    card.querySelectorAll('[data-boot-provider]').forEach((block) => block.remove());
+    for (const accounts of home.providers) {
+      const block = provider.cloneNode(true) as HTMLElement;
+      const list = block.querySelector('ul');
+      block.querySelectorAll('[data-boot-account]').forEach((row) => row.remove());
+      for (let index = 0; account && list && index < accounts; index++) list.append(account.cloneNode(true));
+      card.append(block);
+    }
+  }
+  const attention = shell.querySelector<HTMLElement>('[data-boot-attention]');
+  if (attention && needsYouLikely(home.needsYou, Date.now())) {
+    const row = attention.querySelector('[data-boot-attention-row]');
+    const more = attention.querySelector('[data-boot-attention-more]');
+    const card = row?.parentElement;
+    attention.querySelectorAll('[data-boot-attention-row]').forEach((element) => element.remove());
+    for (let index = 0; row && card && index < home.needsYou.rows; index++) card.insertBefore(row.cloneNode(true), more);
+    if (!home.needsYou.more) more?.remove();
+    attention.hidden = false;
+  } else {
+    attention?.remove();
+  }
+  const machine = shell.querySelector<HTMLElement>('[data-boot-machine]');
+  if (machine?.parentElement) {
+    const grid = machine.parentElement;
+    grid.querySelectorAll('[data-boot-machine]').forEach((card) => card.remove());
+    for (let index = 0; index < home.machines; index++) grid.append(machine.cloneNode(true));
   }
 
   // The art's first frame, the same still moment SidebarArt's canvas draws first, so the handoff doesn't move it. In
