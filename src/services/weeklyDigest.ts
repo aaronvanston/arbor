@@ -3,6 +3,7 @@ import type { MessageKey, MessageVariables } from '../i18n/resources';
 import { formatCount, formatDateRange, formatMoney } from '../lib/format';
 import type { CapacityProvider } from './capacityReport';
 import { EXPIRING_MIN_PERCENT, EXPIRING_WITHIN_MS } from './expiringCapacity';
+import { plainError } from './plainError';
 import { providerLabel } from './providerLimits';
 import type { QuotaProvider } from './quotaService';
 import { projectsTotals, pullRequestStatus } from './sessionProjects';
@@ -375,7 +376,7 @@ export function noMergedText(digest: WeeklyDigest, t: Translate): string {
   switch (digest.github.last) {
     case 'missing': return t('usage.projects.github.missing');
     case 'signedOut': return t('usage.projects.github.signedOut');
-    case 'failed': return t('usage.projects.github.failed', { message: digest.github.message });
+    case 'failed': return t('usage.projects.github.failed', { message: plainError(digest.github.message, t) });
     default: return t('usage.digest.done.none');
   }
 }

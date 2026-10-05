@@ -77,7 +77,7 @@ describe('the Projects view', () => {
 
   test('when GitHub turns down asking how they stand, the note says so and offers a retry', () => {
     const page = render(report([pullRequest(57, 'open')], { detailError: 'Field doesn’t exist' }));
-    expect(page).toContain('GitHub said which pull requests merged, but not how open ones’ checks and reviews stand: Field doesn’t exist');
+    expect(page).toContain('GitHub said which pull requests merged, but not how open ones’ checks and reviews stand. Field doesn’t exist.');
     expect(page).toContain('Retry');
   });
 });

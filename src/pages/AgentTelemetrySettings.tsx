@@ -8,6 +8,7 @@ import { useI18n } from '../i18n';
 import { formatAgo } from '../lib/format';
 import { cn } from '../lib/utils';
 import { parsePort } from '../services/machineHealth';
+import { plainError } from '../services/plainError';
 import { DEFAULT_TELEMETRY_PORT, machineTelemetryState, setAgentTelemetry, takeAgentTelemetry, telemetryNeedsSetup, useAgentTelemetry } from '../services/agentTelemetry';
 import { MachinePill } from '../components/identity/Identity';
 
@@ -41,7 +42,7 @@ export function AgentTelemetrySettings() {
   const state = !status
     ? ''
     : status.error
-      ? t('telemetry.settings.failed', { error: status.error })
+      ? t('telemetry.settings.failed', { error: plainError(status.error, t) })
       : listening
         ? t('telemetry.settings.listening', { address: listening })
         : t('telemetry.settings.off');

@@ -12,6 +12,7 @@ import { webUiManagementUrl } from '../services/clientAccess';
 import { clientKeyName, maskApiKey, newClientKey } from '../services/clientKeys';
 import { proxyUrlProblem, sessionTtlProblem } from '../services/coreSettingsInput';
 import { useUnsavedChanges } from '../services/unsavedChanges';
+import { plainError } from '../services/plainError';
 import { CORE_CONFIG_DEFAULTS as CORE, changedFromDefaults, onOffLabel, resetOffer } from '../services/settingDefaults';
 import { confirmSettingsInEffect, notLoadedNotice } from '../services/settingsInEffect';
 import { useConfirmation } from '../components/ConfirmationDialog';
@@ -304,7 +305,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
       return true;
     } catch (error) {
       if (settings) setSettings(settings);
-      mutationFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: String(error) } }, 'error');
+      mutationFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: plainError(error, t) } }, 'error');
       void loadSettings('preserve');
       return false;
     } finally {
@@ -487,7 +488,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
         await savedLive('config.diagnostics.notice.saved', loggingFeedback);
       }
     } catch (error) {
-      const message = t('config.error.saveFailed', { error: String(error) });
+      const message = t('config.error.saveFailed', { error: plainError(error, t) });
       setLoggingError(message);
       void refreshStatus();
       void loadSettings('preserve');
@@ -678,7 +679,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
         await savedLive('config.notice.networkUpdated', networkFeedback);
       }
     } catch (error) {
-      networkFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: String(error) } }, 'error');
+      networkFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: plainError(error, t) } }, 'error');
       void loadSettings('preserve');
     } finally {
       setBusyAction(null);
@@ -724,7 +725,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
       setLoadError('');
       await savedLive('config.notice.retryUpdated', retryFeedback);
     } catch (error) {
-      retryFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: String(error) } }, 'error');
+      retryFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: plainError(error, t) } }, 'error');
       void loadSettings('preserve');
     } finally {
       setBusyAction(null);
@@ -750,7 +751,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
       setLoadError('');
       await savedLive('config.notice.sessionRoutingUpdated', routingFeedback);
     } catch (error) {
-      routingFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: String(error) } }, 'error');
+      routingFeedback.showNotice({ key: 'config.error.saveFailed', variables: { error: plainError(error, t) } }, 'error');
       void loadSettings('preserve');
     } finally {
       setBusyAction(null);

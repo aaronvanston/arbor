@@ -24,6 +24,7 @@ import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { cn } from '../lib/utils';
 import { pullRequestSignals, pullRequestSignalsText } from '../services/pullRequestSignals';
+import { plainError } from '../services/plainError';
 import { PULL_REQUEST_BADGES, PullRequestSignals, PullRequestStateBadge } from '../components/PullRequestSignals';
 import type { ProjectPullRequest, ProjectTotals, SessionProjectsReport } from '../native/types';
 
@@ -137,9 +138,9 @@ function GithubNote({ report, onRetry }: { report: SessionProjectsReport; onRetr
     : github.last === 'signedOut'
       ? t('usage.projects.github.signedOut')
       : github.last === 'failed'
-        ? t('usage.projects.github.failed', { message: github.message })
+        ? t('usage.projects.github.failed', { message: plainError(github.message, t) })
         : github.last === 'ok' && github.detailError
-          ? t('usage.projects.github.detailFailed', { message: github.detailError })
+          ? t('usage.projects.github.detailFailed', { message: plainError(github.detailError, t) })
           : '';
   if (!message) return null;
   return (

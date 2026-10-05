@@ -4,7 +4,8 @@ import { StatusPill } from '../components/ui/status-dot';
 import { useCollectorStatus } from '../hooks/useCollectorStatus';
 import { useI18n } from '../i18n';
 import { formatAgo } from '../lib/format';
-import { collectorDisplay, lastCollectedMs } from '../services/usageCollector';
+import { collectorDisplay, collectorProblem, lastCollectedMs } from '../services/usageCollector';
+import { plainError } from '../services/plainError';
 
 const REFRESH_MS = 5_000;
 
@@ -23,7 +24,7 @@ export function UsageCollectorSection() {
       <SettingsRow
         settingId="data.collector"
         title={t('usage.collector.status')}
-        description={loadError ? t('usage.collector.loadFailed', { error: loadError }) : status?.message || undefined}
+        description={loadError ? t('usage.collector.loadFailed', { error: plainError(loadError, t) }) : status?.message ? (status.state === 'error' ? collectorProblem(status.message, t) : status.message) : undefined}
         status={last === null ? undefined : t('usage.collector.lastRecord', { time: formatAgo(last, checkedAt) })}
         control={status ? <StatusPill tone={tone}>{t(labelKey)}</StatusPill> : loadError ? null : <Skeleton className="h-6 w-32" />}
       />

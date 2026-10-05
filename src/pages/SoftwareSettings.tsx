@@ -4,6 +4,7 @@ import { invokeCommand } from '../native/commands';
 import { useI18n } from '../i18n';
 import { InlineNotice, useAppNotice } from '../appNotice';
 import { createSoftwareSaver, type SoftwareSaverEvents } from '../services/softwareSettings';
+import { plainError } from '../services/plainError';
 import { SOFTWARE_DEFAULTS as SOFTWARE, onOffLabel, resetOffer } from '../services/settingDefaults';
 import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Badge } from '../components/ui/badge';
@@ -40,7 +41,7 @@ export function SoftwareSettingsSection() {
       show(result);
     } catch (error) {
       setSettings(null);
-      feedback.showNotice({ key: 'config.error.saveFailed', variables: { error: String(error) } }, 'error');
+      feedback.showNotice({ key: 'config.error.loadFailed', variables: { error: plainError(error, t) } }, 'error');
     } finally {
       setLoading(false);
     }
@@ -72,7 +73,7 @@ export function SoftwareSettingsSection() {
     busy: setSaving,
     saved: setSettings,
     failed: (error) => {
-      feedback.showNotice({ key: 'config.error.saveFailed', variables: { error: String(error) } }, 'error');
+      feedback.showNotice({ key: 'config.error.saveFailed', variables: { error: plainError(error, t) } }, 'error');
       void load();
     },
   };

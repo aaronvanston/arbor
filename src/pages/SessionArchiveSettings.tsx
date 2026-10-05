@@ -23,6 +23,7 @@ import { Switch } from '../components/ui/switch';
 import { formatAgo, formatNumber } from '../lib/format';
 import { formatBytes } from '../services/machineHealth';
 import { useQuotaClock } from '../services/quotaTime';
+import { errorWords, plainError } from '../services/plainError';
 import { ArchiveImports } from './SessionArchiveImports';
 import {
   adoptSessionArchive,
@@ -327,7 +328,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
             <span className="flex flex-wrap items-center gap-2">
               <StatusPill tone={archiveTone(status.state)}>{t(archiveStateKey(status.state))}</StatusPill>
               <span>{passLine}</span>
-              {status.lastError ? <span className="text-error-foreground">{status.lastError}</span> : null}
+              {status.lastError ? <span className="text-error-foreground" title={errorWords(status.lastError)}>{plainError(status.lastError, t)}</span> : null}
               {error ? <span className="text-error-foreground">{error}</span> : null}
             </span>
           }
@@ -459,7 +460,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
             <span className="text-muted-foreground">{t('sessionArchive.homes.leftOut')}</span>
           ) : failed && group.run ? (
             <span className="text-error-foreground">
-              {t('sessionArchive.homes.failed', { error: failed })}{' '}
+              {t('sessionArchive.homes.failed', { error: plainError(failed, t) })}{' '}
               {group.run.lastOkAt !== null ? t('sessionArchive.homes.lastKept', { time: formatAgo(group.run.lastOkAt, now) }) : t('sessionArchive.homes.neverKept')}
             </span>
           ) : undefined}

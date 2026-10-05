@@ -13,6 +13,7 @@ import {
   suggestionTarget,
 } from '../services/machineDiscovery';
 import { shellWord } from '../services/setupChecklist';
+import { errorWords, plainError } from '../services/plainError';
 import { CommandLine } from './CommandLine';
 import { MachinePill } from './identity/Identity';
 import { MachineIcon } from './MachineIcon';
@@ -165,7 +166,7 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
                 <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status"><Spinner />{t('machines.discovery.loading')}</p>
               ) : discovery.state === 'failed' ? (
                 <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm text-error-foreground" role="alert">{t('machines.discovery.failed', { error: discovery.error })}</p>
+                  <p className="text-sm text-error-foreground" role="alert" title={errorWords(discovery.error)}>{t('machines.discovery.failed', { error: plainError(discovery.error, t) })}</p>
                   <Button type="button" variant="outline" size="xs" onClick={discover}>{t('machines.discovery.retry')}</Button>
                 </div>
               ) : suggestions.length === 0 ? (

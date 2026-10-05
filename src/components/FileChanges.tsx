@@ -3,6 +3,7 @@ import { Columns2, Eye, FileCode, Rows2 } from './ui/icons';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
 import { canPreview, setDiffStyle, useDiffStyle, type DiffStyle, type FileView } from '../services/fileView';
+import { errorWords, plainError } from '../services/plainError';
 import { Skeleton } from './ui/skeleton';
 import { Toggle, ToggleGroup } from './ui/toggle-group';
 
@@ -115,7 +116,7 @@ export function ViewerSkeleton() {
 
 function ViewerFailed({ error }: { error: unknown }) {
   const { t } = useI18n();
-  return <p className="text-xs text-error-foreground" role="alert">{t('fileView.failed', { error: String(error) })}</p>;
+  return <p className="text-xs text-error-foreground" role="alert" title={errorWords(error)}>{t('fileView.failed', { error: plainError(error, t) })}</p>;
 }
 
 /** A viewer that fails to load or draw says so in its place, rather than taking the page with it. */

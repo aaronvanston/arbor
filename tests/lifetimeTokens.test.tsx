@@ -170,7 +170,7 @@ describe('all-time tokens', () => {
   it('says how much is left to count, and what could not be', () => {
     const counting = render(lifetime({ versionsLeft: 214, bytesLeft: 3.24e9, lastError: 'Couldn’t read a kept chunk' }));
     expect(counting).toContain('Counting: 214 kept session files left (3.0 GB).');
-    expect(counting).toContain('Some sessions couldn’t be counted (Couldn’t read a kept chunk).');
+    expect(counting).toContain('Some sessions couldn’t be counted. Couldn’t read a kept chunk. They’re');
   });
 
   it('points to the archive when there is nothing to count', () => {

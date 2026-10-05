@@ -9,6 +9,7 @@ import { canOpenView, setupChecksView, type AppView } from '../navigation';
 import { pauseAccount, resumeAccount } from '../services/accountPause';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { useAccountReserves } from '../services/accountReserves';
+import { plainError } from '../services/plainError';
 import { getAccountsSnapshot, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { loadProxyBaseUrl } from '../services/clientAccess';
 import { copyPendingText } from '../lib/clipboard';
@@ -108,7 +109,7 @@ export function usePaletteActions({ onNavigate, confirmCore = false }: { onNavig
     // The same command as the View menu and Settings › Appearance; the page's new size says it worked.
     const changeZoom = (change: () => Promise<unknown>) => async () => {
       const failure = await tryZoomChange(change);
-      if (failure) toast({ kind: 'error', title: t('zoom.failed'), description: failure.reason });
+      if (failure) toast({ kind: 'error', title: t('zoom.failed'), description: plainError(failure.reason, t) });
     };
     const confirmed = async (command: 'start_core_process' | 'restart_core_process') => !confirmCore || askConfirmation({
       title: t(CORE_CONFIRM[command].title),

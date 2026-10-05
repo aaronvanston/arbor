@@ -17,6 +17,7 @@ import {
   type TokenGroup,
 } from '../services/lifetimeTokens';
 import { formatBytes } from '../services/machineHealth';
+import { errorWords, plainErrorReason } from '../services/plainError';
 import { SettingsSection } from '../components/layout/settings';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -180,7 +181,7 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
       ) : null}
       {data.lastError ? (
         <Alert variant="warning" icon={<TriangleAlert />}>
-          <AlertDescription>{t('usage.lifetime.failed', { error: data.lastError })}</AlertDescription>
+          <AlertDescription title={errorWords(data.lastError)}>{t('usage.lifetime.failed', { error: plainErrorReason(data.lastError, t) })}</AlertDescription>
         </Alert>
       ) : null}
       <div className="flex flex-col gap-1 px-4 text-xs leading-[1.45] text-muted-foreground">

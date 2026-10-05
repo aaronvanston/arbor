@@ -1,6 +1,7 @@
 import { AlertCircle } from './ui/icons';
 import { useCollectorStatus } from '../hooks/useCollectorStatus';
 import { useI18n } from '../i18n';
+import { collectorProblem } from '../services/usageCollector';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
 
@@ -21,7 +22,7 @@ export function UsageCollectorBanner({ onOpenData }: { onOpenData?: () => void }
       action={onOpenData ? <Button variant="outline" size="xs" onClick={onOpenData}>{t('usage.collector.openData')}</Button> : undefined}
     >
       <AlertTitle>{t('usage.collector.bannerTitle')}</AlertTitle>
-      {status.message ? <AlertDescription>{status.message}</AlertDescription> : null}
+      {status.message ? <AlertDescription title={status.message}>{collectorProblem(status.message, t)}</AlertDescription> : null}
     </Alert>
   );
 }

@@ -2,6 +2,7 @@ import { invokeCommand } from '../native/commands';
 import type { MessageKey, MessageVariables } from '../i18n/resources';
 import { formatWhen } from '../lib/format';
 import { machineLookKey } from './machineLook';
+import { plainError } from './plainError';
 import type { SystemNotification } from './notify';
 import type {
   ArchiveCondition,
@@ -252,7 +253,7 @@ export function archiveNotification(alert: ArchiveAlert, status: ArchiveStatus, 
     case 'failing':
       return {
         title: t('sessionArchive.alert.failing.title'),
-        body: status.lastError ? t('sessionArchive.alert.failing.body', { time, error: status.lastError }) : t('sessionArchive.alert.failing.phone', { time }),
+        body: status.lastError ? t('sessionArchive.alert.failing.body', { time, error: plainError(status.lastError, t) }) : t('sessionArchive.alert.failing.phone', { time }),
         phoneBody: t('sessionArchive.alert.failing.phone', { time }),
         kind: 'archiveFailing',
       };

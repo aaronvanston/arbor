@@ -18,6 +18,7 @@ import { toast } from '../components/ui/toast';
 import { formatDate, formatDateRange, formatNumber, formatPercent } from '../lib/format';
 import { cn } from '../lib/utils';
 import { formatBytes } from '../services/machineHealth';
+import { errorWords, plainError } from '../services/plainError';
 import {
   addSessionImport,
   cancelSessionImport,
@@ -126,7 +127,7 @@ export function ImportRow({ item, paused, onStop }: { item: ArchiveImport; pause
           {item.failures > 0 ? (
             <span className="text-warning-foreground">{t(item.failures === 1 ? 'sessionArchive.imports.failures.one' : 'sessionArchive.imports.failures.other', { count: formatNumber(item.failures) })}</span>
           ) : null}
-          {item.error ? <span className="text-warning-foreground">{item.error}</span> : null}
+          {item.error ? <span className="text-warning-foreground" title={errorWords(item.error)}>{plainError(item.error, t)}</span> : null}
         </span>
       }
       control={

@@ -5,6 +5,7 @@ import { REFRESH_INTERVAL_OPTIONS, setAppPreference, useAppPreferences } from '.
 import { DEFAULT_THEME_PREFERENCE, isThemePreference, type ThemePreference } from '../theme';
 import type { MessageKey } from '../i18n/resources';
 import { onOffLabel, preferenceReset, resetOffer } from '../services/settingDefaults';
+import { errorWords, plainError } from '../services/plainError';
 import { APP_COLOR_LABEL, APP_COLORS, appColorChoice, appColorSwatch, isAppColor } from '../services/appColor';
 import { isSidebarArt, isSidebarArtMotion, SIDEBAR_ART_LABEL, SIDEBAR_ART_MOTION_LABEL, SIDEBAR_ART_MOTIONS, SIDEBAR_ARTS, sidebarArtChoice, sidebarArtMotionChoice } from '../services/sidebarArt';
 import {
@@ -48,7 +49,7 @@ function ZoomRow() {
       settingId="appearance.zoom"
       title={t('appearance.zoom.title')}
       description={t('appearance.zoom.description')}
-      status={reason ? <span className="text-error-foreground">{t('zoom.failedBecause', { error: reason })}</span> : null}
+      status={reason ? <span className="text-error-foreground" title={errorWords(reason)}>{t('zoom.failedBecause', { error: plainError(reason, t) })}</span> : null}
       control={
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">

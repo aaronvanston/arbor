@@ -11,6 +11,7 @@ import { Spinner } from '../components/ui/spinner';
 import { requestFocus } from '../focusRequests';
 import { useI18n } from '../i18n';
 import { machinesView, type AppView } from '../navigation';
+import { errorWords, plainError } from '../services/plainError';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { agentRollout, getClientVersions, ROLLOUT_DAYS, type AgentRollout } from '../services/agentRollout';
 import { fleetUpdates, harnessGroups, rolloutTarget, rolloutTargets, untried, type FleetUpdate } from '../services/agentFleet';
@@ -305,7 +306,7 @@ export function SetupAgents({ onNavigate, setupMachines }: { onNavigate: (view: 
           <div className="flex flex-col gap-1 px-4 py-3 text-xs">
             {error ? <p className="text-error-foreground">{t('setup.agents.versions.stale', { error })}</p> : null}
             {versions?.truncated ? <p className="text-muted-foreground">{t('rollout.truncated')}</p> : null}
-            {versionsError ? <p className="text-error-foreground">{t('rollout.failed', { error: versionsError })}</p> : null}
+            {versionsError ? <p className="text-error-foreground" title={errorWords(versionsError)}>{t('rollout.failed', { error: plainError(versionsError, t) })}</p> : null}
           </div>
         ) : null}
       </>

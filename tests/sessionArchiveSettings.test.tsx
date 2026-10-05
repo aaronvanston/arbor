@@ -78,11 +78,11 @@ describe('Settings › Session archive', () => {
     expect(shown).toContain('Agent homes on cedar-01');
     expect(shown).toContain('3,480 of 3,480 files kept');
     // The page's clock ticks by the minute, so it may be a minute behind.
-    expect(shown).toMatch(/The last check couldn’t reach it: ssh: connect to host macbook-air port 22: Operation timed out Last kept (19|20)h ago\./);
+    expect(shown).toMatch(/The last check didn’t finish\. macbook-air didn’t answer over SSH\. Check that it’s on and connected\. Last kept (19|20)h ago\./);
     // One never reached has no homes yet, only why.
     expect(shown).toContain('Agent homes on cedar-02');
-    expect(shown).toContain('The last check couldn’t reach it: ssh: Could not resolve hostname cedar-02 Nothing kept from it yet.');
-    expect(shown.match(/couldn’t reach it/g)?.length).toBe(2);
+    expect(shown).toContain('The last check didn’t finish. Couldn’t find cedar-02 on the network. Check its name in your SSH config. Nothing kept from it yet.');
+    expect(shown.match(/The last check didn’t finish/g)?.length).toBe(2);
   });
 
   it('keeps or leaves out a project’s sessions, on every machine or on one', () => {
