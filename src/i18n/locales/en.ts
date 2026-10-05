@@ -3617,6 +3617,7 @@ export const en = {
   'usage.stat.costMeta': 'Price coverage: {priced} / {total} requests',
   'usage.stat.costMetaTitle': '{priced} of {total} requests estimated from model prices; {unpriced} unpriced',
   'usage.pricing.search': 'Search model',
+  'usage.pricing.noMatch': 'No model matches “{query}”.',
   'usage.pricing.add': 'Add manually',
   'usage.pricing.sync': 'Sync prices',
   'usage.pricing.syncing': 'Syncing',

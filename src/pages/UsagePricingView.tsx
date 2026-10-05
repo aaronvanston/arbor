@@ -22,6 +22,7 @@ import { cn } from '../lib/utils';
 import { ModelName } from '../components/identity/Identity';
 import type { ModelPrice, UsagePricing, UsageQuery } from '../native/types';
 import { trackFeature } from '../services/productAnalytics';
+import { TableEmpty } from '../components/ui/data-table';
 import { UsageEmpty } from './UsageEmpty';
 
 type PriceDraft = {
@@ -277,6 +278,9 @@ export function PricingView({
               ))}
             </TableBody>
           </Table>
+        ) : pricing.rows.length && search.trim() ? (
+          // The range has models; the search is what left none.
+          <TableEmpty>{t('usage.pricing.noMatch', { query: search.trim() })}</TableEmpty>
         ) : (
           <UsageEmpty />
         )}
