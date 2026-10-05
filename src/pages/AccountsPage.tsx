@@ -67,6 +67,7 @@ import {
   windowGrid,
   useAccountLimitPrefs,
   windowDurationMs,
+  meteredWindowLabels,
   windowLabels,
   type CapWarning,
   type Headline,
@@ -283,6 +284,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
         paused,
         off,
         labels,
+        metered: meteredWindowLabels([...items, ...turnedOff]),
         hidden,
         headline: buildHeadline(items, headlineLabel, turnedOff),
         warnings: capWarnings(items, headlineLabel, hidden),
@@ -418,7 +420,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
           </SettingsSection>
         ) : (
           <>
-            {grouped.map(({ provider, accounts, paused, off, labels, hidden, headline, warnings }) => (
+            {grouped.map(({ provider, accounts, paused, off, labels, metered, hidden, headline, warnings }) => (
               <SettingsSection
                 key={provider}
                 title={
@@ -446,7 +448,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                         {reordering === provider ? t('accounts.reorder.done') : t('accounts.reorder.button')}
                       </Button>
                     ) : null}
-                    {labels.length > 0 && reordering !== provider ? (
+                    {metered.length > 0 && reordering !== provider ? (
                       <Menu>
                         <MenuTrigger render={<Button variant="ghost-muted" size="sm" aria-label={t('accounts.windows.aria', { provider: providerMeta[provider].label })} />}>
                           <SlidersHorizontal />
@@ -455,7 +457,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                         <MenuPopup className="min-w-64">
                           <MenuRadioGroup value={headline.label} onValueChange={(label: string) => setHeadlineWindow(provider, label)}>
                             <MenuGroupLabel>{t('accounts.windows.headline')}</MenuGroupLabel>
-                            {labels.filter((label) => !hidden.includes(label)).map((label) => (
+                            {metered.filter((label) => !hidden.includes(label)).map((label) => (
                               <MenuRadioItem key={label} value={label}>
                                 <span className="min-w-0 flex-1 truncate">{label}</span>
                                 <span className="text-xs tabular-nums text-muted-foreground">{formatPooled(pooledPercent([...accounts, ...paused, ...off], label))}</span>
@@ -465,7 +467,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                           <MenuSeparator />
                           <MenuGroup>
                             <MenuGroupLabel>{t('accounts.windows.visible')}</MenuGroupLabel>
-                            {labels.map((label) => {
+                            {metered.map((label) => {
                               const visible = !hidden.includes(label);
                               return (
                                 <MenuCheckboxItem

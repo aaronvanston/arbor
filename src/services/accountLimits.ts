@@ -111,6 +111,18 @@ export function windowLabels(accounts: AccountLike[]): string[] {
   return [...seen];
 }
 
+/**
+ * The window labels some account reports a share left for: the windows the Windows menu offers. A row with nothing to
+ * measure (an xAI paid API account's note) isn't a window to pick or hide.
+ */
+export function meteredWindowLabels(accounts: AccountLike[]): string[] {
+  const metered = new Set<string>();
+  accounts.forEach((account) => {
+    displayRows(account.quota).forEach((row) => { if (row.remainingPercent !== null) metered.add(row.label); });
+  });
+  return windowLabels(accounts).filter((label) => metered.has(label));
+}
+
 /** Most windows side by side in an account's grid; more wrap onto the next line. */
 const WINDOWS_PER_LINE = 3;
 

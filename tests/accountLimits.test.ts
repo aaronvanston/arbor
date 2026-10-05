@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildHeadline, capWarnings, defaultHeadlineWindow, displayRows, freshQuotas, freshRows, headlinePace, isStaleQuota, partialHeadline,
-  pooledPercent, rowWindowMs, staleLimits, staleNoteKey, usagePace, windowDurationMs, windowGrid, windowLabels,
+  pooledPercent, rowWindowMs, staleLimits, staleNoteKey, usagePace, windowDurationMs, windowGrid, windowLabels, meteredWindowLabels,
 } from '../src/services/accountLimits';
 import { evenPace } from '../src/services/limitPace';
 import { quotaRowsFor, type QuotaState } from '../src/services/quotaService';
@@ -28,6 +28,13 @@ describe('account limits', () => {
   test('collects window labels in first-seen order and ignores unfetched accounts', () => {
     const accounts = [claude('a', 80, 70), { name: 'b', quota: { status: 'idle', rows: [] } as QuotaState }];
     expect(windowLabels(accounts)).toEqual(['5-hour window', '7-day window', '7-day Fable window']);
+  });
+
+  test('offers only windows some account reports a share left for', () => {
+    const paid = { name: 'x', quota: { status: 'success', rows: [{ label: 'Paid API account', remainingPercent: null, detail: 'note' }] } as QuotaState };
+    expect(windowLabels([paid])).toEqual(['Paid API account']);
+    expect(meteredWindowLabels([paid])).toEqual([]);
+    expect(meteredWindowLabels([paid, claude('a', 80, 70)])).toEqual(['5-hour window', '7-day window', '7-day Fable window']);
   });
 
   test('stacks equal slices so the filled width equals the pooled percent', () => {
