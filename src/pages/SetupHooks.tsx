@@ -283,7 +283,7 @@ export function SetupHooks({ machines }: { machines: SetupMachine[] }) {
                 <TableHead className="min-w-56">{t('setup.hooks.column.runs')}</TableHead>
                 <TableHead className="min-w-36">{t('setup.hooks.column.repo')}</TableHead>
                 {fleet.map((machine) => (
-                  <MachineHead key={machine.machine} column={{ machine: machine.machine, homes: [], reachable: machine.reachable }} />
+                  <MachineHead key={machine.machine} column={{ machine: machine.machine, homes: [], reachable: machine.reachable }} pickable={false} />
                 ))}
               </TableRow>
             </TableHeader>

@@ -87,19 +87,22 @@ export function MachineStrip({ columns, looks, homeCount }: { columns: MachineCo
   );
 }
 
-/** A machine's pill at the head of its column; picking it shows that machine's homes one by one. */
-export function MachineHead({ column }: { column: MachineColumn }) {
+/**
+ * A machine's pill at the head of its column; picking it shows that machine's homes one by one. A grid with no
+ * one-machine view (Hooks) passes `pickable={false}`, since the pick would only narrow the other tabs unseen.
+ */
+export function MachineHead({ column, pickable = true }: { column: MachineColumn; pickable?: boolean }) {
   const { t } = useI18n();
   return (
     <TableHead className="min-w-44">
-      <button
+      {!pickable ? <MachinePill name={column.machine} size="sm" /> : <button
         type="button"
         className="cursor-pointer rounded-sm outline-none ring-ring focus-visible:ring-2"
         aria-label={t('setup.plugins.grid.openMachine', { machine: column.machine })}
         onClick={() => setSyncMachine(column.machine)}
       >
         <MachinePill name={column.machine} size="sm" />
-      </button>
+      </button>}
       {!column.reachable ? <span className="ms-2 text-2xs font-normal text-warning-foreground">{t('setup.plugins.home.away')}</span> : null}
     </TableHead>
   );
