@@ -21,6 +21,7 @@ import {
 import { useConfirmation } from './ConfirmationDialog';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
+import { toast } from './ui/toast';
 import type { LiveSessionsReport } from '../native/types';
 
 /** A slow check falls back to the board's last one rather than holding up the button. */
@@ -64,8 +65,11 @@ export function useIdleUpdateGuard() {
       return;
     }
     const choice = await askChoice(idleUpdateConfirmation(update, load, t));
-    if (choice === 'confirm') scheduleIdleUpdate(update);
-    else if (choice === 'secondary') start();
+    if (choice === 'confirm') {
+      scheduleIdleUpdate(update);
+      // Its notice sits at the top of Home and Updates, out of sight from where it was asked for, so it's said here too.
+      toast({ title: t(idleUpdateTitleKey([update])), description: idleUpdateWaitingText([update], t) });
+    } else if (choice === 'secondary') start();
   }, [askChoice, coreStopped, t]);
 
   return { guard };
