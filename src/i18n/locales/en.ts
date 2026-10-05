@@ -171,6 +171,8 @@ export const en = {
   'machineScope.onMachine.open': 'Open {machine}',
   'machineScope.onMachine.fleetWide': 'Machine assignments, SSH hosts, the live board and the metrics receiver cover every machine at once.',
   'machineScope.showAll': 'Show All machines',
+  'machineScope.showAllProjects': 'Show All projects',
+  'machineScope.showAllEverywhere': 'Show All projects across All machines',
   'machineScope.phoneFleetWide': 'Phone alerts go to one phone for every machine: its service and which alerts it gets.',
   'settings.reset.withUnit': '{value} {unit}',
   'settingsSearch.results': 'Matching settings',

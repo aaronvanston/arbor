@@ -466,12 +466,16 @@ export function useFleetWideHold(): string | undefined {
 /** The scope notice: what a page holds for every machine alike, folded away at one machine, and the way back to it. */
 export function FleetWideNotice({ text }: { text: string }) {
   const { t } = useI18n();
+  // The button names what it widens to, so a project's scope doesn't read as a machine's.
+  const scope = useSettingsScope();
+  const project = useSettingsProject();
+  const showAll = project ? (scope ? 'machineScope.showAllEverywhere' : 'machineScope.showAllProjects') : 'machineScope.showAll';
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
       <span>{text}</span>
       <Button variant="outline" size="sm" onClick={() => { setSettingsScope(null); setSettingsProject(null); }}>
         <Layers />
-        {t('machineScope.showAll')}
+        {t(showAll)}
       </Button>
     </div>
   );
