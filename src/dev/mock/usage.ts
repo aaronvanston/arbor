@@ -15,6 +15,7 @@ import type {
   LimitCycle,
   LiveContext,
   LiveSessionsReport,
+  MachineAssignment,
   MachineLive,
   MachineSessions,
   ModelPrice,
@@ -1320,13 +1321,29 @@ const mockProjectsReport = (sessions: UsageSession[], answered: boolean): Omit<S
   };
 };
 
+/** Which machine and pool each API key's requests count toward, as Settings › Machines last saved them. */
+let machineAssignments: MachineAssignment[] = freshInstall ? [] : [
+  { api_key_hash: 'a1b2', label: 'Casey laptop', machine: 'casey-mbp', pool: 'dev' },
+  { api_key_hash: 'c3d4', label: 'CI runner', machine: 'ci-01', pool: 'ci' },
+  { api_key_hash: 'e5f6', label: 'GitHub runner', machine: 'ci-runner', pool: 'ci' },
+];
+
 export const usageAnswers: CommandAnswers<UsageCommands> = {
-  get_usage_machine_assignments: () => freshInstall ? [] : [
-    { api_key_hash: 'a1b2', label: 'Casey laptop', machine: 'casey-mbp', pool: 'dev' },
-    { api_key_hash: 'c3d4', label: 'CI runner', machine: 'ci-01', pool: 'ci' },
-    { api_key_hash: 'e5f6', label: 'GitHub runner', machine: 'ci-runner', pool: 'ci' },
-  ],
-  save_usage_machine_assignments: () => null,
+  get_usage_machine_assignments: () => structuredClone(machineAssignments),
+  // Like the backend: each key's machine and pool change in one go, or none do.
+  save_usage_machine_assignments: ({ assignments }) => {
+    for (const assignment of assignments) {
+      if (assignment.machine.trim().length > 100 || assignment.pool.trim().length > 100) throw 'Machine and pool names must be 100 bytes or fewer';
+      if (assignment.machine.trim() === '__unassigned__' || assignment.pool.trim() === '__unassigned__') throw 'That name is reserved for the unassigned filter';
+      if (!machineAssignments.some((saved) => saved.api_key_hash === assignment.api_key_hash)) throw 'Unknown key assignment; refresh and try again';
+    }
+    mockLog('save_usage_machine_assignments', assignments);
+    machineAssignments = machineAssignments.map((saved) => {
+      const next = assignments.find((assignment) => assignment.api_key_hash === saved.api_key_hash);
+      return next ? { ...saved, machine: next.machine.trim(), pool: next.pool.trim() } : saved;
+    });
+    return null;
+  },
   record_limit_samples: (args) => { mockLog('limit_history', args.samples); return args.samples.length; },
   rename_limit_history_accounts: (args) => { mockLog('limit_history_rename', args.renames); return 0; },
   get_limit_cycles: (args) => limitCyclesFor(args.account, args.window),
