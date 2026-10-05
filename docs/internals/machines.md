@@ -1,0 +1,56 @@
+# Machines
+
+Arbor reaches every machine other than this Mac over SSH, using the hosts in the user's own `~/.ssh` config. It never
+reads keys. Linux machines count as much as Macs.
+
+## Running a script
+
+Every script on a machine goes through `usage/machine_health/shell.rs`: `find_machine`, then `run_checked` (or
+`run_on_machine` for a script that reports each item itself, or `run_streaming`, with slots of its own, for output too
+big to hold). It caps how many run at once and notes each run in Diagnostics, so never build SSH commands or take its
+slots anywhere else.
+
+## Changing a file
+
+Every change to a file on a machine goes through `usage/machine_health/guarded_writes.rs` (`edit_start`, `edit_call`
+for each file, `edit_finish`). It writes only while the file is still as Arbor read it, backs it up first in
+`~/.arbor/setup-backups`, and lands on Sync › Arbor's changes, the one list where any of them can be undone.
+
+## Agent homes
+
+Which folders are a machine's agent homes comes only from `usage/machine_health/agent_homes.rs`: the standard Claude
+Code, Codex and Pi homes, the ones a scan found and the ones added in Settings › Agent homes, each with a Sessions and a
+Sync switch. Every script that looks in an agent home loops over its generated `agent_homes` shell function
+(`shell_function`) instead of naming folders of its own. `harnesses.rs` knows each coding agent's homes, files and how
+to start it.
+
+## Automations
+
+`usage/machine_health/automations/`:
+
+- `discover.rs` finds other apps' automations on each machine, held in memory and never saved, through one module per
+  app in `apps/` (the Codex app, Claude's scheduled tasks, Orca, Superset): its part of the scan, how its lines read,
+  what it can be asked to do. A new app is a module there plus an entry in `AUTOMATION_APPS`
+  (`src/services/automations.ts`).
+- `runner.rs` runs Arbor's own while the app is open: a precheck over SSH, then the agent detached, its output never
+  kept. `draft.rs` drafts one from a sentence through the local proxy.
+- One aimed at a pool gets its machine from `runs::pick_for_automation` when it's due.
+- One set to run on its machine goes to `udian.rs`: Arbor installs the ultradian runner it carries (pinned in
+  `udian-version.txt`, fetched into `bundled-udian/` by the release build), writes the schedule and scripts there and
+  reads the runs back, so it runs with Arbor closed. ultradian's own run logs stay on the machine, unread.
+
+## Pools
+
+`pools.rs` holds a pool's members, weights, limits and what a full pool does (refuse, queue or spill). `runs.rs` starts
+a run on one and `runs_handoff.rs` hands it to T3 Code or Orca on the member picked, with the agent's own command line
+as the last resort. Arbor keeps where a run went, never its prompt.
+
+`pool_ssh.rs` makes each pool an SSH host, `ssh arbor-<pool>`. Arbor's `~/.arbor/ssh/pools.conf` runs
+`arbor pools connect` as the host's ProxyCommand, which asks the app for a member over the socket (`pools.connect`) and
+carries the bytes.
+
+- A host name stays pinned (in usage.db) to the member its first connection went to, until that member is off, removed
+  or not answering, or the name is forgotten on the pool's page.
+- This Mac is never picked: the ProxyCommand runs here and would connect an app to itself.
+- Host keys come only from the user's known_hosts, never a scan.
+- `~/.ssh/config` gets its one Include line only through a guarded write.

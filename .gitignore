@@ -12,7 +12,7 @@ cpa-core/
 
 agent_docs/
 .codex/
-# Agent worktrees the main checkout keeps; .claude/CLAUDE.md itself is tracked.
+# Agent worktrees the main checkout keeps.
 .claude/worktrees/
 
 *.log
