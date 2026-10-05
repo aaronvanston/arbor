@@ -225,6 +225,7 @@ export const en = {
   'accounts.off.title': 'Every account is off',
   'accounts.off.description': 'Turn one back on from Accounts to see its limits here. An account paused at a cap comes back on by itself when that limit resets.',
   'accounts.off.open': 'Open Accounts',
+  'accounts.off.page': 'Nothing goes through the proxy until one is back on. Turn one on below; an account paused at a cap comes back on by itself when that limit resets.',
   'accounts.turnedOff.title': 'Turned off',
   'accounts.turnedOff.description': 'Turned off by hand. The proxy doesn’t use them; their limits are grayed out here and in the total above.',
   'accounts.moreActions': 'More account actions',

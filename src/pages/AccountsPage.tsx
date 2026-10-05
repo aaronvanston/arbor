@@ -76,7 +76,7 @@ import {
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { AccountSignInsPage } from './AccountSignIns';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { AccountsEmpty } from '../components/AccountsEmpty';
@@ -420,6 +420,13 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
           </SettingsSection>
         ) : (
           <>
+            {/* Turned-off accounts still show their limits, grayed, so with every one off the page would look in use. */}
+            {gap === 'off' ? (
+              <Alert variant="warning" icon={<PowerOff />}>
+                <AlertTitle>{t('accounts.off.title')}</AlertTitle>
+                <AlertDescription>{t('accounts.off.page')}</AlertDescription>
+              </Alert>
+            ) : null}
             {grouped.map(({ provider, accounts, paused, off, labels, metered, hidden, headline, warnings }) => (
               <SettingsSection
                 key={provider}
