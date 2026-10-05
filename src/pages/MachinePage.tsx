@@ -54,7 +54,7 @@ const CHECKOUTS_ID = 'machine-checkouts';
  * One machine's own page: everything about it and nothing compared across the fleet. Its pill (which opens its look),
  * status and score; "Bring … in line" when it isn't; its readings; what's running on it now; its agents; its requests
  * and sessions in the range; where its setup differs from the reference machine's; and its checkouts. A machine with
- * no host yet has only its checklist and a way to add one. The Machines overview keeps the fleet at a glance.
+ * no host yet has its checklist, a way to add one, and the requests and sessions that came through the proxy. The Machines overview keeps the fleet at a glance.
  */
 export function MachinePage({ machine: name, overview, sessions, onNavigate, onOpenSession, onOpenRequests }: {
   machine: string;
@@ -241,55 +241,60 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
               <MachineHarnessesBlock harnesses={machineHarnesses(item.agents)} />
             </SettingsSection>
           ) : null}
+        </>
+      )}
 
-          <SettingsSection
-            title={t('machine.usage.title')}
-            description={t('machine.usage.description')}
-            headerAction={(
-              <Button variant="ghost-muted" size="sm" onClick={() => onOpenRequests(name)}>
-                {t('machine.usage.requests')}
-                <ArrowUpRight />
-              </Button>
-            )}
-          >
-            {overview ? (
-              <div className="grid gap-px bg-border/50 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] [&>*]:bg-card">
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
-                  <Fact label={t('usage.fleet.column.requests')} value={formatCount(usage?.requests ?? 0)} />
-                  <Fact label={t('usage.fleet.column.tokens')} value={formatCount(usage?.tokens ?? 0)} />
-                  <Fact
-                    label={t('usage.fleet.column.success')}
-                    value={usage && usage.success + usage.failures ? `${((usage.success / (usage.success + usage.failures)) * 100).toFixed(1)}%` : '—'}
-                  />
-                  <Fact label={t('usage.fleet.column.failed')} value={formatCount(usage?.failures ?? 0)} tone={usage?.failures ? 'error' : undefined} />
-                  <Fact label={t('usage.fleet.column.lastRequest')} value={usage?.lastRequest ? formatWhen(usage.lastRequest) : t('usage.fleet.noRequests')} wide />
-                </dl>
-                <div className="px-4 py-3">
-                  <MachineThroughput machine={name} name={name} activity={activity} maximum={throughputScale(overview.machineLive)} />
-                </div>
-              </div>
-            ) : (
-              <SettingsBlock><Skeleton className="h-24 w-full" /></SettingsBlock>
-            )}
-          </SettingsSection>
+      {/* Its requests and sessions come through the proxy, not over SSH, so they show with no host too. */}
+      <SettingsSection
+        title={t('machine.usage.title')}
+        description={t('machine.usage.description')}
+        headerAction={(
+          <Button variant="ghost-muted" size="sm" onClick={() => onOpenRequests(name)}>
+            {t('machine.usage.requests')}
+            <ArrowUpRight />
+          </Button>
+        )}
+      >
+        {overview ? (
+          <div className="grid gap-px bg-border/50 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] [&>*]:bg-card">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
+              <Fact label={t('usage.fleet.column.requests')} value={formatCount(usage?.requests ?? 0)} />
+              <Fact label={t('usage.fleet.column.tokens')} value={formatCount(usage?.tokens ?? 0)} />
+              <Fact
+                label={t('usage.fleet.column.success')}
+                value={usage && usage.success + usage.failures ? `${((usage.success / (usage.success + usage.failures)) * 100).toFixed(1)}%` : '—'}
+              />
+              <Fact label={t('usage.fleet.column.failed')} value={formatCount(usage?.failures ?? 0)} tone={usage?.failures ? 'error' : undefined} />
+              <Fact label={t('usage.fleet.column.lastRequest')} value={usage?.lastRequest ? formatWhen(usage.lastRequest) : t('usage.fleet.noRequests')} wide />
+            </dl>
+            <div className="px-4 py-3">
+              <MachineThroughput machine={name} name={name} activity={activity} maximum={throughputScale(overview.machineLive)} />
+            </div>
+          </div>
+        ) : (
+          <SettingsBlock><Skeleton className="h-24 w-full" /></SettingsBlock>
+        )}
+      </SettingsSection>
 
-          <SettingsSection
-            title={t('machine.sessions.title')}
-            description={t('machine.sessions.description')}
-            summary={own ? sessionsSummary(own, t) : undefined}
-            headerAction={allSessions}
-          >
-            {sessions === null ? (
-              <SettingsBlock><Skeleton className="h-20 w-full" /></SettingsBlock>
-            ) : own?.latest.length ? (
-              <div className="flex flex-col py-1.5">
-                {own.latest.map((session) => <MachineSessionRow key={session.id} session={session} now={boardNow} onOpen={onOpenSession} />)}
-              </div>
-            ) : (
-              <SettingsBlock className="text-xs text-muted-foreground">{tRich('machine.sessions.none', { machine: small })}</SettingsBlock>
-            )}
-          </SettingsSection>
+      <SettingsSection
+        title={t('machine.sessions.title')}
+        description={t('machine.sessions.description')}
+        summary={own ? sessionsSummary(own, t) : undefined}
+        headerAction={allSessions}
+      >
+        {sessions === null ? (
+          <SettingsBlock><Skeleton className="h-20 w-full" /></SettingsBlock>
+        ) : own?.latest.length ? (
+          <div className="flex flex-col py-1.5">
+            {own.latest.map((session) => <MachineSessionRow key={session.id} session={session} now={boardNow} onOpen={onOpenSession} />)}
+          </div>
+        ) : (
+          <SettingsBlock className="text-xs text-muted-foreground">{tRich('machine.sessions.none', { machine: small })}</SettingsBlock>
+        )}
+      </SettingsSection>
 
+      {unconfigured ? null : (
+        <>
           <MachineAutomations machine={name} small={small} onNavigate={onNavigate} />
 
           <SettingsSection
