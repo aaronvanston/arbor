@@ -31,6 +31,10 @@ export function NotificationsSettingsPage() {
   const projects = useFleetProjects();
   const held = useFleetWideHold();
   const heavy = useScopedPreference('heavySessionTokens', heavyLabel);
+  // A value set elsewhere (the command line, an older version) is listed too, so the list shows what's in effect.
+  const heavyChoices = HEAVY_SESSION_TOKEN_OPTIONS.some((tokens) => tokens === heavy.value)
+    ? [...HEAVY_SESSION_TOKEN_OPTIONS]
+    : [...HEAVY_SESSION_TOKEN_OPTIONS, heavy.value].sort((left, right) => left - right);
   const machines = useScopedPreference('machineNotifications', onOff);
   const setupChanges = useScopedPreference('setupChangeAlerts', onOff);
   const permission = useScopedPreference('agentPermissionAlerts', onOff);
@@ -113,7 +117,7 @@ export function NotificationsSettingsPage() {
                   <SelectValue>{heavyLabel(heavy.value)}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end">
-                  {HEAVY_SESSION_TOKEN_OPTIONS.map((tokens) => (
+                  {heavyChoices.map((tokens) => (
                     <SelectItem key={tokens} value={String(tokens)}>{heavyLabel(tokens)}</SelectItem>
                   ))}
                 </SelectPopup>
