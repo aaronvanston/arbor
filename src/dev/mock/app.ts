@@ -151,8 +151,8 @@ function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[]; r
       latestVersion: '0.3.208',
       releases: Array.from({ length: 9 }, (_, index) => {
         const version = `0.3.${208 - index}`;
-        const changes = Array.from({ length: index === 0 ? 11 : 3 }, (__, change) => `Change ${change + 1} in ${version}`);
-        if (index === 1) changes.unshift(`Keep every account’s limits readable when a provider sends a reset time far in the future, a window Arbor hasn’t seen before and a plan name it doesn’t recognize, so the Accounts page, the sidebar limits and the capacity report all agree instead of showing three different answers for the same account`);
+        const changes = Array.from({ length: 3 }, (__, change) => `Change ${change + 1} in ${version}`);
+        if (index === 1) changes.splice(0, 1, `Keep every account’s limits readable when a provider sends a reset time far in the future, a window Arbor hasn’t seen before and a plan name it doesn’t recognize, so the Accounts page, the sidebar limits and the capacity report all agree instead of showing three different answers for the same account`);
         return { version, changes };
       }),
     };
@@ -163,17 +163,11 @@ function mockAppReleases(): { latestVersion: string; releases: ReleaseNotes[]; r
       {
         version: '0.3.201',
         summary: 'Updates now show what they change.',
+        // Release notes are a summary and at most three changes, as release-notes.mjs allows.
         changes: [
-          'Show what an update changes beside the update pill',
-          'Show the core’s changes on Settings › Updates',
-          'Record each release on GitHub with its DMG',
-          'Install the update the feed has now, not the one from the last check',
-          'Install the newer core an Arbor update brings',
-          'Bundle core 8.0.5',
-          'Name a session’s state the same way everywhere on Home and Sessions',
-          'Keep a plan ready on the board until it’s acted on',
-          'Wake a snoozed thread when it asks for another approval',
-          'Say when a stopped thread was last active',
+          'See what an update brings before you install it.',
+          'See what a core update changes before it installs.',
+          'An Arbor update brings the newer core with it.',
         ],
       },
       { version: '0.3.200', changes: ['Already installed, so not shown'] },
