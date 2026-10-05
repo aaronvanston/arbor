@@ -1307,9 +1307,12 @@ function SkillPlanDialog({ request, machines, repo, homeLabel, onClose, onDone }
 
   // An add that commits nothing reads as putting the skills on, which is all it does.
   const putting = plan ? putsOnly(plan) : false;
+  // The skills it changes, as the bulk bar's button counted them; a ticked skill with nothing to do isn't one.
+  const touched = plan ? touchedSkills(plan) : [];
+  const titled = touched.length ? touched : plan?.names ?? [];
   const title = !plan || !request ? null : request.kind === 'machine'
     ? tRich('setup.skills.review.title', { machine: <MachinePill name={request.machine} size="lg" /> })
-    : t((putting ? PUT_ON_TITLE : PLAN_TITLE[request.kind])[plan.names.length === 1 ? 0 : 1], { name: plan.names[0] ?? '', count: plan.names.length });
+    : t((putting ? PUT_ON_TITLE : PLAN_TITLE[request.kind])[titled.length === 1 ? 0 : 1], { name: titled[0] ?? '', count: titled.length });
   const runKey: MessageKey = putting ? 'setup.skills.plan.run.putOn'
     : plan?.kind === 'add' ? 'setup.skills.plan.run.add'
     : plan?.kind === 'remove' ? 'setup.skills.plan.run.remove'
