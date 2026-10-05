@@ -47,10 +47,27 @@ export function sceneClock(fps = SCENE_FPS) {
     pause() {
       last = null;
     },
+    /** The earliest `now` a tick draws at, in requestAnimationFrame's ms; null while paused, when the next one does. */
+    get dueAt(): number | null {
+      return last === null ? null : last + gap;
+    },
     get seconds() {
       return seconds;
     },
   };
+}
+
+/**
+ * How long before a frame is due a moving scene wakes to wait for display frames again. A scene draws one display frame
+ * in four (at 60 Hz), so between its frames it sleeps on a timer rather than waking on every display frame to skip
+ * it. Waking a little under a 60 Hz frame early means the first display frame after the wake is the one that was going
+ * to draw anyway, so the scene draws the same moments at the same times, with room for a timer that fires late.
+ */
+export const SCENE_WAKE_EARLY_MS = 10;
+
+/** How long to sleep after a frame drawn at `now` (ms, as requestAnimationFrame gives it), or 0 to wait on frames now. */
+export function sceneWakeDelay(dueAt: number | null, now: number): number {
+  return dueAt === null ? 0 : Math.max(0, dueAt - SCENE_WAKE_EARLY_MS - now);
 }
 
 // ---- Noise ----

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useAppPreferences } from '../../appPreferences';
 import type { AppColor } from '../../services/appColor';
 import { SIDEBAR_ART_SPEED, sidebarArtMotionChoice, type SidebarArt as SidebarArtChoice } from '../../services/sidebarArt';
-import { drawScene, sceneClock, sceneRows, SCENE_STILL_SECONDS, type SceneName } from '../../services/sidebarScenes';
+import { drawScene, sceneClock, sceneRows, sceneWakeDelay, SCENE_STILL_SECONDS, type SceneName } from '../../services/sidebarScenes';
 import type { AppTheme } from '../../theme';
 
 /**
@@ -44,6 +44,8 @@ function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: 
     let pixels: Uint32Array | null = null;
     let value = new Float32Array(0), drift = new Float32Array(0);
     let frame = 0;
+    // Between the scene's frames it sleeps on a timer instead of waking every display frame (sceneWakeDelay).
+    let wake = 0;
 
     // Sizes the canvas to the strip; false while the strip has no size (a hidden sidebar).
     const fit = () => {
@@ -77,16 +79,26 @@ function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: 
         return;
       }
       const seconds = clock.tick(now, speed);
-      if (seconds !== null && fit()) draw(seconds);
-      frame = requestAnimationFrame(loop);
+      if (seconds === null) {
+        frame = requestAnimationFrame(loop);
+        return;
+      }
+      if (fit()) draw(seconds);
+      wake = window.setTimeout(() => {
+        wake = 0;
+        if (!frame) frame = requestAnimationFrame(loop);
+      }, sceneWakeDelay(clock.dueAt, performance.now()));
     };
     const follow = () => {
       if (!moving()) {
+        // A sleep cut short, so coming back in front draws on the next display frame, as it always has.
+        window.clearTimeout(wake);
+        wake = 0;
         clock.pause();
         if (still()) redraw();
         return;
       }
-      if (!frame) frame = requestAnimationFrame(loop);
+      if (!frame && !wake) frame = requestAnimationFrame(loop);
     };
 
     redraw();
@@ -99,6 +111,7 @@ function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: 
     reduce?.addEventListener('change', follow);
     return () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(wake);
       resized.disconnect();
       window.removeEventListener('focus', follow);
       window.removeEventListener('blur', follow);
