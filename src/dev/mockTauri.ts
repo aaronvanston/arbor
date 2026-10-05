@@ -273,6 +273,12 @@
  * Code itself, `many` for 40 T3 Code threads across four machines, `fail` for every read failing (the board says so
  * with Retry), or `failafter` for reads failing after the first (the board keeps the last read and says so).
  * `?fleet=not3` for no machine with T3 Code, which hides T3 Code's switch in Settings › Machines and its notice here.
+ * The waits under it come from Arbor's reporter on each machine: `?attention=none` for no session waiting on its user,
+ * or `question` for the Claude Code session asking a question rather than for permission; `?reporter=partial` for
+ * casey-mbp's second Codex home no longer reporting, or `fail` for turning a machine's reporter on or off failing on
+ * its first file. ci-01 is reached through Tailscale's syd relay and drops the odd ping: `?ping=none` for it not
+ * answering pings at all (its latency reads as unknown), and `?path=direct` or `peer` for it reached directly over the
+ * internet, or through a relay with no region named.
  * Turning T3 Code threads off in Settings › Machines takes T3 Code's threads off the board and shows the notice whose
  * Turn on switches them back; it's logged as `t3_threads_enabled`, and the waiting count the tray icon would show as
  * `tray_waiting`.
@@ -325,8 +331,9 @@
  * grayed out.
  * For Back and Forward (⌘[ and ⌘], the mouse's side buttons, Go back and Go forward in the palette): `?history=back` to
  * start on Machines with steps to go back through (Home, Accounts, Usage's Requests with Failed on, the Sessions list
- * for arbor, the login-loop session, Settings › OAuth), or `?history=both` to start on that session with Settings ›
- * OAuth and Machines still ahead. With `?core=stopped` too, Back and Forward pass over Accounts and OAuth.
+ * for arbor, the login-loop session, Settings › Model routes), or `?history=both` to start on that session with
+ * Settings › Model routes and Machines still ahead. With `?core=stopped` too, Back and Forward pass over Accounts and
+ * Model routes, the two that need the core.
  * For the filter bar (the Filters button, its popover, and a chip for each filter that's set): `?filters=usage` to
  * start on Usage's Requests narrowed to casey-mbp and the login-loop session, or `?filters=sessions` to start on the
  * Sessions list narrowed to casey-mbp and the arbor project (so the popover offers arbor's branches). The other
@@ -629,7 +636,8 @@ export function installTauriMock() {
       failedRequestsView(),
       sessionsView({ tab: 'sessions', project: 'arbor' }),
       sessionsView({ tab: 'sessions', project: 'arbor', session: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7' }),
-      { kind: 'settings', page: 'appearance' },
+      // Model routes, as the one Settings page that needs the core, so `?core=stopped` shows Back passing over it.
+      { kind: 'settings', page: 'overrides' },
       { kind: 'main', page: 'machines' },
     ];
     resetViewHistory({ entries: steps, index: historyScenario === 'both' ? 4 : steps.length - 1 });
