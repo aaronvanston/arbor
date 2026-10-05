@@ -14,8 +14,7 @@ to its page. Sync is still `setup` in ids and storage keys.
 
 Pages have no tabs: the tree picks the view and the breadcrumb reads "Page / View". Sync › Library is the exception: a
 bar over it picks the kind it lists (`kind`: plugins, MCP servers, skills, hooks, instructions) and how it's shown
-(`lens`: the list, each kind's grid by machine, or Cost), and Repo has Files and Arbor's changes (`lens: 'changes'`) the
-same way. A view that can be narrowed to one machine (`hasMachineScope`, plus Checkouts and the Library's Cost) ends its breadcrumb with the machine picker
+(`lens`: the list, each kind's grid by machine, or Cost), and Repo opens on History with `lens: 'changes'`. A view that can be narrowed to one machine (`hasMachineScope`, plus Checkouts and the Library's Cost) ends its breadcrumb with the machine picker
 (`components/layout/MachineCrumb.tsx`), and the page's other views keep that pick (`keepMachineScope`).
 
 ## Views that moved
@@ -24,7 +23,7 @@ An old view id can still turn up in links, the palette's saved picks and the vie
 land somewhere. `movedUsageView` sends Usage's old Capacity, Analysis, Failures and Claude Code (`telemetry`) to
 Accounts › Value, Overview, Requests with Failed on, and the Library's Cost. `movedSetupView` sends Sync's old Agents and
 Toolchain to Software; Skills, MCP & plugins and Hooks to their Library kind by machine (`libraryView(kind, 'machines')`);
-Cost and Context to the Library's Cost; Arbor's changes (`history`) to Repo with `lens: 'changes'`; Projects to
+Cost and Context to the Library's Cost; Arbor's changes (`history`) to the Repo's History (`lens: 'changes'`); Projects to
 `checkoutsView()` (Sessions with `lens: 'checkouts'`); and Checklist to Machines. `savedUsageView` and `savedSetupView`
 read a page's saved last view through them. Overview kept Checks' id, `overview`. `tests/movedViews.test.ts` covers all of it; extend these maps when you move a view.
 
@@ -46,7 +45,7 @@ for every machine and the machines behind it; a row's switch (`services/libraryT
 brings each answering machine in line straight away, with Undo. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its
 own switch (a value of that machine's own in the repo, applied there at once, `switchMachine`), use and a plugin's
 measured cost, and Remove from every machine (`removeEverywhere`), confirmed first and undone with Undo. Software has the agent rollout, every machine's
-versions and the toolchain. Repo is the setup repo's files, with Arbor's changes on each machine beside them.
+versions and the toolchain. Repo is the setup repo's files, changes and History, one timeline of its commits with the changes Arbor made on each machine from them (and on its own, from features that edit settings), each with Undo (`pages/SetupRepoHistory.tsx` over `services/repoTimeline.ts`).
 
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the
 limits, the next run's chances, where a burst would go. Settings › Pools only edits them.

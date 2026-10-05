@@ -415,7 +415,7 @@ pub(crate) fn skill_install(answer: &Value) -> String {
         }
     }
     if !items(answer, "written").is_empty() {
-        out.push("Undo it in Sync › Repo › Arbor's changes.".into());
+        out.push("Undo it in Sync › Repo › History.".into());
     }
     out.join("\n")
 }

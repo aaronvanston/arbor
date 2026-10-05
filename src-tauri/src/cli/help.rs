@@ -124,7 +124,7 @@ arbor sync <machine>
 arbor sync apply <machine>
 
 How far each machine is from the setup repo, what Sync would change on one, or bring one in line. Applying asks
-first: it prints the plan and needs --yes. Every file is backed up before it changes, and Sync › Repo › Arbor's changes can
+first: it prints the plan and needs --yes. Every file is backed up before it changes, and Sync › Repo › History can
 undo it.
 
   arbor sync
@@ -216,7 +216,7 @@ Serves Arbor to an agent over MCP on stdin and stdout. Changes that ask first ne
 arbor skill install
 
 Prints the skill that teaches agents arbor, or puts it in this Mac's skill store (~/.agents/skills) and each Claude
-Code home with Sync on. Each copy is backed up first, so Sync › Repo › Arbor's changes can undo it.
+Code home with Sync on. Each copy is backed up first, so Sync › Repo › History can undo it.
 
   arbor skill
   arbor skill install

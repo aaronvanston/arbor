@@ -57,7 +57,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Pause or resume an account | `arbor accounts pause <id>`, `arbor accounts resume <id>` |
 | Cap an account at a percent of its limits, or clear it | `arbor accounts cap <id> 50`, `arbor accounts cap <id> off` |
 | Automatic account order for a provider | `arbor routing claude on`, `arbor routing codex off` |
-| Bring a machine in line with the setup repo | `arbor sync apply <machine>` (backed up first; undo it in Sync › Repo › Arbor's changes) |
+| Bring a machine in line with the setup repo | `arbor sync apply <machine>` (backed up first; undo it in Sync › Repo › History) |
 | Proxy core | `arbor core start`, `arbor core stop`, `arbor core restart`, `arbor core install [version]` |
 | Mark every alert seen | `arbor alerts seen` |
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |

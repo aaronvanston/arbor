@@ -74,7 +74,7 @@ type Plan = { machine: SetupMachine; files: SyncFile[] };
 const short = (sha: string) => sha.slice(0, 7);
 
 /** "2 files and 1 skill". */
-function countText(counts: { files: number; skills: number }, t: Translate): string {
+export function countText(counts: { files: number; skills: number }, t: Translate): string {
   const files = t(counts.files === 1 ? 'setup.sync.count.files.one' : 'setup.sync.count.files.other', { count: counts.files });
   if (!counts.skills) return files;
   const skills = t(counts.skills === 1 ? 'setup.sync.count.skills.one' : 'setup.sync.count.skills.other', { count: counts.skills });
@@ -112,7 +112,11 @@ type Bulk = { running: boolean; results: { machine: string; ok: boolean; text: R
  * The setup repo: a git repo on this Mac whose CLAUDE.md, AGENTS.md, rules, subagents, commands and skills
  * each machine is brought in step with, one machine first, after its changes have been reviewed.
  */
-export function SetupRepoSection({ machines }: { machines: SetupMachine[] }) {
+export function SetupRepoSection({ machines, history = null }: {
+  machines: SetupMachine[];
+  /** Opens the browser on History, narrowed to a machine's changes when one is named. */
+  history?: { machine: string | null } | null;
+}) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
   const [path, setPath] = useState<string | null>(storedSetupRepo);
@@ -330,6 +334,7 @@ export function SetupRepoSection({ machines }: { machines: SetupMachine[] }) {
         <RepoBrowser
           repo={repo}
           machines={machines}
+          history={history}
           onRepo={setRepo}
           onReview={(machine, path) => {
             setReviewFocus(path ?? null);
@@ -912,7 +917,7 @@ function SkillSidesDiff({ machine, before, after }: { machine: string; before: S
 }
 
 /** How many files and skills a backup holds: setup sync's files and store skills, and the Skills tab's skills. */
-const backupCounts = (backup: SetupBackup) => {
+export const backupCounts = (backup: SetupBackup) => {
   const files = backup.files.filter((file) => !file.skill).length;
   return { files, skills: backup.files.length - files + backup.skills.length };
 };
@@ -927,7 +932,7 @@ export function undoMessage(backup: SetupBackup, t: Translate): string {
   return t(backup.files.length === 1 ? 'setup.sync.undo.confirm.one' : 'setup.sync.undo.confirm.other', { things, time });
 }
 
-const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
+export const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
   sync: 'setup.history.what.sync',
   skills: 'setup.history.what.skills',
   reporter: 'setup.history.what.reporter',

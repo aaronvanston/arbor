@@ -47,7 +47,8 @@ import {
 import type { FileView } from '../services/fileView';
 import { checkSetupSkillSources, removableKind, setSetupFileRemoved, setSetupSkillRemoved, updateSetupSkill } from '../services/setupSync';
 import { machineLookKey } from '../services/machineLook';
-import { ChangesMode, HistoryMode } from './SetupRepoChanges';
+import { ChangesMode } from './SetupRepoChanges';
+import { HistoryMode } from './SetupRepoHistory';
 import { ProjectInstructionsStanding } from './ProjectInstructionsCard';
 
 // The tree and the viewers bring in large libraries, so they load the first time the browser is shown.
@@ -86,9 +87,11 @@ const folderOf = (path: string) => (path.includes('/') ? `${path.slice(0, path.l
  * outside Arbor, until they're committed together; History shows what each commit changed. Each file says what Arbor
  * does with it and, once committed, how each machine's copy stands, which opens that machine's review.
  */
-export function RepoBrowser({ repo, machines, onRepo, onReview }: {
+export function RepoBrowser({ repo, machines, history = null, onRepo, onReview }: {
   repo: SetupRepo;
   machines: SetupMachine[];
+  /** Opens on History, its machine changes narrowed to `machine` when one is named. */
+  history?: { machine: string | null } | null;
   onRepo: (repo: SetupRepo) => void;
   /** Opens a machine's review, with `path`'s copy there opened in it. */
   onReview: (machine: string, path?: string) => void;
@@ -97,7 +100,9 @@ export function RepoBrowser({ repo, machines, onRepo, onReview }: {
   const { askConfirmation } = useConfirmation();
   const [tree, setTree] = useState<RepoTree | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>('files');
+  const [mode, setMode] = useState<Mode>(history ? 'history' : 'files');
+  // A link to History opens it again, even when the browser was left on another mode.
+  useEffect(() => { if (history) setMode('history'); }, [history]);
   const [selected, setSelected] = useState<string | null>(null);
   const [naming, setNaming] = useState<Naming | null>(null);
   /** The open file has an edit that isn't saved, which choosing another file would lose. */
@@ -308,7 +313,7 @@ export function RepoBrowser({ repo, machines, onRepo, onReview }: {
           onDiscard={(paths) => void discard(paths)}
         />
       ) : (
-        <HistoryMode repo={repo} />
+        <HistoryMode repo={repo} machines={machines} machine={history?.machine ?? null} />
       )}
       <NamingDialog
         naming={naming}

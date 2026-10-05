@@ -51,7 +51,7 @@ export type SetupTabId = 'overview' | 'library' | 'software' | 'repo';
 export type LibraryKind = 'plugins' | 'mcps' | 'skills' | 'hooks' | 'instructions';
 /**
  * How a Sync view looks at what it shows: the Library by machine (each kind's grid) or by what it costs, and the
- * Repo as Arbor's changes on one machine, with its undo.
+ * Repo opened on its History, the repo's commits with the changes Arbor made on the machines.
  */
 export type SetupLens = 'machines' | 'cost' | 'changes';
 /**
@@ -72,7 +72,7 @@ export type UsageParams = { tab?: UsageTabId; machine?: string; session?: string
 export type SessionsParams = { tab?: SessionsTabId; session?: string; machine?: string; project?: string; lens?: ProjectsLens };
 /**
  * What Sync shows: one of its views, the Library's kind, how the view looks at it, and the machine Cost's Claude Code
- * spend is narrowed to, or whose changes the Repo's Arbor's changes lists.
+ * spend is narrowed to, or whose changes the Repo's History starts on.
  */
 export type SetupParams = { tab?: SetupTabId; kind?: LibraryKind; lens?: SetupLens; machine?: string; item?: string };
 export type AccountsParams = { tab?: AccountsTabId };
@@ -159,7 +159,7 @@ export function hasMachineScope(page: MainPageId, tab: string | undefined): bool
   return false;
 }
 
-/** Sync's views with a machine in their breadcrumb: the Library's Cost, and the Repo's Arbor's changes, one machine's at a time. */
+/** Sync's views narrowed to a machine: the Library's Cost, and the Repo's History, whose machine changes it filters. */
 const setupMachineScope = (params: SetupParams | undefined) =>
   (params?.tab === 'library' && params.lens === 'cost') || (params?.tab === 'repo' && params.lens === 'changes');
 
@@ -204,7 +204,7 @@ export function movedUsageView(tab: string | null | undefined): AppView | null {
 /**
  * Where a Sync view that moved is now, by the id saved views, recent picks and links still name it: Agents and
  * Toolchain are Software; Skills, MCP & plugins and Hooks the Library's kind by machine, as their grids were; Cost
- * (and Context before it) the Library by cost; Arbor's changes the Repo's; Projects Sessions › Projects' Checkouts;
+ * (and Context before it) the Library by cost; Arbor's changes the Repo's History; Projects Sessions › Projects' Checkouts;
  * and Checklist the Machines page, where each machine's page has its own. Null for any other id.
  */
 export function movedSetupView(tab: string | null | undefined): AppView | null {

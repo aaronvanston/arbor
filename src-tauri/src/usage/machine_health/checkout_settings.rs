@@ -8,7 +8,7 @@
 //! excludes the first time it writes one), and it wins over the machine's settings and the project's
 //! checked-in .claude/settings.json, which Arbor never writes. A checkout where Git would see a new
 //! file is left alone. Each file is changed the careful way (guarded_writes): only while it's as
-//! Arbor read it, backed up first, and listed on Sync › Repo › Arbor's changes to undo.
+//! Arbor read it, backed up first, and listed on Sync › Repo › History to undo.
 
 use super::guarded_writes::{edit_call, edit_finish, edit_outcomes, edit_start, new_stamp, run_on, ChangeKind, Edit, EditFile, EditOutcome};
 use super::setup::covered_machine;

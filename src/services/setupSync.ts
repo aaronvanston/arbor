@@ -26,9 +26,6 @@ export type SyncKind = SyncFileKind | 'skill';
  */
 export type SkillProblem = 'link' | 'name' | 'secret' | 'large' | 'noDoc';
 
-/** How many changes a machine keeps backups of, as the native side keeps them. */
-export const BACKUPS_KEPT = 20;
-
 export const getSetupRepo = (repo: string) => invokeCommand('get_setup_repo', { repo });
 export const readSetupRepoFile = (repo: string, commit: string, path: string) => invokeCommand('read_setup_repo_file', { repo, commit, path });
 /** Starts a repo in `repo` with this Mac's instructions, rules, subagents and commands. */

@@ -771,7 +771,7 @@ fn with_include(config: Option<&[u8]>) -> Vec<u8> {
     text
 }
 
-/// Adds the line that brings Arbor's pool hosts into ~/.ssh/config, backed up so Sync › Repo › Arbor's changes can undo it.
+/// Adds the line that brings Arbor's pool hosts into ~/.ssh/config, backed up so Sync › Repo › History can undo it.
 #[tauri::command]
 pub(crate) async fn add_pool_ssh_include(app: tauri::AppHandle) -> Result<(), String> {
     let path = ssh_config_path().ok_or("Can't find your home folder")?;

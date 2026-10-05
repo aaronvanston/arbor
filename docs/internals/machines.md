@@ -14,7 +14,7 @@ slots anywhere else.
 
 Every change to a file on a machine goes through `usage/machine_health/guarded_writes.rs` (`edit_start`, `edit_call`
 for each file, `edit_finish`). It writes only while the file is still as Arbor read it, backs it up first in
-`~/.arbor/setup-backups`, and lands on Sync › Repo › Arbor's changes, the one list where any of them can be undone.
+`~/.arbor/setup-backups`, and lands on Sync › Repo › History, the one list where any of them can be undone.
 
 ## Agent homes
 

@@ -38,10 +38,12 @@ function planDetails(plans: LinePlan[], t: ReturnType<typeof useI18n>['t']) {
  * The top of Sync's Overview: where the machines stand against the repo, each one behind with what's behind and a way
  * to bring it in line, and what the repo changed lately.
  */
-export function SetupOverviewHead({ machines, onOpenItem, onOpenRepo }: {
+export function SetupOverviewHead({ machines, onOpenItem, onOpenRepo, onOpenHistory }: {
   machines: SetupMachine[];
   onOpenItem: (kind: LibraryKind, key: string) => void;
   onOpenRepo: () => void;
+  /** The Repo's History, with every machine's changes. */
+  onOpenHistory: () => void;
 }) {
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
@@ -168,7 +170,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenRepo }: {
 
       <SettingsSection
         title={t('overview.recent.title')}
-        headerAction={<Button variant="ghost" size="sm" onClick={onOpenRepo}>{t('overview.recent.all')}<ChevronRight /></Button>}
+        headerAction={<Button variant="ghost" size="sm" onClick={onOpenHistory}>{t('overview.recent.all')}<ChevronRight /></Button>}
       >
         {log === null ? (
           <TableEmpty><span className="inline-flex items-center gap-2"><Spinner />{t('library.loading')}</span></TableEmpty>

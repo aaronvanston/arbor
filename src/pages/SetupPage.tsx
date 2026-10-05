@@ -59,7 +59,6 @@ import { SetupChecks } from './SetupChecks';
 import { SetupRepoSection } from './SetupSync';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
 import { SetupPlugins } from './SetupPlugins';
-import { historyMachine, rememberHistoryMachine, SetupHistory } from './SetupHistory';
 import { SetupCost } from './SetupCost';
 import { SetupAgents } from './SetupAgents';
 import { HarnessItemsSection, HarnessSkillsSection } from './SetupHarnessHomes';
@@ -392,8 +391,9 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   });
 
   const machines = useMemo(() => inventory?.machines ?? [], [inventory]);
-  // Arbor's changes shows one machine's backups at a time; the breadcrumb picks which.
-  const historyPick = repoChanges ? historyMachine(machines, params?.machine) : null;
+  // History named by a link (Arbor's changes once), with the machine whose changes it narrows to; kept stable so the
+  // browser only jumps to History when the link changes.
+  const history = useMemo(() => (repoChanges ? { machine: params?.machine ?? null } : null), [repoChanges, params?.machine]);
   const keys = useMemo(() => homeKeys(machines), [machines]);
   const reference = resolveReference(machines, chosenReference);
   const activeHome = chosenHome && keys.includes(chosenHome) ? chosenHome : keys[0] ?? null;
@@ -522,22 +522,10 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             t('setup.title'),
             t(leafLabel('setup', tab) ?? 'setup.tab.overview'),
             // Cost is the one Sync view that's about spend rather than comparing machines, so it can be narrowed to one.
-            ...(repoChanges ? [t('setup.tab.history')] : []),
             ...(costLens ? [t('setup.tab.cost')] : []),
             ...(libraryLens === 'machines' ? [t(LIBRARY_KIND_LABEL[kind])] : []),
             ...(libraryItem !== null ? [t(LIBRARY_KIND_LABEL[kind]), libraryItemName(libraryItem)] : []),
-            ...(repoChanges && historyPick ? [
-              <MachineCrumb
-                key="machine"
-                machine={historyPick}
-                machines={machines.map((entry) => entry.machine)}
-                all={false}
-                onChange={(machine) => {
-                  rememberHistoryMachine(machine);
-                  onViewChange?.(setupView({ tab: 'repo', lens: 'changes', machine }));
-                }}
-              />,
-            ] : []),
+
             ...(costLens ? [
               <MachineCrumb
                 key="machine"
@@ -576,20 +564,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             <EmptyDescription>{t('setup.empty.description')}</EmptyDescription>
           </Empty>
         ) : tab === 'repo' ? (
-          <>
-            <ToggleGroup
-              className="self-start"
-              value={[repoChanges ? 'changes' : 'files']}
-              aria-label={t('setup.repo.lens.label')}
-              onValueChange={(values) => {
-                if (values[0]) onViewChange?.(setupView({ tab: 'repo', ...(values[0] === 'changes' ? { lens: 'changes' as const } : {}) }), 'push');
-              }}
-            >
-              <Toggle value="files">{t('setup.repo.lens.files')}</Toggle>
-              <Toggle value="changes">{t('setup.tab.history')}</Toggle>
-            </ToggleGroup>
-            {repoChanges ? <SetupHistory machines={machines} picked={historyPick} /> : <SetupRepoSection machines={machines} />}
-          </>
+          <SetupRepoSection machines={machines} history={history} />
         ) : costLens ? (
           <SetupCost
             machines={machines}
@@ -641,6 +616,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
               machines={machines}
               onOpenItem={(itemKind, key) => onNavigate(libraryItemView(itemKind, key))}
               onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}
+              onOpenHistory={() => onNavigate(setupView({ tab: 'repo', lens: 'changes' }))}
             />
             {!firstScan ? (
               <SetupChecks

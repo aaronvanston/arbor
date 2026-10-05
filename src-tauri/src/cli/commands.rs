@@ -710,7 +710,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "add_pool_ssh_include",
         access: Access::Write,
-        summary: "Adds the line that brings Arbor's pool hosts into ~/.ssh/config, backed up so Sync › Repo › Arbor's changes can undo it.",
+        summary: "Adds the line that brings Arbor's pool hosts into ~/.ssh/config, backed up so Sync › Repo › History can undo it.",
         args: &[],
     },
     CommandSpec {
@@ -1546,7 +1546,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "apply_codex_plugin_changes",
         access: Access::Confirm,
-        summary: "Makes the changes in a machine's Codex homes: installs and removals with Codex's own `plugin` command, so Codex keeps its records and cache as it would for a person there, then turning plugins on and off in each config.toml the careful way, only while it's as read, backed up first and on Sync › Repo › Arbor's changes to undo. The Codex app's own marketplaces are left alone. Then the machine is read again.",
+        summary: "Makes the changes in a machine's Codex homes: installs and removals with Codex's own `plugin` command, so Codex keeps its records and cache as it would for a person there, then turning plugins on and off in each config.toml the careful way, only while it's as read, backed up first and on Sync › Repo › History to undo. The Codex app's own marketplaces are left alone. Then the machine is read again.",
         args: &[
             ArgSpec { name: "machine", ts_type: "string", optional: false },
             ArgSpec { name: "changes", ts_type: "Array<CodexPluginChange>", optional: false },
@@ -1555,7 +1555,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "forget_plugin_leftovers",
         access: Access::Confirm,
-        summary: "Takes plugins that are gone out of the settings that still name them, home by home, the careful way: only while each file is as read, backed up first, and on Sync › Repo › Arbor's changes to undo. Then the machine is read again.",
+        summary: "Takes plugins that are gone out of the settings that still name them, home by home, the careful way: only while each file is as read, backed up first, and on Sync › Repo › History to undo. Then the machine is read again.",
         args: &[
             ArgSpec { name: "machine", ts_type: "string", optional: false },
             ArgSpec { name: "leftovers", ts_type: "Array<PluginLeftover>", optional: false },
@@ -1664,7 +1664,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "apply_hooks",
         access: Access::Confirm,
-        summary: "Puts the repo's hooks, as `commit` has them, in each of a machine's Claude Code and Codex homes that isn't in step: hooks that run a script in ~/.agents/hooks are replaced with the repo's for that home, and every other hook is left as it is. Each settings.json or hooks.json is changed the careful way, only while it's as read, backed up first and on Sync › Repo › Arbor's changes to undo. Codex then asks for a review of each hook that's new or changed before it runs it, which is left to its user. Then the machine is read again.",
+        summary: "Puts the repo's hooks, as `commit` has them, in each of a machine's Claude Code and Codex homes that isn't in step: hooks that run a script in ~/.agents/hooks are replaced with the repo's for that home, and every other hook is left as it is. Each settings.json or hooks.json is changed the careful way, only while it's as read, backed up first and on Sync › Repo › History to undo. Codex then asks for a review of each hook that's new or changed before it runs it, which is left to its user. Then the machine is read again.",
         args: &[
             ArgSpec { name: "repo", ts_type: "string", optional: false },
             ArgSpec { name: "commit", ts_type: "string", optional: false },
@@ -1886,7 +1886,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "install_cli_skill",
         access: Access::Write,
-        summary: "Puts the skill in this Mac's store and its Claude Code homes, backed up so Sync › Repo › Arbor's changes can undo it.",
+        summary: "Puts the skill in this Mac's store and its Claude Code homes, backed up so Sync › Repo › History can undo it.",
         args: &[],
     },
 ];

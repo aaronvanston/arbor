@@ -384,7 +384,7 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
   const sheetRow = sheet ? view.plugins.find((row) => row.id === sheet) ?? null : null;
   const mcpColumns = useMemo(() => machineColumns(view.mcpHomes), [view]);
   const codexColumns = useMemo(() => machineColumns(view.codexHomes), [view]);
-  // A Codex change is made straight away: turning a plugin on or off can be undone from Arbor's changes, and an
+  // A Codex change is made straight away: turning a plugin on or off can be undone from Repo › History, and an
   // install or removal is confirmed first.
   const changeCodexPlugin = async (row: PluginRow, cell: PluginCell, action: PluginAction) => {
     const { machine, path: home } = cell.home;
@@ -1246,7 +1246,7 @@ function MachineRepoMenu({ row, machine, busy, onWanted }: {
 
 /**
  * Under the grid: what the filter hides, and plugins that are gone but still named in a settings file, which can be
- * taken out of those files. Each machine's files are backed up and the change goes on Arbor's changes to undo.
+ * taken out of those files. Each machine's files are backed up and the change goes on Repo › History to undo.
  */
 function GridFooter({ grid, onShowAll, error }: { grid: PluginGrid; onShowAll: () => void; error: string | null }) {
   const { t } = useI18n();

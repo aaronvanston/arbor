@@ -228,7 +228,6 @@ describe('Sync’s views that kept their ids', () => {
     expect(movedSetupView('overview')).toBeNull();
     expect(parseRecents(JSON.stringify(['page:main:setup:overview', 'page:main:setup:history']))).toEqual(['page:main:setup:overview', 'page:main:setup:repo']);
     expect(translate('setup.tab.overview')).toBe('Overview');
-    expect(translate('setup.tab.history')).toBe('Arbor’s changes');
     expect(leafFound('setup', 'repo', 'arbor’s changes')).toBe(true);
     expect(leafFound('setup', 'overview', 'checks')).toBe(true);
   });

@@ -228,7 +228,7 @@ export const cliHandlers: CliHandlers = {
   },
   'sync.apply': {
     access: 'confirm',
-    summary: 'Brings a machine in line with the setup repo, backing up first so Sync › Repo › Arbor\'s changes can undo it',
+    summary: 'Brings a machine in line with the setup repo, backing up first so Sync › Repo › History can undo it',
     args: [arg('machine', 'string')],
     run: async (args) => {
       const machine = textArg(args, 'machine');

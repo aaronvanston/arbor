@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { DiffStyleToggle, ViewerSkeleton } from '../components/FileChanges';
 import { Button } from '../components/ui/button';
 import { Checkbox } from '../components/ui/checkbox';
@@ -9,17 +9,12 @@ import { Textarea } from '../components/ui/textarea';
 import { toast } from '../components/ui/toast';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
-import { formatAgo, formatDateTime } from '../lib/format';
 import { cn } from '../lib/utils';
-import type { RepoChange, RepoCommit, RepoEntry, RepoFileProblem, RepoStatus, SetupRepo } from '../native/types';
-import { baseName, commitSetupRepo, getSetupRepoChanges, getSetupRepoLog, suggestedMessage } from '../services/repoBrowser';
+import type { RepoChange, RepoEntry, RepoFileProblem, RepoStatus, SetupRepo } from '../native/types';
+import { baseName, commitSetupRepo, getSetupRepoChanges, suggestedMessage } from '../services/repoBrowser';
 
 const CodeChanges = lazy(() => import('../components/CodeChanges').then((module) => ({ default: module.CodeChanges })));
 
-/** How many commits History lists. */
-const LOG_LIMIT = 100;
-
-const short = (sha: string) => sha.slice(0, 7);
 
 /** A change's letter, as git status prints it, in git's colors. */
 const LETTER: Record<Exclude<RepoStatus, 'same'>, { letter: string; className: string; key: MessageKey }> = {
@@ -45,7 +40,7 @@ function StatusLetter({ status }: { status: RepoStatus }) {
   return <span className={cn('w-3 shrink-0 text-center font-mono text-xs font-semibold', look.className)} title={t(look.key)}>{look.letter}</span>;
 }
 
-type Loaded<T> = { state: 'loading' } | { state: 'error'; error: string } | { state: 'ready'; value: T };
+export type Loaded<T> = { state: 'loading' } | { state: 'error'; error: string } | { state: 'ready'; value: T };
 
 /** A change's words for the message it suggests: one file's name and what happened to it, or how many. */
 function useSuggested(changes: readonly Pick<RepoChange, 'path' | 'status'>[]) {
@@ -204,7 +199,7 @@ export function ChangesMode({ repo, entries, onRepo, onOpen, onDiscard }: {
 }
 
 /** Each file's changes one after another, with any that can't be shown named above them, and why. */
-function Diffs({ loaded, files, unshown, empty, renderActions }: {
+export function Diffs({ loaded, files, unshown, empty, renderActions }: {
   loaded: Loaded<RepoChange[]>;
   files: RepoChange[];
   unshown: RepoChange[];
@@ -244,79 +239,5 @@ function Diffs({ loaded, files, unshown, empty, renderActions }: {
         <CodeChanges files={drawn} renderActions={renderActions} header={notes} />
       </Suspense>
     </div>
-  );
-}
-
-/** History: the branch's commits, newest first; beside them, everything the chosen one changed. */
-export function HistoryMode({ repo }: { repo: SetupRepo }) {
-  const { t } = useI18n();
-  const [log, setLog] = useState<Loaded<RepoCommit[]>>({ state: 'loading' });
-  const [chosen, setChosen] = useState<string | null>(null);
-  const [changes, setChanges] = useState<Loaded<RepoChange[]>>({ state: 'loading' });
-  const head = repo.head?.sha ?? null;
-  const now = Date.now();
-
-  useEffect(() => {
-    let current = true;
-    getSetupRepoLog(repo.path, LOG_LIMIT)
-      .then((value) => {
-        if (!current) return;
-        setLog({ state: 'ready', value });
-        setChosen((was) => (was && value.some((commit) => commit.sha === was) ? was : value[0]?.sha ?? null));
-      })
-      .catch((reason: unknown) => { if (current) setLog({ state: 'error', error: String(reason) }); });
-    return () => { current = false; };
-  }, [repo.path, head]);
-
-  useEffect(() => {
-    if (!chosen) return undefined;
-    let current = true;
-    setChanges({ state: 'loading' });
-    getSetupRepoChanges(repo.path, chosen)
-      .then((value) => { if (current) setChanges({ state: 'ready', value }); })
-      .catch((reason: unknown) => { if (current) setChanges({ state: 'error', error: String(reason) }); });
-    return () => { current = false; };
-  }, [repo.path, chosen]);
-
-  const commits = log.state === 'ready' ? log.value : [];
-  const commit = commits.find((entry) => entry.sha === chosen) ?? null;
-  const files = useMemo(() => (changes.state === 'ready' ? changes.value.filter((change) => change.problem === null) : []), [changes]);
-  const unshown = changes.state === 'ready' ? changes.value.filter((change) => change.problem !== null) : [];
-
-  return (
-    <>
-      <div className="col-start-1 row-start-2 flex min-h-0 flex-col overflow-y-auto border-e border-border/60 py-1">
-        {log.state === 'loading' ? <div className="p-3"><ViewerSkeleton /></div> : null}
-        {log.state === 'error' ? <p className="px-3 py-3 text-xs text-error-foreground" role="alert">{t('repo.history.failed', { error: log.error })}</p> : null}
-        {log.state === 'ready' && !commits.length ? <p className="px-3 py-3 text-xs text-muted-foreground">{t('repo.history.empty')}</p> : null}
-        {commits.map((entry) => (
-          <button
-            key={entry.sha}
-            type="button"
-            onClick={() => setChosen(entry.sha)}
-            aria-current={entry.sha === chosen ? 'true' : undefined}
-            className={cn('mx-1 flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-start hover:bg-accent/60', entry.sha === chosen && 'bg-accent hover:bg-accent')}
-          >
-            <span className="truncate text-sm text-foreground">{entry.subject}</span>
-            <span className="text-xs text-muted-foreground"><span className="font-mono">{short(entry.sha)}</span> · {formatAgo(entry.atMs, now)}</span>
-          </button>
-        ))}
-      </div>
-      <section className="col-start-2 row-span-2 row-start-1 flex min-h-0 min-w-0 flex-col">
-        <header className="flex min-h-11 items-center gap-3 border-b border-border/60 px-4 py-2">
-          {commit ? (
-            <p className="flex min-w-0 flex-1 items-baseline gap-2 text-sm">
-              <span className="truncate text-foreground">{commit.subject}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                <span className="font-mono">{short(commit.sha)}</span> · {formatDateTime(commit.atMs, { year: 'always' })}
-                {changes.state === 'ready' ? ` · ${t(changes.value.length === 1 ? 'repo.history.files.one' : 'repo.history.files.other', { count: changes.value.length })}` : ''}
-              </span>
-            </p>
-          ) : <p className="flex-1 text-sm text-muted-foreground">{t('repo.history.choose')}</p>}
-          <DiffStyleToggle />
-        </header>
-        {chosen ? <Diffs loaded={changes} files={files} unshown={unshown} empty={t('repo.history.nothing')} /> : null}
-      </section>
-    </>
   );
 }

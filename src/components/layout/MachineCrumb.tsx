@@ -21,7 +21,7 @@ export function MachineCrumb({ machine, machines, unassigned = false, all = true
   /** The machines to pick from, in the order they're shown. */
   machines: readonly string[];
   unassigned?: boolean;
-  /** Offers All machines; a view that only ever shows one machine (Arbor's changes) leaves it out. */
+  /** Offers All machines; a view that only ever shows one machine leaves it out. */
   all?: boolean;
   onChange: (machine: string) => void;
 }) {
