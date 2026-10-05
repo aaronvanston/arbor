@@ -51,10 +51,11 @@ shows it and list it in that comment.
 
 `bun run perf` is the webview's speed benchmark, run the way `docs/perf/PROCESS.md` describes. It builds the demo
 with hidden source maps into the gitignored `.perf/site/`, drives it in Playwright's WebKit on a fake clock (cold
-launch, every page, ten minutes of idle, at the default and `?size=real` sizes), prints the counts with where they
-come from and writes the gitignored `perf/latest.json`. `perf:check` fails when a gated count is over its ceiling in
-`perf/baseline.json`, `perf:ratchet` lowers the ceilings to this run (never raising one) and `perf:report` prints the
-last run again. It takes about a minute, so `verify` doesn't run it; `--reuse` checks or ratchets the last run.
+launch, every page, ten minutes of idle on Home and ten closed to the tray on Usage, at the default and `?size=real`
+sizes), prints the counts with where they come from and writes the gitignored `perf/latest.json`. `perf:check` fails
+when a gated count is over its ceiling in `perf/baseline.json`, `perf:ratchet` lowers the ceilings to this run (never
+raising one) and `perf:report` prints the last run again. It takes a few minutes, so `verify` doesn't run it;
+`--reuse` checks or ratchets the last run.
 
 `src-tauri/src/usage/bench.rs` fills a usage.db with a million requests and times each page's reads. It's ignored in
 the normal run and only means something in release, where SQLite is compiled optimized:

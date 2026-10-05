@@ -260,6 +260,9 @@
  * the background, so they go to the Mac as notifications (in `window.__mockLog`). Without either, it's whatever the
  * browser says, and a driven browser often has no focus. The unread count the tray icon would show is logged as
  * `tray_unread`;
+ * `?window=closes` closes the window to the tray five seconds after load (the page reads as hidden), `?window=minimizes`
+ * minimizes it and `?window=covered` has another app cover it; `window.__mockWindow('shown' | 'closed' | 'minimized' |
+ * 'covered')` moves it there at any time, which is how `bun run perf` hides it;
  * `?clipboard=fail` to have the clipboard refuse every copy, so copy buttons and the palette's copy actions say they
  * couldn't.
  * For the live fleet board (`get_fleet_sources`): by default T3 Code on cam-mbp has a thread asking for approval
@@ -387,6 +390,31 @@ import { fleetScenario, usageAnswers } from './mock/usage';
 const statusScenario = params.get('status') ?? 'ok';
 const chromeScenario = params.get('chrome');
 let windowFullscreen = chromeScenario === 'mac-fullscreen';
+/** Where the window is, for `?window=closes` and `window.__mockWindow`: on screen, closed to the tray, minimized or covered. */
+type MockWindowState = 'shown' | 'closed' | 'minimized' | 'covered';
+let mockWindowState: MockWindowState = 'shown';
+
+/**
+ * Moves the mock's window, the way WKWebView reports it: anything but shown reads as a hidden page without focus, and
+ * Tauri's window says whether it's visible (closed to the tray isn't) and minimized.
+ */
+function setMockWindow(state: MockWindowState) {
+  if (state === mockWindowState) return;
+  const describe = (name: 'visibilityState' | 'hidden') => Object.getOwnPropertyDescriptor(Document.prototype, name)?.get;
+  const realVisibility = describe('visibilityState');
+  const realHidden = describe('hidden');
+  if (!Object.getOwnPropertyDescriptor(document, 'visibilityState')) {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (mockWindowState === 'shown' ? realVisibility?.call(document) : 'hidden') });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => (mockWindowState === 'shown' ? realHidden?.call(document) : true) });
+    const focus = document.hasFocus.bind(document);
+    document.hasFocus = () => mockWindowState === 'shown' && focus();
+  }
+  mockWindowState = state;
+  mockLog('window', state);
+  document.dispatchEvent(new Event('visibilitychange'));
+  window.dispatchEvent(new Event(state === 'shown' ? 'focus' : 'blur'));
+}
+
 /**
  * The view `?page=` names: a main page's id (with `&tab=` for one of its views), `machine:` and a machine's name for
  * Machines with it opened out, or `settings:` and a Settings page's id.
@@ -432,6 +460,8 @@ const pluginAnswers: Record<string, (args: Json) => unknown> = {
     return title.includes('new') ? '/Users/cam/src/new-setup' : MOCK_REPO;
   },
   'plugin:window|is_fullscreen': () => windowFullscreen,
+  'plugin:window|is_visible': () => mockWindowState !== 'closed',
+  'plugin:window|is_minimized': () => mockWindowState === 'minimized',
   'plugin:notification|is_permission_granted': () => true,
   'plugin:notification|request_permission': () => 'granted',
   'plugin:notification|notify': (args) => { mockLog('notification', args); return null; },
@@ -590,6 +620,10 @@ export function installTauriMock() {
   if (params.get('alerts') === 'sample' && !getAlertHistory().entries.length) seedAlerts();
   const windowScenario = params.get('window');
   if (windowScenario === 'focused' || windowScenario === 'unfocused') document.hasFocus = () => windowScenario === 'focused';
+  (window as Window & { __mockWindow?: (state: MockWindowState) => void }).__mockWindow = setMockWindow;
+  const windowMoves: Record<string, MockWindowState> = { closes: 'closed', minimizes: 'minimized', covered: 'covered' };
+  const windowMove = windowMoves[windowScenario ?? ''];
+  if (windowMove) window.setTimeout(() => setMockWindow(windowMove), 5_000);
   if (params.get('alerts') === 'fire') {
     const fire = () => void fireTestAlerts();
     (window as Window & { __fireAlerts?: () => void }).__fireAlerts = fire;

@@ -1,7 +1,8 @@
 /**
  * `bun run perf`: Arbor's speed benchmark (docs/perf/PROCESS.md). Builds the browser mock as the production-optimized
  * demo site, serves it on 127.0.0.1 and drives it in Playwright's WebKit, the engine Arbor's window uses, through a
- * cold launch to Home, a visit to each main page and ten minutes of idle on Home. The page clock runs time, so ten
+ * cold launch to Home, a visit to each main page, ten minutes of idle on Home and ten minutes with the window closed to
+ * the tray on a heavy page. The page clock runs time, so ten
  * minutes take seconds and the gated counts come out the same on every run.
  *
  *   bun run perf               measure, print the tables, write perf/latest.json
@@ -39,6 +40,9 @@ const IDLE_STEP_MS = 1_000;
 const BEFORE_PREFETCH_MS = 1_900;
 /** How long frames run at the start of idle before they're held (see perf/counters.ts). */
 const FRAME_SAMPLE_MS = 10_000;
+const HIDDEN_MINUTES = 10;
+/** The page left open when the window is closed to the tray: Usage's Requests, one of the heaviest. */
+const HIDDEN_PAGE = { page: 'usage' };
 
 type Size = { id: 'default' | 'real'; query: string };
 const SIZES: Size[] = [{ id: 'default', query: '' }, { id: 'real', query: 'size=real' }];
@@ -86,8 +90,12 @@ type Step = {
 
 type Timing = { firstPaintMs: number | null; domContentLoadedMs: number | null; settledMs: number | null; rssMb: number | null };
 
+/** Ten minutes closed to the tray: the counts over them, and the page's elements while hidden and once shown again. */
+type HiddenResult = Step & { domNodesShown: number; domNodesHidden: number; domNodesBack: number; rssShownMb: number | null; rssHiddenMb: number | null };
+
 type SizeResult = {
   launch: Step;
+  hidden?: HiddenResult;
   /** App JS a cold start needs before the prefetch: Home's, and each page's beyond Home's. Default size only. */
   coldJs?: { home: number; pages: Record<string, number> };
   idle: Step & { rssStartMb: number | null; rssEndMb: number | null };
@@ -208,6 +216,25 @@ async function advance(page: Page, network: ReturnType<typeof trackNetwork>, tot
     await quiet(page, network);
   }
 }
+
+/** Elements in the document, and in the content area beside the sidebar. */
+const domNodes = (page: Page) => page.evaluate(() => ({
+  all: document.getElementsByTagName('*').length,
+  main: document.querySelector('main')?.getElementsByTagName('*').length ?? 0,
+}));
+
+const openPage = (page: Page, target: { page: string; tab?: string; lens?: string }) => page.evaluate(({ page, tab, lens }) => {
+  const open = (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => void }).__mockOpen;
+  if (!open) throw new Error('The mock has no __mockOpen');
+  open(page, tab, lens);
+}, target);
+
+/** Closes the mock's window to the tray, or shows it again (src/dev/mockTauri.ts). */
+const moveWindow = (page: Page, state: 'shown' | 'closed') => page.evaluate((state) => {
+  const move = (window as Window & { __mockWindow?: (state: string) => void }).__mockWindow;
+  if (!move) throw new Error('The mock has no __mockWindow');
+  move(state);
+}, state);
 
 const snapshot = (page: Page) => page.evaluate(() => (window as unknown as { __arborPerf: { snapshot: () => CounterSnapshot } }).__arborPerf.snapshot());
 const reset = (page: Page) => page.evaluate(() => (window as unknown as { __arborPerf: { reset: () => void } }).__arborPerf.reset());
@@ -443,11 +470,7 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   for (const target of PAGES) {
     await reset(navRun.page);
     const loadedBefore = navRun.scripts.length;
-    await navRun.page.evaluate(({ page, tab, lens }) => {
-      const open = (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => void }).__mockOpen;
-      if (!open) throw new Error('The mock has no __mockOpen');
-      open(page, tab, lens);
-    }, target);
+    await openPage(navRun.page, target);
     await quiet(navRun.page, navRun.network);
     await advance(navRun.page, navRun.network, NAVIGATION_MS, STEP_MS);
     pages[target.id] = summarize(sources, await snapshot(navRun.page), navRun.scripts.slice(loadedBefore), [...navRun.scripts]);
@@ -456,13 +479,46 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   process.stdout.write('\n');
   await navRun.context.close();
 
+  console.log(`[${size.id}] (${elapsed()}) ${HIDDEN_MINUTES} minutes closed to the tray on ${HIDDEN_PAGE.page}…`);
+  const hidden = await hiddenJourney(browser, url, sources);
+
   let cold: SizeResult['coldJs'];
   if (size.id === 'default') {
     console.log(`[${size.id}] (${elapsed()}) cold start on each page for its JS…`);
     cold = await coldJs(browser, origin, sources);
   }
   console.log(`[${size.id}] (${elapsed()}) done`);
-  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, pages, timing };
+  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, hidden, pages, timing };
+}
+
+/**
+ * The window closed to the tray with a heavy page open, as it mostly is (docs/perf/BACKLOG.md, M1): what keeps
+ * running for the tray, the alerts and the pools, and what's left of the page. Frames are held, as WebKit runs none
+ * for a hidden page. Showing it again must bring the page back.
+ */
+async function hiddenJourney(browser: Browser, url: string, sources: BuildSources): Promise<HiddenResult> {
+  const before = webContentPids();
+  const run = await launch(browser, url);
+  await openPage(run.page, HIDDEN_PAGE);
+  await quiet(run.page, run.network);
+  await advance(run.page, run.network, NAVIGATION_MS, STEP_MS);
+  const shown = await domNodes(run.page);
+  const rssShownMb = rssMb(before);
+  await run.page.evaluate(() => (window as unknown as { __arborPerf: { holdFrames: () => void } }).__arborPerf.holdFrames());
+  await reset(run.page);
+  const loadedBefore = run.scripts.length;
+  await moveWindow(run.page, 'closed');
+  await advance(run.page, run.network, HIDDEN_MINUTES * 60_000, IDLE_STEP_MS);
+  const step = summarize(sources, await snapshot(run.page), run.scripts.slice(loadedBefore), [...run.scripts]);
+  const hidden = await domNodes(run.page);
+  const rssHiddenMb = rssMb(before);
+  await moveWindow(run.page, 'shown');
+  await quiet(run.page, run.network);
+  await advance(run.page, run.network, NAVIGATION_MS, STEP_MS);
+  const back = await domNodes(run.page);
+  if (back.main < shown.main / 2) pageErrors.push(`hidden: the page didn't come back once the window showed (${back.main} elements, ${shown.main} before)`);
+  await run.context.close();
+  return { ...step, domNodesShown: shown.all, domNodesHidden: hidden.all, domNodesBack: back.all, rssShownMb, rssHiddenMb };
 }
 
 /** The gated counts, flattened into baseline keys. */
@@ -493,6 +549,17 @@ function countsOf(results: Latest['sizes']): Counts {
     counts[`${size}.idle.timerFiresPerMinute`] = perMinute(idle.timerFires);
     counts[`${size}.idle.liveTimers`] = idle.liveTimers;
     counts[`${size}.idle.rafPerSecond`] = Math.round((idle.rafCalls / (IDLE_MINUTES * 60)) * 10) / 10;
+    const { hidden } = result;
+    if (hidden) {
+      const perHiddenMinute = (value: number) => Math.round((value / HIDDEN_MINUTES) * 10) / 10;
+      counts[`${size}.hidden.commandsPerMinute`] = perHiddenMinute(hidden.commands);
+      counts[`${size}.hidden.commandBytesPerMinute`] = Math.round(hidden.commandBytes / HIDDEN_MINUTES);
+      counts[`${size}.hidden.reactCommitsPerMinute`] = perHiddenMinute(hidden.commits);
+      counts[`${size}.hidden.domMutationsPerMinute`] = perHiddenMinute(hidden.mutations);
+      counts[`${size}.hidden.timerFiresPerMinute`] = perHiddenMinute(hidden.timerFires);
+      counts[`${size}.hidden.liveTimers`] = hidden.liveTimers;
+      counts[`${size}.hidden.domNodes`] = hidden.domNodesHidden;
+    }
   }
   return counts;
 }
@@ -508,6 +575,8 @@ function reportedOf(results: Latest['sizes']): Latest['reported'] {
     reported[`${size}.rssIdleStartMb`] = result.idle.rssStartMb;
     reported[`${size}.rssIdleEndMb`] = result.idle.rssEndMb;
     reported[`${size}.launch.mockJsBytes`] = result.launch.mockJsBytes;
+    reported[`${size}.hidden.rssShownMb`] = result.hidden?.rssShownMb ?? null;
+    reported[`${size}.hidden.rssHiddenMb`] = result.hidden?.rssHiddenMb ?? null;
   }
   return reported;
 }
@@ -556,6 +625,26 @@ function printReport(latest: Latest) {
     table(['Site', 'Kind', 'Fires/min'], idle.topTimers.slice(0, 10).map((timer) => [timer.site, timer.kind, (timer.fires / IDLE_MINUTES).toFixed(1)]));
     console.log('\nIdle: components rendered per minute');
     table(['Component', 'Renders/min'], idle.topComponents.slice(0, 10).map((entry) => [entry.component, (entry.renders / IDLE_MINUTES).toFixed(1)]));
+    const { hidden } = result;
+    if (hidden) {
+      const perMinute = (value: number) => (value / HIDDEN_MINUTES).toFixed(1);
+      console.log(`\nClosed to the tray on ${HIDDEN_PAGE.page}, per minute over ${HIDDEN_MINUTES} minutes (WebContent RSS ${hidden.rssShownMb ?? '?'} MB shown → ${hidden.rssHiddenMb ?? '?'} MB hidden, reported only):`);
+      table(['Counter', 'Value'], [
+        ['commands', perMinute(hidden.commands)],
+        ['command KB', kb(hidden.commandBytes / HIDDEN_MINUTES)],
+        ['React commits', perMinute(hidden.commits)],
+        ['DOM mutations', perMinute(hidden.mutations)],
+        ['app timer fires', perMinute(hidden.timerFires)],
+        ['live app timers at the end', hidden.liveTimers],
+        ['elements: shown → hidden → shown again', `${hidden.domNodesShown} → ${hidden.domNodesHidden} → ${hidden.domNodesBack}`],
+      ]);
+      console.log('\nHidden: commands by bytes per minute');
+      table(['Command', 'Calls/min', 'KB/min'], hidden.topCommands.slice(0, 10).map((command) => [command.command, perMinute(command.calls), kb((command.replyBytes + command.argBytes) / HIDDEN_MINUTES)]));
+      console.log('\nHidden: timers by fires per minute');
+      table(['Site', 'Kind', 'Fires/min'], hidden.topTimers.slice(0, 10).map((timer) => [timer.site, timer.kind, perMinute(timer.fires)]));
+      console.log('\nHidden: components rendered per minute');
+      table(['Component', 'Renders/min'], hidden.topComponents.slice(0, 10).map((entry) => [entry.component, perMinute(entry.renders)]));
+    }
   }
   if (latest.pageErrors.length) console.log(`\nUncaught errors in the page (counts may be wrong):\n  ${latest.pageErrors.join('\n  ')}`);
   if (latest.notMeasured.length) console.log(`\nNot measured in WebKit: ${latest.notMeasured.join('; ')}`);
