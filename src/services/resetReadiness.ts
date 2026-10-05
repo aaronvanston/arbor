@@ -15,10 +15,25 @@ export function resetReadyFor(file: AuthFile, quota: QuotaState): ResetReady | n
     return quota.bankedReset?.earlyUse === undefined ? { provider: 'claude', limit: quota.bankedReset?.refills } : null;
   }
   if (canResetCodexQuota(file, quota)) {
-    const spent = quota.rows.find((row) => !row.extra && row.remainingPercent !== null && row.remainingPercent <= 0);
+    const spent = codexMainLimits(quota).find((row) => row.remainingPercent <= 0);
     return spent ? { provider: 'codex', limit: spent.label } : null;
   }
   return null;
+}
+
+/** The limits a Codex manual reset refills, with what's left of each known. Extra limits aren't refilled. */
+const codexMainLimits = (quota: QuotaState) => quota.rows.flatMap((row) =>
+  !row.extra && row.remainingPercent !== null ? [{ label: row.label, remainingPercent: row.remainingPercent }] : []);
+
+/**
+ * Whether a Codex manual reset would be spent early: none of the limits it refills has run out. Names the one closest
+ * to running out, as Claude's banked resets do, or null when one has run out or nothing is known.
+ */
+export function codexResetEarlyUse(quota: QuotaState): { limit: string; percentLeft: number } | null {
+  const limits = codexMainLimits(quota);
+  if (!limits.length || limits.some((row) => row.remainingPercent <= 0)) return null;
+  const closest = limits.reduce((least, row) => (row.remainingPercent < least.remainingPercent ? row : least));
+  return { limit: closest.label, percentLeft: Math.round(closest.remainingPercent) };
 }
 
 export type ResetReadyAccount = { key: string; file: AuthFile; quota: QuotaState | undefined };

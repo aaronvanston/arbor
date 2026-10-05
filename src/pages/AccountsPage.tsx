@@ -8,6 +8,7 @@ import { QuotaActionFeedback } from '../components/QuotaActionFeedback';
 import { ProviderStatusBanner } from '../components/ProviderStatusBanner';
 import { canResetQuota, resetClaudeQuotaWithConfirmation, resetCodexQuotaWithConfirmation, resetUnconfirmed } from '../services/quotaActions';
 import { formatQuotaReset, useQuotaClock } from '../services/quotaTime';
+import { codexResetEarlyUse } from '../services/resetReadiness';
 import { formatRelative, formatWhen } from '../lib/format';
 import {
   fileName,
@@ -189,6 +190,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
 
   const resetCodexQuota = useCallback(async (file: AuthFile, quota: QuotaState) => {
     setError('');
+    const early = codexResetEarlyUse(quota);
     try {
       await resetCodexQuotaWithConfirmation(file, () => askConfirmation({
         title: t('quota.reset'),
@@ -199,7 +201,10 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
           { label: t('quota.confirm.applicableLabel'), value: String(quota.resetCreditsApplicable ?? '—') },
           { label: t('quota.earliestExpiry'), value: formatQuotaTimestamp(quota.resetCreditsEarliestExpiry) },
         ],
-        warning: t('quota.confirm.warning'),
+        warning: [
+          early ? t('quota.confirm.early', { limit: early.limit, percent: early.percentLeft }) : null,
+          t('quota.confirm.warning'),
+        ].filter(Boolean).join(' '),
       }));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : String(requestError));

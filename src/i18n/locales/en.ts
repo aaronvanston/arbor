@@ -3475,6 +3475,7 @@ export const en = {
   'quota.resetCreditsWarning': 'Reset credit details unavailable: {error}',
   'quota.service.window.sevenDayFable': '7-day Fable window',
   'quota.service.error.resetCreditsInvalid': 'The reset credits endpoint returned unrecognized data',
+  'quota.confirm.early': '{limit} still has {percent}% left, so using a reset now spends it early.',
   'quota.confirm.title': 'Reset the Codex quota for “{name}”?',
   'quota.confirm.warning': 'This consumes one manual reset credit. It runs only after Confirm Reset; canceling or closing does not consume a credit.',
   'quota.bankedResets': 'Banked resets',

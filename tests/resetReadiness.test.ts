@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { claudeBankedResetFor, quotaRowsFor, type AuthFile, type QuotaState } from '../src/services/quotaService';
-import { nextResetNotifications, resetReadyFor } from '../src/services/resetReadiness';
+import { codexResetEarlyUse, nextResetNotifications, resetReadyFor } from '../src/services/resetReadiness';
 
 const NOW = Date.parse('2030-01-10T00:00:00Z');
 const claudeFile: AuthFile = { name: 'claude-max.json', provider: 'claude', auth_index: 'claude-1' };
@@ -75,6 +75,18 @@ describe('when a reset is worth a notification', () => {
     expect(resetReadyFor(codexFile, codexQuota(codexUsage(80)))).toBeNull();
     expect(resetReadyFor(codexFile, codexQuota(codexUsage(100), { resetCredits: 0 }))).toBeNull();
     expect(resetReadyFor(codexFile, codexQuota(codexUsage(100), { resetCreditsApplicable: 0 }))).toBeNull();
+  });
+});
+
+describe('a Codex reset spent early', () => {
+  it('names the main limit closest to running out while none has', () => {
+    expect(codexResetEarlyUse(codexQuota(codexUsage(20, 100)))).toEqual({ limit: 'Weekly limit', percentLeft: 60 });
+    expect(codexResetEarlyUse(codexQuota(codexUsage(70.4)))).toEqual({ limit: '5-hour limit', percentLeft: 30 });
+  });
+
+  it('says nothing once a main limit has run out, or while none is known', () => {
+    expect(codexResetEarlyUse(codexQuota(codexUsage(100)))).toBeNull();
+    expect(codexResetEarlyUse({ status: 'success', rows: [] })).toBeNull();
   });
 });
 
