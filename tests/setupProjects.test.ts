@@ -47,8 +47,8 @@ const fleet = [
     repo('/Users/casey/src/arbor', 'github.com/casey/arbor', [
       main('/Users/casey/src/arbor', { sizeKb: 900, behind: 2 }),
       worktree('/Users/casey/src/arbor/.claude/worktrees/fox', { merged: true, blocker: null, sizeKb: 300, ignored: ['.env.local', 'node_modules/'] }),
-      worktree('/Users/casey/.t3/worktrees/arbor/login', { gone: true, blocker: null, sizeKb: 200 }),
-      worktree('/Users/casey/.t3/worktrees/arbor/wip', { untracked: 2, blocker: 'dirty' }),
+      worktree('/Users/casey/.agent-app/worktrees/arbor/login', { gone: true, blocker: null, sizeKb: 200 }),
+      worktree('/Users/casey/.agent-app/worktrees/arbor/wip', { untracked: 2, blocker: 'dirty' }),
     ], { lastUsedMs: NOW - 1_000, files: [claude('a'), agents('x')] }),
     repo('/Users/casey/src/notes', null, [main('/Users/casey/src/notes')], { lastUsedMs: NOW - 50_000, files: [agents('n')] }),
   ]),
@@ -129,7 +129,7 @@ describe('projects across machines', () => {
 
   it('plans removals only from what the last scan says can go', () => {
     const mbp = present(fleet[0]);
-    const chosen = chosenWorktrees(mbp, ['/Users/casey/src/arbor/.claude/worktrees/fox', '/Users/casey/.t3/worktrees/arbor/wip', '/Users/casey/src/arbor', '/nowhere']);
+    const chosen = chosenWorktrees(mbp, ['/Users/casey/src/arbor/.claude/worktrees/fox', '/Users/casey/.agent-app/worktrees/arbor/wip', '/Users/casey/src/arbor', '/nowhere']);
     expect(chosen.map(({ worktree: entry }) => entry.path)).toEqual(['/Users/casey/src/arbor/.claude/worktrees/fox']);
     expect(removalPlan(chosen)).toEqual([{ repo: '/Users/casey/src/arbor', path: '/Users/casey/src/arbor/.claude/worktrees/fox', head: 'abc' }]);
     expect(branchFate(worktree('/a', { merged: true }))).toBe('delete');

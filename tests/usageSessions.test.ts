@@ -54,8 +54,8 @@ const transcript = (fields: Partial<SessionTranscript>): SessionTranscript => ({
 describe('where a session ran', () => {
   it('names the project after the main checkout, and a linked worktree after its own folder', () => {
     expect(sessionPlace(transcript({
-      cwd: '/Users/casey/.t3/worktrees/arbor/login-loop/src', repoRoot: '/Users/casey/.t3/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop',
-    }))).toEqual({ folder: '~/.t3/worktrees/arbor/login-loop/src', project: 'arbor', worktree: 'login-loop', branch: 'fix/login-loop', repository: null });
+      cwd: '/Users/casey/.agent-app/worktrees/arbor/login-loop/src', repoRoot: '/Users/casey/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop',
+    }))).toEqual({ folder: '~/.agent-app/worktrees/arbor/login-loop/src', project: 'arbor', worktree: 'login-loop', branch: 'fix/login-loop', repository: null });
     expect(sessionPlace(transcript({ cwd: '/Users/casey/src/proxy', repoRoot: '/Users/casey/src/proxy', mainRepo: '/Users/casey/src/proxy' })))
       .toMatchObject({ folder: '~/src/proxy', project: 'proxy', worktree: null });
   });
@@ -129,7 +129,7 @@ describe('the names the Sessions filters match on', () => {
     }))?.project ?? null;
     expect(project('', '', 'git@github.com:acme/arbor.git')).toBeNull();
     expect(project('/Users/casey/src/arbor/src', '/Users/casey/src/arbor', 'git@github.com:acme/arbor-app.git')).toBe('arbor-app');
-    expect(project('/Users/casey/.t3/worktrees/arbor/login', '/Users/casey/src/arbor', '')).toBe('arbor');
+    expect(project('/Users/casey/.agent-app/worktrees/arbor/login', '/Users/casey/src/arbor', '')).toBe('arbor');
     expect(project('/Users/casey/src/site', '/Users/casey/src/site', 'https://gitlab.com/group/sub/site', 'acme/website')).toBe('website');
     expect(project('/srv/mirror.git', '', '')).toBe('mirror');
     expect(project('/Users/casey/scratch', '', '')).toBe('scratch');
@@ -140,7 +140,7 @@ describe('the names the Sessions filters match on', () => {
 describe('the tools a session called', () => {
   it('names MCP tools and Codex’s namespaced ones apart from where they came from', () => {
     expect(toolLabel('Bash')).toEqual({ name: 'Bash', source: null });
-    expect(toolLabel('mcp__t3-code__preview_click')).toEqual({ name: 'preview_click', source: 't3-code' });
+    expect(toolLabel('mcp__agent-app__preview_click')).toEqual({ name: 'preview_click', source: 'agent-app' });
     expect(toolLabel('mcp__claude_ai_Gmail__search_threads')).toEqual({ name: 'search_threads', source: 'claude_ai_Gmail' });
     expect(toolLabel('collaboration/spawn_agent')).toEqual({ name: 'spawn_agent', source: 'collaboration' });
     expect(toolLabel('mcp__codex_apps__github/_create_pull_request')).toEqual({ name: 'create_pull_request', source: 'codex_apps · github' });

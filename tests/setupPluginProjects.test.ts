@@ -19,7 +19,7 @@ const scans = [
   scan('mac-mini', [
     repo('/Users/casey/src/arbor', 'github.com/Casey/arbor.git', [
       worktree('/Users/casey/src/arbor', { main: true, plugins: [{ id: 'context7@official', on: false, local: true }] }),
-      worktree('/Users/casey/.t3/worktrees/arbor/fix'),
+      worktree('/Users/casey/.agent-app/worktrees/arbor/fix'),
       worktree('/gone', { prunable: true }),
     ]),
     repo('/Users/casey/src/other', 'github.com/acme/other', [worktree('/Users/casey/src/other', { main: true })]),
@@ -44,7 +44,7 @@ describe('a project’s plugins', () => {
   it('finds each checkout of a project by its remote, on every machine, leaving out ones gone', () => {
     expect(projectCheckouts(scans, 'casey/arbor').map((checkout) => `${checkout.machine}:${checkout.path}`)).toEqual([
       'mac-mini:/Users/casey/src/arbor',
-      'mac-mini:/Users/casey/.t3/worktrees/arbor/fix',
+      'mac-mini:/Users/casey/.agent-app/worktrees/arbor/fix',
       'ci-01:/home/ci/arbor',
     ]);
   });
@@ -69,14 +69,14 @@ describe('a project’s plugins', () => {
     const changes = projectChanges(plugins, checkouts, 'casey/arbor', home);
     expect(changes).toEqual([
       // The main checkout already keeps context7 off; the worktree and ci-01 don't.
-      { machine: 'mac-mini', checkout: '/Users/casey/.t3/worktrees/arbor/fix', target: 'context7@official', on: false, blocked: null },
+      { machine: 'mac-mini', checkout: '/Users/casey/.agent-app/worktrees/arbor/fix', target: 'context7@official', on: false, blocked: null },
       { machine: 'ci-01', checkout: '/home/ci/arbor', target: 'context7@official', on: false, blocked: null },
       // The checked-in settings turn superpowers off on ci-01; the local value wins over them.
       { machine: 'ci-01', checkout: '/home/ci/arbor', target: 'superpowers@m', on: true, blocked: null },
     ]);
     expect(checkoutsStanding(changes, checkouts, 'mac-mini', 'context7@official')).toEqual({ total: 2, behind: 1, blocked: null });
     const byMachine = readyByMachine([...changes, { machine: 'mac-mini', checkout: '/x', target: 'ghost@m', on: true, blocked: 'notInstalled' }]);
-    expect(pluginChanges(byMachine.get('mac-mini') ?? [])).toEqual([{ home: '~/.claude', action: 'disable', target: 'context7@official', checkout: '/Users/casey/.t3/worktrees/arbor/fix' }]);
+    expect(pluginChanges(byMachine.get('mac-mini') ?? [])).toEqual([{ home: '~/.claude', action: 'disable', target: 'context7@official', checkout: '/Users/casey/.agent-app/worktrees/arbor/fix' }]);
     expect(byMachine.get('ci-01')?.length).toBe(2);
   });
 });

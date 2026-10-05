@@ -1618,10 +1618,12 @@ const projectRepos: Record<string, { homeDir: string; repos: ProjectRepo[] }> = 
           skills: skillProjectsSample ? [{ name: 'pdf', state: 'off', local: true }] : [],
           mcpDenied: mcpProjectsSample ? [{ name: 'linear', local: true }] : [],
           ...(projectInstructionsSample ? { instructions: instructionFiles('arbor', 'none', 'a0c3e9d1beef') } : {}) }),
-        mockWorktree('/Users/casey/.t3/worktrees/arbor/login-loop', 't3code/login-loop', {
-          merged: true, gone: true, upstream: 'origin/t3code/login-loop', ahead: null, behind: null, lastUsedMs: hours(52),
+        mockWorktree('/Users/casey/.agent-app/worktrees/arbor/login-loop', 'fix/login-loop', {
+          merged: true, gone: true, upstream: 'origin/fix/login-loop', ahead: null, behind: null, lastUsedMs: hours(52),
           ignored: ['.env.local', 'dist/', 'node_modules/'], mcpLocal: mcpProjectsSample ? ['sentry'] : [],
         }),
+        // The one T3 Code made, in the folder T3 Code keeps its worktrees in, so the row shows whose it is; the others
+        // sit in a made-up agent app's folder, which Arbor shows as plain worktrees.
         mockWorktree('/Users/casey/.t3/worktrees/arbor/projects-tab', 't3code/projects-tab', {
           ahead: 3, changed: 4, untracked: 1, open: true, lastUsedMs: hours(0.05), touchedAt: hours(0.05), blocker: 'dirty',
           ...(projectInstructionsSample ? { instructions: instructionFiles('own', 'none') } : {}),
@@ -1629,8 +1631,8 @@ const projectRepos: Record<string, { homeDir: string; repos: ProjectRepo[] }> = 
         mockWorktree('/Users/casey/src/arbor/.claude/worktrees/quiet-fox', 'claude/quiet-fox', {
           gone: true, ahead: null, behind: null, lastUsedMs: hours(120), ignored: ['node_modules/'],
         }),
-        mockWorktree('/Users/casey/.t3/worktrees/arbor/tray-spike', 'spike/tray', { upstream: null, ahead: null, behind: null, lastUsedMs: hours(400), blocker: 'notMerged' }),
-        mockWorktree('/Users/casey/.t3/worktrees/arbor/local-config', 't3code/local-config', { merged: true, hidden: 2, lastUsedMs: hours(200), blocker: 'hidden' }),
+        mockWorktree('/Users/casey/.agent-app/worktrees/arbor/tray-spike', 'spike/tray', { upstream: null, ahead: null, behind: null, lastUsedMs: hours(400), blocker: 'notMerged' }),
+        mockWorktree('/Users/casey/.agent-app/worktrees/arbor/local-config', 'chore/local-config', { merged: true, hidden: 2, lastUsedMs: hours(200), blocker: 'hidden' }),
       ], { lastUsedMs: hours(0.05), files: arborFiles('arbor-a', 'agents-a') }),
       projectRepo('/Users/casey/src/proxy', 'github.com/acme/proxy', [
         mainCheckout('/Users/casey/src/proxy', 'feat/rate-limiter', { ahead: 2, changed: 3, merged: false }),

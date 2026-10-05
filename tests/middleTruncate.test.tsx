@@ -5,7 +5,7 @@ import { splitForMiddleTruncate } from '../src/lib/middleTruncate';
 
 describe('where a long path or branch is cut', () => {
   it('keeps a path’s last segment when it is short', () => {
-    expect(splitForMiddleTruncate('~/.t3/worktrees/arbor/t3code-5c8a4774')).toEqual({ head: '~/.t3/worktrees/arbor/', tail: 't3code-5c8a4774' });
+    expect(splitForMiddleTruncate('~/.agent-app/worktrees/arbor/task-5c8a4774')).toEqual({ head: '~/.agent-app/worktrees/arbor/', tail: 'task-5c8a4774' });
     expect(splitForMiddleTruncate('.claude/skills/review/SKILL.md')).toEqual({ head: '.claude/skills/review/', tail: 'SKILL.md' });
   });
 

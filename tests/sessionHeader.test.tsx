@@ -8,8 +8,8 @@ const MINUTE = 60_000;
 const now = Date.now();
 
 const transcript = (fields: Partial<SessionTranscript> = {}): SessionTranscript => ({
-  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/.t3/worktrees/arbor/login-loop',
-  repoRoot: '/Users/casey/.t3/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop', commitHash: '',
+  machine: 'casey-mbp', agent: 'claude', home: '/Users/casey', agentHome: '', cwd: '/Users/casey/.agent-app/worktrees/arbor/login-loop',
+  repoRoot: '/Users/casey/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/casey/src/arbor', branch: 'fix/login-loop', commitHash: '',
   repositoryUrl: '', title: 'Fix the login redirect loop', titleSource: 'ai',
   pullRequests: [{ url: 'https://github.com/aaronvanston/arbor/pull/412', repository: 'aaronvanston/arbor', number: 412 }],
   linesAdded: 214, linesRemoved: 37, compactions: [], toolUsage: null, readAtMs: now - 2 * MINUTE,
@@ -67,7 +67,7 @@ describe('session header', () => {
   test('opens Details as it was last left, with the full id, the User-Agent and where the transcript came from', () => {
     global.localStorage = { getItem: () => 'open', setItem: () => {} };
     const html = text(render(session()));
-    expect(html).toContain('Folder ~/.t3/worktrees/arbor/login-loop');
+    expect(html).toContain('Folder ~/.agent-app/worktrees/arbor/login-loop');
     expect(html).toContain('Session ID a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7');
     expect(html).toContain('User agent claude-cli/2.1.280 (external, cli)');
     expect(html).toContain('From its transcript on casey-mbp , read 2m ago');
