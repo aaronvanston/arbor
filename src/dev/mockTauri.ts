@@ -284,6 +284,8 @@
  * `?chrome=mac` draws the Mac window's title bar (room for the window buttons, top rows drag, and three drawn window
  * buttons at x 16–68, so screenshots show what the sidebar button and the wordmark clear), and
  * `?chrome=mac-fullscreen` starts that window in full screen; `window.__mockFullscreen(true | false)` moves it in or out.
+ * `window.__mockOpen(page, tab?, lens?)` goes to a page as `?page=`, `&tab=` and `&lens=` would start on it, without a
+ * reload (the website's demo moves the app this way from its own tabs).
  * ⌘=, ⌘− and ⌘0 act like the app's View menu (Zoom In, Zoom Out, Actual Size), from 83% to 144%, logged as `zoom`;
  * `?zoom=1.2` (any factor) starts at that zoom for this load without saving it, as a level the app saved would. The
  * mock can't zoom its own tab the way WKWebView does: in a same-origin frame of a set size (how screenshots are taken)
@@ -352,7 +354,7 @@ import { previewSidebarLayout, SIDEBAR_MIN_WIDTH, sidebarMaxWidth } from '../ser
 import { isSidebarArt } from '../services/sidebarArt';
 import { isAppColor } from '../services/appColor';
 import { previewAppPreference } from '../appPreferences';
-import { resetViewHistory } from '../services/viewHistory';
+import { goToView, resetViewHistory } from '../services/viewHistory';
 import { automationView, failedRequestsView, machinesView, mainPageView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
 import type { Commands } from '../native/commands';
 import { mockCommands, type CommandAnswers } from './mock/answers';
@@ -374,13 +376,13 @@ let windowFullscreen = chromeScenario === 'mac-fullscreen';
  * The view `?page=` names: a main page's id (with `&tab=` for one of its views), `machine:` and a machine's name for
  * Machines with it opened out, or `settings:` and a Settings page's id.
  */
-function mockStartView(page: string | null): AppView | null {
+function mockStartView(page: string | null, tab = params.get('tab'), lens = params.get('lens')): AppView | null {
   if (!page) return null;
   const settingsView = page.startsWith('settings:') ? settingsPageView(page.slice('settings:'.length)) : null;
   if (settingsView) return settingsView;
   if (page.startsWith('machine:')) return machinesView(page.slice('machine:'.length));
   if (page.startsWith('automation:')) return automationView(page.slice('automation:'.length));
-  return mainPageView(page, params.get('tab'), { lens: params.get('lens') });
+  return mainPageView(page, tab, { lens });
 }
 
 /**
@@ -555,6 +557,11 @@ export function installTauriMock() {
   (window as Window & { __mockFullscreen?: (fullscreen: boolean) => void }).__mockFullscreen = (fullscreen) => {
     windowFullscreen = fullscreen;
     void emit('tauri://resize', { width: window.innerWidth, height: window.innerHeight });
+  };
+  // The website's demo moves the app between pages from outside it, as its own sidebar would, without a reload.
+  (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => void }).__mockOpen = (page, tab, lens) => {
+    const view = mockStartView(page, tab ?? null, lens ?? null);
+    if (view) goToView(view);
   };
   const sidebarScenario = params.get('sidebar');
   if (sidebarScenario === 'hidden') previewSidebarLayout({ hidden: true });
