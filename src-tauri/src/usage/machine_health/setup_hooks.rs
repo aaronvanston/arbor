@@ -559,7 +559,7 @@ fn set_wanted(file: &mut Value, name: &str, machine: Option<&str>, wanted: HookW
                 *machines = serde_json::json!({});
             }
             let machines = machines.as_object_mut().ok_or_else(unreadable)?;
-            // The file's own spelling of the machine stays, so a hand-written "eden-dev-01" isn't joined by "Eden dev 01".
+            // The file's own spelling of the machine stays, so a hand-written "cedar-dev-01" isn't joined by "Cedar dev 01".
             let key = normalize_machine_name(machine);
             let listed = machines.keys().find(|listed| normalize_machine_name(listed) == key).cloned();
             if wanted == HookWanted::Off {

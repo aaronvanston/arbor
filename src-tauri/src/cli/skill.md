@@ -35,7 +35,7 @@ any other machine, say so instead of trying.
 | Scheduled automations, Arbor's and other apps' | `arbor call list_automations`, then `arbor call get_automation id=<id>` and `arbor call list_automation_runs id=<id>` |
 | Saved settings | `arbor settings`, `arbor settings get <name>` |
 
-Machines can be named by their name or their SSH host, in any case (`eden-dev-01` finds "Eden dev 01"). Accounts
+Machines can be named by their name or their SSH host, in any case (`cedar-dev-01` finds "Cedar dev 01"). Accounts
 are named by the short id in the first column of `arbor accounts` (like `a6bd830`), since their names are partly
 hidden.
 

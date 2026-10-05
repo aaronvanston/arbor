@@ -302,7 +302,7 @@ describe('Node’s versions on a machine', () => {
   });
 
   it('picks for a cleanup the older patches of each line, never the default, a pin or a line’s newest', () => {
-    const crowded = machine('eden', '/Users/e', {
+    const crowded = machine('oak', '/Users/o', {
       tools: [tool('node', '20.19.4', '/Users/e/.nvm/versions/node/v20.19.4/bin/node')],
       kept: [
         kept('node', 'fnm', '24.12.0'), kept('node', 'nvm', '22.21.1'), kept('node', 'fnm', '22.18.0'),

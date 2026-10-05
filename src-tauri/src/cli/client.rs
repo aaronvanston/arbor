@@ -269,7 +269,7 @@ pub(crate) fn run(arguments: Vec<String>) -> i32 {
 }
 
 /// The name Arbor keeps a machine under, from what someone typed: its name or its SSH host, in any case, with spaces,
-/// dashes or dots between words (`eden-dev-01` finds "Eden dev 01"). Anything else is passed on as typed.
+/// dashes or dots between words (`cedar-dev-01` finds "Cedar dev 01"). Anything else is passed on as typed.
 fn machine_name(client: &mut Client, typed: &str) -> Result<String, Failure> {
     let hosts = client.read("get_machine_hosts", Value::Null)?;
     Ok(matching_machine(&hosts, typed).unwrap_or_else(|| typed.to_string()))
