@@ -75,7 +75,9 @@ const changed = () => void emit('harness-runs-updated', Date.now());
 
 /** Where the native side would send a run: the pool's likeliest member, following spills, or why nobody can take it. */
 function start(request: RunRequest, snapshot: MachineHealthSnapshot): HarnessRun {
-  const title = request.title?.trim() || request.prompt.split('\n').find((line) => line.trim())?.trim().slice(0, 80) || 'Arbor run';
+  // As Rust's title_of: the one given, else where it works, never the prompt.
+  const place = request.repo ? request.repo.replace(/\.git$/, '').split('/').slice(-2).join('/') : request.folder.trim().replace(/\/+$/, '').split('/').pop()?.replace(/^~$/, '') ?? '';
+  const title = (request.title?.trim() || (place ? `Session in ${place}` : request.pool ? `Session on ${request.pool}` : 'Arbor session')).slice(0, 80);
   const run: HarnessRun = base(`run-${Date.now().toString(36)}`, {
     pool: request.pool, ranPool: null, machine: null, harness: request.harness, used: null, setup: request.setup, folder: request.folder,
     repo: request.repo ?? null,

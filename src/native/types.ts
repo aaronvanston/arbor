@@ -3716,7 +3716,7 @@ export type RunRequest = {
    */
   fallback: boolean,
   /**
-   * What the harness calls it; the prompt's first line when left out.
+   * What the harness calls it; named from where it works when left out, never from the prompt.
    */
   title?: string,
   /**

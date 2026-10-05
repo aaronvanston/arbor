@@ -56,15 +56,23 @@ fn a_folder_starts_at_home_or_root_and_never_climbs_out() {
 }
 
 #[test]
-fn a_title_is_the_one_given_or_the_prompts_first_line() {
+fn a_title_is_the_one_given_or_where_the_run_works_never_the_prompt() {
     let mut asked = request(Harness::T3, "codex");
     asked.prompt = "\n  Tidy the README\nand more".into();
-    assert_eq!(title_of(&asked), "Tidy the README");
+    asked.folder = "~/src/billing/".into();
+    // SECRET: the prompt never becomes the title, which is kept.
+    assert_eq!(title_of(&asked), "Session in billing");
+    asked.repo = Some("github.com/acme/arbor.git".into());
+    assert_eq!(title_of(&asked), "Session in acme/arbor");
     asked.title = Some("Nightly tidy".into());
     assert_eq!(title_of(&asked), "Nightly tidy");
     asked.title = Some("  ".into());
-    asked.prompt = " ".into();
-    assert_eq!(title_of(&asked), "Arbor run");
+    asked.repo = None;
+    asked.folder = "~".into();
+    asked.pool = "builds".into();
+    assert_eq!(title_of(&asked), "Session on builds");
+    asked.pool = String::new();
+    assert_eq!(title_of(&asked), "Arbor session");
 }
 
 #[test]

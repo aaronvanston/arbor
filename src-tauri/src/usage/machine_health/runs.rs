@@ -209,7 +209,7 @@ pub(crate) struct RunRequest {
     /// Start it on the command line when a member has room but not the harness.
     #[serde(default)]
     pub(crate) fallback: bool,
-    /// What the harness calls it; the prompt's first line when left out.
+    /// What the harness calls it; named from where it works when left out, never from the prompt.
     #[serde(default)]
     pub(crate) title: Option<String>,
     /// The trigger that started it.
@@ -482,11 +482,31 @@ fn checked_folder(folder: &str) -> Result<String, String> {
     Ok(if folder.is_empty() { "/".into() } else { folder.to_string() })
 }
 
-/// The run's title: the one given, or the prompt's first line, short.
+/// The run's title: the one given, else where it works (the repo's `owner/name`, the folder's last part, or the pool).
+/// Never the prompt: a run's record is kept, and Arbor keeps where a run went but never what it was asked.
 fn title_of(request: &RunRequest) -> String {
-    let source = request.title.as_deref().filter(|title| !title.trim().is_empty()).unwrap_or_else(|| request.prompt.lines().find(|line| !line.trim().is_empty()).unwrap_or(""));
-    let title: String = source.trim().chars().filter(|c| !c.is_control()).take(80).collect();
-    if title.is_empty() { "Arbor run".into() } else { title }
+    let short = |text: &str| -> String { text.trim().chars().filter(|c| !c.is_control()).take(80).collect() };
+    let given = request.title.as_deref().map(short).unwrap_or_default();
+    if !given.is_empty() {
+        return given;
+    }
+    let repo = request.repo.as_deref().map(str::trim).filter(|repo| !repo.is_empty());
+    let place = match repo {
+        Some(repo) => {
+            let parts: Vec<&str> = repo.trim_end_matches(".git").rsplitn(3, '/').collect();
+            match parts.as_slice() {
+                [name, owner, ..] => format!("{owner}/{name}"),
+                _ => repo.to_string(),
+            }
+        }
+        None => request.folder.trim().trim_end_matches('/').rsplit('/').next().filter(|part| !part.is_empty() && *part != "~").unwrap_or("").to_string(),
+    };
+    let place = short(&place);
+    if !place.is_empty() {
+        return short(&format!("Session in {place}"));
+    }
+    let pool = short(&request.pool);
+    if pool.is_empty() { "Arbor session".into() } else { short(&format!("Session on {pool}")) }
 }
 
 /// A random v4 UUID, the shape Claude Code's `--session-id` and T3 Code's ids take.

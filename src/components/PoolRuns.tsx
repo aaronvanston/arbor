@@ -294,7 +294,7 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
     setStarting(true);
     setError(null);
     try {
-      const run = await startRun({ ...draft, folder: draft.folder.trim(), model: takesModel ? draft.model?.trim() || undefined : undefined });
+      const run = await startRun({ ...draft, title: draft.title?.trim() || undefined, folder: draft.folder.trim(), model: takesModel ? draft.model?.trim() || undefined : undefined });
       const harness = t(HARNESS_LABEL[run.used ?? run.harness]);
       if (run.state === 'handedOff' || run.state === 'running') {
         toast({ kind: 'success', title: t('runs.started', { harness, machine: run.machine ?? '' }) });
@@ -385,6 +385,11 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
               </div>
             </div>
             {choices.length === 0 ? <p className="-mt-3 text-xs text-muted-foreground">{t('runs.dialog.noSetupsHint', { harness: t(HARNESS_LABEL[draft.harness]) })}</p> : null}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="run-title">{t('runs.dialog.name')}</Label>
+              <Input id="run-title" value={draft.title ?? ''} onChange={(event) => change({ title: event.currentTarget.value })} placeholder={t('runs.dialog.namePlaceholder')} />
+              <p className="text-xs text-muted-foreground">{t('runs.dialog.nameHint')}</p>
+            </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="run-prompt">{t('runs.dialog.prompt')}</Label>
               <Textarea id="run-prompt" ref={promptRef} rows={5} value={draft.prompt} onChange={(event) => change({ prompt: event.currentTarget.value })} placeholder={t('runs.dialog.promptPlaceholder')} />
