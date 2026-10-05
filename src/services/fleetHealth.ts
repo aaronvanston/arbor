@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { MachineHealth } from '../native/types';
 import { useFleetBoard } from './fleetBoard';
 import { homeMachines, type HomeMachine } from './homeOverview';
-import { fetchMachineHealth } from './machineHealth';
+import { fetchMachineHealth, onMachineHostsSaved } from './machineHealth';
 import { sharedStore } from './savedStore';
 
 /** A machine's status changes slowly, and the sampler's rounds come every 5 seconds while Machines is open. */
@@ -43,8 +43,15 @@ export function watchFleetHealth(): () => void {
   };
   read();
   const unlisten = listen('machine-health-updated', () => { if (Date.now() - readAt >= REFRESH_MS) read(); });
+  // A machine added or removed shows in the sidebar and Home at once, and again after the sampler's round that reads
+  // it, rather than up to half a minute later.
+  const stopSaved = onMachineHostsSaved(() => {
+    read();
+    readAt = 0;
+  });
   return () => {
     disposed = true;
+    stopSaved();
     void unlisten.then((stop) => stop()).catch(() => undefined);
   };
 }

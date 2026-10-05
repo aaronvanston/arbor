@@ -16,9 +16,19 @@ export const fetchMachineHealth = (since: number | null, windowMs: number, passi
   invokeCommand('get_machine_health', { since, windowMs, passive });
 
 export const fetchMachineHosts = () => invokeCommand('get_machine_hosts');
+const hostsSaved = new Set<() => void>();
+/** Calls `listener` each time the machine list is saved from this window; returns what stops it. */
+export function onMachineHostsSaved(listener: () => void): () => void {
+  hostsSaved.add(listener);
+  return () => { hostsSaved.delete(listener); };
+}
+
 /** Adds or updates `hosts`, and takes the machines named in `removed` off the list; their history stays, and saving one again brings it back. */
-export const saveMachineHosts = (hosts: MachineHost[], removed: string[] = []) =>
-  tracked('machines-saved', invokeCommand('save_machine_hosts', { hosts, removed }), { count: hosts.length });
+export async function saveMachineHosts(hosts: MachineHost[], removed: string[] = []) {
+  const saved = await tracked('machines-saved', invokeCommand('save_machine_hosts', { hosts, removed }), { count: hosts.length });
+  for (const listener of hostsSaved) listener();
+  return saved;
+}
 
 /** An SSH port typed into the hosts table: whole digits from 1 to 65535, otherwise null. */
 export function parsePort(text: string): number | null {
