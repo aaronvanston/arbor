@@ -919,8 +919,20 @@ const mockLiveSessions = (): LiveSessionsReport => {
 // The sessions waiting on their user, as the live board's sources read them from the reporters' events: a Claude Code
 // session asking for permission, a Codex one done with its turn, and a Claude Code session whose requests didn't come
 // through Arbor. ?attention=none shows nothing waiting; ?attention=question has the first one asking a question.
-// Each wait began at a fixed time, as an event's does, so it's alerted once.
-const attentionStart = Date.now();
+// Each wait began at a fixed time, as an event's does, so it's alerted once. The time is kept across reloads for half an
+// hour: the app knows a wait by when it began, so a start taken afresh on every load would read as a new wait each time.
+const ATTENTION_START_KEY = 'arbor.mock.attention-start.v1';
+const attentionStart = (() => {
+  const saved = Number(window.localStorage.getItem(ATTENTION_START_KEY));
+  if (saved && Date.now() - saved < 30 * 60_000) return saved;
+  const start = Date.now();
+  try {
+    window.localStorage.setItem(ATTENTION_START_KEY, String(start));
+  } catch {
+    /* keep it for this load */
+  }
+  return start;
+})();
 
 const mockAgentAttention = (): AgentAttentionReport => {
   const reporting = Object.keys(reporterInstalled).filter((machine) => reporterInstalled[machine]);
