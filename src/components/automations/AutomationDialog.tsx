@@ -467,6 +467,8 @@ function MachineField({ machine, onChange }: { machine: string; onChange: (machi
     return isMachine(machine) && !listed.includes(machine) ? [...listed, machine] : listed;
   }, [fleet, machine]);
   const pool = poolOf(machine);
+  // A machine with no SSH host can't be reached to run anything, so it's listed but can't be picked until it has one.
+  const hostless = useMemo(() => new Set((fleet ?? []).filter((entry) => !entry.health || entry.health.status === 'unconfigured').map((entry) => entry.machine)), [fleet]);
   return (
     <Field label={t('automations.fact.machine')} hint={machine === BEST ? t('automations.target.bestGone') : pool !== null ? t('automations.target.poolHint') : t('automations.form.machineHint')}>
       <Select value={machine} onValueChange={(next) => onChange(String(next ?? ''))}>
@@ -478,7 +480,16 @@ function MachineField({ machine, onChange }: { machine: string; onChange: (machi
           </SelectValue>
         </SelectTrigger>
         <SelectPopup>
-          {names.map((name) => <SelectItem key={name} value={name}><MachinePill name={name} size="sm" /></SelectItem>)}
+          {names.map((name) => (
+            hostless.has(name) && name !== machine ? (
+              <SelectItem key={name} value={name} disabled>
+                <span className="flex flex-col items-start">
+                  <MachinePill name={name} size="sm" />
+                  <span className="text-xs text-muted-foreground">{t('automations.target.noHost')}</span>
+                </span>
+              </SelectItem>
+            ) : <SelectItem key={name} value={name}><MachinePill name={name} size="sm" /></SelectItem>
+          ))}
           {/* A pool picks one of its members with room when the run is due. */}
           {(pools ?? []).map((entry) => (
             <SelectItem key={entry.id} value={poolValue(entry.id)}>

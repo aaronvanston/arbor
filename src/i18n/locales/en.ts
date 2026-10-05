@@ -5732,6 +5732,7 @@ export const en = {
   'automations.target.poolShort': 'Pool · picks a member with room',
   'automations.target.poolHint': 'When it’s due, the pool picks a member with room that has the agent. A pool that queues waits up to its own wait or this automation’s grace, whichever is shorter.',
   'automations.target.noPools': 'Make one in Settings › Pools',
+  'automations.target.noHost': 'No SSH host yet, so Arbor can’t run anything there',
   'automations.model.label': 'Model',
   'automations.model.all': 'All models',
   'automations.model.unknown': 'Its model shows once a run says which one it used.',
