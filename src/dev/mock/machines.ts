@@ -41,7 +41,7 @@ import type { CommandAnswers } from './answers';
 import { poolAnswers, poolSshAnswers } from './pools';
 import { runAnswers } from './runs';
 import { configSettings } from './core';
-import { freshInstall, later, mockLog, now, params } from './scenario';
+import { freshInstall, later, mockLog, now, params, realSize } from './scenario';
 import { joinSetupMachine, leaveToPolicy, recordEditMock, scanSetupMock, setupItem, setupMachines } from './setup';
 import { reporterInstalled, setMockT3Enabled, setMockT3Titles } from './usage';
 
@@ -114,9 +114,10 @@ const healthHosts: MachineHost[] = [
   { machine: 'studio', endpoint: '', port: 22, enabled: true, source: 'seed' },
 ];
 // `?machines=many` adds a rack of fourteen build machines, one with no host yet, so the sidebar's list of machines is
-// longer than a short window has room for.
-if (params.get('machines') === 'many') {
-  for (let index = 1; index <= 14; index += 1) {
+// longer than a short window has room for. `?size=real` adds eight, for a fleet of fourteen.
+const buildMachines = params.get('machines') === 'many' ? 14 : realSize ? 8 : 0;
+if (buildMachines) {
+  for (let index = 1; index <= buildMachines; index += 1) {
     const name = `build-${String(index).padStart(2, '0')}`;
     healthHosts.push({ machine: name, endpoint: index === 9 ? '' : name, port: 22, enabled: true, source: 'manual' });
   }

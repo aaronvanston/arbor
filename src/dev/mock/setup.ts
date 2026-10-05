@@ -86,7 +86,7 @@ import type {
 import { projectOf, skillFolder, skillOf } from '../../services/repoBrowser';
 import { HARNESS_SYNC_HOMES, syncKind } from '../../services/setupSync';
 import type { CommandAnswers } from './answers';
-import { freshInstall, hours, later, mockLog, params } from './scenario';
+import { freshInstall, hours, later, mockLog, params, realSize } from './scenario';
 
 // Sync › Cost's starting context: sessions' first requests over the last four weeks, from each machine's homes. See
 // `?context=`.
@@ -2214,19 +2214,22 @@ const instructionFilesOf = (texts: Record<string, string>) => Object.fromEntries
 /** The rest of the folder as the repo started, kept from the first time it's read so later commits show what changed. */
 let startedOthers: Record<string, MockBlob> | null = null;
 
+/** `?repo=big`, which `?size=real` brings too: a setup repo the size people keep. */
+const bigRepo = params.get('repo') === 'big' || realSize;
+
 /** `?repo=big`'s made-up skill names: two words each, enough for a repo the size people keep. */
 const BIG_WORDS = ['brand', 'motion', 'audio', 'slides', 'chart', 'report', 'launch', 'triage', 'schema', 'theme'];
 const bigSkillNames = (offset: number) => BIG_WORDS.flatMap((first) => BIG_WORDS.slice(offset, offset + 5).map((second) => `${first}-${second}-kit`));
 
 /** `?repo=big`: fifty skills' folders with a few files each, beside what every repo starts with. */
-const bigRepoFiles = (): Record<string, MockBlob> => params.get('repo') !== 'big' ? {} : Object.fromEntries(bigSkillNames(0).flatMap((name) => [
+const bigRepoFiles = (): Record<string, MockBlob> => !bigRepo ? {} : Object.fromEntries(bigSkillNames(0).flatMap((name) => [
   [`.agents/skills/${name}/SKILL.md`, textBlob(`---\nname: ${name}\ndescription: Makes a ${name.replace(/-/g, ' ')}.\n---\n\n# ${name}\n`)],
   [`.agents/skills/${name}/references/guide.md`, textBlob(`# ${name} guide\n`)],
   [`.agents/skills/${name}/scripts/run.sh`, textBlob('#!/bin/sh\necho done\n')],
 ]));
 
 // `?repo=big` has fifty more skills taken off every machine, so the list of them is longer than the browser is tall.
-if (params.get('repo') === 'big') for (const name of bigSkillNames(5)) mockRemovedSkills.add(name);
+if (bigRepo) for (const name of bigSkillNames(5)) mockRemovedSkills.add(name);
 
 const othersAtStart = () => {
   startedOthers ??= {

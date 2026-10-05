@@ -11,6 +11,13 @@ export const params = new URLSearchParams(window.location.search);
  */
 export const freshInstall = params.get('fresh') === '1';
 
+/**
+ * `?size=real`: the mock at the size of a heavy user's real setup, so a page that's slow with many machines or a
+ * million requests shows it (and `bun run perf` measures it): fourteen machines, a million requests recorded, four
+ * hundred more sessions, fifty skills in the setup repo and forty T3 Code threads. Each domain grows its own answers.
+ */
+export const realSize = params.get('size') === 'real';
+
 /** When the page loaded; the mock's times are set from it. */
 export const now = Date.now();
 

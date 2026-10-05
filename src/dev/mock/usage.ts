@@ -43,7 +43,7 @@ import { sessionClient, sessionPlace } from '../../services/usageSessions';
 import type { CommandAnswers } from './answers';
 import bundledPriceCatalog from '../../../src-tauri/resources/model_prices.json';
 import { coreStatus, heavyScenario } from './core';
-import { freshInstall, iso, later, mockLog, now, params } from './scenario';
+import { freshInstall, iso, later, mockLog, now, params, realSize } from './scenario';
 
 // With `?prices=none`, no model has a price, so no request, session or machine has a known cost.
 const noPrices = params.get('prices') === 'none';
@@ -74,7 +74,8 @@ const usageHistory = Array.from({ length: HISTORY_HOURS }, (_, index) => {
   const at = new Date(now + offset);
   const daysAgo = Math.floor((HISTORY_HOURS - 1 - index) / 24);
   if ((at.getHours() >= 1 && at.getHours() < 7) || daysAgo === 11 || daysAgo === 12) return null;
-  const requests = Math.round(400 + 600 * Math.abs(Math.sin(index / 3)) + (index % 5) * 60);
+  // `?size=real` triples it, about a million requests a month.
+  const requests = Math.round((400 + 600 * Math.abs(Math.sin(index / 3)) + (index % 5) * 60) * (realSize ? 3 : 1));
   const failure = noFailures ? 0 : Math.round(requests * 0.04);
   const canceled = index % 7 === 0 ? 2 : 0;
   at.setMinutes(0, 0, 0);
@@ -187,11 +188,22 @@ const machineShare = (machine: string, pool: string, share: number, failureRate:
   return { machine, pool, requests, tokens: Math.round(totals.tokens * share), success: requests - failures - canceled, failures, canceled, lastRequest };
 };
 
-const machines = [
-  machineShare('cam-mbp', 'dev', 0.726, 0.025, 4, iso(-120_000)),
-  machineShare('ci-01', 'ci', 0.251, 0.017, 0, iso(-900_000)),
-  machineShare('', '', 0.023, 0, 0, iso(-5_400_000)),
-];
+/** `?size=real`'s eight build machines, as machines.ts adds them. */
+const realSizeBuildMachines = realSize ? Array.from({ length: 8 }, (_, index) => `build-${String(index + 1).padStart(2, '0')}`) : [];
+
+const machines = realSize
+  ? [
+    machineShare('cam-mbp', 'dev', 0.4, 0.025, 4, iso(-120_000)),
+    machineShare('ci-01', 'ci', 0.15, 0.017, 0, iso(-900_000)),
+    machineShare('cedar-02', 'dev', 0.12, 0.02, 1, iso(-300_000)),
+    ...realSizeBuildMachines.map((machine, index) => machineShare(machine, 'ci', 0.035, 0.01, 0, iso(-(index + 2) * 600_000))),
+    machineShare('', '', 0.05, 0, 0, iso(-5_400_000)),
+  ]
+  : [
+    machineShare('cam-mbp', 'dev', 0.726, 0.025, 4, iso(-120_000)),
+    machineShare('ci-01', 'ci', 0.251, 0.017, 0, iso(-900_000)),
+    machineShare('', '', 0.023, 0, 0, iso(-5_400_000)),
+  ];
 if (freshInstall) machines.length = 0;
 
 // Each machine's last minute, as twelve five-second buckets of tokens.
@@ -309,7 +321,8 @@ const requestTokens = (index: number, claude: boolean): UsageRecord['tokens'] =>
   return { input_tokens: input, output_tokens: output, reasoning_tokens: reasoning, cache_read_tokens: cacheRead, cache_creation_tokens: cacheCreation, total_tokens: input + output + reasoning };
 };
 
-const usageRecords = Array.from({ length: 25 }, (_, index): UsageRecord => {
+// `?size=real` has a thousand, so the Requests grid pages through more than it shows.
+const usageRecords = Array.from({ length: realSize ? 1_000 : 25 }, (_, index): UsageRecord => {
   const failed = !noFailures && (index % 9 === 4 || index % 7 === 6);
   const failureStatus = index % 9 === 4 ? 429 : index % 14 === 6 ? 503 : 401;
   const model = index % 3 === 0 ? 'gpt-6-luna' : index % 3 === 1 ? 'claude-opus-5-5' : 'gpt-6-sol';
@@ -449,6 +462,8 @@ const usageStorage = {
   recordCount: 18_420,
   oldestTimestamp: iso(-212 * DAY_MS) as string | null,
 };
+// `?size=real`: a million requests kept, in a database about that size.
+if (realSize) Object.assign(usageStorage, { fileBytes: 2_200 * 1_048_576, walBytes: 16 * 1_048_576, freeBytes: 120 * 1_048_576, recordCount: 1_000_000 });
 if (freshInstall) Object.assign(usageStorage, { fileBytes: 229_376, walBytes: 0, freeBytes: 0, recordCount: 0, oldestTimestamp: null });
 
 /** What Settings › Data's repair would still find. */
@@ -778,6 +793,28 @@ for (const session of usageSessions) {
   Object.assign(session, stats(session.id), sums(requests));
 }
 
+/**
+ * `?size=real`: four hundred more sessions over the last thirty days, across the fleet, every fifth with a subagent.
+ * Added after the loop above, so their requests are made up only when a session's page asks for them; the list's
+ * totals are the threads' own estimates.
+ */
+const realSizeSessions = (): UsageSession[] => {
+  const fleet = ['casey-mbp', 'ci-01', 'cedar-02', ...realSizeBuildMachines];
+  const models = ['claude-opus-5-5', 'gpt-6-sol', 'claude-sonnet-5', 'gpt-6-luna'];
+  return Array.from({ length: 400 }, (_, index) => {
+    const id = `${(0x50000000 + index * 7_919).toString(16)}-4a5b-4c6d-8e7f-${String(index).padStart(12, '0')}`;
+    const model = models[index % models.length] ?? 'gpt-6-sol';
+    const agent = model.startsWith('claude') ? sessionAgents.claudeCode : sessionAgents.codexHosted;
+    const startMinutesAgo = 30 + index * 107;
+    const main = sessionThread(id, null, 0, model, agent, startMinutesAgo, 5 + (index % 50), 8 + ((index * 37) % 60), index % 11 === 0 ? 1 : 0);
+    const threads = index % 5 === 0
+      ? [main, sessionThread(`${id.slice(0, -4)}5ab0`, id, 1, 'claude-haiku-4-5', agent, startMinutesAgo - 2, 3, 6 + (index % 9))]
+      : [main];
+    return { ...mockSession(id, threads, fleet[index % fleet.length] ?? ''), peakContext: 60_000 + ((index * 4_211) % 180_000) };
+  });
+};
+if (realSize) usageSessions.push(...realSizeSessions());
+
 // What each session's transcript says, as the machines' transcript scans store it. Two weren't found: a codex exec run
 // with a throwaway CODEX_HOME, and a session seen only through its subagents.
 const mockTranscript = (fields: Partial<SessionTranscript>): SessionTranscript => ({
@@ -1020,7 +1057,7 @@ const defaultT3Channels = (): T3Channel[] => {
   ];
 };
 
-// `?fleet=many`: ten threads on each of four machines, in every state, across a few projects.
+// `?fleet=many` (and `?size=real`): ten threads on each of four machines, in every state, across a few projects.
 const manyT3Channels = (): T3Channel[] => {
   const states = ['approval', 'question', 'working', 'failed', 'done', 'idle', 'idle', 'working', 'done', 'idle'];
   const roots: Record<string, string> = { 'cam-mbp': '/Users/cam/src', 'cedar-02': '/home/cam/src', 'ci-01': '/home/ci/src', 'lab-box': '/home/lab/src' };
@@ -1089,7 +1126,7 @@ const mockFleetSources = (): FleetSources => {
   if (fleetScenario === 'empty') {
     return { nowMs, thisMachine: 'cam-mbp', t3Enabled: mockT3Enabled, t3Found: mockT3Found, t3: [], attention: { items: [], reporting: attention.reporting }, sessions: [] };
   }
-  const t3 = !mockT3Enabled || !mockT3Found ? [] : (fleetScenario === 'many' ? manyT3Channels() : defaultT3Channels()).map((channel): T3Channel => {
+  const t3 = !mockT3Enabled || !mockT3Found ? [] : (fleetScenario === 'many' || realSize ? manyT3Channels() : defaultT3Channels()).map((channel): T3Channel => {
     const { machine, threads } = channel;
     // T3 Code quit without cleaning up: its database still says running, but its process is gone.
     if (fleetScenario === 't3down') return { ...channel, serverRunning: false };

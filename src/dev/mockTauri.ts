@@ -9,7 +9,9 @@
  * no accounts (`&accounts=kept` keeps them, as after the first sign-ins), no machines, requests, sessions, archive,
  * telemetry or other apps yet, Sync with this Mac alone and nothing scanned, the usage data note showing (unless
  * `&usagedata=seen`), and nothing saved in the window (each load starts again; the other switches still apply on
- * top); `?core=stopped`, `?core=missing`,
+ * top); `?size=real` for the mock at a heavy user's real size (fourteen machines, a million requests recorded, four
+ * hundred more sessions, fifty skills in the setup repo and fifty removed, forty T3 Code threads), which `bun run perf`
+ * measures beside the default; `?core=stopped`, `?core=missing`,
  * `?core=unready` (process up, management port not answering yet), `?core=unreadable` (its status can't be read, so
  * pages that need it say so and offer Check again), `?core=stops` (running, then stopping eight seconds after load, so
  * a page that needs it, like Accounts or Settings › Auth Files, locks in place; Start core brings it back there);
@@ -370,7 +372,7 @@ import { previewAppPreference } from '../appPreferences';
 import { goToView, resetViewHistory } from '../services/viewHistory';
 import { automationView, failedRequestsView, machinesView, mainPageView, poolsView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
 import type { Commands } from '../native/commands';
-import { mockCommands, type CommandAnswers } from './mock/answers';
+import { mockCommands, type CommandAnswers, type CommandObserver } from './mock/answers';
 import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
 import { archiveAnswers } from './mock/archive';
 import { automationsAnswers } from './mock/automations';
@@ -669,5 +671,7 @@ export function installTauriMock() {
   if (startPage) resetViewHistory({ entries: [{ kind: 'main', page: 'home' }, startPage], index: 1 });
   clearMocks();
   mockWindows('main');
-  mockCommands(answers, { plugins: (command, args) => pluginAnswers[command]?.(args) ?? null, delayMs: 60, events: true });
+  // `bun run perf` (perf/counters.ts) leaves its command counter on the window before the page loads.
+  const observe = (window as Window & { __arborPerfCommand?: CommandObserver }).__arborPerfCommand;
+  mockCommands(answers, { plugins: (command, args) => pluginAnswers[command]?.(args) ?? null, delayMs: 60, events: true, observe });
 }
