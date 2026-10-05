@@ -2,12 +2,12 @@ import { useState, type ReactNode } from 'react';
 import { PoolDialog } from '../components/pools/PoolDialog';
 import { PoolLimitsLine, PoolMembersTable, PoolPlan, PoolStandingBadge, ShareBar, useWhenFull } from '../components/pools/PoolHealth';
 import { PoolRunsBlock, StartRunDialog } from '../components/PoolRuns';
-import { PoolSshSection } from '../components/pools/PoolSshSection';
+import { PoolConnectDialog } from '../components/pools/PoolConnect';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
-import { AlertCircle, ChevronRight, Network, Pencil, Play, Plus } from '../components/ui/icons';
+import { AlertCircle, ChevronRight, Network, Pencil, Play, Plus, TerminalSquare } from '../components/ui/icons';
 import { Skeleton } from '../components/ui/skeleton';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
@@ -27,6 +27,7 @@ export function PoolsPage({ params, onNavigate }: { params?: PoolsParams; onNavi
   const { runs } = useRuns();
   const [editing, setEditing] = useState<MachinePool | null>(null);
   const [running, setRunning] = useState<MachinePool | null>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
   const open = params?.pool ? pools?.find((pool) => pool.id === params.pool) : undefined;
   const previewOf = (pool: MachinePool) => previews.find((entry) => entry.pool === pool.id);
   const runsOf = (pool: MachinePool) => (runs ? poolRuns(runs, pool.id) : null);
@@ -34,6 +35,7 @@ export function PoolsPage({ params, onNavigate }: { params?: PoolsParams; onNavi
     <>
       <PoolDialog pool={editing} pools={pools ?? []} onClose={() => setEditing(null)} />
       <StartRunDialog pool={running} onClose={() => setRunning(null)} />
+      <PoolConnectDialog poolId={connecting} onClose={() => setConnecting(null)} />
     </>
   );
   const startRun = (pool: MachinePool) => (
@@ -52,6 +54,9 @@ export function PoolsPage({ params, onNavigate }: { params?: PoolsParams; onNavi
           actions={open ? (
             <>
               {startRun(open)}
+              <Button variant="outline" size="sm" onClick={() => setConnecting(open.id)} disabledReason={open.members.length === 0 ? t('runs.needsMembers') : undefined}>
+                <TerminalSquare />{t('pools.ssh.open')}
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setEditing(open)}><Pencil />{t('pools.edit')}</Button>
             </>
           ) : null}
@@ -180,7 +185,10 @@ function PoolCard({ pool, pools, preview, actions, onOpen }: {
   );
 }
 
-/** A pool's own page: its standing and limits, its members, how its next run is picked, and its recent runs. */
+/**
+ * A pool's own page: its standing and limits, its members with where the next run would go, and its recent runs.
+ * Connecting over SSH is set up once, so it lives behind the Connect button instead of on the page.
+ */
 function PoolDetail({ pool, pools, preview, runs }: { pool: MachinePool; pools: MachinePool[]; preview: PoolPreview | undefined; runs: HarnessRun[] | null }) {
   const { t } = useI18n();
   const whenFull = useWhenFull(pool, pools);
@@ -204,14 +212,12 @@ function PoolDetail({ pool, pools, preview, runs }: { pool: MachinePool; pools: 
               <ShareBar preview={preview} />
             </div>
             <PoolMembersTable pool={pool} preview={preview} />
+            <div className="border-t border-border/50 px-4 py-3">
+              <PoolPlan pool={pool} pools={pools} preview={preview} explain />
+            </div>
           </>
         )}
       </section>
-      <section className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-xs/5">
-        <h3 className="text-sm font-medium">{t('pools.how.title')}</h3>
-        <PoolPlan pool={pool} pools={pools} preview={preview} explain />
-      </section>
-      {pool.members.length > 0 ? <PoolSshSection poolId={pool.id} /> : null}
       {runs ? (
         <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5">
           <h3 className="border-b border-border/50 px-4 py-3 text-sm font-medium">{t('runs.recent')}</h3>

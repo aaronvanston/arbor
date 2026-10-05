@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PoolSshBody } from '../src/components/pools/PoolSshSection';
+import { PoolSshBody } from '../src/components/pools/PoolConnect';
 import { I18nProvider } from '../src/i18n';
 import { formatDate } from '../src/lib/format';
 import type { PoolSsh, PoolSshConnection } from '../src/native/types';

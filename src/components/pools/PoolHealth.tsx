@@ -147,35 +147,23 @@ export function PoolLimitsLine({ pool, className }: { pool: MachinePool; classNa
 }
 
 /**
- * Where the next run, and the ones after it, would go: the most likely machine, then a numbered strip of the next
- * eight, each counting as running for the ones after it, and what happens once the pool fills.
+ * Where the next run would most likely go, in one line, with the rule behind it when asked. The plan's later steps
+ * aren't drawn: the chance bar above already shows the balance, and a strip of eight machines read as noise.
  */
 export function PoolPlan({ pool, pools, preview, explain = false }: { pool: MachinePool; pools: readonly MachinePool[]; preview: PoolPreview | undefined; explain?: boolean }) {
   const { t, tRich } = useI18n();
   const whenFull = useWhenFull(pool, pools);
-  const steps = planSteps(preview?.plan ?? []);
+  const next = planSteps(preview?.plan ?? []).machines[0];
   return (
-    <div className="flex flex-col gap-2 text-sm" data-slot="pool-plan">
-      {explain ? <p className="text-xs text-muted-foreground">{t(shareRule(pool))}</p> : null}
+    <div className="flex flex-col gap-1 text-sm" data-slot="pool-plan">
       {!preview ? (
         <span className="text-muted-foreground">{t('pools.verdict.checking')}</span>
-      ) : steps.machines.length === 0 ? (
+      ) : next === undefined ? (
         <span className="text-muted-foreground">{t('pools.how.nobody', { action: whenFull })}</span>
       ) : (
-        <>
-          <span>{tRich('pools.next.likely', { machine: <MachinePill name={steps.machines[0] ?? ''} size="sm" /> })}</span>
-          <span className="text-xs text-muted-foreground">{t('pools.how.plan', { count: preview.plan.length })}</span>
-          <ol className="flex flex-wrap items-center gap-1.5">
-            {steps.machines.map((machine, index) => (
-              <li key={index} className="inline-flex items-center gap-1 rounded-md border border-border/60 py-0.5 ps-1.5 pe-1">
-                <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
-                <MachinePill name={machine} size="sm" />
-              </li>
-            ))}
-          </ol>
-          <span className="text-xs text-muted-foreground">{steps.fills ? t('pools.how.fills', { action: whenFull }) : t('pools.how.planHint')}</span>
-        </>
+        <span>{tRich('pools.next.likely', { machine: <MachinePill name={next} size="sm" /> })}</span>
       )}
+      {explain ? <p className="text-xs text-muted-foreground">{t(shareRule(pool))}</p> : null}
     </div>
   );
 }

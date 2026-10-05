@@ -3,6 +3,7 @@ import { CommandLine } from '../CommandLine';
 import { MachinePill } from '../identity/Identity';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Button } from '../ui/button';
+import { Dialog, DialogDescription, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../ui/dialog';
 import { AlertCircle } from '../ui/icons';
 import { Skeleton } from '../ui/skeleton';
 import { toast } from '../ui/toast';
@@ -12,37 +13,38 @@ import type { PoolSsh, PoolSshConnection } from '../../native/types';
 import { formatDate } from '../../lib/format';
 import { READINESS_LABEL, connectionWords, forgetBlocker, spreadExample, sshBlocker, usePoolSsh } from '../../services/poolSsh';
 
-/** A pool's page: reaching the pool as one SSH host. */
-export function PoolSshSection({ poolId }: { poolId: string }) {
-  const { ssh, error } = usePoolSsh(poolId);
+/**
+ * A pool's Connect dialog: reaching the pool as one SSH host. It sits behind a button rather than on the page, since
+ * it's set up once and the page is for the pool's load and runs.
+ */
+export function PoolConnectDialog({ poolId, onClose }: { poolId: string | null; onClose: () => void }) {
+  const { t } = useI18n();
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-xs/5">
-      <PoolSshBody poolId={poolId} ssh={ssh} error={error} />
-    </section>
+    <Dialog open={poolId !== null} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogPopup className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{t('pools.ssh.title')}</DialogTitle>
+          <DialogDescription>{t('pools.ssh.intro')}</DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="flex flex-col gap-4 pb-6">
+          {poolId ? <PoolConnectBody poolId={poolId} /> : null}
+        </DialogPanel>
+      </DialogPopup>
+    </Dialog>
   );
+}
+
+function PoolConnectBody({ poolId }: { poolId: string }) {
+  const { ssh, error } = usePoolSsh(poolId);
+  return <PoolSshBody poolId={poolId} ssh={ssh} error={error} />;
 }
 
 export function PoolSshBody({ poolId, ssh, error }: { poolId: string; ssh: PoolSsh | null; error: string | null }) {
   const { t } = useI18n();
   const [adding, setAdding] = useState(false);
   const [forgetting, setForgetting] = useState<string | null>(null);
-  const title = <h3 className="text-sm font-medium">{t('pools.ssh.title')}</h3>;
-  if (error) {
-    return (
-      <>
-        {title}
-        <Alert variant="error"><AlertCircle /><AlertDescription>{error}</AlertDescription></Alert>
-      </>
-    );
-  }
-  if (!ssh) {
-    return (
-      <>
-        {title}
-        <Skeleton className="h-8 w-full" />
-      </>
-    );
-  }
+  if (error) return <Alert variant="error"><AlertCircle /><AlertDescription>{error}</AlertDescription></Alert>;
+  if (!ssh) return <Skeleton className="h-8 w-full" />;
   const blocker = sshBlocker(ssh);
   const addInclude = async () => {
     setAdding(true);
@@ -68,10 +70,6 @@ export function PoolSshBody({ poolId, ssh, error }: { poolId: string; ssh: PoolS
   };
   return (
     <>
-      <div className="flex flex-col gap-1">
-        {title}
-        <p className="text-sm text-muted-foreground">{t('pools.ssh.intro')}</p>
-      </div>
       {blocker === 'command' ? (
         <Alert variant="warning"><AlertCircle /><AlertDescription>{t('pools.ssh.needsCommand')}</AlertDescription></Alert>
       ) : (
@@ -91,7 +89,7 @@ export function PoolSshBody({ poolId, ssh, error }: { poolId: string; ssh: PoolS
         </div>
       ) : null}
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-muted-foreground">{ssh.user ? t('pools.ssh.members.as', { user: ssh.user }) : t('pools.ssh.members')}</span>
+        <span className="text-xs font-medium text-muted-foreground">{ssh.user ? t('pools.ssh.members.as', { user: ssh.user }) : t('pools.ssh.members')}</span>
         {blocker === 'members' ? <p className="text-sm text-muted-foreground">{t('pools.ssh.noneReady')}</p> : null}
         <ul className="flex flex-col gap-1.5">
           {ssh.members.map((member) => (
@@ -105,7 +103,7 @@ export function PoolSshBody({ poolId, ssh, error }: { poolId: string; ssh: PoolS
         </ul>
       </div>
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-muted-foreground">{t('pools.ssh.connections')}</span>
+        <span className="text-xs font-medium text-muted-foreground">{t('pools.ssh.connections')}</span>
         {ssh.connections.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('pools.ssh.noConnections')}</p>
         ) : (
