@@ -31,6 +31,7 @@ import { CommandPalette, type PalettePage, type PaletteSetting } from './compone
 import { SettingsSearch } from './components/SettingsSearch';
 import { QuitGuard } from './components/QuitGuard';
 import { MonitorBoundary, PageErrorBoundary } from './components/ErrorBoundaries';
+import { AfterLaunch } from './components/AfterLaunch';
 import { CoreLockedPage } from './components/CoreLockedPage';
 import { coreLock, coreLockHint, sidebarCoreState } from './services/coreLock';
 import { useMacTitleBar } from './services/windowChrome';
@@ -496,23 +497,27 @@ function AppContent() {
 
   return (
     <>
+      {/* What feeds Home, the sidebar and the menu bar starts with the window; machine alerts share its health read. */}
       <MonitorBoundary name="LimitsMonitor"><LimitsMonitor coreReady={coreReady} /></MonitorBoundary>
-      <MonitorBoundary name="AccountReservesMonitor"><AccountReservesMonitor coreReady={coreReady} /></MonitorBoundary>
-      <MonitorBoundary name="ProxyChecksMonitor"><ProxyChecksMonitor coreReady={coreReady} /></MonitorBoundary>
-      <MonitorBoundary name="SessionMonitor"><SessionMonitor /></MonitorBoundary>
       <MonitorBoundary name="LiveSessionsMonitor"><LiveSessionsMonitor /></MonitorBoundary>
-      <MonitorBoundary name="WeeklyDigestMonitor"><WeeklyDigestMonitor /></MonitorBoundary>
       <MonitorBoundary name="MachineMonitor"><MachineMonitor /></MonitorBoundary>
       <MonitorBoundary name="FleetHealthMonitor"><FleetHealthMonitor /></MonitorBoundary>
-      <MonitorBoundary name="SetupChangeMonitor"><SetupChangeMonitor /></MonitorBoundary>
-      <MonitorBoundary name="AutomationMonitor"><AutomationMonitor /></MonitorBoundary>
-      <MonitorBoundary name="ArchiveMonitor"><ArchiveMonitor /></MonitorBoundary>
-      <MonitorBoundary name="AgentAttentionMonitor"><AgentAttentionMonitor /></MonitorBoundary>
       <MonitorBoundary name="FleetMonitor"><FleetMonitor /></MonitorBoundary>
       <MonitorBoundary name="AlertCoordinator"><AlertCoordinator coreReady={coreReady} onNavigate={navigate} /></MonitorBoundary>
-      <MonitorBoundary name="UpdateWhenIdleMonitor"><UpdateWhenIdleMonitor /></MonitorBoundary>
-      <MonitorBoundary name="CliBridgeMonitor"><CliBridgeMonitor /></MonitorBoundary>
       <MonitorBoundary name="QuitGuard"><QuitGuard /></MonitorBoundary>
+      {/* The rest start once Home's reads have gone, a second or two in. */}
+      <AfterLaunch>
+        <MonitorBoundary name="AccountReservesMonitor"><AccountReservesMonitor coreReady={coreReady} /></MonitorBoundary>
+        <MonitorBoundary name="ProxyChecksMonitor"><ProxyChecksMonitor coreReady={coreReady} /></MonitorBoundary>
+        <MonitorBoundary name="SessionMonitor"><SessionMonitor /></MonitorBoundary>
+        <MonitorBoundary name="WeeklyDigestMonitor"><WeeklyDigestMonitor /></MonitorBoundary>
+        <MonitorBoundary name="SetupChangeMonitor"><SetupChangeMonitor /></MonitorBoundary>
+        <MonitorBoundary name="AutomationMonitor"><AutomationMonitor /></MonitorBoundary>
+        <MonitorBoundary name="ArchiveMonitor"><ArchiveMonitor /></MonitorBoundary>
+        <MonitorBoundary name="AgentAttentionMonitor"><AgentAttentionMonitor /></MonitorBoundary>
+        <MonitorBoundary name="UpdateWhenIdleMonitor"><UpdateWhenIdleMonitor /></MonitorBoundary>
+        <MonitorBoundary name="CliBridgeMonitor"><CliBridgeMonitor /></MonitorBoundary>
+      </AfterLaunch>
       {/* Closed on a crash so it doesn't pop back open by itself when it restarts. */}
       <MonitorBoundary name="CommandPalette" onCrash={() => setPaletteOpen(false)}>
         <CommandPalette

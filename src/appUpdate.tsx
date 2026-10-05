@@ -21,6 +21,7 @@ import { translate, useI18n } from './i18n';
 import { appUpdateRestartsProxy, settleIdleUpdate } from './services/updateWhenIdle';
 import type { AppUpdateInfo, AppUpdateTask } from './native/types';
 import { trackFeature } from './services/productAnalytics';
+import { afterLaunch } from './services/launchSettle';
 
 type AppUpdateContextValue = {
   info: AppUpdateInfo | null;
@@ -119,7 +120,8 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
 
     if (!startupCheckStarted.current) {
       startupCheckStarted.current = true;
-      void check();
+      // The feed is on the network; Home's own reads go first.
+      void afterLaunch().then(() => check());
     }
     // Quiet background poll so the sidebar pill and Home banner appear without a manual check.
     const poll = async () => {

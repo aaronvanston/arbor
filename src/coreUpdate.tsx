@@ -11,6 +11,7 @@ import {
 import { invokeCommand } from './native/commands';
 import { useCoreRuntime } from './coreRuntime';
 import type { CoreLatest } from './native/types';
+import { afterLaunch } from './services/launchSettle';
 
 /**
  * The core's releases come from GitHub a few times a week, so the background check asks every half hour, and when
@@ -167,7 +168,8 @@ export function CoreUpdateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!latestAutoCheckStarted) {
       latestAutoCheckStarted = true;
-      void check();
+      // The release list is on the network; Home's own reads go first.
+      void afterLaunch().then(() => check());
     } else if (latestCheckPromise) {
       void check();
     }

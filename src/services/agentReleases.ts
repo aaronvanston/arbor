@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { invokeCommand } from '../native/commands';
 import type { LatestVersions } from '../native/types';
+import { afterLaunch } from './launchSettle';
 
 /** The native side keeps an answer an hour, so asking sooner gets the same one. */
 const KNOWN_REFRESH_MS = 60 * 60 * 1000;
@@ -43,7 +44,8 @@ function releaseStore<T>(ask: () => Promise<T>, unknown: T, known: (value: T) =>
     listeners.add(listener);
     if (!polling) {
       polling = true;
-      void poll();
+      // The registries are on the network; at launch, Home's own reads go first.
+      void afterLaunch().then(poll);
     }
     return () => {
       listeners.delete(listener);
