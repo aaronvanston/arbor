@@ -89,6 +89,7 @@ mod tests {
         types.visit::<crate::usage::ModelPrice>();
         types.visit::<crate::usage::ModelPriceSyncResult>();
         types.visit::<crate::usage::UsageSessionPage>();
+        types.visit::<crate::usage::HeavySessionCandidate>();
         types.visit::<crate::usage::UsageSessionTimeline>();
         types.visit::<crate::usage::UsageRepairResult>();
         types.visit::<crate::usage::storage::UsageStorageInfo>();

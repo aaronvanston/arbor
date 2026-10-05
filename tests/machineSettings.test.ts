@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { APP_PREFERENCE_DEFAULTS, type AppPreferences } from '../src/appPreferences';
 import {
+  lowestRaised,
   machineValue,
   overrideCount,
   raisedAnywhere,
@@ -43,6 +44,13 @@ describe('machine-scoped settings', () => {
     // Off everywhere but one machine, the phone topic still counts as raised here.
     expect(topicRaisedHere('machines', off, { ci01: { machineNotifications: true } })).toBe(true);
     expect(topicRaisedHere('machines', off)).toBe(false);
+  });
+
+  it('finds the lowest threshold anywhere, so the heavy-session check can ask only for sessions over it', () => {
+    const off = prefs({ heavySessionTokens: 0 });
+    expect(lowestRaised(off, {}, 'heavySessionTokens')).toBeNull();
+    expect(lowestRaised(prefs({ heavySessionTokens: 100 * M }), { ci01: { heavySessionTokens: 0 }, labbox: { heavySessionTokens: 500 * M } }, 'heavySessionTokens')).toBe(100 * M);
+    expect(lowestRaised(off, { labbox: { heavySessionTokens: 500 * M } }, 'heavySessionTokens', { 'cam/arbor': { all: { heavySessionTokens: 250 * M }, machines: { ci01: { heavySessionTokens: 40 * M } } } })).toBe(40 * M);
   });
 
   it('drops what isn’t a machine-scoped setting of the right type', () => {

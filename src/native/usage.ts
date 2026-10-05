@@ -1,4 +1,5 @@
 import type {
+  HeavySessionCandidate,
   AntiburnStatus,
   CacheMisses,
   CapacityQuery,
@@ -45,6 +46,7 @@ export type UsageCommands = {
   sync_usage_model_prices: { args: { query: UsageQuery }; result: ModelPriceSyncResult };
 
   get_usage_sessions: { args: { query: UsageQuery }; result: UsageSessionPage };
+  get_heavy_sessions: { args: { start: string; minTokens: number }; result: HeavySessionCandidate[] };
   get_usage_session_timeline: { args: { session: string }; result: UsageSessionTimeline };
   get_live_sessions: { result: LiveSessionsReport };
   get_fleet_sources: { result: FleetSources };

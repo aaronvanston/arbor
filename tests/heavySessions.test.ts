@@ -1,24 +1,17 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import { heavySessions, heavySessionsOn, heavySessionText, nextHeavyNotifications, type HeavySession } from '../src/services/heavySessions';
-import type { UsageSession, UsageSessionPage } from '../src/native/types';
+import type { HeavySessionCandidate } from '../src/native/types';
 
 const HOUR = 3_600_000;
 const M = 1_000_000;
 const t = (key: Parameters<typeof translate>[0], variables?: Record<string, string | number>) => translate(key, variables);
 
-const session = (id: string, totalTokens: number, fields: Partial<UsageSession> = {}): UsageSession => ({
-  id, parentId: null, depth: 0, models: ['claude-fable-5-1'], providers: ['claude'],
+const session = (id: string, totalTokens: number, fields: Partial<HeavySessionCandidate> = {}): HeavySessionCandidate => ({
+  id, machine: 'Cedar 01', transcriptMachine: '', repository: null, apiKeyHash: 'desk-cedar',
   userAgent: 'claude-cli/2.1.280 (external, cli) AcmeDesk/1.4.205',
-  startedAtMs: 0, lastActiveAtMs: 0, requests: 100, failures: 0, canceled: 0,
-  inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
-  totalTokens, estimatedCost: 84.2, pricedRequests: 100, peakContext: 0, compactions: 0,
-  provider: 'claude', machine: 'Cedar 01', pool: 'Cedar', apiKeyHash: 'desk-cedar', active: true, hasOwnRequests: true, subagents: 0, threads: [], transcript: null,
+  totalTokens, requests: 100, pricedRequests: 100, estimatedCost: 84.2, otherKeySessions: 0,
   ...fields,
-});
-const page = (items: UsageSession[]): UsageSessionPage => ({
-  items, total: items.length, page: 1, pageSize: 200, totalPages: 1,
-  summary: { sessions: items.length, subagentThreads: 0, active: 0, requests: 0, totalTokens: 0, estimatedCost: 0, pricedRequests: 0, untrackedRequests: 0 },
 });
 const heavy = (id: string, fields: Partial<HeavySession> = {}): HeavySession => ({
   id, client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', placedOn: 'Cedar 01', apiKeyHash: 'desk-cedar', tokens: 130 * M, requests: 100, cost: 84.2, otherKeySessions: 0, ...fields,
@@ -26,19 +19,18 @@ const heavy = (id: string, fields: Partial<HeavySession> = {}): HeavySession => 
 
 describe('heavy sessions', () => {
   it('flags the sessions over the hourly threshold, heaviest first', () => {
-    const hour = page([
+    const hour = [
       session('quiet', 12 * M),
-      session('heavy', 130 * M),
+      // The quiet session and the one after it used the same key.
+      session('heavy', 130 * M, { otherKeySessions: 2 }),
       session('heavier', 290 * M, { userAgent: 'codex_exec/0.156.0 (Mac OS 26.0.0; arm64) dumb', machine: '', apiKeyHash: 'runner', pricedRequests: 90 }),
       session('same-key', 3 * M),
-    ]);
+    ];
     const items = heavySessions(hour, 100 * M);
     expect(items.map((item) => item.id)).toEqual(['heavier', 'heavy']);
     expect(items[1]).toEqual({
       id: 'heavy', client: 'Claude Code', host: 'AcmeDesk', machine: 'Cedar 01', placedOn: 'Cedar 01', apiKeyHash: 'desk-cedar',
-      tokens: 130 * M, requests: 100, cost: 84.2,
-      // The quiet session and the one after it used the same key.
-      otherKeySessions: 2,
+      tokens: 130 * M, requests: 100, cost: 84.2, otherKeySessions: 2,
     });
     // Some requests had no price, so the cost would fall short.
     expect(items[0]).toMatchObject({ client: 'codex exec', host: null, cost: null, otherKeySessions: 0 });
@@ -83,11 +75,11 @@ describe('heavy sessions', () => {
 
 describe('heavy sessions per machine', () => {
   it('holds each session to its own machine’s threshold, where 0 is off', () => {
-    const hour = page([
+    const hour = [
       session('ci', 300 * M, { machine: 'ci-01' }),
       session('cedar', 300 * M, { machine: 'cedar-02' }),
       session('laptop', 120 * M, { machine: 'cam-mbp' }),
-    ]);
+    ];
     const threshold = ({ machine }: { machine: string }) => ({ 'ci-01': 0, 'cedar-02': 500 * M })[machine] ?? 100 * M;
     expect(heavySessions(hour, threshold).map((item) => item.id)).toEqual(['laptop']);
   });
@@ -95,12 +87,11 @@ describe('heavy sessions per machine', () => {
 
 describe('heavy sessions on one machine', () => {
   it('places a session by its key, or else by where its transcript was found, as the Sessions list does', () => {
-    const transcript = { machine: 'lab-box' } as unknown as NonNullable<UsageSession['transcript']>;
-    const hour = page([
+    const hour = [
       session('keyed', 130 * M),
-      session('found', 150 * M, { machine: '', transcript }),
+      session('found', 150 * M, { machine: '', transcriptMachine: 'lab-box' }),
       session('nowhere', 140 * M, { machine: '' }),
-    ]);
+    ];
     const items = heavySessions(hour, 100 * M);
     expect(heavySessionsOn(items, '').map((item) => item.id)).toEqual(['found', 'nowhere', 'keyed']);
     expect(heavySessionsOn(items, 'Cedar 01').map((item) => item.id)).toEqual(['keyed']);

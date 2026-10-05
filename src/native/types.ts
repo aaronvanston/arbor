@@ -1816,6 +1816,34 @@ export type HealthReason = {
 export type HealthStatus = "healthy" | "degraded" | "critical" | "unreachable" | "pending" | "unconfigured";
 
 /**
+ * A session the heavy-session check looks at: only what it needs to hold the
+ * session to its project's and machine's threshold, say where it runs and what
+ * it used, and warn who else pausing its key would stop.
+ */
+export type HeavySessionCandidate = {
+  id: string,
+  machine: string,
+  /**
+   * The machine its transcript is on; empty until one is found.
+   */
+  transcriptMachine: string,
+  /**
+   * `owner/name` from its transcript's remote, else its first pull request's.
+   */
+  repository: string | null,
+  apiKeyHash: string,
+  userAgent: string | null,
+  totalTokens: number,
+  requests: number,
+  pricedRequests: number,
+  estimatedCost: number,
+  /**
+   * Other sessions that sent requests with the same key in the window.
+   */
+  otherKeySessions: number,
+};
+
+/**
  * One file in a skill.
  * Why a skill's file isn't shown.
  */

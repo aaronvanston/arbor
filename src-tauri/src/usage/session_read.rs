@@ -424,7 +424,7 @@ fn sort_sessions(sessions: &mut [UsageSession], order: SessionOrder) {
 }
 
 /// Gives each session without its transcript what its transcript says.
-fn fill_missing_transcripts(connection: &Connection, sessions: &mut [UsageSession]) -> Result<(), String> {
+pub(super) fn fill_missing_transcripts(connection: &Connection, sessions: &mut [UsageSession]) -> Result<(), String> {
     let ids = sessions
         .iter()
         .filter(|session| session.transcript.is_none())

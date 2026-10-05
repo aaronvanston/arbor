@@ -1401,6 +1401,109 @@ pub(crate) async fn get_usage_sessions(
     .await
 }
 
+/// A session the heavy-session check looks at: only what it needs to hold the
+/// session to its project's and machine's threshold, say where it runs and what
+/// it used, and warn who else pausing its key would stop.
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HeavySessionCandidate {
+    id: String,
+    machine: String,
+    /// The machine its transcript is on; empty until one is found.
+    transcript_machine: String,
+    /// `owner/name` from its transcript's remote, else its first pull request's.
+    repository: Option<String>,
+    api_key_hash: String,
+    user_agent: Option<String>,
+    total_tokens: u64,
+    requests: u64,
+    priced_requests: u64,
+    estimated_cost: f64,
+    /// Other sessions that sent requests with the same key in the window.
+    other_key_sessions: usize,
+}
+
+/// The sessions that used at least `min_tokens` since `start`, subagents
+/// included, heaviest first, for the heavy-session check. Every session in the
+/// window counts toward its key's, but only these have their transcripts read,
+/// and none their threads or conversations.
+#[tauri::command]
+pub(crate) async fn get_heavy_sessions(
+    start: String,
+    min_tokens: u64,
+    gui_config_state: tauri::State<'_, GuiConfigState>,
+) -> Result<Vec<HeavySessionCandidate>, String> {
+    let config = gui_config_state.snapshot()?;
+    run_usage_task(move || {
+        load_heavy_sessions(
+            &open_usage_database()?,
+            start,
+            min_tokens,
+            &config,
+            Local::now().timestamp_millis(),
+        )
+    })
+    .await
+}
+
+fn load_heavy_sessions(
+    connection: &Connection,
+    start: String,
+    min_tokens: u64,
+    config: &GuiConfigFile,
+    now_ms: i64,
+) -> Result<Vec<HeavySessionCandidate>, String> {
+    let query = UsageQuery {
+        start: Some(start),
+        ..UsageQuery::default()
+    };
+    let mut sessions = session_read::select_sessions(
+        connection,
+        config,
+        now_ms,
+        &session_read::SessionSelect {
+            query: &query,
+            only_active: false,
+            order: session_read::SessionOrder::Tokens,
+            limit: None,
+            transcripts: false,
+        },
+    )?
+    .sessions;
+    let mut per_key = HashMap::<String, usize>::new();
+    for session in sessions.iter().filter(|session| !session.api_key_hash.is_empty()) {
+        *per_key.entry(session.api_key_hash.clone()).or_default() += 1;
+    }
+    sessions.retain(|session| session.root.totals.total_tokens >= min_tokens);
+    session_read::fill_missing_transcripts(connection, &mut sessions)?;
+    Ok(sessions
+        .into_iter()
+        .map(|session| {
+            let other_key_sessions = per_key
+                .get(&session.api_key_hash)
+                .map_or(0, |count| count.saturating_sub(1));
+            let (transcript_machine, repository) = session
+                .transcript
+                .as_ref()
+                .map(|transcript| (transcript.machine().to_string(), transcript.repository()))
+                .unwrap_or_default();
+            HeavySessionCandidate {
+                id: session.root.id,
+                machine: session.machine,
+                transcript_machine,
+                repository,
+                api_key_hash: session.api_key_hash,
+                user_agent: session.root.user_agent,
+                total_tokens: session.root.totals.total_tokens,
+                requests: session.root.totals.requests,
+                priced_requests: session.root.totals.priced_requests,
+                estimated_cost: session.root.totals.estimated_cost,
+                other_key_sessions,
+            }
+        })
+        .collect())
+}
+
 /// Groups the requests matching the query into root sessions, each with the
 /// subagent threads descended from it.
 fn load_usage_sessions(
@@ -5923,6 +6026,37 @@ mod tests {
             },
         );
         assert_eq!(opus.summary.untracked_requests, 2);
+    }
+
+    #[test]
+    fn heavy_sessions_are_those_over_the_threshold_in_the_window_with_who_shares_their_key() {
+        let row = |id, timestamp_ms, tokens, key| SessionRow {
+            total_tokens: tokens,
+            api_key_hash: key,
+            ..session_row(id, None, timestamp_ms)
+        };
+        let connection = session_test_database(&[
+            // Heavy, but before the window.
+            row("earlier", SESSION_T0, 900_000, "desk"),
+            row("heavy", SESSION_T0 + 3_600_000, 500_000, "desk"),
+            row("heavy", SESSION_T0 + 3_700_000, 500_000, "desk"),
+            row("light", SESSION_T0 + 3_700_000, 1_000, "desk"),
+            row("runner", SESSION_T0 + 3_700_000, 800_000, "runner"),
+            row("keyless", SESSION_T0 + 3_700_000, 2_000_000, ""),
+        ]);
+        let start = rfc3339_millis(SESSION_T0 + 3_000_000);
+        let sessions =
+            load_heavy_sessions(&connection, start, 600_000, &GuiConfigFile::default(), SESSION_T0 + 4_000_000)
+                .unwrap();
+        let read = sessions
+            .iter()
+            .map(|session| (session.id.as_str(), session.total_tokens, session.other_key_sessions))
+            .collect::<Vec<_>>();
+        // The light session is under the threshold but still shares the heavy one's key.
+        assert_eq!(read, [("keyless", 2_000_000, 0), ("heavy", 1_000_000, 1), ("runner", 800_000, 0)]);
+        assert_eq!(sessions[1].requests, 2);
+        assert_eq!(sessions[1].transcript_machine, "");
+        assert_eq!(sessions[1].repository, None);
     }
 
     #[test]

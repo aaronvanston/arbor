@@ -109,13 +109,26 @@ export const machineValue = <K extends MachineScopedKey>(
   key: K,
 ): AppPreferences[K] => resolveMachineSetting(preferences, overrides, machine, key).value;
 
-/** Whether an alert is on for All machines or any one machine, so its monitor keeps running. A threshold of 0 is off. */
-export function raisedAnywhere(preferences: AppPreferences, overrides: MachineOverrideMap, key: MachineScopedKey, projects: ProjectOverrideMap = {}): boolean {
-  const on = (value: AppPreferences[MachineScopedKey] | undefined) => (typeof value === 'number' ? value > 0 : value === true);
+/** A setting's value everywhere, then each machine's and each project's own, where they have one. */
+function scopedValues(preferences: AppPreferences, overrides: MachineOverrideMap, key: MachineScopedKey, projects: ProjectOverrideMap) {
   const projectValues = isProjectScoped(key)
     ? Object.values(projects).flatMap((project) => [project.all, ...Object.values(project.machines ?? {})])
     : [];
-  return on(preferences[key]) || [...Object.values(overrides), ...projectValues].some((own) => on(own?.[key]));
+  return [preferences[key], ...[...Object.values(overrides), ...projectValues].map((own) => own?.[key])];
+}
+
+/** Whether an alert is on for All machines or any one machine, so its monitor keeps running. A threshold of 0 is off. */
+export function raisedAnywhere(preferences: AppPreferences, overrides: MachineOverrideMap, key: MachineScopedKey, projects: ProjectOverrideMap = {}): boolean {
+  return scopedValues(preferences, overrides, key, projects).some((value) => (typeof value === 'number' ? value > 0 : value === true));
+}
+
+/**
+ * The lowest value a threshold is raised to anywhere: everywhere, on a machine, or in a project. Null when it's off
+ * everywhere. Nothing under it is over any scope's threshold.
+ */
+export function lowestRaised(preferences: AppPreferences, overrides: MachineOverrideMap, key: MachineScopedKey, projects: ProjectOverrideMap = {}): number | null {
+  const raised = scopedValues(preferences, overrides, key, projects).filter((value): value is number => typeof value === 'number' && value > 0);
+  return raised.length ? Math.min(...raised) : null;
 }
 
 /** How many settings `machine` has its own value for. */

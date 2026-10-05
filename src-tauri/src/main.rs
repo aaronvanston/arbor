@@ -1823,6 +1823,7 @@ fn main() {
             usage::get_usage_analysis,
             usage::get_usage_events,
             usage::get_usage_sessions,
+            usage::get_heavy_sessions,
             usage::projects::get_session_projects,
             usage::projects::get_merged_pull_requests,
             usage::pull_requests::get_pull_request_states,

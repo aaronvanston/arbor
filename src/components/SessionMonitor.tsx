@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
 import { useAppPreferences } from '../appPreferences';
-import { raisedAnywhere, resolveScoped, useMachineOverrides, useProjectOverrides } from '../services/machineSettings';
+import { lowestRaised, resolveScoped, useMachineOverrides, useProjectOverrides } from '../services/machineSettings';
 import { useI18n } from '../i18n';
 import {
   HEAVY_SESSION_WINDOW_MS,
@@ -13,8 +13,8 @@ import {
   undismissHeavySessions,
 } from '../services/heavySessions';
 import { notify } from '../services/notify';
-import type { UsageSession } from '../native/types';
-import { sessionRepository, shortSessionId } from '../services/usageSessions';
+import type { HeavySessionCandidate } from '../native/types';
+import { shortSessionId } from '../services/usageSessions';
 
 const SEEN_KEY = 'arbor.heavy-sessions-seen.v1';
 const USAGE_UPDATED_EVENT = 'usage-records-updated';
@@ -44,10 +44,13 @@ export function SessionMonitor() {
   const overrides = useMachineOverrides();
   const projects = useProjectOverrides();
   // Checked on, as long as some project or machine flags heavy sessions; each session is held to its project's and
-  // machine's threshold.
-  const active = raisedAnywhere(preferences, overrides, 'heavySessionTokens', projects);
-  const threshold = (session: UsageSession) =>
-    resolveScoped(preferences, overrides, projects, { project: sessionRepository(session), machine: session.machine }, 'heavySessionTokens').value;
+  // machine's threshold, and only sessions over the lowest of them are read.
+  const lowest = lowestRaised(preferences, overrides, 'heavySessionTokens', projects);
+  const active = lowest !== null;
+  const lowestRef = useRef(lowest);
+  lowestRef.current = lowest;
+  const threshold = (session: HeavySessionCandidate) =>
+    resolveScoped(preferences, overrides, projects, { project: session.repository, machine: session.machine }, 'heavySessionTokens').value;
   const thresholdRef = useRef(threshold);
   thresholdRef.current = threshold;
   const textRef = useRef({ t });
@@ -80,11 +83,12 @@ export function SessionMonitor() {
       const nowMs = Date.now();
       lastCheckMs = nowMs;
       try {
-        const page = await invokeCommand('get_usage_sessions', {
-          query: { start: new Date(nowMs - HEAVY_SESSION_WINDOW_MS).toISOString(), sort: 'tokens', page_size: 200 },
+        const candidates = await invokeCommand('get_heavy_sessions', {
+          start: new Date(nowMs - HEAVY_SESSION_WINDOW_MS).toISOString(),
+          minTokens: lowestRef.current ?? 0,
         });
         if (disposed) return;
-        const items = heavySessions(page, (session) => thresholdRef.current(session));
+        const items = heavySessions(candidates, (session) => thresholdRef.current(session));
         setHeavySessions(items);
         const { seen, fresh, changed } = nextHeavyNotifications(seenRef.current, items, nowMs);
         if (changed) {

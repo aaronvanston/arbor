@@ -39,7 +39,7 @@ import type {
   UsageSessionThread,
 } from '../../native/types';
 import type { UsageCommands } from '../../native/usage';
-import { sessionClient, sessionPlace } from '../../services/usageSessions';
+import { sessionClient, sessionPlace, sessionRepository } from '../../services/usageSessions';
 import type { CommandAnswers } from './answers';
 import bundledPriceCatalog from '../../../src-tauri/resources/model_prices.json';
 import { coreStatus, heavyScenario } from './core';
@@ -1428,6 +1428,23 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
       },
       ...(query.facets ? { facets: sessionFacets(query, inRequests) } : {}),
     };
+  },
+  // As usage.rs reads them: every session with requests since `start` counts toward its key's, and those with at least
+  // `minTokens` come back. The mock doesn't time sessions request by request, so one active since then counts whole.
+  get_heavy_sessions: ({ start, minTokens }) => {
+    const since = Date.parse(start);
+    const inWindow = usageSessions.filter((item) => item.lastActiveAtMs >= since);
+    const keySessions = new Map<string, number>();
+    for (const item of inWindow) if (item.apiKeyHash) keySessions.set(item.apiKeyHash, (keySessions.get(item.apiKeyHash) ?? 0) + 1);
+    return inWindow
+      .filter((item) => item.totalTokens >= minTokens)
+      .sort((a, b) => b.totalTokens - a.totalTokens)
+      .map((item) => ({
+        id: item.id, machine: item.machine, transcriptMachine: item.transcript?.machine ?? '', repository: sessionRepository(item),
+        apiKeyHash: item.apiKeyHash, userAgent: item.userAgent, totalTokens: item.totalTokens, requests: item.requests,
+        pricedRequests: item.pricedRequests, estimatedCost: item.estimatedCost,
+        otherKeySessions: item.apiKeyHash ? (keySessions.get(item.apiKeyHash) ?? 1) - 1 : 0,
+      }));
   },
   get_session_projects: (args) => {
     const { query } = args;

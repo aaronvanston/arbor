@@ -2,7 +2,7 @@ import type { MessageKey, MessageVariables } from '../i18n/resources';
 import { formatCount, formatMoney } from '../lib/format';
 import { savedStore, sharedStore, storedRecord } from './savedStore';
 import { sessionClient } from './usageSessions';
-import type { UsageSession, UsageSessionPage } from '../native/types';
+import type { HeavySessionCandidate } from '../native/types';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -32,10 +32,13 @@ export type HeavySession = {
   otherKeySessions: number;
 };
 
-/** The sessions in `page` that used at least `thresholdTokens`. The page holds the last hour's sessions. */
-export function heavySessions(page: UsageSessionPage, thresholdTokens: number | ((session: UsageSession) => number)): HeavySession[] {
+/**
+ * The sessions in `candidates` that used at least `thresholdTokens`. The candidates are the last hour's sessions over
+ * the lowest threshold anywhere, as `get_heavy_sessions` reads them.
+ */
+export function heavySessions(candidates: HeavySessionCandidate[], thresholdTokens: number | ((session: HeavySessionCandidate) => number)): HeavySession[] {
   const threshold = typeof thresholdTokens === 'number' ? () => thresholdTokens : thresholdTokens;
-  return page.items
+  return candidates
     .filter((session) => {
       // Each project and machine can have its own threshold (Settings › Notifications scoped to it); 0 is off there.
       const tokens = threshold(session);
@@ -48,14 +51,12 @@ export function heavySessions(page: UsageSessionPage, thresholdTokens: number | 
         client: client?.name ?? null,
         host: client?.host ?? null,
         machine: session.machine,
-        placedOn: session.machine || session.transcript?.machine || '',
+        placedOn: session.machine || session.transcriptMachine,
         apiKeyHash: session.apiKeyHash,
         tokens: session.totalTokens,
         requests: session.requests,
         cost: session.pricedRequests >= session.requests ? session.estimatedCost : null,
-        otherKeySessions: session.apiKeyHash
-          ? page.items.filter((other) => other.id !== session.id && other.apiKeyHash === session.apiKeyHash).length
-          : 0,
+        otherKeySessions: session.otherKeySessions,
       };
     })
     .sort((a, b) => b.tokens - a.tokens);

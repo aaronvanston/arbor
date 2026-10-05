@@ -477,6 +477,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_heavy_sessions",
+        access: Access::Read,
+        summary: "The sessions that used at least `min_tokens` since `start`, subagents included, heaviest first, for the heavy-session check. Every session in the window counts toward its key's, but only these have their transcripts read, and none their threads or conversations.",
+        args: &[
+            ArgSpec { name: "start", ts_type: "string", optional: false },
+            ArgSpec { name: "minTokens", ts_type: "number", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_session_projects",
         access: Access::Read,
         summary: "Get session projects",
@@ -2042,6 +2051,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_usage_analysis" => async { done(Box::pin(crate::usage::get_usage_analysis(arg(&args, "query")?, app.state())).await) }.await,
         "get_usage_events" => async { done(Box::pin(crate::usage::get_usage_events(arg(&args, "query")?, app.state())).await) }.await,
         "get_usage_sessions" => async { done(Box::pin(crate::usage::get_usage_sessions(arg(&args, "query")?, app.state())).await) }.await,
+        "get_heavy_sessions" => async { done(Box::pin(crate::usage::get_heavy_sessions(arg(&args, "start")?, arg(&args, "minTokens")?, app.state())).await) }.await,
         "get_session_projects" => async { done(Box::pin(crate::usage::projects::get_session_projects(arg(&args, "query")?, arg(&args, "checkNow")?, app.state())).await) }.await,
         "get_merged_pull_requests" => async { done(Box::pin(crate::usage::projects::get_merged_pull_requests(arg(&args, "fromMs")?, arg(&args, "toMs")?, arg(&args, "machine")?, app.state())).await) }.await,
         "get_pull_request_states" => async { done(Box::pin(crate::usage::pull_requests::get_pull_request_states(arg(&args, "pullRequests")?)).await) }.await,

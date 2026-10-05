@@ -26,6 +26,7 @@ any other machine, say so instead of trying.
 | Sessions started on pools, and how each went | `arbor pools recent`, or `arbor pools recent <pool>` |
 | Connect to a pool over SSH | `ssh arbor-<pool>`, once its page in Arbor says it's ready; `arbor pools connect` is that host's ProxyCommand, not something to run yourself. Each host name stays on its first machine; `arbor call forget_pool_ssh_name --args '{"poolId":"<id>","name":"<host>"}'` lets it pick again |
 | Sessions | `arbor sessions` (recent), `arbor sessions --live` (running now, with cost per hour) |
+| Sessions that used a lot of tokens lately, as Arbor's heavy-session alert sees them | `arbor call get_heavy_sessions start=<ISO time> minTokens=<tokens>` |
 | Usage and cost | `arbor usage today`, `arbor usage 7d`, `arbor usage 30d` |
 | Accounts and limits | `arbor accounts`, or `arbor accounts refresh` to read the limits again |
 | Automatic account order | `arbor routing` |
