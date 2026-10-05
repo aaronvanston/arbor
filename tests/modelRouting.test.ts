@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { availableQuickRoutes, groupSources, routableSources, type RouteSource } from '../src/pages/ModelRoutingPage';
+import { availableQuickRoutes, groupSources, otherProviderOf, routableSources, type RouteSource } from '../src/pages/ModelRoutingPage';
 import type { ModelOverrideEntry } from '../src/native/types';
 
 const source = (kind: string, model: string): RouteSource => ({ id: `${kind}:${model}`, model, displayName: null, provider: kind, kind, protocol: 'x' });
@@ -19,6 +19,17 @@ describe('model routing helpers', () => {
       'codex-oauth:gpt-5.6-sol',
     ]);
     expect(groupSources(sources).map(([kind, list]) => [kind, list.length])).toEqual([['claude-oauth', 2], ['codex-oauth', 1]]);
+  });
+
+  it('names the other provider when the requested model is another provider\'s', () => {
+    const opus = sources.find((entry) => entry.model === 'claude-opus-5');
+    if (!opus) throw new Error('fixture');
+    expect(otherProviderOf(sources, 'gpt-5.6-sol', opus)).toBe('codex-oauth');
+    expect(otherProviderOf(sources, 'gpt-5.6-sol[1m]', opus)).toBe('codex-oauth');
+    expect(otherProviderOf(sources, 'claude-fable-5-1', opus)).toBeNull();
+    // Unknown names, and API-key providers' models, which aren't routable, aren't refused.
+    expect(otherProviderOf(sources, 'my-own-name', opus)).toBeNull();
+    expect(otherProviderOf(sources, 'gpt-5.6-luna', opus)).toBeNull();
   });
 
   it('surfaces quick routes only when both ends exist on the same channel', () => {

@@ -269,6 +269,11 @@ pub(crate) async fn create_model_override(
     )?;
     let source = sources.iter().find(|source| source.source.id == source_id)
         .ok_or_else(|| "The original model is no longer available in the core, or its configuration source has changed, please refresh and select it again".to_string())?;
+    if let ThinkingAliasSourceLocation::Oauth { channel, .. } = &source.location {
+        if let Some(provider) = other_provider_of(&definitions, &requested_model, channel) {
+            return Err(format!("{requested_model} is a {provider} model. Pick one from the same provider to serve it."));
+        }
+    }
     let updated = add_model_override_to_yaml(
         &content,
         source,

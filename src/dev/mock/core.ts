@@ -754,6 +754,10 @@ export const coreAnswers: CommandAnswers<CoreCommands> = {
     }
     const entry = { requestedModel, upstreamModel: source.model, oauthChannel: source.protocol, provider: source.provider, kind: source.kind, forceMapping: args.forceMapping ?? true, longContext: /\[1m\]$/i.test(requestedModel) };
     const entries = [entry];
+    // As Rust does, a model that's another provider's is refused: the core routes only within one provider.
+    const owners = aliasSources.filter((candidate) => candidate.model.toLowerCase() === requestedModel.replace(/\[1m\]$/i, '').toLowerCase());
+    const other = owners.length && !owners.some((candidate) => candidate.kind === source.kind) ? owners[0] : undefined;
+    if (other) throw new Error(`${requestedModel} is a ${other.provider} model. Pick one from the same provider to serve it.`);
     if (args.includeLongContext && !entry.longContext) {
       entries.push({ ...entry, requestedModel: `${requestedModel}[1m]`, upstreamModel: `${source.model}[1m]`, longContext: true });
     }

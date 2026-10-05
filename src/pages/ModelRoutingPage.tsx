@@ -36,6 +36,17 @@ const stripLongContext = (model: string) => model.replace(/\[1m\]$/i, '');
 /** Only OAuth sources can be routed; the core ignores oauth-model-alias for API-key providers. */
 export const routableSources = (sources: RouteSource[]) => sources.filter((source) => source.kind.endsWith('-oauth'));
 
+/**
+ * The provider kind a requested model belongs to when that's another provider than `upstream`'s: the core only
+ * routes a request within one OAuth provider, so a route from another's model would never be used. Null when the
+ * name is unknown or one of `upstream`'s own.
+ */
+export const otherProviderOf = (sources: RouteSource[], requested: string, upstream: RouteSource): string | null => {
+  const name = stripLongContext(requested).toLowerCase();
+  const owners = routableSources(sources).filter((source) => source.model.toLowerCase() === name).map((source) => source.kind);
+  return owners.length && !owners.includes(upstream.kind) ? owners[0] ?? null : null;
+};
+
 /** Group routable sources by provider kind so the picker reads as "Claude OAuth → models". */
 export const groupSources = (sources: RouteSource[]) => {
   const groups = new Map<string, RouteSource[]>();
@@ -99,6 +110,7 @@ export function ModelRoutingPage() {
   const selected = sources.find((source) => source.id === sourceId) ?? null;
   const trimmedRequested = requested.trim();
   const sameModel = Boolean(selected && trimmedRequested && stripLongContext(trimmedRequested).toLowerCase() === selected.model.toLowerCase());
+  const otherProvider = selected && trimmedRequested ? otherProviderOf(sources, trimmedRequested, selected) : null;
 
   const create = async (nextRequested: string, nextSourceId: string, options: { longContext: boolean; forceMapping: boolean }) => {
     const source = sources.find((entry) => entry.id === nextSourceId);
@@ -114,6 +126,11 @@ export function ModelRoutingPage() {
     }
     if (stripLongContext(nextRequested).toLowerCase() === source.model.toLowerCase()) {
       setError(t('overrides.error.sameModel'));
+      return;
+    }
+    const owner = otherProviderOf(sources, nextRequested, source);
+    if (owner) {
+      setError(t('overrides.error.otherProvider', { provider: thinkingAliasSourceKindLabel(owner) }));
       return;
     }
     setBusy(nextRequested);
@@ -275,8 +292,9 @@ export function ModelRoutingPage() {
               <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
               <span className={cn('truncate font-mono text-sm', selected ? 'font-medium text-foreground' : 'text-muted-foreground')}>{selected?.model || t('overrides.preview.selectUpstream')}</span>
               {sameModel ? <Badge variant="warning" className="ms-1 shrink-0">{t('overrides.error.sameModel')}</Badge> : null}
+              {otherProvider ? <Badge variant="warning" className="ms-1 shrink-0">{t('overrides.error.otherProvider', { provider: thinkingAliasSourceKindLabel(otherProvider) })}</Badge> : null}
             </div>
-            <Button size="sm" onClick={() => void create(trimmedRequested, sourceId, { longContext, forceMapping })} disabled={loading || Boolean(busy) || !trimmedRequested || !selected || sameModel}>
+            <Button size="sm" onClick={() => void create(trimmedRequested, sourceId, { longContext, forceMapping })} disabled={loading || Boolean(busy) || !trimmedRequested || !selected || sameModel || Boolean(otherProvider)}>
               {busy && busy === trimmedRequested ? <Spinner /> : <Route />}
               {busy && busy === trimmedRequested ? t('overrides.creating') : t('overrides.create')}
             </Button>

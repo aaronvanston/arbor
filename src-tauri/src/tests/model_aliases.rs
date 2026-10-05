@@ -901,3 +901,15 @@ fn protocol_less_payload_entries_apply_to_every_alias_protocol() {
         assert_eq!(speed_aliases_from_yaml(&input).unwrap().len(), 1);
     }
 }
+
+#[test]
+fn a_route_from_another_providers_model_is_named() {
+    let definitions = vec![
+        test_oauth_definition_set("claude", &["claude-opus-5-5", "claude-sonnet-5-5"]),
+        test_oauth_definition_set("codex", &["gpt-6-sol"]),
+    ];
+    assert_eq!(other_provider_of(&definitions, "gpt-6-sol", "claude"), Some("Codex OAuth"));
+    assert_eq!(other_provider_of(&definitions, "GPT-6-SOL[1m]", "claude"), Some("Codex OAuth"));
+    assert_eq!(other_provider_of(&definitions, "claude-sonnet-5-5", "claude"), None);
+    assert_eq!(other_provider_of(&definitions, "made-up-name", "claude"), None);
+}

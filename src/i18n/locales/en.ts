@@ -758,6 +758,7 @@ export const en = {
   'overrides.quick.apply': 'Route {requested} → {upstream}',
   'overrides.quick.active': 'Active',
   'overrides.error.sameModel': 'The requested model cannot be the same as the model serving it',
+  'overrides.error.otherProvider': 'That’s a {provider} model. Pick one from the same provider to serve it.',
   'overrides.error.emptyRequested': 'Enter the requested model name',
   'overrides.error.selectUpstream': 'Select the model to serve requests with',
   'overrides.warning.restart': 'Routes apply immediately to new requests. Clients keep their current model name.',

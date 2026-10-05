@@ -1593,6 +1593,21 @@ pub(crate) fn model_overrides_from_yaml(
     Ok(overrides)
 }
 
+/// The provider a requested model belongs to when it's another OAuth provider's than `channel`'s, by the
+/// providers' own model lists: the core routes a request only within one provider, so such a route would never be
+/// used. None when the name is unknown, or one of `channel`'s own.
+pub(crate) fn other_provider_of(definitions: &[OAuthModelDefinitions], requested_model: &str, channel: &str) -> Option<&'static str> {
+    let name = requested_model.strip_suffix("[1m]").or_else(|| requested_model.strip_suffix("[1M]")).unwrap_or(requested_model);
+    let owners: Vec<&OAuthModelDefinitions> = definitions
+        .iter()
+        .filter(|set| set.models.iter().any(|model| model.id.eq_ignore_ascii_case(name)))
+        .collect();
+    if owners.iter().any(|set| set.channel.key == channel) {
+        return None;
+    }
+    owners.first().map(|set| set.channel.provider)
+}
+
 pub(crate) fn add_model_override_to_yaml(
     content: &str,
     source: &ResolvedThinkingAliasSource,
