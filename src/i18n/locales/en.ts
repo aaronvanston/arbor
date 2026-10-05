@@ -5266,6 +5266,8 @@ export const en = {
   'authFiles.reauth.starting': 'Requesting a sign-in link…',
   'authFiles.reauth.waiting': 'Waiting for you to finish signing in…',
   'authFiles.reauth.finalizing': 'Saving the refreshed credentials…',
+  'authFiles.turnedOff': 'Turned off {name}',
+  'authFiles.turnedOn': 'Turned on {name}',
   'authFiles.reauth.done': 'Credentials refreshed in “{name}”',
   'authFiles.reauth.doneTransplanted': 'Credentials refreshed in “{name}”. The core’s temporary copy “{from}” was cleaned up.',
   'authFiles.reauth.doneRenamed': 'Credentials refreshed and saved as “{name}”. The core replaced “{from}” with this file and kept its settings.',

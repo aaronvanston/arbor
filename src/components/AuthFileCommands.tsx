@@ -241,21 +241,35 @@ export function useAuthFileCommands(listing: AuthFile[]) {
     .sort((a, b) => a.label.localeCompare(b.label)), [listing]);
   const succeeded = (key: MessageKey, variables?: MessageVariables) => toast({ kind: 'success', title: t(key, variables) });
 
-  /** Runs one change: busy while it runs, why it failed above the list, and the listing read again after. */
-  const change = async (work: () => Promise<void>) => {
+  /**
+   * Runs one change: busy while it runs, the listing read again after, and why it failed above the list. The
+   * failure is set after the reload, which clears the list's error as it starts. Says whether the change went through.
+   */
+  const change = async (work: () => Promise<void>): Promise<boolean> => {
     setBusy(true);
     setAccountsError('');
+    let failure = '';
     try {
       await work();
     } catch (requestError) {
-      setAccountsError(String(requestError));
+      failure = String(requestError);
     } finally {
       setBusy(false);
     }
     await loadAccountFiles();
+    if (failure) setAccountsError(failure);
+    return !failure;
   };
 
-  const toggle = (file: AuthFile) => change(() => setOAuthCredentialFileDisabled(file, !readBoolean(file, 'disabled')));
+  // Turning an account off or on is undone as easily as it's done, so it happens straight away with Undo.
+  const toggle = async (file: AuthFile) => {
+    const disabled = !readBoolean(file, 'disabled');
+    if (!await change(() => setOAuthCredentialFileDisabled(file, disabled))) return;
+    toast({
+      title: t(disabled ? 'authFiles.turnedOff' : 'authFiles.turnedOn', { name: authFileName(file) }),
+      action: { label: t('common.undo'), onClick: () => { void change(() => setOAuthCredentialFileDisabled(file, !disabled)); } },
+    });
+  };
 
   const remove = async (file: AuthFile) => {
     const name = authFileName(file);
