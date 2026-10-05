@@ -90,17 +90,21 @@ export function checklistReference(machines: SetupMachine[], target: string | nu
 
 export type ConnectStep = {
   state: StepState;
-  why: 'ok' | 'noHost' | 'connecting' | 'down' | 'reading' | 'notRead' | 'scanFailed';
+  why: 'ok' | 'noHost' | 'connecting' | 'healthUnread' | 'down' | 'reading' | 'notRead' | 'scanFailed';
   error: string | null;
 };
 
-/** Whether Arbor reaches the machine and has read what its agents load. */
-export function connectStep(machine: SetupMachine, health: MachineHealth | null): ConnectStep {
+/**
+ * Whether Arbor reaches the machine and has read what its agents load. `healthUnread` is when Arbor's own reading of the
+ * machines' health failed, which says nothing about the machine, so the step says that rather than waiting on SSH.
+ */
+export function connectStep(machine: SetupMachine, health: MachineHealth | null, healthUnread = false): ConnectStep {
   if (!machine.reachable) {
     // Nothing is waited on for a machine with no host: it needs one first.
     if (health?.status === 'unconfigured') return { state: 'todo', why: 'noHost', error: null };
     const error = health?.error ?? null;
-    return error ? { state: 'todo', why: 'down', error } : { state: 'waiting', why: 'connecting', error: null };
+    if (error) return { state: 'todo', why: 'down', error };
+    return healthUnread && !health ? { state: 'waiting', why: 'healthUnread', error: null } : { state: 'waiting', why: 'connecting', error: null };
   }
   if (machine.scannedAt === null) return { state: 'waiting', why: machine.scanning ? 'reading' : 'notRead', error: null };
   if (machine.error) return { state: 'todo', why: 'scanFailed', error: machine.error };

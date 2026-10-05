@@ -205,11 +205,14 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
 
   // The agents, and whether the reporter is set up, as the Machines page last checked them.
   const [health, setHealth] = useState<MachineHealth[] | null>(null);
+  const [healthUnread, setHealthUnread] = useState(false);
   const loadHealth = useCallback(async () => {
     try {
       setHealth((await fetchMachineHealth(Date.now(), 1_000, true)).machines);
+      setHealthUnread(false);
     } catch {
-      // The steps that need it keep waiting.
+      // The steps that need it keep waiting; the first says why, and the poll tries again.
+      setHealthUnread(true);
     }
   }, []);
   useEffect(() => {
@@ -329,7 +332,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   const steps = useMemo(() => {
     if (!machine) return null;
     return {
-      connect: connectStep(machine, targetHealth),
+      connect: connectStep(machine, targetHealth, healthUnread),
       // Arbor only runs on a Mac, so this one's system is known before its tools are looked at.
       agents: agentsStep(machine, machines, reference, machine.local ? 'Darwin' : toolchain?.find((entry) => entry.machine === machine.machine)?.os || null, latest),
       proxy: proxyStep(machine, reference, assignments, requests, usageError, now),
@@ -343,7 +346,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       projects: projectsStep(machine, reference, projects),
       checks: checksStep(machine),
     };
-  }, [machine, machines, reference, targetHealth, referenceHealth, assignments, requests, usageError, now, repoPath, repo, repoError, registry, registryError, view, listed, toolchain, projects, latest]);
+  }, [machine, machines, reference, targetHealth, healthUnread, referenceHealth, assignments, requests, usageError, now, repoPath, repo, repoError, registry, registryError, view, listed, toolchain, projects, latest]);
 
   const states = steps ? STEP_ORDER.map((id) => ({ id, state: steps[id].state })) : [];
   const progress = checklistProgress(states.map((entry) => entry.state));
@@ -724,6 +727,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
           case 'ok': return say('setup.checklist.connect.ok', { time: machine.scannedAt !== null ? formatAgo(machine.scannedAt, now) : '' });
           case 'noHost': return say('setup.checklist.connect.noHost');
           case 'connecting': return say('setup.checklist.connect.connecting');
+          case 'healthUnread': return say('setup.checklist.connect.healthUnread');
           case 'down': return say('setup.checklist.connect.down', { error: step.error ?? '' });
           case 'reading': return say('setup.checklist.connect.reading');
           case 'notRead': return say('setup.checklist.connect.notRead');

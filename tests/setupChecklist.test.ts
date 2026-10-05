@@ -88,6 +88,8 @@ describe('connecting', () => {
 
   it('waits for a machine that hasn’t answered yet, and says why one is down', () => {
     expect(connectStep({ ...fresh, reachable: false }, null)).toMatchObject({ state: 'waiting', why: 'connecting' });
+    // Arbor's own reading of health failing isn't the machine not answering.
+    expect(connectStep({ ...fresh, reachable: false }, null, true)).toMatchObject({ state: 'waiting', why: 'healthUnread' });
     expect(connectStep({ ...fresh, reachable: false }, health('Permission denied (publickey).'))).toEqual({
       state: 'todo', why: 'down', error: 'Permission denied (publickey).',
     });
