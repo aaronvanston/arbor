@@ -51,6 +51,16 @@ export const SEARCH_KBD_CLASS = 'hidden bg-transparent text-sidebar-muted-foregr
 export const TREE_NAV_CLASS = 'relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-1 pb-2';
 export const treeSectionClass = (index: number) => cn('flex shrink-0 flex-col', index > 0 && 'mt-3');
 export const TREE_SECTION_LABEL_CLASS = 'flex h-7 items-center px-2.5 text-xs font-medium text-sidebar-muted-foreground';
+/** The sub-list under an open page: a 1px guide line under the page's icon, the views indented past it. */
+export const TREE_LEAVES_CLASS = 'my-1 ml-[1.0625rem] flex flex-col gap-0.5 border-l border-sidebar-border pl-2';
+
+/** A view under its page: 28px, muted until it's hovered or open, its label weighted once it's the view on screen. */
+export const LEAF_CLASS = cn(
+  'relative flex h-7 w-full cursor-pointer items-center gap-2 rounded-[var(--control-radius)] pl-2.5 text-left text-sm text-sidebar-muted-foreground outline-none ring-ring transition-colors',
+  'hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active',
+  'data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs/5 dark:data-[active=true]:shadow-none',
+);
+
 export const TREE_CHEVRON_CLASS = 'absolute top-1 right-1 flex size-6 cursor-pointer items-center justify-center rounded-md text-[var(--sidebar-icon-color)] outline-none ring-ring transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2';
 
 /**

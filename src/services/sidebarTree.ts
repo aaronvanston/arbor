@@ -13,9 +13,12 @@ import {
   type SetupTabId,
   type UsageTabId,
 } from '../navigation';
-import { savedStore, storedRecord } from './savedStore';
+import { storedRecord } from './storedRecord';
 
 /**
+ * Plain data and rules with no store or Tauri import, so index.html's first-screen script (src/boot/bootPaint.ts) can
+ * open the same groups as the tree; which groups are open is kept in sidebarTreeChoices.ts.
+ *
  * The sidebar as a tree, in the way T3 lists threads under each project: Home on its own, then the pages in two
  * labeled sections, each page with its views under it. The tree picks the view; pages have no tabs of their own.
  * Machines has no fixed views: its row is the fleet overview and its leaves are the machines themselves. Alerts is
@@ -266,13 +269,6 @@ export function arrivedChoices(choices: OpenChoices, page: MainPageId): OpenChoi
   return rest;
 }
 
-const choices = savedStore<OpenChoices>({ key: 'arbor.sidebar.tree.v1', parse: parseOpenChoices, fallback: {}, place: 'window' });
-
-export const useOpenChoices = choices.useValue;
-
-export const setGroupOpen = (page: MainPageId, open: boolean) => choices.set({ ...choices.get(), [page]: open });
-
-export const arriveAtPage = (page: MainPageId) => choices.set(arrivedChoices(choices.get(), page));
 
 /**
  * Whether the tree's focused row was taken away with the focus on it, as a page change folding its group does, which

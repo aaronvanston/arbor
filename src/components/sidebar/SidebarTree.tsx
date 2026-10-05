@@ -16,7 +16,6 @@ import { setupChecks } from '../../services/setupChecks';
 import { replaceEqualDeep } from '../../services/stableValue';
 import { fetchSetupInventory, SETUP_INVENTORY_UPDATED_EVENT } from '../../services/setupInventory';
 import {
-  arriveAtPage,
   fitOpenGroups,
   focusDropped,
   handOpened,
@@ -26,21 +25,20 @@ import {
   openLeaf,
   openMachine,
   openPool,
-  setGroupOpen,
   SIDEBAR_TREE,
   treeKeyTarget,
-  useOpenChoices,
   wantedOpen,
   type HandOpened,
   type TreeLeaf,
   type TreePage,
 } from '../../services/sidebarTree';
+import { arriveAtPage, setGroupOpen, useOpenChoices } from '../../services/sidebarTreeChoices';
 import type { HealthStatus } from '../../native/types';
 import { MachinePill } from '../identity/Identity';
 import { StatusDot, type StatusTone } from '../ui/status-dot';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
 import { SidebarRow } from './SidebarChrome';
-import { PAGE_ICONS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass } from './shellParts';
+import { LEAF_CLASS, PAGE_ICONS, TREE_CHEVRON_CLASS, TREE_LEAVES_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass } from './shellParts';
 
 export { PAGE_ICONS } from './shellParts';
 
@@ -287,12 +285,6 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
   );
 }
 
-/** A view under its page: 28px, muted until it's hovered or open, its label weighted once it's the view on screen. */
-const LEAF_CLASS = cn(
-  'relative flex h-7 w-full cursor-pointer items-center gap-2 rounded-[var(--control-radius)] pl-2.5 text-left text-sm text-sidebar-muted-foreground outline-none ring-ring transition-colors',
-  'hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active',
-  'data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs/5 dark:data-[active=true]:shadow-none',
-);
 
 function TreePageRow({ page, current, open, badge, machines, machineOpen, pools, poolOpen, lit, locked, leafLocked, lockedHint, hint, onNavigate, onOpenGroup }: {
   page: TreePage;
@@ -371,7 +363,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
       </div>
       {shown ? (
         // The sub-list: a 1px guide line under the page's icon, the views indented past it.
-        <ul id={listId} aria-label={label} className="my-1 ml-[1.0625rem] flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
+        <ul id={listId} aria-label={label} className={TREE_LEAVES_CLASS}>
           {page.leaves.map((leaf) => (
             <TreeLeafRow
               key={leaf.tab}
