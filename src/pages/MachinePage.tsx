@@ -38,6 +38,7 @@ import {
   MachineHealthDetail,
   MachineScore,
   STATUS_TONE,
+  HealthReadFailed,
   useMachineHealthSnapshot,
 } from './MachineHealthPanel';
 import { SetupChecklist, type ChecklistTab } from './SetupChecklist';
@@ -68,7 +69,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
   const { t, tRich } = useI18n();
   const [windowId, setWindowId] = useState<HealthWindowId>('15m');
   const windowMs = healthWindowMs(windowId);
-  const { snapshot, error: healthError } = useMachineHealthSnapshot(windowMs);
+  const { snapshot, error: healthError, readAt: healthReadAt, retry: retryHealth } = useMachineHealthSnapshot(windowMs);
   const item = snapshot?.machines.find((entry) => entry.machine === name) ?? null;
   const latest = useLatestAgentVersions();
   const newest = useMemo(() => newestAgents(snapshot?.machines ?? [], latest), [snapshot, latest]);
@@ -163,14 +164,14 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
               <p className={cn('truncate text-sm', headlineClass(item.status))} title={item.error ?? undefined}>{machineHeadline(item, t)}</p>
               {problem ? <FixMenu machine={item.machine} item={item} problem={problem} className="-my-1" /> : null}
             </div>
-          ) : snapshot ? null : (
+          ) : snapshot || healthError ? null : (
             <Skeleton className="h-4 w-56" />
           )}
         </div>
         {item && !unconfigured ? <MachineScore item={item} windowMs={windowMs} /> : null}
       </div>
 
-      {healthError ? <Alert variant="error"><AlertDescription>{healthError}</AlertDescription></Alert> : null}
+      {healthError ? <HealthReadFailed error={healthError} stale={snapshot !== null} readAt={healthReadAt} onRetry={() => void retryHealth()} /> : null}
       {snapshot && !item ? (
         <Alert variant="warning" icon={<Unplug />}><AlertDescription><p>{tRich('machine.gone', { machine: pill })}</p></AlertDescription></Alert>
       ) : null}
@@ -215,7 +216,9 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
             description={t('machine.health.description', { seconds: Math.round((snapshot?.intervalMs ?? 5_000) / 1000) })}
             headerAction={<HealthWindowToggle value={windowId} onChange={setWindowId} />}
           >
-            {item ? <MachineHealthDetail item={item} windowMs={windowMs} /> : <SettingsBlock><Skeleton className="h-40 w-full" /></SettingsBlock>}
+            {item ? <MachineHealthDetail item={item} windowMs={windowMs} />
+              : healthError ? <SettingsBlock className="text-xs text-muted-foreground">{t('machines.health.unavailable')}</SettingsBlock>
+              : <SettingsBlock><Skeleton className="h-40 w-full" /></SettingsBlock>}
           </SettingsSection>
 
           {live ? (

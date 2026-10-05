@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { ArrowDown, ArrowUp, ChevronRight, Cpu, Gpu, HardDrive, MemoryStick, Network, Radar, Settings2, Thermometer, Unplug } from '../components/ui/icons';
+import { ArrowDown, ArrowUp, ChevronRight, Cpu, Gpu, HardDrive, MemoryStick, Network, Radar, Settings2, Thermometer, TriangleAlert, Unplug } from '../components/ui/icons';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import {
@@ -21,7 +21,9 @@ import { newestAgents, type NewestAgents } from '../services/agentVersions';
 import { healthReasonText } from '../services/homeOverview';
 import { machineIdentity, osLabel } from '../services/machineIdentity';
 import { unreachableReason } from '../services/machineAlerts';
+import { errorWords, plainError } from '../services/plainError';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
@@ -699,6 +701,8 @@ export function MachineHealthDetail({ item, windowMs }: { item: MachineHealth; w
 export function useMachineHealthSnapshot(windowMs: number) {
   const [snapshot, setSnapshot] = useState<MachineHealthSnapshot | null>(null);
   const [error, setError] = useState('');
+  // When the figures on screen were read, so a failed read after them can say how old they are.
+  const [readAt, setReadAt] = useState<number | null>(null);
   const snapshotRef = useRef<MachineHealthSnapshot | null>(null);
   const inflight = useRef(false);
   const fullReload = useRef(true);
@@ -714,6 +718,7 @@ export function useMachineHealthSnapshot(windowMs: number) {
       snapshotRef.current = merged;
       fullReload.current = false;
       setSnapshot(merged);
+      setReadAt(Date.now());
       setError('');
     } catch (requestError) {
       setError(String(requestError));
@@ -749,7 +754,27 @@ export function useMachineHealthSnapshot(windowMs: number) {
     };
   }, [load]);
 
-  return { snapshot, error };
+  return { snapshot, error, readAt, retry: load };
+}
+
+/**
+ * A failed read of the machines' health, in plain words with Try again. With figures already on screen it says how old
+ * they are, since the charts would otherwise sit still as if nothing had changed.
+ */
+export function HealthReadFailed({ error, stale, readAt, onRetry }: { error: string; stale: boolean; readAt: number | null; onRetry: () => void }) {
+  const { t } = useI18n();
+  const reason = plainError(error, t);
+  return (
+    <Alert
+      variant={stale ? 'warning' : 'error'}
+      icon={<TriangleAlert />}
+      action={<Button variant="outline" size="sm" onClick={onRetry}>{t('common.tryAgain')}</Button>}
+    >
+      <AlertDescription title={errorWords(error)}>
+        {stale && readAt !== null ? t('machines.health.readStale', { time: formatTime(readAt), error: reason }) : t('machines.health.readFailed', { error: reason })}
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /** The window the charts cover, as its toggle's id. */
@@ -779,7 +804,7 @@ export function MachineHealthPanel({ onConfigure, onOpen }: {
   const { t } = useI18n();
   const [windowId, setWindowId] = useState<HealthWindowId>('15m');
   const windowMs = healthWindowMs(windowId);
-  const { snapshot, error } = useMachineHealthSnapshot(windowMs);
+  const { snapshot, error, readAt, retry } = useMachineHealthSnapshot(windowMs);
   const machines = useMemo(() => snapshot?.machines ?? [], [snapshot]);
   const latest = useLatestAgentVersions();
   const newest = useMemo(() => newestAgents(machines, latest), [machines, latest]);
@@ -827,7 +852,7 @@ export function MachineHealthPanel({ onConfigure, onOpen }: {
         </div>
       }
     >
-      {error ? <SettingsBlock className="text-sm text-error-foreground">{error}</SettingsBlock> : null}
+      {error ? <SettingsBlock><HealthReadFailed error={error} stale={snapshot !== null} readAt={readAt} onRetry={() => void retry()} /></SettingsBlock> : null}
       {!snapshot && !error ? (
         <div className="@container divide-y divide-border/50">
           {[0, 1, 2].map((index) => (
