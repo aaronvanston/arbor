@@ -1424,7 +1424,7 @@ function SkillPlanDialog({ request, machines, repo, homeLabel, onClose, onDone }
             <DialogFooter>
               {done ? (
                 <>
-                  <p className="me-auto max-w-xl text-sm text-error-foreground" role="status">{undoError ?? t('setup.skills.plan.partly')}</p>
+                  <p className="me-auto max-w-xl text-sm text-error-foreground" role="status">{undoError ?? t(anythingDone ? 'setup.skills.plan.partly' : 'setup.skills.plan.noneDone')}</p>
                   <Button variant="outline" disabled={undoing} onClick={onClose}>{t('common.close')}</Button>
                   {anythingDone ? (
                     <Button variant="destructive" disabled={undoing} onClick={() => void undoPartial()}>

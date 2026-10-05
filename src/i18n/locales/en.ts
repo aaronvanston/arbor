@@ -2216,6 +2216,7 @@ export const en = {
   'setup.skills.plan.problem.unread': 'Arbor couldn’t read it again after its store changed, so its homes weren’t changed.',
   'setup.skills.plan.repoFailed': 'The repo wasn’t changed, so no machine was: {error}',
   'setup.skills.plan.partly': 'Some of it didn’t finish. Undo puts back what was done.',
+  'setup.skills.plan.noneDone': 'Nothing changed. Read why above, then try again.',
   'setup.skills.plan.undoDone': 'Undo what was done',
   'setup.skills.done.add.one': 'Added {name} to every machine',
   'setup.skills.done.add.other': 'Added {count} skills to every machine',
