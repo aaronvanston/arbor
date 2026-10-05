@@ -432,7 +432,7 @@ export function VersionManagementPage() {
               ? `${formatBytes(progress.downloaded)} / ${formatBytes(progress.total)}`
               : progress.downloaded > 0
                 ? formatBytes(progress.downloaded)
-                : t('kernel.progress.waiting')
+                : progress.running ? t('kernel.progress.waiting') : ''
     : '';
 
   const installDialogTone: MessageType = progress?.result
@@ -726,7 +726,8 @@ export function VersionManagementPage() {
               tone={installDialogTone === 'error' ? 'error' : installDialogTone === 'success' ? 'success' : 'primary'}
             />
             <div className="flex items-center justify-between gap-4 text-xs">
-              <strong className="font-semibold tabular-nums text-foreground">{progressKnown ? `${progressPercent.toFixed(1)}%` : t('kernel.dialog.unknownProgress')}</strong>
+              {/* Once an install has stopped there's no progress to wait for; the message below says how it ended. */}
+              <strong className="font-semibold tabular-nums text-foreground">{progressKnown ? `${progressPercent.toFixed(1)}%` : installRunning ? t('kernel.dialog.unknownProgress') : null}</strong>
               <span className="tabular-nums text-muted-foreground">{progressText}</span>
             </div>
             {installDialogMessage ? (
