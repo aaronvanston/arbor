@@ -1121,9 +1121,12 @@ mod tests {
             for shell_name in shells() {
                 let output = run_in(shell_name, &home, &home_check_script());
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                // SECRET: no environment value, key, setting or argument reaches Arbor, however it's read.
+                // SECRET: no environment value, key, setting or argument reaches Arbor, however it's read. The temp
+                // home's own path is printed and is named with a process id and a time, whose digits can hold "3773"
+                // by chance, so it's taken out before looking.
+                let shown = stdout.replace(&home.display().to_string(), "~");
                 for secret in ["SECRET", "10.0.0.5", "OPENAI", "ANTHROPIC", "homePath", "shadow", "launchArgs", "3773"] {
-                    assert!(!stdout.contains(secret), "{shell_name}: {secret} in {stdout}");
+                    assert!(!shown.contains(secret), "{shell_name}: {secret} in {shown}");
                 }
                 let t3 = parse_check(&stdout).t3.expect("t3");
                 assert!(!t3.running, "{shell_name}");
