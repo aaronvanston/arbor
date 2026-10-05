@@ -30,7 +30,8 @@ that app is found.
 ### 4. Fast on real data
 
 Real installs have millions of requests. Pages read from SQLite with that in mind (`src-tauri/src/usage/bench.rs`
-times them), and nothing repaints or polls when it doesn't need to.
+times them), and nothing repaints or polls when it doesn't need to. `bun run perf:check` holds the webview to ceilings
+that only ever come down (`docs/perf/PROCESS.md`).
 
 ## A small glossary
 
@@ -100,10 +101,14 @@ bun install --frozen-lockfile   # drop the flag only when changing dependencies
 bun run verify                  # typecheck, tests' typecheck, lint, knip, bun test
 bun run build                   # the only gate that compiles the Tailwind CSS
 bun run verify:rust             # after Rust changes
+bun run perf && bun run perf:check  # after webview or mock changes, about a minute
 bun test tests/x.test.ts        # one suite
 ```
 
-Finish with `verify` and `build`, plus `verify:rust` after Rust changes. A release reaches `build` only at the very end
+Finish with `verify` and `build`, plus `verify:rust` after Rust changes and `perf:check` after webview or mock changes.
+When `perf:check` fails, a count went up: fix it, or if the growth is the point of the change (a new view's code),
+raise that ceiling in `perf/baseline.json` by hand and say why in the commit. Never lower a ceiling by hand; `bun run
+perf:ratchet` does that. A release reaches `build` only at the very end
 of its build, so a failure pushed to main costs a nightly.
 
 To see the UI, serve the mock with exactly `bunx vite --host 127.0.0.1 --port 1420 --strictPort` and open
