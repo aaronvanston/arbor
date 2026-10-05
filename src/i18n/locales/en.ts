@@ -5776,6 +5776,7 @@ export const en = {
   'automations.runNow.action': 'Run now',
   'automations.runNow.title': 'Run {name} now?',
   'automations.runNow.message': 'Arbor runs its pre-flight check on the machine and, if that passes, starts the agent there. It uses your accounts like any other session.',
+  'automations.runNow.messageNoCheck': 'Arbor starts the agent on the machine. It uses your accounts like any other session.',
   'automations.runNow.messageOther': 'The app that keeps it starts the run on its machine. It uses your accounts like any other session.',
   'automations.runNow.confirm': 'Run now',
   'automations.runNow.started': '{name} started',

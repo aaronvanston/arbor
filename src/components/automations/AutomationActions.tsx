@@ -58,7 +58,7 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
   const runNow = () => act(async () => {
     const confirmed = await askConfirmation({
       title: t('automations.runNow.title', { name: item.name }),
-      message: t(item.source === 'arbor' ? 'automations.runNow.message' : 'automations.runNow.messageOther'),
+      message: t(item.source !== 'arbor' ? 'automations.runNow.messageOther' : item.hasPrecheck ? 'automations.runNow.message' : 'automations.runNow.messageNoCheck'),
       confirmText: t('automations.runNow.confirm'),
     });
     if (!confirmed) return;
