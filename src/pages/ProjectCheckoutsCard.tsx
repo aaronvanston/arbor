@@ -26,7 +26,7 @@ type Value = 'on' | 'off' | 'none';
 /** One thing a project can turn on or off: a plugin or a skill, with its projects' values from the setup repo. */
 export type ProjectRow = { id: string; name: string; note: string | null; projects: Record<string, RepoProjectValue> };
 
-const BLOCKED: Record<Blocked, MessageKey> = {
+export const BLOCKED: Record<Blocked, MessageKey> = {
   notInstalled: 'projectCheckouts.blocked.notInstalled',
   policy: 'projectCheckouts.blocked.policy',
   ignored: 'projectCheckouts.blocked.ignored',
@@ -238,11 +238,13 @@ function ValueMenu({ value, label, muted = false, follow, busy, aria, onValue }:
 }
 
 /** The checkout changes, machine by machine; then the machines scanned again. */
-export function CheckoutReview({ project, description, rows, changes, label, apply, onClose, onDone }: {
+export function CheckoutReview({ project, description, rows, changes, left = [], label, apply, onClose, onDone }: {
   project: string;
   description: string;
   rows: Pick<ProjectRow, 'id' | 'name'>[];
   changes: CheckoutChange[];
+  /** Blocked changes, listed with why Arbor leaves them so the review doesn't read as covering every checkout. */
+  left?: CheckoutChange[];
   /** What a change does, when it isn't turning something on or off. */
   label?: (change: CheckoutChange, name: string) => string;
   apply: (machine: string, changes: CheckoutChange[]) => Promise<{ done: number; failed: number }>;
@@ -286,6 +288,13 @@ export function CheckoutReview({ project, description, rows, changes, label, app
                 <MachinePill name={change.machine} size="sm" />
                 <MiddleTruncate value={change.checkout} className="min-w-0 flex-1 font-mono text-xs" />
                 <span className="shrink-0">{label ? label(change, nameOf(change.target)) : t(change.on ? 'projectCheckouts.turnOn' : 'projectCheckouts.turnOff', { name: nameOf(change.target) })}</span>
+              </li>
+            ))}
+            {left.map((change) => (
+              <li key={`${change.machine}\u0000${change.checkout}\u0000${change.target}`} className="flex items-center gap-3 py-2 text-muted-foreground">
+                <MachinePill name={change.machine} size="sm" />
+                <MiddleTruncate value={change.checkout} className="min-w-0 flex-1 font-mono text-xs" />
+                <span className="shrink-0 text-xs">{change.blocked ? t(BLOCKED[change.blocked]) : null}</span>
               </li>
             ))}
           </ul>

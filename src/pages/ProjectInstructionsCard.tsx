@@ -13,7 +13,7 @@ import {
 } from '../services/projectInstructions';
 import { getProjects } from '../services/setupProjects';
 import type { MachineProjects, SetupMachine, SetupRepo } from '../native/types';
-import { CheckoutReview } from './ProjectCheckoutsCard';
+import { BLOCKED, CheckoutReview } from './ProjectCheckoutsCard';
 
 /**
  * A project's own instructions, as the repo browser shows beside one of their files: how many of the project's checkouts
@@ -38,16 +38,27 @@ export function ProjectInstructionsStanding({ repo, machines, project }: { repo:
     [repo.instructions, checkouts, project, machines],
   );
   const ready = changes.filter((change) => !change.blocked);
+  // A file of someone's own, or one the checkout's version control would pick up, keeps the checkout out of step, so
+  // the button doesn't say otherwise.
+  const left = changes.filter((change) => change.blocked);
   if (!scans) return null;
   if (!checkouts.length) return <span>{t('projectCheckouts.noCheckouts')}</span>;
   const onMachines = new Set(checkouts.map((checkout) => checkout.machine)).size;
   return (
     <span className="flex items-center gap-2">
       <span>{t(onMachines === 1 ? 'repo.project.checkouts.one' : 'repo.project.checkouts.other', { count: checkouts.length, machines: onMachines })}</span>
-      <Button variant="outline" size="xs" disabled={!ready.length} disabledReason={ready.length ? undefined : t('projectCheckouts.inStep')} onClick={() => setReviewing(true)}>
+      <Button
+        variant="outline"
+        size="xs"
+        disabled={!ready.length}
+        disabledReason={ready.length ? undefined : left.length ? [...new Set(left.map((change) => t(BLOCKED[change.blocked ?? 'own'])))].join('. ') : t('projectCheckouts.inStep')}
+        onClick={() => setReviewing(true)}
+      >
         {ready.length
           ? t(ready.length === 1 ? 'projectCheckouts.bring.one' : 'projectCheckouts.bring.other', { count: ready.length })
-          : t('projectCheckouts.bring.none')}
+          : left.length
+            ? t(left.length === 1 ? 'projectInstructions.left.one' : 'projectInstructions.left.other', { count: left.length })
+            : t('projectCheckouts.bring.none')}
       </Button>
       {reviewing ? (
         <CheckoutReview
@@ -55,6 +66,7 @@ export function ProjectInstructionsStanding({ repo, machines, project }: { repo:
           description={t('projectInstructions.reviewDescription')}
           rows={INSTRUCTION_FILES.map((file) => ({ id: file, name: instructionFileName(file) }))}
           changes={ready}
+          left={left}
           label={(change: CheckoutChange, name: string) => t(change.on ? 'projectInstructions.write' : 'projectInstructions.empty', { name })}
           apply={async (machine, list) => {
             const results = await applyCheckoutInstructions(repo.path, project, machine, instructionsChanges(list));

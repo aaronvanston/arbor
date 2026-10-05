@@ -2409,6 +2409,8 @@ export const en = {
   'projectInstructions.reviewDescription': 'Arbor writes each file from the repo’s last commit, backed up first and listed on Sync › Arbor’s changes to undo. It only writes a file while it’s as Arbor read it.',
   'projectInstructions.write': 'Write {name}',
   'projectInstructions.empty': 'Take the text out of {name}',
+  'projectInstructions.left.one': '1 file Arbor leaves',
+  'projectInstructions.left.other': '{count} files Arbor leaves',
   'setup.skills.projects.title': 'In a project',
   'setup.skills.projects.description': 'Turn a skill on or off in one project’s checkouts, on every machine or on one. Arbor sets it in each checkout’s own .claude/settings.local.json, which Git ignores and which wins over the machine’s settings. The checked-in .claude/settings.json is never changed, and a checkout where Git would see a new file is left alone.',
   'setup.skills.projects.reviewDescription': 'Arbor sets each skill in the checkout’s settings.local.json, backed up first, and lists the change on Sync › Arbor’s changes to undo.',
