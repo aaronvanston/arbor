@@ -4751,7 +4751,7 @@ export const en = {
   'runs.dialog.agent': 'Agent',
   'runs.dialog.noSetups': 'None found',
   'runs.dialog.readyOn': 'ready on {ready} of {found}',
-  'runs.dialog.noSetupsHint': 'No member of this pool has {harness} yet. Machines show what they have on their own pages.',
+  'runs.dialog.noSetupsHint': 'No member Arbor can pick has {harness} yet. Manual-only members aren’t picked for runs, and machines show what they have on their own pages.',
   'runs.dialog.folder': 'Folder',
   'runs.dialog.folderPlaceholder': '~/src/project',
   'runs.dialog.model': 'Model',
