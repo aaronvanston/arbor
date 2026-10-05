@@ -3,8 +3,10 @@
 //! that has one.
 //!
 //! Only the columns in `COLUMNS` are ever named in SQL, and nothing is selected with a
-//! star. A thread's title and branch (T3 Code names branches from the first message),
-//! errors, payloads, messages, activities, plans, diffs and auth rows are never read,
+//! star. A thread's title is read only while Settings › Harnesses' Thread names is on
+//! (`set_t3_thread_titles`), and is only held in memory for the board. Its branch (T3
+//! Code names branches from the first message), errors, payloads, messages, activities,
+//! plans, diffs and auth rows are never read,
 //! and neither are T3 Code's settings, tokens, secrets or logs. The resume cursor gives
 //! up one id, picked out by `json_extract` inside SQLite along the one path its
 //! provider uses. `server-runtime.json` gives up its pid and start time.
@@ -106,8 +108,15 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 /// Wakes the loop when reading is turned on.
 static WAKE: Notify = Notify::const_new();
 
+/// Off until the webview says otherwise: threads are read by ids alone.
+static TITLES: AtomicBool = AtomicBool::new(false);
+
 fn enabled() -> bool {
     ENABLED.load(Ordering::SeqCst)
+}
+
+fn titles() -> bool {
+    TITLES.load(Ordering::SeqCst)
 }
 
 // ---------------------------------------------------------------------------
@@ -132,8 +141,18 @@ const AGENT_SESSION_ID_SQL: &str = "CASE \
     WHEN json_type(r.resume_cursor_json, '$.sessionId') = 'text' THEN json_extract(r.resume_cursor_json, '$.sessionId') \
     END";
 
-/// What the data query selects, in order. `column` names the positions.
-const DATA_COLUMNS: [&str; 23] = [
+/// The one column read only while titles are on, which `COLUMNS` leaves out so the probe never needs it. T3 Code's
+/// thread table has had it since `Projections` (migration 5), one of the slots checked.
+#[cfg(test)]
+const TITLE_COLUMN: (&str, &str) = ("projection_threads", "title");
+/// What the data query selects in the title's place: nothing, or the title.
+const NO_TITLE: &str = "NULL";
+const TITLE: &str = "t.title";
+/// The most of a title kept.
+const TITLE_CHARS: usize = 200;
+
+/// What the data query selects, in order, the last in the title's place. `column` names the positions.
+const DATA_COLUMNS: [&str; 24] = [
     "t.thread_id",
     "t.project_id",
     "p.workspace_root",
@@ -157,7 +176,17 @@ const DATA_COLUMNS: [&str; 23] = [
     "r.provider_name",
     AGENT_SESSION_ID_SQL,
     "(SELECT MAX(a.created_at) FROM projection_pending_approvals a WHERE a.thread_id = t.thread_id AND a.status = 'pending')",
+    NO_TITLE,
 ];
+
+/// The data query's columns, with the title or without.
+fn data_columns(titled: bool) -> Vec<&'static str> {
+    let mut columns = DATA_COLUMNS.to_vec();
+    if titled {
+        columns[column::TITLE] = TITLE;
+    }
+    columns
+}
 
 mod column {
     pub(super) const THREAD_ID: usize = 0;
@@ -183,6 +212,7 @@ mod column {
     pub(super) const RUNTIME_PROVIDER: usize = 20;
     pub(super) const AGENT_SESSION_ID: usize = 21;
     pub(super) const LATEST_APPROVAL: usize = 22;
+    pub(super) const TITLE: usize = 23;
 }
 
 /// The threads worth a look: asking for something, working, with a plan waiting on a decision (T3 Code's Plan Ready
@@ -252,30 +282,33 @@ fn tagged(tag: char, columns: &[&str], from: &str) -> String {
     format!("SELECT '{tag}'{fields} {from};")
 }
 
-/// The statements this Mac runs: the migrations, the slots, the columns, then the threads.
+/// The statements this Mac runs: the migrations, the slots, the columns, then the threads, without their titles or
+/// with them.
 struct LocalSql {
     newest: String,
     slots: String,
     columns: String,
     data: String,
+    data_titled: String,
 }
 
 static LOCAL_SQL: LazyLock<LocalSql> = LazyLock::new(|| LocalSql {
     newest: select(&NEWEST_COLUMNS, NEWEST_FROM),
     slots: select(&SLOT_COLUMNS, &slots_from()),
     columns: select(&TABLE_COLUMNS, &table_columns_from()),
-    data: select(&DATA_COLUMNS, &data_from()),
+    data: select(&data_columns(false), &data_from()),
+    data_titled: select(&data_columns(true), &data_from()),
 });
 
 /// The same statements for sqlite3 on another machine, tagged, stopping at the first that fails: the probe's lines
 /// are out by then, so Arbor can say why.
-fn remote_sql() -> String {
+fn remote_sql(titled: bool) -> String {
     [
         ".bail on".to_string(),
         tagged('M', &NEWEST_COLUMNS, NEWEST_FROM),
         tagged('N', &SLOT_COLUMNS, &slots_from()),
         tagged('C', &TABLE_COLUMNS, &table_columns_from()),
-        tagged('T', &DATA_COLUMNS, &data_from()),
+        tagged('T', &data_columns(titled), &data_from()),
     ]
     .join("\n")
         + "\n"
@@ -401,6 +434,8 @@ pub(crate) struct T3Thread {
     /// Claude's session UUID or Codex's thread id, from the resume cursor.
     pub(in crate::usage) agent_session_id: Option<String>,
     pub(in crate::usage) arbor_session: Option<ArborSession>,
+    /// T3 Code's title for it, only while Thread names is on.
+    title: Option<String>,
 }
 
 #[cfg(test)]
@@ -429,6 +464,7 @@ impl T3Thread {
             updated_at_ms: 0,
             agent_session_id: agent_session_id.map(str::to_string),
             arbor_session: None,
+            title: None,
         }
     }
 }
@@ -456,13 +492,20 @@ fn is_folder(value: &str) -> bool {
     value.starts_with('/') && value.chars().count() <= PATH_CHARS && !value.chars().any(char::is_control)
 }
 
+/// A title as one line: control characters and runs of spaces become one space, cut at `TITLE_CHARS`. Empty is none.
+fn clean_title(value: &str) -> Option<String> {
+    let line = value.split(|c: char| c.is_control() || c.is_whitespace()).filter(|word| !word.is_empty()).collect::<Vec<_>>().join(" ");
+    let cut: String = line.chars().take(TITLE_CHARS).collect();
+    (!cut.is_empty()).then_some(cut)
+}
+
 fn iso_ms(value: &str) -> Option<i64> {
     DateTime::parse_from_rfc3339(value.trim()).ok().map(|time| time.timestamp_millis())
 }
 
 /// One row of the data query, in the order of `DATA_COLUMNS`. Ids that aren't ids drop the row; odd values drop
 /// themselves.
-fn thread_from_row(row: &[SqlValue], offset_ms: i64) -> Option<T3Thread> {
+fn thread_from_row(row: &[SqlValue], offset_ms: i64, titled: bool) -> Option<T3Thread> {
     if row.len() != DATA_COLUMNS.len() {
         return None;
     }
@@ -510,6 +553,7 @@ fn thread_from_row(row: &[SqlValue], offset_ms: i64) -> Option<T3Thread> {
         updated_at_ms,
         agent_session_id: text(column::AGENT_SESSION_ID).filter(|id| is_agent_session_id(id)).map(str::to_string),
         arbor_session: None,
+        title: text(column::TITLE).filter(|_| titled).and_then(clean_title),
     })
 }
 
@@ -581,7 +625,8 @@ fn channel_snapshot(
         .skipped()
         .or_else(|| read.failed.then_some(Skipped { reason: SkipReason::Unreadable, migration: read.probe.newest }));
     let mut threads: Vec<T3Thread> = if skipped.is_none() {
-        read.rows.iter().filter_map(|row| thread_from_row(row, offset_ms)).collect()
+        // A read that began before Thread names was turned off keeps no title.
+        read.rows.iter().filter_map(|row| thread_from_row(row, offset_ms, titles())).collect()
     } else {
         Vec::new()
     };
@@ -813,7 +858,7 @@ fn query_database(connection: &Connection, read: &mut ChannelRead) -> rusqlite::
             read.probe.columns.insert(column?);
         }
         if read.probe.skipped().is_none() {
-            let mut statement = connection.prepare(&LOCAL_SQL.data)?;
+            let mut statement = connection.prepare(if titles() { &LOCAL_SQL.data_titled } else { &LOCAL_SQL.data })?;
             let rows = statement.query_map([], |row| values(row, DATA_COLUMNS.len()))?;
             for row in rows {
                 read.rows.push(row?);
@@ -1125,7 +1170,8 @@ while IFS=$tab read -r dir channel; do
 done < "$work/dirs"
 "##;
 
-static REMOTE_SCRIPT: LazyLock<String> = LazyLock::new(|| [SCRIPT_HEAD, &remote_sql(), SCRIPT_TAIL].concat());
+static REMOTE_SCRIPT: LazyLock<String> = LazyLock::new(|| [SCRIPT_HEAD, &remote_sql(false), SCRIPT_TAIL].concat());
+static REMOTE_SCRIPT_TITLED: LazyLock<String> = LazyLock::new(|| [SCRIPT_HEAD, &remote_sql(true), SCRIPT_TAIL].concat());
 
 /// What the script printed about a runtime file.
 #[derive(Debug, Default, PartialEq)]
@@ -1306,7 +1352,8 @@ fn take_remote(state: &MachineHealthState, now_ms: i64) -> Vec<Machine> {
 }
 
 async fn read_remote(machine: &Machine) -> Result<RemoteRead, String> {
-    parse_remote(&run_checked(machine, MachineOp::T3Threads, &REMOTE_SCRIPT, REMOTE_TIMEOUT).await?)
+    let script = if titles() { &REMOTE_SCRIPT_TITLED } else { &REMOTE_SCRIPT };
+    parse_remote(&run_checked(machine, MachineOp::T3Threads, script, REMOTE_TIMEOUT).await?)
 }
 
 /// Stores a look's result, unless reading was turned off or the machine pointed somewhere else meanwhile. A machine
@@ -1389,6 +1436,24 @@ pub(crate) async fn set_t3_threads_enabled(enabled: bool, state: tauri::State<'_
     } else if !was {
         WAKE.notify_one();
     }
+    Ok(())
+}
+
+/// Turns reading T3 Code's thread titles on or off. Either way everything read so far is dropped and read again, so
+/// no title outlives the switch and a fresh one shows straight away.
+#[tauri::command]
+pub(crate) async fn set_t3_thread_titles(enabled: bool, state: tauri::State<'_, MachineHealthState>) -> Result<(), String> {
+    if TITLES.swap(enabled, Ordering::SeqCst) == enabled {
+        return Ok(());
+    }
+    {
+        let mut inner = state.lock();
+        inner.local_t3 = T3Log::default();
+        for series in inner.series.values_mut() {
+            series.t3 = T3Log::default();
+        }
+    }
+    WAKE.notify_one();
     Ok(())
 }
 
@@ -2116,23 +2181,10 @@ mod tests {
 
     #[test]
     fn the_queries_name_only_whitelisted_columns() {
-        let data = &LOCAL_SQL.data;
-        let mut named = 0;
-        for (index, _) in data.match_indices('.') {
-            let before = &data[..index];
-            let alias: String = before.chars().rev().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();
-            let name: String = data[index + 1..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
-            // A JSON path ('$.resume') or a time format isn't a column.
-            if alias.is_empty() || name.is_empty() || before.ends_with('$') {
-                continue;
-            }
-            let table = ALIASES.iter().find(|(known, _)| *known == alias).map(|(_, table)| *table);
-            let table = table.unwrap_or_else(|| panic!("unknown alias {alias}.{name}"));
-            assert!(COLUMNS.contains(&(table, name.as_str())), "{table}.{name} isn't whitelisted");
-            named += 1;
+        for (data, titled) in [(&LOCAL_SQL.data, false), (&LOCAL_SQL.data_titled, true)] {
+            names_only_whitelisted_columns(data, titled);
         }
-        assert!(named > 30);
-        let every = [LOCAL_SQL.newest.as_str(), &LOCAL_SQL.slots, &LOCAL_SQL.columns, data, &remote_sql()].join("\n");
+        let every = [LOCAL_SQL.newest.as_str(), &LOCAL_SQL.slots, &LOCAL_SQL.columns, &LOCAL_SQL.data, &remote_sql(false)].join("\n");
         // JSON's type name and counting rows aren't columns.
         let every = every.replace("'text'", "").replace("COUNT(*)", "");
         for never in [
@@ -2146,6 +2198,53 @@ mod tests {
             assert!(!name.contains('*'));
         }
         assert!(every.contains("'$.resume'") && every.contains("'$.threadId'") && every.contains("'$.sessionId'"));
+        // With titles on, the title is the one thing more.
+        let titled = [LOCAL_SQL.data_titled.as_str(), &remote_sql(true)].join("\n").replace("COUNT(*)", "");
+        assert_eq!(titled.matches("title").count(), 2, "{titled}");
+        assert!(!titled.contains("branch") && !titled.contains("summary") && !titled.contains('*'));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_title_is_read_only_when_asked_for_and_kept_as_one_short_line() {
+        let home = temp_dir("titles");
+        let dir = channel_dir(&home);
+        let _writer = state_database(&dir, &shape(NEWEST_MIGRATION), now_ms());
+        let connection = open_readonly(&dir.join(DATABASE_FILE)).unwrap();
+        let rows = |sql: &str| -> Vec<Vec<SqlValue>> {
+            let mut statement = connection.prepare(sql).unwrap();
+            statement.query_map([], |row| values(row, DATA_COLUMNS.len())).unwrap().map(Result::unwrap).collect()
+        };
+        let titled = rows(&LOCAL_SQL.data_titled);
+        assert!(!titled.is_empty());
+        let threads: Vec<T3Thread> = titled.iter().filter_map(|row| thread_from_row(row, 0, true)).collect();
+        assert!(threads.iter().all(|thread| thread.title.as_deref() == Some(SECRET)), "the fixture's title is its secret");
+        // A row read with titles that's taken up after they're off keeps none.
+        assert!(titled.iter().filter_map(|row| thread_from_row(row, 0, false)).all(|thread| thread.title.is_none()));
+        assert!(rows(&LOCAL_SQL.data).iter().filter_map(|row| thread_from_row(row, 0, true)).all(|thread| thread.title.is_none()));
+
+        assert_eq!(clean_title("  Fix the\nlogin\tflow \u{7}  ").as_deref(), Some("Fix the login flow"));
+        assert_eq!(clean_title(" \n "), None);
+        assert_eq!(clean_title(&"a".repeat(500)).map(|title| title.chars().count()), Some(TITLE_CHARS));
+    }
+
+    fn names_only_whitelisted_columns(data: &str, titled: bool) {
+        let mut named = 0;
+        for (index, _) in data.match_indices('.') {
+            let before = &data[..index];
+            let alias: String = before.chars().rev().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();
+            let name: String = data[index + 1..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+            // A JSON path ('$.resume') or a time format isn't a column.
+            if alias.is_empty() || name.is_empty() || before.ends_with('$') {
+                continue;
+            }
+            let table = ALIASES.iter().find(|(known, _)| *known == alias).map(|(_, table)| *table);
+            let table = table.unwrap_or_else(|| panic!("unknown alias {alias}.{name}"));
+            let known = COLUMNS.contains(&(table, name.as_str())) || (titled && (table, name.as_str()) == TITLE_COLUMN);
+            assert!(known, "{table}.{name} isn't whitelisted");
+            named += 1;
+        }
+        assert!(named > 30);
     }
 
     /// The probe's lines for a database of the known shape at `migration`.

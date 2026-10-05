@@ -972,7 +972,7 @@ const t3Thread = (fields: Partial<T3Thread>): T3Thread => ({
   threadId: '', projectId: '', workspaceRoot: null, provider: 'claudeAgent', sessionStatus: 'ready', sessionUpdatedAtMs: null,
   pendingApprovals: 0, pendingQuestions: 0, approvalSinceMs: null, latestApprovalAtMs: null, questionSeenAtMs: null, interactionMode: 'default',
   hasActionablePlan: false, turn: null, latestUserMessageAtMs: null, settled: false, t3SnoozedUntilMs: null, t3SnoozedAtMs: null,
-  updatedAtMs: now, agentSessionId: null, arborSession: null,
+  updatedAtMs: now, agentSessionId: null, arborSession: null, title: null,
   ...fields,
 });
 
@@ -1048,6 +1048,20 @@ export const setMockT3Enabled = (enabled: boolean) => {
   mockT3Enabled = enabled;
 };
 
+// Follows set_t3_thread_titles: on, each thread comes with a made-up title.
+let mockT3Titles = false;
+export const setMockT3Titles = (enabled: boolean) => {
+  mockT3Titles = enabled;
+};
+const MOCK_TITLES = [
+  'Fix the flaky login test', 'Add weights to pool members', 'Explain the retry loop in the proxy', 'Tidy the settings search index',
+  'Move the release notes check into CI', 'Find why the tray count is off by one', 'Draft the onboarding checklist', 'Speed up the usage page reads',
+];
+const titled = (channel: T3Channel): T3Channel => ({
+  ...channel,
+  threads: channel.threads.map((thread, index) => ({ ...thread, title: MOCK_TITLES[index % MOCK_TITLES.length] ?? null })),
+});
+
 // `?fleet=not3`: no machine has T3 Code, so neither the board nor Settings mentions it.
 const mockT3Found = fleetScenario !== 'not3' && !freshInstall;
 
@@ -1088,7 +1102,7 @@ const mockFleetSources = (): FleetSources => {
     if (fleetScenario === 'quiet' && machine === 'cedar-02') return { ...channel, readAtMs: nowMs - 3 * 60_000 };
     if (fleetScenario === 'queued' && machine === 'casey-mbp') return { ...channel, threads: [...threads, queuedT3Thread()] };
     return channel;
-  });
+  }).map((channel) => (mockT3Titles ? titled(channel) : channel));
   const sessions = usageSessions
     .filter((session) => session.lastActiveAtMs >= nowMs - 6 * 3_600_000)
     .sort((a, b) => b.lastActiveAtMs - a.lastActiveAtMs)

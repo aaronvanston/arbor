@@ -1,7 +1,7 @@
 /** The browser mock's harness runs: started on a pool, handed to T3 Code, Orca or an agent's command line. */
 import { emit } from '@tauri-apps/api/event';
 import type { MachineCommands } from '../../native/machines';
-import type { HarnessRun, MachineHealthSnapshot, RunRequest } from '../../native/types';
+import type { HarnessRun, MachineHealthSnapshot, RunHarness, RunRequest } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { poolsNow, preview } from './pools';
 import { freshInstall, later, mockLog, now, params } from './scenario';
@@ -103,12 +103,18 @@ function start(request: RunRequest, snapshot: MachineHealthSnapshot): HarnessRun
   return { ...run, state: 'refused', reason: 'noRoom', endedAtMs: Date.now() };
 }
 
+// Follows set_run_harnesses_off, as the native side does.
+let harnessesOff: RunHarness[] = [];
+
 export const runAnswers = (
   snapshot: () => MachineHealthSnapshot,
-): Pick<CommandAnswers<MachineCommands>, 'start_pool_run' | 'get_runs' | 'cancel_run' | 'open_run'> => ({
+): Pick<CommandAnswers<MachineCommands>, 'start_pool_run' | 'set_run_harnesses_off' | 'get_runs' | 'cancel_run' | 'open_run'> => ({
   start_pool_run: ({ request }) => {
     // The prompt is the run's own; the log keeps everything else.
     mockLog('start_pool_run', { ...request, prompt: `(${request.prompt.length} characters)` });
+    if (harnessesOff.includes(request.harness) && !request.fallback) {
+      throw new Error(`Runs aren't handed to ${request.harness === 't3' ? 'T3 Code' : 'Orca'} now. Turn it on in Settings › Harnesses, or let the run use the command line.`);
+    }
     // A run on a repo needs no folder: each member works in its own checkout.
     if (!request.repo && (!/^(~|~\/|\/)/.test(request.folder.trim()) || request.folder.split('/').includes('..'))) throw new Error("A run's folder starts with ~/ or / and has no .. in it.");
     if (!request.prompt.trim()) throw new Error('A run needs a prompt.');
@@ -118,6 +124,12 @@ export const runAnswers = (
       changed();
       return run;
     });
+  },
+  set_run_harnesses_off: ({ off }) => {
+    mockLog('set_run_harnesses_off', { off });
+    if (off.includes('headless')) throw new Error("The command line is the last resort and can't be turned off");
+    harnessesOff = off;
+    return null;
   },
   get_runs: () => runs,
   cancel_run: ({ id }) => {

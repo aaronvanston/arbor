@@ -888,6 +888,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "set_automation_app_enabled",
+        access: Access::Write,
+        summary: "Turns reading one other app's automations on or off. Off forgets what was found of it at once and leaves its part out of every scan; on looks again everywhere.",
+        args: &[
+            ArgSpec { name: "source", ts_type: "AutomationSource", optional: false },
+            ArgSpec { name: "enabled", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "set_automation_draft_model",
         access: Access::Write,
         summary: "Sets the model that drafts automations, and its effort.",
@@ -2064,6 +2073,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "copy_automation_into_arbor" => async { done(Box::pin(crate::usage::machine_health::automations::commands::copy_automation_into_arbor(app.clone(), arg(&args, "id")?, arg(&args, "pauseOriginal")?)).await) }.await,
         "draft_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::draft_automation(arg(&args, "input")?, app.state())).await) }.await,
         "set_automations_running" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automations_running(app.clone(), arg(&args, "running")?)).await) }.await,
+        "set_automation_app_enabled" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_app_enabled(app.clone(), arg(&args, "source")?, arg(&args, "enabled")?)).await) }.await,
         "set_automation_draft_model" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_draft_model(app.clone(), arg(&args, "model")?, arg(&args, "effort")?)).await) }.await,
         "add_automations_key" => done(Box::pin(crate::usage::machine_health::automations::commands::add_automations_key(app.clone())).await),
         "set_automation_proxy_address" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_proxy_address(app.clone(), arg(&args, "address")?)).await) }.await,

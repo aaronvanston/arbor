@@ -81,7 +81,6 @@ export function AgentHomesSettingsPage() {
             {machines.map((machine) => (
               <MachineHomes key={machine.machine} view={view} machine={machine} onAdd={() => setAdding(machine.machine)} />
             ))}
-            <KnownHarnesses harnesses={view.harnesses} />
           </>
         )}
         <AddAgentHomeDialog
@@ -133,11 +132,14 @@ function EveryMachineHomes({ view, onAdd }: { view: AgentHomesView; onAdd: () =>
   );
 }
 
-/** What Arbor knows about each harness: where it keeps things by default, and what Arbor does with it. */
-function KnownHarnesses({ harnesses }: { harnesses: HarnessInfo[] }) {
+/**
+ * What Arbor knows about each agent: where it keeps things by default, and what Arbor does with it. It's on Settings ›
+ * Harnesses, beside the apps that run them.
+ */
+export function KnownHarnesses({ harnesses }: { harnesses: HarnessInfo[] }) {
   const { t } = useI18n();
   return (
-    <SettingsSection settingId="agent-homes.harnesses" title={t('agentHomes.harnesses.title')} description={t('agentHomes.harnesses.description')}>
+    <SettingsSection settingId="harnesses.agents" title={t('agentHomes.harnesses.title')} description={t('agentHomes.harnesses.description')}>
       <Table containerClassName="@container" className="min-w-[52rem]">
         <TableHeader>
           <TableRow>

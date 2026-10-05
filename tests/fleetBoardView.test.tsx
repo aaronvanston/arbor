@@ -14,7 +14,7 @@ const thread = (fields: Partial<T3Thread> = {}): T3Thread => ({
   threadId: '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', projectId: 'b1c2d3e4', workspaceRoot: '/Users/casey/src/arbor', provider: 'claudeAgent',
   sessionStatus: 'ready', sessionUpdatedAtMs: NOW - 10 * MINUTE, pendingApprovals: 0, pendingQuestions: 0, approvalSinceMs: null, latestApprovalAtMs: null,
   questionSeenAtMs: null, interactionMode: 'default', hasActionablePlan: false, turn: null, latestUserMessageAtMs: null, settled: false,
-  t3SnoozedUntilMs: null, t3SnoozedAtMs: null, updatedAtMs: NOW - 10 * MINUTE, agentSessionId: null, arborSession: null,
+  t3SnoozedUntilMs: null, t3SnoozedAtMs: null, updatedAtMs: NOW - 10 * MINUTE, agentSessionId: null, arborSession: null, title: null,
   ...fields,
 });
 const channel = (machine: string, threads: T3Thread[], fields: Partial<T3Channel> = {}): T3Channel => ({

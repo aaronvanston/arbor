@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
+import type { RunHarness } from '../native/types';
 import { listen } from '@tauri-apps/api/event';
 import { useAppPreferences } from '../appPreferences';
 import { loadFleetSources, recentSessionIds, useFleetBoard, waitingCount, workingByMachine } from '../services/fleetBoard';
 import { reportWorkingSessions } from '../services/pools';
-import { setT3ThreadsEnabled, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
+import { setT3ThreadsEnabled, setT3ThreadTitles, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
+import { runHarnessesOff, setRunHarnessesOff } from '../services/runs';
 
 /** New events from a machine's reporter, and new requests, which can end a wait or start work. */
 const SOURCE_EVENTS = [T3_THREADS_UPDATED_EVENT, 'agent-attention-updated', 'usage-records-updated'];
@@ -18,7 +20,7 @@ const CHECK_INTERVAL_MS = 15_000;
  * until told.
  */
 export function FleetMonitor() {
-  const { fleetT3Threads } = useAppPreferences();
+  const { fleetT3Threads, fleetT3Titles, runsToOrca } = useAppPreferences();
   const { board } = useFleetBoard();
   const checkRef = useRef<() => void>(() => undefined);
 
@@ -80,6 +82,26 @@ export function FleetMonitor() {
       stale = true;
     };
   }, [fleetT3Threads]);
+
+  // Titles change what's read, so the board is read again once the native side has dropped the old reads.
+  useEffect(() => {
+    let stale = false;
+    setT3ThreadTitles(fleetT3Titles)
+      .catch((error) => console.warn('Failed to turn reading T3 Code thread titles on or off', error))
+      .finally(() => {
+        if (!stale) checkRef.current();
+      });
+    return () => {
+      stale = true;
+    };
+  }, [fleetT3Titles]);
+
+  // The native side picks members for runs, queued ones too, so it's told which harnesses are off.
+  const harnessesOff = runHarnessesOff({ runsToOrca }).join(',');
+  useEffect(() => {
+    setRunHarnessesOff(harnessesOff ? (harnessesOff.split(',') as RunHarness[]) : [])
+      .catch((error) => console.warn('Failed to tell Arbor which harnesses take runs', error));
+  }, [harnessesOff]);
 
   // Snoozing, seeing a row and time passing change the count as much as a new read does.
   const waiting = board ? waitingCount(board) : null;

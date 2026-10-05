@@ -50,6 +50,14 @@ impl Harness {
         }
     }
 
+    fn name(self) -> &'static str {
+        match self {
+            Self::T3 => "T3 Code",
+            Self::Orca => "Orca",
+            Self::Headless => "the command line",
+        }
+    }
+
     fn from_stored(text: &str) -> Self {
         match text {
             "t3" => Self::T3,
@@ -57,6 +65,17 @@ impl Harness {
             _ => Self::Headless,
         }
     }
+}
+
+/// The name the webview knows a run's harness by, which its commands take.
+pub(crate) type RunHarness = Harness;
+
+/// The harnesses runs aren't handed to (Settings › Harnesses), as the webview last said. The command line can't be
+/// turned off: it's the last resort when a run allows it.
+static HARNESSES_OFF: StdMutex<Vec<Harness>> = StdMutex::new(Vec::new());
+
+fn harness_off(harness: Harness) -> bool {
+    HARNESSES_OFF.lock().is_ok_and(|off| off.contains(&harness))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
@@ -306,7 +325,8 @@ fn offer(agents: &agents::MachineAgents, request: &RunRequest) -> Offer {
         Harness::Orca => (agents.orca().is_some_and(|orca| orca.is_running() && orca.can_start(setup)), None),
         Harness::Headless => (false, None),
     };
-    if has {
+    // One turned off is as though no member had it, so the command line is still there when the run allows it.
+    if has && !harness_off(request.harness) {
         return Offer::Harness;
     }
     let driver = driver.or_else(|| agents.t3().and_then(|t3| t3.setup(setup)).map(|found| found.driver_name().to_string()));
@@ -1025,6 +1045,9 @@ pub(crate) async fn start_pool_run(app: tauri::AppHandle, request: RunRequest) -
     if request.setup.trim().is_empty() {
         return Err("A run needs the setup or agent to start.".into());
     }
+    if harness_off(request.harness) && !request.fallback {
+        return Err(format!("Runs aren't handed to {} now. Turn it on in Settings › Harnesses, or let the run use the command line.", request.harness.name()));
+    }
     let request = RunRequest { folder: folder.clone(), repo: repo.clone(), ..request };
     let pools_saved = run_usage_task(|| pools::read_pools(&open_usage_database()?)).await?;
     let mut run = HarnessRun {
@@ -1061,6 +1084,18 @@ pub(crate) async fn start_pool_run(app: tauri::AppHandle, request: RunRequest) -
     save(run.clone()).await?;
     publish(&app);
     Ok(run)
+}
+
+/// Which harnesses runs aren't handed to, from Settings › Harnesses. Runs waiting in the queue go by it from their next try.
+#[tauri::command]
+pub(crate) async fn set_run_harnesses_off(off: Vec<RunHarness>) -> Result<(), String> {
+    if off.contains(&Harness::Headless) {
+        return Err("The command line is the last resort and can't be turned off".into());
+    }
+    if let Ok(mut current) = HARNESSES_OFF.lock() {
+        *current = off;
+    }
+    Ok(())
 }
 
 #[tauri::command]

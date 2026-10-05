@@ -1,4 +1,4 @@
-import type { Automation, AutomationDraft, AutomationDraftInput, AutomationInput, AutomationList, AutomationRun } from './types';
+import type { Automation, AutomationDraft, AutomationDraftInput, AutomationInput, AutomationList, AutomationRun, AutomationSource } from './types';
 
 /**
  * Automations: Arbor's own, which it runs on a schedule, and the ones other apps keep on each machine, which it finds.
@@ -16,6 +16,7 @@ export type AutomationCommands = {
   copy_automation_into_arbor: { args: { id: string; pauseOriginal: boolean }; result: Automation };
   draft_automation: { args: { input: AutomationDraftInput }; result: AutomationDraft };
   set_automations_running: { args: { running: boolean }; result: AutomationList };
+  set_automation_app_enabled: { args: { source: AutomationSource; enabled: boolean }; result: AutomationList };
   set_automation_draft_model: { args: { model: string; effort: string }; result: AutomationList };
   add_automations_key: { result: AutomationList };
   set_automation_proxy_address: { args: { address: string }; result: AutomationList };

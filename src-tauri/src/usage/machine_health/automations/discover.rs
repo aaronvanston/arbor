@@ -48,9 +48,9 @@ pub(super) struct MachineFind {
     pub(super) udian: Option<UdianOnMachine>,
 }
 
-// Lines out: `H home`, then each app's own, then the background runner's probe.
-fn scan_script(machine: &str) -> String {
-    let parts: String = apps::APPS.iter().map(|app| app.script()).collect();
+// Lines out: `H home`, then each app's own, then the background runner's probe. An app turned off has no part.
+fn scan_script(machine: &str, off: &[AutomationSource]) -> String {
+    let parts: String = apps::APPS.iter().filter(|app| !off.contains(&app.source())).map(|app| app.script()).collect();
     format!(
         "{AGENT_ENV}{homes}\
          printf 'H\\t%s\\n' \"$HOME\"\n\
@@ -61,11 +61,11 @@ fn scan_script(machine: &str) -> String {
     )
 }
 
-pub(super) async fn scan(machine: &Machine) -> MachineFind {
+pub(super) async fn scan(machine: &Machine, off: &[AutomationSource]) -> MachineFind {
     let scanned_at_ms = Local::now().timestamp_millis();
-    match run_checked(machine, MachineOp::AutomationScan, &scan_script(machine.name()), SCAN_TIMEOUT).await {
+    match run_checked(machine, MachineOp::AutomationScan, &scan_script(machine.name(), off), SCAN_TIMEOUT).await {
         Ok(stdout) => {
-            let (found, apps) = parse_scan(machine.name(), &stdout);
+            let (found, apps) = parse_scan_without(machine.name(), &stdout, off);
             MachineFind { scanned_at_ms: Some(scanned_at_ms), scanning: false, error: None, apps, found, udian: udian::parse_probe(&stdout) }
         }
         Err(error) => MachineFind { scanned_at_ms: Some(scanned_at_ms), scanning: false, error: Some(error), ..Default::default() },
@@ -73,11 +73,17 @@ pub(super) async fn scan(machine: &Machine) -> MachineFind {
 }
 
 /// What a machine's scan found, and the apps that are there.
+#[cfg(test)]
 pub(super) fn parse_scan(machine: &str, stdout: &str) -> (Vec<Found>, Vec<AutomationSource>) {
+    parse_scan_without(machine, stdout, &[])
+}
+
+/// The same, leaving out the apps turned off.
+pub(super) fn parse_scan_without(machine: &str, stdout: &str, off: &[AutomationSource]) -> (Vec<Found>, Vec<AutomationSource>) {
     let scan = ScanLines::new(machine, stdout);
     let mut found = Vec::new();
     let mut there = Vec::new();
-    for app in apps::APPS {
+    for app in apps::APPS.iter().filter(|app| !off.contains(&app.source())) {
         if let Some(items) = app.parse(&scan.only(app.tags())) {
             there.push(app.source());
             found.extend(items);
@@ -109,7 +115,8 @@ pub(super) async fn scan_machine(app: &tauri::AppHandle, machine: Machine) {
         entry.scanning = true;
     }
     runner::emit(app);
-    let result = scan(&machine).await;
+    let off = run_usage_task(|| store::apps_off(&open_usage_database()?)).await.unwrap_or_default();
+    let result = scan(&machine, &off).await;
     if let Ok(mut found) = FOUND.lock() {
         found.insert(name, result);
     }
@@ -151,6 +158,15 @@ pub(super) fn all_found(found: &BTreeMap<String, MachineFind>) -> Vec<Found> {
         }
     }
     order.into_iter().filter_map(|id| best.remove(&id)).collect()
+}
+
+/// Forgets what was found of an app just turned off, so nothing of it can be shown or changed until it's on again.
+pub(super) fn forget_app(source: AutomationSource) {
+    if let Ok(mut found) = FOUND.lock() {
+        for find in found.values_mut() {
+            find.found.retain(|item| item.automation.summary.source != source);
+        }
+    }
 }
 
 pub(super) fn find(id: &str) -> Option<Found> {
@@ -215,6 +231,9 @@ mod tests {
         assert_eq!(found.iter().map(|item| item.automation.summary.source).collect::<Vec<_>>(), [AutomationSource::CodexApp, AutomationSource::ClaudeDesktop]);
         assert_eq!(there, [AutomationSource::CodexApp, AutomationSource::ClaudeDesktop, AutomationSource::Superset]);
         assert_eq!(parse_scan("casey-mbp", "H\t/Users/casey\n"), (Vec::new(), Vec::new()));
+        let (found, there) = parse_scan_without("casey-mbp", &stdout, &[AutomationSource::CodexApp]);
+        assert_eq!(found.iter().map(|item| item.automation.summary.source).collect::<Vec<_>>(), [AutomationSource::ClaudeDesktop]);
+        assert_eq!(there, [AutomationSource::ClaudeDesktop, AutomationSource::Superset]);
     }
 
     #[test]
@@ -235,12 +254,16 @@ mod tests {
 
     #[test]
     fn the_scan_holds_every_apps_part_and_the_probe() {
-        let script = scan_script("casey-mbp");
+        let script = scan_script("casey-mbp", &[]);
         assert!(script.contains("orca automations list --json </dev/null"));
         assert!(script.contains("superset automations list --json </dev/null"));
         assert!(script.contains("automations/*/automation.toml"));
         assert!(script.contains("scheduled-tasks/*/SKILL.md"));
         assert!(script.contains(udian::PROBE_SCRIPT));
+        // An app turned off is never asked, and what it printed anyway is left out.
+        let script = scan_script("casey-mbp", &[AutomationSource::Orca, AutomationSource::CodexApp]);
+        assert!(!script.contains("orca automations list") && !script.contains("automations/*/automation.toml"));
+        assert!(script.contains("superset automations list --json </dev/null") && script.contains("scheduled-tasks/*/SKILL.md"));
     }
 
     #[test]

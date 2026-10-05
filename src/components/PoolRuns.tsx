@@ -23,8 +23,8 @@ import { HARNESS_LABEL } from '../services/harnesses';
 import { useFleetHealth } from '../services/fleetHealth';
 import { SETUP_PROJECTS_UPDATED_EVENT, getProjects, scanProjects } from '../services/setupProjects';
 import { plainError } from '../services/plainError';
+import { useAppPreferences } from '../appPreferences';
 import {
-  RUN_HARNESSES,
   RUN_STATE_LABEL,
   RUN_STATE_TONE,
   cancelRun,
@@ -36,6 +36,7 @@ import {
   runCommands,
   repoName,
   runDraftProblem,
+  runHarnessChoices,
   runSetupChoices,
   runSetupLabel,
   setupLabel,
@@ -240,6 +241,9 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
   const { t } = useI18n();
   const health = useFleetHealth();
   const reason = useReason();
+  // Settings › Harnesses can turn T3 Code and Orca off for runs; the command line is always there.
+  const harnesses = runHarnessChoices(useAppPreferences());
+  const firstHarness = harnesses[0] ?? 'headless';
   const [draft, setDraft] = useState<RunRequest>(() => newRunRequest(''));
   const [byFolder, setByFolder] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -249,11 +253,11 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
   const { projects, scanning } = usePoolProjects(pool);
   useEffect(() => {
     if (!pool) return;
-    setDraft(newRunRequest(pool.id));
+    setDraft(newRunRequest(pool.id, firstHarness));
     setByFolder(false);
     setError(null);
     setTried(false);
-  }, [pool]);
+  }, [pool, firstHarness]);
   const repos = pool && projects ? poolRepos(pool, projects) : [];
   const total = pool?.members.filter((member) => member.weight !== 'manual').length ?? 0;
   const firstRepo = repos[0]?.repo;
@@ -357,7 +361,7 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
                     <SelectValue>{t(HARNESS_LABEL[draft.harness])}</SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
-                    {RUN_HARNESSES.map((harness) => <SelectItem key={harness} value={harness}>{t(HARNESS_LABEL[harness])}</SelectItem>)}
+                    {harnesses.map((harness) => <SelectItem key={harness} value={harness}>{t(HARNESS_LABEL[harness])}</SelectItem>)}
                   </SelectPopup>
                 </Select>
               </div>

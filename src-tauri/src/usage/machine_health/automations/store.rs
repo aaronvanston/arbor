@@ -1,6 +1,6 @@
 //! Arbor's own automations and every run of them, in usage.db.
 
-use super::{AutomationInput, AutomationRun, AutomationRunStatus};
+use super::{AutomationInput, AutomationRun, AutomationRunStatus, AutomationSource};
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// An automation as it's kept.
@@ -302,6 +302,17 @@ mod tests {
     }
 
     #[test]
+    fn keeps_which_apps_are_off() {
+        let connection = test_database();
+        assert_eq!(apps_off(&connection).unwrap(), Vec::new());
+        set_app_off(&connection, AutomationSource::Orca, true).unwrap();
+        set_app_off(&connection, AutomationSource::CodexApp, true).unwrap();
+        assert_eq!(apps_off(&connection).unwrap(), vec![AutomationSource::CodexApp, AutomationSource::Orca]);
+        set_app_off(&connection, AutomationSource::Orca, false).unwrap();
+        assert_eq!(apps_off(&connection).unwrap(), vec![AutomationSource::CodexApp]);
+    }
+
+    #[test]
     fn keeps_settings() {
         let connection = test_database();
         assert_eq!(setting(&connection, "running").unwrap(), None);
@@ -309,6 +320,22 @@ mod tests {
         set_setting(&connection, "running", "1").unwrap();
         assert_eq!(setting(&connection, "running").unwrap().as_deref(), Some("1"));
     }
+}
+
+/// An app as its switch is kept: `app_off.<source>`, and only for an app turned off.
+fn app_name(source: AutomationSource) -> String {
+    serde_json::to_value(source).ok().and_then(|value| value.as_str().map(str::to_string)).unwrap_or_default()
+}
+
+/// The other apps whose automations aren't read. Arbor's own are never among them.
+pub(super) fn apps_off(connection: &Connection) -> Result<Vec<AutomationSource>, String> {
+    let off: Vec<String> = settings_with_prefix(connection, "app_off.")?.into_iter().filter(|(_, value)| value == "off").map(|(name, _)| name).collect();
+    Ok(super::apps::APPS.iter().map(|app| app.source()).filter(|source| off.contains(&app_name(*source))).collect())
+}
+
+pub(super) fn set_app_off(connection: &Connection, source: AutomationSource, off: bool) -> Result<(), String> {
+    let key = format!("app_off.{}", app_name(source));
+    if off { set_setting(connection, &key, "off") } else { remove_setting(connection, &key) }
 }
 
 /// Every setting whose key starts with `prefix`, with the prefix taken off.

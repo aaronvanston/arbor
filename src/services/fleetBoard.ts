@@ -53,6 +53,8 @@ export type FleetSession = {
   /** Claude's session UUID or Codex's thread id. */
   agentSessionId: string | null;
   t3ThreadId: string | null;
+  /** T3 Code's title for the thread, read only while Settings › Harnesses' Thread names is on. */
+  t3Title: string | null;
   sources: FleetSourceKind[];
   snoozedUntilMs: number | null;
   snoozedBy: 'arbor' | 't3' | null;
@@ -441,6 +443,7 @@ function rowOf(draft: Draft, sources: FleetSources, now: number, { snoozes, seen
     arborSessionId,
     agentSessionId,
     t3ThreadId: thread?.threadId ?? null,
+    t3Title: thread?.title ?? null,
     sources: kinds,
     snoozedUntilMs: snooze?.untilMs ?? null,
     snoozedBy: snooze?.by ?? null,
@@ -638,10 +641,12 @@ const PROVIDER_NAME: Record<string, MessageKey> = {
 };
 
 /**
- * A row's name: the linked session's, as the other lists name it, else for a T3 Code thread its provider, project and
- * short thread id ("Claude in arbor · 1a2b3c4d"), never T3 Code's title; else the client with a short id.
+ * A row's name: T3 Code's title when Thread names is on, else the linked session's, as the other lists name it, else
+ * for a T3 Code thread its provider, project and short thread id ("Claude in arbor · 1a2b3c4d"); else the client with
+ * a short id.
  */
 export function fleetSessionName(row: FleetSession, t: Translate) {
+  if (row.t3Title) return row.t3Title;
   if (row.session) return liveSessionName(row.session);
   const id = shortSessionId(row.t3ThreadId ?? row.agentSessionId ?? row.key);
   if (row.t3ThreadId) {

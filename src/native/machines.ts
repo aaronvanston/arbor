@@ -1,5 +1,6 @@
 import type {
   HarnessRun,
+  RunHarness,
   RunRequest,
   AgentHome,
   AgentHomeKind,
@@ -47,6 +48,7 @@ export type MachineCommands = {
   add_pool_ssh_include: { result: void };
   forget_pool_ssh_name: { args: { poolId: string; name: string }; result: void };
   start_pool_run: { args: { request: RunRequest }; result: HarnessRun };
+  set_run_harnesses_off: { args: { off: RunHarness[] }; result: void };
   get_runs: { result: HarnessRun[] };
   cancel_run: { args: { id: string }; result: HarnessRun[] };
   open_run: { args: { id: string }; result: void };
@@ -63,6 +65,7 @@ export type MachineCommands = {
   open_fix_session: { args: { machine: string; agent: AgentKind; prompt: string; onMachine: boolean }; result: void };
   keep_claude_sessions: { args: { machine: string; homes: string[] }; result: SettingsEdit[] };
   set_t3_threads_enabled: { args: { enabled: boolean }; result: void };
+  set_t3_thread_titles: { args: { enabled: boolean }; result: void };
 
   set_agent_reporter: { args: { machine: string; enabled: boolean; plan?: boolean | null }; result: ReporterSetup };
   get_agent_telemetry: { result: TelemetryStatus };

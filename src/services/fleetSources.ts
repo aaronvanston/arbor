@@ -11,5 +11,8 @@ export const getFleetSources = () => invokeCommand('get_fleet_sources');
 /** Turns reading T3 Code's threads on or off. Nothing is read until this is sent, and off drops what was read. */
 export const setT3ThreadsEnabled = (enabled: boolean) => invokeCommand('set_t3_threads_enabled', { enabled });
 
+/** Turns reading T3 Code's thread titles on or off. Either way what was read is dropped and read again. */
+export const setT3ThreadTitles = (enabled: boolean) => invokeCommand('set_t3_thread_titles', { enabled });
+
 /** Puts the number of sessions waiting on their user beside the tray icon, ahead of the unread alerts. */
 export const setTrayWaiting = (count: number) => invokeCommand('set_tray_waiting', { count });

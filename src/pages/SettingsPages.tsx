@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { AlertCircle, ArrowUpRight } from '../components/ui/icons';
-import { setAppPreference, useAppPreferences } from '../appPreferences';
 import { useI18n } from '../i18n';
-import { onOffLabel, preferenceReset } from '../services/settingDefaults';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
-import { Switch } from '../components/ui/switch';
 import { UsageMachineAssignments } from './UsageMachineAssignments';
 import { MachineHostsSettings } from './MachineHostsSettings';
 import { AgentTelemetrySettings } from './AgentTelemetrySettings';
@@ -16,7 +13,6 @@ import { AutomationSettings } from '../components/automations/AutomationSettings
 import { FleetWideNotice, SettingsScopeSentence } from '../components/layout/machineScope';
 import { MachinePill } from '../components/identity/Identity';
 import { useSettingsScope } from '../services/machineSettings';
-import { useT3Found } from '../services/fleetBoard';
 import { machinesView, type AppView } from '../navigation';
 import type { MachineAssignment } from '../native/types';
 
@@ -53,7 +49,6 @@ export function MachineAssignmentsSettingsPage({ onNavigate }: { onNavigate?: (v
           <>
             <UsageMachineAssignments assignments={assignments} onSaved={() => void load()} />
             <MachineHostsSettings />
-            <LiveBoardSettings />
             <AutomationSettings />
             <AgentTelemetrySettings />
           </>
@@ -79,34 +74,6 @@ function OneMachineSettings({ machine, onNavigate }: { machine: string; onNaviga
             <ArrowUpRight />
             <span>{tRich('machineScope.onMachine.open', { machine: <MachinePill name={machine} /> })}</span>
           </Button>
-        }
-      />
-    </SettingsSection>
-  );
-}
-
-/**
- * Settings › Machines: what the live board and the tray read from each machine besides the proxy and reporters. It's
- * only T3 Code's threads so far, so it shows once some machine has T3 Code.
- */
-function LiveBoardSettings() {
-  const { t } = useI18n();
-  const preferences = useAppPreferences();
-  const t3Found = useT3Found();
-  if (!t3Found) return null;
-  return (
-    <SettingsSection title={t('fleet.settings.title')} description={t('fleet.settings.description')}>
-      <SettingsRow
-        settingId="machines.t3Threads"
-        reset={preferenceReset(preferences, 'fleetT3Threads', onOffLabel(t))}
-        title={t('fleet.settings.t3Threads')}
-        description={t('fleet.settings.t3ThreadsHint')}
-        control={
-          <Switch
-            checked={preferences.fleetT3Threads}
-            aria-label={t('fleet.settings.t3Threads')}
-            onCheckedChange={(checked) => setAppPreference('fleetT3Threads', checked)}
-          />
         }
       />
     </SettingsSection>

@@ -1,5 +1,6 @@
 //! The Automations page's commands.
 
+use super::apps;
 use super::discover::{self, Found, MachineFind};
 use super::proxy;
 use super::store::{self, Record};
@@ -137,7 +138,8 @@ pub(super) fn list_from(
         let last = last_run(connection, &record.id)?;
         automations.push(arbor_summary_with_model(connection, &record, last)?);
     }
-    for item in discover::all_found(found) {
+    let apps_off = store::apps_off(connection)?;
+    for item in discover::all_found(found).into_iter().filter(|item| !apps_off.contains(&item.automation.summary.source)) {
         automations.push(with_project(connection, item)?.automation.summary);
     }
     let placing = udian::placing_errors();
@@ -176,6 +178,7 @@ pub(super) fn list_from(
         // Whether the core still has the key needs the app; `current_list` fills it in.
         proxy_key: false,
         proxy_address: store::setting(connection, proxy::ADDRESS_SETTING)?.unwrap_or_default(),
+        apps_off,
     })
 }
 
@@ -591,6 +594,27 @@ pub(crate) async fn set_automations_running(app: tauri::AppHandle, running: bool
     })
     .await?;
     runner::WAKE.notify_one();
+    runner::emit(&app);
+    current_list(&app).await
+}
+
+/// Turns reading one other app's automations on or off. Off forgets what was found of it at once and leaves its part
+/// out of every scan; on looks again everywhere.
+#[tauri::command]
+pub(crate) async fn set_automation_app_enabled(app: tauri::AppHandle, source: AutomationSource, enabled: bool) -> Result<AutomationList, String> {
+    if apps::for_source(source).is_none() {
+        return Err("Arbor's own automations can't be turned off here".into());
+    }
+    run_usage_task(move || {
+        let connection = open_usage_database()?;
+        let _guard = lock_usage_writes();
+        store::set_app_off(&connection, source, !enabled)
+    })
+    .await?;
+    if enabled {
+        return scan_automations(app, None).await;
+    }
+    discover::forget_app(source);
     runner::emit(&app);
     current_list(&app).await
 }

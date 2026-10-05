@@ -46,5 +46,10 @@ versions and the toolchain. Repo is the setup repo's files, with Arbor's changes
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the
 limits, the next run's chances, where a burst would go. Settings › Pools only edits them.
 
+Settings › Harnesses (`pages/HarnessesSettings.tsx`, with `services/harnessApps.ts` deciding what shows) has a card for
+each app that runs agents (T3 Code, Orca, Superset, the Codex app, Claude) once it's found on a machine, with the
+switches for what Arbor reads from it and hands it, and the agents' table below. An app's own switch goes there, never
+on Settings › Machines.
+
 Every machine name renders as `MachinePill` (`components/identity/Identity.tsx`), colored by the look picked in
 `MachineLookPicker`.

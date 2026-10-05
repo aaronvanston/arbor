@@ -15,6 +15,7 @@ const list = (fields: Partial<AutomationList>): AutomationList => ({
   agents: ['claude', 'codex'],
   proxyKey: true,
   proxyAddress: '',
+  appsOff: [],
   ...fields,
 });
 const render = (value: AutomationList) => {

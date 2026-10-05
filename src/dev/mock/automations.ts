@@ -6,6 +6,7 @@ import type {
   AutomationList,
   AutomationRun,
   AutomationRunStatus,
+  AutomationSource,
   AutomationSummary,
   ScheduleSummary,
   UdianOnMachine,
@@ -324,12 +325,16 @@ let proxyAddress = '';
 
 const runs = new Map<string, AutomationRun[]>(automations.map((item) => [item.summary.id, seedRuns(item)]));
 
+// Follows set_automation_app_enabled: an app turned off isn't asked, so neither it nor its automations show.
+let appsOff: AutomationSource[] = [];
+const notOff = (apps: AutomationSource[]) => apps.filter((app) => !appsOff.includes(app));
+
 const list = (): AutomationList => ({
-  automations: automations.map((item) => item.summary),
+  automations: automations.map((item) => item.summary).filter((summary) => !appsOff.includes(summary.source)),
   scans: [
-    { machine: 'casey-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: ['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : [])], udian: runnerOn.get('casey-mbp') ?? null, placingError: null },
+    { machine: 'casey-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff(['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('casey-mbp') ?? null, placingError: null },
     {
-      machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: [...(withOrca ? ['orca' as const] : []), ...(withSuperset ? ['superset' as const] : [])], udian: runnerOn.get('cedar-02') ?? null,
+      machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff([...(withOrca ? ['orca' as const] : []), ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('cedar-02') ?? null,
       placingError: runner === 'failing' ? 'cedar-02 didn\'t answer over SSH.' : null,
     },
     {
@@ -344,6 +349,7 @@ const list = (): AutomationList => ({
   agents: ['claude', 'codex', 'pi', 'primeAgent', 'droid'],
   proxyKey,
   proxyAddress,
+  appsOff,
 });
 
 const find = (id: string) => {
@@ -474,6 +480,12 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
   set_automations_running: ({ running: next }) => {
     mockLog('set_automations_running', { running: next });
     running = next;
+    return list();
+  },
+  set_automation_app_enabled: ({ source, enabled }) => {
+    mockLog('set_automation_app_enabled', { source, enabled });
+    if (source === 'arbor') throw "Arbor's own automations can't be turned off here";
+    appsOff = enabled ? appsOff.filter((app) => app !== source) : [...appsOff, source];
     return list();
   },
   set_automation_draft_model: ({ model, effort }) => {

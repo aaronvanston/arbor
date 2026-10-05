@@ -6,6 +6,7 @@ import type { HarnessRun, MachineHealth, MachinePool, MachineProjects, RunHarnes
 import { type HarnessSetupRow, machineHarnesses } from './harnesses';
 import { sshCommand } from './fixPrompt';
 import { shellPath, shellWord } from './setupChecklist';
+import type { AppPreferences } from '../appPreferences';
 
 /**
  * Harness runs (see `runs.rs`): work started on a pool and handed to T3 Code, Orca or, as a last resort, an agent's own
@@ -218,8 +219,19 @@ export function runSetupLabel(
 export const setupLabel = (setup: Pick<HarnessSetupRow, 'name' | 'driver' | 'rawDriver'>, t: (key: MessageKey) => string) =>
   setup.name ?? (setup.driver ? t(setup.driver) : setup.rawDriver);
 
-/** A new session: Orca, in a worktree of its own. */
-export const newRunRequest = (pool: string): RunRequest => ({ pool, harness: 'orca', setup: '', folder: '', prompt: '', fallback: false, worktree: true });
+/** The harnesses runs aren't handed to, from Settings › Harnesses. The command line is always there. */
+export const runHarnessesOff = (preferences: Pick<AppPreferences, 'runsToOrca'>): RunHarness[] => (preferences.runsToOrca ? [] : ['orca']);
+
+/** The harnesses a run can be handed to, in the picker's order. */
+export const runHarnessChoices = (preferences: Pick<AppPreferences, 'runsToOrca'>) => {
+  const off = runHarnessesOff(preferences);
+  return RUN_HARNESSES.filter((harness) => !off.includes(harness));
+};
+
+export const setRunHarnessesOff = (off: RunHarness[]) => invokeCommand('set_run_harnesses_off', { off });
+
+/** A new session: Orca, in a worktree of its own, unless Settings › Harnesses turned it off. */
+export const newRunRequest = (pool: string, harness: RunHarness = 'orca'): RunRequest => ({ pool, harness, setup: '', folder: '', prompt: '', fallback: false, worktree: true });
 
 /** Why a run can't be started yet, as the native side would refuse it. Null when it can. */
 export function runDraftProblem(draft: RunRequest): MessageKey | null {

@@ -61,7 +61,9 @@ times them), and nothing repaints or polls when it doesn't need to.
    shown, logged or stored in the webview, `localStorage` included; setup scans send names and salted fingerprints
    only. Data from transcripts and other apps' databases is linked by the ids they store, never by heuristics, and
    limited to the fields a feature uses. Conversation text (prompts, replies, summaries, tool inputs and outputs) is
-   never read or kept outside the archive.
+   never read or kept outside the archive. The one other exception is an app's thread title behind an opt-in switch
+   on Settings › Harnesses, off by default (T3 Code's Thread names): read only while it's on, held in memory for the
+   live board, never saved, logged or archived, and dropped when it's turned off.
 5. **Breaking the archive's edges.** Raw bytes live only in a store's `chunks/` and, for a file still growing,
    `pending/`. `archive.db`, `journal/`, listings, logs and every archive command hold ids, paths, sizes, hashes and
    times; token counting keeps a hash of each call's id with its day, model and token numbers, and Claude Code's own

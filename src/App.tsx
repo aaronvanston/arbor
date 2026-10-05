@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo,
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
 import { onAddMachineRequest } from './services/addMachine';
-import { Activity, Archive, BellRing, Database, FolderSearch, Info, Monitor, Network, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
+import { Activity, Archive, BellRing, Bot, Database, FolderSearch, Info, Monitor, Network, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
 import { CoreRuntimeProvider, useCoreRuntime } from './coreRuntime';
 import { CoreUpdateProvider, useCoreUpdate } from './coreUpdate';
 import { HomePage } from './pages/HomePage';
@@ -93,6 +93,7 @@ const settingsGroups: { id: string; labelKey: MessageKey; pages: { id: SettingsP
     pages: [
       { id: 'machines', icon: Monitor },
       { id: 'agent-homes', icon: FolderSearch },
+      { id: 'harnesses', icon: Bot },
       { id: 'pools', icon: Network },
       { id: 'session-archive', icon: Archive },
     ],
@@ -134,6 +135,7 @@ const pageModules = {
   extraModels: () => import('./pages/ExtraModelsPage'),
   settings: () => import('./pages/SettingsPages'),
   agentHomes: () => import('./pages/AgentHomesSettings'),
+  harnesses: () => import('./pages/HarnessesSettings'),
   pools: () => import('./pages/PoolsSettings'),
   appearance: () => import('./pages/AppearanceSettingsPage'),
   notifications: () => import('./pages/NotificationsSettingsPage'),
@@ -154,6 +156,7 @@ const ModelRoutingPage = lazy(() => pageModules.modelRouting().then((module) => 
 const ExtraModelsPage = lazy(() => pageModules.extraModels().then((module) => ({ default: module.ExtraModelsPage })));
 const MachineAssignmentsSettingsPage = lazy(() => pageModules.settings().then((module) => ({ default: module.MachineAssignmentsSettingsPage })));
 const AgentHomesSettingsPage = lazy(() => pageModules.agentHomes().then((module) => ({ default: module.AgentHomesSettingsPage })));
+const HarnessesSettingsPage = lazy(() => pageModules.harnesses().then((module) => ({ default: module.HarnessesSettingsPage })));
 const PoolsSettingsPage = lazy(() => pageModules.pools().then((module) => ({ default: module.PoolsSettingsPage })));
 const AppearanceSettingsPage = lazy(() => pageModules.appearance().then((module) => ({ default: module.AppearanceSettingsPage })));
 const NotificationsSettingsPage = lazy(() => pageModules.notifications().then((module) => ({ default: module.NotificationsSettingsPage })));
@@ -213,6 +216,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
     case 'extra-models': return <ExtraModelsPage />;
     case 'machines': return <MachineAssignmentsSettingsPage onNavigate={onNavigate} />;
     case 'agent-homes': return <AgentHomesSettingsPage />;
+    case 'harnesses': return <HarnessesSettingsPage />;
     case 'pools': return <PoolsSettingsPage onNavigate={onNavigate} />;
     case 'data': return <UsageDataSettingsPage />;
     case 'session-archive': return <SessionArchiveSettingsPage />;

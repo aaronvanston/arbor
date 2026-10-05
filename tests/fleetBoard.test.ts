@@ -52,7 +52,7 @@ const thread = (fields: Partial<T3Thread> = {}): T3Thread => ({
   threadId: '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', projectId: 'b1c2d3e4', workspaceRoot: '/Users/casey/src/arbor', provider: 'claudeAgent',
   sessionStatus: 'ready', sessionUpdatedAtMs: NOW - 10 * MINUTE, pendingApprovals: 0, pendingQuestions: 0, approvalSinceMs: null, latestApprovalAtMs: null,
   questionSeenAtMs: null, interactionMode: 'default', hasActionablePlan: false, turn: null, latestUserMessageAtMs: null, settled: false,
-  t3SnoozedUntilMs: null, t3SnoozedAtMs: null, updatedAtMs: NOW - 10 * MINUTE, agentSessionId: null, arborSession: null,
+  t3SnoozedUntilMs: null, t3SnoozedAtMs: null, updatedAtMs: NOW - 10 * MINUTE, agentSessionId: null, arborSession: null, title: null,
   ...fields,
 });
 const running = (startedMinutesAgo: number) => ({ state: 'running', requestedAtMs: NOW - startedMinutesAgo * MINUTE - SECOND, startedAtMs: NOW - startedMinutesAgo * MINUTE, completedAtMs: null });
@@ -343,9 +343,11 @@ describe('merging the sources', () => {
     expect(done.status).toBe('done');
   });
 
-  it('names a T3 Code thread with no session by its provider, project and short id, never a title', () => {
+  it('names a T3 Code thread with no session by its provider, project and short id, unless its title was read', () => {
     const row = t3Row({ provider: 'codex', turn: completed(5) });
     expect(fleetSessionName(row, t)).toBe('Codex in arbor · 7c1d2e3f');
+    // With Thread names on, the native side sends the title, and it names the row.
+    expect(fleetSessionName(t3Row({ provider: 'codex', turn: completed(5), title: 'Fix the login test' }), t)).toBe('Fix the login test');
     expect(fleetSessionName(t3Row({ workspaceRoot: null, provider: null }), t)).toBe('Agent · 7c1d2e3f');
     const reporterOnly = only(board({ attention: { items: [wait({ agent: 'codex', sessionId: CODEX_ID })], reporting: ['casey-mbp'] } }));
     expect(fleetSessionName(reporterOnly, t)).toBe('Codex 0199a1b2');

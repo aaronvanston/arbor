@@ -534,6 +534,10 @@ export type AutomationList = {
    * The address machines try first to reach the proxy; empty to find it on their own.
    */
   proxyAddress: string,
+  /**
+   * The apps whose automations aren't read (Settings › Harnesses): their part of each scan is left out.
+   */
+  appsOff: Array<AutomationSource>,
 };
 
 /**
@@ -4694,6 +4698,10 @@ export type T3Thread = {
    */
   agentSessionId: string | null,
   arborSession: ArborSession | null,
+  /**
+   * T3 Code's title for it, only while Thread names is on.
+   */
+  title: string | null,
 };
 
 /**

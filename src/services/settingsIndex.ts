@@ -32,6 +32,7 @@ export const SETTINGS_PAGE_LABEL: Record<SettingsPageId, MessageKey> = {
   'extra-models': 'settings.nav.extraModels',
   machines: 'settings.nav.machines',
   'agent-homes': 'settings.nav.agentHomes',
+  harnesses: 'settings.nav.harnesses',
   pools: 'settings.nav.pools',
   'session-archive': 'settings.nav.sessionArchive',
   data: 'settings.nav.data',
@@ -102,7 +103,6 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
 
   section('machines', 'assignments', 'usage.assignments.title', { description: 'usage.assignments.description' }),
   section('machines', 'hosts', 'machines.hosts.title', { description: 'machines.hosts.description', keywords: 'settingsSearch.keywords.ssh' }),
-  row('machines', 't3Threads', 'fleet.settings.title', 'fleet.settings.t3Threads', { description: 'fleet.settings.t3ThreadsHint', keywords: 'fleet.palette.keywords', fallback: 'machines.hosts' }),
   row('machines', 'automations-running', 'automations.settings.title', 'automations.settings.running', { description: 'automations.settings.runningHint', keywords: 'tree.automations.keywords' }),
   row('machines', 'automations-runner', 'automations.settings.title', 'automations.runner.title', { description: 'automations.runner.descriptionSearch', keywords: 'automations.runner.keywords' }),
   row('machines', 'automations-proxy-key', 'automations.settings.title', 'automations.proxy.key', { description: 'automations.proxy.keyHint', keywords: 'automations.proxy.keywords' }),
@@ -113,7 +113,15 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('machines', 'telemetry-machines', 'telemetry.settings.title', 'telemetry.settings.machines'),
 
   section('agent-homes', 'everywhere', 'agentHomes.everywhere.title', { description: 'agentHomes.everywhere.description', keywords: 'settingsSearch.keywords.agentHomes' }),
-  section('agent-homes', 'harnesses', 'agentHomes.harnesses.title', { description: 'agentHomes.harnesses.description', keywords: 'agentHomes.harnesses.keywords' }),
+  // Each app's rows show once it's found, so search lands on the agents' table, which is always there, until then.
+  row('harnesses', 't3-threads', 'harness.kind.t3', 'harnesses.t3Threads.title', { description: 'harnesses.t3Threads.description', keywords: 'fleet.palette.keywords', fallback: 'harnesses.agents' }),
+  row('harnesses', 't3-titles', 'harness.kind.t3', 'harnesses.t3Titles.title', { description: 'harnesses.t3Titles.description', keywords: 'harnesses.keywords.titles', fallback: 'harnesses.agents' }),
+  row('harnesses', 'orca-automations', 'harness.kind.orca', 'harnesses.automations.title', { description: 'harnesses.automations.description', keywords: 'harnesses.keywords.automations', fallback: 'harnesses.agents' }),
+  row('harnesses', 'orca-runs', 'harness.kind.orca', 'harnesses.runs.title', { description: 'harnesses.runs.description', keywords: 'harnesses.keywords.runs', fallback: 'harnesses.agents' }),
+  row('harnesses', 'superset-automations', 'automations.source.superset', 'harnesses.automations.title', { description: 'harnesses.automations.description', keywords: 'harnesses.keywords.automations', fallback: 'harnesses.agents' }),
+  row('harnesses', 'codex-app-automations', 'automations.source.codexApp', 'harnesses.automations.title', { description: 'harnesses.automations.description', keywords: 'harnesses.keywords.automations', fallback: 'harnesses.agents' }),
+  row('harnesses', 'claude-automations', 'automations.source.claudeDesktop', 'harnesses.automations.title', { description: 'harnesses.automations.description', keywords: 'harnesses.keywords.automations', fallback: 'harnesses.agents' }),
+  section('harnesses', 'agents', 'agentHomes.harnesses.title', { description: 'agentHomes.harnesses.description', keywords: 'agentHomes.harnesses.keywords' }),
   section('pools', 'list', 'pools.list.title', { description: 'pools.list.description', keywords: 'settingsSearch.keywords.pools' }),
 
   row('session-archive', 'folder', 'sessionArchive.title', 'sessionArchive.folder.title', { description: 'sessionArchive.setup.folderDescription' }),
@@ -200,7 +208,12 @@ const byId = new Map(SETTINGS_INDEX.map((entry) => [entry.id, entry]));
  * Rows that moved page, by the start of the ids they had, for picks saved before: Network's are on Proxy (`general`),
  * and Auth files' account order is on Routing.
  */
-const MOVED_SETTING_IDS: readonly (readonly [string, string])[] = [['network.', 'general.'], ['auth-files.routing', 'routing.accounts']];
+const MOVED_SETTING_IDS: readonly (readonly [string, string])[] = [
+  ['network.', 'general.'],
+  ['auth-files.routing', 'routing.accounts'],
+  ['machines.t3Threads', 'harnesses.t3-threads'],
+  ['agent-homes.harnesses', 'harnesses.agents'],
+];
 
 /** A setting's id today, for one saved under the page it used to be on. */
 export function currentSettingId(id: string) {

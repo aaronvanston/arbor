@@ -48,6 +48,10 @@ export type AppPreferences = {
   quitGuard: boolean;
   /** Read T3 Code's threads (ids, statuses and times only) on this Mac and the machines, for the live board and the tray. */
   fleetT3Threads: boolean;
+  /** Read T3 Code's thread titles too, to name the threads on the live board. Needs `fleetT3Threads`. */
+  fleetT3Titles: boolean;
+  /** Hand pool runs to Orca. Off, a run asking for it goes to the command line when it allows that. */
+  runsToOrca: boolean;
   /** Show accounts' email addresses with most of the name hidden, and the same part of any file name that repeats it. */
   hideEmails: boolean;
 };
@@ -85,6 +89,8 @@ export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   reserveAlerts: true,
   quitGuard: true,
   fleetT3Threads: true,
+  fleetT3Titles: false,
+  runsToOrca: true,
   hideEmails: false,
 };
 

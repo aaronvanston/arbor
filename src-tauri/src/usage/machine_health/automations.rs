@@ -269,6 +269,8 @@ pub(crate) struct AutomationList {
     pub(crate) proxy_key: bool,
     /// The address machines try first to reach the proxy; empty to find it on their own.
     pub(crate) proxy_address: String,
+    /// The apps whose automations aren't read (Settings › Harnesses): their part of each scan is left out.
+    pub(crate) apps_off: Vec<AutomationSource>,
 }
 
 /// An Arbor automation as the dialog saves it; no id is a new one.
