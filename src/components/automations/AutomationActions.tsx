@@ -3,7 +3,7 @@ import { useI18n } from '../../i18n';
 import { automationView, automationsView, type AppView } from '../../navigation';
 import { invokeCommand } from '../../native/commands';
 import type { AutomationSummary } from '../../native/types';
-import { showAutomations } from '../../services/automations';
+import { loadAutomations, showAutomations } from '../../services/automations';
 import { useConfirmation } from '../ConfirmationDialog';
 import { Button } from '../ui/button';
 import { CirclePause, CirclePlay, Copy, MoreHorizontal, Pencil, Play, Trash2 } from '../ui/icons';
@@ -58,6 +58,9 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
     });
     if (!confirmed) return;
     await invokeCommand('run_automation_now', { id: item.id });
+    // The list is read again so the automation's page, which reads its runs whenever the list changes, shows this one
+    // at once rather than at the runner's next word.
+    await loadAutomations();
     toast({ title: t('automations.runNow.started', { name: item.name }) });
     onNavigate(automationView(item.id));
   });
