@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, type RefObject } from 'react';
+import { createContext, useContext, useRef, useState, type RefObject } from 'react';
 
 /** Lets a popover's or menu's root know its popup element, which its popup part sets. */
 export const LayerPopupContext = createContext<RefObject<HTMLDivElement | null> | null>(null);
@@ -6,6 +6,27 @@ export const LayerPopupContext = createContext<RefObject<HTMLDivElement | null> 
 export const useLayerPopupRef = () => useRef<HTMLDivElement | null>(null);
 
 export const useLayerPopup = () => useContext(LayerPopupContext);
+
+/**
+ * Whether a popup (a tooltip's, a menu's) is on screen or on its way off: from when it starts to open until its root
+ * says it has finished closing. Base UI's portals draw nothing while closed anyway, but every closed popup on screen
+ * would still render its parts and subscribe to its root's store each time its trigger's row rendered (hundreds of
+ * them at launch), so the popup parts check this first. `onOpenChange` and `onOpenChangeComplete` go on the root.
+ */
+export function usePopupShown({ open, defaultOpen }: { open?: boolean | undefined; defaultOpen?: boolean | undefined }) {
+  const [shown, setShown] = useState(Boolean(defaultOpen));
+  // A popup opened from outside shows from the render that opens it.
+  if (open && !shown) setShown(true);
+  return {
+    shown,
+    onOpenChange: (next: boolean) => {
+      if (next) setShown(true);
+    },
+    onOpenChangeComplete: (next: boolean) => {
+      if (!next) setShown(false);
+    },
+  };
+}
 
 /**
  * Whether a press outside a popup landed in a dialog opened after it, such as a confirmation the popup asked for.

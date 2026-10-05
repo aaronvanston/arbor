@@ -1,4 +1,4 @@
-import type { ReactElement, SVGProps } from 'react';
+import { memo, type FunctionComponent, type NamedExoticComponent, type SVGProps } from 'react';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import * as stroke from '@hugeicons/core-free-icons';
 import * as duotone from 'arbor-duotone-icons';
@@ -18,12 +18,17 @@ export type AppIconProps = Omit<SVGProps<SVGSVGElement>, 'ref' | 'strokeWidth'> 
   /** Draws the duotone version, for the selected sidebar row. Icons without one stay as they are. */
   selected?: boolean;
 };
-export type AppIcon = (props: AppIconProps) => ReactElement;
+/** One of the icons below, or anything drawn in one's place (a test's stand-in). */
+export type AppIcon = NamedExoticComponent<AppIconProps> | FunctionComponent<AppIconProps>;
 
-function icon(line: IconSvgElement, filled?: IconSvgElement): AppIcon {
-  return function Icon({ selected = false, strokeWidth = ICON_STROKE, ...props }: AppIconProps) {
+/**
+ * Memoized: an icon's props are nearly always a class name, so a row or button rendering again for its own reasons
+ * leaves its icons as they were (they were most of what an idle minute rendered).
+ */
+function icon(line: IconSvgElement, filled?: IconSvgElement): NamedExoticComponent<AppIconProps> {
+  return memo(function Icon({ selected = false, strokeWidth = ICON_STROKE, ...props }: AppIconProps) {
     return <HugeiconsIcon icon={selected && filled ? filled : line} strokeWidth={strokeWidth} {...props} />;
-  };
+  });
 }
 
 export const Activity = icon(stroke.ActivityIcon, duotone.ActivityIcon);

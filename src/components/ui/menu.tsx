@@ -1,25 +1,39 @@
 import { ContextMenu as ContextMenuPrimitive } from '@base-ui/react/context-menu';
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Check, ChevronRight } from './icons';
-import { useId, type ReactNode } from 'react';
+import { createContext, useContext, useId, type ReactNode } from 'react';
 import { cn } from '../../lib/utils';
-import { LayerPopupContext, pressedLayerAbove, useLayerPopup, useLayerPopupRef } from './layers';
+import { LayerPopupContext, pressedLayerAbove, useLayerPopup, useLayerPopupRef, usePopupShown } from './layers';
 
-/** Stays open under a dialog it opened, such as a confirmation, while a press in that dialog is answered. */
-function Menu<Payload>({ onOpenChange, ...props }: MenuPrimitive.Root.Props<Payload>) {
+/** Whether the menu's popup is on screen or on its way off; a popup outside `Menu` and `ContextMenu` always renders. */
+const MenuShown = createContext(true);
+
+/**
+ * Stays open under a dialog it opened, such as a confirmation, while a press in that dialog is answered. Its popup
+ * renders only while it's shown (`usePopupShown`).
+ */
+function Menu<Payload>({ onOpenChange, onOpenChangeComplete, ...props }: MenuPrimitive.Root.Props<Payload>) {
   const popupRef = useLayerPopupRef();
+  const popup = usePopupShown(props);
   return (
     <LayerPopupContext value={popupRef}>
-      <MenuPrimitive.Root
-        {...props}
-        onOpenChange={(open, details) => {
-          if (!open && details.reason === 'outside-press' && pressedLayerAbove(popupRef.current, details.event)) {
-            details.cancel();
-            return;
-          }
-          onOpenChange?.(open, details);
-        }}
-      />
+      <MenuShown value={popup.shown}>
+        <MenuPrimitive.Root
+          {...props}
+          onOpenChange={(open, details) => {
+            if (!open && details.reason === 'outside-press' && pressedLayerAbove(popupRef.current, details.event)) {
+              details.cancel();
+              return;
+            }
+            popup.onOpenChange(open);
+            onOpenChange?.(open, details);
+          }}
+          onOpenChangeComplete={(open) => {
+            popup.onOpenChangeComplete(open);
+            onOpenChangeComplete?.(open);
+          }}
+        />
+      </MenuShown>
     </LayerPopupContext>
   );
 }
@@ -30,9 +44,26 @@ function MenuTrigger(props: MenuPrimitive.Trigger.Props) {
 
 /**
  * A menu a right-click opens over an area, at the pointer. It takes the same MenuPopup and items as Menu, since Base
- * UI's context menu is built from the menu's own parts.
+ * UI's context menu is built from the menu's own parts; its popup too renders only while it's shown.
  */
-const ContextMenu = ContextMenuPrimitive.Root;
+function ContextMenu({ onOpenChange, onOpenChangeComplete, ...props }: ContextMenuPrimitive.Root.Props) {
+  const popup = usePopupShown(props);
+  return (
+    <MenuShown value={popup.shown}>
+      <ContextMenuPrimitive.Root
+        {...props}
+        onOpenChange={(open, details) => {
+          popup.onOpenChange(open);
+          onOpenChange?.(open, details);
+        }}
+        onOpenChangeComplete={(open) => {
+          popup.onOpenChangeComplete(open);
+          onOpenChangeComplete?.(open);
+        }}
+      />
+    </MenuShown>
+  );
+}
 
 function ContextMenuTrigger(props: ContextMenuPrimitive.Trigger.Props) {
   return <ContextMenuPrimitive.Trigger data-slot="context-menu-trigger" {...props} />;
@@ -53,6 +84,7 @@ function MenuPopup({
   anchor?: MenuPrimitive.Positioner.Props['anchor'];
 }) {
   const popupRef = useLayerPopup();
+  if (!useContext(MenuShown)) return null;
   return (
     <MenuPrimitive.Portal>
       {/* Same layer as dialogs (see dialog.tsx), so whichever opened last is on top. */}

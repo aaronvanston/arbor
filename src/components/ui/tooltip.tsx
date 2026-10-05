@@ -1,9 +1,36 @@
+import { createContext, useContext } from 'react';
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
+import { usePopupShown } from './layers';
 
 const TooltipProvider = TooltipPrimitive.Provider;
-const Tooltip = TooltipPrimitive.Root;
+
+/**
+ * Whether the tooltip's popup is on screen or on its way off. Outside `Tooltip` (no such use today) a popup always
+ * renders, leaving Base UI to decide.
+ */
+const TooltipShown = createContext(true);
+
+/** A tooltip, whose popup renders only while it's shown (`usePopupShown`). */
+function Tooltip({ onOpenChange, onOpenChangeComplete, ...props }: TooltipPrimitive.Root.Props) {
+  const popup = usePopupShown(props);
+  return (
+    <TooltipShown.Provider value={popup.shown}>
+      <TooltipPrimitive.Root
+        {...props}
+        onOpenChange={(open, details) => {
+          popup.onOpenChange(open);
+          onOpenChange?.(open, details);
+        }}
+        onOpenChangeComplete={(open) => {
+          popup.onOpenChangeComplete(open);
+          onOpenChangeComplete?.(open);
+        }}
+      />
+    </TooltipShown.Provider>
+  );
+}
 
 function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
@@ -39,6 +66,7 @@ function TooltipPopup({
   side?: TooltipPrimitive.Positioner.Props['side'];
   sideOffset?: TooltipPrimitive.Positioner.Props['sideOffset'];
 }) {
+  if (!useContext(TooltipShown)) return null;
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Positioner align={align} className="pointer-events-none z-[140] max-w-(--available-width)" data-slot="tooltip-positioner" side={side} sideOffset={sideOffset}>
