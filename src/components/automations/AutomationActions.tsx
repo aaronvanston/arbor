@@ -71,9 +71,11 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
   });
 
   const copyIntoArbor = () => act(async () => {
+    // Only an original Arbor can pause is offered paused, so only then does the message say it can be.
+    const canPause = abilities.pause && item.enabled;
     const choice = await askChoice({
       title: t('automations.copy.title', { name: item.name }),
-      message: t('automations.copy.message'),
+      message: t(canPause ? 'automations.copy.message' : 'automations.copy.messageKeep'),
       confirmText: abilities.pause && item.enabled ? t('automations.copy.confirmPause') : t('automations.copy.confirm'),
       ...(abilities.pause && item.enabled ? { secondaryText: t('automations.copy.keepBoth') } : {}),
     });

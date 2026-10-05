@@ -5783,6 +5783,7 @@ export const en = {
   'automations.copy.action': 'Copy into Arbor',
   'automations.copy.title': 'Copy {name} into Arbor?',
   'automations.copy.message': 'Arbor makes its own automation from it, paused, so you can check it before it runs. Running both would do the work twice, so the original can be paused.',
+  'automations.copy.messageKeep': 'Arbor makes its own automation from it, paused, so you can check it before it runs. Running both would do the work twice, so turn one off once the copy is ready.',
   'automations.copy.confirm': 'Copy',
   'automations.copy.confirmPause': 'Copy and pause the original',
   'automations.copy.keepBoth': 'Copy, keep both on',
