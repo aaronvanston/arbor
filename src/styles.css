@@ -581,10 +581,12 @@
   }
 }
 
-/* While the sidebar's edge is dragged, the pointer keeps the resize cursor over whatever it crosses,
-   buttons and links included, and nothing it passes gets selected. SidebarResizeHandle sets it. */
+/* While the sidebar's edge or a column's is dragged, the pointer keeps the resize cursor over whatever it crosses,
+   buttons and links included, and nothing it passes gets selected. SidebarResizeHandle and ColumnResizeHandle set it. */
 :root[data-sidebar-resizing],
-:root[data-sidebar-resizing] * {
+:root[data-sidebar-resizing] *,
+:root[data-column-resizing],
+:root[data-column-resizing] * {
   cursor: col-resize !important;
   -webkit-user-select: none !important;
   user-select: none !important;

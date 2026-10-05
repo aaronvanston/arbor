@@ -1,5 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { ContextMenuItem, FileTreeRowDecoration } from '@pierre/trees';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import type { ContextMenuItem } from '@pierre/trees';
+import type { RowMark } from '../components/RepoFileTree';
+import { ColumnResizeHandle } from '../components/ColumnResizeHandle';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { FileViewToggle, ViewerSkeleton } from '../components/FileChanges';
 import { MachinePill } from '../components/identity/Identity';
@@ -25,6 +27,7 @@ import { cn } from '../lib/utils';
 import type { RepoEntry, RepoFileProblem, RepoStatus, RepoText, RepoTree, SetupMachine, SetupRepo, SetupRepoSkill, SourceCheck } from '../native/types';
 import {
   baseName,
+  clampRepoTreeWidth,
   deleteSetupRepoPath,
   discardSetupRepoChanges,
   firstFile,
@@ -35,6 +38,11 @@ import {
   newPathProblem,
   projectOf,
   readSetupRepoText,
+  REPO_TREE_DEFAULT_WIDTH,
+  REPO_TREE_MAX_WIDTH,
+  REPO_TREE_MIN_WIDTH,
+  repoTreeWidth,
+  repoTreeWidthForKey,
   settled,
   skillFolder,
   skillOf,
@@ -181,11 +189,11 @@ export function RepoBrowser({ repo, machines, history = null, onRepo, onReview }
     }
   }, [byPath, open]);
 
-  const decorate = useCallback((path: string, folder: boolean): FileTreeRowDecoration | null => {
+  const decorate = useCallback((path: string, folder: boolean): RowMark | null => {
     if (folder) {
       const skill = skillOf(path);
       const check = skill && path === skillFolder(skill) ? sources?.find((entry) => entry.name === skill) : null;
-      return check?.state === 'update' ? { text: t('repo.tree.update'), title: t('setup.sources.state.update') } : null;
+      return check?.state === 'update' ? { icon: 'update', title: t('setup.sources.state.update') } : null;
     }
     const entry = byPath.get(path);
     if (entry?.role === 'other') return { text: t('repo.tree.notSynced'), title: t('repo.role.other') };
@@ -239,13 +247,34 @@ export function RepoBrowser({ repo, machines, history = null, onRepo, onReview }
   ), [byPath, remove, discard]);
 
   const entry = selected ? byPath.get(selected) ?? null : null;
+  const treeWidth = repoTreeWidth.useValue();
+  const frame = useRef<HTMLDivElement>(null);
 
   return (
-    // Each mode draws its list under the bar on the left and its pane on the right, spanning the bar's row too.
+    // Each mode draws its list under the bar on the left and its pane on the right, spanning the bar's row too. The
+    // list's column is as wide as it was last dragged, but never more than under half the browser.
     <div
-      className="grid h-[min(78vh,880px)] min-h-[540px] grid-cols-[18rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border/70 bg-card"
+      ref={frame}
+      className="relative grid h-[min(78vh,880px)] min-h-[540px] grid-cols-[min(var(--repo-tree-width),45%)_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border/70 bg-card"
+      style={{ '--repo-tree-width': `${treeWidth}px` } as CSSProperties}
       data-slot="repo-browser"
     >
+      <ColumnResizeHandle
+        width={treeWidth}
+        min={REPO_TREE_MIN_WIDTH}
+        max={REPO_TREE_MAX_WIDTH}
+        initial={REPO_TREE_DEFAULT_WIDTH}
+        label={t('repo.tree.resize')}
+        hint={t('repo.tree.resizeHint')}
+        clamp={clampRepoTreeWidth}
+        forKey={repoTreeWidthForKey}
+        onPreview={(width) => frame.current?.style.setProperty('--repo-tree-width', `${width}px`)}
+        onCommit={(width) => {
+          frame.current?.style.setProperty('--repo-tree-width', `${width}px`);
+          repoTreeWidth.set(width);
+        }}
+        className="left-[min(var(--repo-tree-width),45%)]"
+      />
       <div className="col-start-1 row-start-1 flex items-center gap-2 border-e border-b border-border/60 px-2 py-2">
         <ToggleGroup
           value={[mode]}

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import {
   baseName,
+  clampRepoTreeWidth,
+  REPO_TREE_DEFAULT_WIDTH,
+  REPO_TREE_MAX_WIDTH,
+  REPO_TREE_MIN_WIDTH,
+  repoTreeWidthForKey,
   firstFile,
   homePath,
   isSkillName,
@@ -156,5 +161,22 @@ describe('commit messages', () => {
       { path: '.agents/skills/pdf/SKILL.md', status: 'modified' },
       { path: '.claude/CLAUDE.md', status: 'modified' },
     ])).toEqual({ key: 'repo.commit.suggest.many', count: 2 });
+  });
+});
+
+describe('the file list column', () => {
+  it('keeps a width within its limits, in whole pixels', () => {
+    expect(clampRepoTreeWidth(310.6)).toBe(311);
+    expect(clampRepoTreeWidth(40)).toBe(REPO_TREE_MIN_WIDTH);
+    expect(clampRepoTreeWidth(4000)).toBe(REPO_TREE_MAX_WIDTH);
+    expect(clampRepoTreeWidth(Number.NaN)).toBe(REPO_TREE_DEFAULT_WIDTH);
+  });
+
+  it('moves a step on the arrows and all the way on Home and End', () => {
+    expect(repoTreeWidthForKey(288, 'ArrowRight')).toBe(304);
+    expect(repoTreeWidthForKey(REPO_TREE_MIN_WIDTH, 'ArrowLeft')).toBe(REPO_TREE_MIN_WIDTH);
+    expect(repoTreeWidthForKey(288, 'Home')).toBe(REPO_TREE_MIN_WIDTH);
+    expect(repoTreeWidthForKey(288, 'End')).toBe(REPO_TREE_MAX_WIDTH);
+    expect(repoTreeWidthForKey(288, 'Enter')).toBeNull();
   });
 });

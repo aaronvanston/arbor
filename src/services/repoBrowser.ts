@@ -1,6 +1,7 @@
 import type { GitStatusEntry } from '@pierre/trees';
 import type { MessageKey } from '../i18n/resources';
 import { invokeCommand } from '../native/commands';
+import { savedStore } from './savedStore';
 import type { RepoChange, RepoEntry, RepoRole, RepoStatus, SetupMachine, SetupRepo } from '../native/types';
 import { scanned, syncPlan, type SyncState } from './setupSync';
 
@@ -140,3 +141,36 @@ export const skillTemplate = (name: string) => `---\nname: ${name}\ndescription:
 
 /** A skill's name as the store takes one: letters, digits, dots, dashes and underscores, not starting with a dot. */
 export const isSkillName = (name: string) => /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(name);
+
+/** The file list's column on Sync › Repo, in CSS pixels: 18rem to start with, never so narrow names are all cut. */
+export const REPO_TREE_MIN_WIDTH = 200;
+export const REPO_TREE_DEFAULT_WIDTH = 288;
+export const REPO_TREE_MAX_WIDTH = 560;
+/** How far one arrow key press moves the column's edge. */
+const REPO_TREE_KEY_STEP = 16;
+
+/** A width within the limits, in whole pixels; one that isn't a number at all is the default. */
+export function clampRepoTreeWidth(width: number): number {
+  const whole = Number.isFinite(width) ? Math.round(width) : REPO_TREE_DEFAULT_WIDTH;
+  return Math.max(REPO_TREE_MIN_WIDTH, Math.min(REPO_TREE_MAX_WIDTH, whole));
+}
+
+/** Where a key press on the column's edge moves it: the arrows a step, Home and End all the way; null for other keys. */
+export function repoTreeWidthForKey(width: number, key: string): number | null {
+  switch (key) {
+    case 'ArrowLeft': return clampRepoTreeWidth(width - REPO_TREE_KEY_STEP);
+    case 'ArrowRight': return clampRepoTreeWidth(width + REPO_TREE_KEY_STEP);
+    case 'Home': return REPO_TREE_MIN_WIDTH;
+    case 'End': return REPO_TREE_MAX_WIDTH;
+    default: return null;
+  }
+}
+
+/** The column's width as last dragged; a window preference like the sidebar's. */
+export const repoTreeWidth = savedStore<number>({
+  key: 'arbor.repo.treeWidth.v1',
+  parse: (raw) => (raw ? clampRepoTreeWidth(Number(raw)) : REPO_TREE_DEFAULT_WIDTH),
+  fallback: REPO_TREE_DEFAULT_WIDTH,
+  serialize: String,
+  place: 'window',
+});
