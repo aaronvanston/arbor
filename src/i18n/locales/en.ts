@@ -5222,7 +5222,7 @@ export const en = {
   'config.network.routingSection': 'Session routing',
   'config.network.retrySection': 'Failure retries',
   'config.network.unsaved': 'Unsaved changes',
-  'config.network.confirmSave': 'Confirm & save',
+  'config.network.save': 'Save changes',
   'config.network.port': 'Port',
   'config.network.portHint': 'Range 1–65535; changing it restarts a running core',
   'config.network.listenHost': 'Custom listen IP',

@@ -1020,7 +1020,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
 
           <SettingsSection
             title={t('config.network.networkSection')}
-            headerAction={saveButton(t('config.network.confirmSave'), busyAction === 'network', controlsDisabled || !networkSettingsDirty, () => void saveNetworkEndpointSettings())}
+            headerAction={saveButton(t('config.network.save'), busyAction === 'network', controlsDisabled || !networkSettingsDirty, () => void saveNetworkEndpointSettings())}
           >
             <SettingsRow
               settingId="general.port"
@@ -1178,7 +1178,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
             title={t('config.network.retrySection')}
             changed={retryChanged}
             attention={Boolean(retryFeedback.notice || retryError)}
-            headerAction={saveButton(t('config.network.confirmSave'), busyAction === 'retry', controlsDisabled || !retrySettingsDirty, () => void saveRetrySettings())}
+            headerAction={saveButton(t('config.network.save'), busyAction === 'retry', controlsDisabled || !retrySettingsDirty, () => void saveRetrySettings())}
           >
             <SettingsRow
               settingId="general.disable-cooling"
@@ -1228,7 +1228,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
             headerAction={
               <div className="flex items-center gap-2">
                 {tlsStatusLabel ? <Badge variant="muted">{tlsStatusLabel}</Badge> : null}
-                {saveButton(t('config.network.confirmSave'), busyAction === 'tls', tlsFieldsDisabled || !tlsSettingsDirty, () => void saveTlsSettings())}
+                {saveButton(t('config.network.save'), busyAction === 'tls', tlsFieldsDisabled || !tlsSettingsDirty, () => void saveTlsSettings())}
               </div>
             }
           >
@@ -1394,7 +1394,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
         <PageBody>
           <SettingsSection
             title={t('config.network.routingSection')}
-            headerAction={saveButton(t('config.network.confirmSave'), busyAction === 'routing', controlsDisabled || !sessionRoutingDirty, () => void saveSessionRoutingSettings())}
+            headerAction={saveButton(t('config.network.save'), busyAction === 'routing', controlsDisabled || !sessionRoutingDirty, () => void saveSessionRoutingSettings())}
           >
             <SettingsRow
               settingId="routing.session-affinity"
