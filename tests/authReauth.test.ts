@@ -273,7 +273,7 @@ describe('credentials the core saved under a new name', () => {
     expect(await completeReauth(legacy, 'claude', before, api, options))
       .toEqual({ kind: 'renamed', name: canonical.name, from: legacy.name });
     expect(calls.map((call) => call.method)).toEqual(['GET']);
-    expect(renames).toEqual([[{ from: 'claude-casey.json::idx-old', to: `${canonical.name}::idx-new` }]]);
+    expect(renames).toEqual([[{ from: 'claude-casey.json::idx-old', to: `${canonical.name}::idx-new`, name: 'claude-casey' }]]);
   });
 
   it('still reports a rename while the deleted file lingers in the listing from memory', async () => {
@@ -325,7 +325,7 @@ describe('credentials the core saved under a new name', () => {
     const { renames, options } = recording();
     expect(await completeReauth(legacy, 'claude', before, api, options))
       .toEqual({ kind: 'renamed', name: canonical.name, from: legacy.name });
-    expect(renames).toEqual([[{ from: 'claude-casey.json::idx-old', to: `${canonical.name}::idx-new` }]]);
+    expect(renames).toEqual([[{ from: 'claude-casey.json::idx-old', to: `${canonical.name}::idx-new`, name: 'claude-casey' }]]);
   });
 
   it('prefers the new file when a same-email credential also changed during a plain sign-in', () => {
@@ -405,6 +405,40 @@ describe('following up a sign-in from Add account', () => {
     expect(refreshed).toEqual(['claude-5772b8d7-home@example.com.json']);
     expect(renames.flat()).toHaveLength(1);
     expect(prioritized).toEqual([]);
+  });
+
+  it('folds a sign-in to an account already listed into its file, as Sign in again does', async () => {
+    const copy = { ...home, name: 'claude-5772b8d7-home@example.com.json', path: '/auths/claude-5772b8d7-home@example.com.json', auth_index: 'idx-copy', priority: undefined, modtime: 2 };
+    const rewritten = { ...home, modtime: 3 };
+    const { api, calls } = fakeApi([[home, copy], [home, copy], [rewritten, copy]], {
+      [home.name]: { type: 'claude', account_uuid: 'uuid-home', priority: 10, access_token: 'old' },
+      [copy.name]: { type: 'claude', account_uuid: 'uuid-home', access_token: 'new' },
+    });
+    const prioritized: string[] = [];
+    const { added, refreshed, files } = await settleSignIn([home], 'claude', api, {
+      ...fast,
+      migrateKeys: () => {},
+      setPriority: async (name) => { prioritized.push(name); },
+    });
+    expect(added).toEqual([]);
+    expect(refreshed).toEqual([home.name]);
+    expect(files.map((file) => file.name)).toEqual([home.name]);
+    expect(calls.filter((call) => call.method !== 'GET')).toMatchObject([
+      { method: 'UPLOAD', name: home.name },
+      { method: 'DELETE', name: copy.name },
+    ]);
+    expect(prioritized).toEqual([]);
+  });
+
+  it('keeps a sign-in to another workspace of the same email as its own account', async () => {
+    const other = { ...home, name: 'claude-other-home@example.com.json', path: '/auths/claude-other-home@example.com.json', auth_index: 'idx-other', priority: undefined, modtime: 2 };
+    const { api, calls } = fakeApi([[home, other]], {
+      [home.name]: { type: 'claude', organization_uuid: 'org-1' },
+      [other.name]: { type: 'claude', organization_uuid: 'org-2' },
+    });
+    const { added } = await settleSignIn([home], 'claude', api, { ...fast, migrateKeys: () => {}, setPriority: async () => {} });
+    expect(added).toEqual([other.name]);
+    expect(calls.filter((call) => call.method !== 'GET')).toEqual([]);
   });
 
   it('keeps the sign-in when a priority couldn’t be set, and says why', async () => {

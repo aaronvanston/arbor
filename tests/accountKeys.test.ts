@@ -7,6 +7,7 @@ import { getAccountOrder, renameOrderKeys, setAccountOrder } from '../src/servic
 import { getAccountProfiles, saveAccountProfile } from '../src/services/accountProfiles';
 import { getPlanCosts, setPlanCost } from '../src/services/planCosts';
 import { getQuotaCacheSnapshot, updateQuotaCache } from '../src/services/quotaCache';
+import { lastItem } from './support/items';
 
 let originalWindow: PropertyDescriptor | undefined;
 let ipcCalls: ReturnType<typeof mockCommands>;
@@ -28,7 +29,7 @@ describe('account keys after the core renames a credential', () => {
     expect(renamedCredentialKeys(
       { name: 'claude-casey.json', auth_index: 'idx-old' },
       { name: 'claude-5772b8d7-casey@example.com.json', auth_index: 'idx-new' },
-    )).toEqual({ from: 'claude-casey.json::idx-old', to: 'claude-5772b8d7-casey@example.com.json::idx-new' });
+    )).toEqual({ from: 'claude-casey.json::idx-old', to: 'claude-5772b8d7-casey@example.com.json::idx-new', name: 'claude-casey' });
   });
 
   it('keeps a renamed credential in its place in the saved order', () => {
@@ -77,6 +78,16 @@ describe('account keys after the core renames a credential', () => {
     expect(getQuotaCacheSnapshot()[to]).toEqual({ status: 'error', rows: [], error: 'kept' });
     // Nobody will finish a fetch for the new key, so it starts idle and gets refreshed.
     expect(getQuotaCacheSnapshot()['wp2-loading-new.json::idx-new']).toEqual({ status: 'idle', rows: [] });
+  });
+
+  it('keeps the name an account without a profile was known by, unless that name is an email', () => {
+    expect(renamedCredentialKeys({ name: 'casey@example.com.json', auth_index: 'a' }, { name: 'new.json', auth_index: 'b' }))
+      .toEqual({ from: 'casey@example.com.json::a', to: 'new.json::b' });
+    const from = 'wp2-plain.json::idx-old';
+    const to = 'wp2-plain-canonical.json::idx-new';
+    migrateAccountKeys([{ from, to, name: 'wp2-plain' }]);
+    expect(getAccountProfiles()[to]).toEqual({ name: 'wp2-plain' });
+    expect(lastItem(ipcCalls)).toEqual({ command: 'rename_limit_history_accounts', args: { renames: [{ from, to }] } });
   });
 
   it('does not show the replaced file as an account while the core still lists it', () => {

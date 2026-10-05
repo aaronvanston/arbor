@@ -63,7 +63,7 @@ export async function recordLimitReadings(readings: LimitReading[]) {
 export async function renameLimitHistory(renames: AccountKeyRename[]) {
   if (!renames.length) return;
   try {
-    await invokeCommand('rename_limit_history_accounts', { renames });
+    await invokeCommand('rename_limit_history_accounts', { renames: renames.map(({ from, to }) => ({ from, to })) });
   } catch (error) {
     console.warn('Failed to move limit history to a renamed account', error);
   }

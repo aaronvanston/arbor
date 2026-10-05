@@ -55,10 +55,11 @@ export function saveAccountProfile(key: string, profile: AccountProfile) {
 }
 
 /** Moves profiles to a credential's new key after a rename. A profile already saved under the new key wins. */
-export function renameAccountProfiles(renames: { from: string; to: string }[]) {
+export function renameAccountProfiles(renames: { from: string; to: string; name?: string }[]) {
   let next = store.get();
-  for (const { from, to } of renames) {
-    const moved = next[from];
+  for (const { from, to, name } of renames) {
+    // An account without a profile was shown under its old file name; keep that name on the new one.
+    const moved = next[from] ?? (name ? { name } : undefined);
     if (from === to || !moved) continue;
     next = { ...next };
     if (!next[to]) next[to] = moved;

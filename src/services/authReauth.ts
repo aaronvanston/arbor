@@ -220,6 +220,37 @@ export type SettleSignInOptions = CompleteReauthOptions & {
 };
 
 /**
+ * Add account used to sign in to an account that's already listed: the core saved the login under its own file name
+ * next to the account's file. Each such login is folded into the existing file the way Sign in again does, so the
+ * account keeps its file, name and settings rather than turning up twice. Returns what was folded into what.
+ */
+async function foldIntoListedAccounts(
+  before: AuthFileRecord[],
+  files: AuthFileRecord[],
+  added: string[],
+  provider: OAuthProviderId,
+  api: ReauthApi,
+  options: CompleteReauthOptions,
+): Promise<{ name: string; from: string }[]> {
+  const onDisk = new Set(files.filter((file) => !isAuthFileGoneFromDisk(file)).map((file) => readString(file, 'name')));
+  const listed = before.filter((file) => onDisk.has(readString(file, 'name')) && !isRuntimeOnlyAuthFile(file)
+    && isAuthFileForProvider(file, provider));
+  const snapshot = snapshotAuthFiles(before);
+  const folded: { name: string; from: string }[] = [];
+  for (const name of added) {
+    const fresh = files.find((file) => readString(file, 'name') === name);
+    if (!fresh || folded.some((entry) => entry.from === name)) continue;
+    for (const target of listed.filter((file) => matchReauthCredential(file, [fresh]))) {
+      const outcome = await completeReauth(target, provider, snapshot, api, options);
+      if (outcome.kind !== 'transplanted') continue;
+      folded.push({ name: outcome.name, from: outcome.from });
+      break;
+    }
+  }
+  return folded;
+}
+
+/**
  * Follows up a finished sign-in to `provider` once the core lists it. An account the core saved under a new file name
  * keeps the app's per-account state (profile, order, cap) under the new one, and a new credential without a priority
  * of its own goes in the default tier, 0.
@@ -227,21 +258,35 @@ export type SettleSignInOptions = CompleteReauthOptions & {
 export async function settleSignIn(
   before: AuthFileRecord[],
   provider: OAuthProviderId,
-  api: Pick<ReauthApi, 'get'> = managementApi,
+  api: ReauthApi = managementApi,
   options: SettleSignInOptions = {},
 ): Promise<SignInResult> {
-  const files = await listingAfterSignIn(before, provider, api, options);
+  let files = await listingAfterSignIn(before, provider, api, options);
   const renamed = renamedCredentials(before, files, provider);
   const migrate = options.migrateKeys ?? migrateAccountKeys;
   migrate(renamed.map(({ from, to }) => renamedCredentialKeys(from, to)));
   const snapshot = snapshotAuthFiles(before);
   // An account the core moved to a new file name was here before, under its old one.
   const known = new Set([...snapshot.keys(), ...renamed.map(({ to }) => readString(to, 'name'))]);
+  const folded = await foldIntoListedAccounts(
+    before,
+    files,
+    changedAuthFileNames(snapshot, files, provider).filter((name) => !known.has(name)),
+    provider,
+    api,
+    options,
+  );
+  if (folded.length > 0) {
+    // The copies just deleted can stay in the listing until the core's watcher notices.
+    const gone = new Set(folded.map(({ from }) => from));
+    files = responseList(await api.get('/auth-files'), 'files').filter((file) => !gone.has(readString(file, 'name')));
+  }
   const written = changedAuthFileNames(snapshot, files, provider);
   const result: SignInResult = {
     files,
     added: written.filter((name) => !known.has(name)),
-    refreshed: written.filter((name) => known.has(name)),
+    // A folded login rewrote its account's file, whether or not the listing shows the change yet.
+    refreshed: [...new Set([...written.filter((name) => known.has(name)), ...folded.map(({ name }) => name)])],
   };
   const setPriority = options.setPriority ?? ((name: string) => managementApi.patch('/auth-files/fields', { name, priority: 0 }));
   const failures = (await Promise.allSettled(changedOAuthAuthFileNames(snapshot, files, provider).map(setPriority)))

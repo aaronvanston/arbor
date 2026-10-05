@@ -6,15 +6,33 @@ import { renameReserveKeys } from './accountReserves';
 import { renamePlanCosts } from './planCosts';
 import type { AuthFileRecord } from './authFiles';
 import { renameQuotaCacheKeys } from './quotaCache';
+import { readString } from './managementApi';
 import { quotaKey } from './quotaService';
 
-export type AccountKeyRename = { from: string; to: string };
+export type AccountKeyRename = {
+  from: string;
+  to: string;
+  /** The name the account was shown under before, for one that had no profile name of its own. */
+  name?: string;
+};
 
-/** The app keys a credential by file name and auth index, and both change when the core renames the file. */
-export const renamedCredentialKeys = (from: AuthFileRecord, to: AuthFileRecord): AccountKeyRename => ({
-  from: quotaKey(from),
-  to: quotaKey(to),
-});
+/**
+ * The name an account without a profile name was shown under: its file name. A file name carrying the account's email
+ * is left out, since a saved profile name would show the email even while Hide email addresses is on.
+ */
+const shownFileName = (file: AuthFileRecord) => {
+  const fileName = readString(file, 'name').replace(/\.json$/i, '');
+  return fileName && !fileName.includes('@') ? fileName : undefined;
+};
+
+/**
+ * The app keys a credential by file name and auth index, and both change when the core renames the file. The old file
+ * name goes along too, so an account the core moved to its own file name keeps the name it was known by.
+ */
+export const renamedCredentialKeys = (from: AuthFileRecord, to: AuthFileRecord): AccountKeyRename => {
+  const name = shownFileName(from);
+  return { from: quotaKey(from), to: quotaKey(to), ...(name ? { name } : {}) };
+};
 
 /**
  * Carries per-account app state (display profile, Accounts order, cached
