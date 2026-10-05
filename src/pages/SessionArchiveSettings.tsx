@@ -26,6 +26,7 @@ import { useQuotaClock } from '../services/quotaTime';
 import { ArchiveImports } from './SessionArchiveImports';
 import {
   adoptSessionArchive,
+  archiveKeepsMachine,
   archiveStateKey,
   archiveSwitchSaver,
   archiveTone,
@@ -436,20 +437,28 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
         </StatsGrid>
       </SettingsSection>
 
-      {sourcesByMachine(status.sources, status.machines).map((group) => (
+      {sourcesByMachine(status.sources, status.machines).map((group) => {
+        // A machine left out isn't checked any more, so its last check's failure is nothing to fix; what it kept stays.
+        // Until the fleet is read, this Mac is the group without an SSH pass.
+        const local = thisMac ? group.machine === thisMac : !group.run;
+        const kept = archiveKeepsMachine(status, { machine: group.machine, local });
+        const failed = kept ? group.run?.error : undefined;
+        return (
         <SettingsSection
           key={group.machine}
           title={<span>{tRich('sessionArchive.homes.title', { machine: <MachinePill name={group.machine} /> })}</span>}
           description={t('sessionArchive.homes.description')}
-          headerAction={group.run?.error ? (
+          headerAction={failed && group.run ? (
             <FixMenu
               machine={group.machine}
-              problem={archiveCollectionProblem({ error: group.run.error, lastOk: group.run.lastOkAt !== null ? formatAgo(group.run.lastOkAt, now) : null }, t)}
+              problem={archiveCollectionProblem({ error: failed, lastOk: group.run.lastOkAt !== null ? formatAgo(group.run.lastOkAt, now) : null }, t)}
             />
           ) : undefined}
-          summary={group.run?.error ? (
+          summary={!kept ? (
+            <span className="text-muted-foreground">{t('sessionArchive.homes.leftOut')}</span>
+          ) : failed && group.run ? (
             <span className="text-error-foreground">
-              {t('sessionArchive.homes.failed', { error: group.run.error })}{' '}
+              {t('sessionArchive.homes.failed', { error: failed })}{' '}
               {group.run.lastOkAt !== null ? t('sessionArchive.homes.lastKept', { time: formatAgo(group.run.lastOkAt, now) }) : t('sessionArchive.homes.neverKept')}
             </span>
           ) : undefined}
@@ -470,7 +479,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
                 }
                 control={(
                   <span className="flex items-center gap-2">
-                    {source.kept < source.files && status.state !== 'paused' ? <Badge variant="info">{t('sessionArchive.homes.catchingUp')}</Badge> : null}
+                    {kept && source.kept < source.files && status.state !== 'paused' ? <Badge variant="info">{t('sessionArchive.homes.catchingUp')}</Badge> : null}
                     {days !== null ? <FixMenu machine={source.machine} problem={sessionRetentionProblem({ home: source.label, days }, t)} /> : null}
                   </span>
                 )}
@@ -478,7 +487,8 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
             );
           })}
         </SettingsSection>
-      ))}
+        );
+      })}
 
       <ArchiveImports status={status} onStatus={onStatus} />
     </>

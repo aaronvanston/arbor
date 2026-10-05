@@ -1127,6 +1127,7 @@ export const en = {
   'sessionArchive.homes.failed': 'The last check couldn’t reach it: {error}',
   'sessionArchive.homes.lastKept': 'Last kept {time}.',
   'sessionArchive.homes.neverKept': 'Nothing kept from it yet.',
+  'sessionArchive.homes.leftOut': 'Left out, so Arbor no longer checks it. What it kept stays.',
   'sessionArchive.imports.title': 'Old backups',
   'sessionArchive.imports.description': 'Take in sessions from copies of agent homes, like a copied ~/.claude or a Codex backup, and from OpenClaw or Claude’s desktop app. Sessions the archive has already aren’t copied again, and nothing in the backup is changed.',
   'sessionArchive.imports.add': 'Import a backup…',
