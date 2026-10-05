@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { Bell, ChartNoAxesColumn, ChevronRight, House, Layers, Lock, MessagesSquare, Monitor, Network, TimeSchedule, Users, type AppIcon } from '../ui/icons';
+import { ChevronRight, Lock } from '../ui/icons';
 import { useI18n } from '../../i18n';
 import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
@@ -40,19 +40,9 @@ import { MachinePill } from '../identity/Identity';
 import { StatusDot, type StatusTone } from '../ui/status-dot';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
 import { SidebarRow } from './SidebarChrome';
+import { PAGE_ICONS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass } from './shellParts';
 
-/** Each main page's icon, in the tree and the search palette. */
-export const PAGE_ICONS: Record<MainPageId, AppIcon> = {
-  home: House,
-  machines: Monitor,
-  pools: Network,
-  sessions: MessagesSquare,
-  automations: TimeSchedule,
-  setup: Layers,
-  accounts: Users,
-  usage: ChartNoAxesColumn,
-  alerts: Bell,
-};
+export { PAGE_ICONS } from './shellParts';
 
 type TreeMachine = { name: string; status: HealthStatus };
 type TreePool = { id: string; name: string; standing: PoolStanding; withRoom: number; pickable: number };
@@ -251,7 +241,7 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
       ref={setNavElement}
       style={navStyle}
       aria-label={t('app.navigation')}
-      className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-1 pb-2"
+      className={TREE_NAV_CLASS}
       data-slot="sidebar-tree"
       onKeyDown={onKeyDown}
       onFocus={(event) => { focusedRow.current = event.target; }}
@@ -262,9 +252,9 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
       }}
     >
       {SIDEBAR_TREE.map((section, index) => (
-        <div key={section.id} className={cn('flex shrink-0 flex-col', index > 0 && 'mt-3')}>
+        <div key={section.id} className={treeSectionClass(index)}>
           {section.labelKey ? (
-            <div id={`tree-section-${section.id}`} className="flex h-7 items-center px-2.5 text-xs font-medium text-sidebar-muted-foreground">
+            <div id={`tree-section-${section.id}`} className={TREE_SECTION_LABEL_CLASS}>
               {t(section.labelKey)}
             </div>
           ) : null}
@@ -371,7 +361,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
             aria-expanded={shown}
             aria-controls={shown ? listId : undefined}
             aria-label={page.machines ? t('tree.group.machines') : page.pools ? t('tree.group.pools') : t('tree.group.views', { page: label })}
-            className="absolute top-1 right-1 flex size-6 cursor-pointer items-center justify-center rounded-md text-[var(--sidebar-icon-color)] outline-none ring-ring transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2"
+            className={TREE_CHEVRON_CLASS}
             data-tree-chevron={page.id}
             onClick={() => onOpenGroup(page.id, !shown)}
           >

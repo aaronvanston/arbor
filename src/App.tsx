@@ -22,6 +22,7 @@ import { sidebarArtChoice, sidebarArtHalo, sidebarArtInk } from './services/side
 import { appColorChoice, applyAppColor } from './services/appColor';
 import { SIDEBAR_ID, SidebarResizeHandle, SidebarToggle } from './components/SidebarControls';
 import { SidebarHeader, SidebarRow, SidebarSearchGroup, SidebarSearchRow } from './components/sidebar/SidebarChrome';
+import { FOOTER_UTILITIES_CLASS, MAIN_CLASS, SHELL_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, TOGGLE_SLOT_CLASS } from './components/sidebar/shellParts';
 import { PAGE_ICONS, SidebarTree } from './components/sidebar/SidebarTree';
 import { SidebarGlance, SidebarMachines } from './components/sidebar/SidebarGlance';
 import { leafView, PALETTE_VIEWS, TREE_PAGES } from './services/sidebarTree';
@@ -521,7 +522,7 @@ function AppContent({ navigateRef }: ShellProps) {
           button sits outside the sidebar. */}
       <div
         ref={shellRef}
-        className="relative flex h-full w-full bg-background text-foreground"
+        className={SHELL_CLASS}
         style={{ '--sidebar-width': `${sidebarWidth}px`, '--art-halo': sidebarArtHalo(sidebarArt, appliedTheme, appColor) } as CSSProperties}
         data-app-shell
         data-mac-title-bar={macTitleBar ? '' : undefined}
@@ -529,7 +530,7 @@ function AppContent({ navigateRef }: ShellProps) {
         {/* The one sidebar button, fixed to the window beside the Mac window buttons: the same place whether the sidebar
             is open, hidden or in Settings. Over the artwork it takes the art's ink. It comes
             before the sidebar in the markup, as it's left of the wordmark on screen, so Tab reaches it first. */}
-        <div className="pointer-events-none fixed top-0 left-[var(--workspace-controls-left)] z-50 flex h-[var(--workspace-topbar-height)] items-center">
+        <div className={TOGGLE_SLOT_CLASS}>
           <SidebarToggle
             shown={sidebar.shown}
             onToggle={toggleSidebar}
@@ -545,7 +546,7 @@ function AppContent({ navigateRef }: ShellProps) {
           ref={asideRef}
           id={SIDEBAR_ID}
           className={cn(
-            'surface-grain @container/sidebar relative flex w-[var(--sidebar-width)] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
+            SIDEBAR_CLASS,
             sidebar.overlay && 'absolute inset-y-0 left-0 z-40 shadow-lg',
             !sidebar.shown && 'hidden',
           )}
@@ -616,7 +617,7 @@ function AppContent({ navigateRef }: ShellProps) {
             </>
           )}
 
-          <div className="flex shrink-0 flex-col gap-2 px-2 pt-1 pb-2" data-slot="sidebar-footer">
+          <div className={SIDEBAR_FOOTER_CLASS} data-slot="sidebar-footer">
             {!inSettings && coreState.down ? <CoreDownRow state={coreState} onNavigate={navigate} /> : null}
             {inSettings ? null : (
               <SidebarGlance
@@ -628,7 +629,7 @@ function AppContent({ navigateRef }: ShellProps) {
                 }}
               />
             )}
-            <div className="flex items-center gap-0.5">
+            <div className={FOOTER_UTILITIES_CLASS}>
               {inSettings ? (
                 <SettingsBack onBack={leaveSettings} />
               ) : (
@@ -664,7 +665,7 @@ function AppContent({ navigateRef }: ShellProps) {
         {/* Relative for the same reason as PageBody's scroll area, for anything a page puts outside it. With the sidebar
             hidden, or over the page, the page's top bar starts where the wordmark does, past the sidebar button. */}
         <main
-          className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+          className={MAIN_CLASS}
           style={sidebar.shown && !sidebar.overlay ? undefined : { '--topbar-start': 'var(--workspace-titlebar-content-left)' } as CSSProperties}
         >
           {/* Back and Forward start a page that failed over too, as choosing it again does. */}

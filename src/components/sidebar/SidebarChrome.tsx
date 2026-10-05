@@ -16,6 +16,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
 import { SidebarArt } from './SidebarArt';
+import { HEADER_ICON_BUTTON, ROW_CLASS, ROW_ICON_CLASS, SEARCH_GROUP_CLASS, SEARCH_KBD_CLASS, SEARCH_ROW_CLASS, SIDEBAR_HEADER_CLASS, WORDMARK_CLASS } from './shellParts';
 
 /**
  * The build tag sits on the sidebar art, where the badge's see-through tint is unreadable, so it gets an opaque pill: the
@@ -34,11 +35,11 @@ export function SidebarHeader({ art, theme, color, macTitleBar, onHome }: { art:
   const build = useBuildChannel();
   const buildLabel = buildChannelLabel(build);
   return (
-    <div className="relative flex h-[var(--workspace-topbar-height)] shrink-0 items-center" data-tauri-drag-region={macTitleBar ? 'deep' : undefined}>
+    <div className={SIDEBAR_HEADER_CLASS} data-tauri-drag-region={macTitleBar ? 'deep' : undefined}>
       <SidebarArt art={art} theme={theme} color={color} />
       <button
         type="button"
-        className={cn('relative z-10 -mx-1 ml-[calc(var(--workspace-titlebar-content-left)-0.25rem)] flex h-7 cursor-pointer items-center rounded-md px-1 text-lg font-semibold tracking-tight text-sidebar-foreground outline-none ring-ring focus-visible:ring-2 [-webkit-app-region:no-drag]', ink && 'art-halo')}
+        className={cn(WORDMARK_CLASS, ink && 'art-halo')}
         style={ink ? { color: ink } : undefined}
         onClick={onHome}
       >
@@ -57,12 +58,10 @@ export function SidebarHeader({ art, theme, color, macTitleBar, onHome }: { art:
   );
 }
 
-/** T3's 28px ghost icon buttons beside the search field, in the sidebar's icon color until hovered. */
-const HEADER_ICON_BUTTON = 'relative size-7 shrink-0 text-[var(--sidebar-icon-color)] [--control-icon-color:currentColor] hover:bg-sidebar-row-hover hover:text-sidebar-foreground';
 
 /** The group under the title row that holds the search row, over the artwork's fade. */
 export function SidebarSearchGroup({ children }: { children: ReactNode }) {
-  return <div className="relative z-[1] shrink-0 px-2 pt-5 pb-2" data-slot="sidebar-search">{children}</div>;
+  return <div className={SEARCH_GROUP_CLASS} data-slot="sidebar-search">{children}</div>;
 }
 
 /**
@@ -88,7 +87,7 @@ export function SidebarSearchRow({ coreReady, lockedHint, onSearch, onNavigate, 
     <div className="flex items-center gap-1">
       <button
         type="button"
-        className="group/search flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-sidebar-muted-foreground outline-none ring-ring transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2"
+        className={SEARCH_ROW_CLASS}
         aria-haspopup="dialog"
         onClick={() => onSearch('')}
         onKeyDown={onKeyDown}
@@ -96,7 +95,7 @@ export function SidebarSearchRow({ coreReady, lockedHint, onSearch, onNavigate, 
         <Search aria-hidden="true" className="size-4 shrink-0 text-[var(--sidebar-icon-color)] group-hover/search:text-sidebar-foreground" />
         <span className="min-w-0 flex-1 truncate">{t('palette.open')}</span>
         {/* Once the sidebar is 240px or wider, as T3 shows its hints. */}
-        <ShortcutKbd id="palette.toggle" className="hidden bg-transparent text-sidebar-muted-foreground @min-[15rem]/sidebar:inline-flex dark:bg-transparent" />
+        <ShortcutKbd id="palette.toggle" className={SEARCH_KBD_CLASS} />
       </button>
       <div className="flex shrink-0 items-center">
         <HeaderIconButton
@@ -144,20 +143,6 @@ function HeaderIconButton({ label, disabledReason, onClick, children }: { label:
   );
 }
 
-/**
- * T3's menu row: 32px, 14px medium, a 16px icon, muted until it's hovered or the current page. The current page's wash
- * and label color are too close to a hovered row's to tell apart by color alone (under 3:1), so its label is also
- * semibold, as T3 marks its open thread by weight. A page whose open view is lit under it (`data-current`) keeps the
- * full label color without the wash, as T3's project row does over its open thread.
- */
-const ROW_CLASS = cn(
-  'group/row relative flex h-8 w-full cursor-pointer items-center gap-2 rounded-[var(--control-radius)] px-2.5 text-left text-sm font-medium text-sidebar-muted-foreground outline-none ring-ring transition-colors',
-  'hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active',
-  // A locked page stays hoverable and focusable, so its reason shows; it just doesn't respond.
-  'aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-sidebar-muted-foreground aria-disabled:active:bg-transparent',
-  'data-[current=true]:text-sidebar-foreground',
-  'data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-semibold data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs/5 dark:data-[active=true]:shadow-none',
-);
 
 /**
  * A page in the sidebar: the main pages in the tree under the search row, and Settings' pages in Settings. One that
@@ -203,7 +188,7 @@ export function SidebarRow({ icon: Icon, label, active, current = false, locked,
       <Icon
         aria-hidden="true"
         selected={active || current}
-        className="size-4 shrink-0 text-[var(--sidebar-icon-color)] group-hover/row:text-sidebar-foreground group-data-[active=true]/row:text-primary group-data-[current=true]/row:text-primary"
+        className={ROW_ICON_CLASS}
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {locked ? (

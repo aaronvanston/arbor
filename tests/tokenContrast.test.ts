@@ -414,7 +414,7 @@ describe('color tokens', () => {
   test('the current page is told from a hovered row by more than color', () => {
     // A hovered row gets the same foreground label and a wash as strong or stronger, so color alone can't mark the
     // current page (WCAG 1.4.11 wants 3:1 between them). Its label's weight does.
-    const row = source('components/sidebar/SidebarChrome.tsx').match(/const ROW_CLASS = cn\(([\s\S]*?)\);/)?.[1] ?? '';
+    const row = source('components/sidebar/shellParts.ts').match(/export const ROW_CLASS = cn\(([\s\S]*?)\);/)?.[1] ?? '';
     expect(row).toContain('font-medium');
     expect(row).toContain('data-[active=true]:font-semibold');
   });

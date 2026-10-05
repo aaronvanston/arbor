@@ -4,6 +4,7 @@ import type { AppColor } from '../../services/appColor';
 import { SIDEBAR_ART_SPEED, sidebarArtMotionChoice, type SidebarArt as SidebarArtChoice } from '../../services/sidebarArt';
 import { drawScene, sceneClock, sceneRows, sceneWakeDelay, SCENE_STILL_SECONDS, type SceneName } from '../../services/sidebarScenes';
 import type { AppTheme } from '../../theme';
+import { SIDEBAR_ART_CLASS, sidebarArtHeight } from './shellParts';
 
 /**
  * The artwork behind the sidebar's title row, as T3 has its stage backdrop: a layer at the top of the sidebar as tall
@@ -18,8 +19,8 @@ export function SidebarArt({ art, theme, color }: { art: SidebarArtChoice; theme
       aria-hidden="true"
       // Raised 6px from T3's placement; the scenes (services/sidebarScenes.ts) are laid out for this. What's past the
       // title row is in rem, as the rows under it are.
-      className="pointer-events-none absolute inset-x-0 -top-1.5 z-0 overflow-hidden select-none"
-      style={{ height: `calc(var(--workspace-topbar-height) + ${(sceneRows(art) - 52) / 16}rem)` }}
+      className={SIDEBAR_ART_CLASS}
+      style={{ height: sidebarArtHeight(sceneRows(art)) }}
       data-slot="sidebar-art"
     >
       <SceneCanvas scene={art} theme={theme} color={color} speed={speed} />

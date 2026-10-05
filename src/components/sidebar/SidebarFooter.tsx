@@ -21,9 +21,8 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '../ui/men
 import { Popover, PopoverPopup, PopoverTrigger } from '../ui/popover';
 import { StatusDot } from '../ui/status-dot';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
+import { UTILITY_BUTTON } from './shellParts';
 
-/** T3's footer icon button: 32px, in the sidebar's icon color until hovered. */
-const UTILITY_BUTTON = 'relative text-[var(--sidebar-icon-color)] [--control-icon-color:currentColor] hover:bg-sidebar-row-hover hover:text-sidebar-foreground data-popup-open:bg-sidebar-row-hover data-popup-open:text-sidebar-foreground';
 /** A dot on a footer icon's corner, ringed in the sidebar color so it reads over the glyph. */
 const CORNER_DOT = 'absolute top-1.5 right-1.5 size-1.5 rounded-full ring-2 ring-sidebar';
 
