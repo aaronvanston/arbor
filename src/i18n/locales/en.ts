@@ -5168,6 +5168,7 @@ export const en = {
   'config.diagnostics.fileLogging.description': 'Write application logs to rotating files; when disabled, logs go to the console.',
   'config.diagnostics.usage.title': 'Usage statistics',
   'config.diagnostics.usage.description': 'Aggregate request and token usage in memory for the usage records page.',
+  'config.diagnostics.usage.offWarning': 'While this is off, Usage and Requests record no new requests.',
   'config.diagnostics.maxSize.title': 'Maximum total log size',
   'config.diagnostics.maxSize.hint': 'Oldest files are deleted after the limit is exceeded. Use 0 for unlimited.',
   'config.diagnostics.errorFiles.title': 'Error request log retention',

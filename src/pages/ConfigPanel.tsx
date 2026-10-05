@@ -1354,6 +1354,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
               settingId="general.usage-statistics"
               title={t('config.diagnostics.usage.title')}
               description={t('config.diagnostics.usage.description')}
+              status={usageStatisticsDraft ? null : <span className="text-warning-foreground">{t('config.diagnostics.usage.offWarning')}</span>}
               control={<Switch checked={usageStatisticsDraft} disabled={controlsDisabled} aria-label={t('config.diagnostics.usage.title')} onCheckedChange={(checked) => { setUsageStatisticsDraft(checked); markLoggingDraftDirty(); }} />}
             />
             <SettingsRow
