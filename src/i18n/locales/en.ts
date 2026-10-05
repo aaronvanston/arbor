@@ -5821,6 +5821,7 @@ export const en = {
   'automations.runsOn.appShort': 'From Arbor, while it’s open',
   'automations.runsOn.machineHint': 'The machine’s background runner starts it when it’s due, whether Arbor is open or not.',
   'automations.runsOn.appHint': 'Arbor starts it when it’s due, while Arbor is open on this Mac.',
+  'automations.runsOn.why.noMachine': 'Pick a machine to run this on it with Arbor closed.',
   'automations.runsOn.why.pool': 'A pool’s member is picked by Arbor when it’s due, so this runs from Arbor.',
   'automations.runsOn.why.custom': 'The background runner follows the usual schedules, so a custom rule runs from Arbor.',
   'automations.runsOn.why.notSetUp': 'Set up the background runner on {machine} in Settings › Machines to run this there with Arbor closed.',

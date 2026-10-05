@@ -186,7 +186,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
   };
 
   const { list } = useAutomations();
-  const runsOnBlocked = backgroundRunnerCheck(list, isMachine(form.machine) ? form.machine : null, form.schedule.kind);
+  const runsOnBlocked = backgroundRunnerCheck(list, isMachine(form.machine) || !form.machine ? form.machine : null, form.schedule.kind);
   const runsOn: AutomationRunsOn = runsOnBlocked ? 'app' : form.runsOn;
 
   const problem = !form.name.trim() ? t('automations.form.needName')

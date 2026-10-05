@@ -180,6 +180,8 @@ describe('the background runner', () => {
     const runners = { ...list([]), scans: [scan('ready-box', { target: 'linux-x64', version: '1.0.0', live: true }), scan('bare-box', { target: 'linux-x64', version: null, live: false })] };
     expect(backgroundRunnerCheck(runners, 'ready-box', 'daily')).toBeNull();
     expect(backgroundRunnerCheck(runners, null, 'daily')).toBe('automations.runsOn.why.pool');
+    // With no machine picked yet, it says to pick one rather than talk about pools.
+    expect(backgroundRunnerCheck(runners, '', 'daily')).toBe('automations.runsOn.why.noMachine');
     expect(backgroundRunnerCheck(runners, 'ready-box', 'custom')).toBe('automations.runsOn.why.custom');
     expect(backgroundRunnerCheck(runners, 'bare-box', 'daily')).toBe('automations.runsOn.why.notSetUp');
     expect(backgroundRunnerCheck(null, 'ready-box', 'daily')).toBe('automations.runsOn.why.notSetUp');

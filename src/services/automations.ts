@@ -411,9 +411,11 @@ export const RUNNER_STATE_TONE: Record<RunnerState, StatusTone> = {
 /**
  * Whether an automation can run on its machine in the background, and why not when it can't: it has to name one
  * machine (a pool's member is picked by Arbor when it's due), follow one of the usual schedules, and the machine's
- * runner has to be there and answering. A runner that's only older still runs it.
+ * runner has to be there and answering. A runner that's only older still runs it. `machine` is null for a pool, and
+ * empty while none is picked yet.
  */
 export function backgroundRunnerCheck(list: AutomationList | null, machine: string | null, scheduleKind: string): MessageKey | null {
+  if (machine === '') return 'automations.runsOn.why.noMachine';
   if (!machine) return 'automations.runsOn.why.pool';
   if (scheduleKind === 'custom') return 'automations.runsOn.why.custom';
   const state = runnerState(list?.scans.find((scan) => scan.machine === machine), list?.udianBundled ?? null);
