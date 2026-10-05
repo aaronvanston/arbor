@@ -4,6 +4,8 @@ import { alertDestination } from '../src/services/alertHistory';
 import {
   automationMachines,
   automationTargetGone,
+  automationHold,
+  automationsHold,
   choiceSummary,
   failedRunAlerts,
   automationModels,
@@ -160,7 +162,7 @@ describe('the background runner', () => {
     expect(runnerState(undefined, '1.0.0')).toBe('unknown');
     expect(runnerState(scan('a', { target: 'linux-x64', version: null, live: false }), '1.0.0')).toBe('missing');
     expect(runnerState(scan('a', { target: null, version: null, live: false }), '1.0.0')).toBe('unsupported');
-    expect(runnerState(scan('a', { target: 'linux-x64', version: null, live: false }), null)).toBe('unsupported');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: null, live: false }), null)).toBe('missing');
     expect(runnerState(scan('a', { target: 'linux-x64', version: '0.9.2', live: true }), '1.0.0')).toBe('outdated');
     expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: false }), '1.0.0')).toBe('stopped');
     expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: true }), '1.0.0')).toBe('ready');
@@ -198,5 +200,26 @@ describe('an automation with nowhere to run', () => {
     // Until the pools are read, a pool isn't called gone; another app's automation runs where that app says.
     expect(automationTargetGone(summary({ target: { kind: 'pool', id: 'gone' } }), null)).toBeNull();
     expect(automationTargetGone(summary({ source: 'codexApp', target: { kind: 'best' } }), [pool])).toBeNull();
+  });
+});
+
+describe('what stops Arbor’s automations starting', () => {
+  it('says all are off first, then a missing key for agents that go through the proxy', () => {
+    expect(automationHold(null, 'claude')).toBeNull();
+    expect(automationHold({ running: false, proxyKey: true }, 'pi')).toBe('off');
+    expect(automationHold({ running: true, proxyKey: false }, 'claude')).toBe('noKey');
+    expect(automationHold({ running: true, proxyKey: false }, 'codex')).toBe('noKey');
+    // Other agents keep their own setup, so they don't need the key.
+    expect(automationHold({ running: true, proxyKey: false }, 'pi')).toBeNull();
+    expect(automationHold({ running: true, proxyKey: true }, 'claude')).toBeNull();
+  });
+
+  it('notes the list only for Arbor’s own automations that are on', () => {
+    const noKey = { ...list([summary({ agent: 'claude' })]), proxyKey: false };
+    expect(automationsHold(noKey)).toBe('noKey');
+    expect(automationsHold({ ...noKey, automations: [summary({ enabled: false })] })).toBeNull();
+    expect(automationsHold({ ...noKey, automations: [summary({ source: 'codexApp' })] })).toBeNull();
+    expect(automationsHold({ ...list([summary({})]), running: false })).toBe('off');
+    expect(automationsHold(null)).toBeNull();
   });
 });

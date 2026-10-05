@@ -8,6 +8,7 @@ import { WithShortcut } from '../components/ShortcutKbd';
 import { AutomationDialog } from '../components/automations/AutomationDialog';
 import { AutomationActions } from '../components/automations/AutomationActions';
 import { AutomationAppName } from '../components/automations/AutomationApp';
+import { AutomationHoldNote } from '../components/automations/AutomationHoldNote';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -34,6 +35,7 @@ import {
   RUN_STATUS_TONE,
   STATE_LABEL,
   automationMachines,
+  automationsHold,
   automationModels,
   filterAutomations,
   loadAutomations,
@@ -137,6 +139,8 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
             <AlertDescription>{t('automations.paused.description')}</AlertDescription>
           </Alert>
         ) : null}
+        {/* Turned off says so above; this is the other thing that stops them, which Run now wouldn't show until a run failed. */}
+        {list?.running ? <AutomationHoldNote hold={automationsHold(list)} onOpenSettings={() => onNavigate({ kind: 'settings', page: 'machines' })} /> : null}
         {failedScans.map((scan) => (
           <p key={scan.machine} className="flex items-center gap-1.5 text-xs text-warning-foreground">
             <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />

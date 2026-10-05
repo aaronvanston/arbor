@@ -24,7 +24,8 @@ import { cn } from '../lib/utils';
 import { automationsView, sessionsView, type AppView } from '../navigation';
 import { invokeCommand } from '../native/commands';
 import type { Automation, AutomationRun } from '../native/types';
-import { AUTOMATION_APPS, automationTargetGone, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
+import { AUTOMATION_APPS, automationHold, automationTargetGone, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
+import { AutomationHoldNote } from '../components/automations/AutomationHoldNote';
 import { useQuotaClock } from '../services/quotaTime';
 import { usePools } from '../services/pools';
 
@@ -75,6 +76,8 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
 
   const arbor = summary.source === 'arbor';
   const gone = automationTargetGone(summary, pools);
+  // Settings' switch pauses every one of Arbor's own, so the next run isn't due while it's off either.
+  const willRun = summary.enabled && !(arbor && list?.running === false);
 
   return (
     <Page width="main">
@@ -92,6 +95,10 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
             {[summary.project, automation.projectPath && automation.projectPath !== summary.project ? automation.projectPath : null].filter(Boolean).join(' · ') || t('automations.noProject')}
           </p>
         </header>
+
+        {arbor && summary.enabled ? (
+          <AutomationHoldNote hold={automationHold(list, summary.agent)} onOpenSettings={() => onNavigate({ kind: 'settings', page: 'machines' })} />
+        ) : null}
 
         <Alert icon={<Info />} variant={gone ? 'warning' : undefined}>
           <AlertDescription>
@@ -115,9 +122,9 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
             {summary.schedule.kind === 'custom' && automation.rrule ? <span className="block font-mono text-2xs text-muted-foreground">{automation.rrule}</span> : null}
           </Fact>
           <Fact label={t('automations.fact.nextRun')}>
-            {summary.enabled && summary.nextRunAtMs
+            {willRun && summary.nextRunAtMs
               ? <span title={formatDateTime(summary.nextRunAtMs, { year: 'always' })}>{formatWhen(summary.nextRunAtMs, { now })} ({formatRelative(summary.nextRunAtMs, now)})</span>
-              : t(summary.enabled ? 'automations.fact.unknown' : 'automations.status.paused')}
+              : t(willRun ? 'automations.fact.unknown' : 'automations.status.paused')}
           </Fact>
           <Fact label={t('automations.fact.machine')}>
             {summary.target.kind === 'best' ? t('automations.target.best')
@@ -175,7 +182,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
               </TableBody>
             </Table>
           ) : (
-            <Empty size="sm"><EmptyDescription>{t(arbor ? 'automations.runs.none' : 'automations.runs.noneOther')}</EmptyDescription></Empty>
+            <Empty size="sm"><EmptyDescription>{t(!arbor ? 'automations.runs.noneOther' : summary.enabled ? 'automations.runs.none' : 'automations.runs.nonePaused')}</EmptyDescription></Empty>
           )}
         </TableCard>
       </PageBody>

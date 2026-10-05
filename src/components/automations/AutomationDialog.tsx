@@ -5,6 +5,7 @@ import { cn } from '../../lib/utils';
 import { invokeCommand } from '../../native/commands';
 import type { Automation, AutomationAccess, Harness, AutomationInput, AutomationRunsOn, AutomationSession, AutomationWorkspace, MachineProjects } from '../../native/types';
 import {
+  automationHold,
   backgroundRunnerCheck,
   choiceSummary,
   loadAutomations,
@@ -322,6 +323,13 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden border-t p-6 md:border-t-0 md:border-s">
                   <AgentField value={form.agent} onChange={(agent) => update({ agent })} />
+                  {/* Saving still works without the key; say here, while the agent is picked, that runs won't start. */}
+                  {automationHold(list, form.agent) === 'noKey' ? (
+                    <p className="-mt-3 flex items-start gap-1.5 text-xs text-warning-foreground" role="note">
+                      <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+                      {t('automations.hold.noKey')}
+                    </p>
+                  ) : null}
                   {/* A path picked on one machine may not exist on another; a pool's members share one, so moving onto or off a pool keeps it. */}
                   <MachineField machine={form.machine} onChange={(next) => update({ machine: next, projectPath: next === form.machine || !isMachine(next) || !isMachine(form.machine) ? form.projectPath : '' })} />
                   <Field

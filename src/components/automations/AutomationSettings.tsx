@@ -20,6 +20,7 @@ import { Spinner } from '../ui/spinner';
 import { StatusDot } from '../ui/status-dot';
 import { Switch } from '../ui/switch';
 import { toast } from '../ui/toast';
+import { plainError } from '../../services/plainError';
 
 const EFFORTS = ['low', 'medium', 'high'] as const;
 
@@ -95,7 +96,7 @@ export function AutomationSettings() {
       showAutomations(await invokeCommand('install_background_runner', { machine }));
       toast({ title: t(update ? 'automations.runner.updated' : 'automations.runner.installed', { machine }) });
     } catch (reason) {
-      setInstallError({ machine, error: String(reason) });
+      setInstallError({ machine, error: plainError(reason, t) });
     } finally {
       setInstalling(null);
     }
@@ -114,7 +115,9 @@ export function AutomationSettings() {
           {list.scans.map((scan) => {
             const state = runnerState(scan, bundled);
             const busy = installing === scan.machine;
-            const failed = installError?.machine === scan.machine ? installError.error : scan.placingError;
+            // Writing the schedules is tried again every round, so its failure says so rather than reading as a dead machine.
+            const failed = installError?.machine === scan.machine ? installError.error
+              : scan.placingError ? t('automations.runner.placingFailed', { error: plainError(scan.placingError, t) }) : null;
             return (
               <li key={scan.machine} className="flex flex-col gap-1 px-3 py-2">
                 <div className="flex items-center gap-3">

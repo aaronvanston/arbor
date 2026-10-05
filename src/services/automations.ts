@@ -7,6 +7,7 @@ import type {
   AutomationRunStatus,
   AutomationSource,
   AutomationSummary,
+  Harness,
   MachinePool,
   ScheduleSummary,
 } from '../native/types';
@@ -377,7 +378,9 @@ export function olderVersion(version: string, than: string): boolean {
 export function runnerState(scan: AutomationScan | undefined, bundled: string | null): RunnerState {
   const udian = scan?.udian;
   if (!udian) return 'unknown';
-  if (!udian.version) return udian.target && bundled ? 'missing' : 'unsupported';
+  // A machine that could take the runner reads as not set up even when this build carries none: it's the build that
+  // lacks it, not the machine, and Set up only shows when there's one to put there.
+  if (!udian.version) return udian.target ? 'missing' : 'unsupported';
   if (!udian.live) return 'stopped';
   return bundled && olderVersion(udian.version, bundled) ? 'outdated' : 'ready';
 }
@@ -421,4 +424,31 @@ export function backgroundRunnerCheck(list: AutomationList | null, machine: stri
   const state = runnerState(list?.scans.find((scan) => scan.machine === machine), list?.udianBundled ?? null);
   if (state === 'ready' || state === 'outdated') return null;
   return 'automations.runsOn.why.notSetUp';
+}
+
+// ── What stops Arbor's automations starting ───────────────────────────────────────────────────────────────────────
+
+/** Why an Arbor automation that's on won't start when it's due: all of them are turned off, or it has no proxy key. */
+export type AutomationHold = 'off' | 'noKey';
+
+/** Agents an automation starts through the proxy (`proxy::routes`), which need the Automations key to run. */
+const THROUGH_PROXY: ReadonlySet<Harness> = new Set<Harness>(['claude', 'codex']);
+
+/**
+ * What would stop an automation with this agent from starting, so its page, the list and the form can say so before a
+ * run fails: Settings' switch for all of Arbor's automations, then the Automations key that Claude and Codex runs
+ * reach the proxy with. Null when nothing does, or before the list is read.
+ */
+export function automationHold(list: Pick<AutomationList, 'running' | 'proxyKey'> | null, agent: Harness | null): AutomationHold | null {
+  if (!list) return null;
+  if (!list.running) return 'off';
+  return !list.proxyKey && agent !== null && THROUGH_PROXY.has(agent) ? 'noKey' : null;
+}
+
+/** The hold on any of Arbor's own automations in the list, for one note above them all. */
+export function automationsHold(list: AutomationList | null): AutomationHold | null {
+  const arbor = list?.automations.filter((item) => item.source === 'arbor') ?? [];
+  if (!list || !arbor.length) return null;
+  if (!list.running) return 'off';
+  return arbor.some((item) => item.enabled && automationHold(list, item.agent) === 'noKey') ? 'noKey' : null;
 }
