@@ -429,14 +429,22 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
   run_automation_now: ({ id }) => {
     mockLog('run_automation_now', { id });
     const item = find(id);
-    const run: AutomationRun = {
+    // As Rust's runner: an Arbor run of Claude or Codex goes through the proxy, and with no Automations key it's
+    // recorded as failed straight away rather than started.
+    const noKey = item.summary.source === 'arbor' && !proxyKey && (item.summary.agent === 'claude' || item.summary.agent === 'codex');
+    const run: AutomationRun = noKey ? {
+      id: `${id}:run:now-${Date.now()}`, automationId: id, machine: item.summary.machine ?? 'cedar-02', status: 'failed',
+      scheduledAtMs: Date.now(), startedAtMs: Date.now(), finishedAtMs: Date.now(), manual: true,
+      precheckExit: null, precheckOutput: null, exitCode: null, sessionId: null,
+      error: 'Automations reach your proxy with their own key. Add it in Settings › Machines first',
+    } : {
       id: `${id}:run:now-${Date.now()}`, automationId: id, machine: item.summary.machine ?? 'cedar-02', status: 'running',
       scheduledAtMs: Date.now(), startedAtMs: Date.now(), finishedAtMs: null, manual: true,
       precheckExit: item.summary.hasPrecheck ? 0 : null, precheckOutput: item.summary.hasPrecheck ? PRECHECK_OUTPUT[id]?.ran ?? null : null,
       exitCode: null, sessionId: null, error: null,
     };
     runs.set(id, [run, ...(runs.get(id) ?? [])]);
-    item.summary.lastRun = { status: 'running', atMs: run.scheduledAtMs };
+    item.summary.lastRun = { status: run.status, atMs: run.scheduledAtMs };
     return run;
   },
   cancel_automation_run: ({ runId }) => {
