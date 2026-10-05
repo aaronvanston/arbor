@@ -154,35 +154,14 @@ cp core-plugins/arbor-models/target/release/libarbor_models.dylib bundled-core/p
 # A nightly or dev build is packaged with its own icon (src-tauri/icons/channels/), so Finder, Launchpad and the Dock
 # tell it from stable even while it's closed; src-tauri/src/app_icon.rs matches it while it runs. Each Arbor.icon is
 # the Icon Composer version macOS 26 and later show, with its own dark colors so dark mode doesn't swap the tile for
-# black; Tauri compiles it with Xcode 26's actool and falls back to the icns without one.
+# black. Its Assets.car is compiled once and committed beside it (scripts/compile-icons.sh, run by the Icons workflow),
+# and Tauri copies that in as it is, so no build runs actool.
 case "$version" in
   *-nightly.*) icons=icons/channels/nightly ;;
   *-dev.*) icons=icons/channels/dev ;;
   *) icons=icons ;;
 esac
-# Tauri compiles an Arbor.icon with actool itself, and fails the whole bundle when that call fails: one Xcode 27 build
-# fails every Icon Composer file ("Bad file descriptor"), and on GitHub's Xcode 26.6 runner Tauri's call failed while
-# the same call made here passed. So the icon is compiled here, with tauri-bundler's own flags (macos/icon.rs), and
-# Tauri is given the Assets.car, which it copies in as it is. When actool can't compile it, the build keeps the icns
-# alone and says why.
-icon_composer=
-actool_check="$(mktemp -d)"
-cp -R "src-tauri/$icons/Arbor.icon" "$actool_check/Icon.icon"
-mkdir "$actool_check/out"
-if actool "$actool_check/Icon.icon" --compile "$actool_check/out" --output-format human-readable-text --notices \
-  --warnings --output-partial-info-plist "$actool_check/out/assetcatalog_generated_info.plist" --app-icon Icon \
-  --include-all-app-icons --accent-color AccentColor --enable-on-demand-resources NO --development-region en \
-  --target-device mac --minimum-deployment-target 26.0 --platform macosx \
-  >"$actool_check/actool.log" 2>&1 </dev/null && [[ -f "$actool_check/out/Assets.car" ]]; then
-  mkdir -p src-tauri/target/arbor-icon
-  cp "$actool_check/out/Assets.car" src-tauri/target/arbor-icon/Assets.car
-  icon_composer=',"target/arbor-icon/Assets.car"'
-else
-  echo "actool couldn't compile src-tauri/$icons/Arbor.icon, so this build uses the icns icon alone. It said:" >&2
-  sed 's/^/  /' "$actool_check/actool.log" >&2
-fi
-rm -rf "$actool_check"
-icon_config=(--config "{\"bundle\":{\"icon\":[\"$icons/icon.png\",\"$icons/32x32.png\",\"$icons/128x128.png\",\"$icons/128x128@2x.png\",\"$icons/icon.icns\"$icon_composer]}}")
+icon_config=(--config "{\"bundle\":{\"icon\":[\"$icons/icon.png\",\"$icons/32x32.png\",\"$icons/128x128.png\",\"$icons/128x128@2x.png\",\"$icons/icon.icns\",\"$icons/Assets.car\"]}}")
 
 RUSTFLAGS="$release_rustflags" bun tauri build --bundles app --config src-tauri/tauri.dmg.conf.json "${icon_config[@]}"
 

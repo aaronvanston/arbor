@@ -29,6 +29,12 @@ anything a sidebar row can select. The duotone set is Hugeicons Pro, installed t
 `HUGEICONS_LICENSE_KEY` from the untracked `.env`. Without the key `bun install` prints a 401 for
 `@hugeicons-pro/core-duotone-rounded`, and the free set stands in. Never commit the key.
 
+The app icon for macOS 26 and later is an Icon Composer file per build channel (`src-tauri/icons/Arbor.icon` and
+`icons/channels/*/Arbor.icon`). Builds never compile it: they copy in the `Assets.car` committed beside it, since
+actool keeps failing builds (one Xcode 27 build fails every such icon). After changing an icon, run the Icons workflow
+(`gh workflow run arbor-icons.yml`), which runs `scripts/compile-icons.sh` on GitHub's Mac, and commit the files from
+its artifact; `tests/appIcons.test.ts` fails until each `Assets.car.sha256` matches its icon.
+
 New worktrees get `.env` and the other gitignored files `.worktreeinclude` lists: Claude Code copies them itself, and
 `t3.json` runs `scripts/copy-worktree-includes.sh` for T3 Code's worktrees.
 
