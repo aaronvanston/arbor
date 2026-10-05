@@ -3663,6 +3663,7 @@ export const en = {
   'usage.trend.srRecovered': 'Also {tokens} tokens by Claude Code’s own count, on days whose transcripts are gone.',
   'usage.trend.srSummary': '{range}: {tokens} tokens and {requests} requests in total.',
   'usage.trend.srPoint': '{range}: {tokens} tokens, {requests} requests',
+  'usage.trend.srPointRecovered': 'Also {tokens} tokens by Claude Code’s own count.',
   'usage.trend.keyboardHint': 'Use the left and right arrow keys to read each period.',
   'usage.token.title': 'Token breakdown',
   'usage.token.description': 'Cache, reasoning, and generation usage',

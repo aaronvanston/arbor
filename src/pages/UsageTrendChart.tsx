@@ -377,6 +377,8 @@ export function UsageTrend({ series }: { series: PreparedTrendSeries }) {
               requests: formatCount(active.requests),
             })
           : ''}
+        {/* A hatched bar reads out what it adds, as its tooltip shows it. */}
+        {announcePoint && active && active.recovered > 0 ? ` ${t('usage.trend.srPointRecovered', { tokens: formatCount(active.recovered) })}` : ''}
       </p>
     </div>
   );
