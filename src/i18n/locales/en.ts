@@ -807,7 +807,7 @@ export const en = {
   'extraModels.add.id.placeholder': 'model-id',
   'extraModels.add.basedOn.title': 'Based on',
   'extraModels.add.basedOn.description': 'The built-in model whose context window, output limit and thinking levels it takes.',
-  'extraModels.add.basedOn.hint': 'Enter a model ID first',
+  'extraModels.add.basedOn.hint': 'Matched to the model ID, or pick one',
   'extraModels.add.basedOn.none': 'Start the proxy to copy a built-in model',
   'extraModels.add.hint': 'Enter the ID of a model to add',
   'extraModels.add.submit': 'Add model',
