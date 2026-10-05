@@ -19,6 +19,7 @@ import { proxyFlow, type HomeMachine } from '../services/homeOverview';
 import { useQuotaClock } from '../services/quotaTime';
 import { DetailRow, SettingsBlock, SettingsSection } from './layout/settings';
 import { WithShortcut } from './ShortcutKbd';
+import { useConfirmation } from './ConfirmationDialog';
 import { ConnectAgentDialog } from './ConnectAgentDialog';
 import { useIdleUpdateGuard } from './UpdateWhenIdle';
 import { Button } from './ui/button';
@@ -46,6 +47,7 @@ const TONE_BOX: Record<StatusTone, string> = {
  */
 export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | null; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
+  const { askConfirmation } = useConfirmation();
   const { info: appUpdate } = useAppUpdate();
   const { status: coreStatus, statusError, refreshStatus, publishStatus } = useCoreRuntime();
   const { files, loaded } = useAccountsStore();
@@ -142,6 +144,16 @@ export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | 
   const coreRunning = Boolean(coreStatus?.running);
   // Status and process controls follow `running`; anything that talks to the core waits for `ready`.
   const coreReady = Boolean(coreStatus?.ready);
+  // Stopping cuts off every agent using the proxy, so it asks first, as the sidebar and palette do.
+  const stopCore = async () => {
+    const confirmed = await askConfirmation({
+      title: t('palette.confirm.stopCore.title'),
+      message: t('palette.confirm.stopCore.message'),
+      confirmText: t('palette.action.stopCore'),
+      variant: 'danger',
+    });
+    if (confirmed) await runCoreProcessCommand('stop_core_process');
+  };
   const coreProcessBusy = processBusy || Boolean(coreStatus?.starting);
   // Reads as starting while a live core isn't answering yet, matching the sidebar. The controls stay on
   // coreProcessBusy so a core that never starts answering can still be stopped or restarted.
@@ -286,7 +298,7 @@ export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | 
           <DetailRow className="border-t border-border/50" label={t('home.proxy.installedAt')} value={coreStatus?.binaryPath || coreStatus?.installDir || statusError || t('common.detecting')} mono />
           <div className="flex items-center justify-between gap-6 border-t border-border/50 px-4 py-2.5">
             <span className="min-w-0 text-xs text-muted-foreground">{t('home.proxy.stopHint')}</span>
-            <Button variant="destructive-outline" size="sm" disabled={!coreRunning || coreProcessBusy} onClick={() => void runCoreProcessCommand('stop_core_process')}>
+            <Button variant="destructive-outline" size="sm" disabled={!coreRunning || coreProcessBusy} onClick={() => void stopCore()}>
               {coreProcessBusy ? <Spinner /> : <Square />}
               {t('kernel.control.stop')}
             </Button>
