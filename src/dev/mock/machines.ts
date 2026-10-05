@@ -429,6 +429,9 @@ const healthFacts = (name: string): MachineFacts =>
     ? { hostname: 'Caseys-MacBook-Pro.local', os: 'Darwin', osVersion: '27.0', arch: 'arm64', model: modelOverride ?? 'Mac16,8', productName: modelOverride === null ? 'MacBook Pro (14-inch, 2024)' : '', chip: 'Apple M4 Pro', gpu: 'Apple M4 Pro', cores: 12, memTotalKb: 67_108_864, diskTotalKb: 482_797_652, swapTotalKb: 5_242_880, gpuMemTotalMb: null, ip: '192.168.1.151', uptimeS: 820_696, batteryPct: null, batteryState: '' }
     : name === 'cedar-02'
     ? { hostname: 'cedar-02', os: 'Linux', osVersion: 'Ubuntu 26.04 LTS', arch: 'x86_64', model: 'NUC 14', productName: '', chip: 'AMD Ryzen 7 8845HS w/ Radeon 780M Graphics', gpu: 'AMD Raphael', cores: 32, memTotalKb: 29_953_392, diskTotalKb: 980_760_096, swapTotalKb: null, gpuMemTotalMb: null, ip: '192.168.1.40', uptimeS: 2_901_035, batteryPct: null, batteryState: '' }
+    // `?machine=new`'s cedar-03: another NUC, set up an hour ago. Its memory and disk are what the readings above assume.
+    : name === 'cedar-03'
+    ? { hostname: 'cedar-03', os: 'Linux', osVersion: 'Ubuntu 26.04 LTS', arch: 'x86_64', model: 'NUC 14', productName: '', chip: 'Intel(R) Core(TM) Ultra 7 155H', gpu: 'Intel Arc Graphics', cores: 22, memTotalKb: 64_308_204, diskTotalKb: 482_797_652, swapTotalKb: 8_388_604, gpuMemTotalMb: null, ip: '192.168.1.41', uptimeS: 3_840, batteryPct: null, batteryState: '' }
     : { hostname: 'ci-01', os: 'Linux', osVersion: 'Ubuntu 26.04 LTS', arch: 'x86_64', model: 'MS-7D25', productName: '', chip: '12th Gen Intel(R) Core(TM) i9-12900K', gpu: 'NVIDIA GeForce RTX 3080', cores: 24, memTotalKb: 64_308_204, diskTotalKb: 482_797_652, swapTotalKb: 33_554_424, gpuMemTotalMb: 10_240, ip: '192.168.2.2', uptimeS: 860_270, batteryPct: null, batteryState: '' };
 
 // `?path=direct` or `?path=peer` shows ci-01's other Tailscale paths.
