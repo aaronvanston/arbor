@@ -1856,8 +1856,11 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "saved_store_snapshot",
         access: Access::Write,
-        summary: "Saved store snapshot",
-        args: &[],
+        summary: "`only` reads just those values and `except` leaves those out: the window reads its large ones, like the alert history, after its first render rather than before it.",
+        args: &[
+            ArgSpec { name: "only", ts_type: "Array<string> | null", optional: true },
+            ArgSpec { name: "except", ts_type: "Array<string> | null", optional: true },
+        ],
     },
     CommandSpec {
         name: "saved_store_set",
@@ -2221,7 +2224,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "restart_core_process" => done(Box::pin(crate::restart_core_process(app.clone())).await),
         "saved_store_snapshot" => {
             let app = app.clone();
-            blocking(move || done(crate::saved_store::saved_store_snapshot(app.state()))).await
+            let args = args.clone();
+            blocking(move || done(crate::saved_store::saved_store_snapshot(app.state(), arg(&args, "only")?, arg(&args, "except")?))).await
         }
         "saved_store_set" => {
             let app = app.clone();

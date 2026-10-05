@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, jest } from 'bun:test';
 import { emit } from '@tauri-apps/api/event';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { loadSavedSettings, SAVED_STORE_CHANGED_EVENT, savedStore } from '../src/services/savedStore';
+import { LAUNCH_SETTLE_MS, resetLaunchSettle } from '../src/services/launchSettle';
 
 const global = globalThis as { localStorage?: unknown };
 const previous = global.localStorage;
@@ -137,5 +138,63 @@ describe('settings the app keeps', () => {
     mockCommands({ saved_store_snapshot: () => ({ values: { 'arbor.test-name.v1': '3' }, migrated: true }) }, { events: true });
     await loadSavedSettings();
     expect(store.get()).toBe(3);
+  });
+
+  it('draws without the app’s copy when it’s slow, then takes it, keeping what changed meanwhile', async () => {
+    Object.defineProperty(globalThis, 'window', { value: { crypto: globalThis.crypto }, writable: true, configurable: true });
+    storage({ 'arbor.test-slow-a.v1': '1', 'arbor.test-slow-b.v1': '1' });
+    const a = savedStore({ key: 'arbor.test-slow-a.v1', parse: parseCount, fallback: 0 });
+    const b = savedStore({ key: 'arbor.test-slow-b.v1', parse: parseCount, fallback: 0 });
+    let answer: () => void = () => undefined;
+    const saved: string[] = [];
+    mockCommands({
+      saved_store_snapshot: () => new Promise((resolve) => {
+        answer = () => resolve({ values: { 'arbor.test-slow-a.v1': '5', 'arbor.test-slow-b.v1': '5' }, migrated: true });
+      }),
+      saved_store_set: (args) => {
+        saved.push(`${args.name}=${args.value}`);
+        return null;
+      },
+    }, { events: true });
+    await loadSavedSettings(5);
+    // The first render goes ahead on the window's own copy.
+    expect(a.get()).toBe(1);
+    // A change before the app answers still reaches the app, and is newer than what the app sends.
+    b.set(2);
+    await settle();
+    expect(saved).toEqual(['arbor.test-slow-b.v1=2']);
+    answer();
+    await settle();
+    await settle();
+    expect(a.get()).toBe(5);
+    expect(b.get()).toBe(2);
+  });
+
+  it('reads the large settings after launch, on the window’s copy until then', async () => {
+    Object.defineProperty(globalThis, 'window', { value: { crypto: globalThis.crypto }, writable: true, configurable: true });
+    storage({ 'arbor.test-small.v1': '1', 'arbor.test-large.v1': '1' });
+    const small = savedStore({ key: 'arbor.test-small.v1', parse: parseCount, fallback: 0 });
+    const large = savedStore({ key: 'arbor.test-large.v1', parse: parseCount, fallback: 0, afterLaunch: true });
+    const asked: unknown[] = [];
+    mockCommands({
+      saved_store_snapshot: (args) => {
+        asked.push(args);
+        const values = { 'arbor.test-small.v1': '4', 'arbor.test-large.v1': '4' };
+        return { values: Object.fromEntries(Object.entries(values).filter(([key]) => (!args.only || args.only.includes(key)) && !args.except?.includes(key))), migrated: true };
+      },
+    }, { events: true });
+    jest.useFakeTimers();
+    resetLaunchSettle();
+    const microtasks = async () => { for (let turn = 0; turn < 20; turn += 1) await Promise.resolve(); };
+    // The first render waits for the small ones only.
+    await loadSavedSettings();
+    expect(small.get()).toBe(4);
+    expect(large.get()).toBe(1);
+    jest.advanceTimersByTime(LAUNCH_SETTLE_MS);
+    await microtasks();
+    jest.useRealTimers();
+    expect(large.get()).toBe(4);
+    expect(asked[0]).toEqual({ except: expect.arrayContaining(['arbor.test-large.v1']) });
+    expect(asked).toContainEqual({ only: expect.arrayContaining(['arbor.test-large.v1']) });
   });
 });

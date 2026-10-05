@@ -60,13 +60,17 @@ const activity = (): CliActivity[] => (freshInstall || installState !== 'install
   { at: hours(3), client: 'cli', method: 'saved_store_set', access: 'write', outcome: 'ok', ms: 6 },
 ]);
 
-/** The app's copy of the window's settings is localStorage here, so the mock's seeds and `?fresh=1` work as before. */
-const savedSnapshot = (): SavedStoreSnapshot => {
+/**
+ * The app's copy of the window's settings is localStorage here, so the mock's seeds and `?fresh=1` work as before.
+ * `only` and `except` narrow it as saved_store.rs does.
+ */
+const savedSnapshot = ({ only, except }: { only?: string[] | null; except?: string[] | null } = {}): SavedStoreSnapshot => {
   const values: Record<string, string> = {};
   for (let index = 0; index < window.localStorage.length; index += 1) {
     const key = window.localStorage.key(index);
     const value = key === null ? null : window.localStorage.getItem(key);
-    if (key?.startsWith('arbor.') && value !== null) values[key] = value;
+    if (!key?.startsWith('arbor.') || value === null || (only && !only.includes(key)) || except?.includes(key)) continue;
+    values[key] = value;
   }
   return { values, migrated: true };
 };
@@ -78,7 +82,7 @@ export const cliAnswers: CommandAnswers<CliCommands> = {
     else window.localStorage.setItem(name, value);
     return null;
   },
-  saved_store_migrate: savedSnapshot,
+  saved_store_migrate: () => savedSnapshot(),
   cli_bridge_ready: ({ actions }) => { mockLog('cli_bridge_ready', actions.map((action) => action.name)); return null; },
   cli_respond: (args) => { mockLog('cli_respond', args); return null; },
   get_cli_overview: () => ({ settings: cliSettings, install: install(), activity: activity(), skill: skillState }),

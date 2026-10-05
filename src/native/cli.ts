@@ -11,7 +11,7 @@ import type {
 
 /** The command line's side of the app: the settings the app keeps for the window, and the window's answers to `arbor`. */
 export type CliCommands = {
-  saved_store_snapshot: { result: SavedStoreSnapshot };
+  saved_store_snapshot: { args: { only?: string[] | null; except?: string[] | null }; result: SavedStoreSnapshot };
   saved_store_set: { args: { name: string; value?: string | null }; result: void };
   saved_store_migrate: { args: { values: Record<string, string> }; result: SavedStoreSnapshot };
 

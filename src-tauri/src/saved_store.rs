@@ -133,9 +133,22 @@ impl SavedStoreState {
     }
 }
 
+/// `only` reads just those values and `except` leaves those out: the window reads its large ones, like the alert
+/// history, after its first render rather than before it.
 #[tauri::command]
-pub(crate) fn saved_store_snapshot(state: tauri::State<'_, SavedStoreState>) -> Result<SavedStoreSnapshot, String> {
-    state.snapshot_at(&store_path()?)
+pub(crate) fn saved_store_snapshot(
+    state: tauri::State<'_, SavedStoreState>,
+    only: Option<Vec<String>>,
+    except: Option<Vec<String>>,
+) -> Result<SavedStoreSnapshot, String> {
+    Ok(narrowed(state.snapshot_at(&store_path()?)?, only.as_deref(), except.as_deref()))
+}
+
+fn narrowed(mut snapshot: SavedStoreSnapshot, only: Option<&[String]>, except: Option<&[String]>) -> SavedStoreSnapshot {
+    snapshot
+        .values
+        .retain(|name, _| only.is_none_or(|only| only.contains(name)) && !except.is_some_and(|except| except.contains(name)));
+    snapshot
 }
 
 /// Saves one setting, or removes it when there's no value, and tells the window, which updates whatever shows it.
@@ -182,6 +195,17 @@ mod tests {
         assert_eq!(fresh.snapshot_at(&path).unwrap().values["arbor.machine-names.v1"], "{\"a\":\"b\"}");
         assert!(fresh.set_at(&path, "arbor.machine-names.v1", None).unwrap());
         assert!(SavedStoreState::default().snapshot_at(&path).unwrap().values.is_empty());
+    }
+
+    #[test]
+    fn the_window_reads_some_values_before_it_draws_and_the_rest_after() {
+        let values = ["arbor.alert-history.v1", "arbor.machine-names.v1"].map(|name| (name.to_string(), "1".to_string()));
+        let snapshot = SavedStoreSnapshot { values: values.into_iter().collect(), migrated: true };
+        let later = ["arbor.alert-history.v1".to_string()];
+        let names = |snapshot: SavedStoreSnapshot| snapshot.values.into_keys().collect::<Vec<_>>();
+        assert_eq!(names(narrowed(snapshot.clone(), None, Some(&later))), ["arbor.machine-names.v1"]);
+        assert_eq!(names(narrowed(snapshot.clone(), Some(&later), None)), ["arbor.alert-history.v1"]);
+        assert_eq!(names(narrowed(snapshot, None, None)).len(), 2);
     }
 
     #[test]

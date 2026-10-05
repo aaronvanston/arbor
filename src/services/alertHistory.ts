@@ -341,7 +341,8 @@ export function parseAlertHistory(raw: string | null): AlertHistory {
   }
 }
 
-const store = savedStore<AlertHistory>({ key: 'arbor.alert-history.v1', parse: parseAlertHistory, fallback: { entries: [], seenAtMs: 0 } });
+// Up to 500 alerts, which the first screen doesn't need before it draws.
+const store = savedStore<AlertHistory>({ key: 'arbor.alert-history.v1', parse: parseAlertHistory, fallback: { entries: [], seenAtMs: 0 }, afterLaunch: true });
 let sequence = 0;
 
 /** Whether the app has asked for the unread count on the tray icon, and the count it was last sent. */
