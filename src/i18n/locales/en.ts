@@ -3244,6 +3244,7 @@ export const en = {
   'palette.group.sessions': 'Sessions',
   'palette.group.automations': 'Automations',
   'palette.group.machines': 'Machines',
+  'palette.group.pools': 'Pools',
   'palette.group.accounts': 'Accounts',
   'palette.sessions.one': '{count} session',
   'palette.sessions.other': '{count} sessions',

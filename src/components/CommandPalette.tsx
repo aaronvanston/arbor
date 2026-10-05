@@ -57,6 +57,7 @@ const GROUP_LABEL: Record<PaletteGroup, MessageKey> = {
   sessions: 'palette.group.sessions',
   automations: 'palette.group.automations',
   machines: 'palette.group.machines',
+  pools: 'palette.group.pools',
   accounts: 'palette.group.accounts',
 };
 const SUBMENU_PLACEHOLDER: Record<PaletteSubmenu, MessageKey> = { pause: 'palette.submenu.pause', resume: 'palette.submenu.resume' };
@@ -317,6 +318,15 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
         run: () => onNavigate(machineSessionsView(item.value)),
       })),
     ];
+    const poolPageItems: PaletteItem[] = (pools ?? []).map((pool) => ({
+      id: `pool:${pool.id}`,
+      group: 'pools',
+      label: pool.name,
+      shown: 'typed',
+      // The Pools page's own mark, as in the sidebar.
+      icon: <IconBox><Network /></IconBox>,
+      run: () => onNavigate(poolsView(pool.id)),
+    }));
     const accountFiles = coreReady ? [...files, ...disabled.filter((file) => reserves.paused[quotaKey(file)])] : [];
     const accountItems: PaletteItem[] = accountFiles.map((file) => {
       const key = quotaKey(file);
@@ -344,7 +354,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
         },
       };
     });
-    return [...pageItems, ...actions, ...poolItems, ...settingItems, ...projectItems, ...sessionItems, ...automationItems, ...machineItems, ...accountItems];
+    return [...pageItems, ...actions, ...poolItems, ...settingItems, ...projectItems, ...sessionItems, ...automationItems, ...machineItems, ...poolPageItems, ...accountItems];
   }, [open, pages, settings, onOpenSetting, lockedHint, actions, text, found, recent, pickedSessions, projects, automationList, pools, machines, sessionMachines, files, disabled, reserves.paused, profiles, coreReady, onNavigate, t]);
 
   const items = useMemo(
