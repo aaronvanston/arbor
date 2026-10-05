@@ -265,7 +265,11 @@ function UseCell({ account, nowMs }: { account: CapacityAccount; nowMs: number }
   if (!use) {
     return (
       <span className="text-muted-foreground">
-        {t('usage.capacity.use.unknown')}
+        {/* Only readings inside the range count, so a short range is often what's missing: say so where it shows. */}
+        <Tooltip>
+          <TooltipTrigger render={<span className="block cursor-default" />}>{t('usage.capacity.use.unknown')}</TooltipTrigger>
+          <TooltipPopup>{t('usage.capacity.use.unknownHint')}</TooltipPopup>
+        </Tooltip>
         {now ? <span className="block text-2xs">{now}</span> : null}
       </span>
     );
