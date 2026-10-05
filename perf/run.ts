@@ -88,13 +88,27 @@ type Step = {
   live: { site: string; kind: string; delay: number; count: number }[];
 };
 
+/**
+ * What a launch sent before Home settled: the page clock's time of the DOM's last change before a quiet stretch, the calls sent
+ * up to then, and calls repeated while the same call (same command and arguments) was still in flight.
+ */
+type Settling = {
+  settledAtMs: number;
+  beforeSettled: number;
+  duplicatesInFlight: number;
+  /** The calls repeated while in flight, by command (and management path). */
+  duplicates: Record<string, number>;
+  /** Each command's calls before Home settled, with the management API's broken down by method and path. */
+  calls: { command: string; calls: number; firstAtMs: number }[];
+};
+
 type Timing = { firstPaintMs: number | null; domContentLoadedMs: number | null; settledMs: number | null; rssMb: number | null };
 
 /** Ten minutes closed to the tray: the counts over them, and the page's elements while hidden and once shown again. */
 type HiddenResult = Step & { domNodesShown: number; domNodesHidden: number; domNodesBack: number; rssShownMb: number | null; rssHiddenMb: number | null };
 
 type SizeResult = {
-  launch: Step;
+  launch: Step & { settling?: Settling };
   hidden?: HiddenResult;
   /** App JS a cold start needs before the prefetch: Home's, and each page's beyond Home's. Default size only. */
   coldJs?: { home: number; pages: Record<string, number> };
@@ -291,6 +305,46 @@ function rssMb(before: Set<number>): number | null {
 // ---------------------------------------------------------------------------------------------------------------
 // Turning raw counts into a step
 
+/** How long the mock takes to answer (src/dev/mockTauri.ts), so how long a call is in flight. */
+const MOCK_ANSWER_MS = 60;
+
+/** Home has settled at its last DOM change before this long without one. */
+const SETTLED_QUIET_MS = 500;
+
+function settlingOf(counted: CounterSnapshot): Settling {
+  const times = counted.mutationTimes;
+  const quietAfter = times.findIndex((at, index) => (times[index + 1] ?? Infinity) - at >= SETTLED_QUIET_MS);
+  const settledAt = times[quietAfter] ?? START_MS;
+  const before = counted.sent.filter((call) => call.at <= settledAt);
+  const lastSent = new Map<string, number>();
+  let duplicatesInFlight = 0;
+  const duplicates: Record<string, number> = {};
+  for (const call of counted.sent) {
+    const key = `${call.command} ${call.args}`;
+    const previous = lastSent.get(key);
+    if (previous !== undefined && call.at - previous < MOCK_ANSWER_MS) {
+      duplicatesInFlight += 1;
+      const name = call.detail ? `${call.command} ${call.detail}` : call.command;
+      duplicates[name] = (duplicates[name] ?? 0) + 1;
+    }
+    lastSent.set(key, call.at);
+  }
+  const calls = new Map<string, { command: string; calls: number; firstAtMs: number }>();
+  for (const call of before) {
+    const name = call.detail ? `${call.command} ${call.detail}` : call.command;
+    const entry = calls.get(name) ?? { command: name, calls: 0, firstAtMs: call.at - START_MS };
+    entry.calls += 1;
+    calls.set(name, entry);
+  }
+  return {
+    settledAtMs: settledAt - START_MS,
+    beforeSettled: before.length,
+    duplicatesInFlight,
+    duplicates,
+    calls: [...calls.values()].sort((a, b) => a.firstAtMs - b.firstAtMs || b.calls - a.calls),
+  };
+}
+
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 const top = <T,>(items: T[], by: (item: T) => number, count = 15) => [...items].sort((a, b) => by(b) - by(a)).slice(0, count);
 
@@ -449,7 +503,7 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   const before = webContentPids();
   const idleRun = await launch(browser, url);
   const launchChunks = [...idleRun.scripts];
-  const launchStep = summarize(sources, idleRun.counted, launchChunks, launchChunks);
+  const launchStep = { ...summarize(sources, idleRun.counted, launchChunks, launchChunks), settling: settlingOf(idleRun.counted) };
   const rssStartMb = rssMb(before);
   console.log(`[${size.id}] (${elapsed()}) launched; idling…`);
   await reset(idleRun.page);
@@ -539,6 +593,10 @@ function countsOf(results: Latest['sizes']): Counts {
     step(`${size}.launch`, result.launch);
     // Everything a launch loads, the prefetched pages included; then what Home and each page need on their own.
     counts[`${size}.launch.appJsBytes`] = result.launch.appJsBytes;
+    if (result.launch.settling) {
+      counts[`${size}.launch.commandsBeforeSettled`] = result.launch.settling.beforeSettled;
+      counts[`${size}.launch.duplicateCallsInFlight`] = result.launch.settling.duplicatesInFlight;
+    }
     if (result.coldJs) {
       counts[`${size}.launch.homeJsBytes`] = result.coldJs.home;
       for (const [page, bytes] of Object.entries(result.coldJs.pages)) counts[`${size}.page.${page}.appJsBytes`] = bytes;
@@ -580,6 +638,7 @@ function reportedOf(results: Latest['sizes']): Latest['reported'] {
     reported[`${size}.launch.mockJsBytes`] = result.launch.mockJsBytes;
     reported[`${size}.hidden.rssShownMb`] = result.hidden?.rssShownMb ?? null;
     reported[`${size}.hidden.rssHiddenMb`] = result.hidden?.rssHiddenMb ?? null;
+    reported[`${size}.launch.settledAtMs`] = result.launch.settling?.settledAtMs ?? null;
   }
   return reported;
 }
@@ -611,6 +670,11 @@ function printReport(latest: Latest) {
       stepRow('launch → Home settled', result.launch, result.launch.appJsBytes),
       ...Object.entries(result.pages).map(([page, step]) => stepRow(`open ${page}`, step, result.coldJs?.pages[page])),
     ]);
+    const { settling } = result.launch;
+    if (settling) {
+      console.log(`\nLaunch: Home settled at ${settling.settledAtMs} ms on the page clock (its last DOM change before ${SETTLED_QUIET_MS} ms without one), after ${settling.beforeSettled} calls; ${settling.duplicatesInFlight} repeated a call still in flight${settling.duplicatesInFlight ? ` (${Object.entries(settling.duplicates).map(([name, count]) => `${name} ×${count}`).join(', ')})` : ''}.`);
+      table(['Sent before Home settled', 'Calls', 'First at ms'], settling.calls.map((entry) => [entry.command, entry.calls, entry.firstAtMs]));
+    }
     const { idle } = result;
     console.log(`\nIdle on Home, per minute over ${IDLE_MINUTES} minutes:`);
     table(['Counter', 'Value'], [

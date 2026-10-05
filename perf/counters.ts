@@ -10,6 +10,7 @@ export function installCounters() {
   type Tally = Record<string, number>;
   type LiveTimer = { kind: 'timeout' | 'interval'; site: string; delay: number };
   type CommandTally = { calls: number; argBytes: number; replyBytes: number; failed: number };
+  type SentCommand = { command: string; at: number; detail: string; args: string };
   type Fiber = {
     tag: number;
     type: unknown;
@@ -46,6 +47,10 @@ export function installCounters() {
     componentSources: {} as Record<string, { name: string; source: string }>,
     mutations: 0,
     mutationTargets: {} as Tally,
+    /** Each command as it was sent, on the page clock: what was in flight before Home settled, and repeats. */
+    sent: [] as SentCommand[],
+    /** The page-clock times the DOM changed at, each once: Home has settled once nothing changes for a while. */
+    mutationTimes: [] as number[],
     wrapped: false,
   };
 
@@ -103,6 +108,14 @@ export function installCounters() {
     call: { command: string; args: Record<string, unknown> }, reply: unknown, failed: boolean,
   ) => {
     const tally = (state.commands[call.command] ??= { calls: 0, argBytes: 0, replyBytes: 0, failed: 0 });
+    // The mock makes its answer as the call arrives and hands it over after a fixed delay, so for nearly every command
+    // this runs when the call was sent. Management requests are told apart by method and path; `args` tells a repeat
+    // of the same call from a different one.
+    const request = call.args.request as { method?: string; path?: string } | undefined;
+    const detail = call.command === 'management_request' && request ? `${request.method ?? ''} ${request.path ?? ''}` : '';
+    let args = '';
+    try { args = JSON.stringify(call.args).slice(0, 300); } catch { /* unserializable */ }
+    if (state.sent.length < 2_000) state.sent.push({ command: call.command, at: Date.now(), detail, args });
     tally.calls += 1;
     tally.argBytes += bytes(call.args);
     tally.replyBytes += failed ? 0 : bytes(reply);
@@ -164,6 +177,8 @@ export function installCounters() {
   };
   const observer = new MutationObserver((records) => {
     state.mutations += records.length;
+    const now = Date.now();
+    if (state.mutationTimes[state.mutationTimes.length - 1] !== now && state.mutationTimes.length < 5_000) state.mutationTimes.push(now);
     for (const record of records) {
       bump(state.mutationTargets, `${record.type}${record.attributeName ? `:${record.attributeName}` : ''} ${describe(record.target)}`);
     }
@@ -184,6 +199,8 @@ export function installCounters() {
     componentSources: { ...state.componentSources },
     mutations: state.mutations,
     mutationTargets: { ...state.mutationTargets },
+    sent: [...state.sent],
+    mutationTimes: [...state.mutationTimes],
     wrapped: state.wrapped && window.setTimeout !== realSetTimeout,
     visibility: document.visibilityState,
   });
@@ -195,6 +212,8 @@ export function installCounters() {
     state.commands = {};
     state.commits = 0;
     state.mutations = 0;
+    state.sent = [];
+    state.mutationTimes = [];
   };
   /** A number that changes whenever React commits or the DOM changes, cheap enough to ask for between tasks. */
   const progress = () => state.commits * 1_000_003 + state.mutations;
@@ -214,6 +233,8 @@ export type CounterSnapshot = {
   componentSources: Record<string, { name: string; source: string }>;
   mutations: number;
   mutationTargets: Record<string, number>;
+  sent: { command: string; at: number; detail: string; args: string }[];
+  mutationTimes: number[];
   wrapped: boolean;
   visibility: DocumentVisibilityState;
 };
