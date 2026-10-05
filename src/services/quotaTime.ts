@@ -1,6 +1,6 @@
-import { useSyncExternalStore } from 'react';
 import { translate } from '../i18n';
 import { formatDateTime, formatRelative } from '../lib/format';
+import { useStoreSelector } from './stableValue';
 
 export const quotaResetInstant = (value: unknown): number | undefined => {
   if (typeof value !== 'number' && typeof value !== 'string') return undefined;
@@ -79,4 +79,15 @@ const subscribe = (listener: () => void) => {
     }
   };
 };
-export const useQuotaClock = () => useSyncExternalStore(subscribe, () => now, () => now);
+const getNow = () => now;
+const itself = (value: number) => value;
+
+/**
+ * The shared clock, moved on every minute. With `select`, only what it works out from the time (a countdown's text,
+ * whether a reset has passed): the component renders again when that changes rather than every minute.
+ */
+export function useQuotaClock(): number;
+export function useQuotaClock<T>(select: (nowMs: number) => T): T;
+export function useQuotaClock<T>(select?: (nowMs: number) => T): T | number {
+  return useStoreSelector<number, T | number>(subscribe, getNow, select ?? itself);
+}

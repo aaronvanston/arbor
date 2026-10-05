@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
 import { ArrowUpRight, Monitor, Plus, TerminalSquare, TriangleAlert, Users } from './ui/icons';
@@ -7,7 +7,8 @@ import { useI18n } from '../i18n';
 import { failedRequestsView, usageView, type AppView } from '../navigation';
 import { addAccount } from '../services/addAccount';
 import { accountsGap, ensureAccountsLoaded, useAccountsStore } from '../services/accountsStore';
-import { todayRange } from '../services/homeOverview';
+import { machinesFlow, todayRange } from '../services/homeOverview';
+import { replaceEqualDeep, useStableValue } from '../services/stableValue';
 import { formatCount, formatMoney } from '../lib/format';
 import { StatBlock, StatsGrid } from './layout/stats';
 import { SettingsBlock, SettingsSection } from './layout/settings';
@@ -44,6 +45,9 @@ export function HomeDashboard({ coreReady, onNavigate, onAddMachine }: {
   onAddMachine?: () => void;
 }) {
   const machines = useHomeMachines();
+  // Home renders again with every change to a machine; the sections that don't show the machines are memoized, and
+  // the proxy card takes only its count of them.
+  const machineFlow = useStableValue(machinesFlow(machines));
   const store = useAccountsStore();
   useEffect(() => {
     if (coreReady) void ensureAccountsLoaded();
@@ -60,13 +64,13 @@ export function HomeDashboard({ coreReady, onNavigate, onAddMachine }: {
           {firstRun ? null : <TodayStats onNavigate={onNavigate} />}
         </>
       ) : null}
-      <HomeProxy machines={machines} onNavigate={onNavigate} />
+      <HomeProxy machines={machineFlow} onNavigate={onNavigate} />
     </>
   );
 }
 
 /** The steps that set Arbor up, for a Home with no account yet: an account, the agents on this Mac, the other machines. */
-function GetStarted({ onNavigate, onAddMachine }: { onNavigate?: (view: AppView) => void; onAddMachine?: () => void }) {
+const GetStarted = memo(function GetStarted({ onNavigate, onAddMachine }: { onNavigate?: (view: AppView) => void; onAddMachine?: () => void }) {
   const { t } = useI18n();
   const [connecting, setConnecting] = useState(false);
   return (
@@ -112,7 +116,7 @@ function GetStarted({ onNavigate, onAddMachine }: { onNavigate?: (view: AppView)
       <ConnectAgentDialog open={connecting} onClose={() => setConnecting(false)} onNavigate={onNavigate} />
     </>
   );
-}
+});
 
 function StartStep({ icon, title, description, action }: { icon: ReactNode; title: string; description: string; action: ReactNode }) {
   return (
@@ -127,14 +131,16 @@ function StartStep({ icon, title, description, action }: { icon: ReactNode; titl
   );
 }
 
-function TodayStats({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+const TodayStats = memo(function TodayStats({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
   const [overview, setOverview] = useState<TodayOverview | null>(null);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
-      setOverview(await invokeCommand('get_usage_overview', { query: todayRange() }));
+      const next = await invokeCommand('get_usage_overview', { query: todayRange() });
+      // A read with nothing new keeps the figures as they were, so the section doesn't render again for it.
+      setOverview((previous) => replaceEqualDeep(previous, next));
       setError('');
     } catch (requestError) {
       setError(String(requestError));
@@ -247,4 +253,4 @@ function TodayStats({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
       )}
     </SettingsSection>
   );
-}
+});

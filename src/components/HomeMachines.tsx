@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { ArrowUpRight } from './ui/icons';
 import { useI18n } from '../i18n';
@@ -13,6 +13,7 @@ import { healthReasonText, homeMachines, todayRange, type HomeMachine } from '..
 import { unreachableReason } from '../services/machineAlerts';
 import { useFleetHealth } from '../services/fleetHealth';
 import { machinePlace } from '../services/machineIdentity';
+import { replaceEqualDeep, useStableValue } from '../services/stableValue';
 import { MachinePill } from './identity/Identity';
 import { FirstMachineActions } from './FirstMachineActions';
 import { SettingsBlock, SettingsSection } from './layout/settings';
@@ -57,7 +58,8 @@ export function useHomeMachines(): HomeMachine[] | null {
 
   const loadSessions = useCallback(async () => {
     try {
-      setSessions(await invokeCommand('get_machine_sessions', { query: todayRange() }));
+      const next = await invokeCommand('get_machine_sessions', { query: todayRange() });
+      setSessions((previous) => replaceEqualDeep(previous, next));
     } catch {
       // The cards still say each machine's health; today's figures fill in on the next read.
     }
@@ -103,17 +105,18 @@ export function useHomeMachines(): HomeMachine[] | null {
     };
   }, [loadSessions]);
 
-  return useMemo(
+  // Machines whose figures didn't change keep their objects, so only their own cards render again.
+  return useStableValue(useMemo(
     () => (health ? homeMachines(health, sessions, board, board?.thisMachine ?? '') : null),
     [health, sessions, board],
-  );
+  ));
 }
 
 /**
  * The second half of what Arbor does: a card per machine using the proxy, with its health, what its agents are doing
  * now and what it sent through today.
  */
-export function HomeMachines({ machines, onNavigate }: { machines: HomeMachine[] | null; onNavigate?: (view: AppView) => void }) {
+export const HomeMachines = memo(function HomeMachines({ machines, onNavigate }: { machines: HomeMachine[] | null; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
   return (
     <SettingsSection
@@ -145,14 +148,16 @@ export function HomeMachines({ machines, onNavigate }: { machines: HomeMachine[]
           </SettingsBlock>
         )
         : machines.map((item) => (
-          <MachineCard key={item.machine} item={item} onOpen={onNavigate ? () => onNavigate(machinesView(item.machine)) : undefined} />
+          <MachineCard key={item.machine} item={item} onNavigate={onNavigate} />
         ))}
     </SettingsSection>
   );
-}
+});
 
-function MachineCard({ item, onOpen }: { item: HomeMachine; onOpen?: () => void }) {
+/** Memoized: a card renders again only when its own machine changes. */
+const MachineCard = memo(function MachineCard({ item, onNavigate }: { item: HomeMachine; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
+  const onOpen = onNavigate ? () => onNavigate(machinesView(item.machine)) : undefined;
   const { health, today } = item;
   const status = health?.status ?? null;
   const tone = status ? STATUS_TONE[status] : 'muted';
@@ -226,4 +231,4 @@ function MachineCard({ item, onOpen }: { item: HomeMachine; onOpen?: () => void 
       </span>
     </button>
   );
-}
+});

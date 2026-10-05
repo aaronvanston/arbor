@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { readFleetHealth } from '../services/machineHealth';
 import { identitiesByMachine, type MachineIdentity } from '../services/machineIdentity';
+import { replaceEqualDeep, useStoreSelector } from '../services/stableValue';
 
 const HEALTH_UPDATED_EVENT = 'machine-health-updated';
 /** A machine's model doesn't change; this only picks up machines that answer for the first time. */
@@ -19,7 +20,10 @@ async function read() {
   readAt = Date.now();
   try {
     const snapshot = await readFleetHealth();
-    identities = identitiesByMachine(snapshot.machines);
+    // What a machine is rarely changes: a read that found the same ones tells no one, so every pill on screen stays put.
+    const next = replaceEqualDeep(identities, identitiesByMachine(snapshot.machines));
+    if (next === identities) return;
+    identities = next;
     listeners.forEach((listener) => listener());
   } catch {
     // Machines keep the plain icon until a read works.
@@ -54,4 +58,9 @@ const getIdentities = () => identities;
  */
 export function useMachineIdentities(): Map<string, MachineIdentity> {
   return useSyncExternalStore(subscribe, getIdentities, getIdentities);
+}
+
+/** What one machine is, from the same copy: a pill renders again only when its own machine's kind changes. */
+export function useMachineKind(name: string): MachineIdentity['kind'] | undefined {
+  return useStoreSelector(subscribe, getIdentities, (identities) => identities.get(name)?.kind);
 }

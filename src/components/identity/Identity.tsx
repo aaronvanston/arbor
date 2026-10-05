@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { memo, type CSSProperties, type ReactNode } from 'react';
 import { Monitor, TerminalSquare } from '../ui/icons';
 import antigravityIcon from '../../assets/icons/antigravity.svg';
 import claudeIcon from '../../assets/icons/claude.svg';
@@ -7,7 +7,7 @@ import geminiIcon from '../../assets/icons/gemini.svg';
 import grokIcon from '../../assets/icons/grok.svg';
 import kimiIcon from '../../assets/icons/kimi-light.svg';
 import vertexIcon from '../../assets/icons/vertex.svg';
-import { useMachineIdentities } from '../../hooks/useMachineIdentities';
+import { useMachineKind } from '../../hooks/useMachineIdentities';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { canonicalProvider } from '../../services/authFiles';
@@ -28,8 +28,8 @@ const plainClass = 'inline-flex min-w-0 max-w-full items-center gap-1.5';
 /** A machine's look: its color, icon and fill, from what was picked for it and what its model is. */
 export function useMachineLook(name: string) {
   const choices = useMachineLookChoices();
-  const identities = useMachineIdentities();
-  return resolveMachineLook(name, choices[machineLookKey(name)], identities.get(name)?.kind);
+  const kind = useMachineKind(name);
+  return resolveMachineLook(name, choices[machineLookKey(name)], kind);
 }
 
 /**
@@ -69,9 +69,10 @@ type MachinePillProps = {
 
 /**
  * A machine as it's named everywhere in Arbor: its icon and name in a pill of its color, filled the way Settings ›
- * Machines says. Without a name it says `fallback` in the same pill, gray, with a plain icon.
+ * Machines says. Without a name it says `fallback` in the same pill, gray, with a plain icon. Memoized: rows name
+ * their machines on every render, and the pill changes only with its own machine.
  */
-export function MachinePill({ name, size = 'md', fallback, onClick, label, className }: MachinePillProps) {
+export const MachinePill = memo(function MachinePill({ name, size = 'md', fallback, onClick, label, className }: MachinePillProps) {
   const machine = name?.trim();
   if (!machine) {
     const content = (
@@ -89,7 +90,7 @@ export function MachinePill({ name, size = 'md', fallback, onClick, label, class
     );
   }
   return <NamedMachine name={machine} size={size} onClick={onClick} label={label} className={className} />;
-}
+});
 
 function NamedMachine({ name, size, onClick, label, className }: Omit<MachinePillProps, 'name' | 'fallback'> & { name: string; size: MachinePillSize }) {
   const look = useMachineLook(name);
@@ -130,10 +131,10 @@ export function MachinePills({ names, size = 'sm', className }: { names: readonl
 }
 
 /** A machine's icon in its color, for an icon box that writes its name beside it (the search palette). Decorative. */
-export function MachineMark({ name, className }: { name: string; className?: string }) {
+export const MachineMark = memo(function MachineMark({ name, className }: { name: string; className?: string }) {
   const look = useMachineLook(name);
   return <MachineIcon kind={look.icon} className={cn('shrink-0', className)} style={{ color: identityColorCss(look.color) }} />;
-}
+});
 
 const PROVIDERS: Record<string, { label: string; icon: string; tint?: boolean }> = {
   claude: { label: 'Claude', icon: claudeIcon },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { ArrowUpRight, History, TriangleAlert, Users } from './ui/icons';
 import { useI18n } from '../i18n';
 import { formatWhen } from '../lib/format';
@@ -41,7 +41,7 @@ const unknownBar = 'bg-[repeating-linear-gradient(-45deg,var(--color-muted-foreg
  * The first half of what Arbor does: every signed-in account, pooled by provider, with what's left of each one's
  * limit, so a glance says which accounts the proxy is leaning on and which have run low.
  */
-export function HomeAccounts({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+export const HomeAccounts = memo(function HomeAccounts({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
   const store = useAccountsStore();
   const { files, loading, refreshing, error } = store;
@@ -115,7 +115,7 @@ export function HomeAccounts({ onNavigate }: { onNavigate?: (view: AppView) => v
       ))}
     </SettingsSection>
   );
-}
+});
 
 function ProviderAccounts({ limit, now, profiles, filesByKey, paused }: {
   limit: ProviderLimit;

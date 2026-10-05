@@ -182,11 +182,16 @@ export type ProxyFlow = {
 };
 
 export function proxyFlow(machines: readonly HomeMachine[] | null, files: readonly AuthFile[] | null, nowMs: number): ProxyFlow {
-  return {
-    machines: machines ? { count: machines.length, sentToday: machines.filter((item) => (item.today?.requests ?? 0) > 0).length } : null,
-    accounts: files ? { count: files.length, ready: files.filter((file) => authFileAvailability(file, nowMs).kind === 'ready').length } : null,
-  };
+  return { machines: machinesFlow(machines), accounts: accountsFlow(files, nowMs) };
 }
+
+/** The machines' end of the proxy card, which changes with the machines but not with the time. */
+export const machinesFlow = (machines: readonly HomeMachine[] | null): ProxyFlow['machines'] =>
+  machines ? { count: machines.length, sentToday: machines.filter((item) => (item.today?.requests ?? 0) > 0).length } : null;
+
+/** The accounts' end, which changes as limits reset. */
+export const accountsFlow = (files: readonly AuthFile[] | null, nowMs: number): ProxyFlow['accounts'] =>
+  files ? { count: files.length, ready: files.filter((file) => authFileAvailability(file, nowMs).kind === 'ready').length } : null;
 
 /** What's pulling a machine's score down, in the words Machines uses. */
 export function healthReasonText(reason: HealthReason, latest: HealthPoint): { key: MessageKey; variables: MessageVariables } {

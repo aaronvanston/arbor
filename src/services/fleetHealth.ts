@@ -5,6 +5,7 @@ import { useFleetBoard } from './fleetBoard';
 import { homeMachines, type HomeMachine } from './homeOverview';
 import { onMachineHostsSaved, readFleetHealth } from './machineHealth';
 import { sharedStore } from './savedStore';
+import { replaceEqualDeep, useStableValue, useStoreSelector } from './stableValue';
 
 /** A machine's status changes slowly, and the sampler's rounds come every 5 seconds while Machines is open. */
 const REFRESH_MS = 30_000;
@@ -18,13 +19,21 @@ const store = sharedStore<MachineHealth[] | null>(null);
 export const useFleetHealth = store.useValue;
 
 /**
+ * Part of the machines' health, picked by `select` (say each machine's name and status): the component renders again
+ * only when that part changes, not on every sampling round's new readings.
+ */
+export const useFleetHealthSelect = <T,>(select: (health: MachineHealth[] | null) => T): T => useStoreSelector(store.subscribe, store.get, select);
+
+/**
  * Every machine with its health and what its agents are doing now, from the live board, in Home's order; null until
  * health has been read once. Today's requests aren't read, so `today` is always null.
  */
 export function useFleetMachines(): HomeMachine[] | null {
   const health = useFleetHealth();
   const { board } = useFleetBoard();
-  return useMemo(() => (health ? homeMachines(health, [], board, board?.thisMachine ?? '') : null), [health, board]);
+  // The board is built anew on every read; machines whose figures didn't change keep their objects, so each row
+  // memoized on its machine renders only when that machine changes.
+  return useStableValue(useMemo(() => (health ? homeMachines(health, [], board, board?.thisMachine ?? '') : null), [health, board]));
 }
 
 /**
@@ -37,7 +46,8 @@ export function watchFleetHealth(): () => void {
   const read = () => {
     readAt = Date.now();
     readFleetHealth()
-      .then((snapshot) => { if (!disposed) store.set(snapshot.machines); })
+      // Machines whose health didn't change keep their objects, and a round that changed nothing tells no one.
+      .then((snapshot) => { if (!disposed) store.set(replaceEqualDeep(store.get(), snapshot.machines)); })
       // A failed first read still settles, so what waits on it says there's nothing rather than loading for good.
       .catch(() => { if (!disposed && store.get() === null) store.set([]); });
   };

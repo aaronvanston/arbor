@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invokeCommand } from '../native/commands';
 import type { MessageKey } from '../i18n/resources';
+import { replaceEqualDeep, useStoreSelector } from './stableValue';
 import type { MachinePool, PoolMemberVerdict, PoolPreview, PoolVerdictKind, PoolWeight, PoolWhenFull } from '../native/types';
 
 /**
@@ -190,12 +191,23 @@ let started = false;
 /** Pages open that show pools' figures; while there are any, the sampler stays on its fast interval. */
 let watching = 0;
 
+/** Takes a read; one that changed nothing (most sampling rounds, for who has room) keeps the snapshot and tells no one. */
 const publish = (next: Snapshot) => {
-  snapshot = next;
+  const kept = replaceEqualDeep(snapshot, next);
+  if (kept === snapshot) return;
+  snapshot = kept;
   for (const listener of listeners) listener();
 };
 
+/**
+ * With no page watching, the previews only feed the sidebar's pool rows, so the sampling rounds reload them at most this
+ * often, as the machines' health is. A page watching reloads on every round, which keeps the sampler fast for it.
+ */
+const PREVIEW_REFRESH_MS = 30_000;
+let previewsReadAt = 0;
+
 async function reloadPreviews() {
+  previewsReadAt = Date.now();
   try {
     publish({ ...snapshot, previews: await invokeCommand('preview_pools', { watching: watching > 0 }) });
   } catch {
@@ -228,17 +240,27 @@ function start() {
   void reloadPools();
   void listen(MACHINE_POOLS_UPDATED_EVENT, () => void reloadPools()).catch(() => undefined);
   // Each sampling round can change who has room.
-  void listen(MACHINE_HEALTH_UPDATED_EVENT, () => { if (listeners.size) void reloadPreviews(); }).catch(() => undefined);
+  void listen(MACHINE_HEALTH_UPDATED_EVENT, () => {
+    if (listeners.size && (watching > 0 || Date.now() - previewsReadAt >= PREVIEW_REFRESH_MS)) void reloadPreviews();
+  }).catch(() => undefined);
 }
 
-const subscribe = (listener: () => void) => {
+/** Calls `listener` after each change to the pools or their previews, reading them first if nothing has yet. */
+export const subscribePools = (listener: () => void) => {
   start();
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 };
+/** The pools and their previews as last read. */
+export const currentPools = () => snapshot;
 
 /** The pools and their previews, kept current while anything shows them. */
-export const usePools = () => useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
+export const usePools = () => useSyncExternalStore(subscribePools, currentPools, currentPools);
+
+/** Part of the pools and their previews, picked by `select`: the component renders again only when that part changes. */
+export const usePoolsSelect = <T,>(select: (pools: Snapshot) => T): T => useStoreSelector(subscribePools, currentPools, select);
 
 /**
  * For a page whose figures should move with the machines, as Machines' do: while it's open the sampler reads every

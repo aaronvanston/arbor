@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { memo, type CSSProperties, type ReactNode } from 'react';
 import { Activity, Bot, Cpu, HardDrive, MemoryStick, MessageSquareMore, Unplug } from '../ui/icons';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/utils';
@@ -11,6 +11,7 @@ import { machinePlace } from '../../services/machineIdentity';
 import { AGENT_KINDS, formatLatency, readingTone } from '../../services/machineHealth';
 import { identityColorCss } from '../../services/identityColors';
 import { useMachineName } from '../../services/machineNames';
+import { useStableValue } from '../../services/stableValue';
 import { MachinePickItems, ProviderPickItems, useGlanceMachineNames, useGlanceProviders } from '../GlancePicks';
 import { MachineMark, MachinePill, ProviderMark, useMachineLook } from '../identity/Identity';
 import { CHIP_CLASS, CHIP_TOOLTIP_DELAY } from '../SidebarLimits';
@@ -74,24 +75,25 @@ export function SidebarGlance({ limits, machines, onCustomize }: { limits: React
  * are in a card on hover, so the chips stay short. Each opens the machine's page.
  */
 export function SidebarMachines({ onOpen }: { onOpen: (machine: string) => void }) {
+  const { t } = useI18n();
   const machines = useFleetMachines();
   const picks = useGlancePicks();
-  const shown = machines ? glanceMachines(machines, picks) : [];
-  if (!shown.length) return null;
+  // Each chip gets only what it shows, kept the same object while that doesn't change, so a sampling round's new
+  // readings re-render no chip whose score, state or agents stayed put. Its card reads the readings while it's open.
+  const chips = useStableValue((machines ? glanceMachines(machines, picks) : []).map((item) => chipFacts(item, t)));
+  if (!chips.length) return null;
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-1" data-slot="sidebar-machines">
-      {shown.map((item) => <MachineChip key={item.machine} item={item} onOpen={() => onOpen(item.machine)} />)}
+      {chips.map((chip) => <MachineChip key={chip.machine} chip={chip} onOpen={onOpen} />)}
     </div>
   );
 }
 
-function MachineChip({ item, onOpen }: { item: HomeMachine; onOpen: () => void }) {
-  const { t } = useI18n();
-  const name = useMachineName(item.machine);
-  const look = useMachineLook(item.machine);
+type ChipFacts = { machine: string; status: HealthStatus; score: number | null; condition: string | null; agents: string; working: number };
+
+function chipFacts(item: HomeMachine, t: ReturnType<typeof useI18n>['t']): ChipFacts {
   const { health, working } = item;
   const status = health?.status ?? 'pending';
-  const statusText = t(HEALTH_LABEL[status]);
   const score = health?.score === null || health?.score === undefined ? null : Math.round(health.score);
   // What's pulling it down, in Machines' words, when it isn't simply healthy.
   const condition = health?.status === 'unreachable'
@@ -99,7 +101,15 @@ function MachineChip({ item, onOpen }: { item: HomeMachine; onOpen: () => void }
     : health?.reason && health.latest && status !== 'healthy'
     ? (({ key, variables }) => t(key, variables))(healthReasonText(health.reason, health.latest))
     : null;
-  const agents = agentsText(item, t) || t('glance.idle');
+  return { machine: item.machine, status, score, condition, agents: agentsText(item, t) || t('glance.idle'), working };
+}
+
+const MachineChip = memo(function MachineChip({ chip, onOpen }: { chip: ChipFacts; onOpen: (machine: string) => void }) {
+  const { t } = useI18n();
+  const name = useMachineName(chip.machine);
+  const look = useMachineLook(chip.machine);
+  const { status, score, condition, agents, working } = chip;
+  const statusText = t(HEALTH_LABEL[status]);
   const healthText = score === null ? statusText : t('glance.machine.score', { status: statusText, score });
   // The machine pill's outline look, so a chip reads as that machine without its name.
   const style = { '--machine-color': identityColorCss(look.color) } as CSSProperties;
@@ -117,11 +127,11 @@ function MachineChip({ item, onOpen }: { item: HomeMachine; onOpen: () => void }
             style={style}
             // The reason is a sentence of its own, with its own full stop, which the label's "{status}." would double.
             aria-label={t('glance.machine.aria', { machine: name, status: condition ? `${healthText}. ${condition.replace(/\.+$/, '')}` : healthText, agents })}
-            onClick={onOpen}
+            onClick={() => onOpen(chip.machine)}
           />
         }
       >
-        <MachineMark name={item.machine} className="size-3.5" />
+        <MachineMark name={chip.machine} className="size-3.5" />
         {status === 'unreachable' ? (
           <Unplug aria-hidden="true" className="size-3 text-error-foreground" />
         ) : (
@@ -133,10 +143,16 @@ function MachineChip({ item, onOpen }: { item: HomeMachine; onOpen: () => void }
         </span>
       </TooltipTrigger>
       <TooltipPopup side="top" align="start" variant="card">
-        <MachineCard item={item} statusText={statusText} score={score} condition={condition} />
+        <LiveMachineCard machine={chip.machine} statusText={statusText} score={score} condition={condition} />
       </TooltipPopup>
     </Tooltip>
   );
+});
+
+/** The card with the machine as it stands now, read only while the card is open. */
+function LiveMachineCard({ machine, ...shown }: { machine: string; statusText: string; score: number | null; condition: string | null }) {
+  const item = useFleetMachines()?.find((entry) => entry.machine === machine);
+  return item ? <MachineCard item={item} {...shown} /> : null;
 }
 
 /**

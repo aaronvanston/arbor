@@ -8,11 +8,12 @@ import { canOpenView, keepMachineScope, machinesView, mainView, poolsView, type 
 import { requestFocus } from '../../focusRequests';
 import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
-import { useFleetHealth } from '../../services/fleetHealth';
+import { useFleetHealthSelect } from '../../services/fleetHealth';
 import { accountsBadge, badgeDestination, machinesBadge, poolsBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
-import { POOL_STANDING_LABEL, poolStanding, usePools, type PoolStanding } from '../../services/pools';
+import { POOL_STANDING_LABEL, poolStanding, usePoolsSelect, type PoolStanding } from '../../services/pools';
 import { useQuotaClock } from '../../services/quotaTime';
 import { setupChecks } from '../../services/setupChecks';
+import { replaceEqualDeep } from '../../services/stableValue';
 import { fetchSetupInventory, SETUP_INVENTORY_UPDATED_EVENT } from '../../services/setupInventory';
 import {
   arriveAtPage,
@@ -84,14 +85,12 @@ const MACHINE_STATUS: Record<HealthStatus, MessageKey> = {
 function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId, PageBadge | null>>; machines: TreeMachine[]; pools: TreePool[] } {
   const { files, disabled } = useAccountsStore();
   const { paused } = useAccountReserves();
-  const now = useQuotaClock();
-  const health = useFleetHealth();
-  const machines = useMemo<TreeMachine[]>(() => (health ?? []).map((machine) => ({ name: machine.machine, status: machine.status })), [health]);
-  const { pools: poolList, previews } = usePools();
-  const pools = useMemo<TreePool[]>(
-    () => (poolList ?? []).map((pool) => ({ id: pool.id, name: pool.name, ...poolStanding(pool, previews.find((preview) => preview.pool === pool.id)) })),
-    [poolList, previews],
-  );
+  // Each signal is only what the tree draws from its store, so a sampling round's new readings, a minute passing or a
+  // preview read that changed no pool's standing leaves the tree as it is.
+  const accounts = useQuotaClock((now) => accountsBadge(files, disabled, paused, now));
+  const machines = useFleetHealthSelect((health): TreeMachine[] => (health ?? []).map((machine) => ({ name: machine.machine, status: machine.status })));
+  const pools = usePoolsSelect(({ pools: poolList, previews }): TreePool[] =>
+    (poolList ?? []).map((pool) => ({ id: pool.id, name: pool.name, ...poolStanding(pool, previews.find((preview) => preview.pool === pool.id)) })));
   const [setup, setSetup] = useState<PageBadge | null>(null);
 
   useEffect(() => {
@@ -102,7 +101,7 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
     let disposed = false;
     const read = () => {
       fetchSetupInventory()
-        .then((inventory) => { if (!disposed) setSetup(setupBadge(setupChecks(inventory.machines))); })
+        .then((inventory) => { if (!disposed) setSetup((previous) => replaceEqualDeep(previous, setupBadge(setupChecks(inventory.machines)))); })
         .catch(() => undefined);
     };
     read();
@@ -113,7 +112,6 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
     };
   }, []);
 
-  const accounts = useMemo(() => accountsBadge(files, disabled, paused, now), [files, disabled, paused, now]);
   const machinesMark = useMemo(() => machinesBadge(machines.map((machine) => machine.status)), [machines]);
   const poolsMark = useMemo(() => poolsBadge(pools.map((pool) => pool.standing)), [pools]);
   return { badges: { accounts, machines: machinesMark, pools: poolsMark, setup }, machines, pools };

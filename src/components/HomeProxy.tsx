@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import { ArrowRight, Check, Copy, Eye, EyeOff, Monitor, Play, RotateCcw, Square, TerminalSquare, Users } from './ui/icons';
@@ -15,7 +15,7 @@ import { accountLimitsView, machinesView, type AppView } from '../navigation';
 import { getAccountsSnapshot, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { clientApiProfiles } from '../services/clientAccess';
 import { CORE_ACTION_LABEL, runCoreProcess, type CoreProcessCommand } from '../services/coreProcess';
-import { proxyFlow, type HomeMachine } from '../services/homeOverview';
+import { accountsFlow, type ProxyFlow } from '../services/homeOverview';
 import { useQuotaClock } from '../services/quotaTime';
 import { DetailRow, SettingsBlock, SettingsSection } from './layout/settings';
 import { WithShortcut } from './ShortcutKbd';
@@ -44,14 +44,16 @@ const TONE_BOX: Record<StatusTone, string> = {
  * the accounts it passes them to. Below that, what an agent needs to reach it, and the core's details folded away with
  * Stop, so it isn't one stray click from cutting every machine off. It's shown whether or not the core is running,
  * since this is where it's started.
+ *
+ * Memoized, with only the machines' count and how many sent something today from Home's machines, so it renders again
+ * when those change, or when an account becomes ready or not as a limit resets, rather than on every sampling round.
  */
-export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | null; onNavigate?: (view: AppView) => void }) {
+export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { machines: ProxyFlow['machines']; onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
   const { info: appUpdate } = useAppUpdate();
   const { status: coreStatus, statusError, refreshStatus, publishStatus } = useCoreRuntime();
   const { files, loaded } = useAccountsStore();
-  const now = useQuotaClock();
 
   const [installedAppVersion, setInstalledAppVersion] = useState('');
   const [listenHost, setListenHost] = useState('127.0.0.1');
@@ -175,7 +177,8 @@ export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | 
   const appVersion = appUpdate?.currentVersion || installedAppVersion;
 
   const profiles = clientApiProfiles(port, tlsEnabled, listenHost).filter((profile) => profile.id !== 'gemini');
-  const flow = useMemo(() => proxyFlow(machines, coreReady && loaded ? files : null, now), [machines, coreReady, loaded, files, now]);
+  const accounts = useQuotaClock((now) => accountsFlow(coreReady && loaded ? files : null, now));
+  const flow: ProxyFlow = { machines, accounts };
   const keyToggleLabel = showApiKey ? t('config.keys.hide') : t('config.keys.show');
   const keyCopyLabel = copied === 'home:apikey' ? t('config.notice.keyCopied') : t('config.keys.copy');
 
@@ -313,7 +316,7 @@ export function HomeProxy({ machines, onNavigate }: { machines: HomeMachine[] | 
       ) : null}
     </SettingsSection>
   );
-}
+});
 
 /** One end of the flow: a count, what it's doing, and where it opens. */
 function FlowEnd({ icon, value, hint, warn = false, onOpen, openLabel }: {
