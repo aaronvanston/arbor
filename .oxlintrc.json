@@ -29,5 +29,5 @@
   // Each worktree under .claude/worktrees carries its own copy of this file. The .gitignore entry for that folder
   // keeps oxlint out of them; `bun run lint` passing --disable-nested-config and the .claude/** ignore below are a
   // second guard in case that entry ever goes missing.
-  "ignorePatterns": ["dist/**", "src-tauri/target/**", "src-tauri/gen/**", ".claude/**"]
+  "ignorePatterns": ["dist/**", "dist-demo/**", ".perf/**", "src-tauri/target/**", "src-tauri/gen/**", ".claude/**"]
 }

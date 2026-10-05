@@ -25,3 +25,7 @@ misc/
 
 # Core plugins build on their own.
 core-plugins/*/target/
+
+# bun run perf: its build, and the last run (perf/baseline.json is what's kept).
+.perf/
+perf/latest.json

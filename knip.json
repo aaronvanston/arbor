@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
   // index.html brings in src/main.tsx, and knip's Vite plugin finds vite.config.js on its own.
   "entry": ["index.html", "tests/**/*.test.{ts,tsx}", "scripts/*.{mjs,ts}"],
-  "project": ["src/**/*.{ts,tsx,css}", "tests/**/*.{ts,tsx}", "scripts/*.{mjs,ts}"],
+  "project": ["src/**/*.{ts,tsx,css}", "tests/**/*.{ts,tsx}", "scripts/*.{mjs,ts}", "perf/*.ts"],
   // An export its own file also uses isn't dead code: services export their thresholds and the types of
   // what they return next to the code that uses them. Anything nobody uses at all is still reported.
   "ignoreExportsUsedInFile": true,
