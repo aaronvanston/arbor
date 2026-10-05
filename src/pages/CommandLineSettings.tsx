@@ -14,6 +14,7 @@ import { Switch } from '../components/ui/switch';
 import { toast } from '../components/ui/toast';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { CLI_ACTIVITY_SHOWN, cliInstallNote, CLI_MCP_COMMAND, cliActivityRows, type CliActivityRow } from '../services/commandLine';
+import { plainError } from '../services/plainError';
 import type { CliOverview, CliSettings } from '../native/types';
 
 /** How often the open log reads the activity again, so requests show up while someone watches. */
@@ -26,6 +27,8 @@ export function CommandLineSettings() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [skillBusy, setSkillBusy] = useState(false);
+  // Kept apart from the section's error so it shows on the Agent skill row, beside the button that failed.
+  const [skillError, setSkillError] = useState<string | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const { copy, copied } = useCopyToClipboard({ inline: true });
 
@@ -35,7 +38,7 @@ export function CommandLineSettings() {
         setOverview(next);
         setError(null);
       })
-      .catch((loadError: unknown) => setError(t('cli.loadFailed', { error: String(loadError) })));
+      .catch((loadError: unknown) => setError(t('cli.loadFailed', { error: plainError(loadError, t) })));
 
   useEffect(() => {
     void load();
@@ -58,7 +61,7 @@ export function CommandLineSettings() {
       await invokeCommand('save_cli_settings', { settings: next });
       setError(null);
     } catch (saveError) {
-      setError(t('cli.saveFailed', { error: String(saveError) }));
+      setError(t('cli.saveFailed', { error: plainError(saveError, t) }));
       void load();
     }
   };
@@ -71,21 +74,22 @@ export function CommandLineSettings() {
       setError(null);
       toast({ kind: 'success', title: t('cli.install.done') });
     } catch (installError) {
-      setError(t('cli.install.failed', { error: String(installError) }));
+      setError(t('cli.install.failed', { error: plainError(installError, t) }));
     } finally {
       setBusy(false);
     }
   };
 
   const addSkill = async () => {
+    setSkillError(null);
     setSkillBusy(true);
     try {
       const result = await invokeCommand('install_cli_skill');
       setOverview((current) => (current ? { ...current, skill: 'current' } : current));
-      setError(result.failed.length ? t('cli.skill.partial', { paths: result.failed.join(', ') }) : null);
+      setSkillError(result.failed.length ? t('cli.skill.partial', { paths: result.failed.join(', ') }) : null);
       if (result.written.length) toast({ kind: 'success', title: t('cli.skill.done'), description: t('cli.skill.doneDescription') });
-    } catch (skillError) {
-      setError(t('cli.skill.failed', { error: String(skillError) }));
+    } catch (caught) {
+      setSkillError(t('cli.skill.failed', { error: plainError(caught, t) }));
     } finally {
       setSkillBusy(false);
     }
@@ -152,6 +156,7 @@ export function CommandLineSettings() {
         settingId="software.cli-skill"
         title={t('cli.skill.title')}
         description={t(skill === 'current' ? 'cli.skill.current' : skill === 'outdated' ? 'cli.skill.outdated' : 'cli.skill.description')}
+        status={skillError ? <span className="text-destructive-foreground" role="alert">{skillError}</span> : undefined}
         control={skill === 'current' ? <Badge variant="success">{t('cli.skill.added')}</Badge> : (
           <Button size="sm" variant="outline" disabled={!skill || skillBusy} onClick={() => void addSkill()}>
             {skillBusy ? <Spinner /> : null}
