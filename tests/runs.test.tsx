@@ -125,6 +125,7 @@ describe('harness runs', () => {
             run({ id: 'h', used: 'headless', harness: 'orca', setup: 'claude', state: 'exited' }),
             run({ id: 'f', state: 'failed', reason: 'handOffFailed', detail: 'not_running' }),
             run({ id: 'a', used: 'headless', harness: 'headless', setup: 'claude', state: 'failed', reason: 'agentFailed', detail: '1', handle: { pid: 1, sessionId: 's-1', log: '~/.arbor/runs/a.log' } }),
+            run({ id: 'w', state: 'queued', machine: null, used: null, harness: 'orca', reason: 'noHarness', waitUntilMs: 600_000 }),
           ]}
           onNavigate={() => undefined}
         />
@@ -143,5 +144,8 @@ describe('harness runs', () => {
     // A run that never started has nothing more to show.
     expect(itemAt(rows, 0)).not.toContain('Details');
     expect(text(renderToStaticMarkup(<I18nProvider><PoolRunsBlock runs={[]} /></I18nProvider>))).toContain('No sessions yet');
+    // One waiting for its harness gives up when none has it, not when none has room.
+    expect(itemAt(rows, 5)).toContain('if no member has Orca running with this setup');
+    expect(itemAt(rows, 5)).not.toContain('has room');
   });
 });

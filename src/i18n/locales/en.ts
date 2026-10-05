@@ -4676,6 +4676,7 @@ export const en = {
   'runs.fellBack': '{harness} wasn’t running, so it went to the command line',
   'runs.whereT3': 'Open T3 Code on that machine to follow the thread',
   'runs.waitsUntil': 'Gives up {when} if no member has room',
+  'runs.waitsUntilHarness': 'Gives up {when} if no member has {harness} running with this setup',
   'runs.cancel': 'Cancel',
   'runs.canceled': 'Took “{title}” out of the queue',
   'runs.cancelConfirm.title': 'Take “{title}” out of the queue?',

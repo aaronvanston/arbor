@@ -154,7 +154,11 @@ export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: 
                 {run.used === 't3' && run.state === 'handedOff' ? ` · ${t('runs.whereT3')}` : ''}
               </p>
               {why ? <p className={run.state === 'failed' ? 'text-xs text-error-foreground' : 'text-xs text-warning-foreground'}>{why}</p> : null}
-              {run.state === 'queued' && run.waitUntilMs ? <p className="text-xs text-muted-foreground">{t('runs.waitsUntil', { when: formatRelative(run.waitUntilMs, nowMs) })}</p> : null}
+              {run.state === 'queued' && run.waitUntilMs ? (
+                <p className="text-xs text-muted-foreground">
+                  {t(run.reason === 'noHarness' ? 'runs.waitsUntilHarness' : 'runs.waitsUntil', { when: formatRelative(run.waitUntilMs, nowMs), harness: t(HARNESS_LABEL[run.harness]) })}
+                </p>
+              ) : null}
               {run.startedAtMs ? (
                 <CollapsiblePanel>
                   <RunDetails run={run} nowMs={nowMs} />
