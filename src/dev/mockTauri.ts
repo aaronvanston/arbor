@@ -157,7 +157,7 @@
  * Usage › All time (`?page=usage&tab=lifetime`) counts a year of the archive's sessions; `?tokens=counting` has files
  * still to count, `?tokens=failed` one that couldn't be read, and `?tokens=waiting` nothing counted yet (as do
  * `?archive=empty`, and `?archive=off`, which has no archive to count from); Claude Code's own count fills in
- * cedar-02's and casey-mbp's days whose transcripts are gone, with mac-mini's older days holding sessions only,
+ * cedar-02's and casey-mbp's days whose transcripts are gone, with casey-mbp's older days holding sessions only,
  * or with `?recovered=none` every day has its transcripts;
  * for Settings › Diagnostics (`?page=settings:diagnostics`), `?diagnostics=` picks Arbor's recorded calls to machines
  * and the core: by default a few slow ci-01 health checks, one that couldn't connect and one slow Auth Files read;
