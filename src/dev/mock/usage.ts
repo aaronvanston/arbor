@@ -40,6 +40,7 @@ import type {
 import type { UsageCommands } from '../../native/usage';
 import { sessionClient, sessionPlace } from '../../services/usageSessions';
 import type { CommandAnswers } from './answers';
+import bundledPriceCatalog from '../../../src-tauri/resources/model_prices.json';
 import { coreStatus, heavyScenario } from './core';
 import { freshInstall, iso, later, mockLog, now, params } from './scenario';
 
@@ -107,6 +108,78 @@ const timeline = timelineBetween(iso(-24 * 3_600_000), iso(0));
 
 const totals = sumTimeline(timeline);
 
+// Which models the requests went to, by share of every range's requests and tokens. Overview's Breakdown and Usage ›
+// Prices both count from this one mix, so they agree. codex-auto-review is Codex's own approval model, which has no
+// public price, so it stays unpriced as it does in the app.
+const MODEL_MIX = [
+  { model: 'claude-opus-5-5', share: 0.52, failureRate: 0.015 },
+  { model: 'gpt-6-sol', share: 0.3, failureRate: 0.026 },
+  { model: 'claude-sonnet-5', share: 0.11, failureRate: 0.01 },
+  { model: 'gpt-6-luna', share: 0.06, failureRate: 0.03 },
+  { model: 'codex-auto-review', share: 0.01, failureRate: 0 },
+];
+
+/** `total` split by MODEL_MIX's shares, the last model taking what rounding leaves, so the parts add up to it. */
+const splitByModel = (total: number) => {
+  let left = total;
+  return MODEL_MIX.map((entry, index) => {
+    const part = index === MODEL_MIX.length - 1 ? left : Math.min(left, Math.round(total * entry.share));
+    left -= part;
+    return part;
+  });
+};
+
+type CatalogEntry = { inputPer1M: number; outputPer1M: number; cacheReadPer1M?: number; cacheCreationPer1M?: number };
+
+// The prices the app carries, read from the same catalog the Rust side bundles, as load_model_prices starts from.
+const bundledPrices: Record<string, ModelPrice> = Object.fromEntries(
+  Object.entries(bundledPriceCatalog.models as Record<string, CatalogEntry>).map(([model, entry]) => [model, {
+    model, prompt: entry.inputPer1M, completion: entry.outputPer1M,
+    cache: entry.cacheReadPer1M ?? 0, cacheRead: entry.cacheReadPer1M ?? 0, cacheCreation: entry.cacheCreationPer1M ?? 0,
+    promptConfigured: true, completionConfigured: true,
+    cacheReadConfigured: entry.cacheReadPer1M !== undefined, cacheCreationConfigured: entry.cacheCreationPer1M !== undefined,
+    source: 'builtin', sourceModelId: '', updatedAtMs: 0,
+  } satisfies ModelPrice]),
+);
+
+/** Prices saved from Usage › Prices, on top of the bundled ones. */
+const manualPrices = new Map<string, ModelPrice>();
+
+/** Every price the app would use: none with `?prices=none`, else the bundled ones with saved ones on top. */
+const modelPrices = (): Record<string, ModelPrice> => (noPrices ? {} : { ...bundledPrices, ...Object.fromEntries(manualPrices) });
+
+/** Usage › Prices for a range's hours, as load_usage_pricing works it out: a row per model used and per price kept. */
+const pricingFor = (points: TimelinePoint[]): UsagePricing => {
+  const sum = sumTimeline(points);
+  const prices = modelPrices();
+  const requests = splitByModel(sum.requests);
+  const tokens = splitByModel(sum.tokens);
+  const used = MODEL_MIX.map(({ model }, index) => {
+    const total = tokens[index] ?? 0;
+    // The same token mix Overview reports; reasoning is billed as output.
+    const input = Math.round(total * 0.045), output = Math.round(total * 0.015), cacheRead = Math.round(total * 0.91);
+    const cacheCreation = total - input - output - cacheRead;
+    const price = prices[model] ?? null;
+    const estimatedCost = price
+      ? (input * price.prompt + output * price.completion + cacheRead * price.cacheRead + cacheCreation * price.cacheCreation) / 1_000_000
+      : 0;
+    return { model, requests: requests[index] ?? 0, inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreation, totalTokens: total, estimatedCost, price };
+  }).filter((row) => row.requests > 0);
+  const kept = Object.values(prices).filter((price) => !used.some((row) => row.model === price.model)).map((price) => ({
+    model: price.model, requests: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, totalTokens: 0, estimatedCost: 0, price,
+  }));
+  const rows = [...used, ...kept].sort((a, b) => Number(Boolean(a.price)) - Number(Boolean(b.price)) || b.requests - a.requests || a.model.localeCompare(b.model));
+  return {
+    rows,
+    totalCost: used.reduce((total, row) => total + row.estimatedCost, 0),
+    totalRequests: sum.requests,
+    pricedRequests: used.reduce((total, row) => total + (row.price ? row.requests : 0), 0),
+    savedPrices: Object.keys(prices).length,
+  };
+};
+
+const dayPricing = pricingFor(timeline);
+
 /** A machine's share of the last 24 hours. */
 const machineShare = (machine: string, pool: string, share: number, failureRate: number, canceled: number, lastRequest: string) => {
   const requests = Math.round(totals.requests * share), failures = Math.round(requests * failureRate);
@@ -141,8 +214,8 @@ const usageOverview: UsageOverview = {
   tpsSampleCount: 8_800,
   averageLatencyMs: 4_180,
   cacheHitRate: 0.95,
-  estimatedCost: noPrices ? 0 : 2_684.12,
-  pricedRequests: noPrices ? 0 : totals.requests - 120,
+  estimatedCost: dayPricing.totalCost,
+  pricedRequests: dayPricing.pricedRequests,
   timeline,
   machines,
   machineLive: machines.map((machine) => ({ machine: machine.machine, requests: Math.max(1, Math.round(machine.requests / 800)), tokens: liveTokens(machine.requests) })),
@@ -152,6 +225,7 @@ if (freshInstall) Object.assign(usageOverview, { rpm: 0, tpm: 0, tps: 0, tpsSamp
 /** The overview for a range: counts come from its timeline, the rest scales with the last 24 hours. */
 const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
   const sum = sumTimeline(points);
+  const pricing = pricingFor(points);
   const scale = totals.requests ? sum.requests / totals.requests : 0;
   return {
     ...usageOverview,
@@ -166,8 +240,8 @@ const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
     cacheReadTokens: Math.round(sum.tokens * 0.91),
     cacheCreationTokens: Math.round(sum.tokens * 0.03),
     totalTokens: sum.tokens,
-    estimatedCost: Math.round(usageOverview.estimatedCost * scale * 100) / 100,
-    pricedRequests: noPrices ? 0 : Math.max(0, sum.requests - Math.round(120 * scale)),
+    estimatedCost: pricing.totalCost,
+    pricedRequests: pricing.pricedRequests,
     timeline: points,
     // Each machine's share holds whatever the range, so the Machines page's figures follow the range picked.
     machines: usageOverview.machines.map((machine) => ({
@@ -194,7 +268,11 @@ const account = (authIndex: string, label: string, share: number, failureRate: n
 };
 
 const usageAnalysis = {
-  models: [category('claude-opus-5-5', 'claude-opus-5-5', 0.52, 0.015), category('gpt-6-sol', 'gpt-6-sol', 0.31, 0.026), category('claude-sonnet-5', 'claude-sonnet-5', 0.11, 0.01), category('gpt-6-luna', 'gpt-6-luna', 0.06, 0.03)],
+  // The same split Usage › Prices counts.
+  models: MODEL_MIX.map(({ model, failureRate }, index) => {
+    const requests = splitByModel(totals.requests)[index] ?? 0;
+    return { key: model, label: model, requests, failures: Math.round(requests * failureRate), tokens: splitByModel(totals.tokens)[index] ?? 0 };
+  }),
   providers: [category('claude', 'Claude', 0.63, 0.014), category('codex', 'Codex', 0.37, 0.027)],
   // The core records an account's email as its source, so these are the accounts below grouped by email: casey@'s
   // Claude and Codex requests are one row here.
@@ -275,26 +353,6 @@ const usageRecords = Array.from({ length: 25 }, (_, index): UsageRecord => {
   };
 });
 if (freshInstall) usageRecords.length = 0;
-
-const priceFor = (model: string, prompt: number, completion: number): ModelPrice => ({
-  model, prompt, completion, cache: prompt / 10, cacheRead: prompt / 10, cacheCreation: prompt * 1.25,
-  promptConfigured: true, completionConfigured: true, cacheReadConfigured: true, cacheCreationConfigured: false,
-  source: 'litellm', sourceModelId: model, updatedAtMs: now - 86_400_000,
-});
-
-const usagePricing: UsagePricing = {
-  rows: [
-    { model: 'claude-opus-5-5', requests: 8_560, inputTokens: 61_000_000, outputTokens: 15_400_000, cacheReadTokens: 1_190_000_000, cacheCreationTokens: 42_000_000, totalTokens: 1_308_400_000, estimatedCost: 1_963.75, price: priceFor('claude-opus-5-5', 5, 25) },
-    { model: 'gpt-6-sol', requests: 5_110, inputTokens: 36_200_000, outputTokens: 9_800_000, cacheReadTokens: 734_000_000, cacheCreationTokens: 0, totalTokens: 780_000_000, estimatedCost: 604.63, price: priceFor('gpt-6-sol', 1.25, 10) },
-    { model: 'claude-sonnet-5', requests: 1_810, inputTokens: 12_900_000, outputTokens: 3_300_000, cacheReadTokens: 251_000_000, cacheCreationTokens: 8_800_000, totalTokens: 276_000_000, estimatedCost: 115.74, price: priceFor('claude-sonnet-5', 3, 15) },
-    { model: 'gpt-6-luna', requests: 990, inputTokens: 7_000_000, outputTokens: 1_900_000, cacheReadTokens: 141_000_000, cacheCreationTokens: 0, totalTokens: 149_900_000, estimatedCost: 0, price: null },
-  ],
-  totalCost: 2_684.12,
-  totalRequests: totals.requests,
-  pricedRequests: totals.requests - 990,
-  savedPrices: 2,
-};
-if (freshInstall) Object.assign(usagePricing, { rows: [], totalCost: 0, pricedRequests: 0, savedPrices: 0 });
 
 // Capacity report: a month of value at API prices per credential, and twelve
 // days of limit readings. `codex-backup` never ran its weekly window, so the
@@ -582,15 +640,7 @@ const seededRandom = (seed: string) => {
   };
 };
 
-// USD per million tokens.
-const timelinePrices: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
-  'claude-opus-5-5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
-  'gpt-6-sol': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
-  'gpt-6-luna': { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
-};
-
+// Where each model's long-context rates start (Claude 5 models are flat at any size).
 const mockLongContext: Record<string, number> = { 'gpt-6-sol': 272_000, 'gpt-6-luna': 272_000 };
 
 const mockThreadRequests = (thread: UsageSessionThread, main: boolean): SessionRequest[] => {
@@ -664,7 +714,7 @@ const mockThreadRequests = (thread: UsageSessionThread, main: boolean): SessionR
     }
     const cacheWrite = claude ? Math.max(0, input - cacheRead - between(200, 900)) : 0;
     const longContext = Boolean(threshold && input > threshold);
-    const price = noPrices ? undefined : timelinePrices[model];
+    const price = modelPrices()[model];
     const scale = (serviceTier === 'priority' ? 2 : 1) / 1_000_000;
     const inputScale = scale * (longContext ? 2 : 1);
     requests.push({
@@ -672,10 +722,10 @@ const mockThreadRequests = (thread: UsageSessionThread, main: boolean): SessionR
       failed: false, canceled: false, failureStatus: 0, failure: '',
       inputTokens: input, outputTokens: output, reasoningTokens: Math.round(output * 0.3), cacheReadTokens: cacheRead, cacheCreationTokens: cacheWrite,
       cost: price ? {
-        input: Math.max(0, input - cacheRead - cacheWrite) * price.input * inputScale,
+        input: Math.max(0, input - cacheRead - cacheWrite) * price.prompt * inputScale,
         cacheRead: cacheRead * price.cacheRead * inputScale,
-        cacheWrite: cacheWrite * price.cacheWrite * inputScale,
-        output: output * price.output * scale * (longContext ? 1.5 : 1),
+        cacheWrite: cacheWrite * price.cacheCreation * inputScale,
+        output: output * price.completion * scale * (longContext ? 1.5 : 1),
       } : null,
       longContext, step,
     });
@@ -1342,7 +1392,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     const items = pool.slice((page - 1) * pageSize, page * pageSize);
     return { items, total: pool.length, page, pageSize, totalPages: Math.ceil(pool.length / pageSize) };
   },
-  get_usage_pricing: () => usagePricing,
+  get_usage_pricing: ({ query }) => pricingFor(timelineBetween(query.start, query.end)),
   repair_usage_cache_records: () => ({ scanned: 18_420, repaired: 12, deleted: 3, backupPath: '/Users/casey/Library/Application Support/onl.arbor.app/usage.backup.db' }),
   get_usage_storage_info: () => ({ ...usageStorage }),
   set_usage_retention: (args) => {
@@ -1375,9 +1425,17 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     // VACUUM takes a while on a real database.
     return later(1_200, () => result);
   },
-  save_usage_model_price: () => null,
-  delete_usage_model_price: () => null,
-  sync_usage_model_prices: () => ({ imported: 42, skipped: 3, filled: ['gpt-6-sol', 'gpt-6-luna'], unmatched: ['codex-auto-review'], usedBuiltin: false }),
+  // Saved prices are manual ones, as the backend marks them; deleting one goes back to the bundled price, if any.
+  save_usage_model_price: ({ price }) => {
+    manualPrices.set(price.model.trim(), { ...price, model: price.model.trim(), source: 'manual', sourceModelId: '', updatedAtMs: Date.now() });
+    return null;
+  },
+  delete_usage_model_price: ({ model }) => {
+    manualPrices.delete(model);
+    return null;
+  },
+  // The bundled catalog already prices every model the mock uses but codex-auto-review, which nothing publishes a price for.
+  sync_usage_model_prices: () => ({ imported: 42, skipped: manualPrices.size, filled: [], unmatched: ['codex-auto-review'], usedBuiltin: false }),
   get_live_sessions: () => mockLiveSessions(),
   get_fleet_sources: () => mockFleetSources(),
   // ?antiburn=missing: a Mac without Antiburn.
