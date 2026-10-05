@@ -1,6 +1,6 @@
 # Rust side: idle cost and slow commands
 
-Static audit on 2026-10-06, following [the performance process](../PROCESS.md). This is step 1, a list of suspected slow spots and measurements to make repeatable before changing code. No app, core, database, archive, SSH target, build, or test was started or read. Estimates below are workload bounds and hypotheses, not benchmark results.
+Static audit and Rust-side benchmark on 2026-10-06, following [the performance process](../PROCESS.md). The benchmark uses only a synthetic temporary database; no app, core, archive or SSH target was started or read.
 
 ## Process measurements
 
@@ -10,6 +10,25 @@ Static audit on 2026-10-06, following [the performance process](../PROCESS.md). 
 | Core started by Arbor | Unavailable | Unavailable | Unavailable | Unavailable | No core process was inspected. |
 
 When Arbor is running, sample only `pgrep -x Arbor`, `ps -o pid,rss,%cpu,nlwp -p <pid>` or `ps -M`, `footprint <pid>` summary, and `vmmap --summary <pid>` at several points over one idle minute. Record window visible/hidden and enabled features separately. Do not infer live heap size from SQLite's 2 GiB mapping: mapped virtual address space is not resident memory.
+
+## Results
+
+Release benchmark command: `cd src-tauri && ARBOR_BENCH_DIR=/tmp/arbor-rust-side-bench cargo test --release usage::bench -- --ignored --nocapture`, with one million synthetic requests over 90 days. The database was reused for the after run.
+
+| Read | Before | After | Result bytes after |
+| --- | ---: | ---: | ---: |
+| Overview, all time | 568 ms | 620 ms | — |
+| Cost groups, all time | not recorded | 320 ms | 6 groups |
+| Analysis, all time | 404 ms | 434 ms | — |
+| Sessions, all time | 626 ms | 603 ms | — |
+| Sessions page 1 | included in all-time read | 595 ms | 35,253 |
+| Sessions page 50 | included in all-time read | 583 ms | 36,885 |
+
+The session change keeps the full request aggregate needed for the summary, but selects only the requested top-K session trees before building `UsageSession` values and running `complete_sessions`. The sample equivalence test covers ordering, pagination and completed session fields. The all-time wall time is still dominated by folding one million request rows, so the main gain is bounded session object and completion work rather than a large latency drop.
+
+For R2, `EXPLAIN QUERY PLAN` on the overview fold, analysis fold and session cost fold each reported `SCAN usage_events`. Those reads have no selective predicate or missing index to fix. No index or rollup was added; a rollup would require the owner's decision.
+
+For R3, passive health reads no longer call `touch`; only `passive: false` keeps the five-second active interval. The sampler compares the current health readings while ignoring sample timestamps and emits `machine-health-updated` only when that signature changes. A unit test covers an identical failed round producing no change signature. The 60-second idle interval remains unchanged.
 
 ## Ranked slow spots
 

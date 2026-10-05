@@ -1181,6 +1181,22 @@ fn record_result(
     }
 }
 
+/// Compare current readings without treating a new sample timestamp as a
+/// change. The timestamp remains in the in-memory history for charting.
+fn health_signature(inner: &Inner) -> Vec<(String, MachineHost, Option<MachineFacts>, Option<HealthPoint>, Option<HealthReason>, Option<String>, Option<NetworkPath>)> {
+    inner
+        .series
+        .values()
+        .map(|series| {
+            let latest = series.points.back().copied().map(|mut point| {
+                point.t = 0;
+                point
+            });
+            (series.host.machine.clone(), series.host.clone(), series.facts.clone(), latest, series.reason, series.error.clone(), series.path.clone())
+        })
+        .collect()
+}
+
 async fn wait_for_tick(state: &MachineHealthState, token: &CancellationToken, interval: Duration) {
     tokio::select! {
         _ = tokio::time::sleep(interval) => {},
@@ -1197,6 +1213,7 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
         if token.is_cancelled() {
             return;
         }
+        let before = health_signature(&state.lock());
         let reload = {
             let inner = state.lock();
             inner.reload_hosts || hosts_loaded_at.is_none_or(|at| at.elapsed() >= HOSTS_REFRESH)
@@ -1257,6 +1274,7 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
         transcripts::scan_due(&app, &state, at_ms);
         agent_homes::scan_due(&app, &state, at_ms);
         let interval = if state.is_active() { ACTIVE_INTERVAL } else { IDLE_INTERVAL };
+        let changed = before != health_signature(&state.lock());
         let seq = {
             let mut inner = state.lock();
             inner.seq += 1;
@@ -1264,7 +1282,9 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
             inner.interval_ms = interval.as_millis() as u64;
             inner.seq
         };
-        let _ = app.emit(MACHINE_HEALTH_UPDATED_EVENT, seq);
+        if changed {
+            let _ = app.emit(MACHINE_HEALTH_UPDATED_EVENT, seq);
+        }
         wait_for_tick(&state, &token, interval).await;
     }
 }
@@ -1489,7 +1509,9 @@ pub(crate) async fn get_machine_health(
     window_ms: Option<i64>,
     passive: Option<bool>,
 ) -> Result<MachineHealthSnapshot, String> {
-    if passive != Some(true) {
+    // Only a visible page asks for an active read. Background and CLI reads
+    // stay passive so they cannot extend the five-second burst.
+    if passive == Some(false) {
         state.touch();
     }
     let now = Local::now().timestamp_millis();
@@ -1771,6 +1793,19 @@ mod tests {
         assert_eq!(up.status, HealthStatus::Unreachable);
         assert_eq!(up.points.len(), 2, "history survives a failed round");
         assert_eq!(up.error.as_deref(), Some("ssh: connect refused"));
+    }
+
+    #[test]
+    fn an_identical_round_does_not_change_the_health_event_signature() {
+        let state = MachineHealthState::default();
+        apply_hosts(
+            &state,
+            vec![MachineHost { machine: "up".into(), endpoint: "up".into(), port: 22, enabled: true, source: String::new() }],
+        );
+        record_result(&state, "up", 1_000, Err("ssh: connect refused".into()), None, None);
+        let before = health_signature(&state.lock());
+        record_result(&state, "up", 6_000, Err("ssh: connect refused".into()), None, None);
+        assert_eq!(before, health_signature(&state.lock()));
     }
 
     #[cfg(unix)]
