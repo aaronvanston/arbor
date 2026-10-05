@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { admitException, appId, EXCEPTIONS_MAX, newExceptionGate, pageViewEvent, paletteKind, REPEAT_WINDOW_MS, usageDataNoticeDue } from '../src/services/productAnalytics';
+import { admitException, appId, isBenignWindowError, EXCEPTIONS_MAX, newExceptionGate, pageViewEvent, paletteKind, REPEAT_WINDOW_MS, usageDataNoticeDue } from '../src/services/productAnalytics';
 
 describe('page views', () => {
   test('carry page and view ids only, never the params that name things', () => {
@@ -11,6 +11,13 @@ describe('page views', () => {
 });
 
 describe('exceptions', () => {
+  test('leave out the browser\'s ResizeObserver loop notes, which aren\'t the app failing', () => {
+    expect(isBenignWindowError('ResizeObserver loop completed with undelivered notifications.')).toBe(true);
+    expect(isBenignWindowError('ResizeObserver loop limit exceeded')).toBe(true);
+    expect(isBenignWindowError('TypeError: x is undefined')).toBe(false);
+    expect(isBenignWindowError(undefined)).toBe(false);
+  });
+
   test('the same one is sent once a minute', () => {
     const gate = newExceptionGate();
     expect(admitException(gate, 'a', 0)).toBe(true);

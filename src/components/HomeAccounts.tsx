@@ -179,7 +179,8 @@ function ProviderAccounts({ limit, now, profiles, filesByKey, paused }: {
           <span className="text-xs text-muted-foreground">{t('accounts.left')}</span>
         </span>
       </div>
-      <ul className="grid grid-cols-[auto_minmax(0,1fr)_minmax(4rem,10rem)_2.75rem_minmax(0,12.5rem)] items-center gap-x-3 gap-y-2 ps-11">
+      {/* The name keeps a few letters' room, so on a narrow page the reset column gives way first. */}
+      <ul className="grid grid-cols-[auto_minmax(5rem,1fr)_minmax(4rem,10rem)_2.75rem_minmax(0,12.5rem)] items-center gap-x-3 gap-y-2 ps-11">
         {accounts.map((account) => {
           const file = filesByKey.get(account.key);
           return (

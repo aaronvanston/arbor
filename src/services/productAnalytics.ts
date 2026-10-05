@@ -64,11 +64,18 @@ export function reportException(source: ExceptionSource, error: unknown, page: s
   invokeCommand('report_exception', { report: { source, name, message, stack, page, chunkIds } }).catch(() => undefined);
 }
 
+/**
+ * Browser messages that aren't the app failing: a ResizeObserver whose callback changed layout has its
+ * notifications put off to the next frame, which the browser reports as an error event with no error.
+ */
+export const isBenignWindowError = (message: string | undefined) => Boolean(message?.startsWith('ResizeObserver loop'));
+
 /** Errors nothing caught: a failed script or a promise nobody waited on. Once, at startup. */
 export function reportUncaughtErrors(currentPage: () => string | null) {
   window.addEventListener('error', (event) => {
     // A resource that failed to load has no error, just a target; those aren't the app's code failing.
     if (event.error === undefined && !event.message) return;
+    if (isBenignWindowError(event.message)) return;
     reportException('window', event.error ?? new Error(event.message), currentPage());
   });
   window.addEventListener('unhandledrejection', (event) => {
