@@ -121,12 +121,16 @@ export const storedSetupReference = () => readStored(REFERENCE_KEY);
 
 /**
  * Sets what Checks opens on, as picking them there would: the machine it compares with and the agent home whose table
- * it shows. For a link from elsewhere (a machine's page) that opens Checks on a comparison.
+ * it shows. For a link from elsewhere (a machine's page) that opens Checks on a comparison. `show` is one thing to
+ * show in that table, as its Show in the table does: searched for, with matching copies too, and scrolled to.
  */
-export function rememberSetupComparison({ reference, home }: { reference?: string | null; home?: string | null }) {
+export function rememberSetupComparison({ reference, home, show }: { reference?: string | null; home?: string | null; show?: string }) {
   if (reference) store(REFERENCE_KEY, reference);
   if (home) store(HOME_KEY, home);
+  pendingShow = show ?? null;
 }
+/** What the next Checks to open shows in its table; only for that one visit, so it's not stored. */
+let pendingShow: string | null = null;
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
@@ -341,8 +345,14 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   const { inventory, error: loadError, setError: setLoadError } = useSetupInventory();
   const [chosenReference, setChosenReference] = useState<string | null>(() => readStored(REFERENCE_KEY));
   const [chosenHome, setChosenHome] = useState<string | null>(() => readStored(HOME_KEY));
-  const [onlyDifferences, setOnlyDifferences] = useState(true);
-  const [query, setQuery] = useState('');
+  // A thing asked for from elsewhere is shown as Show in the table here shows it.
+  const [asked] = useState(() => {
+    const name = pendingShow;
+    pendingShow = null;
+    return name;
+  });
+  const [onlyDifferences, setOnlyDifferences] = useState(asked === null);
+  const [query, setQuery] = useState(asked ?? '');
   const [comparison, setComparison] = useState<Comparison | null>(null);
   // A view that doesn't name one gets the one last open, which the effect below writes into the view.
   const tab: SetupTab = isSetupTab(params?.tab) ? params.tab : savedTab();
@@ -353,6 +363,13 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
     store(TAB_KEY, tab);
   }, [params?.tab, tab]);
   const tableRef = useRef<HTMLDivElement>(null);
+  // Once the table's there, it's scrolled to, the once: after every render until then, as it waits on the scans.
+  const scrolledToShown = useRef(asked === null);
+  useEffect(() => {
+    if (scrolledToShown.current || !tableRef.current) return;
+    scrolledToShown.current = true;
+    window.requestAnimationFrame(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  });
 
   const machines = useMemo(() => inventory?.machines ?? [], [inventory]);
   // Arbor's changes shows one machine's backups at a time; the breadcrumb picks which.

@@ -199,7 +199,10 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           onReload={() => void reload()}
           onOpenTab={openTab}
           onCompareSettings={(reference, home) => openChecks(reference, home)}
-          onShowCheck={(home) => openChecks(null, home)}
+          onShowCheck={(home, item) => {
+            rememberSetupComparison({ home, show: item });
+            onNavigate(setupChecksView());
+          }}
           onCompareCheck={compareCopies}
           onNavigate={onNavigate}
         />
