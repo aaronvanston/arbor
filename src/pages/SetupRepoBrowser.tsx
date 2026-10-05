@@ -90,7 +90,8 @@ export function RepoBrowser({ repo, machines, onRepo, onReview }: {
   repo: SetupRepo;
   machines: SetupMachine[];
   onRepo: (repo: SetupRepo) => void;
-  onReview: (machine: string) => void;
+  /** Opens a machine's review, with `path`'s copy there opened in it. */
+  onReview: (machine: string, path?: string) => void;
 }) {
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
@@ -382,7 +383,8 @@ function FilePane({ repo, machines, entry, sources, onTree, onRepo, onReview, on
   sources: SourceCheck[] | null;
   onTree: (tree: RepoTree) => void;
   onRepo: (repo: SetupRepo) => void;
-  onReview: (machine: string) => void;
+  /** Opens a machine's review, with `path`'s copy there opened in it. */
+  onReview: (machine: string, path?: string) => void;
   onUnsaved: (dirty: boolean) => void;
   onChanges: () => void;
   onRename: () => void;
@@ -607,7 +609,8 @@ function RoleLine({ repo, machines, entry, sources, onRepo, onReview }: {
   entry: RepoEntry;
   sources: SourceCheck[] | null;
   onRepo: (repo: SetupRepo) => void;
-  onReview: (machine: string) => void;
+  /** Opens a machine's review, with `path`'s copy there opened in it. */
+  onReview: (machine: string, path?: string) => void;
 }) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
@@ -680,19 +683,34 @@ function RoleLine({ repo, machines, entry, sources, onRepo, onReview }: {
       {list.length ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <span>{t('repo.standing.label')}</span>
-          {list.map((standing) => (
-            <button
-              key={standing.machine}
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-1.5 py-0.5 text-foreground hover:bg-accent dark:bg-input/24"
-              title={t('repo.standing.reviewTitle', { machine: standing.machine })}
-              onClick={() => onReview(standing.machine)}
-            >
-              <StatusDot tone={standing.state === 'unread' ? 'muted' : settled(standing.state) ? 'success' : 'warning'} />
-              <MachinePill name={standing.machine} size="sm" />
-              <span className="text-muted-foreground">{t(STANDING[standing.state])}</span>
-            </button>
-          ))}
+          {list.map((standing) => {
+            const look = (
+              <>
+                <StatusDot tone={standing.state === 'unread' ? 'muted' : settled(standing.state) ? 'success' : 'warning'} />
+                <MachinePill name={standing.machine} size="sm" />
+                <span className="text-muted-foreground">{t(STANDING[standing.state])}</span>
+              </>
+            );
+            // A machine whose copy is the repo's has nothing about this file to review, and the review doesn't list it.
+            if (standing.state === 'same' || standing.state === 'unread' || !target) {
+              return (
+                <span key={standing.machine} className="inline-flex items-center gap-1.5 rounded-md border border-border/50 px-1.5 py-0.5 text-foreground">
+                  {look}
+                </span>
+              );
+            }
+            return (
+              <button
+                key={standing.machine}
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-1.5 py-0.5 text-foreground hover:bg-accent dark:bg-input/24"
+                title={t('repo.standing.reviewTitle', { machine: standing.machine })}
+                onClick={() => onReview(standing.machine, target)}
+              >
+                {look}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </div>

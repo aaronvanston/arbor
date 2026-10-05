@@ -122,6 +122,7 @@ export function SetupRepoSection({ machines }: { machines: SetupMachine[] }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState<'load' | 'start' | 'pull' | 'push' | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviewFocus, setReviewFocus] = useState<string | null>(null);
   /** The first machine brought in step with a commit this time, which lets the rest follow. */
   const [first, setFirst] = useState<{ machine: string; commit: string } | null>(null);
   const [bulk, setBulk] = useState<Bulk | null>(null);
@@ -288,7 +289,7 @@ export function SetupRepoSection({ machines }: { machines: SetupMachine[] }) {
           <>
             <RepoSummary path={path} repo={repo} error={error} onForget={forget} />
             {problem ? <p className="px-4 py-2.5 text-xs text-error-foreground" role="alert">{problem}</p> : null}
-            {repo?.head && plans.length ? <MachineStrip plans={plans} onReview={setReviewing} /> : null}
+            {repo?.head && plans.length ? <MachineStrip plans={plans} onReview={(machine) => { setReviewFocus(null); setReviewing(machine); }} /> : null}
             {repo?.head && !plans.length ? <p className="px-4 py-3 text-xs text-muted-foreground">{t('setup.repo.noMachines')}</p> : null}
             {behind.length && !bulk?.running ? (
               <div className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -318,12 +319,23 @@ export function SetupRepoSection({ machines }: { machines: SetupMachine[] }) {
         <SyncReviewDialog
           repo={repo}
           machine={reviewed}
+          focus={reviewFocus}
           onClose={() => setReviewing(null)}
           onApplied={applied}
           onRepo={setRepo}
         />
       ) : null}
-      {repo ? <RepoBrowser repo={repo} machines={machines} onRepo={setRepo} onReview={setReviewing} /> : null}
+      {repo ? (
+        <RepoBrowser
+          repo={repo}
+          machines={machines}
+          onRepo={setRepo}
+          onReview={(machine, path) => {
+            setReviewFocus(path ?? null);
+            setReviewing(machine);
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -429,9 +441,11 @@ const ACTION: Record<'update' | 'add' | 'extra' | 'removed', [on: MessageKey, of
 };
 
 /** A machine's files against the repo's, what bringing it in step would change, and the changes made before. */
-export function SyncReviewDialog({ repo, machine, onClose, onApplied, onRepo }: {
+export function SyncReviewDialog({ repo, machine, focus = null, onClose, onApplied, onRepo }: {
   repo: SetupRepo;
   machine: SetupMachine | null;
+  /** A file to open the review on, as the repo browser's machine buttons ask for one. */
+  focus?: string | null;
   onClose: () => void;
   onApplied: (machine: string, outcome: SyncOutcome) => void;
   onRepo: (repo: SetupRepo) => void;
@@ -459,13 +473,13 @@ export function SyncReviewDialog({ repo, machine, onClose, onApplied, onRepo }: 
 
   useEffect(() => {
     setChoices({});
-    setShown(new Set());
+    setShown(new Set(focus ? [focus] : []));
     setNotice(null);
     setPending(null);
     setBackups(null);
     setBackupsError(null);
     if (name) void loadBackups(name);
-  }, [name, loadBackups]);
+  }, [name, focus, loadBackups]);
 
   const files = useMemo(() => (machine ? syncPlan(repo, machine) : []), [repo, machine]);
   const changes = syncChanges(files, choices);
