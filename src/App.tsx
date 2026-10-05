@@ -639,7 +639,7 @@ function AppContent() {
               ) : (
                 <>
                   <SettingsUtility onOpen={openSettings} />
-                  <AlertsUtility current={samePage(view, { kind: 'main', page: 'alerts' })} onNavigate={navigate} />
+                  <AlertsUtility current={samePage(view, { kind: 'main', page: 'alerts' })} onNavigate={navigate} hint={shortcutHints} />
                   <CoreUtility state={coreState} onNavigate={navigate} />
                 </>
               )}

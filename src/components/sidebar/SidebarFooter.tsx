@@ -53,9 +53,9 @@ export function SettingsUtility({ onOpen }: { onOpen: () => void }) {
 /**
  * The alert history's bell. It's a log, so it's in the footer rather than among the pages: a dot in the accent color
  * says something's unread, and the popover lists the newest unread, each opening what it's about. The Alerts page is
- * still ⌘7.
+ * still ⌘9, which shows in place of the bell while ⌘ is held, as the pages' numbers do in the tree.
  */
-export function AlertsUtility({ current, onNavigate }: { current: boolean; onNavigate: (view: AppView) => void }) {
+export function AlertsUtility({ current, onNavigate, hint = false }: { current: boolean; onNavigate: (view: AppView) => void; hint?: boolean }) {
   const { t } = useI18n();
   const history = useAlertHistory();
   // Held here so opening an alert, or the Alerts page, closes the popover rather than leaving it over what opened.
@@ -81,8 +81,8 @@ export function AlertsUtility({ current, onNavigate }: { current: boolean; onNav
           />
         }
       >
-        <Bell />
-        {unread.length ? <span aria-hidden="true" className={cn(CORNER_DOT, 'bg-primary')} /> : null}
+        {hint ? <ShortcutKbd id="go.alerts" /> : <Bell />}
+        {unread.length && !hint ? <span aria-hidden="true" className={cn(CORNER_DOT, 'bg-primary')} /> : null}
       </UtilityTooltip>
       <PopoverPopup side="top" align="start" sideOffset={8} padding="none" className="w-80" aria-label={t('app.nav.alerts')}>
         <div className="flex items-center justify-between gap-3 px-3 pt-2.5 pb-1.5">
