@@ -74,13 +74,19 @@ function PoolSection({ pool, pools, onEdit, onOpen }: {
   const remove = async () => {
     setRemoving(true);
     try {
-      const unhooked = pools.filter((other) => other.spillPool === pool.id).length;
+      // Removing a pool sets the pools that spilled into it to refuse, so Undo puts those back as they were too.
+      const spilling = pools.filter((other) => other.spillPool === pool.id);
+      const unhooked = spilling.length;
+      const undo = async () => {
+        await savePool(pool);
+        for (const other of spilling) await savePool(other);
+      };
       await removePool(pool.id);
       toast({
         kind: 'success',
         title: t('pools.removed', { name: pool.name }),
         description: unhooked ? t(unhooked === 1 ? 'pools.removedUnhooked.one' : 'pools.removedUnhooked.other', { count: unhooked }) : undefined,
-        action: { label: t('common.undo'), onClick: () => { savePool(pool).catch((failure: unknown) => toast({ kind: 'error', title: String(failure) })); } },
+        action: { label: t('common.undo'), onClick: () => { undo().catch((failure: unknown) => toast({ kind: 'error', title: String(failure) })); } },
         focusAction: true,
       });
     } catch (failure) {
