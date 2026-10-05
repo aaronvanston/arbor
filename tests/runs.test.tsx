@@ -2,13 +2,13 @@ import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PoolRunsBlock } from '../src/components/PoolRuns';
 import { I18nProvider } from '../src/i18n';
-import type { HarnessRun, MachineAgents, MachineHealth, MachinePool } from '../src/native/types';
-import { canOpenRun, newRunRequest, poolRuns, reasonMessage, runCommands, runDraftProblem, runSetupChoices } from '../src/services/runs';
+import type { HarnessRun, MachineAgents, MachineHealth, MachinePool, MachineProjects, ProjectRepo } from '../src/native/types';
+import { canOpenRun, newRunRequest, poolRepos, poolRuns, reasonMessage, repoName, runCommands, runDraftProblem, runSetupChoices, unscannedMembers } from '../src/services/runs';
 import { itemAt } from './support/items';
 
 const run = (fields: Partial<HarnessRun> = {}): HarnessRun => ({
   id: 'r1', trigger: null, pool: 'builds', ranPool: 'builds', machine: 'casey-mbp', harness: 't3', used: 't3', setup: 'codex_work',
-  folder: '~/src/app', title: 'Tidy the tests', state: 'handedOff', reason: null, detail: null, handle: {}, queuedAtMs: 0,
+  folder: '~/src/app', repo: null, title: 'Tidy the tests', state: 'handedOff', reason: null, detail: null, handle: {}, queuedAtMs: 0,
   startedAtMs: 1_000, endedAtMs: null, waitUntilMs: null, ...fields,
 });
 
@@ -80,6 +80,31 @@ describe('harness runs', () => {
     expect(runDraftProblem({ ...draft, setup: 'codex', folder: '~/src/../..' })).toBe('runs.problem.folder');
     expect(runDraftProblem({ ...draft, setup: 'codex', folder: '~/src/app' })).toBe('runs.problem.prompt');
     expect(runDraftProblem({ ...draft, setup: 'codex', folder: '~', prompt: 'Go' })).toBeNull();
+    // A session on a repo needs no folder: each member works in its own checkout.
+    expect(runDraftProblem({ ...draft, setup: 'claude', repo: 'github.com/acme/storefront', prompt: 'Go' })).toBeNull();
+  });
+
+  it('starts a new session in Orca, in a worktree of its own', () => {
+    expect(newRunRequest('builds')).toMatchObject({ harness: 'orca', worktree: true, fallback: false });
+  });
+
+  it('lists the repos the members have, those on the most members first, and who hasn’t been looked at', () => {
+    const repo = (path: string, remote: string | null, extra: Partial<ProjectRepo> = {}) => ({ path, remote, state: 'ok', bare: false, ...extra }) as ProjectRepo;
+    const scan = (machine: string, repos: ProjectRepo[], scannedAt: number | null = 1) => ({ machine, scannedAt, repos }) as MachineProjects;
+    const pool = { members: [{ machine: 'casey-mbp', weight: 'normal' }, { machine: 'cedar-02', weight: 'prefer' }, { machine: 'ci-01', weight: 'manual' }, { machine: 'lab-box', weight: 'normal' }] } as MachinePool;
+    const projects = [
+      scan('casey-mbp', [repo('/Users/casey/src/docs', 'github.com/acme/docs'), repo('/Users/casey/src/storefront', 'github.com/acme/storefront')]),
+      scan('cedar-02', [repo('/home/casey/storefront', 'github.com/Acme/storefront.git'), repo('/home/casey/old', 'github.com/acme/old', { state: 'missing' }), repo('/home/casey/notes', null)]),
+      // Kept for picking by hand, so its repos don't count.
+      scan('ci-01', [repo('/srv/docs', 'github.com/acme/docs')]),
+      scan('lab-box', [], null),
+    ];
+    expect(poolRepos(pool, projects)).toEqual([
+      { repo: 'github.com/acme/storefront', machines: ['casey-mbp', 'cedar-02'] },
+      { repo: 'github.com/acme/docs', machines: ['casey-mbp'] },
+    ]);
+    expect(unscannedMembers(pool, projects)).toEqual(['lab-box']);
+    expect(repoName('github.com/acme/storefront.git')).toBe('acme/storefront');
   });
 
   it('lists a pool’s runs, spilled-in ones too, and opens only Orca’s', () => {
@@ -117,6 +142,6 @@ describe('harness runs', () => {
     expect(itemAt(rows, 4)).toContain('Details');
     // A run that never started has nothing more to show.
     expect(itemAt(rows, 0)).not.toContain('Details');
-    expect(text(renderToStaticMarkup(<I18nProvider><PoolRunsBlock runs={[]} /></I18nProvider>))).toContain('No runs yet');
+    expect(text(renderToStaticMarkup(<I18nProvider><PoolRunsBlock runs={[]} /></I18nProvider>))).toContain('No sessions yet');
   });
 });

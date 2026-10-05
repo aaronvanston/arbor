@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { clearFocusRequest, useFocusRequest } from '../focusRequests';
 import { PoolDialog } from '../components/pools/PoolDialog';
 import { PoolLimitsLine, PoolMembersTable, PoolPlan, PoolStandingBadge, ShareBar, useWhenFull } from '../components/pools/PoolHealth';
 import { PoolRunsBlock, StartRunDialog } from '../components/PoolRuns';
@@ -29,6 +30,14 @@ export function PoolsPage({ params, onNavigate }: { params?: PoolsParams; onNavi
   const [running, setRunning] = useState<MachinePool | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const open = params?.pool ? pools?.find((pool) => pool.id === params.pool) : undefined;
+  // ⌘K's New session on a pool lands here and opens the dialog once the pool has loaded.
+  const asked = useFocusRequest('pool-session');
+  useEffect(() => {
+    if (!asked || !pools) return;
+    const pool = pools.find((entry) => entry.id === asked);
+    if (pool && pool.members.length > 0) setRunning(pool);
+    clearFocusRequest('pool-session');
+  }, [asked, pools]);
   const previewOf = (pool: MachinePool) => previews.find((entry) => entry.pool === pool.id);
   const runsOf = (pool: MachinePool) => (runs ? poolRuns(runs, pool.id) : null);
   const dialogs = (

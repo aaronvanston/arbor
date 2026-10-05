@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { invokeCommand } from '../native/commands';
-import { ArrowLeft, Bot, ChevronRight, FolderGit2, Search, SlidersHorizontal, TimeSchedule, type AppIcon } from './ui/icons';
+import { ArrowLeft, Bot, ChevronRight, FolderGit2, Network, Search, SlidersHorizontal, TimeSchedule, type AppIcon } from './ui/icons';
 import { requestFocus } from '../focusRequests';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
-import { accountLimitsView, automationView, machineSessionsView, machinesView, sessionsView, type AppView } from '../navigation';
+import { accountLimitsView, automationView, machineSessionsView, machinesView, poolsView, sessionsView, type AppView } from '../navigation';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { useAccountReserves } from '../services/accountReserves';
 import { useAccountsStore } from '../services/accountsStore';
@@ -30,6 +30,7 @@ import type { FacetCount, HealthStatus, UsageSession, UsageSessionPage } from '.
 import { paletteKind, trackFeature } from '../services/productAnalytics';
 import { machineName } from '../services/machineNames';
 import { SOURCE_LABEL, useAutomations } from '../services/automations';
+import { usePools } from '../services/pools';
 
 /**
  * A page the palette can open, as the sidebar lists it, or one of its views, which names its page in `parent` and is
@@ -110,6 +111,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
   const profiles = useAccountProfiles();
   const reserves = useAccountReserves();
   const { list: automationList } = useAutomations();
+  const { pools } = usePools();
   const { actions, submenus } = usePaletteActions({ onNavigate });
   const listRef = useRef<HTMLDivElement>(null);
   // The dialog puts the focus in the field as it opens (initialFocus), once it has noted what had it, so closing hands
@@ -270,6 +272,19 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       icon: <IconBox>{automation.agent ? <ProviderMark provider={automation.agent} decorative className="size-full object-contain" fallback={<TimeSchedule />} /> : <TimeSchedule />}</IconBox>,
       run: () => onNavigate(automationView(automation.id)),
     }));
+    // A new session on each pool with members: its page, with New session open.
+    const poolItems: PaletteItem[] = (pools ?? []).filter((pool) => pool.members.length > 0).map((pool) => ({
+      id: `pool-session:${pool.id}`,
+      group: 'actions',
+      label: t('palette.poolSession', { pool: pool.name }),
+      keywords: pool.members.map((member) => machineName(member.machine)).join(' '),
+      shown: 'typed',
+      icon: <IconBox><Network /></IconBox>,
+      run: () => {
+        requestFocus('pool-session', pool.id);
+        onNavigate(poolsView(pool.id));
+      },
+    }));
     const listed = new Set(machines.map((item) => item.machine));
     const machineItems: PaletteItem[] = [
       ...machines.map((item): PaletteItem => ({
@@ -329,8 +344,8 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
         },
       };
     });
-    return [...pageItems, ...actions, ...settingItems, ...projectItems, ...sessionItems, ...automationItems, ...machineItems, ...accountItems];
-  }, [open, pages, settings, onOpenSetting, lockedHint, actions, text, found, recent, pickedSessions, projects, automationList, machines, sessionMachines, files, disabled, reserves.paused, profiles, coreReady, onNavigate, t]);
+    return [...pageItems, ...actions, ...poolItems, ...settingItems, ...projectItems, ...sessionItems, ...automationItems, ...machineItems, ...accountItems];
+  }, [open, pages, settings, onOpenSetting, lockedHint, actions, text, found, recent, pickedSessions, projects, automationList, pools, machines, sessionMachines, files, disabled, reserves.paused, profiles, coreReady, onNavigate, t]);
 
   const items = useMemo(
     () => (submenu ? paletteMatches(submenus[submenu], query) : paletteResults(entries, query, recents)),

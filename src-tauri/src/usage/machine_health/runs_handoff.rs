@@ -231,17 +231,36 @@ fn orca_agent_command(request: &RunRequest) -> String {
     parts.join(" ")
 }
 
-/// Hands a run to Orca: a terminal in the folder's repository, running the agent with the prompt.
-pub(super) fn orca_script(_run_id: &str, request: &RunRequest, title: &str) -> String {
-    format!(
-        r##"{env}{folder}{preamble}{find}root=$(git -C "$folder" rev-parse --show-toplevel 2>/dev/null) || fail not_git
-"$orca" repo add --path "$root" --json >/dev/null 2>&1 || fail repo_add
-quote() {{ printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }}
+/// Hands a run to Orca: a terminal in the folder's repository, running the agent with the prompt. A run in its own
+/// worktree is Orca's own `worktree create`, which makes the worktree off the repo's default base and starts the agent
+/// in it, so Orca shows it as one of its worktrees; Orca starts its agents with their own default model there.
+pub(super) fn orca_script(run_id: &str, request: &RunRequest, title: &str) -> String {
+    let start = if request.worktree {
+        format!(
+            r##"out=$("$orca" worktree create --repo "path:$root" --name {name} --agent {agent} --prompt {prompt} --no-parent --json 2>/dev/null)
+handle=$(printf '%s\n' "$out" | sed -n 's/.*"agentTerminalHandle" *: *"\([A-Za-z0-9_-]*\)".*/\1/p' | head -n 1)
+[ -n "$handle" ] || handle=$(printf '%s\n' "$out" | sed -n 's/.*"handle" *: *"\([A-Za-z0-9_-]*\)".*/\1/p' | head -n 1)
+"##,
+            name = shell_quote(&super::worktree_name(run_id)),
+            agent = shell_quote(&request.setup),
+            prompt = shell_quote(&request.prompt),
+        )
+    } else {
+        format!(
+            r##"quote() {{ printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }}
 agent={agent}
 command="cd $(quote "$folder") && $agent"
 out=$("$orca" terminal create --worktree "path:$root" --title {title} --command "$command" --json 2>/dev/null)
 handle=$(printf '%s\n' "$out" | sed -n 's/.*"handle" *: *"\([A-Za-z0-9_-]*\)".*/\1/p' | head -n 1)
-if [ -z "$handle" ]; then
+"##,
+            agent = shell_quote(&orca_agent_command(request)),
+            title = shell_quote(title),
+        )
+    };
+    format!(
+        r##"{env}{folder}{preamble}{find}root=$(git -C "$folder" rev-parse --show-toplevel 2>/dev/null) || fail not_git
+"$orca" repo add --path "$root" --json >/dev/null 2>&1 || fail repo_add
+{start}if [ -z "$handle" ]; then
   code=$(printf '%s\n' "$out" | sed -n 's/.*"code" *: *"\([a-z_]*\)".*/\1/p' | head -n 1)
   fail "orca_${{code:-unknown}}"
 fi
@@ -251,8 +270,6 @@ printf 'terminal=%s\n' "$handle"
         folder = folder_line(&request.folder),
         preamble = PREAMBLE,
         find = FIND_ORCA,
-        agent = shell_quote(&orca_agent_command(request)),
-        title = shell_quote(title),
     )
 }
 

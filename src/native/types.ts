@@ -1718,7 +1718,11 @@ export type HarnessRun = {
    */
   used: RunHarness | null,
   setup: string,
+  /**
+   * The folder asked for, or once a run that named a repo is placed, its checkout on the machine it went to.
+   */
   folder: string,
+  repo: string | null,
   title: string,
   state: RunState,
   reason: RunReason | null,
@@ -3656,6 +3660,10 @@ export type RunHandle = {
    * Where a run on the command line leaves what the agent printed, on its machine, from `~/`.
    */
   log?: string,
+  /**
+   * The branch and folder name of the run's own worktree, when it was given one.
+   */
+  worktree?: string,
 };
 
 /**
@@ -3680,9 +3688,19 @@ export type RunRequest = {
    */
   setup: string,
   /**
-   * Where on the machine the agent works, from `~/` or `/`.
+   * Where on the machine the agent works, from `~/` or `/`. Left empty when the run names a repo.
    */
   folder: string,
+  /**
+   * The repository to work in, as `host/owner/name`: each member's own checkout of it, from its last Projects scan,
+   * so the folder can differ from machine to machine. Members without one are left out.
+   */
+  repo?: string,
+  /**
+   * Work in a new worktree off the repo's default branch rather than in the checkout itself, so two runs on one
+   * machine never edit the same files.
+   */
+  worktree: boolean,
   prompt: string,
   model?: string,
   /**

@@ -42,6 +42,7 @@ const STEPS: &[Step] = &[
     Step { version: 19, name: "harness runs", apply: harness_runs },
     Step { version: 20, name: "pool ssh names", apply: pool_ssh_names },
     Step { version: 21, name: "agent home roles", apply: agent_home_roles },
+    Step { version: 22, name: "run repos", apply: run_repos },
 ];
 
 /// The version of a database that has had every step.
@@ -1220,6 +1221,18 @@ fn harness_runs(connection: &mut Connection, _: &Path) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS usage_runs_state ON usage_runs (state)",
         )
         .map_err(|error| format!("Failed to prepare the harness runs table: {error}"))
+}
+
+/// The repository a run named (`host/owner/name`), when it named one instead of a folder: each member works in its own
+/// checkout of it, wherever that is on the machine, and `folder` becomes the one on the machine it went to.
+fn run_repos(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    // A database marked older than it is runs steps it already had again, so the column can be there already.
+    if usage_table_columns(connection, "usage_runs")?.contains("repo") {
+        return Ok(());
+    }
+    connection
+        .execute_batch("ALTER TABLE usage_runs ADD COLUMN repo TEXT")
+        .map_err(|error| format!("Failed to add repositories to harness runs: {error}"))
 }
 
 /// Which machine each host name a pool was reached under over SSH (`machine_health/pool_ssh.rs`) is pinned to, so an

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invokeCommand } from '../native/commands';
 import type { MessageKey } from '../i18n/resources';
-import type { HarnessRun, MachineHealth, MachinePool, RunHarness, RunReason, RunRequest, RunState } from '../native/types';
+import type { HarnessRun, MachineHealth, MachinePool, MachineProjects, RunHarness, RunReason, RunRequest, RunState } from '../native/types';
 import { type HarnessSetupRow, machineHarnesses } from './harnesses';
 import { sshCommand } from './fixPrompt';
 import { shellPath, shellWord } from './setupChecklist';
@@ -15,7 +15,11 @@ import { shellPath, shellWord } from './setupChecklist';
 
 export const HARNESS_RUNS_UPDATED_EVENT = 'harness-runs-updated';
 
-export const RUN_HARNESSES: readonly RunHarness[] = ['t3', 'orca', 'headless'];
+/**
+ * The harnesses a new session can go to. T3 Code's new orchestrator no longer takes threads from outside over HTTP, so
+ * until it has a supported way in, sessions go to Orca or the agent's own command line.
+ */
+export const RUN_HARNESSES: readonly RunHarness[] = ['orca', 'headless'];
 
 export const RUN_STATE_LABEL: Record<RunState, MessageKey> = {
   queued: 'runs.state.queued',
@@ -61,6 +65,9 @@ const DETAIL_LABEL: Record<string, MessageKey> = {
   auth: 'runs.detail.auth',
   project_add: 'runs.detail.projectAdd',
   no_project: 'runs.detail.projectAdd',
+  // T3 Code's new orchestrator took away the routes Arbor started threads through.
+  snapshot_404: 'runs.detail.t3Changed',
+  worktree_add: 'runs.detail.worktreeAdd',
   not_git: 'runs.detail.notGit',
   repo_add: 'runs.detail.repoAdd',
   unreachable: 'runs.detail.unreachable',
@@ -149,17 +156,58 @@ export function runSetupChoices(pool: Pick<MachinePool, 'members'>, health: read
   return [...choices.values()].sort((a, b) => b.ready - a.ready || a.id.localeCompare(b.id));
 }
 
+export type PoolRepo = {
+  /** `host/owner/name`, as the scan found it. */
+  repo: string;
+  /** The members with a checkout of it. */
+  machines: string[];
+};
+
+const looseName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+const sameRemote = (remote: string) => remote.trim().replace(/\/+$/, '').replace(/\.git$/, '').toLowerCase();
+
+/** The members a session can go to: every one not kept for picking by hand. */
+const sessionMembers = (pool: Pick<MachinePool, 'members'>) => pool.members.filter((member) => member.weight !== 'manual').map((member) => member.machine);
+
+/**
+ * The repositories a session on this pool could work in: every one the members' last Projects scans found a checkout of,
+ * with the members that have it, those on the most members first.
+ */
+export function poolRepos(pool: Pick<MachinePool, 'members'>, projects: readonly MachineProjects[]): PoolRepo[] {
+  const repos = new Map<string, PoolRepo>();
+  for (const machine of sessionMembers(pool)) {
+    const scanned = projects.find((entry) => looseName(entry.machine) === looseName(machine));
+    for (const found of scanned?.repos ?? []) {
+      if (!found.remote || found.bare || found.state !== 'ok') continue;
+      const key = sameRemote(found.remote);
+      const entry = repos.get(key) ?? { repo: found.remote, machines: [] };
+      if (!entry.machines.includes(machine)) entry.machines.push(machine);
+      repos.set(key, entry);
+    }
+  }
+  return [...repos.values()].sort((a, b) => b.machines.length - a.machines.length || a.repo.localeCompare(b.repo));
+}
+
+/** Members Arbor hasn't looked at the repos on yet, so the repo list can't speak for them. */
+export function unscannedMembers(pool: Pick<MachinePool, 'members'>, projects: readonly MachineProjects[]): string[] {
+  return sessionMembers(pool).filter((machine) => !projects.some((entry) => looseName(entry.machine) === looseName(machine) && entry.scannedAt !== null));
+}
+
+/** `owner/name` of a `host/owner/name` remote, as the list shows it. */
+export const repoName = (repo: string) => repo.split('/').slice(-2).join('/').replace(/\.git$/, '');
+
 /** A setup's name as the harness shows it. */
 export const setupLabel = (setup: Pick<HarnessSetupRow, 'name' | 'driver' | 'rawDriver'>, t: (key: MessageKey) => string) =>
   setup.name ?? (setup.driver ? t(setup.driver) : setup.rawDriver);
 
-export const newRunRequest = (pool: string): RunRequest => ({ pool, harness: 't3', setup: '', folder: '', prompt: '', fallback: false });
+/** A new session: Orca, in a worktree of its own. */
+export const newRunRequest = (pool: string): RunRequest => ({ pool, harness: 'orca', setup: '', folder: '', prompt: '', fallback: false, worktree: true });
 
 /** Why a run can't be started yet, as the native side would refuse it. Null when it can. */
 export function runDraftProblem(draft: RunRequest): MessageKey | null {
   if (!draft.setup.trim()) return 'runs.problem.setup';
   const folder = draft.folder.trim();
-  if (!/^(~$|~\/|\/)/.test(folder) || folder.split('/').includes('..')) return 'runs.problem.folder';
+  if (!draft.repo && (!/^(~$|~\/|\/)/.test(folder) || folder.split('/').includes('..'))) return 'runs.problem.folder';
   if (!draft.prompt.trim()) return 'runs.problem.prompt';
   return null;
 }

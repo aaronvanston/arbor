@@ -12,7 +12,7 @@ const minute = 60_000;
 
 const base = (id: string, overrides: Partial<HarnessRun>): HarnessRun => ({
   id, trigger: null, pool: 'mock-builds', ranPool: 'mock-builds', machine: 'casey-mbp', harness: 't3', used: 't3',
-  setup: 'codex_work', folder: '~/src/storefront', title: 'Tidy the flaky checkout tests', state: 'handedOff', reason: null,
+  setup: 'codex_work', folder: '~/src/storefront', repo: null, title: 'Tidy the flaky checkout tests', state: 'handedOff', reason: null,
   detail: null, handle: {}, queuedAtMs: now - 12 * minute, startedAtMs: now - 12 * minute + 4_000, endedAtMs: null, waitUntilMs: null,
   ...overrides,
 });
@@ -20,6 +20,10 @@ const base = (id: string, overrides: Partial<HarnessRun>): HarnessRun => ({
 const fixtures = (): HarnessRun[] => {
   if (runsScenario === 'none' || freshInstall) return [];
   const runs: HarnessRun[] = [
+    base('run-session', {
+      machine: 'cedar-02', harness: 'orca', used: 'orca', setup: 'claude', repo: 'github.com/acme/storefront', title: 'Split the checkout page into steps',
+      handle: { terminal: 'term_9c1d', worktree: 'arbor-5e1f0a2b' }, queuedAtMs: now - 4 * minute, startedAtMs: now - 4 * minute + 3_000,
+    }),
     base('run-t3', { handle: { projectId: 'p-store', threadId: 't-1' } }),
     base('run-orca', {
       machine: 'cedar-02', harness: 'orca', used: 'orca', setup: 'claude', title: 'Update the billing docs for the new plans',
@@ -49,7 +53,7 @@ const fixtures = (): HarnessRun[] => {
   if (runsScenario === 'failed') {
     runs.unshift(
       base('run-refused', { machine: null, ranPool: null, used: null, state: 'refused', reason: 'noRoom', title: 'Rebuild the docs site', startedAtMs: null, queuedAtMs: now - 3 * minute, endedAtMs: now - 3 * minute }),
-      base('run-no-folder', { machine: null, ranPool: null, used: null, state: 'refused', reason: 'noFolder', detail: 'cedar-02, ci-01', title: 'Fix the flaky upload test', startedAtMs: null, queuedAtMs: now - 5 * minute, endedAtMs: now - 5 * minute + 4_000 }),
+      base('run-no-folder', { machine: null, ranPool: null, harness: 'orca', used: null, setup: 'claude', folder: '', repo: 'github.com/acme/uploads', state: 'refused', reason: 'noFolder', detail: 'cedar-02, ci-01', title: 'Fix the flaky upload test', startedAtMs: null, queuedAtMs: now - 5 * minute, endedAtMs: now - 5 * minute + 4_000 }),
       base('run-model', { state: 'failed', reason: 'noModel', detail: 'no_model', title: 'Write release notes', handle: {}, queuedAtMs: now - 8 * minute, endedAtMs: now - 8 * minute + 3_000 }),
       base('run-hand-off', { machine: 'cedar-02', state: 'failed', reason: 'handOffFailed', detail: 'not_running', title: 'Clean up feature flags', handle: {}, queuedAtMs: now - 20 * minute, endedAtMs: now - 20 * minute + 2_000 }),
       base('run-agent', {
@@ -74,6 +78,7 @@ function start(request: RunRequest, snapshot: MachineHealthSnapshot): HarnessRun
   const title = request.title?.trim() || request.prompt.split('\n').find((line) => line.trim())?.trim().slice(0, 80) || 'Arbor run';
   const run: HarnessRun = base(`run-${Date.now().toString(36)}`, {
     pool: request.pool, ranPool: null, machine: null, harness: request.harness, used: null, setup: request.setup, folder: request.folder,
+    repo: request.repo ?? null,
     title, trigger: request.trigger ?? null, state: 'starting', handle: {}, queuedAtMs: Date.now(), startedAtMs: null,
   });
   const seen = new Set<string>();
@@ -86,7 +91,10 @@ function start(request: RunRequest, snapshot: MachineHealthSnapshot): HarnessRun
     if (likely) {
       const used = request.harness === 'headless' ? 'headless' : request.harness;
       const handle = used === 't3' ? { projectId: 'p-mock', threadId: `t-${Date.now().toString(36)}` } : used === 'orca' ? { terminal: 'term_new1' } : { pid: 51_000 };
-      return { ...run, ranPool: pool.id, machine: likely, used, handle, state: used === 'headless' ? 'running' : 'handedOff', startedAtMs: Date.now() };
+      const worktree = request.worktree && used !== 't3' ? { worktree: `arbor-${Date.now().toString(16).slice(-8)}` } : {};
+      // A run on a repo works in the member's checkout of it, as its Projects scan found it.
+      const folder = request.repo ? `~/src/${request.repo.split('/').pop() ?? 'project'}` : request.folder;
+      return { ...run, ranPool: pool.id, machine: likely, used, folder, handle: { ...handle, ...worktree }, state: used === 'headless' ? 'running' : 'handedOff', startedAtMs: Date.now() };
     }
     if (pool.whenFull === 'spill') { poolId = pool.spillPool; continue; }
     if (pool.whenFull === 'queue') return { ...run, state: 'queued', reason: 'noRoom', waitUntilMs: Date.now() + pool.queueTimeoutMin * minute };
@@ -101,7 +109,8 @@ export const runAnswers = (
   start_pool_run: ({ request }) => {
     // The prompt is the run's own; the log keeps everything else.
     mockLog('start_pool_run', { ...request, prompt: `(${request.prompt.length} characters)` });
-    if (!/^(~|~\/|\/)/.test(request.folder.trim()) || request.folder.split('/').includes('..')) throw new Error("A run's folder starts with ~/ or / and has no .. in it.");
+    // A run on a repo needs no folder: each member works in its own checkout.
+    if (!request.repo && (!/^(~|~\/|\/)/.test(request.folder.trim()) || request.folder.split('/').includes('..'))) throw new Error("A run's folder starts with ~/ or / and has no .. in it.");
     if (!request.prompt.trim()) throw new Error('A run needs a prompt.');
     return later(900, () => {
       const run = start(request, snapshot());

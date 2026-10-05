@@ -173,8 +173,17 @@ pub(crate) struct RunRequest {
     /// T3 Code's setup id ("codex_work"), Orca's agent id ("codex"), or for the command line
     /// "claude" or "codex".
     pub(crate) setup: String,
-    /// Where on the machine the agent works, from `~/` or `/`.
+    /// Where on the machine the agent works, from `~/` or `/`. Left empty when the run names a repo.
+    #[serde(default)]
     pub(crate) folder: String,
+    /// The repository to work in, as `host/owner/name`: each member's own checkout of it, from its last Projects scan,
+    /// so the folder can differ from machine to machine. Members without one are left out.
+    #[serde(default)]
+    pub(crate) repo: Option<String>,
+    /// Work in a new worktree off the repo's default branch rather than in the checkout itself, so two runs on one
+    /// machine never edit the same files.
+    #[serde(default)]
+    pub(crate) worktree: bool,
     pub(crate) prompt: String,
     #[serde(default)]
     pub(crate) model: Option<String>,
@@ -218,6 +227,10 @@ pub(crate) struct RunHandle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     log: Option<String>,
+    /// The branch and folder name of the run's own worktree, when it was given one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    worktree: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -234,7 +247,9 @@ pub(crate) struct HarnessRun {
     /// The harness it went to: the command line when it fell back.
     used: Option<Harness>,
     setup: String,
+    /// The folder asked for, or once a run that named a repo is placed, its checkout on the machine it went to.
     folder: String,
+    repo: Option<String>,
     title: String,
     state: RunState,
     reason: Option<RunReason>,
@@ -478,6 +493,27 @@ fn headless_command(agent: AgentKind, request: &RunRequest, session_id: &str) ->
     parts.join(" ")
 }
 
+/// The branch and folder name of a run's own worktree: short, and the run's own.
+fn worktree_name(run_id: &str) -> String {
+    format!("arbor-{}", run_id.chars().filter(char::is_ascii_hexdigit).take(8).collect::<String>())
+}
+
+/// Moves the script into a new worktree of the folder's repository, on a branch of its own off the default branch the
+/// machine last fetched (`origin/HEAD`, else what's checked out), under `~/.arbor/worktrees`. Nothing is fetched first:
+/// that could stop to ask for a password.
+fn worktree_lines(run_id: &str) -> String {
+    format!(
+        "root=$(git -C \"$folder\" rev-parse --show-toplevel 2>/dev/null) || {{ printf 'failed=not_git\\n'; exit 0; }}
+base=$(git -C \"$root\" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || printf HEAD)
+mkdir -p \"$HOME/.arbor/worktrees\"
+worktree=\"$HOME/.arbor/worktrees\"/{name}
+git -C \"$root\" worktree add -q -b {name} \"$worktree\" \"$base\" >/dev/null 2>&1 || {{ printf 'failed=worktree_add\\n'; exit 0; }}
+cd \"$worktree\" || {{ printf 'failed=worktree_add\\n'; exit 0; }}
+",
+        name = shell_quote(&worktree_name(run_id)),
+    )
+}
+
 /// Where a run's log sits on its machine.
 fn log_path(run_id: &str) -> String {
     format!("~/.arbor/runs/{run_id}.log")
@@ -486,14 +522,14 @@ fn log_path(run_id: &str) -> String {
 /// How long a run's log and exit code stay on its machine.
 const LOG_KEPT_DAYS: u32 = 7;
 
-/// Starts the agent's command line in the folder, detached, and leaves its exit code where a later
-/// check finds it. What the agent prints goes to a log only its owner can read, on the machine, for
-/// the person to look at there when a run fails: Arbor never reads it, since it's the conversation.
-/// Logs and exit codes older than a week are cleared as each run starts.
+/// Starts the agent's command line in the folder (or a new worktree of it), detached, and leaves its exit code where a
+/// later check finds it. What the agent prints goes to a log only its owner can read, on the machine, for the person to
+/// look at there when a run fails: Arbor never reads it, since it's the conversation. Logs and exit codes older than a
+/// week are cleared as each run starts.
 fn headless_script(run_id: &str, agent: AgentKind, request: &RunRequest, session_id: &str) -> String {
     format!(
         "{env}{folder}if ! cd \"$folder\" 2>/dev/null; then printf 'no_folder\\n'; exit 0; fi
-runs=\"$HOME/.arbor/runs\"
+{worktree}runs=\"$HOME/.arbor/runs\"
 mkdir -p \"$runs\"
 find \"$runs\" -type f \\( -name '*.log' -o -name '*.exit' \\) -mtime +{kept} -exec rm -f {{}} + 2>/dev/null
 exit_file=\"$runs\"/{id}.exit
@@ -508,6 +544,7 @@ printf 'pid=%s\\n' \"$!\"
         kept = LOG_KEPT_DAYS,
         env = agents::AGENT_ENV,
         folder = folder_line(&request.folder),
+        worktree = if request.worktree { worktree_lines(run_id) } else { String::new() },
         id = shell_quote(run_id),
         command = shell_quote(&headless_command(agent, request, session_id)),
     )
@@ -536,6 +573,7 @@ fn parse_hand_off(stdout: &str) -> Result<RunHandle, (RunReason, Option<String>)
         pid: fields.get("pid").and_then(|pid| pid.parse().ok()),
         session_id: None,
         log: None,
+        worktree: None,
     };
     if handle == RunHandle::default() {
         return Err((RunReason::HandOffFailed, None));
@@ -564,6 +602,9 @@ async fn hand_off(machine: &Machine, offer: Offer, run_id: &str, request: &RunRe
         handle.log = Some(log_path(run_id));
     }
     handle.session_id = session_id;
+    if request.worktree && harness != Harness::T3 {
+        handle.worktree = Some(worktree_name(run_id));
+    }
     Ok((harness, handle))
 }
 
@@ -575,10 +616,10 @@ fn write_run(connection: &Connection, run: &HarnessRun) -> Result<(), String> {
     connection
         .execute(
             "INSERT INTO usage_runs (id, trigger_id, pool_id, ran_pool_id, machine, harness, used_harness, setup, folder, title,
-                state, reason, detail, handle, queued_at_ms, started_at_ms, ended_at_ms, wait_until_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
-             ON CONFLICT(id) DO UPDATE SET ran_pool_id = ?4, machine = ?5, used_harness = ?7, state = ?11, reason = ?12,
-                detail = ?13, handle = ?14, started_at_ms = ?16, ended_at_ms = ?17, wait_until_ms = ?18",
+                state, reason, detail, handle, queued_at_ms, started_at_ms, ended_at_ms, wait_until_ms, repo)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+             ON CONFLICT(id) DO UPDATE SET ran_pool_id = ?4, machine = ?5, used_harness = ?7, folder = ?9, state = ?11,
+                reason = ?12, detail = ?13, handle = ?14, started_at_ms = ?16, ended_at_ms = ?17, wait_until_ms = ?18",
             params![
                 run.id,
                 run.trigger,
@@ -598,6 +639,7 @@ fn write_run(connection: &Connection, run: &HarnessRun) -> Result<(), String> {
                 run.started_at_ms,
                 run.ended_at_ms,
                 run.wait_until_ms,
+                run.repo,
             ],
         )
         .map(|_| ())
@@ -608,7 +650,7 @@ fn read_runs(connection: &Connection, filter: &str) -> Result<Vec<HarnessRun>, S
     let mut statement = connection
         .prepare(&format!(
             "SELECT id, trigger_id, pool_id, ran_pool_id, machine, harness, used_harness, setup, folder, title, state, reason,
-                detail, handle, queued_at_ms, started_at_ms, ended_at_ms, wait_until_ms
+                detail, handle, queued_at_ms, started_at_ms, ended_at_ms, wait_until_ms, repo
              FROM usage_runs {filter} ORDER BY queued_at_ms DESC LIMIT {KEPT_RUNS}"
         ))
         .map_err(|error| error.to_string())?;
@@ -633,6 +675,7 @@ fn read_runs(connection: &Connection, filter: &str) -> Result<Vec<HarnessRun>, S
                 started_at_ms: row.get(15)?,
                 ended_at_ms: row.get(16)?,
                 wait_until_ms: row.get(17)?,
+                repo: row.get(18)?,
             })
         })
         .map_err(|error| error.to_string())?
@@ -793,6 +836,55 @@ fn offer_now(inner: &Inner, key: &str, request: &RunRequest) -> Offer {
         .map_or(Offer::Nothing, |series| offer(&series.agents, request))
 }
 
+/// The member's checkout of `repo`, from its last Projects scan.
+fn repo_folder(inner: &Inner, key: &str, repo: &str) -> Option<String> {
+    inner
+        .projects
+        .iter()
+        .find(|(machine, _)| normalize_machine_name(machine) == key)
+        .and_then(|(_, projects)| projects.repo_path(repo))
+        .map(str::to_string)
+}
+
+/// Members of the run's pools, its spills included, whose projects Arbor hasn't looked at yet, so a run on a repo
+/// knows where each one keeps it. A scan only reads, the way the Projects page's does.
+async fn scan_unseen(app: &tauri::AppHandle, pools_saved: &[MachinePool], pool_id: &str) {
+    let mut names = Vec::new();
+    let mut next = Some(pool_id.to_string());
+    let mut visited = BTreeSet::new();
+    while let Some(id) = next.take() {
+        let Some(pool) = pools_saved.iter().find(|pool| pool.id == id) else { break };
+        if !visited.insert(pool.id.clone()) {
+            break;
+        }
+        names.extend(pool.members.iter().map(|member| member.machine.clone()));
+        if pool.when_full == PoolWhenFull::Spill {
+            next = pool.spill_pool.clone();
+        }
+    }
+    let unseen: Vec<String> = {
+        let state = app.state::<MachineHealthState>();
+        let inner = state.lock();
+        names
+            .into_iter()
+            .filter(|name| {
+                let key = normalize_machine_name(name);
+                let listed = inner.series.values().any(|series| normalize_machine_name(&series.host.machine) == key && series.host.enabled && series.error.is_none());
+                let seen = inner.projects.iter().any(|(machine, projects)| normalize_machine_name(machine) == key && projects.scanned());
+                listed && !seen
+            })
+            .collect()
+    };
+    let scans = unseen.into_iter().map(|name| {
+        let app = app.clone();
+        async move {
+            let state = app.state::<MachineHealthState>();
+            let _ = setup_projects::scan_projects(app.clone(), state, name, None).await;
+        }
+    });
+    futures_util::future::join_all(scans).await;
+}
+
 /// Tries to start a run on its pool, following spills; records how it went. A member found without the run's folder
 /// goes into `skip` (normalized name to name), so the run tries the next and later tries leave it out; when every
 /// member that could take it lacked the folder, the run doesn't start and says where it looked.
@@ -809,6 +901,27 @@ async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequ
         };
         visited.insert(pool.id.clone());
         let state = app.state::<MachineHealthState>();
+        // A run on a repo goes only where the last Projects scan found a checkout of it; members scanned without one
+        // count as lacking its folder, so a refusal names them.
+        let folders: HashMap<String, String> = match &request.repo {
+            Some(repo) => {
+                let inner = state.lock();
+                for member in &pool.members {
+                    let key = normalize_machine_name(&member.machine);
+                    if repo_folder(&inner, &key, repo).is_none() {
+                        skip.entry(key).or_insert_with(|| member.machine.clone());
+                    }
+                }
+                pool.members
+                    .iter()
+                    .filter_map(|member| {
+                        let key = normalize_machine_name(&member.machine);
+                        repo_folder(&inner, &key, repo).map(|folder| (key, folder))
+                    })
+                    .collect()
+            }
+            None => HashMap::new(),
+        };
         let ready = |machine: &str| {
             let key = normalize_machine_name(machine);
             !skip.contains_key(&key) && !passed.contains(&key)
@@ -829,8 +942,13 @@ async fn attempt(app: &tauri::AppHandle, run: &mut HarnessRun, request: &RunRequ
                 run.ran_pool = Some(pool.id.clone());
                 run.machine = Some(machine.name().to_string());
                 run.state = RunState::Starting;
-                match hand_off(&machine, chosen, &run.id, request).await {
+                let placed = match folders.get(&key) {
+                    Some(folder) => RunRequest { folder: folder.clone(), ..request.clone() },
+                    None => request.clone(),
+                };
+                match hand_off(&machine, chosen, &run.id, &placed).await {
                     Ok((used, handle)) => {
+                        run.folder = placed.folder.clone();
                         let ids = [handle.thread_id.clone(), handle.session_id.clone()].into_iter().flatten().collect();
                         lock_held().reservations.started(reservation, ids, Local::now().timestamp_millis() + RUN_HOLD_MS);
                         run.used = Some(used);
@@ -896,14 +1014,18 @@ async fn save(run: HarnessRun) -> Result<(), String> {
 /// spilled or refused as the pool says when nobody can take it.
 #[tauri::command]
 pub(crate) async fn start_pool_run(app: tauri::AppHandle, request: RunRequest) -> Result<HarnessRun, String> {
-    let folder = checked_folder(&request.folder)?;
+    let repo = request.repo.as_deref().map(str::trim).filter(|repo| !repo.is_empty()).map(str::to_string);
+    if repo.as_deref().is_some_and(|repo| repo.chars().any(char::is_control) || repo.split('/').count() < 3) {
+        return Err("A run's repository is written host/owner/name.".into());
+    }
+    let folder = if repo.is_some() { String::new() } else { checked_folder(&request.folder)? };
     if request.prompt.trim().is_empty() {
         return Err("A run needs a prompt.".into());
     }
     if request.setup.trim().is_empty() {
         return Err("A run needs the setup or agent to start.".into());
     }
-    let request = RunRequest { folder: folder.clone(), ..request };
+    let request = RunRequest { folder: folder.clone(), repo: repo.clone(), ..request };
     let pools_saved = run_usage_task(|| pools::read_pools(&open_usage_database()?)).await?;
     let mut run = HarnessRun {
         id: new_uuid(),
@@ -915,6 +1037,7 @@ pub(crate) async fn start_pool_run(app: tauri::AppHandle, request: RunRequest) -
         used: None,
         setup: request.setup.trim().to_string(),
         folder,
+        repo,
         title: title_of(&request),
         state: RunState::Starting,
         reason: None,
@@ -927,6 +1050,9 @@ pub(crate) async fn start_pool_run(app: tauri::AppHandle, request: RunRequest) -
     };
     save(run.clone()).await?;
     publish(&app);
+    if request.repo.is_some() {
+        scan_unseen(&app, &pools_saved, &request.pool).await;
+    }
     let mut skip = BTreeMap::new();
     attempt(&app, &mut run, &request, &pools_saved, &mut skip).await;
     if run.state == RunState::Queued {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { useI18n } from '../i18n';
 import { formatAgo, formatDateTime, formatDuration, formatRelative } from '../lib/format';
 import { sessionsView, type AppView } from '../navigation';
@@ -19,6 +20,7 @@ import { toast } from './ui/toast';
 import { SettingsBlock } from './layout/settings';
 import { HARNESS_LABEL } from '../services/harnesses';
 import { useFleetHealth } from '../services/fleetHealth';
+import { SETUP_PROJECTS_UPDATED_EVENT, getProjects, scanProjects } from '../services/setupProjects';
 import {
   RUN_HARNESSES,
   RUN_STATE_LABEL,
@@ -27,14 +29,17 @@ import {
   canOpenRun,
   newRunRequest,
   openRun,
+  poolRepos,
   reasonMessage,
   runCommands,
+  repoName,
   runDraftProblem,
   runSetupChoices,
   setupLabel,
   startRun,
+  unscannedMembers,
 } from '../services/runs';
-import type { HarnessRun, MachinePool, RunHarness, RunRequest } from '../native/types';
+import type { HarnessRun, MachinePool, MachineProjects, RunHarness, RunRequest } from '../native/types';
 
 /** One run's reason, worded, or null when it has none. */
 function useReason() {
@@ -129,9 +134,10 @@ export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: 
                 {t('runs.line', {
                   harness: t(HARNESS_LABEL[harness]),
                   setup: run.setup,
-                  folder: run.folder,
+                  folder: run.repo && !run.folder ? repoName(run.repo) : run.folder,
                   when: formatAgo(run.queuedAtMs, nowMs),
                 })}
+                {run.handle.worktree ? ` · ${t('runs.ownWorktree', { name: run.handle.worktree })}` : ''}
                 {run.used === 'headless' && run.harness !== 'headless' ? ` · ${t('runs.fellBack', { harness: t(HARNESS_LABEL[run.harness]) })}` : ''}
                 {run.used === 't3' && run.state === 'handedOff' ? ` · ${t('runs.whereT3')}` : ''}
               </p>
@@ -172,22 +178,71 @@ export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: 
   );
 }
 
-/** Starts a run on a pool: which harness and setup, the folder, the prompt, and whether the command line may stand in. */
+/** A choice in the repository list that switches to typing a folder. */
+const FOLDER_CHOICE = '__folder';
+
+/**
+ * The members' repositories, as their last Projects scans found them, kept fresh. Members never looked at are scanned
+ * once while the dialog is open, the way Setup's checklist does, so the list speaks for every member it can reach.
+ */
+function usePoolProjects(pool: MachinePool | null) {
+  const health = useFleetHealth();
+  const [projects, setProjects] = useState<MachineProjects[] | null>(null);
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!pool) return;
+    let current = true;
+    const load = () => getProjects().then((next) => { if (current) setProjects(next); }).catch(() => { if (current) setProjects([]); });
+    void load();
+    const stop = listen(SETUP_PROJECTS_UPDATED_EVENT, () => void load());
+    return () => {
+      current = false;
+      void stop.then((unlisten) => unlisten()).catch(() => undefined);
+    };
+  }, [pool]);
+  const unseen = pool && projects ? unscannedMembers(pool, projects) : [];
+  const reachable = new Set((health ?? []).filter((machine) => machine.host.enabled && !machine.error).map((machine) => machine.machine));
+  useEffect(() => {
+    for (const machine of unseen) {
+      if (!reachable.has(machine) || asked.current.has(machine)) continue;
+      asked.current.add(machine);
+      scanProjects(machine).catch(() => undefined);
+    }
+  });
+  const scanning = (projects ?? []).filter((entry) => entry.scanning && pool?.members.some((member) => member.machine === entry.machine)).map((entry) => entry.machine);
+  return { projects, scanning };
+}
+
+/**
+ * Starts a session on a pool: the repository (or a folder), where it runs (Orca or the agent's command line), the agent,
+ * the prompt, and whether it gets a worktree of its own. The pool picks the member.
+ */
 export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; onClose: () => void }) {
   const { t } = useI18n();
   const health = useFleetHealth();
   const reason = useReason();
   const [draft, setDraft] = useState<RunRequest>(() => newRunRequest(''));
+  const [byFolder, setByFolder] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tried, setTried] = useState(false);
-  const folderRef = useRef<HTMLInputElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const { projects, scanning } = usePoolProjects(pool);
   useEffect(() => {
     if (!pool) return;
     setDraft(newRunRequest(pool.id));
+    setByFolder(false);
     setError(null);
     setTried(false);
   }, [pool]);
+  const repos = pool && projects ? poolRepos(pool, projects) : [];
+  const total = pool?.members.filter((member) => member.weight !== 'manual').length ?? 0;
+  const firstRepo = repos[0]?.repo;
+  // The repo on the most members, until one is picked or a folder typed.
+  useEffect(() => {
+    if (!pool || byFolder || draft.repo || !firstRepo) return;
+    setDraft((current) => ({ ...current, repo: firstRepo }));
+  }, [pool, byFolder, draft.repo, firstRepo]);
   const choices = pool ? runSetupChoices(pool, health, draft.harness) : [];
   const firstChoice = choices[0]?.id;
   // The first setup that's ready somewhere, once a harness is picked.
@@ -198,13 +253,25 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
   const change = (patch: Partial<RunRequest>) => setDraft((current) => ({ ...current, ...patch }));
   const problem = runDraftProblem(draft);
   const chosen = choices.find((choice) => choice.id === draft.setup);
+  const chosenRepo = repos.find((entry) => entry.repo === draft.repo);
+  // Orca's own worktree command starts its agents with their default model.
+  const takesModel = !(draft.harness === 'orca' && draft.worktree);
+  const pickWhere = (next: string) => {
+    if (next === FOLDER_CHOICE) {
+      setByFolder(true);
+      change({ repo: undefined });
+    } else {
+      setByFolder(false);
+      change({ repo: next, folder: '' });
+    }
+  };
   const start = async () => {
     setTried(true);
     if (problem || !pool) return;
     setStarting(true);
     setError(null);
     try {
-      const run = await startRun({ ...draft, folder: draft.folder.trim(), model: draft.model?.trim() || undefined });
+      const run = await startRun({ ...draft, folder: draft.folder.trim(), model: takesModel ? draft.model?.trim() || undefined : undefined });
       const harness = t(HARNESS_LABEL[run.used ?? run.harness]);
       if (run.state === 'handedOff' || run.state === 'running') {
         toast({ kind: 'success', title: t('runs.started', { harness, machine: run.machine ?? '' }) });
@@ -224,13 +291,45 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
   };
   return (
     <Dialog open={pool !== null} onOpenChange={(isOpen) => { if (!isOpen && !starting) onClose(); }}>
-      <DialogPopup className="max-w-xl" initialFocus={folderRef}>
+      <DialogPopup className="max-w-xl" initialFocus={promptRef}>
         <form className="contents" onSubmit={(event) => { event.preventDefault(); void start(); }}>
           <DialogHeader>
             <DialogTitle>{t('runs.dialog.title', { pool: pool?.name ?? '' })}</DialogTitle>
             <DialogDescription>{t('runs.dialog.description')}</DialogDescription>
           </DialogHeader>
           <DialogPanel className="flex flex-col gap-5">
+            <div className="flex flex-col gap-1.5">
+              <Label>{t('runs.dialog.repo')}</Label>
+              <Select value={byFolder ? FOLDER_CHOICE : draft.repo ?? ''} onValueChange={(next) => { if (next) pickWhere(String(next)); }}>
+                <SelectTrigger size="sm" aria-label={t('runs.dialog.repo')}>
+                  <SelectValue>
+                    {byFolder ? t('runs.dialog.folderChoice') : chosenRepo ? repoName(chosenRepo.repo) : t('runs.dialog.noRepos')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {repos.map((entry) => (
+                    <SelectItem key={entry.repo} value={entry.repo}>
+                      <span className="flex w-full items-center justify-between gap-3">
+                        <span className="font-mono text-xs">{repoName(entry.repo)}</span>
+                        <span className="text-xs text-muted-foreground">{t('runs.dialog.repoOn', { count: entry.machines.length, total })}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={FOLDER_CHOICE}>{t('runs.dialog.folderChoice')}</SelectItem>
+                </SelectPopup>
+              </Select>
+              {byFolder ? (
+                <Input id="run-folder" font="mono" value={draft.folder} onChange={(event) => change({ folder: event.target.value })} placeholder={t('runs.dialog.folderPlaceholder')} spellCheck={false} aria-label={t('runs.dialog.folder')} />
+              ) : null}
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {scanning.length > 0 ? <><Spinner className="size-3" />{t('runs.dialog.scanning', { machines: scanning.join(', ') })}</> : t('runs.dialog.reposHint')}
+              </p>
+              {chosenRepo && !byFolder ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {chosenRepo.machines.map((machine) => <MachinePill key={machine} name={machine} size="sm" />)}
+                </div>
+              ) : null}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label>{t('runs.dialog.harness')}</Label>
@@ -244,9 +343,9 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>{t(draft.harness === 't3' ? 'runs.dialog.setup' : 'runs.dialog.agent')}</Label>
+                <Label>{t('runs.dialog.agent')}</Label>
                 <Select value={draft.setup} onValueChange={(next) => change({ setup: next ? String(next) : '' })} disabled={choices.length === 0}>
-                  <SelectTrigger size="sm" aria-label={t(draft.harness === 't3' ? 'runs.dialog.setup' : 'runs.dialog.agent')}>
+                  <SelectTrigger size="sm" aria-label={t('runs.dialog.agent')}>
                     <SelectValue>{chosen ? setupLabel(chosen, t) : t('runs.dialog.noSetups')}</SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
@@ -263,21 +362,24 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
               </div>
             </div>
             {choices.length === 0 ? <p className="-mt-3 text-xs text-muted-foreground">{t('runs.dialog.noSetupsHint', { harness: t(HARNESS_LABEL[draft.harness]) })}</p> : null}
-            <div className="grid grid-cols-[2fr_1fr] gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="run-folder">{t('runs.dialog.folder')}</Label>
-                <Input id="run-folder" ref={folderRef} font="mono" value={draft.folder} onChange={(event) => change({ folder: event.target.value })} placeholder={t('runs.dialog.folderPlaceholder')} spellCheck={false} />
-              </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="run-prompt">{t('runs.dialog.prompt')}</Label>
+              <Textarea id="run-prompt" ref={promptRef} rows={5} value={draft.prompt} onChange={(event) => change({ prompt: event.currentTarget.value })} placeholder={t('runs.dialog.promptPlaceholder')} />
+              <p className="text-xs text-muted-foreground">{t('runs.dialog.promptHint')}</p>
+            </div>
+            {takesModel ? (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="run-model">{t('runs.dialog.model')}</Label>
                 <Input id="run-model" font="mono" value={draft.model ?? ''} onChange={(event) => change({ model: event.target.value })} placeholder={t('runs.dialog.modelPlaceholder')} spellCheck={false} />
               </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="run-prompt">{t('runs.dialog.prompt')}</Label>
-              <Textarea id="run-prompt" rows={5} value={draft.prompt} onChange={(event) => change({ prompt: event.currentTarget.value })} placeholder={t('runs.dialog.promptPlaceholder')} />
-              <p className="text-xs text-muted-foreground">{t('runs.dialog.promptHint')}</p>
-            </div>
+            ) : null}
+            <label className="flex items-start gap-2.5 text-sm">
+              <Checkbox checked={draft.worktree === true} onCheckedChange={(on) => change({ worktree: on === true })} className="mt-0.5" />
+              <span className="space-y-0.5">
+                <span className="block">{t('runs.dialog.worktree')}</span>
+                <span className="block text-xs text-muted-foreground">{t(takesModel ? 'runs.dialog.worktreeHint' : 'runs.dialog.orcaModel')}</span>
+              </span>
+            </label>
             {draft.harness === 'headless' ? (
               <p className="text-xs text-muted-foreground">{t('runs.dialog.headlessHint')}</p>
             ) : (

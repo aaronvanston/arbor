@@ -299,6 +299,11 @@ pub(crate) struct MachineProjects {
     repos: Vec<ProjectRepo>,
 }
 
+/// A remote as compared: any case, with or without `.git`.
+fn same_remote(remote: &str) -> String {
+    remote.trim().trim_end_matches('/').trim_end_matches(".git").to_ascii_lowercase()
+}
+
 impl MachineProjects {
     /// The project (lowercase `owner/name`) of the checkout at `path`, from its repo's remote, when the last scan found it.
     pub(crate) fn checkout_project(&self, path: &str) -> Option<String> {
@@ -308,6 +313,21 @@ impl MachineProjects {
         let name = parts.next()?.trim_end_matches(".git");
         let owner = parts.next()?;
         Some(format!("{owner}/{name}").to_ascii_lowercase())
+    }
+
+    /// Whether a scan has finished here, so a repo missing from it isn't on the machine as far as sessions show.
+    pub(crate) fn scanned(&self) -> bool {
+        self.scanned_at.is_some()
+    }
+
+    /// The main checkout of the repo whose remote is `remote` (`host/owner/name`), when the last scan found one.
+    pub(crate) fn repo_path(&self, remote: &str) -> Option<&str> {
+        let wanted = same_remote(remote);
+        self.repos
+            .iter()
+            .filter(|repo| repo.state == RepoState::Ok && !repo.bare)
+            .find(|repo| repo.remote.as_deref().is_some_and(|found| same_remote(found) == wanted))
+            .map(|repo| repo.path.as_str())
     }
 
     /// Every checkout the last scan found: each repo's worktrees, the main one included.
@@ -1478,6 +1498,26 @@ mod tests {
     use super::*;
 
     const NOW: i64 = 1_800_000_000_000;
+
+    #[test]
+    fn a_runs_repo_is_found_by_its_remote_in_any_case_with_or_without_git() {
+        let repo = |path: &str, remote: Option<&str>, state: RepoState| ProjectRepo { path: path.into(), remote: remote.map(Into::into), state, ..ProjectRepo::default() };
+        let projects = MachineProjects {
+            scanned_at: Some(NOW),
+            repos: vec![
+                repo("/home/casey/old/storefront", Some("github.com/acme/storefront"), RepoState::Missing),
+                repo("/home/casey/src/storefront", Some("github.com/Acme/storefront.git"), RepoState::Ok),
+                repo("/home/casey/src/docs", None, RepoState::Ok),
+            ],
+            ..MachineProjects::default()
+        };
+        assert!(projects.scanned());
+        // A checkout that's gone is passed over for one that's there.
+        assert_eq!(projects.repo_path("github.com/acme/storefront"), Some("/home/casey/src/storefront"));
+        assert_eq!(projects.repo_path("github.com/acme/storefront.git/"), Some("/home/casey/src/storefront"));
+        assert_eq!(projects.repo_path("github.com/acme/docs"), None);
+        assert!(!MachineProjects::default().scanned());
+    }
 
     fn worktree(path: &str) -> ProjectWorktree {
         ProjectWorktree {

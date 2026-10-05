@@ -9,6 +9,8 @@ fn request(harness: Harness, setup: &str) -> RunRequest {
         harness,
         setup: setup.into(),
         folder: "~/src/app".into(),
+        repo: None,
+        worktree: false,
         prompt: PROMPT.into(),
         model: None,
         fallback: false,
@@ -28,6 +30,7 @@ fn run(id: &str, state: RunState) -> HarnessRun {
         used: Some(Harness::Headless),
         setup: "claude".into(),
         folder: "~/src/app".into(),
+        repo: None,
         title: "Fix the flaky test".into(),
         state,
         reason: None,
@@ -226,8 +229,20 @@ fn hand_off_scripts_run_against_stand_ins() {
             bodies = home.join("bodies.log").display()
         ),
     );
-    script("git", "printf '%s\\n' \"$HOME/src/app\"\n".into());
-    script("orca", format!("{log_line}case \"$1 $2\" in 'terminal create') printf '{{\"ok\":true,\"result\":{{\"terminal\":{{\"handle\":\"term_ab12\"}}}}}}\\n' ;; esac\n"));
+    // `git -C <root> worktree add -q -b <name> <path> <base>` makes the folder; anything else is asked for the top.
+    script(
+        "git",
+        format!("case \"$3 $4\" in 'worktree add') {log_line}mkdir -p \"$8\" ;; 'symbolic-ref -q') printf 'origin/main\\n' ;; *) printf '%s\\n' \"$HOME/src/app\" ;; esac\n"),
+    );
+    script(
+        "orca",
+        format!(
+            "{log_line}case \"$1 $2\" in 'terminal create') printf '{{\"ok\":true,\"result\":{{\"terminal\":{{\"handle\":\"term_ab12\"}}}}}}\\n' ;; 'worktree create') printf '{{\"ok\":true,\"result\":{{\"startupTerminal\":{{\"handle\":\"term_shell\"}},\"agentTerminalHandle\":\"term_wt99\"}}}}\\n' ;; esac\n"
+        ),
+    );
+    // The agents themselves never run for real.
+    script("claude", "exit 0\n".into());
+    script("codex", "exit 0\n".into());
     let has_reader = ["osascript", "python3", "node"].iter().any(|reader| std::process::Command::new("sh").args(["-c", &format!("command -v {reader}")]).output().is_ok_and(|out| out.status.success()));
     for shell in ["sh", "dash"] {
         if std::process::Command::new(shell).arg("-c").arg("true").output().is_err() {
@@ -274,6 +289,24 @@ fn hand_off_scripts_run_against_stand_ins() {
         assert_eq!(parse_hand_off(&stdout).map(|handle| handle.terminal), Ok(Some("term_ab12".into())), "{shell}: {stderr}");
         let calls = std::fs::read_to_string(&log).unwrap();
         assert!(calls.contains("repo add --path"), "{calls}");
+
+        // In its own worktree, Orca makes it and starts the agent there; the handle is the agent's terminal.
+        let mut own = request(Harness::Orca, "claude");
+        own.worktree = true;
+        let (stdout, stderr) = run_script(&handoff::orca_script("5e1f0a2b-77aa-4c1d-8e2f-000000000001", &own, "Nightly"));
+        assert_eq!(parse_hand_off(&stdout).map(|handle| handle.terminal), Ok(Some("term_wt99".into())), "{shell}: {stderr}");
+        let calls = std::fs::read_to_string(&log).unwrap();
+        assert!(calls.contains("worktree create --repo path:") && calls.contains("--name arbor-5e1f0a2b --agent claude"), "{calls}");
+
+        // On the command line, a new worktree on a branch of its own off the default branch, under ~/.arbor/worktrees.
+        let mut headless = request(Harness::Headless, "claude");
+        headless.worktree = true;
+        let (stdout, stderr) = run_script(&headless_script("5e1f0a2b-77aa-4c1d-8e2f-000000000002", AgentKind::Claude, &headless, "s"));
+        assert!(stdout.contains("pid="), "{shell}: {stdout} {stderr}");
+        assert!(home.join(".arbor/worktrees/arbor-5e1f0a2b").is_dir());
+        let calls = std::fs::read_to_string(&log).unwrap();
+        assert!(calls.contains("worktree add -q -b arbor-5e1f0a2b") && calls.contains("origin/main"), "{calls}");
+        let _ = std::fs::remove_dir_all(home.join(".arbor/worktrees"));
 
         let mut missing = request(Harness::Orca, "claude");
         missing.folder = "~/nowhere".into();
