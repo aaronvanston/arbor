@@ -1961,6 +1961,7 @@ export const en = {
   'setup.hooks.grid.show': 'Show',
   'setup.hooks.grid.noMatch': 'No hook matches “{query}”.',
   'setup.hooks.grid.allInLine': 'Every machine has the repo’s hooks as the repo has them.',
+  'setup.hooks.grid.unreadable': 'Arbor can’t compare the machines with the repo’s hooks until it can read them. Fix the file, then commit it.',
   'setup.hooks.grid.empty': 'No hooks yet. Add a script to .agents/hooks and a hook to .agents/hooks.json, or take one from a machine that runs it from ~/.agents/hooks.',
   'setup.hooks.grid.inLine.one': '1 hook in step everywhere. Show it',
   'setup.hooks.grid.inLine.other': '{count} hooks in step everywhere. Show them',

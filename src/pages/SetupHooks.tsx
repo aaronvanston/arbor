@@ -179,6 +179,8 @@ export function SetupHooks({ machines }: { machines: SetupMachine[] }) {
   if (!rows.length) {
     empty = query.trim()
       ? t('setup.hooks.grid.noMatch', { query: query.trim() })
+      // A file Arbor can't read compares with nothing, so an empty grid isn't every machine in step.
+      : fileProblems.length ? t('setup.hooks.grid.unreadable')
       : registry?.found || registry?.cells.length ? t('setup.hooks.grid.allInLine') : t('setup.hooks.grid.empty');
   }
 
