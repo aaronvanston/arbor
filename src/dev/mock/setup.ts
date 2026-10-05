@@ -356,6 +356,14 @@ keepThisMacOnly(setupMachines);
 // Its own homes, without the other apps' ones a first look at the machine would add.
 for (const entry of freshInstall ? setupMachines : []) entry.homes = entry.homes.filter((home) => !home.path.startsWith('~/.agent-app/'));
 
+/** What a machine's first scan finds, held back until Sync scans it: `?fresh=1`'s Mac hasn't been read yet. */
+const unscanned = new Map<string, Pick<SetupMachine, 'homes' | 'harnessHomes' | 'installs' | 'harnessInstalls'>>();
+for (const entry of freshInstall ? setupMachines : []) {
+  const { homes, harnessHomes, installs, harnessInstalls } = entry;
+  unscanned.set(entry.machine, { homes, harnessHomes, installs, harnessInstalls });
+  Object.assign(entry, { scannedAt: null, homes: [], harnessHomes: [], installs: [], harnessInstalls: [] });
+}
+
 // With `?pluginrepo=sample`, ci-01 has agency from its own marketplace, which the repo has removed everywhere, and
 // cedar-02's settings still name a plugin that's gone, which the grid counts rather than lists.
 if (params.get('pluginrepo') === 'sample') {
@@ -622,6 +630,11 @@ export const scanSetupMock = (machine: string | null, staleOnly: boolean) => {
   targets.forEach((entry, index) => window.setTimeout(() => {
     entry.scanning = false;
     entry.scannedAt = Date.now();
+    const found = unscanned.get(entry.machine);
+    if (found && entry.reachable) {
+      Object.assign(entry, found);
+      unscanned.delete(entry.machine);
+    }
     entry.error = !entry.reachable
       ? `ssh: connect to host ${entry.machine} port 22: Connection refused`
       : setupScenario === 'fail' && entry.machine === 'ci-01' ? 'ssh: connect to host ci-01 port 22: Operation timed out' : null;
@@ -1712,7 +1725,8 @@ const scanProjectsMock = (machine: string, fetch: boolean) => {
     const plugins = new Map(entry.repos.flatMap((repo) => repo.worktrees.map((worktree) => [worktree.path, worktree.plugins] as const)));
     const skills = new Map(entry.repos.flatMap((repo) => repo.worktrees.map((worktree) => [worktree.path, worktree.skills] as const)));
     const mcp = new Map(entry.repos.flatMap((repo) => repo.worktrees.map((worktree) => [worktree.path, { mcpDenied: worktree.mcpDenied, mcpLocal: worktree.mcpLocal, instructions: worktree.instructions }] as const)));
-    if (projectsScenario !== 'none') {
+    // A new install has no sessions yet, and a scan only finds the repos sessions have worked in.
+    if (projectsScenario !== 'none' && !freshInstall) {
       const fresh = structuredClone(projectRepos[machine]?.repos ?? []);
       const kept = new Set(entry.repos.flatMap((repo) => repo.worktrees.map((worktree) => worktree.path)));
       for (const repo of fresh) {
