@@ -137,7 +137,8 @@ function readinessOf(machine: string): PoolSshReadiness {
 
 function connectionsOf(pool: MachinePool): PoolSshConnection[] {
   if (sshScenario === 'idle' || sshScenario === 'nokeys' || sshScenario === 'nocli') return [];
-  const ready = pool.members.filter((member) => readinessOf(member.machine) === 'ready').map((member) => member.machine);
+  // Host names are pinned only to members a pick could land on: reachable, and not Manual only, which is never picked.
+  const ready = pool.members.filter((member) => member.weight !== 'manual' && readinessOf(member.machine) === 'ready').map((member) => member.machine);
   const [first, second] = ready;
   const host = hostName(pool);
   const day = 24 * 60 * 60_000;
