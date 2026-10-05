@@ -43,6 +43,12 @@ const FRAME_SAMPLE_MS = 10_000;
 const HIDDEN_MINUTES = 10;
 /** The page left open when the window is closed to the tray: Usage's Requests, one of the heaviest. */
 const HIDDEN_PAGE = { page: 'usage' };
+/**
+ * Health rounds after the idle: the native sampler's `machine-health-updated`, which the mock never sends itself, once a
+ * minute as on an idle Mac, with what each re-reads and re-renders counted over the seconds after it.
+ */
+const HEALTH_ROUNDS = 5;
+const HEALTH_ROUND_MS = 2_000;
 
 type Size = { id: 'default' | 'real'; query: string };
 const SIZES: Size[] = [{ id: 'default', query: '' }, { id: 'real', query: 'size=real' }];
@@ -74,6 +80,8 @@ type Step = {
   mockJsBytes: number;
   chunks: string[];
   commits: number;
+  /** Component renders across every commit: what each commit cost, as commits alone don't say. */
+  componentRenders: number;
   mutations: number;
   commands: number;
   commandBytes: number;
@@ -84,6 +92,8 @@ type Step = {
   topTimers: { site: string; kind: string; fires: number; created: number }[];
   topRaf: { site: string; calls: number }[];
   topComponents: { component: string; renders: number }[];
+  /** Where renders started: components that rendered under no other that did, with every render below them. */
+  topOrigins: { component: string; renders: number }[];
   topMutations: { target: string; count: number }[];
   live: { site: string; kind: string; delay: number; count: number }[];
 };
@@ -113,6 +123,8 @@ type SizeResult = {
   /** App JS a cold start needs before the prefetch: Home's, and each page's beyond Home's. Default size only. */
   coldJs?: { home: number; pages: Record<string, number> };
   idle: Step & { rssStartMb: number | null; rssEndMb: number | null };
+  /** Every health round's counts together; the gated ones are per round. */
+  healthRounds?: Step;
   pages: Record<string, Step>;
   timing: Timing;
 };
@@ -398,13 +410,21 @@ function summarize(sources: BuildSources, counted: CounterSnapshot, chunks: stri
     live.set(id, entry);
   }
 
-  const components = new Map<string, number>();
-  for (const [key, renders] of Object.entries(counted.rendered)) {
+  const labels = new Map<string, string>();
+  const label = (key: string) => {
+    const cached = labels.get(key);
+    if (cached) return cached;
     const known = counted.componentSources[key];
     const position = known ? sources.functionSource(known.source, allChunks) : null;
-    const label = position ? formatPosition({ ...position, name: position.name ?? known?.name ?? null }) : `${known?.name ?? key} (?)`;
-    components.set(label, (components.get(label) ?? 0) + renders);
-  }
+    const named = position ? formatPosition({ ...position, name: position.name ?? known?.name ?? null }) : `${known?.name ?? key} (?)`;
+    labels.set(key, named);
+    return named;
+  };
+  const byComponent = (tally: Record<string, number>) => {
+    const components = new Map<string, number>();
+    for (const [key, renders] of Object.entries(tally)) components.set(label(key), (components.get(label(key)) ?? 0) + renders);
+    return top([...components.entries()].map(([component, renders]) => ({ component, renders })), (entry) => entry.renders);
+  };
 
   const commands = Object.entries(counted.commands).map(([command, tally]) => ({ command, calls: tally.calls, replyBytes: tally.replyBytes, argBytes: tally.argBytes }));
   const appTimers = [...timers.values()];
@@ -413,6 +433,7 @@ function summarize(sources: BuildSources, counted: CounterSnapshot, chunks: stri
     mockJsBytes: sum(chunks.filter(mockChunk).map(fileBytes)),
     chunks,
     commits: counted.commits,
+    componentRenders: sum(Object.values(counted.rendered)),
     mutations: counted.mutations,
     commands: sum(commands.map((command) => command.calls)),
     commandBytes: sum(commands.map((command) => command.replyBytes + command.argBytes)),
@@ -422,7 +443,8 @@ function summarize(sources: BuildSources, counted: CounterSnapshot, chunks: stri
     topCommands: top(commands, (command) => command.replyBytes + command.argBytes),
     topTimers: top(appTimers, (timer) => timer.fires * 1_000 + timer.created),
     topRaf: top([...raf.entries()].map(([site, calls]) => ({ site, calls })), (entry) => entry.calls),
-    topComponents: top([...components.entries()].map(([component, renders]) => ({ component, renders })), (entry) => entry.renders),
+    topComponents: byComponent(counted.rendered),
+    topOrigins: byComponent(counted.origins),
     topMutations: top(Object.entries(counted.mutationTargets).map(([target, count]) => ({ target, count })), (entry) => entry.count),
     live: top([...live.values()], (timer) => timer.count, 40),
   };
@@ -516,6 +538,8 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   const idleChunks = idleRun.scripts.slice(launchChunks.length);
   const idleStep = summarize(sources, idleCounted, idleChunks, [...idleRun.scripts]);
   const rssEndMb = rssMb(before);
+  console.log(`[${size.id}] (${elapsed()}) ${HEALTH_ROUNDS} health rounds…`);
+  const healthRounds = summarize(sources, await healthRoundsOf(idleRun.page, idleRun.network), [], [...idleRun.scripts]);
   await idleRun.context.close();
 
   console.log(`[${size.id}] (${elapsed()}) opening each page…`);
@@ -542,7 +566,7 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
     cold = await coldJs(browser, origin, sources);
   }
   console.log(`[${size.id}] (${elapsed()}) done`);
-  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, hidden, pages, timing };
+  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, healthRounds, hidden, pages, timing };
 }
 
 /**
@@ -578,6 +602,38 @@ async function hiddenJourney(browser: Browser, url: string, sources: BuildSource
   return { ...step, domNodesShown: shown.all, domNodesHidden: hidden.all, domNodesBack: back.all, rssShownMb, rssHiddenMb };
 }
 
+/** Each health round's counts over the seconds after it, added up; the minute between rounds isn't counted. */
+async function healthRoundsOf(page: Page, network: ReturnType<typeof trackNetwork>): Promise<CounterSnapshot> {
+  let total: CounterSnapshot | null = null;
+  const add = (into: Record<string, number>, from: Record<string, number>) => {
+    for (const [key, count] of Object.entries(from)) into[key] = (into[key] ?? 0) + count;
+  };
+  for (let round = 0; round < HEALTH_ROUNDS; round += 1) {
+    await reset(page);
+    await page.evaluate(() => (window as Window & { __mockEmit?: (event: string) => void }).__mockEmit?.('machine-health-updated'));
+    await quiet(page, network);
+    await advance(page, network, HEALTH_ROUND_MS, STEP_MS);
+    const counted = await snapshot(page);
+    if (!total) total = counted;
+    else {
+      total.commits += counted.commits;
+      total.mutations += counted.mutations;
+      for (const tally of ['timersCreated', 'timersFired', 'rafCalls', 'rendered', 'origins', 'mutationTargets'] as const) add(total[tally], counted[tally]);
+      Object.assign(total.componentSources, counted.componentSources);
+      for (const [command, tally] of Object.entries(counted.commands)) {
+        const into = (total.commands[command] ??= { calls: 0, argBytes: 0, replyBytes: 0, failed: 0 });
+        into.calls += tally.calls;
+        into.argBytes += tally.argBytes;
+        into.replyBytes += tally.replyBytes;
+        into.failed += tally.failed;
+      }
+    }
+    await advance(page, network, 60_000 - HEALTH_ROUND_MS, IDLE_STEP_MS);
+  }
+  if (!total) throw new Error('No health rounds ran.');
+  return total;
+}
+
 /** The gated counts, flattened into baseline keys. */
 function countsOf(results: Latest['sizes']): Counts {
   const counts: Counts = {};
@@ -591,6 +647,7 @@ function countsOf(results: Latest['sizes']): Counts {
       counts[`${prefix}.commandBytes`] = values.commandBytes;
     };
     step(`${size}.launch`, result.launch);
+    counts[`${size}.launch.componentRenders`] = result.launch.componentRenders;
     // Everything a launch loads, the prefetched pages included; then what Home and each page need on their own.
     counts[`${size}.launch.appJsBytes`] = result.launch.appJsBytes;
     if (result.launch.settling) {
@@ -606,6 +663,7 @@ function countsOf(results: Latest['sizes']): Counts {
     counts[`${size}.idle.commandsPerMinute`] = perMinute(idle.commands);
     counts[`${size}.idle.commandBytesPerMinute`] = Math.round(idle.commandBytes / IDLE_MINUTES);
     counts[`${size}.idle.reactCommitsPerMinute`] = perMinute(idle.commits);
+    counts[`${size}.idle.componentRendersPerMinute`] = perMinute(idle.componentRenders);
     counts[`${size}.idle.domMutationsPerMinute`] = perMinute(idle.mutations);
     counts[`${size}.idle.timerFiresPerMinute`] = perMinute(idle.timerFires);
     counts[`${size}.idle.liveTimers`] = idle.liveTimers;
@@ -620,6 +678,13 @@ function countsOf(results: Latest['sizes']): Counts {
       counts[`${size}.hidden.timerFiresPerMinute`] = perHiddenMinute(hidden.timerFires);
       counts[`${size}.hidden.liveTimers`] = hidden.liveTimers;
       counts[`${size}.hidden.domNodes`] = hidden.domNodesHidden;
+    }
+    const rounds = result.healthRounds;
+    if (rounds) {
+      const perRound = (value: number) => Math.round((value / HEALTH_ROUNDS) * 10) / 10;
+      counts[`${size}.healthRound.reactCommits`] = perRound(rounds.commits);
+      counts[`${size}.healthRound.componentRenders`] = perRound(rounds.componentRenders);
+      counts[`${size}.healthRound.commands`] = perRound(rounds.commands);
     }
   }
   return counts;
@@ -681,6 +746,7 @@ function printReport(latest: Latest) {
       ['commands', (idle.commands / IDLE_MINUTES).toFixed(1)],
       ['command KB', kb(idle.commandBytes / IDLE_MINUTES)],
       ['React commits', (idle.commits / IDLE_MINUTES).toFixed(1)],
+      ['component renders', (idle.componentRenders / IDLE_MINUTES).toFixed(1)],
       ['DOM mutations', (idle.mutations / IDLE_MINUTES).toFixed(1)],
       ['app timer fires', (idle.timerFires / IDLE_MINUTES).toFixed(1)],
       ['live app timers at the end', idle.liveTimers],
@@ -711,6 +777,14 @@ function printReport(latest: Latest) {
       table(['Site', 'Kind', 'Fires/min'], hidden.topTimers.slice(0, 10).map((timer) => [timer.site, timer.kind, perMinute(timer.fires)]));
       console.log('\nHidden: components rendered per minute');
       table(['Component', 'Renders/min'], hidden.topComponents.slice(0, 10).map((entry) => [entry.component, perMinute(entry.renders)]));
+    }
+    console.log('\nIdle: where renders started (renders per minute at and below each)');
+    table(['Component', 'Renders/min'], (idle.topOrigins ?? []).slice(0, 10).map((entry) => [entry.component, (entry.renders / IDLE_MINUTES).toFixed(1)]));
+    const rounds = result.healthRounds;
+    if (rounds) {
+      const perRound = (value: number) => (value / HEALTH_ROUNDS).toFixed(1);
+      console.log(`\nEach health round (machine-health-updated), over the ${HEALTH_ROUND_MS / 1_000} s after it: ${perRound(rounds.commits)} commits, ${perRound(rounds.componentRenders)} component renders, ${perRound(rounds.commands)} commands`);
+      table(['Started at', 'Renders/round'], (rounds.topOrigins ?? []).slice(0, 8).map((entry) => [entry.component, perRound(entry.renders)]));
     }
   }
   if (latest.pageErrors.length) console.log(`\nUncaught errors in the page (counts may be wrong):\n  ${latest.pageErrors.join('\n  ')}`);

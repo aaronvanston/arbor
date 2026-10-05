@@ -304,6 +304,8 @@
  * `?chrome=mac-fullscreen` starts that window in full screen; `window.__mockFullscreen(true | false)` moves it in or out.
  * `window.__mockOpen(page, tab?, lens?)` goes to a page as `?page=`, `&tab=` and `&lens=` would start on it, without a
  * reload (the website's demo moves the app this way from its own tabs).
+ * `window.__mockEmit(event, payload?)` sends one of the native side's events, as `machine-health-updated` after each
+ * sampling round (`bun run perf` uses it to count what a round re-renders; the mock never sends that one itself).
  * ⌘=, ⌘− and ⌘0 act like the app's View menu (Zoom In, Zoom Out, Actual Size), from 83% to 144%, logged as `zoom`;
  * `?zoom=1.2` (any factor) starts at that zoom for this load without saving it, as a level the app saved would. The
  * mock can't zoom its own tab the way WKWebView does: in a same-origin frame of a set size (how screenshots are taken)
@@ -614,6 +616,9 @@ export function installTauriMock() {
   (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => void }).__mockOpen = (page, tab, lens) => {
     const view = mockStartView(page, tab ?? null, lens ?? null);
     if (view) goToView(view);
+  };
+  (window as Window & { __mockEmit?: (event: string, payload?: unknown) => void }).__mockEmit = (event, payload) => {
+    void emit(event, payload ?? Date.now());
   };
   const sidebarScenario = params.get('sidebar');
   if (sidebarScenario === 'hidden') previewSidebarLayout({ hidden: true });

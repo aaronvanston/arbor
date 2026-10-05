@@ -43,6 +43,7 @@ export function installCounters() {
     commands: {} as Record<string, CommandTally>,
     commits: 0,
     rendered: {} as Tally,
+    origins: {} as Tally,
     componentTypes: new Map<unknown, string>(),
     componentSources: {} as Record<string, { name: string; source: string }>,
     mutations: 0,
@@ -139,14 +140,22 @@ export function installCounters() {
     state.componentSources[key] = { name, source: fn ? String(fn).slice(0, 160) : '' };
     return key;
   };
-  const visit = (fiber: Fiber | null) => {
+  // An origin is a component that rendered under no other component that did: its own state or store changed, so it's
+  // where a commit started (or a fresh mount's top). Every render is tallied against its origin, so `origins` says
+  // what each one's updates cost in all.
+  const visit = (fiber: Fiber | null, origin: string | null) => {
     let node = fiber;
     while (node) {
-      if (COMPONENT_TAGS.has(node.tag) && (!node.alternate || (node.flags & PERFORMED_WORK) === PERFORMED_WORK)) {
-        bump(state.rendered, componentKey(node.type));
+      const rendered = COMPONENT_TAGS.has(node.tag) && (!node.alternate || (node.flags & PERFORMED_WORK) === PERFORMED_WORK);
+      let below = origin;
+      if (rendered) {
+        const key = componentKey(node.type);
+        bump(state.rendered, key);
+        below ??= key;
+        bump(state.origins, below);
       }
       // A subtree React bailed out of keeps the very same child fibers; only a re-rendered one has new ones.
-      if (node.child && (!node.alternate || node.child !== node.alternate.child)) visit(node.child);
+      if (node.child && (!node.alternate || node.child !== node.alternate.child)) visit(node.child, below);
       node = node.sibling;
     }
   };
@@ -161,7 +170,7 @@ export function installCounters() {
     onPostCommitFiberRoot() {},
     onCommitFiberRoot(_renderer: number, root: { current: Fiber }) {
       state.commits += 1;
-      visit(root.current.child);
+      visit(root.current.child, null);
     },
   };
 
@@ -196,6 +205,7 @@ export function installCounters() {
     commands: JSON.parse(JSON.stringify(state.commands)) as Record<string, CommandTally>,
     commits: state.commits,
     rendered: { ...state.rendered },
+    origins: { ...state.origins },
     componentSources: { ...state.componentSources },
     mutations: state.mutations,
     mutationTargets: { ...state.mutationTargets },
@@ -206,7 +216,7 @@ export function installCounters() {
   });
   /** Starts a new count; live timers carry on, as they're still running. */
   const reset = () => {
-    for (const tally of [state.timersCreated, state.timersFired, state.rafCalls, state.rendered, state.mutationTargets]) {
+    for (const tally of [state.timersCreated, state.timersFired, state.rafCalls, state.rendered, state.origins, state.mutationTargets]) {
       for (const key of Object.keys(tally)) delete tally[key];
     }
     state.commands = {};
@@ -230,6 +240,8 @@ export type CounterSnapshot = {
   commands: Record<string, { calls: number; argBytes: number; replyBytes: number; failed: number }>;
   commits: number;
   rendered: Record<string, number>;
+  /** Renders by the component they started at (one that rendered under no other that did), its own and below it. */
+  origins: Record<string, number>;
   componentSources: Record<string, { name: string; source: string }>;
   mutations: number;
   mutationTargets: Record<string, number>;

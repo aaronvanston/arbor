@@ -7,9 +7,16 @@
     "commandBytes": {
       "relative": 0.001,
       "absolute": 16
+    },
+    "componentRenders": {
+      "relative": 0.06,
+      "absolute": 2
     }
   },
   "ceilings": {
+    "default.healthRound.commands": 3,
+    "default.healthRound.componentRenders": 555.4,
+    "default.healthRound.reactCommits": 2,
     "default.hidden.commandBytesPerMinute": 49143,
     "default.hidden.commandsPerMinute": 6.2,
     "default.hidden.domMutationsPerMinute": 0.6,
@@ -19,6 +26,7 @@
     "default.hidden.timerFiresPerMinute": 10.1,
     "default.idle.commandBytesPerMinute": 144634,
     "default.idle.commandsPerMinute": 16.5,
+    "default.idle.componentRendersPerMinute": 752.1,
     "default.idle.domMutationsPerMinute": 5.8,
     "default.idle.liveTimers": 18,
     "default.idle.rafPerSecond": 62.7,
@@ -28,6 +36,7 @@
     "default.launch.commandBytes": 203661,
     "default.launch.commands": 85,
     "default.launch.commandsBeforeSettled": 62,
+    "default.launch.componentRenders": 7666,
     "default.launch.domMutations": 322,
     "default.launch.duplicateCallsInFlight": 3,
     "default.launch.homeJsBytes": 1668978,
@@ -116,6 +125,9 @@
     "default.page.usage.commands": 8,
     "default.page.usage.domMutations": 70,
     "default.page.usage.reactCommits": 8,
+    "real.healthRound.commands": 3,
+    "real.healthRound.componentRenders": 710.2,
+    "real.healthRound.reactCommits": 2,
     "real.hidden.commandBytesPerMinute": 83476,
     "real.hidden.commandsPerMinute": 6.2,
     "real.hidden.domMutationsPerMinute": 0.6,
@@ -125,6 +137,7 @@
     "real.hidden.timerFiresPerMinute": 10.1,
     "real.idle.commandBytesPerMinute": 280492,
     "real.idle.commandsPerMinute": 16.5,
+    "real.idle.componentRendersPerMinute": 915.3,
     "real.idle.domMutationsPerMinute": 5.8,
     "real.idle.liveTimers": 18,
     "real.idle.rafPerSecond": 62.7,
@@ -134,6 +147,7 @@
     "real.launch.commandBytes": 589789,
     "real.launch.commands": 85,
     "real.launch.commandsBeforeSettled": 62,
+    "real.launch.componentRenders": 8542,
     "real.launch.domMutations": 335,
     "real.launch.duplicateCallsInFlight": 3,
     "real.launch.reactCommits": 120,
