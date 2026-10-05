@@ -3809,6 +3809,8 @@ export const en = {
   'usage.projects.expand': 'Show the branches of {name}',
   'usage.projects.collapse': 'Hide the branches of {name}',
   'usage.projects.viewSessions': 'View these sessions',
+  'usage.projects.viewSessionsCount.one': 'View 1 session',
+  'usage.projects.viewSessionsCount.other': 'View {count} sessions',
   'usage.projects.empty': 'No sessions in this range or these filters.',
   'usage.pullRequests.title': 'Pull requests',
   'usage.pullRequests.description': 'A session’s cost is split between the pull requests it worked on. Once GitHub says which branch a pull request came from, the sessions on that branch count too.',

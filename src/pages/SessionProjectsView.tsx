@@ -163,6 +163,11 @@ export function Lines({ added, removed, className }: { added: number; removed: n
 }
 
 /** The columns a project and each of its branches share. */
+/** A session count's button reads as what it opens, not just the number. */
+function sessionsLabel(t: ReturnType<typeof useI18n>['t'], count: number) {
+  return t(count === 1 ? 'usage.projects.viewSessionsCount.one' : 'usage.projects.viewSessionsCount.other', { count: compactNumber(count) });
+}
+
 function TotalsCells({ totals, pullRequests, now, onOpenSessions }: {
   totals: ProjectTotals;
   pullRequests: ProjectPullRequest[];
@@ -181,6 +186,7 @@ function TotalsCells({ totals, pullRequests, now, onOpenSessions }: {
               render={
                 <button
                   type="button"
+                  aria-label={sessionsLabel(t, totals.sessions)}
                   className="cursor-pointer rounded-sm text-foreground underline decoration-muted-foreground/50 underline-offset-2 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -422,6 +428,7 @@ function PullRequestsSection({ pullRequests, onOpenSessions }: { pullRequests: P
                       render={
                         <button
                           type="button"
+                          aria-label={sessionsLabel(t, pullRequest.sessions)}
                           className="cursor-pointer rounded-sm text-foreground underline decoration-muted-foreground/50 underline-offset-2 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={(event) => {
                             event.stopPropagation();
