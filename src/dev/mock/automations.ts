@@ -111,11 +111,12 @@ function previousRun(schedule: ScheduleSummary, at: number): number | null {
 
 /**
  * A seed whose next run follows its schedule, for one that has a next run at all, and whose last run sits on one of
- * the schedule's times, so the times on its runs fit the schedule they're listed under.
+ * the schedule's times, so the times on its runs fit the schedule they're listed under: the latest time gone for one
+ * still running on schedule, the time it was paused at or before otherwise.
  */
 const scheduled = (item: Seed): Seed => {
   const { schedule, lastRun, nextRunAtMs } = item.summary;
-  const lastAt = lastRun ? previousRun(schedule, lastRun.atMs) : null;
+  const lastAt = lastRun ? previousRun(schedule, nextRunAtMs === null ? lastRun.atMs : now) : null;
   return {
     ...item,
     summary: {
