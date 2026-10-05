@@ -262,7 +262,9 @@
  * `tray_unread`;
  * `?window=closes` closes the window to the tray five seconds after load (the page reads as hidden), `?window=minimizes`
  * minimizes it and `?window=covered` has another app cover it; `window.__mockWindow('shown' | 'closed' | 'minimized' |
- * 'covered')` moves it there at any time, which is how `bun run perf` hides it;
+ * 'covered')` moves it there at any time, which is how `bun run perf` hides it. While it's closed or minimized for half a
+ * minute, or covered for five, the open page rests (nothing in the content area) and the monitors carry on at their
+ * hidden pace; it comes back as it was left when the window shows;
  * `?clipboard=fail` to have the clipboard refuse every copy, so copy buttons and the palette's copy actions say they
  * couldn't.
  * For the live fleet board (`get_fleet_sources`): by default T3 Code on cam-mbp has a thread asking for approval

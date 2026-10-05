@@ -11,6 +11,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-is-fullscreen",
+    "core:window:allow-is-visible",
+    "core:window:allow-is-minimized",
     "core:window:allow-set-background-color",
     "core:webview:allow-set-webview-background-color",
     "dialog:allow-open",

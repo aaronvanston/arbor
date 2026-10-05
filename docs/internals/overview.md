@@ -40,6 +40,20 @@ Arbor's files open. So every process starts through `configure_helper_command` (
 files open through `system_open::open_with_system`; tauri-plugin-opener's `open_url` and `open_path` never reap the
 `open` they start.
 
+## The hidden window
+
+Closing the window only hides it, and it's hidden most of the time: the webview is the background service (alerts,
+caps, limits, tray rows, the pools' report, the CLI's window actions all run in the monitors `App.tsx` mounts beside
+the page). So:
+
+- Anything that must keep going while nobody looks belongs in a monitor, never in a page. Half a minute after the
+  window is closed or minimized (five when it's only covered) the open page rests: the content area renders nothing
+  until the window shows, then the same view mounts again (`services/pageRest.ts`). A page holds that off only while
+  it has unsaved edits (`useUnsavedChanges`), a dialog open, or a spinner or refresh showing.
+- `backgroundThrottling` is off, so WebKit never slows a hidden page's timers. A monitor's check that runs more often
+  than once a minute goes through `pacedInterval` or `throttleWaitMs` (`services/hiddenPace.ts`), which hold it to
+  once a minute while hidden; alerts and the tray stay within that. A page's own polls skip while `document.hidden`.
+
 ## Where to read more
 
 - [Navigation](navigation.md): the sidebar tree, views, and old view ids that still have to land.

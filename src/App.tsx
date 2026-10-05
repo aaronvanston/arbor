@@ -46,6 +46,7 @@ import { AlertsUtility, CoreDownRow, CoreUtility, SettingsBack, SettingsUtility,
 import { useAppShortcuts } from './hooks/useAppShortcuts';
 import { watchAppMenuActions, type AppMenuHandlers } from './services/appMenu';
 import { useModifierHold } from './hooks/useShortcuts';
+import { usePageRest } from './hooks/usePageRest';
 import { SETTINGS_PAGE_LABEL, indexSettings, settingEntry, type SettingEntry } from './services/settingsIndex';
 import { requestFocus } from './focusRequests';
 import { focusReturnTarget } from './services/focusReturn';
@@ -250,6 +251,8 @@ function AppContent() {
   const { latest: coreLatest, hasUpdate: coreHasUpdate, check: checkCoreUpdate } = useCoreUpdate();
   const history = useViewHistory();
   const view = currentView(history);
+  // Closed to the tray or minimized for a while, the page lets go of what it holds; the monitors below carry on.
+  const pageResting = usePageRest(JSON.stringify(view));
   // Where Settings opens, and where leaving it returns to: the last page on each side, as it was left.
   const lastMainView = useRef<AppView>(HOME_VIEW);
   const lastSettingsPage = useRef<SettingsPageId>('general');
@@ -677,7 +680,7 @@ function AppContent() {
           style={sidebar.shown && !sidebar.overlay ? undefined : { '--topbar-start': 'var(--workspace-titlebar-content-left)' } as CSSProperties}
         >
           {/* Back and Forward start a page that failed over too, as choosing it again does. */}
-          {lockedInPlace(history, coreReady) ? (
+          {pageResting ? null : lockedInPlace(history, coreReady) ? (
             <CoreLockedPage
               lock={lock ?? 'checking'}
               statusError={statusError}
