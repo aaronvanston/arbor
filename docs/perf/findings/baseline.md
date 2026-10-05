@@ -28,6 +28,9 @@ source through the hidden source maps (`perf/sourcemap.ts`).
 - **Determinism.** Five runs gave identical counts except React commits (±2, when a lazily loaded chunk lands decides
   React's batching) and command bytes (±4 bytes in launch and Accounts replies). Those two have a tolerance in
   `perf/baseline.json` (3% or 2 commits; 0.1% or 16 bytes); everything else must not go up at all.
+- **Renders and health rounds**, added after this baseline: component renders per journey (6% tolerance at launch),
+  where each render started, and five `machine-health-updated` rounds after the idle, which the mock never sends on
+  its own. See `rerender-churn.md`. Idle DOM mutations can move by 0.1 between runs, as toasts fade on real time.
 - **Real size** is the new `?size=real` mock scenario: 14 machines, a million requests recorded (1,000 request rows),
   400 more sessions, the setup repo with 50 skills (and 50 removed), 40 T3 Code threads.
 
