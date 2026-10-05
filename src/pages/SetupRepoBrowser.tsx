@@ -329,7 +329,7 @@ export function RepoBrowser({ repo, machines, onRepo, onReview }: {
 const present = <T,>(value: T | null | undefined): value is T => value !== null && value !== undefined;
 
 function TreeSkeleton() {
-  return <div className="flex flex-col gap-2 px-3 py-3">{['w-1/2', 'w-2/3', 'w-3/5', 'w-1/3', 'w-2/3'].map((width) => <div key={width} className={cn('h-3 animate-skeleton rounded bg-muted', width)} />)}</div>;
+  return <div className="flex flex-col gap-2 px-3 py-3">{['w-1/2', 'w-2/3', 'w-3/5', 'w-1/3', 'w-2/3'].map((width, index) => <div key={index} className={cn('h-3 animate-skeleton rounded bg-muted', width)} />)}</div>;
 }
 
 /** New file, new skill, a project's instructions. */
