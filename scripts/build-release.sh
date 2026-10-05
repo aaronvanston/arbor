@@ -162,13 +162,20 @@ case "$version" in
 esac
 # Tauri only falls back when actool is missing or older than 26. An actool that's there but can't compile the icon (one
 # Xcode 27 build fails every Icon Composer file, Xcode's own template too, with "Bad file descriptor") fails the whole
-# bundle, so the icon is compiled once here first and left out, keeping the icns, when that fails.
+# bundle, so the icon is compiled once here first and left out, keeping the icns, when that fails. The check runs
+# exactly what tauri-bundler's macos/icon.rs runs (a copy named Icon.icon, the same flags): a lighter call passed on
+# GitHub's Xcode 26.6 runner while Tauri's own failed the bundle.
 icon_composer=",\"$icons/Arbor.icon\""
 actool_check="$(mktemp -d)"
-if ! xcrun actool "src-tauri/$icons/Arbor.icon" --compile "$actool_check" --platform macosx \
-  --minimum-deployment-target 11.0 --app-icon Arbor --output-partial-info-plist "$actool_check/info.plist" \
-  >"$actool_check/actool.log" 2>&1 </dev/null || [[ ! -f "$actool_check/Assets.car" ]]; then
-  echo "actool couldn't compile src-tauri/$icons/Arbor.icon, so this build uses the icns icon alone." >&2
+cp -R "src-tauri/$icons/Arbor.icon" "$actool_check/Icon.icon"
+mkdir "$actool_check/out"
+if ! actool "$actool_check/Icon.icon" --compile "$actool_check/out" --output-format human-readable-text --notices \
+  --warnings --output-partial-info-plist "$actool_check/out/assetcatalog_generated_info.plist" --app-icon Icon \
+  --include-all-app-icons --accent-color AccentColor --enable-on-demand-resources NO --development-region en \
+  --target-device mac --minimum-deployment-target 26.0 --platform macosx \
+  >"$actool_check/actool.log" 2>&1 </dev/null || [[ ! -f "$actool_check/out/Assets.car" ]]; then
+  echo "actool couldn't compile src-tauri/$icons/Arbor.icon, so this build uses the icns icon alone. It said:" >&2
+  sed 's/^/  /' "$actool_check/actool.log" >&2
   icon_composer=
 fi
 rm -rf "$actool_check"
