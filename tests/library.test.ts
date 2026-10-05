@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { libraryCounts, libraryItemName, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { bringInLine, linePlans, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
 import { extensionsView, type PluginRow } from '../src/services/setupPlugins';
 import { present } from './support/items';
-import type { McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo } from '../src/native/types';
+import type { HookRegistry, McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, fields: Partial<SetupItem> = {}): SetupItem => ({
   kind, name, path: null, sum: null, size: null, link: null, value: null, note: null, count: null, enabled: null,
@@ -318,5 +318,38 @@ describe('an item’s own page', () => {
     expect(run.changed).toEqual(['cam-mbp']);
     await run.undo();
     expect(calls).toEqual(['set removed', 'apply remove', 'put back']);
+  });
+});
+
+describe('bringing a machine in line', () => {
+  const hookView = { name: 'guard', event: 'PreToolUse', matcher: null, command: '~/.agents/hooks/guard.sh', script: 'guard.sh', timeout: null, agents: ['claude' as const], homes: null, removed: false, allOff: false, off: [], problems: [] };
+  const hooks = (state: 'add' | 'same'): HookRegistry => ({
+    commit: 'h'.repeat(40), found: true, uncommitted: false, problems: [], hooks: [hookView],
+    cells: [{ machine: 'cam-mbp', agent: 'claude', home: '~/.claude', name: 'guard', event: 'PreToolUse', script: 'guard.sh', state, blocked: null }],
+  });
+
+  it('plans each answering machine’s rows that the repo lists and that are behind there', () => {
+    const rows = rowsOf([...fleet(), machine('far-01', [], false)], repo([listing(REVIEW, 'on')]));
+    expect(linePlans(rows, [...fleet(), machine('far-01', [], false)]).map((plan) => [plan.machine, plan.rows.map((row) => row.name)])).toEqual([
+      ['ci-01', ['review']],
+      ['cedar-02', ['review']],
+    ]);
+    // What the repo doesn't list is each machine's own, so it's never brought in line.
+    expect(linePlans(rowsOf(fleet(), repo([])), fleet())).toEqual([]);
+  });
+
+  it('writes the hooks’ scripts before the hooks, since a hook runs one', async () => {
+    const calls: string[] = [];
+    const script = { path: '~/.agents/hooks/guard.sh', kind: 'hookScript' as const, sum: 's1', ck: 'c1-10', size: 10 };
+    const setup = repo([], { files: [script] });
+    mockCommands({
+      apply_setup_sync: ({ changes }) => { calls.push(`sync ${changes.map((change) => change.path).join(',')}`); return { backup: 'b1', done: changes.map((change) => change.path), failed: [] }; },
+      apply_hooks: () => { calls.push('hooks'); return [{ home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: true, error: null }]; },
+    });
+    const machines = [machine('cam-mbp', [])];
+    const row = { ...rowFor(libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: hooks('add') }), 'guard') };
+    const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row] });
+    expect(calls).toEqual(['sync ~/.agents/hooks/guard.sh', 'hooks']);
+    expect(done).toEqual({ changed: true, failed: [], needsYou: false });
   });
 });

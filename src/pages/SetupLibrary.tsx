@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useLibrary } from '../hooks/useLibrary';
 import { ProviderMark } from '../components/identity/Identity';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -17,16 +18,11 @@ import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
-import { LIBRARY_KINDS, libraryCounts, libraryList, libraryRows, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
+import { LIBRARY_KINDS, libraryCounts, libraryList, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
 import { removeEverywhere, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
 import { skillFolder } from '../services/repoBrowser';
 import { LibraryItemPage, type LibraryActions } from './SetupLibraryItem';
-import { getHookRegistry } from '../services/setupHooks';
-import { getMcpRegistry, withRegistry } from '../services/setupMcp';
-import { withCodexPluginRepo, withPluginRepo } from '../services/setupPluginRepo';
-import { extensionsView } from '../services/setupPlugins';
-import { getSetupRepo, storedSetupRepo } from '../services/setupSync';
-import type { HookRegistry, McpRegistry, SetupMachine, SetupRepo } from '../native/types';
+import type { SetupMachine } from '../native/types';
 
 export const KIND_LABEL: Record<LibraryKind, MessageKey> = {
   plugins: 'library.kind.plugins',
@@ -116,7 +112,6 @@ export function ScopeText({ row, className }: { row: LibraryRow; className?: str
   );
 }
 
-type Sources = { repo: SetupRepo | null; registry: McpRegistry | null; hooks: HookRegistry | null };
 
 /** Flips a row's switch with its kind's own switch. */
 function switchRow(repo: string, machines: SetupMachine[], toggle: LibraryToggle, on: boolean): Promise<LibrarySwitch> {
@@ -151,41 +146,12 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   onCounts: (counts: Record<LibraryKind, number>) => void;
 }) {
   const { t } = useI18n();
-  const [repoPath] = useState(storedSetupRepo);
-  const [sources, setSources] = useState<Sources>({ repo: null, registry: null, hooks: null });
-  const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { repoPath, setSources, loaded, loadError, rows } = useLibrary(machines);
   const [agent, setAgent] = useState<LibraryAgent | null>(null);
   const [query, setQuery] = useState('');
   const [running, setRunning] = useState<Running | null>(null);
   const [problems, setProblems] = useState<Problem[]>([]);
 
-  // The repo is read again whenever a machine has been, since each machine is compared with it as its last scan found it.
-  const scans = machines.map((machine) => `${machine.machine}:${machine.scannedAt ?? ''}`).join('\n');
-  useEffect(() => {
-    if (!repoPath) return undefined;
-    let current = true;
-    Promise.all([getSetupRepo(repoPath), getMcpRegistry(repoPath).catch(() => null), getHookRegistry(repoPath).catch(() => null)])
-      .then(([repo, registry, hooks]) => {
-        if (!current) return;
-        setSources({ repo, registry, hooks });
-        setLoadError(null);
-        setLoaded(true);
-      })
-      .catch((error) => {
-        if (!current) return;
-        setLoadError(String(error));
-        setLoaded(true);
-      });
-    return () => { current = false; };
-  }, [repoPath, scans]);
-
-  const rows = useMemo(() => {
-    const { repo, registry, hooks } = sources;
-    const view = withCodexPluginRepo(withPluginRepo(withRegistry(extensionsView(machines), registry), repo?.plugins ?? null), repo?.codexPlugins ?? null);
-    const registryFound = registry?.found === true && registry.problems.length === 0;
-    return libraryRows({ machines, view, repo, registryFound, hooks });
-  }, [machines, sources]);
   const counts = useMemo(() => libraryCounts(rows), [rows]);
   useEffect(() => { onCounts(counts); }, [counts, onCounts]);
   const shown = useMemo(() => libraryList(rows, { kind, agent, query }), [rows, kind, agent, query]);

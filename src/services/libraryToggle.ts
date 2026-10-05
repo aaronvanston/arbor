@@ -8,7 +8,7 @@ import { applyCodexPluginChanges, applyPluginChanges, extensionsView, type Plugi
 import { applySetupSync, getSetupRepo, setSetupFileMachine, setSetupFileOff, setSetupFileRemoved, setSetupSkillMachine, setSetupSkillOff, syncChanges, syncPlan, undoSetupSync } from './setupSync';
 import { skillsView, STORE } from './setupSkills';
 import { machineLookKey } from './machineLook';
-import type { LibraryToggle } from './library';
+import type { LibraryRow, LibraryToggle } from './library';
 import type { HookRegistry, McpRegistry, PluginAction, PluginResult, PluginWanted, RepoPlugin, SetupMachine, SetupRepo } from '../native/types';
 
 /**
@@ -538,4 +538,80 @@ export async function removeEverywhere(repo: string, machines: SetupMachine[], t
       }), skipped };
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bringing a machine in line
+// ---------------------------------------------------------------------------
+
+/** What bringing one machine in line changes: each Library row behind there that the repo lists. */
+export type LinePlan = { machine: string; rows: LibraryRow[] };
+
+/** Each answering machine with rows behind there, in the machines' order. */
+export function linePlans(rows: LibraryRow[], machines: SetupMachine[]): LinePlan[] {
+  return reachableMachines(machines)
+    .map((machine) => ({ machine: machine.machine, rows: rows.filter((row) => row.toggle && row.state !== 'unlisted' && row.behind.includes(machine.machine)) }))
+    .filter((plan) => plan.rows.length > 0);
+}
+
+/**
+ * Brings one machine in line with the repo, row by row with each kind's own line-up: plugins, MCP servers, its hooks
+ * at once, its files from the repo's sync, and skills into or out of its store and homes. Edits to files and settings
+ * land on Arbor's changes, where they can be undone; Claude Code's own plugin and MCP commands keep no backup, so the
+ * Overview confirms before this runs.
+ */
+export async function bringInLine(repo: string, sources: { [K in keyof SwitchSources]-?: SwitchSources[K] | null }, machines: SetupMachine[], plan: LinePlan): Promise<{ changed: boolean; failed: SwitchFailure[]; needsYou: boolean }> {
+  const { machine } = plan;
+  const entry = machines.find((candidate) => candidate.machine === machine);
+  const failed: SwitchFailure[] = [];
+  let changed = false;
+  let needsYou = false;
+  if (!entry) return { changed, failed: [{ machine, message: 'unread' }], needsYou };
+  const toggles = plan.rows.flatMap((row) => (row.toggle ? [row.toggle] : []));
+  const setup = sources.repo;
+  const hook = toggles.find((toggle) => toggle.kind === 'hook');
+  // Files first: a hook runs a script the repo's sync puts in ~/.agents/hooks, so its scripts go with them.
+  if (setup?.head) {
+    const files = new Set(toggles.flatMap((toggle) => (toggle.kind === 'file' ? [toggle.path] : [])));
+    const changes = syncChanges(syncPlan(setup, entry).filter((file) => files.has(file.path) || (hook !== undefined && file.kind === 'hookScript')));
+    if (changes.length) {
+      try {
+        const outcome = await applySetupSync(setup.path, setup.head.sha, machine, changes);
+        changed ||= outcome.done.length > 0;
+        failed.push(...outcome.failed.map((item) => ({ machine, message: item.reason })));
+      } catch (error) {
+        failed.push(failure(machine, error));
+      }
+    }
+  }
+  for (const toggle of toggles) {
+    if (toggle.kind === 'plugin') {
+      const ran = await lineUpPlugin(toggle.row, toggle.row.repo, toggle.codex, machine);
+      changed ||= ran.done.length > 0;
+      needsYou ||= ran.needsYou.length > 0;
+      failed.push(...ran.failed.map((result) => ({ machine, message: result.message })));
+    } else if (toggle.kind === 'mcp' && sources.registry) {
+      const ran = await lineUpServer(repo, machines, sources.registry, toggle.name, machine);
+      changed ||= ran.changed.length > 0;
+      failed.push(...ran.failed);
+    }
+  }
+  // A machine's hooks are written together, so one hook behind brings them all in line.
+  if (hook?.kind === 'hook' && sources.hooks) {
+    const ran = await lineUpHook(repo, machines, sources.hooks, hook.name, machine);
+    changed ||= ran.changed.length > 0;
+    failed.push(...ran.failed);
+  }
+  if (setup?.head) {
+    // Skills the repo puts on the machine go in its store and on in its homes; ones it keeps off come out of both.
+    const skills = toggles.flatMap((toggle) => (toggle.kind === 'skill' ? [toggle.name] : []));
+    const off = new Set(setup.offSkills);
+    for (const [kind, names] of [['add', skills.filter((name) => !off.has(name))], ['remove', skills.filter((name) => off.has(name))]] as const) {
+      if (!names.length) continue;
+      const done = await runSkillPlan({ ...planSkills(kind, names, [entry], setup), marks: [] }, setup, () => undefined);
+      changed ||= done.touched.length > 0;
+      failed.push(...runFailures(done.problems));
+    }
+  }
+  return { changed, failed, needsYou };
 }

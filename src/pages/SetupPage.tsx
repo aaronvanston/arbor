@@ -28,6 +28,7 @@ import { cn } from '../lib/utils';
 import { requestFocus } from '../focusRequests';
 import { isSetupTab, libraryItemView, libraryView, savedSetupView, setupView, type AppView, type LibraryKind, type SetupParams, type SetupTabId } from '../navigation';
 import { isLibraryKind, libraryItemName } from '../services/library';
+import { SetupOverviewHead } from './SetupOverview';
 import { KIND_LABEL as LIBRARY_KIND_LABEL, LibraryBar, SetupLibrary, type LibraryLens } from './SetupLibrary';
 import { leafLabel } from '../services/sidebarTree';
 import type { ViewChange } from '../services/viewHistory';
@@ -636,7 +637,22 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
           <SetupRepoSection machines={machines} />
         ) : (
           <>
-            <p className="max-w-3xl text-xs leading-[1.5] text-muted-foreground">
+            <SetupOverviewHead
+              machines={machines}
+              onOpenItem={(itemKind, key) => onNavigate(libraryItemView(itemKind, key))}
+              onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}
+            />
+            {!firstScan ? (
+              <SetupChecks
+                checks={checks}
+                machines={scanned}
+                homeLabel={(key) => homeLabel(key, t)}
+                onShow={show}
+                onCompare={compareCopies}
+              />
+            ) : null}
+            <h2 className="mt-4 text-sm font-normal tracking-title text-foreground/70">{t('overview.compare.title')}</h2>
+            <p className="-mt-3 max-w-3xl text-xs leading-[1.5] text-muted-foreground">
               {tRich(compared ? 'setup.intro' : 'setup.introOne', { machine: <MachinePill name={reference} size="sm" /> })}
             </p>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
@@ -650,15 +666,6 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
                 />
               ))}
             </div>
-            {!firstScan ? (
-              <SetupChecks
-                checks={checks}
-                machines={scanned}
-                homeLabel={(key) => homeLabel(key, t)}
-                onShow={show}
-                onCompare={compareCopies}
-              />
-            ) : null}
             {firstScan ? (
               <p className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
                 <Spinner />

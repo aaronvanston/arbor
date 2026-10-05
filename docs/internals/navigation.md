@@ -37,7 +37,10 @@ machine's things go on its page; comparing machines is Sync's.
 
 ## Sync
 
-Sync has four views. Overview is the checks. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
+Sync has four views. Overview (`pages/SetupOverview.tsx` atop the checks and the machine comparison) says which
+machines are in step with the repo and brings one or all in line, confirmed first, with `bringInLine`: each Library row
+behind there, files and hook scripts first, then plugins and MCP servers, the machine's hooks, and skills. The Library
+and Overview read the same rows through `hooks/useLibrary.ts`, so they count the same things behind. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
 plugin, MCP server, skill, hook and instruction file the setup repo gives the agents, one row each, with the repo's word
 for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
 brings each answering machine in line straight away, with Undo. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its

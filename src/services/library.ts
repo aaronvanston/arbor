@@ -3,9 +3,9 @@ import { machineColumns, pluginSummary } from './pluginGrid';
 import { mcpSummary } from './mcpGrid';
 import { HOOK_AGENT_KINDS, hookAgents, hookRows, hookSummary } from './setupHooks';
 import { isRemovedServer } from './setupMcp';
-import { removableKind } from './setupSync';
+import { removableKind, scanned, syncPlan } from './setupSync';
 import { isCodexOwnMarketplace, type ExtensionsView, type PluginRow } from './setupPlugins';
-import { fleetSkills, repoSkillState } from './setupSkills';
+import { fleetSkills, repoSkillState, STORE } from './setupSkills';
 import type { HookRegistry, SetupMachine, SetupRepo } from '../native/types';
 
 /**
@@ -128,12 +128,13 @@ function serverRows(view: ExtensionsView, found: boolean): LibraryRow[] {
         const wanted = state === 'on' ? own !== 'off' : own === 'own';
         return [column.machine, { own, wanted, homes: row.cells.filter((cell) => cell.home.machine === column.machine && cell.item).map((cell) => cell.home.path) }];
       })),
-      toggle: state === 'on' || state === 'off' ? { kind: 'mcp', name: row.name } : null,
+      // A definition the repo can't use (one holding a secret) can't be put anywhere, so it can't be switched either.
+      toggle: (state === 'on' || state === 'off') && !server?.problems.length ? { kind: 'mcp', name: row.name } : null,
     };
   });
 }
 
-function skillRows(machines: SetupMachine[], repo: SetupRepo | null): LibraryRow[] {
+function skillRows(machines: SetupMachine[], repo: SetupRepo | null, behindOn: (path: string) => string[]): LibraryRow[] {
   const fleet = fleetSkills(machines);
   return fleet.rows.map((row): LibraryRow => {
     const state = repo ? repoSkillState(repo, row.name) : 'absent';
@@ -149,7 +150,8 @@ function skillRows(machines: SetupMachine[], repo: SetupRepo | null): LibraryRow
       state: off ? 'off' : state === 'synced' ? 'on' : state === 'removed' ? 'removed' : 'unlisted',
       on: cells.filter(({ cell }) => cell.loads > 0).map(({ machine }) => machine),
       fleet: fleet.machines,
-      behind: cells.filter(({ cell }) => cell.look).map(({ machine }) => machine),
+      // A skill the repo has is behind where the repo's sync would change the store; one it hasn't is each machine's own.
+      behind: state === 'synced' ? behindOn(`${STORE}/${row.name}`) : [],
       exceptions: Object.keys(repo?.skillMachines[row.name] ?? {}).length,
       places: Object.fromEntries(fleet.machines.map((machine) => {
         const own = repo?.skillMachines[row.name]?.[machineLookKey(machine)] ?? null;
@@ -187,7 +189,7 @@ function hookLibraryRows(registry: HookRegistry, machines: readonly string[]): L
   });
 }
 
-function fileRows(repo: SetupRepo, machines: readonly string[]): LibraryRow[] {
+function fileRows(repo: SetupRepo, machines: readonly string[], behindOn: (path: string) => string[]): LibraryRow[] {
   const removed = repo.removedFiles.map((path) => ({ path, removed: true }));
   const files = repo.files.filter((file) => file.kind !== 'hookScript').map((file) => ({ path: file.path, removed: false, kind: file.kind }));
   return [...files, ...removed.map((entry) => ({ ...entry, kind: null }))].map(({ path, removed: gone, kind }): LibraryRow => {
@@ -202,7 +204,7 @@ function fileRows(repo: SetupRepo, machines: readonly string[]): LibraryRow[] {
       state: gone ? 'removed' : off ? 'off' : 'on',
       on: gone || off ? [] : machines.filter((machine) => !offHere.includes(machineLookKey(machine))),
       fleet: [...machines],
-      behind: [],
+      behind: gone ? [] : behindOn(path),
       exceptions: Object.keys(repo.fileMachines[path] ?? {}).length,
       places: Object.fromEntries(machines.map((machine) => {
         const own = repo.fileMachines[path]?.[machineLookKey(machine)] ?? null;
@@ -229,13 +231,18 @@ export type LibrarySources = {
  */
 export function libraryRows({ machines, view, repo, registryFound, hooks }: LibrarySources): LibraryRow[] {
   const names = machines.map((machine) => machine.machine);
+  // Each answering machine against the repo's files and skills once, as its review would see it.
+  const plans = repo ? machines.filter((machine) => machine.reachable && scanned(machine)).map((machine) => ({ machine: machine.machine, files: syncPlan(repo, machine) })) : [];
+  const behindOn = (path: string) => plans
+    .filter(({ files }) => files.some((file) => file.path === path && (file.state === 'add' || file.state === 'update' || file.state === 'removed')))
+    .map(({ machine }) => machine);
   const byName = (a: LibraryRow, b: LibraryRow) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key);
   const rows = [
     ...[...pluginRows(view, false), ...pluginRows(view, true)].sort(byName),
     ...serverRows(view, registryFound).sort(byName),
-    ...skillRows(machines, repo).sort(byName),
+    ...skillRows(machines, repo, behindOn).sort(byName),
     ...(hooks ? hookLibraryRows(hooks, names).sort(byName) : []),
-    ...(repo ? fileRows(repo, names) : []),
+    ...(repo ? fileRows(repo, names, behindOn) : []),
   ];
   return rows.map((row) => (row.state === 'unlisted' && row.behind.length ? { ...row, behind: [] } : row));
 }
