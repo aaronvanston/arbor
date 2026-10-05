@@ -42,7 +42,18 @@ It's for your own accounts on your own machines. It isn't built for sharing acco
 
 ## Download
 
-Signed downloads for macOS are coming soon. Until then, build it from source (below).
+Download the DMG from the [latest release](https://github.com/aaronvanston/arbor/releases/latest). Arbor runs on Macs
+with Apple silicon.
+
+Arbor isn't notarized by Apple yet, so macOS stops its first launch with "Apple could not verify Arbor". Drag Arbor to
+Applications, open it once, then open it from System Settings › Privacy & Security › Open Anyway. Or, from Terminal:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Arbor.app
+```
+
+You only do this once: updates download inside Arbor and install without the prompt. To build it yourself instead, see
+[Build from source](#build-from-source).
 
 ## First run
 
