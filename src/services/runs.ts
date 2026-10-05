@@ -196,6 +196,24 @@ export function unscannedMembers(pool: Pick<MachinePool, 'members'>, projects: r
 /** `owner/name` of a `host/owner/name` remote, as the list shows it. */
 export const repoName = (repo: string) => repo.split('/').slice(-2).join('/').replace(/\.git$/, '');
 
+/**
+ * A run's setup by the name the harness shows for it. A run keeps only the setup's id ("codex_work"), so the name comes
+ * from the machine it went to, else any machine whose last agents check found that setup, else the id itself.
+ */
+export function runSetupLabel(
+  run: Pick<HarnessRun, 'setup' | 'harness' | 'used' | 'machine'>,
+  health: readonly MachineHealth[] | null,
+  t: (key: MessageKey) => string,
+): string {
+  const harness = run.used ?? run.harness;
+  const own = (health ?? []).filter((machine) => machine.machine === run.machine);
+  for (const machine of [...own, ...(health ?? [])]) {
+    const setup = machineHarnesses(machine.agents).find((entry) => entry.kind === harness)?.setups.find((entry) => entry.id === run.setup);
+    if (setup) return setupLabel(setup, t);
+  }
+  return run.setup;
+}
+
 /** A setup's name as the harness shows it. */
 export const setupLabel = (setup: Pick<HarnessSetupRow, 'name' | 'driver' | 'rawDriver'>, t: (key: MessageKey) => string) =>
   setup.name ?? (setup.driver ? t(setup.driver) : setup.rawDriver);

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PoolRunsBlock } from '../src/components/PoolRuns';
 import { I18nProvider } from '../src/i18n';
 import type { HarnessRun, MachineAgents, MachineHealth, MachinePool, MachineProjects, ProjectRepo } from '../src/native/types';
-import { canOpenRun, newRunRequest, poolRepos, poolRuns, reasonMessage, repoName, runCommands, runDraftProblem, runSetupChoices, unscannedMembers } from '../src/services/runs';
+import { canOpenRun, newRunRequest, poolRepos, poolRuns, reasonMessage, repoName, runCommands, runDraftProblem, runSetupChoices, runSetupLabel, unscannedMembers } from '../src/services/runs';
 import { itemAt } from './support/items';
 
 const run = (fields: Partial<HarnessRun> = {}): HarnessRun => ({
@@ -71,6 +71,20 @@ describe('harness runs', () => {
     expect(choices.map((choice) => [choice.id, choice.ready, choice.found])).toEqual([['codex_work', 1, 2], ['cursor', 0, 1]]);
     expect(runSetupChoices(pool([{ machine: 'casey-mbp', weight: 'normal' }]), health, 'orca')).toEqual([]);
     expect(runSetupChoices(pool([]), null, 't3')).toEqual([]);
+  });
+
+  it('names a run’s setup the way the harness does, not by its id', () => {
+    const t = (key: string) => (key === 'harness.driver.claudeAgent' ? 'Claude' : key);
+    const health = [
+      machine('cedar-02', { t3: { version: null, running: true, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Old name', enabled: true }] } }),
+      machine('casey-mbp', { t3: { version: null, running: true, setups: [{ id: 'codex_work', driver: 'codex', name: 'Codex · Work', enabled: true }] } }),
+    ];
+    // The machine it went to names it first.
+    expect(runSetupLabel(run(), health, t)).toBe('Codex · Work');
+    expect(runSetupLabel(run({ machine: null }), health, t)).toBe('Codex · Old name');
+    // A setup no machine reports any more keeps its id, rather than nothing.
+    expect(runSetupLabel(run({ setup: 'claude_proxy' }), health, t)).toBe('claude_proxy');
+    expect(runSetupLabel(run(), null, t)).toBe('codex_work');
   });
 
   it('asks for a setup, a rooted folder and a prompt before a run can start', () => {

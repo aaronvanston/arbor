@@ -22,6 +22,7 @@ import { useConfirmation } from './ConfirmationDialog';
 import { HARNESS_LABEL } from '../services/harnesses';
 import { useFleetHealth } from '../services/fleetHealth';
 import { SETUP_PROJECTS_UPDATED_EVENT, getProjects, scanProjects } from '../services/setupProjects';
+import { plainError } from '../services/plainError';
 import {
   RUN_HARNESSES,
   RUN_STATE_LABEL,
@@ -36,6 +37,7 @@ import {
   repoName,
   runDraftProblem,
   runSetupChoices,
+  runSetupLabel,
   setupLabel,
   startRun,
   unscannedMembers,
@@ -106,6 +108,7 @@ export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: 
   const { t } = useI18n();
   const reason = useReason();
   const { askConfirmation } = useConfirmation();
+  const health = useFleetHealth();
   const [busy, setBusy] = useState<string | null>(null);
   // Arbor never keeps a run's prompt, so one taken out of the queue can't be put back: it's asked first.
   const cancel = async (run: HarnessRun) => {
@@ -123,7 +126,7 @@ export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: 
       await action();
       if (done) toast({ kind: 'success', title: done });
     } catch (failure) {
-      toast({ kind: 'error', title: String(failure) });
+      toast({ kind: 'error', title: plainError(failure, t) });
     } finally {
       setBusy(null);
     }
@@ -145,7 +148,7 @@ export function PoolRunsBlock({ runs, nowMs = Date.now(), onNavigate }: { runs: 
               <p className="text-xs text-muted-foreground">
                 {t('runs.line', {
                   harness: t(HARNESS_LABEL[harness]),
-                  setup: run.setup,
+                  setup: runSetupLabel(run, health, t),
                   folder: run.repo && !run.folder ? repoName(run.repo) : run.folder,
                   when: formatAgo(run.queuedAtMs, nowMs),
                 })}
@@ -300,7 +303,7 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
         setError(reason(run) ?? t(RUN_STATE_LABEL[run.state]));
       }
     } catch (failure) {
-      setError(String(failure));
+      setError(plainError(failure, t));
     } finally {
       setStarting(false);
     }
