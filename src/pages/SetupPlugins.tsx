@@ -544,7 +544,9 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
     setRegistryError(null);
     setTaking(null);
     const { machine, agent } = plan.cell.home;
-    setNotice({ ok: true, text: tRich(own ? 'setup.mcp.notice.takenOwn' : 'setup.mcp.notice.taken', { name: plan.row.name, machine: <MachinePill name={machine} />, agent: agentName(agent, t) }) });
+    // A toast, since the page's notice sits above the grid, out of sight of the row the take changed.
+    setNotice(null);
+    toast({ kind: 'success', title: tRich(own ? 'setup.mcp.notice.takenOwn' : 'setup.mcp.notice.taken', { name: plan.row.name, machine: <MachinePill name={machine} />, agent: agentName(agent, t) }) });
   };
 
   // One plugin in one home, with its menu; the grid's machine cells open to these. The machine's own value in the repo
