@@ -10,6 +10,7 @@ import { AppearanceSettingsPage } from '../src/pages/AppearanceSettingsPage';
 import { createThemeEnvironment, detectThemePreference, WINDOW_BACKGROUND } from '../src/theme';
 import { createThemeController, type AppTheme, type ThemePreference } from '../src/themeController';
 import { present } from './support/items';
+import { PRE_PAINT_SCRIPT } from './support/bootScripts';
 
 const STORAGE_KEY = 'arbor.theme';
 const globals = globalThis as { window?: unknown; document?: unknown; isTauri?: boolean };
@@ -189,8 +190,7 @@ describe('theme controls', () => {
 
 describe('launch colors', () => {
   test('the pre-paint script, native window and --background token use one color', () => {
-    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-    const script = present(html.match(/<script>([\s\S]*?)<\/script>/)?.[1], 'the pre-paint script');
+    const script = PRE_PAINT_SCRIPT;
     const firstPaint = (dark: boolean) => {
       const root = { dataset: {} as Record<string, string>, style: {} as Record<string, string> };
       runInNewContext(script, {

@@ -14,7 +14,6 @@ import { loadSystemRegion } from './services/systemRegion';
 import { showWindowWhenPainted } from './services/windowChrome';
 import { loadZoom } from './services/zoom';
 import { initializeTheme } from './theme';
-import './styles.css';
 
 // Nothing reads saved state while modules load (savedStore waits until asked), so this still comes first.
 renameLegacySavedKeys();

@@ -1,10 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useAppPreferences } from '../../appPreferences';
 import type { AppColor } from '../../services/appColor';
-import { SIDEBAR_ART_SPEED, sidebarArtMotionChoice, type SidebarArt as SidebarArtChoice } from '../../services/sidebarArt';
+import { SIDEBAR_ART_SPEED, sidebarArtHeight, sidebarArtMotionChoice, type SidebarArt as SidebarArtChoice } from '../../services/sidebarArt';
 import { drawScene, sceneClock, sceneRows, sceneWakeDelay, SCENE_STILL_SECONDS, type SceneName } from '../../services/sidebarScenes';
 import type { AppTheme } from '../../theme';
-import { SIDEBAR_ART_CLASS, sidebarArtHeight } from './shellParts';
+import { SIDEBAR_ART_CLASS } from './shellParts';
 
 /**
  * The artwork behind the sidebar's title row, as T3 has its stage backdrop: a layer at the top of the sidebar as tall
@@ -36,7 +36,9 @@ export function SidebarArt({ art, theme, color }: { art: SidebarArtChoice; theme
 function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: AppTheme; color: AppColor; speed: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
+  // Before paint, so the frame that replaces index.html's first screen (src/boot/bootPaint.ts drew this same still
+  // moment) is never one without the art.
+  useLayoutEffect(() => {
     const canvas = canvasRef.current, host = canvas?.parentElement, context = canvas?.getContext('2d');
     if (!canvas || !host || !context) return;
     const clock = sceneClock();

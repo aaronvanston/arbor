@@ -308,7 +308,8 @@ describe('color tokens', () => {
   }
 
   test('every one of Arbor’s colors sets its own buttons in both themes, and index.html knows it before paint', () => {
-    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    // index.html's pre-paint script, which the build inlines from here.
+    const html = readFileSync(new URL('../src/boot/bootHead.ts', import.meta.url), 'utf8');
     for (const color of APP_COLORS.filter((color) => color !== DEFAULT_APP_COLOR)) {
       const own = themed(block(styles, `:root[data-app-color='${color}'] {`));
       expect({ color, light: own.light['--primary'] !== undefined, dark: own.dark['--primary'] !== own.light['--primary'] }).toEqual({ color, light: true, dark: true });

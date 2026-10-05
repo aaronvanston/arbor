@@ -34,7 +34,6 @@ export const SIDEBAR_HEADER_CLASS = 'relative flex h-[var(--workspace-topbar-hei
 export const WORDMARK_CLASS = 'relative z-10 -mx-1 ml-[calc(var(--workspace-titlebar-content-left)-0.25rem)] flex h-7 cursor-pointer items-center rounded-md px-1 text-lg font-semibold tracking-tight text-sidebar-foreground outline-none ring-ring focus-visible:ring-2 [-webkit-app-region:no-drag]';
 /** The artwork's layer, raised 6px from T3's placement; its height comes from the scene. */
 export const SIDEBAR_ART_CLASS = 'pointer-events-none absolute inset-x-0 -top-1.5 z-0 overflow-hidden select-none';
-export const sidebarArtHeight = (rows: number) => `calc(var(--workspace-topbar-height) + ${(rows - 52) / 16}rem)`;
 
 export const SEARCH_GROUP_CLASS = 'relative z-[1] shrink-0 px-2 pt-5 pb-2';
 export const SEARCH_ROW_CLASS = 'group/search flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-sidebar-muted-foreground outline-none ring-ring transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2';

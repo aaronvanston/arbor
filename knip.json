@@ -1,7 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
-  // index.html brings in src/main.tsx, and knip's Vite plugin finds vite.config.js on its own.
-  "entry": ["index.html", "tests/**/*.test.{ts,tsx}", "scripts/*.{mjs,ts}"],
+  // index.html brings in src/main.tsx, and knip's Vite plugin finds vite.config.js on its own. The boot files are
+  // index.html's static first screen, which vite.config.js's bootShell() renders and inlines by path.
+  "entry": ["index.html", "src/boot/bootHead.ts", "src/boot/bootPaint.ts", "src/boot/renderBootShell.tsx", "tests/**/*.test.{ts,tsx}", "scripts/*.{mjs,ts}"],
   "project": ["src/**/*.{ts,tsx,css}", "tests/**/*.{ts,tsx}", "scripts/*.{mjs,ts}", "perf/*.ts"],
   // An export its own file also uses isn't dead code: services export their thresholds and the types of
   // what they return next to the code that uses them. Anything nobody uses at all is still reported.

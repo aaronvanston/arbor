@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { createThemeController, type AppTheme, type NativeThemeSource, type ThemePreference } from '../src/themeController';
-import { present } from './support/items';
+import { PRE_PAINT_SCRIPT } from './support/bootScripts';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -293,8 +292,7 @@ describe('theme preferences and native synchronization', () => {
 });
 
 describe('first paint', () => {
-  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  const script = present(html.match(/<script>([\s\S]*?)<\/script>/)?.[1], 'the pre-paint script');
+  const script = PRE_PAINT_SCRIPT;
   for (const [saved, dark, expected] of [
     [null, true, 'dark'], ['system', true, 'dark'], ['system', false, 'light'],
     ['light', true, 'light'], ['dark', false, 'dark'], ['invalid', true, 'dark'],

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invokeCommand } from '../native/commands';
 import type { ZoomLevel } from '../native/types';
+import { rememberBootZoom } from '../boot/bootState';
 
 /**
  * The window's zoom. The native side owns it (src-tauri/src/zoom.rs): the View menu's Actual Size, Zoom In and Zoom
@@ -61,6 +62,8 @@ function show(next: ZoomLevel) {
     if (next.factor === 1) root.removeProperty('--zoom');
     else root.setProperty('--zoom', String(next.factor));
   }
+  // So the next launch's first screen, drawn before the level can be asked for, already has it (index.html).
+  rememberBootZoom(next.factor);
   listeners.forEach((listener) => listener());
   // What's measured from the window, like the sidebar's widest, is in CSS pixels, and a zoom changes how many fit.
   // WebKit reports that as a resize; this makes sure every measure is taken again once the new zoom has laid out.

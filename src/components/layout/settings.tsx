@@ -20,7 +20,7 @@ const HIGHLIGHT_CLASS = 'data-highlight:row-highlight';
  * them, still at the right, in a narrower window or a zoomed-in one, rather than spilling over the title. The actions
  * never shrink below what they hold.
  */
-const SECTION_HEADER = 'flex min-h-7 flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4';
+export const SECTION_HEADER = 'flex min-h-7 flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4';
 const SECTION_TITLE = 'min-w-0 flex-1 basis-48';
 const SECTION_ACTION = 'ms-auto flex min-h-7 min-w-7 max-w-full shrink-0 items-center justify-end';
 
@@ -112,7 +112,7 @@ export function SectionAbout({ title, description }: { title: ReactNode; descrip
   );
 }
 
-const SECTION_CARD =
+export const SECTION_CARD =
   'overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5 [&>*+*]:border-t [&>*+*]:border-border/50';
 
 /** A section's card without its header, for a part of a page that's already titled above it. */

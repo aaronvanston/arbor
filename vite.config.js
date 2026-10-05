@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { build, defineConfig, runnerImport } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { readFileSync } from 'node:fs';
@@ -57,6 +57,58 @@ function eagerModules(getModuleIds, getModuleInfo) {
   return eager;
 }
 
+
+/**
+ * The static first screen (src/boot/BootShell.tsx): rendered to HTML into index.html's `#root`, with the two small
+ * scripts that fit it to what's saved (src/boot/bootHead.ts in the head, src/boot/bootPaint.ts after the screen)
+ * bundled and inlined, so the window can show before any of the app's script has loaded. React's first commit replaces
+ * it. Worked out once per build, and again in a dev server whenever a file it's made from changes.
+ */
+function bootShell(mode) {
+  const root = fileURLToPath(new URL('.', import.meta.url));
+  let made = null;
+  const script = async (entry) => {
+    const output = await build({
+      configFile: false,
+      logLevel: 'silent',
+      // The browser mock's `?chrome=mac` only matters outside the app's own build.
+      define: { __BOOT_MOCK__: String(mode !== 'production') },
+      build: {
+        write: false,
+        minify: true,
+        target: 'es2020',
+        lib: { entry: fileURLToPath(new URL(entry, import.meta.url)), formats: ['iife'], name: 'arborBoot' },
+      },
+    });
+    const [chunk] = (Array.isArray(output) ? output[0] : output).output;
+    return chunk.code.trim().replaceAll('</script', '<\\/script');
+  };
+  const make = async () => {
+    const { module } = await runnerImport('/src/boot/renderBootShell.tsx', {
+      root,
+      configFile: false,
+      logLevel: 'error',
+      resolve: { alias: { 'arbor-duotone-icons': duotoneIcons(mode) } },
+    });
+    const [head, paint] = await Promise.all([script('./src/boot/bootHead.ts'), script('./src/boot/bootPaint.ts')]);
+    return { shell: module.renderBootShell(), head, paint };
+  };
+  return {
+    name: 'arbor-boot-shell',
+    handleHotUpdate({ file }) {
+      if (/\/src\/(boot|components\/sidebar|components\/ui|services\/sidebar|i18n)\//.test(file.replaceAll('\\', '/'))) made = null;
+    },
+    async transformIndexHtml(html) {
+      made ??= make();
+      const { shell, head, paint } = await made;
+      return html
+        .replace('<!--boot-head-->', `<script>${head}</script>`)
+        .replace('<!--boot-shell-->', shell)
+        .replace('<!--boot-paint-->', `<script>${paint}</script>`);
+    },
+  };
+}
+
 let eager = null;
 
 /**
@@ -66,7 +118,7 @@ let eager = null;
  */
 export default defineConfig(({ mode }) => ({
   base: mode === 'demo' ? './' : '/',
-  plugins: [onlyListedGrammars(), react(), tailwindcss()],
+  plugins: [onlyListedGrammars(), react(), tailwindcss(), bootShell(mode)],
   resolve: {
     alias: { 'arbor-duotone-icons': duotoneIcons(mode) },
   },

@@ -61,3 +61,6 @@ export const sidebarArtHalo = (art: SidebarArt, theme: AppTheme, color: AppColor
   const shade = art === 'off' ? undefined : sceneTitleShade(art, theme, color);
   return shade && hex(shade);
 };
+
+/** The art layer's height for a scene `rows` px tall: the title row, and what's past it in rem, as the rows under it are. */
+export const sidebarArtHeight = (rows: number) => `calc(var(--workspace-topbar-height) + ${(rows - 52) / 16}rem)`;
