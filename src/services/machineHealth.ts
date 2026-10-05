@@ -15,9 +15,12 @@ export type HealthWindowId = (typeof HEALTH_WINDOWS)[number]['id'];
 /**
  * A passive read doesn't count as watching, so it leaves the sampler on its background interval. Nobody watches a
  * hidden window, so a page left open in one reads passively too, and doesn't hold the fleet on the fast interval.
+ * `machine` keeps the history to that machine's; every machine still comes with its latest reading.
  */
-export const fetchMachineHealth = (since: number | null, windowMs: number, passive = false) =>
-  invokeCommand('get_machine_health', { since, windowMs, passive: passive || isWindowHidden() });
+export function fetchMachineHealth(since: number | null, windowMs: number, passive = false, machine?: string) {
+  const args = { since, windowMs, passive: passive || isWindowHidden() };
+  return invokeCommand('get_machine_health', machine === undefined ? args : { ...args, machine });
+}
 
 /**
  * How long a background read of the fleet answers for others. The sampler's rounds are at least 5 seconds apart, so a

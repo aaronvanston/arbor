@@ -696,9 +696,10 @@ export function MachineHealthDetail({ item, windowMs }: { item: MachineHealth; w
 
 /**
  * The machines' health over a window, read as the sampler says each round ends and as the window shows again. The
- * backend samples at its fast interval only while something reads it this way.
+ * backend samples at its fast interval only while something reads it this way. With `machine`, only that machine's
+ * history comes, as its own page charts no other.
  */
-export function useMachineHealthSnapshot(windowMs: number) {
+export function useMachineHealthSnapshot(windowMs: number, machine?: string) {
   const [snapshot, setSnapshot] = useState<MachineHealthSnapshot | null>(null);
   const [error, setError] = useState('');
   // When the figures on screen were read, so a failed read after them can say how old they are.
@@ -713,7 +714,7 @@ export function useMachineHealthSnapshot(windowMs: number) {
     try {
       const previous = fullReload.current ? null : snapshotRef.current;
       const since = previous ? Math.max(-Infinity, ...previous.machines.flatMap((item) => item.points.map((point) => point.t))) : null;
-      const next = await fetchMachineHealth(Number.isFinite(since) ? since : null, windowMs);
+      const next = await fetchMachineHealth(Number.isFinite(since) ? since : null, windowMs, false, machine);
       const merged = mergeSnapshots(previous, next, windowMs);
       snapshotRef.current = merged;
       fullReload.current = false;
@@ -725,12 +726,12 @@ export function useMachineHealthSnapshot(windowMs: number) {
     } finally {
       inflight.current = false;
     }
-  }, [windowMs]);
+  }, [windowMs, machine]);
 
   useEffect(() => {
     fullReload.current = true;
     snapshotRef.current = null;
-  }, [windowMs]);
+  }, [windowMs, machine]);
 
   useEffect(() => {
     let disposed = false;

@@ -69,7 +69,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
   const { t, tRich } = useI18n();
   const [windowId, setWindowId] = useState<HealthWindowId>('15m');
   const windowMs = healthWindowMs(windowId);
-  const { snapshot, error: healthError, readAt: healthReadAt, retry: retryHealth } = useMachineHealthSnapshot(windowMs);
+  const { snapshot, error: healthError, readAt: healthReadAt, retry: retryHealth } = useMachineHealthSnapshot(windowMs, name);
   const item = snapshot?.machines.find((entry) => entry.machine === name) ?? null;
   const latest = useLatestAgentVersions();
   const newest = useMemo(() => newestAgents(snapshot?.machines ?? [], latest), [snapshot, latest]);

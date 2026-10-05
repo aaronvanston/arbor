@@ -1448,7 +1448,8 @@ pub(crate) struct MachineHealthSnapshot {
     machines: Vec<MachineHealth>,
 }
 
-fn build_snapshot(inner: &Inner, now: i64, since: Option<i64>, window_ms: i64) -> MachineHealthSnapshot {
+/// `only` keeps the history to that machine's: the others come with their latest reading and no points.
+fn build_snapshot(inner: &Inner, now: i64, since: Option<i64>, window_ms: i64, only: Option<&str>) -> MachineHealthSnapshot {
     let floor = now - window_ms.clamp(1_000, HISTORY_MS);
     let machines = inner
         .series
@@ -1465,12 +1466,16 @@ fn build_snapshot(inner: &Inner, now: i64, since: Option<i64>, window_ms: i64) -
             } else {
                 latest.map_or(HealthStatus::Pending, |point| status_for_score(point.score))
             };
-            let points = series
-                .points
-                .iter()
-                .filter(|point| point.t >= floor && since.is_none_or(|since| point.t > since))
-                .copied()
-                .collect();
+            let points = if only.is_none_or(|only| only == series.host.machine) {
+                series
+                    .points
+                    .iter()
+                    .filter(|point| point.t >= floor && since.is_none_or(|since| point.t > since))
+                    .copied()
+                    .collect()
+            } else {
+                Vec::new()
+            };
             MachineHealth {
                 machine: series.host.machine.clone(),
                 host: series.host.clone(),
@@ -1501,13 +1506,15 @@ fn build_snapshot(inner: &Inner, now: i64, since: Option<i64>, window_ms: i64) -
 }
 
 /// `passive` reads without counting as someone watching, so a background check for alerts
-/// doesn't keep the whole fleet on the fast interval.
+/// doesn't keep the whole fleet on the fast interval. `machine` sends only that machine's history,
+/// for its own page; every machine still comes with its latest reading.
 #[tauri::command]
 pub(crate) async fn get_machine_health(
     state: tauri::State<'_, MachineHealthState>,
     since: Option<i64>,
     window_ms: Option<i64>,
     passive: Option<bool>,
+    machine: Option<String>,
 ) -> Result<MachineHealthSnapshot, String> {
     // Only a visible page asks for an active read. Background and CLI reads
     // stay passive so they cannot extend the five-second burst.
@@ -1516,7 +1523,7 @@ pub(crate) async fn get_machine_health(
     }
     let now = Local::now().timestamp_millis();
     let inner = state.lock();
-    Ok(build_snapshot(&inner, now, since, window_ms.unwrap_or(HISTORY_MS)))
+    Ok(build_snapshot(&inner, now, since, window_ms.unwrap_or(HISTORY_MS), machine.as_deref()))
 }
 
 /// This Mac as the machine list names it, or would once it's added, and whether it's there yet.
@@ -1773,7 +1780,7 @@ mod tests {
         record_result(&state, "up", 1_000, Ok(sample.clone()), Some(5.5), Some(lan.clone()));
         record_result(&state, "up", 6_000, Ok(sample), Some(6.5), Some(lan.clone()));
         let inner = state.lock();
-        let snapshot = build_snapshot(&inner, 6_000, None, HISTORY_MS);
+        let snapshot = build_snapshot(&inner, 6_000, None, HISTORY_MS, None);
         assert_eq!(snapshot.machines.len(), 2);
         let up = snapshot.machines.iter().find(|m| m.machine == "up").unwrap();
         assert_eq!(up.status, HealthStatus::Healthy);
@@ -1783,12 +1790,18 @@ mod tests {
         assert_eq!(up.path, Some(lan));
         let blank = snapshot.machines.iter().find(|m| m.machine == "blank").unwrap();
         assert_eq!(blank.status, HealthStatus::Unconfigured);
-        let incremental = build_snapshot(&inner, 6_000, Some(1_000), HISTORY_MS);
+        let incremental = build_snapshot(&inner, 6_000, Some(1_000), HISTORY_MS, None);
         assert_eq!(incremental.machines.iter().find(|m| m.machine == "up").unwrap().points.len(), 1);
+        let others = build_snapshot(&inner, 6_000, None, HISTORY_MS, Some("blank"));
+        let up = others.machines.iter().find(|m| m.machine == "up").unwrap();
+        assert!(up.points.is_empty(), "another machine's page doesn't carry this one's history");
+        assert_eq!(up.latest.and_then(|point| point.latency_ms), Some(6.5), "but does carry its latest reading");
+        let own = build_snapshot(&inner, 6_000, None, HISTORY_MS, Some("up"));
+        assert_eq!(own.machines.iter().find(|m| m.machine == "up").unwrap().points.len(), 2);
         drop(inner);
         record_result(&state, "up", 11_000, Err("ssh: connect refused".into()), None, None);
         let inner = state.lock();
-        let snapshot = build_snapshot(&inner, 11_000, None, HISTORY_MS);
+        let snapshot = build_snapshot(&inner, 11_000, None, HISTORY_MS, None);
         let up = snapshot.machines.iter().find(|m| m.machine == "up").unwrap();
         assert_eq!(up.status, HealthStatus::Unreachable);
         assert_eq!(up.points.len(), 2, "history survives a failed round");

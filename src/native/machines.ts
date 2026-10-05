@@ -53,7 +53,7 @@ export type MachineCommands = {
   cancel_run: { args: { id: string }; result: HarnessRun[] };
   open_run: { args: { id: string }; result: void };
   get_machine_health: {
-    args: { since?: number | null; windowMs?: number | null; passive?: boolean | null };
+    args: { since?: number | null; windowMs?: number | null; passive?: boolean | null; machine?: string | null };
     result: MachineHealthSnapshot;
   };
 

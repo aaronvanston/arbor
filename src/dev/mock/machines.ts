@@ -453,7 +453,8 @@ const healthError = healthScenario === 'hostkey'
   ? 'ci@ci-01.tailc0ffee.ts.net: Permission denied (publickey).'
   : 'ssh: connect to host ci-01 port 22: Connection refused';
 
-const machineHealthSnapshot = (since: number | null, windowMs: number): MachineHealthSnapshot => {
+/** `only` keeps the history to that machine's, as Rust does for a machine's own page. */
+const machineHealthSnapshot = (since: number | null, windowMs: number, only: string | null = null): MachineHealthSnapshot => {
   const at = Date.now();
   const floor = at - Math.min(windowMs, 3_600_000);
   return {
@@ -464,7 +465,9 @@ const machineHealthSnapshot = (since: number | null, windowMs: number): MachineH
       if (healthScenario === 'pending' && host.endpoint !== 'localhost') return { machine: host.machine, host, local: false, status: 'pending', score: null, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: null, lastAttemptAt: null, pingTarget: null, path: null, agents: noAgents };
       if (host.machine === 'ci-01' && healthDown) return { machine: host.machine, host, local: false, status: 'unreachable', score: null, reason: null, facts: healthFacts(host.machine), latest: null, points: [], error: healthError, lastOkAt: at - (healthScenario === 'down-long' ? 12 * 60_000 : 90_000), lastAttemptAt: at - 800, pingTarget: 'ci-01.tailc0ffee.ts.net', path: null, agents: agentsOf(host.machine) };
       const points: HealthPoint[] = [];
-      for (let t = Math.ceil(floor / 5_000) * 5_000; t <= at; t += 5_000) if (since === null || t > since) points.push(healthPoint(host.machine, t));
+      if (only === null || only === host.machine) {
+        for (let t = Math.ceil(floor / 5_000) * 5_000; t <= at; t += 5_000) if (since === null || t > since) points.push(healthPoint(host.machine, t));
+      }
       const latest = healthPoint(host.machine, at);
       const reason = host.machine === 'cam-mbp' ? { metric: 'disk' as const, value: latest.disk } : host.machine === 'ci-01' ? { metric: 'memory' as const, value: latest.mem } : null;
       const local = host.endpoint === 'localhost';
@@ -664,7 +667,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     if (healthScenario === 'fail' || (healthScenario === 'failafter' && Date.now() - now > 10_000)) {
       return Promise.reject('database is locked');
     }
-    const snapshot = () => machineHealthSnapshot(args.since ?? null, args.windowMs ?? 3_600_000);
+    const snapshot = () => machineHealthSnapshot(args.since ?? null, args.windowMs ?? 3_600_000, args.machine ?? null);
     return healthScenario === 'slow' ? later(4_000, snapshot) : snapshot();
   },
   get_machine_hosts: () => healthHosts,

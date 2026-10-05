@@ -583,11 +583,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "get_machine_health",
         access: Access::Read,
-        summary: "`passive` reads without counting as someone watching, so a background check for alerts doesn't keep the whole fleet on the fast interval.",
+        summary: "`passive` reads without counting as someone watching, so a background check for alerts doesn't keep the whole fleet on the fast interval. `machine` sends only that machine's history, for its own page; every machine still comes with its latest reading.",
         args: &[
             ArgSpec { name: "since", ts_type: "number | null", optional: true },
             ArgSpec { name: "windowMs", ts_type: "number | null", optional: true },
             ArgSpec { name: "passive", ts_type: "boolean | null", optional: true },
+            ArgSpec { name: "machine", ts_type: "string | null", optional: true },
         ],
     },
     CommandSpec {
@@ -2054,7 +2055,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_limit_cycles" => async { done(Box::pin(crate::usage::capacity::get_limit_cycles(arg(&args, "account")?, arg(&args, "window")?)).await) }.await,
         "record_limit_samples" => async { done(Box::pin(crate::usage::limit_history::record_limit_samples(arg(&args, "samples")?)).await) }.await,
         "rename_limit_history_accounts" => async { done(Box::pin(crate::usage::limit_history::rename_limit_history_accounts(arg(&args, "renames")?)).await) }.await,
-        "get_machine_health" => async { done(Box::pin(crate::usage::machine_health::get_machine_health(app.state(), arg(&args, "since")?, arg(&args, "windowMs")?, arg(&args, "passive")?)).await) }.await,
+        "get_machine_health" => async { done(Box::pin(crate::usage::machine_health::get_machine_health(app.state(), arg(&args, "since")?, arg(&args, "windowMs")?, arg(&args, "passive")?, arg(&args, "machine")?)).await) }.await,
         "get_machine_hosts" => done(Box::pin(crate::usage::machine_health::get_machine_hosts()).await),
         "get_this_mac" => done(Box::pin(crate::usage::machine_health::get_this_mac(app.state())).await),
         "save_machine_hosts" => async { done(Box::pin(crate::usage::machine_health::save_machine_hosts(app.state(), arg(&args, "hosts")?, arg(&args, "removed")?)).await) }.await,
