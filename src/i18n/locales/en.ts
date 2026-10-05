@@ -3993,6 +3993,7 @@ export const en = {
   'sessions.header.pullRequests.one': 'Pull request',
   'sessions.header.pullRequests.other': 'Pull requests',
   'sessions.header.openPullRequest': 'Open pull request {name}',
+  'sessions.header.pullRequestDetailFailed': 'GitHub didn’t say how their checks and reviews stand.',
   'sessions.header.lines': 'Lines changed',
   'sessions.header.details': 'Details',
   'sessions.header.times': 'Started {started} · Last request {last}, {ago}',

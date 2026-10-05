@@ -7,6 +7,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { createRefreshScheduler } from '../services/refreshScheduler';
+import { errorWords } from '../services/plainError';
 import { formatAgo, formatCount, formatDateTime, formatDuration, formatMoney, formatPercent, formatTime, formatTokens, formatWhen } from '../lib/format';
 import {
   DEEP_CONTEXT_TOKENS,
@@ -397,6 +398,8 @@ const GITHUB_RECHECK_MS = 3_000;
 function SessionPullRequests({ pullRequests }: { pullRequests: PullRequestLink[] }) {
   const { t } = useI18n();
   const [states, setStates] = useState<ReadonlyMap<string, PullRequestState | null>>(() => new Map());
+  // GitHub may answer whether they merged but turn down how checks and reviews stand: say so, as Projects does.
+  const [detailError, setDetailError] = useState('');
   // The page reloads its session every few seconds; the same links shouldn't ask again.
   const links = useRef(pullRequests);
   links.current = pullRequests;
@@ -409,6 +412,7 @@ function SessionPullRequests({ pullRequests }: { pullRequests: PullRequestLink[]
         .then((named) => {
           if (disposed) return;
           setStates(new Map(named.pullRequests.map((pullRequest) => [pullRequest.url, pullRequest.github])));
+          setDetailError(named.github.last === 'ok' ? named.github.detailError : '');
           if (named.github.checking) recheck = window.setTimeout(load, GITHUB_RECHECK_MS);
         })
         // The links still work without their states.
@@ -442,6 +446,11 @@ function SessionPullRequests({ pullRequests }: { pullRequests: PullRequestLink[]
           </span>
         );
       })}
+      {detailError ? (
+        <span className="text-xs text-warning-foreground" title={errorWords(detailError)}>
+          {t('sessions.header.pullRequestDetailFailed')}
+        </span>
+      ) : null}
     </span>
   );
 }
