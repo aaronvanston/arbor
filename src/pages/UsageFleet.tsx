@@ -139,7 +139,7 @@ export function MachineThroughput({ machine, name, activity, maximum }: { machin
           {number(current)} <small className="text-xs font-normal text-muted-foreground">{t('usage.fleet.tokensPerSecond')}</small>
         </span>
         <span className="truncate text-xs text-muted-foreground">
-          {activity?.requests ? t('usage.fleet.recentRequests', { count: number(activity.requests) }) : t('usage.fleet.noRecent')}
+          {activity?.requests ? t(activity.requests === 1 ? 'usage.fleet.recentRequests.one' : 'usage.fleet.recentRequests.other', { count: number(activity.requests) }) : t('usage.fleet.noRecent')}
         </span>
       </div>
       <svg

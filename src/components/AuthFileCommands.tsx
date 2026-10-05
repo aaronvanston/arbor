@@ -47,6 +47,8 @@ import { modelMatchesRule, normalizeOAuthExcludedRules, openOAuthModelNames, set
 import { loadOAuthModelSettings, saveOAuthModelSettings, type OAuthModelSettings, type OAuthModelTarget } from '../services/oauthModelSettings';
 import { fileName, providerForFile, quotaKey, type AuthFile } from '../services/quotaService';
 import { formatQuotaReset } from '../services/quotaTime';
+import { formatCount } from '../lib/format';
+import { plainError } from '../services/plainError';
 
 /**
  * What can be done to a credential in the core's listing, and how its state reads: turning it on and off, its
@@ -253,7 +255,7 @@ export function useAuthFileCommands(listing: AuthFile[]) {
     try {
       await work();
     } catch (requestError) {
-      failure = String(requestError);
+      failure = plainError(requestError, t);
     } finally {
       setBusy(false);
     }
@@ -366,11 +368,11 @@ export function useAuthFileCommands(listing: AuthFile[]) {
           await managementApi.uploadAuthFile(file);
           uploaded += 1;
         } catch (requestError) {
-          failures.push(`${file.name}: ${String(requestError)}`);
+          failures.push(`${file.name}: ${plainError(requestError, t)}`);
         }
       }
-      if (uploaded > 0) succeeded('authFiles.uploaded', { count: uploaded });
-      if (failures.length > 0) throw new Error(t('authFiles.uploadFailed', { count: failures.length, errors: failures.join('; ') }));
+      if (uploaded > 0) succeeded(uploaded === 1 ? 'authFiles.uploaded.one' : 'authFiles.uploaded.other', { count: formatCount(uploaded) });
+      if (failures.length > 0) throw new Error(t(failures.length === 1 ? 'authFiles.uploadFailed.one' : 'authFiles.uploadFailed.other', { count: formatCount(failures.length), errors: failures.join('; ') }));
     });
   };
 
@@ -811,7 +813,7 @@ function ExcludedModelsDialog({ target, providers, onTarget, onClose }: {
           <Button variant="outline" onClick={close} disabled={saving}>{t('common.cancel')}</Button>
           <Button onClick={() => void save()} disabled={dialogBusy || !settings}>
             {saving ? <Spinner /> : <Check />}
-            {saving ? t('common.saving') : t('authFiles.models.save', { count: rules.length })}
+            {saving ? t('common.saving') : t(rules.length === 1 ? 'authFiles.models.save.one' : 'authFiles.models.save.other', { count: formatCount(rules.length) })}
           </Button>
         </DialogFooter>
       </DialogPopup>

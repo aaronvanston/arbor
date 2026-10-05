@@ -17,7 +17,7 @@ import { cn } from '../lib/utils';
 import type { AppView } from '../navigation';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { fetchMachineHealth, saveMachineHosts } from '../services/machineHealth';
-import { formatAgo } from '../lib/format';
+import { formatAgo, formatCount } from '../lib/format';
 import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import {
   agentsStep,
@@ -166,7 +166,7 @@ const store = (key: string, value: string) => {
 };
 
 const plural = (count: number, one: MessageKey, other: MessageKey, t: Translate, values: Record<string, string | number> = {}) =>
-  t(count === 1 ? one : other, { count, ...values });
+  t(count === 1 ? one : other, { count: formatCount(count), ...values });
 
 /**
  * "Bring … in line", on a machine's own page: the `target` machine brought in line with another, a step at a time:
@@ -713,7 +713,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
     const name = named(machine.machine);
     const ref = named(referenceName ?? '');
     const plural = (count: number, one: MessageKey, other: MessageKey, values: Record<string, string | number | T> = {}) =>
-      say(count === 1 ? one : other, { count, ...values });
+      say(count === 1 ? one : other, { count: formatCount(count), ...values });
     // A step waiting on a machine's read, or stuck on one that failed.
     const unread = (state: StepState, both: boolean) =>
       state === 'unknown' ? say('setup.checklist.readFailed') : say(both ? 'setup.checklist.waitingBoth' : 'setup.checklist.notRead');
