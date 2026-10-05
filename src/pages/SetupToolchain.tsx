@@ -18,7 +18,6 @@ import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
-import { formatAgo } from '../lib/format';
 import { tilde } from '../services/setupProjects';
 import { scanFailedProblem, libraryLinesProblem, projectToolchainProblem, toolBehindProblem } from '../services/fixPrompt';
 import { FixMenu } from '../components/FixMenu';
@@ -60,7 +59,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from '../components/ui/popover'
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from '../components/ui/toast';
 import { MachinePill } from '../components/identity/Identity';
-import { useNow } from '../hooks/useNow';
+import { useAgo } from '../hooks/useNow';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 type Filter = 'all' | 'look';
@@ -137,7 +136,6 @@ function checkText(check: NeedCheck, t: Translate): string {
  */
 export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
   const { t } = useI18n();
-  const now = useNow();
   const [toolchain, setToolchain] = useState<MachineToolchain[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
@@ -216,7 +214,6 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
             toolchain={byMachine.get(machine.machine) ?? null}
             rows={rows}
             error={actionErrors[machine.machine] ?? null}
-            now={now}
             onScan={() => scan(machine.machine)}
           />
         ))}
@@ -376,15 +373,16 @@ function CardTitle({ title, description }: { title: string; description: string 
   );
 }
 
-function MachineCard({ machine, toolchain, rows, error, now, onScan }: {
+function MachineCard({ machine, toolchain, rows, error, onScan }: {
   machine: SetupMachine;
   toolchain: MachineToolchain | null;
   rows: ToolchainRow[];
   error: string | null;
-  now: number;
   onScan: () => void;
 }) {
   const { t } = useI18n();
+  // Its own "scanned … ago", so the half-minute clock renders this line rather than the whole page.
+  const scannedAgo = useAgo(toolchain?.scannedAt);
   const busy = Boolean(toolchain?.scanning);
   const failure = error ?? toolchain?.error ?? null;
   const scanned = toolchain?.scannedAt != null ? toolchain : null;
@@ -393,7 +391,7 @@ function MachineCard({ machine, toolchain, rows, error, now, onScan }: {
     : failure
       ? t('setup.toolchain.machine.failed')
       : scanned?.scannedAt != null
-        ? t('setup.toolchain.machine.scanned', { time: formatAgo(scanned.scannedAt, now) })
+        ? t('setup.toolchain.machine.scanned', { time: scannedAgo })
         : machine.reachable
           ? t('setup.toolchain.machine.waiting')
           : t('setup.toolchain.machine.away');

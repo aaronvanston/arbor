@@ -33,7 +33,6 @@ import { KIND_LABEL as LIBRARY_KIND_LABEL, LibraryBar, SetupLibrary, type Librar
 import { leafLabel } from '../services/sidebarTree';
 import type { ViewChange } from '../services/viewHistory';
 import { formatBytes } from '../services/machineHealth';
-import { formatAgo } from '../lib/format';
 import { itemProblem, setupChecks, type SetupCheck, type SetupCheckSubject } from '../services/setupChecks';
 import { archiveKeepsMachine, getSessionArchiveStatus } from '../services/sessionArchive';
 import {
@@ -67,7 +66,7 @@ import { SetupToolchain } from './SetupToolchain';
 import { SetupSkills } from './SetupSkills';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import type { ArchiveStatus, SetupItem, SetupMachine } from '../native/types';
-import { useNow } from '../hooks/useNow';
+import { useAgo } from '../hooks/useNow';
 
 // The directory reads marketplaces from GitHub and is opened now and then, so it loads on its own when it is.
 const SetupDirectory = lazy(() => import('./SetupDirectory').then((module) => ({ default: module.SetupDirectory })));
@@ -291,13 +290,13 @@ function MachineSummary({ machine, reference, differences, onScan }: {
   onScan: () => void;
 }) {
   const { t } = useI18n();
-  const now = useNow();
+  const scannedAgo = useAgo(machine.scannedAt);
   const status = machine.scanning
     ? t('setup.machine.scanning')
     : machine.error
       ? t('setup.machine.failed')
       : machine.scannedAt !== null
-        ? t('setup.machine.scanned', { time: formatAgo(machine.scannedAt, now) })
+        ? t('setup.machine.scanned', { time: scannedAgo })
         : machine.reachable
           ? t('setup.machine.waiting')
           : t('setup.machine.unreachable');

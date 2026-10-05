@@ -21,7 +21,6 @@ import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import type { FileView } from '../services/fileView';
 import { formatBytes } from '../services/machineHealth';
-import { formatAgo } from '../lib/format';
 import {
   branchFate,
   buildProjects,
@@ -65,7 +64,7 @@ import type {
 import { MachinePill } from '../components/identity/Identity';
 import { FixMenu } from '../components/FixMenu';
 import { checkoutProblem } from '../services/fixPrompt';
-import { useNow } from '../hooks/useNow';
+import { useAgo, useNow } from '../hooks/useNow';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 type Filter = 'all' | 'look' | 'clean';
@@ -115,7 +114,6 @@ export function SetupProjects({ machines, embedded = false }: {
   embedded?: boolean;
 }) {
   const { t } = useI18n();
-  const now = useNow();
   const [projects, setProjects] = useState<MachineProjects[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
@@ -198,7 +196,6 @@ export function SetupProjects({ machines, embedded = false }: {
             machine={machine}
             projects={byMachine.get(machine.machine) ?? null}
             error={actionErrors[machine.machine] ?? null}
-            now={now}
             onRun={(action) => run(machine.machine, action)}
           />
         ))}
@@ -268,7 +265,6 @@ export function SetupProjects({ machines, embedded = false }: {
                           <ProjectDetail
                             row={row}
                             columns={columns}
-                            now={now}
                             chosen={chosen}
                             onChoose={choose}
                             onCompare={setComparing}
@@ -307,14 +303,16 @@ export function SetupProjects({ machines, embedded = false }: {
   );
 }
 
-function MachineCard({ machine, projects, error, now, onRun }: {
+function MachineCard({ machine, projects, error, onRun }: {
   machine: SetupMachine;
   projects: MachineProjects | null;
   error: string | null;
-  now: number;
   onRun: (action: 'scan' | 'fetch' | 'measure') => void;
 }) {
   const { t } = useI18n();
+  // Its own times, so the half-minute clock renders these lines rather than the whole view.
+  const scannedAgo = useAgo(projects?.scannedAt);
+  const fetchedAgo = useAgo(projects?.fetchedAt);
   const busy = Boolean(projects?.scanning || projects?.measuring || projects?.removing);
   const failure = error ?? projects?.error ?? null;
   const totals = projects && projects.scannedAt !== null ? machineTotals(projects) : null;
@@ -327,7 +325,7 @@ function MachineCard({ machine, projects, error, now, onRun }: {
         : failure
         ? t('setup.projects.machine.failed')
         : projects?.scannedAt != null
-          ? t('setup.projects.machine.scanned', { time: formatAgo(projects.scannedAt, now) })
+          ? t('setup.projects.machine.scanned', { time: scannedAgo })
           : machine.reachable
             ? t('setup.projects.machine.waiting')
             : t('setup.projects.machine.away');
@@ -353,7 +351,7 @@ function MachineCard({ machine, projects, error, now, onRun }: {
       <div className={cn('flex min-w-0 items-center gap-1 text-2xs', failure ? 'text-warning-foreground' : 'text-muted-foreground')} title={failure ?? undefined}>
         {busy ? <Spinner className="size-3" /> : failure ? <TriangleAlert className="size-3 shrink-0" aria-hidden="true" /> : null}
         <span className="truncate">{status}</span>
-        {projects?.fetchedAt != null && !busy && !failure ? <span className="truncate">· {t('setup.projects.machine.fetched', { time: formatAgo(projects.fetchedAt, now) })}</span> : null}
+        {projects?.fetchedAt != null && !busy && !failure ? <span className="truncate">· {t('setup.projects.machine.fetched', { time: fetchedAgo })}</span> : null}
       </div>
       {failure ? <p className="line-clamp-2 text-2xs text-muted-foreground" title={failure}>{failure}</p> : null}
       {totals ? (
@@ -457,10 +455,9 @@ function PlaceCell({ repo, more }: { repo: ProjectRepo; more: number }) {
   );
 }
 
-function ProjectDetail({ row, columns, now, chosen, onChoose, onCompare }: {
+function ProjectDetail({ row, columns, chosen, onChoose, onCompare }: {
   row: ProjectRow;
   columns: string[];
-  now: number;
   chosen: Chosen;
   onChoose: (machine: string, path: string, on: boolean) => void;
   onCompare: (comparison: FileComparison) => void;
@@ -470,7 +467,7 @@ function ProjectDetail({ row, columns, now, chosen, onChoose, onCompare }: {
     <div className="flex flex-col gap-4 px-4 py-3">
       {row.files.length ? <FilesView row={row} columns={columns} onCompare={onCompare} /> : null}
       {places.map((place) => (
-        <PlaceDetail key={`${place.machine}\u0000${place.repo.path}`} place={place} now={now} chosen={chosen[place.machine] ?? []} onChoose={(path, on) => onChoose(place.machine, path, on)} />
+        <PlaceDetail key={`${place.machine}\u0000${place.repo.path}`} place={place} chosen={chosen[place.machine] ?? []} onChoose={(path, on) => onChoose(place.machine, path, on)} />
       ))}
     </div>
   );
@@ -528,20 +525,21 @@ function FileCell({ file, machine, project, onCompare }: { file: FileRow; machin
   );
 }
 
-function PlaceDetail({ place, now, chosen, onChoose }: {
+function PlaceDetail({ place, chosen, onChoose }: {
   place: ProjectPlace;
-  now: number;
   chosen: string[];
   onChoose: (path: string, on: boolean) => void;
 }) {
   const { t } = useI18n();
   const { repo, homeDir, machine } = place;
+  const fetchedAgo = useAgo(repo.fetchedAt);
+  const usedAgo = useAgo(repo.lastUsedMs);
   const facts = [
     repo.defaultBranch ? t('setup.projects.detail.default', { branch: repo.defaultBranch }) : null,
-    repo.fetchedAt !== null ? t('setup.projects.detail.fetched', { time: formatAgo(repo.fetchedAt, now) }) : repo.remote ? t('setup.projects.detail.neverFetched') : null,
-    repo.lastUsedMs !== null ? t('setup.projects.detail.used', { time: formatAgo(repo.lastUsedMs, now) }) : null,
+    repo.fetchedAt !== null ? t('setup.projects.detail.fetched', { time: fetchedAgo }) : repo.remote ? t('setup.projects.detail.neverFetched') : null,
+    repo.lastUsedMs !== null ? t('setup.projects.detail.used', { time: usedAgo }) : null,
   ].filter(Boolean);
-  const stale = repo.fetchedAt !== null && now - repo.fetchedAt > FETCH_STALE_MS;
+  const stale = useNow((nowMs) => repo.fetchedAt !== null && nowMs - repo.fetchedAt > FETCH_STALE_MS);
   const worktreeIssues = repo.worktrees.flatMap((worktree) => {
     const dirty = (worktree.changed ?? 0) + (worktree.untracked ?? 0);
     const states = [
@@ -595,7 +593,6 @@ function PlaceDetail({ place, now, chosen, onChoose }: {
                   repo={repo}
                   worktree={worktree}
                   homeDir={homeDir}
-                  now={now}
                   chosen={chosen.includes(worktree.path)}
                   onChoose={(on) => onChoose(worktree.path, on)}
                 />
@@ -608,11 +605,10 @@ function PlaceDetail({ place, now, chosen, onChoose }: {
   );
 }
 
-function WorktreeLine({ repo, worktree, homeDir, now, chosen, onChoose }: {
+function WorktreeLine({ repo, worktree, homeDir, chosen, onChoose }: {
   repo: ProjectRepo;
   worktree: ProjectWorktree;
   homeDir: string;
-  now: number;
   chosen: boolean;
   onChoose: (on: boolean) => void;
 }) {
@@ -620,6 +616,7 @@ function WorktreeLine({ repo, worktree, homeDir, now, chosen, onChoose }: {
   const owner = worktreeOwner(worktree.path, homeDir);
   const shownPath = worktree.main ? tilde(worktree.path, homeDir) : worktree.path.startsWith(`${repo.path}/`) ? `…${worktree.path.slice(repo.path.length)}` : tilde(worktree.path, homeDir);
   const used = [worktree.lastUsedMs, worktree.touchedAt].reduce<number | null>((latest, at) => (at !== null && (latest === null || at > latest) ? at : latest), null);
+  const usedAgo = useAgo(used);
   const dirty = (worktree.changed ?? 0) + (worktree.untracked ?? 0);
   const own = ownSizeKb(repo, worktree);
   const removable = worktree.blocker === null;
@@ -659,7 +656,7 @@ function WorktreeLine({ repo, worktree, homeDir, now, chosen, onChoose }: {
         )}
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {worktree.open ? <span className="text-info-foreground">{t('setup.projects.worktree.open')}</span> : used !== null ? formatAgo(used, now) : <Dash />}
+        {worktree.open ? <span className="text-info-foreground">{t('setup.projects.worktree.open')}</span> : used !== null ? usedAgo : <Dash />}
       </TableCell>
       <TableCell className="text-end tabular-nums text-muted-foreground">{size(own) ?? <Dash />}</TableCell>
       <TableCell>

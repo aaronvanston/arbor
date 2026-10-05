@@ -17,7 +17,7 @@ import { cn } from '../lib/utils';
 import type { AppView } from '../navigation';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { fetchMachineHealth, saveMachineHosts } from '../services/machineHealth';
-import { formatAgo, formatCount } from '../lib/format';
+import { formatCount } from '../lib/format';
 import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import {
   agentsStep,
@@ -72,7 +72,7 @@ import type {
   SkillAction,
 } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
-import { useNow } from '../hooks/useNow';
+import { useAgo, useNow } from '../hooks/useNow';
 
 const REFERENCE_KEY = 'arbor.setup.checklist.reference.v1';
 /** How often the agents and the reporter are looked at again, which the Machines page checks on its own schedule. */
@@ -187,7 +187,6 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   onNavigate: (view: AppView) => void;
 }) {
   const { t, tRich } = useI18n();
-  const now = useNow();
   const [chosenReference, setChosenReference] = useState<string | null>(() => readStored(REFERENCE_KEY));
   const [openState, setOpenState] = useState<{ target: string | null; ids: StepId[] } | null>(null);
   const [review, setReview] = useState<'repo' | 'skills' | 'mcp' | 'plugins' | null>(null);
@@ -330,16 +329,21 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   const referenceHealth = health?.find((entry) => entry.machine === referenceName) ?? null;
   // Every machine but this Mac is on the machine list, which is what the agent updates and the reporter need.
   const listed = !machine?.local || health === null || targetHealth !== null;
+  // The time matters to two lines (when the machine was read, and whether and when it last used the proxy), so the
+  // half-minute clock picks just those, and the checklist renders again only when one of them reads differently.
+  const proxy = useNow((nowMs) => (machine ? proxyStep(machine, reference, assignments, requests, usageError, nowMs) : null));
+  const scannedAgo = useAgo(machine?.scannedAt);
+  const lastRequestAgo = useAgo(proxy?.lastRequestMs);
 
   const view = useMemo(() => withRegistry(extensionsView(machines), registry), [machines, registry]);
   const latest = useLatestAgentVersions();
   const steps = useMemo(() => {
-    if (!machine) return null;
+    if (!machine || !proxy) return null;
     return {
       connect: connectStep(machine, targetHealth, healthUnread),
       // Arbor only runs on a Mac, so this one's system is known before its tools are looked at.
       agents: agentsStep(machine, machines, reference, machine.local ? 'Darwin' : toolchain?.find((entry) => entry.machine === machine.machine)?.os || null, latest),
-      proxy: proxyStep(machine, reference, assignments, requests, usageError, now),
+      proxy,
       repo: repoStep(repoPath, repo, repoError, machine),
       skills: skillsStep(machine, reference),
       mcp: mcpStep(machine, repoPath, registry, registryError, view),
@@ -350,7 +354,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       projects: projectsStep(machine, reference, projects),
       checks: checksStep(machine),
     };
-  }, [machine, machines, reference, targetHealth, healthUnread, referenceHealth, assignments, requests, usageError, now, repoPath, repo, repoError, registry, registryError, view, listed, toolchain, projects, latest]);
+  }, [machine, machines, reference, targetHealth, healthUnread, referenceHealth, proxy, repoPath, repo, repoError, registry, registryError, view, listed, toolchain, projects, latest]);
 
   const states = steps ? STEP_ORDER.map((id) => ({ id, state: steps[id].state })) : [];
   const progress = checklistProgress(states.map((entry) => entry.state));
@@ -728,7 +732,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       case 'connect': {
         const step = steps.connect;
         switch (step.why) {
-          case 'ok': return say('setup.checklist.connect.ok', { time: machine.scannedAt !== null ? formatAgo(machine.scannedAt, now) : '' });
+          case 'ok': return say('setup.checklist.connect.ok', { time: scannedAgo });
           case 'noHost': return say('setup.checklist.connect.noHost');
           case 'connecting': return say('setup.checklist.connect.connecting');
           case 'healthUnread': return say('setup.checklist.connect.healthUnread');
@@ -746,7 +750,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       case 'proxy': {
         const step = steps.proxy;
         switch (step.why) {
-          case 'seen': return plural(step.requests, 'setup.checklist.proxy.seen.one', 'setup.checklist.proxy.seen.other', { time: step.lastRequestMs !== null ? formatAgo(step.lastRequestMs, now) : '' });
+          case 'seen': return plural(step.requests, 'setup.checklist.proxy.seen.one', 'setup.checklist.proxy.seen.other', { time: lastRequestAgo });
           case 'noKey': return say('setup.checklist.proxy.noKey');
           case 'quiet': return say('setup.checklist.proxy.quiet');
           case 'loading': return say('setup.checklist.proxy.loading');
