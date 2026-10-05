@@ -626,7 +626,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "save_agent_home",
         access: Access::Write,
-        summary: "Adds a home, or changes its switches.",
+        summary: "Adds a home, or changes its role.",
         args: &[
             ArgSpec { name: "home", ts_type: "AgentHome", optional: false },
         ],

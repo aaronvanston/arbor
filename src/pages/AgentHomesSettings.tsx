@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlertCircle, FolderSearch, Plus, RotateCcw, Trash2 } from '../components/ui/icons';
+import { AlertCircle, EyeOff, FolderSearch, Plus, RotateCcw, Trash2 } from '../components/ui/icons';
 import { FixMenu } from '../components/FixMenu';
 import { scanFailedProblem } from '../services/fixPrompt';
 import { useI18n } from '../i18n';
@@ -19,7 +19,6 @@ import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
-import { Switch } from '../components/ui/switch';
 import { TableEmpty } from '../components/ui/data-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { toast } from '../components/ui/toast';
@@ -27,21 +26,26 @@ import { useSettingsScope } from '../services/machineSettings';
 import {
   AGENT_HOME_KINDS,
   AGENT_HOME_LABEL,
-  readsSessions,
-  syncs,
+  GUESS_REASON_LABEL,
+  ROLE_LABEL,
+  canFollowGuess,
   homeFromFound,
   homePathProblem,
+  ignoredFromFound,
   isVariable,
   ownHomes,
   previewAgentHome,
   removeAgentHome,
+  roleOf,
+  rolesFor,
   saveAgentHome,
   scanAgentHomes,
   switchedHere,
-  syncOffCount,
   useAgentHomes,
+  withRole,
 } from '../services/agentHomes';
-import type { AgentHome, AgentHomeKind, AgentHomesView, HarnessInfo, MachineAgentHomes } from '../native/types';
+import type { AgentHome, AgentHomeKind, AgentHomeRole, AgentHomesView, HarnessInfo, MachineAgentHomes } from '../native/types';
+import type { MessageKey } from '../i18n/resources';
 
 /**
  * Settings › Agent homes: where each machine's agents keep their homes, which every script that reads one goes by.
@@ -54,7 +58,6 @@ export function AgentHomesSettingsPage() {
   // The machine the Add dialog adds for ('' is every machine), while it's open.
   const [adding, setAdding] = useState<string | null>(null);
   const machines = view?.machines.filter((entry) => !scope || entry.machine === scope) ?? [];
-  const syncOff = view ? syncOffCount(view) : 0;
   return (
     <Page>
       <PageTopbar>
@@ -73,7 +76,7 @@ export function AgentHomesSettingsPage() {
           error ? null : <p className="flex items-center gap-2 px-4 text-sm text-muted-foreground" role="status"><Spinner />{t('agentHomes.loading')}</p>
         ) : (
           <>
-            {syncOff ? <p className="px-4 text-sm text-muted-foreground" data-slot="agent-homes-sync-note">{t(syncOff === 1 ? 'agentHomes.syncOffNote.one' : 'agentHomes.syncOffNote.other', { count: syncOff })}</p> : null}
+            <RolesIntro />
             <EveryMachineHomes view={view} onAdd={() => setAdding('')} />
             {machines.map((machine) => (
               <MachineHomes key={machine.machine} view={view} machine={machine} onAdd={() => setAdding(machine.machine)} />
@@ -88,6 +91,30 @@ export function AgentHomesSettingsPage() {
         />
       </PageBody>
     </Page>
+  );
+}
+
+const ROLE_HINT: Record<AgentHomeRole, MessageKey> = {
+  active: 'agentHomes.role.activeHint',
+  history: 'agentHomes.role.historyHint',
+  ignored: 'agentHomes.role.ignoredHint',
+};
+
+/** What each role does, above the lists that set them. */
+function RolesIntro() {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-3 px-4" data-slot="agent-homes-roles">
+      <p className="text-sm text-muted-foreground">{t('agentHomes.intro')}</p>
+      <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+        {(['active', 'history', 'ignored'] as const).map((role) => (
+          <div key={role} className="flex flex-col gap-0.5">
+            <dt className="font-medium text-foreground">{t(ROLE_LABEL[role])}</dt>
+            <dd className="text-xs text-muted-foreground">{t(ROLE_HINT[role])}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -241,13 +268,23 @@ function MachineHomes({ view, machine, onAdd }: { view: AgentHomesView; machine:
               {machine.suggested.map((found) => (
                 <TableRow key={`${found.agent}:${found.path}`}>
                   <TableCell className="w-48">{t(AGENT_HOME_LABEL[found.agent])}</TableCell>
-                  <TableCell><MiddleTruncate value={found.path} className="font-mono" /></TableCell>
-                  <TableCell className="w-40 text-end text-muted-foreground">{t(found.folders === 1 ? 'agentHomes.suggested.folders.one' : 'agentHomes.suggested.folders.other', { count: found.folders })}</TableCell>
-                  <TableCell className="w-24 text-end">
-                    <Button variant="outline" size="xs" onClick={() => void addFound(machine.machine, found, t)}>
-                      <Plus />
-                      {t('agentHomes.suggested.add')}
-                    </Button>
+                  <TableCell>
+                    <MiddleTruncate value={found.path} className="font-mono" />
+                    {found.guess ? <span className="block whitespace-normal text-xs text-muted-foreground">{t(GUESS_REASON_LABEL[found.guess.reason])}</span> : null}
+                  </TableCell>
+                  <TableCell className="w-28 text-end text-muted-foreground">{t(found.folders === 1 ? 'agentHomes.suggested.folders.one' : 'agentHomes.suggested.folders.other', { count: found.folders })}</TableCell>
+                  <TableCell className="w-28">{found.guess ? <Badge variant="outline" size="sm">{t(ROLE_LABEL[found.guess.role])}</Badge> : null}</TableCell>
+                  <TableCell className="w-44">
+                    <span className="flex justify-end gap-1.5">
+                      <Button variant="ghost" size="xs" onClick={() => void ignoreFound(machine.machine, found, t)}>
+                        <EyeOff />
+                        {t('agentHomes.suggested.ignore')}
+                      </Button>
+                      <Button variant="outline" size="xs" onClick={() => void addFound(machine.machine, found, t)}>
+                        <Plus />
+                        {t('agentHomes.suggested.add')}
+                      </Button>
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}
@@ -270,7 +307,18 @@ async function addFound(machine: string, found: MachineAgentHomes['suggested'][n
   }
 }
 
-/** Homes with their switches: Sessions for reading their sessions, Sync for their settings. */
+/** Keeps a suggestion on the list as ignored, with Undo taking it off again so it's offered once more. */
+async function ignoreFound(machine: string, found: MachineAgentHomes['suggested'][number], t: Translate) {
+  const home = ignoredFromFound(machine, found);
+  try {
+    await saveAgentHome(home);
+    toast({ kind: 'success', title: t('agentHomes.suggested.ignored', { path: found.path }), action: { label: t('common.undo'), onClick: () => void removeAgentHome(home) } });
+  } catch (error) {
+    toast({ kind: 'error', title: t('agentHomes.saveFailed'), description: String(error) });
+  }
+}
+
+/** Homes with their roles. */
 function HomesTable({ homes, view }: { homes: AgentHome[]; view: AgentHomesView }) {
   const { t } = useI18n();
   return (
@@ -280,8 +328,7 @@ function HomesTable({ homes, view }: { homes: AgentHome[]; view: AgentHomesView 
           <TableHead className="w-48">{t('agentHomes.column.agent')}</TableHead>
           <TableHead>{t('agentHomes.column.folder')}</TableHead>
           <TableHead className="w-24">{t('agentHomes.column.source')}</TableHead>
-          <TableHead className="w-20 text-center">{t('agentHomes.column.sessions')}</TableHead>
-          <TableHead className="w-20 text-center">{t('agentHomes.column.sync')}</TableHead>
+          <TableHead className="w-60">{t('agentHomes.column.role')}</TableHead>
           <TableHead className="w-12"><span className="sr-only">{t('agentHomes.column.actions')}</span></TableHead>
         </TableRow>
       </TableHeader>
@@ -295,10 +342,10 @@ function HomesTable({ homes, view }: { homes: AgentHome[]; view: AgentHomesView 
 function HomeRow({ home, view }: { home: AgentHome; view: AgentHomesView }) {
   const { t } = useI18n();
   const [saving, setSaving] = useState(false);
-  const change = async (patch: Partial<Pick<AgentHome, 'sessions' | 'sync'>>) => {
+  const change = async (next: AgentHome) => {
     setSaving(true);
     try {
-      await saveAgentHome({ ...home, ...patch });
+      await saveAgentHome(next);
     } catch (error) {
       toast({ kind: 'error', title: t('agentHomes.saveFailed'), description: String(error) });
     } finally {
@@ -319,7 +366,8 @@ function HomeRow({ home, view }: { home: AgentHome; view: AgentHomesView }) {
   };
   // A standard home can't leave the list; one switched on a machine can go back to how every machine has it.
   const removable = home.source !== 'standard' || (home.machine !== '' && switchedHere(view, home));
-  const folder: ReactNode = isVariable(home) ? (
+  const role = roleOf(home);
+  const folderPath: ReactNode = isVariable(home) ? (
     <span className="flex min-w-0 items-baseline gap-1.5">
       <span className="font-mono">{home.path}</span>
       <span className="truncate text-xs text-muted-foreground">{t('agentHomes.variable')}</span>
@@ -327,25 +375,29 @@ function HomeRow({ home, view }: { home: AgentHome; view: AgentHomesView }) {
   ) : (
     <MiddleTruncate value={home.path} className="font-mono" />
   );
+  // Why Arbor would pick what it does: always while the home follows it, and when the user's pick differs from it.
+  const guess = home.guess;
+  const why = !guess
+    ? null
+    : !home.chosen
+      ? t(GUESS_REASON_LABEL[guess.reason])
+      : guess.role !== role
+        ? t('agentHomes.guess.differs', { reason: t(GUESS_REASON_LABEL[guess.reason]), role: t(ROLE_LABEL[guess.role]) })
+        : null;
+  const folder: ReactNode = (
+    <>
+      {folderPath}
+      {why ? <span className="block whitespace-normal text-xs text-muted-foreground" data-slot="agent-home-guess">{why}</span> : null}
+    </>
+  );
   const source = home.source === 'standard' ? 'agentHomes.source.standard' : home.source === 'found' ? 'agentHomes.source.found' : 'agentHomes.source.added';
   return (
     <TableRow data-agent-home={home.path}>
       <TableCell>{t(AGENT_HOME_LABEL[home.agent])}</TableCell>
       <TableCell>{folder}</TableCell>
       <TableCell><Badge variant={home.source === 'standard' ? 'muted' : 'outline'} size="sm">{t(source)}</Badge></TableCell>
-      <TableCell className="text-center">
-        {readsSessions(home.agent) ? (
-          <Switch size="sm" checked={home.sessions} disabled={saving} onCheckedChange={(sessions) => void change({ sessions })} aria-label={t('agentHomes.sessionsFor', { path: home.path })} />
-        ) : (
-          <span className="text-muted-foreground" title={t('agentHomes.noSessions')}>–</span>
-        )}
-      </TableCell>
-      <TableCell className="text-center">
-        {syncs(home.agent) ? (
-          <Switch size="sm" checked={home.sync} disabled={saving} onCheckedChange={(sync) => void change({ sync })} aria-label={t('agentHomes.syncFor', { path: home.path })} />
-        ) : (
-          <span className="text-muted-foreground" title={t('agentHomes.noSettings')}>–</span>
-        )}
+      <TableCell>
+        <RoleSelect home={home} disabled={saving} onChange={(next) => void change(next)} />
       </TableCell>
       <TableCell className="text-end">
         {removable ? (
@@ -364,6 +416,36 @@ function HomeRow({ home, view }: { home: AgentHome; view: AgentHomesView }) {
   );
 }
 
+const AUTOMATIC = 'automatic';
+
+/** A home's role, with Automatic for one that can follow Arbor's guess. */
+function RoleSelect({ home, disabled, onChange }: { home: AgentHome; disabled: boolean; onChange: (home: AgentHome) => void }) {
+  const { t } = useI18n();
+  const role = roleOf(home);
+  const automatic = canFollowGuess(home);
+  const value = automatic && !home.chosen ? AUTOMATIC : role;
+  const pick = (next: string) => {
+    if (next === value) return;
+    if (next === AUTOMATIC) onChange(withRole(home, home.guess?.role ?? role, false));
+    else onChange(withRole(home, next as AgentHomeRole, true));
+  };
+  return (
+    <Select value={value} onValueChange={(next) => { if (next) pick(String(next)); }} disabled={disabled}>
+      <SelectTrigger size="sm" aria-label={t('agentHomes.roleFor', { path: home.path })}>
+        <SelectValue>{value === AUTOMATIC ? t('agentHomes.role.automaticNow', { role: t(ROLE_LABEL[role]) }) : t(ROLE_LABEL[role])}</SelectValue>
+      </SelectTrigger>
+      <SelectPopup>
+        {automatic ? (
+          <SelectItem value={AUTOMATIC}>
+            {home.guess ? t('agentHomes.role.automaticNow', { role: t(ROLE_LABEL[home.guess.role]) }) : t('agentHomes.role.automatic')}
+          </SelectItem>
+        ) : null}
+        {rolesFor(home.agent).map((option) => <SelectItem key={option} value={option}>{t(ROLE_LABEL[option])}</SelectItem>)}
+      </SelectPopup>
+    </Select>
+  );
+}
+
 type Preview = { state: 'idle' } | { state: 'looking' } | { state: 'failed'; error: string } | { state: 'done'; folders: string[] };
 
 /** Adds a home for a machine or every machine, after showing which folders it would take in. */
@@ -372,8 +454,8 @@ function AddAgentHomeDialog({ machine, machines, onClose }: { machine: string | 
   const [target, setTarget] = useState('');
   const [agent, setAgent] = useState<AgentHomeKind>('claude');
   const [path, setPath] = useState('');
-  const [sessions, setSessions] = useState(true);
-  const [sync, setSync] = useState(false);
+  // Someone adding a folder by hand means agents to run from it, where Arbor can keep its settings.
+  const [role, setRole] = useState<AgentHomeRole>('active');
   const [preview, setPreview] = useState<Preview>({ state: 'idle' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -385,8 +467,7 @@ function AddAgentHomeDialog({ machine, machines, onClose }: { machine: string | 
     setTarget(machine);
     setAgent('claude');
     setPath('');
-    setSessions(true);
-    setSync(false);
+    setRole('active');
     setPreview({ state: 'idle' });
     setError(null);
   }, [open, machine]);
@@ -396,6 +477,8 @@ function AddAgentHomeDialog({ machine, machines, onClose }: { machine: string | 
     setPreview({ state: 'idle' });
   }, [target, agent, path]);
 
+  const roles: AgentHomeRole[] = rolesFor(agent).filter((option) => option !== 'ignored');
+  const pickedRole = roles.includes(role) ? role : (roles[0] ?? 'ignored');
   const problem = path.trim() ? homePathProblem(path) : null;
   const ready = Boolean(path.trim()) && problem === null && !saving;
   // Every machine's is looked at on this Mac, which may not have it.
@@ -412,7 +495,8 @@ function AddAgentHomeDialog({ machine, machines, onClose }: { machine: string | 
     setSaving(true);
     setError(null);
     try {
-      await saveAgentHome({ machine: target, agent, path: path.trim(), source: 'added', sessions: sessions && readsSessions(agent), sync: sync && syncs(agent) });
+      const home: AgentHome = { machine: target, agent, path: path.trim(), source: 'added', sessions: false, sync: false, chosen: true, guess: null };
+      await saveAgentHome(withRole(home, pickedRole, true));
       toast({ kind: 'success', title: t('agentHomes.added', { path: path.trim() }) });
       onClose();
     } catch (failure) {
@@ -483,21 +567,17 @@ function AddAgentHomeDialog({ machine, machines, onClose }: { machine: string | 
                 ) : null}
               </div>
             ) : null}
-            <div className="flex flex-col gap-2">
-              <label className="flex items-start justify-between gap-3 text-sm">
-                <span>
-                  <span className="block text-foreground">{t('agentHomes.add.sessions')}</span>
-                  <span className="block text-xs text-muted-foreground">{t(readsSessions(agent) ? 'agentHomes.add.sessionsHint' : 'agentHomes.noSessions')}</span>
-                </span>
-                <Switch size="sm" checked={sessions && readsSessions(agent)} disabled={!readsSessions(agent)} onCheckedChange={setSessions} aria-label={t('agentHomes.add.sessions')} />
-              </label>
-              <label className="flex items-start justify-between gap-3 text-sm">
-                <span>
-                  <span className="block text-foreground">{t('agentHomes.add.sync')}</span>
-                  <span className="block text-xs text-muted-foreground">{t(syncs(agent) ? 'agentHomes.add.syncHint' : 'agentHomes.noSettings')}</span>
-                </span>
-                <Switch size="sm" checked={sync && syncs(agent)} disabled={!syncs(agent)} onCheckedChange={setSync} aria-label={t('agentHomes.add.sync')} />
-              </label>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t('agentHomes.add.role')}</Label>
+              <Select value={pickedRole} onValueChange={(next) => { if (next) setRole(next as AgentHomeRole); }}>
+                <SelectTrigger size="sm" aria-label={t('agentHomes.add.role')}>
+                  <SelectValue>{t(ROLE_LABEL[pickedRole])}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {roles.map((option) => <SelectItem key={option} value={option}>{t(ROLE_LABEL[option])}</SelectItem>)}
+                </SelectPopup>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t(ROLE_HINT[pickedRole])}</p>
             </div>
             {error ? <p className="text-sm text-error-foreground" role="alert">{error}</p> : null}
           </DialogPanel>

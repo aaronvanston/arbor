@@ -76,8 +76,9 @@
  * `?machines=unhosted` for no machine with a host yet, so Machines lists them waiting for one and Sync › Agents has
  * no agents to list and offers Add hosts;
  * `?homes=fresh` for no machine looked at for agent homes yet (Settings › Agent homes lists only the standard homes
- * until Look again fills each machine's list), `?homes=fail` for cedar-02's last look failing, and `?homes=none` for
- * looks that found nothing more to suggest;
+ * until Look again fills each machine's list), `?homes=fail` for cedar-02's last look failing, `?homes=none` for
+ * looks that found nothing more to suggest, and `?homes=old` for homes saved before Arbor guessed their roles (all
+ * active, no guess) until Look again sorts them;
  * `?harnessHomes=none` for no other harness's home (Pi's, Droid's, OpenCode's) on any machine, so Sync › Agents,
  * Skills, MCP & plugins and Hooks leave their cards for them out, and `?harnessupdate=fail` for updating one of
  * them failing, as an agent without its update command does;

@@ -14,6 +14,7 @@ import type {
   DiagnosticCall,
   DiscoveredHost,
   FoundHome,
+  HomeGuess,
   HarnessInfo,
   HealthPoint,
   MachineAgents,
@@ -511,9 +512,11 @@ if (params.get('machine') === 'new') {
   joinMockMachine('cedar-03', true);
 }
 
-// Settings › Agent homes: each machine's list of agent homes, as the first look at it filled it in. `?homes=fresh` for no
-// machine looked at yet, so the list is only the standard homes until Look again; `?homes=fail` for cedar-02's last
-// look failing (and failing again); `?homes=none` for looks that found nothing more to suggest.
+// Settings › Agent homes: each machine's list of agent homes, as the first look at it filled it in, each home's role
+// following what the last look guessed unless it was picked. `?homes=fresh` for no machine looked at yet, so the list is
+// only the standard homes until Look again; `?homes=fail` for cedar-02's last look failing (and failing again);
+// `?homes=none` for looks that found nothing more to suggest; `?homes=old` for homes saved before Arbor guessed roles,
+// all active and unpicked with no guess, until Look again sorts them.
 const homesScenario = params.get('homes') ?? '';
 
 const STANDARD_HOMES: readonly (readonly [AgentHomeKind, string])[] = [
@@ -526,7 +529,28 @@ const standardHome = (agent: AgentHomeKind, path: string) => STANDARD_HOMES.some
 const homeSyncs = (agent: AgentHomeKind) => agent !== 'pi' && agent !== 'claude-desktop';
 const homeReadsSessions = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex' || agent === 'pi' || agent === 'claude-desktop';
 const DESKTOP_HOMES = '~/Library/Application Support/Claude/local-agent-mode-sessions/*/*';
-const savedHome = (machine: string, agent: AgentHomeKind, path: string, sync: boolean): AgentHome => ({ machine, agent, path, source: 'found', sessions: true, sync });
+const savedHome = (machine: string, agent: AgentHomeKind, path: string, sync: boolean, chosen = false): AgentHome =>
+  ({ machine, agent, path, source: 'found', sessions: true, sync: homesScenario === 'old' ? homeSyncs(agent) : sync, chosen, guess: null });
+
+// What the last look made of each home and suggestion, by machine, then agent and folder.
+const homeGuesses: Record<string, Record<string, HomeGuess>> = {
+  'casey-mbp': {
+    'claude ~/.agent-app/homes/*': { role: 'active', reason: 'recent' },
+    'codex ~/.agent-app/homes/*': { role: 'active', reason: 'recent' },
+    [`claude-desktop ${DESKTOP_HOMES}`]: { role: 'history', reason: 'idle' },
+    [`claude ${DESKTOP_HOMES}/local_*/.claude`]: { role: 'history', reason: 'sessionCopy' },
+    'claude ~/.agent-tool/workspace': { role: 'history', reason: 'idle' },
+    'claude ~/Library/Application Support/AcmeCode/claude': { role: 'history', reason: 'idle' },
+  },
+  'cedar-02': {
+    'claude ~/.agent-tool/profiles/*': { role: 'active', reason: 'recent' },
+    'codex ~/sandbox/*/.codex': { role: 'history', reason: 'sessionCopy' },
+  },
+};
+const guessFor = (machine: string, agent: AgentHomeKind, path: string): HomeGuess | null =>
+  homesScenario === 'old' && !homesLookedAgain.has(machine) ? null : homeGuesses[machine]?.[`${agent} ${path}`] ?? null;
+// Machines looked at again since the page opened, which sorts `?homes=old`'s homes.
+const homesLookedAgain = new Set<string>();
 
 // What each machine's first look found, which it added to the list, and what it found beside that.
 const firstLooks: Record<string, { homes: AgentHome[]; suggested: FoundHome[] }> = {
@@ -536,12 +560,14 @@ const firstLooks: Record<string, { homes: AgentHome[]; suggested: FoundHome[] }>
       savedHome('casey-mbp', 'codex', '~/.agent-app/homes/*', true),
       savedHome('casey-mbp', 'claude-desktop', DESKTOP_HOMES, false),
       savedHome('casey-mbp', 'claude', `${DESKTOP_HOMES}/local_*/.claude`, false),
+      // Kept active by hand, though nothing ran there lately.
+      savedHome('casey-mbp', 'claude', '~/.agent-tool/workspace', true, true),
     ],
-    suggested: [{ agent: 'claude', path: '~/Library/Application Support/AcmeCode/claude', folders: 1 }],
+    suggested: [{ agent: 'claude', path: '~/Library/Application Support/AcmeCode/claude', folders: 1, guess: null }],
   },
   'cedar-02': {
-    homes: [savedHome('cedar-02', 'claude', '~/.agent-tool/profiles/*', false)],
-    suggested: [{ agent: 'codex', path: '~/sandbox/*/.codex', folders: 3 }],
+    homes: [savedHome('cedar-02', 'claude', '~/.agent-tool/profiles/*', true)],
+    suggested: [{ agent: 'codex', path: '~/sandbox/*/.codex', folders: 3, guess: null }],
   },
   'ci-01': { homes: [], suggested: [] },
 };
@@ -555,8 +581,8 @@ if (homesScenario !== 'fresh' && !freshInstall) {
     homeScans[machine] = { at: now - 2 * 86_400_000, error: null, suggested: homesScenario === 'none' ? [] : looked.suggested };
   }
   // One added by hand for every machine, and a standard home switched off on one machine.
-  savedHomes.push({ machine: '', agent: 'codex', path: '/srv/agents/codex', source: 'added', sessions: true, sync: true });
-  savedHomes.push({ machine: 'ci-01', agent: 'pi', path: '~/.pi/agent/sessions', source: 'standard', sessions: false, sync: false });
+  savedHomes.push({ machine: '', agent: 'codex', path: '/srv/agents/codex', source: 'added', sessions: true, sync: true, chosen: true, guess: null });
+  savedHomes.push({ machine: 'ci-01', agent: 'pi', path: '~/.pi/agent/sessions', source: 'standard', sessions: false, sync: false, chosen: true, guess: null });
   if (homesScenario === 'fail') homeScans['cedar-02'] = { ...homeScans['cedar-02']!, at: now - 40 * 60_000, error: 'ssh: connect to host cedar-02 port 22: Operation timed out' };
 }
 
@@ -565,12 +591,12 @@ const homeMachines = () => healthHosts.filter((host) => host.enabled && host.end
 
 /** A machine's homes as its scripts read them: the standard ones, then every machine's, then its own, each taking the place of the same home before it. */
 function homesOn(machine: string): AgentHome[] {
-  const homes: AgentHome[] = STANDARD_HOMES.map(([agent, path]) => ({ machine: '', agent, path, source: 'standard', sessions: homeReadsSessions(agent), sync: homeSyncs(agent) }));
+  const homes: AgentHome[] = STANDARD_HOMES.map(([agent, path]) => ({ machine: '', agent, path, source: 'standard', sessions: homeReadsSessions(agent), sync: homeSyncs(agent), chosen: true, guess: null }));
   for (const scope of machine ? ['', machine] : ['']) {
     for (const home of savedHomes.filter((entry) => entry.machine === scope)) {
       const at = homes.findIndex((listed) => listed.agent === home.agent && listed.path === home.path);
-      if (at >= 0) homes[at] = { ...homes[at]!, machine: home.machine, sessions: home.sessions, sync: home.sync };
-      else homes.push(home);
+      if (at >= 0) homes[at] = { ...homes[at]!, machine: home.machine, sessions: home.sessions, sync: home.sync, chosen: home.chosen };
+      else homes.push({ ...home, guess: home.machine && home.source !== 'standard' ? guessFor(home.machine, home.agent, home.path) : null });
     }
   }
   return homes;
@@ -599,7 +625,9 @@ const agentHomesView = (): AgentHomesView => ({
       homes,
       scannedAtMs: scan?.at ?? null,
       error: scan?.error ?? null,
-      suggested: scan?.suggested.filter((found) => !homes.some((home) => home.agent === found.agent && home.path === found.path)) ?? [],
+      suggested: (scan?.suggested ?? [])
+        .filter((found) => !homes.some((home) => home.agent === found.agent && home.path === found.path))
+        .map((found) => ({ ...found, guess: guessFor(machine, found.agent, found.path) })),
     };
   }),
 });
@@ -615,6 +643,12 @@ function lookForHomes(machine: string) {
     for (const home of looked.homes) if (!savedHomes.some((saved) => saved.machine === home.machine && saved.agent === home.agent && saved.path === home.path)) savedHomes.push(home);
   }
   homeScans[machine] = { at: Date.now(), error: null, suggested: homesScenario === 'none' ? [] : looked.suggested };
+  // Each look sets the homes nobody picked a role for to what it guesses.
+  homesLookedAgain.add(machine);
+  savedHomes = savedHomes.map((home) => {
+    const guess = home.machine === machine && home.source !== 'standard' && !home.chosen ? guessFor(machine, home.agent, home.path) : null;
+    return guess ? { ...home, sessions: guess.role !== 'ignored' && homeReadsSessions(home.agent), sync: guess.role === 'active' && homeSyncs(home.agent) } : home;
+  });
 }
 
 /** The machines: their health, agents, reporters and telemetry. */
@@ -643,7 +677,16 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     const problem = homePathProblem(home.path);
     if (!standardHome(home.agent, home.path) && problem) throw new Error('A home’s folder starts with ~/ or /');
     const path = home.path.trim().replace(/\/+$/, '');
-    const saved: AgentHome = { ...home, path, source: standardHome(home.agent, path) ? 'standard' : home.source === 'standard' ? 'added' : home.source, sessions: home.sessions && homeReadsSessions(home.agent), sync: home.sync && homeSyncs(home.agent) };
+    const standard = standardHome(home.agent, path);
+    const saved: AgentHome = {
+      ...home,
+      path,
+      source: standard ? 'standard' : home.source === 'standard' ? 'added' : home.source,
+      sessions: home.sessions && homeReadsSessions(home.agent),
+      sync: home.sync && homeSyncs(home.agent),
+      chosen: home.chosen || standard,
+      guess: null,
+    };
     savedHomes = [...savedHomes.filter((entry) => !(entry.machine === saved.machine && entry.agent === saved.agent && entry.path === saved.path)), saved];
     return agentHomesView();
   },

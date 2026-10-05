@@ -57,12 +57,26 @@ export type AgentHome = {
    * Its settings are read and changed: the Sync page, the needs-you reporter, telemetry, how long sessions are kept.
    */
   sync: boolean,
+  /**
+   * The user picked its role. Otherwise it follows what each look at its machine guesses.
+   */
+  chosen: boolean,
+  /**
+   * What the last look at its machine makes of it, for a home found or added there. Never saved.
+   */
+  guess: HomeGuess | null,
 };
 
 /**
  * What a home belongs to, by the name the archive files its sessions under.
  */
 export type AgentHomeKind = "claude" | "codex" | "pi" | "claude-desktop" | "pi-agent" | "prime-agent" | "opencode" | "droid" | "amp";
+
+/**
+ * What a home is for. It's kept as the two things it decides: whether its sessions are read, and whether its settings
+ * are read and changed.
+ */
+export type AgentHomeRole = "active" | "history" | "ignored";
 
 /**
  * Where a home on the list came from.
@@ -1542,6 +1556,10 @@ export type FoundHome = {
    * How many folders it stands for.
    */
   folders: number,
+  /**
+   * The role it would start with.
+   */
+  guess: HomeGuess | null,
 };
 
 /**
@@ -1795,6 +1813,16 @@ export type HealthStatus = "healthy" | "degraded" | "critical" | "unreachable" |
 export type HiddenReason = "secret" | "large" | "binary";
 
 export type HomeAgent = "claude" | "codex" | "shared";
+
+export type HomeGuess = {
+  role: AgentHomeRole,
+  reason: HomeGuessReason,
+};
+
+/**
+ * Why a look guessed a home's role.
+ */
+export type HomeGuessReason = "recent" | "idle" | "sessionCopy";
 
 /**
  * Why Arbor won't change a home's hook.

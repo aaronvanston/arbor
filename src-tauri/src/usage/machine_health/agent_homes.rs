@@ -3,10 +3,16 @@
 //! looks at a machine it scans for folders shaped like an agent's home and adds the ones it finds;
 //! later scans only suggest. The user adds, removes and switches homes in Settings › Agent homes.
 //!
-//! A home has two switches. Sessions: its transcripts are read for the Sessions pages and kept by
-//! the archive. Sync: its settings are read and changed, for the Sync page, the needs-you reporter,
-//! telemetry and how long sessions are kept. A folder a `*` matched has to look like the agent's
-//! home as well, so a pattern never picks up a folder that only happens to sit beside one.
+//! A home has a role. Active: agents run from it, so its settings are read and changed (the Sync page, the needs-you
+//! reporter, telemetry, automations, how long sessions are kept) and its transcripts are read. History only: just its
+//! transcripts are read for the Sessions pages and kept by the archive, as for a backup or a copy an app made for one
+//! session. Ignored: Arbor leaves it alone. The role is kept as the two things it decides, `sessions` and `sync`, which
+//! is what the scripts read.
+//!
+//! The user can pick a home's role; until they do, it follows what each look at its machine guesses: active when an
+//! agent wrote a session in it in the last 30 days, history only otherwise or when it sits inside another app's
+//! sessions folder. A folder a `*` matched has to look like the agent's home as well, so a pattern never picks up a
+//! folder that only happens to sit beside one.
 
 use super::shell::shell_quote;
 use super::*;
@@ -101,6 +107,38 @@ impl AgentHomeSource {
     }
 }
 
+/// What a home is for. It's kept as the two things it decides: whether its sessions are read, and whether its settings
+/// are read and changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum AgentHomeRole {
+    /// Agents run from it: Sync keeps it in line, and its sessions are read.
+    Active,
+    /// Only its sessions are read and archived. Nothing changes it.
+    History,
+    /// Arbor leaves it alone, and later looks don't offer it again.
+    Ignored,
+}
+
+/// Why a look guessed a home's role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum HomeGuessReason {
+    /// An agent wrote a session in it in the last 30 days.
+    Recent,
+    /// None of its sessions is that new.
+    Idle,
+    /// It sits inside another app's sessions folder, a copy made for one session.
+    SessionCopy,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HomeGuess {
+    pub(crate) role: AgentHomeRole,
+    pub(crate) reason: HomeGuessReason,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentHome {
@@ -115,6 +153,31 @@ pub(crate) struct AgentHome {
     pub(crate) sessions: bool,
     /// Its settings are read and changed: the Sync page, the needs-you reporter, telemetry, how long sessions are kept.
     pub(crate) sync: bool,
+    /// The user picked its role. Otherwise it follows what each look at its machine guesses.
+    #[serde(default)]
+    pub(crate) chosen: bool,
+    /// What the last look at its machine makes of it, for a home found or added there. Never saved.
+    #[serde(default)]
+    pub(crate) guess: Option<HomeGuess>,
+}
+
+impl AgentHome {
+    pub(crate) fn role(&self) -> AgentHomeRole {
+        if self.sync {
+            AgentHomeRole::Active
+        } else if self.sessions {
+            AgentHomeRole::History
+        } else {
+            AgentHomeRole::Ignored
+        }
+    }
+
+    /// Sets the switches `role` decides, as far as its agent has them: Pi's sessions folder can't be active, and a
+    /// harness whose sessions Arbor can't read has no history.
+    fn set_role(&mut self, role: AgentHomeRole) {
+        self.sessions = role != AgentHomeRole::Ignored && self.agent.reads_sessions();
+        self.sync = role == AgentHomeRole::Active && self.agent.syncs();
+    }
 }
 
 /// The agents' own homes, on every machine that has them: where each harness's environment variable points, then its
@@ -128,9 +191,9 @@ fn standard_paths() -> impl Iterator<Item = (AgentHomeKind, &'static str)> {
     })
 }
 
-/// Whether a home the scan finds starts with Sync on. Off, since a found home is often a tool's copy of a standard
-/// one, or a folder of short-lived sessions, whose settings nobody keeps in line.
-const FOUND_SYNC: bool = false;
+/// The role a home the scan finds starts with when the look can't tell more: history only, since a found home is
+/// often a tool's copy of a standard one, or a folder of short-lived sessions, whose settings nobody keeps in line.
+const FOUND_ROLE: AgentHomeRole = AgentHomeRole::History;
 
 fn standard() -> Vec<AgentHome> {
     standard_paths()
@@ -141,6 +204,8 @@ fn standard() -> Vec<AgentHome> {
             source: AgentHomeSource::Standard,
             sessions: agent.reads_sessions(),
             sync: agent.syncs(),
+            chosen: true,
+            guess: None,
         })
         .collect()
 }
@@ -156,6 +221,7 @@ pub(crate) fn homes_on(saved: &[AgentHome], machine: &str) -> Vec<AgentHome> {
             match homes.iter_mut().find(|listed| listed.agent == home.agent && listed.path == home.path) {
                 Some(listed) => {
                     listed.machine = home.machine.clone();
+                    listed.chosen = home.chosen;
                     listed.sessions = home.sessions && home.agent.reads_sessions();
                     listed.sync = home.sync && home.agent.syncs();
                 }
@@ -302,7 +368,17 @@ fn checked(home: AgentHome) -> Result<AgentHome, String> {
         _ if standard => AgentHomeSource::Standard,
         source => source,
     };
-    Ok(AgentHome { machine, path, source, sessions: home.sessions && home.agent.reads_sessions(), sync: home.sync && home.agent.syncs(), ..home })
+    Ok(AgentHome {
+        machine,
+        path,
+        source,
+        sessions: home.sessions && home.agent.reads_sessions(),
+        sync: home.sync && home.agent.syncs(),
+        // A standard home has no guess to follow.
+        chosen: home.chosen || standard,
+        guess: None,
+        ..home
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -315,14 +391,15 @@ struct Saved {
     // Tests build scripts from their own list instead.
     #[cfg_attr(test, allow(dead_code))]
     homes: Vec<AgentHome>,
-    /// Machines a look for homes has worked on, and so added what it found.
-    scanned: BTreeSet<String>,
+    /// Machines a look for homes has worked on, and so added what it found, with when the last look ran and whether it
+    /// saw which folders had sessions lately.
+    scanned: BTreeMap<String, (i64, bool)>,
     /// Machines looked at, whether it worked or not.
     looked: BTreeSet<String>,
 }
 
 /// The saved list, read once and kept in step with every save, so a script can be built without opening usage.db.
-static SAVED: RwLock<Saved> = RwLock::new(Saved { loaded: false, homes: Vec::new(), scanned: BTreeSet::new(), looked: BTreeSet::new() });
+static SAVED: RwLock<Saved> = RwLock::new(Saved { loaded: false, homes: Vec::new(), scanned: BTreeMap::new(), looked: BTreeSet::new() });
 
 /// Whether Arbor has looked for homes on `machine` yet. The archive waits for that, so a first pass never lists a
 /// machine with only the standard homes and takes the rest for gone.
@@ -358,7 +435,7 @@ fn saved() -> Vec<AgentHome> {
 pub(super) fn reload(connection: &Connection) -> Result<(), String> {
     let homes = read_homes(connection)?;
     let scans = read_scans(connection)?;
-    let scanned = scans.iter().filter(|scan| scan.filled).map(|scan| scan.machine.clone()).collect();
+    let scanned = scans.iter().filter(|scan| scan.filled).map(|scan| (scan.machine.clone(), (scan.scanned_at_ms, scan.activity))).collect();
     let looked = scans.into_iter().map(|scan| scan.machine).collect();
     if let Ok(mut saved) = SAVED.write() {
         *saved = Saved { loaded: true, homes, scanned, looked };
@@ -368,21 +445,38 @@ pub(super) fn reload(connection: &Connection) -> Result<(), String> {
 
 fn read_homes(connection: &Connection) -> Result<Vec<AgentHome>, String> {
     let mut statement = connection
-        .prepare("SELECT machine, agent, path, source, sessions, sync FROM usage_agent_homes ORDER BY machine, agent, path")
+        .prepare("SELECT machine, agent, path, source, sessions, sync, chosen FROM usage_agent_homes ORDER BY machine, agent, path")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?, row.get::<_, i64>(5)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
         })
         .map_err(|error| error.to_string())?;
     let mut homes = Vec::new();
     for row in rows {
-        let (machine, agent, path, source, sessions, sync) = row.map_err(|error| error.to_string())?;
+        let (machine, agent, path, source, sessions, sync, chosen) = row.map_err(|error| error.to_string())?;
         // A kind a newer Arbor saved is left for it.
         let Some(agent) = AgentHomeKind::parse(&agent) else {
             continue;
         };
-        homes.push(AgentHome { machine, agent, path, source: AgentHomeSource::parse(&source), sessions: sessions != 0, sync: sync != 0 });
+        homes.push(AgentHome {
+            machine,
+            agent,
+            path,
+            source: AgentHomeSource::parse(&source),
+            sessions: sessions != 0,
+            sync: sync != 0,
+            chosen: chosen != 0,
+            guess: None,
+        });
     }
     Ok(homes)
 }
@@ -390,9 +484,10 @@ fn read_homes(connection: &Connection) -> Result<Vec<AgentHome>, String> {
 fn write_home(connection: &Connection, home: &AgentHome) -> Result<(), String> {
     connection
         .execute(
-            "INSERT INTO usage_agent_homes(machine, agent, path, source, sessions, sync) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(machine, agent, path) DO UPDATE SET source = excluded.source, sessions = excluded.sessions, sync = excluded.sync",
-            params![home.machine, home.agent.shell_name(), home.path, home.source.as_str(), home.sessions as i64, home.sync as i64],
+            "INSERT INTO usage_agent_homes(machine, agent, path, source, sessions, sync, chosen) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(machine, agent, path) DO UPDATE SET source = excluded.source, sessions = excluded.sessions, sync = excluded.sync,
+               chosen = excluded.chosen",
+            params![home.machine, home.agent.shell_name(), home.path, home.source.as_str(), home.sessions as i64, home.sync as i64, home.chosen as i64],
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -405,6 +500,10 @@ struct StoredScan {
     machine: String,
     scanned_at_ms: i64,
     found: Vec<(AgentHomeKind, String)>,
+    /// The found folders an agent wrote a session in lately.
+    recent: Vec<(AgentHomeKind, String)>,
+    /// The last look that worked saw which folders had sessions lately; one before Arbor asked didn't.
+    activity: bool,
     error: String,
     /// A look has worked, and added what it found to the list.
     filled: bool,
@@ -412,19 +511,29 @@ struct StoredScan {
 
 fn read_scans(connection: &Connection) -> Result<Vec<StoredScan>, String> {
     let mut statement = connection
-        .prepare("SELECT machine, scanned_at_ms, found, error, filled FROM usage_agent_home_scans ORDER BY machine")
+        .prepare("SELECT machine, scanned_at_ms, found, recent, activity, error, filled FROM usage_agent_home_scans ORDER BY machine")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
         })
         .map_err(|error| error.to_string())?;
     let mut scans = Vec::new();
     for row in rows {
-        let (machine, scanned_at_ms, found, error, filled) = row.map_err(|error| error.to_string())?;
-        let found: Vec<(String, String)> = serde_json::from_str(&found).unwrap_or_default();
-        let found = found.into_iter().filter_map(|(agent, path)| Some((AgentHomeKind::parse(&agent)?, path))).collect();
-        scans.push(StoredScan { machine, scanned_at_ms, found, error, filled: filled != 0 });
+        let (machine, scanned_at_ms, found, recent, activity, error, filled) = row.map_err(|error| error.to_string())?;
+        let folders = |json: &str| {
+            let listed: Vec<(String, String)> = serde_json::from_str(json).unwrap_or_default();
+            listed.into_iter().filter_map(|(agent, path)| Some((AgentHomeKind::parse(&agent)?, path))).collect::<Vec<_>>()
+        };
+        scans.push(StoredScan { machine, scanned_at_ms, found: folders(&found), recent: folders(&recent), activity: activity != 0, error, filled: filled != 0 });
     }
     Ok(scans)
 }
@@ -441,43 +550,104 @@ fn write_scan(connection: &Connection, scan: &StoredScan) -> Result<(), String> 
             .map(|_| ())
             .map_err(|error| error.to_string());
     }
-    let found: Vec<(&str, &str)> = scan.found.iter().map(|(agent, path)| (agent.shell_name(), path.as_str())).collect();
+    let json = |folders: &[(AgentHomeKind, String)]| {
+        let listed: Vec<(&str, &str)> = folders.iter().map(|(agent, path)| (agent.shell_name(), path.as_str())).collect();
+        serde_json::to_string(&listed).map_err(|error| error.to_string())
+    };
     connection
         .execute(
-            "INSERT INTO usage_agent_home_scans(machine, scanned_at_ms, found, error, filled) VALUES (?1, ?2, ?3, '', 1)
-             ON CONFLICT(machine) DO UPDATE SET scanned_at_ms = excluded.scanned_at_ms, found = excluded.found, error = '', filled = 1",
-            params![scan.machine, scan.scanned_at_ms, serde_json::to_string(&found).map_err(|error| error.to_string())?],
+            "INSERT INTO usage_agent_home_scans(machine, scanned_at_ms, found, recent, activity, error, filled) VALUES (?1, ?2, ?3, ?4, ?5, '', 1)
+             ON CONFLICT(machine) DO UPDATE SET scanned_at_ms = excluded.scanned_at_ms, found = excluded.found, recent = excluded.recent,
+               activity = excluded.activity, error = '', filled = 1",
+            params![scan.machine, scan.scanned_at_ms, json(&scan.found)?, json(&scan.recent)?, scan.activity as i64],
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
 }
 
-/// Files a scan. The first one of a machine also adds the homes it found that the list doesn't cover; later ones
-/// are only offered. Returns the homes it added.
-fn store_scan(connection: &mut Connection, scan: &StoredScan) -> Result<Vec<AgentHome>, String> {
+/// What filing a look changed on the list.
+#[derive(Debug, Default)]
+struct Stored {
+    /// Homes the first look at a machine added.
+    added: Vec<AgentHome>,
+    /// Homes whose role the look changed, as they are now.
+    sorted: Vec<AgentHome>,
+}
+
+/// Files a scan. The first one of a machine also adds the homes it found that the list doesn't cover, each with the
+/// role it guesses; later ones are only offered. Each look that saw which folders had sessions lately then sets every
+/// home found or added on the machine whose role the user hasn't picked to the role it guesses.
+fn store_scan(connection: &mut Connection, scan: &StoredScan) -> Result<Stored, String> {
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
     let first: bool = transaction
         .query_row("SELECT NOT EXISTS (SELECT 1 FROM usage_agent_home_scans WHERE machine = ?1 AND filled != 0)", params![scan.machine], |row| row.get(0))
         .map_err(|error| error.to_string())?;
     write_scan(&transaction, scan)?;
-    let mut added = Vec::new();
+    let mut stored = Stored::default();
     if first && scan.error.is_empty() {
         let homes = read_homes(&transaction)?;
         for found in suggestions(&homes_on(&homes, &scan.machine), &scan.found) {
-            let home = AgentHome {
+            let mut home = AgentHome {
                 machine: scan.machine.clone(),
                 agent: found.agent,
                 path: found.path,
                 source: AgentHomeSource::Found,
-                sessions: found.agent.reads_sessions(),
-                sync: FOUND_SYNC && found.agent.syncs(),
+                sessions: false,
+                sync: false,
+                chosen: false,
+                guess: None,
             };
+            let role = if scan.activity { guess(home.agent, &home.path, scan).map(|guess| guess.role) } else { None };
+            home.set_role(role.unwrap_or(FOUND_ROLE));
             write_home(&transaction, &home)?;
-            added.push(home);
+            stored.added.push(home);
+        }
+    }
+    if scan.error.is_empty() && scan.activity {
+        let unpicked = read_homes(&transaction)?.into_iter().filter(|home| home.machine == scan.machine && home.source != AgentHomeSource::Standard && !home.chosen);
+        for mut home in unpicked {
+            let Some(guessed) = guess(home.agent, &home.path, scan) else {
+                continue;
+            };
+            if home.role() != guessed.role {
+                home.set_role(guessed.role);
+                write_home(&transaction, &home)?;
+                if !stored.added.iter().any(|added| added.agent == home.agent && added.path == home.path) {
+                    stored.sorted.push(home);
+                }
+            }
         }
     }
     transaction.commit().map_err(|error| error.to_string())?;
-    Ok(added)
+    Ok(stored)
+}
+
+/// What a look makes of a home of `agent` at `path`, a folder or a pattern, on its machine: none when the look found
+/// no folder it takes in. It's a copy made for one session when every folder it takes in sits inside a folder of
+/// sessions another kind of home keeps (Claude's desktop app keeps a Claude Code home in each of its sessions), active
+/// when an agent wrote a session in one of the rest lately, and history only when none did.
+fn guess(agent: AgentHomeKind, path: &str, scan: &StoredScan) -> Option<HomeGuess> {
+    let folders: Vec<&str> = scan.found.iter().filter(|(kind, folder)| *kind == agent && covers(path, folder)).map(|(_, folder)| folder.as_str()).collect();
+    if folders.is_empty() {
+        return None;
+    }
+    let copy = |folder: &str| {
+        scan.found.iter().any(|(kind, holder)| *kind != agent && kind.reads_sessions() && !kind.has_settings() && within(folder, holder))
+    };
+    let own: Vec<&str> = folders.into_iter().filter(|folder| !copy(folder)).collect();
+    let (role, reason) = if own.is_empty() {
+        (AgentHomeRole::History, HomeGuessReason::SessionCopy)
+    } else if own.iter().any(|folder| scan.recent.iter().any(|(kind, recent)| *kind == agent && recent == folder)) {
+        (if agent.syncs() { AgentHomeRole::Active } else { AgentHomeRole::History }, HomeGuessReason::Recent)
+    } else {
+        (AgentHomeRole::History, HomeGuessReason::Idle)
+    };
+    Some(HomeGuess { role, reason })
+}
+
+/// Whether `folder` is `holder` or inside it.
+fn within(folder: &str, holder: &str) -> bool {
+    folder.strip_prefix(holder).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
 // ---------------------------------------------------------------------------
@@ -495,6 +665,7 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(60);
 ///                          encoded folder names or a `.claude.json`, Codex's keeps its sessions by year, Pi's
 ///                          sessions folder has a folder for each place Pi ran, and Claude's desktop app keeps each
 ///                          local session's audit log in a folder of its own
+///   R agent folder         a found folder an agent wrote a session in within the last 30 days
 const SCAN_SCRIPT: &str = r##"set -u
 export LC_ALL=C
 renice -n 10 $$ >/dev/null 2>&1
@@ -511,10 +682,6 @@ login=$!
 watch=$!
 wait "$login" 2>/dev/null
 kill "$watch" 2>/dev/null
-grep "^E$tab" "$work/login" 2>/dev/null | while IFS=$tab read -r tag agent dir; do
-  dir=${dir%/}
-  if [ -n "$dir" ] && [ -d "$dir" ]; then printf 'F\t%s\t%s\n' "$agent" "$dir"; fi
-done
 look() {
   depth=$1
   shift
@@ -526,6 +693,11 @@ look() {
     -o \( -type d \( -name projects -o -name sessions \) -print \) \
     -o \( -type f \( -name .claude.json -o -name audit.jsonl \) -print \) 2>/dev/null
 }
+{
+  grep "^E$tab" "$work/login" 2>/dev/null | while IFS=$tab read -r tag agent dir; do
+    dir=${dir%/}
+    if [ -n "$dir" ] && [ -d "$dir" ]; then printf 'F\t%s\t%s\n' "$agent" "$dir"; fi
+  done
 {
   look 5 "$HOME"/.[!.]* "$HOME"/..?*
   look 7 "$HOME/Library/Application Support"
@@ -548,13 +720,25 @@ look() {
       if [ -d "$1" ]; then printf 'F\tpi\t%s\n' "$p"; fi ;;
     */local_*/audit.jsonl) printf 'F\tclaude-desktop\t%s\n' "${p%/local_*/audit.jsonl}" ;;
   esac
-done | awk '!seen[$0]++'
+done
+} | awk '!seen[$0]++' | while IFS=$tab read -r tag agent dir; do
+  printf 'F\t%s\t%s\n' "$agent" "$dir"
+  case $agent in
+    claude) sessions=$dir/projects ;;
+    codex) sessions=$dir/sessions ;;
+    *) sessions=$dir ;;
+  esac
+  # Only whether one transcript is that new: head keeps the first, and find stops once it has nowhere to write.
+  newest=$(find "$sessions" -type f -name '*.jsonl' -mtime -30 2>/dev/null | head -n 1)
+  if [ -n "$newest" ]; then printf 'R\t%s\t%s\n' "$agent" "$dir"; fi
+done
 "##;
 
 #[derive(Debug, Default, PartialEq)]
 struct ScanRead {
     home: String,
     found: Vec<(AgentHomeKind, String)>,
+    recent: Vec<(AgentHomeKind, String)>,
 }
 
 /// The folders a scan found, written from `~`, leaving out any an agent's environment variable points at, which its
@@ -563,12 +747,14 @@ fn parse_scan(stdout: &str) -> ScanRead {
     let mut read = ScanRead::default();
     let mut env = Vec::new();
     let mut found = Vec::new();
+    let mut recent = Vec::new();
     for line in stdout.lines() {
         let fields: Vec<&str> = line.split('\t').collect();
         match fields[..] {
             ["H", home] => read.home = home.trim_end_matches('/').to_string(),
             ["V", agent, dir] if !dir.is_empty() => env.extend(AgentHomeKind::parse(agent).map(|agent| (agent, dir.trim_end_matches('/').to_string()))),
             ["F", agent, dir] if dir.starts_with('/') => found.extend(AgentHomeKind::parse(agent).map(|agent| (agent, dir.to_string()))),
+            ["R", agent, dir] if dir.starts_with('/') => recent.extend(AgentHomeKind::parse(agent).map(|agent| (agent, dir.to_string()))),
             _ => {}
         }
     }
@@ -580,6 +766,9 @@ fn parse_scan(stdout: &str) -> ScanRead {
         .filter(|entry| seen.insert(entry.clone()))
         .collect();
     read.found.sort();
+    read.recent = recent.into_iter().map(|(agent, dir)| (agent, tilde(&dir, &read.home))).filter(|entry| read.found.contains(entry)).collect();
+    read.recent.sort();
+    read.recent.dedup();
     read
 }
 
@@ -591,6 +780,8 @@ pub(crate) struct FoundHome {
     pub(crate) path: String,
     /// How many folders it stands for.
     pub(crate) folders: u32,
+    /// The role it would start with.
+    pub(crate) guess: Option<HomeGuess>,
 }
 
 /// Whether `pattern`, a home's path, takes in `path`, a folder or another pattern: the same number of folders, each
@@ -638,7 +829,7 @@ fn suggestions(homes: &[AgentHome], found: &[(AgentHomeKind, String)]) -> Vec<Fo
             paths.push((pattern, folders));
         }
         paths.sort();
-        folded.extend(paths.into_iter().map(|(path, folders)| FoundHome { agent, path, folders }));
+        folded.extend(paths.into_iter().map(|(path, folders)| FoundHome { agent, path, folders, guess: None }));
     }
     folded
 }
@@ -680,8 +871,19 @@ fn first_fold(paths: &[(String, u32)]) -> Option<String> {
 async fn scan(machine: &Machine) -> StoredScan {
     let scanned_at_ms = Local::now().timestamp_millis();
     match run_checked(machine, MachineOp::AgentHomesScan, SCAN_SCRIPT, SCAN_TIMEOUT).await {
-        Ok(stdout) => StoredScan { machine: machine.name().to_string(), scanned_at_ms, found: parse_scan(&stdout).found, error: String::new(), filled: true },
-        Err(error) => StoredScan { machine: machine.name().to_string(), scanned_at_ms, found: Vec::new(), error, filled: false },
+        Ok(stdout) => {
+            let read = parse_scan(&stdout);
+            StoredScan { machine: machine.name().to_string(), scanned_at_ms, found: read.found, recent: read.recent, activity: true, error: String::new(), filled: true }
+        }
+        Err(error) => StoredScan {
+            machine: machine.name().to_string(),
+            scanned_at_ms,
+            found: Vec::new(),
+            recent: Vec::new(),
+            activity: false,
+            error,
+            filled: false,
+        },
     }
 }
 
@@ -692,8 +894,11 @@ static SCANNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static TRIED: Mutex<BTreeMap<String, i64>> = Mutex::new(BTreeMap::new());
 const RETRY_MS: i64 = 30 * 60 * 1000;
 
-/// Looks for homes on each answering machine a look hasn't worked on yet, and adds what it finds. One that fails is
-/// tried again half an hour later.
+/// How often a machine is looked at again, so homes whose role the user hasn't picked follow which ones agents use.
+const RELOOK_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Looks for homes on each answering machine a look hasn't worked on yet, or whose last look is a day old or didn't
+/// see which folders had sessions lately, and files what it finds. One that fails is tried again half an hour later.
 pub(super) fn scan_due(app: &tauri::AppHandle, state: &MachineHealthState, now_ms: i64) {
     let scanned = match SAVED.read() {
         Ok(saved) if saved.loaded => saved.scanned.clone(),
@@ -705,7 +910,8 @@ pub(super) fn scan_due(app: &tauri::AppHandle, state: &MachineHealthState, now_m
     };
     for machine in machines {
         let name = machine.name().to_string();
-        if scanned.contains(&name) || tried.get(&name).is_some_and(|at| now_ms - at < RETRY_MS) {
+        let fresh = scanned.get(&name).is_some_and(|(at, activity)| *activity && now_ms - at < RELOOK_MS);
+        if fresh || tried.get(&name).is_some_and(|at| now_ms - at < RETRY_MS) {
             continue;
         }
         tried.insert(name, now_ms);
@@ -817,11 +1023,21 @@ fn view(connection: &Connection, machines: &[String]) -> Result<AgentHomesView, 
     let machines = machines
         .iter()
         .map(|machine| {
-            let homes = homes_on(&saved, machine);
+            let mut homes = homes_on(&saved, machine);
             let scan = scans.iter().find(|scan| scan.machine == *machine);
+            let mut suggested = scan.map(|scan| suggestions(&homes, &scan.found)).unwrap_or_default();
+            // A look from before Arbor asked which folders had sessions lately can't guess.
+            if let Some(scan) = scan.filter(|scan| scan.activity) {
+                for home in homes.iter_mut().filter(|home| home.machine == *machine && home.source != AgentHomeSource::Standard) {
+                    home.guess = guess(home.agent, &home.path, scan);
+                }
+                for found in &mut suggested {
+                    found.guess = guess(found.agent, &found.path, scan);
+                }
+            }
             MachineHomes {
                 machine: machine.clone(),
-                suggested: scan.map(|scan| suggestions(&homes, &scan.found)).unwrap_or_default(),
+                suggested,
                 scanned_at_ms: scan.map(|scan| scan.scanned_at_ms),
                 error: scan.filter(|scan| !scan.error.is_empty()).map(|scan| scan.error.clone()),
                 homes,
@@ -845,7 +1061,7 @@ pub(crate) async fn get_agent_homes(state: tauri::State<'_, MachineHealthState>)
     read_view(&state).await
 }
 
-/// Adds a home, or changes its switches.
+/// Adds a home, or changes its role.
 #[tauri::command]
 pub(crate) async fn save_agent_home(state: tauri::State<'_, MachineHealthState>, home: AgentHome) -> Result<AgentHomesView, String> {
     let home = checked(home)?;
@@ -903,7 +1119,7 @@ pub(crate) async fn preview_agent_home(
     agent: AgentHomeKind,
     path: String,
 ) -> Result<Vec<String>, String> {
-    let home = checked(AgentHome { machine, agent, path, source: AgentHomeSource::Added, sessions: true, sync: false })?;
+    let home = checked(AgentHome { machine, agent, path, source: AgentHomeSource::Added, sessions: true, sync: false, chosen: true, guess: None })?;
     let target = {
         let inner = state.lock();
         if home.machine.is_empty() {
@@ -928,7 +1144,7 @@ pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn home(machine: &str, agent: AgentHomeKind, path: &str, sessions: bool, sync: bool) -> AgentHome {
-        AgentHome { machine: machine.into(), agent, path: path.into(), source: AgentHomeSource::Added, sessions, sync }
+        AgentHome { machine: machine.into(), agent, path: path.into(), source: AgentHomeSource::Added, sessions, sync, chosen: true, guess: None }
     }
 
     /// Has the list hold `homes` for the scripts this thread builds.
@@ -1047,6 +1263,12 @@ pub(crate) mod tests {
         }
         fs::write(root.join(".claude.json"), "{}").unwrap();
         fs::write(root.join("Library/Application Support/Claude/local-agent-mode-sessions/acct/org/local_1/audit.jsonl"), "{}\n").unwrap();
+        // A session written today in one profile, and one from long ago in the other.
+        fs::write(root.join(".tools/profiles/work/projects/-Users-casey-src/today.jsonl"), "{}\n").unwrap();
+        let old = root.join(".tools/profiles/home/projects/-Users-casey-app/old.jsonl");
+        fs::write(&old, "{}\n").unwrap();
+        let status = std::process::Command::new("touch").args(["-t", "202001010000"]).arg(&old).status().unwrap();
+        assert!(status.success());
         for shell in shells() {
             let script = format!("CLAUDE_CONFIG_DIR=\"$HOME/env home\"\n{SCAN_SCRIPT}");
             let read = parse_scan(&run(shell, &root, &script));
@@ -1060,6 +1282,14 @@ pub(crate) mod tests {
                     (AgentHomeKind::Codex, "~/.codex".into()),
                     (AgentHomeKind::Codex, "~/.tools/profiles/codex".into()),
                     (AgentHomeKind::Pi, "~/.pi/agent/sessions".into()),
+                    (AgentHomeKind::ClaudeDesktop, "~/Library/Application Support/Claude/local-agent-mode-sessions/acct/org".into()),
+                ],
+                "{shell}"
+            );
+            assert_eq!(
+                read.recent,
+                [
+                    (AgentHomeKind::Claude, "~/.tools/profiles/work".to_string()),
                     (AgentHomeKind::ClaudeDesktop, "~/Library/Application Support/Claude/local-agent-mode-sessions/acct/org".into()),
                 ],
                 "{shell}"
@@ -1108,16 +1338,131 @@ pub(crate) mod tests {
             machine: "cedar-01".into(),
             scanned_at_ms: 1,
             found: found.iter().map(|path| (AgentHomeKind::Claude, path.to_string())).collect(),
+            recent: Vec::new(),
+            activity: false,
             error: String::new(),
             filled: true,
         };
-        let added = store_scan(&mut connection, &scan(&["~/.claude", "~/.tools/a", "~/.tools/b"])).unwrap();
-        assert_eq!(added.iter().map(|home| (home.path.as_str(), home.source, home.sessions, home.sync)).collect::<Vec<_>>(), [("~/.tools/*", AgentHomeSource::Found, true, FOUND_SYNC)]);
-        assert!(store_scan(&mut connection, &scan(&["~/.tools/a", "~/.other"])).unwrap().is_empty(), "only suggested now");
+        let stored = store_scan(&mut connection, &scan(&["~/.claude", "~/.tools/a", "~/.tools/b"])).unwrap();
+        assert_eq!(
+            stored.added.iter().map(|home| (home.path.as_str(), home.source, home.role(), home.chosen)).collect::<Vec<_>>(),
+            [("~/.tools/*", AgentHomeSource::Found, FOUND_ROLE, false)]
+        );
+        assert!(store_scan(&mut connection, &scan(&["~/.tools/a", "~/.other"])).unwrap().added.is_empty(), "only suggested now");
         let view = view(&connection, &["cedar-01".into()]).unwrap();
         let [cedar] = &view.machines[..] else { panic!() };
-        assert_eq!(cedar.suggested, [FoundHome { agent: AgentHomeKind::Claude, path: "~/.other".into(), folders: 1 }]);
+        assert_eq!(cedar.suggested, [FoundHome { agent: AgentHomeKind::Claude, path: "~/.other".into(), folders: 1, guess: None }]);
         assert!(cedar.homes.iter().any(|home| home.path == "~/.tools/*" && home.machine == "cedar-01"));
         assert_eq!(view.everywhere.len(), standard_paths().count());
+    }
+    fn looked(found: &[(AgentHomeKind, &str)], recent: &[(AgentHomeKind, &str)]) -> StoredScan {
+        let folders = |list: &[(AgentHomeKind, &str)]| list.iter().map(|(agent, path)| (*agent, path.to_string())).collect();
+        StoredScan {
+            machine: "cedar-01".into(),
+            scanned_at_ms: 1,
+            found: folders(found),
+            recent: folders(recent),
+            activity: true,
+            error: String::new(),
+            filled: true,
+        }
+    }
+
+    const DESKTOP: &str = "~/Library/Application Support/Claude/local-agent-mode-sessions/acct/org";
+
+    #[test]
+    fn a_home_is_guessed_active_when_used_lately_and_history_when_idle_or_a_session_copy() {
+        let scan = looked(
+            &[
+                (AgentHomeKind::Claude, "~/.tools/profiles/work"),
+                (AgentHomeKind::Claude, "~/.tools/profiles/home"),
+                (AgentHomeKind::Claude, "~/.old-claude"),
+                (AgentHomeKind::ClaudeDesktop, DESKTOP),
+                // Its folder has a `.claude.json` too, so the scan takes it for a Claude Code home as well.
+                (AgentHomeKind::Claude, DESKTOP),
+                (AgentHomeKind::Claude, &format!("{DESKTOP}/local_1/.claude")),
+                (AgentHomeKind::Claude, &format!("{DESKTOP}/local_2/.claude")),
+                (AgentHomeKind::Pi, "~/.pi/agent/sessions"),
+            ],
+            &[
+                (AgentHomeKind::Claude, "~/.tools/profiles/work"),
+                (AgentHomeKind::Claude, &format!("{DESKTOP}/local_1/.claude")),
+                (AgentHomeKind::Pi, "~/.pi/agent/sessions"),
+            ],
+        );
+        let guessed = |agent, path: &str| guess(agent, path, &scan).map(|guess| (guess.role, guess.reason));
+        assert_eq!(guessed(AgentHomeKind::Claude, "~/.tools/profiles/*"), Some((AgentHomeRole::Active, HomeGuessReason::Recent)), "one profile in use");
+        assert_eq!(guessed(AgentHomeKind::Claude, "~/.old-claude"), Some((AgentHomeRole::History, HomeGuessReason::Idle)));
+        assert_eq!(
+            guessed(AgentHomeKind::Claude, &format!("{DESKTOP}/*/.claude")),
+            Some((AgentHomeRole::History, HomeGuessReason::SessionCopy)),
+            "a desktop session's copy, however new"
+        );
+        assert_eq!(guessed(AgentHomeKind::Claude, DESKTOP), Some((AgentHomeRole::History, HomeGuessReason::SessionCopy)), "the desktop app's folder taken for a Claude Code home");
+        assert_eq!(guessed(AgentHomeKind::ClaudeDesktop, DESKTOP), Some((AgentHomeRole::History, HomeGuessReason::Idle)), "its own sessions are only ever history");
+        assert_eq!(guessed(AgentHomeKind::Pi, "~/.pi/agent/sessions"), Some((AgentHomeRole::History, HomeGuessReason::Recent)));
+        assert_eq!(guessed(AgentHomeKind::Claude, "~/gone"), None, "nothing found there");
+        assert_eq!(guessed(AgentHomeKind::Codex, "~/.tools/profiles/*"), None, "another agent's folders");
+    }
+
+    #[test]
+    fn each_look_sorts_the_homes_the_user_hasn_t_picked_and_leaves_their_picks() {
+        let mut connection = super::super::super::schema::test_database();
+        let found = [
+            (AgentHomeKind::Claude, "~/.work-claude"),
+            (AgentHomeKind::Claude, "~/.old-claude"),
+            (AgentHomeKind::Claude, "~/.picked"),
+            (AgentHomeKind::ClaudeDesktop, DESKTOP),
+            (AgentHomeKind::Claude, &format!("{DESKTOP}/local_1/.claude")),
+        ];
+        let recent = [(AgentHomeKind::Claude, "~/.work-claude"), (AgentHomeKind::Claude, "~/.old-claude"), (AgentHomeKind::Claude, "~/.picked")];
+        let first = store_scan(&mut connection, &looked(&found, &recent)).unwrap();
+        let roles = |homes: &[AgentHome]| homes.iter().map(|home| (home.path.clone(), home.role())).collect::<BTreeMap<_, _>>();
+        let added = roles(&first.added);
+        assert_eq!(added["~/.work-claude"], AgentHomeRole::Active);
+        assert_eq!(added["~/.old-claude"], AgentHomeRole::Active);
+        assert_eq!(added[&format!("{DESKTOP}/local_1/.claude")], AgentHomeRole::History);
+        assert_eq!(added[DESKTOP], AgentHomeRole::History);
+        assert!(first.sorted.is_empty(), "what it added isn't counted again");
+
+        // The user keeps one active; the next look a month on finds only the first in use.
+        let picked = AgentHome { chosen: true, ..first.added.iter().find(|home| home.path == "~/.picked").unwrap().clone() };
+        write_home(&connection, &picked).unwrap();
+        let later = store_scan(&mut connection, &looked(&found, &recent[..1])).unwrap();
+        assert!(later.added.is_empty());
+        assert_eq!(roles(&later.sorted), BTreeMap::from([("~/.old-claude".to_string(), AgentHomeRole::History)]));
+        let saved = roles(&read_homes(&connection).unwrap());
+        assert_eq!(saved["~/.picked"], AgentHomeRole::Active, "the user's pick stays");
+
+        let view = view(&connection, &["cedar-01".into()]).unwrap();
+        let [cedar] = &view.machines[..] else { panic!() };
+        let old = cedar.homes.iter().find(|home| home.path == "~/.old-claude").unwrap();
+        assert_eq!(old.guess, Some(HomeGuess { role: AgentHomeRole::History, reason: HomeGuessReason::Idle }));
+        assert!(cedar.homes.iter().filter(|home| home.source == AgentHomeSource::Standard).all(|home| home.guess.is_none()));
+    }
+
+    #[test]
+    fn a_look_that_failed_or_never_checked_sessions_sorts_nothing() {
+        let mut connection = super::super::super::schema::test_database();
+        let unpicked = AgentHome { chosen: false, ..home("cedar-01", AgentHomeKind::Claude, "~/.work-claude", true, true) };
+        write_home(&connection, &unpicked).unwrap();
+        let found = [(AgentHomeKind::Claude, "~/.work-claude")];
+        let failed = StoredScan { error: "ssh: timed out".into(), filled: false, ..looked(&found, &[]) };
+        assert!(store_scan(&mut connection, &failed).unwrap().sorted.is_empty());
+        let before = StoredScan { activity: false, ..looked(&found, &[]) };
+        assert!(store_scan(&mut connection, &before).unwrap().sorted.is_empty());
+        assert_eq!(read_homes(&connection).unwrap()[0].role(), AgentHomeRole::Active);
+    }
+
+    #[test]
+    fn a_role_sets_only_the_switches_its_agent_has() {
+        let mut pi = home("m", AgentHomeKind::Pi, "~/pi", false, false);
+        pi.set_role(AgentHomeRole::Active);
+        assert_eq!(pi.role(), AgentHomeRole::History, "Pi's sessions folder has no settings");
+        let mut amp = home("m", AgentHomeKind::Amp, "~/amp", false, false);
+        amp.set_role(AgentHomeRole::History);
+        assert_eq!(amp.role(), AgentHomeRole::Ignored, "Arbor reads none of Amp's sessions");
+        amp.set_role(AgentHomeRole::Active);
+        assert_eq!((amp.sessions, amp.sync), (false, true));
     }
 }

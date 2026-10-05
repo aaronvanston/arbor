@@ -41,6 +41,7 @@ const STEPS: &[Step] = &[
     Step { version: 18, name: "automations", apply: automations },
     Step { version: 19, name: "harness runs", apply: harness_runs },
     Step { version: 20, name: "pool ssh names", apply: pool_ssh_names },
+    Step { version: 21, name: "agent home roles", apply: agent_home_roles },
 ];
 
 /// The version of a database that has had every step.
@@ -1237,6 +1238,18 @@ fn pool_ssh_names(connection: &mut Connection, _: &Path) -> Result<(), String> {
             )",
         )
         .map_err(|error| format!("Failed to prepare the pool SSH names table: {error}"))
+}
+
+/// Whether the user picked each home's role or it follows Arbor's guess, and which found folders each machine's last
+/// look saw sessions in lately. The homes found before this start unpicked, so the next look sorts them; a standard
+/// home switched on a machine was the user's own pick.
+fn agent_home_roles(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    add_missing_columns(connection, "usage_agent_homes", &[("chosen", "INTEGER NOT NULL DEFAULT 0")])?;
+    add_missing_columns(connection, "usage_agent_home_scans", &[("recent", "TEXT NOT NULL DEFAULT '[]'"), ("activity", "INTEGER NOT NULL DEFAULT 0")])?;
+    connection
+        .execute("UPDATE usage_agent_homes SET chosen = 1 WHERE source = 'standard'", [])
+        .map(|_| ())
+        .map_err(|error| format!("Failed to mark the standard agent homes: {error}"))
 }
 
 // ---------------------------------------------------------------------------
