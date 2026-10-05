@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   agentsStep, alertsStep, checklistProgress, checklistReference, checksStep, cloneCommand, connectStep, firstOpen,
-  installCommand, mcpStep, missingProxySettings, pluginsStep, projectsStep, proxyStep, repoStep, settingsStep, shellPath, skillsStep, toolsStep,
+  installCommand, mcpStep, waitsForHost, missingProxySettings, pluginsStep, projectsStep, proxyStep, repoStep, settingsStep, shellPath, skillsStep, toolsStep,
   PROXY_WINDOW_MS, type KeyAssignment, type MachineRequests,
 } from '../src/services/setupChecklist';
 import { extensionsView } from '../src/services/setupPlugins';
@@ -93,6 +93,15 @@ describe('connecting', () => {
     });
     // One with no host isn't waited on: it needs one first.
     expect(connectStep({ ...fresh, reachable: false }, { status: 'unconfigured', error: null } as MachineHealth)).toEqual({ state: 'todo', why: 'noHost', error: null });
+  });
+
+  it('has the steps that wait on a machine with no host wait for the host, not a read', () => {
+    const noHost = connectStep({ ...fresh, reachable: false }, { status: 'unconfigured', error: null } as MachineHealth);
+    const connecting = connectStep({ ...fresh, reachable: false }, null);
+    expect(waitsForHost(noHost, { state: 'waiting' })).toBe(true);
+    // A step with something to do or done stays as it is, and one waiting on a machine that has a host waits on it.
+    expect(waitsForHost(noHost, { state: 'todo' })).toBe(false);
+    expect(waitsForHost(connecting, { state: 'waiting' })).toBe(false);
   });
 
   it('waits for the first read, then reports one that failed', () => {

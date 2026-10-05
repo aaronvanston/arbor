@@ -3000,6 +3000,7 @@ export const en = {
   'setup.checklist.lookAgain': 'Look again',
   'setup.checklist.review': 'Review changes',
   'setup.checklist.notRead': 'Waiting for the machine to be read',
+  'setup.checklist.waitingHost': 'Waiting for an SSH host',
   'setup.checklist.waitingBoth': 'Waiting for both machines to be read',
   'setup.checklist.offline': 'Arbor can’t reach it to check',
   'setup.checklist.readFailed': 'Couldn’t be read; scan again once Arbor can reach it',

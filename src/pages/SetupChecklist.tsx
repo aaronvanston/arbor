@@ -44,6 +44,7 @@ import {
   type MachineRequests,
   type StepId,
   type StepState,
+  waitsForHost,
 } from '../services/setupChecklist';
 import { homeKey, scanSetup } from '../services/setupInventory';
 import { getMcpRegistry, withRegistry } from '../services/setupMcp';
@@ -903,15 +904,17 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       {steps && machine && !folded ? (
         <ol className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5 [&>*+*]:border-t [&>*+*]:border-border/50" aria-label={t('setup.checklist.stepsLabel', { machine: machine.machine })}>
           {STEP_ORDER.map((id, index) => {
-            const content = body(id);
+            // A step waiting on a machine with no host can only wait for one, and nothing it offers would work yet.
+            const hostless = id !== 'connect' && waitsForHost(steps.connect, steps[id]);
+            const content = hostless ? null : body(id);
             return (
               <StepRow
                 key={id}
                 number={index + 1}
                 state={steps[id].state}
                 title={t(STEP_TITLE[id])}
-                summary={summary(id, withPills)}
-                summaryText={summary(id, inWords)}
+                summary={hostless ? t('setup.checklist.waitingHost') : summary(id, withPills)}
+                summaryText={hostless ? t('setup.checklist.waitingHost') : summary(id, inWords)}
                 open={openIds.includes(id)}
                 onToggle={() => toggle(id)}
               >

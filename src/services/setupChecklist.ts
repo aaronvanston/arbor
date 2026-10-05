@@ -107,6 +107,14 @@ export function connectStep(machine: SetupMachine, health: MachineHealth | null)
   return { state: 'done', why: 'ok', error: null };
 }
 
+/**
+ * Whether a step is only waiting because the machine has no SSH host: nothing can read it until one is added, so the
+ * step says that rather than that a read is under way, and offers nothing that would need the machine.
+ */
+export function waitsForHost(connect: ConnectStep, step: { state: StepState }): boolean {
+  return connect.why === 'noHost' && step.state === 'waiting';
+}
+
 /** A first read that failed leaves nothing to compare, which isn't the same as a machine with little on it. */
 const readFailed = (machine: SetupMachine) => machine.scannedAt !== null && machine.error !== null && !machine.homes.length && !machine.installs.length;
 /** Whether what a machine's agents load is known: read, and not by a first read that failed. */
