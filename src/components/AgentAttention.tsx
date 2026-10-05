@@ -31,7 +31,12 @@ export function NeedsYouSection({ onNavigate }: { onNavigate?: (view: AppView) =
       {rows.map((row) => <FleetRow key={row.key} row={row} now={now} place onOpen={openSession} />)}
       {more > 0 ? (
         <SettingsBlock className="py-2 text-xs text-muted-foreground">
-          {t(more === 1 ? 'home.attention.more.one' : 'home.attention.more.other', { count: more })}
+          {/* The rest are on the board, so the line opens it. */}
+          {onNavigate ? (
+            <button type="button" className="cursor-pointer underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:underline" onClick={() => onNavigate(liveBoardView())}>
+              {t(more === 1 ? 'home.attention.more.one' : 'home.attention.more.other', { count: more })}
+            </button>
+          ) : t(more === 1 ? 'home.attention.more.one' : 'home.attention.more.other', { count: more })}
         </SettingsBlock>
       ) : null}
     </SettingsSection>
