@@ -33,7 +33,7 @@ export const KIND_LABEL: Record<LibraryKind, MessageKey> = {
 };
 
 /** The Library's lenses: the list, each kind's grid by machine, and what it all costs. */
-export type LibraryLens = 'list' | Extract<SetupLens, 'machines' | 'cost'>;
+export type LibraryLens = 'list' | Extract<SetupLens, 'machines' | 'cost' | 'directory'>;
 
 /**
  * The bar over every Library lens: which kind (the list and By machine have one; Cost is every kind's) and how it's
@@ -49,7 +49,7 @@ export function LibraryBar({ kind, lens, counts, onChange }: {
   const { t } = useI18n();
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {lens === 'cost' ? <span /> : (
+      {lens === 'cost' || lens === 'directory' ? <span /> : (
         <ToggleGroup value={[kind]} aria-label={t('library.kinds')} onValueChange={(values) => { if (values[0]) onChange(values[0] as LibraryKind, lens); }}>
           {LIBRARY_KINDS.map((entry) => (
             <Toggle key={entry} value={entry}>
@@ -59,11 +59,14 @@ export function LibraryBar({ kind, lens, counts, onChange }: {
           ))}
         </ToggleGroup>
       )}
-      <ToggleGroup value={[lens]} aria-label={t('library.lens.label')} onValueChange={(values) => { if (values[0]) onChange(kind, values[0] as LibraryLens); }}>
-        <Toggle value="list">{t('library.lens.list')}</Toggle>
-        <Toggle value="machines">{t('library.lens.machines')}</Toggle>
-        <Toggle value="cost">{t('library.lens.cost')}</Toggle>
-      </ToggleGroup>
+      <span className="flex items-center gap-2">
+        <ToggleGroup value={lens === 'directory' ? [] : [lens]} aria-label={t('library.lens.label')} onValueChange={(values) => { if (values[0]) onChange(kind, values[0] as LibraryLens); }}>
+          <Toggle value="list">{t('library.lens.list')}</Toggle>
+          <Toggle value="machines">{t('library.lens.machines')}</Toggle>
+          <Toggle value="cost">{t('library.lens.cost')}</Toggle>
+        </ToggleGroup>
+        <Button variant={lens === 'directory' ? 'default' : 'outline'} size="xs" onClick={() => onChange(kind, 'directory')}>{t('library.lens.directory')}</Button>
+      </span>
     </div>
   );
 }

@@ -44,7 +44,10 @@ plugin, MCP server, skill, hook and instruction file the setup repo gives the ag
 for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
 brings each answering machine in line straight away, with Undo. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its
 own switch (a value of that machine's own in the repo, applied there at once, `switchMachine`), use and a plugin's
-measured cost, and Remove from every machine (`removeEverywhere`), confirmed first and undone with Undo. Software has the agent rollout, every machine's
+measured cost, and Remove from every machine (`removeEverywhere`), confirmed first and undone with Undo. Browse directory (`lens: 'directory'`, `pages/SetupDirectory.tsx` over `services/directory.ts`) lists what each
+marketplace offers, read from its GitHub repository by `get_marketplace_catalog` (no account, 15 minutes' cache): the
+marketplaces machines and the repo use, Anthropic's official one as a suggestion, and any `owner/repo` typed in. Adding
+one (`addPlugin`) lists it on for every machine with its marketplace's repository and installs it, with Undo. Software has the agent rollout, every machine's
 versions and the toolchain. Repo is the setup repo's files, changes and History, one timeline of its commits with the changes Arbor made on each machine from them (and on its own, from features that edit settings), each with Undo (`pages/SetupRepoHistory.tsx` over `services/repoTimeline.ts`).
 
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the

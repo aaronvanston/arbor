@@ -53,7 +53,7 @@ export type LibraryKind = 'plugins' | 'mcps' | 'skills' | 'hooks' | 'instruction
  * How a Sync view looks at what it shows: the Library by machine (each kind's grid) or by what it costs, and the
  * Repo opened on its History, the repo's commits with the changes Arbor made on the machines.
  */
-export type SetupLens = 'machines' | 'cost' | 'changes';
+export type SetupLens = 'machines' | 'cost' | 'directory' | 'changes';
 /**
  * The Accounts page's views: each account's limits, every sign-in the core has with what each takes, and what each
  * subscription is worth against what it costs.
@@ -116,7 +116,7 @@ export const setupChecksView = (): AppView => setupView({ tab: 'overview' });
 /** One Library row's own page, by its key (`plugin:claude:review@acme`, `mcp:linear`, `file:~/.claude/…`). */
 export const libraryItemView = (kind: LibraryKind, item: string): AppView => setupView({ tab: 'library', kind, item });
 /** Sync › Library on a kind, as a list, or by machine with `lens`. */
-export const libraryView = (kind?: LibraryKind, lens?: Extract<SetupLens, 'machines' | 'cost'>): AppView =>
+export const libraryView = (kind?: LibraryKind, lens?: Extract<SetupLens, 'machines' | 'cost' | 'directory'>): AppView =>
   setupView({ tab: 'library', ...(kind ? { kind } : {}), ...(lens ? { lens } : {}) });
 export const accountsView = (params: AccountsParams = {}): AppView => ({ kind: 'main', page: 'accounts', params });
 /** Accounts' limits, where an account's row is: what an account's alert, its palette row or a limit opens. */

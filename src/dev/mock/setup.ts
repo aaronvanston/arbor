@@ -5,6 +5,7 @@
 import { emit } from '@tauri-apps/api/event';
 import type { SetupCommands } from '../../native/setup';
 import type {
+  CatalogPlugin,
   AgentKind,
   CodexPluginChange,
   ChangeKind,
@@ -1285,6 +1286,38 @@ type MockRegistryServer = {
 };
 
 const mockDefinition = (transport: string, place: string | null, variables: string[], sum: string): MockDefinition => ({ transport, place, variables, sum });
+
+/** What each marketplace the mock knows offers, by its GitHub repository, as the directory reads it. */
+const catalogPlugin = (name: string, description: string, category: string | null = null, version: string | null = null): CatalogPlugin =>
+  ({ name, description, category, version });
+const MOCK_CATALOGS: Record<string, { name: string; plugins: CatalogPlugin[] }> = {
+  'anthropics/claude-plugins-official': {
+    name: 'claude-plugins-official',
+    plugins: [
+      catalogPlugin('code-review', 'Review a diff or pull request for bugs before you push', 'development', '1.2.0'),
+      catalogPlugin('commit-commands', 'Commit, push and open a pull request in one go', 'productivity', '1.0.3'),
+      catalogPlugin('context7', 'Up-to-date library docs in every session', 'development', '1.2.0'),
+      catalogPlugin('frontend-design', 'Distinctive interfaces, not generic ones', 'design', '1.1.0'),
+      catalogPlugin('pr-review-toolkit', 'Specialist reviewers for tests, types and error handling', 'development', '1.4.0'),
+      catalogPlugin('security-guidance', 'Warns before edits that open common security holes', 'security'),
+    ],
+  },
+  'obra/superpowers-marketplace': {
+    name: 'superpowers-marketplace',
+    plugins: [
+      catalogPlugin('superpowers', 'Skills for planning, debugging and test-first work', 'development', '4.0.1'),
+      catalogPlugin('superpowers-lab', 'Experimental skills from the same author', 'development'),
+    ],
+  },
+  'acme/codex-plugins': {
+    name: 'team',
+    plugins: [
+      catalogPlugin('review', 'The team’s review checklist for Codex', 'development'),
+      catalogPlugin('sketch', 'Turns a rough idea into a plan', 'productivity'),
+      catalogPlugin('oncall', 'Page summaries and runbooks', 'operations'),
+    ],
+  },
+};
 
 const mockRegistry: { found: boolean; servers: MockRegistryServer[] } = {
   found: params.get('registry') !== 'none',
@@ -2843,6 +2876,16 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   },
   get_setup_repo_log: (args) => later(250, () => [...mockRepo(args.repo).commits].reverse().slice(0, args.limit).map(({ sha, subject, atMs }) => ({ sha, subject, atMs }))),
   commit_setup_repo: (args) => later(700, () => commitRepoMock(args.repo, args.paths, args.message)),
+  get_marketplace_catalog: (args) => {
+    mockLog('get_marketplace_catalog', args);
+    // `?catalog=fail`: GitHub can't be reached, so no marketplace's list can be read.
+    if (params.get('catalog') === 'fail') return later(400, () => { throw "Arbor couldn't reach GitHub: error sending request"; });
+    const catalog = MOCK_CATALOGS[args.source.toLowerCase()];
+    return later(500, () => {
+      if (!catalog) throw `${args.source} has no plugin list Arbor knows, or GitHub can't show it without an account`;
+      return { source: args.source, name: catalog.name, plugins: catalog.plugins, readAtMs: Date.now() };
+    });
+  },
   check_setup_skill_sources: (args) => {
     const repo = mockRepo(args.repo);
     const { force } = args;

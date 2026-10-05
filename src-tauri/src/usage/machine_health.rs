@@ -47,6 +47,7 @@ pub(crate) mod keep_sessions;
 pub(crate) mod pool_ssh;
 pub(crate) mod pools;
 pub(crate) mod runs;
+pub(crate) mod plugin_catalog;
 pub(crate) mod project_instructions;
 pub(crate) mod setup;
 pub(crate) mod setup_hooks;

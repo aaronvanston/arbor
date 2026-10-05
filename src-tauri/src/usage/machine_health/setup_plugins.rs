@@ -139,7 +139,7 @@ fn plugin_marketplace(id: &str) -> Option<&str> {
 }
 
 /// A GitHub repository as `owner/repo`.
-fn is_github_repo(value: &str) -> bool {
+pub(super) fn is_github_repo(value: &str) -> bool {
     let Some((owner, repo)) = value.split_once('/') else {
         return false;
     };

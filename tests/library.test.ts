@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { libraryCounts, libraryItemName, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { bringInLine, linePlans, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { addPlugin, bringInLine, linePlans, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
+import { directoryEntries, directorySources } from '../src/services/directory';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
 import { extensionsView, type PluginRow } from '../src/services/setupPlugins';
-import { present } from './support/items';
+import { lastItem, present } from './support/items';
 import type { HookRegistry, McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, fields: Partial<SetupItem> = {}): SetupItem => ({
@@ -351,5 +352,54 @@ describe('bringing a machine in line', () => {
     const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row] });
     expect(calls).toEqual(['sync ~/.agents/hooks/guard.sh', 'hooks']);
     expect(done).toEqual({ changed: true, failed: [], needsYou: false });
+  });
+});
+
+describe('the directory', () => {
+  const catalog = { source: 'acme/agent-tools', name: 'acme-tools', readAtMs: 0, plugins: [
+    { name: 'oncall', description: 'Page summaries', version: null, category: 'operations' },
+    { name: 'review', description: 'Review a diff', version: '1.0.0', category: 'development' },
+  ] };
+
+  it('lists the marketplaces in use, then the official ones not in use, then the ones typed in, once each', () => {
+    const machines = fleet();
+    const sources = directorySources(extensionsView(machines), repo([listing(REVIEW, 'on')]), [{ source: 'acme/agent-tools', agent: 'claude' }, { source: 'not a repo', agent: 'claude' }, { source: 'other/tools', agent: 'codex' }]);
+    expect(sources).toEqual([
+      { source: 'acme/agent-tools', agent: 'claude', added: true, suggested: false },
+      { source: 'anthropics/claude-plugins-official', agent: 'claude', added: false, suggested: true },
+      { source: 'other/tools', agent: 'codex', added: false, suggested: false },
+    ]);
+  });
+
+  it('says how the Library has each plugin, and narrows them to a search', () => {
+    const rows = rowsOf(fleet(), repo([listing(REVIEW, 'off')]));
+    const entries = directoryEntries(catalog, 'claude', rows);
+    expect(entries.map((entry) => [entry.id, entry.standing])).toEqual([['oncall@acme-tools', null], [REVIEW, 'off']]);
+    expect(directoryEntries(catalog, 'codex', rows).every((entry) => entry.standing === null)).toBe(true);
+    expect(directoryEntries(catalog, 'claude', rows, 'operations').map((entry) => entry.name)).toEqual(['oncall']);
+  });
+
+  it('adds a plugin on for every machine with its marketplace, installs it where it isn’t, and Undo takes it all back', async () => {
+    const set: unknown[] = [];
+    const applied: { machine: string; actions: string[] }[] = [];
+    mockCommands({
+      set_setup_plugin: ({ plugin, source, wanted }) => { set.push([plugin, source, wanted]); return repo(wanted ? [listing(plugin, wanted)] : []); },
+      apply_plugin_changes: ({ machine: name, changes }) => {
+        applied.push({ machine: name, actions: changes.map((change) => change.action) });
+        return changes.map((change): PluginResult => ({ ...change, checkout: null, outcome: 'done', message: '' }));
+      },
+    });
+    const machines = [machine('cam-mbp', [marketplace('acme-tools')]), machine('ci-01', [])];
+    const run = await addPlugin('/repo', machines, 'oncall@acme-tools', 'acme/agent-tools', false);
+    expect(set).toEqual([['oncall@acme-tools', 'acme/agent-tools', 'on']]);
+    expect(applied).toEqual([
+      { machine: 'cam-mbp', actions: ['install'] },
+      { machine: 'ci-01', actions: ['addMarketplace', 'install'] },
+    ]);
+    expect(run.changed).toEqual(['cam-mbp', 'ci-01']);
+    applied.length = 0;
+    await run.undo();
+    expect(lastItem(set)).toEqual(['oncall@acme-tools', 'acme/agent-tools', null]);
+    expect(applied).toEqual([{ machine: 'ci-01', actions: ['uninstall'] }, { machine: 'cam-mbp', actions: ['uninstall'] }]);
   });
 });

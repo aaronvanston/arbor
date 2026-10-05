@@ -3,7 +3,7 @@ import { machineColumns } from './pluginGrid';
 import { planSkills, runSkillPlan, undoSkillRun, type RunProblem } from './skillRuns';
 import { applyHooks, hookChanges, setHookWanted } from './setupHooks';
 import { applyMcpChanges, mcpChanges, plannedMcp, putBackMcpServer, setMcpWanted, withRegistry, type PendingMcp } from './setupMcp';
-import { codexRepoChanges, differs, repoAction, setSetupCodexPlugin, setSetupPlugin, wantedOn } from './setupPluginRepo';
+import { codexRepoChanges, differs, repoAction, setSetupCodexPlugin, setSetupPlugin, wantedOn, withCodexPluginRepo, withPluginRepo } from './setupPluginRepo';
 import { applyCodexPluginChanges, applyPluginChanges, extensionsView, type PluginCell, type PluginRow } from './setupPlugins';
 import { applySetupSync, getSetupRepo, setSetupFileMachine, setSetupFileOff, setSetupFileRemoved, setSetupSkillMachine, setSetupSkillOff, syncChanges, syncPlan, undoSetupSync } from './setupSync';
 import { skillsView, STORE } from './setupSkills';
@@ -614,4 +614,43 @@ export async function bringInLine(repo: string, sources: { [K in keyof SwitchSou
     }
   }
   return { changed, failed, needsYou };
+}
+
+// ---------------------------------------------------------------------------
+// Adding from the directory
+// ---------------------------------------------------------------------------
+
+/**
+ * Adds a marketplace's plugin to the Library: the repo lists it on for every machine, with its marketplace's
+ * repository so a machine without the marketplace adds it first, then each machine that answers installs it. Undo
+ * takes the listing out and the installs back off.
+ */
+export async function addPlugin(repo: string, machines: SetupMachine[], id: string, source: string, codex: boolean): Promise<LibrarySwitch> {
+  const set = (wanted: PluginWanted | null) => (codex ? setSetupCodexPlugin : setSetupPlugin)(repo, id, source, null, wanted);
+  const listings = (setup: SetupRepo) => (codex ? withCodexPluginRepo : withPluginRepo)(extensionsView(machines), codex ? setup.codexPlugins : setup.plugins);
+  const rowOf = (setup: SetupRepo) => {
+    const view = listings(setup);
+    return (codex ? view.codexPlugins : view.plugins).find((row) => row.id === id) ?? null;
+  };
+  const next = await set('on');
+  const row = rowOf(next);
+  if (!row) throw new Error(`The repo didn't list ${id}`);
+  const ran = await runChanges(lineUp(row, codex), codex);
+  const asFailure = (result: MachineResult): SwitchFailure => ({ machine: result.machine, message: result.message });
+  return {
+    repo: next,
+    changed: unique(ran.done.map((change) => change.machine)),
+    failed: ran.failed.map(asFailure),
+    needsYou: unique(ran.needsYou.map((result) => result.machine)),
+    skipped: unreachableOf(machines, () => true),
+    undo: async () => {
+      const back = await set(null);
+      const byMachine = new Map<string, DoneChange[]>();
+      for (const change of [...ran.done].reverse()) {
+        const action = INVERSE[change.action];
+        if (action) byMachine.set(change.machine, [...(byMachine.get(change.machine) ?? []), { ...change, action }]);
+      }
+      return { repo: back, failed: (await runChanges(byMachine, codex)).failed.map(asFailure) };
+    },
+  };
 }

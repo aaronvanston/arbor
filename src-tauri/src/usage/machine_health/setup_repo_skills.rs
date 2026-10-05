@@ -1388,7 +1388,7 @@ async fn check_sources(folder: &Path, client: &reqwest::Client, apis: GithubApis
     Ok(checks)
 }
 
-fn github_client(gui_config_state: &GuiConfigState) -> Result<reqwest::Client, String> {
+pub(super) fn github_client(gui_config_state: &GuiConfigState) -> Result<reqwest::Client, String> {
     let proxy_url = gui_config_state.snapshot()?.proxy_url;
     crate::core_runtime::build_http_client_with_proxy(
         reqwest::Client::builder()

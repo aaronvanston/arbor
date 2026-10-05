@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Layers, Search, TriangleAlert } from '../components/ui/icons';
 import { MachineCrumb } from '../components/layout/MachineCrumb';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
@@ -68,6 +68,9 @@ import { SetupSkills } from './SetupSkills';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import type { ArchiveStatus, SetupItem, SetupMachine } from '../native/types';
 import { useNow } from '../hooks/useNow';
+
+// The directory reads marketplaces from GitHub and is opened now and then, so it loads on its own when it is.
+const SetupDirectory = lazy(() => import('./SetupDirectory').then((module) => ({ default: module.SetupDirectory })));
 
 const REFERENCE_KEY = 'arbor.setup.reference.v1';
 const HOME_KEY = 'arbor.setup.home.v1';
@@ -373,7 +376,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   // The Library's kind, the one last open when the view doesn't name one, and how it's shown.
   const kind: LibraryKind = isLibraryKind(params?.kind) ? params.kind : savedKind();
   useEffect(() => { if (tab === 'library') store(KIND_KEY, kind); }, [tab, kind]);
-  const libraryLens: LibraryLens = tab === 'library' && (params?.lens === 'machines' || params?.lens === 'cost') ? params.lens : 'list';
+  const libraryLens: LibraryLens = tab === 'library' && (params?.lens === 'machines' || params?.lens === 'cost' || params?.lens === 'directory') ? params.lens : 'list';
   const costLens = tab === 'library' && libraryLens === 'cost';
   // One row's own page, opened from the list; it has no lens of its own.
   const libraryItem = tab === 'library' && libraryLens === 'list' ? params?.item ?? null : null;
@@ -524,6 +527,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             // Cost is the one Sync view that's about spend rather than comparing machines, so it can be narrowed to one.
             ...(costLens ? [t('setup.tab.cost')] : []),
             ...(libraryLens === 'machines' ? [t(LIBRARY_KIND_LABEL[kind])] : []),
+            ...(libraryLens === 'directory' ? [t('library.lens.directory')] : []),
             ...(libraryItem !== null ? [t(LIBRARY_KIND_LABEL[kind]), libraryItemName(libraryItem)] : []),
 
             ...(costLens ? [
@@ -573,6 +577,10 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             reads={costReads}
             onNavigate={onNavigate}
           />
+        ) : tab === 'library' && libraryLens === 'directory' ? (
+          <Suspense fallback={<p className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"><Spinner />{t('library.loading')}</p>}>
+            <SetupDirectory machines={machines} onOpenItem={(itemKind, key) => onViewChange?.(libraryItemView(itemKind, key), 'push')} />
+          </Suspense>
         ) : tab === 'library' && libraryLens === 'list' ? (
           <SetupLibrary
             machines={machines}

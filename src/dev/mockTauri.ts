@@ -235,6 +235,7 @@
  * listens on, or `fail` to have setting a machine up fail to write its first file.
  * `?fileremove=fail` to have taking a rule, subagent or command off every machine fail on changes not committed;
  * `?skillremove=fail` to have taking a skill off every machine in the repo fail on changes not committed;
+ * `?catalog=fail` for every marketplace's plugin list failing to come from GitHub (Sync › Library › Directory);
  * `?skilloff=fail` to have turning a skill off on every machine (Sync › Library) fail on changes not committed;
  * `?skilldrop=fail` to have taking skills back out of the repo (Undo after adding them) fail on changes not committed;
  * `?leftovers=fail` to have cleaning up plugin leftovers fail as if a settings file changed since the scan;

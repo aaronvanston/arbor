@@ -754,6 +754,16 @@ export type CapacityReport = {
 };
 
 /**
+ * One plugin a marketplace offers.
+ */
+export type CatalogPlugin = {
+  name: string,
+  description: string | null,
+  version: string | null,
+  category: string | null,
+};
+
+/**
  * What made a change, as its backup names it.
  */
 export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh";
@@ -2503,6 +2513,22 @@ export type ManagementRequest = {
   query?: { [key in string]: string },
   body?: JsonValue,
   timeoutMs?: number,
+};
+
+/**
+ * What a marketplace offers: its name as the list gives it (what plugins' ids end with), and its plugins.
+ */
+export type MarketplaceCatalog = {
+  /**
+   * `owner/repo` on GitHub.
+   */
+  source: string,
+  name: string,
+  plugins: Array<CatalogPlugin>,
+  /**
+   * When GitHub was asked, in ms.
+   */
+  readAtMs: number,
 };
 
 export type McpAction = "add" | "update" | "remove";

@@ -1335,6 +1335,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_marketplace_catalog",
+        access: Access::Read,
+        summary: "What the marketplace at `source` (`owner/repo` on GitHub) offers. What GitHub said in the last 15 minutes is used again, unless `force`.",
+        args: &[
+            ArgSpec { name: "source", ts_type: "string", optional: false },
+            ArgSpec { name: "force", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "set_setup_file_off",
         access: Access::Write,
         summary: "Turns a rule, subagent or command the repo has off on every machine, keeping it in the repo, or on again, and commits .agents/machines.json alone. Instructions are every machine's own, so they're never off.",
@@ -2158,6 +2167,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "drop_setup_skills" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::drop_setup_skills(arg(&args, "repo")?, arg(&args, "skills")?)).await) }.await,
         "set_setup_file_removed" => async { done(Box::pin(crate::usage::machine_health::setup_sync::set_setup_file_removed(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "removed")?)).await) }.await,
         "set_setup_skill_off" => async { done(Box::pin(crate::usage::machine_health::setup_sync::set_setup_skill_off(arg(&args, "repo")?, arg(&args, "skill")?, arg(&args, "off")?)).await) }.await,
+        "get_marketplace_catalog" => async { done(Box::pin(crate::usage::machine_health::plugin_catalog::get_marketplace_catalog(app.state(), arg(&args, "source")?, arg(&args, "force")?)).await) }.await,
         "set_setup_file_off" => async { done(Box::pin(crate::usage::machine_health::setup_sync::set_setup_file_off(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "off")?)).await) }.await,
         "set_setup_file_machine" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_file_machine(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,
         "set_setup_plugin" => async { done(Box::pin(crate::usage::machine_health::setup_wanted::set_setup_plugin(arg(&args, "repo")?, arg(&args, "plugin")?, arg(&args, "source")?, arg(&args, "project")?, arg(&args, "machine")?, arg(&args, "wanted")?)).await) }.await,

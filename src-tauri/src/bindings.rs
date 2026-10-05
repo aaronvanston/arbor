@@ -157,6 +157,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::setup_sync::SetupBackup>();
         types.visit::<crate::usage::machine_health::guarded_writes::SyncOutcome>();
         types.visit::<crate::usage::machine_health::setup_repo_skills::SourceCheck>();
+        types.visit::<crate::usage::machine_health::plugin_catalog::MarketplaceCatalog>();
         types.visit::<crate::usage::machine_health::setup_skills::SkillChange>();
         types.visit::<crate::usage::machine_health::transcripts::SkillUsageReport>();
         types.visit::<crate::usage::machine_health::setup_plugins::PluginChange>();
