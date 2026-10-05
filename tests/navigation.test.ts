@@ -50,4 +50,12 @@ describe('navigation', () => {
     expect(keepMachineScope(live, usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview' }));
     expect(keepMachineScope(live, setupView({ tab: 'skills' }))).toEqual(setupView({ tab: 'skills' }));
   });
+
+  test("Sync's Cost and Arbor's changes keep each other's machine", () => {
+    const cost = setupView({ tab: 'cost', machine: 'cedar-02' });
+    expect(keepMachineScope(cost, setupView({ tab: 'history' }))).toEqual(setupView({ tab: 'history', machine: 'cedar-02' }));
+    expect(keepMachineScope(setupView({ tab: 'history', machine: 'studio' }), setupView({ tab: 'cost' }))).toEqual(setupView({ tab: 'cost', machine: 'studio' }));
+    // Views without a machine in their breadcrumb don't take one.
+    expect(keepMachineScope(cost, setupView({ tab: 'toolchain' }))).toEqual(setupView({ tab: 'toolchain' }));
+  });
 });

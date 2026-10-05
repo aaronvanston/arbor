@@ -142,16 +142,20 @@ export function hasMachineScope(page: MainPageId, tab: string | undefined): bool
   return false;
 }
 
+/** Sync's views with a machine in their breadcrumb: Cost, and Arbor's changes, which shows one machine's at a time. */
+const setupMachineScope = (tab: string | undefined) => tab === 'cost' || tab === 'history';
+
 /**
  * The view `next` opens as, picked while `current` is on screen: a view of the same page that can be narrowed to a
  * machine keeps the machine the page is narrowed to, so moving between Sessions' views stays on that machine.
  */
 export function keepMachineScope(current: AppView, next: AppView): AppView {
   if (current.kind !== 'main' || next.kind !== 'main' || current.page !== next.page) return next;
-  if (next.page !== 'sessions' && next.page !== 'usage') return next;
+  if (next.page !== 'sessions' && next.page !== 'usage' && next.page !== 'setup') return next;
   const machine = current.params && 'machine' in current.params ? current.params.machine : undefined;
   const tab = next.params?.tab;
-  if (!machine || !hasMachineScope(next.page, tab) || next.params?.machine !== undefined) return next;
+  const scoped = next.page === 'setup' ? setupMachineScope(tab) : hasMachineScope(next.page, tab);
+  if (!machine || !scoped || next.params?.machine !== undefined) return next;
   return { ...next, params: { ...next.params, machine } } as AppView;
 }
 
