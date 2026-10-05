@@ -52,6 +52,9 @@ type Form = {
   precheck: string;
   precheckTimeoutSecs: number;
   enabled: boolean;
+  /** The model and effort it's set to. The form doesn't change them, but a save writes every field, so they're kept. */
+  model: string | null;
+  effort: string | null;
 };
 
 const BEST = 'best';
@@ -76,6 +79,8 @@ const emptyForm = (machine: string): Form => ({
   precheck: '',
   precheckTimeoutSecs: 60,
   enabled: true,
+  model: null,
+  effort: null,
 });
 
 const formFrom = (automation: Automation): Form => ({
@@ -95,6 +100,8 @@ const formFrom = (automation: Automation): Form => ({
   precheck: automation.precheck ?? '',
   precheckTimeoutSecs: automation.precheckTimeoutSecs,
   enabled: automation.summary.enabled,
+  model: automation.model,
+  effort: automation.effort,
 });
 
 const GRACE_CHOICES = [15, 30, 60, 120, 360, 720, 1440];
@@ -210,6 +217,8 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
       ...(form.precheck.trim() ? { precheck: form.precheck.trim() } : {}),
       precheckTimeoutSecs: form.precheckTimeoutSecs,
       enabled: form.enabled,
+      ...(form.model ? { model: form.model } : {}),
+      ...(form.effort ? { effort: form.effort } : {}),
     };
     try {
       const saved = await invokeCommand('save_automation', { input });
