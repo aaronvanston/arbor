@@ -243,12 +243,13 @@ export function ThinkingAliasesPage() {
   });
 
   useEffect(() => {
+    // The name follows the model and options until it's typed over. The updater stays pure: React may run it twice,
+    // and one that moved the ref itself refused the second run, which left the first generated name in place.
+    const generated = generatedAliasRef.current;
+    generatedAliasRef.current = uniqueDefaultAlias;
     setAlias((current) => {
       const currentValue = current.trim();
-      const canReplace = !currentValue || currentValue === generatedAliasRef.current;
-      if (!canReplace) return current;
-      generatedAliasRef.current = uniqueDefaultAlias;
-      return uniqueDefaultAlias;
+      return !currentValue || currentValue === generated ? uniqueDefaultAlias : current;
     });
   }, [uniqueDefaultAlias]);
 
