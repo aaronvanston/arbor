@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arbor.onl/schema/project.schema.json",
+  "title": "Arbor project",
+  "description": "One project in the setup repo: projects/<owner>/<name>/project.json, or projects/_local/<name>/project.json for one with no remote. Beside it: instructions.md, machines/<machine>.md and skills/<skill>/. Move the folder under projects/_archive/ to keep it on record without syncing.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "remote": { "type": "string", "description": "The URL to clone, as git takes it. Its owner/name has to be the folder's. Not for a project in _local." },
+    "local": { "type": "boolean", "description": "True for a project in _local. The folder is what counts." },
+    "path": { "$ref": "#/$defs/path", "description": "Where it goes on every machine. Default <codeRoot>/<owner>/<name>, or <codeRoot>/_local/<name>." },
+    "branch": { "type": "string", "description": "The branch kept up to date. Default the remote's." },
+    "machines": {
+      "description": "The machines it's on: \"all\", or each by name or @role with its values there. A machine's own entry wins over its role's.",
+      "oneOf": [
+        { "const": "all" },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "path": { "$ref": "#/$defs/path", "description": "Where it goes on this machine." },
+              "skills": { "$ref": "#/$defs/values" },
+              "plugins": { "$ref": "#/$defs/values" },
+              "mcp": { "$ref": "#/$defs/values" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "skills": { "$ref": "#/$defs/values", "description": "On or off in each of its checkouts, over the machine's value." },
+    "plugins": { "$ref": "#/$defs/values", "description": "On or off in each of its checkouts, by name@marketplace." },
+    "mcp": { "$ref": "#/$defs/values", "description": "On or off in each of its checkouts." }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "path": { "type": "string", "pattern": "^(~|/)(/?[^/]+)*$", "description": "~/… or absolute, without .. in it." },
+    "values": { "type": "object", "additionalProperties": { "enum": ["on", "off"] } }
+  }
+}

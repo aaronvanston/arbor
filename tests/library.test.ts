@@ -28,7 +28,7 @@ const listing = (id: string, all: RepoPlugin['all'], machines: RepoPlugin['machi
 const repo = (plugins: RepoPlugin[], fields: Partial<SetupRepo> = {}): SetupRepo => ({
   path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha: 'ab'.repeat(32), subject: 'Start', atMs: 1_000 },
   upstream: null, uncommitted: [], files: [], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
-  skillProjects: {}, mcpProjects: {}, instructions: [], plugins, codexPlugins: [], ...fields,
+  skillProjects: {}, mcpProjects: {}, instructions: [], plugins, codexPlugins: [], layers: { machines: [], projects: [], problems: [] }, ...fields,
 });
 
 const REVIEW = 'review@acme-tools';

@@ -209,7 +209,7 @@ describe('the setup repo', () => {
   const repo = (sum: string): SetupRepo => ({
     path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha, subject: 'Start', atMs: NOW }, upstream: null, uncommitted: [],
     files: [{ path: '~/.claude/CLAUDE.md', kind: 'instructions', sum, ck: 'c1-10', size: 10 }], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
-    plugins: [], codexPlugins: [],
+    plugins: [], codexPlugins: [], layers: { machines: [], projects: [], problems: [] },
   });
 
   it('is in step when nothing is to add or update', () => {
@@ -462,7 +462,7 @@ describe('projects', () => {
     path, state: 'ok', bare: false, remote, defaultBranch: 'origin/main', fetchedAt: null, fetchFailed: false, lastUsedMs: null, worktrees: [], files: [], ...fields,
   });
   const projects = (name: string, homeDir: string, repos: ProjectRepo[], scannedAt: number | null = NOW, error: string | null = null): MachineProjects => ({
-    machine: name, homeDir, scannedAt, partial: false, fetchedAt: null, measuredAt: null, scanning: false, measuring: false, removing: false, error, repos,
+    machine: name, homeDir, scannedAt, partial: false, fetchedAt: null, measuredAt: null, scanning: false, measuring: false, removing: false, error, repos, places: [],
   });
   const theirs = projects('mbp', '/Users/cam', [
     repo('/Users/cam/src/arbor', 'github.com/cam/arbor', { lastUsedMs: NOW - 60_000 }),

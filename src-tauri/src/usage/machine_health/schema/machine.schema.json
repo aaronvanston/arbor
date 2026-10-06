@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arbor.onl/schema/machine.schema.json",
+  "title": "Arbor machine",
+  "description": "One machine in the setup repo: machines/<machine>.json. The file name is the machine, compared loosely with the names Arbor shows (eden-dev-01.json is \"Eden dev 01\"). Move the file to machines/_archive/ to keep it on record without syncing.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "type": "string", "description": "How Arbor names the machine. The file name is what counts." },
+    "host": { "type": "string", "description": "Its SSH host. Arbor offers to add it when it has no host by that name; it never connects to it unasked." },
+    "role": { "type": "string", "description": "A label, like devbox. A project can list \"@devbox\" to be on every machine with this role." },
+    "codeRoot": { "$ref": "#/$defs/path", "description": "Where projects go on this machine, as <codeRoot>/<owner>/<name>. Default ~/code." },
+    "skills": {
+      "type": "object",
+      "description": "This machine's own value for a skill: off keeps it off this machine, own keeps the machine's copy.",
+      "additionalProperties": { "enum": ["off", "own"] }
+    },
+    "plugins": {
+      "type": "object",
+      "description": "This machine's own value for a plugin .agents/plugins.json lists, by name@marketplace.",
+      "additionalProperties": { "enum": ["on", "off", "own", "removed"] }
+    },
+    "mcp": {
+      "type": "object",
+      "description": "This machine's own value for an MCP server.",
+      "additionalProperties": { "enum": ["on", "off"] }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "path": { "type": "string", "pattern": "^(~|/)(/?[^/]+)*$", "description": "~/… or absolute, without .. in it." }
+  }
+}

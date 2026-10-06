@@ -1,36 +1,36 @@
 import type {
   AgentKind,
-  CodexPluginChange,
   CheckoutInstructionsChange,
   CheckoutInstructionsResult,
   CheckoutMcpChange,
   CheckoutMcpResult,
   CheckoutSkillChange,
   CheckoutSkillResult,
+  CodexPluginChange,
+  HookRegistry,
+  HookWanted,
   MachineProjects,
   MachineToolchain,
   McpChange,
-  PluginWanted,
-  SkillWanted,
   McpHealth,
   McpRegistry,
+  McpResult,
+  McpUsageReport,
   McpWanted,
-  HookRegistry,
-  HookWanted,
   NodeChange,
   NodeResult,
+  PluginChange,
+  PluginCosts,
   PluginLeftover,
+  PluginResult,
+  PluginWanted,
+  ProjectsDrift,
+  RemovalResult,
   RepoChange,
   RepoCommit,
   RepoText,
   RepoTree,
   SettingsEdit,
-  McpResult,
-  McpUsageReport,
-  PluginChange,
-  PluginCosts,
-  PluginResult,
-  RemovalResult,
   SetupBackup,
   SetupInventory,
   SetupRepo,
@@ -38,6 +38,7 @@ import type {
   SetupText,
   SkillChange,
   SkillUsageReport,
+  SkillWanted,
   SourceCheck,
   MarketplaceCatalog,
   StartingContext,
@@ -54,6 +55,8 @@ export type SetupCommands = {
   read_setup_skill: { args: { machine: string; path: string }; result: SetupSkillFile[] };
 
   get_setup_repo: { args: { repo: string }; result: SetupRepo };
+  get_project_drift: { args: { repo: string }; result: ProjectsDrift };
+  add_setup_schemas: { args: { repo: string }; result: SetupRepo };
   read_setup_repo_file: { args: { repo: string; commit: string; path: string }; result: SetupText };
   start_setup_repo: { args: { repo: string }; result: SetupRepo };
   take_setup_file: { args: { repo: string; machine: string; path: string }; result: SetupRepo };
@@ -143,7 +146,7 @@ export type SetupCommands = {
   set_hook_agents: { args: { repo: string; name: string; agents: AgentKind[] }; result: HookRegistry };
 
   get_projects: { result: MachineProjects[] };
-  scan_projects: { args: { machine: string; fetch?: boolean | null }; result: MachineProjects };
+  scan_projects: { args: { machine: string; fetch?: boolean | null; repo?: string | null }; result: MachineProjects };
   measure_projects: { args: { machine: string }; result: MachineProjects };
   read_project_file: { args: { machine: string; repo: string; name: string }; result: SetupText };
   remove_worktrees: { args: { machine: string; removals: WorktreeRemoval[] }; result: RemovalResult[] };

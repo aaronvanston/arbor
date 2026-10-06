@@ -3,9 +3,12 @@
 //! The repo holds them as plain Markdown, for every machine and, where one differs, for one machine:
 //!
 //! ```text
-//! .agents/projects/<owner>/<name>/instructions.md
-//! .agents/projects/<owner>/<name>/machines/<machine>.md
+//! projects/<owner>/<name>/instructions.md
+//! projects/<owner>/<name>/machines/<machine>.md
 //! ```
+//!
+//! beside the project's project.json (see setup_layers). They used to live under .agents/projects/, with the
+//! machine's file named by its normalized name; those are still read, and the project's folder wins.
 //!
 //! Each checkout gets them in the files its agents read beside the project's checked-in ones, and Git
 //! ignores: Claude Code's CLAUDE.local.md, and Codex's AGENTS.override.md. Claude Code stops reading a
@@ -30,8 +33,9 @@ use super::*;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use ts_rs::TS;
 
-/// Where the repo keeps projects' instructions.
-pub(super) const PROJECTS_DIR: &str = ".agents/projects/";
+/// Where the repo keeps projects' instructions: in each project's folder, and where it used to.
+const PROJECTS_DIR: &str = super::setup_layers::PROJECTS_DIR;
+const OLD_PROJECTS_DIR: &str = ".agents/projects/";
 /// Longer than any project's own instructions should be.
 const TEXT_MAX_BYTES: usize = 65_536;
 /// The most of a checkout's AGENTS.md Arbor copies into AGENTS.override.md.
@@ -65,7 +69,15 @@ impl RepoInstructions {
 
 /// The project and machine a repo path holds instructions for, when it's one of those files.
 pub(super) fn instructions_file(rel: &str) -> Option<(String, Option<String>)> {
-    let rest = rel.strip_prefix(PROJECTS_DIR)?;
+    instructions_place(rel).map(|(project, machine, _)| (project, machine))
+}
+
+/// `instructions_file`, and whether the path is where they used to live.
+fn instructions_place(rel: &str) -> Option<(String, Option<String>, bool)> {
+    let (rest, old) = match rel.strip_prefix(OLD_PROJECTS_DIR) {
+        Some(rest) => (rest, true),
+        None => (rel.strip_prefix(PROJECTS_DIR)?, false),
+    };
     let parts: Vec<&str> = rest.split('/').collect();
     let (owner, name, machine) = match parts.as_slice() {
         [owner, name, "instructions.md"] => (*owner, *name, None),
@@ -79,19 +91,11 @@ pub(super) fn instructions_file(rel: &str) -> Option<(String, Option<String>)> {
     if !super::setup_wanted::is_project(&project) {
         return None;
     }
-    if machine.is_some_and(|machine| machine.is_empty() || normalize_machine_name(machine) != machine) {
+    // The old place named machines only by their normalized names; a project's folder names them as people do.
+    if machine.is_some_and(|machine| normalize_machine_name(machine).is_empty() || (old && normalize_machine_name(machine) != machine)) {
         return None;
     }
-    Some((project.to_ascii_lowercase(), machine.map(str::to_string)))
-}
-
-/// The repo path for a project's instructions on every machine, or on one.
-fn instructions_rel(project: &str, machine: Option<&str>) -> String {
-    let project = project.to_ascii_lowercase();
-    match machine {
-        Some(machine) => format!("{PROJECTS_DIR}{project}/machines/{}.md", normalize_machine_name(machine)),
-        None => format!("{PROJECTS_DIR}{project}/instructions.md"),
-    }
+    Some((project.to_ascii_lowercase(), machine.map(normalize_machine_name), old))
 }
 
 /// The fingerprint Arbor's files name a text by.
@@ -101,26 +105,29 @@ pub(super) fn text_hash(text: &[u8]) -> String {
 
 /// Every project's instructions `commit` holds, from its listing under `prefix`.
 pub(super) async fn list(folder: &Path, prefix: &str, commit: &str) -> Result<Vec<RepoInstructions>, String> {
-    let listing = git_out(folder, &["ls-tree", "-r", "-l", "-z", "--full-name", commit, "--", &format!("./{PROJECTS_DIR}")]).await?;
-    let mut found = Vec::new();
+    let listing = git_out(folder, &["ls-tree", "-r", "-l", "-z", "--full-name", commit, "--", &format!("./{PROJECTS_DIR}"), &format!("./{OLD_PROJECTS_DIR}")]).await?;
+    let mut found: Vec<(String, Option<String>, String, u64, bool)> = Vec::new();
     for entry in listing.split('\0') {
         let Some((meta, full)) = entry.split_once('\t') else { continue };
         let Some(rel) = full.strip_prefix(prefix) else { continue };
         let fields: Vec<&str> = meta.split_whitespace().collect();
         let [mode, "blob", object, size] = fields.as_slice() else { continue };
-        let Some((project, machine)) = instructions_file(rel).filter(|_| matches!(*mode, "100644" | "100755")) else { continue };
+        let Some((project, machine, old)) = instructions_place(rel).filter(|_| matches!(*mode, "100644" | "100755")) else { continue };
         let Ok(size) = size.parse::<u64>() else { continue };
         if size as usize > TEXT_MAX_BYTES {
             continue;
         }
-        found.push((project, machine, object.to_string(), size));
+        found.push((project, machine, object.to_string(), size, old));
     }
-    let objects: Vec<&str> = found.iter().map(|(_, _, object, _)| object.as_str()).collect();
+    // One text per project and machine, from the project's folder where both places have one.
+    found.sort_by(|a, b| (&a.0, &a.1, a.4).cmp(&(&b.0, &b.1, b.4)));
+    found.dedup_by(|later, kept| later.0 == kept.0 && later.1 == kept.1);
+    let objects: Vec<&str> = found.iter().map(|(_, _, object, _, _)| object.as_str()).collect();
     let contents = super::setup_sync::blobs(folder, &objects).await?;
     Ok(found
         .into_iter()
         .zip(contents)
-        .map(|((project, machine, _, size), bytes)| RepoInstructions { project, machine, hash: text_hash(&bytes), size })
+        .map(|((project, machine, _, size, _), bytes)| RepoInstructions { project, machine, hash: text_hash(&bytes), size })
         .collect())
 }
 
@@ -132,8 +139,21 @@ async fn wanted_text(folder: &Path, project: &str, machine: &str) -> Result<Opti
         return Ok(None);
     }
     let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
-    for rel in [instructions_rel(project, Some(machine)), instructions_rel(project, None)] {
-        if let Ok(bytes) = repo_file(folder, &head, &rel).await {
+    // Paths come back from the folder, as `instructions_place` reads them, since the repo may sit inside a larger one.
+    let listing = git_out(folder, &["ls-tree", "-r", "--name-only", "-z", &head, "--", &format!("./{PROJECTS_DIR}"), &format!("./{OLD_PROJECTS_DIR}")]).await?;
+    let project = project.to_ascii_lowercase();
+    let machine = normalize_machine_name(machine);
+    // The machine's own before every machine's, and the project's folder before the old place.
+    let mut found: Vec<(bool, bool, &str)> = listing
+        .split('\0')
+        .filter_map(|rel| {
+            let (named, on, old) = instructions_place(rel)?;
+            (named == project && on.as_ref().is_none_or(|on| *on == machine)).then_some((on.is_none(), old, rel))
+        })
+        .collect();
+    found.sort();
+    for (_, _, rel) in found {
+        if let Ok(bytes) = repo_file(folder, &head, rel).await {
             return Ok(Some(bytes));
         }
     }
@@ -412,7 +432,11 @@ mod tests {
         assert_eq!(instructions_file(".agents/projects/cam/arbor/notes.md"), None);
         assert_eq!(instructions_file(".agents/projects/cam/instructions.md"), None);
         assert_eq!(instructions_file(".agents/projects/../x/instructions.md"), None);
-        assert_eq!(instructions_rel("Cam/Arbor", Some("Mac-Mini")), ".agents/projects/cam/arbor/machines/macmini.md");
+        // A project's own folder names machines as people do.
+        assert_eq!(instructions_file("projects/Cam/Arbor/instructions.md"), Some(("cam/arbor".into(), None)));
+        assert_eq!(instructions_file("projects/cam/arbor/machines/Mac-Mini.md"), Some(("cam/arbor".into(), Some("macmini".into()))));
+        assert_eq!(instructions_file("projects/cam/arbor/project.json"), None);
+        assert_eq!(instructions_file("projects/cam/arbor/machines/-.md"), None);
     }
 
     #[test]

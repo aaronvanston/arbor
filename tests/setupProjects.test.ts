@@ -36,7 +36,7 @@ const repo = (path: string, remote: string | null, worktrees: ProjectWorktree[],
 });
 const machine = (name: string, homeDir: string, repos: ProjectRepo[], fields: Partial<MachineProjects> = {}): MachineProjects => ({
   machine: name, homeDir, scannedAt: NOW, partial: false, fetchedAt: null, measuredAt: null, scanning: false, measuring: false,
-  removing: false, error: null, repos, ...fields,
+  removing: false, error: null, repos, places: [], ...fields,
 });
 
 const agents = (sum: string) => ({ name: 'AGENTS.md', sum, size: 100 });

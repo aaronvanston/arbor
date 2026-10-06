@@ -28,7 +28,7 @@ const repoFile = (path: string, sum: string, ck = 'c1-120'): SetupRepoFile => ({
 const repo = (files: SetupRepoFile[], skills: SetupRepoSkill[] = []): SetupRepo => ({
   path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha: sha('ab'), subject: 'Start', atMs: 1_000 },
   upstream: null, uncommitted: [], files, skills, ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
-    plugins: [], codexPlugins: [],
+    plugins: [], codexPlugins: [], layers: { machines: [], projects: [], problems: [] },
 });
 const repoSkill = (name: string, sum: string | null, fields: Partial<SetupRepoSkill> = {}): SetupRepoSkill => ({
   name, path: `~/.agents/skills/${name}`, sum, ck: sum === null ? null : 'c9-40', files: 3, size: 4_096, problem: null, source: null, ...fields,

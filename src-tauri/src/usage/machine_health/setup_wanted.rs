@@ -101,6 +101,60 @@ pub(crate) struct ProjectValue {
     machines: BTreeMap<String, PluginWanted>,
 }
 
+impl ProjectValue {
+    pub(super) fn set_all(&mut self, wanted: PluginWanted) {
+        self.all = Some(wanted);
+    }
+
+    pub(super) fn set_machine(&mut self, machine: &str, wanted: PluginWanted) {
+        self.machines.insert(machine.to_string(), wanted);
+    }
+
+    #[cfg(test)]
+    pub(super) fn all(&self) -> Option<PluginWanted> {
+        self.all
+    }
+
+    /// Lays `value` over this one: its values win, and this one's stand where it has none.
+    pub(super) fn overlay(&mut self, value: ProjectValue) {
+        if value.all.is_some() {
+            self.all = value.all;
+        }
+        self.machines.extend(value.machines);
+    }
+
+    #[cfg(test)]
+    pub(super) fn machine(&self, machine: &str) -> Option<PluginWanted> {
+        self.machines.get(machine).copied()
+    }
+}
+
+impl RepoPlugin {
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Sets a machine's own value (by normalized name), as a machine file in the repo gives it.
+    pub(super) fn set_machine(&mut self, machine: &str, wanted: PluginWanted) {
+        self.machines.insert(machine.to_string(), wanted);
+    }
+
+    /// Sets a project's values, as its project file gives them, over any .agents/plugins.json has.
+    pub(super) fn set_project(&mut self, project: &str, value: ProjectValue) {
+        self.projects.entry(project.to_string()).or_default().overlay(value);
+    }
+
+    #[cfg(test)]
+    pub(super) fn machine_value(&self, machine: &str) -> Option<PluginWanted> {
+        self.machines.get(machine).copied()
+    }
+
+    #[cfg(test)]
+    pub(super) fn project_value(&self, project: &str) -> Option<&ProjectValue> {
+        self.projects.get(project)
+    }
+}
+
 /// Each skill's projects with a value of their own, by lowercase `owner/name`.
 pub(super) type SkillProjects = BTreeMap<String, BTreeMap<String, ProjectValue>>;
 

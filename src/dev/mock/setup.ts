@@ -7,47 +7,46 @@ import type { SetupCommands } from '../../native/setup';
 import type {
   CatalogPlugin,
   AgentKind,
-  CodexPluginChange,
   ChangeKind,
   CheckoutInstructions,
   CheckoutInstructionsResult,
   CheckoutMcpResult,
-  LocalFileState,
-  RepoInstructions,
   CheckoutSkillResult,
-  RepoPlugin,
-  RepoProjectValue,
-  SkillWanted,
+  CheckoutStatus,
+  CodexPluginChange,
   DefinitionView,
   Harness,
   HarnessHome,
   HarnessInstall,
   HiddenReason,
   HomeAgent,
+  HookCell,
+  HookRegistry,
+  HookState,
+  HookWanted,
   ItemKind,
+  LocalFileState,
   MachineProjects,
   MachineToolchain,
   McpChange,
   McpHealth,
   McpOutcome,
   McpRegistry,
-  McpWanted,
-  HookCell,
-  HookRegistry,
-  HookState,
-  HookWanted,
-  NodeChange,
-  NodeResult,
-  SettingsEdit,
   McpResult,
   McpStatus,
+  McpUsageReport,
+  McpWanted,
+  NodeChange,
+  NodeResult,
   PluginAction,
   PluginChange,
   PluginCosts,
   PluginOutcome,
   PluginResult,
+  ProjectCell,
   ProjectLibrary,
   ProjectRepo,
+  ProjectsDrift,
   ProjectToolchain,
   ProjectWorktree,
   RegistryCell,
@@ -57,14 +56,20 @@ import type {
   RepoCommit,
   RepoEntry,
   RepoFileProblem,
+  RepoInstructions,
+  RepoPlugin,
+  RepoProject,
+  RepoProjectValue,
   RepoRole,
   RepoStatus,
   RepoTree,
   RepoUpstream,
+  SettingsEdit,
   SetupBackup,
   SetupHome,
   SetupInstall,
   SetupItem,
+  SetupLayers,
   SetupMachine,
   SetupRepo,
   SetupRepoFile,
@@ -74,6 +79,7 @@ import type {
   SkillOverride,
   SkillSource,
   SkillUsageReport,
+  SkillWanted,
   SourceCheck,
   SourceState,
   StartingContext,
@@ -81,10 +87,10 @@ import type {
   SyncFileKind,
   SyncOutcome,
   ToolNeed,
-  McpUsageReport,
   WorktreeRemoval,
 } from '../../native/types';
-import { projectOf, skillFolder, skillOf } from '../../services/repoBrowser';
+import { projectInstructionsPath, projectOf, skillFolder, skillOf } from '../../services/repoBrowser';
+import { machineLookKey } from '../../services/machineLook';
 import { HARNESS_SYNC_HOMES, syncKind } from '../../services/setupSync';
 import type { CommandAnswers } from './answers';
 import { freshInstall, hours, later, mockLog, params, realSize } from './scenario';
@@ -793,7 +799,7 @@ const mockCodexRepoPlugins: RepoPlugin[] = params.get('pluginrepo') === 'sample'
   : [];
 
 /**
- * Projects' own instructions (.agents/projects/<owner>/<name>/), by `project\u0000machine` with '' for every machine.
+ * Projects' own instructions (projects/<owner>/<name>/), by `project\u0000machine` with '' for every machine.
  * `?projectinstructions=sample`: cam/arbor has text for every machine and ci-01 its own. The Mac's main checkout has
  * Arbor's CLAUDE.local.md from an older text, its projects-tab worktree a CLAUDE.local.md of someone's own, and
  * cedar-02's brave-otter worktree doesn't ignore one.
@@ -863,6 +869,7 @@ const setupRepoReply = (path: string): SetupRepo => {
     plugins: structuredClone(mockRepoPlugins),
     codexPlugins: structuredClone(mockCodexRepoPlugins),
     instructions: repoInstructions(),
+    layers: mockLayers(),
   };
 };
 
@@ -1743,9 +1750,91 @@ const projectRepos: Record<string, { homeDir: string; repos: ProjectRepo[] }> = 
 const projectsState: MachineProjects[] = Object.entries(projectRepos).map(([machine, { homeDir, repos }]) => ({
   machine, homeDir, scannedAt: projectsScenario === 'fresh' ? null : Date.now() - 4 * 60_000,
   partial: projectsScenario === 'partial' && machine === 'cam-mbp', fetchedAt: null, measuredAt: null, scanning: false, measuring: false,
-  removing: false, error: null, repos: projectsScenario === 'fresh' || projectsScenario === 'none' ? [] : structuredClone(repos),
+  removing: false, error: null, repos: projectsScenario === 'fresh' || projectsScenario === 'none' ? [] : structuredClone(repos), places: [],
 }));
 keepThisMacOnly(projectsState);
+
+// Sync › Projects: the sample setup repo's machine and project files, and where each project stands on each machine.
+// `?places=none` is a repo with no project files yet; `?places=unscanned`, machines whose scans haven't looked at the
+// places yet; `?places=problems`, files Arbor had to skip parts of.
+const placesScenario = params.get('places');
+
+const mockProject = (key: string, extra: Partial<RepoProject>): RepoProject => ({
+  key, folder: `projects/${key}`, archived: false, local: key.startsWith('_local/'), remote: null, path: null, branch: null,
+  machines: { kind: 'all' }, skills: {}, plugins: {}, mcp: {}, ownSkills: [], ...extra,
+});
+
+const mockLayers = (): SetupLayers => placesScenario === 'none' ? { machines: [], projects: [], problems: [] } : {
+  machines: [
+    { key: 'cammbp', file: 'machines/cam-mbp.json', archived: false, name: 'cam-mbp', host: null, role: 'workstation', codeRoot: '~/code', skills: {}, plugins: {}, mcp: {} },
+    { key: 'ci01', file: 'machines/ci-01.json', archived: false, name: 'ci-01', host: 'ci-01', role: 'devbox', codeRoot: '~/work', skills: { pdf: 'off' }, plugins: {}, mcp: {} },
+    { key: 'cedar02', file: 'machines/cedar-02.json', archived: false, name: 'cedar-02', host: 'cedar-02', role: 'devbox', codeRoot: '~/code', skills: {}, plugins: {}, mcp: {} },
+    { key: 'labbox', file: 'machines/_archive/lab-box.json', archived: true, name: 'lab-box', host: 'lab-box', role: null, codeRoot: '~/code', skills: {}, plugins: {}, mcp: {} },
+  ],
+  projects: [
+    mockProject('cam/arbor', { remote: 'git@github.com:cam/arbor.git', ownSkills: ['release-notes'] }),
+    mockProject('acme/proxy', { remote: 'https://github.com/acme/proxy.git', machines: { kind: 'some', machines: { cammbp: { path: null, skills: {}, plugins: {}, mcp: {} }, '@devbox': { path: null, skills: {}, plugins: {}, mcp: {} } } } }),
+    mockProject('cam/billing', { remote: 'git@github.com:cam/billing.git', machines: { kind: 'some', machines: { cedar02: { path: null, skills: {}, plugins: {}, mcp: {} } } } }),
+    mockProject('_local/notes', { path: '~/src/notes', machines: { kind: 'some', machines: { cammbp: { path: null, skills: {}, plugins: {}, mcp: {} } } } }),
+    mockProject('cam/legacy-site', { folder: 'projects/_archive/cam/legacy-site', archived: true, remote: 'git@github.com:cam/legacy-site.git' }),
+  ],
+  problems: placesScenario === 'problems' ? [
+    { file: 'projects/cam/billing/project.json', problem: '"path" has to start with ~/ or /, without .. in it, so ../billing is left out' },
+    { file: 'machines/studio.json', problem: "isn't JSON Arbor can read (expected value at line 3 column 1), so it skips it" },
+  ] : [],
+};
+
+const placeStatus = (extra: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
+  branch: 'main', changed: 0, untracked: 0, upstream: 'origin/main', ahead: 0, behind: 0, defaultBranch: 'origin/main',
+  fetchedAt: hours(3), fetchFailed: false, worktrees: 0, ...extra,
+});
+
+const placeCell = (machine: string, path: string, state: ProjectCell['state'], extra: Partial<ProjectCell> = {}): ProjectCell => ({
+  machine, path, state: placesScenario === 'unscanned' ? 'notScanned' : state, blocker: null, blockerRemote: null, link: null,
+  checkout: null, status: null, others: [], ...(placesScenario === 'unscanned' ? {} : extra),
+});
+
+const mockDrift = (): ProjectsDrift => {
+  const machines = projectsState.map((entry) => ({ machine: entry.machine, scannedAt: entry.scannedAt, scanning: entry.scanning, error: entry.error }));
+  if (placesScenario === 'none') return { projects: [], unlisted: [], machines };
+  const on = new Set(machines.map((entry) => entry.machine));
+  const cells = (list: ProjectCell[]) => list.filter((cell) => on.has(cell.machine));
+  return {
+    machines,
+    projects: [
+      {
+        project: 'cam/arbor', local: false, archived: false, remote: 'git@github.com:cam/arbor.git', branch: null, unknown: [], unassigned: [],
+        cells: cells([
+          placeCell('cam-mbp', '~/code/cam/arbor', 'linked', { link: '/Users/cam/src/arbor', checkout: '/Users/cam/src/arbor', status: placeStatus({ behind: 2, worktrees: 5, fetchedAt: hours(0.5) }) }),
+          placeCell('ci-01', '~/work/cam/arbor', 'elsewhere', { checkout: '/home/ci/src/arbor', status: placeStatus({ behind: 14, fetchedAt: hours(9 * 24) }) }),
+          placeCell('cedar-02', '~/code/cam/arbor', 'inPlace', { checkout: '/home/cam/code/cam/arbor', status: placeStatus({ worktrees: 1 }), others: ['/home/cam/src/arbor'] }),
+        ]),
+      },
+      {
+        project: 'acme/proxy', local: false, archived: false, remote: 'https://github.com/acme/proxy.git', branch: null, unknown: ['studio'], unassigned: [],
+        cells: cells([
+          placeCell('cam-mbp', '~/code/acme/proxy', 'elsewhere', { checkout: '/Users/cam/src/proxy', status: placeStatus({ branch: 'feat/rate-limiter', upstream: 'origin/feat/rate-limiter', ahead: 2, changed: 3 }) }),
+          placeCell('ci-01', '~/work/acme/proxy', 'inPlace', { checkout: '/home/ci/work/acme/proxy', status: placeStatus() }),
+          placeCell('cedar-02', '~/code/acme/proxy', 'missing'),
+        ]),
+      },
+      {
+        project: 'cam/billing', local: false, archived: false, remote: 'git@github.com:cam/billing.git', branch: null, unknown: [], unassigned: [],
+        cells: cells([
+          placeCell('cedar-02', '~/code/cam/billing', 'blocked', { blocker: 'other' }),
+        ]),
+      },
+      {
+        project: '_local/notes', local: true, archived: false, remote: null, branch: null, unknown: [], unassigned: [],
+        cells: cells([
+          placeCell('cam-mbp', '~/src/notes', 'inPlace', { checkout: '/Users/cam/src/notes', status: placeStatus({ upstream: null, ahead: null, behind: null, defaultBranch: null, fetchedAt: null }) }),
+        ]),
+      },
+      { project: 'cam/legacy-site', local: false, archived: true, remote: 'git@github.com:cam/legacy-site.git', branch: null, unknown: [], unassigned: [], cells: [] },
+    ],
+    unlisted: on.has('cedar-02') ? [{ machine: 'cedar-02', path: '/home/cam/src/scratch', remote: null }] : [],
+  };
+};
 
 const projectTexts: Record<string, string> = {
   'arbor-a': '# Working on Arbor\n\nArbor is a Tauri 2 desktop app for macOS.\n\n## Running things\n\n```sh\nbun run verify\nbun run build\n```\n\n## Hard rules\n\n- The real app and its live data are off limits.\n- Claim, reset and redeem calls are only ever mocked.\n',
@@ -2203,7 +2292,7 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
   projectRepos[name] = { homeDir: '/home/cam', repos: [] };
   projectsState.push({
     machine: name, homeDir: '/home/cam', scannedAt, partial: false, fetchedAt: null, measuredAt: null,
-    scanning: false, measuring: false, removing: false, error: null, repos: [],
+    scanning: false, measuring: false, removing: false, error: null, repos: [], places: [],
   });
   if (!arrived) {
     window.setTimeout(() => {
@@ -2251,7 +2340,7 @@ const hiddenBlob = (file: SetupSkillFile): MockBlob => ({ text: null, sum: file.
 /** Projects' own instructions as files, by their place in the repo. */
 const instructionFilesOf = (texts: Record<string, string>) => Object.fromEntries(Object.entries(texts).map(([key, text]) => {
   const [project = '', machine = ''] = key.split('\u0000');
-  return [`.agents/projects/${project}/${machine ? `machines/${machine}.md` : 'instructions.md'}`, textBlob(text)];
+  return [projectInstructionsPath(project, machine || null), textBlob(text)];
 }));
 
 /** The rest of the folder as the repo started, kept from the first time it's read so later commits show what changed. */
@@ -2277,7 +2366,7 @@ if (bigRepo) for (const name of bigSkillNames(5)) mockRemovedSkills.add(name);
 const othersAtStart = () => {
   startedOthers ??= {
     ...bigRepoFiles(),
-    'README.md': textBlob('# Agent setup\n\nThe agent files Arbor keeps the same on every machine.\n\n- `.claude/` and `.codex/` go to each machine\'s homes.\n- `.agents/skills/` holds the skills, a folder each.\n- `.agents/projects/` holds projects\' own instructions.\n'),
+    'README.md': textBlob('# Agent setup\n\nThe agent files Arbor keeps the same on every machine.\n\n- `.claude/` and `.codex/` go to each machine\'s homes.\n- `.agents/skills/` holds the skills, a folder each.\n- `projects/` holds each project, with its own instructions.\n'),
     '.gitignore': textBlob('.DS_Store\n'),
     '.agents/machines.json': textBlob(`${JSON.stringify({ skills: mockSkillMachines, files: mockFileMachines }, null, 2)}\n`),
     '.claude/settings.json': textBlob('{\n  "permissions": {\n    "allow": ["Bash(bun test:*)"]\n  }\n}\n'),
@@ -2475,7 +2564,7 @@ const commitRepoMock = (path: string, paths: string[], message: string) => {
   for (const key of Object.keys(mockInstructions)) delete mockInstructions[key];
   for (const [file, blob] of next) {
     const found = projectOf(file);
-    if (found && blob.text !== null) mockInstructions[`${found.project}\u0000${found.machine ?? ''}`] = blob.text;
+    if (found && blob.text !== null) mockInstructions[`${found.project.toLowerCase()}\u0000${found.machine ? machineLookKey(found.machine) : ''}`] = blob.text;
   }
   mockLog('commit_setup_repo', { repo: path, paths: chosen, subject });
   return setupRepoReply(path);
@@ -3160,6 +3249,11 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     return later(500, () => setHookAgentsMock(repo, name, agents));
   },
   get_projects: () => projectsState.map(projectsReply),
+  get_project_drift: () => later(250, mockDrift),
+  add_setup_schemas: (args) => {
+    mockLog('add_setup_schemas', { repo: args.repo });
+    return later(400, () => setupRepoReply(args.repo));
+  },
   scan_projects: (args) => {
     mockLog('scan_projects', { machine: args.machine, fetch: Boolean(args.fetch) });
     return scanProjectsMock(args.machine, Boolean(args.fetch));

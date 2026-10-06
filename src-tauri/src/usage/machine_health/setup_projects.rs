@@ -281,6 +281,70 @@ pub(crate) struct ProjectRepo {
     files: Vec<ProjectFile>,
 }
 
+/// What's at a place the setup repo wants a project.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum PlaceKind {
+    /// Nothing there.
+    #[default]
+    Missing,
+    /// A link to nothing.
+    Broken,
+    File,
+    /// An empty folder, which a clone can fill.
+    Empty,
+    /// A folder that isn't the top of a checkout.
+    Other,
+    Checkout,
+}
+
+/// How a main checkout stands: what Sync › Projects needs to say whether it's up to date and safe to move.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CheckoutStatus {
+    /// None when no branch is checked out.
+    pub(super) branch: Option<String>,
+    /// Changed tracked files, and untracked ones; None when `git status` failed.
+    pub(super) changed: Option<u32>,
+    pub(super) untracked: Option<u32>,
+    pub(super) upstream: Option<String>,
+    pub(super) ahead: Option<u32>,
+    pub(super) behind: Option<u32>,
+    /// The remote's default branch, like `origin/main`.
+    pub(super) default_branch: Option<String>,
+    pub(super) fetched_at: Option<i64>,
+    /// The fetch Arbor asked for didn't work.
+    pub(super) fetch_failed: bool,
+    /// Its linked worktrees, which a move would have to repair.
+    pub(super) worktrees: u32,
+}
+
+/// A place the setup repo wants a project, as the last scan found it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FoundPlace {
+    /// As the repo gives it: `~/…` or absolute.
+    pub(super) path: String,
+    pub(super) kind: PlaceKind,
+    /// Where it leads, when it's a link.
+    pub(super) link: Option<String>,
+    /// The folder it is, links followed.
+    pub(super) real: Option<String>,
+    /// A checkout's origin as `host/owner/name`.
+    pub(super) remote: Option<String>,
+    #[serde(flatten)]
+    pub(super) status: CheckoutStatus,
+}
+
+/// A main checkout the last scan found from sessions, as Sync › Projects compares it.
+pub(super) struct FoundCheckout {
+    pub(super) path: String,
+    /// With links followed, where the scan knew.
+    pub(super) real: Option<String>,
+    pub(super) remote: Option<String>,
+    pub(super) status: CheckoutStatus,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MachineProjects {
@@ -297,6 +361,8 @@ pub(crate) struct MachineProjects {
     removing: bool,
     error: Option<String>,
     repos: Vec<ProjectRepo>,
+    /// The places the setup repo wants its projects here, from the same scan.
+    places: Vec<FoundPlace>,
 }
 
 /// A remote as compared: any case, with or without `.git`.
@@ -305,6 +371,59 @@ fn same_remote(remote: &str) -> String {
 }
 
 impl MachineProjects {
+    /// A machine's projects as a scan printing `stdout` would leave them.
+    #[cfg(test)]
+    pub(super) fn from_scan(machine: &str, stdout: &str) -> Self {
+        let scanned = parse_scan(stdout, &HashMap::new(), 0);
+        MachineProjects { machine: machine.into(), home_dir: scanned.home_dir, scanned_at: Some(1), repos: scanned.repos, places: scanned.places, ..MachineProjects::default() }
+    }
+}
+
+impl MachineProjects {
+    pub(super) fn places(&self) -> &[FoundPlace] {
+        &self.places
+    }
+
+    pub(super) fn scanned_at(&self) -> Option<i64> {
+        self.scanned_at
+    }
+
+    pub(super) fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    pub(super) fn is_scanning(&self) -> bool {
+        self.scanning
+    }
+
+    /// The main checkouts the last scan found, most recently used first, each with how it stands.
+    pub(super) fn main_checkouts(&self) -> Vec<FoundCheckout> {
+        self.repos
+            .iter()
+            .filter(|repo| repo.state == RepoState::Ok && !repo.bare)
+            .map(|repo| {
+                let main = repo.worktrees.iter().find(|worktree| worktree.main);
+                FoundCheckout {
+                    path: repo.path.clone(),
+                    real: main.and_then(|main| main.real.clone()),
+                    remote: repo.remote.clone(),
+                    status: CheckoutStatus {
+                        branch: main.and_then(|main| main.branch.clone()),
+                        changed: main.and_then(|main| main.changed),
+                        untracked: main.and_then(|main| main.untracked),
+                        upstream: main.and_then(|main| main.upstream.clone()),
+                        ahead: main.and_then(|main| main.ahead),
+                        behind: main.and_then(|main| main.behind),
+                        default_branch: repo.default_branch.clone(),
+                        fetched_at: repo.fetched_at,
+                        fetch_failed: repo.fetch_failed,
+                        worktrees: repo.worktrees.iter().filter(|worktree| !worktree.main).count() as u32,
+                    },
+                }
+            })
+            .collect()
+    }
+
     /// The project (lowercase `owner/name`) of the checkout at `path`, from its repo's remote, when the last scan found it.
     pub(crate) fn checkout_project(&self, path: &str) -> Option<String> {
         let repo = self.repos.iter().find(|repo| repo.worktrees.iter().any(|worktree| worktree.path == path))?;
@@ -513,12 +632,35 @@ trap 'rm -rf "$work"' EXIT
 //   P file                          Claude Code settings in the worktree before it, in base64 on the
 //                                   lines up to a "." line: only its enabledPlugins is kept
 //   Q                               the scan ran out of time here
+// Then each place the setup repo wants one of its projects (setup_layers), from a second heredoc:
+//   K path kind link real           kind: missing, broken (a link to nothing), file, empty, other or
+//                                   checkout; link is where a link leads, real the folder with links followed
+//   KO url                          a checkout's origin
+//   KE                              the fetch Arbor asked for failed
+//   KS branch changed untracked upstream track default fetched worktrees
+//                                   a checkout's branch and status, its upstream and how far apart they
+//                                   are, the remote's default branch, when it was last fetched, and how
+//                                   many linked worktrees it has
 const SCAN_HEAD: &str = r##"cat > "$work/repos" <<'ARBOR_REPOS'
 "##;
 
 const SCAN_BODY: &str = r##"ARBOR_REPOS
 cwds > "$work/cwds"
 printf 'H\t%s\n' "$HOME"
+# Fetches origin into $1 when Arbor asked, printing $2 when that fails.
+fetch_origin() {
+  [ "$fetch" = 1 ] || return 0
+  if [ -z "$(git -C "$1" config --get core.sshCommand 2>/dev/null || true)" ]; then
+    GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2'
+    export GIT_SSH_COMMAND
+  else
+    unset GIT_SSH_COMMAND
+  fi
+  # Nothing may ask for a password: a fetch that needs one fails instead.
+  GCM_INTERACTIVE=never GIT_ASKPASS=false SSH_ASKPASS_REQUIRE=never \
+    git -C "$1" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 -c gc.auto=0 -c maintenance.auto=false \
+    fetch --quiet --prune --no-tags --no-recurse-submodules origin >/dev/null 2>&1 || printf '%s\n' "$2"
+}
 scan_repo() {
   if [ ! -d "$repo" ]; then printf 'R\t%s\tmissing\n' "$repo"; return 0; fi
   real=$(cd "$repo" 2>/dev/null && pwd -P || true)
@@ -533,18 +675,7 @@ scan_repo() {
   url=$(origin_url "$repo")
   if [ -n "$url" ]; then
     printf 'O\t%s\n' "$url"
-    if [ "$fetch" = 1 ]; then
-      if [ -z "$(git -C "$repo" config --get core.sshCommand 2>/dev/null || true)" ]; then
-        GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2'
-        export GIT_SSH_COMMAND
-      else
-        unset GIT_SSH_COMMAND
-      fi
-      # Nothing may ask for a password: a fetch that needs one fails instead.
-      GCM_INTERACTIVE=never GIT_ASKPASS=false SSH_ASKPASS_REQUIRE=never \
-        git -C "$repo" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 -c gc.auto=0 -c maintenance.auto=false \
-        fetch --quiet --prune --no-tags --no-recurse-submodules origin >/dev/null 2>&1 || printf 'E\n'
-    fi
+    fetch_origin "$repo" E
   fi
   def=$(git -C "$repo" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)
   if [ -z "$def" ]; then
@@ -689,7 +820,61 @@ while IFS= read -r repo <&3; do
 done 3< "$work/repos"
 "##;
 
-fn scan_script(repos: &[String], fetch: bool) -> String {
+// Follows SCAN_BODY, with the places in a heredoc Rust puts before it, ending ARBOR_PLACES.
+const PLACES_BODY: &str = r##"ARBOR_PLACES
+scan_place() {
+  case "$p" in "~") at=$HOME ;; "~/"*) at="$HOME/${p#\~/}" ;; *) at=$p ;; esac
+  link=-
+  [ -L "$at" ] && link=$(readlink "$at" 2>/dev/null | tr -d '\t' || true)
+  if [ ! -e "$at" ]; then
+    if [ -L "$at" ]; then printf 'K\t%s\tbroken\t%s\t-\n' "$p" "${link:--}"; else printf 'K\t%s\tmissing\t-\t-\n' "$p"; fi
+    return 0
+  fi
+  if [ ! -d "$at" ]; then printf 'K\t%s\tfile\t%s\t-\n' "$p" "${link:--}"; return 0; fi
+  real=$(cd "$at" 2>/dev/null && pwd -P || true)
+  top=$(git -C "$at" rev-parse --show-toplevel 2>/dev/null || true)
+  if [ -z "$top" ] || [ "$top" != "$real" ]; then
+    kind=other
+    [ -z "$(ls -A "$at" 2>/dev/null | head -n 1)" ] && kind=empty
+    printf 'K\t%s\t%s\t%s\t%s\n' "$p" "$kind" "${link:--}" "${real:--}"
+    return 0
+  fi
+  printf 'K\t%s\tcheckout\t%s\t%s\n' "$p" "${link:--}" "$real"
+  url=$(origin_url "$at")
+  if [ -n "$url" ]; then
+    printf 'KO\t%s\n' "$url"
+    # A checkout the repos above have fetched already isn't fetched twice.
+    grep -Fqx "$real" "$work/repos" 2>/dev/null || fetch_origin "$at" KE
+  fi
+  branch=$(git -C "$at" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if git -C "$at" status --porcelain --untracked-files=normal > "$work/pst" 2>/dev/null; then
+    counts=$(awk '/^\?\? / { u++; next } { c++ } END { printf "%d\t%d", c, u }' "$work/pst")
+  else
+    counts="-$tab-"
+  fi
+  track="-$tab-"
+  if [ -n "$branch" ]; then
+    track=$(git -C "$at" for-each-ref --format='%(upstream:short)%09%(upstream:track)' "refs/heads/$branch" 2>/dev/null | head -n 1)
+    case "$track" in *"$tab"*) ;; *) track="-$tab-" ;; esac
+  fi
+  def=$(git -C "$at" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  common=$(git -C "$at" rev-parse --git-common-dir 2>/dev/null || true)
+  case "$common" in /*) ;; ?*) common="$at/$common" ;; esac
+  at_s=-
+  if [ -n "$common" ] && [ -f "$common/FETCH_HEAD" ]; then at_s=$(date -r "$common/FETCH_HEAD" +%s 2>/dev/null || echo -); fi
+  # The first entry is the checkout itself; the rest are its linked worktrees.
+  wts=$(git -C "$at" worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)
+  [ "${wts:-0}" -gt 0 ] 2>/dev/null && wts=$((wts - 1)) || wts=0
+  printf 'KS\t%s\t%s\t%s\t%s\t%s\t%s\n' "${branch:--}" "$counts" "$track" "${def:--}" "$at_s" "$wts"
+}
+# The places run even when the repos above used up the time: they're few, and what Sync › Projects shows.
+while IFS= read -r p <&3; do
+  [ -n "$p" ] || continue
+  scan_place </dev/null
+done 3< "$work/places"
+"##;
+
+fn scan_script(repos: &[String], places: &[String], fetch: bool) -> String {
     let budget = if fetch { FETCH_BUDGET_S } else { SCAN_BUDGET_S };
     let mut script = format!("{GIT_ENV}{CHECKS}{INSIDE_REPO}{ORIGIN_URL}fetch={}\nbudget={budget}\n{SCAN_HEAD}", u8::from(fetch));
     for repo in repos.iter().filter(|repo| is_path(repo)) {
@@ -697,6 +882,12 @@ fn scan_script(repos: &[String], fetch: bool) -> String {
         script.push('\n');
     }
     script.push_str(SCAN_BODY);
+    script.push_str("cat > \"$work/places\" <<'ARBOR_PLACES'\n");
+    for place in places.iter().filter(|place| super::setup_layers::is_layer_path(place) && !place.contains('\n')) {
+        script.push_str(place);
+        script.push('\n');
+    }
+    script.push_str(PLACES_BODY);
     script
 }
 
@@ -765,6 +956,7 @@ fn seconds(value: &str) -> Option<i64> {
 struct Scanned {
     home_dir: String,
     repos: Vec<ProjectRepo>,
+    places: Vec<FoundPlace>,
     partial: bool,
 }
 
@@ -829,6 +1021,46 @@ fn parse_scan(stdout: &str, used: &HashMap<String, i64>, now_ms: i64) -> Scanned
                 }
             }
             (["Q"], _) => scanned.partial = true,
+            (["K", path, kind, link, real], _) => {
+                let kind = match *kind {
+                    "broken" => PlaceKind::Broken,
+                    "file" => PlaceKind::File,
+                    "empty" => PlaceKind::Empty,
+                    "other" => PlaceKind::Other,
+                    "checkout" => PlaceKind::Checkout,
+                    _ => PlaceKind::Missing,
+                };
+                scanned.places.push(FoundPlace { path: path.to_string(), kind, link: field(link).map(str::to_string), real: field(real).map(str::to_string), ..FoundPlace::default() });
+            }
+            (["KO", url], _) => {
+                if let Some(place) = scanned.places.last_mut() {
+                    place.remote = normalize_remote(url);
+                }
+            }
+            (["KE"], _) => {
+                if let Some(place) = scanned.places.last_mut() {
+                    place.status.fetch_failed = true;
+                }
+            }
+            (["KS", branch, changed, untracked, upstream, track, default, fetched, worktrees], _) => {
+                if let Some(place) = scanned.places.last_mut() {
+                    let status = &mut place.status;
+                    status.branch = field(branch).map(str::to_string);
+                    status.changed = field(changed).and_then(|count| count.parse().ok());
+                    status.untracked = field(untracked).and_then(|count| count.parse().ok());
+                    status.upstream = field(upstream).map(str::to_string);
+                    if status.upstream.is_some() {
+                        let (ahead, behind, gone) = parse_track(track);
+                        if !gone {
+                            status.ahead = Some(ahead);
+                            status.behind = Some(behind);
+                        }
+                    }
+                    status.default_branch = field(default).map(str::to_string);
+                    status.fetched_at = seconds(fetched);
+                    status.worktrees = worktrees.trim().parse().unwrap_or(0);
+                }
+            }
             (["R", path, state], last) => {
                 attach = false;
                 if let Some(last) = last {
@@ -1102,22 +1334,25 @@ fn release(app: &tauri::AppHandle, machine: &str, update: impl FnOnce(&mut Machi
     projects
 }
 
-/// Looks at every repo sessions have worked in on a machine, fetching each first when `fetch`.
+/// Looks at every repo sessions have worked in on a machine, and each place the setup repo `repo` (else the last one
+/// named) wants a project there, fetching each first when `fetch`.
 #[tauri::command]
 pub(crate) async fn scan_projects(
     app: tauri::AppHandle,
     state: tauri::State<'_, MachineHealthState>,
     machine: String,
     fetch: Option<bool>,
+    repo: Option<String>,
 ) -> Result<MachineProjects, String> {
     let fetch = fetch == Some(true);
+    let places = super::setup_layers::places_on(&state, repo, &machine).await;
     let (target, _) = claim(&state, &machine, Work::Scan)?;
     let _ = app.emit(SETUP_PROJECTS_UPDATED_EVENT, Local::now().timestamp_millis());
     let result = async {
         let name = machine.clone();
         let checkouts = run_usage_task(move || load_checkouts(&open_usage_database()?, &name)).await?;
         let timeout = if fetch { FETCH_TIMEOUT } else { SCAN_TIMEOUT };
-        let stdout = run_checked(&target, MachineOp::ProjectsScan, &scan_script(&checkouts.repos, fetch), timeout).await?;
+        let stdout = run_checked(&target, MachineOp::ProjectsScan, &scan_script(&checkouts.repos, &places, fetch), timeout).await?;
         Ok(parse_scan(&stdout, &checkouts.used, Local::now().timestamp_millis()))
     }
     .await;
@@ -1132,6 +1367,7 @@ pub(crate) async fn scan_projects(
                 .filter_map(|worktree| worktree.size_kb.map(|size| (worktree.path.clone(), size)))
                 .collect();
             entry.repos = scanned.repos;
+            entry.places = scanned.places;
             for worktree in entry.repos.iter_mut().flat_map(|repo| &mut repo.worktrees) {
                 worktree.size_kb = sizes.get(&worktree.path).copied();
             }
@@ -1919,6 +2155,55 @@ mod tests {
         }
 
         #[test]
+        fn each_place_the_repo_wants_is_read_as_a_checkout_a_link_or_whats_in_the_way() {
+            for shell in shells() {
+                let root = temp_dir("places");
+                let (home, app) = fixture(&root);
+                let code = home.join("code");
+                fs::create_dir_all(code.join("cam/empty")).unwrap();
+                fs::create_dir_all(code.join("cam/stuff")).unwrap();
+                fs::write(code.join("cam/stuff/notes.txt"), "x").unwrap();
+                fs::write(code.join("cam/file"), "x").unwrap();
+                std::os::unix::fs::symlink(&app, code.join("cam/app")).unwrap();
+                std::os::unix::fs::symlink(root.join("gone"), code.join("cam/broken")).unwrap();
+                fs::write(app.join("new.txt"), "x").unwrap();
+                let places: Vec<String> = ["~/code/cam/app", "~/code/cam/missing", "~/code/cam/empty", "~/code/cam/stuff", "~/code/cam/file", "~/code/cam/broken"]
+                    .into_iter()
+                    .map(String::from)
+                    .chain([app.display().to_string()])
+                    .collect();
+                let output = run(shell, &home, &scan_script(&[], &places, false));
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
+                let found = parse_scan(&stdout, &HashMap::new(), 0).places;
+                let kinds: Vec<(&str, PlaceKind)> = found.iter().map(|place| (place.path.as_str(), place.kind)).collect();
+                assert_eq!(
+                    kinds,
+                    [
+                        ("~/code/cam/app", PlaceKind::Checkout),
+                        ("~/code/cam/missing", PlaceKind::Missing),
+                        ("~/code/cam/empty", PlaceKind::Empty),
+                        ("~/code/cam/stuff", PlaceKind::Other),
+                        ("~/code/cam/file", PlaceKind::File),
+                        ("~/code/cam/broken", PlaceKind::Broken),
+                        (app.to_str().unwrap(), PlaceKind::Checkout),
+                    ],
+                    "{shell}: {stdout}"
+                );
+                let linked = &found[0];
+                assert_eq!(linked.link.as_deref(), Some(app.to_str().unwrap()), "{shell}");
+                assert_eq!(linked.real.as_deref(), Some(app.to_str().unwrap()), "{shell}");
+                assert!(linked.remote.as_deref().is_some_and(|remote| remote.ends_with("upstream")), "{shell}: {:?}", linked.remote);
+                let status = &linked.status;
+                assert_eq!((status.branch.as_deref(), status.changed, status.untracked), (Some("main"), Some(0), Some(1)), "{shell}");
+                assert_eq!((status.upstream.as_deref(), status.ahead, status.behind), (Some("origin/main"), Some(0), Some(0)), "{shell}");
+                assert_eq!((status.default_branch.as_deref(), status.worktrees), (Some("origin/main"), 4), "{shell}");
+                assert!(found[6].link.is_none(), "{shell}");
+                let _ = fs::remove_dir_all(&root);
+            }
+        }
+
+        #[test]
         fn a_checkouts_own_mcp_servers_come_from_claude_json_by_name_only() {
             for shell in shells() {
                 let root = temp_dir("mcp");
@@ -1942,7 +2227,7 @@ mod tests {
                     },
                 });
                 fs::write(home.join(".claude.json"), serde_json::to_string_pretty(&json).unwrap()).unwrap();
-                let output = run(shell, &home, &scan_script(&[app.display().to_string()], false));
+                let output = run(shell, &home, &scan_script(&[app.display().to_string()], &[], false));
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 assert!(!stdout.contains("SECRET-TOKEN-123") && !stdout.contains("someone@example.com"), "{shell}: {stdout}");
                 let scanned = parse_scan(&stdout, &HashMap::new(), Local::now().timestamp_millis());
@@ -1964,7 +2249,7 @@ mod tests {
                 fs::write(app.join(".git/info/exclude"), "CLAUDE.local.md\n").unwrap();
                 fs::write(app.join("CLAUDE.local.md"), "<!-- arbor: x text=abc123 import=0 -->\n\nPRIVATE-NOTE-1\n").unwrap();
                 fs::write(root.join("busy/CLAUDE.local.md"), "PRIVATE-NOTE-2\n").unwrap();
-                let output = run(shell, &home, &scan_script(&[app.display().to_string()], false));
+                let output = run(shell, &home, &scan_script(&[app.display().to_string()], &[], false));
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 assert!(!stdout.contains("PRIVATE-NOTE"), "{shell}: {stdout}");
                 let scanned = parse_scan(&stdout, &HashMap::new(), Local::now().timestamp_millis());
@@ -1987,7 +2272,7 @@ mod tests {
             age(&root);
             let status_before = git(&home, &app, &["status", "--porcelain"]);
             let repos = vec![app.display().to_string(), root.join("gone").display().to_string(), root.display().to_string()];
-            let output = run(shell, &home, &scan_script(&repos, false));
+            let output = run(shell, &home, &scan_script(&repos, &[], false));
             assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
             let scanned = parse_scan(&String::from_utf8_lossy(&output.stdout), &HashMap::new(), Local::now().timestamp_millis());
             assert_eq!(scanned.home_dir, home.display().to_string());
@@ -2014,7 +2299,7 @@ mod tests {
             assert_eq!(git(&home, &app, &["status", "--porcelain"]), status_before);
             // A remote's user name, password and query never leave the machine.
             git(&home, &app, &["remote", "set-url", "origin", "https://cam:ghp_secret@Example.com/Owner/App.git?token=x"]);
-            let output = run(shell, &home, &scan_script(&repos[..1], false));
+            let output = run(shell, &home, &scan_script(&repos[..1], &[], false));
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(!stdout.contains("ghp_secret") && !stdout.contains("token=x"), "{shell}: {stdout}");
             let scanned = parse_scan(&stdout, &HashMap::new(), Local::now().timestamp_millis());
@@ -2034,7 +2319,7 @@ mod tests {
             let (home, app) = fixture(&root);
             age(&root);
             let repos = vec![app.display().to_string()];
-            let output = run(shell, &home, &scan_script(&repos, false));
+            let output = run(shell, &home, &scan_script(&repos, &[], false));
             let now_ms = Local::now().timestamp_millis();
             let scanned = parse_scan(&String::from_utf8_lossy(&output.stdout), &HashMap::new(), now_ms);
             let projects = MachineProjects { scanned_at: Some(now_ms), repos: scanned.repos, ..MachineProjects::default() };
@@ -2109,7 +2394,7 @@ mod tests {
             let (home, app) = fixture(&root);
             risky(&root, &home, &app);
             age(&root);
-            let output = run(shell, &home, &scan_script(&[app.display().to_string()], false));
+            let output = run(shell, &home, &scan_script(&[app.display().to_string()], &[], false));
             assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
             let scanned = parse_scan(&String::from_utf8_lossy(&output.stdout), &HashMap::new(), Local::now().timestamp_millis());
             let repo = scanned.repos.first().unwrap();

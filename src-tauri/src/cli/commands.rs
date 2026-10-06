@@ -1178,6 +1178,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_project_drift",
+        access: Access::Read,
+        summary: "Where each of the setup repo's projects stands on each machine, from the machines' last project scans. Remembers `repo` as the one the window names, so scans started elsewhere look at its places too.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "add_setup_schemas",
+        access: Access::Write,
+        summary: "Puts Arbor's schemas for machine and project files in the repo, or brings them up to date, each a commit of its own.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "read_setup_repo_file",
         access: Access::Read,
         summary: "A synced file's content as `commit` has it, for comparing with a machine's copy.",
@@ -1705,10 +1721,11 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "scan_projects",
         access: Access::Write,
-        summary: "Looks at every repo sessions have worked in on a machine, fetching each first when `fetch`.",
+        summary: "Looks at every repo sessions have worked in on a machine, and each place the setup repo `repo` (else the last one named) wants a project there, fetching each first when `fetch`.",
         args: &[
             ArgSpec { name: "machine", ts_type: "string", optional: false },
             ArgSpec { name: "fetch", ts_type: "boolean | null", optional: true },
+            ArgSpec { name: "repo", ts_type: "string | null", optional: true },
         ],
     },
     CommandSpec {
@@ -2157,6 +2174,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "read_setup_text" => async { done(Box::pin(crate::usage::machine_health::setup::read_setup_text(app.state(), arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "read_setup_skill" => async { done(Box::pin(crate::usage::machine_health::setup::read_setup_skill(app.state(), arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "get_setup_repo" => async { done(Box::pin(crate::usage::machine_health::setup_sync::get_setup_repo(arg(&args, "repo")?)).await) }.await,
+        "get_project_drift" => async { done(Box::pin(crate::usage::machine_health::project_places::get_project_drift(app.state(), arg(&args, "repo")?)).await) }.await,
+        "add_setup_schemas" => async { done(Box::pin(crate::usage::machine_health::setup_layers::add_setup_schemas(arg(&args, "repo")?)).await) }.await,
         "read_setup_repo_file" => async { done(Box::pin(crate::usage::machine_health::setup_sync::read_setup_repo_file(arg(&args, "repo")?, arg(&args, "commit")?, arg(&args, "path")?)).await) }.await,
         "list_setup_repo_tree" => async { done(Box::pin(crate::usage::machine_health::setup_repo_browse::list_setup_repo_tree(arg(&args, "repo")?)).await) }.await,
         "read_setup_repo_text" => async { done(Box::pin(crate::usage::machine_health::setup_repo_browse::read_setup_repo_text(arg(&args, "repo")?, arg(&args, "path")?, arg(&args, "commit")?)).await) }.await,
@@ -2214,7 +2233,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
             let app = app.clone();
             blocking(move || plain(crate::usage::machine_health::setup_projects::get_projects(app.state()))).await
         }
-        "scan_projects" => async { done(Box::pin(crate::usage::machine_health::setup_projects::scan_projects(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "fetch")?)).await) }.await,
+        "scan_projects" => async { done(Box::pin(crate::usage::machine_health::setup_projects::scan_projects(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "fetch")?, arg(&args, "repo")?)).await) }.await,
         "measure_projects" => async { done(Box::pin(crate::usage::machine_health::setup_projects::measure_projects(app.clone(), app.state(), arg(&args, "machine")?)).await) }.await,
         "read_project_file" => async { done(Box::pin(crate::usage::machine_health::setup_projects::read_project_file(app.state(), arg(&args, "machine")?, arg(&args, "repo")?, arg(&args, "name")?)).await) }.await,
         "remove_worktrees" => async { done(Box::pin(crate::usage::machine_health::setup_projects::remove_worktrees(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "removals")?)).await) }.await,

@@ -42,11 +42,11 @@ export type SessionsTabId = 'live' | 'sessions' | 'projects';
 export type ProjectsLens = 'checkouts';
 /**
  * Sync's views (the page's id is `setup`): Overview, its Checks (`overview`, the id saved views hold), Library,
- * everything the repo gives the machines' agents, Software, their agents and tools, and Repo. Saved ids of views that
- * now live elsewhere (Agents, Skills, MCP & plugins, Hooks, Toolchain, Cost, Arbor's changes, and before them Context,
- * Projects and Checklist) open through `movedSetupView`.
+ * everything the repo gives the machines' agents, Projects, where the repo's projects are on each machine, Software,
+ * their agents and tools, and Repo. Saved ids of views that now live elsewhere (Agents, Skills, MCP & plugins, Hooks,
+ * Toolchain, Cost, Arbor's changes, and before them Context and Checklist) open through `movedSetupView`.
  */
-export type SetupTabId = 'overview' | 'library' | 'software' | 'repo';
+export type SetupTabId = 'overview' | 'library' | 'projects' | 'software' | 'repo';
 /** The Library's tabs: what kind of thing it lists. */
 export type LibraryKind = 'plugins' | 'mcps' | 'skills' | 'hooks' | 'instructions';
 /**
@@ -179,7 +179,7 @@ export function keepMachineScope(current: AppView, next: AppView): AppView {
 
 const usageTabIds: readonly string[] = ['overview', 'digest', 'lifetime', 'events', 'prices'] satisfies UsageTabId[];
 const sessionsTabIds: readonly string[] = ['live', 'sessions', 'projects'] satisfies SessionsTabId[];
-const setupTabIds: readonly string[] = ['overview', 'library', 'software', 'repo'] satisfies SetupTabId[];
+const setupTabIds: readonly string[] = ['overview', 'library', 'projects', 'software', 'repo'] satisfies SetupTabId[];
 const accountsTabIds: readonly string[] = ['limits', 'sign-ins', 'value'] satisfies AccountsTabId[];
 export const isUsageTab = (tab: string | undefined | null): tab is UsageTabId => usageTabIds.includes(tab ?? '');
 export const isSessionsTab = (tab: string | undefined | null): tab is SessionsTabId => sessionsTabIds.includes(tab ?? '');
@@ -204,8 +204,9 @@ export function movedUsageView(tab: string | null | undefined): AppView | null {
 /**
  * Where a Sync view that moved is now, by the id saved views, recent picks and links still name it: Agents and
  * Toolchain are Software; Skills, MCP & plugins and Hooks the Library's kind by machine, as their grids were; Cost
- * (and Context before it) the Library by cost; Arbor's changes the Repo's History; Projects Sessions › Projects' Checkouts;
- * and Checklist the Machines page, where each machine's page has its own. Null for any other id.
+ * (and Context before it) the Library by cost; Arbor's changes the Repo's History; and Checklist the Machines page, where
+ * each machine's page has its own. `projects` was the checkouts grid, now Sessions › Projects' Checkouts, until it became
+ * Sync › Projects again, which links there. Null for any other id.
  */
 export function movedSetupView(tab: string | null | undefined): AppView | null {
   switch (tab) {
@@ -217,7 +218,6 @@ export function movedSetupView(tab: string | null | undefined): AppView | null {
     case 'cost':
     case 'context': return libraryView(undefined, 'cost');
     case 'history': return setupView({ tab: 'repo', lens: 'changes' });
-    case 'projects': return checkoutsView();
     case 'checklist': return machinesView();
     default: return null;
   }

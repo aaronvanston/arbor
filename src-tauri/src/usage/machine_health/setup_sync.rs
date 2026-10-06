@@ -32,6 +32,7 @@ use super::setup::{covered_machine, is_script_name, looks_secret, read_text, res
 use super::setup_mcp::{holds_secret, MCP_FILE};
 use super::setup_hooks::HOOKS_FILE;
 use super::project_instructions as instructions;
+use super::setup_layers::{self as layers, LayerPath, SetupLayers};
 use super::setup_wanted::{self as wanted, RepoPlugin, SkillMachines, SkillProjects, MACHINES_FILE, PLUGINS_FILE};
 use super::setup_repo_skills::{self as repo_skills, RepoSkill, SkillEntry, SkillFiles, SKILLS_DIR, SOURCES_FILE};
 use super::guarded_writes::{
@@ -206,8 +207,16 @@ pub(crate) struct SetupRepo {
     /// The Codex plugins .agents/plugins.json lists under `codex`, with each one's value for every machine and the
     /// machines' own. Codex's plugins and marketplaces aren't Claude Code's, so they're never compared.
     codex_plugins: Vec<RepoPlugin>,
-    /// Projects' own instructions, for every machine and for one, under .agents/projects.
+    /// Projects' own instructions, for every machine and for one, from each project's folder (or .agents/projects).
     instructions: Vec<instructions::RepoInstructions>,
+    /// Its machine and project files. Their values are in the maps above already.
+    layers: SetupLayers,
+}
+
+impl SetupRepo {
+    pub(super) fn layers(&self) -> &SetupLayers {
+        &self.layers
+    }
 }
 
 pub(super) async fn git(folder: &Path, args: &[&str], timeout: Duration) -> Result<std::process::Output, String> {
@@ -334,7 +343,7 @@ async fn uncommitted(folder: &Path, prefix: &str) -> Result<Vec<String>, String>
 /// The files and skills the repo syncs as `commit` has them, and the others it holds under the agents' folders.
 /// What a commit's tree holds: files, skills, what's ignored, the machines' values and removed marks, what's off
 /// everywhere, projects' values and plugins.
-type Tree = (Vec<RepoFile>, Vec<RepoSkill>, Vec<String>, (SkillMachines, Vec<String>, Vec<String>, SkillMachines), (Vec<String>, Vec<String>), (SkillProjects, SkillProjects), (Vec<RepoPlugin>, Vec<RepoPlugin>));
+type Tree = (Vec<RepoFile>, Vec<RepoSkill>, Vec<String>, (SkillMachines, Vec<String>, Vec<String>, SkillMachines), (Vec<String>, Vec<String>), (SkillProjects, SkillProjects), (Vec<RepoPlugin>, Vec<RepoPlugin>), SetupLayers);
 
 async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String> {
     let listing = git_out(folder, &["ls-tree", "-r", "-l", "-z", "--full-name", commit, "--", "."]).await?;
@@ -344,6 +353,8 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String>
     let mut machines_file = None;
     let mut plugins_file = None;
     let mut ignored = Vec::new();
+    let mut layer_files: Vec<(String, LayerPath, String)> = Vec::new();
+    let mut project_skills: Vec<(String, String)> = Vec::new();
     for entry in listing.split('\0') {
         let Some((meta, full)) = entry.split_once('\t') else { continue };
         let Some(rel) = full.strip_prefix(prefix) else { continue };
@@ -371,6 +382,18 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String>
         if rel == PLUGINS_FILE && file {
             plugins_file = Some(object.to_string());
             continue;
+        }
+        match layers::layer_path(rel) {
+            Some(LayerPath::ProjectSkill { folder, skill }) => {
+                project_skills.push((folder, skill));
+                continue;
+            }
+            Some(path @ (LayerPath::Machine { .. } | LayerPath::Project { .. })) if file && size.parse::<u64>().is_ok_and(|size| size <= layers::LAYER_FILE_MAX_BYTES) => {
+                layer_files.push((rel.to_string(), path, object.to_string()));
+                continue;
+            }
+            Some(_) => continue,
+            None => {}
         }
         match managed(rel) {
             Some(kind) if file && size.parse::<u64>().is_ok_and(|size| size <= FILE_MAX_BYTES) => {
@@ -428,7 +451,10 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String>
     };
     let plugins = plugins_bytes.as_deref().map(wanted::parse_plugins).unwrap_or_default();
     let codex_plugins = plugins_bytes.as_deref().map(wanted::parse_codex_plugins).unwrap_or_default();
-    Ok((files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (skill_projects, mcp_projects), (plugins, codex_plugins)))
+    let layer_objects: Vec<&str> = layer_files.iter().map(|(_, _, object)| object.as_str()).collect();
+    let layer_contents = blobs(folder, &layer_objects).await?;
+    let layers = layers::read_layers(layer_files.into_iter().zip(layer_contents).map(|((rel, path, _), bytes)| (rel, path, bytes)).collect(), &project_skills);
+    Ok((files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (skill_projects, mcp_projects), (plugins, codex_plugins), layers))
 }
 
 /// What the repo in `folder` holds and where its branch stands.
@@ -450,7 +476,7 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         .filter(|branch| !branch.is_empty());
     let last = git(folder, &["log", "-1", "--format=%H%x00%s%x00%ct"], GIT_TIMEOUT).await?;
     let head = last.status.success().then(|| parse_commit(&String::from_utf8_lossy(&last.stdout))).flatten();
-    let (files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (skill_projects, mcp_projects), (plugins, codex_plugins)) = match &head {
+    let (files, skills, ignored, (mut skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (mut skill_projects, mut mcp_projects), (mut plugins, codex_plugins), layers) = match &head {
         Some(head) => tree(folder, &prefix, &head.sha).await?,
         None => (
             Vec::new(),
@@ -460,8 +486,10 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
             (Vec::new(), Vec::new()),
             (SkillProjects::new(), SkillProjects::new()),
             (Vec::new(), Vec::new()),
+            SetupLayers::default(),
         ),
     };
+    layers.merge(&mut skill_machines, &mut plugins, &mut skill_projects, &mut mcp_projects);
     let instructions = match &head {
         Some(head) => instructions::list(folder, &prefix, &head.sha).await?,
         None => Vec::new(),
@@ -486,6 +514,7 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         plugins,
         codex_plugins,
         instructions,
+        layers,
     })
 }
 
@@ -591,7 +620,7 @@ async fn start_repo(folder: &Path, home: &Path, machine: &str, git_config: &[&st
 
 /// Commits `content` as the repo's copy of `rel`, and nothing else.
 pub(super) async fn take_into_repo(folder: &Path, rel: &str, content: &[u8], message: &str, git_config: &[&str]) -> Result<(), String> {
-    if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && instructions::instructions_file(rel).is_none() {
+    if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && instructions::instructions_file(rel).is_none() && !layers::is_layer_file(rel) {
         return Err(format!("Arbor doesn't sync {rel}"));
     }
     let pathspec = format!("./{rel}");
@@ -1507,6 +1536,33 @@ mod tests {
             write(&root.join(".claude/CLAUDE.md"), b"edited\n");
             write(&root.join(".agents/machines.json"), b"{}");
             assert!(block_on(remove_file(&root, "~/.claude/agents/old.md", true, &IDENTITY)).unwrap_err().contains("aren't committed"));
+            let _ = fs::remove_dir_all(&root);
+        }
+
+        #[test]
+        fn machine_and_project_files_are_read_and_their_values_merged_in() {
+            let root = temp_dir("layers");
+            git_in(&root, &["init", "--quiet"]);
+            write(&root.join(".agents/machines.json"), br#"{"version": 1, "skills": {"pdf": {"machines": {"ci-01": "off"}, "projects": {"cam/arbor": {"all": "on"}}}}}"#);
+            write(&root.join("machines/ci-01.json"), br#"{"name": "CI 01", "skills": {"pdf": "own"}}"#);
+            write(&root.join("projects/cam/arbor/project.json"), br#"{"remote": "git@github.com:cam/arbor.git", "machines": {"ci-01": {"skills": {"pdf": "off"}}}}"#);
+            write(&root.join("projects/cam/arbor/instructions.md"), b"New place.\n");
+            write(&root.join(".agents/projects/cam/arbor/instructions.md"), b"Old place.\n");
+            write(&root.join("projects/cam/arbor/skills/notes/SKILL.md"), b"---\nname: notes\n---\n");
+            write(&root.join("schema/project.schema.json"), b"{}");
+            git_in(&root, &["add", "--all"]);
+            git_in(&root, &["commit", "--quiet", "-m", "Layers"]);
+            let repo = block_on(read_repo(&root)).unwrap();
+            assert!(repo.ignored.is_empty(), "{:?}", repo.ignored);
+            let found = serde_json::to_value(&repo).unwrap();
+            assert_eq!(found["skillMachines"]["pdf"]["ci01"], "own");
+            assert_eq!(found["skillProjects"]["pdf"]["cam/arbor"], serde_json::json!({"all": "on", "machines": {"ci01": "off"}}));
+            assert_eq!(found["layers"]["machines"][0]["name"], "CI 01");
+            assert_eq!(found["layers"]["projects"][0]["ownSkills"], serde_json::json!(["notes"]));
+            assert_eq!(found["layers"]["problems"], serde_json::json!([]));
+            // The project's folder wins over where instructions used to live.
+            let listed: Vec<&str> = repo.instructions.iter().map(|found| found.hash()).collect();
+            assert_eq!(listed, [instructions::text_hash(b"New place.\n").as_str()]);
             let _ = fs::remove_dir_all(&root);
         }
 

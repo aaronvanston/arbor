@@ -28,8 +28,9 @@ export const commitSetupRepo = (repo: string, paths: string[], message: string) 
 
 /** Where the repo keeps skills, a folder each. */
 const SKILLS_FOLDER = '.agents/skills/';
-/** Where the repo keeps projects' own instructions. */
-const PROJECTS_FOLDER = '.agents/projects/';
+/** Where the repo keeps projects, a folder each with their own instructions; and where their instructions used to be. */
+const PROJECTS_FOLDER = 'projects/';
+const OLD_PROJECTS_FOLDER = '.agents/projects/';
 
 /** Roles whose file goes to the same place in each machine's home. */
 const HOME_ROLES: ReadonlySet<RepoRole> = new Set(['instructions', 'rule', 'subagent', 'command', 'hookScript']);
@@ -44,17 +45,25 @@ export function skillOf(path: string): string | null {
 /** A skill's folder in the repo. */
 export const skillFolder = (name: string) => `${SKILLS_FOLDER}${name}`;
 
-/** The project, and the machine when it's one machine's, whose own instructions a file in the repo holds. */
+/** The project, and the machine when it's one machine's (as its file is named), whose own instructions a file in the repo holds. */
 export function projectOf(path: string): { project: string; machine: string | null } | null {
-  if (!path.startsWith(PROJECTS_FOLDER)) return null;
-  const parts = path.slice(PROJECTS_FOLDER.length).split('/');
+  const folder = [PROJECTS_FOLDER, OLD_PROJECTS_FOLDER].find((prefix) => path.startsWith(prefix));
+  if (!folder) return null;
+  const parts = path.slice(folder.length).split('/');
   const [owner, name, third, fourth] = parts;
-  if (!owner || !name) return null;
+  if (!owner || !name || owner.startsWith('_')) return null;
   const project = `${owner}/${name}`;
   if (parts.length === 3 && third === 'instructions.md') return { project, machine: null };
   if (parts.length === 4 && third === 'machines' && fourth?.endsWith('.md') && fourth.length > 3) return { project, machine: fourth.slice(0, -3) };
   return null;
 }
+
+/** How a machine's own file is named in the repo: its name in lowercase, words joined by dashes ("Eden dev 01" is eden-dev-01). */
+export const machineFileStem = (machine: string) => machine.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+/** Where a project's own instructions go in the repo: for every machine, or for one. */
+export const projectInstructionsPath = (project: string, machine: string | null) =>
+  `${PROJECTS_FOLDER}${project.toLowerCase()}/${machine ? `machines/${machineFileStem(machine)}.md` : 'instructions.md'}`;
 
 /** Where a file goes on each machine, as the scans name it: its place in the home folder, or for a skill its folder in the store. */
 export function homePath(entry: Pick<RepoEntry, 'path' | 'role'>): string | null {

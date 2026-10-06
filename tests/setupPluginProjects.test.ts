@@ -12,7 +12,7 @@ const repo = (path: string, remote: string | null, worktrees: ProjectWorktree[],
   path, state: 'ok', bare: false, remote, defaultBranch: 'origin/main', fetchedAt: null, fetchFailed: false, lastUsedMs: null, worktrees, files: [], ...fields,
 });
 const scan = (machine: string, repos: ProjectRepo[]): MachineProjects => ({
-  machine, homeDir: '/home/cam', scannedAt: 1, partial: false, fetchedAt: null, measuredAt: null, scanning: false, measuring: false, removing: false, error: null, repos,
+  machine, homeDir: '/home/cam', scannedAt: 1, partial: false, fetchedAt: null, measuredAt: null, scanning: false, measuring: false, removing: false, error: null, repos, places: [],
 });
 
 const scans = [

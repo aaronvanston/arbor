@@ -9,6 +9,7 @@ import type {
   WorktreeRemoval,
 } from '../native/types';
 import { tracked } from './productAnalytics';
+import { storedSetupRepo } from './setupSync';
 
 /**
  * The git checkouts sessions have worked in on each machine, with their worktrees and the instruction files at the top
@@ -24,7 +25,8 @@ export const PROJECTS_FRESH_MS = 30 * 60_000;
 export const FETCH_STALE_MS = 7 * 86_400_000;
 
 export const getProjects = () => invokeCommand('get_projects');
-export const scanProjects = (machine: string, fetch = false) => invokeCommand('scan_projects', { machine, fetch });
+/** Scans a machine's projects, looking too at the places the setup repo wants its projects there. */
+export const scanProjects = (machine: string, fetch = false) => invokeCommand('scan_projects', { machine, fetch, repo: storedSetupRepo() });
 export const measureProjects = (machine: string) => invokeCommand('measure_projects', { machine });
 export const readProjectFile = (machine: string, repo: string, name: string) => invokeCommand('read_project_file', { machine, repo, name });
 export const removeWorktrees = (machine: string, removals: WorktreeRemoval[]) => tracked('worktrees-removed', invokeCommand('remove_worktrees', { machine, removals }), { count: removals.length });

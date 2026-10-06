@@ -36,6 +36,7 @@ import {
   listSetupRepoTree,
   moveSetupRepoPath,
   newPathProblem,
+  projectInstructionsPath,
   projectOf,
   readSetupRepoText,
   REPO_TREE_DEFAULT_WIDTH,
@@ -54,7 +55,6 @@ import {
 } from '../services/repoBrowser';
 import type { FileView } from '../services/fileView';
 import { checkSetupSkillSources, removableKind, setSetupFileRemoved, setSetupSkillRemoved, updateSetupSkill } from '../services/setupSync';
-import { machineLookKey } from '../services/machineLook';
 import { ChangesMode } from './SetupRepoChanges';
 import { HistoryMode } from './SetupRepoHistory';
 import { ProjectInstructionsStanding } from './ProjectInstructionsCard';
@@ -820,7 +820,7 @@ function NamingDialog({ naming, repo, machines, entries, onClose, onDone }: {
   const path = !naming ? '' : naming.kind === 'skill'
     ? `${skillFolder(value.trim())}/SKILL.md`
     : naming.kind === 'instructions'
-      ? project ? `.agents/projects/${project.toLowerCase()}/${machine ? `machines/${machineLookKey(machine)}.md` : 'instructions.md'}` : ''
+      ? project ? projectInstructionsPath(project, machine || null) : ''
       : value.trim();
   const others = naming?.kind === 'rename' ? entries.filter((entry) => entry.path !== naming.path && !entry.path.startsWith(`${naming.path}/`)) : entries;
   const problem: MessageKey | null = !naming ? null

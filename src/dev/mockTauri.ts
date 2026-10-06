@@ -27,7 +27,7 @@
  * `?page=accounts` or `?page=settings:auth-files` (any page id, `settings:` for a Settings page) to start on that page,
  * with Home one step back; with `?core=stopped` or `?core=missing` too, it shows locked with Start core or Install core;
  * `&tab=` with it starts on one of the page's views, by the id the view keeps: `?page=setup&tab=skills` (Sync's
- * `overview` is its Checks and `history` Arbor's changes; also `agents`, `repo`, `plugins`, `toolchain` and `cost`), `?page=sessions&tab=projects&lens=checkouts` for Projects' Checkouts (without `lens`, its Activity),
+ * `overview` is its Checks and `history` Arbor's changes; also `projects`, `agents`, `repo`, `plugins`, `toolchain` and `cost`), `?page=sessions&tab=projects&lens=checkouts` for Projects' Checkouts (without `lens`, its Activity),
  * `?page=accounts&tab=limits` or `value` (Value opens with `?core=stopped` too, its Limits locked beside it in the
  * sidebar), `?page=usage&tab=events` or `?page=sessions&tab=live` (a view a page doesn't have opens it on the view it
  * last had, and one that moved opens where it is now: `?page=usage&tab=capacity` opens Accounts › Value, `analysis`
@@ -45,9 +45,8 @@
  * Usage › Failed requests), and Usage was last left on Failures (it opens on Requests with Failed on);
  * `?oldviews=sync` does the same for Sync's and Usage's other moved views: Recent has Sync's
  * Context and Projects and Usage's Claude Code (listed as Sync › Cost, which both Context and Claude Code are part of,
- * and Sessions › Project checkouts), then Checks and Arbor's changes, which kept their ids, and Sync was last left on
- * Context (it opens on Cost); `?page=setup&tab=projects` opens Sessions › Projects' Checkouts, `&tab=context` Cost and
- * `&tab=checklist` Machines;
+ * and Sync › Projects, which it's again), then Checks and Arbor's changes, which kept their ids, and Sync was last left on
+ * Context (it opens on Cost); `?page=setup&tab=context` opens Cost and `&tab=checklist` Machines;
  * `?usagedata=new` for a new install's first launch, so the usage data note shows (`off` for it turned off, `env` for
  * DO_NOT_TRACK set, `source` for a build from source, which never sends);
  * `?status=incident` or `?status=maintenance` for the provider status pages;
@@ -171,6 +170,9 @@
  * the calls failing to read. Clear and Undo work on what's shown;
  * `?sources=fail` to have GitHub's limit on checking skills' sources used up;
  * for Sessions › Projects' Checkouts (`?page=sessions&tab=projects&lens=checkouts`):
+ * `?places=none` for a setup repo with no project files yet (Sync › Projects offers the schemas), `?places=unscanned`
+ * for machines whose scans haven't looked at the repo's places yet, `?places=problems` for project and machine files
+ * Arbor skipped parts of;
  * `?projects=fresh` for machines whose projects haven't been scanned (the view scans them), `?projects=none` for scans
  * that found no repos, `?projects=fail` to have cedar-02's projects scan fail, `?projects=partial` for a scan of
  * the Mac that ran out of time; `?worktrees=changed` to have every worktree but the first come back changed when

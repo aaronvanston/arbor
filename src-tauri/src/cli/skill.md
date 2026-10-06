@@ -32,6 +32,7 @@ any other machine, say so instead of trying.
 | Automatic account order | `arbor routing` |
 | Alerts | `arbor alerts` |
 | How far machines are from the setup repo | `arbor sync`, then `arbor sync <machine>` for what would change there |
+| Where the setup repo's projects are on each machine (its projects/ folder): in place, linked, elsewhere, missing or blocked | `arbor call get_project_drift repo=<setup repo folder>`; `arbor call scan_projects machine=<name> repo=<folder>` looks again |
 | Proxy core | `arbor core` |
 | Session archive | `arbor archive` |
 | Scheduled automations, Arbor's and other apps' | `arbor call list_automations`, then `arbor call get_automation id=<id>` and `arbor call list_automation_runs id=<id>` |
@@ -58,6 +59,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Cap an account at a percent of its limits, or clear it | `arbor accounts cap <id> 50`, `arbor accounts cap <id> off` |
 | Automatic account order for a provider | `arbor routing claude on`, `arbor routing codex off` |
 | Bring a machine in line with the setup repo | `arbor sync apply <machine>` (backed up first; undo it in Sync › Repo › History) |
+| Put the schemas for machine and project files in the setup repo, each as a commit | `arbor call add_setup_schemas repo=<setup repo folder>` |
 | Proxy core | `arbor core start`, `arbor core stop`, `arbor core restart`, `arbor core install [version]` |
 | Mark every alert seen | `arbor alerts seen` |
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |

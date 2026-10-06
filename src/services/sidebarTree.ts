@@ -79,6 +79,8 @@ export const SIDEBAR_TREE: readonly TreeSection[] = [
           sync('overview', 'setup.tab.overview', 'tree.sync.overviewKeywords'),
           // Skills, MCP & plugins, Hooks and Cost, which the palette still finds it by.
           sync('library', 'setup.tab.library', 'tree.sync.libraryKeywords'),
+          // Where the repo's projects are on each machine.
+          sync('projects', 'setup.tab.projects', 'tree.sync.projectsKeywords'),
           // Agents (Machines' Agent updates once) and Toolchain, which the palette still finds it by.
           sync('software', 'setup.tab.software', 'tree.sync.softwareKeywords'),
           // With Arbor's changes on each machine, which the palette still finds it by.

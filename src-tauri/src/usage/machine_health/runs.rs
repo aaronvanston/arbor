@@ -919,7 +919,7 @@ async fn scan_unseen(app: &tauri::AppHandle, pools_saved: &[MachinePool], pool_i
         let app = app.clone();
         async move {
             let state = app.state::<MachineHealthState>();
-            let _ = setup_projects::scan_projects(app.clone(), state, name, None).await;
+            let _ = setup_projects::scan_projects(app.clone(), state, name, None, None).await;
         }
     });
     futures_util::future::join_all(scans).await;

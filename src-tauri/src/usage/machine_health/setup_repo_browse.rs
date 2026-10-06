@@ -42,9 +42,10 @@ pub(crate) enum RepoRole {
     HookScript,
     /// A file in a skill's folder under .agents/skills.
     Skill,
-    /// A project's own instructions under .agents/projects.
+    /// A project's own instructions, in its folder under projects/ (or .agents/projects).
     ProjectInstructions,
-    /// One of the records Arbor keeps: which machines get what, MCP servers, hooks, plugins, skill sources.
+    /// One of the records Arbor keeps: which machines get what, MCP servers, hooks, plugins, skill sources, machine and
+    /// project files and their schemas.
     Record,
     /// Anything else, which stays in the repo.
     Other,
@@ -200,11 +201,12 @@ fn role_of(rel: &str) -> RepoRole {
         .and_then(|rest| rest.strip_prefix('/'))
         .and_then(|rest| rest.split_once('/'))
         .is_some_and(|(name, within)| !name.is_empty() && !within.is_empty());
-    if skill {
+    let layer = super::setup_layers::layer_path(rel);
+    if skill || matches!(layer, Some(super::setup_layers::LayerPath::ProjectSkill { .. })) {
         RepoRole::Skill
     } else if instructions::instructions_file(rel).is_some() {
         RepoRole::ProjectInstructions
-    } else if RECORDS.contains(&rel) {
+    } else if RECORDS.contains(&rel) || super::setup_layers::is_layer_file(rel) {
         RepoRole::Record
     } else {
         RepoRole::Other
@@ -786,6 +788,11 @@ mod tests {
         assert_eq!(role_of(".agents/skills/pdf"), RepoRole::Other, "a file named like a skill's folder isn't a skill");
         assert_eq!(role_of(".agents/projects/cam/arbor/instructions.md"), RepoRole::ProjectInstructions);
         assert_eq!(role_of(".agents/projects/cam/arbor/machines/ci01.md"), RepoRole::ProjectInstructions);
+        assert_eq!(role_of("projects/cam/arbor/machines/ci-01.md"), RepoRole::ProjectInstructions);
+        assert_eq!(role_of("projects/cam/arbor/project.json"), RepoRole::Record);
+        assert_eq!(role_of("machines/ci-01.json"), RepoRole::Record);
+        assert_eq!(role_of("schema/machine.schema.json"), RepoRole::Record);
+        assert_eq!(role_of("projects/cam/arbor/skills/notes/SKILL.md"), RepoRole::Skill);
         assert_eq!(role_of(".agents/machines.json"), RepoRole::Record);
         assert_eq!(role_of(".agents/skill-sources.json"), RepoRole::Record);
         assert_eq!(role_of(".claude/settings.json"), RepoRole::Other);

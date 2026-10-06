@@ -49,6 +49,7 @@ pub(crate) mod pools;
 pub(crate) mod runs;
 pub(crate) mod plugin_catalog;
 pub(crate) mod project_instructions;
+pub(crate) mod project_places;
 pub(crate) mod setup;
 pub(crate) mod setup_hooks;
 pub(crate) mod setup_mcp;
@@ -58,6 +59,7 @@ pub(crate) mod setup_repo_browse;
 pub(crate) mod setup_repo_skills;
 pub(crate) mod setup_skills;
 pub(crate) mod setup_sync;
+pub(crate) mod setup_layers;
 pub(crate) mod setup_wanted;
 pub(crate) mod setup_toolchain;
 pub(crate) mod shell;
@@ -716,6 +718,9 @@ struct Inner {
     local_t3: t3_threads::T3Log,
     /// Each machine's git checkouts, from the last scan of its projects.
     projects: BTreeMap<String, setup_projects::MachineProjects>,
+    /// The setup repo the window last named, so a scan of projects started elsewhere still looks where the repo wants
+    /// them. Rust has no setting of its own for it.
+    setup_repo: Option<String>,
     /// Each machine's tools and what its projects ask of them, from the last scan.
     toolchain: BTreeMap<String, setup_toolchain::MachineToolchain>,
     /// Sessions working now on each machine (normalized name), as the window's live board last
@@ -746,6 +751,7 @@ impl Default for MachineHealthState {
                 local_setup: setup::MachineSetup::default(),
                 local_t3: t3_threads::T3Log::default(),
                 projects: BTreeMap::new(),
+                setup_repo: None,
                 toolchain: BTreeMap::new(),
                 working_sessions: None,
             }),

@@ -56,6 +56,7 @@ import { setSyncMachine, setSyncProject, useSyncScope } from '../services/syncSc
 import { clearSyncChanges, requestSyncReview, syncCounts, useSyncChanges, type SyncReview } from '../services/syncChanges';
 import { SetupChecks } from './SetupChecks';
 import { SetupRepoSection } from './SetupSync';
+import { SyncProjects } from './SyncProjects';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
 import { SetupPlugins } from './SetupPlugins';
 import { SetupCost } from './SetupCost';
@@ -537,6 +538,15 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
           </Empty>
         ) : tab === 'repo' ? (
           <SetupRepoSection machines={machines} history={history} />
+        ) : tab === 'projects' ? (
+          <SyncProjects
+            machines={machines}
+            onOpenInRepo={(path) => {
+              requestFocus('repo-file', path);
+              onNavigate(setupView({ tab: 'repo' }));
+            }}
+            onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}
+          />
         ) : costLens ? (
           <SetupCost
             machines={machines}

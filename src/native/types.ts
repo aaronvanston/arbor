@@ -367,6 +367,11 @@ export type ArchiveTotals = {
   pendingBytes: number,
 };
 
+/**
+ * Which machines a project is on.
+ */
+export type Assignment = { "kind": "all" } | { "kind": "some", machines: { [key in string]: ProjectOnMachine }, };
+
 export type AttentionItem = {
   machine: string,
   agent: AgentKind,
@@ -883,6 +888,37 @@ export type CheckoutSkillResult = {
   checkout: string,
   skill: string,
   outcome: CheckoutOutcome,
+};
+
+/**
+ * How a main checkout stands: what Sync › Projects needs to say whether it's up to date and safe to move.
+ */
+export type CheckoutStatus = {
+  /**
+   * None when no branch is checked out.
+   */
+  branch: string | null,
+  /**
+   * Changed tracked files, and untracked ones; None when `git status` failed.
+   */
+  changed: number | null,
+  untracked: number | null,
+  upstream: string | null,
+  ahead: number | null,
+  behind: number | null,
+  /**
+   * The remote's default branch, like `origin/main`.
+   */
+  defaultBranch: string | null,
+  fetchedAt: number | null,
+  /**
+   * The fetch Arbor asked for didn't work.
+   */
+  fetchFailed: boolean,
+  /**
+   * Its linked worktrees, which a move would have to repair.
+   */
+  worktrees: number,
 };
 
 /**
@@ -1409,6 +1445,16 @@ export type DiscoveredHost = {
  */
 export type DiscoverySource = "sshConfig" | "knownHosts" | "tailscale";
 
+/**
+ * A machine's project scan, as far as Sync › Projects needs it.
+ */
+export type DriftMachine = {
+  machine: string,
+  scannedAt: number | null,
+  scanning: boolean,
+  error: string | null,
+};
+
 export type ExceptionReport = {
   source: ExceptionSource,
   name: string,
@@ -1590,6 +1636,54 @@ export type FoundHome = {
    * The role it would start with.
    */
   guess: HomeGuess | null,
+};
+
+/**
+ * A place the setup repo wants a project, as the last scan found it.
+ */
+export type FoundPlace = {
+  /**
+   * As the repo gives it: `~/…` or absolute.
+   */
+  path: string,
+  kind: PlaceKind,
+  /**
+   * Where it leads, when it's a link.
+   */
+  link: string | null,
+  /**
+   * The folder it is, links followed.
+   */
+  real: string | null,
+  /**
+   * A checkout's origin as `host/owner/name`.
+   */
+  remote: string | null,
+  /**
+   * None when no branch is checked out.
+   */
+  branch: string | null,
+  /**
+   * Changed tracked files, and untracked ones; None when `git status` failed.
+   */
+  changed: number | null,
+  untracked: number | null,
+  upstream: string | null,
+  ahead: number | null,
+  behind: number | null,
+  /**
+   * The remote's default branch, like `origin/main`.
+   */
+  defaultBranch: string | null,
+  fetchedAt: number | null,
+  /**
+   * The fetch Arbor asked for didn't work.
+   */
+  fetchFailed: boolean,
+  /**
+   * Its linked worktrees, which a move would have to repair.
+   */
+  worktrees: number,
 };
 
 /**
@@ -2071,6 +2165,14 @@ export type LatestVersions = {
   codex: string | null,
 };
 
+/**
+ * A layer file Arbor skipped, or a value in one, and why.
+ */
+export type LayerProblem = {
+  file: string,
+  problem: string,
+};
+
 export type LifetimeTokens = {
   /**
    * An archive has been set up, so there's something to count.
@@ -2446,6 +2548,10 @@ export type MachineProjects = {
   removing: boolean,
   error: string | null,
   repos: Array<ProjectRepo>,
+  /**
+   * The places the setup repo wants its projects here, from the same scan.
+   */
+  places: Array<FoundPlace>,
 };
 
 export type MachineSessions = {
@@ -2858,6 +2964,24 @@ export type PhoneAlertSecretStatus = {
 };
 
 /**
+ * What's at a place the setup repo wants a project.
+ */
+export type PlaceKind = "missing" | "broken" | "file" | "empty" | "other" | "checkout";
+
+/**
+ * How a project stands at its place on one machine.
+ */
+export type PlaceState = "inPlace" | "linked" | "elsewhere" | "missing" | "blocked" | "notScanned";
+
+/**
+ * A checkout of a project on a machine it isn't assigned to.
+ */
+export type Placed = {
+  machine: string,
+  path: string,
+};
+
+/**
  * What a change does. An apply makes them in this order.
  */
 export type PluginAction = "addMarketplace" | "refresh" | "install" | "update" | "enable" | "disable" | "uninstall" | "removeMarketplace";
@@ -3121,6 +3245,59 @@ export type ProjectBranch = {
   lastActiveAtMs: number,
 };
 
+/**
+ * A project on one machine.
+ */
+export type ProjectCell = {
+  machine: string,
+  /**
+   * Where the repo wants it, `~/…` or absolute.
+   */
+  path: string,
+  state: PlaceState,
+  /**
+   * For Blocked, what's there, and when it's another repo's checkout, that repo.
+   */
+  blocker: PlaceKind | null,
+  blockerRemote: string | null,
+  /**
+   * Where the place leads, for Linked.
+   */
+  link: string | null,
+  /**
+   * The checkout that counts: the place's folder, or the one a link would lead to.
+   */
+  checkout: string | null,
+  /**
+   * How that checkout stands.
+   */
+  status: CheckoutStatus | null,
+  /**
+   * Its other checkouts on the machine, which are never moved or counted.
+   */
+  others: Array<string>,
+};
+
+/**
+ * A project and where it stands on each machine it's on.
+ */
+export type ProjectDrift = {
+  project: string,
+  local: boolean,
+  archived: boolean,
+  remote: string | null,
+  branch: string | null,
+  cells: Array<ProjectCell>,
+  /**
+   * Machines it lists that Arbor doesn't watch.
+   */
+  unknown: Array<string>,
+  /**
+   * Checkouts on machines it doesn't list.
+   */
+  unassigned: Array<Placed>,
+};
+
 export type ProjectFile = {
   name: string,
   sum: string,
@@ -3146,6 +3323,16 @@ export type ProjectLibrary = {
    * Whether the packages script looked it up, so None means it isn't installed.
    */
   checked: boolean,
+};
+
+/**
+ * A project's values on one machine, or on each machine of a role.
+ */
+export type ProjectOnMachine = {
+  path: string | null,
+  skills: { [key in string]: PluginWanted },
+  plugins: { [key in string]: PluginWanted },
+  mcp: { [key in string]: PluginWanted },
 };
 
 export type ProjectPullRequest = {
@@ -3358,6 +3545,15 @@ export type ProjectWorktree = {
    * It has a CLAUDE.md or .claude/CLAUDE.md, so Claude Code reads that rather than AGENTS.md.
    */
   claudeMd: boolean,
+};
+
+/**
+ * Every project's places against what the machines' last scans found.
+ */
+export type ProjectsDrift = {
+  projects: Array<ProjectDrift>,
+  unlisted: Array<UnlistedCheckout>,
+  machines: Array<DriftMachine>,
 };
 
 export type ProxyChecks = {
@@ -3584,6 +3780,40 @@ export type RepoInstructions = {
 };
 
 /**
+ * A machine as its file in the repo describes it.
+ */
+export type RepoMachine = {
+  /**
+   * Its normalized name, from the file's name.
+   */
+  key: string,
+  /**
+   * The file, from the repo's root.
+   */
+  file: string,
+  archived: boolean,
+  /**
+   * How the file names it; the file's name when it doesn't.
+   */
+  name: string,
+  /**
+   * The SSH host the file gives. Arbor connects with its own list; this only offers a missing one.
+   */
+  host: string | null,
+  role: string | null,
+  /**
+   * Where its projects go, `~/…` or absolute.
+   */
+  codeRoot: string,
+  skills: { [key in string]: SkillWanted },
+  plugins: { [key in string]: PluginWanted },
+  /**
+   * Kept for the MCP registry; on or off.
+   */
+  mcp: { [key in string]: PluginWanted },
+};
+
+/**
  * A plugin the repo lists.
  */
 export type RepoPlugin = {
@@ -3608,6 +3838,42 @@ export type RepoPlugin = {
    * project's checkouts in Claude Code's local scope, which wins over the machine's.
    */
   projects: { [key in string]: RepoProjectValue },
+};
+
+/**
+ * A project as its folder in the repo describes it.
+ */
+export type RepoProject = {
+  /**
+   * Lowercase `owner/name`, or `_local/<name>` for one with no remote.
+   */
+  key: string,
+  /**
+   * Its folder, from the repo's root.
+   */
+  folder: string,
+  archived: boolean,
+  local: boolean,
+  /**
+   * As the file writes it, which is what a clone uses.
+   */
+  remote: string | null,
+  path: string | null,
+  /**
+   * None for the remote's default.
+   */
+  branch: string | null,
+  machines: Assignment,
+  /**
+   * On or off in every checkout.
+   */
+  skills: { [key in string]: PluginWanted },
+  plugins: { [key in string]: PluginWanted },
+  mcp: { [key in string]: PluginWanted },
+  /**
+   * The skills only its checkouts get, from its skills folder.
+   */
+  ownSkills: Array<string>,
 };
 
 /**
@@ -4207,6 +4473,15 @@ export type SetupItem = {
   import: ImportFacts | null,
 };
 
+/**
+ * The repo's machines and projects, as its last commit has them.
+ */
+export type SetupLayers = {
+  machines: Array<RepoMachine>,
+  projects: Array<RepoProject>,
+  problems: Array<LayerProblem>,
+};
+
 export type SetupMachine = {
   machine: string,
   local: boolean,
@@ -4303,9 +4578,13 @@ export type SetupRepo = {
    */
   codexPlugins: Array<RepoPlugin>,
   /**
-   * Projects' own instructions, for every machine and for one, under .agents/projects.
+   * Projects' own instructions, for every machine and for one, from each project's folder (or .agents/projects).
    */
   instructions: Array<RepoInstructions>,
+  /**
+   * Its machine and project files. Their values are in the maps above already.
+   */
+  layers: SetupLayers,
 };
 
 /**
@@ -5009,6 +5288,18 @@ export type UdianOnMachine = {
    * Its daemon answered.
    */
   live: boolean,
+};
+
+/**
+ * A checkout a scan found whose repo isn't one of the setup repo's projects.
+ */
+export type UnlistedCheckout = {
+  machine: string,
+  path: string,
+  /**
+   * `host/owner/name`; None for a repo with no remote.
+   */
+  remote: string | null,
 };
 
 /**

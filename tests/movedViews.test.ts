@@ -180,11 +180,11 @@ describe('Sync’s Checklist, now on each machine’s page', () => {
   });
 });
 
-describe('Sync’s Projects, now Sessions › Projects’ Checkouts', () => {
-  it('opens Checkouts from its old id, in a link, a saved pick or a query string', () => {
+describe('Sessions › Projects’ Checkouts, once Sync’s Projects, and Sync › Projects now', () => {
+  it('opens Checkouts by its own view, and Sync’s old Projects id on Sync’s Projects again', () => {
     expect(checkoutsView()).toEqual(sessionsView({ tab: 'projects', lens: 'checkouts' }));
-    expect(movedSetupView('projects')).toEqual(checkoutsView());
-    expect(mainPageView('setup', 'projects')).toEqual(checkoutsView());
+    expect(movedSetupView('projects')).toBeNull();
+    expect(mainPageView('setup', 'projects')).toEqual(setupView({ tab: 'projects' }));
     expect(mainPageView('sessions', 'projects', { lens: 'checkouts' })).toEqual(checkoutsView());
     // Without a lens, or with one Projects doesn't have, it's Projects' Activity.
     expect(mainPageView('sessions', 'projects')).toEqual(sessionsView({ tab: 'projects' }));
@@ -193,29 +193,14 @@ describe('Sync’s Projects, now Sessions › Projects’ Checkouts', () => {
     expect(palettePageId(checkoutsView())).toBe('page:main:sessions:projects:checkouts');
     expect(palettePageId(sessionsView({ tab: 'projects' }))).toBe('page:main:sessions:projects');
     expect(parseRecents(JSON.stringify(['page:main:setup:projects', 'page:main:sessions:projects']))).toEqual([
-      'page:main:sessions:projects:checkouts',
+      'page:main:setup:projects',
       'page:main:sessions:projects',
     ]);
   });
 
-  it('opens Checks when Sync was last left on Projects, rather than leaving Sync', () => {
-    expect(savedSetupView('projects')).toBe('overview');
-    expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.some((leaf) => (leaf.tab as string) === 'projects')).toBe(false);
-  });
-
-  it('is found in the search palette as Checkouts and by Projects, beside Projects itself', () => {
-    const checkouts = PALETTE_VIEWS.find((item) => palettePageId(item.view) === palettePageId(checkoutsView()));
-    if (!checkouts) throw new Error('no Checkouts row');
-    expect(checkouts.page).toBe('sessions');
-    const label = translate(checkouts.labelKey);
-    const found = (query: string) => paletteScore({ id: label, group: 'pages', label, keywords: checkouts.keywords && translate(checkouts.keywords) }, query) !== null;
-    expect(label).toBe('Project checkouts');
-    expect(found('checkouts')).toBe(true);
-    expect(found('projects')).toBe(true);
-    expect(found('worktrees')).toBe(true);
-    expect(found('sync')).toBe(true);
-    expect(leafFound('sessions', 'projects', 'projects')).toBe(true);
-    expect(leafFound('sessions', 'projects', 'activity')).toBe(true);
+  it('opens Sync on Projects when it was last left there, and lists it in the sidebar', () => {
+    expect(savedSetupView('projects')).toBe('projects');
+    expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.some((leaf) => (leaf.tab as string) === 'projects')).toBe(true);
   });
 });
 
@@ -240,7 +225,7 @@ describe('Sync’s views that kept their ids', () => {
 
   it('lists Sync’s views in the sidebar’s order, Overview first', () => {
     expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.map((leaf) => translate(leaf.labelKey))).toEqual([
-      'Overview', 'Library', 'Software', 'Repo',
+      'Overview', 'Library', 'Projects', 'Software', 'Repo',
     ]);
   });
 
