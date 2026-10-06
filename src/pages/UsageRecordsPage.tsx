@@ -430,7 +430,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         const filtered = Boolean(machine || model || provider || source || apiKeyHash || session || result !== 'all');
         const keepOptions = quiet && !breakdown && kept?.key === optionsKey
           && Date.now() - kept.loadedAt < OPTIONS_KEPT_MS;
-        const optionsRequest = variant === 'machines' || variant === 'value' || (breakdown && !filtered)
+        const optionsRequest = variant === 'machines' || variant === 'value' || breakdown
           ? Promise.resolve(emptyAnalysis)
           : keepOptions && kept
             ? Promise.resolve(kept.value)
