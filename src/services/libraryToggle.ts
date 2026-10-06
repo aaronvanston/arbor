@@ -1,8 +1,8 @@
 import { mcpSummary } from './mcpGrid';
 import { machineColumns } from './pluginGrid';
 import { planSkills, runSkillPlan, undoSkillRun, type RunProblem } from './skillRuns';
-import { applyHooks, hookChanges, setHookWanted } from './setupHooks';
-import { applyMcpChanges, mcpChanges, plannedMcp, putBackMcpServer, setMcpWanted, withRegistry, type PendingMcp } from './setupMcp';
+import { applyHooks, hookChanges, setHookWanted, takeHook } from './setupHooks';
+import { applyMcpChanges, mcpChanges, plannedMcp, putBackMcpServer, setMcpWanted, takeMcpServer, withRegistry, type PendingMcp } from './setupMcp';
 import { codexRepoChanges, differs, repoAction, setSetupCodexPlugin, setSetupPlugin, wantedOn, withCodexPluginRepo, withPluginRepo } from './setupPluginRepo';
 import { applyCodexPluginChanges, applyPluginChanges, extensionsView, type PluginCell, type PluginRow } from './setupPlugins';
 import { applySetupSync, getSetupRepo, setSetupFileMachine, setSetupFileOff, setSetupFileRemoved, setSetupSkillMachine, setSetupSkillOff, syncChanges, syncPlan, undoSetupSync } from './setupSync';
@@ -653,4 +653,53 @@ export async function addPlugin(repo: string, machines: SetupMachine[], id: stri
       return { repo: back, failed: (await runChanges(byMachine, codex)).failed.map(asFailure) };
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Taking a machine's own into the repo
+// ---------------------------------------------------------------------------
+
+/** Where a row the repo doesn't list can be taken from: each machine that answers, with the homes that have it. */
+export function takeSources(row: LibraryRow, machines: SetupMachine[]): { machine: string; homes: string[] }[] {
+  if (row.state !== 'unlisted') return [];
+  return reachableMachines(machines).flatMap((machine) => {
+    // A skill can be taken from a machine's store (~/.agents) as well as from a home's own copy.
+    const homes = (row.places[machine.machine]?.homes ?? []);
+    return homes.length ? [{ machine: machine.machine, homes }] : [];
+  });
+}
+
+/** What taking a row in did, and how to take it back out where that's possible. */
+export type TakeRun = SwitchSources & { failed: SwitchFailure[]; undo: (() => Promise<SwitchSources & { failed: SwitchFailure[] }>) | null };
+
+/**
+ * Takes a row only machines have into the repo, from one machine's copy: an MCP server as every machine's definition,
+ * a hook with its script, or a skill, which also goes on every machine as adding it to the repo does. A plugin is
+ * taken in by its switch. An MCP server or hook taken in has no Undo here; the repo's History keeps the commit.
+ */
+export async function takeIntoRepo(repo: string, machines: SetupMachine[], row: LibraryRow, from: { machine: string; home: string }): Promise<TakeRun> {
+  switch (row.kind) {
+    case 'mcps':
+      return { registry: await takeMcpServer(repo, from.machine, from.home, row.name, false), failed: [], undo: null };
+    case 'hooks': {
+      const [event, script] = row.key.replace(/^hook:extra:/, '').split('\u0000');
+      if (!event || !script) throw new Error(`Arbor can't tell which hook ${row.name} is`);
+      return { hooks: await takeHook(repo, from.machine, from.home, event, script), failed: [], undo: null };
+    }
+    case 'skills': {
+      const current = await getSetupRepo(repo);
+      const done = await runSkillPlan(planSkills('add', [row.name], reachableMachines(machines), current, from.machine), current, () => undefined);
+      if (done.repoError) throw new Error(done.repoError);
+      return {
+        repo: await getSetupRepo(repo),
+        failed: runFailures(done.problems),
+        undo: async () => {
+          const problems = await undoSkillRun(done);
+          return { repo: await getSetupRepo(repo), failed: runFailures(problems.machines) };
+        },
+      };
+    }
+    default:
+      throw new Error(`${row.name} is taken into the repo with its switch`);
+  }
 }

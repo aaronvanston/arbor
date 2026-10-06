@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { libraryCounts, libraryItemName, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { addPlugin, bringInLine, linePlans, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { addPlugin, bringInLine, linePlans, takeIntoRepo, takeSources, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { directoryEntries, directorySources } from '../src/services/directory';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
@@ -404,5 +404,28 @@ describe('the directory', () => {
     await run.undo();
     expect(lastItem(set)).toEqual(['oncall@acme-tools', 'acme/agent-tools', null]);
     expect(applied).toEqual([{ machine: 'ci-01', actions: ['uninstall'] }, { machine: 'cam-mbp', actions: ['uninstall'] }]);
+  });
+});
+
+describe('taking a machine’s own into the repo', () => {
+  it('offers the answering machines that have it, and takes a server or hook from the copy picked', async () => {
+    const calls: unknown[] = [];
+    const empty = { commit: 'c'.repeat(40), found: true, uncommitted: false, problems: [], cells: [] };
+    mockCommands({
+      take_mcp_server: (args) => { calls.push(['mcp', args.machine, args.home, args.name, args.own]); return { ...empty, servers: [] }; },
+      take_hook: (args) => { calls.push(['hook', args.machine, args.home, args.event, args.script]); return { ...empty, hooks: [] }; },
+    });
+    const machines = [machine('cam-mbp', []), machine('far-01', [], false)];
+    const place = { own: null, wanted: false, homes: ['~/.claude'] };
+    const row = (kind: LibraryRow['kind'], key: string, name: string): LibraryRow => ({
+      key, kind, name, detail: null, agents: ['claude'], state: 'unlisted', on: ['cam-mbp', 'far-01'], fleet: ['cam-mbp', 'far-01'], behind: [], exceptions: 0,
+      places: { 'cam-mbp': place, 'far-01': place }, toggle: null,
+    });
+    const server = row('mcps', 'mcp:mine', 'mine');
+    expect(takeSources(server, machines)).toEqual([{ machine: 'cam-mbp', homes: ['~/.claude'] }]);
+    expect(takeSources({ ...server, state: 'on' }, machines)).toEqual([]);
+    expect((await takeIntoRepo('/repo', machines, server, { machine: 'cam-mbp', home: '~/.claude' })).undo).toBeNull();
+    await takeIntoRepo('/repo', machines, row('hooks', 'hook:extra:SessionStart\u0000old.sh', 'old.sh'), { machine: 'cam-mbp', home: '~/.claude' });
+    expect(calls).toEqual([['mcp', 'cam-mbp', '~/.claude', 'mine', false], ['hook', 'cam-mbp', '~/.claude', 'SessionStart', 'old.sh']]);
   });
 });

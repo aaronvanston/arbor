@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { TableEmpty } from '../components/ui/data-table';
 import { MoreHorizontal } from '../components/ui/icons';
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '../components/ui/menu';
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
 import { useI18n } from '../i18n';
@@ -34,6 +35,9 @@ export type LibraryActions = {
   onOpenByMachine: () => void;
   /** The row's file in the Repo, for what the repo keeps as files. */
   onOpenInRepo: (() => void) | null;
+  /** Where a row only machines have can be taken into the repo from, and taking it. */
+  takeFrom: { machine: string; homes: string[] }[];
+  onTake: (from: { machine: string; home: string }) => void;
 };
 
 /** Why a machine's switch can't be flipped, or null when it can. */
@@ -112,7 +116,7 @@ export function LibraryItemPage({ row, machines, actions }: { row: LibraryRow; m
         </div>
       </header>
       {actions.problems.map((text) => <p key={text} className="-mt-5 text-xs text-error-foreground">{text}</p>)}
-      {row.state === 'unlisted' ? <p className="-mt-4 text-sm text-muted-foreground">{t('library.item.unlisted')}</p> : null}
+      {row.state === 'unlisted' && row.kind !== 'plugins' ? <TakeIn row={row} actions={actions} /> : null}
       {row.state === 'removed' ? <p className="-mt-4 text-sm text-muted-foreground">{t('library.item.removed')}</p> : null}
 
       <SettingsSection title={t('library.item.where')} description={t('library.item.whereAbout')} summary={libraryScope(row).kind === 'all' ? t('library.scope.all') : null}>
@@ -154,6 +158,45 @@ export function LibraryItemPage({ row, machines, actions }: { row: LibraryRow; m
       </SettingsSection>
 
       <UseAndCost row={row} machines={machines} />
+    </div>
+  );
+}
+
+/** Taking a row only machines have into the repo, from the copy on a machine picked, confirmed first. */
+function TakeIn({ row, actions }: { row: LibraryRow; actions: LibraryActions }) {
+  const { t } = useI18n();
+  const { askConfirmation } = useConfirmation();
+  const choices = actions.takeFrom.flatMap(({ machine, homes }) => homes.map((home) => ({ machine, home, key: `${machine}\u0000${home}` })));
+  const [picked, setPicked] = useState<string | null>(null);
+  const choice = choices.find((entry) => entry.key === picked) ?? choices[0] ?? null;
+  const take = async () => {
+    if (!choice) return;
+    const confirmed = await askConfirmation({
+      title: t('library.item.take.title', { name: row.name }),
+      message: t(row.kind === 'skills' ? 'library.item.take.skill' : 'library.item.take.message', { name: row.name, machine: choice.machine, home: choice.home }),
+      confirmText: t('library.item.take.button'),
+    });
+    if (confirmed) actions.onTake({ machine: choice.machine, home: choice.home });
+  };
+  return (
+    <div className="-mt-4 flex flex-col gap-3 rounded-xl border border-border/60 bg-card px-4 py-3">
+      <p className="text-sm text-muted-foreground">{t('library.item.unlisted')}</p>
+      {choices.length ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={choice?.key ?? ''} onValueChange={(value) => setPicked(String(value))}>
+            <SelectTrigger size="sm" className="w-auto min-w-56" aria-label={t('library.item.take.from')}>
+              <SelectValue>{choice ? `${choice.machine} · ${choice.home}` : ''}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {choices.map((entry) => <SelectItem key={entry.key} value={entry.key}>{`${entry.machine} · ${entry.home}`}</SelectItem>)}
+            </SelectPopup>
+          </Select>
+          <Button size="sm" disabled={actions.running !== null} onClick={() => void take()}>
+            {actions.running === row.key ? <Spinner className="size-3.5" /> : null}
+            {t('library.item.take.button')}
+          </Button>
+        </div>
+      ) : <p className="text-xs text-muted-foreground">{t('library.item.take.none')}</p>}
     </div>
   );
 }

@@ -19,7 +19,7 @@ import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
 import { LIBRARY_KINDS, libraryCounts, libraryList, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
-import { removeEverywhere, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
+import { removeEverywhere, takeIntoRepo, takeSources, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
 import { skillFolder } from '../services/repoBrowser';
 import { LibraryItemPage, type LibraryActions } from './SetupLibraryItem';
 import type { SetupMachine } from '../native/types';
@@ -215,6 +215,28 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       setRunning(null);
     }
   };
+  /** Takes a row only machines have into the repo; MCP servers and hooks have no Undo, so the item page confirms first. */
+  const take = async (row: LibraryRow, from: { machine: string; home: string }) => {
+    if (!repoPath || running) return;
+    setRunning({ key: row.key, on: true });
+    report(row.key, []);
+    try {
+      const run = await takeIntoRepo(repoPath, machines, row, from);
+      keep(run);
+      const texts = failedText(run.failed, [], row.name);
+      report(row.key, texts);
+      const undo = run.undo;
+      toast({
+        kind: texts.length ? 'warning' : 'success',
+        title: t('library.item.take.done', { name: row.name }),
+        ...(undo ? { action: { label: t('common.undo'), onClick: () => { void (async () => { try { const back = await undo(); keep(back); report(row.key, failedText(back.failed, [], row.name)); } catch (error) { report(row.key, [t('library.undo.failed', { name: row.name, error: String(error) })]); } })(); } } } : {}),
+      });
+    } catch (error) {
+      report(row.key, [t('library.item.take.failed', { name: row.name, error: String(error) })]);
+    } finally {
+      setRunning(null);
+    }
+  };
   const toggle = (row: LibraryRow, on: boolean) => {
     const target = row.toggle;
     if (target) void perform(row, row.key, on, t(on ? 'library.toggle.on' : 'library.toggle.off', { name: row.name }), (repo) => switchRow(repo, machines, target, on));
@@ -236,6 +258,8 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       },
       onOpenByMachine,
       onOpenInRepo: repoFile && row.state !== 'unlisted' ? () => onOpenInRepo(repoFile) : null,
+      takeFrom: takeSources(row, machines),
+      onTake: (from) => void take(row, from),
     };
   };
 
