@@ -8,5 +8,7 @@
   "ignoreExportsUsedInFile": true,
   // The Bun plugin would add every **/*.test.* as an entry. The .gitignore entry for .claude/worktrees already keeps
   // the copies in each worktree out; turning the plugin off and listing the tests under "entry" is a second guard.
-  "bun": false
+  "bun": false,
+  // macOS's own memory tool, which perf/run.ts reads the WebContent process's footprint with.
+  "ignoreBinaries": ["footprint"]
 }

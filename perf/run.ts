@@ -1,9 +1,9 @@
 /**
  * `bun run perf`: Arbor's speed benchmark (docs/perf/PROCESS.md). Builds the browser mock as the production-optimized
  * demo site, serves it on 127.0.0.1 and drives it in Playwright's WebKit, the engine Arbor's window uses, through a
- * cold launch to Home, a visit to each main page, ten minutes of idle on Home and ten minutes with the window closed to
- * the tray on a heavy page. The page clock runs time, so ten
- * minutes take seconds and the gated counts come out the same on every run.
+ * cold launch to Home, a visit to each main page, ten minutes of idle on Home, ten minutes with the window closed to
+ * the tray on a heavy page, and a tour of heavy pages closed to the tray until the window reloads itself into the
+ * background. The page clock runs time, so ten minutes take seconds and the gated counts come out the same on every run.
  *
  *   bun run perf               measure, print the tables, write perf/latest.json
  *   bun run perf:check         measure, then fail when a gated count is over its ceiling in perf/baseline.json
@@ -16,7 +16,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, normalize } from 'node:path';
-import { webkit, type Browser, type Page } from 'playwright';
+import { webkit, type Browser, type Frame, type Page } from 'playwright';
 import { installCounters, type CounterSnapshot } from './counters';
 import { check, ratchet, type Baseline, type CheckRow, type Counts } from './ratchet';
 import { BuildSources, formatPosition, isMockSource, type SourcePosition } from './sourcemap';
@@ -49,6 +49,28 @@ const HIDDEN_PAGE = { page: 'usage' };
  */
 const HEALTH_ROUNDS = 5;
 const HEALTH_ROUND_MS = 2_000;
+
+/** The heavy pages toured before the window is closed for long enough to reload (docs/perf/BACKLOG.md, M3). */
+const RELOAD_TOUR: { page: string; tab?: string; lens?: string }[] = [
+  { page: 'usage' },
+  { page: 'sessions' },
+  { page: 'setup', tab: 'library', lens: 'machines' },
+  { page: 'accounts' },
+  { page: 'machines' },
+];
+/** Closed this long, the window is a look short of its half hour (src/services/backgroundReload.ts). */
+const BEFORE_RELOAD_MINUTES = 29;
+/** How long after its half hour the window may take to reload: one look, five minutes apart, and a margin. */
+const RELOAD_WAIT_MINUTES = 7;
+/** Footprint samples, a real second apart, taken for the memory before and after the reload. */
+const FOOTPRINT_SAMPLES = 10;
+/** How long the background page runs before it's counted: its boot. */
+const BACKGROUND_BOOT_MS = 5_000;
+/**
+ * Each of these must be heard from within a minute of the reload: the tray, the pools' report and the command line. A
+ * push that would only clear the tray waits out that minute (services/bootMode.ts), so the journey waits a moment past it.
+ */
+const MONITOR_COMMANDS = ['report_working_sessions', 'set_tray_rows', 'set_tray_status', 'set_tray_unread', 'cli_bridge_ready'];
 
 type Size = { id: 'default' | 'real'; query: string };
 const SIZES: Size[] = [{ id: 'default', query: '' }, { id: 'real', query: 'size=real' }];
@@ -117,9 +139,40 @@ type Timing = { firstPaintMs: number | null; domContentLoadedMs: number | null; 
 /** Ten minutes closed to the tray: the counts over them, and the page's elements while hidden and once shown again. */
 type HiddenResult = Step & { domNodesShown: number; domNodesHidden: number; domNodesBack: number; rssShownMb: number | null; rssHiddenMb: number | null };
 
+/**
+ * A tour of heavy pages, then closed to the tray until the window reloads into the background: its memory before and
+ * after, what the background page loads and does as it starts, whether every monitor was heard from within a minute,
+ * and whether an alert went out again.
+ */
+type ReloadResult = {
+  reloaded: boolean;
+  /** The background page's start: what it loaded and sent, over its first five seconds. */
+  boot: Step;
+  domNodesBefore: number;
+  domNodesBackground: number;
+  domNodesBack: number;
+  /** The monitors' commands not heard within a minute of the reload. */
+  monitorsMissing: string[];
+  /** Alerts sent before the reload that went out again within a minute after it. */
+  alertsResent: string[];
+  /** Whether the window came back on the view it was left on. */
+  sameView: boolean;
+  /**
+   * The WebContent process's footprint after the tour, closed a look short of the half hour, a minute after it, and
+   * shown again; the middle two settled (settledFootprintMb).
+   */
+  footprintShownMb: number | null;
+  footprintBeforeMb: number | null;
+  footprintAfterMb: number | null;
+  footprintBackMb: number | null;
+  /** Wall-clock time from the window showing to the sidebar marking the view, as the app loads around it. */
+  backMs: number | null;
+};
+
 type SizeResult = {
   launch: Step & { settling?: Settling };
   hidden?: HiddenResult;
+  reload?: ReloadResult;
   /** App JS a cold start needs before the prefetch: Home's, and each page's beyond Home's. Default size only. */
   coldJs?: { home: number; pages: Record<string, number> };
   idle: Step & { rssStartMb: number | null; rssEndMb: number | null };
@@ -312,6 +365,34 @@ function rssMb(before: Set<number>): number | null {
   const result = spawnSync('ps', ['-o', 'rss=', '-p', fresh.join(',')], { encoding: 'utf8' });
   const sizes = result.stdout.split('\n').map((line) => Number.parseInt(line.trim(), 10)).filter((kb) => kb > 0);
   return sizes.length ? Math.round(Math.max(...sizes) / 1024) : null;
+}
+
+/**
+ * The largest physical footprint, in MB, among the WebContent processes started since `before`: what Activity Monitor
+ * shows as a process's memory. Resident size keeps pages WebKit has handed back until the system wants them, so it
+ * barely moves when a page lets go; the footprint does.
+ */
+function footprintMb(before: Set<number>): number | null {
+  const sizes = [...webContentPids()].filter((pid) => !before.has(pid)).flatMap((pid) => {
+    const match = /Footprint:\s*([\d.]+)\s*(KB|MB|GB)/.exec(spawnSync('footprint', ['-p', String(pid)], { encoding: 'utf8' }).stdout);
+    if (!match?.[1] || !match[2]) return [];
+    return [Number(match[1]) * { KB: 1 / 1024, MB: 1, GB: 1024 }[match[2] as 'KB' | 'MB' | 'GB']];
+  });
+  return sizes.length ? Math.round(Math.max(...sizes)) : null;
+}
+
+/**
+ * The footprint once WebKit has had a few real seconds to collect what the page let go of and hand it back: the least
+ * over several samples, since a single one lands wherever its last collection happened to be.
+ */
+async function settledFootprintMb(page: Page, before: Set<number>): Promise<number | null> {
+  const samples: number[] = [];
+  for (let sample = 0; sample < FOOTPRINT_SAMPLES; sample += 1) {
+    await page.waitForTimeout(1_000);
+    const size = footprintMb(before);
+    if (size !== null) samples.push(size);
+  }
+  return samples.length ? Math.min(...samples) : null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -560,13 +641,16 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   console.log(`[${size.id}] (${elapsed()}) ${HIDDEN_MINUTES} minutes closed to the tray on ${HIDDEN_PAGE.page}…`);
   const hidden = await hiddenJourney(browser, url, sources);
 
+  console.log(`[${size.id}] (${elapsed()}) a tour of heavy pages, then closed to the tray until the window reloads…`);
+  const reload = await reloadJourney(browser, url, sources);
+
   let cold: SizeResult['coldJs'];
   if (size.id === 'default') {
     console.log(`[${size.id}] (${elapsed()}) cold start on each page for its JS…`);
     cold = await coldJs(browser, origin, sources);
   }
   console.log(`[${size.id}] (${elapsed()}) done`);
-  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, healthRounds, hidden, pages, timing };
+  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, healthRounds, hidden, reload, pages, timing };
 }
 
 /**
@@ -634,6 +718,97 @@ async function healthRoundsOf(page: Page, network: ReturnType<typeof trackNetwor
   return total;
 }
 
+/** The alert history as the mock keeps it (src/services/alertHistory.ts): each entry's key and when it last went out. */
+const alertsSent = (page: Page) => page.evaluate(() => {
+  try {
+    const history = JSON.parse(localStorage.getItem('arbor.alert-history.v1') ?? '{}') as { entries?: { kind: string; title: string; subject?: unknown; atMs: number; notifiedAtMs?: number }[] };
+    return (history.entries ?? []).map((entry) => ({ key: `${entry.kind} ${JSON.stringify(entry.subject ?? null)} ${entry.title}`, sentAtMs: entry.notifiedAtMs ?? entry.atMs }));
+  } catch {
+    return [];
+  }
+});
+
+/** The view on screen, as the sidebar marks it. */
+const currentRow = (page: Page) => page.evaluate(() => document.querySelector('aside [aria-current="page"]')?.textContent?.trim() ?? '');
+
+/**
+ * The window closed to the tray after a tour of heavy pages, for longer than the half hour after which it reloads
+ * into a fresh page (docs/perf/BACKLOG.md, M3). The app reloads itself, as it would; the journey only moves the clock
+ * and watches. The background page must start every monitor again within a minute, without sending an alert twice,
+ * and the window must come back on the view it was left on.
+ */
+async function reloadJourney(browser: Browser, url: string, sources: BuildSources): Promise<ReloadResult> {
+  const before = webContentPids();
+  const run = await launch(browser, url);
+  for (const target of RELOAD_TOUR) {
+    await openPage(run.page, target);
+    await quiet(run.page, run.network);
+    await advance(run.page, run.network, NAVIGATION_MS, STEP_MS);
+  }
+  const shownRow = await currentRow(run.page);
+  const footprintShownMb = footprintMb(before);
+  await run.page.evaluate(() => (window as unknown as { __arborPerf: { holdFrames: () => void } }).__arborPerf.holdFrames());
+  await moveWindow(run.page, 'closed');
+  await advance(run.page, run.network, BEFORE_RELOAD_MINUTES * 60_000, 5_000);
+  const beforeNodes = (await domNodes(run.page)).all;
+  const footprintBeforeMb = await settledFootprintMb(run.page, before);
+  const sentBefore = await alertsSent(run.page);
+
+  // From here the page may go at any moment: the clock moves in steps, and each waits for the page that's there.
+  let reloaded = false;
+  const scripts: string[] = [];
+  const onNavigated = (frame: Frame) => {
+    if (frame === run.page.mainFrame() && frame.url().includes('boot=background')) reloaded = true;
+  };
+  run.page.on('framenavigated', onNavigated);
+  run.page.on('response', (response) => {
+    const path = new URL(response.url()).pathname.replace(/^\//, '');
+    if (reloaded && path.endsWith('.js') && !scripts.includes(path)) scripts.push(path);
+  });
+  const reloadedAtMs = await run.page.evaluate(() => Date.now());
+  for (let waited = 0; waited < RELOAD_WAIT_MINUTES * 60_000 && !reloaded; waited += 5_000) {
+    await run.page.clock.runFor(5_000).catch(() => undefined);
+    await quiet(run.page, run.network).catch(() => undefined);
+  }
+  run.page.off('framenavigated', onNavigated);
+  if (!reloaded) {
+    const footprintAfterMb = await settledFootprintMb(run.page, before);
+    await run.context.close();
+    return {
+      reloaded, boot: summarize(sources, emptySnapshot(), [], []), domNodesBefore: beforeNodes, domNodesBackground: beforeNodes, domNodesBack: beforeNodes,
+      monitorsMissing: MONITOR_COMMANDS, alertsResent: [], sameView: true, footprintShownMb, footprintBeforeMb, footprintAfterMb, footprintBackMb: footprintAfterMb, backMs: null,
+    };
+  }
+  await run.page.waitForLoadState('load');
+  await quiet(run.page, run.network);
+  await run.page.evaluate(() => (window as unknown as { __arborPerf: { holdFrames: () => void } }).__arborPerf.holdFrames());
+  await advance(run.page, run.network, BACKGROUND_BOOT_MS, STEP_MS);
+  const boot = summarize(sources, await snapshot(run.page), [...scripts], [...run.scripts, ...scripts]);
+  const backgroundNodes = (await domNodes(run.page)).all;
+  await advance(run.page, run.network, 61_000 - BACKGROUND_BOOT_MS, 1_000);
+  const heard = (await snapshot(run.page)).commands;
+  const monitorsMissing = MONITOR_COMMANDS.filter((command) => !heard[command]?.calls);
+  const sentBeforeKeys = new Set(sentBefore.map((alert) => alert.key));
+  const alertsResent = (await alertsSent(run.page)).filter((alert) => alert.sentAtMs >= reloadedAtMs && sentBeforeKeys.has(alert.key)).map((alert) => alert.key);
+  const footprintAfterMb = await settledFootprintMb(run.page, before);
+
+  const showing = performance.now();
+  await moveWindow(run.page, 'shown');
+  const backMs = await run.page.waitForSelector('aside [aria-current="page"]', { timeout: 10_000 }).then(() => Math.round(performance.now() - showing), () => null);
+  await quiet(run.page, run.network);
+  await advance(run.page, run.network, NAVIGATION_MS, STEP_MS);
+  const backNodes = (await domNodes(run.page)).all;
+  const sameView = (await currentRow(run.page)) === shownRow;
+  const footprintBackMb = footprintMb(before);
+  await run.context.close();
+  return { reloaded, boot, domNodesBefore: beforeNodes, domNodesBackground: backgroundNodes, domNodesBack: backNodes, monitorsMissing, alertsResent, sameView, footprintShownMb, footprintBeforeMb, footprintAfterMb, footprintBackMb, backMs };
+}
+
+/** Counters with nothing in them, for a journey that never got to count. */
+const emptySnapshot = (): CounterSnapshot => ({
+  timersCreated: {}, timersFired: {}, live: [], rafCalls: {}, commands: {}, commits: 0, rendered: {}, origins: {}, componentSources: {}, mutations: 0, mutationTargets: {}, sent: [], mutationTimes: [], wrapped: true, visibility: 'hidden',
+});
+
 /** The gated counts, flattened into baseline keys. */
 function countsOf(results: Latest['sizes']): Counts {
   const counts: Counts = {};
@@ -686,6 +861,21 @@ function countsOf(results: Latest['sizes']): Counts {
       counts[`${size}.healthRound.componentRenders`] = perRound(rounds.componentRenders);
       counts[`${size}.healthRound.commands`] = perRound(rounds.commands);
     }
+    const { reload } = result;
+    if (reload) {
+      // What a page the window reloaded into in the background loads and does as it starts: only what the monitors need.
+      counts[`${size}.reload.appJsBytes`] = reload.boot.appJsBytes;
+      counts[`${size}.reload.commands`] = reload.boot.commands;
+      counts[`${size}.reload.commandBytes`] = reload.boot.commandBytes;
+      counts[`${size}.reload.reactCommits`] = reload.boot.commits;
+      counts[`${size}.reload.domNodes`] = reload.domNodesBackground;
+      // Each must stay at none: the window didn't reload, a monitor wasn't heard from within a minute, an alert went
+      // out twice, or the window came back somewhere else.
+      counts[`${size}.reload.notReloaded`] = reload.reloaded ? 0 : 1;
+      counts[`${size}.reload.monitorsMissing`] = reload.monitorsMissing.length;
+      counts[`${size}.reload.alertsResent`] = reload.alertsResent.length;
+      counts[`${size}.reload.viewLost`] = reload.sameView ? 0 : 1;
+    }
   }
   return counts;
 }
@@ -704,6 +894,11 @@ function reportedOf(results: Latest['sizes']): Latest['reported'] {
     reported[`${size}.hidden.rssShownMb`] = result.hidden?.rssShownMb ?? null;
     reported[`${size}.hidden.rssHiddenMb`] = result.hidden?.rssHiddenMb ?? null;
     reported[`${size}.launch.settledAtMs`] = result.launch.settling?.settledAtMs ?? null;
+    reported[`${size}.reload.footprintShownMb`] = result.reload?.footprintShownMb ?? null;
+    reported[`${size}.reload.footprintBeforeMb`] = result.reload?.footprintBeforeMb ?? null;
+    reported[`${size}.reload.footprintAfterMb`] = result.reload?.footprintAfterMb ?? null;
+    reported[`${size}.reload.footprintBackMb`] = result.reload?.footprintBackMb ?? null;
+    reported[`${size}.reload.backMs`] = result.reload?.backMs ?? null;
   }
   return reported;
 }
@@ -786,6 +981,24 @@ function printReport(latest: Latest) {
       console.log(`\nEach health round (machine-health-updated), over the ${HEALTH_ROUND_MS / 1_000} s after it: ${perRound(rounds.commits)} commits, ${perRound(rounds.componentRenders)} component renders, ${perRound(rounds.commands)} commands`);
       table(['Started at', 'Renders/round'], (rounds.topOrigins ?? []).slice(0, 8).map((entry) => [entry.component, perRound(entry.renders)]));
     }
+  }
+  for (const [size, result] of Object.entries(latest.sizes)) {
+    const reload = result?.reload;
+    if (!reload) continue;
+    console.log(`\n━━ ${size} size: closed to the tray past the half hour after a tour of ${RELOAD_TOUR.map((target) => target.page).join(', ')} ━━`);
+    console.log(`WebContent footprint (reported only): ${reload.footprintShownMb ?? '?'} MB after the tour → ${reload.footprintBeforeMb ?? '?'} MB closed ${BEFORE_RELOAD_MINUTES} minutes → ${reload.footprintAfterMb ?? '?'} MB a minute after ${reload.reloaded ? 'the reload' : 'the half hour (no reload)'} → ${reload.footprintBackMb ?? '?'} MB shown again.`);
+    table(['Counter', 'Value'], [
+      ['reloaded by itself', reload.reloaded ? 'yes' : 'NO'],
+      ['background boot: app JS KB', kb(reload.boot.appJsBytes)],
+      ['background boot: commands', reload.boot.commands],
+      ['background boot: command KB', kb(reload.boot.commandBytes)],
+      ['background boot: React commits', reload.boot.commits],
+      ['elements: closed → background → shown again', `${reload.domNodesBefore} → ${reload.domNodesBackground} → ${reload.domNodesBack}`],
+      ['monitors not heard within a minute', reload.monitorsMissing.join(', ') || 'none'],
+      ['alerts sent again', reload.alertsResent.join('; ') || 'none'],
+      ['back on the view it was left on', reload.sameView ? 'yes' : 'NO'],
+      ['shown to the sidebar back (wall clock, reported)', reload.backMs ? `${reload.backMs} ms` : '—'],
+    ]);
   }
   if (latest.pageErrors.length) console.log(`\nUncaught errors in the page (counts may be wrong):\n  ${latest.pageErrors.join('\n  ')}`);
   if (latest.notMeasured.length) console.log(`\nNot measured in WebKit: ${latest.notMeasured.join('; ')}`);

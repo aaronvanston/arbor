@@ -265,7 +265,9 @@
  * minimizes it and `?window=covered` has another app cover it; `window.__mockWindow('shown' | 'closed' | 'minimized' |
  * 'covered')` moves it there at any time, which is how `bun run perf` hides it. While it's closed or minimized for half a
  * minute, or covered for five, the open page rests (nothing in the content area) and the monitors carry on at their
- * hidden pace; it comes back as it was left when the window shows;
+ * hidden pace; it comes back as it was left when the window shows. Closed or minimized for half an hour, the page
+ * reloads into the background (`&boot=background`, which starts the mock's window closed): only the monitors run until
+ * the window shows, then the app comes back on the view it was left on;
  * `?clipboard=fail` to have the clipboard refuse every copy, so copy buttons and the palette's copy actions say they
  * couldn't.
  * For the live fleet board (`get_fleet_sources`): by default T3 Code on cam-mbp has a thread asking for approval
@@ -629,6 +631,8 @@ export function installTauriMock() {
   const windowScenario = params.get('window');
   if (windowScenario === 'focused' || windowScenario === 'unfocused') document.hasFocus = () => windowScenario === 'focused';
   (window as Window & { __mockWindow?: (state: MockWindowState) => void }).__mockWindow = setMockWindow;
+  // The page the window reloads into after a long while closed to the tray starts with the window still closed.
+  if (params.get('boot') === 'background') setMockWindow('closed');
   const windowMoves: Record<string, MockWindowState> = { closes: 'closed', minimizes: 'minimized', covered: 'covered' };
   const windowMove = windowMoves[windowScenario ?? ''];
   if (windowMove) window.setTimeout(() => setMockWindow(windowMove), 5_000);
