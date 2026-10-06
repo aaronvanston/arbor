@@ -32,7 +32,7 @@ const DIRS: [&str; 6] = ["chunks", "pending", "journal", "index", "quarantine", 
 /// Scratch left behind by a writer that stopped is cleared after this long.
 const TMP_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 /// Files the Finder leaves in any folder it has shown, which don't make a folder "not empty".
-const FINDER_FILES: [&str; 2] = [".DS_Store", ".localized"];
+pub(crate) const FINDER_FILES: [&str; 2] = [".DS_Store", ".localized"];
 /// MNT_IGNORE_OWNERSHIP: the volume doesn't enforce owners or modes.
 #[cfg(target_os = "macos")]
 const IGNORE_OWNERSHIP: u32 = 0x0020_0000;
@@ -339,19 +339,12 @@ impl Store {
     }
 
     fn chunk_path(&self, hash: &[u8; 32]) -> PathBuf {
-        let name = hex(hash);
-        self.root.join("chunks").join(&name[..2]).join(format!("{name}.zst"))
+        chunk_path_in(&self.root, hash)
     }
 
     /// Reads a chunk back and checks it holds what its name says.
     pub(crate) fn read_chunk(&self, hash: &[u8; 32]) -> Result<Vec<u8>, String> {
-        let path = self.chunk_path(hash);
-        let frame = fs::read(&path).map_err(|error| format!("Couldn't read chunk {}: {error}", &hex(hash)[..12]))?;
-        let plain = codec::decode(&frame)?;
-        if sha256(&plain) != *hash {
-            return Err(format!("Chunk {} doesn't hold what its name says", &hex(hash)[..12]));
-        }
-        Ok(plain)
+        read_chunk_in(&self.root, hash)
     }
 
     /// Stores each chunk not already here, checked, flushed and moved into place, and gives
@@ -432,14 +425,34 @@ impl Store {
     }
 
     pub(crate) fn read_pending(&self, key: &str, gen: i64) -> Result<Vec<u8>, String> {
-        let frame = fs::read(self.root.join("pending").join(format!("{key}.{gen}.zst"))).map_err(|error| format!("Couldn't read a kept tail: {error}"))?;
-        codec::decode(&frame)
+        read_pending_in(&self.root, key, gen)
     }
 
     /// Removes the copies of a version's tail, except `keep`.
     pub(crate) fn drop_pending(&self, key: &str, keep: Option<i64>) {
         drop_pending_in(&self.root.join("pending"), key, keep);
     }
+}
+
+fn chunk_path_in(root: &Path, hash: &[u8; 32]) -> PathBuf {
+    let name = hex(hash);
+    root.join("chunks").join(&name[..2]).join(format!("{name}.zst"))
+}
+
+/// Reads a chunk from the store at `root` and checks it holds what its name says. Chunks never change, so this
+/// needs no lock and reads beside a pass that's writing.
+pub(crate) fn read_chunk_in(root: &Path, hash: &[u8; 32]) -> Result<Vec<u8>, String> {
+    let frame = fs::read(chunk_path_in(root, hash)).map_err(|error| format!("Couldn't read chunk {}: {error}", &hex(hash)[..12]))?;
+    let plain = codec::decode(&frame)?;
+    if sha256(&plain) != *hash {
+        return Err(format!("Chunk {} doesn't hold what its name says", &hex(hash)[..12]));
+    }
+    Ok(plain)
+}
+
+pub(crate) fn read_pending_in(root: &Path, key: &str, gen: i64) -> Result<Vec<u8>, String> {
+    let frame = fs::read(root.join("pending").join(format!("{key}.{gen}.zst"))).map_err(|error| format!("Couldn't read a kept tail: {error}"))?;
+    codec::decode(&frame)
 }
 
 pub(crate) fn drop_pending_in(dir: &Path, key: &str, keep: Option<i64>) {

@@ -165,6 +165,11 @@ function listedCommands() {
   return listed;
 }
 
+/** Commands only `arbor` reaches, each with why the window has no use for it yet. */
+const CLI_ONLY: Record<string, string> = {
+  export_session_archive: 'exporting sessions is asked for on the command line; the window has no export yet',
+};
+
 describe('the commands between the webview and the native side', () => {
   const registered = registeredCommands();
   const files = webviewFiles();
@@ -183,7 +188,11 @@ describe('the commands between the webview and the native side', () => {
 
   // Some commands reach invoke through a helper (a core action, a settings save), so this looks for the name anywhere.
   test('every registered command is used by the webview, so none is left behind unused', () => {
-    expect(registered.filter((command) => !source.includes(`'${command}'`))).toEqual([]);
+    expect(registered.filter((command) => !source.includes(`'${command}'`) && !(command in CLI_ONLY))).toEqual([]);
+  });
+
+  test('a command left to the command line is registered and not used by the webview after all', () => {
+    expect(Object.keys(CLI_ONLY).filter((command) => !registered.includes(command) || source.includes(`'${command}'`))).toEqual([]);
   });
 
   // The compiler checks each answer against the list, and that the browser mock has one for every command, but only

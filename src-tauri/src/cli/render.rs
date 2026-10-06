@@ -420,10 +420,41 @@ pub(crate) fn skill_install(answer: &Value) -> String {
     out.join("\n")
 }
 
+/// What `arbor archive export` wrote, and the sessions it couldn't put back together.
+pub(crate) fn archive_export(report: &Value) -> String {
+    let megabytes = report.get("bytes").and_then(Value::as_f64).map_or("–".into(), |bytes| format!("{:.1} MB", bytes / 1e6));
+    let sessions = report.get("sessions").and_then(Value::as_u64).unwrap_or(0);
+    let mut out = vec![format!(
+        "Exported {sessions} session{} ({} files, {megabytes}) to {}",
+        if sessions == 1 { "" } else { "s" },
+        count(report.get("files").unwrap_or(&Value::Null)),
+        field(report, "out"),
+    )];
+    let projects: Vec<String> = items(report, "projects").iter().map(text).collect();
+    if !projects.is_empty() {
+        out.push(format!("Projects: {}", projects.join(", ")));
+    }
+    let failed = items(report, "failed");
+    if !failed.is_empty() {
+        out.push(format!("{} couldn't be read in full; what could be read is in their folders:", failed.len()));
+        out.extend(failed.iter().map(|failure| format!("  {}  {}", field(failure, "sessionId"), field(failure, "error"))));
+    }
+    out.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_archive_export_says_where_it_went_and_what_it_missed() {
+        let done = json!({ "out": "/Users/cam/exports", "sessions": 1, "files": 3, "bytes": 2_500_000, "projects": ["acme/ledger"], "failed": [] });
+        assert_eq!(archive_export(&done), "Exported 1 session (3 files, 2.5 MB) to /Users/cam/exports\nProjects: acme/ledger");
+        let partly = json!({ "out": "/x", "sessions": 2, "files": 1, "bytes": 10, "projects": [], "failed": [{ "sessionId": "0f8b", "error": "Couldn't read chunk 1a2b3c4d5e6f" }] });
+        let text = archive_export(&partly);
+        assert!(text.starts_with("Exported 2 sessions") && text.contains("  0f8b  Couldn't read chunk"), "{text}");
+    }
 
     #[test]
     fn a_pool_session_says_where_it_went_that_it_waits_or_why_it_didnt_start() {

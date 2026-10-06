@@ -18,6 +18,12 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
   name and token numbers. `archive/recovered.rs` reads Claude Code's own `stats-cache.json` daily totals (each
   machine's days with model names, token and session counts) for days whose transcripts are gone.
 
+- **Export.** `archive/export.rs` puts sessions back together into a new or empty folder the user names, outside the
+  archive's own folders: the one way raw bytes leave a store, and only when asked. It reads without the store's lock,
+  since chunks never change and a growing version whose tail moves on is read again, and it writes nothing to the
+  index or the journal. Its answer holds the same ids, paths and counts as every archive command. A session's
+  project and branch come from usage.db by session id, so a session Arbor hasn't read a transcript of has none.
+
 Working out which session a file is, and counting its tokens, uses structs that name only those fields. The archive's
 SECRET tests prove nothing more leaves `chunks/`; every new archive command extends them. Archive tests build stores and
 homes in temp folders and run the lister under both `sh` and `dash` against a temp HOME.

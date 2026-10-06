@@ -1065,6 +1065,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "export_session_archive",
+        access: Access::Write,
+        summary: "Puts the kept sessions a request picks back together in a new or empty folder: one folder per session, with its files as the agent wrote them and a session.json naming its machine, project and branch.",
+        args: &[
+            ArgSpec { name: "request", ts_type: "ArchiveExportRequest", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "check_session_archive_folder",
         access: Access::Read,
         summary: "Check session archive folder",
@@ -2189,6 +2197,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "preview_session_import" => async { done(Box::pin(crate::usage::machine_health::archive::preview_session_import(app.clone(), arg(&args, "path")?)).await) }.await,
         "add_session_import" => async { done(Box::pin(crate::usage::machine_health::archive::add_session_import(app.clone(), arg(&args, "path")?, arg(&args, "machine")?)).await) }.await,
         "cancel_session_import" => async { done(Box::pin(crate::usage::machine_health::archive::cancel_session_import(app.clone(), arg(&args, "id")?)).await) }.await,
+        "export_session_archive" => async { done(Box::pin(crate::usage::machine_health::archive::export_session_archive(arg(&args, "request")?)).await) }.await,
         "check_session_archive_folder" => async { done(Box::pin(crate::usage::machine_health::archive::check_session_archive_folder(arg(&args, "path")?)).await) }.await,
         "create_session_archive" => async { done(Box::pin(crate::usage::machine_health::archive::create_session_archive(app.clone(), arg(&args, "path")?)).await) }.await,
         "use_session_archive" => async { done(Box::pin(crate::usage::machine_health::archive::use_session_archive(app.clone(), arg(&args, "path")?)).await) }.await,

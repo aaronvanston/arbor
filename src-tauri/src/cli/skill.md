@@ -69,6 +69,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Set up or update the background runner on a machine, so its automations run with Arbor closed | `arbor call install_background_runner machine=<name>` (needs `--yes`) |
 | Give automations their proxy key (Claude and Codex automations reach the proxy with it, whatever a machine is signed in to) | `arbor call add_automations_key` (needs `--yes`) |
 | Set the address machines try first to reach the proxy, or clear it | `arbor call set_automation_proxy_address address=<url>` (`address=` clears it) |
+| Put kept sessions back together from the session archive, one folder per session with its transcripts and a session.json naming its machine, project and branch | `arbor archive export --project <name> --since 30d --out <new or empty folder>` (also `--machine <name>`, `--since 2026-09-01`, `--all-versions`). The folder holds whole transcripts, unencrypted: only export when asked, to where they asked |
 | Start a session on whichever pool member has room and the repository | `arbor pools start <pool> --repo <owner/name> --agent claude --prompt "…"` (asks first). It works in its own worktree off the default branch, in Orca there, or add `--cli` for the agent's own command line (and `--model`). `--folder <path>` instead of `--repo`; `--prompt -` reads stdin. Over MCP it's the `start_pool_run` tool |
 
 Stopping or restarting the proxy cuts off every agent using it for a moment, on every machine. Say so when you show

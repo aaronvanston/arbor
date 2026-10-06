@@ -145,6 +145,69 @@ pub(crate) fn pool_start(words: &[&str]) -> Result<PoolStart, String> {
     }
 }
 
+/// What `arbor archive export` was given.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct ArchiveExport {
+    pub(crate) out: String,
+    pub(crate) project: Option<String>,
+    pub(crate) machine: Option<String>,
+    /// `30d`, `12h`, `2w`, or a date like 2026-09-01.
+    pub(crate) since: Option<String>,
+    pub(crate) all_versions: bool,
+}
+
+/// Reads `arbor archive export`'s own flags. It needs a folder to export to.
+pub(crate) fn archive_export(words: &[&str]) -> Result<ArchiveExport, String> {
+    let mut export = ArchiveExport::default();
+    let mut rest = words.iter();
+    while let Some(word) = rest.next() {
+        let mut value = |flag: &str| rest.next().map(|value| value.to_string()).ok_or(format!("{flag} needs a value"));
+        match *word {
+            "--out" | "-o" => export.out = value("--out")?,
+            "--project" => export.project = Some(value("--project")?),
+            "--machine" => export.machine = Some(value("--machine")?),
+            "--since" => export.since = Some(value("--since")?),
+            "--all-versions" => export.all_versions = true,
+            other => return Err(format!("arbor archive export doesn't take {other}. Run arbor help archive to see what it does.")),
+        }
+    }
+    if export.out.trim().is_empty() {
+        return Err("Name a new or empty folder to export to with --out <folder>.".into());
+    }
+    Ok(export)
+}
+
+/// When `--since` starts: so many hours, days or weeks before `now`, or a date's midnight here.
+pub(crate) fn since_ms(text: &str, now: chrono::DateTime<chrono::Local>) -> Result<i64, String> {
+    use chrono::{Duration, Local, NaiveDate, TimeZone};
+    let text = text.trim();
+    let wrong = || format!("--since takes a span like 30d, 12h or 2w, or a date like 2026-09-01, not {text}");
+    if let Ok(day) = NaiveDate::parse_from_str(text, "%Y-%m-%d") {
+        let midnight = day.and_hms_opt(0, 0, 0).and_then(|at| Local.from_local_datetime(&at).earliest()).ok_or_else(wrong)?;
+        return Ok(midnight.timestamp_millis());
+    }
+    let unit = text.chars().last().ok_or_else(wrong)?;
+    let count: i64 = text[..text.len() - unit.len_utf8()].parse().map_err(|_| wrong())?;
+    let span = match unit {
+        'h' => Duration::try_hours(count),
+        'd' => Duration::try_days(count),
+        'w' => Duration::try_weeks(count),
+        _ => None,
+    };
+    span.filter(|_| count >= 0).map(|span| (now - span).timestamp_millis()).ok_or_else(wrong)
+}
+
+/// A folder typed on the command line as the full path the app needs: `~` is the home folder, and a relative one
+/// is from where arbor was run.
+pub(crate) fn full_path(typed: &str, home: Option<&std::path::Path>, cwd: &std::path::Path) -> std::path::PathBuf {
+    let typed = typed.trim();
+    match (typed.strip_prefix('~'), home) {
+        (Some(""), Some(home)) => home.to_path_buf(),
+        (Some(rest), Some(home)) if rest.starts_with('/') => home.join(rest.trim_start_matches('/')),
+        _ => cwd.join(typed),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +248,33 @@ mod tests {
         assert!(pool_start(&["--repo", "a/b", "--folder", "~/a", "--agent", "codex", "--prompt", "Go"]).unwrap_err().contains("not both"));
         assert!(pool_start(&["--repo"]).unwrap_err().contains("needs a value"));
         assert!(pool_start(&["--loud"]).unwrap_err().contains("--loud"));
+    }
+
+    #[test]
+    fn an_archive_export_needs_a_folder_and_reads_its_span() {
+        let export = archive_export(&["--project", "ledger", "--since", "30d", "--out", "exports/ledger", "--all-versions"]).unwrap();
+        assert_eq!((export.project.as_deref(), export.since.as_deref(), export.out.as_str(), export.all_versions), (Some("ledger"), Some("30d"), "exports/ledger", true));
+        assert!(archive_export(&["--project", "ledger"]).unwrap_err().contains("--out"));
+        assert!(archive_export(&["--out", "x", "--loud"]).unwrap_err().contains("--loud"));
+        assert!(archive_export(&["--out"]).unwrap_err().contains("needs a value"));
+
+        use chrono::TimeZone;
+        let now = chrono::Local.with_ymd_and_hms(2026, 10, 6, 15, 0, 0).unwrap();
+        assert_eq!(since_ms("30d", now).unwrap(), (now - chrono::Duration::days(30)).timestamp_millis());
+        assert_eq!(since_ms("12h", now).unwrap(), (now - chrono::Duration::hours(12)).timestamp_millis());
+        assert_eq!(since_ms("2w", now).unwrap(), (now - chrono::Duration::weeks(2)).timestamp_millis());
+        assert_eq!(since_ms("2026-09-01", now).unwrap(), chrono::Local.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap().timestamp_millis());
+        for wrong in ["", "d", "30", "30y", "-3d", "soon", "2026-13-01"] {
+            assert!(since_ms(wrong, now).is_err(), "{wrong}");
+        }
+
+        let home = std::path::Path::new("/Users/cam");
+        let cwd = std::path::Path::new("/Users/cam/src");
+        assert_eq!(full_path("~/exports", Some(home), cwd), home.join("exports"));
+        assert_eq!(full_path("~", Some(home), cwd), home);
+        assert_eq!(full_path("out", Some(home), cwd), cwd.join("out"));
+        assert_eq!(full_path("/Volumes/Backup/x", Some(home), cwd), std::path::PathBuf::from("/Volumes/Backup/x"));
+        assert_eq!(full_path("~other/x", Some(home), cwd), cwd.join("~other/x"));
     }
 
     #[test]

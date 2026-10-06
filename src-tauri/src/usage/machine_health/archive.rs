@@ -14,6 +14,7 @@
 pub(crate) mod chunker;
 pub(crate) mod classify;
 pub(crate) mod codec;
+pub(crate) mod export;
 pub(crate) mod identity;
 pub(crate) mod imports;
 pub(crate) mod index;
@@ -540,6 +541,35 @@ pub(crate) async fn get_session_archive_status(app: tauri::AppHandle) -> Result<
 #[tauri::command]
 pub(crate) async fn get_lifetime_tokens(machine: Option<String>) -> Result<tokens::LifetimeTokens, String> {
     blocking(move || tokens::lifetime(&open_index(&index_dir()?)?, machine.as_deref())).await
+}
+
+/// Puts the kept sessions a request picks back together in a new or empty folder: one folder per session, with its
+/// files as the agent wrote them and a session.json naming its machine, project and branch.
+#[tauri::command]
+pub(crate) async fn export_session_archive(request: export::ArchiveExportRequest) -> Result<export::ArchiveExport, String> {
+    blocking(move || {
+        let dir = index_dir()?;
+        let db = open_index(&dir)?;
+        let settings = settings(&db)?;
+        let (Some(root), Some(archive_id)) = (settings.root.clone(), index::get_meta(&db, "archiveId")?) else {
+            return Err("There's no archive yet".into());
+        };
+        match open_main_check(&settings, &archive_id, device(&dir)) {
+            Some(Away::Missing) => return Err("The archive's drive isn't connected".into()),
+            Some(Away::Foreign) => return Err("The archive folder holds a different archive".into()),
+            None => {}
+        }
+        // Without usage.db every session still exports, untagged; only a project can't be found.
+        let tags = match crate::usage::open_usage_database().and_then(|usage| export::session_tags(&usage)) {
+            Ok(tags) => tags,
+            Err(error) if request.project.is_some() => return Err(format!("Couldn't read which project each session worked on: {error}")),
+            Err(_) => Default::default(),
+        };
+        let root = PathBuf::from(root);
+        let reader = export::Reader { store_root: root.clone(), pending_dir: dir.join("pending") };
+        export::run(&db, &reader, &tags, &request, &[root, dir])
+    })
+    .await
 }
 
 /// The archive's own folders, which are never looked in for a backup to import.

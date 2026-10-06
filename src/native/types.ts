@@ -220,6 +220,52 @@ export type ArborSession = {
  */
 export type ArchiveCondition = "off" | "ok" | "catching-up" | "paused" | "main-missing" | "foreign" | "error";
 
+export type ArchiveExport = {
+  out: string,
+  sessions: number,
+  files: number,
+  bytes: number,
+  /**
+   * The repositories the project matched, as `owner/name`, or checkout folders for one with no remote.
+   */
+  projects: Array<string>,
+  /**
+   * Sessions that couldn't be put back together, and why. What they had that could be read is in their folder.
+   */
+  failed: Array<ArchiveExportFailure>,
+};
+
+export type ArchiveExportFailure = {
+  sessionId: string,
+  error: string,
+};
+
+/**
+ * Which sessions to export, and where to.
+ */
+export type ArchiveExportRequest = {
+  /**
+   * A full path to a folder that's missing or empty.
+   */
+  out: string,
+  /**
+   * The repository as `owner/name` or just its name, or the name of the checkout's folder.
+   */
+  project: string | null,
+  /**
+   * Only sessions kept from this machine.
+   */
+  machine: string | null,
+  /**
+   * Only sessions active since this time, in ms.
+   */
+  since: number | null,
+  /**
+   * Every version each file has had, not only the newest.
+   */
+  allVersions: boolean,
+};
+
 /**
  * An old backup taken in, or being taken in. Its homes are kept like a live home's, filed under
  * `machine`.

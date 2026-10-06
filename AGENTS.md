@@ -66,7 +66,7 @@ that only ever come down (`docs/perf/PROCESS.md`).
    on Settings › Harnesses, off by default (T3 Code's Thread names): read only while it's on, held in memory for the
    live board, never saved, logged or archived, and dropped when it's turned off.
 5. **Breaking the archive's edges.** Raw bytes live only in a store's `chunks/` and, for a file still growing,
-   `pending/`. `archive.db`, `journal/`, listings, logs and every archive command hold ids, paths, sizes, hashes and
+   `pending/`, until the user exports sessions into a folder they name (`arbor archive export`). `archive.db`, `journal/`, listings, logs and every archive command hold ids, paths, sizes, hashes and
    times; token counting keeps a hash of each call's id with its day, model and token numbers, and Claude Code's own
    totals keep each machine's days with model names, token and session counts. Nothing more. Nothing in `chunks/` is
    ever deleted or rewritten, apart from swapping a proven-corrupt file for a verified copy with the same hash. Every

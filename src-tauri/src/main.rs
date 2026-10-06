@@ -1909,6 +1909,7 @@ fn main() {
             usage::machine_health::archive::preview_session_import,
             usage::machine_health::archive::add_session_import,
             usage::machine_health::archive::cancel_session_import,
+            usage::machine_health::archive::export_session_archive,
             usage::machine_health::archive::check_session_archive_folder,
             usage::machine_health::archive::create_session_archive,
             usage::machine_health::archive::use_session_archive,

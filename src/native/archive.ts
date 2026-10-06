@@ -1,6 +1,6 @@
-import type { ArchiveStatus, FolderCheck, ImportPreview, LifetimeTokens } from './types';
+import type { ArchiveExport, ArchiveExportRequest, ArchiveStatus, FolderCheck, ImportPreview, LifetimeTokens } from './types';
 
-/** The session archive: its store, collecting into it, old backups brought in, and the all-time token count it keeps. */
+/** The session archive: its store, collecting into it, old backups brought in, exporting sessions out of it, and the all-time token count it keeps. */
 export type ArchiveCommands = {
   get_session_archive_status: { result: ArchiveStatus };
   check_session_archive_folder: { args: { path: string }; result: FolderCheck };
@@ -16,6 +16,8 @@ export type ArchiveCommands = {
   preview_session_import: { args: { path: string }; result: ImportPreview };
   add_session_import: { args: { path: string; machine: string }; result: ArchiveStatus };
   cancel_session_import: { args: { id: number }; result: ArchiveStatus };
+
+  export_session_archive: { args: { request: ArchiveExportRequest }; result: ArchiveExport };
 
   get_lifetime_tokens: { args: { machine?: string | null }; result: LifetimeTokens };
 };

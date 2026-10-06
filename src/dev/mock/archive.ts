@@ -2,6 +2,7 @@
 import type { ArchiveCommands } from '../../native/archive';
 import type {
   ArchiveCondition,
+  ArchiveExport,
   ArchiveImport,
   ArchiveMachineRun,
   ArchiveSource,
@@ -362,6 +363,13 @@ export const archiveAnswers: CommandAnswers<ArchiveCommands> = {
       archiveStatus = { ...archiveStatus, imports: archiveStatus.imports.map((entry) => entry.id === id ? { ...entry, files: 18_204, kept: 2_310, sessions: 540 } : entry) };
     }, 2_500);
     return archiveStatus;
+  },
+  // Only the command line exports; the mock answers as an export of the request would.
+  export_session_archive: (args): ArchiveExport => {
+    mockLog('export_session_archive', args);
+    if (archiveStatus.main === null) throw 'There’s no archive yet';
+    const { out, project } = args.request;
+    return { out, sessions: 12, files: 31, bytes: 48_200_000, projects: project ? [`cam/${project.split('/').pop()}`] : [], failed: [] };
   },
   cancel_session_import: (args) => {
     mockLog('cancel_session_import', args);

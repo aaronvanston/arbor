@@ -210,6 +210,8 @@ Usage: arbor [command] [flags]
   sync apply <machine>         Bring it in line (backed up first)
   core [status|start|stop|restart|install [version]]
   archive                      The session archive
+  archive export --out <folder> [--project name] [--since 30d] [--machine name]
+                               Put kept sessions back together, one folder per session
   settings [get|set|unset] [name] [value]
                                Arbor's saved settings
   commands [filter]            Everything arbor can call
@@ -536,6 +538,7 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
             show(options, &status, archive_summary);
             Ok(())
         }
+        ["archive", "export", rest @ ..] => archive_export(options, rest),
         ["settings", rest @ ..] => saved_settings(options, rest),
         ["commands", filter @ ..] => {
             let client = connect(options)?;
@@ -725,6 +728,30 @@ fn archive_summary(status: &Value) -> String {
         out.push(format!("  Problem   {error}"));
     }
     out.join("\n")
+}
+
+/// `arbor archive export`: the kept sessions it picks, put back together in a new or empty folder by the app.
+fn archive_export(options: &args::Options, rest: &[&str]) -> Result<(), Failure> {
+    let export = args::archive_export(rest).map_err(usage_error)?;
+    let since = export.since.as_deref().map(|since| args::since_ms(since, chrono::Local::now())).transpose().map_err(usage_error)?;
+    let cwd = std::env::current_dir().map_err(|error| Failure::new(exit::FAILED, format!("Couldn't tell which folder arbor runs in: {error}")))?;
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let out = args::full_path(&export.out, home.as_deref(), &cwd);
+    let mut client = connect(options)?;
+    let machine = match &export.machine {
+        Some(typed) => Some(machine_name(&mut client, typed)?),
+        None => None,
+    };
+    let request = json!({
+        "out": out.to_string_lossy(),
+        "project": export.project,
+        "machine": machine,
+        "since": since,
+        "allVersions": export.all_versions,
+    });
+    let report = change(&mut client, options, "export_session_archive", json!({ "request": request }))?;
+    show(options, &report, render::archive_export);
+    Ok(())
 }
 
 /// `arbor settings`: lists, reads and changes the window's saved settings through the app, which tells the window.

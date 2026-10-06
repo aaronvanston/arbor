@@ -149,10 +149,22 @@ stopping or restarting cuts off every agent using the proxy for a moment, on eve
     (
         "archive",
         "arbor archive
+arbor archive export --out <folder> [--project <name>] [--since <span>] [--machine <name>] [--all-versions]
 
 The session archive: where its store is, how much it holds and when it last collected.
 
+export puts kept sessions back together in a new or empty folder: one folder per session, named for when it was last
+active, its machine, branch and id, holding its files as the agent wrote them and a session.json with its machine,
+project, branch and commit. export.json lists them all. Each file is its newest version; --all-versions adds the
+older ones beside it (main.v12.jsonl).
+
+--project takes the repository as owner/name or just its name, or a checkout folder's name for one with no remote.
+A session's project is known once Arbor has read its transcript. --since takes 12h, 30d, 2w or a date like
+2026-09-01. The folder is on this Mac, and the transcripts in it aren't encrypted.
+
   arbor archive
+  arbor archive export --project ledger --since 30d --out ~/exports/ledger
+  arbor archive export --machine cam-mbp --since 2026-09-01 --out /Volumes/Backup/sessions
 ",
     ),
     (

@@ -197,6 +197,8 @@ mod tests {
         types.visit::<crate::usage::machine_health::archive::store::FolderCheck>();
         types.visit::<crate::usage::machine_health::archive::imports::ImportPreview>();
         types.visit::<crate::usage::machine_health::archive::tokens::LifetimeTokens>();
+        types.visit::<crate::usage::machine_health::archive::export::ArchiveExportRequest>();
+        types.visit::<crate::usage::machine_health::archive::export::ArchiveExport>();
     }
 
     struct Collected {
