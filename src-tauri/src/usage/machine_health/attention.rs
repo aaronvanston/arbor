@@ -1383,6 +1383,15 @@ pub(in crate::usage) fn pending_waits(state: &MachineHealthState) -> PendingWait
     PendingWaits { waits, reporting }
 }
 
+/// The session ids still waiting, without materializing their session rows.
+pub(in crate::usage) fn pending_waiting_ids(
+    connection: &Connection,
+    pending: PendingWaits,
+    now_ms: i64,
+) -> Result<HashSet<String>, String> {
+    Ok(unanswered(connection, pending.waits, now_ms)?.into_iter().map(|wait| wait.session).collect())
+}
+
 /// The waits still unanswered, each with its session: the Needs you card's report, and the fleet board's.
 pub(in crate::usage) fn attention_report(
     connection: &Connection,

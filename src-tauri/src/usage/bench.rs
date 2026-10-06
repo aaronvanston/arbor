@@ -166,9 +166,9 @@ fn fill(connection: &mut Connection, events: i64, days: i64, now_ms: i64) {
     transaction.commit().unwrap();
 }
 
-/// Runs `read` three times and prints the fastest and slowest.
+/// Runs `read` five times and prints the median and range.
 fn time<T>(label: &str, mut read: impl FnMut() -> Result<T, String>) {
-    let mut samples = (0..3)
+    let mut samples = (0..5)
         .map(|_| {
             let started = Instant::now();
             read().unwrap();
@@ -176,32 +176,42 @@ fn time<T>(label: &str, mut read: impl FnMut() -> Result<T, String>) {
         })
         .collect::<Vec<_>>();
     samples.sort_by(f64::total_cmp);
-    println!("{label:<44} {:>9.1} ms   (slowest {:>9.1} ms)", samples[0], samples[2]);
+    println!("{label:<44} median {:>9.1} ms   range {:>9.1}–{:>9.1} ms", samples[2], samples[0], samples[4]);
 }
 
 fn time_bytes<T: serde::Serialize>(label: &str, mut read: impl FnMut() -> Result<T, String>) {
-    let mut samples = Vec::with_capacity(3);
+    let mut samples = Vec::with_capacity(5);
     let mut bytes = 0;
-    for _ in 0..3 {
+    for _ in 0..5 {
         let started = Instant::now();
         let value = read().unwrap();
         bytes = serde_json::to_vec(&value).unwrap().len();
         samples.push(started.elapsed().as_secs_f64() * 1_000.0);
     }
     samples.sort_by(f64::total_cmp);
-    println!("{label:<44} {:>9.1} ms   {:>9} bytes (slowest {:>9.1} ms)", samples[0], bytes, samples[2]);
+    println!("{label:<44} median {:>9.1} ms   range {:>9.1}–{:>9.1} ms   {:>9} bytes", samples[2], samples[0], samples[4], bytes);
 }
 
 fn time_count<T>(label: &str, mut read: impl FnMut() -> Result<Vec<T>, String>) {
-    let mut samples = Vec::with_capacity(3);
+    let mut samples = Vec::with_capacity(5);
     let mut count = 0;
-    for _ in 0..3 {
+    for _ in 0..5 {
         let started = Instant::now();
         count = read().unwrap().len();
         samples.push(started.elapsed().as_secs_f64() * 1_000.0);
     }
     samples.sort_by(f64::total_cmp);
-    println!("{label:<44} {:>9.1} ms   {:>9} groups (slowest {:>9.1} ms)", samples[0], count, samples[2]);
+    println!("{label:<44} median {:>9.1} ms   range {:>9.1}–{:>9.1} ms   {:>9} groups", samples[2], samples[0], samples[4], count);
+}
+
+#[cfg(unix)]
+fn peak_rss_bytes() -> Option<u64> {
+    let mut usage = unsafe { std::mem::zeroed::<libc::rusage>() };
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) } != 0 { return None; }
+    #[cfg(target_os = "macos")]
+    { Some(usage.ru_maxrss as u64) }
+    #[cfg(not(target_os = "macos"))]
+    { Some((usage.ru_maxrss as u64).saturating_mul(1024)) }
 }
 
 fn since(now_ms: i64, back_ms: i64) -> Option<String> {
@@ -270,10 +280,17 @@ fn page_reads_at_volume() {
     let studio_week = UsageQuery { machine: Some("Mac Studio".into()), ..week.clone() };
     let busiest = MARATHON.to_string();
 
+    for (label, query) in [("all time", &all), ("7 days", &week), ("24 hours", &day)] {
+        let filter = build_usage_filter(query);
+        let rows: i64 = connection.query_row(&format!("SELECT COUNT(*) FROM usage_events{}", filter.clause), params_from_iter(filter.params.iter()), |row| row.get(0)).unwrap();
+        println!("rows visited, {label:<35} {rows}");
+    }
+
     let mapped: i64 = connection.pragma_query_value(None, "mmap_size", |row| row.get(0)).unwrap();
     println!("usage.db: {} (mapped up to {} MB)", root.join(USAGE_DATABASE_FILE).display(), mapped >> 20);
     time("open usage.db", || open().map(|_| ()));
     time("overview, all time", || load_usage_overview(&open()?, &all));
+    time("overview + breakdown, all time", || load_usage_overview(&open()?, &UsageQuery { include_analysis: Some(true), ..all.clone() }));
     time_count("cost groups, all time", || load_usage_cost_groups(&open()?, &build_usage_filter(&all)));
     time("overview, 7 days", || load_usage_overview(&open()?, &week));
     time("overview, 24 hours", || load_usage_overview(&open()?, &day));
@@ -335,6 +352,10 @@ fn page_reads_at_volume() {
     let capacity_week: capacity::CapacityQuery = serde_json::from_value(serde_json::json!({ "start": week.start })).unwrap();
     time("capacity, 7 days", || capacity::load_capacity_report(&open()?, &capacity_week, now_ms));
     time("machine assignments", || machines::load_assignments(&open()?, &config));
+    #[cfg(unix)]
+    if let Some(bytes) = peak_rss_bytes() {
+        println!("peak benchmark RSS: {} MiB", bytes / (1024 * 1024));
+    }
 
     if kept.is_none() {
         drop(connection);

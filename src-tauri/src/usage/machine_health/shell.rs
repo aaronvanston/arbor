@@ -4,10 +4,16 @@
 //! the script, notes the run in Diagnostics, and hands back what it printed or why it failed.
 
 use super::*;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Scripts running on machines at once, all of them together, so a burst of scans and changes
 /// can't open dozens of SSH sessions.
 static SCRIPT_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+#[cfg(test)]
+static SCRIPT_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+static SCRIPT_PEAK: AtomicUsize = AtomicUsize::new(0);
 
 /// Streaming runs at once. They're long copies, so they have slots of their own and never keep
 /// a scan waiting.
@@ -196,12 +202,33 @@ pub(in crate::usage) async fn run_on_machine(
 ) -> Result<std::process::Output, String> {
     let MachineCommand { command, machine } = target.into();
     let _slot = SCRIPT_SLOTS.acquire().await.map_err(|error| error.to_string())?;
+    #[cfg(test)]
+    let _active = ScriptActiveGuard::new();
     let started = Instant::now();
     let finished = run_script_within(command, script, timeout).await;
     if let Some(machine) = machine {
         diagnostics::record(diagnostics::machine_call(&machine, op, started.elapsed(), finished.as_ref()));
     }
     finished.unwrap_or_else(|| Err(timed_out(timeout)))
+}
+
+#[cfg(test)]
+struct ScriptActiveGuard;
+
+#[cfg(test)]
+impl ScriptActiveGuard {
+    fn new() -> Self {
+        let active = SCRIPT_ACTIVE.fetch_add(1, Ordering::SeqCst) + 1;
+        SCRIPT_PEAK.fetch_max(active, Ordering::SeqCst);
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for ScriptActiveGuard {
+    fn drop(&mut self) {
+        SCRIPT_ACTIVE.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// `run_on_machine` for a script whose exit status says whether it worked: what it printed, or
@@ -444,6 +471,22 @@ mod tests {
         // A reporting script's output is read whatever its exit status.
         let output = runtime.block_on(run_on_machine(&here, MachineOp::PluginApply, "echo 'R\t0\tok'\nexit 1\n", Duration::from_secs(10))).unwrap();
         assert_eq!((output.status.code(), String::from_utf8_lossy(&output.stdout).as_ref()), (Some(1), "R\t0\tok\n"));
+    }
+
+    #[test]
+    fn concurrent_script_peak_stays_at_the_shared_limit() {
+        SCRIPT_ACTIVE.store(0, Ordering::SeqCst);
+        SCRIPT_PEAK.store(0, Ordering::SeqCst);
+        let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build().unwrap();
+        let target = Machine::this_mac("shell-test");
+        runtime.block_on(async {
+            let runs = (0..16).map(|_| {
+                let target = target.clone();
+                tokio::spawn(async move { run_on_machine(&target, MachineOp::SetupScan, "sleep 0.02", Duration::from_secs(2)).await })
+            });
+            for run in runs { run.await.unwrap().unwrap(); }
+        });
+        assert!(SCRIPT_PEAK.load(Ordering::SeqCst) <= 8);
     }
 
     #[test]

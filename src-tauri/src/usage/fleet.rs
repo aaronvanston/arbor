@@ -29,6 +29,12 @@ pub(crate) struct FleetSources {
     sessions: Vec<FleetProxySession>,
 }
 
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FleetTrayCounts {
+    waiting: u32,
+}
+
 /// A proxy session, over its requests in the window.
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +69,23 @@ pub(crate) async fn get_fleet_sources(
             attention,
             sessions,
         })
+    })
+    .await
+}
+
+/// The tray badge's one count, without reading proxy sessions or serializing
+/// T3 threads. The full fleet source remains for the visible board.
+#[tauri::command]
+pub(crate) async fn get_fleet_tray_counts(
+    state: tauri::State<'_, MachineHealthState>,
+) -> Result<FleetTrayCounts, String> {
+    let now_ms = Local::now().timestamp_millis();
+    let t3 = t3_threads::waiting_ids(&state, now_ms);
+    let pending = attention::pending_waits(&state);
+    run_usage_task(move || {
+        let mut waiting = t3;
+        waiting.extend(attention::pending_waiting_ids(&open_usage_database()?, pending, now_ms)?);
+        Ok(FleetTrayCounts { waiting: waiting.len().min(u32::MAX as usize) as u32 })
     })
     .await
 }
@@ -149,6 +172,13 @@ mod tests {
     fn database() -> Connection {
         let connection = schema::test_database();
         connection
+    }
+
+    #[test]
+    fn tray_counts_payload_is_only_the_count_it_shows() {
+        let payload = serde_json::to_vec(&FleetTrayCounts { waiting: 7 }).unwrap();
+        assert_eq!(payload, br#"{"waiting":7}"#);
+        assert!(payload.len() < 32, "tray update read {} bytes", payload.len());
     }
 
     fn request(connection: &Connection, session: &str, parent: Option<&str>, at_ms: i64, failed: bool, canceled: bool) {

@@ -1556,6 +1556,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   sync_usage_model_prices: () => ({ imported: 42, skipped: manualPrices.size, filled: [], unmatched: ['codex-auto-review'], usedBuiltin: false }),
   get_live_sessions: () => mockLiveSessions(),
   get_fleet_sources: () => mockFleetSources(),
+  get_fleet_tray_counts: () => ({ waiting: mockFleetSources().attention.items.length }),
   // ?antiburn=missing: a Mac without Antiburn.
   get_antiburn: () => ({ installed: params.get('antiburn') !== 'missing' && !freshInstall, thisMachine: 'cam-mbp' }),
   open_antiburn: () => { mockLog('open_antiburn', null); return null; },

@@ -310,6 +310,9 @@ pub(crate) struct UsageQuery {
     /// way. Newest first when unset.
     #[serde(default)]
     request_order: Option<UsageRequestOrder>,
+    /// Overview only: include the Breakdown categories in the same request-table pass.
+    #[serde(default)]
+    include_analysis: Option<bool>,
 }
 
 /// A column the Requests list can be ordered by: the ones the database holds
@@ -384,6 +387,9 @@ pub(crate) struct UsageOverview {
     timeline: Vec<UsageTimelinePoint>,
     machines: Vec<machines::MachineUsage>,
     machine_live: Vec<machines::MachineLive>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    analysis: Option<UsageAnalysis>,
 }
 
 #[derive(Default, Serialize, TS)]
@@ -434,6 +440,64 @@ struct UsageCategory {
     requests: u64,
     failures: u64,
     tokens: u64,
+}
+
+#[derive(Default)]
+struct UsageAnalysisAccumulator {
+    categories: [HashMap<String, UsageCategory>; 4],
+    key_labels: HashMap<String, (String, String)>,
+    by_index: HashMap<String, UsageAccountCategory>,
+    by_source: HashMap<String, UsageAccountCategory>,
+}
+
+impl UsageAnalysisAccumulator {
+    fn add(&mut self, row: &Row<'_>, at: usize) -> rusqlite::Result<()> {
+        const UNNAMED: [&str; 4] = ["unknown", "Unknown provider", "Unknown source", "__unrecorded_api_key__"];
+        let failed = row.get::<_, bool>(at)?;
+        let canceled = row.get::<_, bool>(at + 1)?;
+        let tokens = from_sql_i64(row.get(at + 7)?);
+        let source = sql_trim(row.get_ref(at + 17)?.as_str()?);
+        let index = sql_trim(row.get_ref(at + 20)?.as_str()?);
+        let (accounts, key) = if index.is_empty() { (&mut self.by_source, source) } else { (&mut self.by_index, index) };
+        let account = accounts.entry(key.to_string()).or_insert_with(|| UsageAccountCategory { auth_index: index.to_string(), ..Default::default() });
+        if source > account.label.as_str() {
+            account.label = source.to_string();
+        }
+        account.requests = account.requests.saturating_add(1);
+        account.failures = account.failures.saturating_add(u64::from(failed && !canceled));
+        account.tokens = account.tokens.saturating_add(tokens);
+        for (category_index, categories) in self.categories.iter_mut().enumerate() {
+            let key_offset = if category_index == 3 { 13 } else { 15 + category_index };
+            let key = Some(sql_trim(row.get_ref(at + key_offset)?.as_str()?)).filter(|key| !key.is_empty()).unwrap_or(UNNAMED[category_index]);
+            if category_index == 3 {
+                let remark = sql_trim(row.get_ref(at + 18)?.as_str()?);
+                let display = sql_trim(row.get_ref(at + 19)?.as_str()?);
+                let labels = self.key_labels.entry(key.to_string()).or_default();
+                if remark > labels.0.as_str() { labels.0 = remark.to_string(); }
+                if display > labels.1.as_str() { labels.1 = display.to_string(); }
+            }
+            let category = categories.entry(key.to_string()).or_insert_with(|| UsageCategory { key: key.to_string(), label: key.to_string(), ..Default::default() });
+            category.requests = category.requests.saturating_add(1);
+            category.failures = category.failures.saturating_add(u64::from(failed && !canceled));
+            category.tokens = category.tokens.saturating_add(tokens);
+        }
+        Ok(())
+    }
+
+    fn finish(self, config: &GuiConfigFile) -> UsageAnalysis {
+        let [models, providers, mut sources, mut api_keys] = self.categories.map(sorted_usage_categories);
+        for category in &mut sources { category.label = usage_source_display(config, "", &category.key); }
+        for category in &mut api_keys {
+            let (remark, display) = self.key_labels.get(&category.key).cloned().unwrap_or_default();
+            category.label = api_key_category_label(remark, display);
+        }
+        let mut accounts: Vec<_> = self.by_index.into_values().chain(self.by_source.into_values()).map(|mut account| {
+            account.label = usage_source_display(config, "", &account.label);
+            account
+        }).collect();
+        accounts.sort_by(|left, right| right.tokens.cmp(&left.tokens).then_with(|| right.requests.cmp(&left.requests)).then_with(|| left.auth_index.cmp(&right.auth_index)).then_with(|| left.label.cmp(&right.label)));
+        UsageAnalysis { models, providers, sources, accounts, api_keys }
+    }
 }
 
 #[derive(Serialize, TS)]
@@ -851,13 +915,25 @@ fn add_text_filter(
 }
 
 #[tauri::command]
-pub(crate) async fn get_usage_overview(query: UsageQuery) -> Result<UsageOverview, String> {
-    run_usage_task(move || load_usage_overview(&open_usage_database()?, &query)).await
+pub(crate) async fn get_usage_overview(
+    query: UsageQuery,
+    gui_config_state: tauri::State<'_, GuiConfigState>,
+) -> Result<UsageOverview, String> {
+    let config = gui_config_state.snapshot()?;
+    run_usage_task(move || load_usage_overview_with_config(&open_usage_database()?, &query, &config)).await
 }
 
 fn load_usage_overview(
     connection: &Connection,
     query: &UsageQuery,
+) -> Result<UsageOverview, String> {
+    load_usage_overview_with_config(connection, query, &GuiConfigFile::default())
+}
+
+fn load_usage_overview_with_config(
+    connection: &Connection,
+    query: &UsageQuery,
+    config: &GuiConfigFile,
 ) -> Result<UsageOverview, String> {
     let filter = build_usage_filter(query);
     // One pass over the requests makes the totals, the hourly trend, the
@@ -866,11 +942,13 @@ fn load_usage_overview(
     let mut totals = OverviewSums::default();
     let mut hours = HashMap::<String, HourSums>::new();
     let mut by_key = HashMap::<String, machines::KeyUsage>::new();
+    let mut analysis = (query.include_analysis == Some(true)).then(UsageAnalysisAccumulator::default);
     let groups = cost_groups::fold_cost_rows::<()>(
         connection,
         &[],
         "failed != 0, canceled != 0, input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, \
-         cache_creation_tokens, total_tokens, latency_ms, generate != 0, ttft_ms, timestamp_ms, local_hour, api_key_hash, timestamp",
+         cache_creation_tokens, total_tokens, latency_ms, generate != 0, ttft_ms, timestamp_ms, local_hour, api_key_hash, timestamp,
+         model, provider, source, api_key_remark, api_key_display, auth_index",
         &filter,
         |_, row, at| {
             let failed: bool = row.get(at)?;
@@ -915,6 +993,9 @@ fn load_usage_overview(
                 }
             }
             machines::key_usage(&mut by_key, row.get_ref(at + 13)?.as_str()?).add(total, failed, canceled, row.get_ref(at + 14)?);
+            if let Some(analysis) = analysis.as_mut() {
+                analysis.add(row, at)?;
+            }
             Ok(())
         },
     )?;
@@ -953,6 +1034,7 @@ fn load_usage_overview(
         timeline,
         machines: machines::usage_by_machine(connection, by_key)?,
         machine_live: machines::live_usage(connection, query, Local::now().timestamp_millis())?,
+        analysis: analysis.map(|analysis| analysis.finish(config)),
         ..UsageOverview::default()
     };
     if overview.total_requests > 0 {
@@ -3761,6 +3843,8 @@ mod tests {
         let overview = load_usage_overview(&connection, &query).unwrap();
         let config = GuiConfigFile::default();
         let analysis = load_usage_analysis(&connection, &query, &config).unwrap();
+        let combined = load_usage_overview_with_config(&connection, &UsageQuery { include_analysis: Some(true), ..query.clone() }, &config).unwrap();
+        assert_eq!(serde_json::to_value(combined.analysis).unwrap(), serde_json::to_value(&analysis).unwrap());
         let events = load_usage_events(&connection, &query, &config).unwrap();
 
         assert_eq!(overview.total_requests, 1);

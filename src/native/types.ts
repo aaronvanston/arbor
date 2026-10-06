@@ -1555,6 +1555,10 @@ export type FleetSources = {
   sessions: Array<FleetProxySession>,
 };
 
+export type FleetTrayCounts = {
+  waiting: number,
+};
+
 /**
  * What a folder is, before an archive is made or used there.
  */
@@ -5108,6 +5112,7 @@ export type UsageOverview = {
   timeline: Array<UsageTimelinePoint>,
   machines: Array<MachineUsage>,
   machineLive: Array<MachineLive>,
+  analysis?: UsageAnalysis,
 };
 
 export type UsagePriceRow = {
@@ -5196,6 +5201,10 @@ export type UsageQuery = {
    * way. Newest first when unset.
    */
   request_order?: UsageRequestOrder,
+  /**
+   * Overview only: include the Breakdown categories in the same request-table pass.
+   */
+  include_analysis?: boolean,
 };
 
 export type UsageRecord = {

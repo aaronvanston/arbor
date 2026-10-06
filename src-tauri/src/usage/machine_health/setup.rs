@@ -1995,7 +1995,7 @@ pub(crate) async fn scan_setup(
 ) -> Result<(), String> {
     let now_ms = Local::now().timestamp_millis();
     let targets = take_targets(&state, machine.as_deref(), stale_only == Some(true), now_ms);
-    start_scans(&app, targets, now_ms);
+    start_scans(&app, targets, now_ms, true);
     Ok(())
 }
 
@@ -2011,7 +2011,7 @@ pub(super) fn rescan(app: &tauri::AppHandle, machine: &str) {
         }
     }
     let targets = take_targets(&state, Some(machine), false, now_ms);
-    start_scans(app, targets, now_ms);
+    start_scans(app, targets, now_ms, false);
 }
 
 /// A machine's setup, found as `covered_machine` finds it.
@@ -2022,14 +2022,19 @@ fn setup_mut<'a>(inner: &'a mut Inner, machine: &str) -> Option<&'a mut MachineS
     (this_machine_name(inner).as_deref() == Some(machine)).then_some(&mut inner.local_setup)
 }
 
-fn start_scans(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: i64) {
+fn start_scans(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: i64, stagger: bool) {
     if targets.is_empty() {
         return;
     }
     let _ = app.emit(SETUP_INVENTORY_UPDATED_EVENT, now_ms);
-    for (target, machine) in targets {
+    let count = targets.len();
+    for (index, (target, machine)) in targets.into_iter().enumerate() {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
+            let delay = if stagger { super::scan_wave_delay(index, count, Duration::from_millis(FRESH_MS as u64)) } else { Duration::ZERO };
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
             let result = scan(&machine).await;
             if let Err(error) = &result {
                 eprintln!("Could not read the setup on {}: {error}", machine.name());
@@ -2044,7 +2049,7 @@ fn start_scans(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: 
             if recorded.again {
                 let now_ms = Local::now().timestamp_millis();
                 let targets = take_targets(&app.state::<MachineHealthState>(), Some(machine.name()), false, now_ms);
-                start_scans(&app, targets, now_ms);
+                start_scans(&app, targets, now_ms, false);
             }
         });
     }

@@ -100,6 +100,7 @@ const COLUMNS: [(&str, &str); 34] = [
 const DATABASE_FILE: &str = "state.sqlite";
 const WAL_FILE: &str = "state.sqlite-wal";
 const RUNTIME_FILE: &str = "server-runtime.json";
+const MACHINE_QUIET_MS: i64 = 2 * 60 * 1000;
 
 pub(crate) const T3_THREADS_UPDATED_EVENT: &str = "t3-threads-updated";
 
@@ -1507,6 +1508,38 @@ pub(in crate::usage) fn snapshot(state: &MachineHealthState) -> T3Snapshot {
         }
     }
     T3Snapshot { enabled, found, this_machine, channels }
+}
+
+/// IDs of T3 threads asking for approval or input, read from the in-memory
+/// snapshots only. This is deliberately separate from `snapshot`: the tray
+/// badge needs counts, not the thread payload or database links.
+pub(in crate::usage) fn waiting_ids(state: &MachineHealthState, now_ms: i64) -> HashSet<String> {
+    let inner = state.lock();
+    if !enabled() {
+        return HashSet::new();
+    }
+    let target = local_target(&inner);
+    let mut ids = HashSet::new();
+    let mut add = |machine: &str, channels: &[T3Channel]| {
+        for channel in channels {
+            if !channel.server_running || (machine != target.as_ref().map(LocalTarget::machine).unwrap_or_default() && now_ms - channel.read_at_ms > MACHINE_QUIET_MS) {
+                continue;
+            }
+            for thread in &channel.threads {
+                if thread.pending_approvals == 0 && thread.pending_questions == 0 {
+                    continue;
+                }
+                ids.insert(thread.agent_session_id.clone().unwrap_or_else(|| format!("t3:{machine}:{}", thread.thread_id)));
+            }
+        }
+    };
+    for series in inner.series.values().filter(|series| series.host.enabled && (series.local || series.agents.t3().is_some())) {
+        add(&series.host.machine, &series.t3.channels);
+    }
+    if matches!(target, Some(LocalTarget::ThisMachine(_))) {
+        add(target.as_ref().map(LocalTarget::machine).unwrap_or("localhost"), &inner.local_t3.channels);
+    }
+    ids
 }
 
 #[cfg(test)]

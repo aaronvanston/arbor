@@ -936,6 +936,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "get_fleet_tray_counts",
+        access: Access::Read,
+        summary: "The tray badge's one count, without reading proxy sessions or serializing T3 threads. The full fleet source remains for the visible board.",
+        args: &[],
+    },
+    CommandSpec {
         name: "get_antiburn",
         access: Access::Read,
         summary: "Get antiburn",
@@ -2059,7 +2065,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
             let app = app.clone();
             blocking(move || done(crate::usage::get_usage_collector_status(app.state()))).await
         }
-        "get_usage_overview" => async { done(Box::pin(crate::usage::get_usage_overview(arg(&args, "query")?)).await) }.await,
+        "get_usage_overview" => async { done(Box::pin(crate::usage::get_usage_overview(arg(&args, "query")?, app.state())).await) }.await,
         "get_usage_analysis" => async { done(Box::pin(crate::usage::get_usage_analysis(arg(&args, "query")?, app.state())).await) }.await,
         "get_usage_events" => async { done(Box::pin(crate::usage::get_usage_events(arg(&args, "query")?, app.state())).await) }.await,
         "get_usage_sessions" => async { done(Box::pin(crate::usage::get_usage_sessions(arg(&args, "query")?, app.state())).await) }.await,
@@ -2121,6 +2127,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "add_automations_key" => done(Box::pin(crate::usage::machine_health::automations::commands::add_automations_key(app.clone())).await),
         "set_automation_proxy_address" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_proxy_address(app.clone(), arg(&args, "address")?)).await) }.await,
         "get_fleet_sources" => done(Box::pin(crate::usage::fleet::get_fleet_sources(app.state(), app.state())).await),
+        "get_fleet_tray_counts" => done(Box::pin(crate::usage::fleet::get_fleet_tray_counts(app.state())).await),
         "get_antiburn" => done(Box::pin(crate::usage::antiburn::get_antiburn(app.state())).await),
         "open_antiburn" => done(Box::pin(crate::usage::antiburn::open_antiburn(app.clone())).await),
         "set_agent_reporter" => async { done(Box::pin(crate::usage::machine_health::attention::set_agent_reporter(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "enabled")?, arg(&args, "plan")?)).await) }.await,

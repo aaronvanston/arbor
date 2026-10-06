@@ -13,7 +13,55 @@ When Arbor is running, sample only `pgrep -x Arbor`, `ps -o pid,rss,%cpu,nlwp -p
 
 ## Results
 
-Release benchmark command: `cd src-tauri && ARBOR_BENCH_DIR=/tmp/arbor-rust-side-bench cargo test --release usage::bench -- --ignored --nocapture`, with one million synthetic requests over 90 days. The same filled database was used for both commits. Each benchmark run reports the fastest of three samples; the table reports the median of five parent-commit runs and six current-commit runs. The range shows the fastest-sample spread, so these reads are visibly noisy on a shared development machine.
+### Round 2 query plans and counters
+
+Before changing R2, the hot queries were run against the retained synthetic database at
+`/tmp/arbor-rust-side-bench/usage.db` (1,000,133 rows). SQLite reported:
+
+```text
+overview fold       SCAN usage_events
+analysis fold       SCAN usage_events
+cost-group fold     SCAN usage_events
+event count         SCAN usage_events USING COVERING INDEX idx_usage_events_completion
+events, newest      SCAN usage_events USING INDEX idx_usage_events_timestamp
+events, by tokens   SCAN usage_events; USE TEMP B-TREE FOR ORDER BY
+```
+
+The three full-range folds have no selective predicate. An additional index would still read the
+whole range, so R2 adds no index and does not introduce an incremental rollup. The overview command
+can now ask for its Breakdown categories with `include_analysis`; those categories are folded during
+the existing request pass, so the Overview refresh no longer starts a second full-range analysis read.
+The default response omits the optional field.
+
+The benchmark now reports five samples as median and range, rows visited, serialized bytes where a
+page result is measured, and peak RSS from `getrusage`. The retained database run visited 1,000,133
+rows for all time, 72,243 for seven days and 10,063 for 24 hours; peak benchmark RSS was 935 MiB.
+The same database is used for every run. The current run's all-time reads were:
+
+| Read | Before median (range) | After median (range) | Result |
+| --- | ---: | ---: | --- |
+| Overview, all time | 615 ms (602–975) | 710 ms (683–1,721) | No measurable change; ranges overlap |
+| Analysis, all time | 462 ms (392–494) | 463 ms (443–490) | No measurable change; standalone read unchanged by R2 and ranges overlap |
+| Cost groups, all time | 336 ms (322–492) | 375 ms (354–380) | No measurable change; ranges overlap |
+| Sessions page 1 | 643 ms (607–1,394) | 660 ms (638–670) | No measurable change; ranges overlap |
+
+The existing R1 session result remains a modest, noisy improvement as reported in round 1. R2's
+combined Overview plus Breakdown read is measured by the benchmark, but there is no comparable
+interleaved parent sample in this worktree, so it is reported without a win claim.
+
+R4's schedule counter is covered by a unit test: a ten-machine wave has strictly increasing start
+delays and its final delay remains below the five-minute interval. The shared shell semaphore test
+observed a peak of at most eight concurrent script runs. R5's tray counter command serializes only
+`{"waiting":N}`; its unit test records 13 bytes for a count of seven, instead of the fleet and T3
+thread payload.
+
+The combined Overview plus Breakdown read was 1,075 ms (1,039–1,119) in the current run; there
+is no interleaved parent measurement for that new path, so it has no before/after claim.
+
+The following table is the historical Round 1 session benchmark. It remains here because R1's
+modest, noisy result was reported honestly; it is not evidence of an R2 win.
+
+Release benchmark command: `cd src-tauri && ARBOR_BENCH_DIR=/tmp/arbor-rust-side-bench cargo test --release usage::bench -- --ignored --nocapture`, with one million synthetic requests over 90 days. The same filled database was used for both commits. Each benchmark run reports five samples as a median and range. The range shows the reads are visibly noisy on a shared development machine.
 
 | Read | Before median (range) | After median (range) | Result bytes after |
 | --- | ---: | ---: | ---: |

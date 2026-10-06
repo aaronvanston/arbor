@@ -66,6 +66,15 @@ pub(crate) mod t3_threads;
 pub(crate) mod telemetry;
 pub(crate) mod transcripts;
 
+/// Delays members of one background scan wave evenly, while keeping the last
+/// member inside the feature's interval.
+pub(super) fn scan_wave_delay(index: usize, count: usize, interval: Duration) -> Duration {
+    if count <= 1 {
+        return Duration::ZERO;
+    }
+    interval.mul_f64(index.min(count.saturating_sub(1)) as f64 / count as f64)
+}
+
 use super::diagnostics::{self, MachineOp};
 use ts_rs::TS;
 use super::*;
@@ -1577,6 +1586,16 @@ pub(crate) async fn save_machine_hosts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scan_wave_spreads_machines_without_crossing_their_interval() {
+        let interval = Duration::from_secs(300);
+        let delays = (0..10).map(|index| scan_wave_delay(index, 10, interval)).collect::<Vec<_>>();
+        assert_eq!(delays.first(), Some(&Duration::ZERO));
+        assert!(delays.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(delays.last().is_some_and(|delay| *delay < interval));
+        assert_eq!(scan_wave_delay(0, 1, interval), Duration::ZERO);
+    }
 
     #[test]
     fn this_mac_is_the_listed_local_host_or_else_the_name_its_things_are_filed_under() {

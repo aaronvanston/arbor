@@ -427,9 +427,10 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         // Usage's Overview shows these same numbers in its Breakdown when nothing is filtered, so it always reads them
         // afresh.
         const breakdown = variant === 'usage' && activeTab === 'overview';
+        const filtered = Boolean(machine || model || provider || source || apiKeyHash || session || result !== 'all');
         const keepOptions = quiet && !breakdown && kept?.key === optionsKey
           && Date.now() - kept.loadedAt < OPTIONS_KEPT_MS;
-        const optionsRequest = variant === 'machines' || variant === 'value'
+        const optionsRequest = variant === 'machines' || variant === 'value' || (breakdown && !filtered)
           ? Promise.resolve(emptyAnalysis)
           : keepOptions && kept
             ? Promise.resolve(kept.value)
@@ -440,19 +441,17 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         if (activeTab === 'overview') {
           // Usage's Breakdown is the names in the menus when nothing is filtered, and read with the filters when
           // something is.
-          const filtered = Boolean(machine || model || provider || source || apiKeyHash || session || result !== 'all');
-          const [nextOptions, nextOverview, nextSessionsByMachine, nextAnalysis] = await Promise.all([
+          const [nextOptions, nextOverview, nextSessionsByMachine] = await Promise.all([
             optionsRequest,
-            invokeCommand('get_usage_overview', { query }),
+            invokeCommand('get_usage_overview', { query: breakdown ? { ...query, include_analysis: true } : query }),
             variant === 'machines' ? invokeCommand('get_machine_sessions', { query }) : null,
-            !breakdown ? null : filtered ? invokeCommand('get_usage_analysis', { query }) : optionsRequest,
           ]);
           if (requestId !== requestIdRef.current) return;
-          setOptionsAnalysis(nextOptions);
+          setOptionsAnalysis(breakdown && !filtered ? nextOverview.analysis ?? nextOptions : nextOptions);
           setOverview(nextOverview);
           setOverviewRange(timeQuery);
           setSessionsByMachine(nextSessionsByMachine);
-          if (nextAnalysis) setAnalysis(nextAnalysis);
+          if (nextOverview.analysis) setAnalysis(nextOverview.analysis);
         } else if (activeTab === 'sessions') {
           const [nextOptions, nextSessions] = await Promise.all([
             optionsRequest,
@@ -1153,4 +1152,3 @@ function FacetOption({ label, sessions }: { label: ReactNode; sessions?: number 
     </span>
   );
 }
-

@@ -5,6 +5,7 @@ import type {
   CapacityQuery,
   CapacityReport,
   FleetSources,
+  FleetTrayCounts,
   LimitAccountRename,
   LimitCycle,
   LimitReading,
@@ -50,6 +51,7 @@ export type UsageCommands = {
   get_usage_session_timeline: { args: { session: string }; result: UsageSessionTimeline };
   get_live_sessions: { result: LiveSessionsReport };
   get_fleet_sources: { result: FleetSources };
+  get_fleet_tray_counts: { result: FleetTrayCounts };
   get_antiburn: { result: AntiburnStatus };
   open_antiburn: { result: void };
   get_machine_sessions: { args: { query: UsageQuery }; result: MachineSessions[] };

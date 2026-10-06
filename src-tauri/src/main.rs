@@ -1892,6 +1892,7 @@ fn main() {
             usage::machine_health::automations::commands::add_automations_key,
             usage::machine_health::automations::commands::set_automation_proxy_address,
             usage::fleet::get_fleet_sources,
+            usage::fleet::get_fleet_tray_counts,
             usage::antiburn::get_antiburn,
             usage::antiburn::open_antiburn,
             usage::machine_health::attention::set_agent_reporter,

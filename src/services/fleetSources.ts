@@ -7,6 +7,7 @@ export type T3SkipReason = 'noSqlite3' | 'migrationRange' | 'schema' | 'unreadab
 export const T3_THREADS_UPDATED_EVENT = 't3-threads-updated';
 
 export const getFleetSources = () => invokeCommand('get_fleet_sources');
+export const getFleetTrayCounts = () => invokeCommand('get_fleet_tray_counts');
 
 /** Turns reading T3 Code's threads on or off. Nothing is read until this is sent, and off drops what was read. */
 export const setT3ThreadsEnabled = (enabled: boolean) => invokeCommand('set_t3_threads_enabled', { enabled });

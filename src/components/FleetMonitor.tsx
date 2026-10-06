@@ -5,7 +5,7 @@ import { useAppPreferences } from '../appPreferences';
 import { loadFleetSources, recentSessionIds, useFleetBoard, waitingCount, workingByMachine } from '../services/fleetBoard';
 import { isWindowHidden, pacedInterval, throttleWaitMs } from '../services/hiddenPace';
 import { reportWorkingSessions } from '../services/pools';
-import { setT3ThreadsEnabled, setT3ThreadTitles, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
+import { getFleetTrayCounts, setT3ThreadsEnabled, setT3ThreadTitles, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
 import { runHarnessesOff, setRunHarnessesOff } from '../services/runs';
 
 /** New events from a machine's reporter, and new requests, which can end a wait or start work. */
@@ -47,7 +47,12 @@ export function FleetMonitor() {
       running = true;
       lastCheckMs = Date.now();
       try {
-        await loadFleetSources();
+        if (document.hidden) {
+          const { waiting } = await getFleetTrayCounts();
+          await setTrayWaiting(waiting);
+        } else {
+          await loadFleetSources();
+        }
       } finally {
         running = false;
       }

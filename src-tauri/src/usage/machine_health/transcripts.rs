@@ -1502,10 +1502,16 @@ async fn scan_machine(target: &Machine, scanned: Vec<String>, now_ms: i64) -> Re
 /// Starts a scan on each machine that's due for one. Called after every health round.
 pub(super) fn scan_due(app: &tauri::AppHandle, state: &MachineHealthState, now_ms: i64) {
     let scanned = scanned_machines(state);
-    for (target, machine) in take_due(state, now_ms) {
+    let targets = take_due(state, now_ms);
+    let count = targets.len();
+    for (index, (target, machine)) in targets.into_iter().enumerate() {
         let app = app.clone();
         let scanned = scanned.clone();
         tauri::async_runtime::spawn(async move {
+            let delay = super::scan_wave_delay(index, count, Duration::from_millis(SCAN_INTERVAL_MS as u64));
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
             let result = scan_machine(&machine, scanned, now_ms).await;
             if let Err(error) = &result {
                 eprintln!("Could not read session transcripts on {}: {error}", machine.name());
