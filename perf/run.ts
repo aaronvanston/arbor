@@ -2,8 +2,9 @@
  * `bun run perf`: Arbor's speed benchmark (docs/perf/PROCESS.md). Builds the browser mock as the production-optimized
  * demo site, serves it on 127.0.0.1 and drives it in Playwright's WebKit, the engine Arbor's window uses, through a
  * cold launch to Home, a visit to each main page, ten minutes of idle on Home, ten minutes with the window closed to
- * the tray on a heavy page, and a tour of heavy pages closed to the tray until the window reloads itself into the
- * background. The page clock runs time, so ten minutes take seconds and the gated counts come out the same on every run.
+ * the tray on a heavy page, a tour of heavy pages closed to the tray until the window reloads itself into the
+ * background, and the first screen's handoff to React (perf/firstScreen.ts). The page clock runs time, so ten minutes
+ * take seconds and the gated counts come out the same on every run.
  *
  *   bun run perf               measure, print the tables, write perf/latest.json
  *   bun run perf:check         measure, then fail when a gated count is over its ceiling in perf/baseline.json
@@ -18,6 +19,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { webkit, type Browser, type Frame, type Page } from 'playwright';
 import { installCounters, type CounterSnapshot } from './counters';
+import { firstScreenJourney, type FirstScreen } from './firstScreen';
 import { check, ratchet, type Baseline, type CheckRow, type Counts } from './ratchet';
 import { BuildSources, formatPosition, isMockSource, type SourcePosition } from './sourcemap';
 
@@ -179,6 +181,8 @@ type SizeResult = {
   /** Every health round's counts together; the gated ones are per round. */
   healthRounds?: Step;
   pages: Record<string, Step>;
+  /** index.html's static first screen against React's first frame. Default size only. */
+  firstScreen?: FirstScreen;
   timing: Timing;
 };
 
@@ -645,12 +649,17 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   const reload = await reloadJourney(browser, url, sources);
 
   let cold: SizeResult['coldJs'];
+  let firstScreen: FirstScreen | undefined;
   if (size.id === 'default') {
+    console.log(`[${size.id}] (${elapsed()}) the first screen against React's first frame…`);
+    const handoff = await firstScreenJourney(browser, origin, SITE, contextOptions, START_MS);
+    firstScreen = handoff.result;
+    pageErrors.push(...handoff.errors);
     console.log(`[${size.id}] (${elapsed()}) cold start on each page for its JS…`);
     cold = await coldJs(browser, origin, sources);
   }
   console.log(`[${size.id}] (${elapsed()}) done`);
-  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, healthRounds, hidden, reload, pages, timing };
+  return { launch: launchStep, coldJs: cold, idle: { ...idleStep, rssStartMb, rssEndMb }, healthRounds, hidden, reload, pages, timing, firstScreen };
 }
 
 /**
@@ -843,6 +852,13 @@ function countsOf(results: Latest['sizes']): Counts {
     counts[`${size}.idle.timerFiresPerMinute`] = perMinute(idle.timerFires);
     counts[`${size}.idle.liveTimers`] = idle.liveTimers;
     counts[`${size}.idle.rafPerSecond`] = Math.round((idle.rafCalls / (IDLE_MINUTES * 60)) * 10) / 10;
+    const { firstScreen } = result;
+    if (firstScreen) {
+      counts[`${size}.firstScreen.shiftPx`] = firstScreen.shiftPx;
+      counts[`${size}.firstScreen.pixelsChanged`] = firstScreen.pixelsChanged;
+      counts[`${size}.firstScreen.shellElements`] = firstScreen.shellElements;
+      counts[`${size}.firstScreen.indexHtmlBytes`] = firstScreen.indexHtmlBytes;
+    }
     const { hidden } = result;
     if (hidden) {
       const perHiddenMinute = (value: number) => Math.round((value / HIDDEN_MINUTES) * 10) / 10;
@@ -930,6 +946,11 @@ function printReport(latest: Latest) {
       stepRow('launch → Home settled', result.launch, result.launch.appJsBytes),
       ...Object.entries(result.pages).map(([page, step]) => stepRow(`open ${page}`, step, result.coldJs?.pages[page])),
     ]);
+    const { firstScreen } = result;
+    if (firstScreen) {
+      const moved = Object.entries(firstScreen.shifts).filter(([, px]) => px > 0);
+      console.log(`\nFirst screen → React's first frame (at ${firstScreen.handoffAtMs} ms of page clock): ${firstScreen.shiftPx} px moved at most${moved.length ? ` (${moved.map(([name, px]) => `${name} ${px}`).join(', ')})` : ''}, ${firstScreen.pixelsChanged} pixels changed, ${firstScreen.shellElements} elements in the static screen, index.html ${kb(firstScreen.indexHtmlBytes)} KB.`);
+    }
     const { settling } = result.launch;
     if (settling) {
       console.log(`\nLaunch: Home settled at ${settling.settledAtMs} ms on the page clock (its last DOM change before ${SETTLED_QUIET_MS} ms without one), after ${settling.beforeSettled} calls; ${settling.duplicatesInFlight} repeated a call still in flight${settling.duplicatesInFlight ? ` (${Object.entries(settling.duplicates).map(([name, count]) => `${name} ×${count}`).join(', ')})` : ''}.`);

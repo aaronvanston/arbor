@@ -14,6 +14,10 @@
     }
   },
   "ceilings": {
+    "default.firstScreen.indexHtmlBytes": 114909,
+    "default.firstScreen.pixelsChanged": 0,
+    "default.firstScreen.shellElements": 523,
+    "default.firstScreen.shiftPx": 0,
     "default.healthRound.commands": 3,
     "default.healthRound.componentRenders": 258.4,
     "default.healthRound.reactCommits": 2,
