@@ -191,3 +191,5 @@ The `spawn` sites are tasks, not one OS thread each. “Hidden” means the webv
 6. Batch telemetry DB writes/events if sender rate makes them material.
 7. Measure archive catch-up separately from settled idle.
 8. Measure fresh SQLite connection cost and actual IPC bytes before caching or pooling.
+
+The post-change `perf:check` run completed without a page error but retained the existing baseline: 16 counters exceeded their ceilings, including hidden command rate, JavaScript byte ceilings, Usage command count and reload monitor presence. No ceiling was raised because the run did not isolate those existing overruns to this change.
