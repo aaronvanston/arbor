@@ -17,7 +17,7 @@
 
 use super::shell::shell_quote;
 use ts_rs::TS;
-use super::setup::{covered_machine, parse_overrides, read_text_after, OverrideState, SetupText};
+use super::setup::{covered_machine, parse_overrides, read_text_after, OverrideState, SetupText, HELPERS};
 use super::setup_plugins::message;
 use super::*;
 
@@ -170,6 +170,10 @@ pub(crate) struct ProjectWorktree {
     agents_md: Option<String>,
     /// It has a CLAUDE.md or .claude/CLAUDE.md, so Claude Code reads that rather than AGENTS.md.
     claude_md: bool,
+    /// The project skill folders Arbor wrote in it, with their fingerprints, and (`!` first) ones it left as the
+    /// project's own.
+    #[serde(skip)]
+    arbor_skills: Vec<(String, String)>,
 }
 
 /// A project instruction file Arbor writes in a checkout.
@@ -394,6 +398,33 @@ impl MachineProjects {
 
     pub(super) fn is_scanning(&self) -> bool {
         self.scanning
+    }
+
+    /// Every checkout and worktree of the repo whose remote is `remote` (`host/owner/name`, compared loosely), and the
+    /// place the setup repo wants it when that's a checkout of it the sessions haven't led to: where a project's own
+    /// skills go.
+    pub(super) fn project_worktrees(&self, remote: Option<&str>, place: Option<&str>) -> Vec<String> {
+        let mut paths: Vec<String> = Vec::new();
+        if let Some(wanted) = remote.map(same_remote) {
+            for repo in self.repos.iter().filter(|repo| repo.state == RepoState::Ok && !repo.bare && repo.remote.as_deref().is_some_and(|found| same_remote(found) == wanted)) {
+                for worktree in repo.worktrees.iter().filter(|worktree| !worktree.prunable) {
+                    paths.push(worktree.real.clone().unwrap_or_else(|| worktree.path.clone()));
+                }
+            }
+        }
+        if let Some(place) = place.filter(|place| !paths.iter().any(|path| path == place)) {
+            paths.push(place.to_string());
+        }
+        paths
+    }
+
+    /// The project skill folders Arbor wrote in the worktree at `path`, as its last scan found them.
+    pub(super) fn arbor_skills(&self, path: &str) -> &[(String, String)] {
+        self.repos
+            .iter()
+            .flat_map(|repo| &repo.worktrees)
+            .find(|worktree| worktree.path == path || worktree.real.as_deref() == Some(path))
+            .map_or(&[], |worktree| worktree.arbor_skills.as_slice())
     }
 
     /// The main checkouts the last scan found, most recently used first, each with how it stands.
@@ -769,6 +800,13 @@ scan_worktree() {
   if [ -f "$wt/AGENTS.md" ]; then agents=$(cksum < "$wt/AGENTS.md" 2>/dev/null | awk '{ printf "c%s-%s", $1, $2 }'); fi
   claude=0
   if [ -e "$wt/CLAUDE.md" ] || [ -e "$wt/.claude/CLAUDE.md" ]; then claude=1; fi
+  # The project skill folders Arbor wrote here (project_skills), each with its fingerprint; `!` marks one left
+  # alone as the project's own.
+  if [ -n "$gitdir" ] && [ -f "$gitdir/arbor-skills" ]; then
+    while IFS= read -r rel; do
+      case "$rel" in ''|*"$tab"*) continue ;; '!'*) printf 'Y\t%s\t-\n' "$rel" ;; *) printf 'Y\t%s\t%s\n' "$rel" "$(folder_print "$wt/$rel")" ;; esac
+    done < "$gitdir/arbor-skills"
+  fi
   printf 'W\t%s\t%s\n' "${agents:--}" "$claude"
   if [ "$this" = 0 ]; then
     git -C "$wt" ls-files --others --ignored --exclude-standard --directory > "$work/ign" 2>/dev/null || : > "$work/ign"
@@ -874,9 +912,18 @@ while IFS= read -r p <&3; do
 done 3< "$work/places"
 "##;
 
+// A skill folder's fingerprint as setup_skills' `place` gives one (after HELPERS), or - for none.
+pub(super) const FOLDER_PRINT: &str = r##"folder_print() {
+  if [ -d "$1" ] && [ ! -L "$1" ] && [ -f "$1/SKILL.md" ]; then
+    l=$(dir_listing "$1"); if [ -n "$l" ]; then printf D; printf '%s\n' "$l" | sum_in; return 0; fi
+  fi
+  printf -
+}
+"##;
+
 fn scan_script(repos: &[String], places: &[String], fetch: bool) -> String {
     let budget = if fetch { FETCH_BUDGET_S } else { SCAN_BUDGET_S };
-    let mut script = format!("{GIT_ENV}{CHECKS}{INSIDE_REPO}{ORIGIN_URL}fetch={}\nbudget={budget}\n{SCAN_HEAD}", u8::from(fetch));
+    let mut script = format!("{GIT_ENV}{CHECKS}{INSIDE_REPO}{ORIGIN_URL}{HELPERS}{FOLDER_PRINT}fetch={}\nbudget={budget}\n{SCAN_HEAD}", u8::from(fetch));
     for repo in repos.iter().filter(|repo| is_path(repo)) {
         script.push_str(repo);
         script.push('\n');
@@ -1118,6 +1165,13 @@ fn parse_scan(stdout: &str, used: &HashMap<String, i64>, now_ms: i64) -> Scanned
                     worktree.midway = *midway != "0";
                     worktree.unreachable = unreachable.trim().parse().unwrap_or(1);
                     worktree.real = field(real).map(str::to_string);
+                }
+            }
+            (["Y", rel, print], Some(repo)) if attach => {
+                if let Some(worktree) = repo.worktrees.last_mut() {
+                    if rel.len() <= 300 && worktree.arbor_skills.len() < 200 {
+                        worktree.arbor_skills.push((rel.to_string(), print.to_string()));
+                    }
                 }
             }
             (["I", entry], Some(repo)) if attach => {

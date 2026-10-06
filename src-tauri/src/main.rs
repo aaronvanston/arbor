@@ -1925,6 +1925,7 @@ fn main() {
             usage::machine_health::setup_sync::get_setup_repo,
             usage::machine_health::project_places::get_project_drift,
             usage::machine_health::project_fixes::apply_project_fixes,
+            usage::machine_health::project_skills::apply_project_skills,
             usage::machine_health::setup_layers::add_setup_schemas,
             usage::machine_health::setup_sync::read_setup_repo_file,
             usage::machine_health::setup_repo_browse::list_setup_repo_tree,

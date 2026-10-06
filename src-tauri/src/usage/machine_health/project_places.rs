@@ -48,6 +48,10 @@ pub(crate) struct ProjectCell {
     status: Option<CheckoutStatus>,
     /// Its other checkouts on the machine, which are never moved or counted.
     others: Vec<String>,
+    /// Of the project's own skills, the copies its checkouts and worktrees here should have, and how many of them
+    /// are missing or out of date. A folder left alone as the project's own counts as in step.
+    skills_total: u32,
+    skills_out: u32,
 }
 
 impl ProjectCell {
@@ -69,7 +73,7 @@ impl ProjectCell {
 
     #[cfg(test)]
     pub(super) fn for_test(state: PlaceState, path: &str, checkout: Option<&str>, status: Option<CheckoutStatus>) -> Self {
-        ProjectCell { machine: "ci-01".into(), path: path.into(), state, blocker: None, blocker_remote: None, link: None, checkout: checkout.map(str::to_string), status, others: Vec::new() }
+        ProjectCell { machine: "ci-01".into(), path: path.into(), state, blocker: None, blocker_remote: None, link: None, checkout: checkout.map(str::to_string), status, others: Vec::new(), skills_total: 0, skills_out: 0 }
     }
 }
 
@@ -152,7 +156,19 @@ fn scanned_key(checkout: &FoundCheckout) -> Option<String> {
 
 /// How one project stands on one machine, from that machine's scan.
 fn cell(project: &ProjectPlaces, machine: &str, path: &str, scan: Option<&MachineProjects>, checkouts: &[FoundCheckout]) -> ProjectCell {
-    let mut cell = ProjectCell { machine: machine.to_string(), path: path.to_string(), state: PlaceState::NotScanned, blocker: None, blocker_remote: None, link: None, checkout: None, status: None, others: Vec::new() };
+    let mut cell = ProjectCell {
+        machine: machine.to_string(),
+        path: path.to_string(),
+        state: PlaceState::NotScanned,
+        blocker: None,
+        blocker_remote: None,
+        link: None,
+        checkout: None,
+        status: None,
+        others: Vec::new(),
+        skills_total: 0,
+        skills_out: 0,
+    };
     let Some(place) = scan.and_then(|scan| scan.places().iter().find(|place| place.path == path)) else {
         return cell;
     };
@@ -200,6 +216,32 @@ fn cell(project: &ProjectPlaces, machine: &str, path: &str, scan: Option<&Machin
     cell
 }
 
+/// How many copies of a project's own skills its checkouts and worktrees on a machine should have, and how many are
+/// missing or out of date, from the machine's last scan.
+fn skill_standing(cell: &ProjectCell, scan: &MachineProjects, skills: &[(&str, &str, &str)], remote: Option<&str>) -> (u32, u32) {
+    if skills.is_empty() || matches!(cell.state, PlaceState::NotScanned | PlaceState::Missing | PlaceState::Blocked) {
+        return (0, 0);
+    }
+    let place = cell.checkout.as_deref().filter(|_| matches!(cell.state, PlaceState::InPlace | PlaceState::Linked));
+    let remote = remote.and_then(normalize_remote);
+    let (mut total, mut out) = (0, 0);
+    for worktree in scan.project_worktrees(remote.as_deref(), place) {
+        let records = scan.arbor_skills(&worktree);
+        for (name, sum, ck) in skills {
+            for sub in super::project_skills::SKILL_DIRS {
+                let rel = format!("{sub}/{name}");
+                total += 1;
+                let own = records.iter().any(|(found, _)| found.strip_prefix('!') == Some(rel.as_str()));
+                let current = records.iter().any(|(found, print)| *found == rel && (print.strip_prefix('D') == Some(sum) || print.strip_prefix('D') == Some(ck)));
+                if !own && !current {
+                    out += 1;
+                }
+            }
+        }
+    }
+    (total, out)
+}
+
 /// Every project's places against `scans`, each machine's last project scan by its name, for `machines`, the machines
 /// Arbor watches.
 pub(super) fn drift(layers: &SetupLayers, machines: &[String], scans: &BTreeMap<String, MachineProjects>) -> ProjectsDrift {
@@ -217,7 +259,14 @@ pub(super) fn drift(layers: &SetupLayers, machines: &[String], scans: &BTreeMap<
             let cells: Vec<ProjectCell> = project
                 .places
                 .iter()
-                .map(|place| cell(project, &place.machine, &place.path, scans.get(&place.machine), found.get(place.machine.as_str()).unwrap_or(&empty)))
+                .map(|place| {
+                    let scan = scans.get(&place.machine);
+                    let mut cell = cell(project, &place.machine, &place.path, scan, found.get(place.machine.as_str()).unwrap_or(&empty));
+                    if let (Some(scan), Some(entry)) = (scan, layers.project(&project.project)) {
+                        (cell.skills_total, cell.skills_out) = skill_standing(&cell, scan, &entry.own_skill_prints(), project.remote.as_deref());
+                    }
+                    cell
+                })
                 .collect();
             for cell in cells.iter().filter(|_| project.local) {
                 if let Some(checkout) = &cell.checkout {
@@ -396,5 +445,29 @@ mod tests {
         assert!(states(&drift, "cam/old").is_empty());
         let unlisted: Vec<(&str, &str)> = drift.unlisted.iter().map(|found| (found.machine.as_str(), found.path.as_str())).collect();
         assert_eq!(unlisted, vec![("cam-mbp", "/Users/cam/site"), ("ci-01", "/home/cam/tmp")]);
+    }
+
+    #[test]
+    fn skill_copies_count_out_of_step_unless_current_or_the_projects_own() {
+        let files = [("projects/cam/arbor/project.json", ARBOR)];
+        let mut found = read_layers(files.iter().map(|(rel, text)| (rel.to_string(), layer_path(rel).unwrap(), text.as_bytes().to_vec())).collect(), &[("projects/cam/arbor".into(), "digest".into())]);
+        found.projects_mut()[0].set_skill_print("digest", &"a".repeat(64), "c1-2");
+        let sum = "a".repeat(64);
+        let place = "~/code/cam/arbor";
+        // Main checkout: Claude's copy current, the shared one out of date. Its worktree: Claude's is the project's own,
+        // the shared one missing.
+        let stdout = format!(
+            "K\t{place}\tcheckout\t-\t/h/code/cam/arbor\nKO\tgit@github.com:cam/arbor.git\nKS\tmain\t0\t0\t-\t-\t-\t-\t1\n\
+             R\t/h/code/cam/arbor\tok\nO\tgit@github.com:cam/arbor.git\n\
+             T\t/h/code/cam/arbor\tabc\tmain\t-\t1\nS\t0\t0\t1\t-\t-\t0\t0\t0\t0\t0\t/h/code/cam/arbor\n\
+             Y\t.claude/skills/digest\tD{sum}\nY\t.agents/skills/digest\tDbbbb\n\
+             T\t/h/wt\tdef\tfix\t-\t0\nS\t0\t0\t0\t-\t-\t0\t0\t0\t0\t0\t/h/wt\n\
+             Y\t!.claude/skills/digest\t-\n"
+        );
+        let scans = scans(&[("ci-01", stdout)]);
+        let drift = drift(&found, &["ci-01".to_string()], &scans);
+        let cell = &drift.projects[0].cells[0];
+        assert_eq!(cell.state, PlaceState::InPlace);
+        assert_eq!((cell.skills_total, cell.skills_out), (4, 2));
     }
 }

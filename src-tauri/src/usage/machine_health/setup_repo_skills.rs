@@ -305,7 +305,12 @@ pub(super) struct SkillEntry {
 impl SkillEntry {
     /// An entry of `git ls-tree -r -l` at `path`, when that's in a skill: .agents/skills/<name>/<rel>.
     pub(super) fn parse(path: &str, mode: &str, kind: &str, object: &str, size: &str) -> Option<Self> {
-        let (name, rel) = path.strip_prefix(".agents/skills/")?.split_once('/')?;
+        Self::parse_in(SKILLS_DIR, path, mode, kind, object, size)
+    }
+
+    /// `parse`, for a skill in the folder `dir` rather than the store's: a project's own skills.
+    fn parse_in(dir: &str, path: &str, mode: &str, kind: &str, object: &str, size: &str) -> Option<Self> {
+        let (name, rel) = path.strip_prefix(dir)?.strip_prefix('/')?.split_once('/')?;
         is_skill_name(name).then(|| Self {
             name: name.to_string(),
             rel: rel.to_string(),
@@ -398,8 +403,8 @@ pub(super) async fn read_skills(folder: &Path, entries: Vec<SkillEntry>, sources
     Ok(skills)
 }
 
-/// The entries of skill `name` as `commit` has them.
-async fn skill_entries(folder: &Path, commit: &str, name: &str) -> Result<Vec<SkillEntry>, String> {
+/// The entries of skill `name` in `dir` (the store's, or a project's own) as `commit` has them.
+async fn skill_entries(folder: &Path, commit: &str, dir: &str, name: &str) -> Result<Vec<SkillEntry>, String> {
     if !is_commit(commit) {
         return Err("That isn't a commit".into());
     }
@@ -407,7 +412,7 @@ async fn skill_entries(folder: &Path, commit: &str, name: &str) -> Result<Vec<Sk
         return Err(format!("Arbor doesn't sync a skill called {name}"));
     }
     // Paths come back as they are from `folder`, which may be inside the repo.
-    let pathspec = format!("./{SKILLS_DIR}/{name}");
+    let pathspec = format!("./{dir}/{name}");
     let listing = git_out(folder, &["--literal-pathspecs", "ls-tree", "-r", "-l", "-z", commit, "--", &pathspec]).await?;
     Ok(listing
         .split('\0')
@@ -415,7 +420,7 @@ async fn skill_entries(folder: &Path, commit: &str, name: &str) -> Result<Vec<Sk
             let (meta, path) = entry.split_once('\t')?;
             let fields: Vec<&str> = meta.split_whitespace().collect();
             let [mode, kind, object, size] = fields.as_slice() else { return None };
-            SkillEntry::parse(path, mode, kind, object, size).filter(|entry| entry.name == name)
+            SkillEntry::parse_in(dir, path, mode, kind, object, size).filter(|entry| entry.name == name)
         })
         .collect())
 }
@@ -448,7 +453,12 @@ impl SkillFiles {
 
 /// Skill `name` as `commit` has it, to write on a machine.
 pub(super) async fn repo_skill(folder: &Path, commit: &str, name: &str) -> Result<SkillFiles, String> {
-    let entries = skill_entries(folder, commit, name).await?;
+    skill_in(folder, commit, SKILLS_DIR, name).await
+}
+
+/// Skill `name` in `dir`, the store's folder or a project's own skills, as `commit` has it.
+pub(super) async fn skill_in(folder: &Path, commit: &str, dir: &str, name: &str) -> Result<SkillFiles, String> {
+    let entries = skill_entries(folder, commit, dir, name).await?;
     if entries.is_empty() {
         return Err(format!("The repo's commit has no {name} skill"));
     }
@@ -1053,7 +1063,7 @@ pub(crate) async fn take_setup_skills(
 #[tauri::command]
 pub(crate) async fn read_setup_repo_skill(repo: String, commit: String, name: String, ck: bool) -> Result<Vec<SetupSkillFile>, String> {
     let folder = Path::new(&repo);
-    let entries = skill_entries(folder, &commit, &name).await?;
+    let entries = skill_entries(folder, &commit, SKILLS_DIR, &name).await?;
     if problem(&entries) == Some("large") {
         return Err("It's too large to compare here.".into());
     }

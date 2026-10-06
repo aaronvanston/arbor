@@ -8,7 +8,7 @@ const status = (extra: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
 });
 
 const cell = (machine: string, state: ProjectCell['state'], extra: Partial<ProjectCell> = {}): ProjectCell => ({
-  machine, path: '~/code/cam/arbor', state, blocker: null, blockerRemote: null, link: null, checkout: null, status: null, others: [], ...extra,
+  machine, path: '~/code/cam/arbor', state, blocker: null, blockerRemote: null, link: null, checkout: null, status: null, others: [], skillsTotal: 0, skillsOut: 0, ...extra,
 });
 
 const project = (name: string, cells: ProjectCell[], extra: Partial<ProjectDrift> = {}): ProjectDrift => ({
@@ -84,6 +84,8 @@ describe('fixes', () => {
     expect(cellFixes(cell('ci-01', 'missing'), true)).toEqual([]);
     expect(cellFixes(cell('ci-01', 'blocked'), false)).toEqual([]);
     expect(cellFixes(cell('ci-01', 'notScanned'), false)).toEqual([]);
+    // A local project's skills are still copied into its checkout.
+    expect(cellFixes(cell('ci-01', 'inPlace', { status: status(), skillsTotal: 4, skillsOut: 2 }), true)).toEqual(['skills']);
   });
 
   it('moves only a clean checkout with no linked worktrees that isn’t at its place', () => {
@@ -104,6 +106,6 @@ describe('fixes', () => {
       unlisted: [],
       machines: [],
     };
-    expect(machineFixes(drift, 'ci-01')).toEqual([{ project: 'cam/arbor', fix: 'link' }, { project: 'acme/proxy', fix: 'fastForward' }]);
+    expect(machineFixes(drift, 'ci-01')).toEqual({ fixes: [{ project: 'cam/arbor', fix: 'link' }, { project: 'acme/proxy', fix: 'fastForward' }], skills: [] });
   });
 });

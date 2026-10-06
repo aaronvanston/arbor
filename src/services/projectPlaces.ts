@@ -17,12 +17,14 @@ export const addSetupSchemas = (repo: string) => invokeCommand('add_setup_schema
  * and backed up, so Repo › History can undo it.
  */
 export const applyProjectFixes = (repo: string, machine: string, fixes: ProjectFixRequest[]) => invokeCommand('apply_project_fixes', { repo, machine, fixes });
+/** Copies a project's own skills into each of its checkouts and worktrees on a machine, backed up the same way. */
+export const applyProjectSkills = (repo: string, machine: string, project: string) => invokeCommand('apply_project_skills', { repo, machine, project });
 
 /** A checkout nobody has fetched for this long may not know what the remote has. */
 export const PLACE_STALE_MS = 86_400_000;
 
 /** What a cell needs before the project is where the repo wants it on that machine; empty when it's there. */
-export type CellNeed = 'link' | 'clone' | 'clear' | 'scan' | 'pull' | 'fetch';
+export type CellNeed = 'link' | 'clone' | 'clear' | 'scan' | 'pull' | 'fetch' | 'skills';
 
 /** The states where the project isn't at its place yet. */
 const NOT_THERE: Record<PlaceState, CellNeed | null> = {
@@ -41,6 +43,7 @@ export function cellNeeds(cell: ProjectCell): CellNeed[] {
   if (place) needs.push(place);
   if (cell.status?.fetchFailed) needs.push('fetch');
   if (cell.status && behindOnDefault(cell.status) > 0) needs.push('pull');
+  if (cell.skillsOut > 0) needs.push('skills');
   return needs;
 }
 
@@ -92,13 +95,16 @@ export function matchesQuery(project: ProjectDrift, query: string): boolean {
 }
 
 /** The fix that meets each need, where Arbor has one. A path something else holds is the user's to clear. */
-const NEED_FIX: Record<CellNeed, PlaceFix | null> = { link: 'link', clone: 'clone', clear: null, scan: null, pull: 'fastForward', fetch: 'fetch' };
+const NEED_FIX: Record<CellNeed, CellFix | null> = { link: 'link', clone: 'clone', clear: null, scan: null, pull: 'fastForward', fetch: 'fetch', skills: 'skills' };
+
+/** A fix a cell offers: one of the place's, or copying the project's own skills into its checkouts. */
+export type CellFix = PlaceFix | 'skills';
 
 /** The fixes a project's cell needs, in order. A local project's place waits for the hub, so it's never linked or cloned. */
-export function cellFixes(cell: ProjectCell, local: boolean): PlaceFix[] {
+export function cellFixes(cell: ProjectCell, local: boolean): CellFix[] {
   return cellNeeds(cell)
     .map((need) => NEED_FIX[need])
-    .filter((fix): fix is PlaceFix => fix !== null && !(local && (fix === 'link' || fix === 'clone')));
+    .filter((fix): fix is CellFix => fix !== null && !(local && (fix === 'link' || fix === 'clone')));
 }
 
 /**
@@ -110,12 +116,46 @@ export function canMove(cell: ProjectCell): boolean {
   return (cell.state === 'elsewhere' || cell.state === 'linked') && status !== null && status.changed === 0 && status.untracked === 0 && status.worktrees === 0;
 }
 
-/** Every fix a machine's projects need, never a move: what its card's Fix button runs. */
-export function machineFixes(drift: ProjectsDrift, machine: string): ProjectFixRequest[] {
-  return drift.projects
-    .filter((project) => !project.archived)
-    .flatMap((project) => {
-      const cell = project.cells.find((found) => found.machine === machine);
-      return cell ? cellFixes(cell, project.local).map((fix) => ({ project: project.project, fix })) : [];
-    });
+/** What a machine's card's Fix button runs: every place fix its projects need (never a move), and the projects whose skills to copy after. */
+export function machineFixes(drift: ProjectsDrift, machine: string): { fixes: ProjectFixRequest[]; skills: string[] } {
+  const fixes: ProjectFixRequest[] = [];
+  const skills: string[] = [];
+  for (const project of drift.projects.filter((found) => !found.archived)) {
+    const cell = project.cells.find((found) => found.machine === machine);
+    for (const fix of cell ? cellFixes(cell, project.local) : []) {
+      if (fix === 'skills') skills.push(project.project);
+      else fixes.push({ project: project.project, fix });
+    }
+  }
+  return { fixes, skills };
+}
+
+/** How a run of fixes on one machine went: what was done, what wasn't and why, and the backups to undo it with. */
+export type FixRun = { done: number; missed: { project: string; detail: string | null }[]; backups: string[] };
+
+/**
+ * Runs `fixes` on a machine, then copies the skills of each project in `skills`, which goes after them so a clone or
+ * link made first gets its skills too. Each step is backed up on its own; undoing the run undoes them newest first.
+ */
+export async function runFixes(repo: string, machine: string, fixes: ProjectFixRequest[], skills: string[]): Promise<FixRun> {
+  const run: FixRun = { done: 0, missed: [], backups: [] };
+  if (fixes.length) {
+    const { backup, results } = await applyProjectFixes(repo, machine, fixes);
+    if (backup) run.backups.push(backup);
+    for (const result of results) {
+      if (result.outcome === 'done') run.done += 1;
+      else run.missed.push({ project: result.project, detail: result.detail });
+    }
+  }
+  for (const project of skills) {
+    try {
+      const outcome = await applyProjectSkills(repo, machine, project);
+      if (outcome.backup) run.backups.push(outcome.backup);
+      if (outcome.failed.length) run.missed.push({ project, detail: outcome.failed.join('; ') });
+      else run.done += 1;
+    } catch (error) {
+      run.missed.push({ project, detail: String(error) });
+    }
+  }
+  return run;
 }

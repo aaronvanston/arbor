@@ -3283,6 +3283,12 @@ export type ProjectCell = {
    * Its other checkouts on the machine, which are never moved or counted.
    */
   others: Array<string>,
+  /**
+   * Of the project's own skills, the copies its checkouts and worktrees here should have, and how many of them
+   * are missing or out of date. A folder left alone as the project's own counts as in step.
+   */
+  skillsTotal: number,
+  skillsOut: number,
 };
 
 /**
@@ -3421,6 +3427,39 @@ export type ProjectRepo = {
   lastUsedMs: number | null,
   worktrees: Array<ProjectWorktree>,
   files: Array<ProjectFile>,
+};
+
+/**
+ * A skill only one project's checkouts get, with the fingerprint a scan finds for a copy of it.
+ */
+export type ProjectSkill = {
+  name: string,
+  /**
+   * With SHA-256 and with `cksum`; None when Arbor can't copy it, and then `problem` says why.
+   */
+  sum: string | null,
+  ck: string | null,
+  problem: string | null,
+};
+
+/**
+ * How bringing a project's skills in line on a machine went.
+ */
+export type ProjectSkillsOutcome = {
+  /**
+   * The backup the changes went into, which Repo › History undoes.
+   */
+  backup: string | null,
+  /**
+   * Skill folders written or brought up to date, and taken out.
+   */
+  written: number,
+  removed: number,
+  /**
+   * Folders left alone, each `path: why`.
+   */
+  skipped: Array<string>,
+  failed: Array<string>,
 };
 
 /**
@@ -3903,7 +3942,7 @@ export type RepoProject = {
   /**
    * The skills only its checkouts get, from its skills folder.
    */
-  ownSkills: Array<string>,
+  ownSkills: Array<ProjectSkill>,
 };
 
 /**

@@ -145,11 +145,18 @@ where it leads, and which repo it is.
 `.claude/skills/<skill>` (Claude Code) and `.agents/skills/<skill>` (Codex and the harnesses that read the shared
 store).
 
-- **Kept out of git.** The copies are listed in `.git/info/exclude`, which every worktree of the repo shares.
+- **Whose a folder is.** Each worktree's own git folder keeps `arbor-skills`, the folders Arbor wrote there.
+  - Arbor only replaces or removes a folder that list names and git doesn't track.
+  - A skill folder the project already has, checked in or someone's own, is left alone and noted with `!` in the
+    list, so it doesn't show as drift.
+  - Once the project drops a skill from the repo, Arbor takes its copies out the next time it copies skills.
+- **Kept out of git.** The copies are listed in an Arbor block in `.git/info/exclude`, which every worktree of the
+  repo shares. The block only keeps git quiet; it says nothing about whose a folder is.
+- **Undo.** Each folder written or taken out is backed up, and both files are guarded edits, so Repo › History
+  undoes all of it.
 - **New worktrees.** Files git doesn't track don't follow a checkout into a new worktree, so a worktree made after the
-  last sync shows as missing the skill until the next one. That's the trade for not touching the project's own repo.
-- **A clash.** A skill folder the project commits itself is the project's own. Arbor never overwrites it and reports
-  the clash.
+  last copy shows skill copies to bring in until the next one. That's the trade for not touching the project's own
+  repo.
 
 ## Local projects and the hub
 

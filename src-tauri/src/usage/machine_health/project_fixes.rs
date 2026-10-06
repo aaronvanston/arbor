@@ -387,10 +387,18 @@ pub(super) enum BackupPlace {
     Clone { place: String, head: String, emptied: bool },
     Move { from: String, to: String, relinked: bool },
     FastForward { checkout: String, branch: String, old: String, new: String },
+    /// A project's skill folder written (`after`) over what was there (`before`, - for nothing), or taken out (`after`
+    /// -); what it replaced is in the backup's folders/<n>.
+    Skill { path: String, before: String, after: String, n: String },
 }
 
 fn whole(path: &str) -> bool {
     path.starts_with('/') && path.len() > 1 && !path.split('/').any(|part| part == "." || part == "..") && !path.chars().any(char::is_control)
+}
+
+/// A skill folder's fingerprint as `place` gives one, or - for nothing there.
+fn is_folder_print(value: &str) -> bool {
+    value == "-" || value.strip_prefix('D').is_some_and(|sum| (sum.len() == 64 && sum.bytes().all(|byte| byte.is_ascii_hexdigit())) || sum.strip_prefix('c').and_then(|rest| rest.split_once('-')).is_some_and(|(crc, len)| !crc.is_empty() && !len.is_empty() && format!("{crc}{len}").bytes().all(|byte| byte.is_ascii_digit())))
 }
 
 fn is_sha(value: &str) -> bool {
@@ -409,6 +417,9 @@ impl BackupPlace {
             ["G", "link", place, checkout, emptied] if whole(place) && whole(checkout) => Some(Self::Link { place: place.to_string(), checkout: checkout.to_string(), emptied: flag(emptied)? }),
             ["G", "clone", place, head, emptied] if whole(place) && is_sha(head) => Some(Self::Clone { place: place.to_string(), head: head.to_string(), emptied: flag(emptied)? }),
             ["G", "move", from, to, relinked] if whole(from) && whole(to) => Some(Self::Move { from: from.to_string(), to: to.to_string(), relinked: flag(relinked)? }),
+            ["G", "skill", path, before, after, n] if whole(path) && is_folder_print(before) && is_folder_print(after) && !n.is_empty() && n.bytes().all(|byte| byte.is_ascii_digit()) => {
+                Some(Self::Skill { path: path.to_string(), before: before.to_string(), after: after.to_string(), n: n.to_string() })
+            }
             ["G", "ff", checkout, branch, old, new] if whole(checkout) && is_sha(old) && is_sha(new) && !branch.is_empty() && !branch.starts_with('-') => {
                 Some(Self::FastForward { checkout: checkout.to_string(), branch: branch.to_string(), old: old.to_string(), new: new.to_string() })
             }
@@ -422,6 +433,7 @@ impl BackupPlace {
             Self::Link { place, .. } | Self::Clone { place, .. } => (place, "added"),
             Self::Move { to, .. } => (to, "changed"),
             Self::FastForward { checkout, .. } => (checkout, "changed"),
+            Self::Skill { path, before, after, .. } => (path, if before == "-" { "added" } else if after == "-" { "removed" } else { "changed" }),
         }
     }
 }
@@ -454,6 +466,7 @@ pub(super) fn undo_place_checks(places: &[BackupPlace]) -> String {
                 f = shell_quote(from),
                 t = shell_quote(to)
             ),
+            BackupPlace::Skill { path, after, .. } => format!("[ \"$(place {})\" = {} ]", shell_quote(path), shell_quote(after)),
             BackupPlace::FastForward { checkout, branch, new, .. } => format!(
                 "top {c} && [ \"$(git -C {c} symbolic-ref --quiet --short HEAD 2>/dev/null)\" = {b} ] && [ \"$(git -C {c} rev-parse HEAD)\" = {n} ] && [ -z \"$(git -C {c} status --porcelain --untracked-files=no 2>/dev/null)\" ]",
                 c = shell_quote(checkout),
@@ -481,6 +494,11 @@ pub(super) fn undo_place_actions(places: &[BackupPlace]) -> String {
                 t = shell_quote(to)
             ),
             BackupPlace::FastForward { checkout, old, .. } => format!("git -C {} reset --quiet --keep {} < /dev/null > /dev/null 2>&1", shell_quote(checkout), shell_quote(old)),
+            BackupPlace::Skill { path, before, n, .. } => format!(
+                "rm -rf {p}{}",
+                if before == "-" { String::new() } else { format!(" && mv \"$dir/folders/\"{} {}", shell_quote(n), shell_quote(path)) },
+                p = shell_quote(path)
+            ),
         };
         script.push_str(&format!("if {action}; then printf 'W\\t%s\\n' {s}; else printf 'X\\t%s\\tfailed\\n' {s}; failed=1; fi\n", s = shell_quote(shown)));
     }

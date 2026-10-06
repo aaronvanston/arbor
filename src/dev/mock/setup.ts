@@ -51,6 +51,7 @@ import type {
   ProjectLibrary,
   ProjectRepo,
   ProjectsDrift,
+  ProjectSkillsOutcome,
   ProjectToolchain,
   ProjectWorktree,
   RegistryCell,
@@ -1776,7 +1777,7 @@ const mockLayers = (): SetupLayers => placesScenario === 'none' ? { machines: []
     { key: 'labbox', file: 'machines/_archive/lab-box.json', archived: true, name: 'lab-box', host: 'lab-box', role: null, codeRoot: '~/code', skills: {}, plugins: {}, mcp: {} },
   ],
   projects: [
-    mockProject('cam/arbor', { remote: 'git@github.com:cam/arbor.git', ownSkills: ['release-notes'] }),
+    mockProject('cam/arbor', { remote: 'git@github.com:cam/arbor.git', ownSkills: [{ name: 'release-notes', sum: 'a1'.repeat(32), ck: 'c1234-560', problem: null }] }),
     mockProject('acme/proxy', { remote: 'https://github.com/acme/proxy.git', machines: { kind: 'some', machines: { cammbp: { path: null, skills: {}, plugins: {}, mcp: {} }, '@devbox': { path: null, skills: {}, plugins: {}, mcp: {} } } } }),
     mockProject('cam/billing', { remote: 'git@github.com:cam/billing.git', machines: { kind: 'some', machines: { cedar02: { path: null, skills: {}, plugins: {}, mcp: {} } } } }),
     mockProject('_local/notes', { path: '~/src/notes', machines: { kind: 'some', machines: { cammbp: { path: null, skills: {}, plugins: {}, mcp: {} } } } }),
@@ -1795,7 +1796,7 @@ const placeStatus = (extra: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
 
 const placeCell = (machine: string, path: string, state: ProjectCell['state'], extra: Partial<ProjectCell> = {}): ProjectCell => ({
   machine, path, state: placesScenario === 'unscanned' ? 'notScanned' : state, blocker: null, blockerRemote: null, link: null,
-  checkout: null, status: null, others: [], ...(placesScenario === 'unscanned' ? {} : extra),
+  checkout: null, status: null, others: [], skillsTotal: 0, skillsOut: 0, ...(placesScenario === 'unscanned' ? {} : extra),
 });
 
 /** What the mock's fixes changed, by `project\u0000machine`, with the backup that holds them. */
@@ -1823,9 +1824,10 @@ const baseDrift = (): ProjectsDrift => {
       {
         project: 'cam/arbor', local: false, archived: false, remote: 'git@github.com:cam/arbor.git', branch: null, unknown: [], unassigned: [],
         cells: cells([
-          placeCell('cam-mbp', '~/code/cam/arbor', 'linked', { link: '/Users/cam/src/arbor', checkout: '/Users/cam/src/arbor', status: placeStatus({ behind: 2, worktrees: 5, fetchedAt: hours(0.5) }) }),
+          // A worktree made since its skills were copied hasn't got them.
+          placeCell('cam-mbp', '~/code/cam/arbor', 'linked', { link: '/Users/cam/src/arbor', checkout: '/Users/cam/src/arbor', status: placeStatus({ behind: 2, worktrees: 5, fetchedAt: hours(0.5) }), skillsTotal: 12, skillsOut: 2 }),
           placeCell('ci-01', '~/work/cam/arbor', 'elsewhere', { checkout: '/home/ci/src/arbor', status: placeStatus({ behind: 14, fetchedAt: hours(9 * 24) }) }),
-          placeCell('cedar-02', '~/code/cam/arbor', 'inPlace', { checkout: '/home/cam/code/cam/arbor', status: placeStatus({ worktrees: 1 }), others: ['/home/cam/src/arbor'] }),
+          placeCell('cedar-02', '~/code/cam/arbor', 'inPlace', { checkout: '/home/cam/code/cam/arbor', status: placeStatus({ worktrees: 1 }), others: ['/home/cam/src/arbor'], skillsTotal: 4, skillsOut: 0 }),
         ]),
       },
       {
@@ -1905,6 +1907,24 @@ const applyFixesMock = (machine: string, fixes: ProjectFixRequest[]): ProjectFix
   }
   void emit('setup-projects-updated', Date.now());
   return { backup, results };
+};
+
+/** Copies a project's own skills on a machine in the mock: its cell has every copy after. */
+const applyProjectSkillsMock = (machine: string, project: string): ProjectSkillsOutcome => {
+  const cell = mockDrift().projects.find((found) => found.project === project)?.cells.find((found) => found.machine === machine);
+  if (!cell?.checkout) throw `${machine} has no checkout of ${project} that a scan has found`;
+  if (!cell.skillsOut) return { backup: null, written: 0, removed: 0, skipped: [], failed: [] };
+  const stamp = `${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z-${Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0')}`;
+  const key = `${project}\u0000${machine}`;
+  const before = placeFixes.get(key);
+  placeFixes.set(key, { patch: { ...before?.patch, skillsOut: 0 }, status: { ...before?.status }, backup: stamp });
+  (setupBackups[machine] ??= []).unshift({
+    id: stamp, atMs: Date.now(), what: 'projects', commit: null, undoneAtMs: null, skills: [],
+    files: [{ path: `${cell.checkout}/.claude/skills/release-notes`, change: 'added', skill: false }, { path: `${cell.checkout}/.agents/skills/release-notes`, change: 'added', skill: false }],
+    was: {}, left: {}, skillWas: {}, skillLeft: {},
+  });
+  void emit('setup-projects-updated', Date.now());
+  return { backup: stamp, written: cell.skillsOut, removed: 0, skipped: [], failed: [] };
 };
 
 /** Undoes the mock's project fixes in `backup`: each place goes back to how the scan had it. */
@@ -3330,6 +3350,10 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   },
   get_projects: () => projectsState.map(projectsReply),
   get_project_drift: () => later(250, mockDrift),
+  apply_project_skills: (args) => {
+    mockLog('apply_project_skills', { machine: args.machine, project: args.project });
+    return later(900, () => applyProjectSkillsMock(args.machine, args.project));
+  },
   apply_project_fixes: (args) => {
     mockLog('apply_project_fixes', { machine: args.machine, fixes: args.fixes });
     return later(1_200, () => applyFixesMock(args.machine, args.fixes));

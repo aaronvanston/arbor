@@ -1196,6 +1196,16 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "apply_project_skills",
+        access: Access::Confirm,
+        summary: "Brings a project's own skills in line in each of its checkouts and worktrees on `machine`, as the setup repo's last commit has them, and takes out ones it has dropped. Backed up first; Repo › History undoes it.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "project", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "add_setup_schemas",
         access: Access::Write,
         summary: "Puts Arbor's schemas for machine and project files in the repo, or brings them up to date, each a commit of its own.",
@@ -2186,6 +2196,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_setup_repo" => async { done(Box::pin(crate::usage::machine_health::setup_sync::get_setup_repo(arg(&args, "repo")?)).await) }.await,
         "get_project_drift" => async { done(Box::pin(crate::usage::machine_health::project_places::get_project_drift(app.state(), arg(&args, "repo")?)).await) }.await,
         "apply_project_fixes" => async { done(Box::pin(crate::usage::machine_health::project_fixes::apply_project_fixes(app.clone(), app.state(), arg(&args, "repo")?, arg(&args, "machine")?, arg(&args, "fixes")?)).await) }.await,
+        "apply_project_skills" => async { done(Box::pin(crate::usage::machine_health::project_skills::apply_project_skills(app.clone(), app.state(), arg(&args, "repo")?, arg(&args, "machine")?, arg(&args, "project")?)).await) }.await,
         "add_setup_schemas" => async { done(Box::pin(crate::usage::machine_health::setup_layers::add_setup_schemas(arg(&args, "repo")?)).await) }.await,
         "read_setup_repo_file" => async { done(Box::pin(crate::usage::machine_health::setup_sync::read_setup_repo_file(arg(&args, "repo")?, arg(&args, "commit")?, arg(&args, "path")?)).await) }.await,
         "list_setup_repo_tree" => async { done(Box::pin(crate::usage::machine_health::setup_repo_browse::list_setup_repo_tree(arg(&args, "repo")?)).await) }.await,

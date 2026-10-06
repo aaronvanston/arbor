@@ -218,6 +218,11 @@ impl SetupRepo {
     pub(super) fn layers(&self) -> &SetupLayers {
         &self.layers
     }
+
+    /// The commit everything above was read from.
+    pub(super) fn head_sha(&self) -> Option<&str> {
+        self.head.as_ref().map(|head| head.sha.as_str())
+    }
 }
 
 pub(super) async fn git(folder: &Path, args: &[&str], timeout: Duration) -> Result<std::process::Output, String> {
@@ -477,7 +482,7 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         .filter(|branch| !branch.is_empty());
     let last = git(folder, &["log", "-1", "--format=%H%x00%s%x00%ct"], GIT_TIMEOUT).await?;
     let head = last.status.success().then(|| parse_commit(&String::from_utf8_lossy(&last.stdout))).flatten();
-    let (files, skills, ignored, (mut skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (mut skill_projects, mut mcp_projects), (mut plugins, codex_plugins), layers) = match &head {
+    let (files, skills, ignored, (mut skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (mut skill_projects, mut mcp_projects), (mut plugins, codex_plugins), mut layers) = match &head {
         Some(head) => tree(folder, &prefix, &head.sha).await?,
         None => (
             Vec::new(),
@@ -491,6 +496,9 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         ),
     };
     layers.merge(&mut skill_machines, &mut plugins, &mut skill_projects, &mut mcp_projects);
+    if let Some(head) = &head {
+        layers.fingerprint_skills(folder, &head.sha).await;
+    }
     let instructions = match &head {
         Some(head) => instructions::list(folder, &prefix, &head.sha).await?,
         None => Vec::new(),
@@ -848,7 +856,7 @@ pub(crate) struct BackupFile {
 #[derive(Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SetupBackup {
-    id: String,
+    pub(super) id: String,
     at_ms: i64,
     /// What made it.
     what: ChangeKind,
@@ -1580,7 +1588,10 @@ mod tests {
             assert_eq!(found["skillMachines"]["pdf"]["ci01"], "own");
             assert_eq!(found["skillProjects"]["pdf"]["cam/arbor"], serde_json::json!({"all": "on", "machines": {"ci01": "off"}}));
             assert_eq!(found["layers"]["machines"][0]["name"], "CI 01");
-            assert_eq!(found["layers"]["projects"][0]["ownSkills"], serde_json::json!(["notes"]));
+            // Fingerprinted as a machine's copy would be, so a scan can tell whether it's in step.
+            let own = &found["layers"]["projects"][0]["ownSkills"][0];
+            assert_eq!((own["name"].as_str(), own["problem"].is_null()), (Some("notes"), true));
+            assert_eq!(own["sum"].as_str().map(str::len), Some(64));
             assert_eq!(found["layers"]["problems"], serde_json::json!([]));
             // The project's folder wins over where instructions used to live.
             let listed: Vec<&str> = repo.instructions.iter().map(|found| found.hash()).collect();

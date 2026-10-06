@@ -117,7 +117,18 @@ pub(crate) struct RepoProject {
     plugins: BTreeMap<String, PluginWanted>,
     mcp: BTreeMap<String, PluginWanted>,
     /// The skills only its checkouts get, from its skills folder.
-    own_skills: Vec<String>,
+    own_skills: Vec<ProjectSkill>,
+}
+
+/// A skill only one project's checkouts get, with the fingerprint a scan finds for a copy of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectSkill {
+    name: String,
+    /// With SHA-256 and with `cksum`; None when Arbor can't copy it, and then `problem` says why.
+    sum: Option<String>,
+    ck: Option<String>,
+    problem: Option<String>,
 }
 
 /// A layer file Arbor skipped, or a value in one, and why.
@@ -445,7 +456,8 @@ pub(super) fn read_layers(files: Vec<(String, LayerPath, Vec<u8>)>, project_skil
                     continue;
                 }
                 if let Some(mut project) = parse_project(&rel, &key, &folder, archived, &bytes, &mut layers.problems) {
-                    project.own_skills = project_skills.iter().filter(|(folder, _)| *folder == project.folder).map(|(_, skill)| skill.clone()).collect::<BTreeSet<_>>().into_iter().collect();
+                    let names: BTreeSet<&String> = project_skills.iter().filter(|(folder, _)| *folder == project.folder).map(|(_, skill)| skill).collect();
+                    project.own_skills = names.into_iter().map(|name| ProjectSkill { name: name.clone(), sum: None, ck: None, problem: None }).collect();
                     layers.projects.push(project);
                 }
             }
@@ -463,6 +475,62 @@ pub(super) fn read_layers(files: Vec<(String, LayerPath, Vec<u8>)>, project_skil
         }
     }
     layers
+}
+
+impl RepoProject {
+    #[cfg(test)]
+    pub(super) fn set_skill_print(&mut self, name: &str, sum: &str, ck: &str) {
+        if let Some(skill) = self.own_skills.iter_mut().find(|skill| skill.name == name) {
+            skill.sum = Some(sum.into());
+            skill.ck = Some(ck.into());
+        }
+    }
+
+    pub(super) fn folder(&self) -> &str {
+        &self.folder
+    }
+
+    pub(super) fn remote(&self) -> Option<&str> {
+        self.remote.as_deref()
+    }
+
+    /// Its own skills Arbor can copy, each with the fingerprints a copy has: SHA-256 and `cksum`.
+    pub(super) fn own_skill_prints(&self) -> Vec<(&str, &str, &str)> {
+        self.own_skills.iter().filter_map(|skill| Some((skill.name.as_str(), skill.sum.as_deref()?, skill.ck.as_deref()?))).collect()
+    }
+
+    /// Its own skills Arbor can copy.
+    pub(super) fn own_skill_names(&self) -> Vec<String> {
+        self.own_skills.iter().filter(|skill| skill.problem.is_none()).map(|skill| skill.name.clone()).collect()
+    }
+}
+
+impl SetupLayers {
+    #[cfg(test)]
+    pub(super) fn projects_mut(&mut self) -> &mut [RepoProject] {
+        &mut self.projects
+    }
+
+    /// The project with key `key`, when it's on record and not archived.
+    pub(super) fn project(&self, key: &str) -> Option<&RepoProject> {
+        self.projects.iter().find(|project| project.key == key && !project.archived)
+    }
+
+    /// Fingerprints each project's own skills as `commit` has them, so a scan's copies can be compared. One Arbor
+    /// can't copy (a link in it, too large) keeps its problem instead.
+    pub(super) async fn fingerprint_skills(&mut self, folder: &Path, commit: &str) {
+        for project in self.projects.iter_mut().filter(|project| !project.archived) {
+            for skill in &mut project.own_skills {
+                match super::setup_repo_skills::skill_in(folder, commit, &format!("{}/skills", project.folder), &skill.name).await {
+                    Ok(files) => {
+                        skill.sum = Some(files.sum);
+                        skill.ck = Some(files.ck);
+                    }
+                    Err(problem) => skill.problem = Some(problem),
+                }
+            }
+        }
+    }
 }
 
 impl SetupLayers {
@@ -770,7 +838,8 @@ mod tests {
         assert_eq!(ci.skills, BTreeMap::from([("grill-me".to_string(), SkillWanted::Off)]));
         assert_eq!(ci.plugins, BTreeMap::from([("x@y".to_string(), PluginWanted::Removed)]));
         assert_eq!(found.projects.len(), 3);
-        assert_eq!(found.projects.iter().find(|project| project.key == "cam/arbor").unwrap().own_skills, vec!["release-notes".to_string()]);
+        let own: Vec<&str> = found.projects.iter().find(|project| project.key == "cam/arbor").unwrap().own_skills.iter().map(|skill| skill.name.as_str()).collect();
+        assert_eq!(own, ["release-notes"]);
     }
 
     #[test]
