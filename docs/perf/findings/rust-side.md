@@ -64,15 +64,16 @@ the same filled benchmark setup. The final rebased run keeps the regression ceil
 | Counter | Parent | Round 2 after | Result |
 | --- | ---: | ---: | --- |
 | Usage page commands | 8 | 7 | Fewer calls |
-| Default hidden commands/minute | 6.6 | 6.5 | Fewer calls |
-| Real hidden commands/minute | 6.6 | 6.6 | No measurable change |
+| Default hidden commands/minute | 6.6 | 6.4 | Fewer calls |
+| Real hidden commands/minute | 6.6 | 6.5 | Fewer calls |
 | Default hidden DOM mutations/minute | 0.6 | 0.6 | No measurable change |
 | Real hidden DOM mutations/minute | 0.6 | 0.6 | No measurable change |
 | Default reload monitors missing | none | none | Preserved |
 | Real reload monitors missing | none | none | Preserved |
 
 The current run's hidden tray reads carry only the displayed waiting count; the hidden command
-counter is 65/minute for the default fixture and 66/minute for the real-size fixture. No ceiling was
+counter is 64/minute for the default fixture and 65/minute for the real-size fixture. Reset rows now
+use absolute reset times, so they remain accurate while hidden without a per-minute countdown write. No ceiling was
 raised for these seven counters. The intended monitor code adds 302 bytes to the measured app chunks;
 those app-JS ceilings were recorded separately with that reason.
 
