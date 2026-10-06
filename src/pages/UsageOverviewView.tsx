@@ -126,7 +126,7 @@ export function OverviewView({ overview, range }: { overview: UsageOverview; ran
         ))}
       </StatsGrid>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <UsageTrendSection timeline={overview.timeline} range={range} empty={<UsageEmpty />} />
+        <UsageTrendSection timeline={overview.timeline} fiveMinuteTimeline={overview.fiveMinuteTimeline} range={range} empty={<UsageEmpty />} />
         <SettingsSection title={t('usage.token.title')} description={t('usage.token.description')}>
           <TokenMetric label={t('usage.token.input')} value={overview.inputTokens} total={overview.totalTokens} tone="bg-primary" />
           <TokenMetric label={t('usage.token.output')} value={overview.outputTokens} total={overview.totalTokens} tone="bg-success" />

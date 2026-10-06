@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { formatCount, formatTokens } from '../lib/format';
 import { cn } from '../lib/utils';
+import type { UsageFiveMinutePoint } from '../native/types';
 import {
   buildUsageTrendSeries,
   clampTrendRatio,
@@ -20,6 +21,7 @@ import {
 } from '../services/usageTrend';
 
 const BUCKET_DESCRIPTION: Record<TrendBucket, MessageKey> = {
+  '5m': 'usage.trend.bucket.5m',
   hour: 'usage.trend.bucket.hour',
   '3h': 'usage.trend.bucket.3h',
   day: 'usage.trend.bucket.day',
@@ -33,6 +35,8 @@ const REQUESTS_HEIGHT = 56;
 const PAD_TOP = 6;
 const MAX_BAR_WIDTH = 24;
 const BAR_GAP = 2;
+// A week of hourly bars is a few pixels each; a full gap would leave more space than bar.
+const NARROW_SLOT = 8;
 const BAR_RADIUS = 4;
 // A nonzero bucket stays visible next to a much larger peak.
 const MIN_BAR_HEIGHT = 2;
@@ -57,17 +61,23 @@ function barPath(x: number, y: number, width: number, height: number): string {
  */
 export function UsageTrendSection({
   timeline,
+  fiveMinuteTimeline,
   range,
   empty,
 }: {
   timeline: TrendInputPoint[];
+  /** A short range's 5-minute blocks, drawn instead of its hours. */
+  fiveMinuteTimeline?: UsageFiveMinutePoint[];
   range: { start?: string; end?: string };
   empty: ReactNode;
 }) {
   const { t } = useI18n();
-  // Keyed on the range's fields, since the range object itself may be rebuilt every render.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const series = useMemo(() => buildUsageTrendSeries(timeline, range), [timeline, range.start, range.end]);
+  const series = useMemo(
+    () => buildUsageTrendSeries(timeline, range, new Date(), fiveMinuteTimeline),
+    // Keyed on the range's fields, since the range object itself may be rebuilt every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [timeline, fiveMinuteTimeline, range.start, range.end],
+  );
   const hasTraffic = series.points.length > 0 && (series.totals.requests > 0 || series.totals.tokens > 0 || series.totals.recovered > 0);
   return (
     <SettingsSection title={t('usage.trend.title')} summary={t(BUCKET_DESCRIPTION[series.bucket])}>
@@ -131,7 +141,7 @@ export function UsageTrend({ series }: { series: PreparedTrendSeries }) {
       const left = x(point.start);
       const right = x(point.end);
       const center = (left + right) / 2;
-      const barWidth = Math.max(1, Math.min(MAX_BAR_WIDTH, right - left - BAR_GAP));
+      const barWidth = Math.max(1, Math.min(MAX_BAR_WIDTH, right - left - (right - left < NARROW_SLOT ? 1 : BAR_GAP)));
       const barHeight = point.tokens > 0 ? Math.max(MIN_BAR_HEIGHT, (point.tokens / tokenAxis.max) * (TOKENS_HEIGHT - PAD_TOP)) : 0;
       // Kept apart from the bar below it by a gap, since it's a different count rather than more of the same one.
       const gap = barHeight ? BAR_GAP : 0;

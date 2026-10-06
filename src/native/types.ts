@@ -5525,6 +5525,19 @@ export type UsageEventPage = {
   totalPages: number,
 };
 
+export type UsageFiveMinutePoint = {
+  /**
+   * When the block starts. Blocks are counted from the Unix epoch, which keeps them on
+   * local 5-minute boundaries in every timezone, since every offset is a whole 5 minutes.
+   */
+  startMs: number,
+  requests: number,
+  success: number,
+  failure: number,
+  canceled: number,
+  tokens: number,
+};
+
 export type UsageOverview = {
   totalRequests: number,
   successCount: number,
@@ -5546,6 +5559,11 @@ export type UsageOverview = {
   estimatedCost: number,
   pricedRequests: number,
   timeline: Array<UsageTimelinePoint>,
+  /**
+   * The range in 5-minute blocks, for a range with both ends and no longer than
+   * FIVE_MINUTE_TIMELINE_MAX_MS; empty otherwise, where the hourly timeline is fine enough.
+   */
+  fiveMinuteTimeline: Array<UsageFiveMinutePoint>,
   machines: Array<MachineUsage>,
   machineLive: Array<MachineLive>,
   analysis?: UsageAnalysis,

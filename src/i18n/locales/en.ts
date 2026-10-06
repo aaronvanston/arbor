@@ -3939,6 +3939,7 @@ export const en = {
   'usage.dataManagement.backup': 'Backup file',
   'usage.dataManagement.success': 'Historical data processed: {repaired} repaired and {deleted} invalid records deleted.',
   'usage.trend.title': 'Token and request trend',
+  'usage.trend.bucket.5m': 'Grouped into 5-minute blocks, in local time',
   'usage.trend.bucket.hour': 'Grouped by hour, in local time',
   'usage.trend.bucket.3h': 'Grouped into 3-hour blocks, in local time',
   'usage.trend.bucket.day': 'Grouped by day, in local time',

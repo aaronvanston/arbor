@@ -385,6 +385,9 @@ pub(crate) struct UsageOverview {
     estimated_cost: f64,
     priced_requests: u64,
     timeline: Vec<UsageTimelinePoint>,
+    /// The range in 5-minute blocks, for a range with both ends and no longer than
+    /// FIVE_MINUTE_TIMELINE_MAX_MS; empty otherwise, where the hourly timeline is fine enough.
+    five_minute_timeline: Vec<UsageFiveMinutePoint>,
     machines: Vec<machines::MachineUsage>,
     machine_live: Vec<machines::MachineLive>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -404,6 +407,30 @@ struct UsageTimelinePoint {
     failure: u64,
     canceled: u64,
     tokens: u64,
+}
+
+#[derive(Default, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+struct UsageFiveMinutePoint {
+    /// When the block starts. Blocks are counted from the Unix epoch, which keeps them on
+    /// local 5-minute boundaries in every timezone, since every offset is a whole 5 minutes.
+    start_ms: i64,
+    requests: u64,
+    success: u64,
+    failure: u64,
+    canceled: u64,
+    tokens: u64,
+}
+
+const FIVE_MINUTE_MS: i64 = 5 * 60 * 1000;
+/// The longest range the chart draws in 5-minute blocks; it matches `FIVE_MINUTE_SPAN_HOURS` in usageTrend.ts.
+const FIVE_MINUTE_TIMELINE_MAX_MS: i64 = 6 * 60 * 60 * 1000;
+
+/// Whether the query's range is short enough to group into 5-minute blocks.
+fn wants_five_minute_timeline(query: &UsageQuery) -> bool {
+    let start = query.start.as_deref().and_then(parse_timestamp_millis);
+    let end = query.end.as_deref().and_then(parse_timestamp_millis);
+    matches!((start, end), (Some(start), Some(end)) if end >= start && end - start <= FIVE_MINUTE_TIMELINE_MAX_MS)
 }
 
 #[derive(Default, Serialize, TS)]
@@ -941,6 +968,7 @@ fn load_usage_overview_with_config(
     // grouped in SQL, which sorts every request first.
     let mut totals = OverviewSums::default();
     let mut hours = HashMap::<String, HourSums>::new();
+    let mut blocks = wants_five_minute_timeline(query).then(HashMap::<i64, HourSums>::new);
     let mut by_key = HashMap::<String, machines::KeyUsage>::new();
     let mut analysis = (query.include_analysis == Some(true)).then(UsageAnalysisAccumulator::default);
     let groups = cost_groups::fold_cost_rows::<()>(
@@ -992,6 +1020,14 @@ fn load_usage_overview_with_config(
                     sums.first_ms = Some(sums.first_ms.map_or(timestamp_ms, |first| first.min(timestamp_ms)));
                 }
             }
+            if let Some(blocks) = blocks.as_mut() {
+                let sums = blocks.entry(timestamp_ms.div_euclid(FIVE_MINUTE_MS) * FIVE_MINUTE_MS).or_default();
+                sums.requests += 1;
+                sums.success += i64::from(!failed);
+                sums.failure += i64::from(failed && !canceled);
+                sums.canceled += i64::from(canceled);
+                sums.tokens = sums.tokens.saturating_add(total);
+            }
             machines::key_usage(&mut by_key, row.get_ref(at + 13)?.as_str()?).add(total, failed, canceled, row.get_ref(at + 14)?);
             if let Some(analysis) = analysis.as_mut() {
                 analysis.add(row, at)?;
@@ -1015,6 +1051,19 @@ fn load_usage_overview_with_config(
         })
         .collect::<Vec<_>>();
     timeline.sort_by(|left, right| left.hour.cmp(&right.hour));
+    let mut five_minute_timeline = blocks
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(start_ms, sums)| UsageFiveMinutePoint {
+            start_ms,
+            requests: from_sql_i64(sums.requests),
+            success: from_sql_i64(sums.success),
+            failure: from_sql_i64(sums.failure),
+            canceled: from_sql_i64(sums.canceled),
+            tokens: from_sql_i64(sums.tokens),
+        })
+        .collect::<Vec<_>>();
+    five_minute_timeline.sort_by_key(|point| point.start_ms);
     let [input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_creation_tokens, total_tokens] =
         totals.tokens.map(from_sql_i64);
 
@@ -1032,6 +1081,7 @@ fn load_usage_overview_with_config(
         estimated_cost,
         priced_requests,
         timeline,
+        five_minute_timeline,
         machines: machines::usage_by_machine(connection, by_key)?,
         machine_live: machines::live_usage(connection, query, Local::now().timestamp_millis())?,
         analysis: analysis.map(|analysis| analysis.finish(config)),
@@ -3302,6 +3352,40 @@ mod tests {
                 ("2026-07-17-22", None, 1),
             ]
         );
+        drop(connection);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn overview_groups_a_short_range_into_five_minute_blocks() {
+        let root = test_root("timeline-five-minutes");
+        let connection = open_test_database(&root);
+        connection
+            .execute_batch(
+                "INSERT INTO usage_events (event_key, timestamp, timestamp_ms, local_hour, total_tokens, failed, created_at) VALUES
+                    ('a', '2026-07-17T12:01:00Z', 1784289660000, '2026-07-17-12', 10, 0, '2026-07-17T12:01:00Z'),
+                    ('b', '2026-07-17T12:04:59Z', 1784289899000, '2026-07-17-12', 5, 1, '2026-07-17T12:04:59Z'),
+                    ('c', '2026-07-17T12:05:00Z', 1784289900000, '2026-07-17-12', 7, 0, '2026-07-17T12:05:00Z');",
+            )
+            .unwrap();
+        let query = |start: &str, end: &str| UsageQuery {
+            start: Some(start.to_string()),
+            end: Some(end.to_string()),
+            ..UsageQuery::default()
+        };
+
+        let overview = load_usage_overview(&connection, &query("2026-07-17T10:00:00Z", "2026-07-17T14:00:00Z")).unwrap();
+        let blocks = overview
+            .five_minute_timeline
+            .iter()
+            .map(|point| (point.start_ms, point.requests, point.failure, point.tokens))
+            .collect::<Vec<_>>();
+        assert_eq!(blocks, [(1_784_289_600_000, 2, 1, 15), (1_784_289_900_000, 1, 0, 7)]);
+
+        // Longer than six hours, or open-ended, the hourly timeline is enough.
+        let week = load_usage_overview(&connection, &query("2026-07-11T12:00:00Z", "2026-07-18T12:00:00Z")).unwrap();
+        assert!(week.five_minute_timeline.is_empty());
+        assert!(load_usage_overview(&connection, &UsageQuery::default()).unwrap().five_minute_timeline.is_empty());
         drop(connection);
         fs::remove_dir_all(root).unwrap();
     }

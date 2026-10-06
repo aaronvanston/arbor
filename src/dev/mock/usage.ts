@@ -30,6 +30,7 @@ import type {
   T3Thread,
   T3Turn,
   ToolUsage,
+  UsageFiveMinutePoint,
   UsageOverview,
   UsagePricing,
   UsageQuery,
@@ -102,6 +103,32 @@ const timelineBetween = (start?: string, end?: string) => {
   const from = start ? Date.parse(start) : -Infinity;
   const to = end ? Date.parse(end) : Infinity;
   return usageHistory.filter((entry) => entry.startMs + 3_600_000 > from && entry.startMs <= to).map((entry) => entry.point);
+};
+
+const FIVE_MINUTES_MS = 5 * 60_000;
+
+/**
+ * A short range's 5-minute blocks, like the backend sends for six hours or less: each hour's traffic spread over its
+ * twelve blocks unevenly, with a few left idle, so the 4-hour chart has bursts and gaps.
+ */
+const fiveMinutesBetween = (start?: string, end?: string): UsageFiveMinutePoint[] => {
+  if (!start || !end) return [];
+  const from = Date.parse(start);
+  const to = Date.parse(end);
+  if (!(to >= from) || to - from > 6 * 3_600_000) return [];
+  return usageHistory.flatMap((entry) => {
+    const weights = Array.from({ length: 12 }, (_, block) => ((entry.startMs / 3_600_000 + block * 7) % 5 === 0 ? 0 : 1 + Math.abs(Math.sin(block * 1.7 + entry.startMs))));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const { requests, failure, canceled, tokens } = entry.point;
+    return weights.flatMap((weight, block) => {
+      const startMs = entry.startMs + block * FIVE_MINUTES_MS;
+      const blockRequests = Math.round((requests * weight) / total);
+      if (!blockRequests || startMs + FIVE_MINUTES_MS <= from || startMs > to) return [];
+      const blockFailure = Math.min(blockRequests, Math.round((failure * weight) / total));
+      const blockCanceled = block === 0 ? Math.min(blockRequests - blockFailure, canceled) : 0;
+      return [{ startMs, requests: blockRequests, success: blockRequests - blockFailure - blockCanceled, failure: blockFailure, canceled: blockCanceled, tokens: Math.round((tokens * weight) / total) }];
+    });
+  });
 };
 
 const sumTimeline = (points: TimelinePoint[]) => points.reduce((acc, point) => ({ requests: acc.requests + point.requests, failure: acc.failure + point.failure, canceled: acc.canceled + point.canceled, tokens: acc.tokens + point.tokens }), { requests: 0, failure: 0, canceled: 0, tokens: 0 });
@@ -230,13 +257,14 @@ const usageOverview: UsageOverview = {
   estimatedCost: dayPricing.totalCost,
   pricedRequests: dayPricing.pricedRequests,
   timeline,
+  fiveMinuteTimeline: [],
   machines,
   machineLive: machines.map((machine) => ({ machine: machine.machine, requests: Math.max(1, Math.round(machine.requests / 800)), tokens: liveTokens(machine.requests) })),
 };
 if (freshInstall) Object.assign(usageOverview, { rpm: 0, tpm: 0, tps: 0, tpsSampleCount: 0, averageLatencyMs: 0, cacheHitRate: 0, estimatedCost: 0, pricedRequests: 0 });
 
 /** The overview for a range: counts come from its timeline, the rest scales with the last 24 hours. */
-const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
+const usageOverviewFor = (points: TimelinePoint[], fiveMinuteTimeline: UsageFiveMinutePoint[] = []): UsageOverview => {
   const sum = sumTimeline(points);
   const pricing = pricingFor(points);
   const scale = totals.requests ? sum.requests / totals.requests : 0;
@@ -256,6 +284,7 @@ const usageOverviewFor = (points: TimelinePoint[]): UsageOverview => {
     estimatedCost: pricing.totalCost,
     pricedRequests: pricing.pricedRequests,
     timeline: points,
+    fiveMinuteTimeline,
     // Each machine's share holds whatever the range, so the Machines page's figures follow the range picked.
     machines: usageOverview.machines.map((machine) => ({
       ...machine,
@@ -1408,7 +1437,7 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     return { state: coreStatus.ready ? 'collecting' : 'waiting-core', message: coreStatus.ready ? 'Collecting from 127.0.0.1:8317' : 'Waiting for the core to start', lastCollectedAt, totalRecords: usageStorage.recordCount };
   },
   get_usage_overview: (args) => {
-    const overview = usageOverviewFor(timelineBetween(args.query.start, args.query.end));
+    const overview = usageOverviewFor(timelineBetween(args.query.start, args.query.end), fiveMinutesBetween(args.query.start, args.query.end));
     return args.query.include_analysis ? { ...overview, analysis: usageAnalysis } : overview;
   },
   get_usage_analysis: () => usageAnalysis,

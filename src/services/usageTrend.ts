@@ -2,7 +2,8 @@
  * Pure helpers behind the usage trend chart.
  *
  * The backend groups usage by local hour (`YYYY-MM-DD-HH`) and only returns
- * hours that had traffic. These helpers lay those rows on a continuous time
+ * hours that had traffic; for a range of a few hours it also sends 5-minute
+ * blocks. These helpers lay those rows on a continuous time
  * axis over the selected range: they fill idle gaps, pick a bucket size from
  * the span, pick tick density from the plot's pixel width, and map a pointer
  * position back to its bucket.
@@ -12,13 +13,13 @@
  */
 
 import { formatDate, formatDateRange, formatDateTime, formatDateWith, formatTime } from '../lib/format';
-import type { UsageTimelinePoint } from '../native/types';
+import type { UsageFiveMinutePoint, UsageTimelinePoint } from '../native/types';
 
-/** The backend aggregates by local hour, so an hour is the finest bucket. */
-export type TrendBucket = 'hour' | '3h' | 'day' | 'week' | 'month';
+/** 5-minute blocks only come with a short range; otherwise the backend's local hour is the finest bucket. */
+export type TrendBucket = '5m' | 'hour' | '3h' | 'day' | 'week' | 'month';
 
 export type PreparedTrendPoint = {
-  /** Local hour key of the bucket's calendar start; stable across refreshes. */
+  /** Local hour key of the bucket's calendar start, with the minute for 5-minute blocks; stable across refreshes. */
   key: string;
   requests: number;
   success: number;
@@ -54,6 +55,9 @@ export type PreparedTrendSeries = {
 };
 
 const HOUR_MS = 60 * 60 * 1000;
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
+/** The longest span drawn in 5-minute blocks; the backend sends them up to the same length (FIVE_MINUTE_TIMELINE_MAX_MS). */
+export const FIVE_MINUTE_SPAN_HOURS = 6;
 
 export function parseLocalHourKey(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})-(\d{2})$/.exec(value.trim());
@@ -94,6 +98,8 @@ function parseRangeDate(value: string | undefined): Date | null {
 }
 
 export function startOfBucket(date: Date, bucket: TrendBucket): Date {
+  // Every timezone offset is a whole 5 minutes, so epoch blocks are local ones too.
+  if (bucket === '5m') return new Date(Math.floor(date.getTime() / FIVE_MINUTES_MS) * FIVE_MINUTES_MS);
   const next = new Date(date.getTime());
   next.setMinutes(0, 0, 0);
   if (bucket === 'hour') return next;
@@ -115,6 +121,8 @@ export function startOfBucket(date: Date, bucket: TrendBucket): Date {
 
 /** Steps in local time, so buckets follow the backend's local-hour keys across DST changes. */
 export function addBucket(date: Date, bucket: TrendBucket): Date {
+  // In real time, so a clock change neither repeats nor skips a block.
+  if (bucket === '5m') return new Date(date.getTime() + FIVE_MINUTES_MS);
   const next = new Date(date.getTime());
   if (bucket === 'hour') next.setHours(next.getHours() + 1);
   else if (bucket === '3h') next.setHours(next.getHours() + 3);
@@ -135,10 +143,16 @@ export function nextBucketStart(start: Date, bucket: TrendBucket): Date {
   return next.getTime() > start.getTime() ? next : addBucket(start, bucket);
 }
 
-export function chooseTrendBucket(start: Date, end: Date): TrendBucket {
+/**
+ * The bucket for a span: fine enough that even a short preset shows a few dozen thin bars, so a
+ * week reads hour by hour instead of as seven blocks. `fiveMinutes` says whether 5-minute blocks came.
+ */
+export function chooseTrendBucket(start: Date, end: Date, fiveMinutes = false): TrendBucket {
   const hours = Math.max(0, end.getTime() - start.getTime()) / HOUR_MS;
-  if (hours <= 48) return 'hour';
-  if (hours <= 72) return '3h';
+  if (fiveMinutes && hours <= FIVE_MINUTE_SPAN_HOURS) return '5m';
+  // A day of slack past a week covers a custom range drawn a little long.
+  if (hours <= 24 * 8) return 'hour';
+  if (hours <= 24 * 21) return '3h';
   if (hours <= 24 * 90) return 'day';
   if (hours <= 24 * 366 * 2) return 'week';
   return 'month';
@@ -151,27 +165,35 @@ const emptyTotals = (): TrendTotals => ({ requests: 0, tokens: 0, recovered: 0, 
  * with zeros, so bars sit at their real time. An open-ended range ("All
  * Time", or a custom range without an end) runs to `now`.
  */
+type TrendCounts = Pick<TrendInputPoint, 'requests' | 'success' | 'failure' | 'canceled' | 'tokens' | 'recovered'>;
+
+/**
+ * The rows that overlap the range, in time order. The backend filters requests before grouping
+ * them, so the first row can start before the range, and a request exactly at the inclusive end
+ * opens one more row. Both are clamped into the edge buckets below.
+ */
+function rowsInRange<T>(rows: Array<{ point: T; start: Date | null }>, size: TrendBucket, rangeStart: Date | null, rangeEnd: Date | null) {
+  return rows
+    .filter((entry): entry is { point: T; start: Date } => {
+      if (!entry.start) return false;
+      if (rangeStart && addBucket(entry.start, size).getTime() <= rangeStart.getTime()) return false;
+      return !rangeEnd || entry.start.getTime() <= rangeEnd.getTime();
+    })
+    .sort((left, right) => left.start.getTime() - right.start.getTime());
+}
+
 export function buildUsageTrendSeries(
   points: TrendInputPoint[],
   range: { start?: string; end?: string } = {},
   now = new Date(),
+  fiveMinutePoints: UsageFiveMinutePoint[] = [],
 ): PreparedTrendSeries {
   const rangeStart = parseRangeDate(range.start);
   const rangeEnd = parseRangeDate(range.end);
-  const parsed = points
-    .map((point) => ({ point, start: timelinePointHour(point) }))
-    .filter((entry): entry is { point: TrendInputPoint; start: Date } => {
-      if (!entry.start) return false;
-      // The backend filters requests before grouping them by hour, so the first
-      // hour can start before the range, and a request exactly at the inclusive
-      // end opens one more hour. Both are clamped into the edge buckets below.
-      if (rangeStart && addBucket(entry.start, 'hour').getTime() <= rangeStart.getTime()) return false;
-      return !rangeEnd || entry.start.getTime() <= rangeEnd.getTime();
-    })
-    .sort((left, right) => left.start.getTime() - right.start.getTime());
+  const hourly = rowsInRange(points.map((point) => ({ point, start: timelinePointHour(point) })), 'hour', rangeStart, rangeEnd);
 
   const totals = emptyTotals();
-  for (const { point } of parsed) {
+  for (const { point } of hourly) {
     totals.requests += Math.max(0, point.requests || 0);
     totals.tokens += Math.max(0, point.tokens || 0);
     totals.recovered += Math.max(0, point.recovered || 0);
@@ -180,19 +202,24 @@ export function buildUsageTrendSeries(
     totals.canceled += Math.max(0, point.canceled || 0);
   }
 
-  const spanStart = rangeStart ?? parsed[0]?.start;
+  const spanStart = rangeStart ?? hourly[0]?.start;
   if (!spanStart) return { bucket: 'hour', points: [], totals };
-  const lastHour = parsed[parsed.length - 1]?.start ?? null;
+  const lastHour = hourly[hourly.length - 1]?.start ?? null;
   // An open end runs to now, or to the end of the newest hour if the clock is behind it.
   const openEnd = lastHour && lastHour.getTime() >= now.getTime() ? addBucket(lastHour, 'hour') : now;
   const spanEnd = rangeEnd ?? openEnd;
   if (spanEnd.getTime() <= spanStart.getTime()) return { bucket: 'hour', points: [], totals: emptyTotals() };
 
-  const bucket = chooseTrendBucket(spanStart, spanEnd);
+  const bucket = chooseTrendBucket(spanStart, spanEnd, fiveMinutePoints.length > 0);
+  // The totals stay on the hourly rows, which every range has; 5-minute blocks only change where the bars fall.
+  const parsed: Array<{ point: TrendCounts; start: Date }> =
+    bucket === '5m'
+      ? rowsInRange(fiveMinutePoints.map((point) => ({ point, start: new Date(point.startMs) })), '5m', rangeStart, rangeEnd)
+      : hourly;
   const series: PreparedTrendPoint[] = [];
   for (let cursor = startOfBucket(spanStart, bucket); cursor.getTime() < spanEnd.getTime(); cursor = nextBucketStart(cursor, bucket)) {
     series.push({
-      key: formatLocalHourKey(cursor),
+      key: bucket === '5m' ? `${formatLocalHourKey(cursor)}-${String(cursor.getMinutes()).padStart(2, '0')}` : formatLocalHourKey(cursor),
       requests: 0,
       success: 0,
       failure: 0,
@@ -296,7 +323,7 @@ const axisTextWidth = (text: string) => text.length * AXIS_CHAR_PX;
 const AXIS_LABEL_SAMPLE = new Date(2026, 8, 30, 12, 0);
 
 const TICK_STEP_HOURS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 96, 168, 336, 720, 1440, 2160, 2880, 4380, 8760, 17520];
-const MIN_TICK_STEP_HOURS: Record<TrendBucket, number> = { hour: 1, '3h': 3, day: 24, week: 168, month: 720 };
+const MIN_TICK_STEP_HOURS: Record<TrendBucket, number> = { '5m': 1, hour: 1, '3h': 3, day: 24, week: 168, month: 720 };
 const MONTH_HOURS = 730;
 
 function tickStepHours(span: number, width: number, labelPx: number, minimumHours: number): number {
@@ -378,7 +405,7 @@ export type TrendAxisLabel = {
 export function trendTimeAxis(start: Date, end: Date, bucket: TrendBucket, width: number): TrendAxisLabel[] {
   const span = end.getTime() - start.getTime();
   if (span <= 0) return [];
-  const hourly = bucket === 'hour' || bucket === '3h';
+  const hourly = bucket === '5m' || bucket === 'hour' || bucket === '3h';
   const sample = (style: LabelStyle) => axisTextWidth(axisLabel(AXIS_LABEL_SAMPLE, style)) + AXIS_LABEL_GAP_PX;
   const minimumHours = MIN_TICK_STEP_HOURS[bucket];
   let stepHours = tickStepHours(span, width, sample(hourly ? 'time' : bucket === 'month' ? 'month' : 'date'), minimumHours);
@@ -463,7 +490,7 @@ export function formatTrendRangeLabel(
   if (bucket === 'month' && complete) return formatDateWith(start, { month: 'long', year: 'numeric' });
   if (bucket === 'day' && complete) return formatDate(start, { weekday: 'short', now: nowMs });
   if (bucket === 'week' || bucket === 'month') return formatDateRange(start, lastInstant, { now: nowMs });
-  // Hours, and the partial days at either end of a range.
+  // 5-minute blocks, hours, and the partial days at either end of a range.
   const from = formatDateTime(start, { now: nowMs });
   const to = sameCalendarDay(start, lastInstant) ? formatTime(end) : formatDateTime(end, { now: nowMs });
   return `${from} – ${to}`;

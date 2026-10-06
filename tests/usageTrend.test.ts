@@ -82,20 +82,28 @@ describe('usage trend helpers', () => {
     expect(parseLocalHourKey('not an hour')).toBeNull();
   });
 
-  test('chooses coarser buckets as the range grows, never finer than an hour', () => {
+  test('chooses coarser buckets as the range grows, keeping a week hour by hour', () => {
     const start = new Date(2026, 8, 14, 12);
     expect(chooseTrendBucket(start, start)).toBe('hour');
     expect(chooseTrendBucket(start, new Date(2026, 8, 14, 12, 30))).toBe('hour');
     expect(chooseTrendBucket(start, new Date(2026, 8, 14, 16))).toBe('hour');
     expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 6))).toBe('hour');
     expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 7))).toBe('hour');
-    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 8))).toBe('3h');
-    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 12))).toBe('day');
+    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 8))).toBe('hour');
+    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 12))).toBe('hour');
+    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 13))).toBe('hour');
+    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 14))).toBe('3h');
+    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 26))).toBe('3h');
+    expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 0, 27))).toBe('day');
     expect(chooseTrendBucket(new Date(2026, 0, 5), new Date(2026, 1, 4))).toBe('day');
     expect(chooseTrendBucket(new Date(2026, 0, 1), new Date(2026, 2, 31))).toBe('day');
     expect(chooseTrendBucket(new Date(2025, 0, 1), new Date(2026, 6, 1))).toBe('week');
     expect(chooseTrendBucket(new Date(2022, 0, 1), new Date(2026, 0, 1))).toBe('month');
     expect(chooseTrendBucket(new Date(2010, 0, 1), new Date(2026, 0, 1))).toBe('month');
+    // 5-minute blocks only when they came, and only up to six hours.
+    expect(chooseTrendBucket(start, new Date(2026, 8, 14, 16), true)).toBe('5m');
+    expect(chooseTrendBucket(start, new Date(2026, 8, 14, 18), true)).toBe('5m');
+    expect(chooseTrendBucket(start, new Date(2026, 8, 14, 19), true)).toBe('hour');
   });
 
   test('fills idle hours inside the selected range', () => {
@@ -126,7 +134,7 @@ describe('usage trend helpers', () => {
 
   test('aggregates sparse hours into 3-hour buckets', () => {
     const start = new Date(2026, 0, 5);
-    const end = new Date(2026, 0, 8);
+    const end = new Date(2026, 0, 14);
     const series = buildUsageTrendSeries(
       [point('2026-01-05-01', 1, 5), point('2026-01-05-02', 3, 7, { success: 2, failure: 1 })],
       range(start, end),
@@ -136,7 +144,34 @@ describe('usage trend helpers', () => {
     const first = itemAt(series.points, 0);
     expect(startOfBucket(first.start, '3h').getHours()).toBe(0);
     expect(first).toMatchObject({ requests: 4, tokens: 12, failure: 1, success: 3 });
-    expect(series.points.length).toBe(24);
+    expect(series.points.length).toBe(72);
+  });
+
+  test('draws a short range in 5-minute blocks when they came, keeping the totals on the hours', () => {
+    const start = new Date(2026, 8, 14, 10, 17);
+    const end = new Date(2026, 8, 14, 14, 17);
+    const block = (at: Date, requests: number, tokens: number) => ({ startMs: at.getTime(), requests, success: requests, failure: 0, canceled: 0, tokens });
+    const series = buildUsageTrendSeries(
+      [point('2026-09-14-10', 3, 30), point('2026-09-14-14', 1, 5)],
+      range(start, end),
+      end,
+      [
+        // Ends before the range starts.
+        block(new Date(2026, 8, 14, 10, 10), 1, 10),
+        block(new Date(2026, 8, 14, 10, 15), 1, 10),
+        block(new Date(2026, 8, 14, 10, 40), 1, 10),
+        block(new Date(2026, 8, 14, 14, 15), 1, 5),
+      ],
+    );
+    expect(series.bucket).toBe('5m');
+    expect(series.points).toHaveLength(49);
+    expect(series.points[0]).toMatchObject({ start, end: new Date(2026, 8, 14, 10, 20), tokens: 10, key: '2026-09-14-10-15' });
+    expect(itemAt(series.points, 5)).toMatchObject({ start: new Date(2026, 8, 14, 10, 40), tokens: 10, key: '2026-09-14-10-40' });
+    expect(lastItem(series.points)).toMatchObject({ end, tokens: 5 });
+    expect(series.totals).toMatchObject({ requests: 4, tokens: 35 });
+    expect(formatTrendRangeLabel(itemAt(series.points, 5), '5m', end)).toContain('10:40');
+    // Without blocks, the same range stays hourly.
+    expect(buildUsageTrendSeries([point('2026-09-14-10', 3, 30)], range(start, end), end).bucket).toBe('hour');
   });
 
   test('uses daily buckets and fills idle days for a 30-day range', () => {
@@ -169,8 +204,9 @@ describe('usage trend helpers', () => {
     [4, 'hour', 4],
     [24, 'hour', 24],
     [48, 'hour', 48],
-    [72, '3h', 24],
-    [7 * 24, 'day', 7],
+    [72, 'hour', 72],
+    [7 * 24, 'hour', 168],
+    [14 * 24, '3h', 112],
     [30 * 24, 'day', 30],
   ] as const)('divides a %i-hour range by time, including empty slots', (hours, bucket, count) => {
     const start = new Date(2026, 0, 5);
@@ -254,12 +290,12 @@ describe('usage trend helpers', () => {
 
   test('runs all time from the first recorded hour to now, including the idle stretch since', () => {
     const now = new Date(2026, 8, 14, 14, 17);
-    const series = buildUsageTrendSeries([point('2026-09-10-05', 2, 20), point('2026-09-11-09', 1, 10)], {}, now);
+    const series = buildUsageTrendSeries([point('2026-08-20-05', 2, 20), point('2026-08-21-09', 1, 10)], {}, now);
     expect(series.bucket).toBe('day');
-    expect(series.points[0]?.start).toEqual(new Date(2026, 8, 10, 5));
-    expect(series.points[0]?.key).toBe('2026-09-10-00');
+    expect(series.points[0]?.start).toEqual(new Date(2026, 7, 20, 5));
+    expect(series.points[0]?.key).toBe('2026-08-20-00');
     expect(series.points[series.points.length - 1]?.end).toEqual(now);
-    expect(series.points.map((item) => item.tokens)).toEqual([20, 10, 0, 0, 0]);
+    expect(series.points.map((item) => item.tokens)).toEqual([20, 10, ...Array<number>(24).fill(0)]);
 
     // The current hour ends in the future; the axis still stops at now.
     const today = buildUsageTrendSeries([point('2026-09-14-09', 1, 10), point('2026-09-14-14', 1, 10)], {}, now);

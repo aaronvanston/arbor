@@ -333,7 +333,7 @@ describe('loading a week', () => {
     const fullOverview: UsageOverview = {
       ...data.overview, canceledCount: 10, successRate: 97, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0,
       cacheCreationTokens: 0, rpm: 0, tpm: 0, tps: 0, tpsSampleCount: 0, averageLatencyMs: 0, cacheHitRate: 0,
-      timeline: [], machines: [], machineLive: [],
+      timeline: [], fiveMinuteTimeline: [], machines: [], machineLive: [],
     };
     const calls = mockCommands({
       get_usage_overview: () => fullOverview,
@@ -374,7 +374,7 @@ describe('loading a week', () => {
   test('narrowed to a machine, reads that machine’s week and its own week before, with limits still every machine’s', async () => {
     const data = digestData();
     const calls = mockCommands({
-      get_usage_overview: () => ({ ...data.overview, canceledCount: 0, successRate: 100, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, rpm: 0, tpm: 0, tps: 0, tpsSampleCount: 0, averageLatencyMs: 0, cacheHitRate: 0, timeline: [], machines: [], machineLive: [] }),
+      get_usage_overview: () => ({ ...data.overview, canceledCount: 0, successRate: 100, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, rpm: 0, tpm: 0, tps: 0, tpsSampleCount: 0, averageLatencyMs: 0, cacheHitRate: 0, timeline: [], fiveMinuteTimeline: [], machines: [], machineLive: [] }),
       get_usage_sessions: () => data.sessions,
       get_session_projects: () => data.projects,
       get_merged_pull_requests: () => ({ pullRequests: data.pullRequests }),
