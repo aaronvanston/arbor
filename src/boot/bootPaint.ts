@@ -1,5 +1,5 @@
 import { appColorChoice } from '../services/appColor';
-import { BOOT_KEY, needsYouLikely, readBootState } from './bootState';
+import { BOOT_KEY, FIRST_SCREEN_SHOWN, needsYouLikely, readBootState } from './bootState';
 import { fitOpenGroups, parseOpenChoices, wantedOpen } from '../services/sidebarTree';
 import { sidebarArtChoice, sidebarArtHalo, sidebarArtHeight, sidebarArtInk } from '../services/sidebarArt';
 import { drawScene, sceneRows, SCENE_STILL_SECONDS } from '../services/sidebarScenes';
@@ -152,9 +152,11 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
     done = true;
     performance.mark('boot-painted');
     const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
-    internals?.invoke('frontend_ready', { theme }).catch(() => {
-      // main.tsx asks again once React has painted, and the shell shows the window by itself after a short wait.
-    });
+    if (!internals) return;
+    // Marked as it's sent: a call that fails means the app can't be reached at all, so main.tsx's would fail too,
+    // and the shell shows the window by itself after a short wait.
+    (window as unknown as Record<string, unknown>)[FIRST_SCREEN_SHOWN] = true;
+    internals.invoke('frontend_ready', { theme }).catch(() => undefined);
   };
   // Everything that reads the layout waits for the first frame, when the page has been laid out once anyway: read
   // while the page is still parsing, it would lay the whole page out early, and again after these changes.

@@ -3,6 +3,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { invokeCommand } from '../native/commands';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { AppTheme } from '../themeController';
+import { firstScreenShown } from '../boot/bootState';
 
 type Unlisten = () => void;
 
@@ -112,7 +113,8 @@ let announced = false;
  * ignores it after launch.
  */
 export function showWindowWhenPainted(): void {
-  if (announced) return;
+  // index.html's first screen already asked for it (src/boot/bootPaint.ts).
+  if (announced || firstScreenShown()) return;
   announced = true;
   afterFirstPaint(() => {
     const theme = paintedTheme(document.documentElement.dataset.theme);

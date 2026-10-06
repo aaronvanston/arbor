@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BootShell } from '../src/boot/BootShell';
-import { BOOT_KEY, DEFAULT_HOME_SHAPE, NEEDS_YOU_RECENT_MS, needsYouLikely, readBootState } from '../src/boot/bootState';
+import { BOOT_KEY, DEFAULT_HOME_SHAPE, FIRST_SCREEN_SHOWN, firstScreenShown, NEEDS_YOU_RECENT_MS, needsYouLikely, readBootState } from '../src/boot/bootState';
 import { NEEDS_YOU_WINDOW_MS } from '../src/services/fleetBoard';
 import { AccountsSkeleton } from '../src/components/homeSkeletons';
 import { PageBreadcrumb, PageTopbar } from '../src/components/layout/page';
@@ -137,5 +137,21 @@ describe('Home while it waits', () => {
     expect(boot.match(/data-boot-machine/g)?.length).toBe(DEFAULT_HOME_SHAPE.machines);
     const real = render(<AccountsSkeleton providers={DEFAULT_HOME_SHAPE.providers} />);
     expect(boot).toContain(real);
+  });
+});
+
+describe('showing the window', () => {
+  it('leaves it to the first screen once that has asked, so main.tsx sends no second frontend_ready', () => {
+    const page = globalThis as unknown as Record<string, unknown> & { window?: unknown };
+    const hadWindow = 'window' in page;
+    if (!hadWindow) page.window = page;
+    try {
+      expect(firstScreenShown()).toBe(false);
+      page[FIRST_SCREEN_SHOWN] = true;
+      expect(firstScreenShown()).toBe(true);
+    } finally {
+      delete page[FIRST_SCREEN_SHOWN];
+      if (!hadWindow) delete page.window;
+    }
   });
 });

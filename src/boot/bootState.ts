@@ -7,6 +7,13 @@
  */
 export const BOOT_KEY = 'arbor.boot.v1';
 
+/**
+ * Set on the window as the first screen sends its own `frontend_ready` (src/boot/bootPaint.ts), so main.tsx doesn't
+ * send a second one the shell would only ignore.
+ */
+export const FIRST_SCREEN_SHOWN = '__arborFirstScreenShown';
+export const firstScreenShown = () => typeof window !== 'undefined' && (window as unknown as Record<string, unknown>)[FIRST_SCREEN_SHOWN] === true;
+
 /** Needs you's rows and whether a "more on the board" line followed, the last time it listed any, and when. */
 export type NeedsYouShape = { rows: number; more: boolean; at: number };
 export type HomeShape = { providers: number[]; machines: number; needsYou: NeedsYouShape };

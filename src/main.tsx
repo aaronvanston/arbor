@@ -42,8 +42,9 @@ function ShowWindowWhenPainted() {
 
 // Dates and numbers follow the Mac's region, the Mac title row's size the window's zoom, and every page the settings
 // the app keeps for the window, so all three are read before anything is drawn. A promise rather than a top-level await: the build targets
-// ES2020, which doesn't have one. The window stays hidden until this first render paints; the shell
-// shows it anyway if that never comes.
+// ES2020, which doesn't have one. Meanwhile the window shows index.html's static first screen (src/boot/), which this
+// render replaces with the same picture; should that screen not have shown it, this render does, and the shell shows
+// it anyway if neither comes.
 // A launch loads the app as it's seen alongside them, so its first frame is the whole app; a page the window reloaded
 // into in the background starts only what keeps running, and the rest once the window shows. A shell that fails to load
 // is loaded again by AppRoot, which shows the error page if it fails again.
