@@ -4,7 +4,7 @@ import { planSkills, runSkillPlan, undoSkillRun, type RunProblem } from './skill
 import { applyHooks, hookChanges, setHookWanted, takeHook } from './setupHooks';
 import { applyMcpChanges, mcpChanges, plannedMcp, putBackMcpServer, setMcpWanted, takeMcpServer, withRegistry, type PendingMcp } from './setupMcp';
 import { codexRepoChanges, differs, repoAction, setSetupCodexPlugin, setSetupPlugin, wantedOn, withCodexPluginRepo, withPluginRepo } from './setupPluginRepo';
-import { applyCodexPluginChanges, applyPluginChanges, extensionsView, type PluginCell, type PluginRow } from './setupPlugins';
+import { applyCodexPluginChanges, applyPluginChanges, extensionsView, type ExtensionsView, type PluginCell, type PluginRow } from './setupPlugins';
 import { applySetupSync, getSetupRepo, setSetupFileMachine, setSetupFileOff, setSetupFileRemoved, setSetupSkillMachine, setSetupSkillOff, syncChanges, syncPlan, undoSetupSync } from './setupSync';
 import { skillsView, STORE } from './setupSkills';
 import { machineLookKey } from './machineLook';
@@ -711,4 +711,51 @@ export async function takeIntoRepo(repo: string, machines: SetupMachine[], row: 
     default:
       throw new Error(`${row.name} is taken into the repo with its switch`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Updating a plugin everywhere
+// ---------------------------------------------------------------------------
+
+/** The Claude Code homes, on machines that answer, with an older version of a plugin than another home has. */
+export const behindHomes = (row: PluginRow) => row.cells.filter((cell) => cell.behind && cell.home.reachable);
+
+/** Updates a plugin in every home that has an older version, with Claude Code's own plugin command. */
+export async function updatePlugin(row: PluginRow): Promise<{ changed: string[]; failed: SwitchFailure[] }> {
+  const byMachine = new Map<string, DoneChange[]>();
+  for (const cell of behindHomes(row)) {
+    const { machine, path: home } = cell.home;
+    byMachine.set(machine, [...(byMachine.get(machine) ?? []), { machine, home, action: 'update', target: row.id, source: null }]);
+  }
+  const ran = await runChanges(byMachine, false);
+  return { changed: unique(ran.done.map((change) => change.machine)), failed: ran.failed.map((result) => ({ machine: result.machine, message: result.message })) };
+}
+
+// ---------------------------------------------------------------------------
+// Marketplaces everywhere
+// ---------------------------------------------------------------------------
+
+/** The Claude Code homes on answering machines that have a marketplace, and whether any has a plugin from it installed. */
+export function marketplaceHomes(view: ExtensionsView, name: string) {
+  const row = view.marketplaces.find((entry) => entry.name === name);
+  const cells = (row?.cells ?? []).filter((cell) => cell.item && cell.home.reachable);
+  const inUse = (home: { machine: string; path: string }) => view.plugins.some((plugin) => plugin.marketplace === name
+    && plugin.cells.some((cell) => cell.home.machine === home.machine && cell.home.path === home.path && (cell.place === 'on' || cell.place === 'off')));
+  return { cells, inUse: cells.some((cell) => inUse(cell.home)), oldestMs: cells.reduce<number | null>((oldest, cell) => (cell.fetchedMs !== null && (oldest === null || cell.fetchedMs < oldest) ? cell.fetchedMs : oldest), null) };
+}
+
+/**
+ * Refreshes a Claude Code marketplace in every home that has it, or removes it from them all, with Claude Code's own
+ * plugin command. A removal is refused while any home has a plugin from it installed.
+ */
+export async function marketplaceEverywhere(view: ExtensionsView, name: string, action: 'refresh' | 'removeMarketplace'): Promise<{ changed: string[]; failed: SwitchFailure[] }> {
+  const { cells, inUse } = marketplaceHomes(view, name);
+  if (action === 'removeMarketplace' && inUse) throw new Error(`A machine has a plugin from ${name} installed`);
+  const byMachine = new Map<string, DoneChange[]>();
+  for (const cell of cells) {
+    const { machine, path: home } = cell.home;
+    byMachine.set(machine, [...(byMachine.get(machine) ?? []), { machine, home, action, target: name, source: null }]);
+  }
+  const ran = await runChanges(byMachine, false);
+  return { changed: unique(ran.done.map((change) => change.machine)), failed: ran.failed.map((result) => ({ machine: result.machine, message: result.message })) };
 }

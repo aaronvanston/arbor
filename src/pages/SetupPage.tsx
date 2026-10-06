@@ -548,7 +548,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
         ) : null}
         {tab === 'library' && libraryItem === null ? <LibraryBar kind={kind} lens={libraryLens} counts={libraryCounts} onChange={chooseLibrary} /> : null}
         {/* The scope sentence, for the grids a project or a machine can have values of its own on. */}
-        {libraryLens === 'machines' && (kind === 'skills' || kind === 'plugins' || kind === 'mcps') ? <SyncScopeSentence /> : null}
+        {(libraryLens === 'machines' || libraryItem !== null) && (kind === 'skills' || kind === 'plugins' || kind === 'mcps') ? <SyncScopeSentence /> : null}
         {tab === 'software' ? (
           // The fleet's agents come from the machines' health checks, not the setup scan, so they don't wait for it.
           <>

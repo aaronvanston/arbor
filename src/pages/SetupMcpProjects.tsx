@@ -10,7 +10,13 @@ import { ProjectCheckoutsCard, type ProjectRow } from './ProjectCheckoutsCard';
  * Sync › Library › Plugins by machine, In a project: a project's own value for each Claude Code server the setup repo defines, denied
  * in each checkout's settings.local.json when off and set up in Claude Code's local scope there when on.
  */
-export function ProjectMcpCard({ repo, registry, machines }: { repo: string; registry: McpRegistry; machines: SetupMachine[] }) {
+export function ProjectMcpCard({ repo, registry, machines, only = null }: {
+  repo: string;
+  registry: McpRegistry;
+  machines: SetupMachine[];
+  /** One server's row alone, on its Library page. */
+  only?: string | null;
+}) {
   const { t } = useI18n();
   const [setup, setSetup] = useState<SetupRepo | null>(null);
 
@@ -27,8 +33,10 @@ export function ProjectMcpCard({ repo, registry, machines }: { repo: string; reg
     [registry, values],
   );
   const rows = useMemo<ProjectRow[]>(
-    () => names.map((name) => ({ id: name, name, note: registry.servers.find((server) => server.name === name)?.claude?.place ?? null, projects: values?.[name] ?? {} })),
-    [names, registry, values],
+    () => names
+      .filter((name) => only === null || name === only)
+      .map((name) => ({ id: name, name, note: registry.servers.find((server) => server.name === name)?.claude?.place ?? null, projects: values?.[name] ?? {} })),
+    [names, registry, values, only],
   );
   const changesFor = useCallback(
     (project: string, checkouts: ProjectCheckout[]) => projectMcpChanges(

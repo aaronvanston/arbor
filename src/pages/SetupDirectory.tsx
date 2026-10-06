@@ -14,7 +14,9 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import type { LibraryKind } from '../navigation';
 import { directoryEntries, directorySources, getMarketplaceCatalog, type DirectoryAgent, type DirectoryEntry, type DirectorySource } from '../services/directory';
-import { addPlugin, type LibrarySwitch } from '../services/libraryToggle';
+import { addPlugin, marketplaceEverywhere, marketplaceHomes, type LibrarySwitch } from '../services/libraryToggle';
+import { useConfirmation } from '../components/ConfirmationDialog';
+import { formatAgo } from '../lib/format';
 import { extensionsView, isGithubRepo } from '../services/setupPlugins';
 import type { MarketplaceCatalog, SetupMachine } from '../native/types';
 import { LibraryMark } from './SetupLibrary';
@@ -51,7 +53,38 @@ export function SetupDirectory({ machines, onOpenItem }: {
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
 
-  const sources = useMemo(() => directorySources(extensionsView(machines), library.repo, typed), [machines, library.repo, typed]);
+  const view = useMemo(() => extensionsView(machines), [machines]);
+  const sources = useMemo(() => directorySources(view, library.repo, typed), [view, library.repo, typed]);
+  const { askConfirmation } = useConfirmation();
+  const [busyMarketplace, setBusyMarketplace] = useState<string | null>(null);
+  /** A Claude Code marketplace the machines have, by the repository it comes from. */
+  const marketplaceOf = (source: DirectorySource) => (source.agent === 'claude' ? view.marketplaces.find((row) => row.github !== null && row.github.toLowerCase() === source.source.toLowerCase()) ?? null : null);
+  const onMachines = async (name: string, action: 'refresh' | 'removeMarketplace') => {
+    if (action === 'removeMarketplace') {
+      const confirmed = await askConfirmation({
+        title: t('directory.marketplace.removeTitle', { name }),
+        message: t('directory.marketplace.removeMessage', { name }),
+        confirmText: t('directory.marketplace.remove'),
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+    }
+    setBusyMarketplace(name);
+    setProblems((current) => ({ ...current, [`market:${name}`]: '' }));
+    try {
+      const run = await marketplaceEverywhere(view, name, action);
+      if (run.failed.length) setProblems((current) => ({ ...current, [`market:${name}`]: run.failed.map((item) => `${item.machine}: ${item.message}`).join(' · ') }));
+      toast({
+        kind: run.failed.length ? 'warning' : 'success',
+        title: t(action === 'refresh' ? 'directory.marketplace.refreshed' : 'directory.marketplace.removed', { name }),
+        description: t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
+      });
+    } catch (error) {
+      setProblems((current) => ({ ...current, [`market:${name}`]: String(error) }));
+    } finally {
+      setBusyMarketplace(null);
+    }
+  };
   const wanted = sources.map(sourceKey).join('\n');
   const read = (source: DirectorySource, force = false) => {
     setReads((current) => ({ ...current, [sourceKey(source)]: { state: 'loading' } }));
@@ -157,13 +190,51 @@ export function SetupDirectory({ machines, onOpenItem }: {
                 {source.suggested ? <Badge variant="info" size="sm">{t('directory.suggested')}</Badge> : null}
               </span>
             )}
-            summary={<span className="font-mono">{source.source}{state.state === 'ready' ? ` · ${t(entries.length === 1 ? 'directory.count.one' : 'directory.count.other', { count: entries.length })}` : ''}</span>}
-            headerAction={(
+            summary={(() => {
+              const market = marketplaceOf(source);
+              const homes = market ? marketplaceHomes(view, market.name) : null;
+              return (
+                <span className="font-mono">
+                  {source.source}
+                  {state.state === 'ready' ? ` · ${t(entries.length === 1 ? 'directory.count.one' : 'directory.count.other', { count: entries.length })}` : ''}
+                  {homes?.oldestMs ? <span className="font-sans">{` · ${t('directory.marketplace.fetched', { ago: formatAgo(homes.oldestMs) })}`}</span> : null}
+                </span>
+              );
+            })()}
+            headerAction={(() => {
+              const market = marketplaceOf(source);
+              const homes = market ? marketplaceHomes(view, market.name) : null;
+              return (
+              <span className="flex items-center gap-1">
+                {market && homes?.cells.length ? (
+                  <>
+                    <Button variant="ghost" size="xs" disabled={busyMarketplace !== null} onClick={() => void onMachines(market.name, 'refresh')}>
+                      {busyMarketplace === market.name ? <Spinner className="size-3.5" /> : null}
+                      {t('directory.marketplace.refresh')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={busyMarketplace !== null || homes.inUse}
+                      disabledReason={homes.inUse ? t('directory.marketplace.inUse') : undefined}
+                      onClick={() => void onMachines(market.name, 'removeMarketplace')}
+                    >
+                      {t('directory.marketplace.remove')}
+                    </Button>
+                  </>
+                ) : null}
               <Button variant="ghost-muted" size="icon-xs" disabled={state.state === 'loading'} onClick={() => read(source, true)} aria-label={t('directory.readAgain', { source: source.source })} title={t('directory.readAgain', { source: source.source })}>
                 {state.state === 'loading' ? <Spinner className="size-3.5" /> : <RefreshCw />}
               </Button>
-            )}
+              </span>
+              );
+            })()}
           >
+            {(() => {
+              const market = marketplaceOf(source);
+              const problem = market ? problems[`market:${market.name}`] : '';
+              return problem ? <p className="border-b border-border/50 px-4 py-2 text-xs text-error-foreground">{problem}</p> : null;
+            })()}
             {state.state === 'loading' ? (
               <TableEmpty><span className="inline-flex items-center gap-2"><Spinner />{t('directory.reading', { source: source.source })}</span></TableEmpty>
             ) : state.state === 'error' ? (

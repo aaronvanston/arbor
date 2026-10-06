@@ -10,7 +10,11 @@ import { ProjectCheckoutsCard, type ProjectRow } from './ProjectCheckoutsCard';
  * Sync › Library › Skills by machine, In a project: a project's own value for each skill the setup repo has, set in each checkout's own
  * skillOverrides. Shown once there's a setup repo with skills.
  */
-export function ProjectSkillsCard({ machines }: { machines: SetupMachine[] }) {
+export function ProjectSkillsCard({ machines, only = null }: {
+  machines: SetupMachine[];
+  /** One skill's row alone, on its Library page. */
+  only?: string | null;
+}) {
   const { t } = useI18n();
   const [path] = useState(storedSetupRepo);
   const [repo, setRepo] = useState<SetupRepo | null>(null);
@@ -28,7 +32,10 @@ export function ProjectSkillsCard({ machines }: { machines: SetupMachine[] }) {
     () => [...new Set([...(repo?.skills ?? []).map((skill) => skill.name), ...Object.keys(values ?? {})])].sort(),
     [repo, values],
   );
-  const rows = useMemo<ProjectRow[]>(() => names.map((name) => ({ id: name, name, note: null, projects: values?.[name] ?? {} })), [names, values]);
+  const rows = useMemo<ProjectRow[]>(
+    () => names.filter((name) => only === null || name === only).map((name) => ({ id: name, name, note: null, projects: values?.[name] ?? {} })),
+    [names, values, only],
+  );
   const changesFor = useCallback(
     (project: string, checkouts: ProjectCheckout[]) => projectSkillChanges(names, values ?? {}, checkouts, project, (machine, skill) => homeSkill(machines, machine, skill)),
     [names, values, machines],

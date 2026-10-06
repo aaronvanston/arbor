@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { libraryCounts, libraryItemName, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { addPlugin, bringInLine, linePlans, takeIntoRepo, takeSources, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { addPlugin, behindHomes, bringInLine, linePlans, marketplaceEverywhere, marketplaceHomes, takeIntoRepo, takeSources, updatePlugin, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { directoryEntries, directorySources } from '../src/services/directory';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
@@ -443,5 +443,41 @@ describe('bringing an agent’s instructions in line', () => {
     const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: null }, machines, present(plans[0]));
     expect(synced).toEqual([[{ path: claude.path, remove: false, before: 'old' }]]);
     expect(done.changed).toBe(true);
+  });
+});
+
+describe('everyday per-home changes from the new pages', () => {
+  const applied = (calls: { machine: string; changes: PluginChange[] }[]) => calls.map(({ machine: name, changes }) => [name, changes.map((change) => `${change.action} ${change.target}`)]);
+  const answering = (calls: { machine: string; changes: PluginChange[] }[]) => mockCommands({
+    apply_plugin_changes: ({ machine: name, changes }) => {
+      calls.push({ machine: name, changes });
+      return changes.map((change): PluginResult => ({ ...change, checkout: null, outcome: 'done', message: '' }));
+    },
+  });
+
+  it('updates a plugin only in the homes with an older version', async () => {
+    const calls: { machine: string; changes: PluginChange[] }[] = [];
+    answering(calls);
+    const machines = [machine('cam-mbp', [plugin(REVIEW)]), machine('ci-01', [item('plugin', REVIEW, { value: '0.9.0', enabled: true })])];
+    const row = pluginRow(machines, null);
+    expect(behindHomes(row).map((cell) => cell.home.machine)).toEqual(['ci-01']);
+    const run = await updatePlugin(row);
+    expect(applied(calls)).toEqual([['ci-01', [`update ${REVIEW}`]]]);
+    expect(run.changed).toEqual(['ci-01']);
+  });
+
+  it('refreshes a marketplace in every home that has it, and removes it only once nothing from it is installed', async () => {
+    const calls: { machine: string; changes: PluginChange[] }[] = [];
+    answering(calls);
+    const inUse = fleet();
+    expect(marketplaceHomes(extensionsView(inUse), 'acme-tools').inUse).toBe(true);
+    await marketplaceEverywhere(extensionsView(inUse), 'acme-tools', 'refresh');
+    expect(applied(calls)).toEqual([['cam-mbp', ['refresh acme-tools']], ['ci-01', ['refresh acme-tools']], ['cedar-02', ['refresh acme-tools']]]);
+    await expect(marketplaceEverywhere(extensionsView(inUse), 'acme-tools', 'removeMarketplace')).rejects.toThrow();
+    calls.length = 0;
+    const unused = [machine('cam-mbp', [marketplace('acme-tools')])];
+    expect(marketplaceHomes(extensionsView(unused), 'acme-tools').inUse).toBe(false);
+    await marketplaceEverywhere(extensionsView(unused), 'acme-tools', 'removeMarketplace');
+    expect(applied(calls)).toEqual([['cam-mbp', ['removeMarketplace acme-tools']]]);
   });
 });

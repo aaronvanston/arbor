@@ -132,7 +132,7 @@ const BLOCKED_TEXT: Record<RegistryBlock, MessageKey> = {
   broken: 'setup.mcp.blocked.broken',
 };
 
-const HEALTH_LOOK: Record<McpStatus, { tone: StatusTone; key: MessageKey }> = {
+export const HEALTH_LOOK: Record<McpStatus, { tone: StatusTone; key: MessageKey }> = {
   connected: { tone: 'success', key: 'setup.plugins.health.connected' },
   needsAuth: { tone: 'warning', key: 'setup.plugins.health.needsAuth' },
   failed: { tone: 'error', key: 'setup.plugins.health.failed' },

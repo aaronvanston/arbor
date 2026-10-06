@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { MachinePill } from '../components/identity/Identity';
 import { SettingsSection } from '../components/layout/settings';
@@ -15,9 +15,12 @@ import type { MessageKey } from '../i18n/resources';
 import { formatAgo, formatCount } from '../lib/format';
 import { cn } from '../lib/utils';
 import { libraryScope, type LibraryPlace, type LibraryRow } from '../services/library';
-import { getMcpUsage, measurePluginCosts, toolSafe } from '../services/setupPlugins';
+import { checkMcpHealth, getMcpUsage, measurePluginCosts, toolSafe } from '../services/setupPlugins';
+import { behindHomes } from '../services/libraryToggle';
+import { StatusDot } from '../components/ui/status-dot';
+import { HEALTH_LOOK } from './SetupPlugins';
 import { getSkillUsage } from '../services/setupSkills';
-import type { ComponentCost, ExtensionUsage, PluginCost, SetupMachine } from '../native/types';
+import type { ComponentCost, ExtensionUsage, McpStatus, PluginCost, SetupMachine } from '../native/types';
 import { AgentMarks, LibraryMark, ScopeText } from './SetupLibrary';
 
 /** How many days of sessions a row's use is counted over. */
@@ -38,6 +41,8 @@ export type LibraryActions = {
   /** Where a row only machines have can be taken into the repo from, and taking it. */
   takeFrom: { machine: string; homes: string[] }[];
   onTake: (from: { machine: string; home: string }) => void;
+  /** Updates a Claude Code plugin in every home with an older version. */
+  onUpdate: () => void;
 };
 
 /** Why a machine's switch can't be flipped, or null when it can. */
@@ -61,11 +66,50 @@ function placeWords(place: LibraryPlace, on: boolean, machine: SetupMachine | un
  * One Library row's own page: the switch for every machine, where it's on with each machine's own switch, what it's
  * used for and costs, and taking it off every machine.
  */
-export function LibraryItemPage({ row, machines, actions }: { row: LibraryRow; machines: SetupMachine[]; actions: LibraryActions }) {
+export function LibraryItemPage({ row, machines, actions, children }: {
+  row: LibraryRow;
+  machines: SetupMachine[];
+  actions: LibraryActions;
+  /** Sections of the kind's own below the rest, like its values in a project. */
+  children?: ReactNode;
+}) {
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
   const busy = actions.running !== null;
   const listed = row.state !== 'unlisted' && row.state !== 'removed';
+
+  // A Claude Code plugin some homes have older than others.
+  const plugin = row.toggle?.kind === 'plugin' && !row.toggle.codex ? row.toggle.row : null;
+  const older = plugin ? behindHomes(plugin) : [];
+  // MCP servers' connections, checked on request in each Claude Code home that has one.
+  const [health, setHealth] = useState<Record<string, McpStatus | 'unknown'>>({});
+  const [checking, setChecking] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const claudeHomes = row.kind === 'mcps' ? row.fleet.flatMap((name) => {
+    const machine = machines.find((entry) => entry.machine === name);
+    if (!machine?.reachable) return [];
+    return (row.places[name]?.homes ?? []).filter((home) => machine.homes.some((entry) => entry.path === home && entry.agent === 'claude')).map((home) => ({ machine: name, home }));
+  }) : [];
+  const check = async () => {
+    setChecking(true);
+    setHealthError(null);
+    const results = await Promise.allSettled(claudeHomes.map(async ({ machine, home }) => [machine, home, await checkMcpHealth(machine, home)] as const));
+    const next: Record<string, McpStatus | 'unknown'> = {};
+    const failures: string[] = [];
+    results.forEach((result, index) => {
+      const asked = claudeHomes[index];
+      if (!asked) return;
+      if (result.status === 'rejected') {
+        failures.push(`${asked.machine}: ${String(result.reason)}`);
+        return;
+      }
+      const found = result.value[2].servers.find((server) => server.name === row.name);
+      next[`${asked.machine}\u0000${asked.home}`] = found?.status ?? 'unknown';
+    });
+    setHealth(next);
+    setHealthError(failures.length ? failures.join(' · ') : null);
+    setChecking(false);
+  };
 
   const remove = async () => {
     const confirmed = await askConfirmation({
@@ -117,9 +161,32 @@ export function LibraryItemPage({ row, machines, actions }: { row: LibraryRow; m
       </header>
       {actions.problems.map((text) => <p key={text} className="-mt-5 text-xs text-error-foreground">{text}</p>)}
       {row.state === 'unlisted' && row.kind !== 'plugins' ? <TakeIn row={row} actions={actions} /> : null}
+      {older.length ? (
+        <div className="-mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 text-sm">
+          <span className="flex-1 text-muted-foreground">
+            {plugin?.newest
+              ? t(older.length === 1 ? 'library.item.update.one' : 'library.item.update.other', { count: older.length, version: plugin.newest })
+              : t('library.item.update.mixed', { count: older.length })}
+          </span>
+          <Button size="sm" variant="outline" disabled={busy} onClick={actions.onUpdate}>
+            {actions.running === `${row.key}\u0000update` ? <Spinner className="size-3.5" /> : null}
+            {t('library.item.update.button')}
+          </Button>
+        </div>
+      ) : null}
       {row.state === 'removed' ? <p className="-mt-4 text-sm text-muted-foreground">{t('library.item.removed')}</p> : null}
 
-      <SettingsSection title={t('library.item.where')} description={t('library.item.whereAbout')} summary={libraryScope(row).kind === 'all' ? t('library.scope.all') : null}>
+      <SettingsSection
+        title={t('library.item.where')}
+        description={t('library.item.whereAbout')}
+        summary={libraryScope(row).kind === 'all' ? t('library.scope.all') : null}
+        headerAction={claudeHomes.length ? (
+          <Button variant="outline" size="sm" disabled={checking} onClick={() => void check()}>
+            {checking ? <Spinner className="size-3.5" /> : null}
+            {t('library.item.health.check')}
+          </Button>
+        ) : undefined}
+      >
         {row.fleet.length ? (
           <ul className="divide-y divide-border/50">
             {row.fleet.map((name) => {
@@ -136,7 +203,20 @@ export function LibraryItemPage({ row, machines, actions }: { row: LibraryRow; m
                       {t(placeWords(place, on, machine))}
                       {row.behind.includes(name) ? <Badge variant="warning" size="sm">{t('library.item.behind')}</Badge> : null}
                     </span>
-                    {place.homes.length ? <span className="truncate font-mono text-xs text-muted-foreground">{place.homes.join(' · ')}</span> : null}
+                    {place.homes.length ? (
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs text-muted-foreground">
+                        {place.homes.map((home) => {
+                          const status = health[`${name}\u0000${home}`];
+                          return (
+                            <span key={home} className="flex items-center gap-1.5">
+                              {status && status !== 'unknown' ? <StatusDot tone={HEALTH_LOOK[status].tone} className="size-1.5" /> : null}
+                              {home}
+                              {status ? <span className="font-sans">{status === 'unknown' ? t('library.item.health.unknown') : t(HEALTH_LOOK[status].key)}</span> : null}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    ) : null}
                   </span>
                   {row.toggle && listed ? (
                     <span className="flex w-10 justify-end" title={held ? t(held) : undefined}>
@@ -155,9 +235,11 @@ export function LibraryItemPage({ row, machines, actions }: { row: LibraryRow; m
             })}
           </ul>
         ) : <TableEmpty>{t('library.item.noMachines')}</TableEmpty>}
+        {healthError ? <p className="border-t border-border/50 px-4 py-3 text-xs text-error-foreground">{t('library.item.health.failed', { error: healthError })}</p> : null}
       </SettingsSection>
 
       <UseAndCost row={row} machines={machines} />
+      {children}
     </div>
   );
 }

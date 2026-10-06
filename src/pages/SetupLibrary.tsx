@@ -19,10 +19,16 @@ import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
 import { LIBRARY_KINDS, libraryCounts, libraryList, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
-import { removeEverywhere, takeIntoRepo, takeSources, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
+import { removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
 import { skillFolder } from '../services/repoBrowser';
 import { LibraryItemPage, type LibraryActions } from './SetupLibraryItem';
-import type { SetupMachine } from '../native/types';
+import type { SetupMachine, SetupRepo } from '../native/types';
+import type { LibrarySources } from '../hooks/useLibrary';
+import { extensionsView } from '../services/setupPlugins';
+import { withPluginRepo } from '../services/setupPluginRepo';
+import { ProjectPluginsCard } from './SetupPluginProjects';
+import { ProjectSkillsCard } from './SetupSkillProjects';
+import { ProjectMcpCard } from './SetupMcpProjects';
 
 export const KIND_LABEL: Record<LibraryKind, MessageKey> = {
   plugins: 'library.kind.plugins',
@@ -149,7 +155,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   onCounts: (counts: Record<LibraryKind, number>) => void;
 }) {
   const { t } = useI18n();
-  const { repoPath, setSources, loaded, loadError, rows } = useLibrary(machines);
+  const { repoPath, sources, setSources, loaded, loadError, rows } = useLibrary(machines);
   const [agent, setAgent] = useState<LibraryAgent | null>(null);
   const [query, setQuery] = useState('');
   const [running, setRunning] = useState<Running | null>(null);
@@ -237,6 +243,27 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       setRunning(null);
     }
   };
+  /** Updates a Claude Code plugin wherever a home has an older version; an update isn't taken back, so it has no Undo. */
+  const update = async (row: LibraryRow) => {
+    const target = row.toggle;
+    if (target?.kind !== 'plugin' || running) return;
+    setRunning({ key: `${row.key}\u0000update`, on: true });
+    report(row.key, []);
+    try {
+      const run = await updatePlugin(target.row);
+      const texts = failedText(run.failed, [], row.name);
+      report(row.key, texts);
+      toast({
+        kind: texts.length ? 'warning' : 'success',
+        title: t('library.item.update.done', { name: row.name }),
+        description: t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
+      });
+    } catch (error) {
+      report(row.key, [t('library.toggle.failed', { name: row.name, error: String(error) })]);
+    } finally {
+      setRunning(null);
+    }
+  };
   const toggle = (row: LibraryRow, on: boolean) => {
     const target = row.toggle;
     if (target) void perform(row, row.key, on, t(on ? 'library.toggle.on' : 'library.toggle.off', { name: row.name }), (repo) => switchRow(repo, machines, target, on));
@@ -260,6 +287,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       onOpenInRepo: repoFile && row.state !== 'unlisted' ? () => onOpenInRepo(repoFile) : null,
       takeFrom: takeSources(row, machines),
       onTake: (from) => void take(row, from),
+      onUpdate: () => void update(row),
     };
   };
 
@@ -275,7 +303,11 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
     const row = rows.find((entry) => entry.key === item);
     if (!loaded) return <TableEmpty><span className="inline-flex items-center gap-2"><Spinner />{t('library.loading')}</span></TableEmpty>;
     if (!row) return <TableEmpty>{t('library.item.gone')}</TableEmpty>;
-    return <LibraryItemPage row={row} machines={machines} actions={actionsFor(row)} />;
+    return (
+      <LibraryItemPage row={row} machines={machines} actions={actionsFor(row)}>
+        {repoPath && row.state !== 'unlisted' && row.state !== 'removed' ? <ItemProjects row={row} repo={repoPath} machines={machines} sources={sources} onRepo={(repo) => setSources((current) => ({ ...current, repo }))} /> : null}
+      </LibraryItemPage>
+    );
   }
 
   const search = t('library.search');
@@ -321,7 +353,6 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
                 problems={problems.filter((problem) => problem.key === row.key).map((problem) => problem.text)}
                 onToggle={(on) => toggle(row, on)}
                 onOpen={() => onOpenItem(row.key)}
-                onOpenByMachine={onOpenByMachine}
               />
             ))}
           </ul>
@@ -332,7 +363,37 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   );
 }
 
-function LibraryItem({ row, running, held, problems, onToggle, onOpen, onOpenByMachine }: {
+/**
+ * An item's own values in a project, as Per home's "In a project" cards keep them: a Claude Code plugin's, a skill's or
+ * an MCP server's, set per project and machine and brought into each checkout.
+ */
+function ItemProjects({ row, repo, machines, sources, onRepo }: {
+  row: LibraryRow;
+  repo: string;
+  machines: SetupMachine[];
+  sources: LibrarySources;
+  onRepo: (repo: SetupRepo) => void;
+}) {
+  const toggle = row.toggle;
+  if (toggle?.kind === 'plugin' && !toggle.codex && sources.repo) {
+    const setup = sources.repo;
+    const plugins = setup.plugins.filter((plugin) => plugin.id === toggle.row.id);
+    if (!plugins.length) return null;
+    return (
+      <ProjectPluginsCard
+        repo={repo}
+        plugins={plugins}
+        view={withPluginRepo(extensionsView(machines), setup.plugins)}
+        onPlugins={(next) => onRepo({ ...setup, plugins: setup.plugins.map((plugin) => next.find((entry) => entry.id === plugin.id) ?? plugin) })}
+      />
+    );
+  }
+  if (toggle?.kind === 'skill') return <ProjectSkillsCard machines={machines} only={toggle.name} />;
+  if (toggle?.kind === 'mcp' && sources.registry?.found) return <ProjectMcpCard repo={repo} registry={sources.registry} machines={machines} only={toggle.name} />;
+  return null;
+}
+
+function LibraryItem({ row, running, held, problems, onToggle, onOpen }: {
   row: LibraryRow;
   running: Running | null;
   /** Another switch is running; one at a time, since each walks every machine. */
@@ -341,7 +402,6 @@ function LibraryItem({ row, running, held, problems, onToggle, onOpen, onOpenByM
   onToggle: (on: boolean) => void;
   /** Opens the row's own page. */
   onOpen: () => void;
-  onOpenByMachine: () => void;
 }) {
   const { t } = useI18n();
   // A row the repo doesn't list is on while any machine has it, and its switch lists it on or off for them all.
@@ -372,8 +432,8 @@ function LibraryItem({ row, running, held, problems, onToggle, onOpen, onOpenByM
             />
           </span>
         ) : (
-          <Button variant="ghost-muted" size="xs" onClick={onOpenByMachine} aria-label={t('library.byMachine.aria', { name: row.name })}>
-            {t('library.lens.machines')}
+          <Button variant="ghost-muted" size="xs" onClick={onOpen} aria-label={t('library.byMachine.aria', { name: row.name })}>
+            {t('library.details')}
             <ChevronRight />
           </Button>
         )}

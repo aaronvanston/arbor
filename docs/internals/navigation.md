@@ -14,7 +14,7 @@ to its page. Sync is still `setup` in ids and storage keys.
 
 Pages have no tabs: the tree picks the view and the breadcrumb reads "Page / View". Sync › Library is the exception: a
 bar over it picks the kind it lists (`kind`: plugins, MCP servers, skills, hooks, instructions) and how it's shown
-(`lens`: the list, each kind's grid by machine, or Cost), and Repo opens on History with `lens: 'changes'`. A view that can be narrowed to one machine (`hasMachineScope`, plus Checkouts and the Library's Cost) ends its breadcrumb with the machine picker
+(`lens`: the list, each kind's grid per home for rare per-home fixes, Cost, or the directory), and Repo opens on History with `lens: 'changes'`. A view that can be narrowed to one machine (`hasMachineScope`, plus Checkouts and the Library's Cost) ends its breadcrumb with the machine picker
 (`components/layout/MachineCrumb.tsx`), and the page's other views keep that pick (`keepMachineScope`).
 
 ## Views that moved
@@ -22,7 +22,7 @@ bar over it picks the kind it lists (`kind`: plugins, MCP servers, skills, hooks
 An old view id can still turn up in links, the palette's saved picks and the view a page was left on, so it has to
 land somewhere. `movedUsageView` sends Usage's old Capacity, Analysis, Failures and Claude Code (`telemetry`) to
 Accounts › Value, Overview, Requests with Failed on, and the Library's Cost. `movedSetupView` sends Sync's old Agents and
-Toolchain to Software; Skills, MCP & plugins and Hooks to their Library kind by machine (`libraryView(kind, 'machines')`);
+Toolchain to Software; Skills, MCP & plugins and Hooks to their Library kind per home (`libraryView(kind, 'machines')`);
 Cost and Context to the Library's Cost; Arbor's changes (`history`) to the Repo's History (`lens: 'changes'`); Projects to
 `checkoutsView()` (Sessions with `lens: 'checkouts'`); and Checklist to Machines. `savedUsageView` and `savedSetupView`
 read a page's saved last view through them. Overview kept Checks' id, `overview`. `tests/movedViews.test.ts` covers all of it; extend these maps when you move a view.
@@ -44,10 +44,11 @@ plugin, MCP server, skill, hook and instruction file the setup repo gives the ag
 for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
 brings each answering machine in line straight away, with Undo. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its
 own switch (a value of that machine's own in the repo, applied there at once, `switchMachine`), use and a plugin's
-measured cost, and Remove from every machine (`removeEverywhere`), confirmed first and undone with Undo. Browse directory (`lens: 'directory'`, `pages/SetupDirectory.tsx` over `services/directory.ts`) lists what each
+measured cost, Update everywhere for a Claude Code plugin some homes have older (`updatePlugin`), Check connections for an MCP server, its values in a project (the Per home cards narrowed to it), Add to the repo for what only machines have (`takeIntoRepo`), and Remove from every machine (`removeEverywhere`), confirmed first and undone with Undo. Per home (`lens: 'machines'`) keeps the old grids for rare per-home fixes. Browse directory (`lens: 'directory'`, `pages/SetupDirectory.tsx` over `services/directory.ts`) lists what each
 marketplace offers, read from its GitHub repository by `get_marketplace_catalog` (no account, 15 minutes' cache): the
 marketplaces machines and the repo use, Anthropic's official one as a suggestion, and any `owner/repo` typed in. Adding
-one (`addPlugin`) lists it on for every machine with its marketplace's repository and installs it, with Undo. Software has the agent rollout, every machine's
+one (`addPlugin`) lists it on for every machine with its marketplace's repository and installs it, with Undo; a
+marketplace the machines have can be refreshed or removed on all of them (`marketplaceEverywhere`). Software has the agent rollout, every machine's
 versions and the toolchain. Repo is the setup repo's files, changes and History, one timeline of its commits with the changes Arbor made on each machine from them (and on its own, from features that edit settings), each with Undo (`pages/SetupRepoHistory.tsx` over `services/repoTimeline.ts`).
 
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the
