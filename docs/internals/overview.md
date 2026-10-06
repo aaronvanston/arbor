@@ -100,5 +100,6 @@ Home, the sidebar and the monitors load with the app; everything else loads when
 - [Navigation](navigation.md): the sidebar tree, views, and old view ids that still have to land.
 - [Commands and types](native-commands.md): `invokeCommand`, generated types, `CommandError`.
 - [Machines](machines.md): scripts over SSH, guarded writes, agent homes, automations and pools.
+- [Projects and machines in the setup repo](projects-and-machines.md): where each project goes on each machine, and the layers over the global setup.
 - [Session archive](session-archive.md): the one place transcript bytes are kept.
 - [Command line](cli.md): `arbor` and `arbor mcp`.
