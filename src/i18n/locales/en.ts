@@ -868,6 +868,7 @@ export const en = {
   'accounts.sparkline.aria': 'Headline percent left over the last 24 hours',
   'tray.limitLine': '{provider} · {percent}% left',
   'tray.resetsIn': 'resets in {time}',
+  'tray.resetsAt': 'resets at {time}',
   'tray.pace.ahead': 'running out early',
   'tray.pace.critical': 'will run out before reset',
   'tray.asOf': 'as of {time}',

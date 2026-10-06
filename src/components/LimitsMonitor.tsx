@@ -29,7 +29,7 @@ import { useQuotaCache } from '../services/quotaCache';
 import { applyRoutingPlan, routingCandidates, routingPlan, useRoutingAuto } from '../services/quotaRouting';
 import { fileName, providerForFile, quotaKey, type QuotaProvider } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
-import { formatWhen } from '../lib/format';
+import { formatDateTime, formatWhen } from '../lib/format';
 import type { TrayDot, TrayRow } from '../native/types';
 import { publishTrayRows } from '../services/trayMenu';
 import { pushToTray } from '../services/bootMode';
@@ -213,11 +213,12 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         delete trayRowRef.current[limit.provider];
         return [];
       }
-      const countdown = formatResetCountdown(limit.headline.nextResetMs, now);
+      // Absolute reset times stay correct in the tray while the window is hidden for hours.
+      const resetAt = limit.headline.nextResetMs ? formatDateTime(limit.headline.nextResetMs) : '';
       const text = [
         t('tray.limitLine', { provider: providerLabel[limit.provider], percent: Math.round(limit.headline.percent) }),
         partialHeadline(limit.headline) ? t('accounts.headline.reporting', { reporting: limit.headline.reporting, total: limit.headline.total }) : '',
-        countdown ? t('tray.resetsIn', { time: countdown }) : '',
+        resetAt ? t('tray.resetsAt', { time: resetAt }) : '',
         limit.pace.tone === 'error' ? t('tray.pace.critical') : limit.pace.tone === 'warning' ? t('tray.pace.ahead') : '',
         limit.stale ? t('tray.asOf', { time: formatWhen(limit.stale.asOfMs, { now }) }) : '',
       ].filter(Boolean).join(' · ');
