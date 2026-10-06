@@ -16,7 +16,7 @@ import { NeedsYouSection } from './AgentAttention';
 import { HomeAccounts } from './HomeAccounts';
 import { HomeMachines, useHomeMachines } from './HomeMachines';
 import { HomeProxy } from './HomeProxy';
-import { ConnectAgentDialog } from './ConnectAgentDialog';
+import { ConnectAgentDialog } from './dialogsWhenOpened';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { TODAY_CARD_CLASS, TodaySkeleton } from './homeSkeletons';

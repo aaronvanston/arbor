@@ -301,8 +301,9 @@ async function advance(page: Page, network: ReturnType<typeof trackNetwork>, tot
 }
 
 /** Elements in the document, and in the content area beside the sidebar. */
+// Leaves out the <link>s Vite adds to <head> as code loads, which say how the code is split, not what the page holds.
 const domNodes = (page: Page) => page.evaluate(() => ({
-  all: document.getElementsByTagName('*').length,
+  all: document.getElementsByTagName('*').length - document.head.getElementsByTagName('link').length,
   main: document.querySelector('main')?.getElementsByTagName('*').length ?? 0,
 }));
 

@@ -20,7 +20,7 @@ import { useQuotaClock } from '../services/quotaTime';
 import { DetailRow, SettingsBlock, SettingsSection } from './layout/settings';
 import { WithShortcut } from './ShortcutKbd';
 import { useConfirmation } from './ConfirmationDialog';
-import { ConnectAgentDialog } from './ConnectAgentDialog';
+import { ConnectAgentDialog } from './dialogsWhenOpened';
 import { useIdleUpdateGuard } from './UpdateWhenIdle';
 import { Button } from './ui/button';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from './ui/collapsible';

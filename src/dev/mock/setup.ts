@@ -584,9 +584,9 @@ if (params.get('diff') === 'folded') {
 // With `?markdown=empty`, ci-01's CLAUDE.md is empty, so its Preview says there's nothing in it.
 if (params.get('markdown') === 'empty') setupTexts.c1a7 = '';
 
-// With `?chunks=slow`, the file viewers take four seconds to load the first time one is shown, so the placeholder
-// they show meanwhile can be seen; with `?chunks=fail`, they fail to load, as a module the webview can't fetch does,
-// so the viewer says it couldn't show the file.
+// With `?chunks=slow`, the file viewers and the dialogs that load on first open take four seconds to load the first
+// time, so the placeholder the viewers show meanwhile can be seen; with `?chunks=fail`, they fail to load, as a module
+// the webview can't fetch does, so the viewer says it couldn't show the file and a dialog says it couldn't open.
 const chunkMock = window as Window & { __mockChunkDelayMs?: number; __mockChunkFail?: string };
 if (params.get('chunks') === 'slow') chunkMock.__mockChunkDelayMs = 4_000;
 if (params.get('chunks') === 'fail') chunkMock.__mockChunkFail = 'Importing a module script failed.';

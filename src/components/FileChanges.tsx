@@ -2,25 +2,15 @@ import { Component, lazy, Suspense, type ReactNode } from 'react';
 import { Columns2, Eye, FileCode, Rows2 } from './ui/icons';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
+import { mockableChunk } from '../lib/mockableChunk';
 import { canPreview, setDiffStyle, useDiffStyle, type DiffStyle, type FileView } from '../services/fileView';
 import { errorWords, plainError } from '../services/plainError';
 import { Skeleton } from './ui/skeleton';
 import { Toggle, ToggleGroup } from './ui/toggle-group';
 
-type ChunkWindow = Window & { __mockChunkDelayMs?: number; __mockChunkFail?: string };
-
-// The browser mock's `?chunks=slow` holds the viewers back, so the placeholder shown while they load can be seen, and
-// its `?chunks=fail` has them fail to load, so what shows in their place can be.
-const mockable = <T,>(load: () => Promise<T>) => () => {
-  const mock = import.meta.env.DEV || import.meta.env.MODE === 'demo' ? (window as ChunkWindow) : null;
-  if (mock?.__mockChunkFail) return Promise.reject(new TypeError(mock.__mockChunkFail));
-  const delay = mock?.__mockChunkDelayMs ?? 0;
-  return delay ? new Promise<void>((resolve) => window.setTimeout(resolve, delay)).then(load) : load();
-};
-
 // Both bring in large libraries (the highlighter, the markdown parser), so they load the first time a file is shown.
-const CodeDiff = lazy(mockable(() => import('./CodeDiff').then((module) => ({ default: module.CodeDiff }))));
-const MarkdownPreview = lazy(mockable(() => import('./MarkdownPreview').then((module) => ({ default: module.MarkdownPreview }))));
+const CodeDiff = lazy(mockableChunk(() => import('./CodeDiff').then((module) => ({ default: module.CodeDiff }))));
+const MarkdownPreview = lazy(mockableChunk(() => import('./MarkdownPreview').then((module) => ({ default: module.MarkdownPreview }))));
 
 const isDiffStyle = (value: unknown): value is DiffStyle => value === 'unified' || value === 'split';
 const isFileView = (value: unknown): value is FileView => value === 'source' || value === 'preview';

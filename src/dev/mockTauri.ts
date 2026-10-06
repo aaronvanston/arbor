@@ -134,8 +134,10 @@
  * cam-mbp's and ci-01's CLAUDE.md too far apart to line up, so the middle shows removed and added whole;
  * `?diff=folded` for those two 260 lines long, a word apart at lines 3, 36 and 250, so the unchanged stretches
  * between fold (26 lines, 207 that open a hundred at a time, and 7 at the end); `?markdown=empty` for ci-01's CLAUDE.md
- * empty, so its Preview says so; `?chunks=slow` to have the viewers take four seconds to load the first time, showing
- * their placeholder, or `?chunks=fail` to have them fail to load, so the viewer says it couldn't show the file;
+ * empty, so its Preview says so; `?chunks=slow` to have the viewers and the dialogs that load on first open (search,
+ * Add machine, Connect an agent) take four seconds to load the first time, showing the viewers' placeholder, or
+ * `?chunks=fail` to have them fail to load, so the viewer says it couldn't show the file and a dialog says it
+ * couldn't open;
  * `?skills=changed` or `?skills=fail` to have a change to skills refused, or its last skill fail to change;
  * `?keep=fail` to have keeping a Claude Code home's sessions refused because its settings changed;
  * Sync › Repo › Arbor’s changes lists cam-mbp's changes, two settings edits to start with (`?changes=none` for none, which says

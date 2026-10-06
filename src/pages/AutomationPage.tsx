@@ -1,7 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { AutomationActions } from '../components/automations/AutomationActions';
 import { AutomationAppName } from '../components/automations/AutomationApp';
-import { MarkdownPreview } from '../components/MarkdownPreview';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { toast } from '../components/ui/toast';
 import { HarnessName } from '../components/identity/Harness';
@@ -28,6 +27,9 @@ import { AUTOMATION_APPS, automationHold, automationTargetGone, loadAutomations,
 import { AutomationHoldNote } from '../components/automations/AutomationHoldNote';
 import { useQuotaClock } from '../services/quotaTime';
 import { usePools } from '../services/pools';
+
+// The markdown parser is big and only an automation's own page shows a prompt, so it loads as one opens.
+const MarkdownPreview = lazy(() => import('../components/MarkdownPreview').then((module) => ({ default: module.MarkdownPreview })));
 
 /** How many runs the page lists. */
 const RUNS_SHOWN = 50;
@@ -304,7 +306,7 @@ function Prompt({ text }: { text: string }) {
       <div className={cn('rounded-lg border border-border/60 px-3 py-2.5', !open && long && 'max-h-56 overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)]')}>
         {plain
           ? <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">{text}</p>
-          : <MarkdownPreview source={text} />}
+          : <Suspense fallback={null}><MarkdownPreview source={text} /></Suspense>}
       </div>
       {long ? (
         <Button variant="ghost-muted" size="xs" className="self-start" onClick={() => setOpen(!open)}>
