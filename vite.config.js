@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { splitStringsPlugin } from './scripts/vite-split-strings.mjs';
 import highlightLanguages from './src/services/highlightLanguages.json' with { type: 'json' };
 
 /**
@@ -118,7 +119,13 @@ let eager = null;
  */
 export default defineConfig(({ mode }) => ({
   base: mode === 'demo' ? './' : '/',
-  plugins: [onlyListedGrammars(), react(), tailwindcss(), bootShell(mode)],
+  plugins: [
+    onlyListedGrammars(),
+    splitStringsPlugin({ root: fileURLToPath(new URL('.', import.meta.url)), mode }),
+    react(),
+    tailwindcss(),
+    bootShell(mode),
+  ],
   resolve: {
     alias: { 'arbor-duotone-icons': duotoneIcons(mode) },
   },

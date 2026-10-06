@@ -79,6 +79,16 @@ commit replaces it with the same picture. What someone changing the shell or Hom
   its first frame: a read while the page is parsing lays the whole page out early, and again after its changes.
 - It sends `frontend_ready` itself; Rust shows the window on the first call and ignores the rest.
 
+## What loads at launch
+
+Home, the sidebar and the monitors load with the app; everything else loads when it's first used.
+
+- The UI's strings are one typed table (`src/i18n/locales/en.ts`), which dev and the tests read whole. A build ships
+  only the strings the launch's code names, and every lazily loaded module brings the ones its own code names
+  (`scripts/vite-split-strings.mjs`). So a key built in code keeps a fixed start, `` t(`status.indicator.${x}`) ``,
+  and never starts with a variable: the build can't tell which strings that needs, and the screen would show the raw
+  key in a build only. An `import()` names its module as a string, or the build stops.
+
 ## Where to read more
 
 - [Navigation](navigation.md): the sidebar tree, views, and old view ids that still have to land.

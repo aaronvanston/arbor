@@ -1,6 +1,7 @@
 import { createContext, Fragment, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { getMachineNames, machineNameIn, useMachineNames, type MachineNames } from '../services/machineNames';
-import { en, type MessageKey, type MessageVariables } from './resources';
+import type { MessageKey, MessageVariables } from './resources';
+import { strings } from './strings';
 
 /** Placeholders that always hold a machine's own name, so they say the name it's shown by (services/machineNames). */
 const MACHINE_VARIABLES: ReadonlySet<string> = new Set(['machine', 'reference']);
@@ -14,8 +15,14 @@ function interpolate(template: string, variables: MessageVariables | undefined, 
   });
 }
 
+/**
+ * A message's words. A build loads the ones launch doesn't need with the pages (./strings); a key whose words haven't
+ * loaded shows itself rather than breaking the screen, which the build's check is there to prevent.
+ */
+const message = (key: MessageKey): string => strings[key] ?? key;
+
 export function translate(key: MessageKey, variables?: MessageVariables, machines: MachineNames = getMachineNames()): string {
-  return interpolate(en[key], variables, machines);
+  return interpolate(message(key), variables, machines);
 }
 
 /** What a rich message's placeholders take: words and numbers, or elements such as a machine's pill. */
@@ -26,7 +33,7 @@ export type RichVariables = Record<string, ReactNode>;
  * of a sentence. For visible text only: labels, titles and notifications need `translate`'s plain string.
  */
 export function translateRich(key: MessageKey, variables: RichVariables, machines: MachineNames = getMachineNames()): ReactNode {
-  return en[key].split(/(\{\w+\})/).map((part, index) => {
+  return message(key).split(/(\{\w+\})/).map((part, index) => {
     const name = /^\{(\w+)\}$/.exec(part)?.[1];
     if (!part) return null;
     if (name === undefined || !Object.prototype.hasOwnProperty.call(variables, name)) return <Fragment key={index}>{part}</Fragment>;
