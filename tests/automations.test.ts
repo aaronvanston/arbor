@@ -156,6 +156,12 @@ describe('the background runner', () => {
     expect(olderVersion('0.9.2', '1.0.0')).toBe(true);
     expect(olderVersion('1.0.10', '1.0.9')).toBe(false);
     expect(olderVersion('1.0.0', '1.0.0')).toBe(false);
+    // A release candidate is newer than the release before it and older than its own release, so machines move from
+    // 0.2.1 to the candidate, and from the candidate to the release.
+    expect(olderVersion('0.2.1', '0.3.0-rc.1')).toBe(true);
+    expect(olderVersion('0.3.0-rc.1', '0.3.0')).toBe(true);
+    expect(olderVersion('0.3.0', '0.3.0-rc.1')).toBe(false);
+    expect(olderVersion('0.3.0-rc.1', '0.3.0-rc.2')).toBe(true);
   });
 
   it('says where each machine stands, and offers to set it up only where Arbor can', () => {

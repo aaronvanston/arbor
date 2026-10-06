@@ -13,6 +13,7 @@ import type {
 } from '../native/types';
 import { formatTime } from '../lib/format';
 import type { StatusTone } from '../components/ui/status-dot';
+import { compareVersions } from './agentVersions';
 import type { SystemNotification } from './notify';
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
@@ -363,17 +364,9 @@ export function switchSchedule(choice: ScheduleChoice, kind: ScheduleChoice['kin
 /** Where a machine's background runner stands: what Settings shows and offers for it. */
 export type RunnerState = 'ready' | 'outdated' | 'stopped' | 'missing' | 'unsupported' | 'unknown';
 
-const versionParts = (version: string) => version.split(/[.-]/).map((part) => Number.parseInt(part, 10)).map((part) => (Number.isNaN(part) ? 0 : part));
-
-/** Whether `version` is older than `than`, by its numbers. */
-export function olderVersion(version: string, than: string): boolean {
-  const [left, right] = [versionParts(version), versionParts(than)];
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    const [a, b] = [left[index] ?? 0, right[index] ?? 0];
-    if (a !== b) return a < b;
-  }
-  return false;
-}
+/** Whether `version` is older than `than`. A release candidate comes before its release, so a machine on 0.3.0-rc.1 is
+ *  offered 0.3.0. */
+export const olderVersion = (version: string, than: string): boolean => compareVersions(version, than) < 0;
 
 export function runnerState(scan: AutomationScan | undefined, bundled: string | null): RunnerState {
   const udian = scan?.udian;
