@@ -63,17 +63,12 @@ export function HomeDashboard({ coreReady, coreChecking = false, onNavigate, onA
     <>
       {/* The board reads the machines, not the core: an agent can be waiting on you while the proxy is down. */}
       <NeedsYouSection onNavigate={onNavigate} />
-      {waiting ? (
+      {/* One tree for waiting and ready, so the sections stay mounted when the core answers. */}
+      {waiting || coreReady ? (
         <>
-          <HomeAccounts onNavigate={onNavigate} waiting />
+          {firstRun && !waiting ? <GetStarted onNavigate={onNavigate} onAddMachine={onAddMachine} /> : <HomeAccounts onNavigate={onNavigate} waiting={waiting} />}
           <HomeMachines machines={machines} onNavigate={onNavigate} />
-          <TodayStats onNavigate={onNavigate} waiting />
-        </>
-      ) : coreReady ? (
-        <>
-          {firstRun ? <GetStarted onNavigate={onNavigate} onAddMachine={onAddMachine} /> : <HomeAccounts onNavigate={onNavigate} />}
-          <HomeMachines machines={machines} onNavigate={onNavigate} />
-          {firstRun ? null : <TodayStats onNavigate={onNavigate} />}
+          {firstRun && !waiting ? null : <TodayStats onNavigate={onNavigate} waiting={waiting} />}
         </>
       ) : null}
       <HomeProxy machines={machineFlow} onNavigate={onNavigate} />

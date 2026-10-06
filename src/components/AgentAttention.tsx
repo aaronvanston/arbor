@@ -27,12 +27,12 @@ export function NeedsYouSection({ onNavigate }: { onNavigate?: (view: AppView) =
   if (!board) {
     // Until the board is read: the rows the first screen drew, if it drew any, so the sections under them stay put.
     const shape = launchHomeShape().needsYou;
-    return needsYouLikely(shape, now) ? <NeedsYouFrame onNavigate={onNavigate} summary={<NeedsYouSummarySkeleton />}><NeedsYouSkeleton rows={shape.rows} more={shape.more} /></NeedsYouFrame> : null;
+    return needsYouLikely(shape, now) ? needsYouFrame(t, onNavigate, <NeedsYouSummarySkeleton />, <NeedsYouSkeleton rows={shape.rows} more={shape.more} />) : null;
   }
   if (!rows.length) return null;
   const openSession = onNavigate ? (id: string) => onNavigate(sessionsView({ session: id })) : undefined;
-  return (
-    <NeedsYouFrame onNavigate={onNavigate} summary={`${needsYouSummary(rows, t)} · ${t('home.attention.window')}`}>
+  return needsYouFrame(t, onNavigate, `${needsYouSummary(rows, t)} · ${t('home.attention.window')}`, (
+    <>
       {rows.map((row) => <FleetRow key={row.key} row={row} now={now} place onOpen={openSession} />)}
       {more > 0 ? (
         <SettingsBlock className="py-2 text-xs text-muted-foreground">
@@ -44,13 +44,15 @@ export function NeedsYouSection({ onNavigate }: { onNavigate?: (view: AppView) =
           ) : t(more === 1 ? 'home.attention.more.one' : 'home.attention.more.other', { count: more })}
         </SettingsBlock>
       ) : null}
-    </NeedsYouFrame>
-  );
+    </>
+  ));
 }
 
-/** The section around Needs you's rows, or its skeleton's: the title, its line of counts, and Open board. */
-export function NeedsYouFrame({ onNavigate, summary, children }: { onNavigate?: (view: AppView) => void; summary: ReactNode; children: ReactNode }) {
-  const { t } = useI18n();
+/**
+ * The section around Needs you's rows, or its skeleton's: the title, its line of counts, and Open board. A plain
+ * function rather than a component, so the section doesn't render one more component every time the board moves.
+ */
+function needsYouFrame(t: ReturnType<typeof useI18n>['t'], onNavigate: ((view: AppView) => void) | undefined, summary: ReactNode, children: ReactNode) {
   return (
     <SettingsSection
       title={t('home.attention.title')}

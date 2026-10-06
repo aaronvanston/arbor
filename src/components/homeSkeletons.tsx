@@ -21,12 +21,13 @@ export const MACHINES_GRID_CLASS = 'grid gap-3 overflow-visible rounded-none bor
 export const TODAY_CARD_CLASS = 'border-0 bg-transparent shadow-none dark:bg-transparent [&>*+*]:border-t-0';
 
 /**
- * A bar standing in for a line of text: `bar` px tall, centered in the text's `line` height by its margins, so it
+ * A bar standing in for a line of text: `bar` px tall, centered in the text's line `height` by its margins, so it
  * takes the line's room as one element (the first screen lays out hundreds of these before the window shows).
- * `above` adds space over it, as the text's own top margin would.
+ * `above` adds space over it, as the text's own top margin would. A plain function rather than a component, so each
+ * isn't one more component for React's first frame to render.
  */
-function Line({ line, bar, above = 0, className }: { line: number; bar: number; above?: number; className?: string }) {
-  const margin = (line - bar) / 2;
+function line(height: number, bar: number, className = '', above = 0) {
+  const margin = (height - bar) / 2;
   return <div className={cn('shrink-0 rounded-sm bg-muted-foreground/15', className)} style={{ height: bar, marginTop: margin + above, marginBottom: margin }} />;
 }
 
@@ -38,20 +39,20 @@ export function ProviderSkeleton({ accounts }: { accounts: number }) {
       <div className="flex items-center gap-3">
         <Skeleton className={cn('size-8 shrink-0 rounded-md', BAR)} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <Line line={20} bar={12} className="w-20" />
-          <Line line={16} bar={10} className="w-56 max-w-full" />
+          {line(20, 12, 'w-20')}
+          {line(16, 10, 'w-56 max-w-full')}
         </div>
         <span className="flex h-6 w-24 shrink-0" />
-        <Line line={24} bar={20} className="w-16" />
+        {line(24, 20, 'w-16')}
       </div>
       <ul className="grid grid-cols-[auto_minmax(5rem,1fr)_minmax(4rem,10rem)_2.75rem_minmax(0,12.5rem)] items-center gap-x-3 gap-y-2 ps-11">
         {Array.from({ length: accounts }, (_, index) => (
           <li key={index} className="contents" data-boot-account>
             <Skeleton className={cn('size-5 rounded-md', BAR)} />
-            <Line line={20} bar={12} className="w-28" />
+            {line(20, 12, 'w-28')}
             <Skeleton className={cn('h-1.5 rounded-full', BAR)} />
-            <Line line={16} bar={10} className="ms-auto w-7" />
-            <Line line={16} bar={10} className="ms-auto w-20" />
+            {line(16, 10, 'ms-auto w-7')}
+            {line(16, 10, 'ms-auto w-20')}
           </li>
         ))}
       </ul>
@@ -71,11 +72,11 @@ function NeedsYouRowSkeleton() {
       <div className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2.5 ps-4">
         <Skeleton className={cn('size-8 shrink-0 rounded-md', BAR)} />
         <span className="flex min-w-0 flex-1 flex-col">
-          <Line line={20} bar={12} className="w-48 max-w-full" />
+          {line(20, 12, 'w-48 max-w-full')}
           {/* The meta line holds a small machine pill, a little taller than its text. */}
-          <Line line={18} bar={10} above={2} className="w-64 max-w-full" />
+          {line(18, 10, 'w-64 max-w-full', 2)}
         </span>
-        <Line line={20} bar={12} className="w-20" />
+        {line(20, 12, 'w-20')}
       </div>
       <span className="size-7 shrink-0" />
     </div>
@@ -87,7 +88,7 @@ export function NeedsYouSkeleton({ rows, more }: { rows: number; more: boolean }
   return (
     <>
       {Array.from({ length: rows }, (_, index) => <NeedsYouRowSkeleton key={index} />)}
-      {more ? <div className="flex flex-col px-4 py-2" data-slot="settings-block" data-boot-attention-more><Line line={16} bar={10} className="w-28" /></div> : null}
+      {more ? <div className="flex flex-col px-4 py-2" data-slot="settings-block" data-boot-attention-more>{line(16, 10, 'w-28')}</div> : null}
     </>
   );
 }
@@ -101,23 +102,23 @@ export function MachineSkeleton() {
     <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 bg-card p-4 shadow-xs/5" data-boot-machine>
       <span className="flex min-w-0 items-start gap-3">
         <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <Line line={20} bar={20} className="w-24 rounded-md" />
-          <Line line={16} bar={10} className="w-32" />
+          {line(20, 20, 'w-24 rounded-md')}
+          {line(16, 10, 'w-32')}
         </span>
-        <Line line={16} bar={10} className="w-14" />
+        {line(16, 10, 'w-14')}
       </span>
       <span className="grid grid-cols-2 gap-3 border-t border-border/50 pt-3">
         {[0, 1].map((column) => (
           <span key={column} className="flex min-w-0 flex-col">
-            <Line line={16} bar={10} className="w-10" />
-            <Line line={20} bar={12} className="w-16" />
+            {line(16, 10, 'w-10')}
+            {line(20, 12, 'w-16')}
             <span className="block h-4" />
           </span>
         ))}
       </span>
       <span className="flex min-w-0 flex-col gap-0.5 border-t border-border/50 pt-3">
-        <Line line={16} bar={10} className="w-40 max-w-full" />
-        <Line line={16} bar={10} className="w-28" />
+        {line(16, 10, 'w-40 max-w-full')}
+        {line(16, 10, 'w-28')}
       </span>
     </div>
   );
@@ -133,9 +134,9 @@ export function TodaySkeleton() {
     <StatsGrid columns={4}>
       {Array.from({ length: 4 }, (_, index) => (
         <div key={index} className="flex min-w-0 flex-col px-4 py-4" aria-hidden="true">
-          <Line line={16} bar={10} className="w-16" />
-          <Line line={28} bar={20} above={4} className="w-20" />
-          <Line line={16} bar={10} above={4} className="w-28" />
+          {line(16, 10, 'w-16')}
+          {line(28, 20, 'w-20', 4)}
+          {line(16, 10, 'w-28', 4)}
         </div>
       ))}
     </StatsGrid>
@@ -148,8 +149,8 @@ export function ProxySkeleton() {
     <span className="flex min-w-0 items-center gap-3">
       <Skeleton className={cn('size-8 shrink-0 rounded-lg', BAR)} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <Line line={20} bar={12} className="w-24" />
-        <Line line={16} bar={10} className="w-32" />
+        {line(20, 12, 'w-24')}
+        {line(16, 10, 'w-32')}
       </span>
     </span>
   );
@@ -161,8 +162,8 @@ export function ProxySkeleton() {
         <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2 dark:bg-input/20">
           <Skeleton className={cn('size-8 shrink-0 rounded-lg', BAR)} />
           <span className="flex min-w-0 flex-1 flex-col">
-            <Line line={20} bar={12} className="w-20" />
-            <Line line={16} bar={10} className="w-28" />
+            {line(20, 12, 'w-20')}
+            {line(16, 10, 'w-28')}
           </span>
         </div>
         <span className="size-4" />
@@ -171,7 +172,7 @@ export function ProxySkeleton() {
       <SettingsBlock className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
         {[0, 1].map((field) => (
           <span key={field} className="flex items-center gap-2">
-            <Line line={28} bar={10} className="w-10" />
+            {line(28, 10, 'w-10')}
             <Skeleton className={cn('h-7 w-44 rounded-md', BAR)} />
           </span>
         ))}
