@@ -3,6 +3,7 @@ import { machinesView } from '../navigation';
 import { invokeCommand } from '../native/commands';
 import type { HealthStatus, TrayAction, TrayDot, TrayRow, TraySection } from '../native/types';
 import { pushToTray } from './bootMode';
+import { isWindowHidden } from './hiddenPace';
 import { goToView } from './viewHistory';
 
 /** A line across the tray menu or one of its sub-menus. */
@@ -18,8 +19,19 @@ export const HEALTH_DOT: Record<HealthStatus, TrayDot> = {
   unconfigured: 'gray',
 };
 
+const lastRows = new Map<TraySection, string>();
+
 /** Puts a section's rows in the tray menu, which leaves it alone when they haven't changed. */
 export function publishTrayRows(section: TraySection, rows: TrayRow[]) {
+  const hidden = isWindowHidden();
+  // Reset countdown text ticks every minute while the tray is closed. Keep the useful limit values and status
+  // stable until the window is shown again, when the limits monitor refreshes the menu with the current countdown.
+  const signatureRows = hidden && section === 'limits'
+    ? rows.map((row) => ({ ...row, text: row.text.replace(/resets in [^·]+/g, 'resets in') }))
+    : rows;
+  const signature = JSON.stringify(signatureRows);
+  if (lastRows.get(section) === signature) return;
+  lastRows.set(section, signature);
   pushToTray(`rows:${section}`, rows.length === 0, () => {
     invokeCommand('set_tray_rows', { section, rows }).catch((error) => console.warn(`Failed to update the tray ${section}`, error));
   });

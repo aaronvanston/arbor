@@ -2127,7 +2127,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "add_automations_key" => done(Box::pin(crate::usage::machine_health::automations::commands::add_automations_key(app.clone())).await),
         "set_automation_proxy_address" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_proxy_address(app.clone(), arg(&args, "address")?)).await) }.await,
         "get_fleet_sources" => done(Box::pin(crate::usage::fleet::get_fleet_sources(app.state(), app.state())).await),
-        "get_fleet_tray_counts" => done(Box::pin(crate::usage::fleet::get_fleet_tray_counts(app.state())).await),
+        "get_fleet_tray_counts" => done(Box::pin(crate::usage::fleet::get_fleet_tray_counts(app.clone(), app.state())).await),
         "get_antiburn" => done(Box::pin(crate::usage::antiburn::get_antiburn(app.state())).await),
         "open_antiburn" => done(Box::pin(crate::usage::antiburn::open_antiburn(app.clone())).await),
         "set_agent_reporter" => async { done(Box::pin(crate::usage::machine_health::attention::set_agent_reporter(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "enabled")?, arg(&args, "plan")?)).await) }.await,

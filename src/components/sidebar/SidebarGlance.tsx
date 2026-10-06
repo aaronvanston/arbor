@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, type ReactNode } from 'react';
+import { memo, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Activity, Bot, Cpu, HardDrive, MemoryStick, MessageSquareMore, Unplug } from '../ui/icons';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/utils';
@@ -10,6 +10,7 @@ import { unreachableReason } from '../../services/machineAlerts';
 import { machinePlace } from '../../services/machineIdentity';
 import { AGENT_KINDS, formatLatency, readingTone } from '../../services/machineHealth';
 import { identityColorCss } from '../../services/identityColors';
+import { isWindowHidden } from '../../services/hiddenPace';
 import { useMachineName } from '../../services/machineNames';
 import { useStableValue } from '../../services/stableValue';
 import { MachinePickItems, ProviderPickItems, useGlanceMachineNames, useGlanceProviders } from '../GlancePicks';
@@ -80,7 +81,10 @@ export function SidebarMachines({ onOpen }: { onOpen: (machine: string) => void 
   const picks = useGlancePicks();
   // Each chip gets only what it shows, kept the same object while that doesn't change, so a sampling round's new
   // readings re-render no chip whose score, state or agents stayed put. Its card reads the readings while it's open.
-  const chips = useStableValue((machines ? glanceMachines(machines, picks) : []).map((item) => chipFacts(item, t)));
+  const currentChips = useStableValue((machines ? glanceMachines(machines, picks) : []).map((item) => chipFacts(item, t)));
+  const heldRef = useRef(currentChips);
+  if (!isWindowHidden()) heldRef.current = currentChips;
+  const chips = isWindowHidden() ? heldRef.current : currentChips;
   if (!chips.length) return null;
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-1" data-slot="sidebar-machines">

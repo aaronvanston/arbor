@@ -1407,7 +1407,10 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     const lastCollectedAt = usageStorage.recordCount ? iso(-5_000) : null;
     return { state: coreStatus.ready ? 'collecting' : 'waiting-core', message: coreStatus.ready ? 'Collecting from 127.0.0.1:8317' : 'Waiting for the core to start', lastCollectedAt, totalRecords: usageStorage.recordCount };
   },
-  get_usage_overview: (args) => usageOverviewFor(timelineBetween(args.query.start, args.query.end)),
+  get_usage_overview: (args) => {
+    const overview = usageOverviewFor(timelineBetween(args.query.start, args.query.end));
+    return args.query.include_analysis ? { ...overview, analysis: usageAnalysis } : overview;
+  },
   get_usage_analysis: () => usageAnalysis,
   get_usage_sessions: ({ query }) => {
     const sortKey = ({ cost: 'estimatedCost', tokens: 'totalTokens', requests: 'requests' } as const satisfies Record<string, SessionSort>)[query.sort ?? ''] ?? 'lastActiveAtMs';

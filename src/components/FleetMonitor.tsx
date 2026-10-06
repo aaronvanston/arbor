@@ -7,6 +7,7 @@ import { isWindowHidden, pacedInterval, throttleWaitMs } from '../services/hidde
 import { reportWorkingSessions } from '../services/pools';
 import { getFleetTrayCounts, setT3ThreadsEnabled, setT3ThreadTitles, setTrayWaiting, T3_THREADS_UPDATED_EVENT } from '../services/fleetSources';
 import { runHarnessesOff, setRunHarnessesOff } from '../services/runs';
+import { bootedInBackground } from '../services/bootMode';
 
 /** New events from a machine's reporter, and new requests, which can end a wait or start work. */
 const SOURCE_EVENTS = [T3_THREADS_UPDATED_EVENT, 'agent-attention-updated', 'usage-records-updated'];
@@ -24,6 +25,16 @@ export function FleetMonitor() {
   const { fleetT3Threads, fleetT3Titles, runsToOrca } = useAppPreferences();
   const { board } = useFleetBoard();
   const checkRef = useRef<() => void>(() => undefined);
+  const needsInitialFleetReadRef = useRef(bootedInBackground());
+  const trayWaitingRef = useRef<number | null>(null);
+  const updateTrayWaiting = (waiting: number) => {
+    if (waiting === trayWaitingRef.current) return Promise.resolve();
+    trayWaitingRef.current = waiting;
+    return setTrayWaiting(waiting).catch((error) => {
+      trayWaitingRef.current = null;
+      console.warn('Failed to show the sessions waiting on you on the tray icon', error);
+    });
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -48,9 +59,14 @@ export function FleetMonitor() {
       lastCheckMs = Date.now();
       try {
         if (document.hidden) {
-          const { waiting } = await getFleetTrayCounts();
-          await setTrayWaiting(waiting);
+          if (needsInitialFleetReadRef.current) {
+            needsInitialFleetReadRef.current = false;
+            await loadFleetSources();
+          } else {
+            await getFleetTrayCounts();
+          }
         } else {
+          needsInitialFleetReadRef.current = false;
           await loadFleetSources();
         }
       } finally {
@@ -119,14 +135,8 @@ export function FleetMonitor() {
 
   // Snoozing, seeing a row and time passing change the count as much as a new read does.
   const waiting = board ? waitingCount(board) : null;
-  const sentRef = useRef<number | null>(null);
   useEffect(() => {
-    if (waiting === null || waiting === sentRef.current) return;
-    sentRef.current = waiting;
-    setTrayWaiting(waiting).catch((error) => {
-      sentRef.current = null;
-      console.warn('Failed to show the sessions waiting on you on the tray icon', error);
-    });
+    if (!isWindowHidden() && waiting !== null) void updateTrayWaiting(waiting);
   }, [waiting]);
 
   // Pools count a machine's agents as its sessions working now, so they read the same as the sidebar and Home; the

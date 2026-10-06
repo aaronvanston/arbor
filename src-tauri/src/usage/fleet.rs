@@ -77,17 +77,20 @@ pub(crate) async fn get_fleet_sources(
 /// T3 threads. The full fleet source remains for the visible board.
 #[tauri::command]
 pub(crate) async fn get_fleet_tray_counts(
+    app: tauri::AppHandle,
     state: tauri::State<'_, MachineHealthState>,
 ) -> Result<FleetTrayCounts, String> {
     let now_ms = Local::now().timestamp_millis();
     let t3 = t3_threads::waiting_ids(&state, now_ms);
     let pending = attention::pending_waits(&state);
-    run_usage_task(move || {
+    let counts = run_usage_task(move || {
         let mut waiting = t3;
         waiting.extend(attention::pending_waiting_ids(&open_usage_database()?, pending, now_ms)?);
         Ok(FleetTrayCounts { waiting: waiting.len().min(u32::MAX as usize) as u32 })
     })
-    .await
+    .await?;
+    crate::tray::set_tray_waiting(app, counts.waiting).await?;
+    Ok(counts)
 }
 
 /// A thread's latest request: when it was made, and whether it failed without being canceled.

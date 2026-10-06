@@ -292,7 +292,6 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   const [sessionsByMachine, setSessionsByMachine] = useState<MachineSessions[] | null>(null);
   // The time range `overview` was loaded for; rolling ranges move on every refresh.
   const [overviewRange, setOverviewRange] = useState<Pick<UsageQuery, 'start' | 'end'>>({});
-  const [analysis, setAnalysis] = useState<UsageAnalysis>(emptyAnalysis);
   const [optionsAnalysis, setOptionsAnalysis] = useState<UsageAnalysis>(emptyAnalysis);
   // The names in the filter menus, kept between quiet refreshes of the same range. A new model or key still turns up
   // within a minute, and a range that takes seconds to read isn't read a second time on every refresh.
@@ -455,7 +454,6 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           setOverview(nextOverview);
           setOverviewRange(timeQuery);
           setSessionsByMachine(nextSessionsByMachine);
-          if (nextOverview.analysis) setAnalysis(nextOverview.analysis);
         } else if (activeTab === 'sessions') {
           const [nextOptions, nextSessions] = await Promise.all([
             optionsRequest,
@@ -1041,7 +1039,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         {hasCurrentSnapshot && activeTab === 'overview' && overview && variant === 'usage' ? (
           <>
             <OverviewView overview={overview} range={overviewRange} />
-            <BreakdownSection analysis={analysis} overview={overview} />
+            <BreakdownSection analysis={overview.analysis ?? emptyAnalysis} overview={overview} />
           </>
         ) : null}
         {activeTab === 'digest' && variant === 'usage' ? <UsageDigestView refreshKey={digestRefresh} machine={machine} onOpenSession={openSession} /> : null}
