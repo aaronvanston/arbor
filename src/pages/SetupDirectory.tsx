@@ -29,6 +29,8 @@ const STANDING: Record<NonNullable<DirectoryEntry['standing']>, MessageKey> = {
 };
 
 const sourceKey = (source: Pick<DirectorySource, 'source' | 'agent'>) => `${source.agent}:${source.source.toLowerCase()}`;
+/** How many of a marketplace's plugins show before Show all; the official ones offer hundreds. */
+const FIRST = 24;
 
 /**
  * Sync › Library › Directory: what each marketplace offers, read from its GitHub repository, beside what the Library
@@ -47,6 +49,7 @@ export function SetupDirectory({ machines, onOpenItem }: {
   const [reads, setReads] = useState<Record<string, Read>>({});
   const [adding, setAdding] = useState<string | null>(null);
   const [problems, setProblems] = useState<Record<string, string>>({});
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
 
   const sources = useMemo(() => directorySources(extensionsView(machines), library.repo, typed), [machines, library.repo, typed]);
   const wanted = sources.map(sourceKey).join('\n');
@@ -142,17 +145,19 @@ export function SetupDirectory({ machines, onOpenItem }: {
         const state = reads[sourceKey(source)] ?? { state: 'loading' as const };
         const entries = state.state === 'ready' ? directoryEntries(state.catalog, source.agent, rows, query) : [];
         if (query.trim() && state.state === 'ready' && !entries.length) return null;
+        const all = opened.has(sourceKey(source)) || query.trim() !== '';
+        const shown = all ? entries : entries.slice(0, FIRST);
         return (
           <SettingsSection
             key={sourceKey(source)}
             title={(
               <span className="flex items-center gap-2">
                 <ProviderMark provider={source.agent} className="size-3.5" />
-                {state.state === 'ready' ? state.catalog.name : source.source}
+                {state.state === 'ready' ? state.catalog.displayName ?? state.catalog.name : source.source}
                 {source.suggested ? <Badge variant="info" size="sm">{t('directory.suggested')}</Badge> : null}
               </span>
             )}
-            summary={<span className="font-mono">{source.source}</span>}
+            summary={<span className="font-mono">{source.source}{state.state === 'ready' ? ` · ${t(entries.length === 1 ? 'directory.count.one' : 'directory.count.other', { count: entries.length })}` : ''}</span>}
             headerAction={(
               <Button variant="ghost-muted" size="icon-xs" disabled={state.state === 'loading'} onClick={() => read(source, true)} aria-label={t('directory.readAgain', { source: source.source })} title={t('directory.readAgain', { source: source.source })}>
                 {state.state === 'loading' ? <Spinner className="size-3.5" /> : <RefreshCw />}
@@ -167,21 +172,29 @@ export function SetupDirectory({ machines, onOpenItem }: {
               <TableEmpty>{t('directory.empty')}</TableEmpty>
             ) : (
               <ul className="grid grid-cols-1 divide-y divide-border/50 lg:grid-cols-2 lg:divide-y-0">
-                {entries.map((entry) => (
+                {shown.map((entry) => (
                   <li key={entry.id} className="flex flex-col gap-1 px-4 py-3" data-directory-plugin={entry.id}>
                     <div className="flex items-center gap-3">
                       <LibraryMark name={entry.name} />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
-                          <span className="truncate">{entry.name}</span>
+                          <span className="truncate">{entry.displayName ?? entry.name}</span>
                           {entry.category ? <span className="shrink-0 text-xs font-normal text-muted-foreground">{entry.category}</span> : null}
+                          {entry.signsIn ? <Badge variant="muted" size="sm" title={t('directory.signsIn.title')}>{t('directory.signsIn')}</Badge> : null}
                         </span>
                         {entry.description ? <span className="line-clamp-2 text-xs text-muted-foreground">{entry.description}</span> : null}
                       </span>
                       {adding === entry.id ? <Spinner className="size-4" /> : entry.row && entry.standing && entry.standing !== 'unlisted' && entry.standing !== 'removed' ? (
                         <Button variant="ghost-muted" size="xs" onClick={() => entry.row && onOpenItem('plugins', entry.row.key)}>{t(STANDING[entry.standing])}</Button>
                       ) : (
-                        <Button variant="outline" size="xs" disabled={adding !== null || !repoPath} onClick={() => void add(entry, source)} aria-label={t('directory.addAria', { name: entry.name })}>
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          disabled={adding !== null || !repoPath || !entry.installable}
+                          disabledReason={!entry.installable ? t('directory.notInstallable') : undefined}
+                          onClick={() => void add(entry, source)}
+                          aria-label={t('directory.addAria', { name: entry.name })}
+                        >
                           <Plus />
                           {t(entry.standing ? STANDING[entry.standing] : 'directory.add')}
                         </Button>
@@ -192,11 +205,17 @@ export function SetupDirectory({ machines, onOpenItem }: {
                 ))}
               </ul>
             )}
+            {state.state === 'ready' && shown.length < entries.length ? (
+              <div className="border-t border-border/50 px-4 py-2">
+                <Button variant="ghost" size="sm" onClick={() => setOpened((current) => new Set([...current, sourceKey(source)]))}>
+                  {t('directory.showAll', { count: entries.length })}
+                </Button>
+              </div>
+            ) : null}
           </SettingsSection>
         );
       }) : null}
 
-      <p className="max-w-2xl text-xs leading-[1.5] text-muted-foreground">{t('directory.openaiNote')}</p>
     </div>
   );
 }

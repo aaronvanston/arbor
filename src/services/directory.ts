@@ -14,12 +14,10 @@ export const getMarketplaceCatalog = (source: string, force = false) => invokeCo
 
 export type DirectoryAgent = 'claude' | 'codex';
 
-/**
- * Official marketplaces, suggested until one is added. OpenAI's curated Codex plugins come with a ChatGPT account and
- * are turned on in the Codex app, so there's no repository to list for them.
- */
+/** The agents' official marketplaces, suggested until one is added: Anthropic's for Claude Code, OpenAI's for Codex. */
 export const OFFICIAL_MARKETPLACES: readonly { source: string; agent: DirectoryAgent }[] = [
   { source: 'anthropics/claude-plugins-official', agent: 'claude' },
+  { source: 'openai/plugins', agent: 'codex' },
 ];
 
 /**
@@ -54,7 +52,7 @@ export type DirectoryEntry = CatalogPlugin & { id: string; standing: DirectorySt
 export function directoryEntries(catalog: MarketplaceCatalog, agent: DirectoryAgent, rows: readonly LibraryRow[], query = ''): DirectoryEntry[] {
   const text = query.trim().toLowerCase();
   return catalog.plugins
-    .filter((plugin) => !text || [plugin.name, plugin.description, plugin.category].some((field) => field?.toLowerCase().includes(text)))
+    .filter((plugin) => !text || [plugin.name, plugin.displayName, plugin.description, plugin.category].some((field) => field?.toLowerCase().includes(text)))
     .map((plugin) => {
       const id = `${plugin.name}@${catalog.name}`;
       const row = rows.find((entry) => entry.toggle?.kind === 'plugin' && entry.toggle.codex === (agent === 'codex') && entry.toggle.row.id === id) ?? null;

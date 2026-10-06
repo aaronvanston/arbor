@@ -356,9 +356,11 @@ describe('bringing a machine in line', () => {
 });
 
 describe('the directory', () => {
-  const catalog = { source: 'acme/agent-tools', name: 'acme-tools', readAtMs: 0, plugins: [
-    { name: 'oncall', description: 'Page summaries', version: null, category: 'operations' },
-    { name: 'review', description: 'Review a diff', version: '1.0.0', category: 'development' },
+  const entry = (name: string, description: string, category: string, version: string | null = null) =>
+    ({ name, displayName: null, description, version, category, signsIn: false, installable: true });
+  const catalog = { source: 'acme/agent-tools', name: 'acme-tools', displayName: null, readAtMs: 0, plugins: [
+    entry('oncall', 'Page summaries', 'operations'),
+    entry('review', 'Review a diff', 'development', '1.0.0'),
   ] };
 
   it('lists the marketplaces in use, then the official ones not in use, then the ones typed in, once each', () => {
@@ -367,6 +369,7 @@ describe('the directory', () => {
     expect(sources).toEqual([
       { source: 'acme/agent-tools', agent: 'claude', added: true, suggested: false },
       { source: 'anthropics/claude-plugins-official', agent: 'claude', added: false, suggested: true },
+      { source: 'openai/plugins', agent: 'codex', added: false, suggested: true },
       { source: 'other/tools', agent: 'codex', added: false, suggested: false },
     ]);
   });

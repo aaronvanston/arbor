@@ -1288,9 +1288,19 @@ type MockRegistryServer = {
 const mockDefinition = (transport: string, place: string | null, variables: string[], sum: string): MockDefinition => ({ transport, place, variables, sum });
 
 /** What each marketplace the mock knows offers, by its GitHub repository, as the directory reads it. */
-const catalogPlugin = (name: string, description: string, category: string | null = null, version: string | null = null): CatalogPlugin =>
-  ({ name, description, category, version });
-const MOCK_CATALOGS: Record<string, { name: string; plugins: CatalogPlugin[] }> = {
+const catalogPlugin = (name: string, description: string, category: string | null = null, version: string | null = null, fields: Partial<CatalogPlugin> = {}): CatalogPlugin =>
+  ({ name, displayName: null, description, category, version, signsIn: false, installable: true, ...fields });
+const MOCK_CATALOGS: Record<string, { name: string; displayName?: string; plugins: CatalogPlugin[] }> = {
+  'openai/plugins': {
+    name: 'openai-curated',
+    displayName: 'Codex official',
+    plugins: [
+      catalogPlugin('github', 'Triage pull requests and issues, debug CI and publish changes', 'Coding', '0.1.12', { displayName: 'GitHub', signsIn: true }),
+      catalogPlugin('linear', 'Plan and track work', 'Productivity', null, { displayName: 'Linear', signsIn: true }),
+      catalogPlugin('build-web-apps', 'Build frontend web apps with browser testing', 'Coding', null, { displayName: 'Build Web Apps' }),
+      catalogPlugin('internal-preview', 'Not offered for install yet', 'Coding', null, { installable: false }),
+    ],
+  },
   'anthropics/claude-plugins-official': {
     name: 'claude-plugins-official',
     plugins: [
@@ -2883,7 +2893,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     const catalog = MOCK_CATALOGS[args.source.toLowerCase()];
     return later(500, () => {
       if (!catalog) throw `${args.source} has no plugin list Arbor knows, or GitHub can't show it without an account`;
-      return { source: args.source, name: catalog.name, plugins: catalog.plugins, readAtMs: Date.now() };
+      return { source: args.source, name: catalog.name, displayName: catalog.displayName ?? null, plugins: catalog.plugins, readAtMs: Date.now() };
     });
   },
   check_setup_skill_sources: (args) => {

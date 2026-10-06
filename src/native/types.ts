@@ -758,9 +758,21 @@ export type CapacityReport = {
  */
 export type CatalogPlugin = {
   name: string,
+  /**
+   * How the marketplace shows its name, when that isn't the name.
+   */
+  displayName: string | null,
   description: string | null,
   version: string | null,
   category: string | null,
+  /**
+   * Installing it asks its user to sign in to something on that machine (Codex's `authentication: ON_INSTALL`).
+   */
+  signsIn: boolean,
+  /**
+   * The marketplace lets it be installed (Codex's `installation: AVAILABLE`, or no policy at all).
+   */
+  installable: boolean,
 };
 
 /**
@@ -2524,6 +2536,10 @@ export type MarketplaceCatalog = {
    */
   source: string,
   name: string,
+  /**
+   * How the marketplace shows its name ("Codex official"), when it gives one.
+   */
+  displayName: string | null,
   plugins: Array<CatalogPlugin>,
   /**
    * When GitHub was asked, in ms.
