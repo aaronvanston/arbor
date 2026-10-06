@@ -1660,6 +1660,7 @@ fn main() {
                 usage::start_usage_collector(usage_app.clone());
                 let telemetry_app = usage_app.clone();
                 tauri::async_runtime::spawn(async move { usage::machine_health::telemetry::restart(&telemetry_app).await });
+                usage::machine_health::project_places::start_place_fetcher(usage_app.clone());
                 usage::machine_health::start_machine_health_sampler(usage_app);
             });
 
@@ -1923,6 +1924,7 @@ fn main() {
             usage::machine_health::setup::read_setup_skill,
             usage::machine_health::setup_sync::get_setup_repo,
             usage::machine_health::project_places::get_project_drift,
+            usage::machine_health::project_fixes::apply_project_fixes,
             usage::machine_health::setup_layers::add_setup_schemas,
             usage::machine_health::setup_sync::read_setup_repo_file,
             usage::machine_health::setup_repo_browse::list_setup_repo_tree,

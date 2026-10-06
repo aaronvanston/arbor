@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { CheckoutStatus, ProjectCell, ProjectDrift, ProjectsDrift } from '../src/native/types';
-import { behindByMachine, behindOnDefault, cellNeeds, dirtyCount, isStale, matchesQuery, PLACE_STALE_MS, projectInStep, projectName, splitProjects } from '../src/services/projectPlaces';
+import { behindByMachine, behindOnDefault, canMove, cellFixes, cellNeeds, dirtyCount, isStale, machineFixes, matchesQuery, PLACE_STALE_MS, projectInStep, projectName, splitProjects } from '../src/services/projectPlaces';
 
 const status = (extra: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
   branch: 'main', changed: 0, untracked: 0, upstream: 'origin/main', ahead: 0, behind: 0, defaultBranch: 'origin/main',
@@ -74,5 +74,36 @@ describe('projects across the machines', () => {
     expect(arbor && matchesQuery(arbor, 'ARBOR')).toBe(true);
     expect(arbor && matchesQuery(arbor, 'github.com:cam')).toBe(true);
     expect(arbor && matchesQuery(arbor, 'proxy')).toBe(false);
+  });
+});
+
+describe('fixes', () => {
+  it('offers the fix for each need, and never links or clones a local project', () => {
+    expect(cellFixes(cell('ci-01', 'elsewhere', { status: status({ behind: 2 }) }), false)).toEqual(['link', 'fastForward']);
+    expect(cellFixes(cell('ci-01', 'missing'), false)).toEqual(['clone']);
+    expect(cellFixes(cell('ci-01', 'missing'), true)).toEqual([]);
+    expect(cellFixes(cell('ci-01', 'blocked'), false)).toEqual([]);
+    expect(cellFixes(cell('ci-01', 'notScanned'), false)).toEqual([]);
+  });
+
+  it('moves only a clean checkout with no linked worktrees that isn’t at its place', () => {
+    expect(canMove(cell('ci-01', 'elsewhere', { status: status() }))).toBe(true);
+    expect(canMove(cell('ci-01', 'linked', { status: status() }))).toBe(true);
+    expect(canMove(cell('ci-01', 'inPlace', { status: status() }))).toBe(false);
+    expect(canMove(cell('ci-01', 'elsewhere', { status: status({ untracked: 1 }) }))).toBe(false);
+    expect(canMove(cell('ci-01', 'linked', { status: status({ worktrees: 3 }) }))).toBe(false);
+  });
+
+  it('gathers what one machine needs, archived projects left out', () => {
+    const drift: ProjectsDrift = {
+      projects: [
+        project('cam/arbor', [cell('ci-01', 'elsewhere', { status: status() }), cell('cam-mbp', 'missing')]),
+        project('acme/proxy', [cell('ci-01', 'inPlace', { status: status({ behind: 1 }) })]),
+        project('cam/old', [cell('ci-01', 'missing')], { archived: true }),
+      ],
+      unlisted: [],
+      machines: [],
+    };
+    expect(machineFixes(drift, 'ci-01')).toEqual([{ project: 'cam/arbor', fix: 'link' }, { project: 'acme/proxy', fix: 'fastForward' }]);
   });
 });

@@ -49,6 +49,7 @@ pub(crate) mod pools;
 pub(crate) mod runs;
 pub(crate) mod plugin_catalog;
 pub(crate) mod project_instructions;
+pub(crate) mod project_fixes;
 pub(crate) mod project_places;
 pub(crate) mod setup;
 pub(crate) mod setup_hooks;

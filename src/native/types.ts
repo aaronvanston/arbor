@@ -783,7 +783,7 @@ export type CatalogPlugin = {
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.
@@ -1569,6 +1569,8 @@ export type Feature = "account-signed-in" | "machines-saved" | "sync-applied" | 
  * What a change does, or did, to a settings file.
  */
 export type FileChange = "create" | "edit" | "none";
+
+export type FixOutcome = "done" | "skipped" | "failed";
 
 /**
  * A proxy session, over its requests in the window.
@@ -2964,6 +2966,11 @@ export type PhoneAlertSecretStatus = {
 };
 
 /**
+ * A way to bring a project in line on a machine.
+ */
+export type PlaceFix = "link" | "clone" | "move" | "fastForward" | "fetch";
+
+/**
  * What's at a place the setup repo wants a project.
  */
 export type PlaceKind = "missing" | "broken" | "file" | "empty" | "other" | "checkout";
@@ -3302,6 +3309,29 @@ export type ProjectFile = {
   name: string,
   sum: string,
   size: number,
+};
+
+export type ProjectFixRequest = {
+  project: string,
+  fix: PlaceFix,
+};
+
+export type ProjectFixResult = {
+  project: string,
+  fix: PlaceFix,
+  outcome: FixOutcome,
+  /**
+   * Why, for one skipped or failed.
+   */
+  detail: string | null,
+};
+
+export type ProjectFixes = {
+  /**
+   * The backup the changes went into, which Repo › History undoes.
+   */
+  backup: string | null,
+  results: Array<ProjectFixResult>,
 };
 
 /**

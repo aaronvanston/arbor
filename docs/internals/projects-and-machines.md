@@ -116,7 +116,7 @@ where it leads, and which repo it is.
 
   The others are listed as other checkouts. They're never moved, removed or counted as drift, but project skills and
   instructions still go to them, so an agent behaves the same in any copy.
-- **Fresh without risk.** Arbor fetches assigned checkouts in the background (only `refs/remotes` change). Fast-forward
+- **Fresh without risk.** Arbor fetches the checkouts at the places every hour while it's open, reading the setup repo from the window's saved setting after a restart (only `refs/remotes` change). Fast-forward
   is a plan step:
   - only for the main checkout;
   - only on the default branch;

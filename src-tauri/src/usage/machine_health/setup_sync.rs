@@ -32,6 +32,7 @@ use super::setup::{covered_machine, is_script_name, looks_secret, read_text, res
 use super::setup_mcp::{holds_secret, MCP_FILE};
 use super::setup_hooks::HOOKS_FILE;
 use super::project_instructions as instructions;
+use super::project_fixes::{undo_place_actions, undo_place_checks, BackupPlace};
 use super::setup_layers::{self as layers, LayerPath, SetupLayers};
 use super::setup_wanted::{self as wanted, RepoPlugin, SkillMachines, SkillProjects, MACHINES_FILE, PLUGINS_FILE};
 use super::setup_repo_skills::{self as repo_skills, RepoSkill, SkillEntry, SkillFiles, SKILLS_DIR, SOURCES_FILE};
@@ -860,6 +861,9 @@ pub(crate) struct SetupBackup {
     pub(super) skills: Vec<BackupSkill>,
     #[serde(skip)]
     edits: Vec<BackupEdit>,
+    /// Projects put in their places (project_fixes).
+    #[serde(skip)]
+    pub(super) places: Vec<BackupPlace>,
 }
 
 /// The backups a machine has, newest first. Files a list names that Arbor wouldn't sync are left out.
@@ -885,6 +889,7 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                         files: Vec::new(),
                         skills: Vec::new(),
                         edits: Vec::new(),
+                        places: Vec::new(),
                     });
                     made_by.push(None);
                     backups.len() - 1
@@ -898,6 +903,11 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
             ["E", ..] => {
                 if let (Some(backup), Some(edit)) = (current.and_then(|index| backups.get_mut(index)), BackupEdit::parse(&fields)) {
                     backup.edits.push(edit);
+                }
+            }
+            ["G", ..] => {
+                if let (Some(backup), Some(place)) = (current.and_then(|index| backups.get_mut(index)), BackupPlace::parse(&fields)) {
+                    backup.places.push(place);
                 }
             }
             ["commit", sha] => {
@@ -967,6 +977,16 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
         });
         let edited: Vec<BackupFile> = edited.collect();
         backup.files.extend(edited);
+        // A project's place is listed like an edit: undone by project_fixes, not as a synced file.
+        let placed: Vec<BackupFile> = backup
+            .places
+            .iter()
+            .map(|place| {
+                let (path, change) = place.shown();
+                BackupFile { path: agent_homes::tilde(path, home), change, skill: false, edit: true, rel: String::new(), before: String::new(), after_sum: String::new(), after_ck: String::new() }
+            })
+            .collect();
+        backup.files.extend(placed);
     }
     backups.sort_by(|a, b| b.id.cmp(&a.id));
     backups
@@ -1000,6 +1020,7 @@ pub(super) fn undo_script(backup: &SetupBackup) -> String {
     }
     script.push_str(&setup_skills::undo_checks(&backup.skills));
     script.push_str(&undo_edit_checks(&backup.edits));
+    script.push_str(&undo_place_checks(&backup.places));
     script.push_str(
         "[ \"$changed\" = 0 ] || exit 0\n\
          back() {\n\
@@ -1019,6 +1040,7 @@ pub(super) fn undo_script(backup: &SetupBackup) -> String {
     }
     script.push_str(&setup_skills::undo_actions(&backup.skills));
     script.push_str(&undo_edit_actions(&backup.edits));
+    script.push_str(&undo_place_actions(&backup.places));
     script.push_str("[ \"$failed\" = 0 ] && date +%s > \"$dir/undone\"\nexit 0\n");
     script
 }

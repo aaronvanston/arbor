@@ -142,6 +142,7 @@ pub(crate) enum MachineOp {
     PluginCost,
     ProjectsScan,
     ProjectsMeasure,
+    ProjectFixes,
     WorktreeRemoval,
     ToolchainScan,
     PackageScan,
@@ -192,6 +193,7 @@ impl MachineOp {
             Self::PluginCost => "plugin cost",
             Self::ProjectsScan => "projects scan",
             Self::ProjectsMeasure => "projects measure",
+            Self::ProjectFixes => "project fixes",
             Self::WorktreeRemoval => "worktree removal",
             Self::ToolchainScan => "toolchain scan",
             Self::PackageScan => "package scan",
@@ -228,6 +230,7 @@ impl MachineOp {
             | Self::PluginCost
             | Self::ProjectsScan
             | Self::ProjectsMeasure
+            | Self::ProjectFixes
             | Self::WorktreeRemoval
             | Self::ToolchainScan
             | Self::PackageScan

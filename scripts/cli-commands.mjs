@@ -82,6 +82,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'set_machine_telemetry',
   'keep_claude_sessions',
   'apply_setup_sync',
+  'apply_project_fixes',
   'undo_setup_sync',
   'delete_setup_repo_path',
   'discard_setup_repo_changes',

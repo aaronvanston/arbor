@@ -20,23 +20,25 @@ import type { MessageKey } from '../i18n/resources';
 import { formatAgo } from '../lib/format';
 import { cn } from '../lib/utils';
 import { useNow } from '../hooks/useNow';
-import type { LayerProblem, PlaceKind, PlaceState, ProjectCell, ProjectDrift, ProjectsDrift, SetupMachine } from '../native/types';
+import type { LayerProblem, PlaceFix, PlaceKind, PlaceState, ProjectCell, ProjectDrift, ProjectFixRequest, ProjectsDrift, SetupMachine } from '../native/types';
 import {
   addSetupSchemas,
+  applyProjectFixes,
   behindByMachine,
+  canMove,
+  cellFixes,
   behindOnDefault,
-  cellNeeds,
   dirtyCount,
   getProjectDrift,
   isStale,
+  machineFixes,
   matchesQuery,
   projectInStep,
   projectName,
   splitProjects,
-  type CellNeed,
 } from '../services/projectPlaces';
 import { scanProjects, SETUP_PROJECTS_UPDATED_EVENT } from '../services/setupProjects';
-import { getSetupRepo, storedSetupRepo } from '../services/setupSync';
+import { getSetupRepo, storedSetupRepo, undoSetupSync } from '../services/setupSync';
 
 type Filter = 'all' | 'attention';
 
@@ -58,14 +60,16 @@ const BLOCKER_TEXT: Record<PlaceKind, MessageKey> = {
   checkout: 'sync.projects.blocker.checkout',
 };
 
-const NEED_TEXT: Record<CellNeed, MessageKey> = {
-  link: 'sync.projects.need.link',
-  clone: 'sync.projects.need.clone',
-  clear: 'sync.projects.need.clear',
-  scan: 'sync.projects.need.scan',
-  pull: 'sync.projects.need.pull',
-  fetch: 'sync.projects.need.fetch',
+const FIX_TEXT: Record<PlaceFix, MessageKey> = {
+  link: 'sync.projects.fix.link',
+  clone: 'sync.projects.fix.clone',
+  move: 'sync.projects.fix.move',
+  fastForward: 'sync.projects.fix.fastForward',
+  fetch: 'sync.projects.fix.fetch',
 };
+
+/** Runs fixes on one machine, or which machine is busy with them. */
+type OnFix = (machine: string, fixes: ProjectFixRequest[]) => void;
 
 /**
  * Sync › Projects: where each project in the setup repo's projects/ folder is on each machine it's on, against where
@@ -88,6 +92,7 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [fixing, setFixing] = useState<ReadonlySet<string>>(new Set());
   const autoScanned = useRef(new Set<string>());
 
   const reload = useCallback(() => {
@@ -135,6 +140,36 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
+
+  // Every fix is backed up on the machine, so it runs straight away and the toast offers Undo.
+  const fix: OnFix = (machine, fixes) => {
+    if (!repo || !fixes.length) return;
+    setFixing((current) => new Set(current).add(machine));
+    applyProjectFixes(repo, machine, fixes)
+      .then(({ backup, results }) => {
+        const done = results.filter((result) => result.outcome === 'done').length;
+        const missed = results.filter((result) => result.outcome !== 'done');
+        toast({
+          kind: missed.length ? 'warning' : 'success',
+          title: missed.length
+            ? t('sync.projects.fix.partly', { done, total: results.length, machine })
+            : t(done === 1 ? 'sync.projects.fix.done.one' : 'sync.projects.fix.done.other', { count: done, machine }),
+          description: missed.length ? missed.map((result) => `${projectName(result.project)}: ${result.detail ?? t('sync.projects.fix.noDetail')}`).join('\n') : undefined,
+          action: backup ? {
+            label: t('sync.projects.fix.undo'),
+            onClick: () => {
+              undoSetupSync(machine, backup)
+                .then((outcome) => toast(outcome.failed.length
+                  ? { kind: 'error', title: t('sync.projects.fix.undoPartly'), description: outcome.failed.map((entry) => `${entry.path}: ${entry.reason}`).join('\n') }
+                  : { kind: 'success', title: t('sync.projects.fix.undone') }))
+                .catch((error) => toast({ kind: 'error', title: t('sync.projects.fix.undoFailed'), description: String(error) }));
+            },
+          } : undefined,
+        });
+      })
+      .catch((error) => toast({ kind: 'error', title: t('sync.projects.fix.failed', { machine }), description: String(error) }))
+      .finally(() => setFixing((current) => { const next = new Set(current); next.delete(machine); return next; }));
+  };
 
   const addSchemas = () => {
     if (!repo) return;
@@ -195,7 +230,7 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
         </Empty>
       ) : (
         <>
-          <MachineStrip drift={drift} machines={machines} errors={scanErrors} now={now} onScan={scan} />
+          <MachineStrip drift={drift} machines={machines} errors={scanErrors} now={now} fixing={fixing} onScan={scan} onFix={fix} />
           <TableCard
             title={t('sync.projects.table.title')}
             count={t(active.length === 1 ? 'sync.projects.table.count.one' : 'sync.projects.table.count.other', { count: active.length })}
@@ -236,7 +271,7 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
                       {expanded.has(project.project) ? (
                         <TableRow className="hover:bg-transparent dark:hover:bg-transparent">
                           <TableCell colSpan={columns.length + 1} className="bg-muted/24 p-0 dark:bg-input/8">
-                            <ProjectDetail project={project} now={now} onOpenInRepo={onOpenInRepo} />
+                            <ProjectDetail project={project} now={now} fixing={fixing} onFix={fix} onOpenInRepo={onOpenInRepo} />
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -294,12 +329,14 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
   );
 }
 
-function MachineStrip({ drift, machines, errors, now, onScan }: {
+function MachineStrip({ drift, machines, errors, now, fixing, onScan, onFix }: {
   drift: ProjectsDrift;
   machines: SetupMachine[];
   errors: Record<string, string>;
   now: number;
+  fixing: ReadonlySet<string>;
   onScan: (machine: string) => void;
+  onFix: OnFix;
 }) {
   const { t } = useI18n();
   const behind = behindByMachine(drift);
@@ -309,13 +346,20 @@ function MachineStrip({ drift, machines, errors, now, onScan }: {
         const scanState = drift.machines.find((entry) => entry.machine === machine.machine);
         const failure = errors[machine.machine] ?? scanState?.error ?? null;
         const count = behind.get(machine.machine) ?? 0;
-        const why = scanState?.scanning ? t('sync.projects.machine.busy') : !machine.reachable ? t('sync.projects.machine.away') : undefined;
+        const why = scanState?.scanning || fixing.has(machine.machine) ? t('sync.projects.machine.busy') : !machine.reachable ? t('sync.projects.machine.away') : undefined;
+        const fixes = machineFixes(drift, machine.machine);
         return (
           <div key={machine.machine} className="flex min-w-0 flex-col gap-1 rounded-xl border border-border/70 bg-card px-3 py-2 shadow-xs/5">
             <div className="flex min-w-0 items-center gap-1.5">
               <MachinePill name={machine.machine} />
               <div className="ms-auto flex shrink-0 items-center gap-1">
-                {count ? <Badge variant="warning" size="sm">{t(count === 1 ? 'sync.projects.machine.behind.one' : 'sync.projects.machine.behind.other', { count })}</Badge> : null}
+                {count && !fixes.length ? <Badge variant="warning" size="sm">{t(count === 1 ? 'sync.projects.machine.behind.one' : 'sync.projects.machine.behind.other', { count })}</Badge> : null}
+                {fixes.length ? (
+                  <Button variant="outline" size="xs" disabledReason={why} onClick={() => onFix(machine.machine, fixes)} title={t('sync.projects.machine.fixTitle', { machine: machine.machine })}>
+                    {fixing.has(machine.machine) ? <Spinner /> : null}
+                    {t(fixes.length === 1 ? 'sync.projects.machine.fix.one' : 'sync.projects.machine.fix.other', { count: fixes.length })}
+                  </Button>
+                ) : null}
                 <Button variant="ghost-muted" size="icon-xs" disabledReason={why} onClick={() => onScan(machine.machine)} aria-label={t('sync.projects.machine.scan', { machine: machine.machine })} title={t('sync.projects.machine.scan', { machine: machine.machine })}>
                   <RefreshIcon refreshing={Boolean(scanState?.scanning)} />
                 </Button>
@@ -397,7 +441,13 @@ function PlaceCell({ cell }: { cell: ProjectCell }) {
   );
 }
 
-function ProjectDetail({ project, now, onOpenInRepo }: { project: ProjectDrift; now: number; onOpenInRepo: (path: string) => void }) {
+function ProjectDetail({ project, now, fixing, onFix, onOpenInRepo }: {
+  project: ProjectDrift;
+  now: number;
+  fixing: ReadonlySet<string>;
+  onFix: OnFix;
+  onOpenInRepo: (path: string) => void;
+}) {
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
@@ -405,7 +455,13 @@ function ProjectDetail({ project, now, onOpenInRepo }: { project: ProjectDrift; 
         {project.cells.map((cell) => (
           <li key={cell.machine} className="grid grid-cols-[10rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1">
             <span className="flex min-w-0"><MachinePill name={cell.machine} size="sm" /></span>
-            <CellDetail cell={cell} now={now} />
+            <CellDetail
+              cell={cell}
+              local={project.local}
+              now={now}
+              busy={fixing.has(cell.machine)}
+              onFix={(fix) => onFix(cell.machine, [{ project: project.project, fix }])}
+            />
           </li>
         ))}
       </ul>
@@ -424,10 +480,12 @@ function ProjectDetail({ project, now, onOpenInRepo }: { project: ProjectDrift; 
   );
 }
 
-function CellDetail({ cell, now }: { cell: ProjectCell; now: number }) {
+function CellDetail({ cell, local, now, busy, onFix }: { cell: ProjectCell; local: boolean; now: number; busy: boolean; onFix: (fix: PlaceFix) => void }) {
   const { t } = useI18n();
   const status = cell.status;
-  const needs = cellNeeds(cell).filter((need) => need !== 'scan');
+  const fixes = cellFixes(cell, local);
+  const movable = canMove(cell);
+  const busyWhy = busy ? t('sync.projects.machine.busy') : undefined;
   const where = cell.state === 'linked'
     ? t('sync.projects.detail.linked', { link: cell.link ?? '' })
     : cell.state === 'elsewhere'
@@ -462,12 +520,18 @@ function CellDetail({ cell, now }: { cell: ProjectCell; now: number }) {
       {cell.others.length ? (
         <span className="text-muted-foreground">{t('sync.projects.detail.others', { paths: cell.others.join(', ') })}</span>
       ) : null}
-      {needs.length ? (
-        <span className="flex flex-wrap items-center gap-1 pt-0.5">
-          <span className="text-muted-foreground">{t('sync.projects.detail.needs')}</span>
-          {needs.map((need) => <Badge key={need} variant="outline" size="sm">{t(NEED_TEXT[need])}</Badge>)}
+      {fixes.length || movable ? (
+        <span className="flex flex-wrap items-center gap-1.5 pt-1">
+          {fixes.map((fix) => (
+            <Button key={fix} variant="outline" size="xs" disabledReason={busyWhy} onClick={() => onFix(fix)}>{t(FIX_TEXT[fix])}</Button>
+          ))}
+          {movable ? (
+            <Button variant="ghost-muted" size="xs" disabledReason={busyWhy} onClick={() => onFix('move')} title={t('sync.projects.fix.moveTitle', { from: cell.checkout ?? '', to: cell.path })}>
+              {t(FIX_TEXT.move)}
+            </Button>
+          ) : null}
         </span>
-      ) : null}
+      ) : cell.state === 'blocked' ? <span className="text-warning-foreground">{t('sync.projects.detail.clearIt')}</span> : null}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { invokeCommand } from '../native/commands';
-import type { CheckoutStatus, PlaceState, ProjectCell, ProjectDrift, ProjectsDrift } from '../native/types';
+import type { CheckoutStatus, PlaceFix, PlaceState, ProjectCell, ProjectDrift, ProjectFixRequest, ProjectsDrift } from '../native/types';
 
 /**
  * Where each of the setup repo's projects is on each machine, against where its project.json wants it: the place the
@@ -11,6 +11,12 @@ import type { CheckoutStatus, PlaceState, ProjectCell, ProjectDrift, ProjectsDri
 export const getProjectDrift = (repo: string) => invokeCommand('get_project_drift', { repo });
 /** Puts Arbor's schemas for machine and project files in the repo, so editors check them. */
 export const addSetupSchemas = (repo: string) => invokeCommand('add_setup_schemas', { repo });
+
+/**
+ * Brings projects in line on a machine: links, clones, moves, fast-forwards and fetches, each checked again there first
+ * and backed up, so Repo › History can undo it.
+ */
+export const applyProjectFixes = (repo: string, machine: string, fixes: ProjectFixRequest[]) => invokeCommand('apply_project_fixes', { repo, machine, fixes });
 
 /** A checkout nobody has fetched for this long may not know what the remote has. */
 export const PLACE_STALE_MS = 86_400_000;
@@ -83,4 +89,33 @@ export function matchesQuery(project: ProjectDrift, query: string): boolean {
   const wanted = query.trim().toLowerCase();
   if (!wanted) return true;
   return project.project.includes(wanted) || Boolean(project.remote?.toLowerCase().includes(wanted));
+}
+
+/** The fix that meets each need, where Arbor has one. A path something else holds is the user's to clear. */
+const NEED_FIX: Record<CellNeed, PlaceFix | null> = { link: 'link', clone: 'clone', clear: null, scan: null, pull: 'fastForward', fetch: 'fetch' };
+
+/** The fixes a project's cell needs, in order. A local project's place waits for the hub, so it's never linked or cloned. */
+export function cellFixes(cell: ProjectCell, local: boolean): PlaceFix[] {
+  return cellNeeds(cell)
+    .map((need) => NEED_FIX[need])
+    .filter((fix): fix is PlaceFix => fix !== null && !(local && (fix === 'link' || fix === 'clone')));
+}
+
+/**
+ * Whether the checkout can be moved to its place instead of linked: only a clean one with no linked worktrees, since
+ * those, and other apps, remember where it is. Arbor checks again on the machine, and for anything running in it.
+ */
+export function canMove(cell: ProjectCell): boolean {
+  const status = cell.status;
+  return (cell.state === 'elsewhere' || cell.state === 'linked') && status !== null && status.changed === 0 && status.untracked === 0 && status.worktrees === 0;
+}
+
+/** Every fix a machine's projects need, never a move: what its card's Fix button runs. */
+export function machineFixes(drift: ProjectsDrift, machine: string): ProjectFixRequest[] {
+  return drift.projects
+    .filter((project) => !project.archived)
+    .flatMap((project) => {
+      const cell = project.cells.find((found) => found.machine === machine);
+      return cell ? cellFixes(cell, project.local).map((fix) => ({ project: project.project, fix })) : [];
+    });
 }

@@ -50,6 +50,29 @@ pub(crate) struct ProjectCell {
     others: Vec<String>,
 }
 
+impl ProjectCell {
+    pub(super) fn state(&self) -> PlaceState {
+        self.state
+    }
+
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub(super) fn checkout(&self) -> Option<&str> {
+        self.checkout.as_deref()
+    }
+
+    pub(super) fn status(&self) -> Option<&CheckoutStatus> {
+        self.status.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(state: PlaceState, path: &str, checkout: Option<&str>, status: Option<CheckoutStatus>) -> Self {
+        ProjectCell { machine: "ci-01".into(), path: path.into(), state, blocker: None, blocker_remote: None, link: None, checkout: checkout.map(str::to_string), status, others: Vec::new() }
+    }
+}
+
 /// A checkout of a project on a machine it isn't assigned to.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +124,20 @@ pub(crate) struct ProjectsDrift {
     projects: Vec<ProjectDrift>,
     unlisted: Vec<UnlistedCheckout>,
     machines: Vec<DriftMachine>,
+}
+
+impl ProjectsDrift {
+    /// Each project on `machine`: its key, how it stands there, its remote and branch, and whether it's local.
+    pub(super) fn on_machine(&self, machine: &str) -> Vec<(String, ProjectCell, Option<String>, Option<String>, bool)> {
+        self.projects
+            .iter()
+            .filter(|project| !project.archived)
+            .filter_map(|project| {
+                let cell = project.cells.iter().find(|cell| cell.machine == machine)?;
+                Some((project.project.clone(), cell.clone(), project.remote.clone(), project.branch.clone(), project.local))
+            })
+            .collect()
+    }
 }
 
 /// A remote as compared: lowercase `host/owner/name`.
@@ -239,6 +276,24 @@ pub(super) fn drift(layers: &SetupLayers, machines: &[String], scans: &BTreeMap<
         })
         .collect();
     ProjectsDrift { projects, unlisted, machines }
+}
+
+/// How often the checkouts at the projects' places are fetched while Arbor is open.
+const FETCH_EVERY: Duration = Duration::from_secs(60 * 60);
+
+/// Fetches the checkouts at each machine's project places every hour, so behind counts don't go stale. Only
+/// remote-tracking refs change; bringing a branch up to date stays a fix the user picks.
+pub(crate) fn start_place_fetcher(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(FETCH_EVERY).await;
+            let machines = arbor_machines(&app.state::<MachineHealthState>().lock());
+            for machine in machines {
+                // A machine that's away, or busy with a scan, is tried again next round.
+                let _ = super::setup_projects::fetch_places(&app, &machine).await;
+            }
+        }
+    });
 }
 
 /// Where each of the setup repo's projects stands on each machine, from the machines' last project scans. Remembers

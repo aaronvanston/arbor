@@ -48,10 +48,12 @@ pub(crate) enum ChangeKind {
     Automations,
     /// The line that brings Arbor's pool hosts into ~/.ssh/config.
     Ssh,
+    /// Projects put where the setup repo wants them: linked, cloned, moved or fast-forwarded.
+    Projects,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::Sync,
         Self::Skills,
         Self::Reporter,
@@ -63,9 +65,10 @@ impl ChangeKind {
         Self::Hooks,
         Self::Automations,
         Self::Ssh,
+        Self::Projects,
     ];
 
-    fn name(self) -> &'static str {
+    pub(super) fn name(self) -> &'static str {
         match self {
             Self::Sync => "sync",
             Self::Skills => "skills",
@@ -78,6 +81,7 @@ impl ChangeKind {
             Self::Hooks => "hooks",
             Self::Automations => "automations",
             Self::Ssh => "ssh",
+            Self::Projects => "projects",
         }
     }
 

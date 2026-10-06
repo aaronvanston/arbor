@@ -103,6 +103,12 @@ impl SavedStoreState {
         Ok(result)
     }
 
+    /// A saved setting's value, for Rust that needs one only the window sets.
+    pub(crate) fn value(&self, name: &str) -> Option<String> {
+        let path = store_path().ok()?;
+        self.with_file(&path, |file| file.values.get(name).cloned()).ok().flatten()
+    }
+
     fn snapshot_at(&self, path: &Path) -> Result<SavedStoreSnapshot, String> {
         self.with_file(path, |file| SavedStoreSnapshot { values: file.values.clone(), migrated: file.migrated })
     }

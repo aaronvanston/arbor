@@ -944,6 +944,7 @@ export const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
   hooks: 'setup.history.what.hooks',
   automations: 'setup.history.what.automations',
   ssh: 'setup.history.what.ssh',
+  projects: 'setup.history.what.projects',
 };
 
 /**

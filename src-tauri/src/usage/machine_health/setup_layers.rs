@@ -35,6 +35,8 @@ pub(super) const SCHEMA_DIR: &str = "schema/";
 const ARCHIVE: &str = "_archive";
 const LOCAL: &str = "_local";
 const PROJECT_FILE: &str = "project.json";
+/// The window's saved setting for the setup repo's folder (services/setupSync.ts).
+pub(super) const SETUP_REPO_SETTING: &str = "arbor.setup.repo.v1";
 /// Where projects go on a machine whose file doesn't say.
 pub(super) const DEFAULT_CODE_ROOT: &str = "~/code";
 /// Larger than any machine or project file should be.

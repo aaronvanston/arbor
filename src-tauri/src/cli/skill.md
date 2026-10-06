@@ -60,6 +60,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Automatic account order for a provider | `arbor routing claude on`, `arbor routing codex off` |
 | Bring a machine in line with the setup repo | `arbor sync apply <machine>` (backed up first; undo it in Sync › Repo › History) |
 | Put the schemas for machine and project files in the setup repo, each as a commit | `arbor call add_setup_schemas repo=<setup repo folder>` |
+| Put a project where the setup repo wants it on a machine: link, clone, move, fast-forward or fetch | `arbor call apply_project_fixes repo=<folder> machine=<name> --args '{"fixes":[{"project":"owner/name","fix":"link"}]}'` (needs `--yes`; backed up, undo it in Sync › Repo › History) |
 | Proxy core | `arbor core start`, `arbor core stop`, `arbor core restart`, `arbor core install [version]` |
 | Mark every alert seen | `arbor alerts seen` |
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |

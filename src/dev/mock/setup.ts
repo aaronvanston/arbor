@@ -38,12 +38,16 @@ import type {
   McpWanted,
   NodeChange,
   NodeResult,
+  PlaceFix,
   PluginAction,
   PluginChange,
   PluginCosts,
   PluginOutcome,
   PluginResult,
   ProjectCell,
+  ProjectFixes,
+  ProjectFixRequest,
+  ProjectFixResult,
   ProjectLibrary,
   ProjectRepo,
   ProjectsDrift,
@@ -1794,7 +1798,21 @@ const placeCell = (machine: string, path: string, state: ProjectCell['state'], e
   checkout: null, status: null, others: [], ...(placesScenario === 'unscanned' ? {} : extra),
 });
 
+/** What the mock's fixes changed, by `project\u0000machine`, with the backup that holds them. */
+const placeFixes = new Map<string, { patch: Partial<ProjectCell>; status: Partial<CheckoutStatus>; backup: string }>();
+
+const fixedCell = (project: string, cell: ProjectCell): ProjectCell => {
+  const fixed = placeFixes.get(`${project}\u0000${cell.machine}`);
+  if (!fixed) return cell;
+  return { ...cell, ...fixed.patch, status: cell.status || fixed.patch.status ? { ...placeStatus(), ...cell.status, ...fixed.patch.status, ...fixed.status } : null };
+};
+
 const mockDrift = (): ProjectsDrift => {
+  const drift = baseDrift();
+  return { ...drift, projects: drift.projects.map((project) => ({ ...project, cells: project.cells.map((cell) => fixedCell(project.project, cell)) })) };
+};
+
+const baseDrift = (): ProjectsDrift => {
   const machines = projectsState.map((entry) => ({ machine: entry.machine, scannedAt: entry.scannedAt, scanning: entry.scanning, error: entry.error }));
   if (placesScenario === 'none') return { projects: [], unlisted: [], machines };
   const on = new Set(machines.map((entry) => entry.machine));
@@ -1834,6 +1852,67 @@ const mockDrift = (): ProjectsDrift => {
     ],
     unlisted: on.has('cedar-02') ? [{ machine: 'cedar-02', path: '/home/cam/src/scratch', remote: null }] : [],
   };
+};
+
+/** Whether a fix fits a project's cell, as project_fixes.rs plans it; the reason it doesn't otherwise. */
+const fixProblem = (cell: ProjectCell, fix: PlaceFix, local: boolean): string | null => {
+  const status = cell.status;
+  const clean = status !== null && status.changed === 0 && status.untracked === 0;
+  switch (fix) {
+    case 'link': return cell.state === 'elsewhere' && !local ? null : "There's no checkout elsewhere to link to, or the place isn't free";
+    case 'clone': return cell.state === 'missing' && !local ? null : 'The machine has a checkout already, or the place isn\'t free';
+    case 'move': return (cell.state === 'elsewhere' || cell.state === 'linked') && clean && status?.worktrees === 0 ? null : 'The checkout has changes or linked worktrees; link it instead';
+    case 'fastForward': return status && (status.behind ?? 0) > 0 && status.changed === 0 && status.upstream === status.defaultBranch ? null : "It's up to date already, or not on the default branch";
+    case 'fetch': return cell.checkout ? null : "There's no checkout to fetch";
+  }
+};
+
+const fixPatch = (cell: ProjectCell, fix: PlaceFix): { patch: Partial<ProjectCell>; status: Partial<CheckoutStatus> } => {
+  switch (fix) {
+    case 'link': return { patch: { state: 'linked', link: cell.checkout }, status: {} };
+    case 'clone': return { patch: { state: 'inPlace', checkout: cell.path, status: placeStatus({ fetchedAt: Date.now() }) }, status: {} };
+    case 'move': return { patch: { state: 'inPlace', link: null, checkout: cell.path }, status: {} };
+    case 'fastForward': return { patch: {}, status: { behind: 0 } };
+    case 'fetch': return { patch: {}, status: { fetchedAt: Date.now(), fetchFailed: false } };
+  }
+};
+
+const applyFixesMock = (machine: string, fixes: ProjectFixRequest[]): ProjectFixes => {
+  if (!fixes.length) throw 'Nothing to fix';
+  const drift = mockDrift();
+  const stamp = `${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z-${Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0')}`;
+  const changed: string[] = [];
+  const results = fixes.map((request): ProjectFixResult => {
+    const project = drift.projects.find((found) => found.project === request.project);
+    const cell = project?.cells.find((found) => found.machine === machine);
+    if (!project || !cell) return { project: request.project, fix: request.fix, outcome: 'skipped', detail: `${request.project} isn't on ${machine} in the setup repo` };
+    const problem = fixProblem(cell, request.fix, project.local);
+    if (problem) return { project: request.project, fix: request.fix, outcome: 'skipped', detail: problem };
+    if (params.get('fixes') === 'fail' && request.fix === 'clone') return { project: request.project, fix: request.fix, outcome: 'failed', detail: 'git@github.com: Permission denied (publickey).' };
+    const key = `${request.project}\u0000${machine}`;
+    const before = placeFixes.get(key);
+    const next = fixPatch(cell, request.fix);
+    placeFixes.set(key, { patch: { ...before?.patch, ...next.patch }, status: { ...before?.status, ...next.status }, backup: stamp });
+    if (request.fix !== 'fetch') changed.push(cell.path);
+    return { project: request.project, fix: request.fix, outcome: 'done', detail: null };
+  });
+  const backup = changed.length ? stamp : null;
+  if (backup) {
+    (setupBackups[machine] ??= []).unshift({
+      id: backup, atMs: Date.now(), what: 'projects', commit: null, undoneAtMs: null, skills: [],
+      files: changed.map((path) => ({ path, change: 'added', skill: false })), was: {}, left: {}, skillWas: {}, skillLeft: {},
+    });
+  }
+  void emit('setup-projects-updated', Date.now());
+  return { backup, results };
+};
+
+/** Undoes the mock's project fixes in `backup`: each place goes back to how the scan had it. */
+const undoFixesMock = (backup: MockSetupBackup): SyncOutcome => {
+  for (const [key, fixed] of placeFixes) if (fixed.backup === backup.id) placeFixes.delete(key);
+  backup.undoneAtMs = Date.now();
+  void emit('setup-projects-updated', Date.now());
+  return { backup: null, done: backup.files.map((file) => file.path), failed: [] };
 };
 
 const projectTexts: Record<string, string> = {
@@ -3071,6 +3150,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     const backup = setupBackups[machine]?.find((candidate) => candidate.id === args.backup);
     if (!entry || !backup) throw "That change's backup isn't on this machine any more.";
     if (backup.undoneAtMs !== null) throw 'That change was undone already.';
+    if (backup.what === 'projects') return later(700, () => undoFixesMock(backup));
     return later(900, () => undoSetupMock(entry, backup));
   },
   apply_skill_changes: (args) => {
@@ -3250,6 +3330,10 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   },
   get_projects: () => projectsState.map(projectsReply),
   get_project_drift: () => later(250, mockDrift),
+  apply_project_fixes: (args) => {
+    mockLog('apply_project_fixes', { machine: args.machine, fixes: args.fixes });
+    return later(1_200, () => applyFixesMock(args.machine, args.fixes));
+  },
   add_setup_schemas: (args) => {
     mockLog('add_setup_schemas', { repo: args.repo });
     return later(400, () => setupRepoReply(args.repo));

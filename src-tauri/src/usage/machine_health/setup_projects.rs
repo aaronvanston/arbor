@@ -536,7 +536,7 @@ pub(super) fn is_path(path: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 // Helpers the scan and removal share.
-const CHECKS: &str = r##"cwds() {
+pub(super) const CHECKS: &str = r##"cwds() {
   if [ -d /proc/self ]; then
     for p in /proc/[0-9]*; do readlink "$p/cwd" 2>/dev/null; done
   elif command -v lsof >/dev/null 2>&1; then
@@ -602,7 +602,7 @@ pub(super) const ORIGIN_URL: &str = r##"origin_url() {
 }
 "##;
 
-const GIT_ENV: &str = r##"set -u
+pub(super) const GIT_ENV: &str = r##"set -u
 export LC_ALL=C GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_PAGER=cat
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY 2>/dev/null
 command -v git >/dev/null 2>&1 || { echo "git isn't installed on this machine" >&2; exit 3; }
@@ -1332,6 +1332,28 @@ fn release(app: &tauri::AppHandle, machine: &str, update: impl FnOnce(&mut Machi
     };
     let _ = app.emit(SETUP_PROJECTS_UPDATED_EVENT, Local::now().timestamp_millis());
     projects
+}
+
+/// Fetches the checkouts at the places the setup repo wants its projects on `machine`, and looks at them again, leaving
+/// the checkouts sessions point at as the last scan found them: the background round that keeps Sync › Projects'
+/// behind counts true. Nothing to do before the window has named a setup repo, or for a machine with no projects.
+pub(super) async fn fetch_places(app: &tauri::AppHandle, machine: &str) -> Result<(), String> {
+    let state = app.state::<MachineHealthState>();
+    // After a restart the window hasn't named the repo yet; the setting it saves does.
+    let saved = state.lock().setup_repo.is_none().then(|| app.state::<crate::saved_store::SavedStoreState>().value(super::setup_layers::SETUP_REPO_SETTING)).flatten().filter(|repo| !repo.is_empty());
+    let places = super::setup_layers::places_on(&state, saved, machine).await;
+    if places.is_empty() {
+        return Ok(());
+    }
+    let (target, _) = claim(&state, machine, Work::Scan)?;
+    let found = run_checked(&target, MachineOp::ProjectsScan, &scan_script(&[], &places, true), FETCH_TIMEOUT).await;
+    let failure = found.as_ref().err().cloned();
+    release(app, machine, |entry| {
+        if let Ok(stdout) = found {
+            entry.places = parse_scan(&stdout, &HashMap::new(), Local::now().timestamp_millis()).places;
+        }
+    });
+    failure.map_or(Ok(()), Err)
 }
 
 /// Looks at every repo sessions have worked in on a machine, and each place the setup repo `repo` (else the last one
