@@ -61,6 +61,24 @@ the app, `App.tsx`). So:
   than once a minute goes through `pacedInterval` or `throttleWaitMs` (`services/hiddenPace.ts`), which hold it to
   once a minute while hidden; alerts and the tray stay within that. A page's own polls skip while `document.hidden`.
 
+## The first screen
+
+The window shows before any of the app's script runs, on a static copy of the shell in `index.html`, and React's first
+commit replaces it with the same picture. What someone changing the shell or Home needs to know:
+
+- The build renders `src/boot/BootShell.tsx` into `#root` (vite.config.js, `bootShell()`). Its classes come from
+  `components/sidebar/shellParts.ts` and Home's waiting skeletons from `components/homeSkeletons.tsx`, the same ones
+  the real shell and Home use. A class written straight into the real shell instead drifts; `tests/bootShell.test.tsx`
+  compares the markup, and `bun run perf` gates the handoff at 0 px moved and 0 pixels changed.
+- Home shows those skeletons until it knows whether the core is running and the board is read, so React's first
+  frame matches the static one. How many rows comes from `arbor.boot.v1` (`src/boot/bootState.ts`): counts only,
+  written as Home loads. Anything else the first screen needs must be in the window's storage before the page loads;
+  the app's own settings aren't readable yet.
+- `src/boot/bootHead.ts` and `bootPaint.ts` are inlined into the page, so they import nothing that reaches a store or
+  Tauri (that's why `sidebarLayoutRules.ts` and `sidebarTree.ts` hold no store). `bootPaint.ts` reads layout only in
+  its first frame: a read while the page is parsing lays the whole page out early, and again after its changes.
+- It sends `frontend_ready` itself; Rust shows the window on the first call and ignores the rest.
+
 ## Where to read more
 
 - [Navigation](navigation.md): the sidebar tree, views, and old view ids that still have to land.
