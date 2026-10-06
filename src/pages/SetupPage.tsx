@@ -56,7 +56,6 @@ import { setSyncMachine, setSyncProject, useSyncScope } from '../services/syncSc
 import { clearSyncChanges, requestSyncReview, syncCounts, useSyncChanges, type SyncReview } from '../services/syncChanges';
 import { SetupChecks } from './SetupChecks';
 import { SetupRepoSection } from './SetupSync';
-import { SyncProjects } from './SyncProjects';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
 import { SetupPlugins } from './SetupPlugins';
 import { SetupCost } from './SetupCost';
@@ -72,6 +71,8 @@ import { homeLabel, storedSetupHome, storedSetupReference, storeSetupHome, store
 
 // The directory reads marketplaces from GitHub and is opened now and then, so it loads on its own when it is.
 const SetupDirectory = lazy(() => import('./SetupDirectory').then((module) => ({ default: module.SetupDirectory })));
+// Sync › Projects only loads when it's opened, as the other Sync views don't need it.
+const SyncProjects = lazy(() => import('./SyncProjects').then((module) => ({ default: module.SyncProjects })));
 
 /** The view last open, which the page opens on when it's opened without naming one. */
 const TAB_KEY = 'arbor.setup.tab.v1';
@@ -539,14 +540,16 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
         ) : tab === 'repo' ? (
           <SetupRepoSection machines={machines} history={history} />
         ) : tab === 'projects' ? (
-          <SyncProjects
-            machines={machines}
-            onOpenInRepo={(path) => {
-              requestFocus('repo-file', path);
-              onNavigate(setupView({ tab: 'repo' }));
-            }}
-            onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}
-          />
+          <Suspense fallback={<p className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"><Spinner />{t('sync.projects.loading')}</p>}>
+            <SyncProjects
+              machines={machines}
+              onOpenInRepo={(path) => {
+                requestFocus('repo-file', path);
+                onNavigate(setupView({ tab: 'repo' }));
+              }}
+              onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}
+            />
+          </Suspense>
         ) : costLens ? (
           <SetupCost
             machines={machines}
