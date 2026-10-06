@@ -27,6 +27,7 @@ use super::shell::{runs_scripts, this_machine_name};
 use super::*;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use ts_rs::TS;
 
 pub(super) const MACHINES_DIR: &str = "machines/";
@@ -659,6 +660,115 @@ impl SetupLayers {
             })
             .collect()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Writing values into the layers
+// ---------------------------------------------------------------------------
+
+/// Whose value is being set: a machine's own, or a project's on every machine or on one.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum LayerTarget<'a> {
+    Machine(&'a str),
+    Project(&'a str, Option<&'a str>),
+}
+
+/// The key `object` already has for `machine`, compared loosely; not a role's.
+fn machine_key(object: &Map<String, Value>, machine: &str) -> Option<String> {
+    let wanted = normalize_machine_name(machine);
+    object.keys().find(|key| !key.starts_with('@') && normalize_machine_name(key) == wanted).cloned()
+}
+
+/// `name` in `section` of `target`'s file set to `value`, or taken out with None, from the file as the working tree has
+/// it: the file's path and its next text. None when the repo has no such file, or `target` is a project on a machine
+/// its file doesn't list by name (listing it would put the project there), so the value stays where it used to be.
+pub(super) fn layer_edit(folder: &Path, layers: &SetupLayers, target: LayerTarget, section: &str, name: &str, value: Option<&str>) -> Result<Option<(String, String)>, String> {
+    let rel = match target {
+        LayerTarget::Machine(machine) => {
+            let key = normalize_machine_name(machine);
+            match layers.machines.iter().find(|found| found.key == key && !found.archived) {
+                Some(found) => found.file.clone(),
+                None => return Ok(None),
+            }
+        }
+        LayerTarget::Project(project, _) => match layers.project(project).filter(|found| !found.local) {
+            Some(found) => format!("{}/{PROJECT_FILE}", found.folder),
+            None => return Ok(None),
+        },
+    };
+    let unreadable = || format!("{rel} isn't JSON Arbor can read. Fix it, then try again.");
+    let bytes = fs::read(folder.join(&rel)).map_err(|error| format!("Arbor couldn't read {rel}: {error}"))?;
+    let mut file: Value = serde_json::from_slice(&bytes).ok().filter(Value::is_object).ok_or_else(unreadable)?;
+    let root = file.as_object_mut().ok_or_else(unreadable)?;
+    let holder = match target {
+        LayerTarget::Project(_, Some(machine)) => {
+            let Some(machines) = root.get_mut("machines").and_then(Value::as_object_mut) else { return Ok(None) };
+            let Some(key) = machine_key(machines, machine) else { return Ok(None) };
+            match machines.get_mut(&key).and_then(Value::as_object_mut) {
+                Some(entry) => entry,
+                None => return Ok(None),
+            }
+        }
+        _ => root,
+    };
+    match value {
+        Some(value) => {
+            let slot = holder.entry(section).or_insert_with(|| Value::Object(Map::new()));
+            if !slot.is_object() {
+                *slot = Value::Object(Map::new());
+            }
+            if let Some(values) = slot.as_object_mut() {
+                values.insert(name.to_string(), Value::from(value));
+            }
+        }
+        None => {
+            let emptied = holder.get_mut(section).and_then(Value::as_object_mut).is_some_and(|values| {
+                values.remove(name);
+                values.is_empty()
+            });
+            if emptied {
+                holder.remove(section);
+            }
+        }
+    }
+    Ok(Some((rel, serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n")))
+}
+
+/// A setup repo file as the working tree has it, or None when it isn't there.
+pub(super) fn working_text(folder: &Path, rel: &str) -> Result<Option<Vec<u8>>, String> {
+    match fs::read(folder.join(rel)) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("Arbor couldn't read {rel}: {error}")),
+    }
+}
+
+/// Commits `layer`'s change, and with it the value taken out of the old file at `old` (`before` as it was, `after`
+/// without it) when that changed anything: one commit, so a value is never in both places or neither.
+pub(super) async fn commit_moved(folder: &Path, layer: (String, String), old: &str, before: Option<&[u8]>, after: String, message: &str) -> Result<(), String> {
+    let mut files: Vec<(String, Vec<u8>)> = vec![(layer.0, layer.1.into_bytes())];
+    let parsed = |bytes: &[u8]| serde_json::from_slice::<Value>(bytes).ok();
+    if before.is_some_and(|before| parsed(before) != parsed(after.as_bytes())) {
+        files.push((old.to_string(), after.into_bytes()));
+    }
+    super::setup_sync::take_files_into_repo(folder, &files, message).await
+}
+
+/// The machines' own MCP values in their files at `commit`, by normalized name, archived machines left out: what the
+/// MCP registry lays over mcp-servers.json's per-machine values.
+pub(super) async fn machine_mcp_values(folder: &Path, commit: &str) -> BTreeMap<String, BTreeMap<String, PluginWanted>> {
+    let Ok(listing) = super::setup_sync::git_out(folder, &["ls-tree", "-z", "--name-only", commit, "--", &format!("./{MACHINES_DIR}")]).await else {
+        return BTreeMap::new();
+    };
+    let mut values = BTreeMap::new();
+    for rel in listing.split('\0').filter(|rel| !rel.is_empty()) {
+        let Some(LayerPath::Machine { key, stem, archived: false }) = layer_path(rel) else { continue };
+        let Ok(bytes) = super::setup_sync::repo_file(folder, commit, rel).await else { continue };
+        if let Some(machine) = parse_machine(rel, &key, &stem, false, &bytes, &mut Vec::new()).filter(|machine| !machine.mcp.is_empty()) {
+            values.insert(key, machine.mcp);
+        }
+    }
+    values
 }
 
 /// Where a project goes on one machine.

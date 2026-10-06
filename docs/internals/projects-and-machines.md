@@ -80,8 +80,13 @@ schema/machine.schema.json, schema/project.schema.json
   `.agents/machines.json`, `plugins.json` and `mcp-servers.json` as `all`.
 - **Old project and machine values are still read.** Values in `skills.X.machines`, `skills.X.projects`,
   `plugins.X.projects` and `mcp.X.projects` count as the machine and project layers, but a value in a machine or
-  project file wins over them. Arbor's writers put values in the new files, and move a value across (in the same
-  commit) the first time they touch it.
+  project file wins over them.
+  - Arbor's switches write a value into the machine's or project's file when the repo has one, and take it out of the
+    old file in the same commit.
+  - A project's value on a machine its `machines` doesn't name stays in the old file, since naming the machine
+    there would put the project on it.
+  - A machine file's MCP `off` keeps a server off that machine; `on` only lifts an off that `mcp-servers.json` gave
+    it. A machine's own server definition stays in `mcp-servers.json`.
 - **Paths.** A path is `~/…` or absolute, never with `..`. `~` is the machine's home from its scan. A project-on-machine
   path beats the project's path, which beats `<codeRoot>/<owner>/<name>`.
 

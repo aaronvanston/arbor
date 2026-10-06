@@ -37,6 +37,7 @@
 //! ```
 
 use super::normalize_machine_name;
+use super::setup_layers::{commit_moved, layer_edit, working_text, LayerTarget};
 use super::setup_sync::{read_repo, take_into_repo, SetupRepo};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -731,14 +732,45 @@ pub(crate) async fn set_setup_skill_machine(repo: String, skill: String, machine
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(format!("Arbor couldn't read {MACHINES_FILE}: {error}")),
     };
-    let next = with_skill_machine(text.as_deref(), &skill, &machine, wanted)?;
     let message = match wanted {
         Some(SkillWanted::Off) => format!("Keep skill {skill} off {machine}"),
         Some(SkillWanted::Own) => format!("Let {machine} keep its own skill {skill}"),
         None => format!("Give {machine} the repo's skill {skill}"),
     };
+    let value = layer_value(wanted)?;
+    if into_layer(folder, LayerTarget::Machine(&machine), SKILLS_SECTION, &skill, value.as_deref(), MACHINES_FILE, |text| with_skill_machine(text, &skill, &machine, None), &message).await? {
+        return read_repo(folder).await;
+    }
+    let next = with_skill_machine(text.as_deref(), &skill, &machine, wanted)?;
     take_into_repo(folder, MACHINES_FILE, next.as_bytes(), &message, &[]).await?;
     read_repo(folder).await
+}
+
+/// Puts a value in its machine's or project's own file when the repo has one, taking it out of `old` (the file it
+/// used to live in, via `without`) in the same commit. False when there's no such file, so the caller writes `old`.
+async fn into_layer(
+    folder: &Path,
+    target: LayerTarget<'_>,
+    section: &str,
+    name: &str,
+    value: Option<&str>,
+    old: &str,
+    without: impl FnOnce(Option<&[u8]>) -> Result<String, String>,
+    message: &str,
+) -> Result<bool, String> {
+    let found = read_repo(folder).await?;
+    let Some(layer) = layer_edit(folder, found.layers(), target, section, name, value)? else {
+        return Ok(false);
+    };
+    let before = working_text(folder, old)?;
+    let after = without(before.as_deref())?;
+    commit_moved(folder, layer, old, before.as_deref(), after, message).await?;
+    Ok(true)
+}
+
+/// A value as a layer file writes it: on, off, own or removed.
+fn layer_value<T: Serialize>(wanted: Option<T>) -> Result<Option<String>, String> {
+    wanted.map(|wanted| serde_json::to_value(wanted).map_err(|error| error.to_string())?.as_str().map(str::to_string).ok_or_else(|| "That isn't a value".to_string())).transpose()
 }
 
 /// `text` with `project`'s value for `skill` set, on every machine (`machine` None) or on one, or taken out with
@@ -787,7 +819,6 @@ pub(crate) async fn set_setup_skill_project(repo: String, skill: String, project
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(format!("Arbor couldn't read {MACHINES_FILE}: {error}")),
     };
-    let next = with_skill_project(text.as_deref(), &skill, &project, machine.as_deref(), wanted)?;
     let place = match &machine {
         Some(machine) => format!("{project} on {machine}"),
         None => project.clone(),
@@ -797,6 +828,12 @@ pub(crate) async fn set_setup_skill_project(repo: String, skill: String, project
         Some(_) => format!("Turn skill {skill} off in {place}"),
         None => format!("Let {place} follow its machine for skill {skill}"),
     };
+    let value = layer_value(wanted)?;
+    let target = LayerTarget::Project(&project, machine.as_deref());
+    if into_layer(folder, target, SKILLS_SECTION, &skill, value.as_deref(), MACHINES_FILE, |text| with_skill_project(text, &skill, &project, machine.as_deref(), None), &message).await? {
+        return read_repo(folder).await;
+    }
+    let next = with_skill_project(text.as_deref(), &skill, &project, machine.as_deref(), wanted)?;
     take_into_repo(folder, MACHINES_FILE, next.as_bytes(), &message, &[]).await?;
     read_repo(folder).await
 }
@@ -820,7 +857,6 @@ pub(crate) async fn set_setup_mcp_project(repo: String, server: String, project:
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(format!("Arbor couldn't read {MACHINES_FILE}: {error}")),
     };
-    let next = with_project_value(text.as_deref(), MCP_SECTION, &server, &project, machine.as_deref(), wanted)?;
     let place = match &machine {
         Some(machine) => format!("{project} on {machine}"),
         None => project.clone(),
@@ -830,6 +866,12 @@ pub(crate) async fn set_setup_mcp_project(repo: String, server: String, project:
         Some(_) => format!("Turn MCP server {server} off in {place}"),
         None => format!("Let {place} follow its machine for MCP server {server}"),
     };
+    let value = layer_value(wanted)?;
+    let target = LayerTarget::Project(&project, machine.as_deref());
+    if into_layer(folder, target, MCP_SECTION, &server, value.as_deref(), MACHINES_FILE, |text| with_project_value(text, MCP_SECTION, &server, &project, machine.as_deref(), None), &message).await? {
+        return read_repo(folder).await;
+    }
+    let next = with_project_value(text.as_deref(), MCP_SECTION, &server, &project, machine.as_deref(), wanted)?;
     take_into_repo(folder, MACHINES_FILE, next.as_bytes(), &message, &[]).await?;
     read_repo(folder).await
 }
@@ -858,17 +900,23 @@ pub(crate) async fn set_setup_plugin(repo: String, plugin: String, source: Optio
         if !is_project(project) {
             return Err("That project has no owner/name to keep it under".into());
         }
-        let next = with_plugin_project(text.as_deref(), &plugin, project, machine.as_deref(), wanted)?;
         let place = machine.as_deref().map_or_else(|| project.to_string(), |machine| format!("{project} on {machine}"));
         let message = match wanted {
             Some(PluginWanted::On) => format!("Turn plugin {plugin} on in {place}"),
             Some(_) => format!("Turn plugin {plugin} off in {place}"),
             None => format!("Let {place} follow its machine for plugin {plugin}"),
         };
+        // Only a plugin the repo lists can have a project's value, so the listing stays in plugins.json.
+        let listed = parse_plugins(text.as_deref().unwrap_or_default()).iter().any(|found| found.id == plugin);
+        let value = layer_value(wanted.filter(|wanted| matches!(wanted, PluginWanted::On | PluginWanted::Off)))?;
+        let target = LayerTarget::Project(project, machine.as_deref());
+        if listed && into_layer(folder, target, "plugins", &plugin, value.as_deref(), PLUGINS_FILE, |text| with_plugin_project(text, &plugin, project, machine.as_deref(), None), &message).await? {
+            return read_repo(folder).await;
+        }
+        let next = with_plugin_project(text.as_deref(), &plugin, project, machine.as_deref(), wanted)?;
         take_into_repo(folder, PLUGINS_FILE, next.as_bytes(), &message, &[]).await?;
         return read_repo(folder).await;
     }
-    let next = with_plugin(text.as_deref(), &plugin, source.as_deref(), machine.as_deref(), wanted)?;
     let message = match (machine.as_deref(), wanted) {
         (None, Some(PluginWanted::On)) => format!("Turn plugin {plugin} on for all machines"),
         (None, Some(PluginWanted::Removed)) => format!("Remove plugin {plugin} from all machines"),
@@ -880,6 +928,15 @@ pub(crate) async fn set_setup_plugin(repo: String, plugin: String, source: Optio
         (Some(machine), Some(PluginWanted::Removed)) => format!("Remove plugin {plugin} from {machine}"),
         (Some(machine), None) => format!("Give {machine} every machine's plugin {plugin}"),
     };
+    // A machine's own value for a plugin the repo lists goes in its file; listing a new one stays in plugins.json.
+    if let Some(machine) = machine.as_deref() {
+        let listed = parse_plugins(text.as_deref().unwrap_or_default()).iter().any(|found| found.id == plugin);
+        let value = layer_value(wanted)?;
+        if listed && into_layer(folder, LayerTarget::Machine(machine), "plugins", &plugin, value.as_deref(), PLUGINS_FILE, |text| with_plugin(text, &plugin, None, Some(machine), None), &message).await? {
+            return read_repo(folder).await;
+        }
+    }
+    let next = with_plugin(text.as_deref(), &plugin, source.as_deref(), machine.as_deref(), wanted)?;
     take_into_repo(folder, PLUGINS_FILE, next.as_bytes(), &message, &[]).await?;
     read_repo(folder).await
 }

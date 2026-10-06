@@ -627,6 +627,43 @@ async fn start_repo(folder: &Path, home: &Path, machine: &str, git_config: &[&st
     read_repo(folder).await
 }
 
+/// Writes and commits several files as one commit, each checked as `take_into_repo` checks one: a file Arbor keeps,
+/// with no changes in the repo that aren't committed, and not a link.
+pub(super) async fn take_files_into_repo(folder: &Path, files: &[(String, Vec<u8>)], message: &str) -> Result<(), String> {
+    for (rel, _) in files {
+        if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && instructions::instructions_file(rel).is_none() && !layers::is_layer_file(rel) {
+            return Err(format!("Arbor doesn't sync {rel}"));
+        }
+        let changes = git_out(folder, &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", &format!("./{rel}")]).await?;
+        if !changes.is_empty() {
+            return Err(format!("{rel} has changes in the repo that aren't committed. Commit or drop them, then try again."));
+        }
+        if fs::symlink_metadata(folder.join(rel)).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            return Err(format!("{rel} is a link in the repo, which Arbor leaves alone"));
+        }
+    }
+    for (rel, content) in files {
+        let path = folder.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        fs::write(&path, content).map_err(|error| format!("Arbor couldn't write {rel}: {error}"))?;
+    }
+    let specs: Vec<String> = files.iter().map(|(rel, _)| format!("./{rel}")).collect();
+    let mut add = vec!["add", "--"];
+    add.extend(specs.iter().map(String::as_str));
+    git_out(folder, &add).await?;
+    let mut quiet = vec!["diff", "--cached", "--quiet", "--"];
+    quiet.extend(specs.iter().map(String::as_str));
+    if git(folder, &quiet, GIT_TIMEOUT).await?.status.success() {
+        return Ok(());
+    }
+    let mut commit = vec!["commit", "--quiet", "-m", message, "--"];
+    commit.extend(specs.iter().map(String::as_str));
+    git_out(folder, &commit).await?;
+    Ok(())
+}
+
 /// Commits `content` as the repo's copy of `rel`, and nothing else.
 pub(super) async fn take_into_repo(folder: &Path, rel: &str, content: &[u8], message: &str, git_config: &[&str]) -> Result<(), String> {
     if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && instructions::instructions_file(rel).is_none() && !layers::is_layer_file(rel) {
@@ -1596,6 +1633,49 @@ mod tests {
             // The project's folder wins over where instructions used to live.
             let listed: Vec<&str> = repo.instructions.iter().map(|found| found.hash()).collect();
             assert_eq!(listed, [instructions::text_hash(b"New place.\n").as_str()]);
+            let _ = fs::remove_dir_all(&root);
+        }
+
+        #[test]
+        fn values_go_into_a_machines_or_projects_file_and_leave_the_old_one_in_the_same_commit() {
+            let root = temp_dir("writers");
+            git_in(&root, &["init", "--quiet"]);
+            git_in(&root, &["config", "user.name", "Arbor Test"]);
+            git_in(&root, &["config", "user.email", "arbor@example.com"]);
+            write(&root.join(".agents/machines.json"), br#"{"version": 1, "skills": {"pdf": {"machines": {"ci-01": "off"}, "projects": {"cam/arbor": {"all": "on"}}}}}"#);
+            write(&root.join("machines/ci-01.json"), br#"{"name": "CI 01"}"#);
+            write(&root.join("projects/cam/arbor/project.json"), br#"{"remote": "git@github.com:cam/arbor.git", "machines": {"CI-01": {}}}"#);
+            git_in(&root, &["add", "--all"]);
+            git_in(&root, &["commit", "--quiet", "-m", "Start"]);
+            let repo = root.display().to_string();
+            let json = |rel: &str| serde_json::from_slice::<serde_json::Value>(&fs::read(root.join(rel)).unwrap()).unwrap();
+            let log = || git_in(&root, &["log", "--format=%s"]);
+
+            // A machine with a file: the value goes there and out of machines.json, together.
+            block_on(wanted::set_setup_skill_machine(repo.clone(), "pdf".into(), "CI 01".into(), Some(wanted::SkillWanted::Own))).unwrap();
+            assert_eq!(json("machines/ci-01.json")["skills"]["pdf"], "own");
+            assert!(json(".agents/machines.json")["skills"]["pdf"].get("machines").is_none());
+            let changed = git_in(&root, &["show", "--name-only", "--format=", "HEAD"]);
+            assert_eq!(changed.lines().collect::<BTreeSet<_>>(), BTreeSet::from([".agents/machines.json", "machines/ci-01.json"]));
+
+            // A project with a folder, on a machine it lists by name: into project.json, under the key it uses.
+            block_on(wanted::set_setup_skill_project(repo.clone(), "pdf".into(), "cam/arbor".into(), Some("CI 01".into()), Some(wanted::PluginWanted::Off))).unwrap();
+            assert_eq!(json("projects/cam/arbor/project.json")["machines"]["CI-01"]["skills"]["pdf"], "off");
+            // Every machine's value moves from machines.json too.
+            block_on(wanted::set_setup_skill_project(repo.clone(), "pdf".into(), "cam/arbor".into(), None, Some(wanted::PluginWanted::Off))).unwrap();
+            assert_eq!(json("projects/cam/arbor/project.json")["skills"]["pdf"], "off");
+            assert!(json(".agents/machines.json").get("skills").is_none());
+
+            // A machine the project doesn't list: listing it would put the project there, so machines.json keeps it.
+            block_on(wanted::set_setup_skill_project(repo.clone(), "pdf".into(), "cam/arbor".into(), Some("cedar".into()), Some(wanted::PluginWanted::On))).unwrap();
+            assert_eq!(json(".agents/machines.json")["skills"]["pdf"]["projects"]["cam/arbor"]["machines"]["cedar"], "on");
+            assert!(json("projects/cam/arbor/project.json")["machines"].get("cedar").is_none());
+
+            // Read back, the layers win and every value is where Sync looks for it.
+            let found = serde_json::to_value(block_on(read_repo(&root)).unwrap()).unwrap();
+            assert_eq!(found["skillMachines"]["pdf"]["ci01"], "own");
+            assert_eq!(found["skillProjects"]["pdf"]["cam/arbor"], serde_json::json!({"all": "off", "machines": {"cedar": "on", "ci01": "off"}}));
+            assert_eq!(log().lines().count(), 5);
             let _ = fs::remove_dir_all(&root);
         }
 

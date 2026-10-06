@@ -27,6 +27,7 @@
 //! Claude Code definition in its own shape, written into its MCP file the way a
 //! Codex home's config.toml is, as a guarded edit that keeps the rest of the file.
 
+use crate::usage::machine_health::setup_wanted::PluginWanted;
 use super::agents::AGENT_ENV;
 use super::harnesses::Harness;
 use ts_rs::TS;
@@ -957,7 +958,9 @@ impl Server {
     /// What a machine's homes of one agent get: its own choice, else every machine's, which is nothing while the
     /// server is off everywhere.
     fn choice(&self, machine: &str, slot: usize) -> Option<&Wanted> {
-        match self.machines.get(machine).map(|choices| &choices[slot]) {
+        // A machine file's value is kept by normalized name (`lay_machine_files`); mcp-servers.json's by the name as given.
+        let own = self.machines.get(machine).or_else(|| self.machines.get(&normalize_machine_name(machine)));
+        match own.map(|choices| &choices[slot]) {
             Some(Wanted::Default) | None if self.off_everywhere => Some(&OFF),
             choice => choice,
         }
@@ -1011,6 +1014,22 @@ pub(super) struct Registry {
 }
 
 impl Registry {
+    /// Lays the machines' own values from their files (setup_layers) over mcp-servers.json's, a file's winning: off keeps
+    /// the server off that machine, on takes away an off the registry gave it.
+    pub(super) fn lay_machine_files(&mut self, values: &BTreeMap<String, BTreeMap<String, PluginWanted>>) {
+        for server in &mut self.servers {
+            for (machine, wanted) in values {
+                let Some(value) = wanted.get(&server.name) else { continue };
+                if *value == PluginWanted::Off {
+                    server.machines.retain(|key, _| normalize_machine_name(key) != *machine);
+                    server.machines.insert(machine.clone(), [Wanted::Off, Wanted::Off]);
+                } else {
+                    server.machines.retain(|key, choices| normalize_machine_name(key) != *machine || !matches!(choices, [Wanted::Off, Wanted::Off]));
+                }
+            }
+        }
+    }
+
     fn server(&self, name: &str) -> Option<&Server> {
         self.servers.iter().find(|server| server.name == name)
     }
@@ -1446,11 +1465,12 @@ async fn load_registry(folder: &Path, commit: Option<&str>) -> Result<(Option<St
     };
     let listed = git_out(folder, &["ls-tree", "-z", &commit, "--", &pathspec]).await?;
     let mode = listed.split('\0').find_map(|entry| entry.split_whitespace().next().filter(|_| entry.split_whitespace().nth(1) == Some("blob")));
-    let registry = match mode {
+    let mut registry = match mode {
         Some("100644" | "100755") => read_registry(&repo_file(folder, &commit, MCP_FILE).await?),
         Some(_) => Registry { servers: Vec::new(), problems: vec![format!("{MCP_FILE} is a link in the repo, which Arbor doesn't follow")] },
         None => Registry::default(),
     };
+    registry.lay_machine_files(&super::setup_layers::machine_mcp_values(folder, &commit).await);
     Ok((Some(commit), mode.is_some(), uncommitted, registry))
 }
 
@@ -2330,8 +2350,6 @@ pub(crate) async fn set_mcp_wanted(
     }
     let folder = Path::new(&repo);
     let mut file = read_file_to_change(folder).await?;
-    set_wanted(&mut file, &name, machine.as_deref(), wanted)?;
-    let text = serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n";
     let message = match (&machine, wanted) {
         (None, McpWanted::Removed) => format!("Remove MCP server {name} from all machines"),
         (None, McpWanted::Off) => format!("Turn MCP server {name} off on all machines"),
@@ -2339,6 +2357,22 @@ pub(crate) async fn set_mcp_wanted(
         (Some(machine), McpWanted::Off) => format!("Keep MCP server {name} off {machine}"),
         (Some(machine), _) => format!("Give {machine} MCP server {name} as every machine has it"),
     };
+    // A machine with a file of its own keeps its off there, and loses any value mcp-servers.json had for it.
+    if let Some(machine) = machine.as_deref().filter(|_| matches!(wanted, McpWanted::Off | McpWanted::Default)) {
+        let found = super::setup_sync::read_repo(folder).await?;
+        let value = (wanted == McpWanted::Off).then_some("off");
+        if let Some(layer) = super::setup_layers::layer_edit(folder, found.layers(), super::setup_layers::LayerTarget::Machine(machine), "mcp", &name, value)? {
+            let before = serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n";
+            set_wanted(&mut file, &name, Some(machine), McpWanted::Default)?;
+            let after = serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n";
+            super::setup_layers::commit_moved(folder, layer, MCP_FILE, Some(before.as_bytes()), after, &message).await?;
+            let (commit, found, uncommitted, registry) = load_registry(folder, None).await?;
+            let machines = scanned_machines(&state.lock());
+            return Ok(registry_view(commit, found, uncommitted, &registry, &machines));
+        }
+    }
+    set_wanted(&mut file, &name, machine.as_deref(), wanted)?;
+    let text = serde_json::to_string_pretty(&file).map_err(|error| error.to_string())? + "\n";
     take_into_repo(folder, MCP_FILE, text.as_bytes(), &message, &[]).await?;
     let (commit, found, uncommitted, registry) = load_registry(folder, None).await?;
     let machines = scanned_machines(&state.lock());
@@ -3458,6 +3492,28 @@ exit 0"#;
         fn log(folder: &Path) -> Vec<String> {
             let output = std::process::Command::new("git").arg("-C").arg(folder).args(["log", "--format=%s"]).output().unwrap();
             String::from_utf8_lossy(&output.stdout).lines().map(str::to_string).collect()
+        }
+
+        #[test]
+        fn a_machine_files_mcp_values_win_over_the_registrys() {
+            let folder = temp_repo("layers");
+            fs::create_dir_all(folder.join(".agents")).unwrap();
+            fs::create_dir_all(folder.join("machines")).unwrap();
+            let server = |machines: serde_json::Value| serde_json::json!({ "claude": { "type": "http", "url": "https://mcp.example.com" }, "codex": null, "machines": machines });
+            let registry = serde_json::json!({ "version": 1, "servers": { "docs": server(serde_json::json!({ "CI 01": null })), "wiki": server(serde_json::json!({})) } });
+            fs::write(folder.join(MCP_FILE), serde_json::to_string_pretty(&registry).unwrap()).unwrap();
+            fs::write(folder.join("machines/ci-01.json"), r#"{"mcp": {"docs": "on", "wiki": "off"}}"#).unwrap();
+            let status = std::process::Command::new("git").arg("-C").arg(&folder).args(IDENTITY).args(["add", "--all"]).status().unwrap();
+            assert!(status.success());
+            let status = std::process::Command::new("git").arg("-C").arg(&folder).args(IDENTITY).args(["commit", "--quiet", "-m", "Start"]).status().unwrap();
+            assert!(status.success());
+            let (_, _, _, read) = block(load_registry(&folder, None)).unwrap();
+            let on = |name: &str| read.server(name).unwrap().wanted("CI 01", HomeAgent::Claude, "~/.claude").is_some();
+            // The machine file turns docs back on there and keeps wiki off; other machines get both as before.
+            assert!(on("docs"));
+            assert!(!on("wiki"));
+            assert!(read.server("wiki").unwrap().wanted("cedar", HomeAgent::Claude, "~/.claude").is_some());
+            let _ = fs::remove_dir_all(&folder);
         }
 
         #[test]
