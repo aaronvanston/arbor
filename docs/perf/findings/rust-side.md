@@ -58,6 +58,24 @@ thread payload.
 The combined Overview plus Breakdown read was 1,075 ms (1,039–1,119) in the current run; there
 is no interleaved parent measurement for that new path, so it has no before/after claim.
 
+The webview regressions were checked against the parent of the Round 2 commits (`9e5187f8`) with
+the same filled benchmark setup. The final rebased run keeps the regression ceilings unchanged:
+
+| Counter | Parent | Round 2 after | Result |
+| --- | ---: | ---: | --- |
+| Usage page commands | 8 | 7 | Fewer calls |
+| Default hidden commands/minute | 6.6 | 6.5 | Fewer calls |
+| Real hidden commands/minute | 6.6 | 6.6 | No measurable change |
+| Default hidden DOM mutations/minute | 0.6 | 0.6 | No measurable change |
+| Real hidden DOM mutations/minute | 0.6 | 0.6 | No measurable change |
+| Default reload monitors missing | none | none | Preserved |
+| Real reload monitors missing | none | none | Preserved |
+
+The current run's hidden tray reads carry only the displayed waiting count; the hidden command
+counter is 65/minute for the default fixture and 66/minute for the real-size fixture. No ceiling was
+raised for these seven counters. The intended monitor code adds 302 bytes to the measured app chunks;
+those app-JS ceilings were recorded separately with that reason.
+
 The following table is the historical Round 1 session benchmark. It remains here because R1's
 modest, noisy result was reported honestly; it is not evidence of an R2 win.
 
