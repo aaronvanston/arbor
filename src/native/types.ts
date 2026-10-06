@@ -190,7 +190,7 @@ export type AppUpdateInfo = {
 /**
  * Where an app update is; the window shows its progress from this.
  */
-export type AppUpdatePhase = "idle" | "available" | "checking" | "downloading" | "staging" | "restarting" | "canceled" | "failed";
+export type AppUpdatePhase = "idle" | "available" | "checking" | "downloading" | "verifying" | "staging" | "restarting" | "canceled" | "failed";
 
 export type AppUpdateTask = {
   running: boolean,
@@ -201,6 +201,10 @@ export type AppUpdateTask = {
   totalBytes: number | null,
   percent: number | null,
   message: string | null,
+  /**
+   * A dev build copied from this Mac's builder folder: no download, so no progress to show for it.
+   */
+  fromThisMac: boolean,
 };
 
 /**

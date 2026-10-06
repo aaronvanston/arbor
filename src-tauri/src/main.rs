@@ -314,6 +314,9 @@ enum AppUpdatePhase {
     Available,
     Checking,
     Downloading,
+    /// Checking the downloaded image's hash against the signed feed.
+    Verifying,
+    /// Opening the image, copying the app out and checking its signature.
     Staging,
     Restarting,
     Canceled,
@@ -331,6 +334,8 @@ struct AppUpdateTask {
     total_bytes: Option<u64>,
     percent: Option<f64>,
     message: Option<String>,
+    /// A dev build copied from this Mac's builder folder: no download, so no progress to show for it.
+    from_this_mac: bool,
 }
 
 impl Default for AppUpdateTask {
@@ -344,6 +349,7 @@ impl Default for AppUpdateTask {
             total_bytes: None,
             percent: None,
             message: None,
+            from_this_mac: false,
         }
     }
 }
@@ -1009,8 +1015,9 @@ impl AppUpdateState {
             target_version: Some(pending.version.clone()),
             downloaded_bytes: 0,
             total_bytes: Some(pending.asset.size_bytes),
-            percent: Some(0.0),
+            percent: pending.local_file.is_none().then_some(0.0),
             message: None,
+            from_this_mac: pending.local_file.is_some(),
         };
         Ok(())
     }

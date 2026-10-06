@@ -193,23 +193,34 @@ export const appAnswers: CommandAnswers<AppCommands> = {
   check_app_update: () => { mockLog('check_app_update', null); return { currentVersion: '0.3.200', updateAvailable: true, releaseUrl: 'https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.3.201', autoUpdateSupported: true, downloadSizeBytes: 48_120_000, unsupportedReason: null, bundledCoreVersion: '8.0.4', ...mockAppReleases() }; },
   get_update_channel: () => updateChannel,
   set_update_channel: ({ channel }) => { mockLog('set_update_channel', channel); updateChannel = channel; return updateChannel; },
-  get_app_update_task: () => ({ running: false, cancelable: false, phase: 'idle', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null }),
+  get_app_update_task: () => ({ running: false, cancelable: false, phase: 'idle', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null, fromThisMac: false }),
   start_app_update: () => {
     mockLog('start_app_update', null);
     // Starting only spawns the install, as in the app: it checks the feed again first, and a failure comes later
     // as progress.
-    const checking = { running: true, cancelable: true, phase: 'checking', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null };
+    const checking = { running: true, cancelable: true, phase: 'checking', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null, fromThisMac: false };
     if (params.get('appupdate') === 'gone') {
       window.setTimeout(() => void emit('app-update-progress', checking), 100);
       window.setTimeout(() => void emit('app-update-progress', { ...checking, running: false, cancelable: false, phase: 'failed', message: 'There’s no update to install anymore; check for updates again' }), 1_200);
     } else if (params.get('appupdate') === 'fail') {
       const task = (phase: string, message: string | null = null) => ({
         running: phase !== 'failed', cancelable: phase === 'downloading', phase, targetVersion: '0.3.201',
-        downloadedBytes: 12_000_000, totalBytes: 48_120_000, percent: 25, message,
+        downloadedBytes: 12_000_000, totalBytes: 48_120_000, percent: 25, message, fromThisMac: false,
       });
       window.setTimeout(() => void emit('app-update-progress', checking), 100);
       window.setTimeout(() => void emit('app-update-progress', task('downloading')), 700);
       window.setTimeout(() => void emit('app-update-progress', task('failed', 'Download failed: the release asset’s signature didn’t match.')), 2_000);
+    } else {
+      // Every step to Restarting, where the real app quits; on the dev channel the build is copied, with no percent.
+      const fromThisMac = updateChannel === 'dev';
+      const total = 48_120_000;
+      const at = (phase: string, downloaded = 0) => ({
+        running: true, cancelable: phase === 'checking' || phase === 'downloading', phase, targetVersion: '0.3.201', fromThisMac,
+        downloadedBytes: downloaded, totalBytes: total, percent: fromThisMac ? null : (downloaded / total) * 100,
+        message: fromThisMac || phase !== 'downloading' ? null : `${(downloaded / 1_000_000).toFixed(1)} MB / ${(total / 1_000_000).toFixed(1)} MB`,
+      });
+      const frames = [checking, ...(fromThisMac ? [at('downloading')] : [0.1, 0.35, 0.6, 0.85, 1].map((part) => at('downloading', Math.round(total * part)))), at('verifying', total), at('staging', total), at('restarting', total)];
+      frames.forEach((frame, index) => window.setTimeout(() => void emit('app-update-progress', frame), 100 + index * 900));
     }
     return null;
   },

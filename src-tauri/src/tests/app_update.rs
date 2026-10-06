@@ -112,6 +112,26 @@ fn installing_downloads_what_the_feed_has_now_not_the_earlier_offer() {
 }
 
 #[test]
+fn a_dev_build_is_copied_with_no_download_progress_to_show() {
+    let state = AppUpdateState::default();
+    state.start(CancellationToken::new()).unwrap();
+    let mut dev_build = pending_app_update("0.3.3");
+    dev_build.local_file = Some(PathBuf::from("/tmp/arbor-dev-feed/Arbor.dmg"));
+    state.start_download(&dev_build).unwrap();
+
+    let task = state.snapshot();
+    assert!(task.from_this_mac);
+    assert_eq!(task.percent, None);
+
+    let state = AppUpdateState::default();
+    state.start(CancellationToken::new()).unwrap();
+    state.start_download(&pending_app_update("0.3.3")).unwrap();
+    let task = state.snapshot();
+    assert!(!task.from_this_mac);
+    assert_eq!(task.percent, Some(0.0));
+}
+
+#[test]
 fn a_failed_or_canceled_check_never_downloads_the_earlier_offer() {
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
     let state = AppUpdateState::default();

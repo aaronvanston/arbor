@@ -203,7 +203,8 @@
  * `?live=none` for no agent sessions running (updates start without asking), or `?live=ends` for sessions that stop
  * a minute after the page loads, so an update waiting for idle agents goes ahead two minutes after that;
  * `?install=fail` to have core installs fail, `?appupdate=fail` to have Arbor's download fail after it starts, or
- *   `?appupdate=gone` for the update gone from the feed by the time Install runs its fresh check;
+ *   `?appupdate=gone` for the update gone from the feed by the time Install runs its fresh check (otherwise an
+ *   install steps through to Restarting, copying the build instead of downloading it on `?channel=dev`);
  * `?channel=nightly` for Settings › Updates on the nightly channel, offered a nightly build;
  * `?channel=dev` for the dev channel, offered this Mac's newest build of main, with `?devbuild=building`,
  *   `?devbuild=waiting`, `?devbuild=failed`, `?devbuild=none` (dev builds not set up: the switch asks for the

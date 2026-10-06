@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { invokeCommand } from './native/commands';
 import { listen } from '@tauri-apps/api/event';
-import { AlertCircle, Download } from './components/ui/icons';
+import { AlertCircle, Check, Download } from './components/ui/icons';
 import { Alert, AlertDescription } from './components/ui/alert';
 import { Button } from './components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle } from './components/ui/dialog';
@@ -19,6 +19,8 @@ import { Spinner } from './components/ui/spinner';
 import { useCoreRuntime } from './coreRuntime';
 import { translate, useI18n } from './i18n';
 import { appUpdateRestartsProxy, settleIdleUpdate } from './services/updateWhenIdle';
+import { appUpdateSteps } from './services/appUpdateSteps';
+import { cn } from './lib/utils';
 import type { AppUpdateInfo, AppUpdateTask } from './native/types';
 import { trackFeature } from './services/productAnalytics';
 import { afterLaunch } from './services/launchSettle';
@@ -56,6 +58,7 @@ const idleTask: AppUpdateTask = {
   totalBytes: null,
   percent: null,
   message: null,
+  fromThisMac: false,
 };
 
 const AppUpdateContext = createContext<AppUpdateContextValue | null>(null);
@@ -211,7 +214,7 @@ export function AppUpdateDialog() {
   const open = confirmOpen || task.running;
   const bundledCore = info?.bundledCoreVersion;
 
-  const percent = task.percent ?? (task.totalBytes && task.totalBytes > 0 ? (task.downloadedBytes / task.totalBytes) * 100 : null);
+  const steps = appUpdateSteps(task);
   const phaseLabel = t(`appUpdate.phase.${task.phase}` as Parameters<typeof t>[0]);
 
   return (
@@ -239,15 +242,31 @@ export function AppUpdateDialog() {
         ) : (
           <>
             <div className="flex flex-col gap-4 px-6 pb-5">
-              <div className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-muted-foreground">{t('kernel.dialog.phase')}</span>
-                <span className="font-medium text-foreground">{phaseLabel}</span>
-              </div>
-              <Progress value={percent} />
-              <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
-                <span className="tabular-nums text-foreground">{percent === null ? t('kernel.dialog.unknownProgress') : `${percent.toFixed(1)}%`}</span>
-                <span className="min-w-0 truncate">{task.message || phaseLabel}</span>
-              </div>
+              <ol className="flex flex-col gap-2.5 text-sm" aria-label={t('appUpdate.steps.label')}>
+                {steps.map((step) => (
+                  <li key={step.id} className="flex flex-col gap-1.5" aria-current={step.state === 'current' ? 'step' : undefined}>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+                        {step.state === 'done'
+                          ? <Check className="size-4 text-success" />
+                          : step.state === 'current'
+                            ? <Spinner className="size-3.5" />
+                            : <span className="size-1.5 rounded-full bg-muted-foreground/40" />}
+                      </span>
+                      <span className={cn('min-w-0 flex-1 truncate', step.state === 'upcoming' ? 'text-muted-foreground' : 'text-foreground', step.state === 'current' && 'font-medium')}>
+                        {t(`appUpdate.steps.${step.id}`)}
+                      </span>
+                      {step.percent !== null ? <span className="tabular-nums text-xs text-muted-foreground">{`${step.percent.toFixed(0)}%`}</span> : null}
+                    </div>
+                    {step.state === 'current' && step.id === 'download' ? (
+                      <div className="flex flex-col gap-1 pl-6.5">
+                        <Progress value={step.percent} />
+                        {task.message ? <span className="truncate text-xs text-muted-foreground">{task.message}</span> : null}
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
               {error ? (
                 <Alert variant="error" icon={<AlertCircle />}>
                   <AlertDescription>{error}</AlertDescription>

@@ -347,11 +347,14 @@ pub(crate) async fn download_and_stage_portable_app_update(
             Some(file) => crate::dev_builds::copy_dev_build(file, &archive_path, pending.asset.size_bytes)?,
             None => download_portable_update_archive(app, pending, token, &archive_path, proxy_url).await?,
         }
-        ensure_portable_update_download(token, &archive_path, pending)?;
         update_app_task(app, |task| {
             task.cancelable = false;
+            task.phase = AppUpdatePhase::Verifying;
+            task.message = None;
+        });
+        ensure_portable_update_download(token, &archive_path, pending)?;
+        update_app_task(app, |task| {
             task.phase = AppUpdatePhase::Staging;
-            task.message = Some("Preparing the application update".to_string());
         });
 
         let staged_app = work_dir
