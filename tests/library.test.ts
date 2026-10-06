@@ -429,3 +429,19 @@ describe('taking a machine’s own into the repo', () => {
     expect(calls).toEqual([['mcp', 'cam-mbp', '~/.claude', 'mine', false], ['hook', 'cam-mbp', '~/.claude', 'SessionStart', 'old.sh']]);
   });
 });
+
+describe('bringing an agent’s instructions in line', () => {
+  it('plans and writes CLAUDE.md where it’s behind, though it has no switch', async () => {
+    const claude = { path: '~/.claude/CLAUDE.md', kind: 'instructions' as const, sum: 'new', ck: 'c1-10', size: 10 };
+    const setup = repo([], { files: [claude] });
+    const machines = [machine('cam-mbp', [item('instructions', 'CLAUDE.md', { path: claude.path, sum: 'old' })])];
+    const rows = libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: null });
+    const plans = linePlans(rows, machines);
+    expect(plans.map((plan) => [plan.machine, plan.rows.map((row) => row.name)])).toEqual([['cam-mbp', ['CLAUDE.md']]]);
+    const synced: unknown[] = [];
+    mockCommands({ apply_setup_sync: ({ changes }) => { synced.push(changes); return { backup: 'b', done: changes.map((change) => change.path), failed: [] }; } });
+    const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: null }, machines, present(plans[0]));
+    expect(synced).toEqual([[{ path: claude.path, remove: false, before: 'old' }]]);
+    expect(done.changed).toBe(true);
+  });
+});

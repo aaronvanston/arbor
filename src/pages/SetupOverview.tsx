@@ -15,7 +15,7 @@ import { useI18n } from '../i18n';
 import { formatAgo, formatCount } from '../lib/format';
 import type { LibraryKind } from '../navigation';
 import { libraryCounts, type LibraryRow } from '../services/library';
-import { bringInLine, linePlans, type LinePlan } from '../services/libraryToggle';
+import { bringable, bringInLine, linePlans, type LinePlan } from '../services/libraryToggle';
 import { getSetupRepoLog } from '../services/repoBrowser';
 import { scanned } from '../services/setupSync';
 import type { RepoCommit, SetupMachine } from '../native/types';
@@ -63,7 +63,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenRepo, onOpenHist
   const plans = useMemo(() => linePlans(rows, machines), [rows, machines]);
   const read = machines.filter(scanned);
   const inStep = read.filter((machine) => machine.reachable && !plans.some((plan) => plan.machine === machine.machine));
-  const behindRows = rows.filter((row) => row.behind.length > 0 && row.toggle && row.state !== 'unlisted');
+  const behindRows = rows.filter((row) => row.behind.length > 0 && bringable(row));
   const counts = libraryCounts(rows);
   const items = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
@@ -108,7 +108,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenRepo, onOpenHist
     );
   }
 
-  const behindNames = (machine: string) => rows.filter((row) => row.behind.includes(machine) && row.toggle && row.state !== 'unlisted');
+  const behindNames = (machine: string) => rows.filter((row) => row.behind.includes(machine) && bringable(row));
   return (
     <div className="flex flex-col gap-6">
       <StatsGrid columns={4}>

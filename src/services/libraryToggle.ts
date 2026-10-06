@@ -547,10 +547,16 @@ export async function removeEverywhere(repo: string, machines: SetupMachine[], t
 /** What bringing one machine in line changes: each Library row behind there that the repo lists. */
 export type LinePlan = { machine: string; rows: LibraryRow[] };
 
+/**
+ * A row bringing a machine in line can change: what the repo lists with a switch, and an agent's instructions, which
+ * have no switch (every machine has its own) but come from the repo all the same.
+ */
+export const bringable = (row: LibraryRow) => (row.toggle !== null || (row.kind === 'instructions' && row.detail !== null)) && row.state !== 'unlisted' && row.state !== 'removed';
+
 /** Each answering machine with rows behind there, in the machines' order. */
 export function linePlans(rows: LibraryRow[], machines: SetupMachine[]): LinePlan[] {
   return reachableMachines(machines)
-    .map((machine) => ({ machine: machine.machine, rows: rows.filter((row) => row.toggle && row.state !== 'unlisted' && row.behind.includes(machine.machine)) }))
+    .map((machine) => ({ machine: machine.machine, rows: rows.filter((row) => bringable(row) && row.behind.includes(machine.machine)) }))
     .filter((plan) => plan.rows.length > 0);
 }
 
@@ -572,7 +578,10 @@ export async function bringInLine(repo: string, sources: { [K in keyof SwitchSou
   const hook = toggles.find((toggle) => toggle.kind === 'hook');
   // Files first: a hook runs a script the repo's sync puts in ~/.agents/hooks, so its scripts go with them.
   if (setup?.head) {
-    const files = new Set(toggles.flatMap((toggle) => (toggle.kind === 'file' ? [toggle.path] : [])));
+    const files = new Set([
+      ...toggles.flatMap((toggle) => (toggle.kind === 'file' ? [toggle.path] : [])),
+      ...plan.rows.flatMap((row) => (row.kind === 'instructions' && !row.toggle && row.detail ? [row.detail] : [])),
+    ]);
     const changes = syncChanges(syncPlan(setup, entry).filter((file) => files.has(file.path) || (hook !== undefined && file.kind === 'hookScript')));
     if (changes.length) {
       try {
