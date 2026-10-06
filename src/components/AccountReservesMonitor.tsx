@@ -15,6 +15,7 @@ import {
 } from '../services/accountReserves';
 import { getAccountsSnapshot, loadAccountFiles, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { notify } from '../services/notify';
+import { holdingReload } from '../services/reloadHolds';
 import { getQuotaCacheSnapshot, useQuotaCache } from '../services/quotaCache';
 import { fileName, providerForFile, quotaKey } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
@@ -54,7 +55,8 @@ export function AccountReservesMonitor({ coreReady }: { coreReady: boolean }) {
     });
     if (!steps.length) return;
     busyRef.current = true;
-    void applyReserveSteps(steps)
+    // An account is turned off in the core before its pause is saved, so the window doesn't reload between the two.
+    void holdingReload('caps', () => applyReserveSteps(steps))
       .then(async ({ done, failed }) => {
         failed.forEach(({ step, error: reason }) => console.warn(`Failed to ${step.kind} an account for its cap`, reason));
         if (alertsRef.current) void notify(reserveNotifications(done, tRef.current, Date.now()));

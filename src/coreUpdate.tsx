@@ -12,6 +12,7 @@ import { invokeCommand } from './native/commands';
 import { useCoreRuntime } from './coreRuntime';
 import type { CoreLatest } from './native/types';
 import { afterLaunch } from './services/launchSettle';
+import { whenShown } from './services/bootMode';
 
 /**
  * The core's releases come from GitHub a few times a week, so the background check asks every half hour, and when
@@ -165,7 +166,8 @@ export function CoreUpdateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => {
+  // Once the window shows, for a page the window reloaded into in the background.
+  useEffect(() => whenShown(() => {
     if (!latestAutoCheckStarted) {
       latestAutoCheckStarted = true;
       // The release list is on the network; Home's own reads go first.
@@ -173,7 +175,7 @@ export function CoreUpdateProvider({ children }: { children: ReactNode }) {
     } else if (latestCheckPromise) {
       void check();
     }
-  }, [check]);
+  }), [check]);
 
   useEffect(() => {
     let disposed = false;

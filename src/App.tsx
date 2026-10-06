@@ -1,37 +1,19 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
 import { onAddMachineRequest } from './services/addMachine';
 import { Activity, Archive, BellRing, Bot, Database, FolderSearch, Info, Monitor, Network, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
-import { CoreRuntimeProvider, useCoreRuntime } from './coreRuntime';
-import { CoreUpdateProvider, useCoreUpdate } from './coreUpdate';
+import { useCoreRuntime } from './coreRuntime';
+import { useCoreUpdate } from './coreUpdate';
 import { HomePage } from './pages/HomePage';
 import { MachinePill } from './components/identity/Identity';
 import { SidebarLimits } from './components/SidebarLimits';
-import { LimitsMonitor } from './components/LimitsMonitor';
-import { FleetHealthMonitor } from './components/FleetHealthMonitor';
-import { AccountReservesMonitor } from './components/AccountReservesMonitor';
-import { ProxyChecksMonitor } from './components/ProxyChecksMonitor';
-import { SessionMonitor } from './components/SessionMonitor';
-import { LiveSessionsMonitor } from './components/LiveSessionsMonitor';
-import { WeeklyDigestMonitor } from './components/WeeklyDigestMonitor';
-import { MachineMonitor } from './components/MachineMonitor';
-import { SetupChangeMonitor } from './components/SetupChangeMonitor';
-import { AutomationMonitor } from './components/AutomationMonitor';
-import { ArchiveMonitor } from './components/ArchiveMonitor';
-import { AgentAttentionMonitor } from './components/AgentAttentionMonitor';
-import { FleetMonitor } from './components/FleetMonitor';
-import { AlertCoordinator } from './components/AlertCoordinator';
-import { UpdateWhenIdleMonitor } from './components/UpdateWhenIdleMonitor';
-import { CliBridgeMonitor } from './components/CliBridgeMonitor';
 import { AddMachineDialog } from './components/AddMachineDialog';
 import { ARBOR_RELEASES_URL, NO_RELEASE_NOTES, arborReleaseUrl, releaseNotesToShow } from './services/releaseNotes';
 import { availableBesideWaiting, idleUpdatePillDetail, idleUpdateTitleKey, useIdleUpdates } from './services/updateWhenIdle';
 import { CommandPalette, type PalettePage, type PaletteSetting } from './components/CommandPalette';
 import { SettingsSearch } from './components/SettingsSearch';
-import { QuitGuard } from './components/QuitGuard';
 import { MonitorBoundary, PageErrorBoundary } from './components/ErrorBoundaries';
-import { AfterLaunch } from './components/AfterLaunch';
 import { CoreLockedPage } from './components/CoreLockedPage';
 import { coreLock, coreLockHint, sidebarCoreState } from './services/coreLock';
 import { useMacTitleBar } from './services/windowChrome';
@@ -58,10 +40,11 @@ import { useAppPreferences } from './appPreferences';
 import { useScrollFade } from './hooks/useScrollFade';
 import { clearOfFade, scrollEdges, scrollPosition } from './lib/scrollFade';
 import { useI18n } from './i18n';
-import { AppUpdateDialog, AppUpdateProvider, useAppUpdate } from './appUpdate';
+import { AppUpdateDialog, useAppUpdate } from './appUpdate';
 import { appUpdateIndicatorState } from './appUpdateModel';
 import { accountLimitsView, canOpenView, machinesView, mainView, samePage, viewPageId, type AppView, type MainPageId, type SettingsPageId } from './navigation';
-import { canArrive, changePageView, currentView, goBack, goForward, goToView, lockedInPlace, useViewHistory, type ViewArrival, type ViewChange } from './services/viewHistory';
+import { canArrive, changePageView, currentView, goBack, goForward, goToView, lockedInPlace, useViewHistory, type ViewArrival, type ViewChange, type ViewHistory } from './services/viewHistory';
+import { bootedInBackground } from './services/bootMode';
 import type { MessageKey } from './i18n/resources';
 import { useAppliedTheme, useThemePreference, type ThemePreference } from './theme';
 import { cn } from './lib/utils';
@@ -230,33 +213,40 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
   }
 });
 
-function App() {
+/** How the shell takes navigation from the monitors beside it (an alert's toast): its own, once it's mounted. */
+export type ShellProps = { navigateRef: MutableRefObject<((view: AppView) => void) | null> };
+
+/**
+ * The app as it's seen: the sidebar, the open page and the dialogs. The providers and the monitors that keep running
+ * while nobody looks are around it, in AppRoot.tsx; a page the window reloaded into in the background loads this only
+ * once the window shows.
+ */
+function App({ navigateRef }: ShellProps) {
   return (
-    <AppUpdateProvider>
-      <CoreRuntimeProvider>
-        <CoreUpdateProvider>
-          {/* Hints open quickly and, once one is open, the next opens at once, so reading a row of them doesn't keep you waiting. */}
-          <TooltipProvider delay={150} closeDelay={0}>
-            <AppContent />
-          </TooltipProvider>
-        </CoreUpdateProvider>
-      </CoreRuntimeProvider>
-    </AppUpdateProvider>
+    // Hints open quickly and, once one is open, the next opens at once, so reading a row of them doesn't keep you waiting.
+    <TooltipProvider delay={150} closeDelay={0}>
+      <AppContent navigateRef={navigateRef} />
+    </TooltipProvider>
   );
 }
 
-function AppContent() {
+/** The last view of `kind` up to the current step, for where Settings opens and where leaving it returns to. */
+function lastViewOf(history: ViewHistory, kind: AppView['kind']): AppView | undefined {
+  return history.entries.slice(0, history.index + 1).reverse().find((view) => view.kind === kind);
+}
+
+function AppContent({ navigateRef }: ShellProps) {
   const { t, tRich } = useI18n();
   usePagePrefetch();
   const { info: appUpdateInfo, hasUpdate, processing: appUpdateProcessing, checking: checkingAppUpdate, check: checkAppUpdate } = useAppUpdate();
   const { latest: coreLatest, hasUpdate: coreHasUpdate, check: checkCoreUpdate } = useCoreUpdate();
   const history = useViewHistory();
   const view = currentView(history);
-  // Closed to the tray or minimized for a while, the page lets go of what it holds; the monitors below carry on.
+  // Closed to the tray or minimized for a while, the page lets go of what it holds; the monitors in AppRoot carry on.
   const pageResting = usePageRest(JSON.stringify(view));
   // Where Settings opens, and where leaving it returns to: the last page on each side, as it was left.
-  const lastMainView = useRef<AppView>(HOME_VIEW);
-  const lastSettingsPage = useRef<SettingsPageId>('general');
+  const lastMainView = useRef<AppView>(lastViewOf(history, 'main') ?? HOME_VIEW);
+  const lastSettingsPage = useRef<SettingsPageId>((lastViewOf(history, 'settings')?.page as SettingsPageId | undefined) ?? 'general');
   useEffect(() => {
     if (view.kind === 'main') lastMainView.current = view;
     else lastSettingsPage.current = view.page;
@@ -372,6 +362,12 @@ function AppContent() {
     setVisit((count) => count + 1);
   }, [coreReady]);
   const navigate = useCallback((next: AppView) => goTo(next, 'open'), [goTo]);
+  useEffect(() => {
+    navigateRef.current = navigate;
+    return () => {
+      navigateRef.current = null;
+    };
+  }, [navigate, navigateRef]);
   const changeView = useCallback((next: AppView, how?: ViewChange) => void changePageView(next, how), []);
   const [paletteOpen, setPaletteOpen] = useState(false);
   // What was typed into the sidebar's search row to open it, typed into the palette as it opens.
@@ -402,7 +398,15 @@ function AppContent() {
     if (!samePage(currentView(history), target)) navigate(target);
   }, [coreReady, history, navigate]);
   useSettingReveal(view.kind === 'settings' ? view.page : null);
-  useEffect(() => trackPageView(view), [view]);
+  // A page the window reloaded into in the background comes back on the view it was left on, which was counted then.
+  const viewCounted = useRef(bootedInBackground());
+  useEffect(() => {
+    if (viewCounted.current) {
+      viewCounted.current = false;
+      return;
+    }
+    trackPageView(view);
+  }, [view]);
   // Usage data is on from the start in an official release, so a new install's first launch says so, once, with the
   // way to turn it off.
   const openUsageData = useRef(() => {});
@@ -497,27 +501,6 @@ function AppContent() {
 
   return (
     <>
-      {/* What feeds Home, the sidebar and the menu bar starts with the window; machine alerts share its health read. */}
-      <MonitorBoundary name="LimitsMonitor"><LimitsMonitor coreReady={coreReady} /></MonitorBoundary>
-      <MonitorBoundary name="LiveSessionsMonitor"><LiveSessionsMonitor /></MonitorBoundary>
-      <MonitorBoundary name="MachineMonitor"><MachineMonitor /></MonitorBoundary>
-      <MonitorBoundary name="FleetHealthMonitor"><FleetHealthMonitor /></MonitorBoundary>
-      <MonitorBoundary name="FleetMonitor"><FleetMonitor /></MonitorBoundary>
-      <MonitorBoundary name="AlertCoordinator"><AlertCoordinator coreReady={coreReady} onNavigate={navigate} /></MonitorBoundary>
-      <MonitorBoundary name="QuitGuard"><QuitGuard /></MonitorBoundary>
-      {/* The rest start once Home's reads have gone, a second or two in. */}
-      <AfterLaunch>
-        <MonitorBoundary name="AccountReservesMonitor"><AccountReservesMonitor coreReady={coreReady} /></MonitorBoundary>
-        <MonitorBoundary name="ProxyChecksMonitor"><ProxyChecksMonitor coreReady={coreReady} /></MonitorBoundary>
-        <MonitorBoundary name="SessionMonitor"><SessionMonitor /></MonitorBoundary>
-        <MonitorBoundary name="WeeklyDigestMonitor"><WeeklyDigestMonitor /></MonitorBoundary>
-        <MonitorBoundary name="SetupChangeMonitor"><SetupChangeMonitor /></MonitorBoundary>
-        <MonitorBoundary name="AutomationMonitor"><AutomationMonitor /></MonitorBoundary>
-        <MonitorBoundary name="ArchiveMonitor"><ArchiveMonitor /></MonitorBoundary>
-        <MonitorBoundary name="AgentAttentionMonitor"><AgentAttentionMonitor /></MonitorBoundary>
-        <MonitorBoundary name="UpdateWhenIdleMonitor"><UpdateWhenIdleMonitor /></MonitorBoundary>
-        <MonitorBoundary name="CliBridgeMonitor"><CliBridgeMonitor /></MonitorBoundary>
-      </AfterLaunch>
       {/* Closed on a crash so it doesn't pop back open by itself when it restarts. */}
       <MonitorBoundary name="CommandPalette" onCrash={() => setPaletteOpen(false)}>
         <CommandPalette

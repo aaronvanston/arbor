@@ -13,6 +13,7 @@ import {
 import { readFleetHealth } from '../services/machineHealth';
 import { isWindowHidden, pacedInterval, pacedMs } from '../services/hiddenPace';
 import { notify } from '../services/notify';
+import { carriedOver, carryOverReload } from '../services/reloadHolds';
 
 const STATE_KEY = 'arbor.machine-alerts.v1';
 const HEALTH_UPDATED_EVENT = 'machine-health-updated';
@@ -20,6 +21,8 @@ const HEALTH_UPDATED_EVENT = 'machine-health-updated';
 const CHECK_THROTTLE_MS = 30_000;
 /** In case a round's event is missed. */
 const CHECK_INTERVAL_MS = 2 * 60_000;
+/** The last resume, carried over a reload of the hidden window. */
+const RESUMED_CARRY = 'machines.resumedAtMs';
 /** How often the time is noted, to tell when this Mac has slept: a minute apart while the window is hidden. */
 const WAKE_TICK_MS = 10_000;
 
@@ -63,7 +66,11 @@ export function MachineMonitor() {
     let running = false;
     let lastCheckMs = 0;
     let pending: number | undefined;
-    let resumedAtMs = Date.now();
+    // A reload of the hidden window isn't a resume: nothing stopped watching, so the last one carries over, and a
+    // machine counting down to its alert carries on counting.
+    const carried = carriedOver(RESUMED_CARRY);
+    const reloaded = typeof carried === 'number' && carried <= Date.now();
+    let resumedAtMs = reloaded ? carried : Date.now();
     let lastTickMs = resumedAtMs;
     let settled: number | undefined;
     const resume = (atMs: number) => {
@@ -122,7 +129,8 @@ export function MachineMonitor() {
 
     // Arbor starting counts as resuming: the network may still be coming up at login, and a stored count
     // ran while nothing was watching.
-    resume(resumedAtMs);
+    if (!reloaded || Date.now() - resumedAtMs < SETTLE_AFTER_RESUME_MS) resume(resumedAtMs);
+    const stopCarry = carryOverReload(RESUMED_CARRY, () => resumedAtMs);
     void check();
     const timer = window.setInterval(() => void check(), CHECK_INTERVAL_MS);
     // The gap so far is judged by the pace it was ticking at, before the pace changes.
@@ -144,6 +152,7 @@ export function MachineMonitor() {
     return () => {
       disposed = true;
       stop?.();
+      stopCarry();
       window.clearInterval(timer);
       stopWakeTimer();
       window.removeEventListener('online', online);

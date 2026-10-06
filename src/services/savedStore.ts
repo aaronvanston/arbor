@@ -99,6 +99,13 @@ const storedText = (key: string): string | null | undefined => {
 };
 
 const saveToApp = (name: string, value: string | null) => invokeCommand('saved_store_set', { name, value });
+
+/** Saves on their way to the app. */
+const inFlight = new Set<Promise<unknown>>();
+
+/** Resolves once every save already on its way to the app has landed, so a reload doesn't lose the last of them. */
+export const savesSettled = (): Promise<void> => Promise.all(inFlight).then(() => undefined);
+
 /** How the app is asked to save a setting; set by `loadSavedSettings`. */
 let saveInApp: ((name: string, value: string | null) => Promise<unknown>) | null = null;
 /** Whether the app's copy is still being read: a setting changed meanwhile is saved to it all the same. */
@@ -139,7 +146,11 @@ export function savedStore<T>({ key, parse, fallback, serialize = JSON.stringify
     if (place === 'app') {
       if (reading) changedWhileReading.set(key, text);
       fromApp?.set(key, text);
-      void (saveInApp ?? (reading ? saveToApp : null))?.(key, text).catch(() => undefined);
+      const saving = (saveInApp ?? (reading ? saveToApp : null))?.(key, text).catch(() => undefined);
+      if (saving) {
+        inFlight.add(saving);
+        void saving.finally(() => inFlight.delete(saving));
+      }
     }
     try {
       localStorage.setItem(key, text);

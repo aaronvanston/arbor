@@ -3,6 +3,7 @@ import { TriangleAlert } from './ui/icons';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
 import { createConfirmationQueue, type ConfirmationChoice } from '../services/confirmationQueue';
+import { holdReloadWhile } from '../services/reloadHolds';
 import { Button } from './ui/button';
 import { AlertDialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle } from './ui/dialog';
 
@@ -22,6 +23,8 @@ type Decisions = { onDecision: (confirmed: boolean) => void; onSecondary?: () =>
 
 // Every confirmation in the app goes through this one queue and shows in the one host, one after another.
 const confirmations = createConfirmationQueue<ConfirmationOptions>();
+// A question waiting for an answer, on screen or not yet, would go with a reload.
+holdReloadWhile('confirmation', () => confirmations.current() !== null);
 
 /** What a confirmation says and its buttons. Apart from the dialog around it so tests can render it without a portal. */
 export function ConfirmationContent({

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { REST_CHECK_MS, restDue, scrollToRestore, windowPlace, type RestScroll, type WindowPlace } from '../services/pageRest';
+import { REST_CHECK_MS, restDue, scrollToRestore, windowPlace, type RestHolds, type RestScroll, type WindowPlace } from '../services/pageRest';
 import { hasUnsavedChanges } from '../services/unsavedChanges';
 
 const PAGE_SCROLL = 'main [data-slot="page-scroll"]';
@@ -11,7 +11,8 @@ const BUSY = 'main [data-slot="spinner"], main [data-refreshing], main [aria-bus
 /** When a page that came back is scrolled to where it was: at once, then as its data arrives and it grows. */
 const SCROLL_ATTEMPTS_MS = [0, 100, 300, 1_000, 2_000];
 
-async function readWindowPlace(): Promise<WindowPlace> {
+/** Where the window is now: on screen, or, hidden, whether Tauri's window says it's closed or minimized. */
+export async function readWindowPlace(): Promise<WindowPlace> {
   if (document.visibilityState !== 'hidden') return 'shown';
   try {
     const current = getCurrentWindow();
@@ -21,6 +22,13 @@ async function readWindowPlace(): Promise<WindowPlace> {
     return windowPlace(true, null);
   }
 }
+
+/** What the open page has that resting or reloading it would lose. */
+export const readPageHolds = (): RestHolds => ({
+  unsaved: hasUnsavedChanges(),
+  dialog: document.querySelector(DIALOG) !== null,
+  busy: document.querySelector(BUSY) !== null,
+});
 
 /**
  * Whether the open page rests while the window is hidden (services/pageRest.ts). It looks every half minute while
@@ -44,12 +52,7 @@ export function usePageRest(view: string): boolean {
       timer = undefined;
       const place = await readWindowPlace();
       if (disposed || hiddenAtMs === null) return;
-      const holds = {
-        unsaved: hasUnsavedChanges(),
-        dialog: document.querySelector(DIALOG) !== null,
-        busy: document.querySelector(BUSY) !== null,
-      };
-      if (restDue(place, Date.now() - hiddenAtMs, holds)) {
+      if (restDue(place, Date.now() - hiddenAtMs, readPageHolds())) {
         savedRef.current = { view: viewRef.current, top: document.querySelector<HTMLElement>(PAGE_SCROLL)?.scrollTop ?? 0 };
         setResting(true);
       } else if (place !== 'shown') {

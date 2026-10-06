@@ -4,6 +4,7 @@ import { mockCommands } from '../src/dev/mock/answers';
 import { getAlertHistory, resetAlertHistory } from '../src/services/alertHistory';
 import { notify, presentAlertsInApp, type InAppAlert, type SystemNotification } from '../src/services/notify';
 import { setPhoneAlertSetting } from '../src/services/phoneAlerts';
+import { reloadHolds } from '../src/services/reloadHolds';
 import { itemAt } from './support/items';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -75,6 +76,16 @@ afterEach(() => {
 });
 
 describe('where alerts show', () => {
+  it('holds a reload of the hidden window until an alert has gone out, so it isn’t recorded and then lost', async () => {
+    windowIs({ visible: false, focused: false });
+    const sending = notify([down]);
+    expect(reloadHolds()).toEqual(['alert']);
+    await sending;
+    expect(shownOnMac).toEqual([down.title]);
+    expect(reloadHolds()).toEqual([]);
+  });
+
+
   it('shows them in Arbor’s window while it’s in front, and still sends them to the phone', async () => {
     windowIs({ visible: true, focused: true });
     await notify([waiting, down]);

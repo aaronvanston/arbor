@@ -3,6 +3,7 @@ import { isWindowInFront } from '../lib/windowVisibility';
 import { recordAlertDelivery, recordAlerts, type AlertSubject } from './alertHistory';
 import { phoneWants, sendPhoneAlerts, type AlertKind, type PhoneAlert } from './phoneAlerts';
 import { trackFeature } from './productAnalytics';
+import { holdingReload } from './reloadHolds';
 
 export type SystemNotification = {
   title: string;
@@ -44,6 +45,11 @@ export const phoneAlertFor = ({ title, body, phoneBody, kind, urgent }: SystemNo
  */
 export async function notify(messages: SystemNotification[]) {
   if (!messages.length) return;
+  // Recorded in the history before it goes out, so the window doesn't reload between the two and lose it.
+  await holdingReload('alert', () => deliver(messages));
+}
+
+async function deliver(messages: SystemNotification[]) {
   const due = recordAlerts(messages).flatMap(({ id, deliver }, index) => {
     const message = messages[index];
     return deliver && message ? [{ ...message, id }] : [];

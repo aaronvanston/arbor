@@ -1,5 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { invokeCommand } from '../native/commands';
+import { holdReload } from './reloadHolds';
 import type { CliAccess, CliWindowAction, CliWindowArg, JsonValue } from '../native/types';
 
 /**
@@ -55,7 +56,11 @@ export async function answerCliRequest(handlers: CliHandlers, request: CliReques
 export function startCliBridge(handlers: CliHandlers): () => void {
   let stopped = false;
   const stop = listen<CliRequest>(CLI_REQUEST_EVENT, ({ payload }) => {
-    void answerCliRequest(handlers, payload).then((answer) => invokeCommand('cli_respond', { id: payload.id, ...answer }));
+    // The window doesn't reload in the middle of an answer.
+    const release = holdReload('cli');
+    void answerCliRequest(handlers, payload)
+      .then((answer) => invokeCommand('cli_respond', { id: payload.id, ...answer }))
+      .finally(release);
   });
   void stop.then(() => {
     if (!stopped) void invokeCommand('cli_bridge_ready', { actions: cliActions(handlers) }).catch(() => undefined);

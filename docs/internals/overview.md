@@ -43,13 +43,20 @@ files open through `system_open::open_with_system`; tauri-plugin-opener's `open_
 ## The hidden window
 
 Closing the window only hides it, and it's hidden most of the time: the webview is the background service (alerts,
-caps, limits, tray rows, the pools' report, the CLI's window actions all run in the monitors `App.tsx` mounts beside
-the page). So:
+caps, limits, tray rows, the pools' report, the CLI's window actions all run in the monitors `AppRoot.tsx` mounts beside
+the app, `App.tsx`). So:
 
 - Anything that must keep going while nobody looks belongs in a monitor, never in a page. Half a minute after the
   window is closed or minimized (five when it's only covered) the open page rests: the content area renders nothing
   until the window shows, then the same view mounts again (`services/pageRest.ts`). A page holds that off only while
   it has unsaved edits (`useUnsavedChanges`), a dialog open, or a spinner or refresh showing.
+- WebKit keeps a page's peak memory however much it lets go, so after half an hour closed or minimized (never only
+  covered) the window reloads into a fresh page (`services/backgroundReload.ts`). That page starts in the background:
+  the monitors start as at launch and `App.tsx` isn't even loaded until the window shows, back on the view it was
+  left on. A monitor must therefore pick up from what's saved, not from memory: anything it alone keeps that would
+  re-alert or restart a countdown is saved, carried over (`carryOverReload`), or holds the reload while it lasts
+  (`holdReload`, as an alert going out, a CLI answer, a cap being applied and a queued update do). The page's own
+  holds are the ones above.
 - `backgroundThrottling` is off, so WebKit never slows a hidden page's timers. A monitor's check that runs more often
   than once a minute goes through `pacedInterval` or `throttleWaitMs` (`services/hiddenPace.ts`), which hold it to
   once a minute while hidden; alerts and the tray stay within that. A page's own polls skip while `document.hidden`.

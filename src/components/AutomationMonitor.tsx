@@ -2,7 +2,12 @@ import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useI18n } from '../i18n';
 import { AUTOMATIONS_UPDATED_EVENT, failedRunAlerts, loadAutomations, useAutomations, type SeenRuns } from '../services/automations';
+import { carriedTimes } from '../services/backgroundReload';
 import { notify } from '../services/notify';
+import { carriedOver, carryOverReload } from '../services/reloadHolds';
+
+/** The runs already seen, carried over a reload of the hidden window so one that failed during it still alerts. */
+const SEEN_CARRY = 'automations.seen';
 
 /**
  * Headless watcher for Arbor's own automations: it reads the list again whenever the native side says something
@@ -12,9 +17,11 @@ import { notify } from '../services/notify';
 export function AutomationMonitor() {
   const { t } = useI18n();
   const { list } = useAutomations();
-  const seenRef = useRef<SeenRuns | null>(null);
+  const seenRef = useRef<SeenRuns | null>(carriedTimes(carriedOver(SEEN_CARRY)));
   const tRef = useRef(t);
   tRef.current = t;
+
+  useEffect(() => carryOverReload(SEEN_CARRY, () => seenRef.current), []);
 
   useEffect(() => {
     void loadAutomations();

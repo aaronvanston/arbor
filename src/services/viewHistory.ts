@@ -118,6 +118,9 @@ const update = (next: ViewHistory) => {
   return true;
 };
 
+/** The history as it is now, for what reads it outside React. */
+export const viewHistoryNow = () => state;
+
 export const useViewHistory = () => useSyncExternalStore(subscribe, () => state, () => state);
 
 /** Starts the history over, for tests and the browser mock's `?history=` scenarios. */

@@ -1,10 +1,11 @@
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppErrorBoundary } from './AppErrorBoundary';
-import App from './App';
+import { AppRoot, loadShell } from './AppRoot';
 import { I18nProvider } from './i18n';
 import { trackWindowVisibility } from './lib/windowVisibility';
 import { lastShownPageId } from './components/ErrorBoundaries';
+import { beginBoot } from './services/bootMode';
 import { preparePhoneAlerts } from './services/phoneAlerts';
 import { reportUncaughtErrors } from './services/productAnalytics';
 import { renameLegacySavedKeys } from './services/savedKeys';
@@ -24,6 +25,10 @@ if ((import.meta.env.DEV || import.meta.env.MODE === 'demo') && !('__TAURI_INTER
   installTauriMock();
 }
 
+// After the mock, which sets the window's place and its start view: a page the window reloaded into in the background
+// starts hidden, back on the view it was left on.
+const background = beginBoot();
+
 reportUncaughtErrors(lastShownPageId);
 initializeTheme();
 trackWindowVisibility();
@@ -40,15 +45,19 @@ function ShowWindowWhenPainted() {
 // the app keeps for the window, so all three are read before anything is drawn. A promise rather than a top-level await: the build targets
 // ES2020, which doesn't have one. The window stays hidden until this first render paints; the shell
 // shows it anyway if that never comes.
-void Promise.all([loadSystemRegion(), loadZoom(), loadSavedSettings()]).then(() => {
+// A launch loads the app as it's seen alongside them, so its first frame is the whole app; a page the window reloaded
+// into in the background starts only what keeps running, and the rest once the window shows. A shell that fails to load
+// is loaded again by AppRoot, which shows the error page if it fails again.
+void Promise.all([loadSystemRegion(), loadZoom(), loadSavedSettings(), background ? null : loadShell().catch(() => null)]).then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <I18nProvider>
         <AppErrorBoundary>
-          <App />
+          <AppRoot />
         </AppErrorBoundary>
       </I18nProvider>
-      <ShowWindowWhenPainted />
+      {/* The window is already up when a page the window reloaded into is shown. */}
+      {background ? null : <ShowWindowWhenPainted />}
     </StrictMode>
   );
 });

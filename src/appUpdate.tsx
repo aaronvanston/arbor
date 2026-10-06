@@ -22,6 +22,8 @@ import { appUpdateRestartsProxy, settleIdleUpdate } from './services/updateWhenI
 import type { AppUpdateInfo, AppUpdateTask } from './native/types';
 import { trackFeature } from './services/productAnalytics';
 import { afterLaunch } from './services/launchSettle';
+import { whenShown } from './services/bootMode';
+import { holdReload } from './services/reloadHolds';
 
 type AppUpdateContextValue = {
   info: AppUpdateInfo | null;
@@ -118,11 +120,13 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       else stopListening = stop;
     });
 
-    if (!startupCheckStarted.current) {
+    // A page the window reloaded into in the background checks once it's shown, as checks only matter to someone looking.
+    const stopStartupCheck = whenShown(() => {
+      if (startupCheckStarted.current) return;
       startupCheckStarted.current = true;
       // The feed is on the network; Home's own reads go first.
       void afterLaunch().then(() => check());
-    }
+    });
     // Quiet background poll so the sidebar pill and Home banner appear without a manual check.
     const poll = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -144,10 +148,14 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     const timer = window.setInterval(() => void poll(), UPDATE_POLL_INTERVAL_MS);
     return () => {
       disposed = true;
+      stopStartupCheck();
       stopListening?.();
       window.clearInterval(timer);
     };
   }, [check]);
+
+  // An install going on doesn't stop for a reload of the window.
+  useEffect(() => (task.running ? holdReload('update') : undefined), [task.running]);
 
   const install = useCallback(async () => {
     setConfirmOpen(false);

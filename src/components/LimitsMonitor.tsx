@@ -32,6 +32,7 @@ import { useQuotaClock } from '../services/quotaTime';
 import { formatWhen } from '../lib/format';
 import type { TrayDot, TrayRow } from '../native/types';
 import { publishTrayRows } from '../services/trayMenu';
+import { pushToTray } from '../services/bootMode';
 import { nextResetNotifications, type ResetReady } from '../services/resetReadiness';
 
 const NOTIFIED_KEY = 'arbor.limits-notified.v1';
@@ -243,7 +244,9 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   }, [trayKey]);
   const trayIndicator = worstIndicator(activeStatuses.map(({ status }) => status.indicator));
   useEffect(() => {
-    invokeCommand('set_tray_status', { indicator: trayIndicator }).catch((error) => console.warn('Failed to update the tray icon', error));
+    pushToTray('status', trayIndicator === 'none', () => {
+      invokeCommand('set_tray_status', { indicator: trayIndicator }).catch((error) => console.warn('Failed to update the tray icon', error));
+    });
   }, [trayIndicator]);
 
   // Native notifications on pace transitions.

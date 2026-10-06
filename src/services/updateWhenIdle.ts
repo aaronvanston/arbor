@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { MessageKey, MessageVariables } from '../i18n/resources';
 import { compareVersions } from './agentVersions';
 import { sleptBetween } from './machineAlerts';
+import { holdReloadWhile } from './reloadHolds';
 import type { LiveSessionsReport } from '../native/types';
 
 type Translate = (key: MessageKey, variables?: MessageVariables) => string;
@@ -211,6 +212,9 @@ const setCurrent = (next: IdleUpdateState) => {
   current = next;
   listeners.forEach((listener) => listener());
 };
+
+// What waits is kept nowhere else, so the window doesn't reload while anything waits or a failure is still to be seen.
+holdReloadWhile('update', () => current.updates.length > 0 || current.failure !== null);
 
 // When the last check was taken in while something waited, to tell a sleep from a check that's merely late. Kept
 // out of the state so a check that changes nothing doesn't re-render what shows the wait.
