@@ -1,8 +1,8 @@
 # Arbor's releases, modeled on T3 Code's. Sessions only push to main; this workflow does the releasing.
 #
-# Nightly: checked once a day, and published as X.Y.Z-nightly.YYYYMMDD.N, a prerelease that apps on the nightly channel
-# take, once main has moved past the newest build and 20 hours have passed since the newest nightly
-# (scripts/release-plan.mjs). Nothing is committed for it.
+# Nightly: checked every six hours, and published as X.Y.Z-nightly.YYYYMMDD.N, a prerelease that apps on the nightly
+# channel take, once main has moved past the newest build and 23 hours have passed since the newest nightly, so at most
+# one a day (scripts/release-plan.mjs). Nothing is committed for it.
 #
 # Stable: run by hand (scripts/release-stable.sh, or Run workflow with channel stable and the notes). It promotes the
 # newest nightly: the same commit, built as X.Y.Z (or the next minor or major, with bump), so stable only ships what
@@ -22,8 +22,9 @@ name: Release
 
 on:
   schedule:
-    # Once a day, early morning in Australia (17:23 UTC). Off minute zero, when GitHub's scheduled jobs are busiest.
-    - cron: '23 17 * * *'
+    # Every six hours (05:23, 11:23, 17:23 and 23:23 UTC); release-plan.mjs lets one nightly through a day. Off minute
+    # zero, when GitHub's scheduled jobs are busiest.
+    - cron: '23 */6 * * *'
   workflow_dispatch:
     inputs:
       channel:
@@ -118,9 +119,13 @@ jobs:
         run: |
           [[ -d node_modules/@hugeicons-pro/core-duotone-rounded ]] || { echo "::error::Hugeicons Pro didn't install; is HUGEICONS_LICENSE_KEY set?"; exit 1; }
           [[ -n "$ARBOR_POSTHOG_KEY" ]] || { echo "::error::ARBOR_POSTHOG_KEY isn't set."; exit 1; }
-      - run: bun run verify
-      - run: bun run verify:rust
+      # A stable release builds the commit its nightly already checked, so it skips these and goes straight to the build.
+      - if: inputs.channel != 'stable'
+        run: bun run verify
+      - if: inputs.channel != 'stable'
+        run: bun run verify:rust
       - name: Check the third-party notices
+        if: inputs.channel != 'stable'
         run: bun scripts/third-party-notices.mjs --check
       - name: Build
         env:

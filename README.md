@@ -128,7 +128,7 @@ off too. A build from source sends nothing: the project key is only built into o
 
 ## Releases
 
-Nightlies, `X.Y.Z-nightly.YYYYMMDD.N`, are built from main when it changes, at most every six hours, and published as
+Nightlies, `X.Y.Z-nightly.YYYYMMDD.N`, are built from main when it changes, at most once a day, and published as
 prereleases; Settings › Updates moves an install to them. A stable release, `arbor-vX.Y.Z`, promotes a nightly that's
 already out, so it's always a build nightly installs have run. Versions follow [semver](https://semver.org): a release
 that adds features takes the next minor version, one that only fixes things the next patch. GitHub Actions builds both

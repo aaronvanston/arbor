@@ -8,13 +8,13 @@ the maintainer's to run.
 
 Planning a release and committing a stable one run on GitHub's Linux runners. The build needs a Mac, so it runs on
 GitHub's macOS runner (`macos-latest`, paid by the minute while the repository is private, free once it's public),
-never on anyone's own machine. Each release runs `bun run verify` and `bun run verify:rust` (the only place the Rust
-tests run), builds with `scripts/build-release.sh` and publishes with `scripts/publish-workflow-release.sh`, in one job
+never on anyone's own machine. Each nightly runs `bun run verify` and `bun run verify:rust` (the only place the Rust
+tests run; a stable release skips them, since its nightly ran them on the same commit), builds with `scripts/build-release.sh` and publishes with `scripts/publish-workflow-release.sh`, in one job
 so the DMG never becomes a GitHub artifact. The runner is new each time; rust-cache keeps the Rust builds between runs.
 
-- **Nightly.** Checked once a day (17:23 UTC) by `scripts/release-plan.mjs`. One goes out once main has moved past the
-  newest build (release commits alone don't count) and 20 hours have passed since the newest nightly, so a nightly
-  started by hand that day holds back the scheduled one. Its version is
+- **Nightly.** Checked every six hours (05:23, 11:23, 17:23 and 23:23 UTC) by `scripts/release-plan.mjs`. One goes out
+  once main has moved past the newest build (release commits alone don't count) and 23 hours have passed since the
+  newest nightly, so there's at most one a day, and a nightly started by hand holds back the scheduled ones. Its version is
   `X.Y.Z-nightly.YYYYMMDD.N`: a prerelease of the patch after the newest release (or of `Cargo.toml`'s version if
   that's newer), where `N` is the workflow's run number. It has fixed notes, and nothing is committed for it. Only apps
   on the nightly channel (Settings › Updates) take it. Started by hand (channel nightly), it skips both waits.
