@@ -544,7 +544,9 @@ pub(crate) async fn get_lifetime_tokens(machine: Option<String>) -> Result<token
 }
 
 /// Puts the kept sessions a request picks back together in a new or empty folder: one folder per session, with its
-/// files as the agent wrote them and a session.json naming its machine, project and branch.
+/// files as the agent wrote them and a session.json naming its machine, project and branch. request: {out: full path
+/// to a new or empty folder, project?: owner/name or name, machine?: name, since?: ms since the epoch, allVersions?:
+/// also every older version}.
 #[tauri::command]
 pub(crate) async fn export_session_archive(request: export::ArchiveExportRequest) -> Result<export::ArchiveExport, String> {
     blocking(move || {

@@ -1067,7 +1067,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "export_session_archive",
         access: Access::Write,
-        summary: "Puts the kept sessions a request picks back together in a new or empty folder: one folder per session, with its files as the agent wrote them and a session.json naming its machine, project and branch.",
+        summary: "Puts the kept sessions a request picks back together in a new or empty folder: one folder per session, with its files as the agent wrote them and a session.json naming its machine, project and branch. request: {out: full path to a new or empty folder, project?: owner/name or name, machine?: name, since?: ms since the epoch, allVersions?: also every older version}.",
         args: &[
             ArgSpec { name: "request", ts_type: "ArchiveExportRequest", optional: false },
         ],
