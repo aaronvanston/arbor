@@ -63,6 +63,10 @@ impl ProjectCell {
         &self.path
     }
 
+    pub(super) fn machine(&self) -> &str {
+        &self.machine
+    }
+
     pub(super) fn checkout(&self) -> Option<&str> {
         self.checkout.as_deref()
     }
@@ -131,6 +135,11 @@ pub(crate) struct ProjectsDrift {
 }
 
 impl ProjectsDrift {
+    /// How `project` stands on each machine it's on.
+    pub(super) fn cells_of(&self, project: &str) -> Vec<ProjectCell> {
+        self.projects.iter().filter(|found| found.project == project && !found.archived).flat_map(|found| found.cells.clone()).collect()
+    }
+
     /// Each project on `machine`: its key, how it stands there, its remote and branch, and whether it's local.
     pub(super) fn on_machine(&self, machine: &str) -> Vec<(String, ProjectCell, Option<String>, Option<String>, bool)> {
         self.projects
@@ -337,6 +346,13 @@ pub(crate) fn start_place_fetcher(app: tauri::AppHandle) {
         loop {
             tokio::time::sleep(FETCH_EVERY).await;
             let machines = arbor_machines(&app.state::<MachineHealthState>().lock());
+            // Local projects first, so the fetch after reads each checkout against the hub's latest.
+            let named = app.state::<MachineHealthState>().lock().setup_repo.clone();
+            // After a restart the window hasn't named the repo yet; the setting it saves does.
+            let repo = named.or_else(|| app.state::<crate::saved_store::SavedStoreState>().value(super::setup_layers::SETUP_REPO_SETTING)).filter(|repo| !repo.is_empty());
+            if let Some(repo) = repo {
+                super::project_hub::sync_all_local(&app, &repo).await;
+            }
             for machine in machines {
                 // A machine that's away, or busy with a scan, is tried again next round.
                 let _ = super::setup_projects::fetch_places(&app, &machine).await;

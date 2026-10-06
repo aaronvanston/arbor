@@ -24,6 +24,7 @@ import type {
   HookRegistry,
   HookState,
   HookWanted,
+  HubSync,
   ItemKind,
   LocalFileState,
   MachineProjects,
@@ -1906,7 +1907,7 @@ const applyFixesMock = (machine: string, fixes: ProjectFixRequest[]): ProjectFix
     });
   }
   void emit('setup-projects-updated', Date.now());
-  return { backup, results };
+  return { backups: backup ? [backup] : [], results };
 };
 
 /** Copies a project's own skills on a machine in the mock: its cell has every copy after. */
@@ -3350,6 +3351,16 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   },
   get_projects: () => projectsState.map(projectsReply),
   get_project_drift: () => later(250, mockDrift),
+  sync_local_project: (args) => {
+    mockLog('sync_local_project', args);
+    return later(1_100, (): HubSync => ({
+      project: args.project,
+      branches: params.get('hub') === 'diverged'
+        ? [{ branch: 'main', state: 'diverged', apart: ['cam-mbp', 'ci-01'] }]
+        : [{ branch: 'main', state: 'advanced', apart: [] }],
+      machines: projectsState.map((entry) => ({ machine: entry.machine, collected: true, handedOut: true, error: null })).slice(0, 1),
+    }));
+  },
   apply_project_skills: (args) => {
     mockLog('apply_project_skills', { machine: args.machine, project: args.project });
     return later(900, () => applyProjectSkillsMock(args.machine, args.project));

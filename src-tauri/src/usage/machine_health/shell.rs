@@ -44,6 +44,11 @@ impl Machine {
         Self { host, local: true, listed: false }
     }
 
+    #[cfg(test)]
+    pub(in crate::usage) fn for_test(host: MachineHost) -> Self {
+        Self { host, local: false, listed: true }
+    }
+
     pub(in crate::usage) fn name(&self) -> &str {
         &self.host.machine
     }

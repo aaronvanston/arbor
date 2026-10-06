@@ -23,7 +23,7 @@ use super::guarded_writes::{new_stamp, prune_backups, run_on, ChangeKind};
 use super::setup::covered_machine;
 use super::setup_layers::arbor_machines;
 use super::setup_projects::{CheckoutStatus, CHECKS, GIT_ENV, ORIGIN_URL};
-use super::shell::{run_checked, shell_quote};
+use super::shell::{run_checked, shell_quote, Machine};
 use super::*;
 use ts_rs::TS;
 
@@ -75,8 +75,8 @@ pub(crate) struct ProjectFixResult {
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProjectFixes {
-    /// The backup the changes went into, which Repo › History undoes.
-    backup: Option<String>,
+    /// The backups the changes went into, oldest first, which Repo › History undoes.
+    backups: Vec<String>,
     results: Vec<ProjectFixResult>,
 }
 
@@ -86,8 +86,11 @@ enum Step {
     Link { place: String, checkout: String, remote: String },
     Clone { place: String, url: String, branch: Option<String> },
     Move { from: String, to: String, relink: bool },
-    FastForward { checkout: String, branch: String },
+    /// `onto` is the upstream (`@{u}`), or for a local project the hub's copy, `refs/remotes/arbor/<branch>`.
+    FastForward { checkout: String, branch: String, onto: String },
     Fetch { checkout: String },
+    /// A local project's place made a repo, filled from the hub on this Mac, then `branch` checked out there.
+    CloneFromHub { place: String, branch: Option<String> },
 }
 
 /// The upstream branch's name without its remote: `origin/main` is `main`.
@@ -111,7 +114,8 @@ fn plan(cell: &ProjectCell, remote: Option<&str>, branch: Option<&str>, local: b
         },
         PlaceFix::Clone => match (cell.state(), remote) {
             (PlaceState::Missing, Some(remote)) if !local => Ok(Step::Clone { place: cell.path().into(), url: remote.into(), branch: branch.map(str::to_string) }),
-            (PlaceState::Missing, _) => Err("A local project is cloned from the hub, which isn't there yet".into()),
+            (PlaceState::Missing, _) if local => Ok(Step::CloneFromHub { place: cell.path().into(), branch: branch.map(str::to_string) }),
+            (PlaceState::Missing, _) => Err("The project has no remote to clone".into()),
             _ => Err("The machine has a checkout already, or the place isn't free".into()),
         },
         PlaceFix::Move => {
@@ -145,7 +149,8 @@ fn plan(cell: &ProjectCell, remote: Option<&str>, branch: Option<&str>, local: b
             if status.behind.unwrap_or(0) == 0 {
                 return Err("It's up to date already".into());
             }
-            Ok(Step::FastForward { checkout: checkout.into(), branch: branch.into() })
+            let onto = if local && upstream.starts_with("arbor/") { format!("refs/remotes/{upstream}") } else { "@{u}".into() };
+            Ok(Step::FastForward { checkout: checkout.into(), branch: branch.into(), onto })
         }
         PlaceFix::Fetch => match checkout {
             Some(checkout) if remote.is_some() => Ok(Step::Fetch { checkout: checkout.into() }),
@@ -253,16 +258,36 @@ fix_move() {
   fi
 }
 fix_ff() {
-  n=$1; checkout=$2; branch=$3
+  n=$1; checkout=$2; branch=$3; onto=$4
   top "$checkout" || { said "$n" skipped "The checkout isn't there as the scan found it"; return 0; }
   [ "$(git -C "$checkout" symbolic-ref --quiet --short HEAD 2>/dev/null)" = "$branch" ] || { said "$n" skipped "The checkout isn't on $branch now"; return 0; }
   tidy "$checkout" || { said "$n" skipped "The checkout has changes now"; return 0; }
   old=$(git -C "$checkout" rev-parse HEAD)
-  if git -C "$checkout" -c gc.auto=0 merge --ff-only --quiet '@{u}' < /dev/null > /dev/null 2> "$work/err"; then
+  if git -C "$checkout" -c gc.auto=0 merge --ff-only --quiet "$onto" < /dev/null > /dev/null 2> "$work/err"; then
     new=$(git -C "$checkout" rev-parse HEAD)
     [ "$new" = "$old" ] || note ff "$checkout" "$branch" "$old" "$new"
     said "$n" done ""
   else said "$n" failed "$(tail -n 2 "$work/err")"; fi
+}
+# A local project's place made an empty repo for the hub to fill: `R n ready <folder> <emptied>`, said done only once
+# hub_checkout has checked a branch out there.
+hub_init() {
+  n=$1; place=$2
+  free "$place" || { said "$n" skipped "Something is at the place now"; return 0; }
+  emptied=$(ready "$place") || { said "$n" failed "Arbor couldn't make the folders for the place"; return 0; }
+  if git init --quiet "$place" > /dev/null 2>&1; then printf 'R\t%s\tready\t%s\t%s\n' "$n" "$(cd "$place" && pwd -P)" "$emptied"
+  else rm -rf "$place"; [ "$emptied" = 1 ] && mkdir "$place"; said "$n" failed "git init didn't work there"; fi
+}
+# Checks branch $3 out of the hub's copy in the repo hub_init made at $2, or takes that repo away again.
+hub_checkout() {
+  n=$1; place=$2; branch=$3; emptied=$4
+  if git -C "$place" checkout --quiet -b "$branch" "refs/remotes/arbor/$branch" > /dev/null 2> "$work/err"; then
+    head=$(git -C "$place" rev-parse HEAD)
+    note clone "$place" "$head" "$emptied"; said "$n" done ""
+  else
+    rm -rf "$place"; [ "$emptied" = 1 ] && mkdir "$place"
+    said "$n" failed "$(tail -n 2 "$work/err")"
+  fi
 }
 fix_fetch() {
   n=$1; checkout=$2
@@ -281,7 +306,8 @@ fn fix_script(stamp: &str, steps: &[(usize, Step)]) -> String {
             Step::Link { place, checkout, remote } => format!("fix_link {n} {} {} {}", at(place), at(checkout), shell_quote(&remote_norm(remote).to_ascii_lowercase())),
             Step::Clone { place, url, branch } => format!("fix_clone {n} {} {} {}", at(place), shell_quote(url), shell_quote(branch.as_deref().unwrap_or("-"))),
             Step::Move { from, to, relink } => format!("fix_move {n} {} {} {}", at(from), at(to), u8::from(*relink)),
-            Step::FastForward { checkout, branch } => format!("fix_ff {n} {} {}", at(checkout), shell_quote(branch)),
+            Step::FastForward { checkout, branch, onto } => format!("fix_ff {n} {} {} {}", at(checkout), shell_quote(branch), shell_quote(onto)),
+            Step::CloneFromHub { place, .. } => format!("hub_init {n} {}", at(place)),
             Step::Fetch { checkout } => format!("fix_fetch {n} {}", at(checkout)),
         };
         script.push_str(&line);
@@ -301,6 +327,34 @@ fn remote_norm(remote: &str) -> String {
     super::setup_projects::normalize_remote(remote).unwrap_or_default()
 }
 
+/// The repos hub_init made ready: each fix's number, the folder, and whether it was an empty folder before.
+fn parse_ready(stdout: &str) -> Vec<(usize, String, bool)> {
+    stdout
+        .lines()
+        .filter_map(|line| match line.split('\t').collect::<Vec<_>>().as_slice() {
+            ["R", n, "ready", real, emptied] if real.starts_with('/') => Some((n.parse().ok()?, real.to_string(), *emptied == "1")),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Fills the empty repo at `real` on `machine` from local project `name`'s hub, and says which branch to check out:
+/// `branch`, else the hub's own, else its first.
+async fn fill_from_hub(machine: &Machine, name: &str, real: &str, branch: Option<&str>) -> Result<String, String> {
+    let hub = super::project_hub::hub_dir(name)?;
+    let branches = super::project_hub::hub_git(&hub, &["for-each-ref", "--format=%(refname:short)", "refs/heads"]).await.unwrap_or_default();
+    let branches: Vec<&str> = branches.lines().filter(|line| !line.is_empty()).collect();
+    let head = super::project_hub::hub_git(&hub, &["symbolic-ref", "--short", "HEAD"]).await.unwrap_or_default();
+    let chosen = branch
+        .filter(|branch| branches.contains(branch))
+        .or_else(|| branches.iter().copied().find(|found| *found == head.trim()))
+        .or_else(|| branches.first().copied())
+        .ok_or("The hub on this Mac has nothing of this project yet. Bring it through the hub from a machine that has it first")?
+        .to_string();
+    super::project_hub::hand_out(&hub, &super::project_hub::git_url(machine, real)).await?;
+    Ok(chosen)
+}
+
 /// How each fix went, by its number, and the backup made.
 fn parse_fixes(stdout: &str) -> (Option<String>, BTreeMap<usize, (FixOutcome, Option<String>)>) {
     let mut backup = None;
@@ -309,6 +363,7 @@ fn parse_fixes(stdout: &str) -> (Option<String>, BTreeMap<usize, (FixOutcome, Op
         let fields: Vec<&str> = line.split('\t').collect();
         match fields.as_slice() {
             ["K", stamp] => backup = Some(stamp.to_string()),
+            ["R", _, "ready", ..] => {}
             ["R", n, how, detail] => {
                 let Ok(n) = n.parse::<usize>() else { continue };
                 let outcome = match *how {
@@ -359,13 +414,33 @@ pub(crate) async fn apply_project_fixes(
             Err(why) => results[n].detail = Some(why),
         }
     }
-    let mut backup = None;
+    let mut backups = Vec::new();
     if !steps.is_empty() {
         let script = fix_script(&new_stamp(), &steps);
         let slow = steps.iter().any(|(_, step)| matches!(step, Step::Clone { .. } | Step::Fetch { .. }));
         let stdout = if slow { run_checked(&target, MachineOp::ProjectFixes, &script, CLONE_TIMEOUT).await? } else { run_on(&target, MachineOp::ProjectFixes, &script).await? };
-        let (made, outcomes) = parse_fixes(&stdout);
-        backup = made;
+        let (made, mut outcomes) = parse_fixes(&stdout);
+        backups.extend(made);
+        // A local project's clone: the empty repo is ready, so the hub fills it, and a second script checks out.
+        for (n, real, emptied) in parse_ready(&stdout) {
+            let Some((_, Step::CloneFromHub { branch, .. })) = steps.iter().find(|(at, _)| *at == n) else { continue };
+            let name = fixes[n].project.strip_prefix("_local/").unwrap_or(&fixes[n].project);
+            let filled = fill_from_hub(&target, name, &real, branch.as_deref()).await;
+            let stdout = match filled {
+                Ok(branch) => {
+                    let script = format!("{GIT_ENV}{CHECKS}{ORIGIN_URL}stamp={}\nwhat={}\n{FIX_FUNCTIONS}hub_checkout {n} {} {} {}\nif [ -n \"$dir\" ]; then printf 'K\\t%s\\n' \"$stamp\"; fi\n", shell_quote(&new_stamp()), ChangeKind::Projects.name(), shell_quote(&real), shell_quote(&branch), u8::from(emptied));
+                    run_on(&target, MachineOp::ProjectFixes, &script).await.unwrap_or_else(|error| format!("R\t{n}\tfailed\t{error}\n"))
+                }
+                Err(error) => {
+                    let script = format!("set -u\nrm -rf {}{}\n", shell_quote(&real), if emptied { format!(" && mkdir {}", shell_quote(&real)) } else { String::new() });
+                    let _ = run_on(&target, MachineOp::ProjectFixes, &script).await;
+                    format!("R\t{n}\tfailed\t{error}\n")
+                }
+            };
+            let (made, more) = parse_fixes(&stdout);
+            backups.extend(made);
+            outcomes.extend(more);
+        }
         for (n, _) in &steps {
             let (outcome, detail) = outcomes.get(n).cloned().unwrap_or((FixOutcome::Failed, Some("The machine didn't say how it went".into())));
             results[*n].outcome = outcome;
@@ -373,7 +448,7 @@ pub(crate) async fn apply_project_fixes(
         }
     }
     let _ = super::setup_projects::scan_projects(app.clone(), state, machine, None, Some(repo)).await;
-    Ok(ProjectFixes { backup, results })
+    Ok(ProjectFixes { backups, results })
 }
 
 // ---------------------------------------------------------------------------
@@ -538,15 +613,15 @@ mod tests {
         let elsewhere = cell(PlaceState::Elsewhere, Some("/home/cam/src/arbor"), Some(status(|_| {})));
         assert_eq!(plan(&elsewhere, REMOTE, None, false, PlaceFix::Link), Ok(Step::Link { place: PLACE.into(), checkout: "/home/cam/src/arbor".into(), remote: REMOTE.unwrap().into() }));
         assert_eq!(plan(&elsewhere, REMOTE, None, false, PlaceFix::Move), Ok(Step::Move { from: "/home/cam/src/arbor".into(), to: PLACE.into(), relink: false }));
-        assert_eq!(plan(&elsewhere, REMOTE, None, false, PlaceFix::FastForward), Ok(Step::FastForward { checkout: "/home/cam/src/arbor".into(), branch: "main".into() }));
+        assert_eq!(plan(&elsewhere, REMOTE, None, false, PlaceFix::FastForward), Ok(Step::FastForward { checkout: "/home/cam/src/arbor".into(), branch: "main".into(), onto: "@{u}".into() }));
         assert!(plan(&elsewhere, REMOTE, None, false, PlaceFix::Clone).is_err());
         let linked = cell(PlaceState::Linked, Some("/home/cam/src/arbor"), Some(status(|_| {})));
         assert_eq!(plan(&linked, REMOTE, None, false, PlaceFix::Move), Ok(Step::Move { from: "/home/cam/src/arbor".into(), to: PLACE.into(), relink: true }));
         assert!(plan(&linked, REMOTE, None, false, PlaceFix::Link).is_err());
         let missing = cell(PlaceState::Missing, None, None);
         assert_eq!(plan(&missing, REMOTE, Some("dev"), false, PlaceFix::Clone), Ok(Step::Clone { place: PLACE.into(), url: REMOTE.unwrap().into(), branch: Some("dev".into()) }));
-        // A local project waits for the hub.
-        assert!(plan(&missing, None, None, true, PlaceFix::Clone).is_err());
+        // A local project is filled from the hub on this Mac.
+        assert_eq!(plan(&missing, None, None, true, PlaceFix::Clone), Ok(Step::CloneFromHub { place: PLACE.into(), branch: None }));
         for fix in [PlaceFix::Link, PlaceFix::Clone, PlaceFix::Move, PlaceFix::FastForward, PlaceFix::Fetch] {
             assert!(plan(&cell(PlaceState::Blocked, None, None), REMOTE, None, false, fix).is_err(), "{fix:?}");
         }
@@ -673,7 +748,7 @@ mod tests {
                 let steps = vec![
                     (0, Step::Link { place: "~/code/cam/app".into(), checkout: app.display().to_string(), remote: url.clone() }),
                     (1, Step::Clone { place: "~/code/cam/other".into(), url: url.clone(), branch: None }),
-                    (2, Step::FastForward { checkout: app.display().to_string(), branch: "main".into() }),
+                    (2, Step::FastForward { checkout: app.display().to_string(), branch: "main".into(), onto: "@{u}".into() }),
                     (3, Step::Move { from: mv.display().to_string(), to: "~/code/cam/mv".into(), relink: false }),
                     (4, Step::Fetch { checkout: app.display().to_string() }),
                 ];
@@ -698,6 +773,35 @@ mod tests {
                 assert!(home.join("code/cam/other").is_dir() && fs::read_dir(home.join("code/cam/other")).unwrap().next().is_none(), "{shell}");
                 assert_eq!(git(&home, &app, &["rev-parse", "HEAD"]), old, "{shell}");
                 assert!(mv.join(".git").is_dir() && !home.join("code/cam/mv").exists(), "{shell}");
+                let _ = fs::remove_dir_all(&root);
+            }
+        }
+
+        #[test]
+        fn a_local_project_is_cloned_from_the_hub_and_undone_like_any_clone() {
+            for shell in shells() {
+                let root = temp_dir("hub-clone");
+                let (home, _) = fixture(&root);
+                let hub = root.join("hub.git");
+                git(&home, &root, &["clone", "-q", "--bare", root.join("seed").to_str().unwrap(), hub.to_str().unwrap()]);
+                fs::create_dir_all(home.join("code/_local/notes")).unwrap();
+                let steps = vec![(0, Step::CloneFromHub { place: "~/code/_local/notes".into(), branch: None })];
+                let stdout = run(shell, &home, &fix_script(&new_stamp(), &steps));
+                let ready = parse_ready(&stdout);
+                let [(0, real, true)] = ready.as_slice() else { panic!("{shell}: {stdout}") };
+                let real = real.clone();
+                tokio::runtime::Runtime::new().unwrap().block_on(crate::usage::machine_health::project_hub::hand_out(&hub, &real)).unwrap();
+                let script = format!("{GIT_ENV}{CHECKS}{ORIGIN_URL}stamp={}\nwhat=projects\n{FIX_FUNCTIONS}hub_checkout 0 {} main 1\n", shell_quote(&new_stamp()), shell_quote(&real));
+                let (_, outcomes) = parse_fixes(&run(shell, &home, &script));
+                assert_eq!(outcomes[&0].0, FixOutcome::Done, "{shell}");
+                assert_eq!(git(&home, Path::new(&real), &["rev-parse", "--abbrev-ref", "HEAD"]), "main");
+                assert!(Path::new(&real).join("README.md").is_file());
+
+                let backups = parse_backups(&run(shell, &home, BACKUPS_SCRIPT));
+                let undone = run(shell, &home, &undo_script(&backups[0]));
+                assert!(!undone.contains("\tchanged") && !undone.contains("\tfailed"), "{shell}: {undone}");
+                // The empty folder that was there is back.
+                assert!(home.join("code/_local/notes").is_dir() && fs::read_dir(home.join("code/_local/notes")).unwrap().next().is_none(), "{shell}");
                 let _ = fs::remove_dir_all(&root);
             }
         }

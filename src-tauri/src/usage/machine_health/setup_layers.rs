@@ -512,6 +512,11 @@ impl SetupLayers {
         &mut self.projects
     }
 
+    /// The local projects on record, not archived: the ones the hub keeps in step.
+    pub(super) fn local_projects(&self) -> Vec<String> {
+        self.projects.iter().filter(|project| project.local && !project.archived).map(|project| project.key.clone()).collect()
+    }
+
     /// The project with key `key`, when it's on record and not archived.
     pub(super) fn project(&self, key: &str) -> Option<&RepoProject> {
         self.projects.iter().find(|project| project.key == key && !project.archived)

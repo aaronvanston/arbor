@@ -153,6 +153,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::project_fixes::ProjectFixRequest>();
         types.visit::<crate::usage::machine_health::project_fixes::ProjectFixes>();
         types.visit::<crate::usage::machine_health::project_skills::ProjectSkillsOutcome>();
+        types.visit::<crate::usage::machine_health::project_hub::HubSync>();
         types.visit::<crate::usage::machine_health::setup_repo_browse::RepoTree>();
         types.visit::<crate::usage::machine_health::setup_repo_browse::RepoText>();
         types.visit::<crate::usage::machine_health::setup_repo_browse::RepoChange>();

@@ -9,6 +9,7 @@ import type {
   CodexPluginChange,
   HookRegistry,
   HookWanted,
+  HubSync,
   MachineProjects,
   MachineToolchain,
   McpChange,
@@ -62,6 +63,7 @@ export type SetupCommands = {
   add_setup_schemas: { args: { repo: string }; result: SetupRepo };
   apply_project_fixes: { args: { repo: string; machine: string; fixes: ProjectFixRequest[] }; result: ProjectFixes };
   apply_project_skills: { args: { repo: string; machine: string; project: string }; result: ProjectSkillsOutcome };
+  sync_local_project: { args: { repo: string; project: string }; result: HubSync };
   read_setup_repo_file: { args: { repo: string; commit: string; path: string }; result: SetupText };
   start_setup_repo: { args: { repo: string }; result: SetupRepo };
   take_setup_file: { args: { repo: string; machine: string; path: string }; result: SetupRepo };

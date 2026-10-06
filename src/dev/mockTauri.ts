@@ -172,7 +172,7 @@
  * for Sessions › Projects' Checkouts (`?page=sessions&tab=projects&lens=checkouts`):
  * `?places=none` for a setup repo with no project files yet (Sync › Projects offers the schemas), `?places=unscanned`
  * for machines whose scans haven't looked at the repo's places yet, `?places=problems` for project and machine files
- * Arbor skipped parts of;
+ * Arbor skipped parts of; `?hub=diverged` for a local project whose machines moved on apart, so the hub left it;
  * `?projects=fresh` for machines whose projects haven't been scanned (the view scans them), `?projects=none` for scans
  * that found no repos, `?projects=fail` to have cedar-02's projects scan fail, `?projects=partial` for a scan of
  * the Mac that ran out of time; `?worktrees=changed` to have every worktree but the first come back changed when

@@ -374,6 +374,22 @@ fn same_remote(remote: &str) -> String {
     remote.trim().trim_end_matches('/').trim_end_matches(".git").to_ascii_lowercase()
 }
 
+/// The places a scan script finds, run under `shell` with HOME `home`: for tests elsewhere.
+#[cfg(all(test, unix))]
+pub(super) fn places_found(shell: &str, home: &Path, places: &[String]) -> Vec<FoundPlace> {
+    let mut command = tokio::process::Command::new(shell);
+    command
+        .env_clear()
+        .env("HOME", home)
+        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let output = tokio::runtime::Runtime::new().unwrap().block_on(super::shell::run_script(command, &scan_script(&[], places, false), Duration::from_secs(60))).unwrap();
+    parse_scan(&String::from_utf8_lossy(&output.stdout), &HashMap::new(), 0).places
+}
+
 impl MachineProjects {
     /// A machine's projects as a scan printing `stdout` would leave them.
     #[cfg(test)]
@@ -894,6 +910,14 @@ scan_place() {
   if [ -n "$branch" ]; then
     track=$(git -C "$at" for-each-ref --format='%(upstream:short)%09%(upstream:track)' "refs/heads/$branch" 2>/dev/null | head -n 1)
     case "$track" in *"$tab"*) ;; *) track="-$tab-" ;; esac
+    # A checkout with no remote is kept in step through Arbor's hub, whose branches it has as arbor/<branch>.
+    up=${track%%"$tab"*}
+    if [ -z "$url" ] && { [ -z "$up" ] || [ "$up" = - ]; }; then
+      if lr=$(git -C "$at" rev-list --left-right --count "refs/heads/$branch...refs/remotes/arbor/$branch" 2>/dev/null); then
+        set -- $lr
+        track="arbor/$branch$tab[ahead $1, behind $2]"
+      fi
+    fi
   fi
   def=$(git -C "$at" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
   common=$(git -C "$at" rev-parse --git-common-dir 2>/dev/null || true)

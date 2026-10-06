@@ -174,6 +174,11 @@ Every transfer starts on this Mac over the SSH Arbor already uses, so the other 
 - **Hand out.** The hub's branches are pushed into each checkout's `refs/remotes/arbor/*`, never its own branches, so
   the checkout reads as "behind arbor/main" and fast-forwards like any other.
 - **Clone.** A missing checkout of a local project is `git init`, filled from the hub, then checked out.
+- **When.** Every hour while Arbor is open, before the places are fetched, and from a local project's "Bring it
+  through this Mac". The place scan reads a checkout with no remote against `arbor/<branch>`, so Fast-forward
+  works as it does for any project.
+- **How git gets there.** git runs on this Mac and reaches each machine over SSH with keys only, with the host and
+  port Arbor uses for that machine. Arbor's scripts on machines don't take part.
 - **Limits.** It only works while this Mac is awake and Arbor is open. A local project that gets a remote stops using
   the hub; its folder moves from `_local/<name>` to `<owner>/<name>`.
 

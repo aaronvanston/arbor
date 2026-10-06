@@ -36,6 +36,7 @@ import {
   projectInStep,
   projectName,
   splitProjects,
+  syncLocalProject,
   type CellFix,
 } from '../services/projectPlaces';
 import { scanProjects, SETUP_PROJECTS_UPDATED_EVENT } from '../services/setupProjects';
@@ -95,6 +96,7 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [fixing, setFixing] = useState<ReadonlySet<string>>(new Set());
+  const [hubbing, setHubbing] = useState<string | null>(null);
   const autoScanned = useRef(new Set<string>());
 
   const reload = useCallback(() => {
@@ -175,6 +177,27 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
       })
       .catch((error) => toast({ kind: 'error', title: t('sync.projects.fix.failed', { machine }), description: String(error) }))
       .finally(() => setFixing((current) => { const next = new Set(current); next.delete(machine); return next; }));
+  };
+
+  // A local project's machines meet through the hub on this Mac; a branch two of them moved on apart is left alone.
+  const throughHub = (project: string) => {
+    if (!repo) return;
+    setHubbing(project);
+    syncLocalProject(repo, project)
+      .then(({ branches, machines: reached }) => {
+        const apart = branches.filter((branch) => branch.state === 'diverged');
+        const away = reached.filter((machine) => machine.error);
+        toast(apart.length || away.length ? {
+          kind: 'warning',
+          title: t('sync.projects.hub.partly', { project: projectName(project) }),
+          description: [
+            ...apart.map((branch) => t('sync.projects.hub.apart', { branch: branch.branch, machines: branch.apart.join(', ') })),
+            ...away.map((machine) => `${machine.machine}: ${machine.error ?? ''}`),
+          ].join('\n'),
+        } : { kind: 'success', title: t('sync.projects.hub.done', { project: projectName(project) }) });
+      })
+      .catch((error) => toast({ kind: 'error', title: t('sync.projects.hub.failed', { project: projectName(project) }), description: String(error) }))
+      .finally(() => setHubbing(null));
   };
 
   const addSchemas = () => {
@@ -277,7 +300,7 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
                       {expanded.has(project.project) ? (
                         <TableRow className="hover:bg-transparent dark:hover:bg-transparent">
                           <TableCell colSpan={columns.length + 1} className="bg-muted/24 p-0 dark:bg-input/8">
-                            <ProjectDetail project={project} now={now} fixing={fixing} onFix={fix} onOpenInRepo={onOpenInRepo} />
+                            <ProjectDetail project={project} now={now} fixing={fixing} hubbing={hubbing === project.project} onFix={fix} onHub={() => throughHub(project.project)} onOpenInRepo={onOpenInRepo} />
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -449,11 +472,13 @@ function PlaceCell({ cell }: { cell: ProjectCell }) {
   );
 }
 
-function ProjectDetail({ project, now, fixing, onFix, onOpenInRepo }: {
+function ProjectDetail({ project, now, fixing, hubbing, onFix, onHub, onOpenInRepo }: {
   project: ProjectDrift;
   now: number;
   fixing: ReadonlySet<string>;
+  hubbing: boolean;
   onFix: OnFix;
+  onHub: () => void;
   onOpenInRepo: (path: string) => void;
 }) {
   const { t } = useI18n();
@@ -481,7 +506,13 @@ function ProjectDetail({ project, now, fixing, onFix, onOpenInRepo }: {
       {project.unknown.length ? (
         <p className="text-xs text-warning-foreground">{t('sync.projects.detail.unknown', { machines: project.unknown.join(', ') })}</p>
       ) : null}
-      <div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {project.local ? (
+          <Button variant="outline" size="xs" disabled={hubbing} onClick={onHub} title={t('sync.projects.hub.title')}>
+            {hubbing ? <Spinner /> : null}
+            {t('sync.projects.hub.action')}
+          </Button>
+        ) : null}
         <Button variant="ghost-muted" size="xs" onClick={() => onOpenInRepo(`projects/${project.project}/project.json`)}>{t('sync.projects.detail.openFile')}</Button>
       </div>
     </div>

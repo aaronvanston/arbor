@@ -17,6 +17,11 @@ export const addSetupSchemas = (repo: string) => invokeCommand('add_setup_schema
  * and backed up, so Repo › History can undo it.
  */
 export const applyProjectFixes = (repo: string, machine: string, fixes: ProjectFixRequest[]) => invokeCommand('apply_project_fixes', { repo, machine, fixes });
+/**
+ * Keeps a project with no remote in step through the hub on this Mac: collects each machine's branches, moves the
+ * hub's forward where one machine is ahead of the rest, and hands them back out as `arbor/<branch>`.
+ */
+export const syncLocalProject = (repo: string, project: string) => invokeCommand('sync_local_project', { repo, project });
 /** Copies a project's own skills into each of its checkouts and worktrees on a machine, backed up the same way. */
 export const applyProjectSkills = (repo: string, machine: string, project: string) => invokeCommand('apply_project_skills', { repo, machine, project });
 
@@ -140,8 +145,8 @@ export type FixRun = { done: number; missed: { project: string; detail: string |
 export async function runFixes(repo: string, machine: string, fixes: ProjectFixRequest[], skills: string[]): Promise<FixRun> {
   const run: FixRun = { done: 0, missed: [], backups: [] };
   if (fixes.length) {
-    const { backup, results } = await applyProjectFixes(repo, machine, fixes);
-    if (backup) run.backups.push(backup);
+    const { backups, results } = await applyProjectFixes(repo, machine, fixes);
+    run.backups.push(...backups);
     for (const result of results) {
       if (result.outcome === 'done') run.done += 1;
       else run.missed.push({ project: result.project, detail: result.detail });

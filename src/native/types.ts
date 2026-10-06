@@ -2063,6 +2063,36 @@ export type HookView = {
  */
 export type HookWanted = "default" | "off" | "removed";
 
+export type HubBranch = {
+  branch: string,
+  state: HubBranchState,
+  /**
+   * The machines whose copies have moved on apart, for a diverged branch.
+   */
+  apart: Array<string>,
+};
+
+/**
+ * How a hub branch came out of a round.
+ */
+export type HubBranchState = "same" | "advanced" | "new" | "diverged";
+
+export type HubMachine = {
+  machine: string,
+  collected: boolean,
+  handedOut: boolean,
+  error: string | null,
+};
+
+/**
+ * How a round through the hub went.
+ */
+export type HubSync = {
+  project: string,
+  branches: Array<HubBranch>,
+  machines: Array<HubMachine>,
+};
+
 /**
  * Where an @import is, in the file that has it.
  */
@@ -3334,9 +3364,9 @@ export type ProjectFixResult = {
 
 export type ProjectFixes = {
   /**
-   * The backup the changes went into, which Repo › History undoes.
+   * The backups the changes went into, oldest first, which Repo › History undoes.
    */
-  backup: string | null,
+  backups: Array<string>,
   results: Array<ProjectFixResult>,
 };
 
