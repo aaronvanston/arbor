@@ -25,7 +25,8 @@ describe('the UI strings split', () => {
       expect(setup).toContain(partOf('setup.toolchain.loadFailed'));
       expect(alerts).not.toContain(partOf('setup.toolchain.loadFailed'));
     }
-  });
+    // It reads the app's whole source twice, about 3 s here but 6 to 9 s on GitHub's runners, past bun's 5 s default.
+  }, 60_000);
 
   test('a key counts as named whole, or by the fixed start of a template that builds it', () => {
     const keys = new Set(['status.indicator.none', 'status.indicator.major', 'status.banner.title', 'app.nav.home', 'app.nav.homeless']);
