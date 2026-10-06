@@ -242,7 +242,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       shown,
       icon: <IconBox><ProviderMark provider={session.provider} decorative className="size-full object-contain" fallback={<Bot />} /></IconBox>,
       content: <SessionLabel session={session} machine extra={formatAgo(session.lastActiveAtMs, now)} className="text-sm" />,
-      opens: sessionsView(),
+      opens: sessionsView({ session: session.id }),
       run: () => onNavigate(sessionsView({ session: session.id })),
     });
     const sessionItems = [
@@ -306,7 +306,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
             <StatusDot tone={STATUS_TONE[item.status]} className="absolute -top-0.5 -right-0.5 ring-2 ring-popover" />
           </IconBox>
         ),
-        opens: machinesView(),
+        opens: machinesView(item.machine),
         run: () => {
           requestFocus('machine', item.machine);
           onNavigate(machinesView(item.machine));

@@ -43,7 +43,7 @@ import {
 } from './MachineHealthPanel';
 import { SetupChecklist, type ChecklistTab } from './SetupChecklist';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
-import { homeLabel, rememberSetupComparison, storedSetupReference } from './SetupPage';
+import { homeLabel, rememberSetupComparison, storedSetupReference } from './setupComparison';
 import { SetupProjects } from './SetupProjects';
 import { MachineAutomations } from '../components/automations/MachineAutomations';
 import { setSyncMachine } from '../services/syncScope';

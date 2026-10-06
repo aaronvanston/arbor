@@ -67,12 +67,11 @@ import { SetupSkills } from './SetupSkills';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import type { ArchiveStatus, SetupItem, SetupMachine } from '../native/types';
 import { useAgo } from '../hooks/useNow';
+import { homeLabel, storedSetupHome, storedSetupReference, storeSetupHome, storeSetupReference, takeSetupShow } from './setupComparison';
 
 // The directory reads marketplaces from GitHub and is opened now and then, so it loads on its own when it is.
 const SetupDirectory = lazy(() => import('./SetupDirectory').then((module) => ({ default: module.SetupDirectory })));
 
-const REFERENCE_KEY = 'arbor.setup.reference.v1';
-const HOME_KEY = 'arbor.setup.home.v1';
 /** The view last open, which the page opens on when it's opened without naming one. */
 const TAB_KEY = 'arbor.setup.tab.v1';
 /** The Library's kind last open. */
@@ -126,34 +125,8 @@ const savedKind = (): LibraryKind => {
   return isLibraryKind(saved) ? saved : 'plugins';
 };
 
-/** The machine Checks compares the others with, as it was last picked there. */
-export const storedSetupReference = () => readStored(REFERENCE_KEY);
-
-/**
- * Sets what Checks opens on, as picking them there would: the machine it compares with and the agent home whose table
- * it shows. For a link from elsewhere (a machine's page) that opens Checks on a comparison. `show` is one thing to
- * show in that table, as its Show in the table does: searched for, with matching copies too, and scrolled to.
- */
-export function rememberSetupComparison({ reference, home, show }: { reference?: string | null; home?: string | null; show?: string }) {
-  if (reference) store(REFERENCE_KEY, reference);
-  if (home) store(HOME_KEY, home);
-  pendingShow = show ?? null;
-}
-/** What the next Checks to open shows in its table; only for that one visit, so it's not stored. */
-let pendingShow: string | null = null;
 
 type Translate = ReturnType<typeof useI18n>['t'];
-
-/** An agent home as Sync names it: Claude Code's, Codex's or the shared one, else its path. */
-export function homeLabel(key: string, t: Translate) {
-  const look = homeLook(key);
-  switch (look.id) {
-    case 'claude': return t('setup.home.claude');
-    case 'codex': return t('setup.home.codex');
-    case 'shared': return t('setup.home.shared');
-    default: return look.path;
-  }
-}
 
 const PROBLEM_LABEL: Record<NonNullable<ReturnType<typeof itemProblem>>, MessageKey> = {
   notFound: 'setup.problem.notFound',
@@ -353,14 +326,10 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
 }) {
   const { t, tRich } = useI18n();
   const { inventory, error: loadError, setError: setLoadError } = useSetupInventory();
-  const [chosenReference, setChosenReference] = useState<string | null>(() => readStored(REFERENCE_KEY));
-  const [chosenHome, setChosenHome] = useState<string | null>(() => readStored(HOME_KEY));
+  const [chosenReference, setChosenReference] = useState<string | null>(storedSetupReference);
+  const [chosenHome, setChosenHome] = useState<string | null>(storedSetupHome);
   // A thing asked for from elsewhere is shown as Show in the table here shows it.
-  const [asked] = useState(() => {
-    const name = pendingShow;
-    pendingShow = null;
-    return name;
-  });
+  const [asked] = useState(takeSetupShow);
   const [onlyDifferences, setOnlyDifferences] = useState(asked === null);
   const [query, setQuery] = useState(asked ?? '');
   const [comparison, setComparison] = useState<Comparison | null>(null);
@@ -431,11 +400,11 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   };
   const chooseReference = (machine: string) => {
     setChosenReference(machine);
-    store(REFERENCE_KEY, machine);
+    storeSetupReference(machine);
   };
   const chooseHome = (key: string) => {
     setChosenHome(key);
-    store(HOME_KEY, key);
+    storeSetupHome(key);
   };
   const scan = (machine: string | null) => {
     scanSetup(machine, false).catch((error) => setLoadError(String(error)));

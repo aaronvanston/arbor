@@ -1,20 +1,26 @@
 import { describe, expect, test } from 'bun:test';
-import { mainPageIds, mainView, machinesView, sessionsView, settingsPageIds, usageView } from '../src/navigation';
-import { arriveWhenLoaded, cancelPendingArrival, pageModuleFor, prefetchAttribute } from '../src/pageModules';
+import { checkoutsView, mainPageIds, mainView, machinesView, sessionsView, settingsPageIds, usageView } from '../src/navigation';
+import { arriveWhenLoaded, cancelPendingArrival, pageModulesFor, prefetchAttribute } from '../src/pageModules';
 
 describe('page modules', () => {
   test('every page but Home has code to load, and a view loads the code its page renders with', () => {
-    for (const page of mainPageIds) expect(pageModuleFor(mainView(page)) === null).toBe(page === 'home');
-    for (const page of settingsPageIds) expect(pageModuleFor({ kind: 'settings', page })).not.toBeNull();
-    // Machines and Sessions are views of the usage records page.
-    expect(pageModuleFor(machinesView('ci-01'))).toBe(pageModuleFor(usageView()));
-    expect(pageModuleFor(sessionsView({ session: 'a1' }))).toBe(pageModuleFor(usageView()));
-    expect(pageModuleFor({ kind: 'settings', page: 'routing' })).toBe(pageModuleFor({ kind: 'settings', page: 'general' }));
+    for (const page of mainPageIds) expect(pageModulesFor(mainView(page)).length === 0).toBe(page === 'home');
+    for (const page of settingsPageIds) expect(pageModulesFor({ kind: 'settings', page })).toHaveLength(1);
+    expect(pageModulesFor({ kind: 'settings', page: 'routing' })).toEqual(pageModulesFor({ kind: 'settings', page: 'general' }));
+    // Machines and Sessions are views of the usage records page; one machine's page, a session's and Checkouts bring
+    // code of their own on top.
+    const usage = pageModulesFor(usageView());
+    expect(pageModulesFor(machinesView())).toEqual(usage);
+    expect(pageModulesFor(sessionsView())).toEqual(usage);
+    expect(pageModulesFor(machinesView('ci-01'))).toEqual([...usage, 'machinePage']);
+    expect(pageModulesFor(sessionsView({ session: 'a1' }))).toEqual([...usage, 'sessionDetail']);
+    expect(pageModulesFor(checkoutsView())).toEqual([...usage, 'checkouts']);
   });
 
   test('a link marks the page it leads to, and a link to Home marks nothing', () => {
     expect(prefetchAttribute(mainView('alerts'))).toEqual({ 'data-prefetch': 'alerts' });
     expect(prefetchAttribute(mainView('home'))).toEqual({});
+    expect(prefetchAttribute(machinesView('ci-01'))).toEqual({ 'data-prefetch': 'usage machinePage' });
   });
 
   test('a page whose code is still loading never lands after a later step has been taken', async () => {

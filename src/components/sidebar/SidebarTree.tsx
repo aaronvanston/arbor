@@ -387,7 +387,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
                   data-active={active}
                   data-tree-row="leaf"
                   data-tree-parent={page.id}
-                  {...prefetchAttribute(mainView(page.id))}
+                  {...prefetchAttribute(machinesView(machine.name))}
                   className={cn(LEAF_CLASS, 'pr-8')}
                   onClick={() => {
                     // Picked again while it's the view, the page goes back to its top.

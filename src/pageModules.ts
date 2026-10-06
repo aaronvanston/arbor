@@ -25,6 +25,10 @@ const loaders = {
   versions: () => import('./pages/VersionManagementPage'),
   diagnostics: () => import('./pages/DiagnosticsSettings'),
   about: () => import('./pages/AboutSettings'),
+  // Views of the usage records page with code of their own: one machine's page brings Sync's checklist with it.
+  machinePage: () => import('./pages/MachinePage'),
+  sessionDetail: () => import('./pages/SessionDetailPage'),
+  checkouts: () => import('./pages/SessionsCheckouts'),
 };
 
 export type PageModuleId = keyof typeof loaders;
@@ -62,9 +66,15 @@ const SETTINGS_PAGE_MODULE: Record<SettingsPageId, PageModuleId> = {
   about: 'about',
 };
 
-/** The code a view's page needs beyond the app's own, or null for Home. */
-export function pageModuleFor(view: AppView): PageModuleId | null {
-  return view.kind === 'main' ? MAIN_PAGE_MODULE[view.page] : SETTINGS_PAGE_MODULE[view.page];
+/** The code a view needs beyond the app's own: its page's, and the view's own where it has some. None for Home. */
+export function pageModulesFor(view: AppView): PageModuleId[] {
+  if (view.kind === 'settings') return [SETTINGS_PAGE_MODULE[view.page]];
+  const page = MAIN_PAGE_MODULE[view.page];
+  if (!page) return [];
+  if (view.page === 'machines' && view.params?.machine) return [page, 'machinePage'];
+  if (view.page === 'sessions' && view.params?.session) return [page, 'sessionDetail'];
+  if (view.page === 'sessions' && view.params?.tab === 'projects' && view.params.lens === 'checkouts') return [page, 'checkouts'];
+  return [page];
 }
 
 const isPageModuleId = (value: string): value is PageModuleId => Object.prototype.hasOwnProperty.call(loaders, value);
@@ -89,25 +99,24 @@ export function loadPageModule<Id extends PageModuleId>(id: Id): Promise<PageMod
 export const prefetchPageModule = (id: PageModuleId) => void loadPageModule(id).catch(() => undefined);
 
 export function prefetchView(view: AppView) {
-  const id = pageModuleFor(view);
-  if (id) prefetchPageModule(id);
+  for (const id of pageModulesFor(view)) prefetchPageModule(id);
 }
 
 /**
  * Marks an element as leading to a view, so pointing at or focusing it (or anything in it) loads that page's code:
  * spread onto a link, a row or a card that opens the page.
  */
-export function prefetchAttribute(view: AppView): { 'data-prefetch'?: PageModuleId } {
-  const id = pageModuleFor(view);
-  return id ? { 'data-prefetch': id } : {};
+export function prefetchAttribute(view: AppView): { 'data-prefetch'?: string } {
+  const ids = pageModulesFor(view);
+  return ids.length ? { 'data-prefetch': ids.join(' ') } : {};
 }
 
 /** Loads the page under the pointer or the focus, for anything marked with `prefetchAttribute`. */
 export function watchPrefetchIntent(root: Document = document) {
   const onIntent = (event: Event) => {
     if (!(event.target instanceof Element)) return;
-    const id = event.target.closest<HTMLElement>('[data-prefetch]')?.dataset.prefetch;
-    if (id && isPageModuleId(id)) prefetchPageModule(id);
+    const ids = event.target.closest<HTMLElement>('[data-prefetch]')?.dataset.prefetch?.split(' ') ?? [];
+    for (const id of ids) if (isPageModuleId(id)) prefetchPageModule(id);
   };
   root.addEventListener('pointerover', onIntent, { passive: true });
   root.addEventListener('focusin', onIntent);
@@ -130,16 +139,16 @@ let arrival = 0;
  * been passed over for a later one.
  */
 export function arriveWhenLoaded(view: AppView, arrive: () => void): Promise<void> {
-  const id = pageModuleFor(view);
+  const missing = pageModulesFor(view).filter((id) => !loaded.has(id));
   const ticket = ++arrival;
-  if (!id || loaded.has(id)) {
+  if (!missing.length) {
     arrive();
     return Promise.resolve();
   }
   const settle = () => {
     if (ticket === arrival) arrive();
   };
-  return loadPageModule(id).then(settle, settle);
+  return Promise.all(missing.map(loadPageModule)).then(settle, settle);
 }
 
 export const cancelPendingArrival = () => void ++arrival;

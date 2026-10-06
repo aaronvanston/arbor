@@ -3,7 +3,7 @@ import { ArchiveBanner } from '../components/ArchiveBanner';
 import { ProviderStatusBanner } from '../components/ProviderStatusBanner';
 import { UsageCollectorBanner } from '../components/UsageCollectorBanner';
 import { ProxyChecksBanner } from '../components/ProxyChecksBanner';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
 import { AlertCircle, CircleCheck, Clock3, Search, X } from '../components/ui/icons';
@@ -31,11 +31,9 @@ import { CapacityView } from './UsageCapacityView';
 import { UsageDigestView } from './UsageDigestView';
 import { useLongLimitWindowsKey } from '../services/capacityReport';
 import { MachineHealthPanel } from './MachineHealthPanel';
-import { MachinePage } from './MachinePage';
 import { UsageLifetimeView } from './UsageLifetimeView';
 import { MachinePill, ModelName, ProviderPill } from '../components/identity/Identity';
-import { SessionDetailPage } from './SessionDetailPage';
-import { SessionsCheckoutsPage } from './SessionsCheckouts';
+import { lazyPage } from '../pageModules';
 import { FilterBar, FilterField } from '../components/FilterBar';
 import {
   chippedUsageFilters,
@@ -102,6 +100,12 @@ import { UsageEmpty } from './UsageEmpty';
 import { PricingView } from './UsagePricingView';
 import { SessionsView } from './UsageSessionsView';
 import { OverviewView, BreakdownSection, FailureGlance } from './UsageOverviewView';
+
+// One machine's page brings Sync's checklist and checkouts, and a session's page its timeline, so neither loads with
+// Machines, Sessions or Usage; going to them waits for their code (pageModulesFor).
+const MachinePage = lazyPage('machinePage', (module) => module.MachinePage);
+const SessionDetailPage = lazyPage('sessionDetail', (module) => module.SessionDetailPage);
+const SessionsCheckoutsPage = lazyPage('checkouts', (module) => module.SessionsCheckoutsPage);
 
 /** A usage view: Usage's own, Sessions', Usage › Prices (`pricing`), or Accounts' Value (`capacity`). */
 type UsageTab = UsageTabId | SessionsTabId | 'pricing' | 'capacity';
@@ -850,10 +854,11 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   }, !listAway);
 
   if (variant === 'sessions' && openSessionId) {
-    return <SessionDetailPage key={openSessionId} sessionId={openSessionId} onBack={closeSession} onViewRequests={openRequestsForSession} />;
+    // A view a page moves to by itself doesn't wait for its code, so it can still suspend; only it waits, not the page.
+    return <Suspense fallback={null}><SessionDetailPage key={openSessionId} sessionId={openSessionId} onBack={closeSession} onViewRequests={openRequestsForSession} /></Suspense>;
   }
   if (checkouts) {
-    return <SessionsCheckoutsPage params={{ tab: 'projects', machine: asked.machine, project: asked.project, lens: 'checkouts' }} onViewChange={onViewChange} />;
+    return <Suspense fallback={null}><SessionsCheckoutsPage params={{ tab: 'projects', machine: asked.machine, project: asked.project, lens: 'checkouts' }} onViewChange={onViewChange} /></Suspense>;
   }
 
   const showFilters = activeTab !== 'digest' && activeTab !== 'lifetime' && activeTab !== 'live';
@@ -1013,7 +1018,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         ) : null}
 
         {activeTab === 'overview' && variant === 'machines' && selectedMachine && onNavigate ? (
-          <MachinePage
+          <Suspense fallback={null}><MachinePage
             key={selectedMachine}
             machine={selectedMachine}
             overview={hasCurrentSnapshot ? overview : null}
@@ -1021,7 +1026,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
             onNavigate={onNavigate}
             onOpenSession={openSession}
             onOpenRequests={openRequestsForMachine}
-          />
+          /></Suspense>
         ) : activeTab === 'overview' && variant === 'machines' ? (
           <MachinesView
             overview={hasCurrentSnapshot ? overview : null}

@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'bun:test';
+import { beforeAll, describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { projectsLensAction } from '../src/components/ProjectsLens';
 import { I18nProvider } from '../src/i18n';
 import type { SessionsParams } from '../src/navigation';
 import { UsageRecordsPage } from '../src/pages/UsageRecordsPage';
+import { loadPageModule } from '../src/pageModules';
 
 const bar = (lens: 'checkouts' | undefined) =>
   renderToStaticMarkup(<I18nProvider>{projectsLensAction(lens, () => {}).bar}</I18nProvider>);
@@ -25,6 +26,8 @@ describe('Sessions › Projects’ Activity / Checkouts choice', () => {
 });
 
 describe('Sessions › Projects’ Checkouts', () => {
+  // Its code loads before it's opened, as going to it waits for.
+  beforeAll(() => loadPageModule('checkouts'));
   const sessions = (params: SessionsParams) =>
     renderToStaticMarkup(<I18nProvider><UsageRecordsPage variant="sessions" params={params} /></I18nProvider>);
 

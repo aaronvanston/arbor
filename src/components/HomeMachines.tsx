@@ -8,6 +8,7 @@ import { cn } from '../lib/utils';
 import { invokeCommand } from '../native/commands';
 import type { HealthStatus, MachineSessions } from '../native/types';
 import { machinesView, type AppView } from '../navigation';
+import { prefetchAttribute } from '../pageModules';
 import { useFleetBoard } from '../services/fleetBoard';
 import { healthReasonText, homeMachines, todayRange, type HomeMachine } from '../services/homeOverview';
 import { unreachableReason } from '../services/machineAlerts';
@@ -185,6 +186,7 @@ const MachineCard = memo(function MachineCard({ item, onNavigate }: { item: Home
       type="button"
       onClick={onOpen}
       disabled={!onOpen}
+      {...prefetchAttribute(machinesView(item.machine))}
       className="group flex min-w-0 cursor-pointer flex-col gap-3 rounded-2xl border border-border/70 bg-card p-4 text-left shadow-xs/5 outline-none ring-ring transition-colors hover:border-border hover:bg-accent/40 focus-visible:ring-2 disabled:cursor-default"
     >
       <span className="flex min-w-0 items-start gap-3">
