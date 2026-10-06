@@ -1,7 +1,9 @@
 //! Requests the window answers. Some of what Arbor does is worked out in the webview (account limits, caps, routing,
 //! Sync's plan, the alert history), and the window keeps running while it's closed, so instead of a second copy of that
 //! logic the command line asks the window: the app sends `cli-request` with an id, the window does the work and hands
-//! the result back with `cli_respond`. The window says which actions it answers with `cli_bridge_ready` when it loads.
+//! the result back with `cli_respond`. The window says which actions it answers with `cli_bridge_ready` when it loads,
+//! and the bridge forgets that each time the page loads again: the hidden window reloads itself after a long while
+//! closed to the tray (src/services/backgroundReload.ts), and a request then waits for the new page.
 
 use super::dispatch::Access;
 use super::protocol::unavailable;
@@ -87,6 +89,21 @@ impl BridgeState {
         self.loaded.notify_waiters();
     }
 
+    /// The page is loading again: nothing answers until the new one says it's ready, and whatever the old one was asked
+    /// fails at once, so the command line can try again rather than wait out ANSWER_WAIT for an answer that won't come.
+    fn page_loading(&self) {
+        let pending = match self.bridge.lock() {
+            Ok(mut bridge) => {
+                bridge.ready = false;
+                std::mem::take(&mut bridge.pending)
+            }
+            Err(_) => return,
+        };
+        for (_, sender) in pending {
+            let _ = sender.send(Err(unavailable("Arbor's window reloaded before it answered. Try again.")));
+        }
+    }
+
     async fn wait_until_ready(&self, wait: Duration) -> Result<(), CommandError> {
         let deadline = Instant::now() + wait;
         loop {
@@ -149,6 +166,17 @@ pub(crate) async fn ask_window(app: &tauri::AppHandle, action: &str, args: Value
     state.ask(emit, action, args, confirm, ANSWER_WAIT).await
 }
 
+/// The main window's page has started loading (`on_page_load`), at launch or on a reload.
+pub(crate) fn forget_page_on_load<R: tauri::Runtime>(webview: &tauri::Webview<R>, payload: &tauri::webview::PageLoadPayload<'_>) {
+    use tauri::Manager;
+    if webview.label() != "main" || payload.event() != tauri::webview::PageLoadEvent::Started {
+        return;
+    }
+    if let Some(state) = webview.try_state::<BridgeState>() {
+        state.page_loading();
+    }
+}
+
 /// The window has loaded and answers these actions.
 #[tauri::command]
 pub(crate) fn cli_bridge_ready(state: tauri::State<'_, BridgeState>, actions: Vec<CliWindowAction>) {
@@ -205,6 +233,27 @@ mod tests {
         let error = state.ask(|_| Ok(()), "slow", Value::Null, false, Duration::from_millis(10)).await.unwrap_err();
         assert!(error.message.contains("didn't answer"), "{}", error.message);
         assert!(state.bridge.lock().unwrap().pending.is_empty(), "a timed-out request is forgotten");
+    }
+
+    #[tokio::test]
+    async fn a_reload_fails_what_the_old_page_was_asked_and_the_next_request_waits_for_the_new_page() {
+        let state = Arc::new(BridgeState::default());
+        state.set_ready(vec![action("limits.read")]);
+        let asking = state.clone();
+        let asked = tokio::spawn(async move { asking.ask(|_| Ok(()), "limits.read", Value::Null, false, Duration::from_secs(60)).await });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        state.page_loading();
+        let error = tokio::time::timeout(Duration::from_secs(1), asked).await.expect("answered at once").unwrap().unwrap_err();
+        assert!(error.message.contains("reloaded"), "{}", error.message);
+        assert_eq!(error.reason.as_deref(), unavailable("").reason.as_deref());
+        assert!(!state.is_ready(), "the new page isn't ready yet");
+
+        let waiting = state.clone();
+        let next = tokio::spawn(async move { waiting.wait_until_ready(Duration::from_secs(5)).await });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!next.is_finished(), "a request waits for the new page");
+        state.set_ready(vec![action("limits.read")]);
+        assert!(next.await.unwrap().is_ok());
     }
 
     #[test]

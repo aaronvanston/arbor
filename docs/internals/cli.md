@@ -14,7 +14,9 @@ and events all apply, and an open window updates by itself.
   and the ones that need confirming. A confirmed command prints its plan and exits 10 without `--yes`
   (`confirm: true` over MCP).
 - `bridge.rs` asks the window for what only it works out (limits, caps, routing, Sync's plan, alerts); the window's side
-  is `src/services/cliHandlers.ts`.
+  is `src/services/cliHandlers.ts`. The hidden window reloads itself after a long while closed, so the bridge forgets
+  the page as each load starts: a request waits for the new page's `cli_bridge_ready`, and one the old page never
+  answered fails at once as unavailable rather than waiting out its two minutes.
 - `redact.rs` hides secrets in every answer and event. `audit.rs` keeps `cli/activity.jsonl`: method, client and
   outcome, never arguments.
 - `management_request` and every claim, reset and redeem call are never reachable.

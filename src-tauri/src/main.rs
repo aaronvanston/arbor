@@ -1471,6 +1471,13 @@ struct GithubAsset {
     digest: Option<String>,
 }
 
+/// Each time the main window's page starts loading, at launch or on a reload: the saved zoom goes back on, and the
+/// command line's bridge waits for the new page.
+fn on_page_load(webview: &tauri::Webview, payload: &tauri::webview::PageLoadPayload<'_>) {
+    zoom::reapply_zoom_on_load(webview, payload);
+    cli::bridge::forget_page_on_load(webview, payload);
+}
+
 fn main() {
     // Run as `arbor`, the program is the command line instead of the app: it talks to the running app and never opens
     // the app's files, takes the one-app lock or starts a window.
@@ -1573,7 +1580,7 @@ fn main() {
             }
         });
 
-    let app = app.on_page_load(zoom::reapply_zoom_on_load).on_window_event(|window, event| {
+    let app = app.on_page_load(on_page_load).on_window_event(|window, event| {
         if window.label() != "main" {
             return;
         }
