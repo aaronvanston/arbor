@@ -366,7 +366,9 @@ pub(super) fn place_script(id: &str, input: &AutomationInput, enabled: bool, zon
     };
     let file = |content: &str| shell_quote(&STANDARD.encode(content));
     let mut options: Vec<String> = trigger;
-    options.extend(["--timeout".into(), RUN_TIMEOUT.into(), "--catch-up".into(), format!("{}m", input.grace_minutes)]);
+    // ultradian 0.2 reads a zero duration only as a bare 0 ("0m" is invalid_duration), and copied automations have no grace.
+    let catch_up = if input.grace_minutes == 0 { "0".to_string() } else { format!("{}m", input.grace_minutes) };
+    options.extend(["--timeout".into(), RUN_TIMEOUT.into(), "--catch-up".into(), catch_up]);
     let has_precheck = input.precheck.as_deref().is_some_and(|precheck| !precheck.trim().is_empty());
     let options: String = options.iter().map(|option| format!(" {}", shell_quote(option))).collect();
     let gate = if has_precheck { " --gate \"sh \\\"$here/gate.sh\\\"\" --gate-mode exit".to_string() } else { " --no-gate".to_string() };
@@ -1054,6 +1056,9 @@ mod tests {
         assert!(script.contains("--gate-mode exit"));
         assert!(script.contains("'--cron' '15 * * * *' '--tz' 'Australia/Melbourne'"));
         assert!(script.contains("--catch-up' '20m'"));
+        let mut no_grace = input();
+        no_grace.grace_minutes = 0;
+        assert!(place_script("arbor:a", &no_grace, true, None, Some((&proxy_setup(), ""))).unwrap().contains("--catch-up' '0' "));
         assert!(script.contains(" resume 'arbor-a'"));
         let run = run_script(&input());
         assert!(run.contains("claude -p --session-id \"$new\""));
