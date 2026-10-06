@@ -27,7 +27,9 @@ latest="$(gh release view --repo "$repository" --json tagName --jq '.tagName' 2>
 
 # Checked against main's notes, as the workflow will, in a throwaway checkout of main.
 git fetch -q origin main
-main_dir="$(mktemp -d "${TMPDIR:-/tmp}/arbor-release-stable.XXXXXX")"
+# The real path: macOS's TMPDIR sits under /var, a link to /private/var, and a script run through the link doesn't
+# know it was run directly, so release-notes.mjs would print nothing.
+main_dir="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/arbor-release-stable.XXXXXX")" && pwd -P)"
 git worktree add -q --detach "$main_dir" origin/main
 trap 'git worktree remove --force "$main_dir"' EXIT
 # The workflow works the version out the same way, from the same script. The values go in the environment, since a
