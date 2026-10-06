@@ -617,9 +617,11 @@ export function installTauriMock() {
     void emit('tauri://resize', { width: window.innerWidth, height: window.innerHeight });
   };
   // The website's demo moves the app between pages from outside it, as its own sidebar would, without a reload.
-  (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => void }).__mockOpen = (page, tab, lens) => {
+  // It settles once the page is on its way in, its code loaded.
+  (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => Promise<void> }).__mockOpen = async (page, tab, lens) => {
     const view = mockStartView(page, tab ?? null, lens ?? null);
-    if (view) goToView(view);
+    const arrive = (window as Window & { __arriveWhenLoaded?: (view: AppView, go: () => void) => Promise<void> }).__arriveWhenLoaded;
+    if (view) await (arrive ? arrive(view, () => goToView(view)) : goToView(view));
   };
   (window as Window & { __mockEmit?: (event: string, payload?: unknown) => void }).__mockEmit = (event, payload) => {
     void emit(event, payload ?? Date.now());

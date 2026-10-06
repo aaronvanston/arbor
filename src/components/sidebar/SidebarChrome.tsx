@@ -149,7 +149,7 @@ function HeaderIconButton({ label, disabledReason, onClick, children }: { label:
  * needs the core while it's down shows a lock and says why, in its tooltip and as its description, and stays in the
  * Tab order so the keyboard reaches the reason too; otherwise its tooltip names its shortcut, which shows in place of
  * the badge while ⌘ is held. `current` marks the open page whose view is lit under it rather than the row itself, and
- * `rowProps` are for the tree's keyboard (data attributes) and a chevron's room at the end.
+ * `rowProps` are data attributes: the tree's keyboard, and the page whose code loads as the row is pointed at.
  */
 export function SidebarRow({ icon: Icon, label, active, current = false, locked, lockedHint, onClick, badge = null, badgeLink = null, shortcut, hint = false, className, rowProps }: {
   icon: AppIcon;

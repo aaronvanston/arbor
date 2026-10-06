@@ -4,7 +4,8 @@ import { listen } from '@tauri-apps/api/event';
 import { ArrowUpRight, Monitor, Plus, TerminalSquare, TriangleAlert, Users } from './ui/icons';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n';
-import { failedRequestsView, usageView, type AppView } from '../navigation';
+import { accountLimitsView, failedRequestsView, machinesView, sessionsView, usageView, type AppView } from '../navigation';
+import { prefetchAttribute } from '../pageModules';
 import { addAccount } from '../services/addAccount';
 import { accountsGap, ensureAccountsLoaded, useAccountsStore } from '../services/accountsStore';
 import { machinesFlow, todayRange } from '../services/homeOverview';
@@ -62,13 +63,14 @@ export function HomeDashboard({ coreReady, coreChecking = false, onNavigate, onA
   return (
     <>
       {/* The board reads the machines, not the core: an agent can be waiting on you while the proxy is down. */}
-      <NeedsYouSection onNavigate={onNavigate} />
+      {/* Each card loads the page it leads to as it's pointed at; the wrappers draw no box of their own. */}
+      <div className="contents" {...prefetchAttribute(sessionsView())}><NeedsYouSection onNavigate={onNavigate} /></div>
       {/* One tree for waiting and ready, so the sections stay mounted when the core answers. */}
       {waiting || coreReady ? (
         <>
-          {firstRun && !waiting ? <GetStarted onNavigate={onNavigate} onAddMachine={onAddMachine} /> : <HomeAccounts onNavigate={onNavigate} waiting={waiting} />}
-          <HomeMachines machines={machines} onNavigate={onNavigate} />
-          {firstRun && !waiting ? null : <TodayStats onNavigate={onNavigate} waiting={waiting} />}
+          {firstRun && !waiting ? <GetStarted onNavigate={onNavigate} onAddMachine={onAddMachine} /> : <div className="contents" {...prefetchAttribute(accountLimitsView())}><HomeAccounts onNavigate={onNavigate} waiting={waiting} /></div>}
+          <div className="contents" {...prefetchAttribute(machinesView())}><HomeMachines machines={machines} onNavigate={onNavigate} /></div>
+          {firstRun && !waiting ? null : <div className="contents" {...prefetchAttribute(usageView())}><TodayStats onNavigate={onNavigate} waiting={waiting} /></div>}
         </>
       ) : null}
       <HomeProxy machines={machineFlow} onNavigate={onNavigate} />

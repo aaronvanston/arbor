@@ -22,6 +22,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from '../ui/popover';
 import { StatusDot } from '../ui/status-dot';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
 import { CORNER_DOT, UTILITY_BUTTON } from './shellParts';
+import { prefetchAttribute } from '../../pageModules';
 
 
 /** Most alerts the bell's popover lists; the rest are on the Alerts page. */
@@ -47,6 +48,8 @@ export function SettingsUtility({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+const ALERTS_VIEW: AppView = { kind: 'main', page: 'alerts' };
+
 /**
  * The alert history's bell. It's a log, so it's in the footer rather than among the pages: a dot in the accent color
  * says something's unread, and the popover lists the newest unread, each opening what it's about. The Alerts page is
@@ -65,7 +68,7 @@ export function AlertsUtility({ current, onNavigate, hint = false }: { current: 
   const now = Date.now();
   const openAlerts = () => {
     setOpen(false);
-    onNavigate({ kind: 'main', page: 'alerts' });
+    onNavigate(ALERTS_VIEW);
   };
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -74,7 +77,7 @@ export function AlertsUtility({ current, onNavigate, hint = false }: { current: 
         shortcut="go.alerts"
         trigger={
           <PopoverTrigger
-            render={<Button variant="ghost-muted" size="icon" className={cn(UTILITY_BUTTON, current && 'bg-sidebar-row-selected text-sidebar-foreground')} aria-label={label} />}
+            render={<Button variant="ghost-muted" size="icon" className={cn(UTILITY_BUTTON, current && 'bg-sidebar-row-selected text-sidebar-foreground')} aria-label={label} {...prefetchAttribute(ALERTS_VIEW)} />}
           />
         }
       >

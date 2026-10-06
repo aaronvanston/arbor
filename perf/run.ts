@@ -35,11 +35,8 @@ const NAVIGATION_MS = 3_000;
 const IDLE_MINUTES = 10;
 const STEP_MS = 100;
 const IDLE_STEP_MS = 1_000;
-/**
- * How far a cold start runs when it's only counting the JS a page needs: just short of the two seconds after which
- * `usePagePrefetch` (src/App.tsx) loads every other page in the background.
- */
-const BEFORE_PREFETCH_MS = 1_900;
+/** How far a cold start runs when it's only counting the JS a page needs. */
+const COLD_START_MS = 1_900;
 /** How long frames run at the start of idle before they're held (see perf/counters.ts). */
 const FRAME_SAMPLE_MS = 10_000;
 const HIDDEN_MINUTES = 10;
@@ -175,7 +172,7 @@ type SizeResult = {
   launch: Step & { settling?: Settling };
   hidden?: HiddenResult;
   reload?: ReloadResult;
-  /** App JS a cold start needs before the prefetch: Home's, and each page's beyond Home's. Default size only. */
+  /** App JS a cold start needs: Home's, and each page's beyond Home's. Default size only. */
   coldJs?: { home: number; pages: Record<string, number> };
   idle: Step & { rssStartMb: number | null; rssEndMb: number | null };
   /** Every health round's counts together; the gated ones are per round. */
@@ -307,10 +304,11 @@ const domNodes = (page: Page) => page.evaluate(() => ({
   main: document.querySelector('main')?.getElementsByTagName('*').length ?? 0,
 }));
 
+// Settles once the page's code has loaded, so the page reads what it shows at the same moment on the page clock every run.
 const openPage = (page: Page, target: { page: string; tab?: string; lens?: string }) => page.evaluate(({ page, tab, lens }) => {
-  const open = (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => void }).__mockOpen;
+  const open = (window as Window & { __mockOpen?: (page: string, tab?: string, lens?: string) => Promise<void> }).__mockOpen;
   if (!open) throw new Error('The mock has no __mockOpen');
-  open(page, tab, lens);
+  return open(page, tab, lens);
 }, target);
 
 /** Closes the mock's window to the tray, or shows it again (src/dev/mockTauri.ts). */
@@ -574,8 +572,8 @@ async function timingPass(browser: Browser, url: string): Promise<Timing> {
 }
 
 /**
- * Each page's own JS: a cold start on it (`?page=`), stopped before the prefetch, less what a cold start on Home loads.
- * Opening pages one after another can't show it, as by then the prefetch has loaded them all.
+ * Each page's own JS: a cold start on it (`?page=`) less what a cold start on Home loads. Opening pages one after
+ * another can't show it, as each page's JS stays loaded once it's been opened.
  */
 async function coldJs(browser: Browser, origin: string, sources: BuildSources) {
   const appBytes = (chunks: string[]) => sum(chunks.filter((chunk) => sources.mockShare(chunk) <= 0.5).map((chunk) => statSync(join(SITE, chunk)).size));
@@ -584,7 +582,7 @@ async function coldJs(browser: Browser, origin: string, sources: BuildSources) {
     if (target) query.set('page', target.page);
     if (target?.tab) query.set('tab', target.tab);
     if (target?.lens) query.set('lens', target.lens);
-    const run = await launch(browser, `${origin}/${target ? `?${query}` : ''}`, BEFORE_PREFETCH_MS);
+    const run = await launch(browser, `${origin}/${target ? `?${query}` : ''}`, COLD_START_MS);
     const chunks = [...run.scripts];
     await run.context.close();
     return chunks;
@@ -833,8 +831,10 @@ function countsOf(results: Latest['sizes']): Counts {
     };
     step(`${size}.launch`, result.launch);
     counts[`${size}.launch.componentRenders`] = result.launch.componentRenders;
-    // Everything a launch loads, the prefetched pages included; then what Home and each page need on their own.
+    // Everything a launch loads, anything idle loads after it (pages load on intent, so nothing should), then what
+    // Home and each page need on their own.
     counts[`${size}.launch.appJsBytes`] = result.launch.appJsBytes;
+    counts[`${size}.idle.appJsBytes`] = result.idle.appJsBytes;
     if (result.launch.settling) {
       counts[`${size}.launch.commandsBeforeSettled`] = result.launch.settling.beforeSettled;
       counts[`${size}.launch.duplicateCallsInFlight`] = result.launch.settling.duplicatesInFlight;
@@ -942,7 +942,7 @@ function printReport(latest: Latest) {
     console.log('');
     const js = (bytes: number | undefined) => (bytes === undefined ? '—' : kb(bytes));
     const stepRow = (name: string, step: Step, jsBytes: number | undefined) => [name, js(jsBytes), step.commits, step.mutations, step.commands, kb(step.commandBytes), step.timerFires];
-    if (result.coldJs) console.log(`App JS: ${kb(result.launch.appJsBytes)} KB loaded by a launch (every page prefetched two seconds in), ${kb(result.coldJs.home)} KB of it needed for Home. Page JS below is a cold start on that page beyond Home's.\n`);
+    if (result.coldJs) console.log(`App JS: ${kb(result.launch.appJsBytes)} KB loaded by a launch, ${kb(result.coldJs.home)} KB of it needed for Home, ${kb(result.idle.appJsBytes)} KB more over ${IDLE_MINUTES} idle minutes. Page JS below is a cold start on that page beyond Home's.\n`);
     table(['Journey', 'App JS KB', 'Commits', 'Mutations', 'Commands', 'Cmd KB', 'Timer fires'], [
       stepRow('launch → Home settled', result.launch, result.launch.appJsBytes),
       ...Object.entries(result.pages).map(([page, step]) => stepRow(`open ${page}`, step, result.coldJs?.pages[page])),

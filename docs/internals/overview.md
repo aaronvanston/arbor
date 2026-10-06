@@ -83,6 +83,12 @@ commit replaces it with the same picture. What someone changing the shell or Hom
 
 Home, the sidebar and the monitors load with the app; everything else loads when it's first used.
 
+- A page's code loads as someone points at or focuses a link to it, or as its palette row lights up
+  (`src/pageModules.ts`): give an element that opens a page `prefetchAttribute(view)`. Going to a page waits for its
+  code (`arriveWhenLoaded`) rather than suspending, because React holds a suspended page back for 300 ms; a dialog that
+  loads on first open (`components/dialogsWhenOpened.tsx`) mounts once its code is in, for the same reason. Only code
+  that loads with `App.tsx` imports `src/pageModules.ts`: reached from the monitors' side, it lets the pages load without
+  the app, and the build splits the app's code into dozens of shared pieces.
 - The UI's strings are one typed table (`src/i18n/locales/en.ts`), which dev and the tests read whole. A build ships
   only the strings the launch's code names, and every lazily loaded module brings the ones its own code names
   (`scripts/vite-split-strings.mjs`). So a key built in code keeps a fixed start, `` t(`status.indicator.${x}`) ``,

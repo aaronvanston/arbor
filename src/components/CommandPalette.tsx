@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPr
 import { invokeCommand } from '../native/commands';
 import { ArrowLeft, Bot, ChevronRight, FolderGit2, Network, Search, SlidersHorizontal, TimeSchedule, type AppIcon } from './ui/icons';
 import { requestFocus } from '../focusRequests';
+import { prefetchView } from '../pageModules';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
@@ -217,6 +218,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
         shortcut: page.view.kind === 'main' && !tab ? `go.${page.view.page}` : undefined,
         // Listed grayed out rather than hidden, so it's clear why it won't open.
         disabledReason: page.locked ? lockedHint : undefined,
+        opens: page.view,
         run: () => onNavigate(page.view),
       };
     });
@@ -240,6 +242,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       shown,
       icon: <IconBox><ProviderMark provider={session.provider} decorative className="size-full object-contain" fallback={<Bot />} /></IconBox>,
       content: <SessionLabel session={session} machine extra={formatAgo(session.lastActiveAtMs, now)} className="text-sm" />,
+      opens: sessionsView(),
       run: () => onNavigate(sessionsView({ session: session.id })),
     });
     const sessionItems = [
@@ -262,6 +265,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       shown: 'typed',
       icon: <IconBox><FolderGit2 /></IconBox>,
       content: countLabel(project.value, project.sessions),
+      opens: sessionsView(),
       run: () => onNavigate(sessionsView({ tab: 'sessions', project: project.value })),
     }));
     const automationItems: PaletteItem[] = (automationList?.automations ?? []).map((automation) => ({
@@ -271,6 +275,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       keywords: [automation.project ?? '', automation.machine ? machineName(automation.machine) : '', t(SOURCE_LABEL(automation.source))].join(' '),
       shown: 'typed',
       icon: <IconBox>{automation.agent ? <ProviderMark provider={automation.agent} decorative className="size-full object-contain" fallback={<TimeSchedule />} /> : <TimeSchedule />}</IconBox>,
+      opens: automationView(automation.id),
       run: () => onNavigate(automationView(automation.id)),
     }));
     // A new session on each pool with members: its page, with New session open.
@@ -301,6 +306,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
             <StatusDot tone={STATUS_TONE[item.status]} className="absolute -top-0.5 -right-0.5 ring-2 ring-popover" />
           </IconBox>
         ),
+        opens: machinesView(),
         run: () => {
           requestFocus('machine', item.machine);
           onNavigate(machinesView(item.machine));
@@ -315,6 +321,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
         shown: 'typed',
         icon: <IconBox><MachineMark name={item.value} /></IconBox>,
         content: countLabel(machineName(item.value), item.sessions),
+        opens: sessionsView(),
         run: () => onNavigate(machineSessionsView(item.value)),
       })),
     ];
@@ -325,6 +332,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       shown: 'typed',
       // The Pools page's own mark, as in the sidebar.
       icon: <IconBox><Network /></IconBox>,
+      opens: poolsView(),
       run: () => onNavigate(poolsView(pool.id)),
     }));
     const accountFiles = coreReady ? [...files, ...disabled.filter((file) => reserves.paused[quotaKey(file)])] : [];
@@ -348,6 +356,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
             {detail ? <span className="shrink-0 text-xs text-muted-foreground">{detail}</span> : null}
           </span>
         ),
+        opens: accountLimitsView(),
         run: () => {
           requestFocus('account', key);
           onNavigate(accountLimitsView());
@@ -365,6 +374,10 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
   useEffect(() => setActive(null), [query, submenu]);
   // -1 when nothing listed can run: no row lights up as if Enter would do something.
   const current = active !== null && items[active] ? active : items.findIndex((item) => !item.disabledReason);
+  const litView = open ? items[current]?.opens : undefined;
+  useEffect(() => {
+    if (litView) prefetchView(litView);
+  }, [litView]);
   useEffect(() => {
     if (current >= 0) listRef.current?.querySelector(`#${optionId(current)}`)?.scrollIntoView({ block: 'nearest' });
   }, [current]);

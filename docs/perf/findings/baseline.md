@@ -18,9 +18,10 @@ source through the hidden source maps (`perf/sourcemap.ts`).
 - **Journeys.** Cold launch: load, then 5 s on the page clock. Open each page: from Home, through `window.__mockOpen`
   (the demo's in-app navigation), 3 s of page clock each, in the order of the table below. Idle: 10 minutes on Home on
   the page clock, in 1 s steps.
-- **Page JS.** `usePagePrefetch` (`src/App.tsx:166`) loads every page two seconds after launch, so opening pages in a
-  row loads no JS at all. Each page's JS is therefore a cold start on that page (`?page=…`) stopped at 1.9 s, less what
-  a cold start on Home loads. Mock-only chunks (more than half their source in `src/dev/`) are left out of "app JS";
+- **Page JS.** A page's JS stays loaded once it's been opened, so opening pages in a row can't show each one's own.
+  Each page's JS is therefore a cold start on that page (`?page=…`) stopped at 1.9 s, less what a cold start on Home
+  loads. (At this first run `usePagePrefetch` also loaded every page two seconds after launch; it's gone since, and
+  `idle.appJsBytes` holds what loads after launch to zero.) Mock-only chunks (more than half their source in `src/dev/`) are left out of "app JS";
   the mock's own chunk is 261 KB.
 - **Frames.** The page clock waits a real task after every timer it runs (~7 ms), so a draw-every-frame loop made 10
   minutes of idle take four and a half minutes. Frames run for the first 10 s of idle and are counted there, then held

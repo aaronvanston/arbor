@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
+import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
 import { onAddMachineRequest } from './services/addMachine';
@@ -44,8 +44,9 @@ import { useI18n } from './i18n';
 import { AppUpdateDialog, useAppUpdate } from './appUpdate';
 import { appUpdateIndicatorState } from './appUpdateModel';
 import { accountLimitsView, canOpenView, machinesView, mainView, samePage, viewPageId, type AppView, type MainPageId, type SettingsPageId } from './navigation';
-import { canArrive, changePageView, currentView, goBack, goForward, goToView, lockedInPlace, useViewHistory, type ViewArrival, type ViewChange, type ViewHistory } from './services/viewHistory';
+import { canArrive, changePageView, currentView, goBack, goForward, goToView, lockedInPlace, stepTarget, useViewHistory, type ViewArrival, type ViewChange, type ViewHistory } from './services/viewHistory';
 import { bootedInBackground } from './services/bootMode';
+import { arriveWhenLoaded, cancelPendingArrival, lazyPage, prefetchAttribute, prefetchView, watchPrefetchIntent } from './pageModules';
 import type { MessageKey } from './i18n/resources';
 import { useAppliedTheme, useThemePreference, type ThemePreference } from './theme';
 import { cn } from './lib/utils';
@@ -107,59 +108,26 @@ const settingsGroups: { id: string; labelKey: MessageKey; pages: { id: SettingsP
 
 const HOME_VIEW: AppView = { kind: 'main', page: 'home' };
 
-// Home comes with the app; every other page loads the first time it's opened, so starting up doesn't wait on them.
-const pageModules = {
-  accounts: () => import('./pages/AccountsPage'),
-  usage: () => import('./pages/UsageRecordsPage'),
-  automations: () => import('./pages/AutomationsPage'),
-  machinePools: () => import('./pages/PoolsPage'),
-  usageData: () => import('./pages/UsageDataSettingsPage'),
-  setup: () => import('./pages/SetupPage'),
-  alerts: () => import('./pages/AlertsPage'),
-  config: () => import('./pages/ConfigPanel'),
-  modelRouting: () => import('./pages/ModelRoutingPage'),
-  extraModels: () => import('./pages/ExtraModelsPage'),
-  settings: () => import('./pages/SettingsPages'),
-  agentHomes: () => import('./pages/AgentHomesSettings'),
-  harnesses: () => import('./pages/HarnessesSettings'),
-  pools: () => import('./pages/PoolsSettings'),
-  appearance: () => import('./pages/AppearanceSettingsPage'),
-  notifications: () => import('./pages/NotificationsSettingsPage'),
-  sessionArchive: () => import('./pages/SessionArchiveSettings'),
-  versions: () => import('./pages/VersionManagementPage'),
-  diagnostics: () => import('./pages/DiagnosticsSettings'),
-  about: () => import('./pages/AboutSettings'),
-};
-const AccountsPage = lazy(() => pageModules.accounts().then((module) => ({ default: module.AccountsPage })));
-const UsageRecordsPage = lazy(() => pageModules.usage().then((module) => ({ default: module.UsageRecordsPage })));
-const PoolsPage = lazy(() => pageModules.machinePools().then((module) => ({ default: module.PoolsPage })));
-const AutomationsPage = lazy(() => pageModules.automations().then((module) => ({ default: module.AutomationsPage })));
-const UsageDataSettingsPage = lazy(() => pageModules.usageData().then((module) => ({ default: module.UsageDataSettingsPage })));
-const SetupPage = lazy(() => pageModules.setup().then((module) => ({ default: module.SetupPage })));
-const AlertsPage = lazy(() => pageModules.alerts().then((module) => ({ default: module.AlertsPage })));
-const ConfigPanelPage = lazy(() => pageModules.config().then((module) => ({ default: module.ConfigPanelPage })));
-const ModelRoutingPage = lazy(() => pageModules.modelRouting().then((module) => ({ default: module.ModelRoutingPage })));
-const ExtraModelsPage = lazy(() => pageModules.extraModels().then((module) => ({ default: module.ExtraModelsPage })));
-const MachineAssignmentsSettingsPage = lazy(() => pageModules.settings().then((module) => ({ default: module.MachineAssignmentsSettingsPage })));
-const AgentHomesSettingsPage = lazy(() => pageModules.agentHomes().then((module) => ({ default: module.AgentHomesSettingsPage })));
-const HarnessesSettingsPage = lazy(() => pageModules.harnesses().then((module) => ({ default: module.HarnessesSettingsPage })));
-const PoolsSettingsPage = lazy(() => pageModules.pools().then((module) => ({ default: module.PoolsSettingsPage })));
-const AppearanceSettingsPage = lazy(() => pageModules.appearance().then((module) => ({ default: module.AppearanceSettingsPage })));
-const NotificationsSettingsPage = lazy(() => pageModules.notifications().then((module) => ({ default: module.NotificationsSettingsPage })));
-const SessionArchiveSettingsPage = lazy(() => pageModules.sessionArchive().then((module) => ({ default: module.SessionArchiveSettingsPage })));
-const VersionManagementPage = lazy(() => pageModules.versions().then((module) => ({ default: module.VersionManagementPage })));
-const DiagnosticsSettingsPage = lazy(() => pageModules.diagnostics().then((module) => ({ default: module.DiagnosticsSettingsPage })));
-const AboutSettingsPage = lazy(() => pageModules.about().then((module) => ({ default: module.AboutSettingsPage })));
-
-/** Once the app has settled, loads the other pages in the background, so opening one later doesn't wait. */
-function usePagePrefetch() {
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      for (const load of Object.values(pageModules)) void load().catch(() => undefined);
-    }, 2_000);
-    return () => window.clearTimeout(timer);
-  }, []);
-}
+const AccountsPage = lazyPage('accounts', (module) => module.AccountsPage);
+const UsageRecordsPage = lazyPage('usage', (module) => module.UsageRecordsPage);
+const PoolsPage = lazyPage('machinePools', (module) => module.PoolsPage);
+const AutomationsPage = lazyPage('automations', (module) => module.AutomationsPage);
+const UsageDataSettingsPage = lazyPage('usageData', (module) => module.UsageDataSettingsPage);
+const SetupPage = lazyPage('setup', (module) => module.SetupPage);
+const AlertsPage = lazyPage('alerts', (module) => module.AlertsPage);
+const ConfigPanelPage = lazyPage('config', (module) => module.ConfigPanelPage);
+const ModelRoutingPage = lazyPage('modelRouting', (module) => module.ModelRoutingPage);
+const ExtraModelsPage = lazyPage('extraModels', (module) => module.ExtraModelsPage);
+const MachineAssignmentsSettingsPage = lazyPage('settings', (module) => module.MachineAssignmentsSettingsPage);
+const AgentHomesSettingsPage = lazyPage('agentHomes', (module) => module.AgentHomesSettingsPage);
+const HarnessesSettingsPage = lazyPage('harnesses', (module) => module.HarnessesSettingsPage);
+const PoolsSettingsPage = lazyPage('pools', (module) => module.PoolsSettingsPage);
+const AppearanceSettingsPage = lazyPage('appearance', (module) => module.AppearanceSettingsPage);
+const NotificationsSettingsPage = lazyPage('notifications', (module) => module.NotificationsSettingsPage);
+const SessionArchiveSettingsPage = lazyPage('sessionArchive', (module) => module.SessionArchiveSettingsPage);
+const VersionManagementPage = lazyPage('versions', (module) => module.VersionManagementPage);
+const DiagnosticsSettingsPage = lazyPage('diagnostics', (module) => module.DiagnosticsSettingsPage);
+const AboutSettingsPage = lazyPage('about', (module) => module.AboutSettingsPage);
 
 /** The name a view's page goes by in the sidebar. */
 function pageLabelKey(view: AppView): MessageKey {
@@ -238,7 +206,6 @@ function lastViewOf(history: ViewHistory, kind: AppView['kind']): AppView | unde
 
 function AppContent({ navigateRef }: ShellProps) {
   const { t, tRich } = useI18n();
-  usePagePrefetch();
   const { info: appUpdateInfo, hasUpdate, processing: appUpdateProcessing, checking: checkingAppUpdate, check: checkAppUpdate } = useAppUpdate();
   const { latest: coreLatest, hasUpdate: coreHasUpdate, check: checkCoreUpdate } = useCoreUpdate();
   const history = useViewHistory();
@@ -359,9 +326,12 @@ function AppContent({ navigateRef }: ShellProps) {
 
   const goTo = useCallback((next: AppView, how: ViewArrival) => {
     if (!canArrive(next, how, coreReady)) return;
-    goToView(next);
-    setVisit((count) => count + 1);
+    arriveWhenLoaded(next, () => {
+      goToView(next);
+      setVisit((count) => count + 1);
+    });
   }, [coreReady]);
+  useEffect(() => watchPrefetchIntent(), []);
   const navigate = useCallback((next: AppView) => goTo(next, 'open'), [goTo]);
   useEffect(() => {
     navigateRef.current = navigate;
@@ -489,11 +459,24 @@ function AppContent({ navigateRef }: ShellProps) {
     inSettings, navigate, openSettings, leaveSettings,
     togglePalette: () => openPalette(!paletteOpen),
     toggleSidebar,
-    goBack: () => goBack(canOpen),
-    goForward: () => goForward(canOpen),
+    // A step taken while a page's code is still loading wins over it.
+    goBack: () => goBack(canOpen) && (cancelPendingArrival(), true),
+    goForward: () => goForward(canOpen) && (cancelPendingArrival(), true),
   });
-  // While ⌘ is held for a moment, the sidebar shows which number opens which page.
+  // While ⌘ is held for a moment, the sidebar shows which number opens which page. ⌘[ and ⌘] land on a page loaded
+  // when it was last open, but not always (a history the mock starts with), so their pages load then; a number's page
+  // loads as it's pressed.
   const shortcutHints = useModifierHold();
+  useEffect(() => {
+    if (!shortcutHints) return;
+    for (const direction of [-1, 1] as const) {
+      const at = stepTarget(history, direction, canOpen);
+      const target = at === null ? undefined : history.entries[at];
+      if (target) prefetchView(target);
+    }
+    // Once as the hints show; the history only changes by a step being taken, which lets go of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortcutHints]);
 
   const coreState = sidebarCoreState(status, statusError);
   const lock = coreLock(status, statusError);
@@ -587,6 +570,7 @@ function AppContent({ navigateRef }: ShellProps) {
                         locked={!canOpenView(target, coreReady)}
                         lockedHint={coreLockedHint}
                         onClick={() => navigate(target)}
+                        rowProps={prefetchAttribute(target)}
                       />
                     );
                   })}
@@ -680,7 +664,7 @@ function AppContent({ navigateRef }: ShellProps) {
             />
           ) : (
             <PageErrorBoundary pageId={viewPageId(view)} resetKey={`${visit}:${history.index}`}>
-              {/* A page's first load is a local file read; nothing shows for those few milliseconds. */}
+              {/* Arrivals wait for a page's code (arriveWhenLoaded), so this shows only for one that didn't. */}
               <Suspense fallback={null}>
                 <ViewContent view={view} visit={visit} coreReady={coreReady} onNavigate={navigate} onViewChange={changeView} onAddMachine={addMachine} theme={theme} onThemeChange={setTheme} />
               </Suspense>

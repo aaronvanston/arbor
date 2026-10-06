@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { PaletteEntry } from '../services/commandPalette';
 import type { ShortcutId } from '../services/shortcuts';
+import type { AppView } from '../navigation';
 
 /** The lists that open in place of the palette's own, for an action that needs an account chosen. */
 export type PaletteSubmenu = 'pause' | 'resume';
@@ -15,6 +16,8 @@ export type PaletteItem = PaletteEntry & {
   disabledReason?: string;
   /** Opens this list instead of running. */
   submenu?: PaletteSubmenu;
+  /** The view it opens, whose page's code loads while it's the lit row. */
+  opens?: AppView;
   /** Runs once the palette has closed; an action says how it went in a toast. */
   run?: () => void | Promise<void>;
 };

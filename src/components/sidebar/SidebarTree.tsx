@@ -6,6 +6,7 @@ import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
 import { canOpenView, keepMachineScope, machinesView, mainView, poolsView, type AppView, type MainPageId } from '../../navigation';
 import { requestFocus } from '../../focusRequests';
+import { prefetchAttribute } from '../../pageModules';
 import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
 import { useFleetHealthSelect } from '../../services/fleetHealth';
@@ -340,7 +341,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
           shortcut={`go.${page.id}`}
           hint={hint}
           className={expandable ? 'pr-8' : undefined}
-          rowProps={{ 'data-tree-row': 'page', 'data-tree-page': page.id, 'data-tree-expandable': String(expandable), 'data-tree-open': String(shown) }}
+          rowProps={{ 'data-tree-row': 'page', 'data-tree-page': page.id, 'data-tree-expandable': String(expandable), 'data-tree-open': String(shown), ...prefetchAttribute(mainView(page.id)) }}
           onClick={() => {
             // Opened where it was left; Machines on its overview.
             arriveAtPage(page.id);
@@ -386,6 +387,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
                   data-active={active}
                   data-tree-row="leaf"
                   data-tree-parent={page.id}
+                  {...prefetchAttribute(mainView(page.id))}
                   className={cn(LEAF_CLASS, 'pr-8')}
                   onClick={() => {
                     // Picked again while it's the view, the page goes back to its top.
@@ -418,6 +420,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
                   data-active={active}
                   data-tree-row="leaf"
                   data-tree-parent={page.id}
+                  {...prefetchAttribute(mainView(page.id))}
                   className={cn(LEAF_CLASS, 'pr-8')}
                   onClick={() => onNavigate(poolsView(pool.id))}
                 >
@@ -456,6 +459,7 @@ function TreeLeafRow({ label, parent, active, locked, lockedHint, onOpen }: {
       data-active={active}
       data-tree-row="leaf"
       data-tree-parent={parent}
+      {...prefetchAttribute(mainView(parent))}
       className={cn(LEAF_CLASS, 'pr-2.5')}
       onClick={locked ? undefined : onOpen}
     >
