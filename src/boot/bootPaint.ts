@@ -1,6 +1,7 @@
 import { appColorChoice } from '../services/appColor';
 import { BOOT_KEY, FIRST_SCREEN_SHOWN, needsYouLikely, readBootState } from './bootState';
 import { fitOpenGroups, parseOpenChoices, wantedOpen } from '../services/sidebarTree';
+import { reloadedPage, startsInBackground } from '../services/bootMark';
 import { sidebarArtChoice, sidebarArtHalo, sidebarArtHeight, sidebarArtInk } from '../services/sidebarArt';
 import { drawScene, sceneRows, SCENE_STILL_SECONDS } from '../services/sidebarScenes';
 import { clampSidebarWidth, parseSidebarLayout, sidebarMaxWidth, sidebarShown, NARROW_WINDOW_WIDTH } from '../services/sidebarLayoutRules';
@@ -145,10 +146,11 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
   };
 
   // Shown once it has painted: two frames, or a short wait, as a window that isn't on screen yet may run no frames
-  // (windowChrome.ts's afterFirstPaint).
+  // (windowChrome.ts's afterFirstPaint). A page the window reloaded into isn't a launch: the window is already up.
+  const launch = !reloadedPage(location.href);
   let done = false;
   const ready = () => {
-    if (done) return;
+    if (done || !launch) return;
     done = true;
     performance.mark('boot-painted');
     const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
@@ -158,6 +160,10 @@ type TauriInternals = { invoke: (command: string, args?: Record<string, unknown>
     (window as unknown as Record<string, unknown>)[FIRST_SCREEN_SHOWN] = true;
     internals.invoke('frontend_ready', { theme }).catch(() => undefined);
   };
+  // A page the window reloaded into while closed to the tray (services/backgroundReload.ts) has no window to show and
+  // nobody to see it; React takes the screen down as it starts.
+  if (startsInBackground(location.href, document.visibilityState === 'hidden')) return;
+
   // Everything that reads the layout waits for the first frame, when the page has been laid out once anyway: read
   // while the page is still parsing, it would lay the whole page out early, and again after these changes.
   let drawn = false;

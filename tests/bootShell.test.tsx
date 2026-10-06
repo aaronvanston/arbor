@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BootShell } from '../src/boot/BootShell';
+import { reloadedPage, startsInBackground } from '../src/services/bootMark';
 import { BOOT_KEY, DEFAULT_HOME_SHAPE, FIRST_SCREEN_SHOWN, firstScreenShown, NEEDS_YOU_RECENT_MS, needsYouLikely, readBootState } from '../src/boot/bootState';
 import { NEEDS_YOU_WINDOW_MS } from '../src/services/fleetBoard';
 import { AccountsSkeleton } from '../src/components/homeSkeletons';
@@ -153,5 +154,14 @@ describe('showing the window', () => {
       delete page[FIRST_SCREEN_SHOWN];
       if (!hadWindow) delete page.window;
     }
+  });
+});
+
+describe('a page the window reloaded into', () => {
+  it('is never a launch, so the first screen leaves showing the window alone, and idles while hidden', () => {
+    expect(reloadedPage('tauri://localhost/?boot=background')).toBe(true);
+    expect(reloadedPage('tauri://localhost/')).toBe(false);
+    expect(startsInBackground('tauri://localhost/?boot=background', true)).toBe(true);
+    expect(startsInBackground('tauri://localhost/?boot=background', false)).toBe(false);
   });
 });

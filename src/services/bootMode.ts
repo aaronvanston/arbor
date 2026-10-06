@@ -1,4 +1,4 @@
-import { BOOT_PARAM, CARRY_KEY, carriedHistory, readCarry, startsInBackground, TRAY_KEPT_MS, trayPushWaits, withoutBootMark } from './backgroundReload';
+import { CARRY_KEY, carriedHistory, readCarry, reloadedPage, startsInBackground, TRAY_KEPT_MS, trayPushWaits, withoutBootMark } from './backgroundReload';
 import { receiveCarry } from './reloadHolds';
 import { resetViewHistory } from './viewHistory';
 
@@ -19,7 +19,7 @@ export const bootedInBackground = () => background;
  */
 export function beginBoot(): boolean {
   const href = window.location.href;
-  if (!new URL(href).searchParams.has(BOOT_PARAM)) return false;
+  if (!reloadedPage(href)) return false;
   background = startsInBackground(href, document.visibilityState === 'hidden');
   bootedAtMs = Date.now();
   window.history.replaceState(window.history.state, '', withoutBootMark(href));

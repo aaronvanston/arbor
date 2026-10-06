@@ -71,29 +71,7 @@ export const TRAY_KEPT_MS = 60_000;
 /** Whether a push to the tray waits: one that would clear it, on a page reloaded into the background, in its first minute. */
 export const trayPushWaits = (clears: boolean, background: boolean, sinceBootMs: number) => clears && background && sinceBootMs < TRAY_KEPT_MS;
 
-/** The query parameter that says the page starts in the background. */
-export const BOOT_PARAM = 'boot';
-const BACKGROUND = 'background';
-
-/** Where the window reloads to: the same page, marked to start in the background. */
-export function backgroundBootUrl(href: string): string {
-  const url = new URL(href);
-  url.searchParams.set(BOOT_PARAM, BACKGROUND);
-  return url.href;
-}
-
-/** The address without the mark, so a later reload of any kind starts as usual. */
-export function withoutBootMark(href: string): string {
-  const url = new URL(href);
-  url.searchParams.delete(BOOT_PARAM);
-  return url.href;
-}
-
-/**
- * Whether this page starts in the background: marked so, and still hidden. A window that showed while it reloaded
- * starts as at launch.
- */
-export const startsInBackground = (href: string, hidden: boolean) => hidden && new URL(href).searchParams.get(BOOT_PARAM) === BACKGROUND;
+export { backgroundBootUrl, reloadedPage, startsInBackground, withoutBootMark } from './bootMark';
 
 /** Where what's carried over a reload waits for the new page. Only views, ids and times: nothing secret. */
 export const CARRY_KEY = 'arbor.reload-carry.v1';
