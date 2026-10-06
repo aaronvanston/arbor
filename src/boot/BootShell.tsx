@@ -6,13 +6,18 @@ import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Button, buttonVariants } from '../components/ui/button';
 import { DEFAULT_HOME_SHAPE } from './bootState';
 import { cn } from '../lib/utils';
-import { PAGE_ICONS, FOOTER_UTILITIES_CLASS, LEAF_CLASS, TREE_LEAVES_CLASS, TOGGLE_BUTTON_CLASS, TOGGLE_INK_CLASS, TOGGLE_SHOWN_CLASS, HEADER_ICON_BUTTON, MAIN_CLASS, ROW_CLASS, ROW_ICON_CLASS, SEARCH_GROUP_CLASS, SEARCH_KBD_CLASS, SEARCH_ROW_CLASS, SHELL_CLASS, SIDEBAR_ART_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, SIDEBAR_HEADER_CLASS, TOGGLE_SLOT_CLASS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass, UTILITY_BUTTON, WORDMARK_CLASS } from '../components/sidebar/shellParts';
+import { CORNER_DOT, PAGE_ICONS, FOOTER_UTILITIES_CLASS, LEAF_CLASS, TREE_LEAVES_CLASS, TOGGLE_BUTTON_CLASS, TOGGLE_INK_CLASS, TOGGLE_SHOWN_CLASS, HEADER_ICON_BUTTON, MAIN_CLASS, ROW_CLASS, ROW_ICON_CLASS, SEARCH_GROUP_CLASS, SEARCH_KBD_CLASS, SEARCH_ROW_CLASS, SHELL_CLASS, SIDEBAR_ART_CLASS, SIDEBAR_CLASS, SIDEBAR_FOOTER_CLASS, SIDEBAR_HEADER_CLASS, TOGGLE_SLOT_CLASS, TREE_CHEVRON_CLASS, TREE_NAV_CLASS, TREE_SECTION_LABEL_CLASS, treeSectionClass, UTILITY_BUTTON, WORDMARK_CLASS } from '../components/sidebar/shellParts';
 import { ArrowUpRight, ChevronRight, Lock, Play, MonitorPlus, PanelLeft, PanelLeftClose, Search, Server, Settings, Bell, UserPlus } from '../components/ui/icons';
 import { Kbd } from '../components/ui/kbd';
 import { SettingsSection } from '../components/layout/settings';
 import { accountSignInsView, canOpenView, mainView } from '../navigation';
 import { leafView, SIDEBAR_TREE } from '../services/sidebarTree';
+import { sidebarCoreState } from '../services/coreLock';
+import { StatusDot } from '../components/ui/status-dot';
 import { formatKeys, SHORTCUTS } from '../services/shortcuts';
+
+/** The core's state before its status has been read, as React's first frame has it. */
+const CHECKING = sidebarCoreState(null, '');
 
 /**
  * The window's first screen, drawn before any script runs: the build renders this to static HTML inside index.html's
@@ -106,7 +111,11 @@ function BootFrame() {
           <div className={FOOTER_UTILITIES_CLASS}>
             <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon' }), UTILITY_BUTTON)}><Settings /></span>
             <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon' }), UTILITY_BUTTON)}><Bell /></span>
-            <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon' }), UTILITY_BUTTON)}><Server /></span>
+            {/* The core's dot, as CoreUtility draws it before the core's status has been read. */}
+            <span className={cn(buttonVariants({ variant: 'ghost-muted', size: 'icon' }), UTILITY_BUTTON)}>
+              <Server />
+              <StatusDot tone={CHECKING.tone} pulse={CHECKING.tone === 'warning'} className={CORNER_DOT} />
+            </span>
           </div>
         </div>
       </aside>

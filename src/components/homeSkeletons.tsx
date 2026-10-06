@@ -177,7 +177,8 @@ export function ProxySkeleton() {
         ))}
         <Skeleton className={cn('ms-auto h-7 w-36 rounded-md', BAR)} />
       </SettingsBlock>
-      <div className="flex min-h-9 items-center px-4"><Skeleton className={cn('h-2.5 w-14', BAR)} /></div>
+      {/* The details fold: its divider sits on the fold, outside the 36px row, as Collapsible's does. */}
+      <div><div className="flex min-h-9 items-center px-4"><Skeleton className={cn('h-2.5 w-14', BAR)} /></div></div>
     </>
   );
 }

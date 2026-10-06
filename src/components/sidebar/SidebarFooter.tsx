@@ -21,10 +21,8 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '../ui/men
 import { Popover, PopoverPopup, PopoverTrigger } from '../ui/popover';
 import { StatusDot } from '../ui/status-dot';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
-import { UTILITY_BUTTON } from './shellParts';
+import { CORNER_DOT, UTILITY_BUTTON } from './shellParts';
 
-/** A dot on a footer icon's corner, ringed in the sidebar color so it reads over the glyph. */
-const CORNER_DOT = 'absolute top-1.5 right-1.5 size-1.5 rounded-full ring-2 ring-sidebar';
 
 /** Most alerts the bell's popover lists; the rest are on the Alerts page. */
 const ALERTS_IN_POPOVER = 8;

@@ -84,4 +84,7 @@ export const FOOTER_UTILITIES_CLASS = 'flex items-center gap-0.5';
 /** T3's footer icon button: 32px, in the sidebar's icon color until hovered. */
 export const UTILITY_BUTTON = 'relative text-[var(--sidebar-icon-color)] [--control-icon-color:currentColor] hover:bg-sidebar-row-hover hover:text-sidebar-foreground data-popup-open:bg-sidebar-row-hover data-popup-open:text-sidebar-foreground';
 
+/** A dot on a footer icon's corner, ringed in the sidebar color so it reads over the glyph. */
+export const CORNER_DOT = 'absolute top-1.5 right-1.5 size-1.5 rounded-full ring-2 ring-sidebar';
+
 export const MAIN_CLASS = 'relative flex min-w-0 flex-1 flex-col overflow-hidden';
