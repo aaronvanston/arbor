@@ -54,3 +54,8 @@ objc2-service-management = { version = "0.3", default-features = false, features
 [dev-dependencies]
 # The same muda Tauri builds its menus with, so a test can check which menu accelerators it reads.
 muda = { version = "0.19", default-features = false }
+
+# Symbols only name functions in a stack trace; crash reports use the panic's file and line, so stripping them
+# keeps those and takes about 11 MB off the app.
+[profile.release]
+strip = "symbols"
