@@ -400,6 +400,10 @@ impl MachineProjects {
 }
 
 impl MachineProjects {
+    pub(super) fn home_dir(&self) -> &str {
+        &self.home_dir
+    }
+
     pub(super) fn places(&self) -> &[FoundPlace] {
         &self.places
     }
@@ -869,6 +873,14 @@ fi
 start=$(date +%s)
 while IFS= read -r repo <&3; do
   [ -n "$repo" ] || continue
+  # `?path`: where another machine has a project, looked at only when it's a checkout not listed already.
+  case "$repo" in
+    '?'*)
+      repo=${repo#?}
+      case "$repo" in "~/"*) repo="$HOME/${repo#\~/}" ;; esac
+      { [ -d "$repo/.git" ] || [ -f "$repo/.git" ]; } || continue
+      grep -Fqx -- "$repo" "$work/repos" && continue ;;
+  esac
   if [ $(( $(date +%s) - start )) -ge "$budget" ]; then printf 'Q\n'; break; fi
   scan_repo </dev/null
 done 3< "$work/repos"
@@ -948,7 +960,7 @@ pub(super) const FOLDER_PRINT: &str = r##"folder_print() {
 fn scan_script(repos: &[String], places: &[String], fetch: bool) -> String {
     let budget = if fetch { FETCH_BUDGET_S } else { SCAN_BUDGET_S };
     let mut script = format!("{GIT_ENV}{CHECKS}{INSIDE_REPO}{ORIGIN_URL}{HELPERS}{FOLDER_PRINT}fetch={}\nbudget={budget}\n{SCAN_HEAD}", u8::from(fetch));
-    for repo in repos.iter().filter(|repo| is_path(repo)) {
+    for repo in repos.iter().filter(|repo| is_path(repo) || repo.strip_prefix('?').is_some_and(super::setup_layers::is_layer_path)) {
         script.push_str(repo);
         script.push('\n');
     }
@@ -1446,13 +1458,15 @@ pub(crate) async fn scan_projects(
 ) -> Result<MachineProjects, String> {
     let fetch = fetch == Some(true);
     let places = super::setup_layers::places_on(&state, repo, &machine).await;
+    let hints = super::setup_layers::hint_paths(&state, &machine).await;
     let (target, _) = claim(&state, &machine, Work::Scan)?;
     let _ = app.emit(SETUP_PROJECTS_UPDATED_EVENT, Local::now().timestamp_millis());
     let result = async {
         let name = machine.clone();
         let checkouts = run_usage_task(move || load_checkouts(&open_usage_database()?, &name)).await?;
         let timeout = if fetch { FETCH_TIMEOUT } else { SCAN_TIMEOUT };
-        let stdout = run_checked(&target, MachineOp::ProjectsScan, &scan_script(&checkouts.repos, &places, fetch), timeout).await?;
+        let repos: Vec<String> = checkouts.repos.iter().cloned().chain(hints.iter().map(|hint| format!("?{hint}"))).collect();
+        let stdout = run_checked(&target, MachineOp::ProjectsScan, &scan_script(&repos, &places, fetch), timeout).await?;
         Ok(parse_scan(&stdout, &checkouts.used, Local::now().timestamp_millis()))
     }
     .await;
@@ -2251,6 +2265,25 @@ mod tests {
         fn a_scan_reads_each_worktree_without_changing_anything() {
             for shell in shells() {
                 scan_in(shell);
+            }
+        }
+
+        #[test]
+        fn where_other_machines_have_a_project_is_looked_at_only_when_its_a_checkout_here() {
+            for shell in shells() {
+                let root = temp_dir("hints");
+                let (home, app) = fixture(&root);
+                let moved = home.join("src/app");
+                fs::create_dir_all(home.join("src")).unwrap();
+                std::process::Command::new("cp").arg("-R").arg(&app).arg(&moved).status().unwrap();
+                // A session's checkout, the same one as a hint, a hint from home, and one that isn't there.
+                let repos = vec![app.display().to_string(), format!("?{}", app.display()), "?~/src/app".into(), "?~/src/nothing".into()];
+                let output = run(shell, &home, &scan_script(&repos, &[], false));
+                let found = parse_scan(&String::from_utf8_lossy(&output.stdout), &HashMap::new(), 0).repos;
+                let paths: Vec<&str> = found.iter().map(|repo| repo.path.as_str()).collect();
+                assert_eq!(paths, [app.to_str().unwrap(), moved.to_str().unwrap()], "{shell}");
+                assert!(found.iter().all(|repo| repo.state == RepoState::Ok), "{shell}");
+                let _ = fs::remove_dir_all(&root);
             }
         }
 

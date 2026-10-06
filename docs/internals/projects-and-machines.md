@@ -92,7 +92,9 @@ schema/machine.schema.json, schema/project.schema.json
 
 ## On each machine
 
-For each machine and each project assigned to it, Arbor works out the wanted path and compares it with what's there.
+For each machine and each project assigned to it, Arbor works out the wanted path and compares it with what's there. Sessions only lead a scan to checkouts agents have worked in, so it also looks at the paths the project has on
+the other machines (from home), and counts one only when it's a checkout of the project's remote. Without that, a
+machine with few sessions would look like it has no checkout and be offered a clone instead of a link.
 The scan reads the wanted paths as well as the ones sessions point at, and for each one records whether it's a link,
 where it leads, and which repo it is.
 

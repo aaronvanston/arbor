@@ -826,6 +826,44 @@ pub(super) async fn places_on(state: &MachineHealthState, repo: Option<String>, 
     found.layers().places(&machines).into_iter().flat_map(|project| project.places).filter(|place| place.machine == machine).map(|place| place.path).collect()
 }
 
+/// Where else to look on `machine` for a checkout of each project the repo puts there: the paths its checkouts have on
+/// the other machines, from their homes (`~/…`), or whole. Sessions only lead a scan to checkouts agents have worked
+/// in, so a machine with few would otherwise look like it has none and be offered a clone instead of a link. A path is
+/// only counted once the scan finds a checkout there whose remote is the project's.
+pub(super) async fn hint_paths(state: &MachineHealthState, machine: &str) -> Vec<String> {
+    let (repo, machines) = {
+        let inner = state.lock();
+        (inner.setup_repo.clone(), arbor_machines(&inner))
+    };
+    let Some(repo) = repo else { return Vec::new() };
+    let Ok(found) = super::setup_sync::read_repo(Path::new(&repo)).await else { return Vec::new() };
+    let wanted: BTreeSet<String> = found
+        .layers()
+        .places(&machines)
+        .into_iter()
+        .filter(|project| project.places.iter().any(|place| place.machine == machine))
+        .filter_map(|project| super::setup_projects::normalize_remote(project.remote.as_deref()?).filter(|remote| !remote.starts_with('/')))
+        .collect();
+    let inner = state.lock();
+    let mut hints: BTreeSet<String> = BTreeSet::new();
+    for (_, scan) in inner.projects.iter().filter(|(other, _)| other.as_str() != machine) {
+        let home = scan.home_dir().trim_end_matches('/');
+        for checkout in scan.main_checkouts() {
+            if !checkout.remote.as_deref().is_some_and(|remote| wanted.contains(&remote.to_ascii_lowercase())) {
+                continue;
+            }
+            let path = match checkout.path.strip_prefix(&format!("{home}/")) {
+                Some(rest) if !home.is_empty() => format!("~/{rest}"),
+                _ => checkout.path.clone(),
+            };
+            if is_layer_path(&path) {
+                hints.insert(path);
+            }
+        }
+    }
+    hints.into_iter().collect()
+}
+
 /// Puts Arbor's schemas for machine and project files in the repo, or brings them up to date, each a commit of its own.
 #[tauri::command]
 pub(crate) async fn add_setup_schemas(repo: String) -> Result<super::setup_sync::SetupRepo, String> {
