@@ -1263,7 +1263,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "get_sync_standing",
         access: Access::Read,
-        summary: "Where every machine stands against the setup repo's last commit, from the machines' last scans, with the repo, its MCP servers and hooks as they were read for it. Remembers `repo` as the one the window names.",
+        summary: "Where every machine stands against the setup repo's last commit, from the machines' last scans, with the repo, its MCP servers and hooks as they were read for it. Remembers `repo` as the one the window names.  It's also where each machine's base is kept: every item it finds in step, after a change Arbor made and the rescan that follows it as much as a machine that was in step already, is recorded as the two sides then. The window reads this after every scan lands, and so does `arbor sync`.",
         args: &[
             ArgSpec { name: "repo", ts_type: "string", optional: false },
         ],

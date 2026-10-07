@@ -1903,8 +1903,20 @@ const mockDrift = (): ProjectsDrift => {
 const behindScenario = params.get('behind');
 const SYNC_DRIFT: Partial<Record<string, ItemDrift>> = { add: 'add', update: 'update', removed: 'remove', extra: 'remove' };
 
+// Who moved since each item last matched, as setup_standing.rs's base says: the repo by default. `?base=edited` has
+// ci-01's first item edited there, `?base=both` cedar-02's edited there while the repo moved on too, and `?base=none`
+// every item with no base yet, so it can't tell.
+const baseScenario = params.get('base');
+
+function mockChange(machine: string, index: number): BehindItem['change'] {
+  if (baseScenario === 'none') return 'unknown';
+  if (baseScenario === 'edited' && machine === 'ci-01' && index === 0) return 'editedHere';
+  if (baseScenario === 'both' && machine === 'cedar-02' && index === 0) return 'bothChanged';
+  return 'update';
+}
+
 function mockBehind(repo: SetupRepo, mcp: McpRegistry | null, hooks: HookRegistry | null, drift: ProjectsDrift, machine: SetupMachine): BehindItem[] {
-  const items: BehindItem[] = [];
+  const items: Omit<BehindItem, 'change'>[] = [];
   for (const file of syncPlan(repo, machine)) {
     const change = SYNC_DRIFT[file.state];
     if (!change || file.state === 'extra') continue;
@@ -1941,13 +1953,18 @@ function mockBehind(repo: SetupRepo, mcp: McpRegistry | null, hooks: HookRegistr
   const order: BehindItem['kind'][] = ['file', 'skill', 'mcp', 'hook', 'plugin', 'project'];
   const unique = items.filter((item) => !seen.has(item.key) && Boolean(seen.add(item.key)));
   const kept = behindScenario === 'plugins' && machine.machine === 'ci-01' ? unique.filter((item) => item.kind === 'plugin') : unique;
-  return kept.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name));
+  return kept
+    .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name))
+    .map((item, index) => ({ ...item, change: item.kind === 'project' ? 'update' : mockChange(machine.machine, index) }));
 }
 
 const kindCounts = (items: BehindItem[]): KindCounts => {
-  const counts: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0 };
+  const counts: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0, decide: 0 };
   const slot = { file: 'files', skill: 'skills', mcp: 'mcp', hook: 'hooks', plugin: 'plugins', project: 'projects' } as const;
-  for (const item of items) counts[slot[item.kind]] += 1;
+  for (const item of items) {
+    counts[slot[item.kind]] += 1;
+    if (item.change === 'editedHere' || item.change === 'bothChanged') counts.decide += 1;
+  }
   return counts;
 };
 

@@ -149,6 +149,12 @@ describe('what applying changes', () => {
     ]);
   });
 
+  it('leaves a file edited on the machine unticked unless it’s chosen', () => {
+    const held = new Set(['~/.claude/agents/reviewer.md']);
+    expect(syncChanges(plan, {}, held).map((change) => change.path)).toEqual(['~/.claude/commands/ship.md']);
+    expect(syncChanges(plan, { '~/.claude/agents/reviewer.md': true }, held).map((change) => change.path)).toEqual(['~/.claude/agents/reviewer.md', '~/.claude/commands/ship.md']);
+  });
+
   it('removes a file only the machine has once it’s chosen, and skips a copy left out', () => {
     expect(syncChanges(plan, { '~/.claude/commands/deploy.md': true, '~/.claude/agents/reviewer.md': false })).toEqual([
       { path: '~/.claude/commands/deploy.md', remove: true, before: sha('6') },

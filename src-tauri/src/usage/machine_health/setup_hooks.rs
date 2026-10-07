@@ -333,6 +333,12 @@ pub(crate) struct HookCell {
     script: String,
     state: HookState,
     blocked: Option<HookBlock>,
+    /// What the repo has for this home and what the home has, as salted fingerprints the window is never sent: Sync's
+    /// base per machine compares them with what they were when the two last matched. "-" for none.
+    #[serde(skip)]
+    repo_print: String,
+    #[serde(skip)]
+    machine_print: String,
 }
 
 /// The agent whose hooks a home keeps, for the homes that keep any.
@@ -354,15 +360,18 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
         for hook in &registry.hooks {
             let Some(script) = hook.script() else { continue };
             let there: Vec<&str> = found.iter().filter(|found| found.event == hook.event && found.script == script).map(|found| found.sum.as_str()).collect();
-            let state = match (hook.wanted(machine, agent, home), there.as_slice()) {
+            let wanted = hook.wanted(machine, agent, home);
+            let repo_print = if wanted { hook_sum(hook.matcher.as_deref(), &hook.handler(), setup.home_dir()) } else { "-".to_string() };
+            let state = match (wanted, there.as_slice()) {
                 (true, []) => HookState::Add,
-                (true, [sum]) if *sum == hook_sum(hook.matcher.as_deref(), &hook.handler(), setup.home_dir()) => HookState::Same,
+                (true, [sum]) if *sum == repo_print => HookState::Same,
                 (true, _) => HookState::Update,
                 (false, []) => continue,
                 (false, _) => HookState::Extra,
             };
+            let machine_print = if there.is_empty() { "-".to_string() } else { there.join("+") };
             let blocked = (!hook.problems.is_empty()).then_some(HookBlock::Broken);
-            cells.push(HookCell { machine: machine.to_string(), agent, home: home.to_string(), name: Some(hook.name.clone()), event: hook.event.clone(), script: script.to_string(), state, blocked });
+            cells.push(HookCell { machine: machine.to_string(), agent, home: home.to_string(), name: Some(hook.name.clone()), event: hook.event.clone(), script: script.to_string(), state, blocked, repo_print, machine_print });
         }
         let mut listed = BTreeSet::new();
         for found in &found {
@@ -379,6 +388,8 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
                 script: found.script.clone(),
                 state: HookState::Extra,
                 blocked: None,
+                repo_print: "-".into(),
+                machine_print: found.sum.clone(),
             });
         }
     }
@@ -515,10 +526,14 @@ pub(super) async fn registry_for(folder: &Path, machines: &[(String, MachineSetu
 }
 
 impl HookRegistry {
-    /// Each repo hook a home of `machine` doesn't have as the repo has it, by its name: one to add, change or take
-    /// out there. A hook the repo hasn't got is the machine's own business.
-    pub(super) fn behind_on<'a>(&'a self, machine: &'a str) -> impl Iterator<Item = (&'a str, HookState)> + 'a {
-        self.cells.iter().filter(move |cell| cell.machine == machine && cell.state != HookState::Same).filter_map(|cell| Some((cell.name.as_deref()?, cell.state)))
+    /// How each repo hook stands in each home of `machine`, as found for Sync's standing: its name, the home, its
+    /// state, and both sides' fingerprints. A hook the repo hasn't got is the machine's own business, so it isn't here.
+    pub(super) fn compared_on<'a>(&'a self, machine: &'a str) -> Vec<(&'a str, &'a str, HookState, &'a str, &'a str)> {
+        self.cells
+            .iter()
+            .filter(|cell| cell.machine == machine)
+            .filter_map(|cell| Some((cell.name.as_deref()?, cell.home.as_str(), cell.state, cell.repo_print.as_str(), cell.machine_print.as_str())))
+            .collect()
     }
 
     /// The repo hooks that run `script`, from ~/.agents/hooks, and aren't removed.
@@ -551,6 +566,8 @@ impl HookRegistry {
             cells: cells
                 .iter()
                 .map(|(machine, name, state)| HookCell {
+                    repo_print: super::setup_standing::test_prints(*state == HookState::Extra, *state == HookState::Add, *state == HookState::Same).0,
+                    machine_print: super::setup_standing::test_prints(*state == HookState::Extra, *state == HookState::Add, *state == HookState::Same).1,
                     machine: machine.to_string(),
                     agent: AgentKind::Claude,
                     home: "~/.claude".into(),

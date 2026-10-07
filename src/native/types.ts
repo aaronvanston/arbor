@@ -795,6 +795,7 @@ export type BehindItem = {
   key: string,
   name: string,
   drift: ItemDrift,
+  change: Change,
 };
 
 /**
@@ -888,6 +889,12 @@ export type CatalogPlugin = {
  * What a project's cell needs before the project is where the repo wants it on that machine and up to date.
  */
 export type CellNeed = "link" | "clone" | "clear" | "scan" | "pull" | "fetch" | "skills";
+
+/**
+ * Who moved since the base: the repo alone (`update`), the machine alone (`editedHere`), both (`bothChanged`), or
+ * can't tell (`unknown`: no base yet, or neither side moved yet they differ, as after a machine's own value is lifted).
+ */
+export type Change = "update" | "editedHere" | "bothChanged" | "unknown";
 
 /**
  * What made a change, as its backup names it.
@@ -2519,6 +2526,10 @@ export type KindCounts = {
   hooks: number,
   plugins: number,
   projects: number,
+  /**
+   * Of all of them, those edited on the machine (alone or with the repo), which wait for the user's decision.
+   */
+  decide: number,
 };
 
 /**

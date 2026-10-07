@@ -6,8 +6,8 @@ import { isRemovedServer } from './setupMcp';
 import { removableKind } from './setupSync';
 import { isCodexOwnMarketplace, type ExtensionsView, type PluginRow } from './setupPlugins';
 import { fleetSkills, repoSkillState, type FleetSkillRow } from './setupSkills';
-import { machinesBehindOn } from './syncStanding';
-import type { HookRegistry, SetupMachine, SetupRepo, SyncStanding } from '../native/types';
+import { machinesBehindOn, machinesEditedOn } from './syncStanding';
+import type { Change, HookRegistry, SetupMachine, SetupRepo, SyncStanding } from '../native/types';
 
 /**
  * Sync › Library: everything the setup repo gives the machines' agents, one row each, whatever kind it is, with the
@@ -53,6 +53,11 @@ export type LibraryRow = {
   fleet: string[];
   /** Machines not as the repo has it, which bringing them in line changes, as Sync's standing says. */
   behind: string[];
+  /**
+   * Machines whose copy was edited there since it last matched the repo (`editedHere`), or edited while the repo moved
+   * on too (`bothChanged`). Never brought in line: each waits for the user's choice.
+   */
+  edited: Record<string, Change>;
   /** Machines with a value of their own, where the repo's word for every machine doesn't apply. */
   exceptions: number;
   /** Each machine of `fleet`, by name: what the repo wants there and which of its homes have it. */
@@ -92,6 +97,7 @@ function pluginRows(view: ExtensionsView, codex: boolean, behindOn: (key: string
         on: summaries.filter((summary) => summary.on > 0).map((summary) => summary.machine),
         fleet,
         behind: behindOn(`plugin:${codex ? 'codex' : 'claude'}:${row.id}`),
+        edited: {},
         exceptions: row.repo ? Object.keys(row.repo.machines).length : 0,
         places: Object.fromEntries(columns.map((column) => {
           const own = row.repo?.machines[machineLookKey(column.machine)] ?? null;
@@ -124,6 +130,7 @@ function serverRows(view: ExtensionsView, found: boolean, behindOn: (key: string
       on: summaries.filter((summary) => summary.state === 'on' || summary.state === 'some').map((summary) => summary.machine),
       fleet: fleetOf(view.mcpHomes),
       behind: behindOn(`mcp:${row.name}`),
+      edited: {},
       exceptions: server ? server.off.length + server.own.length : 0,
       places: Object.fromEntries(columns.map((column) => {
         const own = !server ? null : server.off.includes(column.machine) ? 'off' : server.own.includes(column.machine) ? 'own' : null;
@@ -156,6 +163,7 @@ function skillRows(machines: SetupMachine[], repo: SetupRepo | null, behindOn: (
       on: cells.filter(({ cell }) => cell.loads > 0).map(({ machine }) => machine),
       fleet: fleet.machines,
       behind: behindOn(`skill:${row.name}`),
+      edited: {},
       exceptions: Object.keys(repo?.skillMachines[row.name] ?? {}).length,
       places: Object.fromEntries(fleet.machines.map((machine) => {
         const own = repo?.skillMachines[row.name]?.[machineLookKey(machine)] ?? null;
@@ -182,6 +190,7 @@ function hookLibraryRows(registry: HookRegistry, machines: readonly string[], be
       on: summaries.filter(({ summary }) => ['same', 'update', 'extra', 'mixed'].includes(summary.state)).map(({ machine }) => machine),
       fleet: [...machines],
       behind: behindOn(`hook:${row.key}`),
+      edited: {},
       exceptions: view?.off.length ?? 0,
       places: Object.fromEntries(summaries.map(({ machine, summary }) => {
         const own = view?.off.includes(machine) ? 'off' : null;
@@ -209,6 +218,7 @@ function fileRows(repo: SetupRepo, machines: readonly string[], behindOn: (path:
       on: gone || off ? [] : machines.filter((machine) => !offHere.includes(machineLookKey(machine))),
       fleet: [...machines],
       behind: behindOn(`file:${path}`),
+      edited: {},
       exceptions: Object.keys(repo.fileMachines[path] ?? {}).length,
       places: Object.fromEntries(machines.map((machine) => {
         const own = repo.fileMachines[path]?.[machineLookKey(machine)] ?? null;
@@ -246,7 +256,9 @@ export function libraryRows({ machines, view, repo, registryFound, hooks, standi
     ...(hooks ? hookLibraryRows(hooks, names, behindOn).sort(byName) : []),
     ...(repo ? fileRows(repo, names, behindOn) : []),
   ];
-  return rows.map((row) => (row.state === 'unlisted' && row.behind.length ? { ...row, behind: [] } : row));
+  return rows.map((row) => (row.state === 'unlisted'
+    ? { ...row, behind: [], edited: {} }
+    : { ...row, edited: machinesEditedOn(standing, row.key) }));
 }
 
 /**

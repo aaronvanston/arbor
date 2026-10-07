@@ -8,7 +8,8 @@ import { directoryEntries, directorySources } from '../src/services/directory';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
 import { extensionsView, type PluginRow } from '../src/services/setupPlugins';
 import { lastItem, present } from './support/items';
-import type { HookRegistry, McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo, SyncStanding } from '../src/native/types';
+import { decide, decisionsFor } from '../src/services/editedHere';
+import type { BehindItem, HookRegistry, McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo, SyncStanding } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, fields: Partial<SetupItem> = {}): SetupItem => ({
   kind, name, path: null, sum: null, size: null, link: null, value: null, note: null, count: null, enabled: null,
@@ -40,17 +41,24 @@ const fleet = () => [
 ];
 
 /** Sync's standing as Rust would give it, saying only which machines are behind on which rows' keys. */
-const standingWith = (behind: Record<string, string[]>): SyncStanding => ({
+const standingWith = (behind: Record<string, string[]>, edited: Record<string, string[]> = {}): SyncStanding => ({
   repo: repo([]), mcp: null, mcpError: null, hooks: null, hooksError: null, inStep: 0, read: 0,
-  machines: Object.entries(behind).map(([name, keys]) => ({
-    machine: name, state: keys.length ? 'behind' : 'inStep', reachable: true,
-    counts: { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0 },
-    behind: keys.map((key) => ({ kind: 'plugin', key, name: key, drift: 'update' })),
-  })),
+  machines: [...new Set([...Object.keys(behind), ...Object.keys(edited)])].map((name) => {
+    const keys = behind[name] ?? [];
+    const own = edited[name] ?? [];
+    return {
+      machine: name, state: keys.length + own.length ? 'behind' : 'inStep', reachable: true,
+      counts: { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0, decide: own.length },
+      behind: [
+        ...keys.map((key): BehindItem => ({ kind: 'plugin', key, name: key, drift: 'update', change: 'update' })),
+        ...own.map((key): BehindItem => ({ kind: 'plugin', key, name: key, drift: 'update', change: 'editedHere' })),
+      ],
+    };
+  }),
 });
 const REVIEW_KEY = 'plugin:claude:review@acme-tools';
-const rowsOf = (machines: SetupMachine[], setup: SetupRepo | null, behind: Record<string, string[]> = {}) =>
-  libraryRows({ machines, view: withPluginRepo(extensionsView(machines), setup?.plugins ?? null), repo: setup, registryFound: false, hooks: null, standing: standingWith(behind) });
+const rowsOf = (machines: SetupMachine[], setup: SetupRepo | null, behind: Record<string, string[]> = {}, edited: Record<string, string[]> = {}) =>
+  libraryRows({ machines, view: withPluginRepo(extensionsView(machines), setup?.plugins ?? null), repo: setup, registryFound: false, hooks: null, standing: standingWith(behind, edited) });
 const rowFor = (rows: LibraryRow[], name: string) => present(rows.find((row) => row.name === name));
 const pluginRow = (machines: SetupMachine[], setup: SetupRepo | null): PluginRow =>
   present(withPluginRepo(extensionsView(machines), setup?.plugins ?? null).plugins.find((row) => row.id === REVIEW));
@@ -437,7 +445,55 @@ describe('bringing a machine in line', () => {
     const row = { ...rowFor(libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: hooks('add'), standing: null }), 'guard') };
     const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row] });
     expect(calls).toEqual(['sync ~/.agents/hooks/guard.sh', 'hooks']);
-    expect(done).toEqual({ changed: true, failed: [], needsYou: false });
+    expect(done).toEqual({ changed: true, failed: [], needsYou: false, heldHooks: false, backups: ['b1'] });
+
+    // A hook edited on the machine holds its hooks, and their scripts, back.
+    calls.length = 0;
+    const held = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row], holdsHooks: true });
+    expect(calls).toEqual([]);
+    expect(held.heldHooks).toBe(true);
+  });
+
+  it('never plans an edit made on the machine, and says which machines have one', () => {
+    const rows = rowsOf(fleet(), repo([listing(REVIEW, 'on')]), { 'cedar-02': [REVIEW_KEY] }, { 'ci-01': [REVIEW_KEY] });
+    const row = rowFor(rows, 'review');
+    expect([row.behind, row.edited]).toEqual([['cedar-02'], { 'ci-01': 'editedHere' }]);
+    expect(linePlans(rows, fleet()).map((plan) => plan.machine)).toEqual(['cedar-02']);
+  });
+});
+
+describe('deciding on a machine’s own edit', () => {
+  const claude = { path: '~/.claude/CLAUDE.md', kind: 'instructions' as const, sum: 'new', ck: 'c1-10', size: 10 };
+  const setup = repo([], { files: [claude] });
+  const machines = [machine('cam-mbp', [item('instructions', 'CLAUDE.md', { path: claude.path, sum: 'mine' })])];
+  const fileRow = () => rowFor(libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: null, standing: standingWith({}, { 'cam-mbp': [`file:${claude.path}`] }) }), 'CLAUDE.md');
+
+  it('offers each kind what it can do, and says why not where it can’t', () => {
+    expect(fileRow().edited).toEqual({ 'cam-mbp': 'editedHere' });
+    expect(decisionsFor(fileRow()).map((offer) => offer.unavailable)).toEqual([null, null, null]);
+    const hook = { ...fileRow(), kind: 'hooks' as const };
+    expect(decisionsFor(hook).map((offer) => [offer.decision, offer.unavailable])).toEqual([
+      ['take', 'edited.unavailable.takeHook'], ['keep', 'edited.unavailable.keepHook'], ['useRepo', null],
+    ]);
+  });
+
+  it('takes the machine’s copy in, keeps it as the machine’s own, or puts the repo’s back with Undo', async () => {
+    const calls: unknown[] = [];
+    mockCommands({
+      take_setup_file: (args) => { calls.push(['take', args.machine, args.path]); return setup; },
+      set_setup_file_machine: (args) => { calls.push(['keep', args.machine, args.path, args.wanted]); return setup; },
+      apply_setup_sync: ({ changes }) => { calls.push(['sync', changes]); return { backup: 'b9', done: changes.map((change) => change.path), failed: [] }; },
+    });
+    const sources = { repo: setup, registry: null, hooks: null };
+    await decide('/repo', sources, machines, fileRow(), 'cam-mbp', 'take');
+    await decide('/repo', sources, machines, fileRow(), 'cam-mbp', 'keep');
+    const used = await decide('/repo', sources, machines, fileRow(), 'cam-mbp', 'useRepo');
+    expect(calls).toEqual([
+      ['take', 'cam-mbp', claude.path],
+      ['keep', 'cam-mbp', claude.path, 'own'],
+      ['sync', [{ path: claude.path, remove: false, before: 'mine' }]],
+    ]);
+    expect(used.run?.backups).toEqual(['b9']);
   });
 
   it('says what’s wrong with the hooks file and a hook in it, rather than an empty list or a hook in step', () => {
@@ -517,7 +573,7 @@ describe('taking a machine’s own into the repo', () => {
     const machines = [machine('cam-mbp', []), machine('far-01', [], false)];
     const place = { own: null, wanted: false, homes: ['~/.claude'] };
     const row = (kind: LibraryRow['kind'], key: string, name: string): LibraryRow => ({
-      key, kind, name, detail: null, agents: ['claude'], state: 'unlisted', on: ['cam-mbp', 'far-01'], fleet: ['cam-mbp', 'far-01'], behind: [], exceptions: 0,
+      key, kind, name, detail: null, agents: ['claude'], state: 'unlisted', on: ['cam-mbp', 'far-01'], fleet: ['cam-mbp', 'far-01'], behind: [], edited: {}, exceptions: 0,
       places: { 'cam-mbp': place, 'far-01': place }, toggle: null,
     });
     const server = row('mcps', 'mcp:mine', 'mine');

@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invokeCommand } from '../native/commands';
-import type { KindCounts, MachineStanding, SyncStanding } from '../native/types';
+import type { BehindItem, Change, KindCounts, MachineStanding, SyncStanding } from '../native/types';
 import type { MessageKey } from '../i18n/resources';
 import { SETUP_INVENTORY_UPDATED_EVENT } from './setupInventory';
 import { replaceEqualDeep } from './stableValue';
@@ -116,9 +116,45 @@ export const useSyncStanding = () => useSyncExternalStore(subscribe, get, get);
 export const standingOf = (standing: SyncStanding | null, machine: string): MachineStanding | null =>
   standing?.machines.find((entry) => entry.machine === machine) ?? null;
 
-/** The machines behind on the item with `key` (a Library row's key, or `project:owner/name`). */
+/**
+ * Whether bringing in line may apply a difference: the repo moved on, or there's no base to say otherwise. An edit made
+ * on the machine (alone or with the repo's) waits for the user: Take into repo, Keep this machine's, or Use the repo's.
+ */
+export const applies = (change: Change) => change === 'update' || change === 'unknown';
+
+/** The machines behind on the item with `key` (a Library row's key, or `project:owner/name`) that bringing in line may change. */
 export const machinesBehindOn = (standing: SyncStanding | null, key: string): string[] =>
-  standing?.machines.filter((machine) => machine.behind.some((item) => item.key === key)).map((machine) => machine.machine) ?? [];
+  standing?.machines.filter((machine) => machine.behind.some((item) => item.key === key && applies(item.change))).map((machine) => machine.machine) ?? [];
+
+/** The machines with an edit of their own to the item with `key`, and who moved: the machine alone or both. */
+export const machinesEditedOn = (standing: SyncStanding | null, key: string): Record<string, Change> =>
+  Object.fromEntries(standing?.machines.flatMap((machine) => {
+    const item = machine.behind.find((entry) => entry.key === key && !applies(entry.change));
+    return item ? [[machine.machine, item.change]] : [];
+  }) ?? []);
+
+/**
+ * The files and skills on `machine` edited there, as the Repo review names them (`~/.claude/CLAUDE.md`,
+ * `~/.agents/skills/pdf`), so the review leaves them unticked.
+ */
+export function heldPaths(standing: SyncStanding | null, machine: string): Set<string> {
+  return new Set(heldItems(standingOf(standing, machine)).flatMap((item) => {
+    if (item.key.startsWith('file:')) return [item.key.slice('file:'.length)];
+    if (item.key.startsWith('skill:')) return [`~/.agents/skills/${item.key.slice('skill:'.length)}`];
+    return [];
+  }));
+}
+
+/** A machine's items waiting for a decision. */
+export const heldItems = (machine: MachineStanding | null): BehindItem[] => machine?.behind.filter((item) => !applies(item.change)) ?? [];
+
+/** What a change is called beside an item. Null for one that needs no word: the repo moving on. */
+export const CHANGE_WORDS: Record<Change, MessageKey | null> = {
+  update: null,
+  unknown: 'sync.change.unknown',
+  editedHere: 'sync.change.editedHere',
+  bothChanged: 'sync.change.bothChanged',
+};
 
 /** The machines behind the repo and answering, which bringing in line can reach. */
 export const machinesBehind = (standing: SyncStanding | null): MachineStanding[] =>
@@ -134,9 +170,10 @@ const KIND_WORDS: { kind: keyof KindCounts; one: MessageKey; other: MessageKey }
   { kind: 'projects', one: 'sync.standing.count.projects.one', other: 'sync.standing.count.projects.other' },
 ];
 
-/** What a machine is behind on, as phrases: "2 files", "1 plugin". */
+/** What a machine is behind on, as phrases: "2 files", "1 plugin", then "1 edited here" for what waits on the user. */
 export function behindParts(counts: KindCounts): { key: MessageKey; count: number }[] {
-  return KIND_WORDS.filter(({ kind }) => counts[kind] > 0).map(({ kind, one, other }) => ({ key: counts[kind] === 1 ? one : other, count: counts[kind] }));
+  const parts = KIND_WORDS.filter(({ kind }) => counts[kind] > 0).map(({ kind, one, other }) => ({ key: counts[kind] === 1 ? one : other, count: counts[kind] }));
+  return counts.decide ? [...parts, { key: 'sync.standing.decide', count: counts.decide }] : parts;
 }
 
 /** A machine's standing in a few words, as the strips and the CLI say it. */

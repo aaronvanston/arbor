@@ -339,7 +339,7 @@ pub(crate) fn alerts(answer: &Value) -> String {
 /// `sync.status` from the window.
 pub(crate) fn sync_status(answer: &Value) -> String {
     let commit: String = field(answer, "commit").chars().take(7).collect();
-    const KINDS: [&str; 6] = ["files", "skills", "mcp", "hooks", "plugins", "projects"];
+    const KINDS: [&str; 7] = ["files", "skills", "mcp", "hooks", "plugins", "projects", "decide"];
     let rows: Vec<Vec<String>> = items(answer, "machines")
         .iter()
         .map(|machine| {
@@ -361,7 +361,20 @@ pub(crate) fn sync_status(answer: &Value) -> String {
     let in_step = answer.get("inStep").and_then(Value::as_u64).unwrap_or(0);
     let read = answer.get("read").and_then(Value::as_u64).unwrap_or(0);
     let mut out = vec![format!("Setup repo {} at {commit}: {in_step} of {read} machines in step", field(answer, "repo"))];
-    out.push(table(&["MACHINE", "STATE", "FILES", "SKILLS", "MCP", "HOOKS", "PLUGINS", "PROJECTS"], &rows));
+    out.push(table(&["MACHINE", "STATE", "FILES", "SKILLS", "MCP", "HOOKS", "PLUGINS", "PROJECTS", "EDITED THERE"], &rows));
+    let edited: Vec<String> = items(answer, "machines")
+        .iter()
+        .flat_map(|machine| {
+            items(machine, "behind")
+                .iter()
+                .filter(|item| matches!(item.get("change").and_then(Value::as_str), Some("editedHere" | "bothChanged")))
+                .map(move |item| format!("  {}: {} {}", field(machine, "machine"), field(item, "kind"), field(item, "name")))
+        })
+        .collect();
+    if !edited.is_empty() {
+        out.push("Edited on the machine since it last matched the repo (Sync never overwrites these; decide on each in Sync):".into());
+        out.extend(edited);
+    }
     for problem in items(answer, "problems") {
         if let Some(text) = problem.as_str() {
             out.push(format!("Not counted: {text}"));
@@ -375,7 +388,13 @@ pub(crate) fn sync_plan(answer: &Value) -> String {
     let rows: Vec<Vec<String>> = items(answer, "files")
         .iter()
         .map(|file| {
-            let applies = if file.get("changes") == Some(&Value::Bool(true)) { "yes" } else { "" };
+            let applies = if file.get("changes") == Some(&Value::Bool(true)) {
+                "yes"
+            } else if file.get("editedHere") == Some(&Value::Bool(true)) {
+                "no, edited there"
+            } else {
+                ""
+            };
             vec![field(file, "state"), field(file, "kind"), field(file, "path"), applies.into()]
         })
         .collect();
@@ -500,15 +519,17 @@ mod tests {
             "repo": "/Users/cam/agent-setup", "commit": "a1b2c3d4e5f6", "inStep": 1, "read": 2,
             "machines": [
                 { "machine": "cam-mbp", "state": "inStep", "counts": { "files": 0, "skills": 0, "mcp": 0, "hooks": 0, "plugins": 0, "projects": 0 } },
-                { "machine": "ci-01", "state": "behind", "counts": { "files": 0, "skills": 0, "mcp": 0, "hooks": 0, "plugins": 2, "projects": 1 } },
+                { "machine": "ci-01", "state": "behind", "counts": { "files": 0, "skills": 0, "mcp": 0, "hooks": 0, "plugins": 2, "projects": 1, "decide": 1 },
+                  "behind": [{ "kind": "plugin", "name": "paper", "change": "editedHere" }, { "kind": "plugin", "name": "linear", "change": "update" }] },
                 { "machine": "lab-box", "state": "notScanned", "counts": {} },
             ],
             "problems": [".agents/hooks.json isn't JSON Arbor can read"],
         });
         let shown = sync_status(&answer);
         assert!(shown.starts_with("Setup repo /Users/cam/agent-setup at a1b2c3d: 1 of 2 machines in step\n"), "{shown}");
-        assert!(shown.contains("ci-01    behind") && shown.contains("2        1"), "{shown}");
+        assert!(shown.contains("ci-01    behind") && shown.contains("2        1         1"), "{shown}");
         assert!(shown.contains("lab-box  not scanned"), "{shown}");
+        assert!(shown.contains("  ci-01: plugin paper") && !shown.contains("plugin linear"), "{shown}");
         assert!(shown.ends_with("Not counted: .agents/hooks.json isn't JSON Arbor can read"), "{shown}");
     }
 

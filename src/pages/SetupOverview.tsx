@@ -19,7 +19,7 @@ import { bringable, bringInLine, linePlans, type LinePlan } from '../services/li
 import { plainError } from '../services/plainError';
 import { bringToast, switchFailureText } from '../services/switchReport';
 import { getSetupRepoLog } from '../services/repoBrowser';
-import { standingOf } from '../services/syncStanding';
+import { applies, CHANGE_WORDS, standingOf } from '../services/syncStanding';
 import type { BehindItem, RepoCommit, SetupMachine } from '../native/types';
 import { KIND_LABEL } from './SetupLibrary';
 
@@ -92,6 +92,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
         failures[plan.machine] = [
           ...done.failed.map((entry) => switchFailureText(entry, t)),
           ...(done.needsYou ? [t('overview.bring.needsYou')] : []),
+          ...(done.heldHooks ? [t('overview.bring.heldHooks')] : []),
         ];
         if (done.failed.length || done.needsYou) notInLine.push(plan.machine);
       } catch (error) {
@@ -113,13 +114,20 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
     );
   }
 
-  /** What a machine is behind on, as badges: a Library row opens its page, a project Sync › Projects. */
+  /**
+   * What a machine is behind on, as badges: a Library row opens its page, a project Sync › Projects. One edited on the
+   * machine says so, and its page is where it's decided; nothing here brings it in line.
+   */
   const badge = (item: BehindItem) => {
     const row = rows.find((entry) => entry.key === item.key && bringable(entry));
     const open = row ? () => onOpenItem(row.kind, row.key) : item.kind === 'project' ? onOpenProjects : null;
+    const word = CHANGE_WORDS[item.change];
+    const held = !applies(item.change);
+    const label = word ? <>{item.name}<span className="text-muted-foreground">· {t(word)}</span></> : item.name;
+    const variant = held ? 'info' : 'outline';
     return open
-      ? <Badge key={item.key} variant="outline" render={<button type="button" onClick={open} />}>{item.name}</Badge>
-      : <Badge key={item.key} variant="outline">{item.name}</Badge>;
+      ? <Badge key={item.key} variant={variant} data-change={item.change} render={<button type="button" onClick={open} />}>{label}</Badge>
+      : <Badge key={item.key} variant={variant} data-change={item.change}>{label}</Badge>;
   };
   // A repo Arbor can't read can't be compared with, so nothing is counted against it, rather than every machine
   // looking in step.
@@ -159,7 +167,9 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
               const plan = plans.find((entry) => entry.machine === machine.machine) ?? null;
               const found = standingOf(standing, machine.machine);
               const state = found?.state ?? 'notScanned';
-              const behind = found?.behind ?? [];
+              // What waits on a decision first, so it isn't lost among the rest.
+              const behind = [...(found?.behind ?? [])].sort((a, b) => Number(applies(a.change)) - Number(applies(b.change)));
+              const decide = found?.counts.decide ?? 0;
               const tone = state === 'behind' ? 'warning' : state === 'inStep' ? 'success' : 'muted';
               return (
                 <li key={machine.machine} className="flex flex-col gap-1.5 px-4 py-3" data-overview-machine={machine.machine}>
@@ -175,6 +185,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
                                 <span className="text-foreground">{t('overview.machine.behind', { count: behind.length })}</span>
                                 {behind.slice(0, NAMED).map(badge)}
                                 {behind.length > NAMED ? <span className="text-xs text-muted-foreground">{t('overview.machine.more', { count: behind.length - NAMED })}</span> : null}
+                                {decide ? <span className="text-xs text-info-foreground">{t(decide === 1 ? 'overview.machine.decide.one' : 'overview.machine.decide.other', { count: decide })}</span> : null}
                               </>
                             )}
                     </span>

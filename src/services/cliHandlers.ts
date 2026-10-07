@@ -12,7 +12,7 @@ import { fileName, providerForFile, quotaKey, type AuthFile } from './quotaServi
 import { getQuotaCacheSnapshot } from './quotaCache';
 import { getRoutingAuto, setRoutingAuto } from './quotaRouting';
 import { applySetupSync, getSetupRepo, scanned, storedSetupRepo, syncChanges, syncPlan } from './setupSync';
-import { getSyncStanding } from './syncStanding';
+import { getSyncStanding, heldPaths } from './syncStanding';
 
 /*
  * The actions Arbor's window answers for `arbor` and its MCP server: the ones whose logic lives in the window. Each
@@ -94,7 +94,9 @@ async function machinePlan(machine: string) {
   const { repo, head, machines } = await syncRepo();
   const found = machines.find((candidate) => candidate.machine === machine);
   if (!found) throw new Error(`${machine} hasn't been scanned for Sync yet, or isn't a machine Arbor knows.`);
-  return { repo, head, files: syncPlan(repo, found) };
+  // What was edited on the machine is never applied from here; it's decided in the window.
+  const held = heldPaths(await getSyncStanding(repo.path), machine);
+  return { repo, head, files: syncPlan(repo, found), held };
 }
 
 export const cliHandlers: CliHandlers = {
@@ -215,7 +217,7 @@ export const cliHandlers: CliHandlers = {
           state: machine.state,
           inStep: machine.state === 'inStep',
           counts: machine.counts,
-          behind: machine.behind.map(({ kind, name, drift }) => ({ kind, name, drift })),
+          behind: machine.behind.map(({ kind, name, drift, change }) => ({ kind, name, drift, change })),
         })),
         problems: [standing.mcpError, standing.hooksError].filter(Boolean),
       };
@@ -227,12 +229,12 @@ export const cliHandlers: CliHandlers = {
     args: [arg('machine', 'string')],
     run: async (args) => {
       const machine = textArg(args, 'machine');
-      const { head, files } = await machinePlan(machine);
-      const changes = new Set(syncChanges(files).map((change) => change.path));
+      const { head, files, held } = await machinePlan(machine);
+      const changes = new Set(syncChanges(files, {}, held).map((change) => change.path));
       return {
         machine,
         commit: head.sha,
-        files: files.filter((file) => file.state !== 'same').map((file) => ({ path: file.path, kind: file.kind, state: file.state, changes: changes.has(file.path) })),
+        files: files.filter((file) => file.state !== 'same').map((file) => ({ path: file.path, kind: file.kind, state: file.state, changes: changes.has(file.path), editedHere: held.has(file.path) })),
       };
     },
   },
@@ -242,8 +244,8 @@ export const cliHandlers: CliHandlers = {
     args: [arg('machine', 'string')],
     run: async (args) => {
       const machine = textArg(args, 'machine');
-      const { repo, head, files } = await machinePlan(machine);
-      const changes = syncChanges(files);
+      const { repo, head, files, held } = await machinePlan(machine);
+      const changes = syncChanges(files, {}, held);
       if (!changes.length) return { machine, done: [], failed: [], backup: null };
       return { machine, ...(await applySetupSync(repo.path, head.sha, machine, changes)) };
     },

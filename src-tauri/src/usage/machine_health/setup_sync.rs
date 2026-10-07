@@ -312,7 +312,7 @@ impl SetupRepo {
 
     pub(super) fn with_file(mut self, path: &str, sum: &str) -> Self {
         let kind = managed(path.trim_start_matches("~/")).expect("a file the repo syncs");
-        self.files.push(RepoFile { path: path.into(), kind, sum: sum.into(), ck: "c1-1".into(), size: 1 });
+        self.files.push(RepoFile { path: path.into(), kind, sum: sum.into(), ck: format!("c{}-1", &sum[..1]), size: 1 });
         self
     }
 

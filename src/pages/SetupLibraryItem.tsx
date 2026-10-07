@@ -20,7 +20,9 @@ import { behindHomes } from '../services/libraryToggle';
 import { StatusDot } from '../components/ui/status-dot';
 import { HEALTH_LOOK } from './SetupPlugins';
 import { getSkillUsage } from '../services/setupSkills';
-import type { ComponentCost, ExtensionUsage, McpStatus, PluginCost, SetupMachine } from '../native/types';
+import type { Change, ComponentCost, ExtensionUsage, McpStatus, PluginCost, SetupMachine } from '../native/types';
+import { decisionsFor, type Decision } from '../services/editedHere';
+import { CHANGE_WORDS } from '../services/syncStanding';
 import { AgentMarks, LibraryMark, ScopeText } from './SetupLibrary';
 
 /** How many days of sessions a row's use is counted over. */
@@ -43,6 +45,8 @@ export type LibraryActions = {
   onTake: (from: { machine: string; home: string }) => void;
   /** Updates a Claude Code plugin in every home with an older version. */
   onUpdate: () => void;
+  /** Decides what happens to a machine's own edit to the row. */
+  onDecide: (machine: string, decision: Decision) => void;
 };
 
 /** Why a machine's switch can't be flipped, or null when it can. */
@@ -195,6 +199,7 @@ export function LibraryItemPage({ row, machines, actions, children }: {
               const on = row.on.includes(name);
               const held = heldReason(row, place, machine);
               const key = `${row.key}\u0000${name}`;
+              const edited = row.edited[name];
               return (
                 <li key={name} className="flex items-center gap-4 px-4 py-3" data-library-machine={name}>
                   <span className="w-40 shrink-0"><MachinePill name={name} /></span>
@@ -202,7 +207,9 @@ export function LibraryItemPage({ row, machines, actions, children }: {
                     <span className="flex items-center gap-2 text-sm text-foreground">
                       {t(placeWords(place, on, machine))}
                       {row.behind.includes(name) ? <Badge variant="warning" size="sm">{t('library.item.behind')}</Badge> : null}
+                      {edited ? <Badge variant="info" size="sm">{t(CHANGE_WORDS[edited] ?? 'sync.change.editedHere')}</Badge> : null}
                     </span>
+                    {edited ? <EditedChoices row={row} machine={name} change={edited} busy={busy} onDecide={actions.onDecide} /> : null}
                     {place.homes.length ? (
                       <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs text-muted-foreground">
                         {place.homes.map((home) => {
@@ -241,6 +248,29 @@ export function LibraryItemPage({ row, machines, actions, children }: {
       <UseAndCost row={row} machines={machines} />
       {children}
     </div>
+  );
+}
+
+/** What each decision is called, and what one that can't be made here is replaced by. */
+const DECISION_LABEL: Record<Decision, MessageKey> = { take: 'edited.take', keep: 'edited.keep', useRepo: 'edited.useRepo' };
+
+/**
+ * A machine's own edit to the row, waiting on the user: what happened, and the three ways out. One that this kind
+ * can't do says why instead of being offered.
+ */
+function EditedChoices({ row, machine, change, busy, onDecide }: { row: LibraryRow; machine: string; change: Change; busy: boolean; onDecide: (machine: string, decision: Decision) => void }) {
+  const { t } = useI18n();
+  const offers = decisionsFor(row);
+  return (
+    <span className="mt-1 flex flex-col gap-1.5" data-edited-machine={machine}>
+      <span className="text-xs text-muted-foreground">{t(change === 'bothChanged' ? 'edited.about.both' : 'edited.about.here', { machine })}</span>
+      <span className="flex flex-wrap items-center gap-2">
+        {offers.filter((offer) => !offer.unavailable).map((offer) => (
+          <Button key={offer.decision} variant="outline" size="xs" disabled={busy} onClick={() => onDecide(machine, offer.decision)}>{t(DECISION_LABEL[offer.decision])}</Button>
+        ))}
+      </span>
+      {offers.flatMap((offer) => (offer.unavailable ? [<span key={offer.decision} className="text-xs text-muted-foreground">{t(offer.unavailable)}</span>] : []))}
+    </span>
   );
 }
 

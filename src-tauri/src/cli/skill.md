@@ -33,7 +33,7 @@ any other machine, say so instead of trying.
 | Automatic account order | `arbor routing` |
 | The models one sign-in keeps from its account, or an Antigravity sign-in's project id (by its file name in Accounts › Sign-ins; the file itself is never shown) | `arbor call get_auth_file_excluded_models name=<file>.json`, `arbor call get_auth_file_project_id name=<file>.json` |
 | Alerts | `arbor alerts` |
-| Where each machine stands against the setup repo: in step, or behind on files, skills, MCP servers, hooks, plugins or projects (the same count as Sync › Overview and the sidebar) | `arbor sync`, then `arbor sync <machine>` for the files and skills that would change there; `arbor call get_sync_standing repo=<setup repo folder>` lists each item behind |
+| Where each machine stands against the setup repo: in step, or behind on files, skills, MCP servers, hooks, plugins or projects (the same count as Sync › Overview and the sidebar) | `arbor sync`, then `arbor sync <machine>` for the files and skills that would change there; `arbor call get_sync_standing repo=<setup repo folder>` lists each item behind. An item marked edited there (`editedHere`, `bothChanged`) was changed on the machine since it last matched the repo: `arbor sync apply` leaves it alone, and the user decides in Sync whether to take it into the repo, keep it as the machine's own, or use the repo's |
 | Where the setup repo's projects are on each machine (its projects/ folder): in place, linked, elsewhere, missing or blocked | `arbor call get_project_drift repo=<setup repo folder>`; `arbor call scan_projects machine=<name> repo=<folder>` looks again |
 | Proxy core | `arbor core` |
 | Session archive | `arbor archive` |

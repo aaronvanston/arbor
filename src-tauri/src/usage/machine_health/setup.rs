@@ -56,6 +56,13 @@ pub(crate) const SETUP_INVENTORY_UPDATED_EVENT: &str = "setup-inventory-updated"
 /// restart still compares with a fresh one, and never leaves this Mac's data folder.
 static SALT: std::sync::OnceLock<[u8; 16]> = std::sync::OnceLock::new();
 
+/// A short hash of the salt, never the salt: what Sync's bases note to tell whether their salted fingerprints still
+/// compare.
+pub(super) fn salt_check() -> String {
+    use sha2::{Digest, Sha256};
+    hex(&Sha256::digest(salt())[..8])
+}
+
 fn salt() -> &'static [u8] {
     SALT.get_or_init(|| {
         let mut salt = [0u8; 16];

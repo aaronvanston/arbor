@@ -1258,6 +1258,12 @@ pub(crate) struct RegistryCell {
     own: bool,
     /// Why Arbor won't change it, when it won't.
     blocked: Option<RegistryBlock>,
+    /// What the repo has for this home and what the home has, as salted fingerprints the window is never sent: Sync's
+    /// base per machine compares them with what they were when the two last matched. "-" for none.
+    #[serde(skip)]
+    repo_print: String,
+    #[serde(skip)]
+    machine_print: String,
 }
 
 /// How each server in each of a machine's homes stands against the repo.
@@ -1269,7 +1275,7 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
             continue;
         }
         let present = setup.home_servers(home);
-        let mut cell = |name: &str, state: RegistryState, own: bool, broken: bool| {
+        let mut cell = |name: &str, state: RegistryState, own: bool, broken: bool, repo_print: String, machine_print: String| {
             let blocked = if !is_server_name(name) {
                 Some(RegistryBlock::Name)
             } else if broken {
@@ -1277,24 +1283,24 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
             } else {
                 None
             };
-            cells.push(RegistryCell { machine: machine.to_string(), home: home.to_string(), name: name.to_string(), state, own, blocked });
+            cells.push(RegistryCell { machine: machine.to_string(), home: home.to_string(), name: name.to_string(), state, own, blocked, repo_print, machine_print });
         };
+        let print = |found: Option<&Option<&str>>| found.map_or_else(|| "-".to_string(), |sum| sum.unwrap_or("?").to_string());
         for server in &registry.servers {
             let found = present.get(server.name.as_str());
-            let (state, own) = match (server.wanted(machine, agent, home), found) {
+            let wanted = server.wanted(machine, agent, home);
+            let repo_print = wanted.map_or_else(|| "-".to_string(), |(definition, _)| mcp_sum(agent, definition, setup.home_dir()));
+            let (state, own) = match (wanted, found) {
                 (Some((_, own)), None) => (RegistryState::Add, own),
-                (Some((definition, own)), Some(sum)) => {
-                    let same = *sum == Some(mcp_sum(agent, definition, setup.home_dir()).as_str());
-                    (if same { RegistryState::Same } else { RegistryState::Update }, own)
-                }
+                (Some((_, own)), Some(sum)) => (if *sum == Some(repo_print.as_str()) { RegistryState::Same } else { RegistryState::Update }, own),
                 (None, Some(_)) => (RegistryState::Extra, false),
                 (None, None) => continue,
             };
-            cell(&server.name, state, own, !server.problems.is_empty());
+            cell(&server.name, state, own, !server.problems.is_empty(), repo_print, print(found));
         }
-        for name in present.keys() {
+        for (name, sum) in &present {
             if registry.server(name).is_none() {
-                cell(name, RegistryState::Extra, false, false);
+                cell(name, RegistryState::Extra, false, false, "-".into(), print(Some(sum)));
             }
         }
     }
@@ -1321,7 +1327,8 @@ fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Ve
             } else {
                 None
             };
-            cells.push(RegistryCell { machine: machine.to_string(), home: home.to_string(), name: server.name.clone(), state, own, blocked });
+            // Other harnesses' homes aren't brought in line from Sync, so Sync's base never compares them.
+            cells.push(RegistryCell { machine: machine.to_string(), home: home.to_string(), name: server.name.clone(), state, own, blocked, repo_print: String::new(), machine_print: String::new() });
         }
     }
     cells
@@ -1481,17 +1488,16 @@ pub(super) async fn registry_for(folder: &Path, machines: &[(String, MachineSetu
 }
 
 impl McpRegistry {
-    /// Each server the repo lists that a Claude Code or Codex home of `machine` doesn't have as the repo defines it:
-    /// missing, set up differently, or there where the repo keeps it off or removed it. Other harnesses' homes only
-    /// get what the repo sends them and aren't brought in line from Sync, so they don't count.
-    pub(super) fn behind_on<'a>(&'a self, machine: &'a str, setup: &'a MachineSetup) -> impl Iterator<Item = (&'a str, RegistryState)> + 'a {
+    /// How each server the repo lists stands in each Claude Code and Codex home of `machine`, as found for Sync's
+    /// standing: the server's name, the home, its state, and both sides' fingerprints. Other harnesses' homes only get
+    /// what the repo sends them and aren't brought in line from Sync, so they aren't here.
+    pub(super) fn compared_on<'a>(&'a self, machine: &'a str, setup: &MachineSetup) -> Vec<(&'a str, &'a str, RegistryState, &'a str, &'a str)> {
         let homes: Vec<&str> = setup.agent_homes().into_iter().filter(|(agent, _)| *agent != HomeAgent::Shared).map(|(_, path)| path).collect();
-        self.cells.iter().filter(move |cell| {
-            cell.machine == machine
-                && cell.state != RegistryState::Same
-                && homes.contains(&cell.home.as_str())
-                && self.servers.iter().any(|server| server.name == cell.name)
-        }).map(|cell| (cell.name.as_str(), cell.state))
+        self.cells
+            .iter()
+            .filter(|cell| cell.machine == machine && homes.contains(&cell.home.as_str()) && self.servers.iter().any(|server| server.name == cell.name))
+            .map(|cell| (cell.name.as_str(), cell.home.as_str(), cell.state, cell.repo_print.as_str(), cell.machine_print.as_str()))
+            .collect()
     }
 
     #[cfg(test)]
@@ -1507,7 +1513,10 @@ impl McpRegistry {
                 .collect(),
             cells: cells
                 .iter()
-                .map(|(machine, home, name, state)| RegistryCell { machine: machine.to_string(), home: home.to_string(), name: name.to_string(), state: *state, own: false, blocked: None })
+                .map(|(machine, home, name, state)| {
+                    let (repo_print, machine_print) = super::setup_standing::test_prints(matches!(state, RegistryState::Extra), matches!(state, RegistryState::Add), matches!(state, RegistryState::Same));
+                    RegistryCell { machine: machine.to_string(), home: home.to_string(), name: name.to_string(), state: *state, own: false, blocked: None, repo_print, machine_print }
+                })
                 .collect(),
         }
     }

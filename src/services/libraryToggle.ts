@@ -599,8 +599,11 @@ export async function removeEverywhere(repo: string, machines: SetupMachine[], t
 // Bringing a machine in line
 // ---------------------------------------------------------------------------
 
-/** What bringing one machine in line changes: each Library row behind there that the repo lists. */
-export type LinePlan = { machine: string; rows: LibraryRow[] };
+/**
+ * What bringing one machine in line changes: each Library row behind there that the repo lists. `holdsHooks`: a hook
+ * on the machine was edited there; a machine's hooks are written together, so none are while that waits.
+ */
+export type LinePlan = { machine: string; rows: LibraryRow[]; holdsHooks?: boolean };
 
 /**
  * A row bringing a machine in line can change: anything the repo lists, on, off or removed from every machine. What it
@@ -608,10 +611,17 @@ export type LinePlan = { machine: string; rows: LibraryRow[] };
  */
 export const bringable = (row: LibraryRow) => row.state !== 'unlisted';
 
-/** Each answering machine with rows behind there, in the machines' order. */
+/**
+ * Each answering machine with rows behind there that it may change, in the machines' order. A row edited on the
+ * machine isn't one of them: Bring in line never overwrites an edit made there.
+ */
 export function linePlans(rows: LibraryRow[], machines: SetupMachine[]): LinePlan[] {
   return reachableMachines(machines)
-    .map((machine) => ({ machine: machine.machine, rows: rows.filter((row) => bringable(row) && row.behind.includes(machine.machine)) }))
+    .map((machine) => ({
+      machine: machine.machine,
+      rows: rows.filter((row) => bringable(row) && row.behind.includes(machine.machine)),
+      holdsHooks: rows.some((row) => row.kind === 'hooks' && row.edited[machine.machine] !== undefined),
+    }))
     .filter((plan) => plan.rows.length > 0);
 }
 
@@ -621,16 +631,18 @@ export function linePlans(rows: LibraryRow[], machines: SetupMachine[]): LinePla
  * land on Arbor's changes, where they can be undone; Claude Code's own plugin and MCP commands keep no backup, so the
  * Overview confirms before this runs.
  */
-export async function bringInLine(repo: string, sources: { [K in keyof SwitchSources]-?: SwitchSources[K] | null }, machines: SetupMachine[], plan: LinePlan): Promise<{ changed: boolean; failed: SwitchFailure[]; needsYou: boolean }> {
+export async function bringInLine(repo: string, sources: { [K in keyof SwitchSources]-?: SwitchSources[K] | null }, machines: SetupMachine[], plan: LinePlan): Promise<LineRun> {
   const { machine } = plan;
   const entry = machines.find((candidate) => candidate.machine === machine);
   const failed: SwitchFailure[] = [];
+  const backups: string[] = [];
   let changed = false;
   let needsYou = false;
-  if (!entry) return { changed, failed: [{ machine, message: 'unread', reason: 'unread' }], needsYou };
+  if (!entry) return { changed, failed: [{ machine, message: 'unread', reason: 'unread' }], needsYou, heldHooks: false, backups };
   const of = (kind: LibraryRow['kind']) => plan.rows.filter((row) => row.kind === kind);
   const setup = sources.repo;
-  const hooksBehind = of('hooks').length > 0;
+  const heldHooks = Boolean(plan.holdsHooks) && of('hooks').length > 0;
+  const hooksBehind = of('hooks').length > 0 && !heldHooks;
   // Files first: a hook runs a script the repo's sync puts in ~/.agents/hooks, so its scripts go with them. A skill the
   // repo took off every machine leaves the store the same way.
   if (setup?.head) {
@@ -643,6 +655,7 @@ export async function bringInLine(repo: string, sources: { [K in keyof SwitchSou
       try {
         const outcome = await applySetupSync(setup.path, setup.head.sha, machine, changes);
         changed ||= outcome.done.length > 0;
+        if (outcome.backup) backups.push(outcome.backup);
         failed.push(...outcome.failed.map((entry) => fromSync(machine, entry)));
       } catch (error) {
         failed.push(failure(machine, error));
@@ -681,11 +694,21 @@ export async function bringInLine(repo: string, sources: { [K in keyof SwitchSou
       if (!names.length) continue;
       const done = await runSkillPlan({ ...planSkills(kind, names, [entry], setup), marks: [] }, setup, () => undefined);
       changed ||= done.touched.length > 0;
+      backups.push(...done.backups.map((made) => made.backup));
       failed.push(...runFailures(done.problems));
     }
   }
-  return { changed, failed, needsYou };
+  return { changed, failed, needsYou, heldHooks, backups };
 }
+
+/**
+ * What bringing a machine in line did. `heldHooks`: its hooks were left alone, one of them waiting on a decision.
+ * `backups`: what it backed up on the machine, newest last, for Undo.
+ */
+export type LineRun = { changed: boolean; failed: SwitchFailure[]; needsYou: boolean; heldHooks: boolean; backups: string[] };
+
+/** Puts back what a run of bringing in line backed up on a machine. */
+export const undoLineRun = (machine: string, run: LineRun) => undoBackups(machine, run.backups);
 
 // ---------------------------------------------------------------------------
 // Adding from the directory

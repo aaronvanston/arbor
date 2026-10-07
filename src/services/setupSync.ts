@@ -275,17 +275,19 @@ export type SyncChoices = Record<string, boolean>;
 
 /**
  * Unless chosen otherwise, the repo's copies are written, files only the machine has are kept, and skills the repo
- * removed from every machine go.
+ * removed from every machine go. A file or skill edited on the machine (`held`, by path, from Sync's standing) is
+ * never ticked by default: overwriting someone's edit is always their choice.
  */
-export const chosen = (file: SyncFile, choices: SyncChoices) => choices[file.path] ?? (file.state === 'update' || file.state === 'add' || file.state === 'removed');
+export const chosen = (file: SyncFile, choices: SyncChoices, held: ReadonlySet<string> = new Set()) =>
+  choices[file.path] ?? (!held.has(file.path) && (file.state === 'update' || file.state === 'add' || file.state === 'removed'));
 
 /** Whether a file's state can be changed at all. */
 export const changeable = (file: SyncFile) => file.state === 'update' || file.state === 'add' || file.state === 'extra' || file.state === 'removed';
 
 /** The changes the choices make. */
-export function syncChanges(files: SyncFile[], choices: SyncChoices = {}): SyncChange[] {
+export function syncChanges(files: SyncFile[], choices: SyncChoices = {}, held: ReadonlySet<string> = new Set()): SyncChange[] {
   return files.flatMap((file): SyncChange[] => {
-    if (!changeable(file) || !chosen(file, choices)) return [];
+    if (!changeable(file) || !chosen(file, choices, held)) return [];
     if (file.state === 'extra' || file.state === 'removed') return [{ path: file.path, remove: true, before: file.item?.sum ?? null }];
     return [{ path: file.path, remove: false, before: file.item?.sum ?? null }];
   });

@@ -7,9 +7,10 @@
 //! `arbor sync` all read it, so they can't disagree; the webview only renders it. What the repo doesn't list is each
 //! machine's own business and never counts.
 //!
-//! Each item is compared with the repo's HEAD alone, so it can only say what bringing the machine in line would do:
-//! add it, update it or take it out (`ItemDrift`). Telling "the repo moved on" from "someone edited the machine"
-//! needs a record of what was last applied there; that comes as more `ItemDrift`s, not another definition.
+//! Each item says what bringing the machine in line would do (add, update or take it out: `ItemDrift`) and who moved
+//! since the two sides last matched (`Change`). That comes from a base per machine and item: both sides' fingerprints
+//! the last time the machine had it as the repo did, kept on this Mac. The repo moving on is an update; the machine
+//! moving is an edit made there, which Arbor never overwrites without being asked.
 
 use super::harnesses;
 use super::project_places::{drift, ProjectsDrift};
@@ -59,6 +60,7 @@ pub(crate) struct BehindItem {
     key: String,
     name: String,
     drift: ItemDrift,
+    change: Change,
 }
 
 /// Where a machine stands.
@@ -83,6 +85,8 @@ pub(crate) struct KindCounts {
     hooks: u32,
     plugins: u32,
     projects: u32,
+    /// Of all of them, those edited on the machine (alone or with the repo), which wait for the user's decision.
+    decide: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -131,9 +135,32 @@ fn regular(item: &SetupItem) -> bool {
     !item.is_link() && item.sum().is_some()
 }
 
-/// The repo's files and skills against one machine's scan: each one bringing the machine in line would add, update
-/// or take out, as the Repo review lists them.
-fn file_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup) -> Vec<BehindItem> {
+/// One item the repo lists, as compared on a machine: what bringing it in line would do (None while it's in step), and
+/// both sides' fingerprints, each as the repo and the scan give them so a later look compares like with like. Only what
+/// was actually compared is here: an item a machine keeps as its own, keeps off, has as a link, or has no home for
+/// isn't, so it never gets a base it didn't earn.
+#[derive(Clone, Debug, PartialEq)]
+struct Compared {
+    kind: StandingKind,
+    key: String,
+    name: String,
+    drift: Option<ItemDrift>,
+    repo: String,
+    machine: String,
+}
+
+fn compared(kind: StandingKind, key: String, name: String, drift: Option<ItemDrift>, repo: impl Into<String>, machine: impl Into<String>) -> Compared {
+    Compared { kind, key, name, drift, repo: repo.into(), machine: machine.into() }
+}
+
+/// What the machine has at a path: its fingerprint, or "-" when it hasn't got it.
+fn machine_print(item: Option<&SetupItem>) -> String {
+    item.and_then(SetupItem::sum).unwrap_or("-").to_string()
+}
+
+/// The repo's files and skills against one machine's scan, as the Repo review would compare them. Hook scripts come
+/// back keyed `script:<name>`, for the hooks that run them to take in.
+fn file_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup) -> Vec<Compared> {
     let key = normalize_machine_name(machine);
     let harness_homes: BTreeSet<String> = harnesses::repo_homes().collect();
     let is_harness_home = |path: &str| path.strip_prefix("~/").is_some_and(|rel| harness_homes.contains(&format!("{rel}/")));
@@ -160,42 +187,43 @@ fn file_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup) -> Vec<Behi
     }
 
     let mut items = Vec::new();
-    let mut push = |kind: StandingKind, path: &str, drift: ItemDrift| {
+    let mut push = |kind: StandingKind, path: &str, drift: Option<ItemDrift>, repo: &str, machine: String| {
         let name = path.rsplit('/').next().unwrap_or(path).to_string();
         let key = match kind {
             StandingKind::Skill => format!("skill:{name}"),
+            StandingKind::Hook => format!("script:{name}"),
             _ => format!("file:{path}"),
         };
-        items.push(BehindItem { kind, key, name, drift });
+        items.push(compared(kind, key, name, drift, repo, machine));
     };
     let file_wanted = |path: &str| repo.file_machines().get(path).and_then(|machines| machines.get(&key)).copied();
     for file in repo.files() {
         let item = present.get(file.path()).copied();
+        let kind = if file.kind() == SyncFileKind::HookScript { StandingKind::Hook } else { StandingKind::File };
         // A file for a home the machine hasn't got: the agent isn't set up there. Hook scripts go in ~/.agents, which is
         // made where there isn't one.
         let home_ok = file.kind() == SyncFileKind::HookScript || homes.iter().any(|home| file.path().starts_with(&format!("{home}/")));
         let wanted = file_wanted(file.path());
-        let drift = if repo.off_files().iter().any(|path| path == file.path()) && wanted != Some(SkillWanted::Own) {
-            item.filter(|item| regular(item)).map(|_| ItemDrift::Remove)
+        if repo.off_files().iter().any(|path| path == file.path()) && wanted != Some(SkillWanted::Own) {
+            let there = item.filter(|item| regular(item));
+            push(kind, file.path(), there.map(|_| ItemDrift::Remove), "off", machine_print(there));
         } else if wanted == Some(SkillWanted::Off) || (wanted == Some(SkillWanted::Own) && item.is_some_and(regular)) || !home_ok {
-            None
+            continue;
         } else {
             match item {
-                None => Some(ItemDrift::Add),
-                Some(item) if !regular(item) => None,
+                None => push(kind, file.path(), Some(ItemDrift::Add), file.print(false), "-".into()),
+                Some(item) if !regular(item) => continue,
                 Some(item) => {
                     let sum = item.sum().unwrap_or_default();
-                    (sum != file.print(is_checksum(sum))).then_some(ItemDrift::Update)
+                    let drift = (sum != file.print(is_checksum(sum))).then_some(ItemDrift::Update);
+                    push(kind, file.path(), drift, file.print(false), sum.to_string());
                 }
             }
-        };
-        if let Some(drift) = drift {
-            push(if file.kind() == SyncFileKind::HookScript { StandingKind::Hook } else { StandingKind::File }, file.path(), drift);
         }
     }
     for (path, item) in &present {
         if regular(item) && !repo.files().iter().any(|file| file.path() == *path) && repo.removed_files().iter().any(|removed| removed == path) {
-            push(StandingKind::File, path, ItemDrift::Remove);
+            push(StandingKind::File, path, Some(ItemDrift::Remove), "removed", machine_print(Some(item)));
         }
     }
 
@@ -212,29 +240,29 @@ fn file_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup) -> Vec<Behi
     for skill in repo.skills() {
         let item = store.get(skill.path()).copied();
         let wanted = skill_wanted(skill.name());
-        let drift = if repo.off_skills().iter().any(|name| name == skill.name()) && wanted != Some(SkillWanted::Own) {
-            item.filter(|item| regular(item) && item.has_doc()).map(|_| ItemDrift::Remove)
+        let repo_print = skill.print(false).unwrap_or("?");
+        if repo.off_skills().iter().any(|name| name == skill.name()) && wanted != Some(SkillWanted::Own) {
+            let there = item.filter(|item| regular(item) && item.has_doc());
+            push(StandingKind::Skill, skill.path(), there.map(|_| ItemDrift::Remove), "off", machine_print(there));
         } else if wanted == Some(SkillWanted::Off) || (wanted == Some(SkillWanted::Own) && item.is_some_and(regular)) || skill.problem().is_some() {
-            None
+            continue;
         } else {
             match item {
-                None => Some(ItemDrift::Add),
-                Some(item) if item.is_link() || item.sum().is_none() || !item.has_doc() => None,
+                None => push(StandingKind::Skill, skill.path(), Some(ItemDrift::Add), repo_print, "-".into()),
+                Some(item) if item.is_link() || item.sum().is_none() || !item.has_doc() => continue,
                 Some(item) => {
                     let sum = item.sum().unwrap_or_default();
-                    (Some(sum) != skill.print(is_checksum(sum))).then_some(ItemDrift::Update)
+                    let drift = (Some(sum) != skill.print(is_checksum(sum))).then_some(ItemDrift::Update);
+                    push(StandingKind::Skill, skill.path(), drift, repo_print, sum.to_string());
                 }
             }
-        };
-        if let Some(drift) = drift {
-            push(StandingKind::Skill, skill.path(), drift);
         }
     }
     for (path, item) in &store {
         let name = path.rsplit('/').next().unwrap_or(path);
         let gone = repo.removed_skills().iter().any(|removed| removed == name) && skill_wanted(name) != Some(SkillWanted::Own);
         if gone && regular(item) && item.has_doc() && !repo.skills().iter().any(|skill| skill.path() == *path) {
-            push(StandingKind::Skill, path, ItemDrift::Remove);
+            push(StandingKind::Skill, path, Some(ItemDrift::Remove), "removed", machine_print(Some(item)));
         }
     }
     items
@@ -245,7 +273,7 @@ fn file_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup) -> Vec<Behi
 // ---------------------------------------------------------------------------
 
 /// How a plugin is in one home: installed and on or off, turned on without being installed (`missing`), or not there.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Place {
     On,
     Off,
@@ -278,23 +306,30 @@ fn plugin_drift(place: Place, wanted: PluginWanted) -> Option<ItemDrift> {
     }
 }
 
-/// The plugins the repo lists that one of the machine's Claude Code (or Codex) homes doesn't have as wanted.
-fn plugin_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup, codex: bool) -> Vec<BehindItem> {
+/// The plugins the repo lists against the machine's Claude Code (or Codex) homes. A plugin has no fingerprint of its
+/// own (its version moves by itself), so each side is what it is: the repo's word, and on, off or not there per home.
+fn plugin_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup, codex: bool) -> Vec<Compared> {
     let agent = if codex { HomeAgent::Codex } else { HomeAgent::Claude };
     // A shadow home's config.toml is the home it shares's, so its plugins are that home's.
     let homes: Vec<_> = setup.homes().iter().filter(|home| home.agent() == agent && !(codex && setup.shares(home.path(), "config.toml"))).collect();
+    if homes.is_empty() {
+        return Vec::new();
+    }
     let listed = if codex { repo.codex_plugins() } else { repo.plugins() };
     listed
         .iter()
-        .filter_map(|plugin| {
+        .filter(|plugin| plugin.wanted_on(machine) != PluginWanted::Own)
+        .map(|plugin| {
             let id = plugin.id();
             let wanted = plugin.wanted_on(machine);
-            let drift = homes.iter().find_map(|home| {
-                let item = home.items().iter().find(|item| item.kind() == ItemKind::Plugin && item.name() == id);
-                plugin_drift(place(item, codex), wanted)
-            })?;
+            let places: Vec<(&str, Place)> = homes
+                .iter()
+                .map(|home| (home.path(), place(home.items().iter().find(|item| item.kind() == ItemKind::Plugin && item.name() == id), codex)))
+                .collect();
+            let drift = places.iter().find_map(|(_, place)| plugin_drift(*place, wanted));
+            let machine_side = places.iter().map(|(home, place)| format!("{home}={place:?}")).collect::<Vec<_>>().join(" ");
             let name = id.rsplit_once('@').map_or(id, |(name, _)| name).to_string();
-            Some(BehindItem { kind: StandingKind::Plugin, key: format!("plugin:{}:{id}", if codex { "codex" } else { "claude" }), name, drift })
+            compared(StandingKind::Plugin, format!("plugin:{}:{id}", if codex { "codex" } else { "claude" }), name, drift, format!("{wanted:?}"), machine_side)
         })
         .collect()
 }
@@ -303,53 +338,192 @@ fn plugin_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup, codex: bo
 // Every kind
 // ---------------------------------------------------------------------------
 
-fn registry_drift(state: RegistryState) -> ItemDrift {
+fn registry_drift(state: RegistryState) -> Option<ItemDrift> {
     match state {
-        RegistryState::Add => ItemDrift::Add,
-        RegistryState::Extra => ItemDrift::Remove,
-        _ => ItemDrift::Update,
+        RegistryState::Same => None,
+        RegistryState::Add => Some(ItemDrift::Add),
+        RegistryState::Extra => Some(ItemDrift::Remove),
+        RegistryState::Update => Some(ItemDrift::Update),
     }
 }
 
-fn hook_drift(state: HookState) -> ItemDrift {
+fn hook_drift(state: HookState) -> Option<ItemDrift> {
     match state {
-        HookState::Add => ItemDrift::Add,
-        HookState::Extra => ItemDrift::Remove,
-        _ => ItemDrift::Update,
+        HookState::Same => None,
+        HookState::Add => Some(ItemDrift::Add),
+        HookState::Extra => Some(ItemDrift::Remove),
+        HookState::Update => Some(ItemDrift::Update),
     }
 }
 
-/// Everything one machine is behind on, each item once, in kind order.
-fn behind(repo: &SetupRepo, mcp: Option<&McpRegistry>, hooks: Option<&HookRegistry>, projects: &ProjectsDrift, machine: &str, setup: &MachineSetup) -> Vec<BehindItem> {
+/// Folds an item's homes into one: behind if any home is, each side's fingerprints listed home by home.
+fn by_home(kind: StandingKind, key: String, name: &str, cells: &[(&str, Option<ItemDrift>, &str, &str)]) -> Compared {
+    let drift = cells.iter().find_map(|(_, drift, _, _)| *drift);
+    let repo = cells.iter().map(|cell| format!("{}={}", cell.0, cell.2)).collect::<Vec<_>>().join(" ");
+    let machine = cells.iter().map(|cell| format!("{}={}", cell.0, cell.3)).collect::<Vec<_>>().join(" ");
+    compared(kind, key, name.to_string(), drift, repo, machine)
+}
+
+/// Every item the repo lists as compared on one machine, each once, in kind order.
+fn compare(repo: &SetupRepo, mcp: Option<&McpRegistry>, hooks: Option<&HookRegistry>, projects: &ProjectsDrift, machine: &str, setup: &MachineSetup) -> Vec<Compared> {
     let mut items = Vec::new();
+    let mut scripts = Vec::new();
     for item in file_items(repo, machine, setup) {
-        // A hook script that differs puts the hooks that run it behind, since bringing them in line writes it.
-        if item.kind == StandingKind::Hook {
-            let running = hooks.map(|hooks| hooks.running(&item.name)).unwrap_or_default();
-            items.extend(running.into_iter().map(|name| BehindItem { kind: StandingKind::Hook, key: format!("hook:repo:{name}"), name: name.to_string(), drift: ItemDrift::Update }));
-        } else {
-            items.push(item);
-        }
+        if item.kind == StandingKind::Hook { scripts.push(item) } else { items.push(item) }
     }
     if let Some(mcp) = mcp {
-        items.extend(mcp.behind_on(machine, setup).map(|(name, state)| BehindItem { kind: StandingKind::Mcp, key: format!("mcp:{name}"), name: name.to_string(), drift: registry_drift(state) }));
+        let mut servers: BTreeMap<&str, Vec<(&str, Option<ItemDrift>, &str, &str)>> = BTreeMap::new();
+        for (name, home, state, repo_side, machine_side) in mcp.compared_on(machine, setup) {
+            servers.entry(name).or_default().push((home, registry_drift(state), repo_side, machine_side));
+        }
+        items.extend(servers.iter().map(|(name, cells)| by_home(StandingKind::Mcp, format!("mcp:{name}"), name, cells)));
     }
+    let mut hook_items: BTreeMap<String, Compared> = BTreeMap::new();
     if let Some(hooks) = hooks {
-        items.extend(hooks.behind_on(machine).map(|(name, state)| BehindItem { kind: StandingKind::Hook, key: format!("hook:repo:{name}"), name: name.to_string(), drift: hook_drift(state) }));
+        let mut found: BTreeMap<&str, Vec<(&str, Option<ItemDrift>, &str, &str)>> = BTreeMap::new();
+        for (name, home, state, repo_side, machine_side) in hooks.compared_on(machine) {
+            found.entry(name).or_default().push((home, hook_drift(state), repo_side, machine_side));
+        }
+        for (name, cells) in &found {
+            hook_items.insert(name.to_string(), by_home(StandingKind::Hook, format!("hook:repo:{name}"), name, cells));
+        }
+        // A hook's script is part of it: bringing the hook in line writes the script, and an edit to it is an edit here.
+        for script in &scripts {
+            for name in hooks.running(&script.name) {
+                let entry = hook_items.entry(name.to_string()).or_insert_with(|| compared(StandingKind::Hook, format!("hook:repo:{name}"), name.to_string(), None, "", ""));
+                entry.drift = entry.drift.or(script.drift.map(|_| ItemDrift::Update));
+                entry.repo = format!("{} {}={}", entry.repo, script.name, script.repo).trim().to_string();
+                entry.machine = format!("{} {}={}", entry.machine, script.name, script.machine).trim().to_string();
+            }
+        }
     }
+    items.extend(hook_items.into_values());
     items.extend(plugin_items(repo, machine, setup, false));
     items.extend(plugin_items(repo, machine, setup, true));
-    items.extend(projects.behind_on(machine).into_iter().map(|project| BehindItem {
-        kind: StandingKind::Project,
-        key: format!("project:{project}"),
-        name: project.strip_prefix("_local/").unwrap_or(project).to_string(),
-        drift: ItemDrift::Update,
+    items.extend(projects.behind_on(machine).into_iter().map(|project| {
+        compared(StandingKind::Project, format!("project:{project}"), project.strip_prefix("_local/").unwrap_or(project).to_string(), Some(ItemDrift::Update), "", "")
     }));
     let mut seen = BTreeSet::new();
     items.retain(|item| seen.insert(item.key.clone()));
     items.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.name.cmp(&b.name)));
     items
 }
+
+// ---------------------------------------------------------------------------
+// A base per machine
+// ---------------------------------------------------------------------------
+
+/// Both sides of an item on a machine the last time they matched: the repo's commit then, and each side's fingerprint.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub(super) struct Base {
+    commit: String,
+    repo: String,
+    machine: String,
+}
+
+/// Who moved since the base: the repo alone (`update`), the machine alone (`editedHere`), both (`bothChanged`), or
+/// can't tell (`unknown`: no base yet, or neither side moved yet they differ, as after a machine's own value is lifted).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Change {
+    Update,
+    EditedHere,
+    BothChanged,
+    Unknown,
+}
+
+impl Change {
+    /// Bringing in line may apply it: the repo moved on, or nobody can say otherwise. An edit here waits for the user.
+    fn applies(self) -> bool {
+        matches!(self, Self::Update | Self::Unknown)
+    }
+}
+
+fn classify(item: &Compared, base: Option<&Base>) -> Change {
+    // A project's checkout isn't edited the way a file is: behind is the remote moving on.
+    if item.kind == StandingKind::Project {
+        return Change::Update;
+    }
+    let Some(base) = base else { return Change::Unknown };
+    match (base.repo != item.repo, base.machine != item.machine) {
+        (true, false) => Change::Update,
+        (false, true) => Change::EditedHere,
+        (true, true) => Change::BothChanged,
+        (false, false) => Change::Unknown,
+    }
+}
+
+/// Takes in one machine's comparison: each item in step becomes its base (at `commit`), each behind is classified
+/// against its base. True when a base changed, so the bases are saved.
+fn settle(bases: &mut BTreeMap<String, Base>, items: Vec<Compared>, commit: &str) -> (Vec<BehindItem>, bool) {
+    let mut changed = false;
+    let mut behind = Vec::new();
+    for item in items {
+        match item.drift {
+            None => {
+                let base = Base { commit: commit.to_string(), repo: item.repo, machine: item.machine };
+                // The commit alone moving isn't worth a save: what a base compares is the two sides.
+                if bases.get(&item.key).is_none_or(|old| old.repo != base.repo || old.machine != base.machine) {
+                    bases.insert(item.key, base);
+                    changed = true;
+                }
+            }
+            Some(drift) => {
+                let change = classify(&item, bases.get(&item.key));
+                behind.push(BehindItem { kind: item.kind, key: item.key, name: item.name, drift, change });
+            }
+        }
+    }
+    (behind, changed)
+}
+
+/// Every machine's bases, by normalized name, as kept in Arbor's data folder (`setup-bases.json`). A file beside the
+/// saved scans rather than usage.db: it's a small map rewritten whole, of the same fingerprints as those scans, and
+/// usage.db is history that only grows.
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+pub(super) struct Bases {
+    version: u32,
+    /// Which salt the MCP server and hook fingerprints were made with (a hash of it, never the salt). Under another,
+    /// they'd all look edited, so their bases are dropped.
+    salt: String,
+    machines: BTreeMap<String, BTreeMap<String, Base>>,
+}
+
+const BASES_FILE: &str = "setup-bases.json";
+const BASES_VERSION: u32 = 1;
+static BASES: std::sync::Mutex<Option<Bases>> = std::sync::Mutex::new(None);
+static SAVING_BASES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Kinds whose fingerprints are salted.
+fn salted(key: &str) -> bool {
+    key.starts_with("mcp:") || key.starts_with("hook:")
+}
+
+fn read_bases(path: &Path, salt_check: &str) -> Bases {
+    let fresh = Bases { version: BASES_VERSION, salt: salt_check.to_string(), machines: BTreeMap::new() };
+    let Some(mut kept) = fs::read(path).ok().and_then(|bytes| serde_json::from_slice::<Bases>(&bytes).ok()).filter(|kept| kept.version == BASES_VERSION) else {
+        return fresh;
+    };
+    if kept.salt != salt_check {
+        for items in kept.machines.values_mut() {
+            items.retain(|key, _| !salted(key));
+        }
+        kept.salt = salt_check.to_string();
+    }
+    kept
+}
+
+fn write_bases(path: &Path, bases: &Bases) -> Result<(), String> {
+    super::archive::store::write_atomic(path, &serde_json::to_vec(bases).map_err(|error| error.to_string())?)
+}
+
+fn bases_path() -> Option<PathBuf> {
+    crate::core_base_dir().ok().map(|dir| dir.join(BASES_FILE))
+}
+
+// ---------------------------------------------------------------------------
+// The standing
+// ---------------------------------------------------------------------------
 
 fn counts(items: &[BehindItem]) -> KindCounts {
     let mut counts = KindCounts::default();
@@ -363,18 +537,23 @@ fn counts(items: &[BehindItem]) -> KindCounts {
             StandingKind::Project => &mut counts.projects,
         };
         *slot += 1;
+        if !item.change.applies() {
+            counts.decide += 1;
+        }
     }
     counts
 }
 
-/// Each machine Sync covers (`machines`: name, answering, last scan) against the repo and what was read with it.
+/// Each machine Sync covers (`machines`: name, answering, last scan) against the repo and what was read with it, each
+/// difference classified against `bases`, which take in every item found in step. True when a base changed.
 fn standing(
     repo: SetupRepo,
     mcp: Result<McpRegistry, String>,
     hooks: Result<HookRegistry, String>,
     projects: &ProjectsDrift,
     machines: &[(String, bool, MachineSetup)],
-) -> SyncStanding {
+    bases: &mut BTreeMap<String, BTreeMap<String, Base>>,
+) -> (SyncStanding, bool) {
     let (mcp, mcp_error) = match mcp {
         Ok(registry) => (Some(registry), None),
         Err(error) => (None, Some(error)),
@@ -383,11 +562,20 @@ fn standing(
         Ok(registry) => (Some(registry), None),
         Err(error) => (None, Some(error)),
     };
+    let commit = repo.head_sha().unwrap_or_default().to_string();
+    let mut saved = false;
     let machines: Vec<MachineStanding> = machines
         .iter()
         .map(|(machine, reachable, setup)| {
             let read = setup.is_read();
-            let items = if read { behind(&repo, mcp.as_ref(), hooks.as_ref(), projects, machine, setup) } else { Vec::new() };
+            let items = if read {
+                let found = compare(&repo, mcp.as_ref(), hooks.as_ref(), projects, machine, setup);
+                let (items, changed) = settle(bases.entry(normalize_machine_name(machine)).or_default(), found, &commit);
+                saved |= changed;
+                items
+            } else {
+                Vec::new()
+            };
             let state = match (read, *reachable, items.is_empty()) {
                 (false, _, _) => MachineState::NotScanned,
                 (true, false, _) => MachineState::Unreachable,
@@ -399,11 +587,15 @@ fn standing(
         .collect();
     let read = machines.iter().filter(|machine| machine.state != MachineState::NotScanned).count() as u32;
     let in_step = machines.iter().filter(|machine| machine.state == MachineState::InStep).count() as u32;
-    SyncStanding { repo, mcp, mcp_error, hooks, hooks_error, machines, in_step, read }
+    (SyncStanding { repo, mcp, mcp_error, hooks, hooks_error, machines, in_step, read }, saved)
 }
 
 /// Where every machine stands against the setup repo's last commit, from the machines' last scans, with the repo,
 /// its MCP servers and hooks as they were read for it. Remembers `repo` as the one the window names.
+///
+/// It's also where each machine's base is kept: every item it finds in step, after a change Arbor made and the rescan
+/// that follows it as much as a machine that was in step already, is recorded as the two sides then. The window reads
+/// this after every scan lands, and so does `arbor sync`.
 #[tauri::command]
 pub(crate) async fn get_sync_standing(state: tauri::State<'_, MachineHealthState>, repo: String) -> Result<SyncStanding, String> {
     state.lock().setup_repo = Some(repo.clone());
@@ -411,11 +603,34 @@ pub(crate) async fn get_sync_standing(state: tauri::State<'_, MachineHealthState
     let found = read_repo(folder).await?;
     let scanned = scanned_machines(&state.lock());
     let (mcp, hooks) = tokio::join!(setup_mcp::registry_for(folder, &scanned), setup_hooks::registry_for(folder, &scanned));
-    let inner = state.lock();
-    let projects = drift(found.layers(), &arbor_machines(&inner), &inner.projects);
-    let machines = covered_machines(&inner);
-    drop(inner);
-    Ok(standing(found, mcp, hooks, &projects, &machines))
+    let (projects, machines) = {
+        let inner = state.lock();
+        (drift(found.layers(), &arbor_machines(&inner), &inner.projects), covered_machines(&inner))
+    };
+    let path = bases_path();
+    let salt_check = super::setup::salt_check();
+    let (standing, snapshot) = {
+        let mut held = BASES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let bases = held.get_or_insert_with(|| path.as_deref().map_or_else(Bases::default, |path| read_bases(path, &salt_check)));
+        let (standing, changed) = standing(found, mcp, hooks, &projects, &machines, &mut bases.machines);
+        (standing, changed.then(|| Bases { version: BASES_VERSION, salt: salt_check.clone(), machines: bases.machines.clone() }))
+    };
+    if let (Some(path), Some(bases)) = (path, snapshot) {
+        tauri::async_runtime::spawn_blocking(move || {
+            let _saving = SAVING_BASES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Err(error) = write_bases(&path, &bases) {
+                eprintln!("Couldn't keep Sync's bases: {error}");
+            }
+        });
+    }
+    Ok(standing)
+}
+
+/// The fingerprints a registry test cell has, by its state: the repo's and the home's the same when it's in step.
+#[cfg(test)]
+pub(super) fn test_prints(extra: bool, add: bool, same: bool) -> (String, String) {
+    let (repo, machine) = if extra { ("-", "b") } else if add { ("a", "-") } else if same { ("a", "a") } else { ("a", "b") };
+    (repo.to_string(), machine.to_string())
 }
 
 #[cfg(test)]
@@ -439,9 +654,17 @@ mod tests {
         drift(&Default::default(), &[], &BTreeMap::new())
     }
 
-    fn one(repo: SetupRepo, mcp: Option<McpRegistry>, hooks: Option<HookRegistry>, setup: MachineSetup) -> MachineStanding {
-        let found = standing(repo, mcp.ok_or_else(|| "unread".to_string()), hooks.ok_or_else(|| "unread".to_string()), &no_projects(), &[("cam-mbp".into(), true, setup)]);
+    fn one_with(repo: SetupRepo, mcp: Option<McpRegistry>, hooks: Option<HookRegistry>, setup: MachineSetup, bases: &mut BTreeMap<String, BTreeMap<String, Base>>) -> MachineStanding {
+        let (found, _) = standing(repo, mcp.ok_or_else(|| "unread".to_string()), hooks.ok_or_else(|| "unread".to_string()), &no_projects(), &[("cam-mbp".into(), true, setup)], bases);
         found.machines.into_iter().next().unwrap()
+    }
+
+    fn one(repo: SetupRepo, mcp: Option<McpRegistry>, hooks: Option<HookRegistry>, setup: MachineSetup) -> MachineStanding {
+        one_with(repo, mcp, hooks, setup, &mut BTreeMap::new())
+    }
+
+    fn changes(found: &MachineStanding) -> Vec<(&str, Change)> {
+        found.behind.iter().map(|item| (item.key.as_str(), item.change)).collect()
     }
 
     #[test]
@@ -552,16 +775,77 @@ mod tests {
         let repo = SetupRepo::for_test().with_file("~/.claude/CLAUDE.md", SUM);
         let in_step = machine().with_file("~/.claude", ItemKind::Instructions, "~/.claude/CLAUDE.md", Some(SUM));
         let behind = machine();
-        let found = standing(repo, Err("unread".into()), Ok(HookRegistry::default()), &no_projects(), &[
+        let (found, _) = standing(repo, Err("unread".into()), Ok(HookRegistry::default()), &no_projects(), &[
             ("a".into(), true, in_step),
             ("b".into(), false, behind.clone()),
             ("c".into(), true, MachineSetup::default()),
             ("d".into(), true, behind),
-        ]);
+        ], &mut BTreeMap::new());
         let states: Vec<_> = found.machines.iter().map(|machine| (machine.machine.as_str(), machine.state)).collect();
         assert_eq!(states, [("a", MachineState::InStep), ("b", MachineState::Unreachable), ("c", MachineState::NotScanned), ("d", MachineState::Behind)]);
         assert_eq!((found.in_step, found.read), (1, 3));
         assert_eq!(found.mcp_error.as_deref(), Some("unread"), "a registry that couldn't be read says why");
         assert_eq!(keys(&found.machines[1].behind), [("file:~/.claude/CLAUDE.md", ItemDrift::Add)], "an unanswering machine keeps what its last scan says");
+    }
+
+    #[test]
+    fn a_base_tells_the_repo_moving_on_from_an_edit_on_the_machine() {
+        const THIRD: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+        let repo = |sum: &str| SetupRepo::for_test().with_file("~/.claude/CLAUDE.md", sum);
+        let machine_with = |sum: &str| machine().with_file("~/.claude", ItemKind::Instructions, "~/.claude/CLAUDE.md", Some(sum));
+        let key = "file:~/.claude/CLAUDE.md";
+
+        // No base yet: it can't say who moved, and the item may still be brought in line.
+        assert_eq!(changes(&one(repo(SUM), None, None, machine_with(OTHER))), [(key, Change::Unknown)]);
+
+        // In step once: that's the base, kept per machine.
+        let mut bases = BTreeMap::new();
+        assert!(one_with(repo(SUM), None, None, machine_with(SUM), &mut bases).behind.is_empty());
+        assert_eq!(bases["cammbp"][key].repo, SUM);
+        assert_eq!(changes(&one_with(repo(OTHER), None, None, machine_with(SUM), &mut bases.clone())), [(key, Change::Update)]);
+        let edited = one_with(repo(SUM), None, None, machine_with(OTHER), &mut bases.clone());
+        assert_eq!(changes(&edited), [(key, Change::EditedHere)]);
+        assert_eq!(edited.counts.decide, 1, "an edit here waits for a decision");
+        assert_eq!(changes(&one_with(repo(OTHER), None, None, machine_with(THIRD), &mut bases.clone())), [(key, Change::BothChanged)]);
+        // The machine taking the edit away again is the same as deleting it there.
+        assert_eq!(changes(&one_with(repo(SUM), None, None, machine(), &mut bases.clone())), [(key, Change::EditedHere)]);
+        // A cksum machine's base is its own checksum, compared with what it reports next time.
+        let mut ck = BTreeMap::new();
+        one_with(repo(SUM), None, None, machine_with("c1-1"), &mut ck);
+        assert_eq!(changes(&one_with(repo(OTHER), None, None, machine_with("c1-1"), &mut ck)), [(key, Change::Update)]);
+    }
+
+    #[test]
+    fn salted_kinds_and_plugins_keep_a_base_too() {
+        let mut bases = BTreeMap::new();
+        let same = McpRegistry::for_test(&["linear"], &[("cam-mbp", "~/.claude", "linear", RegistryState::Same)]);
+        let hooks = HookRegistry::for_test(&[("notify", "notify.sh")], &[("cam-mbp", "notify", HookState::Same)]);
+        let paper = |wanted| SetupRepo::for_test().with_plugin(RepoPlugin::for_test("paper@paper", wanted, &[]), false);
+        let on = machine().with_item("~/.claude", ItemKind::Plugin, "paper@paper", Some("1.0.0"), Some(true));
+        assert!(one_with(paper(PluginWanted::On), Some(same), Some(hooks), on.clone(), &mut bases).behind.is_empty());
+        let edited = McpRegistry::for_test(&["linear"], &[("cam-mbp", "~/.claude", "linear", RegistryState::Update)]);
+        let hook_edited = HookRegistry::for_test(&[("notify", "notify.sh")], &[("cam-mbp", "notify", HookState::Update)]);
+        let off = machine().with_item("~/.claude", ItemKind::Plugin, "paper@paper", Some("1.0.0"), Some(false));
+        let found = one_with(paper(PluginWanted::On), Some(edited), Some(hook_edited), off, &mut bases.clone());
+        assert_eq!(changes(&found), [("mcp:linear", Change::EditedHere), ("hook:repo:notify", Change::EditedHere), ("plugin:claude:paper@paper", Change::EditedHere)]);
+        // The repo turning it off is the repo moving on.
+        assert_eq!(changes(&one_with(paper(PluginWanted::Off), None, None, on, &mut bases)), [("plugin:claude:paper@paper", Change::Update)]);
+    }
+
+    #[test]
+    fn kept_bases_come_back_and_salted_ones_go_under_another_salt() {
+        let path = std::env::temp_dir().join(format!("arbor-setup-bases-{}.json", std::process::id()));
+        let base = Base { commit: "a".repeat(40), repo: "r".into(), machine: "m".into() };
+        let items = BTreeMap::from([("file:~/.claude/CLAUDE.md".to_string(), base.clone()), ("mcp:linear".to_string(), base.clone())]);
+        let bases = Bases { version: BASES_VERSION, salt: "s1".into(), machines: BTreeMap::from([("cammbp".to_string(), items.clone())]) };
+        write_bases(&path, &bases).unwrap();
+        assert_eq!(read_bases(&path, "s1"), bases);
+        let resalted = read_bases(&path, "s2");
+        assert_eq!(resalted.machines["cammbp"].keys().collect::<Vec<_>>(), ["file:~/.claude/CLAUDE.md"]);
+        fs::write(&path, "{").unwrap();
+        assert!(read_bases(&path, "s1").machines.is_empty());
+        let _ = fs::remove_file(&path);
+        // The kept file holds fingerprints and commits, nothing else.
+        assert!(!serde_json::to_string(&bases).unwrap().contains("salt\":\"0"));
     }
 }

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useConfirmation } from '../components/ConfirmationDialog';
 import { useLibrary } from '../hooks/useLibrary';
+import { decide, type Decision } from '../services/editedHere';
 import { ProviderMark } from '../components/identity/Identity';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -19,7 +21,7 @@ import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
 import { LIBRARY_KINDS, libraryCounts, libraryKindProblems, libraryList, libraryRowProblems, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
-import { removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources, type UndoResult } from '../services/libraryToggle';
+import { removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, undoLineRun, type LibrarySwitch, type SwitchFailure, type SwitchSources, type UndoResult } from '../services/libraryToggle';
 import { plainError } from '../services/plainError';
 import { switchFailureText, switchToast, undoToast } from '../services/switchReport';
 import { skillFolder } from '../services/repoBrowser';
@@ -118,11 +120,23 @@ export function ScopeText({ row, className }: { row: LibraryRow; className?: str
           {t('library.behind', { count: row.behind.length })}
         </Badge>
       ) : null}
+      {Object.keys(row.edited).length ? (
+        <Badge variant="info" size="sm" title={t('library.edited.title', { machines: Object.keys(row.edited).join(', ') })}>
+          {t('library.edited', { count: Object.keys(row.edited).length })}
+        </Badge>
+      ) : null}
       <span className="text-muted-foreground">{words}</span>
     </span>
   );
 }
 
+
+/** What a decided edit's toast says. */
+const DECIDED: Record<Decision, MessageKey> = {
+  take: 'edited.done.take',
+  keep: 'edited.done.keep',
+  useRepo: 'edited.done.useRepo',
+};
 
 /** Flips a row's switch with its kind's own switch. */
 function switchRow(repo: string, machines: SetupMachine[], toggle: LibraryToggle, on: boolean): Promise<LibrarySwitch> {
@@ -158,6 +172,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
 }) {
   const { t } = useI18n();
   const { repoPath, sources, setSources, loaded, loadError, kindErrors, rows } = useLibrary(machines);
+  const { askConfirmation } = useConfirmation();
   const [agent, setAgent] = useState<LibraryAgent | null>(null);
   const [query, setQuery] = useState('');
   const [running, setRunning] = useState<Running | null>(null);
@@ -281,6 +296,39 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       setRunning(null);
     }
   };
+  /**
+   * One machine's own edit, decided: taken into the repo, kept as the machine's own, or replaced by the repo's. The
+   * repo's copy is confirmed first, since it overwrites the edit, and offers Undo from what it backed up.
+   */
+  const settle = async (row: LibraryRow, machine: string, decision: Decision) => {
+    if (!repoPath || running) return;
+    if (decision === 'useRepo') {
+      const confirmed = await askConfirmation({
+        title: t('edited.useRepo.title', { name: row.name, machine }),
+        message: t('edited.useRepo.message', { name: row.name, machine }),
+        confirmText: t('edited.useRepo.confirm'),
+      });
+      if (!confirmed) return;
+    }
+    setRunning({ key: `${row.key}\u0000${machine}`, on: true });
+    report(row.key, []);
+    try {
+      const done = await decide(repoPath, sources, machines, row, machine, decision);
+      keep(done);
+      const run = done.run;
+      const texts = run ? run.failed.map((entry) => t('library.toggle.machineFailed', { name: row.name, machine: entry.machine, message: entry.message })) : [];
+      report(row.key, texts);
+      toast({
+        kind: texts.length ? 'warning' : 'success',
+        title: t(DECIDED[decision], { name: row.name, machine }),
+        ...(run?.backups.length ? { action: { label: t('common.undo'), onClick: () => { void undoLineRun(machine, run).then((failed) => report(row.key, failed.map((entry) => t('library.undo.failed', { name: row.name, error: entry.message })))); } } } : {}),
+      });
+    } catch (error) {
+      report(row.key, [t('library.toggle.failed', { name: row.name, error: String(error) })]);
+    } finally {
+      setRunning(null);
+    }
+  };
   const toggle = (row: LibraryRow, on: boolean) => {
     const target = row.toggle;
     if (target) void perform(row, row.key, on, t(on ? 'library.toggle.on' : 'library.toggle.off', { name: row.name }), (repo) => switchRow(repo, machines, target, on));
@@ -309,6 +357,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       takeFrom: takeSources(row, machines),
       onTake: (from) => void take(row, from),
       onUpdate: () => void update(row),
+      onDecide: (machine, decision) => void settle(row, machine, decision),
     };
   };
 

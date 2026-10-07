@@ -65,7 +65,7 @@ import type {
   SyncOutcome,
 } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
-import { reloadSyncStanding, standingOf, standingWords, useSyncStanding } from '../services/syncStanding';
+import { heldPaths, reloadSyncStanding, standingOf, standingWords, useSyncStanding } from '../services/syncStanding';
 import { RepoBrowser } from './SetupRepoBrowser';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -120,6 +120,7 @@ export function SetupRepoSection({ machines, history = null }: {
   history?: { machine: string | null } | null;
 }) {
   const { t, tRich } = useI18n();
+  const { standing: standingNow } = useSyncStanding();
   const { askConfirmation } = useConfirmation();
   const [path, setPath] = useState<string | null>(storedSetupRepo);
   const [repo, setRepo] = useState<SetupRepo | null>(null);
@@ -237,7 +238,8 @@ export function SetupRepoSection({ machines, history = null }: {
     setBulk({ running: true, results });
     for (const plan of behind) {
       try {
-        const outcome = await applySetupSync(repo.path, repo.head.sha, plan.machine.machine, syncChanges(plan.files));
+        // An edit made on a machine is never overwritten by bringing the rest along.
+        const outcome = await applySetupSync(repo.path, repo.head.sha, plan.machine.machine, syncChanges(plan.files, {}, heldPaths(standingNow, plan.machine.machine)));
         const result = outcomeText(outcome, plan.machine.machine, t, tRich);
         results.push({
           machine: plan.machine.machine,
@@ -505,7 +507,10 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
   }, [name, focus, loadBackups]);
 
   const files = useMemo(() => (machine ? syncPlan(repo, machine) : []), [repo, machine]);
-  const changes = syncChanges(files, choices);
+  // What was edited on the machine stays unticked unless someone ticks it.
+  const { standing } = useSyncStanding();
+  const held = useMemo(() => heldPaths(standing, name ?? ''), [standing, name]);
+  const changes = syncChanges(files, choices, held);
   // Until the machine has been read again after a change, what it has isn't known.
   const reading = machine?.scanning === true;
   const same = files.filter((file) => file.state === 'same').map((file) => file.path);
@@ -649,7 +654,8 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
                           repo={repo}
                           machine={machine.machine}
                           file={file}
-                          on={chosen(file, choices)}
+                          on={chosen(file, choices, held)}
+                          edited={held.has(file.path)}
                           open={shown.has(file.path)}
                           busy={busy !== null || pending !== null}
                           taking={busy === file.path}
@@ -760,7 +766,7 @@ function SkillWantedMenu({ path, machine, wanted, busy, onWanted }: {
   );
 }
 
-function SyncFileRow({ repo, machine, file, on, open: isOpen, busy, taking, onChoose, onToggle, onTake, wanted, onWanted }: {
+function SyncFileRow({ repo, machine, file, on, open: isOpen, busy, taking, onChoose, onToggle, onTake, wanted, onWanted, edited = false }: {
   repo: SetupRepo;
   machine: string;
   file: SyncFile;
@@ -774,6 +780,8 @@ function SyncFileRow({ repo, machine, file, on, open: isOpen, busy, taking, onCh
   /** A repo skill's own value on this machine, null while it follows every machine's; undefined for anything else. */
   wanted?: SkillWanted | null;
   onWanted?: (wanted: SkillWanted | null) => void;
+  /** Edited on the machine since it last matched the repo, so it's left unticked. */
+  edited?: boolean;
 }) {
   const { t, tRich } = useI18n();
   const skill = file.kind === 'skill';
@@ -810,6 +818,7 @@ function SyncFileRow({ repo, machine, file, on, open: isOpen, busy, taking, onCh
         ) : (
           <MiddleTruncate value={file.path} className="flex-1 font-mono text-xs text-foreground" />
         )}
+        {edited ? <Badge variant="info" size="sm" data-sync-edited={file.path}>{t('sync.change.editedHere')}</Badge> : null}
         {/* The title has the note's words in full for when it's cut short, so it names the machine in words. */}
         {note ? <span className="min-w-0 shrink truncate text-xs text-muted-foreground" title={t(note, { link, machine })}>{tRich(note, { link, machine: pill })}</span> : null}
         {action ? <span className={cn('shrink-0 text-xs', on ? 'text-foreground' : 'text-muted-foreground')}>{tRich(action, { machine: pill })}</span> : null}
