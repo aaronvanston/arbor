@@ -20,6 +20,7 @@ import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useI18n } from '../i18n';
+import type { MessageKey } from '../i18n/resources';
 import { formatAgo, formatDateTime, formatDuration, formatRelative, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
 import { automationsView, sessionsView, type AppView } from '../navigation';
@@ -143,7 +144,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                   : summary.runsOn === 'machine'
                     ? t('automations.note.machine', { machine: summary.machine ?? '' })
                     : t('automations.note.arbor', { machine: summary.machine ?? '' })
-              : t(AUTOMATION_APPS[summary.source].note ?? 'automations.note.codex', { path: automation.sourcePath ?? '' })}
+              : t(otherAppNote(summary), { path: automation.sourcePath ?? '', machine: summary.machine ?? '' })}
           </AlertDescription>
         </Alert>
 
@@ -230,6 +231,12 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   );
 }
 
+/** What another app's automation note says Arbor can do with it, leaving out a copy it can't make. */
+function otherAppNote(summary: Automation['summary']): MessageKey {
+  if (summary.source === 'superset' && !summary.abilities.copy) return 'automations.note.supersetNoCopy';
+  return AUTOMATION_APPS[summary.source].note ?? 'automations.note.codex';
+}
+
 function FactGrid({ children }: { children: ReactNode }) {
   return <dl className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-2xl border border-border/70 bg-card px-4 py-4 sm:grid-cols-4">{children}</dl>;
 }
@@ -302,7 +309,9 @@ function RunSteps({ automation, runs, now, command }: { automation: Automation; 
               <span className="text-xs text-muted-foreground">{t('automations.command.title')}</span>
               <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border/60 bg-muted/60 px-3 py-2 font-mono text-xs leading-5 text-foreground dark:bg-input/16">{automation.prompt}</pre>
             </div>
-          ) : <Prompt text={automation.prompt} />}
+          ) : automation.prompt.trim() || automation.summary.source === 'arbor'
+            ? <Prompt text={automation.prompt} />
+            : <p className="text-xs text-muted-foreground">{t('automations.prompt.notRead')}</p>}
         </Step>
       </ol>
     </section>

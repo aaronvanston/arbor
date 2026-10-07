@@ -339,7 +339,8 @@ function seedRuns(item: Seed): AutomationRun[] {
     return {
       id: `${item.summary.id}:run:${index}`,
       automationId: item.summary.id,
-      machine: item.summary.machine ?? 'cedar-02',
+      // Superset's cloud runs them in its own workspace, on no machine of Arbor's.
+      machine: item.summary.source === 'superset' && !item.summary.machine ? null : item.summary.machine ?? 'cedar-02',
       status,
       scheduledAtMs,
       startedAtMs: status === 'missed' || status === 'unreachable' ? null : scheduledAtMs + 2_000,
