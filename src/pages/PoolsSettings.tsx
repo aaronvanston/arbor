@@ -11,7 +11,7 @@ import { Button } from '../components/ui/button';
 import { Spinner } from '../components/ui/spinner';
 import { toast } from '../components/ui/toast';
 import { poolsView, type AppView } from '../navigation';
-import { POOL_WEIGHT_LABEL, newPool, removePool, savePool, usePools } from '../services/pools';
+import { POOL_WEIGHT_LABEL, newPool, removePool, savePool, usePools, whenFullKey } from '../services/pools';
 import type { MachinePool } from '../native/types';
 
 /**
@@ -122,7 +122,7 @@ function PoolSection({ pool, pools, onEdit, onOpen }: {
           </ul>
         )}
         <PoolLimitsLine pool={pool} />
-        <p className="text-xs text-muted-foreground">{t('pools.page.whenFull', { action: whenFull })}</p>
+        <p className="text-xs text-muted-foreground">{t(whenFullKey(pool), { action: whenFull })}</p>
       </SettingsBlock>
     </SettingsSection>
   );

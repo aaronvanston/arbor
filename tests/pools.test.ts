@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import type { MachinePool, PoolMemberVerdict } from '../src/native/types';
-import { leftOut, limitWords, machinesToAdd, newPool, planSteps, poolDraftProblem, poolSummary, shareRule, spillTargets, trippedLimit, verdictMessage } from '../src/services/pools';
+import { leftOut, limitWords, machinesToAdd, newPool, planSteps, poolDraftProblem, poolSummary, shareRule, spillTargets, trippedLimit, verdictMessage, whenFullKey } from '../src/services/pools';
 
 const pool = (patch: Partial<MachinePool> = {}): MachinePool => ({ ...newPool(), id: 'p1', name: 'Builds', ...patch });
 const verdict = (patch: Partial<PoolMemberVerdict>): PoolMemberVerdict => ({
@@ -36,6 +36,12 @@ describe('how a pool picks', () => {
     expect(words(pool())).toEqual(['4 agents working', '95% CPU', '5% memory free or less']);
     expect(words(pool({ maxAgents: null, memFloor: null }))).toEqual(['95% CPU']);
     expect(words(pool({ maxAgents: null, cpuCeiling: null, memFloor: null }))).toEqual([]);
+  });
+
+  // money-32: with no limits a machine can't be full, so the overflow sentence says when none is answering.
+  it('says when a run overflows in terms the pool’s limits allow', () => {
+    expect(whenFullKey(pool())).toBe('pools.page.whenFull');
+    expect(whenFullKey(pool({ maxAgents: null, cpuCeiling: null, memFloor: null }))).toBe('pools.page.whenNoneAnswer');
   });
 
   it('explains the chance by free slots under an agent limit, else by agents running', () => {

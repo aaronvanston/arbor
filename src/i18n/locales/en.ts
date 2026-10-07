@@ -5191,6 +5191,7 @@ export const en = {
   'pools.page.open': 'Open {name}',
   'pools.page.shareTitle': 'Chance of taking the next run',
   'pools.page.whenFull': 'When every machine is full, a run would {action}.',
+  'pools.page.whenNoneAnswer': 'When no machine is answering, a run would {action}.',
   'pools.summary.withRoom': 'Pools with room',
   'pools.summary.full': 'Pools full',
   'pools.summary.waiting': 'Runs waiting',

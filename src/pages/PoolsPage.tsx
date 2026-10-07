@@ -14,7 +14,7 @@ import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
 import { poolsView, type AppView, type PoolsParams } from '../navigation';
 import type { HarnessRun, MachinePool, PoolPreview } from '../native/types';
-import { newPool, poolStanding, usePools, usePoolsWatching } from '../services/pools';
+import { newPool, poolStanding, usePools, usePoolsWatching, whenFullKey } from '../services/pools';
 import { poolRuns, useRuns } from '../services/runs';
 
 /**
@@ -209,7 +209,7 @@ function PoolDetail({ pool, pools, preview, runs, onNavigate }: { pool: MachineP
           <PoolStandingBadge pool={pool} preview={preview} />
         </div>
         <PoolLimitsLine pool={pool} className="text-sm" />
-        <p className="text-sm text-muted-foreground">{t('pools.page.whenFull', { action: whenFull })}</p>
+        <p className="text-sm text-muted-foreground">{t(whenFullKey(pool), { action: whenFull })}</p>
       </header>
       <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5">
         {pool.members.length === 0 ? (

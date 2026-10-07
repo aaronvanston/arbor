@@ -69,6 +69,13 @@ export function limitWords(pool: Pick<MachinePool, 'maxAgents' | 'cpuCeiling' | 
   return words;
 }
 
+/**
+ * The sentence for where a run goes when the pool can't take it. With no limits on a machine can't be full, only not
+ * answering, so it says that instead.
+ */
+export const whenFullKey = (pool: Pick<MachinePool, 'maxAgents' | 'cpuCeiling' | 'memFloor'>): MessageKey =>
+  limitWords(pool).length ? 'pools.page.whenFull' : 'pools.page.whenNoneAnswer';
+
 /** How a member's chance is worked out: by free agent slots under an agent limit, else by agents running. */
 export const shareRule = (pool: Pick<MachinePool, 'maxAgents'>): MessageKey =>
   pool.maxAgents === null ? 'pools.how.shareOpen' : 'pools.how.shareSlots';
