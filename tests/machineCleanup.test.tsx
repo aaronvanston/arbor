@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { mockCommands } from '../src/dev/mock/answers';
 import { I18nProvider, translate, translateRich } from '../src/i18n';
-import { outcomeText } from '../src/pages/SetupSync';
+import { outcomeText } from '../src/pages/SetupBackups';
 import { CleanupContent, type CleanupProblem } from '../src/pages/MachineCleanup';
 import { CleanupRowMenu } from '../src/pages/cleanupActions';
 import { concreteHomePath, LazyCleanupRowMenu } from '../src/pages/cleanupMenuLazy';

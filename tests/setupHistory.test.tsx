@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../src/i18n';
-import { BackupList } from '../src/pages/SetupSync';
+import { BackupList } from '../src/pages/SetupBackups';
 import type { SetupBackup } from '../src/native/types';
 
 const backup = (id: string, what: SetupBackup['what'], files: string[], undone = false): SetupBackup => ({

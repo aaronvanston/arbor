@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { ArrowUpCircle, Check, ChevronDown, ListChecks, Plus } from '../components/ui/icons';
 import { CommandLine } from '../components/CommandLine';
@@ -11,7 +11,6 @@ import { Progress } from '../components/ui/progress';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
-import { useLibrary } from '../hooks/useLibrary';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
@@ -60,7 +59,6 @@ import { MachineReporterRow } from './MachineReporter';
 import { SetupChecks } from './SetupChecks';
 import { ReviewDialog as ExtensionsReviewDialog } from './SetupPlugins';
 import { SkillReviewDialog } from './SetupSkills';
-import { SyncReviewDialog } from './SetupSync';
 import { toolLabel } from './SetupToolchain';
 import type {
   AgentKind,
@@ -75,6 +73,9 @@ import type {
 } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
 import { useAgo, useNow } from '../hooks/useNow';
+
+/** The repo step's review, loaded when it opens so a machine's page doesn't carry the Library's modules. */
+const ChecklistRepoReview = lazy(() => import('./ChecklistRepoReview').then((module) => ({ default: module.ChecklistRepoReview })));
 
 const REFERENCE_KEY = 'arbor.setup.checklist.reference.v1';
 /** How often the agents and the reporter are looked at again, which the Machines page checks on its own schedule. */
@@ -188,8 +189,6 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   onCompareCheck: (check: SetupCheck, subject: SetupCheckSubject) => void;
   onNavigate: (view: AppView) => void;
 }) {
-  // Bringing the machine in line from its review runs the same plan as Overview.
-  const libraryLine = useLibrary(machines);
   const { t, tRich } = useI18n();
   const [chosenReference, setChosenReference] = useState<string | null>(() => readStored(REFERENCE_KEY));
   const [openState, setOpenState] = useState<{ target: string | null; ids: StepId[] } | null>(null);
@@ -944,13 +943,17 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       ) : null}
 
       {repo?.head ? (
-        <SyncReviewDialog
-          repo={repo}
-          machine={review === 'repo' ? reviewedMachine : null}
-          onClose={() => setReview(null)}
-          line={{ rows: libraryLine.rows, sources: libraryLine.sources, machines }}
-          onRepo={setRepo}
-        />
+        review === 'repo' ? (
+          <Suspense fallback={null}>
+            <ChecklistRepoReview
+              repo={repo}
+              machine={reviewedMachine}
+              machines={machines}
+              onClose={() => setReview(null)}
+              onRepo={setRepo}
+            />
+          </Suspense>
+        ) : null
       ) : null}
       <SkillReviewDialog
         open={review === 'skills'}

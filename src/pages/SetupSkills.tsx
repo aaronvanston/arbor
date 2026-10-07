@@ -80,7 +80,7 @@ import {
 import { getSetupRepo, listSetupBackups, scanned, skillWanted, storedSetupRepo, undoSetupSync } from '../services/setupSync';
 import { setSyncMachine, useSyncScope } from '../services/syncScope';
 import type { Comparison } from './SetupCompare';
-import { BackupList, undoMessage } from './SetupSync';
+import { BackupList, undoMessage } from './SetupBackups';
 import type {
   SetupBackup,
   SetupMachine,

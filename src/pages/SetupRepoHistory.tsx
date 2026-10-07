@@ -15,7 +15,7 @@ import { changeKey, nothingChangedOn, repoTimeline, type MachineChange } from '.
 import { listSetupBackups, scanned, undoSetupSync } from '../services/setupSync';
 import type { RepoChange, RepoCommit, SetupBackup, SetupMachine, SetupRepo } from '../native/types';
 import { Diffs, type Loaded } from './SetupRepoChanges';
-import { backupCounts, CHANGE_KIND, countText, outcomeText, undoMessage } from './SetupSync';
+import { backupCounts, CHANGE_KIND, countText, outcomeText, undoMessage } from './SetupBackups';
 
 /** How many commits History lists. */
 const LOG_LIMIT = 100;

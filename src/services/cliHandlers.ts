@@ -12,11 +12,6 @@ import { fileName, providerForFile, quotaKey, type AuthFile } from './quotaServi
 import { getQuotaCacheSnapshot } from './quotaCache';
 import { getRoutingAuto, setRoutingAuto } from './quotaRouting';
 import { getSetupRepo, scanned, storedSetupRepo, syncChanges, syncPlan } from './setupSync';
-import { bringInLine, linePlans } from './libraryToggle';
-import { libraryRows } from './library';
-import { withRegistry } from './setupMcp';
-import { withCodexPluginRepo, withPluginRepo } from './setupPluginRepo';
-import { extensionsView } from './setupPlugins';
 import { getSyncStanding, heldPaths } from './syncStanding';
 
 /*
@@ -104,6 +99,10 @@ async function machinePlan(machine: string) {
   const { repo, head, machines } = await syncRepo();
   const found = machines.find((candidate) => candidate.machine === machine);
   if (!found) throw new Error(`${machine} hasn't been scanned for Sync yet, or isn't a machine Arbor knows.`);
+  // Loaded when asked: the Library's modules stay out of what the window loads at launch for the command line.
+  const [{ linePlans }, { libraryRows }, { withRegistry }, { withCodexPluginRepo, withPluginRepo }, { extensionsView }] = await Promise.all([
+    import('./libraryToggle'), import('./library'), import('./setupMcp'), import('./setupPluginRepo'), import('./setupPlugins'),
+  ]);
   const standing = await getSyncStanding(repo.path);
   const sources = { repo: standing.repo, registry: standing.mcp, hooks: standing.hooks };
   const view = withCodexPluginRepo(withPluginRepo(withRegistry(extensionsView(machines), standing.mcp), standing.repo.plugins), standing.repo.codexPlugins);
@@ -262,6 +261,7 @@ export const cliHandlers: CliHandlers = {
       const { repo, machines, sources, plan } = await machinePlan(machine);
       if (!plan) return { machine, changed: false, failed: [], needsYou: false, heldHooks: false, backups: [] };
       // The same plan and steps as Overview's Bring in line.
+      const { bringInLine } = await import('./libraryToggle');
       return { machine, items: plan.rows.map((row) => ({ kind: row.kind, name: row.name })), ...(await bringInLine(repo.path, sources, machines, plan)) };
     },
   },
