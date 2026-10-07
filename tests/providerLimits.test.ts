@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { freshQuotas } from '../src/services/accountLimits';
+import { translate } from '../src/i18n';
 import { formatResetCountdown, providerLimits } from '../src/services/providerLimits';
 import { appendSample, pruneSamples, HISTORY_WINDOW_MS } from '../src/services/limitsHistory';
 import { notificationKind, paceStep, staleHoldMs, staleHolds } from '../src/components/LimitsMonitor';
@@ -87,6 +88,11 @@ describe('provider limits', () => {
     expect(formatResetCountdown(5 * 60_000, now)).toBe('5m');
     expect(formatResetCountdown(3 * HOUR + 12 * 60_000, now)).toBe('3h 12m');
     expect(formatResetCountdown(2 * 24 * HOUR + 5 * HOUR, now)).toBe('2d 5h');
+  });
+
+  // money-17: a paused account's "back in …" takes the bare countdown, never "back in in 2d".
+  test('reads a paused account’s return once', () => {
+    expect(translate('reserves.paused.back', { time: formatResetCountdown(2 * 24 * HOUR, 0) })).toBe('back in 2d 0h');
   });
 });
 

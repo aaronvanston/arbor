@@ -21,6 +21,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip'
 import { clearFocusRequest, requestFocus, useFocusRequest } from '../focusRequests';
 import { useI18n } from '../i18n';
 import { formatRelative } from '../lib/format';
+import { formatResetCountdown } from '../services/providerLimits';
 import { cn } from '../lib/utils';
 import { invokeCommand } from '../native/commands';
 import type { OAuthBrowserOption } from '../native/types';
@@ -371,7 +372,8 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
       setResuming(false);
     }
   };
-  const back = paused && paused.resumeAtMs > now ? formatRelative(paused.resumeAtMs, now) : '';
+  // "back in {time}" takes a bare duration ("2d"), not a relative time that already says "in".
+  const back = paused ? formatResetCountdown(paused.resumeAtMs, now) : '';
   return (
     <div data-account-key={signIn.key}>
     <SettingsBlock className="flex items-center gap-3 py-3">
