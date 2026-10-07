@@ -10,7 +10,7 @@ const account = (name: string): AuthFile =>
 
 let originalWindow: PropertyDescriptor | undefined;
 let paths: string[];
-let failListing: boolean;
+let failListing: boolean | 'core';
 
 beforeEach(() => {
   originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -23,6 +23,7 @@ beforeEach(() => {
       // Answered a moment later, as the core would, so the callers below overlap.
       await new Promise((resolve) => setTimeout(resolve, 5));
       if (request.path === '/auth-files') {
+        if (failListing === 'core') throw { kind: 'core', status: 500, reason: 'couldn’t read the auth directory', message: 'Management API error (500): couldn’t read the auth directory' };
         if (failListing) throw 'offline';
         return coreReply({ files: [account('work-load')] });
       }
@@ -68,5 +69,11 @@ describe('loading the accounts once', () => {
     await ensureAccountsLoaded();
     expect(paths.filter((path) => path === '/auth-files')).toHaveLength(2);
     expect(getAccountsSnapshot().files.map((file) => file.name)).toEqual(['work-load.json']);
+  });
+
+  it('says in plain words why a listing failed', async () => {
+    failListing = 'core';
+    await ensureAccountsLoaded();
+    expect(getAccountsSnapshot().error).toBe('The core couldn’t finish the request. Try again in a moment.');
   });
 });

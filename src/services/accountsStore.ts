@@ -1,5 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import { translate } from '../i18n';
 import { managementApi, readBoolean, readString, responseList } from './managementApi';
+import { plainError } from './plainError';
 import { authFileAvailabilityChangesAt, dedupeAuthFiles, isAuthFileGoneFromDisk } from './authFiles';
 import { rememberCredentialEmails } from './emailPrivacy';
 import { idleQuota, loadQuota, providerForFile, quotaKey, type AuthFile } from './quotaService';
@@ -134,7 +136,8 @@ export async function loadAccountFiles({ quiet = false }: { quiet?: boolean } = 
       emit({ quietFailures: state.quietFailures + 1 });
       return [];
     }
-    emit({ loading: false, loaded: true, error: String(error) });
+    // The core's own words ("Management API error (500): …") read as what happened and what to do next.
+    emit({ loading: false, loaded: true, error: plainError(error, translate) });
     return [];
   }
 }

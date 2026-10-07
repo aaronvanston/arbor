@@ -66,8 +66,6 @@ const CORE_CONFIRM: Record<'start_core_process' | 'restart_core_process', { titl
   restart_core_process: { title: 'palette.confirm.restartCore.title', message: 'palette.confirm.restartCore.message', confirm: 'palette.action.restartCore' },
 };
 
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
 /**
  * What the palette can do besides open things. Each action calls the same service the page with its button does;
  * Stop core and Pause ask first, and Restart core waits for idle agents as the Home page's button does. The palette
@@ -146,7 +144,7 @@ export function usePaletteActions({ onNavigate, confirmCore = false }: { onNavig
       'scan-setup': () => {
         // Checks shows the scan running and what it finds; the view Sync was left on might not (Agents has no scan).
         onNavigate(setupChecksView());
-        scanSetup(null, false).catch((error: unknown) => toast({ kind: 'error', title: t('palette.outcome.scanFailed'), description: errorText(error) }));
+        scanSetup(null, false).catch((error: unknown) => toast({ kind: 'error', title: t('palette.outcome.scanFailed'), description: plainError(error, t) }));
       },
       'toggle-sidebar': toggleSidebar,
       'theme-light': () => setTheme('light'),
@@ -212,7 +210,7 @@ export function usePaletteActions({ onNavigate, confirmCore = false }: { onNavig
             await pauseAccount(file);
             toast({ kind: 'success', title: t('palette.outcome.paused', { name }) });
           } catch (error) {
-            toast({ kind: 'error', title: t('palette.outcome.pauseFailed', { name }), description: errorText(error) });
+            toast({ kind: 'error', title: t('palette.outcome.pauseFailed', { name }), description: plainError(error, t) });
           }
         }),
         disabledReason: isOAuthCredentialFile(file) ? undefined : t('palette.unavailable.cantPause'),
@@ -222,7 +220,7 @@ export function usePaletteActions({ onNavigate, confirmCore = false }: { onNavig
           await resumeAccount(key, file);
           toast({ kind: 'success', title: t('palette.outcome.resumed', { name }) });
         } catch (error) {
-          toast({ kind: 'error', title: t('palette.outcome.resumeFailed', { name }), description: errorText(error) });
+          toast({ kind: 'error', title: t('palette.outcome.resumeFailed', { name }), description: plainError(error, t) });
         }
       })),
     };
