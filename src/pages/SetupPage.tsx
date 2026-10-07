@@ -341,11 +341,13 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   const onViewChangeRef = useRef(onViewChange);
   onViewChangeRef.current = onViewChange;
   useEffect(() => {
-    if (params?.tab !== tab) {
-      const saved = savedView();
-      onViewChangeRef.current?.(setupView(saved.tab === tab ? saved : { tab }));
+    // Kept only once the view names it, so the saved one is still there to read until then (an effect can run twice).
+    if (params?.tab === tab) {
+      store(TAB_KEY, tab);
+      return;
     }
-    store(TAB_KEY, tab);
+    const saved = savedView();
+    onViewChangeRef.current?.(setupView(saved.tab === tab ? saved : { tab }));
   }, [params?.tab, tab]);
   // The Library's kind, the one last open when the view doesn't name one, and how it's shown.
   const kind: LibraryKind = isLibraryKind(params?.kind) ? params.kind : savedKind();
