@@ -70,6 +70,7 @@ import { keeperLine, SETUP_REPO_UPDATED_EVENT, useRepoKeeper } from '../services
 import { autoLineWords, useAutoLine } from '../services/setupAutoline';
 import { listen } from '@tauri-apps/api/event';
 import { RepoBrowser } from './SetupRepoBrowser';
+import { HistoryMode } from './SetupRepoHistory';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 type TranslateRich = ReturnType<typeof useI18n>['tRich'];
@@ -348,6 +349,7 @@ export function SetupRepoSection({ machines, history = null }: {
           onRepo={setRepo}
         />
       ) : null}
+      {!path ? <ChangesWithoutRepo machines={machines} machine={history?.machine ?? null} /> : null}
       {repo ? (
         <RepoBrowser
           repo={repo}
@@ -387,6 +389,23 @@ function KeeperLineView() {
         : line.fetchedMs ? t('repoKeeper.kept', { upstream: line.upstream, time: formatAgo(line.fetchedMs) })
           : t('repoKeeper.keptNotYet', { upstream: line.upstream });
   return <p className="text-xs text-muted-foreground" data-repo-keeper={line.kind}>{text}</p>;
+}
+
+/**
+ * Arbor's changes on the machines when no setup repo is chosen: Clean up, the reporter and telemetry still change
+ * files there, and every such change needs a list to be undone from.
+ */
+function ChangesWithoutRepo({ machines, machine }: { machines: SetupMachine[]; machine: string | null }) {
+  const { t } = useI18n();
+  return (
+    <div
+      className="grid h-[min(60vh,640px)] min-h-[360px] grid-cols-[minmax(220px,38%)_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border/70 bg-card"
+      data-slot="repo-changes"
+    >
+      <h3 className="col-start-1 row-start-1 border-e border-b border-border/60 px-3 py-2.5 text-sm font-medium text-foreground">{t('repo.history.noRepoTitle')}</h3>
+      <HistoryMode repo={null} machines={machines} machine={machine} />
+    </div>
+  );
 }
 
 /** Where the repo is, its last commit, and what in it isn't synced. */

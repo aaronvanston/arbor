@@ -178,7 +178,8 @@
  * couldn't open;
  * `?skills=changed` or `?skills=fail` to have a change to skills refused, or its last skill fail to change;
  * `?keep=fail` to have keeping a Claude Code home's sessions refused because its settings changed;
- * Sync › Repo › Arbor’s changes lists cam-mbp's changes, two settings edits to start with (`?changes=none` for none, which says
+ * Sync › Repo › Arbor’s changes lists cam-mbp's changes, two settings edits to start with (on their own under the setup
+ * repo's intro until a repo is chosen; `?changes=none` for none, which says
  * Arbor hasn't changed anything there, or `?changes=fail` for the list failing to load); the reporter, keeping
  * sessions, telemetry and Codex's MCP servers each add one when they change a file;
  * `?archive=off` (no session archive yet: `/Volumes/Backup/…` is empty, `/Users/…` is empty on this Mac's own disk, a path with

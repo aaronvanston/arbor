@@ -26,17 +26,18 @@ type Chosen = { kind: 'commit'; sha: string } | { kind: 'change'; key: string };
 /**
  * History: the repo's commits and the changes Arbor made on the machines, newest first, in one list. A commit shows its
  * diff and what it changed on each machine; a machine's change shows its files and skills. Every machine change can be
- * undone from its backup, which the machine keeps.
+ * undone from its backup, which the machine keeps. With no setup repo there are no commits, but Arbor still changes
+ * files on machines (Clean up, the reporter, telemetry), so the list holds those alone.
  */
 export function HistoryMode({ repo, machines, machine: asked }: {
-  repo: SetupRepo;
+  repo: SetupRepo | null;
   machines: SetupMachine[];
   /** The machine whose changes the list starts on, as a link asked; all of them when null. */
   machine: string | null;
 }) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
-  const [log, setLog] = useState<Loaded<RepoCommit[]>>({ state: 'loading' });
+  const [log, setLog] = useState<Loaded<RepoCommit[]>>(repo ? { state: 'loading' } : { state: 'ready', value: [] });
   const [backups, setBackups] = useState<Record<string, SetupBackup[]>>({});
   const [unread, setUnread] = useState<string[]>([]);
   const [machine, setMachine] = useState<string | null>(asked);
@@ -44,17 +45,22 @@ export function HistoryMode({ repo, machines, machine: asked }: {
   const [changes, setChanges] = useState<Loaded<RepoChange[]>>({ state: 'loading' });
   const [undoing, setUndoing] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: ReactNode } | null>(null);
-  const head = repo.head?.sha ?? null;
+  const repoPath = repo?.path ?? null;
+  const head = repo?.head?.sha ?? null;
   const now = Date.now();
   useEffect(() => { setMachine(asked); }, [asked]);
 
   useEffect(() => {
+    if (!repoPath) {
+      setLog({ state: 'ready', value: [] });
+      return undefined;
+    }
     let current = true;
-    getSetupRepoLog(repo.path, LOG_LIMIT)
+    getSetupRepoLog(repoPath, LOG_LIMIT)
       .then((value) => { if (current) setLog({ state: 'ready', value }); })
       .catch((reason: unknown) => { if (current) setLog({ state: 'error', error: String(reason) }); });
     return () => { current = false; };
-  }, [repo.path, head]);
+  }, [repoPath, head]);
 
   const read = useMemo(() => machines.filter((entry) => scanned(entry) && entry.reachable).map((entry) => entry.machine), [machines]);
   const loadBackups = useCallback(async (names: string[]) => {
@@ -80,14 +86,14 @@ export function HistoryMode({ repo, machines, machine: asked }: {
   const picked = chosen ?? (commits[0] ? { kind: 'commit' as const, sha: commits[0].sha } : null);
   const commitSha = picked?.kind === 'commit' ? picked.sha : null;
   useEffect(() => {
-    if (!commitSha) return undefined;
+    if (!commitSha || !repoPath) return undefined;
     let current = true;
     setChanges({ state: 'loading' });
-    getSetupRepoChanges(repo.path, commitSha)
+    getSetupRepoChanges(repoPath, commitSha)
       .then((value) => { if (current) setChanges({ state: 'ready', value }); })
       .catch((reason: unknown) => { if (current) setChanges({ state: 'error', error: String(reason) }); });
     return () => { current = false; };
-  }, [repo.path, commitSha]);
+  }, [repoPath, commitSha]);
 
   const undo = async (change: MachineChange) => {
     const confirmed = await askConfirmation({
@@ -147,7 +153,7 @@ export function HistoryMode({ repo, machines, machine: asked }: {
         {unread.length ? <p className="px-3 py-1 text-xs text-muted-foreground">{t('repo.history.unread', { machines: unread.join(', ') })}</p> : null}
         {log.state === 'loading' ? <div className="p-3"><ViewerSkeleton /></div> : null}
         {log.state === 'error' ? <p className="px-3 py-3 text-xs text-error-foreground" role="alert">{t('repo.history.failed', { error: log.error })}</p> : null}
-        {log.state === 'ready' && !items.length ? <p className="px-3 py-3 text-xs text-muted-foreground">{t('repo.history.empty')}</p> : null}
+        {log.state === 'ready' && !items.length ? <p className="px-3 py-3 text-xs text-muted-foreground">{t(repo ? 'repo.history.empty' : 'repo.history.noChanges')}</p> : null}
         {machine && nothingChangedOn(backups, machine) ? (
           <p className="px-3 py-1 text-xs text-muted-foreground">{tRich('repo.history.noChangesOn', { machine: <MachinePill name={machine} size="sm" /> })}</p>
         ) : null}
@@ -231,8 +237,8 @@ export function HistoryMode({ repo, machines, machine: asked }: {
                     {changes.state === 'ready' ? ` · ${t(changes.value.length === 1 ? 'repo.history.files.one' : 'repo.history.files.other', { count: changes.value.length })}` : ''}
                   </span>
                 </p>
-              ) : <p className="flex-1 text-sm text-muted-foreground">{t('repo.history.choose')}</p>}
-              <DiffStyleToggle />
+              ) : <p className="flex-1 text-sm text-muted-foreground">{t(repo ? 'repo.history.choose' : 'repo.history.chooseChange')}</p>}
+              {repo ? <DiffStyleToggle /> : null}
             </header>
             {commit ? (() => {
               const applied = items.find((item) => item.kind === 'commit' && item.commit.sha === commit.sha);
