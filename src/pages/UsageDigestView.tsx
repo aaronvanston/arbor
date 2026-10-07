@@ -21,6 +21,7 @@ import {
   formatRatio,
   LIMIT_WARNING_PERCENT,
   loadWeeklyDigest,
+  limitUseText,
   mergedHint,
   mergedValue,
   noMergedText,
@@ -454,7 +455,7 @@ function SessionsSection({ digest, onOpenSession }: { digest: WeeklyDigest; onOp
         const content = (
           <>
             <SessionLabel session={session} machine className="flex-1 text-sm" />
-            {share !== null ? <span className="w-20 shrink-0 text-right text-xs text-muted-foreground tabular-nums">{t('usage.digest.sessions.share', { percent: percentText(share) })}</span> : null}
+            {share !== null ? <span className="min-w-20 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground tabular-nums">{t('usage.digest.sessions.share', { percent: percentText(share) })}</span> : null}
             <span className="w-20 shrink-0 text-right text-sm text-foreground tabular-nums">{money(session.estimatedCost)}</span>
           </>
         );
@@ -504,7 +505,7 @@ function LimitsSection({ limits, machine }: { limits: DigestLimit[]; machine: st
                     aria-label={t('usage.digest.limits.useLabel', { provider: providerLabel[limit.provider] })}
                   />
                   <span className="block truncate text-2xs text-muted-foreground tabular-nums">
-                    {limit.percent === null ? t('usage.digest.limits.notYet') : t('usage.digest.limits.used', { percent: Math.round(limit.percent) })}
+                    {limitUseText(limit, t)}
                   </span>
                 </TooltipTrigger>
                 <TooltipPopup>{t('usage.digest.limits.useHint', { window: limit.window })}</TooltipPopup>

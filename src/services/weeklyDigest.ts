@@ -350,6 +350,16 @@ export const percentText = (share: number) => `${share < 0.1 && share > 0 ? (sha
 /** What requests were worth over what they cost, like "6.5×". */
 export const formatRatio = (ratio: number) => `${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}×`;
 
+/**
+ * How much of its limit a provider's accounts used. Use is per window length, so past 100% they needed more than the
+ * window allows, and it says so rather than reading as more than all of it used.
+ */
+export function limitUseText(limit: Pick<DigestLimit, 'percent'>, t: Translate): string {
+  if (limit.percent === null) return t('usage.digest.limits.notYet');
+  const percent = Math.round(limit.percent);
+  return t(percent > 100 ? 'usage.digest.limits.over' : 'usage.digest.limits.used', { percent });
+}
+
 /** Whether the week's spend is known: some of its requests had a price, or it had none, so it cost nothing. */
 export const spendKnown = (digest: WeeklyDigest) => digest.priced || digest.requests === 0;
 

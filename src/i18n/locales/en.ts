@@ -4373,6 +4373,7 @@ export const en = {
   'usage.digest.limits.measured': '{measured} of {count} accounts measured',
   'usage.digest.limits.spare': '{names} could go',
   'usage.digest.limits.used': '{percent}% used on average',
+  'usage.digest.limits.over': 'Past the limit, on pace for {percent}%',
   'usage.digest.limits.notYet': 'Not enough readings yet',
   'usage.digest.limits.useLabel': '{provider} limit use',
   'usage.digest.limits.useHint': 'How much of the {window} each account used per {window}, from its limit readings, averaged over the accounts.',

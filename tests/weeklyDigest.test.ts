@@ -11,6 +11,7 @@ import {
   digestWeek,
   dueDigestWeek,
   loadWeeklyDigest,
+  limitUseText,
   mergedHint,
   mergedValue,
   noMergedText,
@@ -278,6 +279,15 @@ describe('weekly digest', () => {
     expect(page).toContain('Change 3 acme/arbor#3 · arbor · merged Sun, 20 Sep +120 −30 unpriced');
     expect(page).toContain('Spend unpriced No prices for these models');
     expect(page).toContain('Cache misses 14 requests sent 2M tokens of context again uncached unpriced Failed');
+  });
+});
+
+describe('limit use', () => {
+  test('says when the accounts were on pace past the limit, not more than all of it used', () => {
+    expect(limitUseText({ percent: 42.4 }, t)).toBe('42% used on average');
+    expect(limitUseText({ percent: 100.4 }, t)).toBe('100% used on average');
+    expect(limitUseText({ percent: 119 }, t)).toBe('Past the limit, on pace for 119%');
+    expect(limitUseText({ percent: null }, t)).toBe('Not enough readings yet');
   });
 });
 

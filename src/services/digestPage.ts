@@ -9,6 +9,7 @@ import {
   DIGEST_PULL_REQUESTS,
   formatRatio,
   LIMIT_WARNING_PERCENT,
+  limitUseText,
   mergedHint,
   mergedValue,
   noMergedText,
@@ -73,7 +74,7 @@ h2{margin:0 0 2px;font-size:15px;font-weight:600}
 .detail{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .figure{flex-shrink:0;min-width:84px;text-align:right;font:13px ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
 .figure.wide{min-width:112px}
-.share{flex-shrink:0;min-width:84px;text-align:right;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.share{flex-shrink:0;min-width:84px;white-space:nowrap;text-align:right;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .muted{color:var(--muted)}
 .added{color:var(--good)}.removed{color:var(--bad)}
@@ -207,7 +208,7 @@ export function digestPage(digest: WeeklyDigest, { t, nowMs }: { t: Translate; n
         return row(
           providerLabel[limit.provider],
           [limit.window, accounts, limit.spare.length ? t('usage.digest.limits.spare', { names: limit.spare.join(', ') }) : ''].filter(Boolean).join(' · '),
-          html`<div class="use"><div class="bar${warn ? ' warn' : ''}"><span style="width:${percent.toFixed(1)}%"></span></div><div class="detail">${limit.percent === null ? t('usage.digest.limits.notYet') : t('usage.digest.limits.used', { percent: Math.round(limit.percent) })}</div></div><div class="figure">${limit.ratio === null ? '—' : t('usage.digest.limits.ratio', { ratio: formatRatio(limit.ratio) })}</div>`,
+          html`<div class="use"><div class="bar${warn ? ' warn' : ''}"><span style="width:${percent.toFixed(1)}%"></span></div><div class="detail">${limitUseText(limit, t)}</div></div><div class="figure">${limit.ratio === null ? '—' : t('usage.digest.limits.ratio', { ratio: formatRatio(limit.ratio) })}</div>`,
         );
       })
     : note(t('usage.digest.limits.empty')));
