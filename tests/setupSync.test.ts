@@ -149,24 +149,13 @@ describe('what applying changes', () => {
     ]);
   });
 
-  it('leaves a file edited on the machine unticked unless it’s chosen', () => {
+  it('leaves a file edited on the machine alone', () => {
     const held = new Set(['~/.claude/agents/reviewer.md']);
-    expect(syncChanges(plan, {}, held).map((change) => change.path)).toEqual(['~/.claude/commands/ship.md']);
-    expect(syncChanges(plan, { '~/.claude/agents/reviewer.md': true }, held).map((change) => change.path)).toEqual(['~/.claude/agents/reviewer.md', '~/.claude/commands/ship.md']);
+    expect(syncChanges(plan, held).map((change) => change.path)).toEqual(['~/.claude/commands/ship.md']);
   });
 
-  it('removes a file only the machine has once it’s chosen, and skips a copy left out', () => {
-    expect(syncChanges(plan, { '~/.claude/commands/deploy.md': true, '~/.claude/agents/reviewer.md': false })).toEqual([
-      { path: '~/.claude/commands/deploy.md', remove: true, before: sha('6') },
-      { path: '~/.claude/commands/ship.md', remove: false, before: null },
-    ]);
-  });
-
-  it('never changes a file that matches, a link, or one in a home the machine hasn’t got', () => {
-    const everything = Object.fromEntries(plan.map((file) => [file.path, true]));
-    expect(syncChanges(plan, everything).map((change) => change.path)).toEqual([
-      '~/.claude/agents/reviewer.md', '~/.claude/commands/deploy.md', '~/.claude/commands/ship.md',
-    ]);
+  it('never changes a file that matches, a link, one in a home the machine hasn’t got, or one only the machine has', () => {
+    expect(syncChanges(plan).map((change) => change.path)).toEqual(['~/.claude/agents/reviewer.md', '~/.claude/commands/ship.md']);
   });
 });
 
@@ -243,9 +232,7 @@ describe('skills against the repo', () => {
   });
 
   it('writes skills as it writes files, and never touches a blocked one or a link', () => {
-    const everything = Object.fromEntries(skillPlan.map((file) => [file.path, true]));
-    expect(syncChanges(skillPlan, everything)).toEqual([
-      { path: '~/.agents/skills/find-skills', remove: true, before: sha('6') },
+    expect(syncChanges(skillPlan)).toEqual([
       { path: '~/.agents/skills/frontend-design', remove: false, before: null },
       { path: '~/.agents/skills/release-notes', remove: false, before: sha('9') },
     ]);
@@ -307,9 +294,9 @@ describe('a skill the repo removed from every machine', () => {
       ['~/.agents/skills/pdf', 'removed'],
       ['~/.agents/skills/sketch', 'extra'],
     ]);
-    // Removed by default; what's only the machine's stays unless chosen.
+    // What the repo removed goes; what's only the machine's stays.
     expect(syncChanges(plan)).toEqual([{ path: '~/.agents/skills/pdf', remove: true, before: sha('1') }]);
-    expect(syncChanges(plan, { '~/.agents/skills/pdf': false })).toEqual([]);
+    expect(syncChanges(plan, new Set(['~/.agents/skills/pdf']))).toEqual([]);
     expect(nothingToApply(syncCounts(plan))).toBe(false);
     expect(nothingToApply(syncCounts(syncPlan(removed, machine([home('shared', '~/.agents', [])]))))).toBe(true);
   });

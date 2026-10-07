@@ -11,6 +11,7 @@ import { Progress } from '../components/ui/progress';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
+import { useLibrary } from '../hooks/useLibrary';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
@@ -187,6 +188,8 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
   onCompareCheck: (check: SetupCheck, subject: SetupCheckSubject) => void;
   onNavigate: (view: AppView) => void;
 }) {
+  // Bringing the machine in line from its review runs the same plan as Overview.
+  const libraryLine = useLibrary(machines);
   const { t, tRich } = useI18n();
   const [chosenReference, setChosenReference] = useState<string | null>(() => readStored(REFERENCE_KEY));
   const [openState, setOpenState] = useState<{ target: string | null; ids: StepId[] } | null>(null);
@@ -945,7 +948,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
           repo={repo}
           machine={review === 'repo' ? reviewedMachine : null}
           onClose={() => setReview(null)}
-          onApplied={() => undefined}
+          line={{ rows: libraryLine.rows, sources: libraryLine.sources, machines }}
           onRepo={setRepo}
         />
       ) : null}

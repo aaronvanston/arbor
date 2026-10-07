@@ -15,13 +15,13 @@ import { Spinner } from '../components/ui/spinner';
 import { StatusDot, type StatusTone } from '../components/ui/status-dot';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
+import { applyCodexPlugins, applyMcp, applyPlugins } from '../services/applyEngine';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { formatAgo, formatTokens } from '../lib/format';
 import { cn } from '../lib/utils';
 import { homeKey } from '../services/setupInventory';
 import {
-  applyMcpChanges,
   canTake,
   getMcpRegistry,
   MCP_FILE,
@@ -44,8 +44,6 @@ import {
   type TakePlan,
 } from '../services/setupMcp';
 import {
-  applyCodexPluginChanges,
-  applyPluginChanges,
   forgetPluginLeftovers,
   changeKey,
   checkMcpHealth,
@@ -426,7 +424,7 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
     setCodexBusy(machine);
     setCodexErrors([]);
     try {
-      const results = await applyCodexPluginChanges(machine, changes.map(({ cell, action }) => (action === 'addMarketplace'
+      const results = await applyCodexPlugins(machine, changes.map(({ cell, action }) => (action === 'addMarketplace'
         ? { home: cell.home.path, action, target: row.marketplace, source: row.source ?? undefined }
         : { home: cell.home.path, action, target: row.id })));
       const failed = results.filter((result) => result.outcome !== 'done' && result.outcome !== 'already');
@@ -1621,7 +1619,7 @@ export function ReviewDialog({ open, planned, plannedServers, repo, commit, mach
     setRuns((current) => ({ ...current, [machine]: { state: 'busy' } }));
     let pluginResults: PluginResult[] = [];
     try {
-      if (plugins.length) pluginResults = await applyPluginChanges(machine, pluginChanges(plugins));
+      if (plugins.length) pluginResults = await applyPlugins(machine, pluginChanges(plugins));
     } catch (error) {
       setRuns((current) => ({ ...current, [machine]: { state: 'error', error: String(error) } }));
       return;
@@ -1629,7 +1627,7 @@ export function ReviewDialog({ open, planned, plannedServers, repo, commit, mach
     let serverResults: McpResult[] = [];
     let serverError: string | null = null;
     try {
-      if (servers.length && repo && shown.commit) serverResults = await applyMcpChanges(repo, shown.commit, machine, mcpChanges(servers));
+      if (servers.length && repo && shown.commit) serverResults = await applyMcp(repo, shown.commit, machine, mcpChanges(servers));
     } catch (error) {
       serverError = String(error);
     }

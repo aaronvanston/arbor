@@ -42,6 +42,15 @@ checks and the machine comparison) says which machines are in step with the repo
 or all in line, confirmed first, with `bringInLine`: each Library row behind there, files and hook scripts first, then
 plugins and MCP servers, the machine's hooks, and skills. A project behind opens Projects, which has its own fixes.
 
+There's one way to change a machine to match the repo: `services/applyEngine.ts`. Every path calls it: Overview's and
+the Repo review's Bring in line (`bringInLine`, files and hook scripts, then plugins, MCP servers, hooks and skills),
+the Library's switches, the Per home grids' buttons, skill runs, decisions on an edit made on a machine, and `arbor sync
+apply`. Each step goes through the kind's guarded command, which checks, backs up and lands on History. Rust rescans
+the machine and records its bases, and the standing is read again. Runs by themselves (`setup_autoline.rs`) call the
+same guarded commands in the same order from Rust. `tests/applyEngine.test.ts` keeps those commands out of every other
+file. The Repo review only shows what's different, with diffs on demand and each file's own decisions; it applies
+nothing of its own.
+
 Whether a machine is in step is decided in one place, `setup_standing.rs`, from the machines' last scans and the repo's
 HEAD, over every kind and the projects. Overview, the Repo strip, the Library's behind, the sidebar badge (machines
 behind or with problems, each once) and `arbor sync` read it through `services/syncStanding.ts`, one read shared by the

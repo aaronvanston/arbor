@@ -158,7 +158,7 @@
  * behind with synced files changed, a push the remote turns down, a branch that follows no remote, or keeping it in step
  * switched off; Sync › Repo says each, and a problem raises an alert;
  * `?base=edited` for ci-01's first item behind edited on the machine since it last matched the repo (Overview,
- * the Library, its page's three choices, the Repo review leaving it unticked), `?base=both` for cedar-02's first item
+ * the Library, its page's three choices, the Repo review saying Bring in line leaves it), `?base=both` for cedar-02's first item
  * edited there while the repo moved on too, and `?base=none` for every item with no base yet, so Sync can't tell who
  * moved;
  * `?repo=fail` or `?repo=dirty` for a setup repo Arbor can't read (Repo and Overview say so, and Overview counts nothing

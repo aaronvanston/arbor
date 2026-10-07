@@ -10,12 +10,12 @@ import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioIt
 import { StatusDot, type StatusTone } from '../components/ui/status-dot';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { toast } from '../components/ui/toast';
+import { applyHookSet } from '../services/applyEngine';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import type { HookCell, HookRegistry, HookView, HookWanted, SetupMachine } from '../native/types';
 import {
-  applyHooks,
   getHookRegistry,
   HOOK_AGENT_KINDS,
   hookAgents,
@@ -168,7 +168,7 @@ export function SetupHooks({ machines }: { machines: SetupMachine[] }) {
     setApplying(machine);
     setApplyErrors((current) => ({ ...current, [machine]: '' }));
     try {
-      const edits = await applyHooks(repo, registry.commit, machine);
+      const edits = await applyHookSet(repo, registry.commit, machine);
       const failed = edits.filter((edit) => edit.error);
       if (failed.length) {
         setApplyErrors((current) => ({ ...current, [machine]: failed.map((edit) => `${edit.path}: ${edit.error}`).join('; ') }));

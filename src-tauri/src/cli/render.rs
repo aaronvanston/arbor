@@ -459,10 +459,18 @@ pub(crate) fn sync_plan(answer: &Value) -> String {
             vec![field(file, "state"), field(file, "kind"), field(file, "path"), applies.into()]
         })
         .collect();
-    if rows.is_empty() {
+    let planned: Vec<String> = items(answer, "items").iter().map(|item| format!("{} {}", field(item, "kind"), field(item, "name"))).collect();
+    if rows.is_empty() && planned.is_empty() {
         return format!("{} is in step with the setup repo.", field(answer, "machine"));
     }
-    table(&["STATE", "KIND", "PATH", "APPLY CHANGES"], &rows)
+    let mut out = Vec::new();
+    if !planned.is_empty() {
+        out.push(format!("Bringing {} in line changes: {}", field(answer, "machine"), planned.join(", ")));
+    }
+    if !rows.is_empty() {
+        out.push(table(&["STATE", "KIND", "PATH", "APPLY CHANGES"], &rows));
+    }
+    out.join("\n")
 }
 
 /// Everything there is to call, from `hello`.

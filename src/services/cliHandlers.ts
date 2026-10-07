@@ -11,7 +11,12 @@ import { fetchSetupInventory } from './setupInventory';
 import { fileName, providerForFile, quotaKey, type AuthFile } from './quotaService';
 import { getQuotaCacheSnapshot } from './quotaCache';
 import { getRoutingAuto, setRoutingAuto } from './quotaRouting';
-import { applySetupSync, getSetupRepo, scanned, storedSetupRepo, syncChanges, syncPlan } from './setupSync';
+import { getSetupRepo, scanned, storedSetupRepo, syncChanges, syncPlan } from './setupSync';
+import { bringInLine, linePlans } from './libraryToggle';
+import { libraryRows } from './library';
+import { withRegistry } from './setupMcp';
+import { withCodexPluginRepo, withPluginRepo } from './setupPluginRepo';
+import { extensionsView } from './setupPlugins';
 import { getSyncStanding, heldPaths } from './syncStanding';
 
 /*
@@ -90,13 +95,22 @@ async function syncRepo() {
   return { repo, head: repo.head, machines: machines.filter(scanned) };
 }
 
+/**
+ * What bringing `machine` in line would do, as Overview's Bring in line plans it (`bringInLine`): the Library's rows
+ * behind there, every kind, and the files and skills that differ, for listing. An edit made on the machine is never
+ * in the plan; it's decided in the window.
+ */
 async function machinePlan(machine: string) {
   const { repo, head, machines } = await syncRepo();
   const found = machines.find((candidate) => candidate.machine === machine);
   if (!found) throw new Error(`${machine} hasn't been scanned for Sync yet, or isn't a machine Arbor knows.`);
-  // What was edited on the machine is never applied from here; it's decided in the window.
-  const held = heldPaths(await getSyncStanding(repo.path), machine);
-  return { repo, head, files: syncPlan(repo, found), held };
+  const standing = await getSyncStanding(repo.path);
+  const sources = { repo: standing.repo, registry: standing.mcp, hooks: standing.hooks };
+  const view = withCodexPluginRepo(withPluginRepo(withRegistry(extensionsView(machines), standing.mcp), standing.repo.plugins), standing.repo.codexPlugins);
+  const registryFound = standing.mcp?.found === true && standing.mcp.problems.length === 0;
+  const rows = libraryRows({ machines, view, repo: standing.repo, registryFound, hooks: standing.hooks, standing });
+  const plan = linePlans(rows, machines).find((entry) => entry.machine === machine) ?? null;
+  return { repo, head, machines, sources, plan, files: syncPlan(repo, found), held: heldPaths(standing, machine) };
 }
 
 export const cliHandlers: CliHandlers = {
@@ -225,15 +239,16 @@ export const cliHandlers: CliHandlers = {
   },
   'sync.plan': {
     access: 'read',
-    summary: 'What Sync would change on a machine: each file or skill that differs from the setup repo',
+    summary: 'What bringing a machine in line would change, as Overview plans it: each item behind there, and each file or skill that differs',
     args: [arg('machine', 'string')],
     run: async (args) => {
       const machine = textArg(args, 'machine');
-      const { head, files, held } = await machinePlan(machine);
-      const changes = new Set(syncChanges(files, {}, held).map((change) => change.path));
+      const { head, files, held, plan } = await machinePlan(machine);
+      const changes = new Set(syncChanges(files, held).map((change) => change.path));
       return {
         machine,
         commit: head.sha,
+        items: plan?.rows.map((row) => ({ kind: row.kind, name: row.name })) ?? [],
         files: files.filter((file) => file.state !== 'same').map((file) => ({ path: file.path, kind: file.kind, state: file.state, changes: changes.has(file.path), editedHere: held.has(file.path) })),
       };
     },
@@ -244,10 +259,10 @@ export const cliHandlers: CliHandlers = {
     args: [arg('machine', 'string')],
     run: async (args) => {
       const machine = textArg(args, 'machine');
-      const { repo, head, files, held } = await machinePlan(machine);
-      const changes = syncChanges(files, {}, held);
-      if (!changes.length) return { machine, done: [], failed: [], backup: null };
-      return { machine, ...(await applySetupSync(repo.path, head.sha, machine, changes)) };
+      const { repo, machines, sources, plan } = await machinePlan(machine);
+      if (!plan) return { machine, changed: false, failed: [], needsYou: false, heldHooks: false, backups: [] };
+      // The same plan and steps as Overview's Bring in line.
+      return { machine, items: plan.rows.map((row) => ({ kind: row.kind, name: row.name })), ...(await bringInLine(repo.path, sources, machines, plan)) };
     },
   },
   'core.install': {

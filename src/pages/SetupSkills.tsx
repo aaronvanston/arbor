@@ -15,6 +15,7 @@ import { TableCard, TableEmpty, TableHeadLabel } from '../components/ui/data-tab
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { toast } from '../components/ui/toast';
+import { runSkills } from '../services/applyEngine';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
@@ -57,7 +58,6 @@ import {
   planSize,
   planSkills,
   putsOnly,
-  runSkillPlan,
   runSucceeded,
   startActivity,
   takeableSkills,
@@ -1287,7 +1287,7 @@ function SkillPlanDialog({ request, machines, repo, homeLabel, onClose, onDone }
     startActivity(keys);
     let touched: string[] = [];
     try {
-      const result = await runSkillPlan(plan, repo, setProgress);
+      const result = await runSkills(plan, repo, setProgress);
       touched = result.touched;
       if (runSucceeded(result)) onDone(result);
       else setDone(result);

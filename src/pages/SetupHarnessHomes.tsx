@@ -31,7 +31,7 @@ import {
 } from '../services/harnessHomes';
 import { formatBytes } from '../services/machineHealth';
 import { applySkillChanges } from '../services/setupSkills';
-import { applyMcpChanges } from '../services/setupMcp';
+import { applyMcp } from '../services/applyEngine';
 import { undoSetupSync } from '../services/setupSync';
 import type { McpAction, McpRegistry, RegistryState, SetupMachine, SkillAction, SyncOutcome } from '../native/types';
 import { concreteHomePath, LazyCleanupRowMenu } from './cleanupMenuLazy';
@@ -352,7 +352,7 @@ export function HarnessItemsSection({ machines, kind, registry = null, repo = nu
     setNotice(null);
     setBusy(`${machine}\t${place.home}\t${name}`);
     try {
-      const [result] = await applyMcpChanges(repo, commit, machine, [{ home: place.home, name, action }]);
+      const [result] = await applyMcp(repo, commit, machine, [{ home: place.home, name, action }]);
       if (result?.outcome !== 'done') setNotice(result?.message || t('setup.harnessMcp.failed', { name }));
       else {
         const backup = result.backup;

@@ -208,7 +208,7 @@ Usage: arbor [command] [flags]
   sync                         How far each machine is from the setup repo
   sync repo                    Whether the setup repo is kept in step with its remote
   sync auto [pause|resume <m>] Machines brought in line by themselves, and pausing one
-  sync <machine>               What Sync would change there
+  sync <machine>               What bringing it in line would change
   sync apply <machine>         Bring it in line (backed up first)
   core [status|start|stop|restart|install [version]]
   archive                      The session archive

@@ -8,7 +8,6 @@ import { SettingsSection } from '../components/layout/settings';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { errorWords, plainError } from '../services/plainError';
-import { Checkbox } from '../components/ui/checkbox';
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from '../components/ui/menu';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
@@ -16,6 +15,9 @@ import { Spinner } from '../components/ui/spinner';
 import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { useI18n } from '../i18n';
+import { useLibrary, type LibrarySources } from '../hooks/useLibrary';
+import { bringInLine, linePlans } from '../services/libraryToggle';
+import type { LibraryRow } from '../services/library';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { formatAgo, formatDateTime } from '../lib/format';
@@ -28,12 +30,9 @@ import {
   setSetupSkillMachine,
   skillName,
   skillWanted,
-  applySetupSync,
   changeable,
-  chosen,
   getSetupRepo,
   isChecksum,
-  nothingToApply,
   listSetupBackups,
   pullSetupRepo,
   pushSetupRepo,
@@ -43,14 +42,11 @@ import {
   startSetupRepo,
   storedSetupRepo,
   storeSetupRepo,
-  syncChanges,
-  syncCounts,
   syncPlan,
   takeSetupFile,
   takeSetupSkills,
   tally,
   undoSetupSync,
-  type SyncChoices,
   type SyncFile,
   type SyncState,
 } from '../services/setupSync';
@@ -102,29 +98,17 @@ export function outcomeText(outcome: SyncOutcome, machine: string, t: Translate,
   return { ok: true, text: tRich('setup.sync.outcome.done', { things: thingsText(outcome.done, t), machine: pill }) };
 }
 
-/** What a machine's review would change there, in a few words. */
-function reviewText(plan: Plan, t: Translate): string {
-  const counts = syncCounts(plan.files);
-  return [
-    counts.update ? t('setup.repo.machine.update', { count: counts.update }) : null,
-    counts.add ? t('setup.repo.machine.add', { count: counts.add }) : null,
-    counts.removed ? t('setup.repo.machine.removed', { count: counts.removed }) : null,
-  ].filter(Boolean).join(' · ');
-}
-
-type Bulk = { running: boolean; results: { machine: string; ok: boolean; text: ReactNode }[] };
-
 /**
- * The setup repo: a git repo on this Mac whose CLAUDE.md, AGENTS.md, rules, subagents, commands and skills
- * each machine is brought in step with, one machine first, after its changes have been reviewed.
+ * The setup repo: a git repo on this Mac whose CLAUDE.md, AGENTS.md, rules, subagents, commands and skills each
+ * machine is brought in step with. Each machine's strip opens what's different there; bringing it in line is the same
+ * as from Overview (`bringInLine`), any machine, in any order.
  */
 export function SetupRepoSection({ machines, history = null }: {
   machines: SetupMachine[];
   /** Opens the browser on History, narrowed to a machine's changes when one is named. */
   history?: { machine: string | null } | null;
 }) {
-  const { t, tRich } = useI18n();
-  const { standing: standingNow } = useSyncStanding();
+  const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
   const [path, setPath] = useState<string | null>(storedSetupRepo);
   const [repo, setRepo] = useState<SetupRepo | null>(null);
@@ -135,9 +119,8 @@ export function SetupRepoSection({ machines, history = null }: {
   const [busy, setBusy] = useState<'load' | 'start' | 'pull' | 'push' | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviewFocus, setReviewFocus] = useState<string | null>(null);
-  /** The first machine brought in step with a commit this time, which lets the rest follow. */
-  const [first, setFirst] = useState<{ machine: string; commit: string } | null>(null);
-  const [bulk, setBulk] = useState<Bulk | null>(null);
+  // What Bring in line works from: the Library's rows and what they're read from, as Overview has them.
+  const { sources, rows } = useLibrary(machines);
 
   const load = useCallback(async (folder: string, quiet = false) => {
     if (!quiet) setBusy('load');
@@ -173,9 +156,6 @@ export function SetupRepoSection({ machines, history = null }: {
     () => (repo?.head ? machines.filter(scanned).map((machine) => ({ machine, files: syncPlan(repo, machine) })) : []),
     [repo, machines],
   );
-  const behind = repo?.head && first?.commit === repo.head.sha
-    ? plans.filter((plan) => plan.machine.machine !== first.machine && !nothingToApply(syncCounts(plan.files)))
-    : [];
 
   const adoptFolder = (folder: string, found: SetupRepo | null = null) => {
     setPath(folder);
@@ -183,8 +163,6 @@ export function SetupRepoSection({ machines, history = null }: {
     setRepo(found);
     setError(null);
     setProblem(null);
-    setFirst(null);
-    setBulk(null);
     // The same folder again doesn't change the path, so the effect that reads it won't run: read it here.
     if (!found && folder === path) void load(folder);
   };
@@ -231,38 +209,6 @@ export function SetupRepoSection({ machines, history = null }: {
       setBusy(null);
     }
   };
-  const applied = (machine: string, outcome: SyncOutcome) => {
-    if (repo?.head && outcome.backup && !outcome.failed.length) setFirst((current) => current?.commit === repo.head?.sha ? current : { machine, commit: repo.head!.sha });
-  };
-  const bringRest = async () => {
-    if (!repo?.head || !behind.length) return;
-    const confirmed = await askConfirmation({
-      title: t(behind.length === 1 ? 'setup.repo.rest.confirm.one' : 'setup.repo.rest.confirm.other', { count: behind.length }),
-      message: t('setup.repo.rest.message', { commit: short(repo.head.sha) }),
-      details: behind.map((plan) => ({ label: <MachinePill name={plan.machine.machine} size="sm" />, value: reviewText(plan, t) })),
-      confirmText: t('setup.repo.rest.confirm.button'),
-    });
-    if (!confirmed) return;
-    const results: Bulk['results'] = [];
-    setBulk({ running: true, results });
-    for (const plan of behind) {
-      try {
-        // An edit made on a machine is never overwritten by bringing the rest along.
-        const outcome = await applySetupSync(repo.path, repo.head.sha, plan.machine.machine, syncChanges(plan.files, {}, heldPaths(standingNow, plan.machine.machine)));
-        const result = outcomeText(outcome, plan.machine.machine, t, tRich);
-        results.push({
-          machine: plan.machine.machine,
-          ok: result.ok,
-          text: result.ok ? t('setup.repo.rest.done', { things: thingsText(outcome.done, t) }) : result.text,
-        });
-      } catch (applyError) {
-        results.push({ machine: plan.machine.machine, ok: false, text: t('setup.sync.outcome.error', { error: String(applyError) }) });
-      }
-      setBulk({ running: true, results: [...results] });
-    }
-    setBulk({ running: false, results });
-  };
-
   const reviewed = plans.find((plan) => plan.machine.machine === reviewing)?.machine ?? null;
 
   return (
@@ -315,27 +261,6 @@ export function SetupRepoSection({ machines, history = null }: {
             {problem ? <p className="px-4 py-2.5 text-xs text-error-foreground" role="alert">{problem}</p> : null}
             {repo?.head && plans.length ? <MachineStrip plans={plans} onReview={(machine) => { setReviewFocus(null); setReviewing(machine); }} /> : null}
             {repo?.head && !plans.length ? <p className="px-4 py-3 text-xs text-muted-foreground">{t('setup.repo.noMachines')}</p> : null}
-            {behind.length && !bulk?.running ? (
-              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-                  {tRich(behind.length === 1 ? 'setup.repo.rest.one' : 'setup.repo.rest.other', { machine: <MachinePill name={first?.machine} size="sm" />, count: behind.length })}
-                </p>
-                <Button size="sm" onClick={() => void bringRest()}>
-                  {t(behind.length === 1 ? 'setup.repo.rest.button.one' : 'setup.repo.rest.button.other', { count: behind.length })}
-                </Button>
-              </div>
-            ) : null}
-            {bulk?.results.length || bulk?.running ? (
-              <div className="flex flex-col gap-1 px-4 py-3 text-sm" role="status">
-                {bulk.results.map((result) => (
-                  <p key={result.machine} className={cn('flex min-w-0 items-center gap-2', result.ok ? 'text-muted-foreground' : 'text-error-foreground')}>
-                    <MachinePill name={result.machine} className="shrink-0" />
-                    <span className="min-w-0">{result.text}</span>
-                  </p>
-                ))}
-                {bulk.running ? <p className="flex items-center gap-2 text-muted-foreground"><Spinner className="size-3.5" />{t('setup.repo.rest.running')}</p> : null}
-              </div>
-            ) : null}
           </>
         )}
       </SettingsSection>
@@ -345,7 +270,7 @@ export function SetupRepoSection({ machines, history = null }: {
           machine={reviewed}
           focus={reviewFocus}
           onClose={() => setReviewing(null)}
-          onApplied={applied}
+          line={{ rows, sources, machines }}
           onRepo={setRepo}
         />
       ) : null}
@@ -521,18 +446,22 @@ const ACTION: Record<'update' | 'add' | 'extra' | 'removed', [on: MessageKey, of
   removed: ['setup.sync.action.remove', 'setup.sync.action.keep'],
 };
 
-/** A machine's files against the repo's, what bringing it in step would change, and the changes made before. */
-export function SyncReviewDialog({ repo, machine, focus = null, onClose, onApplied, onRepo }: {
+/**
+ * What's different on a machine against the repo's files and skills, each with its changes on demand and its own
+ * decisions (take the machine's into the repo, keep it as the machine's own), the changes Arbor made there before, and
+ * Bring it in line, the same plan Overview runs for every kind.
+ */
+export function SyncReviewDialog({ repo, machine, focus = null, onClose, line, onRepo }: {
   repo: SetupRepo;
   machine: SetupMachine | null;
   /** A file to open the review on, as the repo browser's machine buttons ask for one. */
   focus?: string | null;
   onClose: () => void;
-  onApplied: (machine: string, outcome: SyncOutcome) => void;
+  /** What Bring in line works from. */
+  line: { rows: LibraryRow[]; sources: LibrarySources; machines: SetupMachine[] };
   onRepo: (repo: SetupRepo) => void;
 }) {
   const { t, tRich } = useI18n();
-  const [choices, setChoices] = useState<SyncChoices>({});
   const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   // Asked in the footer rather than over the dialog, which would take a click on it as one outside.
@@ -553,7 +482,6 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
   }, []);
 
   useEffect(() => {
-    setChoices({});
     setShown(new Set(focus ? [focus] : []));
     setNotice(null);
     setPending(null);
@@ -563,10 +491,10 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
   }, [name, focus, loadBackups]);
 
   const files = useMemo(() => (machine ? syncPlan(repo, machine) : []), [repo, machine]);
-  // What was edited on the machine stays unticked unless someone ticks it.
+  // What was edited on the machine is never brought in line; its own row has the decisions.
   const { standing } = useSyncStanding();
   const held = useMemo(() => heldPaths(standing, name ?? ''), [standing, name]);
-  const changes = syncChanges(files, choices, held);
+  const plan = useMemo(() => (name ? linePlans(line.rows, line.machines).find((entry) => entry.machine === name) ?? null : null), [line.rows, line.machines, name]);
   // Until the machine has been read again after a change, what it has isn't known.
   const reading = machine?.scanning === true;
   const same = files.filter((file) => file.state === 'same').map((file) => file.path);
@@ -579,16 +507,17 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
     return next;
   });
 
-  const apply = async () => {
+  const bring = async () => {
     setPending(null);
-    if (!machine || !head || !changes.length) return;
+    if (!machine || !plan) return;
     setBusy('apply');
     setNotice(null);
     try {
-      const outcome = await applySetupSync(repo.path, head.sha, machine.machine, changes);
-      setNotice(outcomeText(outcome, machine.machine, t, tRich));
-      setChoices({});
-      onApplied(machine.machine, outcome);
+      const done = await bringInLine(repo.path, line.sources, line.machines, plan);
+      const failures = [...done.failed.map((entry) => entry.message), ...(done.needsYou ? [t('overview.bring.needsYou')] : []), ...(done.heldHooks ? [t('overview.bring.heldHooks')] : [])];
+      setNotice(failures.length
+        ? { ok: false, text: failures.join(' ') }
+        : { ok: true, text: tRich('setup.sync.brought', { machine: pill }) });
       void loadBackups(machine.machine);
     } catch (error) {
       setNotice({ ok: false, text: t('setup.sync.outcome.error', { error: String(error) }) });
@@ -606,11 +535,6 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
       onRepo(await (file.kind === 'skill'
         ? setSetupSkillMachine(repo.path, skillName(file.path), machine.machine, wanted)
         : setSetupFileMachine(repo.path, file.path, machine.machine, wanted)));
-      setChoices((current) => {
-        const next = { ...current };
-        delete next[file.path];
-        return next;
-      });
     } catch (error) {
       setNotice({ ok: false, text: String(error) });
     } finally {
@@ -710,12 +634,10 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
                           repo={repo}
                           machine={machine.machine}
                           file={file}
-                          on={chosen(file, choices, held)}
                           edited={held.has(file.path)}
                           open={shown.has(file.path)}
                           busy={busy !== null || pending !== null}
                           taking={busy === file.path}
-                          onChoose={(on) => setChoices((current) => ({ ...current, [file.path]: on }))}
                           onToggle={() => toggle(file.path)}
                           onTake={() => void take(file)}
                           wanted={file.kind === 'skill' && file.skill
@@ -747,13 +669,10 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
               {pending?.kind === 'apply' ? (
                 <>
                   <p className="me-auto max-w-xl text-sm text-foreground" role="status">
-                    {tRich(changes.length === 1 ? 'setup.sync.confirm.one' : 'setup.sync.confirm.other', {
-                      things: thingsText(changes.map((change) => change.path), t),
-                      machine: pill,
-                    })}
+                    {tRich('setup.sync.bring.confirm', { machine: pill, names: plan?.rows.map((row) => row.name).join(', ') ?? '' })}
                   </p>
                   <Button variant="outline" onClick={() => setPending(null)}>{t('setup.sync.back')}</Button>
-                  <Button variant={changes.some((change) => change.remove) ? 'destructive' : 'default'} onClick={() => void apply()}>
+                  <Button onClick={() => void bring()}>
                     {/* One run of text, so the button's gap doesn't pull the words and the pill apart. */}
                     <span>{tRich('setup.sync.confirm.apply', { machine: pill })}</span>
                   </Button>
@@ -770,9 +689,9 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, onAppli
                     <p className={cn('me-auto max-w-xl text-sm', notice.ok ? 'text-muted-foreground' : 'text-error-foreground')} role="status">{notice.text}</p>
                   ) : null}
                   <Button variant="outline" onClick={onClose}>{t('common.close')}</Button>
-                  <Button disabled={!changes.length || busy !== null || reading} onClick={() => setPending({ kind: 'apply' })}>
+                  <Button disabled={!plan || busy !== null || reading} disabledReason={plan ? undefined : t('setup.sync.bring.nothing')} onClick={() => setPending({ kind: 'apply' })}>
                     {busy === 'apply' ? <Spinner /> : null}
-                    {changes.length ? t('setup.sync.apply', { things: thingsText(changes.map((change) => change.path), t) }) : t('setup.sync.apply.none')}
+                    <span>{tRich('setup.sync.bring.button', { machine: <MachinePill name={machine.machine} size="sm" /> })}</span>
                   </Button>
                 </>
               )}
@@ -822,23 +741,23 @@ function SkillWantedMenu({ path, machine, wanted, busy, onWanted }: {
   );
 }
 
-function SyncFileRow({ repo, machine, file, on, open: isOpen, busy, taking, onChoose, onToggle, onTake, wanted, onWanted, edited = false }: {
+function SyncFileRow({ repo, machine, file, open: isOpen, busy, taking, onToggle, onTake, wanted, onWanted, edited = false }: {
   repo: SetupRepo;
   machine: string;
   file: SyncFile;
-  on: boolean;
   open: boolean;
   busy: boolean;
   taking: boolean;
-  onChoose: (on: boolean) => void;
   onToggle: () => void;
   onTake: () => void;
   /** A repo skill's own value on this machine, null while it follows every machine's; undefined for anything else. */
   wanted?: SkillWanted | null;
   onWanted?: (wanted: SkillWanted | null) => void;
-  /** Edited on the machine since it last matched the repo, so it's left unticked. */
+  /** Edited on the machine since it last matched the repo, so Bring in line leaves it alone. */
   edited?: boolean;
 }) {
+  // What Bring in line does with it: the repo's copy, unless it was edited there; what only the machine has stays.
+  const on = !edited && (file.state === 'update' || file.state === 'add' || file.state === 'removed');
   const { t, tRich } = useI18n();
   const skill = file.kind === 'skill';
   const canChange = changeable(file);
@@ -861,9 +780,6 @@ function SyncFileRow({ repo, machine, file, on, open: isOpen, busy, taking, onCh
   return (
     <Collapsible className="flex flex-col" open={isOpen} onOpenChange={onToggle}>
       <div className="flex min-w-0 items-center gap-3 px-3 py-2">
-        {canChange ? (
-          <Checkbox checked={on} disabled={busy} onCheckedChange={(checked) => onChoose(checked === true)} aria-label={t('setup.sync.include', { path: file.path })} />
-        ) : null}
         {readable ? (
           <CollapsibleTrigger
             className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"

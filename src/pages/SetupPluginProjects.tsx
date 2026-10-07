@@ -3,7 +3,8 @@ import { useI18n } from '../i18n';
 import type { ProjectCheckout } from '../services/projectCheckouts';
 import { setSetupPluginProject } from '../services/setupPluginRepo';
 import { homePlugin, pluginChanges, projectChanges } from '../services/setupPluginProjects';
-import { applyPluginChanges, type ExtensionsView } from '../services/setupPlugins';
+import { type ExtensionsView } from '../services/setupPlugins';
+import { applyPlugins } from '../services/applyEngine';
 import type { RepoPlugin } from '../native/types';
 import { ProjectCheckoutsCard, type ProjectRow } from './ProjectCheckoutsCard';
 
@@ -36,7 +37,7 @@ export function ProjectPluginsCard({ repo, plugins, view, onPlugins }: {
       changesFor={changesFor}
       save={async (id, project, machine, value) => onPlugins((await setSetupPluginProject(repo, id, project, machine, value)).plugins)}
       apply={async (machine, changes) => {
-        const results = await applyPluginChanges(machine, pluginChanges(changes));
+        const results = await applyPlugins(machine, pluginChanges(changes));
         const done = results.filter((result) => result.outcome === 'done' || result.outcome === 'already').length;
         return { done, failed: results.length - done };
       }}
