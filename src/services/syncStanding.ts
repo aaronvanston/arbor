@@ -4,6 +4,7 @@ import { invokeCommand } from '../native/commands';
 import type { KindCounts, MachineStanding, SyncStanding } from '../native/types';
 import type { MessageKey } from '../i18n/resources';
 import { SETUP_INVENTORY_UPDATED_EVENT } from './setupInventory';
+import { replaceEqualDeep } from './stableValue';
 import { storedSetupRepo, subscribeSetupRepo } from './setupSync';
 
 /**
@@ -12,14 +13,12 @@ import { storedSetupRepo, subscribeSetupRepo } from './setupSync';
  * sync`. Nothing here decides it again; these are only ways to read and show it.
  *
  * One read is shared by every page and the sidebar: it follows the setup repo setting, and reads again when a scan of
- * machines or projects lands (a burst of them once), or when something here asks after changing the repo.
+ * machines or projects lands (a burst of them in two reads at most), or when something here asks after changing the repo.
  */
 
 export const getSyncStanding = (repo: string) => invokeCommand('get_sync_standing', { repo });
 
 const SETUP_PROJECTS_UPDATED_EVENT = 'setup-projects-updated';
-/** Scans land in bursts; one read after the last of them. */
-const SETTLE_MS = 400;
 
 export type StandingSnapshot = {
   /** The setup repo's folder, or null when none is chosen. */
@@ -33,43 +32,55 @@ export type StandingSnapshot = {
 
 let snapshot: StandingSnapshot = { repoPath: storedSetupRepo(), standing: null, error: null, loaded: storedSetupRepo() === null };
 const listeners = new Set<() => void>();
-let reading = 0;
-let timer: number | null = null;
 let stopEvents: (() => void) | null = null;
 
+/** Takes a new snapshot, keeping the old objects where nothing changed, and tells no one when nothing did. */
 const tell = (next: StandingSnapshot) => {
-  snapshot = next;
+  const kept = replaceEqualDeep(snapshot, next);
+  if (kept === snapshot) return;
+  snapshot = kept;
   listeners.forEach((listener) => listener());
 };
 
+let inFlight = false;
+let again = false;
+
 async function read() {
   const repoPath = storedSetupRepo();
-  const ticket = ++reading;
   if (!repoPath) {
     tell({ repoPath: null, standing: null, error: null, loaded: true });
     return;
   }
   if (repoPath !== snapshot.repoPath) tell({ repoPath, standing: null, error: null, loaded: false });
   try {
-    const standing = await getSyncStanding(repoPath);
-    if (ticket === reading) tell({ repoPath, standing, error: null, loaded: true });
+    tell({ repoPath, standing: await getSyncStanding(repoPath), error: null, loaded: true });
   } catch (error) {
-    if (ticket === reading) tell({ repoPath, standing: null, error: String(error), loaded: true });
+    tell({ repoPath, standing: null, error: String(error), loaded: true });
   }
 }
 
-/** Reads the standing again shortly, folding a burst of asks into one read. */
-export function reloadSyncStanding(delay = 0) {
-  if (timer !== null) window.clearTimeout(timer);
-  timer = window.setTimeout(() => {
-    timer = null;
-    void read();
-  }, delay);
+/**
+ * Reads the standing again. Scans land in bursts: an ask while a read is under way waits for it and makes one more
+ * read after, so a burst costs two reads at most and no timers.
+ */
+export function reloadSyncStanding() {
+  if (inFlight) {
+    again = true;
+    return;
+  }
+  inFlight = true;
+  void read().finally(() => {
+    inFlight = false;
+    if (again) {
+      again = false;
+      reloadSyncStanding();
+    }
+  });
 }
 
 function start() {
   let disposed = false;
-  const unlisten = [SETUP_INVENTORY_UPDATED_EVENT, SETUP_PROJECTS_UPDATED_EVENT].map((event) => listen(event, () => reloadSyncStanding(SETTLE_MS)));
+  const unlisten = [SETUP_INVENTORY_UPDATED_EVENT, SETUP_PROJECTS_UPDATED_EVENT].map((event) => listen(event, () => reloadSyncStanding()));
   const stopRepo = subscribeSetupRepo(() => reloadSyncStanding());
   reloadSyncStanding();
   stopEvents = () => {

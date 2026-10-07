@@ -7,7 +7,7 @@ import type { BehindItem, KindCounts, MachineStanding, SyncStanding } from '../s
 const none: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0 };
 const item = (kind: BehindItem['kind'], key: string): BehindItem => ({ kind, key, name: key.split(':').pop() ?? key, drift: 'update' });
 const machine = (name: string, state: MachineStanding['state'], behind: BehindItem[] = [], counts: Partial<KindCounts> = {}): MachineStanding =>
-  ({ machine: name, state, reachable: state !== 'unreachable', scannedAt: 1_000, behind, counts: { ...none, ...counts } });
+  ({ machine: name, state, reachable: state !== 'unreachable', behind, counts: { ...none, ...counts } });
 const standing = (machines: MachineStanding[]) => ({ machines } as Pick<SyncStanding, 'machines'> as SyncStanding);
 
 describe('reading Sync’s standing', () => {

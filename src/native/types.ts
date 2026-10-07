@@ -3001,7 +3001,6 @@ export type MachineStanding = {
   machine: string,
   state: MachineState,
   reachable: boolean,
-  scannedAt: number | null,
   behind: Array<BehindItem>,
   counts: KindCounts,
 };

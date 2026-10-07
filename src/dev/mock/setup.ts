@@ -1949,7 +1949,7 @@ const syncStandingMock = (path: string): SyncStanding => {
     const scannedOnce = machine.scannedAt !== null || machine.homes.length > 0;
     const behind = scannedOnce ? mockBehind(repo, mcp, hooks, drift, machine) : [];
     const state = !scannedOnce ? 'notScanned' : !machine.reachable ? 'unreachable' : behind.length ? 'behind' : 'inStep';
-    return { machine: machine.machine, state, reachable: machine.reachable, scannedAt: machine.scannedAt, behind, counts: kindCounts(behind) };
+    return { machine: machine.machine, state, reachable: machine.reachable, behind, counts: kindCounts(behind) };
   });
   return {
     repo, mcp, mcpError, hooks, hooksError, machines,

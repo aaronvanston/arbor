@@ -2416,10 +2416,6 @@ pub(super) fn home_harness(setup: &MachineSetup, path: &str) -> Option<Harness> 
 
 /// What Sync's standing (`setup_standing`) reads of a scan, and nothing more.
 impl MachineSetup {
-    pub(super) fn scanned_at(&self) -> Option<i64> {
-        self.scanned_at
-    }
-
     /// Read at least once: a scan has landed, or one was kept from before Arbor started.
     pub(super) fn is_read(&self) -> bool {
         self.scanned_at.is_some() || !self.homes.is_empty()

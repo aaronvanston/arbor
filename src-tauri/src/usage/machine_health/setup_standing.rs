@@ -91,7 +91,6 @@ pub(crate) struct MachineStanding {
     machine: String,
     state: MachineState,
     reachable: bool,
-    scanned_at: Option<i64>,
     behind: Vec<BehindItem>,
     counts: KindCounts,
 }
@@ -395,7 +394,7 @@ fn standing(
                 (true, true, true) => MachineState::InStep,
                 (true, true, false) => MachineState::Behind,
             };
-            MachineStanding { machine: machine.clone(), state, reachable: *reachable, scanned_at: setup.scanned_at(), counts: counts(&items), behind: items }
+            MachineStanding { machine: machine.clone(), state, reachable: *reachable, counts: counts(&items), behind: items }
         })
         .collect();
     let read = machines.iter().filter(|machine| machine.state != MachineState::NotScanned).count() as u32;

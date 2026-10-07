@@ -43,7 +43,7 @@ const fleet = () => [
 const standingWith = (behind: Record<string, string[]>): SyncStanding => ({
   repo: repo([]), mcp: null, mcpError: null, hooks: null, hooksError: null, inStep: 0, read: 0,
   machines: Object.entries(behind).map(([name, keys]) => ({
-    machine: name, state: keys.length ? 'behind' : 'inStep', reachable: true, scannedAt: 1_000,
+    machine: name, state: keys.length ? 'behind' : 'inStep', reachable: true,
     counts: { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0 },
     behind: keys.map((key) => ({ kind: 'plugin', key, name: key, drift: 'update' })),
   })),
