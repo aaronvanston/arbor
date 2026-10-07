@@ -1363,6 +1363,7 @@ pub(crate) struct AgentAttentionReport {
 }
 
 /// What the machines' reporters have said, taken under the lock so the database is read without it.
+#[derive(Default)]
 pub(in crate::usage) struct PendingWaits {
     waits: Vec<Wait>,
     /// Machines the reporter is set up on.

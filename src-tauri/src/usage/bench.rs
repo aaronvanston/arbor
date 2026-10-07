@@ -218,9 +218,60 @@ fn since(now_ms: i64, back_ms: i64) -> Option<String> {
     DateTime::<chrono::Utc>::from_timestamp_millis(now_ms - back_ms).map(|start| start.to_rfc3339())
 }
 
+/// The filled usage.db, where it is, the time it was filled up to, and whether it's kept after the run.
+struct BenchDatabase {
+    root: PathBuf,
+    connection: Connection,
+    now_ms: i64,
+    kept: bool,
+}
+
+impl Drop for BenchDatabase {
+    fn drop(&mut self) {
+        if !self.kept {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+}
+
 #[test]
 #[ignore = "benchmark: run in release with --ignored --nocapture"]
 fn page_reads_at_volume() {
+    let database = bench_database();
+    page_reads(&database.root, &database.connection, database.now_ms);
+}
+
+/// The live board's sources, as `get_fleet_sources` reads them several times a minute, with T3 Code's 500 threads
+/// each naming a session from the last week. Times from the newest request, so a kept database still has a window.
+///
+/// ```sh
+/// cd src-tauri && cargo test --release usage::bench::live_board -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn live_board_at_volume() {
+    let database = bench_database();
+    let connection = &database.connection;
+    let now_ms: i64 = connection.query_row("SELECT MAX(timestamp_ms) FROM usage_events", [], |row| row.get(0)).unwrap();
+    let open = || open_usage_database_at(&database.root);
+    let config = GuiConfigFile::default();
+    let agent_ids = connection
+        .prepare("SELECT DISTINCT session_id FROM usage_events WHERE timestamp_ms >= ?1 AND session_id IS NOT NULL LIMIT 500")
+        .unwrap()
+        .query_map([now_ms - 7 * DAY], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    let sessions = fleet::recent_sessions(connection, &config, now_ms).unwrap().len();
+    println!("live board: {sessions} sessions in 6 hours, {} T3 Code threads", agent_ids.len());
+    for _ in 0..3 {
+        time_bytes("live board: fleet sources", || {
+            fleet::fleet_sources(&open()?, &config, Default::default(), fleet::bench_channels(&agent_ids), now_ms)
+        });
+    }
+}
+
+fn bench_database() -> BenchDatabase {
     let events = env_number("ARBOR_BENCH_EVENTS", 1_000_000);
     let days = env_number("ARBOR_BENCH_DAYS", 90);
     let kept = std::env::var("ARBOR_BENCH_DIR").ok().map(PathBuf::from);
@@ -270,8 +321,12 @@ fn page_reads_at_volume() {
         })
         .collect::<Vec<_>>();
     pull_requests::store_test_states(&mut connection, &states);
+    BenchDatabase { root, connection, now_ms, kept: kept.is_some() }
+}
+
+fn page_reads(root: &Path, connection: &Connection, now_ms: i64) {
     // Each read opens usage.db as a command does, so the cost of opening counts.
-    let open = || open_usage_database_at(&root);
+    let open = || open_usage_database_at(root);
     let config = GuiConfigFile::default();
     let all = UsageQuery::default();
     let week = UsageQuery { start: since(now_ms, 7 * DAY), ..UsageQuery::default() };
@@ -355,10 +410,5 @@ fn page_reads_at_volume() {
     #[cfg(unix)]
     if let Some(bytes) = peak_rss_bytes() {
         println!("peak benchmark RSS: {} MiB", bytes / (1024 * 1024));
-    }
-
-    if kept.is_none() {
-        drop(connection);
-        let _ = fs::remove_dir_all(&root);
     }
 }

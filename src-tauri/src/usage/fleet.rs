@@ -54,23 +54,53 @@ pub(crate) async fn get_fleet_sources(
     let waits = attention::pending_waits(&state);
     let t3 = t3_threads::snapshot(&state);
     let now_ms = Local::now().timestamp_millis();
-    run_usage_task(move || {
-        let connection = open_usage_database()?;
-        let attention = attention::attention_report(&connection, &config, waits, now_ms)?;
-        let sessions = recent_sessions(&connection, &config, now_ms)?;
-        let mut channels = t3.channels;
-        link_t3_threads(&connection, &mut channels)?;
-        Ok(FleetSources {
-            now_ms,
-            this_machine: t3.this_machine,
-            t3_enabled: t3.enabled,
-            t3_found: t3.found,
-            t3: channels,
-            attention,
-            sessions,
-        })
+    run_usage_task(move || fleet_sources(&open_usage_database()?, &config, waits, t3, now_ms)).await
+}
+
+pub(super) fn fleet_sources(
+    connection: &Connection,
+    config: &GuiConfigFile,
+    waits: attention::PendingWaits,
+    t3: t3_threads::T3Snapshot,
+    now_ms: i64,
+) -> Result<FleetSources, String> {
+    let attention = attention::attention_report(connection, config, waits, now_ms)?;
+    let sessions = recent_sessions(connection, config, now_ms)?;
+    let mut channels = t3.channels;
+    link_t3_threads(connection, &mut channels)?;
+    Ok(FleetSources {
+        now_ms,
+        this_machine: t3.this_machine,
+        t3_enabled: t3.enabled,
+        t3_found: t3.found,
+        t3: channels,
+        attention,
+        sessions,
     })
-    .await
+}
+
+/// T3 Code's threads on one machine, each naming one of `agent_ids`, for the benchmark.
+#[cfg(test)]
+pub(super) fn bench_channels(agent_ids: &[String]) -> t3_threads::T3Snapshot {
+    let threads = agent_ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| t3_threads::T3Thread::for_test(&format!("thread-{index}"), Some(id)))
+        .collect();
+    t3_threads::T3Snapshot {
+        enabled: true,
+        found: true,
+        this_machine: "cam-mbp".into(),
+        channels: vec![T3Channel {
+            machine: "cam-mbp".into(),
+            channel: t3_threads::T3ChannelKind::Userdata,
+            read_at_ms: 0,
+            server_running: true,
+            read_mode: t3_threads::ReadMode::Readonly,
+            skipped: None,
+            threads,
+        }],
+    }
 }
 
 /// The tray badge's one count, without reading proxy sessions or serializing
@@ -93,18 +123,32 @@ pub(crate) async fn get_fleet_tray_counts(
     Ok(counts)
 }
 
-/// A thread's latest request: when it was made, and whether it failed without being canceled.
-/// One lookup on `idx_usage_events_session`, the id compared as stored.
-fn last_request(connection: &Connection, session: &str) -> Result<Option<(i64, bool)>, String> {
-    connection
-        .query_row(
-            "SELECT timestamp_ms, failed, canceled FROM usage_events WHERE session_id = ?1 \
-             ORDER BY timestamp_ms DESC, id DESC LIMIT 1",
-            [session],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? != 0 && row.get::<_, i64>(2)? == 0)),
+/// Each thread's latest request: when it was made, and whether it failed without being canceled. One statement for
+/// them all rather than one per thread, each still a lookup on `idx_usage_events_session`, the ids compared as stored.
+/// A thread without requests has no entry.
+fn last_requests<'a>(
+    connection: &Connection,
+    sessions: impl IntoIterator<Item = &'a str>,
+) -> Result<HashMap<String, (i64, bool)>, String> {
+    let ids: HashSet<&str> = sessions.into_iter().collect();
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let ids = serde_json::to_string(&ids).map_err(|error| format!("Failed to read the sessions' latest requests: {error}"))?;
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT j.value, e.timestamp_ms, e.failed, e.canceled FROM json_each(?1) j \
+             JOIN usage_events e ON e.id = (SELECT id FROM usage_events WHERE session_id = j.value \
+             ORDER BY timestamp_ms DESC, id DESC LIMIT 1)",
         )
-        .optional()
-        .map_err(|error| format!("Failed to read a session's latest request: {error}"))
+        .map_err(|error| format!("Failed to read the sessions' latest requests: {error}"))?;
+    let rows = statement
+        .query_map([ids], |row| {
+            Ok((row.get::<_, String>(0)?, (row.get::<_, i64>(1)?, row.get::<_, i64>(2)? != 0 && row.get::<_, i64>(3)? == 0)))
+        })
+        .map_err(|error| format!("Failed to read the sessions' latest requests: {error}"))?;
+    rows.collect::<rusqlite::Result<_>>()
+        .map_err(|error| format!("Failed to read the sessions' latest requests: {error}"))
 }
 
 /// The sessions with requests in the window, the most recently active first, with where each ran.
@@ -129,36 +173,30 @@ pub(super) fn recent_sessions(connection: &Connection, config: &GuiConfigFile, n
         },
     )?
     .sessions;
-    sessions
+    let last = last_requests(connection, sessions.iter().map(|session| session.root.id.as_str()))?;
+    Ok(sessions
         .into_iter()
         .map(|session| {
-            let last_request_failed = last_request(connection, &session.root.id)?.is_some_and(|(_, failed)| failed);
-            Ok(FleetProxySession { session, last_request_failed })
+            let last_request_failed = last.get(&session.root.id).is_some_and(|(_, failed)| *failed);
+            FleetProxySession { session, last_request_failed }
         })
-        .collect()
+        .collect())
 }
 
 /// Gives each T3 Code thread the proxy session whose id is the thread's agent session id, when
 /// that session's requests came through Arbor, so its row can open the session's page.
 fn link_t3_threads(connection: &Connection, channels: &mut [T3Channel]) -> Result<(), String> {
-    let mut found = HashMap::<String, Option<ArborSession>>::new();
+    let last = last_requests(
+        connection,
+        channels.iter().flat_map(|channel| channel.threads.iter()).filter_map(|thread| thread.agent_session_id.as_deref()),
+    )?;
     for thread in channels.iter_mut().flat_map(|channel| channel.threads.iter_mut()) {
-        let Some(id) = thread.agent_session_id.clone() else {
+        let Some(id) = thread.agent_session_id.as_ref() else {
             continue;
         };
-        let linked = match found.get(&id) {
-            Some(linked) => linked.clone(),
-            None => {
-                let linked = last_request(connection, &id)?.map(|(at_ms, failed)| ArborSession {
-                    id: id.clone(),
-                    last_active_at_ms: at_ms,
-                    last_request_failed: failed,
-                });
-                found.insert(id, linked.clone());
-                linked
-            }
-        };
-        thread.arbor_session = linked;
+        thread.arbor_session = last
+            .get(id)
+            .map(|&(at_ms, failed)| ArborSession { id: id.clone(), last_active_at_ms: at_ms, last_request_failed: failed });
     }
     Ok(())
 }
@@ -218,6 +256,8 @@ mod tests {
         let mut channels = vec![channel(vec![
             T3Thread::for_test("thread-claude", Some(CLAUDE)),
             T3Thread::for_test("thread-codex", Some(CODEX)),
+            // Two threads can name one session.
+            T3Thread::for_test("thread-claude-fork", Some(CLAUDE)),
             // The same id in another case is another id.
             T3Thread::for_test("thread-upper", Some(&CLAUDE.to_uppercase())),
             T3Thread::for_test("thread-none", None),
@@ -240,6 +280,7 @@ mod tests {
             Some(ArborSession { id: CODEX.into(), last_active_at_ms: now - 2 * MINUTE, last_request_failed: false }),
             "a canceled request isn't a failure"
         );
+        assert_eq!(linked("thread-claude-fork"), linked("thread-claude"));
         assert_eq!(linked("thread-upper"), None);
         assert_eq!(linked("thread-none"), None);
         assert_eq!(linked("thread-no-requests"), None);
