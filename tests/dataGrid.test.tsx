@@ -284,6 +284,23 @@ describe('request order', () => {
     }
   });
 
+  it('keeps a sort with Failed on apart from All', () => {
+    const kept = new Map<string, string>();
+    const store = {
+      getItem: (key: string) => kept.get(key) ?? null,
+      setItem: (key: string, value: string) => void kept.set(key, value),
+      removeItem: (key: string) => void kept.delete(key),
+    };
+    saveRequestOrder(store, { by: 'time', descending: false }, true);
+    expect(loadRequestOrder(store, true)).toEqual({ by: 'time', descending: false });
+    expect(loadRequestOrder(store)).toBeNull();
+    saveRequestOrder(store, { by: 'total', descending: true });
+    expect(loadRequestOrder(store, true)).toEqual({ by: 'time', descending: false });
+    saveRequestOrder(store, null, true);
+    expect(loadRequestOrder(store, true)).toBeNull();
+    expect(loadRequestOrder(store)).toEqual({ by: 'total', descending: true });
+  });
+
   it('shows an order on the column it sorts', () => {
     expect(requestSortColumn({ by: 'cache', descending: false })).toEqual({ column: 'cache', descending: false });
     expect(requestSortColumn({ by: 'time', descending: true })).toBeNull();

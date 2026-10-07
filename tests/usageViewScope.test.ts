@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { usageViewScopeKey, type UsageViewScope } from '../src/services/usageViewScope';
+import { filterOptionsSource, usageViewScopeKey, type UsageViewScope } from '../src/services/usageViewScope';
 
 const allModelsScope: UsageViewScope = {
   tab: 'overview',
@@ -60,5 +60,32 @@ describe('usage view scope', () => {
   test('keeps adjacent filter values from colliding', () => {
     expect(usageViewScopeKey({ ...allModelsScope, machine: 'a', model: '' }))
       .not.toBe(usageViewScopeKey({ ...allModelsScope, machine: '', model: 'a' }));
+  });
+});
+
+describe('filter menu names', () => {
+  const overview = { variant: 'usage', breakdown: true, filtered: false, quiet: false, keptFresh: false };
+
+  test("Overview takes them from its Breakdown while nothing's filtered", () => {
+    expect(filterOptionsSource(overview)).toBe('overview');
+    expect(filterOptionsSource({ ...overview, keptFresh: true })).toBe('overview');
+  });
+
+  test('Overview keeps the unfiltered names once something is filtered, so the menus stay full and the pick sticks', () => {
+    expect(filterOptionsSource({ ...overview, filtered: true, keptFresh: true })).toBe('kept');
+    // Opened already filtered (a machine picked), it reads them rather than showing empty menus.
+    expect(filterOptionsSource({ ...overview, filtered: true })).toBe('query');
+  });
+
+  test('other views read them afresh unless a background refresh can reuse them', () => {
+    const requests = { ...overview, breakdown: false };
+    expect(filterOptionsSource(requests)).toBe('query');
+    expect(filterOptionsSource({ ...requests, keptFresh: true })).toBe('query');
+    expect(filterOptionsSource({ ...requests, keptFresh: true, quiet: true })).toBe('kept');
+  });
+
+  test('Machines and Value have no such menus', () => {
+    expect(filterOptionsSource({ ...overview, variant: 'machines' })).toBe('none');
+    expect(filterOptionsSource({ ...overview, variant: 'value', filtered: true })).toBe('none');
   });
 });

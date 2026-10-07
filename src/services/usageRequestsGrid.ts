@@ -177,10 +177,12 @@ export function failureSummary(body: string): string {
 }
 
 const ORDER_KEY = 'arbor.usage-requests-order.v1';
+// Failed on has columns of its own, so it keeps its own sort too: All's could be on a column it doesn't show.
+const FAILED_ORDER_KEY = 'arbor.usage-failed-requests-order.v1';
 
-/** The sort picked on Requests last time, if it's one the server still takes; newest first otherwise. */
-export function loadRequestOrder(storage: Pick<Storage, 'getItem'>): UsageRequestOrder | null {
-  const saved = read(storage, ORDER_KEY);
+/** The sort picked on Requests (or with Failed on) last time, if it's one the server still takes; newest first otherwise. */
+export function loadRequestOrder(storage: Pick<Storage, 'getItem'>, failedOnly = false): UsageRequestOrder | null {
+  const saved = read(storage, failedOnly ? FAILED_ORDER_KEY : ORDER_KEY);
   if (!saved || typeof saved !== 'object') return null;
   const { by, descending } = saved as Record<string, unknown>;
   const known: readonly unknown[] = Object.values(REQUEST_SORT_KEYS);
@@ -191,10 +193,11 @@ export function loadRequestOrder(storage: Pick<Storage, 'getItem'>): UsageReques
 }
 
 /** Keeps the sort for next time; newest first is the default, so it's kept as nothing. */
-export function saveRequestOrder(storage: Pick<Storage, 'setItem' | 'removeItem'>, order: UsageRequestOrder | null) {
+export function saveRequestOrder(storage: Pick<Storage, 'setItem' | 'removeItem'>, order: UsageRequestOrder | null, failedOnly = false) {
+  const key = failedOnly ? FAILED_ORDER_KEY : ORDER_KEY;
   try {
-    if (order) storage.setItem(ORDER_KEY, JSON.stringify(order));
-    else storage.removeItem(ORDER_KEY);
+    if (order) storage.setItem(key, JSON.stringify(order));
+    else storage.removeItem(key);
   } catch {
     // Storage full or blocked: the sort still applies, it just isn't remembered.
   }

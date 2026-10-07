@@ -9,7 +9,7 @@ import { listen } from '@tauri-apps/api/event';
 import { AlertCircle, CircleCheck, Clock3, Search, X } from '../components/ui/icons';
 import { useI18n } from '../i18n';
 import { createRefreshScheduler } from '../services/refreshScheduler';
-import { usageViewScopeKey } from '../services/usageViewScope';
+import { filterOptionsSource, usageViewScopeKey } from '../services/usageViewScope';
 import { formatCount } from '../lib/format';
 import { type SessionPullRequestFilter, type UsageSessionSort } from '../services/usageSessions';
 import { ArchiveMachineCrumb, FleetMachineCrumb, MachineCrumb } from '../components/layout/MachineCrumb';
@@ -299,10 +299,14 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
   const [events, setEvents] = useState<UsageEventPage | null>(null);
   const [sessions, setSessions] = useState<UsageSessionPage | null>(null);
   const [sessionSort, setSessionSort] = useState<UsageSessionSort>('recent');
-  // Requests' order, with Failed on or off; null is newest first.
-  const [requestOrder, setRequestOrder] = useState<UsageRequestOrder | null>(() =>
+  // Requests' order, and Failed on's own, as its grid has columns of its own; null is newest first.
+  const [allOrder, setAllOrder] = useState<UsageRequestOrder | null>(() =>
     typeof localStorage === 'undefined' ? null : loadRequestOrder(localStorage),
   );
+  const [failedOrder, setFailedOrder] = useState<UsageRequestOrder | null>(() =>
+    typeof localStorage === 'undefined' ? null : loadRequestOrder(localStorage, true),
+  );
+  const requestOrder = failedOnly ? failedOrder : allOrder;
   const [projects, setProjects] = useState<SessionProjectsReport | null>(null);
   // Set to ask GitHub about pull requests with the next load of the Projects view, whenever it last did.
   const checkGithubRef = useRef(false);
@@ -427,15 +431,18 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
         // The names in the request filters' menus. Machines has none of those menus, so it skips the query.
         const optionsKey = [variant, range, customStart, customEnd].join('|');
         const kept = optionsRef.current;
-        // Usage's Overview shows these same numbers in its Breakdown when nothing is filtered, so it always reads them
-        // afresh.
         const breakdown = variant === 'usage' && activeTab === 'overview';
         const filtered = Boolean(machine || model || provider || source || apiKeyHash || session || result !== 'all');
-        const keepOptions = quiet && !breakdown && kept?.key === optionsKey
-          && Date.now() - kept.loadedAt < OPTIONS_KEPT_MS;
-        const optionsRequest = variant === 'machines' || variant === 'value' || breakdown
+        const optionsSource = filterOptionsSource({
+          variant,
+          breakdown,
+          filtered,
+          quiet,
+          keptFresh: kept?.key === optionsKey && Date.now() - kept.loadedAt < OPTIONS_KEPT_MS,
+        });
+        const optionsRequest = optionsSource === 'none' || optionsSource === 'overview'
           ? Promise.resolve(emptyAnalysis)
-          : keepOptions && kept
+          : optionsSource === 'kept' && kept
             ? Promise.resolve(kept.value)
             : invokeCommand('get_usage_analysis', { query: timeQuery }).then((value) => {
                 optionsRef.current = { key: optionsKey, loadedAt: Date.now(), value };
@@ -450,7 +457,9 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
             variant === 'machines' ? invokeCommand('get_machine_sessions', { query }) : null,
           ]);
           if (requestId !== requestIdRef.current) return;
-          setOptionsAnalysis(breakdown && !filtered ? nextOverview.analysis ?? nextOptions : nextOptions);
+          const unfiltered = optionsSource === 'overview' ? nextOverview.analysis : null;
+          if (unfiltered) optionsRef.current = { key: optionsKey, loadedAt: Date.now(), value: unfiltered };
+          setOptionsAnalysis(unfiltered ?? nextOptions);
           setOverview(nextOverview);
           setOverviewRange(timeQuery);
           setSessionsByMachine(nextSessionsByMachine);
@@ -479,8 +488,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           const [nextOptions, nextEvents, nextOverview] = await Promise.all([
             optionsRequest,
             invokeCommand('get_usage_events', {
-              // Failed on keeps newest first: its grid has no sort of its own, so All's would apply unseen.
-              query: { ...query, page, page_size: pageSize, request_order: failedOnly ? undefined : requestOrder ?? undefined },
+              query: { ...query, page, page_size: pageSize, request_order: requestOrder ?? undefined },
             }),
             failedOnly ? invokeCommand('get_usage_overview', { query: { ...query, failed: undefined, canceled: undefined } }) : null,
           ]);
@@ -1089,8 +1097,8 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
               setPage(1);
             }}
             onOrderChange={(order) => {
-              setRequestOrder(order);
-              saveRequestOrder(localStorage, order);
+              (failedOnly ? setFailedOrder : setAllOrder)(order);
+              saveRequestOrder(localStorage, order, failedOnly);
               setPage(1);
             }}
           />

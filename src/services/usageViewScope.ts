@@ -45,3 +45,30 @@ export function usageViewScopeKey(scope: UsageViewScope): string {
     scope.pullRequests ?? '',
   ]);
 }
+
+/**
+ * Where the names in the request filters' menus come from. They're always every name in the range, unfiltered: a
+ * menu listing only what's already filtered would empty out, and drop the pick it holds.
+ * - `none`: the view has none of those menus.
+ * - `overview`: Usage's Overview reads them with its Breakdown, which is unfiltered while nothing is filtered.
+ * - `kept`: names read a moment ago for the same range.
+ * - `query`: read them now.
+ */
+export type FilterOptionsSource = 'none' | 'overview' | 'kept' | 'query';
+
+export function filterOptionsSource(input: {
+  variant: string;
+  /** Usage's Overview, whose Breakdown is the same analysis. */
+  breakdown: boolean;
+  filtered: boolean;
+  quiet: boolean;
+  /** Names read earlier are for this range and still fresh. */
+  keptFresh: boolean;
+}): FilterOptionsSource {
+  if (input.variant === 'machines' || input.variant === 'value') return 'none';
+  if (input.breakdown && !input.filtered) return 'overview';
+  // Once something is filtered the Breakdown narrows too, so the Overview keeps the names it read before, even on a
+  // load the user asked for.
+  if (input.keptFresh && (input.quiet || input.breakdown)) return 'kept';
+  return 'query';
+}
