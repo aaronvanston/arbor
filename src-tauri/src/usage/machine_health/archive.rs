@@ -25,6 +25,7 @@ pub(crate) mod lister;
 pub(crate) mod recovered;
 pub(crate) mod remote;
 pub(crate) mod sha;
+pub(crate) mod standing;
 pub(crate) mod store;
 pub(crate) mod tokens;
 
@@ -528,6 +529,27 @@ async fn current_status(app: &tauri::AppHandle) -> Result<ArchiveStatus, String>
         let db = open_index(&dir)?;
         let runtime = Runtime { running, last_pass_at, next_pass_at, last_complete, last_error, failing_since };
         status_from(&db, &runtime, device(&dir))
+    })
+    .await
+}
+
+/// What the archive can say about agent homes on `machine` before the clean-up sets one aside: its condition, whether
+/// the machine's homes are kept at all, and for each home (by its whole path) how many of its session files it has
+/// safely. Counts and times only.
+pub(crate) async fn home_standings(app: &tauri::AppHandle, machine: &str, local: bool, roots: Vec<String>) -> Result<(ArchiveCondition, bool, Vec<standing::HomeCounts>), String> {
+    let condition = current_status(app).await.map(|status| status.state)?;
+    let machine = machine.to_string();
+    blocking(move || {
+        let db = open_index(&index_dir()?)?;
+        // This Mac's homes are filed under the name it was first given, and always kept.
+        let (name, kept) = if local {
+            (index::get_meta(&db, "thisMachine")?.unwrap_or(machine), true)
+        } else {
+            let kept = settings(&db)?.keeps(&machine);
+            (machine, kept)
+        };
+        let counts = roots.iter().map(|root| standing::home_counts(&db, &name, root)).collect::<Result<_, _>>()?;
+        Ok((condition, kept, counts))
     })
     .await
 }
