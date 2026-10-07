@@ -6,6 +6,7 @@ src-tauri/target/
 bin-work/
 bundled-core/
 bundled-udian/
+bundled-grove/
 # Where builds up to 1.0 kept it; scripts/build-release.sh moves it to bundled-core/.
 cpa-core/
 /portable-app.json

@@ -10,6 +10,8 @@
       "../core-version.txt": "core-version.txt",
       "../udian-version.txt": "udian-version.txt",
       "../bundled-udian/*": "udian/",
+      "../grove-version.txt": "grove-version.txt",
+      "../bundled-grove/*": "grove/",
       "../bundled-core/CLIProxyAPI_*": "core/",
       "../bundled-core/plugins/arbor-models.dylib": "core/plugins/arbor-models.dylib",
       "../portable-app.json": "portable-app.json"

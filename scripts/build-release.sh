@@ -133,6 +133,56 @@ else
   fi
 fi
 
+# Bundle Grove, the machine-health sampler pinned in grove-version.txt: the macOS builds of `grove`, which Arbor runs
+# on this Mac, and every system's `grove-probe`, which Arbor installs on a machine when asked. Each archive is checked
+# against the release's SHA256SUMS here, and Arbor checks it again before it runs or sends one. An empty
+# grove-version.txt builds without it, and machine health then falls back to the built-in sampler.
+grove_version="$(tr -d '[:space:]' < grove-version.txt)"
+grove_version="${grove_version#v}"
+grove_assets=()
+for grove_target in darwin-arm64 darwin-x64; do grove_assets+=("grove-${grove_version}-${grove_target}.tar.gz"); done
+for grove_target in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do grove_assets+=("grove-probe-${grove_version}-${grove_target}.tar.gz"); done
+
+# As the runner's: reused when they're this version's, match their sums and the folder holds nothing else.
+grove_cached() {
+  [[ -n "$grove_version" && -f bundled-grove/SHA256SUMS ]] || return 1
+  [[ "$(find bundled-grove -mindepth 1 | wc -l | tr -d ' ')" == "$(( ${#grove_assets[@]} + 1 ))" ]] || return 1
+  local asset expected actual
+  for asset in "${grove_assets[@]}"; do
+    [[ -f "bundled-grove/$asset" ]] || return 1
+    expected="$(awk -v name="$asset" '$2 == name { print $1; exit }' bundled-grove/SHA256SUMS)"
+    actual="$(shasum -a 256 "bundled-grove/$asset" | awk '{print $1}')"
+    [[ -n "$expected" && "$actual" == "$expected" ]] || return 1
+  done
+}
+
+if grove_cached; then
+  echo "Using cached Grove $grove_version"
+else
+  rm -rf bundled-grove
+  mkdir -p bundled-grove
+  if [[ -n "$grove_version" ]]; then
+    grove_release_url="https://github.com/aaronvanston/grove/releases/download/v${grove_version}"
+    grove_sums="$work_dir/grove-SHA256SUMS"
+    curl -fsSL --retry 3 -o "$grove_sums" "$grove_release_url/SHA256SUMS"
+    : > bundled-grove/SHA256SUMS
+    for grove_asset in "${grove_assets[@]}"; do
+      curl -fsSL --retry 3 -o "bundled-grove/$grove_asset" "$grove_release_url/$grove_asset"
+      grove_expected="$(awk -v name="$grove_asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print tolower($1); exit } }' "$grove_sums")"
+      grove_actual="$(shasum -a 256 "bundled-grove/$grove_asset" | awk '{print $1}')"
+      if [[ -z "$grove_expected" || "$grove_actual" != "$grove_expected" ]]; then
+        echo "SHA-256 verification failed for $grove_asset" >&2
+        exit 1
+      fi
+      # Two spaces, as `grove probe install --from` reads them.
+      printf '%s  %s\n' "$grove_actual" "$grove_asset" >> bundled-grove/SHA256SUMS
+    done
+  else
+    echo "No Grove pinned in grove-version.txt; building without it."
+    : > bundled-grove/SHA256SUMS
+  fi
+fi
+
 node scripts/set-version.mjs "$version"
 
 # Versions up to 1.0 install an update only when this marker names EasyCLIProxyAPI, the app Arbor was forked from, so

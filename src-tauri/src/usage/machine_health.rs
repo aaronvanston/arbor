@@ -41,6 +41,7 @@ pub(crate) mod cli_skill;
 pub(crate) mod client_versions;
 pub(crate) mod discovery;
 pub(crate) mod fix_session;
+pub(crate) mod grove;
 pub(crate) mod guarded_writes;
 pub(crate) mod harness_update;
 pub(crate) mod harnesses;
