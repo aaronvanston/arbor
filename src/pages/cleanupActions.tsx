@@ -24,6 +24,10 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from '../components/ui/menu';
 import { Button } from '../components/ui/button';
 import { MoreHorizontal } from '../components/ui/icons';
 import { toast } from '../components/ui/toast';
+import { requestFocus } from '../focusRequests';
+import { machinesView } from '../navigation';
+import { goToView } from '../services/viewHistory';
+import type { CleanupMenuProps } from './cleanupMenuLazy';
 
 /** How a removal went: the scan it left, or why it didn't happen. Null when the user said no. */
 export type CleanupActionResult = { scan: CleanupScan | null; problem: { text: string; changed: boolean } | null };
@@ -200,13 +204,18 @@ export function useCleanupActions(onScan: (scan: CleanupScan) => void = () => un
  * A row's "Remove from <machine>…" menu, where homes and agents already appear: a home's folder (on one machine, or on
  * each machine for a home every machine has) and the agent that runs from it. Runs the Clean up section's flow.
  */
-export function CleanupRowMenu({ machines, path, harness, label }: { machines: string[]; path?: string | null; harness?: Harness | null; label: string }) {
+export function CleanupRowMenu({ machines, path, harness, openPage = false, label, defaultOpen = false }: CleanupMenuProps & { defaultOpen?: boolean }) {
   const { t } = useI18n();
   const harnessName = useHarnessName();
   const { removeHomeFrom, uninstallFrom } = useCleanupActions();
-  if (!machines.length || (!path && !harness)) return null;
+  if (!machines.length || (!path && !harness && !openPage)) return null;
+  // A home the clean-up can't find by its path opens the machine's Clean up section, where its folders are listed.
+  const openCleanup = (machine: string) => {
+    requestFocus('machine-cleanup', machine);
+    goToView(machinesView(machine));
+  };
   return (
-    <Menu>
+    <Menu defaultOpen={defaultOpen}>
       <MenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label={label} title={label} />}>
         <MoreHorizontal />
       </MenuTrigger>
@@ -214,6 +223,11 @@ export function CleanupRowMenu({ machines, path, harness, label }: { machines: s
         {path ? machines.map((machine) => (
           <MenuItem key={`home:${machine}`} onClick={() => void removeHomeFrom(machine, path)}>
             {t('machine.cleanup.from.removeHome', { machine })}
+          </MenuItem>
+        )) : null}
+        {openPage && !path ? machines.map((machine) => (
+          <MenuItem key={`page:${machine}`} onClick={() => openCleanup(machine)}>
+            {t('machine.cleanup.from.openPage', { machine })}
           </MenuItem>
         )) : null}
         {harness ? machines.map((machine) => (

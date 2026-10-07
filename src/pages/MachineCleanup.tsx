@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { clearFocusRequest, useFocusRequest } from '../focusRequests';
 import { useI18n } from '../i18n';
 import { formatAgo, formatCount, formatDateTime } from '../lib/format';
 import { cn } from '../lib/utils';
@@ -50,6 +51,15 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
   /** The path or set-aside item being changed, and a failure beside it. */
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<CleanupProblem | null>(null);
+
+  // Another page asked for this section (a home it can't find by its path): bring it into view.
+  const focus = useFocusRequest('machine-cleanup');
+  const anchor = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus !== machine) return;
+    clearFocusRequest('machine-cleanup');
+    anchor.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focus, machine]);
 
   // What Arbor already looked at this session shows at once; nothing runs on the machine until asked.
   useEffect(() => {
@@ -130,6 +140,7 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
   };
 
   return (
+    <div ref={anchor} className="scroll-mt-4">
     <CleanupContent
       machine={machine}
       pill={pill}
@@ -144,6 +155,7 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
       onDelete={(items) => void deleteForGood(items)}
       onUninstall={(agent) => void uninstall(agent)}
     />
+    </div>
   );
 }
 

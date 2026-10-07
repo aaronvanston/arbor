@@ -82,9 +82,6 @@ export const homeIn = (scan: CleanupScan, path: string) => scan.homes.find((home
 export const runningAgent = (scan: CleanupScan, harness: Harness) =>
   scan.agents.find((agent) => agent.harness === harness && agent.first) ?? scan.agents.find((agent) => agent.harness === harness) ?? null;
 
-/** A home's folder that names one folder, rather than a pattern or where a variable points, which the clean-up can find. */
-export const concreteHomePath = (path: string) => (path.startsWith('~/') || path.startsWith('/')) && !path.includes('*');
-
 export const lastRoutedCopy = (agent: Pick<CleanupAgent, 'harness' | 'onlyCopy'>, routed: boolean) =>
   routed && agent.onlyCopy && (agent.harness === 'claude' || agent.harness === 'codex');
 

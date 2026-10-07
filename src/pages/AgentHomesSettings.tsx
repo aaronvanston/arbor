@@ -23,8 +23,7 @@ import { TableEmpty } from '../components/ui/data-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { toast } from '../components/ui/toast';
 import { cn } from '../lib/utils';
-import { concreteHomePath } from '../services/cleanup';
-import { CleanupRowMenu } from './cleanupActions';
+import { concreteHomePath, LazyCleanupRowMenu } from './cleanupMenuLazy';
 import { knownHarnessOrder } from '../services/knownHarnesses';
 import { useSettingsScope } from '../services/machineSettings';
 import {
@@ -414,7 +413,12 @@ function HomeRow({ home, view, machines }: { home: AgentHome; view: AgentHomesVi
       </TableCell>
       <TableCell className="text-end">
         {/* Taking the folder itself off a machine goes through its Clean up, with the same checks and Undo. */}
-        {concreteHomePath(home.path) ? <CleanupRowMenu machines={machines} path={home.path} label={t('machine.cleanup.from.menu', { name: home.path })} /> : null}
+        <LazyCleanupRowMenu
+          machines={machines}
+          path={concreteHomePath(home.path) ? home.path : null}
+          openPage={!concreteHomePath(home.path)}
+          label={t('cleanupMenu.label', { name: home.path })}
+        />
         {removable ? (
           <Button
             variant="ghost"

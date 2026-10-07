@@ -34,8 +34,7 @@ import { applySkillChanges } from '../services/setupSkills';
 import { applyMcpChanges } from '../services/setupMcp';
 import { undoSetupSync } from '../services/setupSync';
 import type { McpAction, McpRegistry, RegistryState, SetupMachine, SkillAction, SyncOutcome } from '../native/types';
-import { concreteHomePath } from '../services/cleanup';
-import { CleanupRowMenu } from './cleanupActions';
+import { concreteHomePath, LazyCleanupRowMenu } from './cleanupMenuLazy';
 
 const STATE: Record<InstructionsState, { label: MessageKey; variant: 'success' | 'warning' | 'muted' } | null> = {
   same: { label: 'setup.harnessHomes.same', variant: 'success' },
@@ -137,7 +136,7 @@ export function HarnessCard({ group, run, onUpdateAll, onUpdate, onOpen }: {
                     </Button>
                   ) : null}
                   {/* Its home or the agent itself off that machine, through its Clean up. */}
-                  <CleanupRowMenu machines={[row.machine]} path={concreteHomePath(row.path) ? row.path : null} harness={group.harness} label={t('machine.cleanup.from.menu', { name: `${name} · ${row.machine}` })} />
+                  <LazyCleanupRowMenu machines={[row.machine]} path={concreteHomePath(row.path) ? row.path : null} harness={group.harness} label={t('cleanupMenu.label', { name: `${name} · ${row.machine}` })} />
                   </span>
                 </TableCell>
               </TableRow>

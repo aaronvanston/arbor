@@ -7,7 +7,8 @@ import { I18nProvider, translate, translateRich } from '../src/i18n';
 import { outcomeText } from '../src/pages/SetupSync';
 import { CleanupContent, type CleanupProblem } from '../src/pages/MachineCleanup';
 import { CleanupRowMenu } from '../src/pages/cleanupActions';
-import { CLEANUP_FRESH_MS, allArchived, archiveLine, cleanupView, concreteHomePath, homeIn, runningAgent, scanIsFresh, deleteSetAside, lastRoutedCopy, nextCopy, removalAsks, removeCleanup, restoreSetAside, uninstallAgent } from '../src/services/cleanup';
+import { concreteHomePath, LazyCleanupRowMenu } from '../src/pages/cleanupMenuLazy';
+import { CLEANUP_FRESH_MS, allArchived, archiveLine, cleanupView, homeIn, runningAgent, scanIsFresh, deleteSetAside, lastRoutedCopy, nextCopy, removalAsks, removeCleanup, restoreSetAside, uninstallAgent } from '../src/services/cleanup';
 import { readCommandError } from '../src/services/commandError';
 import type { CleanupAgent, CleanupHome, CleanupScan, HomeArchive, SetAsideItem } from '../src/native/types';
 import { itemAt } from './support/items';
@@ -167,6 +168,9 @@ describe('a machine’s clean-up', () => {
     expect(html).toContain('aria-label="Clean up ~/.factory"');
     expect(renderToStaticMarkup(<I18nProvider><CleanupRowMenu machines={[]} path="~/.factory" label="x" /></I18nProvider>)).toBe('');
     expect(renderToStaticMarkup(<I18nProvider><CleanupRowMenu machines={['cam-mbp']} path={null} label="x" /></I18nProvider>)).toBe('');
+    // Its trigger draws without loading the flow; a home it can't find by path still gets one, to open the machine's page.
+    expect(renderToStaticMarkup(<I18nProvider><LazyCleanupRowMenu machines={['cam-mbp']} openPage label="Clean up ~/.tools/*" /></I18nProvider>)).toContain('aria-label="Clean up ~/.tools/*"');
+    expect(renderToStaticMarkup(<I18nProvider><LazyCleanupRowMenu machines={['cam-mbp']} label="x" /></I18nProvider>)).toBe('');
   });
 
   it('lists what is set aside with Restore, Delete for good and the drive it is kept on', () => {
