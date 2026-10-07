@@ -10,6 +10,7 @@ import { canResetQuota, resetClaudeQuotaWithConfirmation, resetCodexQuotaWithCon
 import { formatQuotaReset, useQuotaClock } from '../services/quotaTime';
 import { codexResetEarlyUse } from '../services/resetReadiness';
 import { plainError } from '../services/plainError';
+import { reorderAnnouncements } from '../services/reorderAnnouncements';
 import { formatRelative, formatWhen } from '../lib/format';
 import {
   fileName,
@@ -509,6 +510,11 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                   sensors={sensors}
                   collisionDetection={closestCenter}
                   modifiers={[verticalOnly]}
+                  accessibility={reorderAnnouncements(
+                    accounts.map((account) => account.key),
+                    (id) => accounts.find((account) => account.key === id)?.name ?? String(id),
+                    t,
+                  )}
                   onDragEnd={(event) => reorder(provider, accounts.map((account) => account.key), event)}
                 >
                   <SortableContext items={accounts.map((account) => account.key)} strategy={verticalListSortingStrategy}>
