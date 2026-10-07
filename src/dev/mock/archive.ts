@@ -33,21 +33,20 @@ const archiveProjectsScenario = params.get('archiveProjects');
 
 const fleetRuns = (share: number): ArchiveMachineRun[] => {
   if (archiveMachinesScenario === 'none' || share === 0) return [];
-  const runs: ArchiveMachineRun[] = [
-    { machine: 'cam-mbp', at: now - 3 * 60_000, complete: false, error: 'ssh: connect to host cam-mbp port 22: Operation timed out', lastOkAt: now - 20 * 60 * 60_000 },
+  // cam-mbp is this Mac, which the archive reads directly, so it never has an SSH pass of its own.
+  return [
     { machine: 'cedar-02', at: now - 3 * 60_000, complete: true, error: null, lastOkAt: now - 3 * 60_000 },
+    archiveMachinesScenario === 'new'
+      ? { machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: Could not resolve hostname ci-01: nodename nor servname provided', lastOkAt: null }
+      : { machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: connect to host ci-01 port 22: Operation timed out', lastOkAt: now - 20 * 60 * 60_000 },
   ];
-  if (archiveMachinesScenario === 'new') runs.push({ machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: Could not resolve hostname ci-01: nodename nor servname provided', lastOkAt: null });
-  return runs;
 };
 
 const fleetHomes = (share: number): ArchiveSource[] => archiveMachinesScenario === 'none' || share === 0 ? [] : [
   { machine: 'cedar-02', label: '~/.claude', agent: 'claude', files: 3480, kept: 3480, gone: 41, retentionDays: 36_500 },
   { machine: 'cedar-02', label: '~/.codex', agent: 'codex', files: 925, kept: 925, gone: 0, retentionDays: null },
-  { machine: 'cam-mbp', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null },
-  // Claude's desktop app: an audit log for each local session, and each session's own Claude Code home.
-  { machine: 'cam-mbp', label: `${DESKTOP}/acct/org`, agent: 'claude-desktop', files: 96, kept: 96, gone: 0, retentionDays: null },
-  ...Array.from({ length: 3 }, (_, n): ArchiveSource => ({ machine: 'cam-mbp', label: `${DESKTOP}/acct/org/local_${n}/.claude`, agent: 'claude', files: 12 + n, kept: 12 + n, gone: 0, retentionDays: null })),
+  // ci-01 was never reached under `?archiveMachines=new`, so nothing of its is kept.
+  ...(archiveMachinesScenario === 'new' ? [] : [{ machine: 'ci-01', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null }]),
 ];
 const DESKTOP = '~/Library/Application Support/Claude/local-agent-mode-sessions';
 const archiveHomes = (share: number): ArchiveSource[] => [
@@ -55,6 +54,9 @@ const archiveHomes = (share: number): ArchiveSource[] => [
   { machine: 'cam-mbp', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null },
   { machine: 'cam-mbp', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
   { machine: 'cam-mbp', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
+  // Claude's desktop app: an audit log for each local session, and each session's own Claude Code home.
+  { machine: 'cam-mbp', label: `${DESKTOP}/acct/org`, agent: 'claude-desktop', files: 96, kept: Math.round(96 * share), gone: 0, retentionDays: null },
+  ...Array.from({ length: 3 }, (_, n): ArchiveSource => ({ machine: 'cam-mbp', label: `${DESKTOP}/acct/org/local_${n}/.claude`, agent: 'claude', files: 12 + n, kept: Math.round((12 + n) * share), gone: 0, retentionDays: null })),
   ...fleetHomes(share),
 ];
 

@@ -478,7 +478,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
             const days = deletesAfterDays(source);
             return (
               <SettingsRow
-                key={source.label}
+                key={`${source.machine}:${source.label}`}
                 title={<span className="font-mono text-sm">{source.label}</span>}
                 description={t(HOME_AGENT_KEYS[source.agent] ?? 'sessionArchive.homes.claude')}
                 status={

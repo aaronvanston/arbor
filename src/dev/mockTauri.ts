@@ -190,7 +190,7 @@
  * its Old backups section has one backup imported and one partway, or `?imports=none` for none, `starting` for the
  * second not listed yet, `away` for its drive unplugged, or `failed` for the first finished with 3 files it couldn't
  * read; the other machines' homes are kept too,
- * cedar-02's up to date and cam-mbp's last check failing since yesterday, or `?archiveMachines=none` for no
+ * cedar-02's up to date and ci-01's last check failing since yesterday (this Mac's homes are read directly, never over SSH), or `?archiveMachines=none` for no
  * other machines, `new` for ci-01 tried but never reached, or `off` for keeping other machines turned off, or `own` for ci-01 left out on its own;
  * `?archiveProjects=sample` leaves cam/billing out everywhere and cam/arbor out on ci-01 (pick them with `?project=`);
  * Import a backup… finds five homes in
