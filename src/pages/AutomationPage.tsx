@@ -48,7 +48,9 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   const [runs, setRuns] = useState<AutomationRun[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   // A schedule someone made in ultradian has its runs read from its machine, which can be away.
-  const [runsError, setRunsError] = useState<string | null>(null);
+  const [runsError, setRunsError] = useState<unknown>(null);
+  // Bumped by Retry, to read the runs again.
+  const [runsRead, setRunsRead] = useState(0);
   const summary = list?.automations.find((item) => item.id === id) ?? automation?.summary ?? null;
 
   // Read again whenever the list changes: a pause, a save or a run from anywhere shows here too.
@@ -70,10 +72,10 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
       .catch((reason: unknown) => {
         if (!current) return;
         setRuns((known) => known ?? []);
-        setRunsError(String(reason));
+        setRunsError(reason);
       });
     return () => { current = false; };
-  }, [id, list]);
+  }, [id, list, runsRead]);
 
   const back = (
     <button type="button" className="cursor-pointer hover:text-foreground" onClick={() => onNavigate(automationsView())}>
@@ -190,9 +192,17 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
 
         <TableCard
           title={t('automations.runs.title')}
-          count={runs ? t(runs.length === 1 ? 'automations.runs.count.one' : 'automations.runs.count.other', { count: runs.length }) : null}
+          // No count where nothing could be counted: runs that couldn't be read, or an app whose runs Arbor doesn't see.
+          count={runs && (runs.length > 0 || (runsError === null && (arbor || own)))
+            ? t(runs.length === 1 ? 'automations.runs.count.one' : 'automations.runs.count.other', { count: runs.length })
+            : null}
         >
-          {runsError ? <p className="border-b border-border/50 px-4 py-2 text-xs text-warning-foreground">{t('automations.runs.ownFailed', { error: runsError })}</p> : null}
+          {runsError !== null ? (
+            <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-2">
+              <p className="text-xs text-warning-foreground">{t('automations.runs.ownFailed', { error: plainError(runsError, t) })}</p>
+              <Button variant="outline" size="xs" onClick={() => setRunsRead((count) => count + 1)}>{t('common.retry')}</Button>
+            </div>
+          ) : null}
           {!runs ? (
             <Skeleton className="m-4 h-24" />
           ) : runs.length ? (
@@ -211,7 +221,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                 {runs.map((run) => <RunRow key={run.id} run={run} now={now} own={own} onNavigate={onNavigate} />)}
               </TableBody>
             </Table>
-          ) : (
+          ) : runsError !== null ? null : (
             <Empty size="sm"><EmptyDescription>{t(own ? 'automations.runs.noneOwn' : !arbor ? 'automations.runs.noneOther' : summary.enabled ? 'automations.runs.none' : 'automations.runs.nonePaused')}</EmptyDescription></Empty>
           )}
         </TableCard>
