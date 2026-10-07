@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { sceneClock, sceneWakeDelay, SCENE_WAKE_EARLY_MS } from '../src/services/sidebarScenes';
+import { sceneClock, sceneResting, sceneWakeDelay, SCENE_REST_AFTER_MS, SCENE_WAKE_EARLY_MS } from '../src/services/sidebarScenes';
 
 /**
  * A display beating every `period` ms from `phase`: a frame asked for at `at` comes on the first beat after it. Both
@@ -80,5 +80,13 @@ describe('the sidebar art’s frames', () => {
     expect(sceneWakeDelay(null, 1_000)).toBe(0);
     expect(sceneWakeDelay(1_000, 1_000)).toBe(0);
     expect(sceneWakeDelay(1_062, 1_000)).toBe(62 - SCENE_WAKE_EARLY_MS);
+  });
+});
+
+describe('resting', () => {
+  it('moves for a minute after the last input, then rests until the next', () => {
+    expect(sceneResting(1_000, 1_000)).toBe(false);
+    expect(sceneResting(1_000, 1_000 + SCENE_REST_AFTER_MS - 1)).toBe(false);
+    expect(sceneResting(1_000, 1_000 + SCENE_REST_AFTER_MS)).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { useAppPreferences } from '../../appPreferences';
 import type { AppColor } from '../../services/appColor';
 import { SIDEBAR_ART_SPEED, sidebarArtHeight, sidebarArtMotionChoice, type SidebarArt as SidebarArtChoice } from '../../services/sidebarArt';
-import { drawScene, sceneClock, sceneRows, sceneWakeDelay, SCENE_STILL_SECONDS, type SceneName } from '../../services/sidebarScenes';
+import { drawScene, sceneClock, sceneResting, sceneRows, sceneWakeDelay, SCENE_STILL_SECONDS, type SceneName } from '../../services/sidebarScenes';
 import type { AppTheme } from '../../theme';
 import { SIDEBAR_ART_CLASS } from './shellParts';
 
@@ -71,7 +71,8 @@ function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: 
       context.putImageData(image, 0, 0);
     };
     const still = () => speed === 0 || (reduce?.matches ?? false);
-    const moving = () => !still() && document.visibilityState === 'visible' && document.hasFocus();
+    let lastInput = performance.now();
+    const moving = () => !still() && document.visibilityState === 'visible' && document.hasFocus() && !sceneResting(lastInput, performance.now());
     const redraw = () => {
       if (fit()) draw(still() ? SCENE_STILL_SECONDS : clock.seconds);
     };
@@ -104,11 +105,19 @@ function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: 
       if (!frame && !wake) frame = requestAnimationFrame(loop);
     };
 
+    // Input wakes a resting scene; while it moves, this only notes the time, as the pointer moves often.
+    const woken = () => {
+      lastInput = performance.now();
+      if (!frame && !wake) follow();
+    };
+    const inputs = ['pointermove', 'pointerdown', 'keydown', 'wheel'] as const;
+
     redraw();
     follow();
     const resized = new ResizeObserver(redraw);
     resized.observe(host);
-    window.addEventListener('focus', follow);
+    for (const input of inputs) window.addEventListener(input, woken, { capture: true, passive: true });
+    window.addEventListener('focus', woken);
     window.addEventListener('blur', follow);
     document.addEventListener('visibilitychange', follow);
     reduce?.addEventListener('change', follow);
@@ -116,7 +125,8 @@ function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: 
       cancelAnimationFrame(frame);
       window.clearTimeout(wake);
       resized.disconnect();
-      window.removeEventListener('focus', follow);
+      for (const input of inputs) window.removeEventListener(input, woken, { capture: true });
+      window.removeEventListener('focus', woken);
       window.removeEventListener('blur', follow);
       document.removeEventListener('visibilitychange', follow);
       reduce?.removeEventListener('change', follow);

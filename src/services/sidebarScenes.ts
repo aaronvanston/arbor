@@ -19,6 +19,15 @@ export type SceneName = 'aurora' | 'canopy';
 
 /** How often a scene is redrawn while moving: they're slow enough that more isn't seen. */
 export const SCENE_FPS = 15;
+/**
+ * How long a scene keeps moving after the last input (a key, the pointer, a scroll, Arbor coming forward). Past it, it
+ * holds its frame until the next: moving costs about 5% of a core, and nobody watches it through a minute away (the
+ * owner's call, 2026-10-08).
+ */
+export const SCENE_REST_AFTER_MS = 60_000;
+/** Whether a scene last woken by input at `lastInputMs` rests at `nowMs`. */
+export const sceneResting = (lastInputMs: number, nowMs: number) => nowMs - lastInputMs >= SCENE_REST_AFTER_MS;
+
 /** The moment drawn when a scene holds still (the Still setting, Reduce motion): one where each is well formed. */
 export const SCENE_STILL_SECONDS = 24;
 
