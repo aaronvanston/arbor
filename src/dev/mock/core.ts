@@ -528,6 +528,23 @@ function apiCall(body: Json): Json {
   return { status_code: 404, body: '{}' };
 }
 
+/** The models each provider's accounts offer, as the core's model definitions list them. */
+const PROVIDER_MODELS: Record<string, { id: string; display_name?: string }[]> = {
+  claude: [
+    { id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' }, { id: 'claude-sonnet-5', display_name: 'Claude Sonnet 5' },
+    { id: 'claude-fable-5-1', display_name: 'Claude Fable 5.1' }, { id: 'claude-haiku-4-5', display_name: 'Claude Haiku 4.5' },
+  ],
+  codex: [{ id: 'gpt-6-sol', display_name: 'GPT-6 Sol' }, { id: 'gpt-6-luna', display_name: 'GPT-6 Luna' }, { id: 'gpt-6-terra' }, { id: 'codex-mini-latest', display_name: 'Codex Mini' }, { id: 'gpt-image-2', display_name: 'GPT Image 2' }],
+  gemini: [{ id: 'gemini-3-pro', display_name: 'Gemini 3 Pro' }, { id: 'gemini-3-flash', display_name: 'Gemini 3 Flash' }],
+  xai: [{ id: 'grok-5', display_name: 'Grok 5' }, { id: 'grok-5-mini', display_name: 'Grok 5 Mini' }],
+};
+
+/** The provider an account's file is for, as the core names it. */
+const providerKey = (provider: unknown) => String(provider ?? '').toLowerCase().replace(/\s*oauth$/, '');
+
+/** Models turned off for every account of a provider (config.yaml's oauth-excluded-models), kept for the session. */
+const providerExclusions: Record<string, string[]> = {};
+
 function managementRequest(request: ManagementRequest): unknown {
   // A core that isn't up answers nothing, so every request fails as the native side's would.
   if (!coreStatus.ready) throw { kind: 'failed', message: 'Management API request failed: error sending request (connection refused)' };
@@ -584,7 +601,14 @@ function managementRequest(request: ManagementRequest): unknown {
     return { ok: true };
   }
   if (path === '/auth-files/models') {
-    return { models: [{ id: 'gpt-6-sol', display_name: 'GPT-6 Sol' }, { id: 'gpt-6-luna', display_name: 'GPT-6 Luna' }, { id: 'gpt-6-terra' }, { id: 'codex-mini-latest', display_name: 'Codex Mini' }] };
+    const file = authFiles.find((entry) => entry.name === query.name);
+    return { models: PROVIDER_MODELS[providerKey(file?.provider)] ?? [] };
+  }
+  if (path.startsWith('/model-definitions/')) return { models: PROVIDER_MODELS[providerKey(decodeURIComponent(path.slice('/model-definitions/'.length)))] ?? [] };
+  if (path === '/oauth-excluded-models') {
+    if (method === 'PATCH' && typeof body.provider === 'string' && Array.isArray(body.models)) providerExclusions[providerKey(body.provider)] = body.models.map(String);
+    if (method === 'DELETE' && query.provider) delete providerExclusions[providerKey(query.provider)];
+    return { 'oauth-excluded-models': { ...providerExclusions } };
   }
   // As in Rust: a credential file holds the account's tokens, so the window can't fetch one.
   if (path.replace(/\/+/g, '/').replace(/^\/|\/$/g, '').toLowerCase() === 'auth-files/download') {
@@ -603,7 +627,7 @@ function managementRequest(request: ManagementRequest): unknown {
     return { status: 'ok', auth_index: file.auth_index, models: [] };
   }
   if (path === '/oauth-session') return { ok: true };
-  if (path === '/config') return { 'oauth-excluded-models': {} };
+  if (path === '/config') return { 'oauth-excluded-models': { ...providerExclusions } };
   if (path === '/openai-compatibility') return [];
   return {};
 }
