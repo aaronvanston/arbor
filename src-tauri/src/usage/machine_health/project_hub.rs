@@ -74,10 +74,31 @@ pub(super) fn choose_tip<'a>(current: Option<&'a str>, tips: &[&'a str], is_ance
     candidates.iter().copied().find(|tip| candidates.iter().all(|other| other == tip || is_ancestor(other, tip)))
 }
 
-/// The hub for local project `name` on this Mac.
+/// The hub for local project `name` on this Mac. A name that would lead out of the hubs' folder has none.
 pub(super) fn hub_dir(name: &str) -> Result<PathBuf, String> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+        return Err(format!("{name} can't be a local project's hub"));
+    }
     let home = std::env::var_os("HOME").filter(|home| !home.is_empty()).map(PathBuf::from).ok_or("Arbor can't find your home folder")?;
     Ok(home.join(".arbor/git/_local").join(format!("{name}.git")))
+}
+
+/// The hub of each local project a round goes through. A project whose hub can't be found is skipped, never the
+/// end of the round, so one bad name doesn't keep every project after it out of step.
+fn hubs(projects: Vec<String>, hub_dir: impl Fn(&str) -> Result<PathBuf, String>) -> Vec<(String, PathBuf)> {
+    projects
+        .into_iter()
+        .filter_map(|project| {
+            let hub = hub_dir(project.strip_prefix("_local/")?);
+            match hub {
+                Ok(hub) => Some((project, hub)),
+                Err(error) => {
+                    eprintln!("Skipped {project} in the hub round: {error}");
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 /// Where git reaches a checkout on `machine`: its folder on this Mac, else over SSH the way Arbor reaches the machine.
@@ -222,10 +243,8 @@ pub(super) fn local_checkouts(found: &super::setup_sync::SetupRepo, inner: &Inne
 /// projects with no remote. Nothing before the window has named a setup repo, or with none of them.
 pub(super) async fn sync_all_local(app: &tauri::AppHandle, repo: &str) {
     let Ok(found) = super::setup_sync::read_repo(Path::new(repo)).await else { return };
-    for project in found.layers().local_projects() {
-        let Some(name) = project.strip_prefix("_local/") else { continue };
+    for (project, hub) in hubs(found.layers().local_projects(), hub_dir) {
         let checkouts = local_checkouts(&found, &app.state::<MachineHealthState>().lock(), &project);
-        let Ok(hub) = hub_dir(name) else { return };
         if checkouts.is_empty() || ensure_hub(&hub).await.is_err() {
             continue;
         }
@@ -260,6 +279,14 @@ pub(crate) async fn sync_local_project(app: tauri::AppHandle, state: tauri::Stat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_project_without_a_hub_is_skipped_and_the_round_goes_on() {
+        let projects = ["_local/..", "_local/idler", "cam/arbor", "_local/notes"].map(String::from).to_vec();
+        let found = hubs(projects, |name| hub_dir(name).map(|_| PathBuf::from(format!("/hubs/{name}.git"))));
+        assert_eq!(found, [("_local/idler".to_string(), PathBuf::from("/hubs/idler.git")), ("_local/notes".to_string(), PathBuf::from("/hubs/notes.git"))]);
+        assert!(hub_dir("a/b").is_err() && hub_dir("").is_err());
+    }
 
     #[test]
     fn a_branch_moves_to_the_copy_every_other_one_is_behind_and_never_merges() {
