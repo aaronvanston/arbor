@@ -599,7 +599,25 @@ fn standing(
 #[tauri::command]
 pub(crate) async fn get_sync_standing(state: tauri::State<'_, MachineHealthState>, repo: String) -> Result<SyncStanding, String> {
     state.lock().setup_repo = Some(repo.clone());
-    let folder = Path::new(&repo);
+    standing_now(&state, &repo).await
+}
+
+/// Works the standing out again without the window, for the bases it records: after a change Arbor made on a machine
+/// has been rescanned, and after the repo was pulled. Nothing to do before a setup repo is named.
+pub(super) async fn refresh(app: &tauri::AppHandle) {
+    let named = app.state::<MachineHealthState>().lock().setup_repo.clone();
+    let repo = named
+        .or_else(|| app.state::<crate::saved_store::SavedStoreState>().value(super::setup_layers::SETUP_REPO_SETTING))
+        .filter(|repo| !repo.is_empty());
+    if let Some(repo) = repo {
+        if let Err(error) = standing_now(&app.state::<MachineHealthState>(), &repo).await {
+            eprintln!("Couldn't work out Sync's standing: {error}");
+        }
+    }
+}
+
+async fn standing_now(state: &MachineHealthState, repo: &str) -> Result<SyncStanding, String> {
+    let folder = Path::new(repo);
     let found = read_repo(folder).await?;
     let scanned = scanned_machines(&state.lock());
     let (mcp, hooks) = tokio::join!(setup_mcp::registry_for(folder, &scanned), setup_hooks::registry_for(folder, &scanned));

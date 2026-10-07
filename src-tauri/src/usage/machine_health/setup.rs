@@ -2200,7 +2200,7 @@ pub(super) fn rescan(app: &tauri::AppHandle, machine: &str) {
         }
     }
     let targets = take_targets(&state, Some(machine), false, now_ms);
-    start_scans(app, targets, now_ms, false);
+    start_scans_after(app, targets, now_ms, false, true);
 }
 
 /// A machine's setup, found as `covered_machine` finds it.
@@ -2212,6 +2212,12 @@ fn setup_mut<'a>(inner: &'a mut Inner, machine: &str) -> Option<&'a mut MachineS
 }
 
 fn start_scans(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: i64, stagger: bool) {
+    start_scans_after(app, targets, now_ms, stagger, false);
+}
+
+/// Starts the scans. `after_change`: Arbor changed something on the machines, so once each scan lands, Sync's standing
+/// is worked out again in Rust, recording the bases of what's now in step whether the window is open or not.
+fn start_scans_after(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: i64, stagger: bool, after_change: bool) {
     if targets.is_empty() {
         return;
     }
@@ -2232,6 +2238,9 @@ fn start_scans(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: 
             let recorded = record(&app.state::<MachineHealthState>(), &target, machine.host(), now_ms, at_ms, result);
             save_scans(&app);
             let _ = app.emit(SETUP_INVENTORY_UPDATED_EVENT, at_ms);
+            if after_change && !recorded.again {
+                super::setup_standing::refresh(&app).await;
+            }
             if recorded.harnesses_changed {
                 let _ = app.emit(agent_homes::AGENT_HOMES_UPDATED_EVENT, ());
             }
