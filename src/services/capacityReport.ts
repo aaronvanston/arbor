@@ -89,6 +89,10 @@ export type CapacityInput = {
 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
+/** Whether `accounts`' worth is known: they sent nothing, or some of what they sent has a price. */
+export const valueKnown = (accounts: Pick<CapacityAccount, 'requests' | 'unpricedRequests'>[]) =>
+  accounts.every((account) => !account.requests) || accounts.some((account) => account.requests > account.unpricedRequests);
+
 /**
  * What `accounts`' requests were worth over what the ones with a known cost cost; null without a cost, or when they
  * had requests and none of them had a price, since their worth then isn't known rather than nothing.

@@ -1381,6 +1381,8 @@ export const en = {
   'usage.capacity.windowNoHistory': 'Use is measured against the {window}. Limit readings build up while Arbor is open.',
   'usage.capacity.noWindow': 'The headline limit resets more than once a day, so there’s no long limit to measure use against.',
   'usage.capacity.providerSummary': '{cost} · worth {value}',
+  'usage.capacity.providerSummaryUnpriced': '{cost} · no prices to value it',
+  'usage.capacity.unpriced': 'Unpriced',
   'usage.capacity.verdict.one': 'These {count} {plan} accounts use {need}% of one account’s {window} between them, on average. One account would cover that and stay under {target}%, so {names} could go.',
   'usage.capacity.verdict.other': 'These {count} {plan} accounts use {need}% of one account’s {window} between them, on average. {keep} would cover that at under {target}% each, so {names} could go.',
   'usage.capacity.saving': 'That saves {amount} a month.',

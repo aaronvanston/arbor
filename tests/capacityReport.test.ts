@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { capacityGap, capacityReport, costedRatio, longLimitWindows } from '../src/services/capacityReport';
+import { capacityGap, capacityReport, costedRatio, longLimitWindows, valueKnown } from '../src/services/capacityReport';
 import { listPrice } from '../src/services/planCosts';
 import { quotaKey, type QuotaState } from '../src/services/quotaService';
 import type { AccountValue, CapacityReport, LimitCoverage, LimitCycle } from '../src/native/types';
@@ -154,5 +154,14 @@ describe('capacity ratio', () => {
     expect(costedRatio([{ periodCost: 50, value: 0, requests: 0, unpricedRequests: 0 }])).toBe(0);
     expect(costedRatio([{ periodCost: null, value: 10, requests: 5, unpricedRequests: 0 }])).toBeNull();
     expect(costedRatio([{ periodCost: 50, value: 25, requests: 5, unpricedRequests: 4 }])).toBe(0.5);
+  });
+});
+
+describe('whether accounts’ worth is known', () => {
+  it('is unknown only when they sent requests and none had a price', () => {
+    expect(valueKnown([])).toBe(true);
+    expect(valueKnown([{ requests: 0, unpricedRequests: 0 }])).toBe(true);
+    expect(valueKnown([{ requests: 5, unpricedRequests: 5 }])).toBe(false);
+    expect(valueKnown([{ requests: 5, unpricedRequests: 5 }, { requests: 3, unpricedRequests: 1 }])).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ import {
   capacityGap,
   capacityReport,
   costedRatio,
+  valueKnown,
   TARGET_PERCENT,
   type CapacityAccount,
   type CapacityProvider,
@@ -154,7 +155,7 @@ export function CapacityView({ data, onAddAccount, onNavigate }: { data: Capacit
         />
         <StatBlock
           label={t('usage.capacity.stat.value')}
-          value={money(value)}
+          value={valueKnown(accounts) ? money(value) : t('usage.capacity.unpriced')}
           hint={t('usage.capacity.stat.valueHint', { count: formatNumber(requests) })}
         />
         <StatBlock
@@ -213,7 +214,7 @@ function ProviderCapacity({
       description={description}
       headerAction={
         <span className="text-xs tabular-nums text-muted-foreground">
-          {t('usage.capacity.providerSummary', {
+          {t(valueKnown(provider.accounts) ? 'usage.capacity.providerSummary' : 'usage.capacity.providerSummaryUnpriced', {
             cost: t('usage.capacity.perMonth', { amount: money(provider.monthlyCost) }),
             value: money(provider.value),
           })}
@@ -274,7 +275,7 @@ function ProviderCapacity({
                   <CostCell account={account} money={money} />
                 </TableCell>
                 <TableCell className={TABLE_NUMERIC_CLASS}>
-                  {money(account.value)}
+                  {valueKnown([account]) ? money(account.value) : <span className="text-muted-foreground">{t('usage.capacity.unpriced')}</span>}
                   <span className="block text-2xs text-muted-foreground">
                     {account.unpricedRequests
                       ? t('usage.capacity.requestsUnpriced', { count: formatNumber(account.requests), unpriced: formatNumber(account.unpricedRequests) })
