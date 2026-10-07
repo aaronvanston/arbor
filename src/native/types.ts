@@ -1070,6 +1070,15 @@ export type CleanupHome = {
    * The app folder it sits in, by that folder's name, for a home an app keeps.
    */
   inside: string | null,
+  /**
+   * For a home whose own agent's sessions Arbor doesn't read from it, the sessions folder the catalog says it
+   * keeps, when it's there.
+   */
+  ownSessions: string | null,
+  /**
+   * That sessions folder is a home on the list Arbor reads and archives, which removing this one takes along.
+   */
+  ownSessionsArchived: boolean,
   held: CleanupHold | null,
 };
 
@@ -4700,6 +4709,10 @@ export type SetupBackup = {
    */
   commit: string | null,
   undoneAtMs: number | null,
+  /**
+   * For a clean-up, when the last of what it set aside was deleted for good, which leaves nothing to undo.
+   */
+  deletedAtMs?: number,
   /**
    * Files, and skills' folders in the store.
    */

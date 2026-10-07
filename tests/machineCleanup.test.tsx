@@ -3,7 +3,8 @@ import { clearMocks } from '@tauri-apps/api/mocks';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { mockCommands } from '../src/dev/mock/answers';
-import { I18nProvider } from '../src/i18n';
+import { I18nProvider, translate, translateRich } from '../src/i18n';
+import { outcomeText } from '../src/pages/SetupSync';
 import { CleanupContent, type CleanupProblem } from '../src/pages/MachineCleanup';
 import { cleanupView, deleteSetAside, removeCleanup, restoreSetAside } from '../src/services/cleanup';
 import { readCommandError } from '../src/services/commandError';
@@ -11,7 +12,8 @@ import type { CleanupHome, CleanupScan, SetAsideItem } from '../src/native/types
 import { itemAt } from './support/items';
 
 const home = (path: string, more: Partial<CleanupHome> = {}): CleanupHome => ({
-  path, agent: 'droid', harness: 'droid', role: 'history', sizeKb: 1_000, newestMs: 1, lastSessionMs: null, sessionFiles: 0, installed: false, inside: null, held: null, ...more,
+  path, agent: 'droid', harness: 'droid', role: 'history', sizeKb: 1_000, newestMs: 1, lastSessionMs: null, sessionFiles: 0, installed: false, inside: null,
+  ownSessions: null, ownSessionsArchived: false, held: null, ...more,
 });
 
 const aside = (path: string, more: Partial<SetAsideItem> = {}): SetAsideItem => ({
@@ -71,6 +73,27 @@ describe('a machine’s clean-up', () => {
     expect(claude).toContain('archive has them all');
     expect(factory).not.toContain('aria-disabled="true"');
     expect(factory).toContain('Agent not installed');
+  });
+
+  it('says what sessions a removable home takes along, only where the catalog knows its sessions folder', () => {
+    const html = render(scan({ homes: [
+      home('~/.pi/agent', { agent: 'pi-agent', harness: 'pi', ownSessions: '~/.pi/agent/sessions', ownSessionsArchived: true }),
+      home('~/.old-pi', { agent: 'pi-agent', harness: 'pi', ownSessions: '~/.old-pi/sessions' }),
+      home('~/.factory'),
+    ] }));
+    const row = (path: string) => itemAt(html.split('data-cleanup-path=').filter((entry) => entry.startsWith(`"${path}"`)), 0);
+    expect(row('~/.pi/agent')).toContain('Holds ~/.pi/agent/sessions, Pi’s sessions, which Arbor archives.');
+    expect(row('~/.pi/agent')).not.toContain('aria-disabled="true"');
+    expect(row('~/.old-pi')).toContain('May hold Pi’s own sessions, which Arbor doesn’t archive.');
+    expect(row('~/.factory')).not.toContain('sessions,');
+  });
+
+  it('says which folders of a clean-up were deleted for good when Undo puts back the rest', () => {
+    const text = (failed: { path: string; reason: string }[], done: string[]) =>
+      renderToStaticMarkup(<I18nProvider>{outcomeText({ backup: null, done, failed }, 'cam-mbp', translate, translateRich).text}</I18nProvider>);
+    const partly = outcomeText({ backup: null, done: ['~/.claude/debug'], failed: [{ path: '~/.factory', reason: 'deleted' }] }, 'cam-mbp', translate, translateRich);
+    expect(partly.ok).toBe(true);
+    expect(text([{ path: '~/.factory', reason: 'deleted' }], ['~/.claude/debug'])).toContain('~/.factory was deleted for good');
   });
 
   it('lists what is set aside with Restore, Delete for good and the drive it is kept on', () => {

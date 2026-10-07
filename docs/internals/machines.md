@@ -22,7 +22,7 @@ The machine page's Clean up (`usage/machine_health/cleanup.rs`) never deletes wh
 `~/.arbor/set-aside/<stamp>/`, or into `.arbor-set-aside/<stamp>/` at the top of the item's own drive so the move is a
 rename and never a copy. That area is apart from `setup-backups` on purpose: backups are pruned to the newest 20, and
 nothing set aside may ever go except by the user's Delete for good. A pointer with the same stamp in `setup-backups`
-lists the removal on Sync › Repo › History; pruning it only drops it from that list. Which harness folders count as
+lists the removal on Sync › Repo › History, and Delete for good notes each item there so Undo stops offering it; pruning the pointer only drops it from that list. Which harness folders count as
 clearable is `harnesses::CLEARABLE`, each with the reason it's safe.
 
 ## Agent homes

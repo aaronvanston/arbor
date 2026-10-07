@@ -88,9 +88,12 @@ const thingsText = (paths: string[], t: Translate) => countText(tally(paths), t)
 export function outcomeText(outcome: SyncOutcome, machine: string, t: Translate, tRich: TranslateRich): { ok: boolean; text: ReactNode } {
   const changed = outcome.failed.filter((failure) => failure.reason === 'changed').map((failure) => failure.path);
   const failed = outcome.failed.filter((failure) => failure.reason === 'failed').map((failure) => failure.path);
+  // A clean-up's folders deleted for good since, which Undo can't bring back.
+  const deleted = outcome.failed.filter((failure) => failure.reason === 'deleted').map((failure) => failure.path);
   const pill = <MachinePill name={machine} />;
   if (changed.length) return { ok: false, text: tRich('setup.sync.outcome.changed', { machine: pill, files: changed.join(', ') }) };
   if (failed.length) return { ok: false, text: t('setup.sync.outcome.failed', { done: outcome.done.length, files: failed.join(', ') }) };
+  if (deleted.length) return { ok: outcome.done.length > 0, text: tRich('setup.sync.outcome.deleted', { things: thingsText(outcome.done, t), machine: pill, files: deleted.join(', ') }) };
   return { ok: true, text: tRich('setup.sync.outcome.done', { things: thingsText(outcome.done, t), machine: pill }) };
 }
 
@@ -989,7 +992,9 @@ export function BackupList({ machine, backups, error, busy, undoing, onUndo, onR
                 .filter(Boolean)
                 .join(' · ')}
             </span>
-            {backup.undoneAtMs !== null ? (
+            {backup.deletedAtMs !== undefined ? (
+              <Badge variant="outline" size="sm" title={formatDateTime(backup.deletedAtMs, { year: 'always' })}>{t('setup.sync.history.deleted', { when: formatAgo(backup.deletedAtMs) })}</Badge>
+            ) : backup.undoneAtMs !== null ? (
               <Badge variant="outline" size="sm">{t('setup.sync.history.undone')}</Badge>
             ) : (
               <Button variant="ghost-muted" size="xs" disabled={busy} onClick={() => onUndo(backup)}>

@@ -117,7 +117,9 @@ export function HistoryMode({ repo, machines, machine: asked }: {
   const unshown = changes.state === 'ready' ? changes.value.filter((entry) => entry.problem !== null) : [];
   const machineLabel = (value: string | null) => (value ?? t('repo.history.allMachines'));
 
-  const undoButton = (entry: MachineChange) => (entry.backup.undoneAtMs !== null ? (
+  const undoButton = (entry: MachineChange) => (entry.backup.deletedAtMs !== undefined ? (
+    <Badge variant="outline" size="sm" title={formatDateTime(entry.backup.deletedAtMs, { year: 'always' })}>{t('setup.sync.history.deleted', { when: formatAgo(entry.backup.deletedAtMs) })}</Badge>
+  ) : entry.backup.undoneAtMs !== null ? (
     <Badge variant="outline" size="sm">{t('setup.sync.history.undone')}</Badge>
   ) : (
     <Button variant="ghost-muted" size="xs" disabled={undoing !== null} onClick={() => void undo(entry)}>
@@ -173,7 +175,7 @@ export function HistoryMode({ repo, machines, machine: asked }: {
               type="button"
               onClick={() => setChosen({ kind: 'change', key })}
               aria-current={active ? 'true' : undefined}
-              className={cn('mx-1 flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-start hover:bg-accent/60', active && 'bg-accent hover:bg-accent', item.change.backup.undoneAtMs !== null && 'opacity-60')}
+              className={cn('mx-1 flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-start hover:bg-accent/60', active && 'bg-accent hover:bg-accent', (item.change.backup.undoneAtMs !== null || item.change.backup.deletedAtMs !== undefined) && 'opacity-60')}
             >
               <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
                 <MachinePill name={item.change.machine} size="sm" />

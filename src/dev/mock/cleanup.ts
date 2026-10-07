@@ -3,7 +3,7 @@ import type { CleanupCommands } from '../../native/cleanup';
 import type { CleanupAgent, CleanupCache, CleanupGroup, CleanupHome, CleanupLeftover, CleanupScan, CommandError, SetAsideItem } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { freshInstall, later, mockLog, now, params } from './scenario';
-import { answerCleanupUndo, cleanupUndoneMock, recordCleanupMock } from './setup';
+import { answerCleanupUndo, cleanupDeletedMock, cleanupUndoneMock, recordCleanupMock } from './setup';
 
 // `?cleanup=` (listed at the top of mockTauri.ts): `none` for nothing to clean anywhere, `fail` for the look failing,
 // `changed` for Remove refusing because the item changed since the look, `drive` for an item set aside on another drive
@@ -17,13 +17,15 @@ const linux = (machine: string) => machine !== 'cam-mbp';
 
 function homesFor(machine: string): CleanupHome[] {
   const home = (path: string, agent: CleanupHome['agent'], harness: CleanupHome['harness'], more: Partial<CleanupHome>): CleanupHome => ({
-    path, agent, harness, role: 'active', sizeKb: null, newestMs: null, lastSessionMs: null, sessionFiles: null, installed: true, inside: null, held: null, ...more,
+    path, agent, harness, role: 'active', sizeKb: null, newestMs: null, lastSessionMs: null, sessionFiles: null, installed: true, inside: null,
+    ownSessions: null, ownSessionsArchived: false, held: null, ...more,
   });
   const homes = [
     home('~/.claude', 'claude', 'claude', { sizeKb: 2_480_000, newestMs: now - 4 * 60_000, lastSessionMs: now - 4 * 60_000, sessionFiles: 1_284, held: 'sessions' }),
     home('~/.codex', 'codex', 'codex', { sizeKb: 812_000, newestMs: now - 2 * hour, lastSessionMs: now - 2 * hour, sessionFiles: 342, held: 'sessions' }),
     home('~/.factory', 'droid', 'droid', { role: 'history', sizeKb: 48_200, newestMs: now - 81 * day, installed: false }),
     home('~/.config/amp', 'amp', 'amp', { role: 'active', sizeKb: 1_240, newestMs: now - 12 * day }),
+    home('~/.pi/agent', 'pi-agent', 'pi', { role: 'active', sizeKb: 22_400, newestMs: now - 9 * day, ownSessions: '~/.pi/agent/sessions', ownSessionsArchived: true }),
   ];
   if (!linux(machine)) {
     homes.push(home('~/Library/Application Support/Agent App/claude', 'claude', 'claude', {
@@ -67,7 +69,12 @@ function cachesFor(): CleanupCache[] {
 
 const stamp = (atMs: number) => `${new Date(atMs).toISOString().replace(/[-:]/g, '').slice(0, 15)}Z-${Math.floor(Math.random() * 65_536).toString(16).padStart(4, '0')}`;
 
-type Stored = { scan: CleanupScan; removed: Map<string, { group: CleanupGroup; item: CleanupHome | CleanupCache | CleanupLeftover }> };
+type Stored = {
+  scan: CleanupScan;
+  removed: Map<string, { group: CleanupGroup; item: CleanupHome | CleanupCache | CleanupLeftover }>;
+  /** What each removal set aside, by its stamp, and which of those were deleted for good since. */
+  stamps: Map<string, { paths: string[]; deleted: string[] }>;
+};
 const machines = new Map<string, Stored>();
 
 function seeded(machine: string): Stored {
@@ -82,7 +89,7 @@ function seeded(machine: string): Stored {
     const at = now - 26 * hour;
     aside.push({ stamp: stamp(at), item: 0, group: 'home', path: '~/Scratch/old-agent', atMs: at, sizeKb: 3_400_000, volume: '~/Scratch', taken: false });
   }
-  stored = { scan: { machine, scannedAtMs: null, homes: [], agents: [], leftovers: [], caches: [], aside, partial: false }, removed: new Map() };
+  stored = { scan: { machine, scannedAtMs: null, homes: [], agents: [], leftovers: [], caches: [], aside, partial: false }, removed: new Map(), stamps: new Map() };
   machines.set(machine, stored);
   return stored;
 }
@@ -130,8 +137,13 @@ function putBack(machine: string, stampId: string, item: number | null) {
 }
 
 answerCleanupUndo((machine, id) => {
+  const deleted = seeded(machine).stamps.get(id)?.deleted ?? [];
   const back = putBack(machine, id, null);
-  return { backup: null, done: back.restored, failed: back.failed.map((failure) => ({ path: failure.path, reason: 'changed' })) };
+  return {
+    backup: null,
+    done: back.restored,
+    failed: [...back.failed.map((failure) => ({ path: failure.path, reason: 'changed' })), ...deleted.map((path) => ({ path, reason: 'deleted' }))],
+  };
 });
 
 export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
@@ -166,6 +178,7 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
         removed.push(path);
       });
       recordCleanupMock(machine, id, removed);
+      stored.stamps.set(id, { paths: removed, deleted: [] });
       stored.scan = { ...stored.scan };
       return { stamp: id, removed, failed: [], scan: stored.scan };
     });
@@ -179,8 +192,14 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
     const stored = seeded(machine);
     return later(900, () => {
       for (const { stamp: id, item } of items) {
-        if (!stored.scan.aside.some((entry) => entry.stamp === id && entry.item === item)) throw `That isn't set aside on ${machine} any more`;
+        const entry = stored.scan.aside.find((candidate) => candidate.stamp === id && candidate.item === item);
+        if (!entry) throw `That isn't set aside on ${machine} any more`;
         stored.removed.delete(`${id}/${item}`);
+        const removal = stored.stamps.get(id);
+        if (removal) {
+          removal.deleted.push(entry.path);
+          if (removal.deleted.length === removal.paths.length) cleanupDeletedMock(machine, id);
+        }
       }
       stored.scan = { ...stored.scan, aside: stored.scan.aside.filter((entry) => !items.some((gone) => gone.stamp === entry.stamp && gone.item === entry.item)) };
       return stored.scan;

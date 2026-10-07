@@ -96,6 +96,11 @@ pub(crate) struct CleanupHome {
     pub(crate) installed: bool,
     /// The app folder it sits in, by that folder's name, for a home an app keeps.
     pub(crate) inside: Option<String>,
+    /// For a home whose own agent's sessions Arbor doesn't read from it, the sessions folder the catalog says it
+    /// keeps, when it's there.
+    pub(crate) own_sessions: Option<String>,
+    /// That sessions folder is a home on the list Arbor reads and archives, which removing this one takes along.
+    pub(crate) own_sessions_archived: bool,
     pub(crate) held: Option<CleanupHold>,
     #[serde(skip)]
     abs: String,
@@ -363,6 +368,7 @@ tidy() {
 // Follows COMMON. Lines out, besides COMMON's:
 //   G n agent folder          a home on the list (its index in the list the script was made from)
 //   C harness kind folder     a folder a harness keeps that it can do without (`harnesses::CLEARABLE`)
+//   S folder sessions         a home's own sessions folder, where the catalog knows one Arbor doesn't read there
 //   O kind file program       a startup item whose program isn't there: launchd or systemd
 //   B agent path real version an agent's command along the PATH (setup's INSTALLS_SCRIPT)
 //   Z path kb newest last-session sessions print    a measured item
@@ -449,6 +455,13 @@ fn scan_script(homes: &[AgentHome]) -> String {
             script.push_str(&format!("    {}) {} ;;\n", kind.shell_name(), calls.join("; ")));
         }
     }
+    script.push_str("  esac\n}\nown_sessions() {\n  case \"$1\" in\n");
+    for (kind, rel) in own_sessions_folders() {
+        script.push_str(&format!(
+            "    {}) if [ -d \"$2/{rel}\" ] && plain \"$2/{rel}\"; then printf 'S\\t%s\\t%s\\n' \"$2\" \"$2/{rel}\"; fi ;;\n",
+            kind.shell_name()
+        ));
+    }
     script.push_str("  esac\n}\nprio_of() {\n  case \"$1\" in\n");
     let sessions: Vec<&str> = homes.iter().filter(|home| home.agent.reads_sessions()).map(|home| home.agent.shell_name()).collect::<BTreeSet<_>>().into_iter().collect();
     if !sessions.is_empty() {
@@ -461,7 +474,7 @@ fn scan_script(homes: &[AgentHome]) -> String {
         script.push_str(&format!(
             "for dir in {words}; do home_line {} \"$dir\" {matched}; done | while IFS=$tab read -r agent folder; do\n\
              \x20 plain \"$folder\" || continue\n\
-             \x20 printf 'G\\t%s\\t%s\\t%s\\n' {index} \"$agent\" \"$folder\"; todo \"$(prio_of \"$agent\")\" \"$folder\"; caches_in \"$agent\" \"$folder\"\n\
+             \x20 printf 'G\\t%s\\t%s\\t%s\\n' {index} \"$agent\" \"$folder\"; todo \"$(prio_of \"$agent\")\" \"$folder\"; caches_in \"$agent\" \"$folder\"; own_sessions \"$agent\" \"$folder\"\n\
              done\n",
             home.agent.shell_name()
         ));
@@ -479,6 +492,19 @@ fn scan_script(homes: &[AgentHome]) -> String {
     script.push_str(&format!("(\n{AGENT_ENV}emit_installs \"$PATH\"\n)\n"));
     script.push_str("list_aside\nmeasure_all\n");
     script
+}
+
+/// The sessions folder, from the home, of each kind of home whose agent keeps its sessions inside it but where Arbor
+/// doesn't read them as that home: from the catalog, so a harness with no known sessions folder has none.
+fn own_sessions_folders() -> Vec<(AgentHomeKind, &'static str)> {
+    harnesses::CATALOG
+        .iter()
+        .filter_map(|spec| {
+            let kind = spec.home_kind.filter(|kind| !kind.reads_sessions())?;
+            let rel = spec.sessions?.default.strip_prefix(spec.home)?.strip_prefix('/')?;
+            (!rel.is_empty()).then_some((kind, rel))
+        })
+        .collect()
 }
 
 fn kind_name(kind: ClearableKind) -> &'static str {
@@ -657,7 +683,12 @@ const DELETE_FUNCTIONS: &str = r##"del() {
   esac
   awk -F'\t' -v n="$2" -v a="$3" '$1 == "M" && $2 == n && $5 == a { f = 1 } END { exit !f }' "$HOME/.arbor/set-aside/$1/manifest" 2>/dev/null \
     || { printf 'X\t%s\t%s\trefused\n' "$1" "$2"; return 0; }
-  if rm -rf "$3" && ! there "$3"; then printf 'G\t%s\t%s\n' "$1" "$2"; else printf 'X\t%s\t%s\tfailed\n' "$1" "$2"; fi
+  if rm -rf "$3" && ! there "$3"; then
+    printf 'G\t%s\t%s\n' "$1" "$2"
+    # Arbor's changes note it, so the removal's Undo there no longer offers it.
+    p="$HOME/.arbor/setup-backups/$1/manifest"
+    if [ -f "$p" ]; then printf 'Y\t%s\t%s\n' "$2" "$(date +%s)" >> "$p"; fi
+  else printf 'X\t%s\t%s\tfailed\n' "$1" "$2"; fi
 }
 "##;
 
@@ -742,6 +773,7 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
     let mut leftovers: Vec<(LeftoverKind, String, String)> = Vec::new();
     let mut agents: Vec<CleanupAgent> = Vec::new();
     let mut measured: HashMap<String, Measured> = HashMap::new();
+    let mut own_sessions: HashMap<String, String> = HashMap::new();
     let mut partial = false;
     for line in stdout.lines() {
         let fields: Vec<&str> = line.split('\t').collect();
@@ -800,6 +832,9 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
                     },
                 );
             }
+            ["S", folder, sessions] if whole(folder) && whole(sessions) => {
+                own_sessions.insert(folder.to_string(), sessions.to_string());
+            }
             ["Q"] => partial = true,
             _ => {}
         }
@@ -819,13 +854,17 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
             None
         }
     };
-    let session_folders: Vec<&str> = found_homes.iter().filter(|(_, agent, _)| agent.reads_sessions()).map(|(_, _, folder)| folder.as_str()).collect();
     let homes_found: Vec<CleanupHome> = found_homes
         .iter()
         .filter_map(|(index, agent, folder)| {
             let listed = homes.get(*index)?;
             let measure = measured.get(folder);
-            let holds_sessions = agent.reads_sessions() || session_folders.iter().any(|inner| *inner != folder && within(inner, folder));
+            let holds_sessions = agent.reads_sessions();
+            let sessions = own_sessions.get(folder);
+            // Archived when the folder is a home on the list that reads sessions and isn't Ignored.
+            let archived = sessions.is_some_and(|sessions| {
+                found_homes.iter().any(|(at, kind, home)| home == sessions && kind.reads_sessions() && homes.get(*at).is_some_and(|listed| listed.role() != AgentHomeRole::Ignored))
+            });
             let path = tilde(folder);
             let spec = agent.harness().spec();
             Some(CleanupHome {
@@ -838,6 +877,8 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
                 last_session_ms: measure.and_then(|measure| measure.last_session_ms),
                 session_files: measure.map(|measure| measure.sessions),
                 installed: installed.contains(&agent.harness()),
+                own_sessions: sessions.map(|sessions| tilde(sessions)),
+                own_sessions_archived: archived,
                 held: if holds_sessions && in_home(folder, &home_dir) { Some(CleanupHold::Sessions) } else { held(folder, measure) },
                 print: measure.map(|measure| measure.print.clone()),
                 list_path: if listed.path.contains('*') { path.clone() } else { listed.path.clone() },
@@ -955,10 +996,10 @@ fn aside_volume(aside: &str, home: &str, stamp: &str, item: u32) -> Option<Optio
     (whole(aside) && (top.is_empty() || whole(top))).then(|| Some(if top.is_empty() { "/".to_string() } else { top.to_string() }))
 }
 
-/// The folder a `C` line of a change's pointer set aside: `C n from aside`.
-pub(super) fn pointer_from<'a>(fields: &[&'a str]) -> Option<&'a str> {
+/// The number and folder of a `C` line of a change's pointer: `C n from aside`.
+pub(super) fn pointer_from<'a>(fields: &[&'a str]) -> Option<(&'a str, &'a str)> {
     match fields {
-        ["C", n, from, aside] if !n.is_empty() && n.bytes().all(|byte| byte.is_ascii_digit()) && whole(from) && whole(aside) => Some(*from),
+        ["C", n, from, aside] if !n.is_empty() && n.bytes().all(|byte| byte.is_ascii_digit()) && whole(from) && whole(aside) => Some((*n, *from)),
         _ => None,
     }
 }
@@ -1309,21 +1350,25 @@ async fn restore(app: &tauri::AppHandle, target: &Machine, stamp: &str, item: Op
     Ok(CleanupRestore { restored, failed, scan })
 }
 
-/// Undo on Sync › Repo › History for a clean-up: puts back everything of it that's still set aside.
-pub(super) async fn undo_from_history(app: &tauri::AppHandle, target: &Machine, stamp: &str) -> Result<SyncOutcome, String> {
+/// Undo on Sync › Repo › History for a clean-up: puts back everything of it that's still set aside, and names what
+/// was deleted for good (`deleted`, as History shows them) with the reason `deleted`.
+pub(super) async fn undo_from_history(app: &tauri::AppHandle, target: &Machine, stamp: &str, deleted: &[String]) -> Result<SyncOutcome, String> {
     let restored = restore(app, target, stamp, None).await?;
-    Ok(SyncOutcome {
-        backup: None,
-        done: restored.restored,
-        failed: restored
-            .failed
-            .into_iter()
-            .map(|failure| SyncFailure {
-                path: failure.path,
-                reason: if matches!(failure.problem, RestoreProblem::Taken | RestoreProblem::Changed) { "changed" } else { "failed" },
-            })
-            .collect(),
-    })
+    Ok(undo_outcome(restored, deleted))
+}
+
+fn undo_outcome(restored: CleanupRestore, deleted: &[String]) -> SyncOutcome {
+    let mut failed: Vec<SyncFailure> = restored
+        .failed
+        .into_iter()
+        .filter(|failure| !(failure.problem == RestoreProblem::Gone && deleted.contains(&failure.path)))
+        .map(|failure| SyncFailure {
+            path: failure.path,
+            reason: if matches!(failure.problem, RestoreProblem::Taken | RestoreProblem::Changed) { "changed" } else { "failed" },
+        })
+        .collect();
+    failed.extend(deleted.iter().map(|path| SyncFailure { path: path.clone(), reason: "deleted" }));
+    SyncOutcome { backup: None, done: restored.restored, failed }
 }
 
 /// Deletes things set aside on a machine for good. Only ever inside a set-aside area, and never undone.
@@ -1408,7 +1453,7 @@ mod tests {
         }
         let line = format!("A\t{stamp}\t0\tcache\t/home/cam/.claude/debug\t/etc/passwd\tDabc\t12\t0\n");
         assert!(parse_aside(&line, "/home/cam").0.is_empty(), "a listing naming somewhere else isn't trusted");
-        assert_eq!(pointer_from(&["C", "0", "/home/cam/.claude/debug", "/home/cam/.arbor/set-aside/x/items/0"]), Some("/home/cam/.claude/debug"));
+        assert_eq!(pointer_from(&["C", "0", "/home/cam/.claude/debug", "/home/cam/.arbor/set-aside/x/items/0"]), Some(("0", "/home/cam/.claude/debug")));
         assert_eq!(pointer_from(&["C", "0", "relative", "/x"]), None);
     }
 
@@ -1464,6 +1509,8 @@ mod tests {
             write(&home.join(".claude/debug/abc.txt"), SECRET);
             write(&home.join(".factory/settings.json"), SECRET);
             write(&home.join(".factory/AGENTS.md"), SECRET);
+            write(&home.join(".pi/agent/AGENTS.md"), SECRET);
+            write(&home.join(".pi/agent/sessions/--src-app--/s.jsonl"), SECRET);
             write(&home.join(".agent-app/homes/one/.claude.json"), SECRET);
             write(&home.join(".agent-app/homes/one/projects/-x/s.jsonl"), SECRET);
             write(&home.join(".cache/opencode/node_modules/pkg/index.js"), SECRET);
@@ -1507,6 +1554,11 @@ mod tests {
                 let factory = scan.homes.iter().find(|home| home.path == "~/.factory").unwrap();
                 assert!(factory.size_kb.is_some() && factory.print.as_deref().is_some_and(|print| print.starts_with('D')), "{shell}");
                 assert!(!factory.installed, "{shell}: no droid on the PATH");
+                assert_eq!((factory.own_sessions.as_deref(), factory.own_sessions_archived), (None, false), "{shell}: the catalog knows no sessions folder for Droid");
+                // Pi's own folder can be removed, and says it holds the sessions folder Arbor archives.
+                let pi = scan.homes.iter().find(|home| home.path == "~/.pi/agent").unwrap();
+                assert_eq!((pi.held, pi.own_sessions.as_deref(), pi.own_sessions_archived), (None, Some("~/.pi/agent/sessions"), true), "{shell}");
+                assert_eq!(found.get("~/.pi/agent/sessions"), Some(&Some(CleanupHold::Sessions)), "{shell}");
                 let claude = scan.homes.iter().find(|home| home.path == "~/.claude").unwrap();
                 assert_eq!(claude.session_files, Some(1), "{shell}");
                 assert!(claude.last_session_ms.is_some(), "{shell}");
@@ -1580,6 +1632,44 @@ mod tests {
                 assert!(stdout.contains(&format!("G\t{stamp}\t1")), "{shell}: {stdout}");
                 assert!(!kept.exists(), "{shell}: nothing left of the removal");
                 assert!(home.join(".claude/debug/new.txt").exists(), "{shell}: what took its place is left alone");
+                let _ = fs::remove_dir_all(&home);
+            }
+        }
+
+        #[test]
+        fn deleting_for_good_marks_the_change_so_undo_restores_only_the_rest() {
+            for shell in shells() {
+                let home = temp_home(&format!("history-{shell}"));
+                fixture(&home);
+                let found = scan(shell, &home);
+                let planned = plan(&found, &[(CleanupGroup::Home, "~/.factory"), (CleanupGroup::Cache, "~/.claude/debug")]);
+                let stamp = "20261007T010203Z-00f0";
+                let stdout = run(shell, &home, &remove_script(stamp, &planned, &[]));
+                let (aside, _) = parse_aside(&stdout, &home.display().to_string());
+                let history = || setup_sync::parse_backups(&run(shell, &home, &format!("set -u\nexport LC_ALL=C\n{}", guarded_writes::BACKUPS_SCRIPT)));
+
+                // One of the two deleted for good: History still offers Undo, which knows that one is gone.
+                let factory: Vec<SetAsideItem> = aside.iter().filter(|item| item.path == "~/.factory").cloned().collect();
+                run(shell, &home, &delete_script(&factory));
+                let listed = history();
+                assert_eq!((listed[0].deleted.as_slice(), listed[0].deleted_at_ms), (&["~/.factory".to_string()][..], None), "{shell}");
+                let rest: Vec<SetAsideItem> = aside.iter().filter(|item| item.path != "~/.factory").cloned().collect();
+                let stdout = run(shell, &home, &restore_script(&rest));
+                assert!(stdout.contains(&format!("B\t{stamp}\t1")) && home.join(".claude/debug/abc.txt").exists(), "{shell}: {stdout}");
+                let restored = CleanupRestore { restored: vec!["~/.claude/debug".into()], failed: Vec::new(), scan: CleanupScan::default() };
+                let outcome = undo_outcome(restored, &listed[0].deleted);
+                assert_eq!(outcome.done, ["~/.claude/debug"]);
+                assert_eq!(outcome.failed, [SyncFailure { path: "~/.factory".into(), reason: "deleted" }], "{shell}");
+
+                // Everything deleted for good: nothing left to undo, with when.
+                let found = scan(shell, &home);
+                let planned = plan(&found, &[(CleanupGroup::Cache, "~/.claude/debug")]);
+                let stamp = "20261007T010203Z-00f1";
+                let stdout = run(shell, &home, &remove_script(stamp, &planned, &[]));
+                run(shell, &home, &delete_script(&parse_aside(&stdout, &home.display().to_string()).0));
+                let listed = history();
+                let all_gone = listed.iter().find(|backup| backup.id == stamp).unwrap();
+                assert!(all_gone.deleted_at_ms.is_some_and(|at| at > 0), "{shell}");
                 let _ = fs::remove_dir_all(&home);
             }
         }

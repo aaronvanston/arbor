@@ -189,6 +189,7 @@ export function CleanupContent({ machine, pill, scan, looking, error, busy, prob
   onDelete: (items: SetAsideItem[]) => void;
 }) {
   const { t, tRich } = useI18n();
+  const harnessName = useHarnessName();
   const view = scan ? cleanupView(scan) : null;
   const scanned = scan?.scannedAtMs ?? null;
   const summary = view && scanned !== null
@@ -275,6 +276,11 @@ export function CleanupContent({ machine, pill, scan, looking, error, busy, prob
                 <Badge key="role" variant="muted" size="sm">{t(ROLE_LABEL[home.role])}</Badge>,
               ]}
               action={removeButton('home', home.path, home.held)}
+              note={home.ownSessions
+                ? home.ownSessionsArchived
+                  ? t('machine.cleanup.ownSessionsArchived', { agent: harnessName(home.harness), path: home.ownSessions })
+                  : t('machine.cleanup.ownSessions', { agent: harnessName(home.harness) })
+                : null}
               problem={problemLine(home.path)}
             />
           ))}
@@ -382,13 +388,15 @@ function GroupHead({ title, kb, action }: { title: string; kb?: number; action?:
   );
 }
 
-function Row({ path, title, mark, facts, badges, action, problem }: {
+function Row({ path, title, mark, facts, badges, action, note, problem }: {
   path: string;
   title?: string;
   mark?: ReactNode;
   facts: (string | null)[];
   badges?: ReactNode[];
   action: ReactNode;
+  /** A line about what removing it takes along. */
+  note?: string | null;
   problem?: ReactNode;
 }) {
   return (
@@ -402,6 +410,7 @@ function Row({ path, title, mark, facts, badges, action, problem }: {
         <p className={cn('truncate text-xs text-muted-foreground', title && 'font-mono')} title={title ? path : undefined}>
           {[title ? path : null, ...facts].filter(Boolean).join(' · ')}
         </p>
+        {note ? <p className="text-xs text-warning-foreground">{note}</p> : null}
         {problem}
       </div>
       <div className="shrink-0">{action}</div>

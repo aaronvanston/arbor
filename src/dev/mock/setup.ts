@@ -965,6 +965,12 @@ export const recordCleanupMock = (machine: string, id: string, paths: string[], 
   setupBackups[machine] = [backup, ...(setupBackups[machine] ?? [])].sort((a, b) => b.atMs - a.atMs).slice(0, 20);
 };
 
+/** Marks a clean-up deleted for good once everything it set aside is. */
+export const cleanupDeletedMock = (machine: string, id: string) => {
+  const backup = setupBackups[machine]?.find((candidate) => candidate.id === id);
+  if (backup) backup.deletedAtMs = Date.now();
+};
+
 /** Marks a clean-up undone once everything it set aside is back. */
 export const cleanupUndoneMock = (machine: string, id: string) => {
   const backup = setupBackups[machine]?.find((candidate) => candidate.id === id);
@@ -3200,7 +3206,9 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   },
   list_setup_backups: (args) => {
     if (params.get('changes') === 'fail') return later(300, () => { throw `ssh: connect to host ${args.machine} port 22: Operation timed out`; });
-    const backups = (setupBackups[args.machine] ?? []).map(({ id, atMs, what, commit, undoneAtMs, files, skills }) => ({ id, atMs, what, commit, undoneAtMs, files, skills }));
+    const backups = (setupBackups[args.machine] ?? []).map(({ id, atMs, what, commit, undoneAtMs, deletedAtMs, files, skills }) => ({
+      id, atMs, what, commit, undoneAtMs, ...(deletedAtMs === undefined ? {} : { deletedAtMs }), files, skills,
+    }));
     return later(300, () => backups);
   },
   undo_setup_sync: (args) => {
@@ -3210,6 +3218,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     const backup = setupBackups[machine]?.find((candidate) => candidate.id === args.backup);
     if (!entry || !backup) throw "That change's backup isn't on this machine any more.";
     if (backup.undoneAtMs !== null) throw 'That change was undone already.';
+    if (backup.deletedAtMs !== undefined) throw 'Everything that clean-up set aside was deleted for good, so there’s nothing to put back.';
     if (backup.what === 'projects') return later(700, () => undoFixesMock(backup));
     if (backup.what === 'cleanup' && undoCleanupMock) {
       const undo = undoCleanupMock;

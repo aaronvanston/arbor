@@ -900,6 +900,13 @@ pub(crate) struct SetupBackup {
     /// The repo's commit it came from.
     commit: Option<String>,
     pub(super) undone_at_ms: Option<i64>,
+    /// For a clean-up, when the last of what it set aside was deleted for good, which leaves nothing to undo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub(super) deleted_at_ms: Option<i64>,
+    /// For a clean-up, the folders it set aside that were deleted for good since, as History shows them.
+    #[serde(skip)]
+    pub(super) deleted: Vec<String>,
     /// Files, and skills' folders in the store.
     files: Vec<BackupFile>,
     /// What a change to skills did in each home.
@@ -917,6 +924,9 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
     let mut home = "";
     // What made each backup, where it says.
     let mut made_by: Vec<Option<ChangeKind>> = Vec::new();
+    // A clean-up's folders by their number, and those deleted for good since with when, for each backup.
+    let mut set_aside: Vec<Vec<(String, String)>> = Vec::new();
+    let mut gone: Vec<Vec<(String, i64)>> = Vec::new();
     // Lines after a backup that isn't Arbor's belong to it, not the one before.
     let mut current: Option<usize> = None;
     for line in stdout.lines() {
@@ -931,12 +941,16 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                         what: ChangeKind::Sync,
                         commit: None,
                         undone_at_ms: undone.parse::<i64>().ok().map(|seconds| seconds * 1000),
+                        deleted_at_ms: None,
+                        deleted: Vec::new(),
                         files: Vec::new(),
                         skills: Vec::new(),
                         edits: Vec::new(),
                         places: Vec::new(),
                     });
                     made_by.push(None);
+                    set_aside.push(Vec::new());
+                    gone.push(Vec::new());
                     backups.len() - 1
                 });
             }
@@ -953,6 +967,12 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
             ["G", ..] => {
                 if let (Some(backup), Some(place)) = (current.and_then(|index| backups.get_mut(index)), BackupPlace::parse(&fields)) {
                     backup.places.push(place);
+                }
+            }
+            // One of a clean-up's folders deleted for good, and when.
+            ["Y", n, seconds] => {
+                if let (Some(listed), Ok(seconds)) = (current.and_then(|index| gone.get_mut(index)), seconds.parse::<i64>()) {
+                    listed.push((n.to_string(), seconds * 1000));
                 }
             }
             ["commit", sha] => {
@@ -1005,7 +1025,11 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
             }
             // A folder the clean-up set aside, listed like an edit: undone by `cleanup`, not as a synced file.
             ["C", ..] => {
-                if let (Some(backup), Some(from)) = (current.and_then(|index| backups.get_mut(index)), super::cleanup::pointer_from(&fields)) {
+                if let (Some(index), Some((n, from))) = (current, super::cleanup::pointer_from(&fields)) {
+                    let Some(backup) = backups.get_mut(index) else { continue };
+                    if let Some(listed) = set_aside.get_mut(index) {
+                        listed.push((n.to_string(), agent_homes::tilde(from, home)));
+                    }
                     backup.files.push(BackupFile {
                         path: agent_homes::tilde(from, home),
                         change: "removed",
@@ -1019,6 +1043,12 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                 }
             }
             _ => {}
+        }
+    }
+    for ((backup, listed), gone) in backups.iter_mut().zip(&set_aside).zip(&gone) {
+        backup.deleted = listed.iter().filter(|(n, _)| gone.iter().any(|(deleted, _)| deleted == n)).map(|(_, path)| path.clone()).collect();
+        if !listed.is_empty() && backup.deleted.len() == listed.len() {
+            backup.deleted_at_ms = gone.iter().map(|(_, at)| *at).max();
         }
     }
     for (backup, made_by) in backups.iter_mut().zip(made_by) {
@@ -1393,7 +1423,10 @@ pub(crate) async fn undo_setup_sync(
         return Err("That change was undone already.".into());
     }
     if found.what == ChangeKind::Cleanup {
-        return super::cleanup::undo_from_history(&app, &target, &found.id).await;
+        if found.deleted_at_ms.is_some() {
+            return Err("Everything that clean-up set aside was deleted for good, so there's nothing to put back.".into());
+        }
+        return super::cleanup::undo_from_history(&app, &target, &found.id, &found.deleted).await;
     }
     let stdout = run_on(&target, MachineOp::SetupUndo, &undo_script(&found)).await;
     rescan(&app, &machine);
