@@ -144,7 +144,8 @@
  * reaching them yet, so Sync shows them as they were and only a Scan you ask for reads them again; `?behind=plugins` for
  * ci-01 behind the setup repo on plugins alone, with the sample plugins listed as `?pluginrepo=sample` lists them (Overview,
  * the Repo strip and the sidebar badge all say so);
- * `?repo=fail` or `?repo=dirty` for a setup repo Arbor can't read, or with changes not committed (CLAUDE.md and pdf's
+ * `?repo=fail` or `?repo=dirty` for a setup repo Arbor can't read (Repo and Overview say so, and Overview counts nothing
+ * against it), or with changes not committed (CLAUDE.md and pdf's
  * SKILL.md edited and a new rule, which Sync › Repo's Changes lists), or `?repo=big` for one with fifty more skills'
  * folders and fifty more skills removed everywhere than the browser is tall; `?repotree=fail` or `?repotree=truncated` for
  * the repo browser's file list failing to read, or cut short; `?repowrite=stale` to have every save there refused

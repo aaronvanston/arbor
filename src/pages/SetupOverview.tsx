@@ -49,7 +49,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
 }) {
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
-  const { repoPath, sources, loaded, rows, standing, kindErrors, readAgain } = useLibrary(machines);
+  const { repoPath, sources, loaded, loadError, rows, standing, kindErrors, readAgain } = useLibrary(machines);
   const [running, setRunning] = useState<string | null>(null);
   const [problems, setProblems] = useState<Record<string, string[]>>({});
   const [log, setLog] = useState<RepoCommit[] | null>(null);
@@ -118,16 +118,21 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
       ? <Badge key={item.key} variant="outline" render={<button type="button" onClick={open} />}>{item.name}</Badge>
       : <Badge key={item.key} variant="outline">{item.name}</Badge>;
   };
+  // A repo Arbor can't read can't be compared with, so nothing is counted against it, rather than every machine
+  // looking in step.
+  const unreadable = loaded && loadError !== null;
+  const pending = unreadable ? '—' : '…';
   return (
     <div className="flex flex-col gap-6">
       <StatsGrid columns={4}>
         <StatBlock
           label={t('overview.stat.inStep')}
-          value={standing ? t('overview.stat.inStepValue', { count: standing.inStep, of: standing.read }) : '…'}
+          value={standing ? t('overview.stat.inStepValue', { count: standing.inStep, of: standing.read }) : pending}
           tone={standing && standing.inStep < standing.read ? 'warning' : 'default'}
+          hint={unreadable ? t('overview.repoUnreadable.hint') : undefined}
         />
-        <StatBlock label={t('overview.stat.items')} value={loaded ? formatCount(items) : '…'} />
-        <StatBlock label={t('overview.stat.behind')} value={standing ? formatCount(behindKeys.size) : '…'} tone={behindKeys.size ? 'warning' : 'default'} />
+        <StatBlock label={t('overview.stat.items')} value={unreadable ? '—' : loaded ? formatCount(items) : '…'} />
+        <StatBlock label={t('overview.stat.behind')} value={standing ? formatCount(behindKeys.size) : pending} tone={behindKeys.size ? 'warning' : 'default'} />
         <StatBlock label={t('overview.stat.lastChange')} value={sources.repo?.head ? formatAgo(sources.repo.head.atMs) : '—'} hint={sources.repo?.head?.subject} />
       </StatsGrid>
 
@@ -139,7 +144,11 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
         ) : undefined}
       >
         {kindError ? <p className="px-4 pt-3 text-xs text-error-foreground" role="alert">{t('overview.kindFailed', { error: kindError })}</p> : null}
-        {!loaded || (!standing && repoPath) ? (
+        {unreadable ? (
+          <TableEmpty action={<Button variant="outline" size="sm" onClick={onOpenRepo}>{t('library.noRepo.open')}</Button>}>
+            <span className="text-error-foreground" role="alert">{t('setup.repo.failed', { error: loadError })}</span>
+          </TableEmpty>
+        ) : !loaded || (!standing && repoPath) ? (
           <TableEmpty><span className="inline-flex items-center gap-2"><Spinner />{t('library.loading')}</span></TableEmpty>
         ) : (
           <ul className="divide-y divide-border/50">

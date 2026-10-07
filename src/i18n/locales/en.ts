@@ -2191,6 +2191,7 @@ export const en = {
   'library.item.open': 'Open {name}',
   'overview.stat.inStep': 'Machines in step',
   'overview.stat.inStepValue': '{count} of {of}',
+  'overview.repoUnreadable.hint': 'Arbor can’t read the setup repo',
   'overview.stat.items': 'In the Library',
   'overview.stat.behind': 'Items behind somewhere',
   'overview.stat.lastChange': 'Repo’s last change',
