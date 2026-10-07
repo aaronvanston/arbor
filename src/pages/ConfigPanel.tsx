@@ -27,7 +27,6 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { AlertDialog, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../components/ui/dialog';
-import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { Input } from '../components/ui/input';
 import { draftFromNumber, NumberField, numberFromDraft } from '../components/ui/number-field';
 import { Label } from '../components/ui/label';
@@ -975,11 +974,13 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
                 </SettingsBlock>
               ))
             ) : (
-              <Empty size="sm">
-                <EmptyMedia><KeyRound /></EmptyMedia>
-                <EmptyTitle>{t('config.keys.empty')}</EmptyTitle>
-                <EmptyDescription>{t('config.keys.add')}</EmptyDescription>
-              </Empty>
+              // With no key the core takes any request, so the empty list says the proxy is open, not just empty.
+              <SettingsBlock>
+                <Alert variant="warning" icon={<KeyRound />}>
+                  <div className="font-medium">{t('config.keys.empty')}</div>
+                  <AlertDescription>{t('config.keys.open')}</AlertDescription>
+                </Alert>
+              </SettingsBlock>
             )}
             {settings?.pausedApiKeys?.map((entry) => (
               <SettingsBlock key={`paused-${entry.apiKeyHash}`} className="flex min-h-12 items-center gap-3 py-2">
