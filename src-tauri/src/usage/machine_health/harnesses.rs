@@ -481,6 +481,50 @@ pub(crate) fn is_found(harness: Harness, found_on: &FoundOn) -> bool {
     matches!(harness, Harness::Claude | Harness::Codex) || found_on.get(&harness).is_some_and(|machines| !machines.is_empty())
 }
 
+/// What a folder the clean-up offers to clear holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ClearableKind {
+    Logs,
+    Cache,
+}
+
+/// A folder a harness writes for itself and rebuilds or does without, so moving it aside loses nothing it needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Clearable {
+    /// From `~/`, or from each of the harness's homes when it starts with neither.
+    pub(crate) path: &'static str,
+    pub(crate) kind: ClearableKind,
+}
+
+/// The folders each harness keeps that the clean-up offers to clear. Kept beside the catalog rather than in it, so a
+/// change to one doesn't touch every entry. Only what the harness's own docs or behavior show is safe: never its
+/// sessions, history, projects, settings, sign-ins, skills or plugins, nor a folder a running session reads back (shell
+/// snapshots, file history, pasted text). One that isn't certain is left out.
+pub(crate) const CLEARABLE: &[(Harness, &[Clearable])] = &[
+    // Debug logs, one file per session, written with --debug or /debug and read only by people troubleshooting
+    // (code.claude.com's "Debug your configuration"). Nothing reads them back, and they can grow to gigabytes.
+    (Harness::Claude, &[Clearable { path: "debug", kind: ClearableKind::Logs }]),
+    // The TUI's plain-text log, codex-tui.log, under the home's log_dir (the Codex config reference). Its sessions are
+    // in sessions/ and its state in SQLite beside the home, so the log is only for troubleshooting.
+    (Harness::Codex, &[Clearable { path: "log", kind: ClearableKind::Logs }]),
+    (
+        Harness::OpenCode,
+        &[
+            // Its logs, of which it keeps the newest ten itself (opencode.ai's troubleshooting docs). Its sessions are
+            // in storage/ and project/ beside them, never in log/.
+            Clearable { path: "~/.local/share/opencode/log", kind: ClearableKind::Logs },
+            // The provider packages it installs as it needs them; its docs say to delete this folder to fetch them again.
+            Clearable { path: "~/.cache/opencode", kind: ClearableKind::Cache },
+        ],
+    ),
+];
+
+/// The folders the clean-up offers to clear for `harness`.
+pub(crate) fn clearable(harness: Harness) -> &'static [Clearable] {
+    CLEARABLE.iter().find(|(listed, _)| *listed == harness).map_or(&[], |(_, folders)| folders)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2,6 +2,7 @@ import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import type { AppCommands } from './app';
 import type { ArchiveCommands } from './archive';
 import type { AutomationCommands } from './automations';
+import type { CleanupCommands } from './cleanup';
 import type { CliCommands } from './cli';
 import type { CoreCommands } from './core';
 import type { MachineCommands } from './machines';
@@ -13,7 +14,7 @@ import type { UsageCommands } from './usage';
  * returns. The entries are written from the Rust signatures, and `tests/commandParity.test.ts` checks each one
  * against them. The types they use come from Rust as well: `./types.ts`, written by `bun run bindings`.
  */
-export type Commands = AppCommands & CoreCommands & UsageCommands & MachineCommands & SetupCommands & ArchiveCommands & CliCommands & AutomationCommands;
+export type Commands = AppCommands & CoreCommands & UsageCommands & MachineCommands & SetupCommands & ArchiveCommands & CliCommands & AutomationCommands & CleanupCommands;
 
 export type CommandName = keyof Commands;
 export type CommandResult<K extends CommandName> = Commands[K]['result'];

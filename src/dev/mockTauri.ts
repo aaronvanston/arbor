@@ -120,6 +120,11 @@
  * `?install=native`, `brew`, `npm`, `bun`, `pnpm`, `mise` or `unknown` to have every machine's Claude Code and Codex
  * installed that way, so Machines names it and an update shows and runs its command (by default Claude Code is from
  * its own installer and Codex from npm);
+ * A machine page's Clean up section (`?page=machine:cam-mbp`, Look): by default each machine has homes, agents, leftovers,
+ * logs and caches, the homes holding sessions shown without Remove, and cam-mbp has a launch agent set aside already;
+ * `?cleanup=none` for nothing to clean, `fail` for the look failing, `changed` for Remove refusing because the item
+ * changed since the look, `drive` for a home set aside on another drive and Remove of ~/.cache/opencode refused because
+ * its drive can't take a set-aside folder;
  * `?setup=fail` to have ci-01's setup scan fail; `?setup=overrides` for skills Claude Code's skillOverrides turn off or
  * list by name only on this Mac and ci-01, and a second Claude home whose overrides Claude Code ignores; `?setup=policy` for
  * a managed-settings policy that sets settings, env, a hook and a plugin and turns a skill off on this Mac, one ci-01
@@ -395,6 +400,7 @@ import { mockCommands, type CommandAnswers, type CommandObserver } from './mock/
 import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
 import { archiveAnswers } from './mock/archive';
 import { automationsAnswers } from './mock/automations';
+import { cleanupAnswers } from './mock/cleanup';
 import { cliAnswers } from './mock/cli';
 import { coreAnswers, coreScenario, stopCoreLater } from './mock/core';
 import { machinesAnswers } from './mock/machines';
@@ -483,7 +489,7 @@ const pluginAnswers: Record<string, (args: Json) => unknown> = {
   'plugin:notification|notify': (args) => { mockLog('notification', args); return null; },
 };
 
-const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers, ...cliAnswers, ...automationsAnswers };
+const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers, ...cliAnswers, ...automationsAnswers, ...cleanupAnswers };
 
 // Status page replies, shaped like status.claude.com (Statuspage) and status.openai.com (incident.io's own feed).
 const claudeStatusFeed = () => {

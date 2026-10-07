@@ -17,6 +17,8 @@ pub(crate) enum CommandErrorKind {
     Canceled,
     /// The core answered, with a status other than success.
     Core,
+    /// What it was to change isn't as Arbor last read it, so it changed nothing.
+    Changed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
@@ -42,6 +44,10 @@ impl CommandError {
 
     pub(crate) fn canceled(message: impl Into<String>) -> Self {
         Self { kind: CommandErrorKind::Canceled, ..Self::failed(message) }
+    }
+
+    pub(crate) fn changed(message: impl Into<String>) -> Self {
+        Self { kind: CommandErrorKind::Changed, ..Self::failed(message) }
     }
 }
 

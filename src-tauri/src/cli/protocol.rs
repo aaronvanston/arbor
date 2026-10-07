@@ -69,7 +69,7 @@ pub(crate) struct Response {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WireError {
-    /// failed, canceled, core, unsupported (no such method, or not allowed) or unavailable (not ready, or too slow).
+    /// failed, canceled, core, changed, unsupported (no such method, or not allowed) or unavailable (not ready, or too slow).
     pub(crate) kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) status: Option<u16>,
@@ -98,6 +98,7 @@ impl From<CommandError> for WireError {
             (CommandErrorKind::Failed, _) => ("failed", error.reason),
             (CommandErrorKind::Canceled, _) => ("canceled", error.reason),
             (CommandErrorKind::Core, _) => ("core", error.reason),
+            (CommandErrorKind::Changed, _) => ("changed", error.reason),
         };
         Self { kind: kind.into(), status: error.status, reason, message: error.message }
     }

@@ -195,6 +195,28 @@ pub(super) fn classify(agent: AgentKind, path: &str, real: &str, probes: &Probes
     (InstallMethod::Unknown, UpdatePlan::SelfUpdate)
 }
 
+/// How any harness's install looks to have been made, from its paths alone, for the clean-up list to show. It's only
+/// what the layout suggests: nothing is ever run against an install on this word, as updating one needs `classify`'s
+/// proof from the tools themselves.
+pub(super) fn method_from_paths(agent: Option<AgentKind>, path: &str, real: &str) -> InstallMethod {
+    let paths = [path, real];
+    if agent.is_some_and(|agent| paths.iter().any(|path| is_native(agent, path))) {
+        InstallMethod::Native
+    } else if paths.iter().any(|path| is_bun(path)) {
+        InstallMethod::Bun
+    } else if paths.iter().any(|path| is_pnpm(path)) {
+        InstallMethod::Pnpm
+    } else if paths.iter().any(|path| is_mise_shim(path) || lower(path).contains("/mise/installs/")) {
+        InstallMethod::Mise
+    } else if lower(real).contains("/lib/node_modules/") && !lower(real).contains("/node_modules/.bin/") {
+        InstallMethod::Npm
+    } else if homebrew_keg(real).is_some() {
+        InstallMethod::Homebrew
+    } else {
+        InstallMethod::Unknown
+    }
+}
+
 /// A word that pastes into a POSIX shell as one argument.
 pub(super) fn shell_word(word: &str) -> String {
     if !word.is_empty() && word.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '@' | ':' | '=' | '+' | ',')) {

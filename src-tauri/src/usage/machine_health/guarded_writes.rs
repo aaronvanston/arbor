@@ -50,10 +50,12 @@ pub(crate) enum ChangeKind {
     Ssh,
     /// Projects put where the setup repo wants them: linked, cloned, moved or fast-forwarded.
     Projects,
+    /// Folders set aside from a machine by its clean-up, which Undo puts back (`cleanup`).
+    Cleanup,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::Sync,
         Self::Skills,
         Self::Reporter,
@@ -66,6 +68,7 @@ impl ChangeKind {
         Self::Automations,
         Self::Ssh,
         Self::Projects,
+        Self::Cleanup,
     ];
 
     pub(super) fn name(self) -> &'static str {
@@ -82,6 +85,7 @@ impl ChangeKind {
             Self::Automations => "automations",
             Self::Ssh => "ssh",
             Self::Projects => "projects",
+            Self::Cleanup => "cleanup",
         }
     }
 

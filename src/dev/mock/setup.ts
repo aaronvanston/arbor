@@ -956,6 +956,27 @@ export const recordEditMock = (machine: string, what: ChangeKind, files: { path:
   setupBackups[machine] = [backup, ...(setupBackups[machine] ?? [])].sort((a, b) => b.atMs - a.atMs).slice(0, 20);
   return backup.id;
 };
+/** A clean-up's removal, as the list of changes has it: its stamp, and the folders it set aside. */
+export const recordCleanupMock = (machine: string, id: string, paths: string[], atMs = Date.now()) => {
+  const backup: MockSetupBackup = {
+    id, atMs, what: 'cleanup', commit: null, undoneAtMs: null, was: {}, left: {}, skills: [], skillWas: {}, skillLeft: {},
+    files: paths.map((path) => ({ path, change: 'removed', skill: false })),
+  };
+  setupBackups[machine] = [backup, ...(setupBackups[machine] ?? [])].sort((a, b) => b.atMs - a.atMs).slice(0, 20);
+};
+
+/** Marks a clean-up undone once everything it set aside is back. */
+export const cleanupUndoneMock = (machine: string, id: string) => {
+  const backup = setupBackups[machine]?.find((candidate) => candidate.id === id);
+  if (backup) backup.undoneAtMs = Date.now();
+};
+
+/** Puts back what a clean-up set aside, for History's Undo; the clean-up mock answers it. */
+let undoCleanupMock: ((machine: string, id: string) => SyncOutcome) | null = null;
+export const answerCleanupUndo = (undo: (machine: string, id: string) => SyncOutcome) => {
+  undoCleanupMock = undo;
+};
+
 if (params.get('changes') !== 'none' && !freshInstall) {
   recordEditMock('cam-mbp', 'reporter', [{ path: '~/.claude/settings.json', added: false }, { path: '~/.codex/config.toml', added: false }], Date.now() - 3 * 86_400_000);
   recordEditMock('cam-mbp', 'keepSessions', [{ path: '~/.agent-app/homes/claude-other/settings.json', added: true }], Date.now() - 26 * 3_600_000);
@@ -3190,6 +3211,10 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     if (!entry || !backup) throw "That change's backup isn't on this machine any more.";
     if (backup.undoneAtMs !== null) throw 'That change was undone already.';
     if (backup.what === 'projects') return later(700, () => undoFixesMock(backup));
+    if (backup.what === 'cleanup' && undoCleanupMock) {
+      const undo = undoCleanupMock;
+      return later(700, () => undo(machine, backup.id));
+    }
     return later(900, () => undoSetupMock(entry, backup));
   },
   apply_skill_changes: (args) => {

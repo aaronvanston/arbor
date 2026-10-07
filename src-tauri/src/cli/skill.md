@@ -37,6 +37,7 @@ any other machine, say so instead of trying.
 | Session archive | `arbor archive` |
 | Scheduled automations, Arbor's, other apps' and schedules made in ultradian by hand (`ultradian:<machine>:<name>`) | `arbor call list_automations`, then `arbor call get_automation id=<id>` and `arbor call list_automation_runs id=<id>` (an ultradian schedule's runs are read from its machine) |
 | Saved settings | `arbor settings`, `arbor settings get <name>` |
+| What could come off a machine: agent homes, agents and how each was installed, startup items whose program is gone, the agents' logs and caches, with sizes; and what's set aside there | `arbor call check_machine_cleanup machine=<name>` (looks again, read-only); `arbor call get_machine_cleanup machine=<name>` gives the last look without one |
 
 Machines can be named by their name or their SSH host, in any case (`cedar-dev-01` finds "Cedar dev 01"). Accounts
 are named by the short id in the first column of `arbor accounts` (like `a6bd830`), since their names are partly
@@ -70,6 +71,8 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Give automations their proxy key (Claude and Codex automations reach the proxy with it, whatever a machine is signed in to) | `arbor call add_automations_key` (needs `--yes`) |
 | Set the address machines try first to reach the proxy, or clear it | `arbor call set_automation_proxy_address address=<url>` (`address=` clears it) |
 | Put kept sessions back together from the session archive, one folder per session with its transcripts and a session.json naming its machine, project and branch | `arbor archive export --project <name> --since 30d --out <new or empty folder>` (also `--machine <name>`, `--since 2026-09-01`, `--all-versions`). The folder holds whole transcripts, unencrypted: only export when asked, to where they asked |
+| Set things on a machine aside, from its last clean-up look: a home Arbor reads no sessions from, a log or cache folder, or a leftover startup item | `arbor call remove_cleanup_items machine=<name> --args '{"items":[{"group":"cache","path":"~/.claude/debug"}]}'` (needs `--yes`; moved into a set-aside folder on that machine, not deleted, and refused when anything changed since the look; undo it with `restore_set_aside` or in Sync › Repo › History) |
+| Put something set aside back, or delete it for good | `arbor call restore_set_aside machine=<name> stamp=<stamp>` (add `item=<n>` for one); `arbor call delete_set_aside machine=<name> --args '{"items":[{"stamp":"<stamp>","item":0}]}'` (both need `--yes`; deleting can't be undone, so only when the person asks for it) |
 | Start a session on whichever pool member has room and the repository | `arbor pools start <pool> --repo <owner/name> --agent claude --prompt "…"` (asks first). It works in its own worktree off the default branch, in Orca there, or add `--cli` for the agent's own command line (and `--model`). `--folder <path>` instead of `--repo`; `--prompt -` reads stdin. Over MCP it's the `start_pool_run` tool |
 
 Stopping or restarting the proxy cuts off every agent using it for a moment, on every machine. Say so when you show

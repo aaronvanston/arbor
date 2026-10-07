@@ -945,6 +945,7 @@ export const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
   automations: 'setup.history.what.automations',
   ssh: 'setup.history.what.ssh',
   projects: 'setup.history.what.projects',
+  cleanup: 'setup.history.what.cleanup',
 };
 
 /**

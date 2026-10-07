@@ -36,6 +36,7 @@ pub(crate) mod archive;
 pub(crate) mod automations;
 pub(crate) mod attention;
 pub(crate) mod checkout_settings;
+pub(crate) mod cleanup;
 pub(crate) mod cli_skill;
 pub(crate) mod client_versions;
 pub(crate) mod discovery;

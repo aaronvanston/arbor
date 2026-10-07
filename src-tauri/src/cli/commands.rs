@@ -670,6 +670,50 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_machine_cleanup",
+        access: Access::Read,
+        summary: "The machine's last clean-up scan this session, without looking again; none before the first.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "check_machine_cleanup",
+        access: Access::Read,
+        summary: "Looks at a machine for what could come off it: agent homes, agents, leftovers from apps that are gone, and the harnesses' logs and caches, with their sizes; and what's set aside there. Changes nothing.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "remove_cleanup_items",
+        access: Access::Confirm,
+        summary: "Moves things the last scan found aside on a machine, all or none, each only while it's as the scan found it. Homes Arbor reads sessions from aren't moved yet. A home moved aside turns Ignored in the agent homes list.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "items", ts_type: "Array<CleanupTarget>", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "restore_set_aside",
+        access: Access::Confirm,
+        summary: "Puts back what a machine has set aside: one item, or all of removal `stamp` when `item` is none.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "stamp", ts_type: "string", optional: false },
+            ArgSpec { name: "item", ts_type: "number | null", optional: true },
+        ],
+    },
+    CommandSpec {
+        name: "delete_set_aside",
+        access: Access::Confirm,
+        summary: "Deletes things set aside on a machine for good. Only ever inside a set-aside area, and never undone.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "items", ts_type: "Array<SetAsideRef>", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_pools",
         access: Access::Read,
         summary: "Every machine pool, with its members, their weights, and its limits.",
@@ -2147,6 +2191,11 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "remove_agent_home" => async { done(Box::pin(crate::usage::machine_health::agent_homes::remove_agent_home(app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "path")?)).await) }.await,
         "scan_agent_homes" => async { done(Box::pin(crate::usage::machine_health::agent_homes::scan_agent_homes(app.clone(), app.state(), arg(&args, "machine")?)).await) }.await,
         "preview_agent_home" => async { done(Box::pin(crate::usage::machine_health::agent_homes::preview_agent_home(app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "path")?)).await) }.await,
+        "get_machine_cleanup" => async { done(Box::pin(crate::usage::machine_health::cleanup::get_machine_cleanup(arg(&args, "machine")?)).await) }.await,
+        "check_machine_cleanup" => async { done(Box::pin(crate::usage::machine_health::cleanup::check_machine_cleanup(app.state(), arg(&args, "machine")?)).await) }.await,
+        "remove_cleanup_items" => async { done(Box::pin(crate::usage::machine_health::cleanup::remove_cleanup_items(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "items")?)).await) }.await,
+        "restore_set_aside" => async { done(Box::pin(crate::usage::machine_health::cleanup::restore_set_aside(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "stamp")?, arg(&args, "item")?)).await) }.await,
+        "delete_set_aside" => async { done(Box::pin(crate::usage::machine_health::cleanup::delete_set_aside(app.state(), arg(&args, "machine")?, arg(&args, "items")?)).await) }.await,
         "get_pools" => done(Box::pin(crate::usage::machine_health::pools::get_pools()).await),
         "save_pool" => async { done(Box::pin(crate::usage::machine_health::pools::save_pool(app.clone(), arg(&args, "pool")?)).await) }.await,
         "remove_pool" => async { done(Box::pin(crate::usage::machine_health::pools::remove_pool(app.clone(), arg(&args, "id")?)).await) }.await,

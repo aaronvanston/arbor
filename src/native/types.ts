@@ -839,7 +839,7 @@ export type CatalogPlugin = {
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.
@@ -1000,6 +1000,147 @@ export type ClaudePolicy = {
   ignoredOverrides: boolean,
 };
 
+export type CleanupAgent = {
+  harness: Harness,
+  /**
+   * Its command, from ~ when it's in the home folder.
+   */
+  path: string,
+  /**
+   * What the command leads to, when that's somewhere else.
+   */
+  real: string | null,
+  version: string | null,
+  /**
+   * How its paths say it was installed. Shown only: nothing is run on this word.
+   */
+  method: InstallMethod,
+  /**
+   * The first of its harness on the PATH, the one that runs.
+   */
+  first: boolean,
+};
+
+export type CleanupCache = {
+  harness: Harness,
+  kind: ClearableKind,
+  path: string,
+  /**
+   * The agent home it's in, if any.
+   */
+  home: string | null,
+  sizeKb: number | null,
+  newestMs: number | null,
+  held: CleanupHold | null,
+};
+
+export type CleanupGroup = "home" | "cache" | "leftover";
+
+/**
+ * Why an item has no Remove.
+ */
+export type CleanupHold = "sessions" | "unmeasured" | "outsideHome";
+
+export type CleanupHome = {
+  /**
+   * From ~ when it's in the home folder.
+   */
+  path: string,
+  agent: AgentHomeKind,
+  harness: Harness,
+  role: AgentHomeRole,
+  sizeKb: number | null,
+  /**
+   * When anything in it was last written.
+   */
+  newestMs: number | null,
+  /**
+   * When a session file in it was last written.
+   */
+  lastSessionMs: number | null,
+  /**
+   * How many session files it holds, once measured.
+   */
+  sessionFiles: number | null,
+  /**
+   * The harness's command is on the machine.
+   */
+  installed: boolean,
+  /**
+   * The app folder it sits in, by that folder's name, for a home an app keeps.
+   */
+  inside: string | null,
+  held: CleanupHold | null,
+};
+
+export type CleanupLeftover = {
+  kind: LeftoverKind,
+  /**
+   * Its file's name without the extension: the launch agent's label or the unit's name, as a rule.
+   */
+  name: string,
+  path: string,
+  /**
+   * The program it starts, which isn't there.
+   */
+  program: string,
+  sizeKb: number | null,
+  newestMs: number | null,
+  held: CleanupHold | null,
+};
+
+export type CleanupRemoval = {
+  /**
+   * The removal's stamp, which Undo puts back by.
+   */
+  stamp: string | null,
+  removed: Array<string>,
+  /**
+   * Paths that couldn't be moved; the rest were.
+   */
+  failed: Array<string>,
+  scan: CleanupScan,
+};
+
+export type CleanupRestore = {
+  restored: Array<string>,
+  failed: Array<RestoreFailure>,
+  scan: CleanupScan,
+};
+
+/**
+ * A machine's clean-up: what the last scan found, and what's set aside there now.
+ */
+export type CleanupScan = {
+  machine: string,
+  /**
+   * When the groups were read; none when only what's set aside was.
+   */
+  scannedAtMs: number | null,
+  homes: Array<CleanupHome>,
+  agents: Array<CleanupAgent>,
+  leftovers: Array<CleanupLeftover>,
+  caches: Array<CleanupCache>,
+  aside: Array<SetAsideItem>,
+  /**
+   * The scan ran out of time before measuring everything.
+   */
+  partial: boolean,
+};
+
+/**
+ * One thing to remove, as the scan lists it.
+ */
+export type CleanupTarget = {
+  group: CleanupGroup,
+  path: string,
+};
+
+/**
+ * What a folder the clean-up offers to clear holds.
+ */
+export type ClearableKind = "logs" | "cache";
+
 export type ClearedCalls = {
   count: number,
   clearedAtMs: number,
@@ -1031,7 +1172,7 @@ export type CliActivity = {
   /**
    * ok, plan (it needed confirming), or the failure's kind.
    */
-  outcome: "ok" | "plan" | "failed" | "canceled" | "core" | "unsupported" | "unavailable",
+  outcome: "ok" | "plan" | "failed" | "canceled" | "core" | "changed" | "unsupported" | "unavailable",
   ms: number,
 };
 
@@ -1208,7 +1349,7 @@ export type CommandError = {
   message: string,
 };
 
-export type CommandErrorKind = "failed" | "canceled" | "core";
+export type CommandErrorKind = "failed" | "canceled" | "core" | "changed";
 
 /**
  * One of a plugin's skills, commands or agents: what its listing adds to every session, and what
@@ -2268,6 +2409,8 @@ export type LayerProblem = {
   file: string,
   problem: string,
 };
+
+export type LeftoverKind = "launchAgent" | "systemdUnit";
 
 export type LifetimeTokens = {
   /**
@@ -4151,6 +4294,16 @@ export type ReporterStatus = {
   homes: Array<ReporterHome>,
 };
 
+export type RestoreFailure = {
+  path: string,
+  problem: RestoreProblem,
+};
+
+/**
+ * Why something set aside couldn't go back.
+ */
+export type RestoreProblem = "taken" | "changed" | "gone" | "failed";
+
 /**
  * What the harness gave back, to find the run in it later.
  */
@@ -4467,6 +4620,40 @@ export type SessionTranscript = {
    * When the transcript was last read.
    */
   readAtMs: number,
+};
+
+/**
+ * Something set aside on the machine, waiting to be put back or deleted for good.
+ */
+export type SetAsideItem = {
+  /**
+   * The removal it was part of.
+   */
+  stamp: string,
+  item: number,
+  group: CleanupGroup,
+  /**
+   * Where it was, and goes back to.
+   */
+  path: string,
+  atMs: number,
+  sizeKb: number | null,
+  /**
+   * The top of the drive it's kept on (from ~ when it's in the home folder), when that isn't the home folder's.
+   */
+  volume: string | null,
+  /**
+   * Something is at its place now, so it can't go back.
+   */
+  taken: boolean,
+};
+
+/**
+ * One thing set aside.
+ */
+export type SetAsideRef = {
+  stamp: string,
+  item: number,
 };
 
 /**

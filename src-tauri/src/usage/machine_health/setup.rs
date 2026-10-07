@@ -318,7 +318,7 @@ fi
 // `B agent path real version`, where `real` is the file the path leads to. A
 // file reached twice, by a link or a directory listed twice, is listed once;
 // directories that aren't absolute are passed over.
-const INSTALLS_SCRIPT: &str = r##"emit_installs() {
+pub(super) const INSTALLS_SCRIPT: &str = r##"emit_installs() {
   for agent in $install_agents; do
     seen=$nl
     old_ifs=$IFS

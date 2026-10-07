@@ -160,6 +160,10 @@ pub(crate) enum MachineOp {
     RunHandOff,
     RunCheck,
     RunOpen,
+    CleanupScan,
+    CleanupList,
+    CleanupMove,
+    CleanupDelete,
 }
 
 impl MachineOp {
@@ -211,6 +215,10 @@ impl MachineOp {
             Self::RunHandOff => "run hand-off",
             Self::RunCheck => "run check",
             Self::RunOpen => "run open",
+            Self::CleanupScan => "clean-up scan",
+            Self::CleanupList => "set-aside list",
+            Self::CleanupMove => "clean-up move",
+            Self::CleanupDelete => "set-aside delete",
         }
     }
 
@@ -238,7 +246,10 @@ impl MachineOp {
             | Self::ArchiveRead
             | Self::AgentHomesScan
             | Self::AutomationScan
-            | Self::AutomationStart => MACHINE_SCAN_SLOW_MS,
+            | Self::AutomationStart
+            | Self::CleanupScan
+            | Self::CleanupMove
+            | Self::CleanupDelete => MACHINE_SCAN_SLOW_MS,
             _ => MACHINE_SLOW_MS,
         }
     }

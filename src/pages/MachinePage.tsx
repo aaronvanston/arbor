@@ -45,6 +45,7 @@ import { SetupChecklist, type ChecklistTab } from './SetupChecklist';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
 import { homeLabel, rememberSetupComparison, storedSetupReference } from './setupComparison';
 import { SetupProjects } from './SetupProjects';
+import { MachineCleanup } from './MachineCleanup';
 import { MachineAutomations } from '../components/automations/MachineAutomations';
 import { setSyncMachine } from '../services/syncScope';
 import { MachineThroughput, throughputScale } from './UsageFleet';
@@ -54,7 +55,7 @@ const CHECKOUTS_ID = 'machine-checkouts';
 /**
  * One machine's own page: everything about it and nothing compared across the fleet. Its pill (which opens its look),
  * status and score; "Bring … in line" when it isn't; its readings; what's running on it now; its agents; its requests
- * and sessions in the range; where its setup differs from the reference machine's; and its checkouts. A machine with
+ * and sessions in the range; where its setup differs from the reference machine's; its checkouts; and what could come off it. A machine with
  * no host yet has its checklist, a way to add one, and the requests and sessions that came through the proxy. The Machines overview keeps the fleet at a glance.
  */
 export function MachinePage({ machine: name, overview, sessions, onNavigate, onOpenSession, onOpenRequests }: {
@@ -347,6 +348,8 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
               <p className="px-1 text-xs text-muted-foreground">{tRich(inventory ? 'machine.checkouts.unread' : 'machine.checkouts.loading', { machine: small })}</p>
             )}
           </section>
+
+          <MachineCleanup key={name} machine={name} pill={pill} />
         </>
       )}
       <SetupCompareDialog comparison={comparison} onClose={() => setComparison(null)} />

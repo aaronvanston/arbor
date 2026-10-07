@@ -313,7 +313,7 @@ pub(crate) fn shell_function_for(saved: &[AgentHome], machine: &str, use_: HomeU
 
 /// A home's path as shell words: each folder's name quoted, and each `*` left for the shell to expand. None for a
 /// path that can't be one.
-fn shell_words(path: &str) -> Option<String> {
+pub(crate) fn shell_words(path: &str) -> Option<String> {
     if let Some(name) = path.strip_prefix('$') {
         return standard_paths().any(|(_, standard)| standard == path).then(|| format!("\"${{{name}:-}}\""));
     }
@@ -1146,6 +1146,43 @@ pub(crate) async fn preview_agent_home(
     let stdout = run_checked(&target, MachineOp::AgentHomeCheck, &script, Duration::from_secs(20)).await?;
     let user_home = stdout.lines().find_map(|line| line.strip_prefix("H\t")).unwrap_or_default().to_string();
     Ok(stdout.lines().filter_map(|line| line.split_once('\t')).filter(|(agent, _)| *agent != "H").map(|(_, dir)| tilde(dir, &user_home)).collect())
+}
+
+// ---------------------------------------------------------------------------
+// For the clean-up, which turns a home it sets aside to Ignored and back
+// ---------------------------------------------------------------------------
+
+/// Every home on `machine`, whatever its role.
+pub(crate) fn every_home_on(machine: &str) -> Vec<AgentHome> {
+    homes_on(&saved(), machine)
+}
+
+/// The home saved for `machine` alone at exactly `path`, if there is one.
+pub(crate) fn saved_home(machine: &str, agent: AgentHomeKind, path: &str) -> Option<AgentHome> {
+    saved().into_iter().find(|home| home.machine == machine && home.agent == agent && home.path == path)
+}
+
+/// Saves a home as it is, as Settings › Agent homes would.
+pub(crate) async fn put_home(home: AgentHome) -> Result<(), String> {
+    let home = checked(home)?;
+    run_usage_task(move || {
+        let connection = open_usage_database()?;
+        write_home(&connection, &home)?;
+        reload(&connection)
+    })
+    .await
+}
+
+/// Takes the home saved for `machine` alone at exactly `path` off the list.
+pub(crate) async fn forget_home(machine: String, agent: AgentHomeKind, path: String) -> Result<(), String> {
+    run_usage_task(move || {
+        let connection = open_usage_database()?;
+        connection
+            .execute("DELETE FROM usage_agent_homes WHERE machine = ?1 AND agent = ?2 AND path = ?3", params![machine, agent.shell_name(), path])
+            .map_err(|error| error.to_string())?;
+        reload(&connection)
+    })
+    .await
 }
 
 #[cfg(test)]

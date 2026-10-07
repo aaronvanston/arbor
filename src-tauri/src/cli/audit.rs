@@ -34,7 +34,7 @@ pub(crate) struct Entry {
     /// What the method does; none when there was no such method.
     pub(crate) access: Option<Access>,
     /// ok, plan (it needed confirming), or the failure's kind.
-    #[ts(type = "\"ok\" | \"plan\" | \"failed\" | \"canceled\" | \"core\" | \"unsupported\" | \"unavailable\"")]
+    #[ts(type = "\"ok\" | \"plan\" | \"failed\" | \"canceled\" | \"core\" | \"changed\" | \"unsupported\" | \"unavailable\"")]
     pub(crate) outcome: String,
     pub(crate) ms: u64,
 }

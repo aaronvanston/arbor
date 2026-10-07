@@ -1003,6 +1003,21 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                     backup.skills.push(skill);
                 }
             }
+            // A folder the clean-up set aside, listed like an edit: undone by `cleanup`, not as a synced file.
+            ["C", ..] => {
+                if let (Some(backup), Some(from)) = (current.and_then(|index| backups.get_mut(index)), super::cleanup::pointer_from(&fields)) {
+                    backup.files.push(BackupFile {
+                        path: agent_homes::tilde(from, home),
+                        change: "removed",
+                        skill: false,
+                        edit: true,
+                        rel: String::new(),
+                        before: String::new(),
+                        after_sum: String::new(),
+                        after_ck: String::new(),
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -1376,6 +1391,9 @@ pub(crate) async fn undo_setup_sync(
         .ok_or("That change's backup isn't on this machine any more.")?;
     if found.undone_at_ms.is_some() {
         return Err("That change was undone already.".into());
+    }
+    if found.what == ChangeKind::Cleanup {
+        return super::cleanup::undo_from_history(&app, &target, &found.id).await;
     }
     let stdout = run_on(&target, MachineOp::SetupUndo, &undo_script(&found)).await;
     rescan(&app, &machine);

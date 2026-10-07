@@ -28,6 +28,7 @@ const OUTCOME: Record<CliActivity['outcome'], { label: MessageKey; tone: 'succes
   failed: { label: 'cli.activity.outcome.failed', tone: 'error' },
   canceled: { label: 'cli.activity.outcome.canceled', tone: 'muted' },
   core: { label: 'cli.activity.outcome.core', tone: 'error' },
+  changed: { label: 'cli.activity.outcome.changed', tone: 'warning' },
   unsupported: { label: 'cli.activity.outcome.unsupported', tone: 'warning' },
   unavailable: { label: 'cli.activity.outcome.unavailable', tone: 'warning' },
 };
