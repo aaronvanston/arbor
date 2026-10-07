@@ -144,7 +144,7 @@ describe('quota action confirmation with fully mocked IPC', () => {
     refreshError = true;
     expect(await resetCodexQuotaWithConfirmation(file, async () => true)).toBe('refresh-error');
     expect(getQuotaCacheSnapshot()[key]).toMatchObject({
-      rows: previous.rows, actionResult: { action: 'reset', status: 'refresh-error', error: 'usage unavailable' },
+      rows: previous.rows, actionResult: { action: 'reset', status: 'refresh-error', error: 'The server had a problem on its end. It said “usage unavailable”. Try again in a moment.' },
     });
     await resetCodexQuotaWithConfirmation(file, async () => true);
     expect(upstreamCalls.filter((request) => request.url.endsWith('/consume'))).toHaveLength(1);
