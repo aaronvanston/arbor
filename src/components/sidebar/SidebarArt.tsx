@@ -123,5 +123,7 @@ function SceneCanvas({ scene, theme, color, speed }: { scene: SceneName; theme: 
     };
   }, [scene, theme, color, speed]);
 
-  return <canvas ref={canvasRef} aria-hidden="true" className="absolute top-0 left-0 block [image-rendering:pixelated]" />;
+  // Its own compositing layer, so each of its frames uploads the canvas alone instead of repainting the sidebar's
+  // header around it (GPU process 2.9% → 1.6% of a core on Home, perf:cpu).
+  return <canvas ref={canvasRef} aria-hidden="true" className="absolute top-0 left-0 block will-change-transform [image-rendering:pixelated]" />;
 }
