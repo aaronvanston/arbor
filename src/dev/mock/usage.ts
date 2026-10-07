@@ -30,6 +30,7 @@ import type {
   T3Thread,
   T3Turn,
   ToolUsage,
+  UsageAnalysis,
   UsageFiveMinutePoint,
   UsageOverview,
   UsagePricing,
@@ -266,11 +267,74 @@ const usageOverview: UsageOverview = {
 };
 if (freshInstall) Object.assign(usageOverview, { rpm: 0, tpm: 0, tps: 0, tpsSampleCount: 0, averageLatencyMs: 0, cacheHitRate: 0, estimatedCost: 0, pricedRequests: 0 });
 
+/**
+ * How much of the traffic a query's machine, pool, model, provider and session leave, so the mock narrows its figures
+ * as the backend's filters would. The mock keeps no per-request split by hour, so each filter is a steady share.
+ */
+const narrowedShare = (query: UsageQuery, rangeRequests = totals.requests): number => {
+  if (!totals.requests) return 0;
+  const of = (rows: { requests: number }[]) => rows.reduce((sum, row) => sum + row.requests, 0) / totals.requests;
+  const mix = (keep: (model: string) => boolean) => MODEL_MIX.filter((entry) => keep(entry.model)).reduce((sum, entry) => sum + entry.share, 0);
+  let share = 1;
+  if (query.machine) share *= of(machines.filter((row) => row.machine === query.machine));
+  if (query.pool) share *= of(machines.filter((row) => row.pool === query.pool));
+  if (query.model) share *= mix((model) => model === query.model);
+  if (query.model_family) share *= mix((model) => model.includes(query.model_family ?? ''));
+  if (query.provider) share *= mix((model) => (model.startsWith('claude') ? 'claude' : 'codex') === query.provider);
+  if (query.session) {
+    const session = usageSessions.find((item) => item.id === query.session || item.threads.some((thread) => thread.id === query.session));
+    // A session's requests are its own whatever the range, so its share is of the range's.
+    share *= session && rangeRequests ? Math.min(1, session.requests / rangeRequests) : 0;
+  }
+  return share;
+};
+
+/** A count cut to `share`, as a narrowed query would find it. */
+const cut = (value: number, share: number) => Math.round(value * share);
+
+/**
+ * Points cut to `share`, rounded on the running total rather than point by point, so a small share still adds up to
+ * its part of the failures rather than rounding each hour's to nothing.
+ */
+const narrowCounts = <Point extends { requests: number; success: number; failure: number; canceled: number; tokens: number }>(points: Point[], share: number): Point[] => {
+  if (share === 1) return points;
+  const exact = { requests: 0, failure: 0, canceled: 0, tokens: 0 };
+  const shown = { requests: 0, failure: 0, canceled: 0, tokens: 0 };
+  return points.map((point) => {
+    const step = (key: keyof typeof exact) => {
+      exact[key] += point[key] * share;
+      const next = Math.round(exact[key]) - shown[key];
+      shown[key] += next;
+      return next;
+    };
+    const requests = step('requests');
+    const failure = Math.min(requests, step('failure'));
+    const canceled = Math.min(requests - failure, step('canceled'));
+    return { ...point, requests, success: requests - failure - canceled, failure, canceled, tokens: step('tokens') };
+  });
+};
+
+const narrowPoints = (points: TimelinePoint[], share: number): TimelinePoint[] => narrowCounts(points, share);
+
+const narrowFiveMinutes = (points: UsageFiveMinutePoint[], share: number): UsageFiveMinutePoint[] =>
+  share === 1 ? points : narrowCounts(points, share).filter((point) => point.requests > 0);
+
+/** The Breakdown's rows cut to `share`, the rows a narrowed query leaves out dropped. */
+const narrowAnalysis = (analysis: UsageAnalysis, share: number): UsageAnalysis => {
+  if (share === 1) return analysis;
+  const rows = <Row extends { requests: number; failures: number; tokens: number }>(list: Row[]) =>
+    list.map((row) => ({ ...row, requests: cut(row.requests, share), failures: cut(row.failures, share), tokens: cut(row.tokens, share) })).filter((row) => row.requests > 0);
+  return { ...analysis, models: rows(analysis.models), providers: rows(analysis.providers), sources: rows(analysis.sources), accounts: rows(analysis.accounts), apiKeys: rows(analysis.apiKeys) };
+};
+
 /** The overview for a range: counts come from its timeline, the rest scales with the last 24 hours. */
-const usageOverviewFor = (points: TimelinePoint[], fiveMinuteTimeline: UsageFiveMinutePoint[] = []): UsageOverview => {
+const usageOverviewFor = (allPoints: TimelinePoint[], fiveMinuteTimeline: UsageFiveMinutePoint[] = [], query: UsageQuery = {}): UsageOverview => {
+  const narrowed = narrowedShare(query, sumTimeline(allPoints).requests);
+  const points = narrowPoints(allPoints, narrowed);
   const sum = sumTimeline(points);
   const pricing = pricingFor(points);
-  const scale = totals.requests ? sum.requests / totals.requests : 0;
+  // Each machine's row follows the range alone; a narrowed query keeps only the machines it names.
+  const scale = totals.requests ? sumTimeline(allPoints).requests / totals.requests : 0;
   return {
     ...usageOverview,
     totalRequests: sum.requests,
@@ -287,9 +351,9 @@ const usageOverviewFor = (points: TimelinePoint[], fiveMinuteTimeline: UsageFive
     estimatedCost: pricing.totalCost,
     pricedRequests: pricing.pricedRequests,
     timeline: points,
-    fiveMinuteTimeline,
+    fiveMinuteTimeline: narrowFiveMinutes(fiveMinuteTimeline, narrowed),
     // Each machine's share holds whatever the range, so the Machines page's figures follow the range picked.
-    machines: usageOverview.machines.map((machine) => ({
+    machines: usageOverview.machines.filter((machine) => (!query.machine || machine.machine === query.machine) && (!query.pool || machine.pool === query.pool)).map((machine) => ({
       ...machine,
       requests: Math.round(machine.requests * scale),
       tokens: Math.round(machine.tokens * scale),
@@ -1450,8 +1514,8 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     return { state: coreStatus.ready ? 'collecting' : 'waiting-core', message: coreStatus.ready ? 'Collecting from 127.0.0.1:8317' : 'Waiting for the core to start', lastCollectedAt, totalRecords: usageStorage.recordCount };
   },
   get_usage_overview: (args) => {
-    const overview = usageOverviewFor(timelineBetween(args.query.start, args.query.end), fiveMinutesBetween(args.query.start, args.query.end));
-    return args.query.include_analysis ? { ...overview, analysis: usageAnalysis } : overview;
+    const overview = usageOverviewFor(timelineBetween(args.query.start, args.query.end), fiveMinutesBetween(args.query.start, args.query.end), args.query);
+    return args.query.include_analysis ? { ...overview, analysis: narrowAnalysis(usageAnalysis, narrowedShare(args.query, totals.requests)) } : overview;
   },
   get_usage_analysis: () => usageAnalysis,
   get_usage_sessions: ({ query }) => {
@@ -1535,7 +1599,12 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   get_usage_events: ({ query }) => {
     const pageSize = query.page_size ?? 20;
     const page = query.page ?? 1;
-    const matching = query.session ? usageRecords.filter((_, index) => index % 6 === 0) : usageRecords;
+    const narrowed = usageRecords.filter((record) => (!query.machine || record.machine === query.machine) && (!query.pool || record.pool === query.pool)
+      && (!query.model || record.model === query.model) && (!query.model_family || record.model.includes(query.model_family))
+      && (!query.provider || record.provider === query.provider) && (!query.auth_index || record.auth_index === query.auth_index));
+    // A session's requests are its agent's, a few of them; the mock doesn't record which session sent each.
+    const session = query.session ? usageSessions.find((item) => item.id === query.session || item.threads.some((thread) => thread.id === query.session)) : null;
+    const matching = query.session ? narrowed.filter((record, index) => index % 2 === 0 && (!session?.provider || record.provider === session.provider)) : narrowed;
     const filtered = query.failed === true ? matching.filter((record) => record.failed) : query.failed === false ? matching.filter((record) => !record.failed) : matching;
     const pool = query.request_order ? sortMockRequests(filtered, query.request_order) : filtered;
     const items = pool.slice((page - 1) * pageSize, page * pageSize);
