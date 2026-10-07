@@ -177,7 +177,12 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
     return stored.scan.scannedAtMs === null ? null : stored.scan;
   },
   check_machine_cleanup: ({ machine }) => {
-    if (scenario === 'fail') return later(900, () => { throw `ssh: connect to host ${machine} port 22: Operation timed out`; });
+    // This Mac is looked at directly, so its look fails on a file rather than over SSH.
+    if (scenario === 'fail') {
+      return later(900, () => {
+        throw linux(machine) ? `ssh: connect to host ${machine} port 22: Operation timed out` : 'Couldn\'t read /Users/cam/.claude: Permission denied (os error 13)';
+      });
+    }
     return later(1_400, () => look(machine));
   },
   remove_cleanup_items: ({ machine, items, allowUnarchived }) => {

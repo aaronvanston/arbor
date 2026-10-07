@@ -17,7 +17,7 @@ import {
   getCleanup,
   restoreSetAside,
 } from '../services/cleanup';
-import { readCommandError } from '../services/commandError';
+import { plainError } from '../services/plainError';
 import { formatBytes } from '../services/machineHealth';
 import { AGENT_HOME_LABEL, ROLE_LABEL } from '../services/agentHomes';
 import { INSTALL_METHOD } from './MachineAgents';
@@ -78,7 +78,7 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
     try {
       setScan(await checkCleanup(machine));
     } catch (reason) {
-      setError(readCommandError(reason).message);
+      setError(plainError(reason, t));
     } finally {
       setLooking(false);
     }
@@ -107,7 +107,7 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
       if (back.failed.length) setProblem({ key, text: back.failed.map((failure) => t(RESTORE_PROBLEM[failure.problem])).join(' · '), changed: false });
       else toast({ kind: 'success', title: t('machine.cleanup.restored', { name: item.path }) });
     } catch (reason) {
-      setProblem({ key, text: readCommandError(reason).message, changed: false });
+      setProblem({ key, text: plainError(reason, t), changed: false });
     } finally {
       setBusy(null);
     }
@@ -133,7 +133,7 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
       setScan(await deleteSetAside(machine, items));
       toast({ kind: 'success', title: one ? t('machine.cleanup.deleted.one', { name: one.path }) : t('machine.cleanup.deleted.all', { count: items.length }) });
     } catch (reason) {
-      setProblem({ key, text: readCommandError(reason).message, changed: false });
+      setProblem({ key, text: plainError(reason, t), changed: false });
     } finally {
       setBusy(null);
     }
