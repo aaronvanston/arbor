@@ -90,6 +90,19 @@ export type CapacityInput = {
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
 /**
+ * What `accounts`' requests were worth over what the ones with a known cost cost; null without a cost, or when they
+ * had requests and none of them had a price, since their worth then isn't known rather than nothing.
+ */
+export function costedRatio(accounts: Pick<CapacityAccount, 'periodCost' | 'value' | 'requests' | 'unpricedRequests'>[]): number | null {
+  const costed = accounts.filter((account) => account.periodCost !== null);
+  const periodCost = sum(costed.map((account) => account.periodCost ?? 0));
+  if (periodCost <= 0) return null;
+  const requests = sum(costed.map((account) => account.requests));
+  if (requests > 0 && requests === sum(costed.map((account) => account.unpricedRequests))) return null;
+  return sum(costed.map((account) => account.value)) / periodCost;
+}
+
+/**
  * Readings spanning at least half a window give the account's use per window
  * length: the use of every cycle they saw, with a window already running at
  * the first reading counted from that reading on, spread over the time
@@ -186,6 +199,8 @@ export function capacityReport({ data, files, quotas, profiles, prefs, order, co
       const activeFrom = data.startMs === null ? null : Math.max(data.startMs, value?.firstSeenMs || data.startMs);
       const periodCost = monthlyCost === null || activeFrom === null ? null : (monthlyCost * Math.max(0, data.endMs - activeFrom)) / MONTH_MS;
       const estimatedCost = value?.estimatedCost ?? 0;
+      const requests = value?.requests ?? 0;
+      const unpricedRequests = Math.max(0, requests - (value?.pricedRequests ?? 0));
       // Use is projected from the live reading, so one held over from before a failed check doesn't count.
       const row = window && live ? freshRows(account.quota).find((item) => item.label === window) : undefined;
       const current = row && row.remainingPercent !== null ? { usedPercent: Math.max(0, 100 - row.remainingPercent), resetAtMs: row.resetAtMs } : null;
@@ -197,10 +212,10 @@ export function capacityReport({ data, files, quotas, profiles, prefs, order, co
         monthlyCost,
         costSet: setCost !== undefined,
         value: estimatedCost,
-        requests: value?.requests ?? 0,
-        unpricedRequests: Math.max(0, (value?.requests ?? 0) - (value?.pricedRequests ?? 0)),
+        requests,
+        unpricedRequests,
         periodCost,
-        ratio: periodCost ? estimatedCost / periodCost : null,
+        ratio: costedRatio([{ periodCost, value: estimatedCost, requests, unpricedRequests }]),
         use,
         current,
         idle: use !== null && use.percent < IDLE_PERCENT,
@@ -210,8 +225,7 @@ export function capacityReport({ data, files, quotas, profiles, prefs, order, co
     const verdicts = planVerdicts(accounts);
     const others = data.accounts.filter((account) =>
       !listed.has(normalizeAuthIndex(account.authIndex)) && providerForFile({ provider: account.provider }) === limit.provider);
-    const costed = accounts.filter((account) => account.periodCost !== null);
-    const periodCost = sum(costed.map((account) => account.periodCost!));
+    const periodCost = sum(accounts.flatMap((account) => (account.periodCost === null ? [] : [account.periodCost])));
     return {
       provider: limit.provider,
       window,
@@ -221,7 +235,7 @@ export function capacityReport({ data, files, quotas, profiles, prefs, order, co
       unknownCosts: accounts.filter((account) => account.monthlyCost === null).length,
       periodCost,
       value: sum(accounts.map((account) => account.value)),
-      ratio: periodCost > 0 ? sum(costed.map((account) => account.value)) / periodCost : null,
+      ratio: costedRatio(accounts),
       verdicts,
     };
   });

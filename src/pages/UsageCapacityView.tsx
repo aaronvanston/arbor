@@ -16,6 +16,7 @@ import type { AppView } from '../navigation';
 import {
   capacityGap,
   capacityReport,
+  costedRatio,
   TARGET_PERCENT,
   type CapacityAccount,
   type CapacityProvider,
@@ -132,8 +133,7 @@ export function CapacityView({ data, onAddAccount, onNavigate }: { data: Capacit
   const monthlyCost = providers.reduce((sum, provider) => sum + provider.monthlyCost, 0);
   const periodCost = providers.reduce((sum, provider) => sum + provider.periodCost, 0);
   const value = providers.reduce((sum, provider) => sum + provider.value, 0);
-  const costedValue = accounts.filter((account) => account.periodCost !== null).reduce((sum, account) => sum + account.value, 0);
-  const ratio = periodCost > 0 ? costedValue / periodCost : null;
+  const ratio = costedRatio(accounts);
   const unknownCosts = accounts.filter((account) => account.monthlyCost === null).length;
   const requests = accounts.reduce((sum, account) => sum + account.requests, 0);
   const spare = accounts.filter((account) => account.spare);

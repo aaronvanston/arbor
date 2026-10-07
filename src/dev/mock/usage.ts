@@ -431,7 +431,11 @@ function capacityReportFor(query: CapacityQuery): CapacityReport {
     const firstSeenMs = current - firstSeenDays * DAY_MS;
     const share = Math.max(0, endMs - Math.max(startMs, firstSeenMs)) / (30 * DAY_MS);
     const count = Math.round(requests * share);
-    return { ...value, requests: count, totalTokens: count * 42_000, estimatedCost: perMonth * share, pricedRequests: Math.max(0, count - (value.authIndex === 'codex-2' ? 60 : 0)), firstSeenMs };
+    // ?prices=none: nothing priced, so what the accounts were worth isn't known.
+    return {
+      ...value, requests: count, totalTokens: count * 42_000, estimatedCost: noPrices ? 0 : perMonth * share,
+      pricedRequests: noPrices ? 0 : Math.max(0, count - (value.authIndex === 'codex-2' ? 60 : 0)), firstSeenMs,
+    };
   }).filter((account) => account.requests > 0);
   const coverage: LimitCoverage[] = [];
   const cycles: LimitCycle[] = [];

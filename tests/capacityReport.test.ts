@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { capacityGap, capacityReport, longLimitWindows } from '../src/services/capacityReport';
+import { capacityGap, capacityReport, costedRatio, longLimitWindows } from '../src/services/capacityReport';
 import { listPrice } from '../src/services/planCosts';
 import { quotaKey, type QuotaState } from '../src/services/quotaService';
 import type { AccountValue, CapacityReport, LimitCoverage, LimitCycle } from '../src/native/types';
@@ -139,5 +139,20 @@ describe('why Value is empty', () => {
     expect(capacityGap(null, listed)).toBe('none');
     // Accounts listed, none of them a subscription.
     expect(capacityGap(true, { ...listed, files: [{ name: 'gemini-key.json' }] })).toBe('subscriptions');
+  });
+});
+
+describe('capacity ratio', () => {
+  it('is unknown when the accounts had requests and none of them had a price', () => {
+    const unpriced: CapacityReport = { ...data, accounts: data.accounts.map((account) => ({ ...account, estimatedCost: 0, pricedRequests: 0 })) };
+    const [report] = capacityReport({ data: unpriced, files, quotas, profiles: {}, prefs: noPrefs, costs: {}, nowMs: now });
+    expect(report?.ratio).toBeNull();
+    expect(report?.accounts.map((account) => account.ratio)).toEqual([null, null, null]);
+  });
+
+  it('is nothing for accounts with a cost that made no requests', () => {
+    expect(costedRatio([{ periodCost: 50, value: 0, requests: 0, unpricedRequests: 0 }])).toBe(0);
+    expect(costedRatio([{ periodCost: null, value: 10, requests: 5, unpricedRequests: 0 }])).toBeNull();
+    expect(costedRatio([{ periodCost: 50, value: 25, requests: 5, unpricedRequests: 4 }])).toBe(0.5);
   });
 });
