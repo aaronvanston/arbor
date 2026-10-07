@@ -16,7 +16,7 @@ import { useAgentHomes } from '../services/agentHomes';
 import { loadAutomations, showAutomations, useAutomations } from '../services/automations';
 import { useT3Found } from '../services/fleetBoard';
 import { useFleetHealth } from '../services/fleetHealth';
-import { HARNESS_APPS, harnessApps, type HarnessApp, type HarnessAppRow } from '../services/harnessApps';
+import { HARNESS_APPS, harnessApps, type HarnessApp, type HarnessAppRow, type HarnessAutomations } from '../services/harnessApps';
 import type { AutomationSource } from '../native/types';
 
 /**
@@ -127,7 +127,7 @@ function PreferenceRow({ settingId, preference, title, description, held }: {
 }
 
 /** Reading one app's automations. Off, the native side stops asking for them and forgets what it found. */
-function AutomationsRow({ settingId, source, appsOff }: { settingId: string; source: Exclude<AutomationSource, 'arbor'>; appsOff: readonly AutomationSource[] }) {
+function AutomationsRow({ settingId, source, appsOff }: { settingId: string; source: HarnessAutomations; appsOff: readonly AutomationSource[] }) {
   const { t } = useI18n();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -78,7 +78,8 @@ find bundled-core -maxdepth 1 -type f -name 'CLIProxyAPI_*' ! -name "$core_asset
 
 # Bundle the background runner (ultradian) pinned in udian-version.txt: one archive for each system Arbor can put it
 # on, each checked against the release's SHA256SUMS. Arbor checks it again before it copies one to a machine. An empty
-# udian-version.txt builds without it, and automations then run only from Arbor while it's open.
+# udian-version.txt builds without it, and automations then run only from Arbor while it's open. Its SKILL.md comes
+# from the release's tag too: Arbor puts it in each machine's agent homes beside the runner.
 udian_version="$(tr -d '[:space:]' < udian-version.txt)"
 udian_version="${udian_version#v}"
 udian_targets=(darwin-arm64 darwin-x64 linux-x64 linux-arm64)
@@ -87,7 +88,8 @@ udian_targets=(darwin-arm64 darwin-x64 linux-x64 linux-arm64)
 # as the core's are, and the folder holds nothing else, since all of it goes into the app.
 udian_cached() {
   [[ -n "$udian_version" && -f bundled-udian/SHA256SUMS ]] || return 1
-  [[ "$(find bundled-udian -mindepth 1 | wc -l | tr -d ' ')" == "$(( ${#udian_targets[@]} + 1 ))" ]] || return 1
+  [[ -s bundled-udian/SKILL.md && "$(cat bundled-udian/SKILL.version 2>/dev/null)" == "$udian_version" ]] || return 1
+  [[ "$(find bundled-udian -mindepth 1 | wc -l | tr -d ' ')" == "$(( ${#udian_targets[@]} + 3 ))" ]] || return 1
   local target asset expected actual
   for target in "${udian_targets[@]}"; do
     asset="ultradian-${udian_version}-${target}.tar.gz"
@@ -119,6 +121,12 @@ else
       printf '%s  %s\n' "$udian_actual" "$udian_asset" >> bundled-udian/SHA256SUMS
     done
     rm bundled-udian/SHA256SUMS.release
+    curl -fsSL --retry 3 -o bundled-udian/SKILL.md "https://raw.githubusercontent.com/aaronvanston/ultradian/v${udian_version}/SKILL.md"
+    if ! head -n 2 bundled-udian/SKILL.md | grep -qx 'name: ultradian'; then
+      echo "ultradian v${udian_version}'s SKILL.md isn't its skill" >&2
+      exit 1
+    fi
+    printf '%s' "$udian_version" > bundled-udian/SKILL.version
   else
     echo "No background runner pinned in udian-version.txt; building without it."
     : > bundled-udian/SHA256SUMS

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { createColumnHelper } from '@tanstack/react-table';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { HarnessName } from '../components/identity/Harness';
 import { MachinePill, ModelName } from '../components/identity/Identity';
 import { PoolName } from '../components/PoolName';
@@ -13,6 +14,9 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { TableCard } from '../components/ui/data-table';
+import { DataGrid, useDataGrid, type DataGridColumnDef, type DataGridColumnMeta, type DataGridFeatures, type DataGridSort } from '../components/ui/data-grid/data-grid';
+import { DataGridColumnsMenu } from '../components/ui/data-grid/data-grid-columns';
+import { gridLayout, type DataGridLayout } from '../components/ui/data-grid/data-grid-layout';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { CirclePause, Plus, Search, TimeSchedule, TriangleAlert } from '../components/ui/icons';
 import { Input } from '../components/ui/input';
@@ -20,7 +24,6 @@ import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { useShortcut } from '../hooks/useShortcuts';
@@ -30,7 +33,9 @@ import { cn } from '../lib/utils';
 import { automationView, automationsView, type AppView, type AutomationsParams } from '../navigation';
 import type { AutomationSource, AutomationSummary } from '../native/types';
 import {
+  AUTOMATION_APPS,
   AUTOMATION_STATES,
+  automationRunner,
   RUN_STATUS_LABEL,
   RUN_STATUS_TONE,
   STATE_LABEL,
@@ -42,8 +47,10 @@ import {
   scanAutomations,
   scheduleWords,
   showAutomations,
+  sortAutomations,
   sourceChoices,
   stateCounts,
+  type AutomationSort,
   type AutomationState,
   useAutomations,
 } from '../services/automations';
@@ -78,13 +85,16 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   const [source, setSource] = useState<AutomationSource | 'all'>('all');
   const [state, setState] = useState<AutomationState>('on');
   const [model, setModel] = useState('all');
+  const [sort, setSort] = useState<AutomationSort | null>(null);
   const [creating, setCreating] = useState(false);
   const automations = useMemo(() => list?.automations ?? [], [list]);
   const sources: (AutomationSource | 'all')[] = ['all', ...sourceChoices(list?.scans ?? [], source)];
   const shown = useMemo(
-    () => filterAutomations(automations, { search, source, machine, state, model }),
-    [automations, search, source, machine, state, model],
+    () => sortAutomations(filterAutomations(automations, { search, source, machine, state, model }), sort),
+    [automations, search, source, machine, state, model, sort],
   );
+  const columns = useAutomationColumns(now, state === 'all', onNavigate);
+  const grid = useDataGrid({ data: shown, columns, getRowId, storageKey: AUTOMATIONS_GRID_KEY, initialLayout: defaultAutomationsLayout });
   const counts = useMemo(() => stateCounts(automations, { search, source, machine, model }), [automations, search, source, machine, model]);
   // Failing joins the switch only while something is, or while it's the one picked.
   const states = AUTOMATION_STATES.filter((entry) => entry !== 'failing' || counts.failing > 0 || state === 'failing');
@@ -208,30 +218,19 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
                     {sources.map((entry) => <SelectItem key={entry} value={entry}>{sourceLabel(entry)}</SelectItem>)}
                   </SelectPopup>
                 </Select>
+                <DataGridColumnsMenu grid={grid} defaultLayout={defaultAutomationsLayout} />
               </>
             )}
           >
             {shown.length ? (
-              <Table containerClassName="@container" className="min-w-[64rem]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-full">{t('automations.column.name')}</TableHead>
-                    <TableHead>{t('automations.column.app')}</TableHead>
-                    <TableHead>{t('automations.column.schedule')}</TableHead>
-                    <TableHead>{t('automations.column.project')}</TableHead>
-                    <TableHead>{t('automations.column.machine')}</TableHead>
-                    <TableHead>{t('automations.column.model')}</TableHead>
-                    <TableHead>{t('automations.column.nextRun')}</TableHead>
-                    <TableHead>{t('automations.column.lastRun')}</TableHead>
-                    <TableHead><span className="sr-only">{t('automations.column.actions')}</span></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {shown.map((item) => (
-                    <AutomationRow key={item.id} item={item} now={now} markPaused={state === 'all'} onOpen={() => onNavigate(automationView(item.id))} onNavigate={onNavigate} />
-                  ))}
-                </TableBody>
-              </Table>
+              <DataGrid
+                grid={grid}
+                label={t('app.nav.automations')}
+                surface="card"
+                sorting={sort}
+                onSortingChange={(next: DataGridSort | null) => setSort(next && (next.column === 'nextRun' || next.column === 'lastRun') ? { column: next.column, descending: next.descending } : null)}
+                onRowClick={(item) => onNavigate(automationView(item.id))}
+              />
             ) : (
               <Empty size="sm">
                 <EmptyDescription>{t('automations.empty.filtered')}</EmptyDescription>
@@ -246,56 +245,92 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   );
 }
 
-function AutomationRow({ item, now, markPaused, onOpen, onNavigate }: {
-  item: AutomationSummary;
-  now: number;
-  /** Badge a paused one, where the switch shows them alongside the rest. */
-  markPaused: boolean;
-  onOpen: () => void;
-  onNavigate: (view: AppView) => void;
-}) {
+const AUTOMATIONS_GRID_KEY = 'arbor.automations-grid.v1';
+
+type AutomationColumnId = 'name' | 'runsIn' | 'schedule' | 'project' | 'machine' | 'model' | 'nextRun' | 'lastRun' | 'actions';
+
+const COLUMN_SIZES: Record<AutomationColumnId, { size: number; minSize: number }> = {
+  name: { size: 220, minSize: 120 },
+  runsIn: { size: 110, minSize: 80 },
+  schedule: { size: 150, minSize: 90 },
+  project: { size: 100, minSize: 60 },
+  machine: { size: 130, minSize: 80 },
+  model: { size: 130, minSize: 80 },
+  nextRun: { size: 170, minSize: 100 },
+  lastRun: { size: 140, minSize: 90 },
+  actions: { size: 44, minSize: 44 },
+};
+
+const COLUMN_IDS = Object.keys(COLUMN_SIZES) as AutomationColumnId[];
+
+/** Every column showing, the name held at the start and the row's actions at the end, so both stay as it scrolls. */
+function defaultAutomationsLayout(): DataGridLayout {
+  const layout = gridLayout(COLUMN_IDS.map((id) => ({ id, minSize: COLUMN_SIZES[id].minSize })), COLUMN_IDS, ['name']);
+  return { ...layout, pinning: { start: ['name'], end: ['actions'] } };
+}
+
+const getRowId = (item: AutomationSummary) => item.id;
+const helper = createColumnHelper<DataGridFeatures, AutomationSummary>();
+
+/** What starts it, with a tooltip saying where and whether Arbor needs to be open. */
+function RunsIn({ item }: { item: AutomationSummary }) {
   const { t } = useI18n();
-  const last = item.lastRun;
-  return (
-    <TableRow className={cn('cursor-pointer transition-colors hover:bg-muted/50 dark:hover:bg-input/16', !item.enabled && 'text-muted-foreground')} onClick={onOpen}>
-      <TableCell className="w-full max-w-0">
+  const runner = automationRunner(item);
+  const machine = item.machine ?? '';
+  const why = item.source === 'arbor'
+    ? t(runner === 'ultradian' ? 'automations.runsIn.placed' : 'automations.runsIn.arbor', { machine })
+    : item.source === 'ultradian'
+      ? t('automations.runsIn.own', { machine })
+      : t('automations.runsIn.app', { app: t(AUTOMATION_APPS[item.source].label) });
+  return <span title={why} className="text-muted-foreground"><AutomationAppName source={runner} className="max-w-full" /></span>;
+}
+
+function useAutomationColumns(now: number, markPaused: boolean, onNavigate: (view: AppView) => void): DataGridColumnDef<AutomationSummary>[] {
+  const { t } = useI18n();
+  return useMemo(() => {
+    const column = (id: AutomationColumnId, header: string, cell: (item: AutomationSummary) => ReactNode, meta: Partial<DataGridColumnMeta> = {}, fixed = false) =>
+      helper.display({ id, header, ...COLUMN_SIZES[id], enableResizing: !fixed, cell: ({ row }) => cell(row.original), meta: { label: header, ...meta } });
+    const muted = 'text-xs text-muted-foreground';
+    const columns: Record<AutomationColumnId, DataGridColumnDef<AutomationSummary>> = {
+      name: column('name', t('automations.column.name'), (item) => (
         <span className="flex min-w-0 items-center gap-2">
           <span className={cn('truncate text-sm font-medium', item.enabled ? 'text-foreground' : 'text-muted-foreground')}>{item.name}</span>
           {markPaused && !item.enabled ? <Badge variant="outline" size="sm" className="shrink-0">{t('automations.status.paused')}</Badge> : null}
         </span>
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-xs text-muted-foreground"><AutomationAppName source={item.source} className="w-max" /></TableCell>
-      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{scheduleWords(item.schedule, t)}</TableCell>
-      <TableCell className="max-w-36 truncate text-xs text-muted-foreground">{item.project ?? '—'}</TableCell>
-      <TableCell className="text-xs">
-        {item.target.kind === 'best'
-          ? <span className="whitespace-nowrap text-muted-foreground">{t('automations.target.best')}</span>
+      )),
+      runsIn: column('runsIn', t('automations.column.app'), (item) => <RunsIn item={item} />, { cellClassName: 'text-xs' }),
+      schedule: column('schedule', t('automations.column.schedule'), (item) => scheduleWords(item.schedule, t), { cellClassName: muted }),
+      project: column('project', t('automations.column.project'), (item) => item.project ?? '—', { cellClassName: muted }),
+      machine: column('machine', t('automations.column.machine'), (item) => (
+        item.target.kind === 'best'
+          ? <span className="text-muted-foreground">{t('automations.target.best')}</span>
           : item.target.kind === 'pool'
-            ? <PoolName id={item.target.id} className="max-w-32" />
-            : <MachinePill name={item.machine} fallback="—" size="sm" className="max-w-32" />}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-xs">
-        {item.model ? <ModelName model={item.model} className="w-max" /> : (
+            ? <PoolName id={item.target.id} className="max-w-full" />
+            : <MachinePill name={item.machine} fallback="—" size="sm" className="max-w-full" />
+      ), { cellClassName: 'text-xs' }),
+      model: column('model', t('automations.column.model'), (item) => (
+        item.model ? <ModelName model={item.model} className="max-w-full" /> : (
           // Until a run says which model, the agent stands in for it.
-          <span className="text-muted-foreground" title={t('automations.model.unknown')}><HarnessName harness={item.agent} className="w-max" /></span>
-        )}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-        {item.nextRunAtMs && item.enabled
+          <span className="text-muted-foreground" title={t('automations.model.unknown')}>{item.agent ? <HarnessName harness={item.agent} className="max-w-full" /> : '—'}</span>
+        )
+      ), { cellClassName: 'text-xs' }),
+      nextRun: column('nextRun', t('automations.column.nextRun'), (item) => (
+        item.nextRunAtMs && item.enabled
           ? <span title={formatDateTime(item.nextRunAtMs, { year: 'always' })}>{formatWhen(item.nextRunAtMs, { now })} ({formatRelative(item.nextRunAtMs, now)})</span>
-          : '—'}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-xs">
-        {last ? (
+          : '—'
+      ), { cellClassName: cn(muted, 'tabular-nums'), sort: 'time' }),
+      lastRun: column('lastRun', t('automations.column.lastRun'), (item) => {
+        const last = item.lastRun;
+        if (!last) return <span className="text-muted-foreground">—</span>;
+        return (
           <span className={cn('inline-flex items-center gap-1.5', last.status === 'failed' ? 'text-error-foreground' : 'text-muted-foreground')} title={formatDateTime(last.atMs, { year: 'always' })}>
             <StatusDot tone={RUN_STATUS_TONE[last.status]} />
             {t('automations.lastRun', { status: t(RUN_STATUS_LABEL[last.status]), when: formatAgo(last.atMs, now) })}
           </span>
-        ) : <span className="text-muted-foreground">—</span>}
-      </TableCell>
-      <TableCell onClick={(event) => event.stopPropagation()}>
-        <AutomationActions item={item} onNavigate={onNavigate} compact />
-      </TableCell>
-    </TableRow>
-  );
+        );
+      }, { cellClassName: 'text-xs', sort: 'time' }),
+      actions: column('actions', t('automations.column.actions'), (item) => <AutomationActions item={item} onNavigate={onNavigate} compact />, { fixed: true, cellClassName: 'px-1' }, true),
+    };
+    return COLUMN_IDS.map((id) => columns[id]);
+  }, [t, now, markPaused, onNavigate]);
 }

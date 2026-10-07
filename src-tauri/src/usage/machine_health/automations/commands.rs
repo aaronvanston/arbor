@@ -5,6 +5,7 @@ use super::discover::{self, Found, MachineFind};
 use super::proxy;
 use super::store::{self, Record};
 use super::super::harnesses::Launcher;
+use super::super::shell::shell_quote;
 use super::*;
 use tauri::Manager;
 
@@ -174,6 +175,7 @@ pub(super) fn list_from(
         draft_model: store::setting(connection, "draft_model")?.unwrap_or_else(|| draft::DEFAULT_MODEL.into()),
         draft_effort: store::setting(connection, "draft_effort")?.unwrap_or_else(|| draft::DEFAULT_EFFORT.into()),
         udian_bundled: udian::bundle().map(|bundle| bundle.version),
+        udian_skill: udian::bundle().and_then(|bundle| bundle.skill()).map(|skill| super::super::guarded_writes::cksum(&skill)),
         agents: Harness::ALL.into_iter().filter(|harness| harness.launches()).collect(),
         // Whether the core still has the key needs the app; `current_list` fills it in.
         proxy_key: false,
@@ -340,10 +342,14 @@ pub(crate) async fn get_automation(id: String) -> Result<Automation, String> {
     run_usage_task(move || Ok(with_project(&open_usage_database()?, found)?.automation)).await
 }
 
-/// An automation's runs, or every automation's, newest first. Only Arbor's own have runs here.
+/// An automation's runs, or every automation's, newest first: Arbor's own, and the recent runs of a schedule someone
+/// made in ultradian themselves, asked of its machine.
 #[tauri::command]
-pub(crate) async fn list_automation_runs(id: Option<String>, limit: Option<u32>) -> Result<Vec<AutomationRun>, String> {
+pub(crate) async fn list_automation_runs(app: tauri::AppHandle, id: Option<String>, limit: Option<u32>) -> Result<Vec<AutomationRun>, String> {
     let limit = limit.unwrap_or(100) as usize;
+    if let Some(item) = id.as_deref().and_then(discover::find).filter(|item| item.automation.summary.source == AutomationSource::Ultradian) {
+        return udian::own_runs(&app, &item, limit).await;
+    }
     run_usage_task(move || Ok(store::runs(&open_usage_database()?, id.as_deref(), limit)?.into_iter().map(|stored| stored.run).collect())).await
 }
 
@@ -485,6 +491,76 @@ pub(crate) async fn cancel_automation_run(app: tauri::AppHandle, run_id: String)
     run_usage_task(move || store::run(&open_usage_database()?, &id)).await?.map(|stored| stored.run).ok_or_else(|| "Arbor has no run with that id".to_string())
 }
 
+// ── Opening a run in Terminal ────────────────────────────────────────────────────────────────────────────────────
+
+/// The shell line that picks up an Arbor automation's run where it left off: its agent resumed by the session id the
+/// run stores, in the folder the run worked in, the run's own worktree while it's still there and the project's
+/// checkout otherwise, since an agent looks for a session under the folder it ran in.
+fn resume_line(record: &Record, stored: &store::StoredRun, program: &str) -> Result<String, String> {
+    let session = stored.run.session_id.as_deref().ok_or("This run has no session to open")?;
+    let resume = match record.input.agent.spec().launcher {
+        Some(Launcher::Claude) => format!("exec {} --resume {}", shell_quote(program), shell_quote(session)),
+        Some(Launcher::Codex) => format!("exec {} resume {}", shell_quote(program), shell_quote(session)),
+        _ => return Err("Arbor can open Claude Code and Codex sessions in Terminal, not this agent's".into()),
+    };
+    let mut folders: Vec<String> = Vec::new();
+    if let Some(worktree) = stored.worktree.as_deref().filter(|worktree| !worktree.is_empty()) {
+        folders.push(runner::path_word(worktree));
+    }
+    // A run on the machine's background runner works in a worktree named for its schedule and run (`udian::run_script`).
+    if record.input.workspace == AutomationWorkspace::NewWorktree && udian::wanted_machine(record).is_some() {
+        folders.push(format!("\"$HOME/.arbor/automation-worktrees/\"{}/{}", shell_quote(&udian::schedule_name(&record.id)), shell_quote(&stored.run.id)));
+    }
+    if !record.input.project_path.is_empty() {
+        folders.push(runner::path_word(&record.input.project_path));
+    }
+    let cd: String = folders.iter().map(|folder| format!("cd {folder} 2>/dev/null || ")).collect();
+    Ok(if folders.is_empty() { resume } else { format!("{{ {cd}true; }} && {resume}") })
+}
+
+/// The shell line that shows one of someone's own ultradian runs: udian's own log of it, which only they read.
+fn udian_log_line(name: &str, run_id: &str) -> String {
+    format!("exec {} logs {} --run {}", udian::BIN, shell_quote(name), shell_quote(run_id))
+}
+
+/// Opens a Terminal window on this Mac for an automation's run: an Arbor run's session resumed on the machine it ran
+/// on, or one of someone's own ultradian runs with udian's log of it. Answers with the same as one command to paste.
+#[tauri::command]
+pub(crate) async fn open_automation_run_in_terminal(app: tauri::AppHandle, automation_id: String, run_id: String) -> Result<String, String> {
+    use super::super::agents::AgentKind;
+    use super::super::fix_session::{self, agent_program, place_of, Launch};
+    let launch = if automation_id.starts_with(ARBOR_PREFIX) {
+        let record = arbor_record(&automation_id).await?;
+        let stored = run_usage_task({
+            let run_id = run_id.clone();
+            move || store::run(&open_usage_database()?, &run_id)
+        })
+        .await?
+        .filter(|stored| stored.run.automation_id == automation_id)
+        .ok_or("Arbor has no run with that id for this automation")?;
+        let machine = stored.run.machine.clone().ok_or("Arbor doesn't know which machine this run was on")?;
+        let agent = match record.input.agent.spec().launcher {
+            Some(Launcher::Claude) => AgentKind::Claude,
+            Some(Launcher::Codex) => AgentKind::Codex,
+            _ => return Err("Arbor can open Claude Code and Codex sessions in Terminal, not this agent's".into()),
+        };
+        let inner = app.state::<MachineHealthState>();
+        let inner = inner.lock();
+        Launch { place: place_of(&inner, &machine)?, line: resume_line(&record, &stored, &agent_program(&inner, &machine, agent))? }
+    } else {
+        let item = found_or_error(&automation_id)?;
+        let discover::Keeper::Id(name) = &item.keeper else { return Err("Arbor can open only ultradian's runs in Terminal".into()) };
+        if item.automation.summary.source != AutomationSource::Ultradian {
+            return Err("Arbor can open only ultradian's runs in Terminal; open this one in the app that keeps it".into());
+        }
+        let inner = app.state::<MachineHealthState>();
+        let place = place_of(&inner.lock(), &item.found_on)?;
+        Launch { place, line: udian_log_line(name, &run_id) }
+    };
+    fix_session::open_in_terminal(&app, &launch, "automation-run", "to open an automation's run")?;
+    Ok(launch.typed())
+}
+
 /// What an Arbor automation copied from another app's starts as: its prompt and schedule, on the machine it was found
 /// on, paused until the user picks a project.
 pub(super) fn copied_input(automation: &Automation) -> AutomationInput {
@@ -523,14 +599,20 @@ pub(super) fn copied_input(automation: &Automation) -> AutomationInput {
 #[tauri::command]
 pub(crate) async fn install_background_runner(app: tauri::AppHandle, machine: String) -> Result<AutomationList, String> {
     let bundle = udian::bundle().ok_or("This build of Arbor doesn't carry the background runner")?;
-    let target = discover::found()
+    let there = discover::found()
         .get(&machine)
-        .and_then(|find| find.udian.as_ref())
-        .map(|udian| udian.target.clone().ok_or("Arbor has no background runner for this machine's system"))
-        .ok_or("Look for automations on this machine first, so Arbor knows its system")??;
-    let archive = udian::archive(&bundle, &target)?;
+        .and_then(|find| find.udian.clone())
+        .ok_or("Look for automations on this machine first, so Arbor knows its system")?;
     let found = shell::find_machine(&app.state::<MachineHealthState>().lock(), &machine)?;
-    udian::install(&found, &archive).await?;
+    // A machine already on this build's runner, with its daemon going, only needs the skill.
+    if !(there.live && there.version.as_deref() == Some(bundle.version.as_str())) {
+        let target = there.target.clone().ok_or("Arbor has no background runner for this machine's system")?;
+        let archive = udian::archive(&bundle, &target)?;
+        udian::install(&found, &archive).await?;
+    }
+    if let Some(skill) = bundle.skill().filter(|skill| there.skill.as_deref() != Some(super::super::guarded_writes::cksum(skill).as_str())) {
+        udian::install_skill(&app, &found, &skill).await?;
+    }
     discover::scan_machine(&app, found).await;
     runner::WAKE.notify_one();
     current_list(&app).await
@@ -700,6 +782,40 @@ mod tests {
             precheck_timeout_secs: 60,
             enabled: true,
         }
+    }
+
+    fn stored(session: Option<&str>, worktree: Option<&str>) -> store::StoredRun {
+        let mut run = runner::new_run("arbor:a1", Some("cam-mbp".into()), 1, false);
+        run.id = "run-1".into();
+        run.session_id = session.map(str::to_string);
+        store::StoredRun { run, worktree: worktree.map(str::to_string) }
+    }
+
+    fn record_with(input: AutomationInput) -> Record {
+        Record { id: "arbor:a1".into(), input, enabled: true, next_run_at_ms: None, created_at_ms: 1, updated_at_ms: 1 }
+    }
+
+    #[test]
+    fn a_run_resumes_in_its_worktree_then_its_checkout() {
+        let mut input = input();
+        input.project_path = "~/work/billing".into();
+        let record = record_with(input.clone());
+        let line = resume_line(&record, &stored(Some("abc-1"), Some("/tmp/wt 1")), "/opt/claude").unwrap();
+        assert_eq!(line, "{ cd '/tmp/wt 1' 2>/dev/null || cd \"$HOME\"/'work/billing' 2>/dev/null || true; } && exec '/opt/claude' --resume 'abc-1'");
+        assert_eq!(resume_line(&record, &stored(None, None), "claude").unwrap_err(), "This run has no session to open");
+
+        input.agent = Harness::Codex;
+        input.workspace = AutomationWorkspace::NewWorktree;
+        input.runs_on = AutomationRunsOn::Machine;
+        let record = record_with(input);
+        let line = resume_line(&record, &stored(Some("s"), None), "codex").unwrap();
+        assert!(line.contains("cd \"$HOME/.arbor/automation-worktrees/\"'arbor-a1'/'run-1' 2>/dev/null || cd \"$HOME\"/'work/billing'"), "{line}");
+        assert!(line.ends_with("exec 'codex' resume 's'"));
+    }
+
+    #[test]
+    fn an_ultradian_run_opens_its_own_log() {
+        assert_eq!(udian_log_line("it's", "run_1"), "exec \"$HOME/.ultradian/bin/udian\" logs 'it'\\''s' --run 'run_1'");
     }
 
     #[test]

@@ -40,6 +40,11 @@ export type DataGridColumnMeta = {
   cellClassName?: string;
   /** The column can be sorted, and how its two ways read: oldest or newest first, or low or high first. */
   sort?: 'time' | 'number';
+  /**
+   * A row's own controls, like its actions menu: no header menu, no width to drag and no place in the Columns list,
+   * so it can't be hidden or moved away from the rows it acts on. Give it `enableResizing: false` too.
+   */
+  fixed?: boolean;
 };
 
 /** The column rows are sorted by, and which way. */
@@ -325,8 +330,10 @@ function GridHead<TData extends RowData>({ header, table, surface, first, edge, 
       // The header's label is a button with 4px of its own, so the cell gives up that much of the edge.
       className={cn(HEAD_CLASS, TABLE_HEAD_SURFACE[surface], first && HEAD_EDGE_START[surface], pinned && 'z-[3]', edge)}
     >
-      <ColumnMenu header={header} table={table} sorted={sorted} onSortingChange={onSortingChange} />
-      {column.getCanResize() ? <ResizeHandle header={header} /> : null}
+      {column.columnDef.meta?.fixed
+        ? <span className="sr-only">{column.columnDef.meta.label}</span>
+        : <ColumnMenu header={header} table={table} sorted={sorted} onSortingChange={onSortingChange} />}
+      {column.getCanResize() && !column.columnDef.meta?.fixed ? <ResizeHandle header={header} /> : null}
     </th>
   );
 }

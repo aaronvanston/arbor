@@ -24,17 +24,23 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
  * the one Arbor carries, and `?runner=legacy` from before it kept only 30 days of runs. `?runner=failing`: writing
  * cedar-02's schedules failed. `?runner=none`: this build carries none. `?automations=nokey`: the proxy has no
  * Automations key yet, so Settings offers to add one.
+ * Someone's own ultradian schedules: two on cedar-02. `?udian=none` hides them; `?udian=away` makes reading their
+ * runs from cedar-02 fail. `?terminal=fail`: opening a run in Terminal fails.
  */
 const scenario = params.get('automations');
 const failing = scenario === 'failing';
 const withOrca = params.get('orca') !== 'none';
 const withSuperset = params.get('superset') !== 'none';
+const udianScenario = params.get('udian');
+const withOwnUdian = udianScenario !== 'none';
 const runner = params.get('runner');
 const BUNDLED_RUNNER = runner === 'none' ? null : '1.0.0';
+const BUNDLED_SKILL = runner === 'none' ? null : 'c1234567-6012';
+// cam-mbp's runner went on before Arbor carried its skill, so Settings offers to add it.
 const runnerOn = new Map<string, UdianOnMachine>([
-  ['cam-mbp', { target: 'darwin-arm64', version: '1.0.0', live: true }],
-  ['cedar-02', { target: 'linux-x64', version: runner === 'old' ? '0.9.2' : runner === 'legacy' ? '0.1.0' : '1.0.0', live: true }],
-  ['ci-01', { target: 'linux-arm64', version: null, live: false }],
+  ['cam-mbp', { target: 'darwin-arm64', version: '1.0.0', live: true, skill: null }],
+  ['cedar-02', { target: 'linux-x64', version: runner === 'old' ? '0.9.2' : runner === 'legacy' ? '0.1.0' : '1.0.0', live: true, skill: BUNDLED_SKILL }],
+  ['ci-01', { target: 'linux-arm64', version: null, live: false, skill: null }],
 ]);
 
 const MINUTE = 60_000;
@@ -46,6 +52,7 @@ const CODEX_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow:
 const CLAUDE_ABILITIES: AutomationAbilities = { edit: false, pause: false, runNow: false, delete: false, copy: true };
 const ORCA_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: true, delete: false, copy: true };
 const SUPERSET_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: true, delete: false, copy: true };
+const ULTRADIAN_ABILITIES: AutomationAbilities = { edit: false, pause: true, runNow: true, delete: false, copy: false };
 
 type Seed = Omit<Automation, 'summary'> & { summary: AutomationSummary };
 
@@ -262,6 +269,24 @@ const SEEDS: Seed[] = [
       rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0',
     }),
   ] : []),
+  ...(withOwnUdian ? [
+    seed({
+      id: 'ultradian:cedar-02:pr-review', source: 'ultradian', name: 'pr-review', enabled: true, machine: 'cedar-02', project: 'billing', agent: 'claude', runsOn: 'machine',
+      schedule: { kind: 'everyHours', hours: 1, minute: 0 }, nextRunAtMs: now + 41 * MINUTE,
+      lastRun: { status: failing ? 'failed' : 'skipped', atMs: now - 19 * MINUTE }, hasPrecheck: true, abilities: ULTRADIAN_ABILITIES,
+    }, {
+      prompt: "claude -p 'Review the pull requests on stdin and leave comments' --model claude-sonnet-5",
+      projectPath: '/home/cam/src/billing', precheck: 'gh pr list --search "review-requested:@me" --json number --jq ".[].number"', precheckTimeoutSecs: 3600, graceMinutes: 10,
+      model: 'claude-sonnet-5',
+    }),
+    seed({
+      id: 'ultradian:cedar-02:nightly-backup', source: 'ultradian', name: 'nightly-backup', enabled: false, machine: 'cedar-02', project: null, agent: null, runsOn: 'machine',
+      schedule: { kind: 'daily', hour: 2, minute: 30 }, nextRunAtMs: null,
+      lastRun: { status: 'done', atMs: now - 3 * DAY }, hasPrecheck: false, abilities: ULTRADIAN_ABILITIES,
+    }, {
+      prompt: './scripts/backup.sh --to /Volumes/Backup', projectPath: '/home/cam', graceMinutes: 0,
+    }),
+  ] : []),
 ];
 
 let automations: Seed[] = freshInstall || scenario === 'empty' ? [] : SEEDS.map((item) => scheduled(structuredClone(item)));
@@ -298,7 +323,8 @@ function seedRuns(item: Seed): AutomationRun[] {
     const ran = status === 'done' || status === 'failed';
     const checked = ran || status === 'skipped';
     const output = PRECHECK_OUTPUT[item.summary.id];
-    const sessions = item.summary.agent ? RUN_SESSIONS[item.summary.agent] ?? [] : [];
+    // ultradian runs whatever command it's given, so its own schedules' runs have no session Arbor could know.
+    const sessions = item.summary.agent && item.summary.source !== 'ultradian' ? RUN_SESSIONS[item.summary.agent] ?? [] : [];
     const sessionId = ran ? sessions[sessionIndex++ % Math.max(1, sessions.length)] ?? null : null;
     return {
       id: `${item.summary.id}:run:${index}`,
@@ -334,7 +360,7 @@ const list = (): AutomationList => ({
   scans: [
     { machine: 'cam-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff(['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('cam-mbp') ?? null, placingError: null },
     {
-      machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff([...(withOrca ? ['orca' as const] : []), ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('cedar-02') ?? null,
+      machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff([...(withOrca ? ['orca' as const] : []), ...(withSuperset ? ['superset' as const] : []), ...(withOwnUdian ? ['ultradian' as const] : [])]), udian: runnerOn.get('cedar-02') ?? null,
       placingError: runner === 'failing' ? 'cedar-02 didn\'t answer over SSH.' : null,
     },
     {
@@ -346,6 +372,7 @@ const list = (): AutomationList => ({
   draftModel,
   draftEffort,
   udianBundled: BUNDLED_RUNNER,
+  udianSkill: BUNDLED_SKILL,
   agents: ['claude', 'codex', 'pi', 'primeAgent', 'droid'],
   proxyKey,
   proxyAddress,
@@ -389,6 +416,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
   }),
   get_automation: ({ id }) => structuredClone(find(id)),
   list_automation_runs: ({ id, limit }) => {
+    if (udianScenario === 'away' && id?.startsWith('ultradian:')) return later(600, () => { throw 'cedar-02 didn\'t answer over SSH.'; });
     const all = id ? runs.get(id) ?? [] : [...runs.values()].flat().sort((left, right) => right.scheduledAtMs - left.scheduledAtMs);
     return all.slice(0, limit ?? 100);
   },
@@ -514,11 +542,21 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
     proxyAddress = trimmed.replace(/\/+$/, '');
     return list();
   },
+  open_automation_run_in_terminal: ({ automationId, runId }) => later(300, () => {
+    mockLog('open_automation_run_in_terminal', { automationId, runId });
+    if (params.get('terminal') === 'fail') throw 'Couldn\'t open Terminal: no application can open the file';
+    const run = runs.get(automationId)?.find((entry) => entry.id === runId);
+    const item = find(automationId);
+    if (item.summary.source === 'ultradian') return `ssh -t cedar-02 'exec "$HOME/.ultradian/bin/udian" logs ${item.summary.name} --run ${runId}'`;
+    if (!run?.sessionId) throw 'This run has no session to open';
+    const program = item.summary.agent === 'codex' ? `codex resume ${run.sessionId}` : `claude --resume ${run.sessionId}`;
+    return `ssh -t ${run.machine ?? 'cedar-02'} '{ cd ${item.projectPath ?? '~'} 2>/dev/null || true; } && exec ${program}'`;
+  }),
   install_background_runner: ({ machine: name }) => later(2_500, () => {
     mockLog('install_background_runner', { machine: name });
     const found = runnerOn.get(name);
     if (!found?.target || !BUNDLED_RUNNER) throw 'Arbor has no background runner for this machine\'s system';
-    runnerOn.set(name, { ...found, version: BUNDLED_RUNNER, live: true });
+    runnerOn.set(name, { ...found, version: BUNDLED_RUNNER, live: true, skill: BUNDLED_SKILL });
     return list();
   }),
 };

@@ -36,8 +36,15 @@ to start it.
   kept. `draft.rs` drafts one from a sentence through the local proxy.
 - One aimed at a pool gets its machine from `runs::pick_for_automation` when it's due.
 - One set to run on its machine goes to `udian.rs`: Arbor installs the ultradian runner it carries (pinned in
-  `udian-version.txt`, fetched into `bundled-udian/` by the release build), writes the schedule and scripts there and
-  reads the runs back, so it runs with Arbor closed. ultradian's own run logs stay on the machine, unread.
+  `udian-version.txt`, fetched into `bundled-udian/` with the release's `SKILL.md` by the release build), writes the
+  schedule and scripts there and reads the runs back, so it runs with Arbor closed. Installing it also puts that
+  skill in the machine's agent homes, through the same guarded write as Arbor's own CLI skill (`cli_skill.rs`).
+- Schedules someone made in ultradian themselves are the `ultradian` app (`apps/ultradian.rs`); Arbor's own are told
+  apart by their `arbor-` name or `arbor` group. They run a command, not a prompt, so a run has no session to link.
+  Their runs are asked of the machine when their page opens (`udian logs <name>` without `--run`) and never stored.
+- ultradian's run logs stay on the machine and Arbor never reads them. "Terminal" on a run opens a window on this Mac
+  that shows the log (`udian logs --run`) or resumes an Arbor run's session over SSH (`fix_session.rs`): the user
+  reads it there, and nothing of it comes back to Arbor.
 
 ## Pools
 

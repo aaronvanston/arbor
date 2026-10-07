@@ -135,6 +135,7 @@ export function scheduleWords(schedule: ScheduleSummary, t: Translate): string {
       return t('automations.schedule.weeklyDays', { days: schedule.days.map(dayName).join(', '), time });
     }
     case 'custom': return t('automations.schedule.custom');
+    case 'manual': return t('automations.schedule.manual');
     case 'elsewhere': return t('automations.schedule.elsewhere');
   }
 }
@@ -157,13 +158,23 @@ export const AUTOMATION_APPS: Record<AutomationSource, AutomationApp> = {
   claudeDesktop: { label: 'automations.source.claudeDesktop', note: 'automations.note.claude', whenFound: false },
   orca: { label: 'automations.source.orca', note: 'automations.note.orca', whenFound: true },
   superset: { label: 'automations.source.superset', note: 'automations.note.superset', whenFound: true },
+  ultradian: { label: 'automations.source.ultradian', note: 'automations.note.ultradian', whenFound: true },
 };
 
 export const SOURCE_LABEL = (source: AutomationSource): MessageKey => AUTOMATION_APPS[source].label;
 
+/**
+ * What starts an automation when it's due, which the list's Runs in column and its filter go by: the app that keeps
+ * it, except Arbor's own set to run on their machine, which ultradian, the background runner there, starts whether
+ * Arbor is open or not.
+ */
+export const automationRunner = (item: Pick<AutomationSummary, 'source' | 'runsOn'>): AutomationSource =>
+  item.source === 'arbor' && item.runsOn === 'machine' ? 'ultradian' : item.source;
+
 /** The apps to filter by: every one listed always, the others once a machine has them, and the one picked. */
 export function sourceChoices(scans: readonly AutomationScan[], picked: AutomationSource | 'all'): AutomationSource[] {
-  const found = new Set(scans.flatMap((scan) => scan.apps));
+  // A machine with the background runner set up has ultradian, whether or not anyone made schedules in it there.
+  const found = new Set(scans.flatMap((scan) => (scan.udian?.version ? [...scan.apps, 'ultradian' as const] : scan.apps)));
   return (Object.keys(AUTOMATION_APPS) as AutomationSource[]).filter((source) => !AUTOMATION_APPS[source].whenFound || found.has(source) || source === picked);
 }
 
@@ -205,6 +216,7 @@ export const STATE_LABEL: Record<AutomationState, MessageKey> = {
 
 export type AutomationFilter = {
   search: string;
+  /** What runs it (`automationRunner`). */
   source: AutomationSource | 'all';
   machine: string;
   /** Every one when left out. */
@@ -227,7 +239,7 @@ const inState = (item: AutomationSummary, state: AutomationState) => {
 const matching = (automations: readonly AutomationSummary[], filter: AutomationFilter) => {
   const words = filter.search.trim().toLowerCase();
   return automations
-    .filter((item) => filter.source === 'all' || item.source === filter.source)
+    .filter((item) => filter.source === 'all' || automationRunner(item) === filter.source)
     .filter((item) => !filter.model || filter.model === 'all' || item.model === filter.model)
     .filter((item) => !filter.machine || item.machine === filter.machine || item.target.kind !== 'machine')
     .filter((item) => !words || [item.name, item.project ?? '', item.machine ?? '', item.model ?? ''].some((text) => text.toLowerCase().includes(words)));
@@ -242,6 +254,23 @@ export function filterAutomations(automations: readonly AutomationSummary[], fil
   return matching(automations, filter)
     .filter((item) => inState(item, filter.state ?? 'all'))
     .sort((left, right) => Number(left.source !== 'arbor') - Number(right.source !== 'arbor') || left.name.localeCompare(right.name));
+}
+
+/** A column the list can be sorted by, and which way. */
+export type AutomationSort = { column: 'nextRun' | 'lastRun'; descending: boolean };
+
+/**
+ * The list in the order picked from a column, or as `filterAutomations` gave it. One with no time for the column
+ * (paused, or never run) goes last either way.
+ */
+export function sortAutomations(automations: readonly AutomationSummary[], sort: AutomationSort | null): AutomationSummary[] {
+  if (!sort) return [...automations];
+  const time = (item: AutomationSummary) => (sort.column === 'nextRun' ? (item.enabled ? item.nextRunAtMs : null) : item.lastRun?.atMs ?? null);
+  return [...automations].sort((left, right) => {
+    const [a, b] = [time(left), time(right)];
+    if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
+    return sort.descending ? b - a : a - b;
+  });
 }
 
 /** How many each state would list with the other filters as they are. */
@@ -362,20 +391,22 @@ export function switchSchedule(choice: ScheduleChoice, kind: ScheduleChoice['kin
 // ── The background runner ─────────────────────────────────────────────────────────────────────────────────────────
 
 /** Where a machine's background runner stands: what Settings shows and offers for it. */
-export type RunnerState = 'ready' | 'outdated' | 'stopped' | 'missing' | 'unsupported' | 'unknown';
+export type RunnerState = 'ready' | 'noSkill' | 'outdated' | 'stopped' | 'missing' | 'unsupported' | 'unknown';
 
 /** Whether `version` is older than `than`. A release candidate comes before its release, so a machine on 0.3.0-rc.1 is
  *  offered 0.3.0. */
 export const olderVersion = (version: string, than: string): boolean => compareVersions(version, than) < 0;
 
-export function runnerState(scan: AutomationScan | undefined, bundled: string | null): RunnerState {
+/** `skill` is the fingerprint of the skill this build carries with the runner, which a ready machine should have too. */
+export function runnerState(scan: AutomationScan | undefined, bundled: string | null, skill: string | null = null): RunnerState {
   const udian = scan?.udian;
   if (!udian) return 'unknown';
   // A machine that could take the runner reads as not set up even when this build carries none: it's the build that
   // lacks it, not the machine, and Set up only shows when there's one to put there.
   if (!udian.version) return udian.target ? 'missing' : 'unsupported';
   if (!udian.live) return 'stopped';
-  return bundled && olderVersion(udian.version, bundled) ? 'outdated' : 'ready';
+  if (bundled && olderVersion(udian.version, bundled)) return 'outdated';
+  return skill && udian.skill !== skill ? 'noSkill' : 'ready';
 }
 
 /** Whether putting the runner Arbor carries on a machine starts pruning its history: ultradian before 0.2 kept every
@@ -384,10 +415,11 @@ export const runnerPrunesHistory = (scan: AutomationScan | undefined): boolean =
   Boolean(scan?.udian?.version && olderVersion(scan.udian.version, '0.2.0'));
 
 /** Whether Arbor can put or update the runner Arbor carries on the machine. */
-export const canInstallRunner = (state: RunnerState) => state === 'missing' || state === 'outdated' || state === 'stopped';
+export const canInstallRunner = (state: RunnerState) => state === 'missing' || state === 'outdated' || state === 'stopped' || state === 'noSkill';
 
 export const RUNNER_STATE_LABEL: Record<RunnerState, MessageKey> = {
   ready: 'automations.runner.state.ready',
+  noSkill: 'automations.runner.state.noSkill',
   outdated: 'automations.runner.state.outdated',
   stopped: 'automations.runner.state.stopped',
   missing: 'automations.runner.state.missing',
@@ -397,6 +429,8 @@ export const RUNNER_STATE_LABEL: Record<RunnerState, MessageKey> = {
 
 export const RUNNER_STATE_TONE: Record<RunnerState, StatusTone> = {
   ready: 'success',
+  // It runs automations all the same; agents there just don't know its command line.
+  noSkill: 'success',
   outdated: 'warning',
   stopped: 'warning',
   missing: 'muted',

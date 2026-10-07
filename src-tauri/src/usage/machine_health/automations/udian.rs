@@ -22,15 +22,25 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// Where udian lives on a machine. The daemon's service runs it from here, and an update replaces it in place.
-const BIN: &str = "\"$HOME/.ultradian/bin/udian\"";
+pub(super) const BIN: &str = "\"$HOME/.ultradian/bin/udian\"";
 /// The group every schedule Arbor writes is in, so Arbor reads back only its own.
 const GROUP: &str = "arbor";
 /// Every schedule Arbor places starts with this, which is how its runs are told from the machine's others.
 const SCHEDULE_PREFIX: &str = "arbor-";
+
+/// A schedule Arbor placed, by its name and group, which Arbor lists as the automation it keeps; the machine's others
+/// are someone's own (`apps::ultradian`).
+pub(super) fn is_arbors(name: &str, group: Option<&str>) -> bool {
+    name.starts_with(SCHEDULE_PREFIX) || group == Some(GROUP)
+}
 const VERSION_FILE: &str = "udian-version.txt";
 /// In the app's Resources, and in a checkout for a dev build.
 const RESOURCES_FOLDER: &str = "udian";
 const SOURCE_FOLDER: &str = "bundled-udian";
+/// The release's skill, which the build fetches from the release's tag beside its archives.
+const SKILL_FILE: &str = "SKILL.md";
+/// The skill's folder name in an agent home's skills.
+const SKILL_NAME: &str = "ultradian";
 /// How much of a precheck's output is kept, as Arbor's own runner keeps.
 const PRECHECK_KEPT: usize = 4 << 10;
 /// How long one run may take in all before udian stops it.
@@ -56,6 +66,13 @@ fn bundle_in(version_file: &Path, dir: &Path) -> Option<Bundle> {
 }
 
 /// The release this build carries: the app's own Resources, or a checkout's `bundled-udian/` for a dev build.
+impl Bundle {
+    /// The skill that comes with this release, `SKILL.md` beside its archives, which teaches agents its command line.
+    pub(super) fn skill(&self) -> Option<Vec<u8>> {
+        std::fs::read(self.dir.join(SKILL_FILE)).ok().filter(|skill| !skill.is_empty())
+    }
+}
+
 pub(super) fn bundle() -> Option<Bundle> {
     let executable_dir = crate::core_runtime::executable_dir().ok()?;
     if let Some(resources) = crate::core_runtime::macos_app_resources_dir(&executable_dir) {
@@ -104,11 +121,14 @@ pub(super) fn archive(bundle: &Bundle, target: &str) -> Result<Vec<u8>, String> 
 // ── Looking ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // Part of each machine's automations scan. Lines out: `U system arch`, and when udian is installed, `V version` and
-// `D live` (1 or 0) from its own answers, each base64 of the JSON.
+// `D live` (1 or 0) from its own answers, each base64 of the JSON, and `W fingerprint` of its skill in the store.
 pub(super) const PROBE_SCRIPT: &str = r##"printf 'U\t%s\t%s\n' "$(uname -s)" "$(uname -m)"
 if [ -x "$HOME/.ultradian/bin/udian" ]; then
   printf 'V\t%s\n' "$("$HOME/.ultradian/bin/udian" version --json </dev/null 2>/dev/null | base64 | tr -d '\n')"
   printf 'D\t%s\n' "$("$HOME/.ultradian/bin/udian" status --json </dev/null 2>/dev/null | base64 | tr -d '\n')"
+  if [ -f "$HOME/.agents/skills/ultradian/SKILL.md" ]; then
+    printf 'W\t%s\n' "$(cksum < "$HOME/.agents/skills/ultradian/SKILL.md" | awk '{ printf "c%s-%s", $1, $2 }')"
+  fi
 fi
 "##;
 
@@ -127,7 +147,12 @@ pub(super) fn parse_probe(stdout: &str) -> Option<UdianOnMachine> {
     for line in stdout.lines() {
         let fields: Vec<&str> = line.split('\t').collect();
         match fields.as_slice() {
-            ["U", system, arch] => found = Some(UdianOnMachine { target: target_for(system, arch).map(str::to_string), version: None, live: false }),
+            ["U", system, arch] => found = Some(UdianOnMachine { target: target_for(system, arch).map(str::to_string), version: None, live: false, skill: None }),
+            ["W", sum] => {
+                if let Some(udian) = found.as_mut() {
+                    udian.skill = Some(sum.trim().to_string()).filter(|sum| !sum.is_empty());
+                }
+            }
             ["V", json] => {
                 if let (Some(udian), Some(value)) = (found.as_mut(), json_line(json)) {
                     udian.version = data(&value).get("version").and_then(serde_json::Value::as_str).map(|version| version.trim_start_matches('v').to_string());
@@ -198,6 +223,20 @@ pub(super) fn install_script(archive: &[u8]) -> String {
 
 pub(super) async fn install(machine: &Machine, archive: &[u8]) -> Result<(), String> {
     run_checked(machine, MachineOp::RunnerInstall, &install_script(archive), INSTALL_TIMEOUT).await.map(|_| ())
+}
+
+/// Puts the runner's skill in the machine's store and each of its Claude Code homes with Sync on, each copy backed up
+/// so Sync › Repo › History can undo it, as Arbor's own skill goes on this Mac (`cli_skill`).
+pub(super) async fn install_skill(app: &tauri::AppHandle, machine: &Machine, skill: &[u8]) -> Result<(), String> {
+    use super::super::cli_skill::{parse_install, skill_install_script};
+    use super::super::guarded_writes::{new_stamp, run_on};
+    let stdout = run_on(machine, MachineOp::SkillsApply, &skill_install_script(machine.name(), &new_stamp(), SKILL_NAME, skill)).await?;
+    super::super::setup::rescan(app, machine.name());
+    let result = parse_install(&stdout);
+    if result.written.is_empty() && result.already.is_empty() {
+        return Err(format!("The background runner is set up on {}, but Arbor couldn't write its skill there", machine.name()));
+    }
+    Ok(())
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -593,6 +632,59 @@ pub(super) fn as_run(udian: &UdianRun, files: Option<&RunFiles>, automation_id: 
     run
 }
 
+// ── Someone's own schedules ──────────────────────────────────────────────────────────────────────────────────────
+
+/// A schedule's recent run records, newest first: `logs` without `--run` lists runs and never their output.
+pub(super) fn own_runs_script(name: &str, limit: usize) -> String {
+    format!("{BIN} logs {} --limit {} --json </dev/null\n", shell_quote(name), limit.clamp(1, 200))
+}
+
+/// The runs `own_runs_script` listed, as Arbor shows a run.
+pub(super) fn parse_own_runs(stdout: &str, automation_id: &str, machine: &str) -> Vec<AutomationRun> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else { return Vec::new() };
+    let list = data(&value).get("runs").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+    let mut runs: Vec<AutomationRun> = list
+        .iter()
+        .filter_map(|record| {
+            let id = record.get("run_id")?.as_str()?.to_string();
+            let started_at_ms = time_ms(record.get("started_at"));
+            let manual = record.get("trigger").and_then(serde_json::Value::as_str) == Some("manual");
+            let mut run = runner::new_run(automation_id, Some(machine.to_string()), started_at_ms.unwrap_or_default(), manual);
+            run.id = id;
+            run.started_at_ms = started_at_ms;
+            run.finished_at_ms = time_ms(record.get("finished_at"));
+            run.precheck_exit = exit_code(record.get("gate_exit"));
+            run.exit_code = exit_code(record.get("action_exit"));
+            let status = record.get("status").and_then(serde_json::Value::as_str).unwrap_or_default();
+            run.status = apps::ultradian::run_status(status);
+            run.error = match status {
+                "timed_out" => Some("It ran past its time limit and was stopped".to_string()),
+                "interrupted" => Some("The machine's background runner stopped during the run".to_string()),
+                "gate_failed" => Some(match run.precheck_exit {
+                    Some(code) => format!("The gate exited with {code}"),
+                    None => "The gate failed".to_string(),
+                }),
+                _ if run.status == AutomationRunStatus::Failed => Some(match run.exit_code {
+                    Some(code) => format!("The command exited with {code}"),
+                    None => "The run failed".to_string(),
+                }),
+                _ => None,
+            };
+            Some(run)
+        })
+        .collect();
+    runs.sort_by(|left, right| right.scheduled_at_ms.cmp(&left.scheduled_at_ms));
+    runs
+}
+
+/// Asks the machine for one of someone's own schedules' recent runs. Nothing of them is kept: they're udian's.
+pub(super) async fn own_runs(app: &tauri::AppHandle, item: &discover::Found, limit: usize) -> Result<Vec<AutomationRun>, String> {
+    let discover::Keeper::Id(name) = &item.keeper else { return Ok(Vec::new()) };
+    let machine = machine_named(app, &item.found_on)?;
+    let stdout = run_checked(&machine, MachineOp::AutomationPoll, &own_runs_script(name, limit), CALL_TIMEOUT).await?;
+    Ok(parse_own_runs(&stdout, &item.automation.summary.id, &item.found_on))
+}
+
 // ── Keeping machines in step ─────────────────────────────────────────────────────────────────────────────────────
 
 /// Why the last try to write a machine's schedules failed, by machine, while Arbor is open.
@@ -829,12 +921,51 @@ mod tests {
             b64(r#"{"schemaVersion":2,"data":{"daemon":{"live":true,"pid":42}}}"#)
         );
         let found = parse_probe(&stdout).unwrap();
-        assert_eq!(found, UdianOnMachine { target: Some("darwin-arm64".into()), version: Some("1.0.0".into()), live: true });
+        assert_eq!(found, UdianOnMachine { target: Some("darwin-arm64".into()), version: Some("1.0.0".into()), live: true, skill: None });
+        let with_skill = parse_probe(&format!("{stdout}W\tc123-456\n")).unwrap();
+        assert_eq!(with_skill.skill.as_deref(), Some("c123-456"));
         assert!(ready(Some(&found)));
         let missing = parse_probe("U\tLinux\tx86_64\n").unwrap();
         assert_eq!(missing.version, None);
         assert!(!ready(Some(&missing)));
         assert_eq!(parse_probe(""), None);
+    }
+
+    #[test]
+    fn reads_someone_s_own_runs_without_their_output() {
+        let script = own_runs_script("it's", 500);
+        assert_eq!(script, "\"$HOME/.ultradian/bin/udian\" logs 'it'\\''s' --limit 200 --json </dev/null\n");
+        assert!(!script.contains("--run"), "a run's log is never asked for");
+        let stdout = r#"{"schema_version":2,"data":{"log":null,"total_runs":2,"runs":[
+          {"action_exit":null,"cwd":"/home/cam","executor":null,"finished_at":"2026-10-07T03:00:02.000Z","gate_exit":0,"log_pointer":"/x","machine_id":"m","pgid":null,"run_id":"run_a","schedule":"triage","schedule_id":"s","started_at":"2026-10-07T03:00:00.000Z","status":"clean","trigger":"scheduled"},
+          {"action_exit":3,"cwd":"/home/cam","executor":null,"finished_at":"2026-10-07T04:01:00.000Z","gate_exit":0,"log_pointer":"/x","machine_id":"m","pgid":null,"run_id":"run_b","schedule":"triage","schedule_id":"s","started_at":"2026-10-07T04:00:00.000Z","status":"failed","trigger":"manual"}
+        ]}}"#;
+        let runs = parse_own_runs(stdout, "ultradian:cam-mbp:triage", "cam-mbp");
+        assert_eq!(runs.iter().map(|run| run.id.as_str()).collect::<Vec<_>>(), ["run_b", "run_a"]);
+        assert_eq!(runs[0].status, AutomationRunStatus::Failed);
+        assert_eq!(runs[0].error.as_deref(), Some("The command exited with 3"));
+        assert!(runs[0].manual);
+        assert_eq!(runs[1].status, AutomationRunStatus::Skipped);
+        assert_eq!(runs[1].session_id, None);
+        assert!(parse_own_runs("nope", "x", "y").is_empty());
+    }
+
+    #[test]
+    fn its_skill_goes_in_the_store_and_each_claude_home_beside_arbor_s() {
+        let script = super::super::super::cli_skill::skill_install_script("cam-mbp", "20261007T000000Z-0001", SKILL_NAME, b"# ultradian\n");
+        assert!(script.contains("place \"$HOME/.agents/skills/ultradian/SKILL.md\""), "{script}");
+        assert!(script.contains("place \"$home/skills/ultradian/SKILL.md\""));
+        assert!(script.contains("what=skills\n"), "one change to undo, under Skills");
+
+        let dir = std::env::temp_dir().join(format!("arbor-udian-bundle-{}-{}", std::process::id(), runner::new_uuid()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let version = dir.join(VERSION_FILE);
+        std::fs::write(&version, "v0.3.1\n").unwrap();
+        let bundle = bundle_in(&version, &dir).unwrap();
+        assert_eq!(bundle.skill(), None, "a build that didn't fetch it has none");
+        std::fs::write(dir.join(SKILL_FILE), "# ultradian\n").unwrap();
+        assert_eq!(bundle.skill().as_deref(), Some(&b"# ultradian\n"[..]));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -1085,6 +1216,7 @@ mod tests {
             let listing = String::from_utf8(tar.wait_with_output().unwrap().stdout).unwrap();
             assert_eq!(listing.trim(), "ultradian", "{target}");
         }
+        assert!(bundle.skill().is_some_and(|skill| skill.starts_with(b"---\nname: ultradian")), "the release's SKILL.md");
     }
 
     /// The same round trip against a real ultradian build, with its daemon: place, run now, read back, remove. It's

@@ -8,6 +8,7 @@ import claudeIcon from '../../assets/icons/claude.svg';
 import codexIcon from '../../assets/icons/codex.svg';
 import orcaIcon from '../../assets/icons/orca.svg';
 import supersetIcon from '../../assets/icons/superset.svg';
+import ultradianIcon from '../../assets/icons/ultradian.svg';
 
 /** The other apps' marks. Orca's and Superset's are drawn in black, so they're lightened in dark mode, and are wider than they're tall. */
 const MARKS: Record<Exclude<AutomationSource, 'arbor'>, { icon: string; tint?: boolean; wide?: boolean }> = {
@@ -15,6 +16,8 @@ const MARKS: Record<Exclude<AutomationSource, 'arbor'>, { icon: string; tint?: b
   claudeDesktop: { icon: claudeIcon },
   orca: { icon: orcaIcon, tint: true, wide: true },
   superset: { icon: supersetIcon, tint: true, wide: true },
+  // ultradian's diamond, from its banner.
+  ultradian: { icon: ultradianIcon },
 };
 
 /** The mark of the app that keeps an automation; Arbor's own wear the Dock icon the user picked. */

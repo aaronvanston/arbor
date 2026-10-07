@@ -3,6 +3,8 @@ import { translate } from '../src/i18n';
 import { alertDestination } from '../src/services/alertHistory';
 import {
   automationMachines,
+  automationRunner,
+  sortAutomations,
   automationTargetGone,
   automationHold,
   automationsHold,
@@ -22,7 +24,7 @@ import {
   stateCounts,
   switchSchedule,
 } from '../src/services/automations';
-import type { AutomationList, AutomationScan, AutomationSummary, MachinePool } from '../src/native/types';
+import type { AutomationList, AutomationScan, AutomationSummary, MachinePool, UdianOnMachine } from '../src/native/types';
 import { itemAt } from './support/items';
 
 const t = (key: Parameters<typeof translate>[0], variables?: Record<string, string | number>) => translate(key, variables);
@@ -46,7 +48,7 @@ const summary = (overrides: Partial<AutomationSummary>): AutomationSummary => ({
   ...overrides,
 });
 
-const list = (automations: AutomationSummary[]): AutomationList => ({ automations, scans: [], running: true, draftModel: 'gpt-6-luna', draftEffort: 'low', udianBundled: '1.0.0', agents: ['claude', 'codex'], proxyKey: true, proxyAddress: '', appsOff: [] });
+const list = (automations: AutomationSummary[]): AutomationList => ({ automations, scans: [], running: true, draftModel: 'gpt-6-luna', draftEffort: 'low', udianBundled: '1.0.0', udianSkill: null, agents: ['claude', 'codex'], proxyKey: true, proxyAddress: '', appsOff: [] });
 
 describe('schedules', () => {
   it('reads the rules the Codex app and Orca write into the dialog’s choices', () => {
@@ -147,10 +149,47 @@ describe('the apps that keep automations', () => {
     expect(sourceChoices([scan('a', ['codexApp']), scan('b', ['superset'])], 'all')).toEqual(['arbor', 'codexApp', 'claudeDesktop', 'superset']);
     expect(sourceChoices([], 'orca')).toEqual(['arbor', 'codexApp', 'claudeDesktop', 'orca']);
   });
+
+  it('offers ultradian on a machine whose background runner is set up, own schedules or not', () => {
+    const runner: AutomationScan = { ...scan('a', []), udian: { target: 'darwin-arm64', version: '0.3.1', live: true, skill: null } };
+    expect(sourceChoices([runner], 'all')).toEqual(['arbor', 'codexApp', 'claudeDesktop', 'ultradian']);
+    expect(sourceChoices([{ ...runner, udian: { target: 'darwin-arm64', version: null, live: false, skill: null } }], 'all')).not.toContain('ultradian');
+  });
+
+  it('lists what starts each one: Arbor, or ultradian for Arbor’s own placed on their machine and someone’s own', () => {
+    const placed = summary({ id: 'arbor:p', runsOn: 'machine' });
+    const fromArbor = summary({ id: 'arbor:a' });
+    const own = summary({ id: 'ultradian:cedar-02:triage', source: 'ultradian', runsOn: 'machine' });
+    const orca = summary({ id: 'orca:1', source: 'orca' });
+    expect([placed, fromArbor, own, orca].map(automationRunner)).toEqual(['ultradian', 'arbor', 'ultradian', 'orca']);
+    const all = [placed, fromArbor, own, orca];
+    expect(filterAutomations(all, { search: '', source: 'ultradian', machine: '' }).map((item) => item.id)).toEqual(['arbor:p', 'ultradian:cedar-02:triage']);
+    expect(filterAutomations(all, { search: '', source: 'arbor', machine: '' }).map((item) => item.id)).toEqual(['arbor:a']);
+  });
+
+  it('sorts by next or last run, with the ones that have none last either way', () => {
+    const items = [
+      summary({ id: 'a', nextRunAtMs: 300, lastRun: { status: 'done', atMs: 10 } }),
+      summary({ id: 'b', nextRunAtMs: 100, lastRun: null }),
+      summary({ id: 'c', nextRunAtMs: 200, enabled: false, lastRun: { status: 'failed', atMs: 30 } }),
+      summary({ id: 'd', nextRunAtMs: 200, lastRun: { status: 'skipped', atMs: 20 } }),
+    ];
+    const ids = (list: AutomationSummary[]) => list.map((item) => item.id);
+    expect(ids(sortAutomations(items, null))).toEqual(['a', 'b', 'c', 'd']);
+    // A paused one has no next run.
+    expect(ids(sortAutomations(items, { column: 'nextRun', descending: false }))).toEqual(['b', 'd', 'a', 'c']);
+    expect(ids(sortAutomations(items, { column: 'nextRun', descending: true }))).toEqual(['a', 'd', 'b', 'c']);
+    expect(ids(sortAutomations(items, { column: 'lastRun', descending: true }))).toEqual(['c', 'd', 'a', 'b']);
+  });
+
+  it('says a schedule that only runs by hand', () => {
+    expect(scheduleWords({ kind: 'manual' }, t)).toBe('Run by hand');
+  });
 });
 
 describe('the background runner', () => {
-  const scan = (machine: string, udian: AutomationScan['udian']): AutomationScan => ({ machine, scannedAtMs: 1, scanning: false, error: null, apps: [], udian, placingError: null });
+  type Runner = Omit<UdianOnMachine, 'skill'> & { skill?: string | null };
+  const scan = (machine: string, udian: Runner | null): AutomationScan => ({ machine, scannedAtMs: 1, scanning: false, error: null, apps: [], udian: udian && { skill: null, ...udian }, placingError: null });
 
   it('compares versions by their numbers', () => {
     expect(olderVersion('0.9.2', '1.0.0')).toBe(true);
@@ -172,6 +211,12 @@ describe('the background runner', () => {
     expect(runnerState(scan('a', { target: 'linux-x64', version: '0.9.2', live: true }), '1.0.0')).toBe('outdated');
     expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: false }), '1.0.0')).toBe('stopped');
     expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: true }), '1.0.0')).toBe('ready');
+    // A ready runner without the skill this build carries is offered it; one whose skill matches is ready.
+    expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: true, skill: null }), '1.0.0', 'c1-2')).toBe('noSkill');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: true, skill: 'c0-1' }), '1.0.0', 'c1-2')).toBe('noSkill');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: '1.0.0', live: true, skill: 'c1-2' }), '1.0.0', 'c1-2')).toBe('ready');
+    expect(runnerState(scan('a', { target: 'linux-x64', version: '0.9.2', live: true, skill: null }), '1.0.0', 'c1-2')).toBe('outdated');
+    expect(canInstallRunner('noSkill')).toBe(true);
     expect(canInstallRunner('ready')).toBe(false);
     expect(canInstallRunner('unsupported')).toBe(false);
     expect(canInstallRunner('outdated')).toBe(true);

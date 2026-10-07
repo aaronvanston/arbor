@@ -17,9 +17,10 @@ export function DataGridColumnsMenu<TData extends RowData>({ grid, presets = [],
 }) {
   const { t } = useI18n();
   const { table, layout, setLayout, layoutColumns } = grid;
+  // A row's own controls stay where they are.
   const columns = layout.order.flatMap((id) => {
     const column = table.getColumn(id);
-    return column ? [column] : [];
+    return column && !column.columnDef.meta?.fixed ? [column] : [];
   });
   const shown = columns.filter((column) => column.getIsVisible()).length;
 

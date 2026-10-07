@@ -1886,6 +1886,7 @@ fn main() {
             usage::machine_health::automations::commands::scan_automations,
             usage::machine_health::automations::commands::get_automation,
             usage::machine_health::automations::commands::list_automation_runs,
+            usage::machine_health::automations::commands::open_automation_run_in_terminal,
             usage::machine_health::automations::commands::save_automation,
             usage::machine_health::automations::commands::delete_automation,
             usage::machine_health::automations::commands::set_automation_enabled,

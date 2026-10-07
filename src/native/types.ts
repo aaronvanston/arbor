@@ -578,6 +578,11 @@ export type AutomationList = {
    */
   udianBundled: string | null,
   /**
+   * The fingerprint of the skill that comes with it, which Arbor puts in each machine's agent homes beside it; null
+   * for a build without one.
+   */
+  udianSkill: string | null,
+  /**
    * The harnesses Arbor can start an automation with, in the catalog's order.
    */
   agents: Array<Harness>,
@@ -667,7 +672,7 @@ export type AutomationSession = "fresh" | "reuse";
 /**
  * Which app keeps an automation and runs it.
  */
-export type AutomationSource = "arbor" | "codexApp" | "claudeDesktop" | "orca" | "superset";
+export type AutomationSource = "arbor" | "codexApp" | "claudeDesktop" | "orca" | "superset" | "ultradian";
 
 /**
  * One automation in the list. The prompt isn't here; `get_automation` has it.
@@ -4236,7 +4241,7 @@ export type SavedStoreSnapshot = {
  * A schedule as words are made from it. `Custom` is a rule none of these describe; `Elsewhere` is a schedule the
  * owning app keeps where Arbor can't read it.
  */
-export type ScheduleSummary = { "kind": "everyMinutes", minutes: number, } | { "kind": "everyHours", hours: number, minute: number, } | { "kind": "daily", hour: number, minute: number, } | { "kind": "weekdays", hour: number, minute: number, } | { "kind": "weekly", days: Array<number>, hour: number, minute: number, } | { "kind": "custom" } | { "kind": "elsewhere" };
+export type ScheduleSummary = { "kind": "everyMinutes", minutes: number, } | { "kind": "everyHours", hours: number, minute: number, } | { "kind": "daily", hour: number, minute: number, } | { "kind": "weekdays", hour: number, minute: number, } | { "kind": "weekly", days: Array<number>, hour: number, minute: number, } | { "kind": "custom" } | { "kind": "manual" } | { "kind": "elsewhere" };
 
 export type ServerView = {
   name: string,
@@ -5437,6 +5442,10 @@ export type UdianOnMachine = {
    * Its daemon answered.
    */
   live: boolean,
+  /**
+   * The fingerprint of its skill in the machine's store, `~/.agents/skills/ultradian`, or null when it has none.
+   */
+  skill: string | null,
 };
 
 /**

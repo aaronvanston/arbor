@@ -12,11 +12,13 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { TableCard } from '../components/ui/data-table';
 import { Empty, EmptyDescription } from '../components/ui/empty';
-import { ArrowUpRight, Info } from '../components/ui/icons';
+import { ArrowUpRight, Info, TerminalSquare } from '../components/ui/icons';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
+import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
+import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { useI18n } from '../i18n';
 import { formatAgo, formatDateTime, formatDuration, formatRelative, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
@@ -43,19 +45,31 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   const [automation, setAutomation] = useState<Automation | null>(null);
   const [runs, setRuns] = useState<AutomationRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A schedule someone made in ultradian has its runs read from its machine, which can be away.
+  const [runsError, setRunsError] = useState<string | null>(null);
   const summary = list?.automations.find((item) => item.id === id) ?? automation?.summary ?? null;
 
   // Read again whenever the list changes: a pause, a save or a run from anywhere shows here too.
   useEffect(() => {
     let current = true;
-    Promise.all([invokeCommand('get_automation', { id }), invokeCommand('list_automation_runs', { id, limit: RUNS_SHOWN })])
-      .then(([next, nextRuns]) => {
+    invokeCommand('get_automation', { id })
+      .then((next) => {
         if (!current) return;
         setAutomation(next);
-        setRuns(nextRuns);
         setError(null);
       })
       .catch((reason: unknown) => { if (current) setError(String(reason)); });
+    invokeCommand('list_automation_runs', { id, limit: RUNS_SHOWN })
+      .then((nextRuns) => {
+        if (!current) return;
+        setRuns(nextRuns);
+        setRunsError(null);
+      })
+      .catch((reason: unknown) => {
+        if (!current) return;
+        setRuns((known) => known ?? []);
+        setRunsError(String(reason));
+      });
     return () => { current = false; };
   }, [id, list]);
 
@@ -77,6 +91,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   }
 
   const arbor = summary.source === 'arbor';
+  const own = summary.source === 'ultradian';
   const gone = automationTargetGone(summary, pools);
   // Settings' switch pauses every one of Arbor's own, so the next run isn't due while it's off either.
   const willRun = summary.enabled && !(arbor && list?.running === false);
@@ -159,12 +174,13 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
           ) : null}
         </FactGrid>
 
-        <RunSteps automation={automation} runs={runs} now={now} />
+        <RunSteps automation={automation} runs={runs} now={now} command={own} />
 
         <TableCard
           title={t('automations.runs.title')}
           count={runs ? t(runs.length === 1 ? 'automations.runs.count.one' : 'automations.runs.count.other', { count: runs.length }) : null}
         >
+          {runsError ? <p className="border-b border-border/50 px-4 py-2 text-xs text-warning-foreground">{t('automations.runs.ownFailed', { error: runsError })}</p> : null}
           {!runs ? (
             <Skeleton className="m-4 h-24" />
           ) : runs.length ? (
@@ -180,11 +196,11 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runs.map((run) => <RunRow key={run.id} run={run} now={now} onNavigate={onNavigate} />)}
+                {runs.map((run) => <RunRow key={run.id} run={run} now={now} own={own} onNavigate={onNavigate} />)}
               </TableBody>
             </Table>
           ) : (
-            <Empty size="sm"><EmptyDescription>{t(!arbor ? 'automations.runs.noneOther' : summary.enabled ? 'automations.runs.none' : 'automations.runs.nonePaused')}</EmptyDescription></Empty>
+            <Empty size="sm"><EmptyDescription>{t(own ? 'automations.runs.noneOwn' : !arbor ? 'automations.runs.noneOther' : summary.enabled ? 'automations.runs.none' : 'automations.runs.nonePaused')}</EmptyDescription></Empty>
           )}
         </TableCard>
       </PageBody>
@@ -222,8 +238,11 @@ function ModelFact({ model, effort, agent, fromRun }: { model: string | null; ef
   );
 }
 
-/** What each run does, in order: the pre-flight check, then the agent with the prompt. */
-function RunSteps({ automation, runs, now }: { automation: Automation; runs: AutomationRun[] | null; now: number }) {
+/**
+ * What each run does, in order: the pre-flight check, then the agent with the prompt. A schedule someone made in
+ * ultradian runs a gate and a command instead.
+ */
+function RunSteps({ automation, runs, now, command }: { automation: Automation; runs: AutomationRun[] | null; now: number; command: boolean }) {
   const { t } = useI18n();
   const checked = runs?.find((run) => run.precheckExit !== null);
   return (
@@ -232,7 +251,7 @@ function RunSteps({ automation, runs, now }: { automation: Automation; runs: Aut
       <ol className="flex flex-col px-4 py-3">
         <Step
           number={1}
-          title={t('automations.step.precheck')}
+          title={t(command ? 'automations.step.gate' : 'automations.step.precheck')}
           meta={automation.precheck ? (
             <>
               <span>{t('automations.step.precheckLimit', { seconds: automation.precheckTimeoutSecs })}</span>
@@ -251,12 +270,17 @@ function RunSteps({ automation, runs, now }: { automation: Automation; runs: Aut
           {automation.precheck ? (
             <>
               <pre className="overflow-x-auto rounded-md border border-border/60 bg-muted/60 px-3 py-2 font-mono text-xs leading-5 text-foreground dark:bg-input/16">{automation.precheck}</pre>
-              <p className="text-xs text-muted-foreground">{t('automations.precheck.explain')}</p>
+              <p className="text-xs text-muted-foreground">{t(command ? 'automations.step.gateExplain' : 'automations.precheck.explain')}</p>
             </>
-          ) : <p className="text-xs text-muted-foreground">{t('automations.step.precheckNone')}</p>}
+          ) : <p className="text-xs text-muted-foreground">{t(command ? 'automations.step.gateNone' : 'automations.step.precheckNone')}</p>}
         </Step>
-        <Step number={2} title={t('automations.step.agent')} last>
-          <Prompt text={automation.prompt} />
+        <Step number={2} title={t(command ? 'automations.step.command' : 'automations.step.agent')} last>
+          {command ? (
+            <div className="flex min-w-0 flex-col gap-2">
+              <span className="text-xs text-muted-foreground">{t('automations.command.title')}</span>
+              <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border/60 bg-muted/60 px-3 py-2 font-mono text-xs leading-5 text-foreground dark:bg-input/16">{automation.prompt}</pre>
+            </div>
+          ) : <Prompt text={automation.prompt} />}
         </Step>
       </ol>
     </section>
@@ -317,10 +341,34 @@ function Prompt({ text }: { text: string }) {
   );
 }
 
-function RunRow({ run, now, onNavigate }: { run: AutomationRun; now: number; onNavigate: (view: AppView) => void }) {
+function RunRow({ run, now, own, onNavigate }: {
+  run: AutomationRun;
+  now: number;
+  /** A run of a schedule someone made in ultradian, whose log Terminal can show. */
+  own: boolean;
+  onNavigate: (view: AppView) => void;
+}) {
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
+  const { copy } = useCopyToClipboard();
   const [stopping, setStopping] = useState(false);
+  const [opening, setOpening] = useState(false);
+  // An Arbor run picks up its session; one of someone's own ultradian runs that started shows udian's log of it, which
+  // Arbor never reads.
+  const terminal = own
+    ? (run.startedAtMs !== null ? 'automations.runs.terminalLog' : null)
+    : run.sessionId && run.machine ? 'automations.runs.terminalSession' : null;
+  const openInTerminal = async () => {
+    setOpening(true);
+    try {
+      const command = await invokeCommand('open_automation_run_in_terminal', { automationId: run.automationId, runId: run.id });
+      toast({ kind: 'success', title: t('automations.runs.terminalOpened'), action: { label: t('automations.runs.terminalCopy'), onClick: () => { void copy(command); } } });
+    } catch (reason) {
+      toast({ kind: 'error', title: t('automations.runs.terminalFailed'), description: String(reason) });
+    } finally {
+      setOpening(false);
+    }
+  };
   // Stopping kills the agent mid-run, which can't be taken back, so it asks first.
   const stop = async () => {
     const confirmed = await askConfirmation({
@@ -367,6 +415,15 @@ function RunRow({ run, now, onNavigate }: { run: AutomationRun; now: number; onN
       <TableCell className="whitespace-nowrap text-end">
         {run.status === 'running' && run.automationId.startsWith('arbor:') ? (
           <Button variant="ghost-muted" size="xs" disabled={stopping} onClick={() => void stop()}>{t('automations.runs.stop')}</Button>
+        ) : null}
+        {terminal ? (
+          <Tooltip>
+            <TooltipTrigger render={<Button variant="ghost-muted" size="xs" disabled={opening} onClick={() => void openInTerminal()} />}>
+              <TerminalSquare />
+              {t('automations.runs.terminal')}
+            </TooltipTrigger>
+            <TooltipPopup>{t(terminal)}</TooltipPopup>
+          </Tooltip>
         ) : null}
         {run.sessionId ? (
           <Button variant="ghost-muted" size="xs" onClick={() => onNavigate(sessionsView({ session: run.sessionId ?? undefined }))}>

@@ -4,7 +4,8 @@
 //!
 //! Each copy is written the way every change to a machine's files is (`guarded_writes`): backed up first, so the
 //! whole install is one entry in Sync › Repo › History and can be undone. A home whose skills folder leads to the
-//! store gets the store's copy, written once.
+//! store gets the store's copy, written once. The background runner's own skill goes to its machines the same way
+//! (`skill_install_script`).
 
 use super::agent_homes::{machines_to_scan, this_mac_name, tilde, HomeUse};
 use super::guarded_writes::{base64_lines, cksum, edit_finish, edit_start, new_stamp, run_on, ChangeKind};
@@ -12,8 +13,10 @@ use super::setup::rescan;
 use super::*;
 use ts_rs::TS;
 
-/// Where the store keeps it, from the home folder.
-const STORE_FILE: &str = ".agents/skills/arbor/SKILL.md";
+/// Where the store keeps a skill, from the home folder.
+fn store_file(name: &str) -> String {
+    format!(".agents/skills/{name}/SKILL.md")
+}
 
 /// What installing the skill did, each place with the home folder as ~.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
@@ -36,7 +39,7 @@ pub(crate) enum CliSkillState {
 }
 
 pub(crate) fn skill_state(home: &Path) -> CliSkillState {
-    match fs::read(home.join(STORE_FILE)) {
+    match fs::read(home.join(store_file("arbor"))) {
         Ok(bytes) if bytes == crate::cli::SKILL.as_bytes() => CliSkillState::Current,
         Ok(_) => CliSkillState::Outdated,
         Err(_) => CliSkillState::Missing,
@@ -45,7 +48,8 @@ pub(crate) fn skill_state(home: &Path) -> CliSkillState {
 
 // Lines out: `H home`, then for each place `P n path` and `E n how`, where how is edit's (ok, changed, failed) or
 // `same` when it's the skill already. The store comes first; a place that resolves to one already written is skipped.
-fn install_script(machine: &str, stamp: &str, skill: &[u8]) -> String {
+/// The script that puts skill `name` in a machine's store and each of its Claude Code homes with Sync on.
+pub(super) fn skill_install_script(machine: &str, stamp: &str, name: &str, skill: &[u8]) -> String {
     format!(
         "set -u\nexport LC_ALL=C\n{homes}{edits}\
          printf 'H\\t%s\\n' \"$HOME\"\n\
@@ -65,13 +69,14 @@ fn install_script(machine: &str, stamp: &str, skill: &[u8]) -> String {
          \x20 if [ \"$before\" = \"$sum\" ]; then printf 'E\\t%s\\tsame\\n' \"$n\"; else edit \"$n\" \"$real\" \"$before\" \"$sum\" < \"$payload\"; fi\n\
          \x20 n=$((n + 1))\n\
          }}\n\
-         place \"$HOME/{STORE_FILE}\"\n\
+         place \"$HOME/{store}\"\n\
          homes=$(agent_homes)\n\
          while IFS=$tab read -r agent home; do\n\
-         \x20 [ \"$agent\" = claude ] && place \"$home/skills/arbor/SKILL.md\"\n\
+         \x20 [ \"$agent\" = claude ] && place \"$home/skills/{name}/SKILL.md\"\n\
          done <<ARBOR_HOMES\n$homes\nARBOR_HOMES\n\
          {finish}",
         homes = agent_homes::shell_function(machine, HomeUse::Sync),
+        store = store_file(name),
         edits = edit_start(stamp, ChangeKind::Skills),
         base64 = base64_lines(skill),
         sum = shell::shell_quote(&cksum(skill)),
@@ -79,7 +84,7 @@ fn install_script(machine: &str, stamp: &str, skill: &[u8]) -> String {
     )
 }
 
-fn parse_install(stdout: &str) -> CliSkillInstall {
+pub(super) fn parse_install(stdout: &str) -> CliSkillInstall {
     let home = stdout.lines().find_map(|line| line.strip_prefix("H\t")).unwrap_or_default();
     let mut paths = BTreeMap::new();
     let mut result = CliSkillInstall::default();
@@ -110,7 +115,7 @@ pub(crate) async fn install_cli_skill(app: tauri::AppHandle, state: tauri::State
         let name = this_mac_name(&inner);
         machines_to_scan(&inner).into_iter().find(Machine::is_local).unwrap_or_else(|| Machine::this_mac(&name))
     };
-    let stdout = run_on(&target, MachineOp::SkillsApply, &install_script(target.name(), &new_stamp(), crate::cli::SKILL.as_bytes())).await?;
+    let stdout = run_on(&target, MachineOp::SkillsApply, &skill_install_script(target.name(), &new_stamp(), "arbor", crate::cli::SKILL.as_bytes())).await?;
     rescan(&app, target.name());
     let result = parse_install(&stdout);
     if result.written.is_empty() && result.already.is_empty() {
@@ -157,7 +162,7 @@ mod tests {
             saved_home("cam-mbp", AgentHomeKind::Claude, "~/.agent-app/homes/*", true, true),
             saved_home("cam-mbp", AgentHomeKind::Codex, "~/.codex", true, true),
         ]);
-        let script = install_script("cam-mbp", "20261002T000000Z-0001", b"# arbor\n");
+        let script = skill_install_script("cam-mbp", "20261002T000000Z-0001", "arbor", b"# arbor\n");
         // A clean environment, so no CLAUDE_CONFIG_DIR or CODEX_HOME of whoever runs the tests is a home here; and
         // under dash as well as sh, since machines run either.
         let run = |shell: &str, script: &str| {

@@ -84,7 +84,7 @@ export function AutomationSettings() {
   };
   const addressChanged = address.trim() !== list.proxyAddress;
 
-  const install = async (machine: string, update: boolean, prunes: boolean) => {
+  const install = async (machine: string, update: boolean | 'skill', prunes: boolean) => {
     if (prunes && !(await askConfirmation({
       title: t('automations.runner.prune.title', { machine }),
       message: t('automations.runner.prune.message', { machine }),
@@ -94,7 +94,7 @@ export function AutomationSettings() {
     setInstallError(null);
     try {
       showAutomations(await invokeCommand('install_background_runner', { machine }));
-      toast({ title: t(update ? 'automations.runner.updated' : 'automations.runner.installed', { machine }) });
+      toast({ title: t(update === 'skill' ? 'automations.runner.skillAdded' : update ? 'automations.runner.updated' : 'automations.runner.installed', { machine }) });
     } catch (reason) {
       setInstallError({ machine, error: plainError(reason, t) });
     } finally {
@@ -113,7 +113,7 @@ export function AutomationSettings() {
       >
         <ul className="divide-y divide-border/60 rounded-lg border border-border/70">
           {list.scans.map((scan) => {
-            const state = runnerState(scan, bundled);
+            const state = runnerState(scan, bundled, list.udianSkill);
             const busy = installing === scan.machine;
             // Writing the schedules is tried again every round, so its failure says so rather than reading as a dead machine.
             const failed = installError?.machine === scan.machine ? installError.error
@@ -128,9 +128,9 @@ export function AutomationSettings() {
                     {scan.udian?.version ? <span className="tabular-nums">· {scan.udian.version}</span> : null}
                   </span>
                   {bundled && canInstallRunner(state) ? (
-                    <Button size="xs" variant="outline" disabled={installing !== null} onClick={() => void install(scan.machine, state !== 'missing', runnerPrunesHistory(scan))}>
+                    <Button size="xs" variant="outline" disabled={installing !== null} onClick={() => void install(scan.machine, state === 'noSkill' ? 'skill' : state !== 'missing', runnerPrunesHistory(scan))}>
                       {busy ? <Spinner /> : null}
-                      {t(state === 'missing' ? 'automations.runner.install' : state === 'stopped' ? 'automations.runner.restart' : 'automations.runner.update')}
+                      {t(state === 'missing' ? 'automations.runner.install' : state === 'stopped' ? 'automations.runner.restart' : state === 'noSkill' ? 'automations.runner.addSkill' : 'automations.runner.update')}
                     </Button>
                   ) : null}
                 </div>

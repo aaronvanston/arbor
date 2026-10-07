@@ -6,6 +6,7 @@ mod claude;
 mod codex;
 mod orca;
 mod superset;
+pub(super) mod ultradian;
 
 use super::discover::Found;
 use super::*;
@@ -40,7 +41,7 @@ pub(super) trait App: Sync {
     }
 }
 
-pub(super) const APPS: &[&dyn App] = &[&codex::CodexApp, &claude::Claude, &orca::Orca, &superset::Superset];
+pub(super) const APPS: &[&dyn App] = &[&codex::CodexApp, &claude::Claude, &orca::Orca, &superset::Superset, &ultradian::Ultradian];
 
 pub(super) fn for_source(source: AutomationSource) -> Option<&'static dyn App> {
     APPS.iter().copied().find(|app| app.source() == source)
@@ -143,7 +144,7 @@ mod tests {
     #[test]
     fn no_two_apps_print_the_same_tag() {
         // The scan's own home line, and the background runner's probe (`udian::PROBE_SCRIPT`).
-        let mut seen: BTreeSet<&str> = ["H", "U", "V", "D"].into();
+        let mut seen: BTreeSet<&str> = ["H", "U", "V", "D", "W"].into();
         for app in APPS {
             for tag in app.tags() {
                 assert!(seen.insert(tag), "{tag} is printed by more than one part of the scan");
@@ -171,7 +172,7 @@ mod tests {
 
     #[test]
     fn every_source_but_arbors_has_an_app() {
-        for source in [AutomationSource::CodexApp, AutomationSource::ClaudeDesktop, AutomationSource::Orca, AutomationSource::Superset] {
+        for source in [AutomationSource::CodexApp, AutomationSource::ClaudeDesktop, AutomationSource::Orca, AutomationSource::Superset, AutomationSource::Ultradian] {
             assert_eq!(for_source(source).map(|app| app.source()), Some(source));
         }
         assert!(for_source(AutomationSource::Arbor).is_none());

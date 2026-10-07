@@ -40,6 +40,7 @@ export const LEFT_OUT = {
   open_dev_build_log: 'it opens a file on the Mac',
   open_external_url: 'it opens any address on the Mac',
   open_fix_session: 'it opens a Terminal window on the Mac and starts an agent in it',
+  open_automation_run_in_terminal: 'it opens a Terminal window on the Mac and resumes a session in it',
   open_oauth_url: 'it opens any address on the Mac',
   install_core_version: 'it reports progress to the window; the command line asks the window to run it',
   set_phone_alert_secret: 'secrets only go in through the window',

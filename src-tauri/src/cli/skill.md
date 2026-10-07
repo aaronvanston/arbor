@@ -35,7 +35,7 @@ any other machine, say so instead of trying.
 | Where the setup repo's projects are on each machine (its projects/ folder): in place, linked, elsewhere, missing or blocked | `arbor call get_project_drift repo=<setup repo folder>`; `arbor call scan_projects machine=<name> repo=<folder>` looks again |
 | Proxy core | `arbor core` |
 | Session archive | `arbor archive` |
-| Scheduled automations, Arbor's and other apps' | `arbor call list_automations`, then `arbor call get_automation id=<id>` and `arbor call list_automation_runs id=<id>` |
+| Scheduled automations, Arbor's, other apps' and schedules made in ultradian by hand (`ultradian:<machine>:<name>`) | `arbor call list_automations`, then `arbor call get_automation id=<id>` and `arbor call list_automation_runs id=<id>` (an ultradian schedule's runs are read from its machine) |
 | Saved settings | `arbor settings`, `arbor settings get <name>` |
 
 Machines can be named by their name or their SSH host, in any case (`cedar-dev-01` finds "Cedar dev 01"). Accounts
@@ -66,7 +66,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Mark every alert seen | `arbor alerts seen` |
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |
 | Run an automation now, precheck first | `arbor call run_automation_now id=<id>` |
-| Set up or update the background runner on a machine, so its automations run with Arbor closed | `arbor call install_background_runner machine=<name>` (needs `--yes`) |
+| Set up or update the background runner on a machine, so its automations run with Arbor closed; also puts ultradian's skill in that machine's agent homes | `arbor call install_background_runner machine=<name>` (needs `--yes`) |
 | Give automations their proxy key (Claude and Codex automations reach the proxy with it, whatever a machine is signed in to) | `arbor call add_automations_key` (needs `--yes`) |
 | Set the address machines try first to reach the proxy, or clear it | `arbor call set_automation_proxy_address address=<url>` (`address=` clears it) |
 | Put kept sessions back together from the session archive, one folder per session with its transcripts and a session.json naming its machine, project and branch | `arbor archive export --project <name> --since 30d --out <new or empty folder>` (also `--machine <name>`, `--since 2026-09-01`, `--all-versions`). The folder holds whole transcripts, unencrypted: only export when asked, to where they asked |

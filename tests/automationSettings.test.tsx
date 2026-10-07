@@ -12,6 +12,7 @@ const list = (fields: Partial<AutomationList>): AutomationList => ({
   draftModel: 'gpt-6-luna',
   draftEffort: 'low',
   udianBundled: '1.0.0',
+  udianSkill: null,
   agents: ['claude', 'codex'],
   proxyKey: true,
   proxyAddress: '',

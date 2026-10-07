@@ -37,6 +37,8 @@ pub(crate) enum AutomationSource {
     Orca,
     /// Superset's, as `superset automations list` gives them: its organization's, kept in its cloud.
     Superset,
+    /// Schedules someone made in ultradian, the background runner, themselves (`udian add`), on a machine where it runs.
+    Ultradian,
 }
 
 /// The agent an automation starts is a harness from the catalog.
@@ -104,6 +106,8 @@ pub(crate) struct UdianOnMachine {
     pub(crate) version: Option<String>,
     /// Its daemon answered.
     pub(crate) live: bool,
+    /// The fingerprint of its skill in the machine's store, `~/.agents/skills/ultradian`, or null when it has none.
+    pub(crate) skill: Option<String>,
 }
 
 /// A schedule as words are made from it. `Custom` is a rule none of these describe; `Elsewhere` is a schedule the
@@ -118,6 +122,8 @@ pub(crate) enum ScheduleSummary {
     /// `days` from Sunday, 0, to Saturday, 6.
     Weekly { days: Vec<u8>, hour: u32, minute: u32 },
     Custom,
+    /// No schedule: it runs only when it's started by hand.
+    Manual,
     Elsewhere,
 }
 
@@ -263,6 +269,9 @@ pub(crate) struct AutomationList {
     pub(crate) draft_effort: String,
     /// The background runner's version Arbor carries and installs; null for a build without it.
     pub(crate) udian_bundled: Option<String>,
+    /// The fingerprint of the skill that comes with it, which Arbor puts in each machine's agent homes beside it; null
+    /// for a build without one.
+    pub(crate) udian_skill: Option<String>,
     /// The harnesses Arbor can start an automation with, in the catalog's order.
     pub(crate) agents: Vec<Harness>,
     /// The proxy has the Automations client key, which every Claude and Codex automation reaches it with.

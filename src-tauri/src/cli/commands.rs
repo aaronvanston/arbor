@@ -817,7 +817,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "list_automation_runs",
         access: Access::Read,
-        summary: "An automation's runs, or every automation's, newest first. Only Arbor's own have runs here.",
+        summary: "An automation's runs, or every automation's, newest first: Arbor's own, and the recent runs of a schedule someone made in ultradian themselves, asked of its machine.",
         args: &[
             ArgSpec { name: "id", ts_type: "string | null", optional: true },
             ArgSpec { name: "limit", ts_type: "number | null", optional: true },
@@ -2166,7 +2166,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "list_automations" => done(Box::pin(crate::usage::machine_health::automations::commands::list_automations(app.clone())).await),
         "scan_automations" => async { done(Box::pin(crate::usage::machine_health::automations::commands::scan_automations(app.clone(), arg(&args, "machine")?)).await) }.await,
         "get_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::get_automation(arg(&args, "id")?)).await) }.await,
-        "list_automation_runs" => async { done(Box::pin(crate::usage::machine_health::automations::commands::list_automation_runs(arg(&args, "id")?, arg(&args, "limit")?)).await) }.await,
+        "list_automation_runs" => async { done(Box::pin(crate::usage::machine_health::automations::commands::list_automation_runs(app.clone(), arg(&args, "id")?, arg(&args, "limit")?)).await) }.await,
         "save_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::save_automation(app.clone(), arg(&args, "input")?)).await) }.await,
         "delete_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::delete_automation(app.clone(), arg(&args, "id")?)).await) }.await,
         "set_automation_enabled" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_enabled(app.clone(), arg(&args, "id")?, arg(&args, "enabled")?)).await) }.await,

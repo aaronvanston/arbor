@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { createColumnHelper } from '@tanstack/react-table';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { DataGrid, useDataGrid, type DataGridColumnDef, type DataGridFeatures } from '../src/components/ui/data-grid/data-grid';
 import { applyPreset, gridLayout, matchingPreset, sanitizeGridLayout } from '../src/components/ui/data-grid/data-grid-layout';
 import { I18nProvider } from '../src/i18n';
 import { RequestDetail, RequestsView } from '../src/pages/UsageRequestsGrid';
@@ -286,5 +288,33 @@ describe('request order', () => {
     expect(requestSortColumn({ by: 'cache', descending: false })).toEqual({ column: 'cache', descending: false });
     expect(requestSortColumn({ by: 'time', descending: true })).toBeNull();
     expect(requestSortColumn(null)).toBeNull();
+  });
+});
+
+describe('a row’s own controls in a grid', () => {
+  type Row = { id: string; name: string };
+  const helper = createColumnHelper<DataGridFeatures, Row>();
+  const gridColumns: DataGridColumnDef<Row>[] = [
+    helper.display({ id: 'name', header: 'Name', size: 200, cell: ({ row }) => row.original.name, meta: { label: 'Name' } }),
+    helper.display({ id: 'actions', header: 'Actions', size: 52, enableResizing: false, cell: () => <button type="button">More</button>, meta: { label: 'Actions', fixed: true } }),
+  ];
+  function Grid() {
+    const grid = useDataGrid({
+      data: [{ id: '1', name: 'Sentry watch' }],
+      columns: gridColumns,
+      getRowId: (row) => row.id,
+      storageKey: 'arbor.test-fixed-grid',
+      initialLayout: () => ({ ...gridLayout(gridColumns.map((column) => ({ id: column.id ?? '' })), ['name', 'actions']), pinning: { start: [], end: ['actions'] } }),
+    });
+    return <DataGrid grid={grid} label="Rows" surface="card" />;
+  }
+
+  it('has no header menu or width to drag, only its name for screen readers', () => {
+    const html = renderToStaticMarkup(<I18nProvider><Grid /></I18nProvider>);
+    const heads = [...html.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((match) => match[1] ?? '');
+    expect(heads).toHaveLength(2);
+    expect(heads[0]).toContain('aria-haspopup');
+    expect(heads[1]).toBe('<span class="sr-only">Actions</span>');
+    expect(html).toContain('style="right:var(--pin-actions)"');
   });
 });

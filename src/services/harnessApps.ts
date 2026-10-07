@@ -9,10 +9,16 @@ import type { AutomationScan, AutomationSource, MachineHealth, RunHarness } from
 
 export type HarnessApp = 't3' | 'orca' | 'superset' | 'codexApp' | 'claudeDesktop';
 
+/**
+ * The automations of an app that runs agents. ultradian, the background runner, isn't one: it runs whatever command
+ * it's given, and its schedules are read wherever Arbor set it up.
+ */
+export type HarnessAutomations = Exclude<AutomationSource, 'arbor' | 'ultradian'>;
+
 type HarnessAppSpec = {
   label: MessageKey;
   /** The automations it keeps, which Arbor can stop reading. */
-  automations: Exclude<AutomationSource, 'arbor'> | null;
+  automations: HarnessAutomations | null;
   /** The runs a pool can hand it, which can be turned off. T3 Code takes none from outside for now. */
   runs: Exclude<RunHarness, 'headless' | 't3'> | null;
 };
@@ -52,7 +58,7 @@ export function harnessAppMachines(health: readonly MachineHealth[] | null, scan
   }
   for (const scan of scans) {
     for (const source of scan.apps) {
-      if (source !== 'arbor') found[source].add(scan.machine);
+      if (source !== 'arbor' && source !== 'ultradian') found[source].add(scan.machine);
     }
   }
   return Object.fromEntries(APP_ORDER.map((app) => [app, [...found[app]].sort()])) as Record<HarnessApp, string[]>;

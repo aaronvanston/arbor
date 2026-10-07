@@ -8,6 +8,7 @@ export type AutomationCommands = {
   scan_automations: { args: { machine?: string | null }; result: AutomationList };
   get_automation: { args: { id: string }; result: Automation };
   list_automation_runs: { args: { id?: string | null; limit?: number | null }; result: AutomationRun[] };
+  open_automation_run_in_terminal: { args: { automationId: string; runId: string }; result: string };
   save_automation: { args: { input: AutomationInput }; result: Automation };
   delete_automation: { args: { id: string }; result: AutomationList };
   set_automation_enabled: { args: { id: string; enabled: boolean }; result: AutomationList };
