@@ -46,9 +46,10 @@
  * Recent section has Usage › Capacity, Analysis and Failures (listed as Accounts › Value, Usage › Overview and
  * Usage › Failed requests), and Usage was last left on Failures (it opens on Requests with Failed on);
  * `?oldviews=sync` does the same for Sync's and Usage's other moved views: Recent has Sync's
- * Context and Projects and Usage's Claude Code (listed as Sync › Cost, which both Context and Claude Code are part of,
- * and Sync › Projects, which it's again), then Checks and Arbor's changes, which kept their ids, and Sync was last left on
- * Context (it opens on Cost); `?page=setup&tab=context` opens Cost and `&tab=checklist` Machines;
+ * Context and Projects and Usage's Claude Code (listed once as Sync › Library with Cost beside it, the lens both
+ * Context and Claude Code are part of, and Sync › Projects, which it's again), then Checks (Sync › Overview, which
+ * kept its id) and Arbor's changes (Sync › Repo with History beside it), and Sync was last left on Context (it opens on
+ * the Library's Cost); `?page=setup&tab=context` opens Cost and `&tab=checklist` Machines;
  * `?usagedata=new` for a new install's first launch, so the usage data note shows (`off` for it turned off, `env` for
  * DO_NOT_TRACK set, `source` for a build from source, which never sends);
  * `?status=incident` or `?status=maintenance` for the provider status pages;
