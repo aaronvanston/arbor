@@ -231,6 +231,7 @@ function ProjectsSection({ report, onOpenSessions }: { report: SessionProjectsRe
         <Table>
           <TableHeader>
             <TableRow>
+              {/* Names keep a minimum width; on a narrow window the table scrolls rather than cut them to a letter. */}
               <TableHead>{t('usage.projects.column.project')}</TableHead>
               <TableHead className={cn('w-24', TABLE_NUMERIC_CLASS)}>{t('usage.projects.column.sessions')}</TableHead>
               <TableHead className={cn('w-24', TABLE_NUMERIC_CLASS)}>{t('usage.projects.column.pullRequests')}</TableHead>
@@ -247,7 +248,7 @@ function ProjectsSection({ report, onOpenSessions }: { report: SessionProjectsRe
               return (
                 <Fragment key={project.name}>
                   <TableRow className={cn('cursor-pointer', open && 'bg-muted/40')} onClick={() => toggle(project.name)}>
-                    <TableCell className="max-w-0">
+                    <TableCell className="max-w-0 min-w-40">
                       <span className="flex min-w-0 items-center gap-2">
                         <button
                           type="button"
@@ -275,7 +276,7 @@ function ProjectsSection({ report, onOpenSessions }: { report: SessionProjectsRe
                         const fromBranch = branchPullRequests(report.pullRequests, project.name, branch.name);
                         return (
                           <TableRow key={`${project.name}\n${branch.name}`} className="bg-muted/20">
-                            <TableCell className="max-w-0">
+                            <TableCell className="max-w-0 min-w-40">
                               <span className="flex min-w-0 items-center gap-1.5 ps-6">
                                 <GitBranch className="size-3.5 shrink-0 text-icon-muted" aria-hidden="true" />
                                 {branch.name
@@ -299,7 +300,7 @@ function ProjectsSection({ report, onOpenSessions }: { report: SessionProjectsRe
             })}
             {unplaced.sessions ? (
               <TableRow>
-                <TableCell className="max-w-0 text-muted-foreground">
+                <TableCell className="max-w-0 min-w-40 text-muted-foreground">
                   <Tooltip>
                     <TooltipTrigger render={<span className="block truncate ps-5.5" />}>{t('usage.projects.unplaced')}</TooltipTrigger>
                     <TooltipPopup>{t('usage.projects.unplacedHint')}</TooltipPopup>
@@ -388,7 +389,7 @@ function PullRequestsSection({ pullRequests, onOpenSessions }: { pullRequests: P
                 className="cursor-pointer"
                 onClick={() => openPullRequest(pullRequest.url)}
               >
-                <TableCell className="max-w-0">
+                <TableCell className="max-w-0 min-w-36">
                   <button
                     type="button"
                     className="block max-w-full cursor-pointer truncate rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -412,7 +413,7 @@ function PullRequestsSection({ pullRequests, onOpenSessions }: { pullRequests: P
                   </span>
                   {when ? <span className="block pt-0.5 text-2xs text-muted-foreground">{when}</span> : null}
                 </TableCell>
-                <TableCell className="max-w-0">
+                <TableCell className="max-w-0 min-w-36">
                   <MiddleTruncate value={pullRequest.branch || '—'} title={pullRequest.branch || undefined} className="flex font-mono text-foreground" />
                   <span className="block truncate text-2xs text-muted-foreground">{pullRequest.project}</span>
                 </TableCell>
