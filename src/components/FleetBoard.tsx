@@ -34,6 +34,7 @@ import { Button } from './ui/button';
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from './ui/collapsible';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from './ui/empty';
 import { FixMenu } from './FixMenu';
+import { errorWords, plainError } from '../services/plainError';
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from './ui/menu';
 import { RefreshIcon } from './ui/refresh-icon';
 import { Skeleton } from './ui/skeleton';
@@ -341,7 +342,7 @@ export function FleetBoardView({ board, failure, now, retrying = false, onRetry,
   ) : undefined;
   const error = failure ? (
     <Alert variant="error" icon={<AlertCircle />} action={retry}>
-      <AlertDescription>{t(board ? 'fleet.errorStale' : 'fleet.error', { error: failure })}</AlertDescription>
+      <AlertDescription title={errorWords(failure)}>{t(board ? 'fleet.errorStale' : 'fleet.error', { error: plainError(failure, t) })}</AlertDescription>
     </Alert>
   ) : null;
   if (!board) {
@@ -444,7 +445,7 @@ export function FleetReadFailure({ failure, stale }: { failure: string; stale: b
         </Button>
       )}
     >
-      <AlertDescription>{t(stale ? 'fleet.errorStale' : 'fleet.error', { error: failure })}</AlertDescription>
+      <AlertDescription title={errorWords(failure)}>{t(stale ? 'fleet.errorStale' : 'fleet.error', { error: plainError(failure, t) })}</AlertDescription>
     </Alert>
   );
 }

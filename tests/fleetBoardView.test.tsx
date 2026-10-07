@@ -84,8 +84,9 @@ describe('the live board', () => {
 
   test('shows an empty board, a failed read with Retry, and T3 Code threads turned off', () => {
     expect(view(buildFleetBoard(sources(), { now: NOW }))).toContain('Nothing on the board');
-    expect(view(null, 'database is locked', { onRetry: () => {} })).toBe('Couldn’t read the board: database is locked Retry');
-    expect(view(buildFleetBoard(busy, { now: NOW }), 'database is locked')).toContain('Couldn’t refresh the board, so it shows the last read: database is locked');
+    // What the backend said reads in plain words, not as its sentence.
+    expect(view(null, 'Failed to read the fleet: database is locked', { onRetry: () => {} })).toBe('Couldn’t read the board. Arbor’s records were busy. Try again in a moment. Retry');
+    expect(view(buildFleetBoard(busy, { now: NOW }), 'database is locked')).toContain('Couldn’t refresh the board, so it shows the last read. Arbor’s records were busy.');
     expect(view(buildFleetBoard(sources({ t3Enabled: false }), { now: NOW }))).toContain('T3 Code threads are off');
     expect(view(buildFleetBoard(sources({ t3Enabled: false, t3Found: false }), { now: NOW }))).not.toContain('T3 Code');
   });

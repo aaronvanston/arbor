@@ -697,6 +697,12 @@ export function installTauriMock() {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: refuse, write: refuse }, configurable: true });
     document.execCommand = () => false;
   }
+  // Each load starts again: snoozes ?fleet=snoozed made are taken back on the next load without it.
+  const SEEDED_SNOOZES = 'arbor.mock.fleet-snoozes-seeded.v1';
+  if (fleetScenario !== 'snoozed' && window.localStorage.getItem(SEEDED_SNOOZES)) {
+    window.localStorage.removeItem('arbor.fleet-snoozes.v1');
+    window.localStorage.removeItem(SEEDED_SNOOZES);
+  }
   if (fleetScenario === 'snoozed') {
     // Snoozed after each began, so neither wakes early: the question for an hour, the Codex work until tonight.
     const snoozedAt = Date.now() - 60_000;
@@ -704,6 +710,7 @@ export function installTauriMock() {
       't3:cam-mbp:userdata:2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d': { untilMs: Date.now() + 3_600_000, atMs: snoozedAt },
       't3:cedar-02:userdata:6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e': { untilMs: Date.now() + 5 * 3_600_000, atMs: snoozedAt },
     }));
+    window.localStorage.setItem(SEEDED_SNOOZES, '1');
   }
   if (params.get('oldviews') === 'seed') {
     const oldPicks = ['page:main:usage:capacity', 'page:main:usage:analysis', 'page:main:usage:failures', 'page:main:home'];
