@@ -113,8 +113,9 @@ export function AutomationPage({ id, back: backTo = automationsView(), onNavigat
   const arbor = summary.source === 'arbor';
   const own = summary.source === 'ultradian';
   const gone = automationTargetGone(summary, pools);
-  // Settings' switch pauses every one of Arbor's own, so the next run isn't due while it's off either.
-  const willRun = summary.enabled && !(arbor && list?.running === false);
+  // Settings' switch pauses every one of Arbor's own, so the next run isn't due while it's off either, nor one whose
+  // machine or pool is gone.
+  const willRun = summary.enabled && !gone && !(arbor && list?.running === false);
 
   return (
     <Page width="main">
@@ -125,7 +126,9 @@ export function AutomationPage({ id, back: backTo = automationsView(), onNavigat
         <header className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold text-foreground">{summary.name}</h2>
-            <Badge variant={summary.enabled ? 'success' : 'outline'}>{t(summary.enabled ? 'automations.status.enabled' : 'automations.status.paused')}</Badge>
+            {summary.enabled && gone
+              ? <Badge variant="warning">{t('automations.status.cantRun')}</Badge>
+              : <Badge variant={summary.enabled ? 'success' : 'outline'}>{t(summary.enabled ? 'automations.status.enabled' : 'automations.status.paused')}</Badge>}
             <Badge variant="muted"><AutomationAppName source={summary.source} /></Badge>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -161,7 +164,7 @@ export function AutomationPage({ id, back: backTo = automationsView(), onNavigat
           <Fact label={t('automations.fact.nextRun')}>
             {willRun && summary.nextRunAtMs
               ? <span title={formatDateTime(summary.nextRunAtMs, { year: 'always' })}>{formatWhen(summary.nextRunAtMs, { now })} ({formatRelative(summary.nextRunAtMs, now)})</span>
-              : t(willRun ? 'automations.fact.unknown' : 'automations.status.paused')}
+              : t(willRun ? 'automations.fact.unknown' : summary.enabled && gone ? 'automations.fact.noNextRun' : 'automations.status.paused')}
           </Fact>
           <Fact label={t('automations.fact.machine')}>
             {summary.target.kind === 'best' ? t('automations.target.best')

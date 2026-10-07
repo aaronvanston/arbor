@@ -36,6 +36,7 @@ import {
   AUTOMATION_APPS,
   AUTOMATION_STATES,
   automationGroupSummary,
+  automationTargetGone,
   automationRowId,
   automationRows,
   automationsGrouped,
@@ -62,6 +63,7 @@ import {
   useAutomations,
 } from '../services/automations';
 import { invokeCommand } from '../native/commands';
+import { usePools } from '../services/pools';
 import { useQuotaClock } from '../services/quotaTime';
 import { plainError } from '../services/plainError';
 import { AutomationPage } from './AutomationPage';
@@ -343,6 +345,7 @@ function useAutomationColumns({ now, markPaused, open, onToggle, onNavigate }: {
   onNavigate: (view: AppView) => void;
 }): DataGridColumnDef<AutomationRow>[] {
   const { t } = useI18n();
+  const { pools } = usePools();
   return useMemo(() => {
     const summaries = new WeakMap<AutomationSummary[], AutomationGroupSummary>();
     const summed = (items: AutomationSummary[]) => {
@@ -429,7 +432,7 @@ function useAutomationColumns({ now, markPaused, open, onToggle, onNavigate }: {
         if (model.value) return <ModelName model={model.value} className="max-w-full" />;
         return <span className="text-muted-foreground">{agent && items.every((item) => item.agent === agent) ? <HarnessName harness={agent} className="max-w-full" /> : '—'}</span>;
       }, { cellClassName: 'text-xs' }),
-      nextRun: column('nextRun', t('automations.column.nextRun'), (item) => <NextRun at={item.enabled ? item.nextRunAtMs : null} now={now} />, (items) => <NextRun at={summed(items).nextRunAtMs} now={now} />, { cellClassName: cn(muted, 'tabular-nums'), sort: 'time' }),
+      nextRun: column('nextRun', t('automations.column.nextRun'), (item) => <NextRun at={item.enabled && !automationTargetGone(item, pools) ? item.nextRunAtMs : null} now={now} />, (items) => <NextRun at={summed(items).nextRunAtMs} now={now} />, { cellClassName: cn(muted, 'tabular-nums'), sort: 'time' }),
       lastRun: column('lastRun', t('automations.column.lastRun'), (item) => <LastRun last={item.lastRun} now={now} />, (items) => {
         const { failing, lastRun } = summed(items);
         // One failing among them says so, over however the newest went.
@@ -443,5 +446,5 @@ function useAutomationColumns({ now, markPaused, open, onToggle, onNavigate }: {
       actions: column('actions', t('automations.column.actions'), (item) => <AutomationActions item={item} onNavigate={onNavigate} compact />, () => null, { fixed: true, cellClassName: 'px-1' }, true),
     };
     return COLUMN_IDS.map((id) => columns[id]);
-  }, [t, now, markPaused, open, onToggle, onNavigate]);
+  }, [t, now, markPaused, open, onToggle, onNavigate, pools]);
 }
