@@ -84,15 +84,20 @@ type PaceNotice = ReturnType<typeof notificationKind>;
  * down past what the held-over limits show: no "back on track" from a failed check. A rise among the accounts
  * still read is measured from their own last pace rather than the held level, so a new run on another account
  * still notifies.
+ *
+ * `regrouped` is set when the accounts counted changed since the last look: one turned off or on, by hand or at a cap,
+ * signed in or removed. The pooled pace then moves because of who's counted, not how fast limits run down, so it
+ * settles on the new pace without a word.
  */
 export function paceStep(
   saved: PaceTone | undefined,
   lastFresh: PaceTone | undefined,
   next: PaceTone,
   held: PaceTone | null,
+  regrouped = false,
 ): { saved: PaceTone | undefined; kind: PaceNotice } {
   if (next === 'muted') return { saved, kind: null };
-  if (saved === undefined) return { saved: next, kind: null };
+  if (saved === undefined || regrouped) return { saved: next, kind: null };
   const rose = held !== null && lastFresh !== undefined && severity[next] > severity[lastFresh] ? notificationKind(lastFresh, next) : null;
   if (severity[next] > severity[saved]) return { saved: next, kind: notificationKind(saved, next) };
   if (next === saved || (held !== null && severity[next] < severity[held])) return { saved, kind: rose };
@@ -252,6 +257,8 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
 
   // Native notifications on pace transitions.
   const freshPaceRef = useRef<Record<string, PaceTone>>({});
+  // Which accounts each provider's pace counted at the last look, so a change in who's counted isn't news.
+  const countedRef = useRef<Record<string, string>>({});
   useEffect(() => {
     if (!preferences.limitNotifications) return;
     const pending: { id: string; provider: string; kind: 'warning' | 'error' | 'recovered'; percent: number; reporting: string; countdown: string }[] = [];
@@ -261,7 +268,10 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       if (limit.loading || limit.headline.percent === null) return;
       const previous = notifiedRef.current[limit.provider];
       const next = limit.pace.tone;
-      const { saved, kind } = paceStep(previous, freshPaceRef.current[limit.provider], next, held.get(limit.provider) ?? null);
+      const counted = limit.accounts.map((account) => account.key).sort().join('\n');
+      const regrouped = countedRef.current[limit.provider] !== undefined && countedRef.current[limit.provider] !== counted;
+      countedRef.current[limit.provider] = counted;
+      const { saved, kind } = paceStep(previous, freshPaceRef.current[limit.provider], next, held.get(limit.provider) ?? null, regrouped);
       if (next !== 'muted') freshPaceRef.current[limit.provider] = next;
       if (saved !== undefined && saved !== previous) {
         notifiedRef.current[limit.provider] = saved;

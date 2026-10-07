@@ -135,6 +135,14 @@ describe('limit notifications', () => {
     expect(paceStep('error', 'error', 'success', 'success')).toEqual({ saved: 'success', kind: 'recovered' });
   });
 
+  // money-13: turning an account off or on moves the pooled pace, but that's not a limit running down or recovering.
+  test('settles quietly when the accounts counted change', () => {
+    expect(paceStep('warning', 'warning', 'success', null, true)).toEqual({ saved: 'success', kind: null });
+    expect(paceStep('success', 'success', 'error', null, true)).toEqual({ saved: 'error', kind: null });
+    // The next look with the same accounts notifies as usual.
+    expect(paceStep('success', 'success', 'error', null)).toEqual({ saved: 'error', kind: 'error' });
+  });
+
   test('still notifies a new run on another account while the pace is held', () => {
     // Critical, then an account's checks fail and the others calm down: held at critical.
     let step = paceStep('error', 'error', 'success', 'error');
