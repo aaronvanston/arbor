@@ -5,12 +5,14 @@ import {
   changeKey,
   choose,
   homeCounts,
+  ignoredSkillOverrides,
   isTurnedOff,
   needsLook,
   placeState,
   plannedSkills,
   settleSkills,
   skillChanges,
+  skillOffBy,
   skillSuggestions,
   skillsView,
   usageFor,
@@ -248,6 +250,26 @@ describe('suggestions', () => {
       homes: machine.homes.map((entry) => (entry.path === PROXY ? { ...entry, items: [skill(PROXY, 'mine', sha('8'))] } : entry)),
     });
     expect(skillSuggestions(differ).find((entry) => entry.kind === 'intoStore')?.changes.map((change) => change.row.name)).toEqual(['legacy']);
+  });
+});
+
+describe('why a skill loads nowhere on a machine', () => {
+  const pdf = row('pdf');
+  const turnedOff = (source: SkillOverride['source']) => ({ ...pdf, cells: pdf.cells.map((entry) => ({ ...entry, place: 'off' as const, override: { name: 'pdf', state: 'off' as const, source, file: '~/.claude/settings.json' } })) });
+
+  it('says a policy or a home’s settings turn it off, and nothing when it loads somewhere', () => {
+    expect(skillOffBy(turnedOff('policy'))).toBe('policy');
+    expect(skillOffBy(turnedOff('settings'))).toBe('settings');
+    expect(skillOffBy(pdf)).toBeNull();
+  });
+
+  it('lists each file whose skill overrides Claude Code ignores, a policy’s too', () => {
+    const policy = { file: '/etc/claude-code/managed-settings.json', keys: [], problem: null, ignoredOverrides: true };
+    const ignoring: SetupMachine = { ...machine, machine: 'cedar-02', policy, homes: [home('claude', PROXY, [], null, { ignoredOverrides: [`${PROXY}/settings.json`] })] };
+    expect(ignoredSkillOverrides([machine, ignoring])).toEqual([
+      { machine: 'cedar-02', file: '/etc/claude-code/managed-settings.json' },
+      { machine: 'cedar-02', file: `${PROXY}/settings.json` },
+    ]);
   });
 });
 

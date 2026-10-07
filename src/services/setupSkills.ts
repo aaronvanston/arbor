@@ -350,7 +350,29 @@ const LOADING: ReadonlySet<SkillPlace> = new Set(['linked', 'loads', 'copy', 'dr
  * A skill on one machine, at All machines: in how many of its homes it loads, whether one of them needs a look, and the
  * machine's row for it, whose homes the cell opens to.
  */
-export type FleetSkillCell = { loads: number; homes: number; look: boolean; row: SkillRow };
+/**
+ * `offBy`: loading nowhere because a Claude Code home's skillOverrides turn it off, the managed settings policy's
+ * (`policy`, which outranks every home) or a home's own (`settings`); null when it's off for any other reason.
+ */
+export type FleetSkillCell = { loads: number; homes: number; look: boolean; offBy: 'policy' | 'settings' | null; row: SkillRow };
+
+/** Why a skill loads in no home on a machine, when skillOverrides are why. */
+export function skillOffBy(row: SkillRow): FleetSkillCell['offBy'] {
+  const off = row.cells.filter(isTurnedOff);
+  if (!off.length || row.cells.some((cell) => LOADING.has(cell.place) && !isTurnedOff(cell))) return null;
+  return off.some((cell) => cell.override?.source === 'policy') ? 'policy' : 'settings';
+}
+
+/**
+ * The skillOverrides Claude Code ignores on each machine, as files: a home's settings.json, or a managed settings policy,
+ * with a value it doesn't know, which makes it drop every override in the file.
+ */
+export function ignoredSkillOverrides(machines: SetupMachine[]): { machine: string; file: string }[] {
+  return machines.flatMap((machine) => [
+    ...(machine.policy?.ignoredOverrides ? [{ machine: machine.machine, file: machine.policy.file }] : []),
+    ...machine.homes.flatMap((home) => home.ignoredOverrides.map((file) => ({ machine: machine.machine, file }))),
+  ]);
+}
 export type FleetSkillRow = { name: string; source: string | null; cells: Record<string, FleetSkillCell | null> };
 export type FleetSkills = { machines: string[]; rows: FleetSkillRow[]; views: Record<string, SkillsView> };
 
@@ -367,7 +389,7 @@ export function fleetSkills(machines: SetupMachine[]): FleetSkills {
       const row = view.rows.find((entry) => entry.name === name);
       source ??= row?.source ?? null;
       cells[machine] = row && (row.store || row.cells.some((cell) => cell.place !== 'none'))
-        ? { loads: row.cells.filter((cell) => LOADING.has(cell.place) && !isTurnedOff(cell)).length, homes: row.cells.length, look: needsLook(row), row }
+        ? { loads: row.cells.filter((cell) => LOADING.has(cell.place) && !isTurnedOff(cell)).length, homes: row.cells.length, look: needsLook(row), offBy: skillOffBy(row), row }
         : null;
     }
     return { name, source, cells };

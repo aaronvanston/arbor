@@ -28,6 +28,7 @@ import {
   repoSkillState,
   getSkillUsage,
   homeCounts,
+  ignoredSkillOverrides,
   isTurnedOff,
   needsLook,
   skillChanges,
@@ -436,12 +437,19 @@ export function SetupSkills({ machines, homeLabel, onCompare, onOpenInRepo }: {
     </>
   );
 
+  // Claude Code drops every override in a file with a value it doesn't know, so the grid's "turned off" can't be trusted there.
+  const ignored = ignoredSkillOverrides(machine ? [machine] : machines);
   return (
     <div className="flex flex-col gap-4">
       <SkillsHow repo={repo !== null} reading={Boolean(repoPath) && !repoRead} />
       {notice ? (
         <p className={cn('text-sm', notice.ok ? 'text-muted-foreground' : 'text-error-foreground')} role="status">{notice.text}</p>
       ) : null}
+      {ignored.map(({ machine: name, file }) => (
+        <p key={`${name}\u0000${file}`} className="text-xs text-warning-foreground">
+          {tRich('setup.skills.overridesIgnored', { machine: <MachinePill name={name} size="sm" />, file })}
+        </p>
+      ))}
       {!machine || !view ? (
         <>
           <FleetSkillsCard
@@ -772,7 +780,7 @@ function FleetSkillsCard({ machines, repo, selected, onTick, onTickAll, activity
                               ? t('setup.skills.fleet.look')
                               : cell.loads
                                 ? cell.homes === 1 ? t('setup.skills.fleet.loadsOnly') : t('setup.skills.fleet.loads', { loads: cell.loads, homes: cell.homes })
-                                : t('setup.skills.fleet.off')}
+                                : t(cell.offBy === 'policy' ? 'setup.skills.fleet.offPolicy' : cell.offBy === 'settings' ? 'setup.skills.fleet.offSettings' : 'setup.skills.fleet.off')}
                           </span>
                         </>
                       )}
@@ -1027,7 +1035,7 @@ function SkillCellView({ row, cell, busy, homeLabel, onPick, onCompare }: {
   const place = isTurnedOff(cell) ? (
     <span className="inline-flex min-w-0 items-center gap-1.5" title={words}>
       <StatusDot tone="muted" />
-      <span className="truncate text-muted-foreground">{t('setup.override.off')}</span>
+      <span className="truncate text-muted-foreground">{t(cell.override?.source === 'policy' ? 'setup.override.offPolicy' : 'setup.override.off')}</span>
     </span>
   ) : label ? (
     <span className="inline-flex min-w-0 items-center gap-1.5">
