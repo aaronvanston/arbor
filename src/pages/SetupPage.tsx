@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Layers, Search, TriangleAlert } from '../components/ui/icons';
 import { MachineCrumb } from '../components/layout/MachineCrumb';
-import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
+import { Page, PageBody, PageBreadcrumb, PageCrumbButton, PageTopbar } from '../components/layout/page';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -513,12 +513,18 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
         <PageBreadcrumb
           segments={[
             t('setup.title'),
-            t(leafLabel('setup', tab) ?? 'setup.tab.overview'),
+            // Below the Library's list (an item, a kind per home, the directory, Cost), its crumbs go back up to the list.
+            tab === 'library' && (libraryItem !== null || libraryLens !== 'list')
+              ? <PageCrumbButton key="library" onClick={() => chooseLibrary(kind, 'list')}>{t(leafLabel('setup', tab) ?? 'setup.tab.overview')}</PageCrumbButton>
+              : t(leafLabel('setup', tab) ?? 'setup.tab.overview'),
             // Cost is the one Sync view that's about spend rather than comparing machines, so it can be narrowed to one.
             ...(costLens ? [t('setup.tab.cost')] : []),
             ...(libraryLens === 'machines' ? [t(LIBRARY_KIND_LABEL[kind])] : []),
             ...(libraryLens === 'directory' ? [t('library.lens.directory')] : []),
-            ...(libraryItem !== null ? [t(LIBRARY_KIND_LABEL[kind]), libraryItemName(libraryItem)] : []),
+            ...(libraryItem !== null ? [
+              <PageCrumbButton key="kind" onClick={() => chooseLibrary(kind, 'list')}>{t(LIBRARY_KIND_LABEL[kind])}</PageCrumbButton>,
+              libraryItemName(libraryItem),
+            ] : []),
 
             ...(costLens ? [
               <MachineCrumb

@@ -189,6 +189,15 @@ export function PageBreadcrumb({ segments, className }: { segments: ReactNode[];
   );
 }
 
+/** A breadcrumb segment that goes back up to the view it names. */
+export function PageCrumbButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return (
+    <button type="button" className="cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
 export function PageBody({ children, className, gap = 'gap-8', fill = false }: {
   children: ReactNode;
   className?: string;

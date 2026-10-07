@@ -34,7 +34,7 @@ import {
   toolRows,
 } from '../services/usageSessions';
 import { githubNote } from '../services/sessionProjects';
-import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
+import { Page, PageBody, PageBreadcrumb, PageCrumbButton, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -226,9 +226,7 @@ export function SessionDetailPage({ sessionId, onBack, onViewRequests }: { sessi
       >
         <PageBreadcrumb
           segments={[
-            <button key="sessions" type="button" className="cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" onClick={onBack}>
-              {t('app.nav.sessions')}
-            </button>,
+            <PageCrumbButton key="sessions" onClick={onBack}>{t('app.nav.sessions')}</PageCrumbButton>,
             title,
           ]}
         />
