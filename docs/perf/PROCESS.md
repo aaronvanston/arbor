@@ -27,6 +27,10 @@ Each journey (cold launch to Home, open each main page, an hour of idle compress
 `perf/baseline.json` holds the ceilings. `bun run perf:check` fails when a gated count goes over its ceiling;
 `bun run perf:ratchet` tightens ceilings to the current numbers and never loosens them.
 
+`bun run perf:cpu` (`perf/idleCpu.ts`) is the real-clock companion: it idles a page in WebKit at a large Retina
+window, sends health rounds every five seconds, and reports the CPU the WebContent and GPU processes used. It sees
+what the page clock can't, CSS transitions and painting, so check it after touching anything that animates.
+
 The Rust side has `src-tauri/src/usage/bench.rs` (page reads on a million requests, release mode only) and grows
 the same way: a slow command or background loop gets a bench before it gets a fix.
 
