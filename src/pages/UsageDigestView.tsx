@@ -22,6 +22,7 @@ import {
   LIMIT_WARNING_PERCENT,
   loadWeeklyDigest,
   mergedHint,
+  mergedValue,
   noMergedText,
   percentText,
   reloadDigestPullRequests,
@@ -297,7 +298,7 @@ function Digest({ digest, onOpenSession }: { digest: WeeklyDigest; onOpenSession
           value={<>{number(digest.sessions)}<Change current={digest.sessions} previous={digest.previousSessions} /></>}
           hint={before(number(digest.previousSessions))}
         />
-        <StatBlock label={t('usage.digest.stat.merged')} value={number(digest.merged.length)} hint={mergedHint(digest, t)} />
+        <StatBlock label={t('usage.digest.stat.merged')} value={mergedValue(digest)} hint={mergedHint(digest, t)} />
         <StatBlock
           label={t('usage.digest.stat.lines')}
           value={digest.sessionsWithLines ? <Lines added={digest.linesAdded} removed={digest.linesRemoved} /> : '—'}

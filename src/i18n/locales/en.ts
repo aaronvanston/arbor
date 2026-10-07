@@ -4341,6 +4341,7 @@ export const en = {
   'usage.digest.stat.open.other': 'None merged · {count} still open',
   'usage.digest.stat.noneMerged': 'None merged',
   'usage.digest.stat.noGithub': 'GitHub couldn’t be asked',
+  'usage.digest.stat.checkingGithub': 'Asking GitHub…',
   'usage.digest.stat.lines': 'Lines changed',
   'usage.digest.done.title': 'What got done',
   'usage.digest.done.description': 'Pull requests the sessions worked on that merged in the week, with what all their sessions cost.',

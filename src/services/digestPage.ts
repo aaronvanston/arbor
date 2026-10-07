@@ -10,6 +10,7 @@ import {
   formatRatio,
   LIMIT_WARNING_PERCENT,
   mergedHint,
+  mergedValue,
   noMergedText,
   percentText,
   SAME_CHANGE,
@@ -149,7 +150,7 @@ export function digestPage(digest: WeeklyDigest, { t, nowMs }: { t: Translate; n
       spendKnown(digest) ? before(money(digest.previousCost)) : t('usage.digest.stat.noPrices'),
     ),
     stat(t('usage.digest.stat.sessions'), html`${number(digest.sessions)}${moved(digest.sessions, digest.previousSessions)}`, before(number(digest.previousSessions))),
-    stat(t('usage.digest.stat.merged'), number(digest.merged.length), mergedHint(digest, t)),
+    stat(t('usage.digest.stat.merged'), mergedValue(digest), mergedHint(digest, t)),
     stat(
       t('usage.digest.stat.lines'),
       digest.sessionsWithLines ? lines(digest.linesAdded, digest.linesRemoved) : '—',

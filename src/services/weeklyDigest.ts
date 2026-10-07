@@ -357,8 +357,15 @@ export const spendKnown = (digest: WeeklyDigest) => digest.priced || digest.requ
 export const githubUnavailable = (digest: WeeklyDigest) =>
   digest.github.last === 'missing' || digest.github.last === 'signedOut' || digest.github.last === 'failed';
 
+/** Whether GitHub is still being asked and hasn't named a merged pull request yet, so none merging isn't known. */
+export const githubChecking = (digest: WeeklyDigest) => digest.github.checking && !digest.merged.length;
+
+/** The count of merged pull requests, unknown while GitHub is still being asked. */
+export const mergedValue = (digest: WeeklyDigest) => (githubChecking(digest) ? '—' : formatCount(digest.merged.length));
+
 /** What goes under the count of merged pull requests. */
 export function mergedHint(digest: WeeklyDigest, t: Translate): string {
+  if (githubChecking(digest)) return t('usage.digest.stat.checkingGithub');
   if (digest.merged.length) {
     // With nothing priced in the week, an average of $0.00 would read as free.
     return digest.priced
@@ -373,6 +380,7 @@ export function mergedHint(digest: WeeklyDigest, t: Translate): string {
 
 /** Why no merged pull request is listed. */
 export function noMergedText(digest: WeeklyDigest, t: Translate): string {
+  if (digest.github.checking) return t('usage.projects.github.checking');
   switch (digest.github.last) {
     case 'missing': return t('usage.projects.github.missing');
     case 'signedOut': return t('usage.projects.github.signedOut');

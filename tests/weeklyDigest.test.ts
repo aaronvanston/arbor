@@ -12,6 +12,8 @@ import {
   dueDigestWeek,
   loadWeeklyDigest,
   mergedHint,
+  mergedValue,
+  noMergedText,
   reloadDigestPullRequests,
   weekDays as weekDaysAsWritten,
   weeklyDigest,
@@ -276,6 +278,16 @@ describe('weekly digest', () => {
     expect(page).toContain('Change 3 acme/arbor#3 · arbor · merged Sun, 20 Sep +120 −30 unpriced');
     expect(page).toContain('Spend unpriced No prices for these models');
     expect(page).toContain('Cache misses 14 requests sent 2M tokens of context again uncached unpriced Failed');
+  });
+});
+
+describe('while GitHub is still being asked', () => {
+  test('says so, rather than that nothing merged', () => {
+    const data = digestData();
+    const digest = weeklyDigest({ ...data, pullRequests: [], projects: { ...data.projects, github: { ...data.projects.github, checking: true, last: '' } } }, providers, NOW);
+    expect(mergedValue(digest)).toBe('—');
+    expect(mergedHint(digest, t)).toBe('Asking GitHub…');
+    expect(noMergedText(digest, t)).toBe('Checking pull requests with GitHub…');
   });
 });
 
