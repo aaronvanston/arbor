@@ -16,6 +16,15 @@ Every change to a file on a machine goes through `usage/machine_health/guarded_w
 for each file, `edit_finish`). It writes only while the file is still as Arbor read it, backs it up first in
 `~/.arbor/setup-backups`, and lands on Sync › Repo › History, the one list where any of them can be undone.
 
+## Taking things off a machine
+
+The machine page's Clean up (`usage/machine_health/cleanup.rs`) never deletes what it removes: it moves it into
+`~/.arbor/set-aside/<stamp>/`, or into `.arbor-set-aside/<stamp>/` at the top of the item's own drive so the move is a
+rename and never a copy. That area is apart from `setup-backups` on purpose: backups are pruned to the newest 20, and
+nothing set aside may ever go except by the user's Delete for good. A pointer with the same stamp in `setup-backups`
+lists the removal on Sync › Repo › History; pruning it only drops it from that list. Which harness folders count as
+clearable is `harnesses::CLEARABLE`, each with the reason it's safe.
+
 ## Agent homes
 
 Which folders are a machine's agent homes comes only from `usage/machine_health/agent_homes.rs`: the standard Claude
