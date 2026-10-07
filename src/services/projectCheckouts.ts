@@ -62,6 +62,14 @@ export type Blocked = 'notInstalled' | 'policy' | 'ignored' | 'seen' | 'denied' 
 /** A change a checkout needs to have something as the project wants it. */
 export type CheckoutChange = { machine: string; checkout: string; target: string; on: boolean; blocked: Blocked | null };
 
+/**
+ * The names a project card works on: every one on Per home, only the item's own on its Library page, so the page's
+ * "Make N changes" never touches another server's or skill's checkouts.
+ */
+export function namesInScope(names: readonly string[], only: string | null): string[] {
+  return only === null ? [...names] : names.filter((name) => name === only);
+}
+
 /** The changes that can be made, by machine. */
 export function readyByMachine(changes: CheckoutChange[]): Map<string, CheckoutChange[]> {
   const byMachine = new Map<string, CheckoutChange[]>();

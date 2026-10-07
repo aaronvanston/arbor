@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n';
-import type { ProjectCheckout } from '../services/projectCheckouts';
+import { namesInScope, type ProjectCheckout } from '../services/projectCheckouts';
 import { applyCheckoutSkills, homeSkill, projectSkillChanges, setSetupSkillProject, skillChanges } from '../services/setupSkillProjects';
 import { getSetupRepo, storedSetupRepo } from '../services/setupSync';
 import type { SetupMachine, SetupRepo } from '../native/types';
@@ -32,13 +32,14 @@ export function ProjectSkillsCard({ machines, only = null }: {
     () => [...new Set([...(repo?.skills ?? []).map((skill) => skill.name), ...Object.keys(values ?? {})])].sort(),
     [repo, values],
   );
+  const shown = useMemo(() => namesInScope(names, only), [names, only]);
   const rows = useMemo<ProjectRow[]>(
-    () => names.filter((name) => only === null || name === only).map((name) => ({ id: name, name, note: null, projects: values?.[name] ?? {} })),
-    [names, values, only],
+    () => shown.map((name) => ({ id: name, name, note: null, projects: values?.[name] ?? {} })),
+    [shown, values],
   );
   const changesFor = useCallback(
-    (project: string, checkouts: ProjectCheckout[]) => projectSkillChanges(names, values ?? {}, checkouts, project, (machine, skill) => homeSkill(machines, machine, skill)),
-    [names, values, machines],
+    (project: string, checkouts: ProjectCheckout[]) => projectSkillChanges(shown, values ?? {}, checkouts, project, (machine, skill) => homeSkill(machines, machine, skill)),
+    [shown, values, machines],
   );
 
   if (!path || !repo || !rows.length) return null;

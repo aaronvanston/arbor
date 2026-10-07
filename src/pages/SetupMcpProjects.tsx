@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n';
-import type { ProjectCheckout } from '../services/projectCheckouts';
+import { namesInScope, type ProjectCheckout } from '../services/projectCheckouts';
 import { applyCheckoutMcp, homeServer, mcpChanges, projectMcpChanges, repoDefines, setSetupMcpProject } from '../services/setupMcpProjects';
 import { getSetupRepo } from '../services/setupSync';
 import type { McpRegistry, SetupMachine, SetupRepo } from '../native/types';
@@ -32,19 +32,19 @@ export function ProjectMcpCard({ repo, registry, machines, only = null }: {
     () => [...new Set([...registry.servers.filter((server) => server.claude).map((server) => server.name), ...Object.keys(values ?? {})])].sort(),
     [registry, values],
   );
+  const shown = useMemo(() => namesInScope(names, only), [names, only]);
   const rows = useMemo<ProjectRow[]>(
-    () => names
-      .filter((name) => only === null || name === only)
+    () => shown
       .map((name) => ({ id: name, name, note: registry.servers.find((server) => server.name === name)?.claude?.place ?? null, projects: values?.[name] ?? {} })),
-    [names, registry, values, only],
+    [shown, registry, values],
   );
   const changesFor = useCallback(
     (project: string, checkouts: ProjectCheckout[]) => projectMcpChanges(
-      names, values ?? {}, checkouts, project,
+      shown, values ?? {}, checkouts, project,
       (machine, server) => homeServer(machines, machine, server),
       (machine, server) => repoDefines(registry, machine, server),
     ),
-    [names, values, machines, registry],
+    [shown, values, machines, registry],
   );
 
   if (!setup || !rows.length) return null;

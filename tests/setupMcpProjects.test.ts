@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import type { ProjectCheckout } from '../src/services/projectCheckouts';
+import { namesInScope, type ProjectCheckout } from '../src/services/projectCheckouts';
 import { homeServer, mcpChanges, projectMcpChanges, repoDefines, serverLoadsIn, type HomeServer } from '../src/services/setupMcpProjects';
 import type { McpRegistry, RepoProjectValue, SetupItem, SetupMachine } from '../src/native/types';
 import { itemAt } from './support/items';
@@ -81,6 +81,20 @@ describe('a project’s MCP servers in its checkouts', () => {
       { machine: 'ci-01', checkout: '/home/ci/arbor', target: 'sentry', on: true, blocked: 'noDefinition' },
     ]);
     expect(mcpChanges([itemAt(changes, 3)])).toEqual([{ checkout: '/src/arbor', server: 'sentry', on: true }]);
+  });
+
+  it('changes only the item’s own server from its Library page', () => {
+    const values: Record<string, Record<string, RepoProjectValue>> = {
+      linear: { 'cam/arbor': { all: 'off', machines: {} } },
+      sentry: { 'cam/arbor': { all: 'on', machines: {} } },
+    };
+    const changes = projectMcpChanges(
+      namesInScope(['linear', 'sentry'], 'sentry'), values, [checkout('mac-mini', '/src/arbor')], 'cam/arbor',
+      (name, server) => homeServer(machines, name, server),
+      (name, server) => repoDefines(registry, name, server),
+    );
+    expect(changes.map((change) => change.target)).toEqual(['sentry']);
+    expect(namesInScope(['linear', 'sentry'], null)).toEqual(['linear', 'sentry']);
   });
 
   it('won’t turn on a server a checked-in deny keeps out', () => {
