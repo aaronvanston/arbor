@@ -28,6 +28,10 @@ let productAnalytics: ProductAnalyticsSettings = {
   available: params.get('usagedata') !== 'source',
 };
 
+/** The version each kind of build reports, for `?build=`; a stable build, the default, has no prerelease. */
+const MOCK_BUILD_VERSIONS: Record<string, string> = { nightly: '0.3.200-nightly.20261002.1', dev: '0.3.200-dev.20261002.1' };
+export const mockAppVersion = MOCK_BUILD_VERSIONS[params.get('build') ?? ''] ?? '0.3.200';
+
 /** The Dock icon the build shows on Auto, as `?build=` makes it (app_icon.rs's `build_icon`). */
 const mockBuildIcon: AppIconChoice = params.get('build') === 'nightly' ? 'amber' : params.get('build') === 'dev' ? 'signal' : 'forest';
 let appIcon: AppIconSetting = { choice: 'auto', shown: mockBuildIcon };
@@ -190,7 +194,7 @@ export const appAnswers: CommandAnswers<AppCommands> = {
     mockLog('open_external_url', args.url);
     return null;
   },
-  check_app_update: () => { mockLog('check_app_update', null); return { currentVersion: '0.3.200', updateAvailable: true, releaseUrl: 'https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.3.201', autoUpdateSupported: true, downloadSizeBytes: 48_120_000, unsupportedReason: null, bundledCoreVersion: '8.0.4', ...mockAppReleases() }; },
+  check_app_update: () => { mockLog('check_app_update', null); return { currentVersion: mockAppVersion, updateAvailable: true, releaseUrl: 'https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.3.201', autoUpdateSupported: true, downloadSizeBytes: 48_120_000, unsupportedReason: null, bundledCoreVersion: '8.0.4', ...mockAppReleases() }; },
   get_update_channel: () => updateChannel,
   set_update_channel: ({ channel }) => { mockLog('set_update_channel', channel); updateChannel = channel; return updateChannel; },
   get_app_update_task: () => ({ running: false, cancelable: false, phase: 'idle', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null, fromThisMac: false }),

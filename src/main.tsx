@@ -7,6 +7,7 @@ import { trackWindowVisibility } from './lib/windowVisibility';
 import { lastShownPageId } from './components/ErrorBoundaries';
 import { beginBoot } from './services/bootMode';
 import { preparePhoneAlerts } from './services/phoneAlerts';
+import { IN_REAL_SHELL } from './services/realShell';
 import { reportUncaughtErrors } from './services/productAnalytics';
 import { renameLegacySavedKeys } from './services/savedKeys';
 import { loadSavedSettings } from './services/savedStore';
@@ -19,7 +20,7 @@ import { initializeTheme } from './theme';
 renameLegacySavedKeys();
 
 // The demo build (vite.config.js) is the mock for the website, so it installs it too.
-if ((import.meta.env.DEV || import.meta.env.MODE === 'demo') && !('__TAURI_INTERNALS__' in window)) {
+if ((import.meta.env.DEV || import.meta.env.MODE === 'demo') && !IN_REAL_SHELL) {
   const { installTauriMock } = await import('./dev/mockTauri');
   installTauriMock();
 }

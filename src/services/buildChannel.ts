@@ -1,6 +1,7 @@
 import { getVersion } from '@tauri-apps/api/app';
 import { useSyncExternalStore } from 'react';
 import type { MessageKey } from '../i18n/resources';
+import { IN_REAL_SHELL } from './realShell';
 
 /**
  * Which kind of build is running, read from its own version like the Dock badge (`build_channel.rs`): a nightly is
@@ -10,10 +11,10 @@ import type { MessageKey } from '../i18n/resources';
 export type BuildChannel = 'stable' | 'nightly' | 'dev';
 
 /**
- * Read as this module loads, before main.tsx installs the browser mock, so only a development build inside the real
- * shell counts; the mock picks its build with `?build=`.
+ * Only a development build inside the real shell counts. This module can load after main.tsx installs the browser mock,
+ * which stands in for the shell, so the shell is the one main.tsx found; the mock picks its build with `?build=`.
  */
-const DEV_SHELL = Boolean(import.meta.env?.DEV) && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+const DEV_SHELL = Boolean(import.meta.env?.DEV) && IN_REAL_SHELL;
 
 export function buildChannelOf(version: string, devBuild: boolean): BuildChannel {
   const pre = /^v?\d+\.\d+\.\d+-([0-9A-Za-z.-]+)/.exec(version.trim())?.[1] ?? '';

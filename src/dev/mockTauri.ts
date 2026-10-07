@@ -432,7 +432,7 @@ import { requestFocus } from '../focusRequests';
 import { automationView, failedRequestsView, machinesView, mainPageView, movedSettingsFocus, poolsView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
 import type { Commands } from '../native/commands';
 import { mockCommands, type CommandAnswers, type CommandObserver } from './mock/answers';
-import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
+import { appAnswers, mockAppVersion, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
 import { archiveAnswers } from './mock/archive';
 import { automationsAnswers } from './mock/automations';
 import { cleanupAnswers } from './mock/cleanup';
@@ -507,13 +507,10 @@ function drawTrafficLights() {
   document.body.append(lights);
 }
 
-/** The version each kind of build reports, for `?build=`. */
-const MOCK_BUILD_VERSIONS: Record<string, string> = { nightly: '0.3.200-nightly.20261002.1', dev: '0.3.200-dev.20261002.1' };
-
 /** Commands of Tauri's own plugins, which the webview reaches through their APIs. */
 const pluginAnswers: Record<string, (args: Json) => unknown> = {
   // The app's own version, the same one the update check reports, unless `?build=` asks for another kind of build.
-  'plugin:app|version': () => MOCK_BUILD_VERSIONS[params.get('build') ?? ''] ?? '0.3.200',
+  'plugin:app|version': () => mockAppVersion,
   'plugin:dialog|open': (args) => {
     const title = String((args.options as Json | undefined)?.title ?? '');
     if (title.includes('backup')) return '/Volumes/Backup/Mac backups';
