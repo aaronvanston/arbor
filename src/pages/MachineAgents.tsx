@@ -224,7 +224,13 @@ export function AgentCopies({ agent, install, item }: { agent: AgentKind; instal
  * tells it when one is waiting on its user. `embedded` is for a card of its own that's already titled, on the
  * machine's page: no box or title of its own, only when they were last checked.
  */
-export function MachineAgentsBlock({ item, newest, embedded = false }: { item: MachineHealth; newest: NewestAgents; embedded?: boolean }) {
+export function MachineAgentsBlock({ item, newest, embedded = false, onChanged }: {
+  item: MachineHealth;
+  newest: NewestAgents;
+  embedded?: boolean;
+  /** Reads the machine again after a change to it, as the reporter's. */
+  onChanged?: () => void;
+}) {
   const { t, tRich } = useI18n();
   const behindText = useBehindText();
   const { update, busy: updating, outcomes } = useAgentUpdate(item);
@@ -340,7 +346,7 @@ export function MachineAgentsBlock({ item, newest, embedded = false }: { item: M
           );
         })}
       </div>
-      <MachineReporterRow item={item} />
+      <MachineReporterRow item={item} onChanged={onChanged} />
       <MachineTelemetryRow item={item} />
     </section>
   );

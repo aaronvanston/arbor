@@ -14,7 +14,7 @@ import { HOUR_MS, MACHINE_WINDOWS, machineWindowMs, type MachineWindowId } from 
 import { checklistOnPage, machineUsageTotal, setupStanding } from '../services/machinePage';
 import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import { useSetupInventory } from '../hooks/useSetupInventory';
-import { FleetMachineSection } from '../components/FleetBoard';
+import { FleetMachineSection, FleetReadFailure } from '../components/FleetBoard';
 import { FixMenu } from '../components/FixMenu';
 import { GroveUnavailableNote, MachineProbeBlock } from '../components/MachineProbes';
 import { MachineHarnessesBlock } from '../components/MachineHarnesses';
@@ -78,7 +78,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
   const item = snapshot?.machines.find((entry) => entry.machine === name) ?? null;
   const latest = useLatestAgentVersions();
   const newest = useMemo(() => newestAgents(snapshot?.machines ?? [], latest), [snapshot, latest]);
-  const { board, now: boardNow } = useFleetBoard();
+  const { board, failure: boardFailure, now: boardNow } = useFleetBoard();
   const live = board?.machines.find((group) => group.machine === name) ?? null;
   const { inventory, reload } = useSetupInventory();
   const setupMachines = useMemo(() => inventory?.machines ?? [], [inventory]);
@@ -244,13 +244,17 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
             />
           ) : (
             <SettingsSection title={t('machine.live.title')} description={t('machine.live.description')} headerAction={allLive}>
-              <SettingsBlock className="text-xs text-muted-foreground">{tRich(board ? 'machine.live.none' : 'machine.live.loading', { machine: small })}</SettingsBlock>
+              {/* A failed read says so with Try again, rather than reading for good. */}
+              {boardFailure ? <SettingsBlock><FleetReadFailure failure={boardFailure} stale={board !== null} /></SettingsBlock> : null}
+              {board || !boardFailure ? (
+                <SettingsBlock className="text-xs text-muted-foreground">{tRich(board ? 'machine.live.none' : 'machine.live.loading', { machine: small })}</SettingsBlock>
+              ) : null}
             </SettingsSection>
           )}
 
           {item ? (
             <SettingsSection title={t('machines.agents.title')} description={t('machine.agents.description')}>
-              <MachineAgentsBlock item={item} newest={newest} embedded />
+              <MachineAgentsBlock item={item} newest={newest} embedded onChanged={() => void retryHealth()} />
             </SettingsSection>
           ) : null}
 

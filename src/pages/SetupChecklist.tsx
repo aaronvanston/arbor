@@ -622,7 +622,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
       case 'alerts': {
         const step = steps.alerts;
         if (step.why === 'notListed') return <p className="text-muted-foreground">{t('setup.checklist.connect.notListed')}</p>;
-        return targetHealth ? <div className="rounded-lg border border-border/50 px-3 py-1"><MachineReporterRow item={targetHealth} /></div> : null;
+        return targetHealth ? <div className="rounded-lg border border-border/50 px-3 py-1"><MachineReporterRow item={targetHealth} onChanged={() => void loadHealth()} /></div> : null;
       }
       case 'tools': {
         const step = steps.tools;

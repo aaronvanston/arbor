@@ -385,6 +385,33 @@ export function FleetBoardView({ board, failure, now, retrying = false, onRetry,
   );
 }
 
+/**
+ * The board's failed read where only part of it shows (a machine's page), with Try again. `stale` says the last board
+ * read is still on screen.
+ */
+export function FleetReadFailure({ failure, stale }: { failure: string; stale: boolean }) {
+  const { t } = useI18n();
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    void loadFleetSources().finally(() => setRetrying(false));
+  };
+  return (
+    <Alert
+      variant="error"
+      icon={<AlertCircle />}
+      action={(
+        <Button variant="outline" size="sm" onClick={retry} disabled={retrying}>
+          <RefreshIcon refreshing={retrying} />
+          {t('common.tryAgain')}
+        </Button>
+      )}
+    >
+      <AlertDescription>{t(stale ? 'fleet.errorStale' : 'fleet.error', { error: failure })}</AlertDescription>
+    </Alert>
+  );
+}
+
 /** Sessions › Live: the board from the monitor's latest read. */
 export function FleetBoard({ machine = '', onOpenSession }: {
   /** The machine the breadcrumb narrowed the board to; `''` is every machine. */

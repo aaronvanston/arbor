@@ -48,9 +48,10 @@ type Outcome = { ok: boolean; text: string; details: string[] };
 
 /**
  * The expanded machine's alerts row: whether Arbor's reporter tells it when an agent there is waiting on its user,
- * and a button to set it up or take it away. Both show exactly which files change before anything does.
+ * and a button to set it up or take it away. Both show exactly which files change before anything does. `onChanged`
+ * reads the machine again once a change is made, so the row shows where the reporter runs now rather than before.
  */
-export function MachineReporterRow({ item }: { item: MachineHealth }) {
+export function MachineReporterRow({ item, onChanged }: { item: MachineHealth; onChanged?: () => void }) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
   const [busy, setBusy] = useState(false);
@@ -75,6 +76,7 @@ export function MachineReporterRow({ item }: { item: MachineHealth }) {
       });
       if (!confirmed) return;
       const done = await setAgentReporter(item.machine, enabled);
+      onChanged?.();
       const failed = done.files.filter((file) => file.error);
       const written = done.files.filter((file) => file.written).length;
       setOutcome({
