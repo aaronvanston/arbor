@@ -339,17 +339,34 @@ pub(crate) fn alerts(answer: &Value) -> String {
 /// `sync.status` from the window.
 pub(crate) fn sync_status(answer: &Value) -> String {
     let commit: String = field(answer, "commit").chars().take(7).collect();
+    const KINDS: [&str; 6] = ["files", "skills", "mcp", "hooks", "plugins", "projects"];
     let rows: Vec<Vec<String>> = items(answer, "machines")
         .iter()
         .map(|machine| {
             let counts = machine.get("counts").unwrap_or(&Value::Null);
-            let number = |name: &str| counts.get(name).and_then(Value::as_u64).unwrap_or(0);
-            let state = if machine.get("inStep") == Some(&Value::Bool(true)) { "in step" } else { "behind" };
-            vec![field(machine, "machine"), state.into(), number("update").to_string(), number("add").to_string(), number("removed").to_string(), number("extra").to_string()]
+            let state = match field(machine, "state").as_str() {
+                "inStep" => "in step",
+                "behind" => "behind",
+                "unreachable" => "not answering",
+                _ => "not scanned",
+            };
+            let mut row = vec![field(machine, "machine"), state.into()];
+            row.extend(KINDS.iter().map(|kind| match counts.get(*kind).and_then(Value::as_u64).unwrap_or(0) {
+                0 => String::new(),
+                count => count.to_string(),
+            }));
+            row
         })
         .collect();
-    let mut out = vec![format!("Setup repo {} at {commit}", field(answer, "repo"))];
-    out.push(table(&["MACHINE", "STATE", "CHANGED", "MISSING", "TO REMOVE", "ONLY THERE"], &rows));
+    let in_step = answer.get("inStep").and_then(Value::as_u64).unwrap_or(0);
+    let read = answer.get("read").and_then(Value::as_u64).unwrap_or(0);
+    let mut out = vec![format!("Setup repo {} at {commit}: {in_step} of {read} machines in step", field(answer, "repo"))];
+    out.push(table(&["MACHINE", "STATE", "FILES", "SKILLS", "MCP", "HOOKS", "PLUGINS", "PROJECTS"], &rows));
+    for problem in items(answer, "problems") {
+        if let Some(text) = problem.as_str() {
+            out.push(format!("Not counted: {text}"));
+        }
+    }
     out.join("\n")
 }
 
@@ -475,6 +492,24 @@ mod tests {
         let plan = session_plan(&request, "Builds");
         assert!(plan.starts_with("This would start claude in Orca on whichever member of Builds has room and a checkout of github.com/acme/storefront, in a worktree of its own."), "{plan}");
         assert!(!plan.contains("secret plan"));
+    }
+
+    #[test]
+    fn sync_status_says_each_machines_standing_by_kind_and_what_wasnt_counted() {
+        let answer = json!({
+            "repo": "/Users/cam/agent-setup", "commit": "a1b2c3d4e5f6", "inStep": 1, "read": 2,
+            "machines": [
+                { "machine": "cam-mbp", "state": "inStep", "counts": { "files": 0, "skills": 0, "mcp": 0, "hooks": 0, "plugins": 0, "projects": 0 } },
+                { "machine": "ci-01", "state": "behind", "counts": { "files": 0, "skills": 0, "mcp": 0, "hooks": 0, "plugins": 2, "projects": 1 } },
+                { "machine": "lab-box", "state": "notScanned", "counts": {} },
+            ],
+            "problems": [".agents/hooks.json isn't JSON Arbor can read"],
+        });
+        let shown = sync_status(&answer);
+        assert!(shown.starts_with("Setup repo /Users/cam/agent-setup at a1b2c3d: 1 of 2 machines in step\n"), "{shown}");
+        assert!(shown.contains("ci-01    behind") && shown.contains("2        1"), "{shown}");
+        assert!(shown.contains("lab-box  not scanned"), "{shown}");
+        assert!(shown.ends_with("Not counted: .agents/hooks.json isn't JSON Arbor can read"), "{shown}");
     }
 
     #[test]

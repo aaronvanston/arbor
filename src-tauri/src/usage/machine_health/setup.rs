@@ -2152,6 +2152,11 @@ fn inventory(inner: &Inner) -> SetupInventory {
     SetupInventory { machines }
 }
 
+/// Each machine Sync covers, as the inventory lists them: its name, whether it's answering, and its last scan.
+pub(super) fn covered_machines(inner: &Inner) -> Vec<(String, bool, MachineSetup)> {
+    inventory(inner).machines.into_iter().map(|entry| (entry.machine, entry.reachable, entry.setup)).collect()
+}
+
 /// What each machine's agents load, as the last scans found it.
 #[tauri::command]
 pub(crate) async fn get_setup_inventory(state: tauri::State<'_, MachineHealthState>) -> Result<SetupInventory, String> {
@@ -2409,8 +2414,103 @@ pub(super) fn home_harness(setup: &MachineSetup, path: &str) -> Option<Harness> 
     setup.harness_homes.iter().find(|home| home.path == path).map(|home| home.harness)
 }
 
+/// What Sync's standing (`setup_standing`) reads of a scan, and nothing more.
+impl MachineSetup {
+    pub(super) fn scanned_at(&self) -> Option<i64> {
+        self.scanned_at
+    }
+
+    /// Read at least once: a scan has landed, or one was kept from before Arbor started.
+    pub(super) fn is_read(&self) -> bool {
+        self.scanned_at.is_some() || !self.homes.is_empty()
+    }
+
+    pub(super) fn homes(&self) -> &[SetupHome] {
+        &self.homes
+    }
+
+    pub(super) fn harness_homes(&self) -> &[HarnessHome] {
+        &self.harness_homes
+    }
+}
+
+impl SetupHome {
+    pub(super) fn agent(&self) -> HomeAgent {
+        self.agent
+    }
+
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub(super) fn items(&self) -> &[SetupItem] {
+        &self.items
+    }
+}
+
+impl HarnessHome {
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub(super) fn items(&self) -> &[SetupItem] {
+        &self.items
+    }
+}
+
+impl SetupItem {
+    pub(super) fn kind(&self) -> ItemKind {
+        self.kind
+    }
+
+    pub(super) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(super) fn path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
+    pub(super) fn sum(&self) -> Option<&str> {
+        self.sum.as_deref()
+    }
+
+    pub(super) fn is_link(&self) -> bool {
+        self.link.is_some()
+    }
+
+    pub(super) fn value(&self) -> Option<&str> {
+        self.value.as_deref()
+    }
+
+    pub(super) fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+
+    /// A skill folder with a SKILL.md, which the agents load.
+    pub(super) fn has_doc(&self) -> bool {
+        self.skill.as_ref().is_some_and(|skill| skill.has_doc)
+    }
+}
+
 #[cfg(test)]
 impl MachineSetup {
+    /// The same, with a file or skill folder at `item_path` in the home at `home`, fingerprinted `sum` (none for a link).
+    pub(super) fn with_file(mut self, home: &str, kind: ItemKind, item_path: &str, sum: Option<&str>) -> Self {
+        if let Some(found) = self.homes.iter_mut().find(|entry| entry.path == home) {
+            let mut item = SetupItem::new(kind, item_path.rsplit('/').next().unwrap_or(item_path));
+            item.path = Some(item_path.to_string());
+            item.sum = sum.map(str::to_string);
+            item.link = sum.is_none().then(|| "~/elsewhere".to_string());
+            if kind == ItemKind::Skill {
+                item.skill = Some(SkillFacts { files: 1, has_doc: true, declared_name: None, description_chars: 0, when_to_use_chars: 0, manual_only: false, source: None });
+            }
+            found.items.push(item);
+        }
+        self.scanned_at.get_or_insert(1);
+        self
+    }
+
     /// The same, with `script` in the machine's ~/.agents/hooks, which has to be one of its homes.
     pub(super) fn with_hook_script(mut self, script: &str) -> Self {
         if let Some(home) = self.homes.iter_mut().find(|home| home.path == "~/.agents") {

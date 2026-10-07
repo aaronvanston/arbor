@@ -1,5 +1,5 @@
 import { invokeCommand } from '../native/commands';
-import type { CheckoutStatus, PlaceFix, PlaceState, ProjectCell, ProjectDrift, ProjectFixRequest, ProjectsDrift } from '../native/types';
+import type { CheckoutStatus, PlaceFix, ProjectCell, ProjectDrift, ProjectFixRequest, ProjectsDrift } from '../native/types';
 
 /**
  * Where each of the setup repo's projects is on each machine, against where its project.json wants it: the place the
@@ -41,28 +41,13 @@ export function machinesToScan(drift: ProjectsDrift, now: number): Set<string> {
 }
 
 /** What a cell needs before the project is where the repo wants it on that machine; empty when it's there. */
-export type CellNeed = 'link' | 'clone' | 'clear' | 'scan' | 'pull' | 'fetch' | 'skills';
+export type CellNeed = ProjectCell['needs'][number];
 
-/** The states where the project isn't at its place yet. */
-const NOT_THERE: Record<PlaceState, CellNeed | null> = {
-  inPlace: null,
-  linked: null,
-  elsewhere: 'link',
-  missing: 'clone',
-  blocked: 'clear',
-  notScanned: 'scan',
-};
-
-/** What a cell needs, in the order it'd be done: the place first, then bringing the checkout up to date. */
-export function cellNeeds(cell: ProjectCell): CellNeed[] {
-  const needs: CellNeed[] = [];
-  const place = NOT_THERE[cell.state];
-  if (place) needs.push(place);
-  if (cell.status?.fetchFailed) needs.push('fetch');
-  if (cell.status && behindOnDefault(cell.status) > 0) needs.push('pull');
-  if (cell.skillsOut > 0) needs.push('skills');
-  return needs;
-}
+/**
+ * What a cell needs, in the order it'd be done: the place first, then bringing the checkout up to date. Worked out in
+ * Rust (`project_places::cell_needs`), where Sync's standing counts a project behind from the same list.
+ */
+export const cellNeeds = (cell: ProjectCell): CellNeed[] => cell.needs;
 
 /** How far the checkout is behind, counted only on the remote's default branch, the one Sync keeps up to date. */
 export function behindOnDefault(status: CheckoutStatus): number {
@@ -93,7 +78,7 @@ export function splitProjects(drift: ProjectsDrift): { active: ProjectDrift[]; a
 /** How many of the projects on each machine aren't where the repo wants them, or up to date, by machine. */
 export function behindByMachine(drift: ProjectsDrift): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const project of drift.projects) {
+  for (const project of drift.projects.filter((found) => !found.archived)) {
     for (const cell of project.cells) {
       if (cellNeeds(cell).some((need) => need !== 'scan')) counts.set(cell.machine, (counts.get(cell.machine) ?? 0) + 1);
     }

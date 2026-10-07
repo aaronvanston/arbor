@@ -52,6 +52,9 @@ pub(crate) struct ProjectCell {
     /// are missing or out of date. A folder left alone as the project's own counts as in step.
     skills_total: u32,
     skills_out: u32,
+    /// What it needs before it's where the repo wants it and up to date, in the order it'd be done. Sync's standing
+    /// counts a project behind on a machine from this, so Sync › Projects and Overview never disagree.
+    needs: Vec<CellNeed>,
 }
 
 impl ProjectCell {
@@ -77,7 +80,7 @@ impl ProjectCell {
 
     #[cfg(test)]
     pub(super) fn for_test(state: PlaceState, path: &str, checkout: Option<&str>, status: Option<CheckoutStatus>) -> Self {
-        ProjectCell { machine: "ci-01".into(), path: path.into(), state, blocker: None, blocker_remote: None, link: None, checkout: checkout.map(str::to_string), status, others: Vec::new(), skills_total: 0, skills_out: 0 }
+        ProjectCell { machine: "ci-01".into(), path: path.into(), state, blocker: None, blocker_remote: None, link: None, checkout: checkout.map(str::to_string), status, others: Vec::new(), skills_total: 0, skills_out: 0, needs: Vec::new() }
     }
 }
 
@@ -177,6 +180,7 @@ fn cell(project: &ProjectPlaces, machine: &str, path: &str, scan: Option<&Machin
         others: Vec::new(),
         skills_total: 0,
         skills_out: 0,
+        needs: Vec::new(),
     };
     let Some(place) = scan.and_then(|scan| scan.places().iter().find(|place| place.path == path)) else {
         return cell;
@@ -223,6 +227,72 @@ fn cell(project: &ProjectPlaces, machine: &str, path: &str, scan: Option<&Machin
         }
     }
     cell
+}
+
+/// What a project's cell needs before the project is where the repo wants it on that machine and up to date.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum CellNeed {
+    /// A checkout is elsewhere: a link at the place.
+    Link,
+    /// No checkout on the machine.
+    Clone,
+    /// Something else is at the place, which is the user's to clear.
+    Clear,
+    /// The machine's projects haven't been scanned with this place in mind. Never counted as behind.
+    Scan,
+    /// The checkout is behind its upstream on the remote's default branch.
+    Pull,
+    /// The last fetch failed.
+    Fetch,
+    /// Copies of the project's own skills are missing or out of date.
+    Skills,
+}
+
+/// How far a checkout is behind, counted only on the remote's default branch, the one Sync keeps up to date.
+fn behind_on_default(status: &CheckoutStatus) -> u32 {
+    let behind = status.behind.unwrap_or(0);
+    if behind == 0 || status.upstream.is_none() || status.branch.is_none() {
+        return 0;
+    }
+    if status.default_branch.is_none() || status.upstream == status.default_branch { behind } else { 0 }
+}
+
+/// What a cell needs, in the order it'd be done: the place first, then bringing the checkout up to date.
+pub(super) fn cell_needs(cell: &ProjectCell) -> Vec<CellNeed> {
+    let mut needs = Vec::new();
+    match cell.state {
+        PlaceState::InPlace | PlaceState::Linked => {}
+        PlaceState::Elsewhere => needs.push(CellNeed::Link),
+        PlaceState::Missing => needs.push(CellNeed::Clone),
+        PlaceState::Blocked => needs.push(CellNeed::Clear),
+        PlaceState::NotScanned => needs.push(CellNeed::Scan),
+    }
+    if let Some(status) = &cell.status {
+        if status.fetch_failed {
+            needs.push(CellNeed::Fetch);
+        }
+        if behind_on_default(status) > 0 {
+            needs.push(CellNeed::Pull);
+        }
+    }
+    if cell.skills_out > 0 {
+        needs.push(CellNeed::Skills);
+    }
+    needs
+}
+
+impl ProjectsDrift {
+    /// Each project on record, archived ones aside, that `machine` is behind on: one that needs something there besides
+    /// a scan. Its key and name.
+    pub(super) fn behind_on(&self, machine: &str) -> Vec<&str> {
+        self.projects
+            .iter()
+            .filter(|project| !project.archived)
+            .filter(|project| project.cells.iter().any(|cell| cell.machine == machine && cell.needs.iter().any(|need| *need != CellNeed::Scan)))
+            .map(|project| project.project.as_str())
+            .collect()
+    }
 }
 
 /// How many copies of a project's own skills its checkouts and worktrees on a machine should have, and how many are
@@ -274,6 +344,7 @@ pub(super) fn drift(layers: &SetupLayers, machines: &[String], scans: &BTreeMap<
                     if let (Some(scan), Some(entry)) = (scan, layers.project(&project.project)) {
                         (cell.skills_total, cell.skills_out) = skill_standing(&cell, scan, &entry.own_skill_prints(), project.remote.as_deref());
                     }
+                    cell.needs = cell_needs(&cell);
                     cell
                 })
                 .collect();

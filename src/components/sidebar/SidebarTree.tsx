@@ -11,9 +11,10 @@ import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
 import { useFleetHealthSelect } from '../../services/fleetHealth';
 import { accountsBadge, badgeDestination, machinesBadge, poolsBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
+import { machinesBehind, useSyncStanding } from '../../services/syncStanding';
 import { POOL_STANDING_LABEL, poolStanding, usePoolsSelect, type PoolStanding } from '../../services/pools';
 import { useQuotaClock } from '../../services/quotaTime';
-import { setupChecks } from '../../services/setupChecks';
+import { setupChecks, type SetupCheck } from '../../services/setupChecks';
 import { replaceEqualDeep } from '../../services/stableValue';
 import { fetchSetupInventory, SETUP_INVENTORY_UPDATED_EVENT } from '../../services/setupInventory';
 import {
@@ -80,7 +81,8 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
   const machines = useFleetHealthSelect((health): TreeMachine[] => (health ?? []).map((machine) => ({ name: machine.machine, status: machine.status })));
   const pools = usePoolsSelect(({ pools: poolList, previews }): TreePool[] =>
     (poolList ?? []).map((pool) => ({ id: pool.id, name: pool.name, ...poolStanding(pool, previews.find((preview) => preview.pool === pool.id)) })));
-  const [setup, setSetup] = useState<PageBadge | null>(null);
+  const [problemChecks, setProblemChecks] = useState<{ level: SetupCheck['level']; machine: string }[]>([]);
+  const { standing } = useSyncStanding();
 
   useEffect(() => {
     if (coreReady) void ensureAccountsLoaded();
@@ -90,7 +92,9 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
     let disposed = false;
     const read = () => {
       fetchSetupInventory()
-        .then((inventory) => { if (!disposed) setSetup((previous) => replaceEqualDeep(previous, setupBadge(setupChecks(inventory.machines)))); })
+        .then((inventory) => {
+          if (!disposed) setProblemChecks((previous) => replaceEqualDeep(previous, setupChecks(inventory.machines).filter((check) => check.level === 'problem').map(({ level, machine }) => ({ level, machine }))));
+        })
         .catch(() => undefined);
     };
     read();
@@ -103,6 +107,8 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
 
   const machinesMark = useMemo(() => machinesBadge(machines.map((machine) => machine.status)), [machines]);
   const poolsMark = useMemo(() => poolsBadge(pools.map((pool) => pool.standing)), [pools]);
+  const behind = useMemo(() => machinesBehind(standing).map((machine) => machine.machine), [standing]);
+  const setup = useMemo(() => setupBadge(problemChecks, behind), [problemChecks, behind]);
   return { badges: { accounts, machines: machinesMark, pools: poolsMark, setup }, machines, pools };
 }
 

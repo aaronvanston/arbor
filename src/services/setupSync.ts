@@ -59,6 +59,8 @@ const setupRepo = savedStore<string | null>({
 
 export const storedSetupRepo = () => setupRepo.get();
 export const storeSetupRepo = (path: string | null) => setupRepo.set(path);
+/** Hears when the setup repo setting changes, here or from the command line. */
+export const subscribeSetupRepo = (listener: () => void) => setupRepo.subscribe(listener);
 
 /** A skill in a machine's store, as the scan names it. */
 export const isStoreSkill = (path: string) => /^~\/\.agents\/skills\/[^/.][^/]*$/.test(path);
@@ -303,8 +305,11 @@ export const tally = (paths: string[]) => {
   return { files: paths.length - skills, skills };
 };
 
-/** In step once nothing the repo has differs or is missing, and nothing it removed is left; files only the machine has may stay. */
-export const inStep = (counts: SyncCounts) => counts.update + counts.add + counts.removed === 0;
+/**
+ * Whether the file review has nothing to write: no file or skill differs or is missing, and nothing the repo removed is
+ * left. Only the review's own question; whether a machine is in step is Sync's standing (`syncStanding.ts`).
+ */
+export const nothingToApply = (counts: SyncCounts) => counts.update + counts.add + counts.removed === 0;
 
 /** Whether a machine has been read, so there's something to compare with the repo. */
 export const scanned = (machine: SetupMachine) => machine.scannedAt !== null || machine.homes.length > 0;

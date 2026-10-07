@@ -223,6 +223,113 @@ impl SetupRepo {
     pub(super) fn head_sha(&self) -> Option<&str> {
         self.head.as_ref().map(|head| head.sha.as_str())
     }
+
+    pub(super) fn files(&self) -> &[RepoFile] {
+        &self.files
+    }
+
+    pub(super) fn skills(&self) -> &[RepoSkill] {
+        &self.skills
+    }
+
+    pub(super) fn skill_machines(&self) -> &SkillMachines {
+        &self.skill_machines
+    }
+
+    pub(super) fn file_machines(&self) -> &SkillMachines {
+        &self.file_machines
+    }
+
+    pub(super) fn removed_skills(&self) -> &[String] {
+        &self.removed_skills
+    }
+
+    pub(super) fn removed_files(&self) -> &[String] {
+        &self.removed_files
+    }
+
+    pub(super) fn off_skills(&self) -> &[String] {
+        &self.off_skills
+    }
+
+    pub(super) fn off_files(&self) -> &[String] {
+        &self.off_files
+    }
+
+    pub(super) fn plugins(&self) -> &[RepoPlugin] {
+        &self.plugins
+    }
+
+    pub(super) fn codex_plugins(&self) -> &[RepoPlugin] {
+        &self.codex_plugins
+    }
+}
+
+impl RepoFile {
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub(super) fn kind(&self) -> SyncFileKind {
+        self.kind
+    }
+
+    /// Its fingerprint as a machine with `ck` (no SHA-256 tool) gives one, or as the rest do.
+    pub(super) fn print(&self, ck: bool) -> &str {
+        if ck { &self.ck } else { &self.sum }
+    }
+}
+
+#[cfg(test)]
+impl SetupRepo {
+    /// An empty repo at a commit, for tests that lay files, skills and plugins into it.
+    pub(super) fn for_test() -> Self {
+        Self {
+            path: "/repo".into(),
+            branch: Some("main".into()),
+            head: Some(RepoCommit { sha: "a".repeat(40), subject: "Start".into(), at_ms: 1 }),
+            upstream: None,
+            uncommitted: Vec::new(),
+            files: Vec::new(),
+            skills: Vec::new(),
+            ignored: Vec::new(),
+            skill_machines: SkillMachines::new(),
+            removed_skills: Vec::new(),
+            removed_files: Vec::new(),
+            off_skills: Vec::new(),
+            off_files: Vec::new(),
+            file_machines: SkillMachines::new(),
+            skill_projects: SkillProjects::new(),
+            mcp_projects: SkillProjects::new(),
+            plugins: Vec::new(),
+            codex_plugins: Vec::new(),
+            instructions: Vec::new(),
+            layers: SetupLayers::default(),
+        }
+    }
+
+    pub(super) fn with_file(mut self, path: &str, sum: &str) -> Self {
+        let kind = managed(path.trim_start_matches("~/")).expect("a file the repo syncs");
+        self.files.push(RepoFile { path: path.into(), kind, sum: sum.into(), ck: "c1-1".into(), size: 1 });
+        self
+    }
+
+    pub(super) fn with_skill(mut self, skill: RepoSkill) -> Self {
+        self.skills.push(skill);
+        self
+    }
+
+    pub(super) fn with_plugin(mut self, plugin: RepoPlugin, codex: bool) -> Self {
+        if codex { self.codex_plugins.push(plugin) } else { self.plugins.push(plugin) }
+        self
+    }
+
+    pub(super) fn with_marks(mut self, removed_files: &[&str], removed_skills: &[&str], off_skills: &[&str]) -> Self {
+        self.removed_files = removed_files.iter().map(|path| path.to_string()).collect();
+        self.removed_skills = removed_skills.iter().map(|name| name.to_string()).collect();
+        self.off_skills = off_skills.iter().map(|name| name.to_string()).collect();
+        self
+    }
 }
 
 pub(super) async fn git(folder: &Path, args: &[&str], timeout: Duration) -> Result<std::process::Output, String> {

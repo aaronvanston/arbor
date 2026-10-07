@@ -158,6 +158,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::setup::SetupSkillFile>();
         types.visit::<crate::usage::machine_health::setup_sync::SetupRepo>();
         types.visit::<crate::usage::machine_health::project_places::ProjectsDrift>();
+        types.visit::<crate::usage::machine_health::setup_standing::SyncStanding>();
         types.visit::<crate::usage::machine_health::project_fixes::ProjectFixRequest>();
         types.visit::<crate::usage::machine_health::project_fixes::ProjectFixes>();
         types.visit::<crate::usage::machine_health::project_skills::ProjectSkillsOutcome>();

@@ -45,22 +45,34 @@ describe('the Machines link’s dot', () => {
   });
 });
 
-describe('the Setup link’s count', () => {
-  it('counts problems only; warnings and notes wait on the page', () => {
-    expect(setupBadge([])).toBeNull();
-    expect(setupBadge([{ level: 'warning' }, { level: 'note' }])).toBeNull();
-    expect(setupBadge([{ level: 'problem' }, { level: 'warning' }, { level: 'problem' }])).toEqual({ tone: 'warning', count: 2, label: 'sidebar.badge.setup.other' });
+describe('the Sync link’s count', () => {
+  const problem = (machine: string) => ({ level: 'problem' as const, machine });
+  const warning = (machine: string) => ({ level: 'warning' as const, machine });
+
+  it('counts machines behind the setup repo, as Sync’s standing has them', () => {
+    expect(setupBadge([], [])).toBeNull();
+    expect(setupBadge([], ['ci-01', 'cedar-02'])).toEqual({ tone: 'warning', count: 2, label: 'sidebar.badge.setup.behind.other' });
+    expect(en['sidebar.badge.setup.behind.one'].replace('{count}', '1')).toBe('1 machine behind the setup repo');
   });
 
-  it('reads one problem in the singular', () => {
-    expect(setupBadge([{ level: 'problem' }])).toEqual({ tone: 'warning', count: 1, label: 'sidebar.badge.setup.one' });
-    expect(en['sidebar.badge.setup.one'].replace('{count}', '1')).toBe('1 setup problem');
+  it('counts machines with problems too, warnings and notes waiting on the page, and each machine once', () => {
+    expect(setupBadge([warning('ci-01'), { level: 'note', machine: 'ci-01' }])).toBeNull();
+    expect(setupBadge([problem('ci-01'), warning('cam-mbp'), problem('ci-01')])).toEqual({ tone: 'warning', count: 1, label: 'sidebar.badge.setup.one' });
+    expect(en['sidebar.badge.setup.one'].replace('{count}', '1')).toBe('1 machine with setup problems');
+    expect(setupBadge([problem('ci-01'), problem('lab-box')], ['ci-01', 'cedar-02'])).toEqual({ tone: 'warning', count: 3, label: 'sidebar.badge.setup.both.other' });
   });
 });
 
 describe('where a sidebar badge leads', () => {
-  it('opens Sync’s Checks showing only the problems it counts', () => {
-    const badge = present(setupBadge([{ level: 'problem' }, { level: 'warning' }]));
+  it('opens Overview for machines behind, which has the checks below it too', () => {
+    expect(badgeDestination('setup', present(setupBadge([], ['ci-01'])))).toEqual({
+      view: { kind: 'main', page: 'setup', params: { tab: 'overview' } },
+      place: 'sidebar.badge.place.overview',
+    });
+  });
+
+  it('opens Sync’s Checks showing only the problems when that’s all it counts', () => {
+    const badge = present(setupBadge([{ level: 'problem', machine: 'ci-01' }, { level: 'warning', machine: 'ci-01' }]));
     expect(badgeDestination('setup', badge)).toEqual({
       view: { kind: 'main', page: 'setup', params: { tab: 'overview' } },
       place: 'sidebar.badge.place.checks',

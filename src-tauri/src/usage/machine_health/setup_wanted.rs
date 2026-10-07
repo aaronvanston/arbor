@@ -92,6 +92,24 @@ pub(crate) struct RepoPlugin {
     projects: BTreeMap<String, ProjectValue>,
 }
 
+impl RepoPlugin {
+    /// What the repo wants of it on `machine`: the machine's own value, else All machines'.
+    pub(super) fn wanted_on(&self, machine: &str) -> PluginWanted {
+        self.machines.get(&normalize_machine_name(machine)).copied().unwrap_or(self.all)
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(id: &str, all: PluginWanted, machines: &[(&str, PluginWanted)]) -> Self {
+        Self {
+            id: id.into(),
+            source: None,
+            all,
+            machines: machines.iter().map(|(machine, wanted)| (normalize_machine_name(machine), *wanted)).collect(),
+            projects: BTreeMap::new(),
+        }
+    }
+}
+
 /// A project's value for a plugin or a skill: on every machine, and on one (by normalized name), which wins.
 /// Only on or off; a project without one follows its machine.
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq, TS)]

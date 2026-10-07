@@ -288,6 +288,35 @@ impl RepoSkill {
     pub(super) fn name(&self) -> &str {
         &self.name
     }
+
+    /// Where it goes, as a machine's scan names it.
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Why it can't be synced, when it can't.
+    pub(super) fn problem(&self) -> Option<&'static str> {
+        self.problem
+    }
+
+    /// Its fingerprint as a machine with `ck` (no SHA-256 tool) gives one, or as the rest do; None when it can't be synced.
+    pub(super) fn print(&self, ck: bool) -> Option<&str> {
+        if ck { self.ck.as_deref() } else { self.sum.as_deref() }
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(name: &str, sum: &str) -> Self {
+        Self {
+            name: name.into(),
+            path: format!("~/.agents/skills/{name}"),
+            sum: Some(sum.into()),
+            ck: Some("c1-1".into()),
+            files: 1,
+            size: 1,
+            problem: None,
+            source: None,
+        }
+    }
 }
 
 /// A file or link in a skill, as a commit lists it.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { withNeeds } from '../src/dev/mock/projectNeeds';
 import type { CheckoutStatus, ProjectCell, ProjectDrift, ProjectsDrift } from '../src/native/types';
 import { behindByMachine, behindOnDefault, canMove, cellFixes, cellNeeds, dirtyCount, isStale, machineFixes, machinesToScan, matchesQuery, PLACE_STALE_MS, SCAN_REFRESH_MS, projectInStep, projectName, splitProjects } from '../src/services/projectPlaces';
 
@@ -7,8 +8,9 @@ const status = (extra: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
   fetchedAt: 1_000, fetchFailed: false, worktrees: 0, ...extra,
 });
 
-const cell = (machine: string, state: ProjectCell['state'], extra: Partial<ProjectCell> = {}): ProjectCell => ({
-  machine, path: '~/code/cam/arbor', state, blocker: null, blockerRemote: null, link: null, checkout: null, status: null, others: [], skillsTotal: 0, skillsOut: 0, ...extra,
+// Each cell's needs as Rust works them out (`project_places::cell_needs`), through the mock that stands in for it.
+const cell = (machine: string, state: ProjectCell['state'], extra: Partial<ProjectCell> = {}): ProjectCell => withNeeds({
+  machine, path: '~/code/cam/arbor', state, blocker: null, blockerRemote: null, link: null, checkout: null, status: null, others: [], skillsTotal: 0, skillsOut: 0, needs: [], ...extra,
 });
 
 const project = (name: string, cells: ProjectCell[], extra: Partial<ProjectDrift> = {}): ProjectDrift => ({

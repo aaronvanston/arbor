@@ -3,15 +3,17 @@ import { machineColumns, pluginSummary } from './pluginGrid';
 import { mcpSummary } from './mcpGrid';
 import { HOOK_AGENT_KINDS, hookAgents, hookRows, hookSummary } from './setupHooks';
 import { isRemovedServer } from './setupMcp';
-import { removableKind, scanned, syncPlan } from './setupSync';
+import { removableKind } from './setupSync';
 import { isCodexOwnMarketplace, type ExtensionsView, type PluginRow } from './setupPlugins';
-import { fleetSkills, repoSkillState, STORE } from './setupSkills';
-import type { HookRegistry, SetupMachine, SetupRepo } from '../native/types';
+import { fleetSkills, repoSkillState, type FleetSkillRow } from './setupSkills';
+import { machinesBehindOn } from './syncStanding';
+import type { HookRegistry, SetupMachine, SetupRepo, SyncStanding } from '../native/types';
 
 /**
  * Sync › Library: everything the setup repo gives the machines' agents, one row each, whatever kind it is, with the
- * repo's word for every machine and how the machines stand against it. The per-kind grids work out the details; this
- * only sums them up, so a row says the same as its grid under By machine.
+ * repo's word for every machine and how the machines stand against it. Which machines are behind on a row comes from
+ * Sync's standing (`syncStanding.ts`), worked out in Rust, so the Library, Overview, the Repo strip and the sidebar
+ * never disagree; the rest of a row only describes it.
  */
 
 export type LibraryKind = 'plugins' | 'mcps' | 'skills' | 'hooks' | 'instructions';
@@ -49,7 +51,7 @@ export type LibraryRow = {
   /** The machines that have it on in some home, of those that have a home for it. */
   on: string[];
   fleet: string[];
-  /** Machines not as the repo has it, which bringing them in line changes. */
+  /** Machines not as the repo has it, which bringing them in line changes, as Sync's standing says. */
   behind: string[];
   /** Machines with a value of their own, where the repo's word for every machine doesn't apply. */
   exceptions: number;
@@ -69,7 +71,7 @@ const unique = <T,>(values: T[]) => [...new Set(values)];
 /** The machines with a home for an agent's things. */
 const fleetOf = (homes: { machine: string }[]) => unique(homes.map((home) => home.machine));
 
-function pluginRows(view: ExtensionsView, codex: boolean): LibraryRow[] {
+function pluginRows(view: ExtensionsView, codex: boolean, behindOn: (key: string) => string[]): LibraryRow[] {
   const homes = codex ? view.codexHomes : view.claudeHomes;
   const columns = machineColumns(homes);
   const fleet = fleetOf(homes);
@@ -89,7 +91,7 @@ function pluginRows(view: ExtensionsView, codex: boolean): LibraryRow[] {
         state,
         on: summaries.filter((summary) => summary.on > 0).map((summary) => summary.machine),
         fleet,
-        behind: summaries.filter((summary) => summary.differs && columns.find((column) => column.machine === summary.machine)?.reachable).map((summary) => summary.machine),
+        behind: behindOn(`plugin:${codex ? 'codex' : 'claude'}:${row.id}`),
         exceptions: row.repo ? Object.keys(row.repo.machines).length : 0,
         places: Object.fromEntries(columns.map((column) => {
           const own = row.repo?.machines[machineLookKey(column.machine)] ?? null;
@@ -102,7 +104,7 @@ function pluginRows(view: ExtensionsView, codex: boolean): LibraryRow[] {
     });
 }
 
-function serverRows(view: ExtensionsView, found: boolean): LibraryRow[] {
+function serverRows(view: ExtensionsView, found: boolean, behindOn: (key: string) => string[]): LibraryRow[] {
   const columns = machineColumns(view.mcpHomes);
   // A plugin's servers come and go with it, and a claude.ai connector is the account's, so neither is the repo's.
   return view.servers.filter((row) => row.origin === 'config').map((row): LibraryRow => {
@@ -121,7 +123,7 @@ function serverRows(view: ExtensionsView, found: boolean): LibraryRow[] {
       state,
       on: summaries.filter((summary) => summary.state === 'on' || summary.state === 'some').map((summary) => summary.machine),
       fleet: fleetOf(view.mcpHomes),
-      behind: summaries.filter((summary) => summary.differs).map((summary) => summary.machine),
+      behind: behindOn(`mcp:${row.name}`),
       exceptions: server ? server.off.length + server.own.length : 0,
       places: Object.fromEntries(columns.map((column) => {
         const own = !server ? null : server.off.includes(column.machine) ? 'off' : server.own.includes(column.machine) ? 'own' : null;
@@ -134,9 +136,12 @@ function serverRows(view: ExtensionsView, found: boolean): LibraryRow[] {
   });
 }
 
-function skillRows(machines: SetupMachine[], repo: SetupRepo | null, behindOn: (path: string) => string[]): LibraryRow[] {
+function skillRows(machines: SetupMachine[], repo: SetupRepo | null, behindOn: (key: string) => string[]): LibraryRow[] {
   const fleet = fleetSkills(machines);
-  return fleet.rows.map((row): LibraryRow => {
+  // A skill the repo has that no machine has yet still has a row, so the machines it's to be added to can be behind on it.
+  const found = new Set(fleet.rows.map((row) => row.name));
+  const repoOnly = (repo?.skills ?? []).filter((skill) => !found.has(skill.name)).map((skill): FleetSkillRow => ({ name: skill.name, source: skill.source?.source ?? null, cells: {} }));
+  return [...fleet.rows, ...repoOnly].map((row): LibraryRow => {
     const state = repo ? repoSkillState(repo, row.name) : 'absent';
     const off = state === 'synced' && Boolean(repo?.offSkills.includes(row.name));
     const cells = Object.entries(row.cells).flatMap(([machine, cell]) => (cell ? [{ machine, cell }] : []));
@@ -150,8 +155,7 @@ function skillRows(machines: SetupMachine[], repo: SetupRepo | null, behindOn: (
       state: off ? 'off' : state === 'synced' ? 'on' : state === 'removed' ? 'removed' : 'unlisted',
       on: cells.filter(({ cell }) => cell.loads > 0).map(({ machine }) => machine),
       fleet: fleet.machines,
-      // A skill the repo has is behind where the repo's sync would change the store; one it hasn't is each machine's own.
-      behind: state === 'synced' ? behindOn(`${STORE}/${row.name}`) : [],
+      behind: behindOn(`skill:${row.name}`),
       exceptions: Object.keys(repo?.skillMachines[row.name] ?? {}).length,
       places: Object.fromEntries(fleet.machines.map((machine) => {
         const own = repo?.skillMachines[row.name]?.[machineLookKey(machine)] ?? null;
@@ -164,7 +168,7 @@ function skillRows(machines: SetupMachine[], repo: SetupRepo | null, behindOn: (
   });
 }
 
-function hookLibraryRows(registry: HookRegistry, machines: readonly string[]): LibraryRow[] {
+function hookLibraryRows(registry: HookRegistry, machines: readonly string[], behindOn: (key: string) => string[]): LibraryRow[] {
   return hookRows(registry).map((row): LibraryRow => {
     const summaries = machines.map((machine) => ({ machine, summary: hookSummary(registry, row, machine) }));
     const view = row.view;
@@ -177,7 +181,7 @@ function hookLibraryRows(registry: HookRegistry, machines: readonly string[]): L
       state: !view ? 'unlisted' : view.removed ? 'removed' : view.allOff ? 'off' : 'on',
       on: summaries.filter(({ summary }) => ['same', 'update', 'extra', 'mixed'].includes(summary.state)).map(({ machine }) => machine),
       fleet: [...machines],
-      behind: summaries.filter(({ summary }) => summary.differs).map(({ machine }) => machine),
+      behind: behindOn(`hook:${row.key}`),
       exceptions: view?.off.length ?? 0,
       places: Object.fromEntries(summaries.map(({ machine, summary }) => {
         const own = view?.off.includes(machine) ? 'off' : null;
@@ -204,7 +208,7 @@ function fileRows(repo: SetupRepo, machines: readonly string[], behindOn: (path:
       state: gone ? 'removed' : off ? 'off' : 'on',
       on: gone || off ? [] : machines.filter((machine) => !offHere.includes(machineLookKey(machine))),
       fleet: [...machines],
-      behind: gone ? [] : behindOn(path),
+      behind: behindOn(`file:${path}`),
       exceptions: Object.keys(repo.fileMachines[path] ?? {}).length,
       places: Object.fromEntries(machines.map((machine) => {
         const own = repo.fileMachines[path]?.[machineLookKey(machine)] ?? null;
@@ -223,25 +227,23 @@ export type LibrarySources = {
   /** The MCP registry's file is there and readable, so servers can be compared with it. */
   registryFound: boolean;
   hooks: HookRegistry | null;
+  /** Sync's standing, which says which machines are behind on each row; none behind until it's read. */
+  standing: SyncStanding | null;
 };
 
 /**
  * Every row of every kind, each kind in name order. Only what the repo lists can be behind it: machines differing over
  * something it doesn't list is each machine's business until it's taken in.
  */
-export function libraryRows({ machines, view, repo, registryFound, hooks }: LibrarySources): LibraryRow[] {
+export function libraryRows({ machines, view, repo, registryFound, hooks, standing }: LibrarySources): LibraryRow[] {
   const names = machines.map((machine) => machine.machine);
-  // Each answering machine against the repo's files and skills once, as its review would see it.
-  const plans = repo ? machines.filter((machine) => machine.reachable && scanned(machine)).map((machine) => ({ machine: machine.machine, files: syncPlan(repo, machine) })) : [];
-  const behindOn = (path: string) => plans
-    .filter(({ files }) => files.some((file) => file.path === path && (file.state === 'add' || file.state === 'update' || file.state === 'removed')))
-    .map(({ machine }) => machine);
+  const behindOn = (key: string) => machinesBehindOn(standing, key);
   const byName = (a: LibraryRow, b: LibraryRow) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key);
   const rows = [
-    ...[...pluginRows(view, false), ...pluginRows(view, true)].sort(byName),
-    ...serverRows(view, registryFound).sort(byName),
+    ...[...pluginRows(view, false, behindOn), ...pluginRows(view, true, behindOn)].sort(byName),
+    ...serverRows(view, registryFound, behindOn).sort(byName),
     ...skillRows(machines, repo, behindOn).sort(byName),
-    ...(hooks ? hookLibraryRows(hooks, names).sort(byName) : []),
+    ...(hooks ? hookLibraryRows(hooks, names, behindOn).sort(byName) : []),
     ...(repo ? fileRows(repo, names, behindOn) : []),
   ];
   return rows.map((row) => (row.state === 'unlisted' && row.behind.length ? { ...row, behind: [] } : row));

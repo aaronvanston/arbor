@@ -779,6 +779,20 @@ export type BackupSkill = {
 };
 
 /**
+ * One item a machine is behind on.
+ */
+export type BehindItem = {
+  kind: StandingKind,
+  /**
+   * The Library row's key (`file:~/.claude/CLAUDE.md`, `skill:pdf`, `mcp:linear`, `hook:repo:guard`,
+   * `plugin:claude:paper@paper`), or `project:owner/name`.
+   */
+  key: string,
+  name: string,
+  drift: ItemDrift,
+};
+
+/**
  * Why a worktree can't be removed.
  */
 export type Blocker = "main" | "locked" | "nested" | "missing" | "unknown" | "dirty" | "hidden" | "midway" | "unreachable" | "open" | "recent" | "defaultBranch" | "notMerged";
@@ -864,6 +878,11 @@ export type CatalogPlugin = {
    */
   installable: boolean,
 };
+
+/**
+ * What a project's cell needs before the project is where the repo wants it on that machine and up to date.
+ */
+export type CellNeed = "link" | "clone" | "clear" | "scan" | "pull" | "fetch" | "skills";
 
 /**
  * What made a change, as its backup names it.
@@ -2456,6 +2475,11 @@ export type InstallMethod = "native" | "homebrew" | "npm" | "bun" | "pnpm" | "mi
  */
 export type InstructionFile = "claudeLocal" | "agentsOverride";
 
+/**
+ * What bringing the machine in line would do to an item.
+ */
+export type ItemDrift = "add" | "update" | "remove";
+
 export type ItemKind = "instructions" | "import" | "rule" | "skill" | "subagent" | "command" | "hook" | "mcp" | "plugin" | "marketplace" | "setting" | "env" | "profile";
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
@@ -2474,6 +2498,18 @@ export type KeptVersion = {
    * A rustup toolchain's channel, like `stable` or `nightly-2026-09-01`.
    */
   label: string | null,
+};
+
+/**
+ * How many items a machine is behind on, by kind.
+ */
+export type KindCounts = {
+  files: number,
+  skills: number,
+  mcp: number,
+  hooks: number,
+  plugins: number,
+  projects: number,
 };
 
 /**
@@ -2960,6 +2996,20 @@ export type MachineSessions = {
    */
   latest: Array<UsageSession>,
 };
+
+export type MachineStanding = {
+  machine: string,
+  state: MachineState,
+  reachable: boolean,
+  scannedAt: number | null,
+  behind: Array<BehindItem>,
+  counts: KindCounts,
+};
+
+/**
+ * Where a machine stands.
+ */
+export type MachineState = "inStep" | "behind" | "unreachable" | "notScanned";
 
 export type MachineTelemetry = {
   machine: string,
@@ -3665,6 +3715,11 @@ export type ProjectCell = {
    */
   skillsTotal: number,
   skillsOut: number,
+  /**
+   * What it needs before it's where the repo wants it and up to date, in the order it'd be done. Sync's standing
+   * counts a project behind on a machine from this, so Sync › Projects and Overview never disagree.
+   */
+  needs: Array<CellNeed>,
 };
 
 /**
@@ -5384,6 +5439,11 @@ export type SpendGroup = {
   sessions: number,
 };
 
+/**
+ * The kind of thing a machine can be behind on.
+ */
+export type StandingKind = "file" | "skill" | "mcp" | "hook" | "plugin" | "project";
+
 export type StartingContext = {
   /**
    * Oldest first.
@@ -5441,6 +5501,26 @@ export type SyncOutcome = {
    */
   done: Array<string>,
   failed: Array<SyncFailure>,
+};
+
+/**
+ * Every machine's standing against the repo, with what it was worked out from, so a page needn't read the repo again.
+ */
+export type SyncStanding = {
+  repo: SetupRepo,
+  /**
+   * The repo's MCP servers against the machines, or why they couldn't be read (then they aren't counted).
+   */
+  mcp: McpRegistry | null,
+  mcpError: string | null,
+  hooks: HookRegistry | null,
+  hooksError: string | null,
+  machines: Array<MachineStanding>,
+  /**
+   * Of the machines read at least once, how many are in step.
+   */
+  inStep: number,
+  read: number,
 };
 
 export type SystemLocale = {

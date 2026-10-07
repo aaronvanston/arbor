@@ -1941,6 +1941,7 @@ fn main() {
             usage::machine_health::archive::reveal_session_archive,
             usage::machine_health::setup::get_setup_inventory,
             usage::machine_health::setup::scan_setup,
+            usage::machine_health::setup_standing::get_sync_standing,
             usage::machine_health::setup::read_setup_text,
             usage::machine_health::setup::read_setup_skill,
             usage::machine_health::setup_sync::get_setup_repo,

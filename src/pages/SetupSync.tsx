@@ -32,8 +32,8 @@ import {
   changeable,
   chosen,
   getSetupRepo,
-  inStep,
   isChecksum,
+  nothingToApply,
   listSetupBackups,
   pullSetupRepo,
   pushSetupRepo,
@@ -65,6 +65,7 @@ import type {
   SyncOutcome,
 } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
+import { reloadSyncStanding, standingOf, standingWords, useSyncStanding } from '../services/syncStanding';
 import { RepoBrowser } from './SetupRepoBrowser';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -97,16 +98,14 @@ export function outcomeText(outcome: SyncOutcome, machine: string, t: Translate,
   return { ok: true, text: tRich('setup.sync.outcome.done', { things: thingsText(outcome.done, t), machine: pill }) };
 }
 
-/** How a machine stands against the repo, in a few words. */
-function planSummary(plan: Plan, t: Translate): { text: string; inStep: boolean } {
+/** What a machine's review would change there, in a few words. */
+function reviewText(plan: Plan, t: Translate): string {
   const counts = syncCounts(plan.files);
-  const parts: string[] = [];
-  if (counts.update) parts.push(t('setup.repo.machine.update', { count: counts.update }));
-  if (counts.add) parts.push(t('setup.repo.machine.add', { count: counts.add }));
-  if (counts.removed) parts.push(t('setup.repo.machine.removed', { count: counts.removed }));
-  if (counts.extra) parts.push(t('setup.repo.machine.extra', { count: counts.extra }));
-  if (inStep(counts)) return { text: [t('setup.repo.machine.inStep'), ...parts].join(' · '), inStep: true };
-  return { text: parts.join(' · '), inStep: false };
+  return [
+    counts.update ? t('setup.repo.machine.update', { count: counts.update }) : null,
+    counts.add ? t('setup.repo.machine.add', { count: counts.add }) : null,
+    counts.removed ? t('setup.repo.machine.removed', { count: counts.removed }) : null,
+  ].filter(Boolean).join(' · ');
 }
 
 type Bulk = { running: boolean; results: { machine: string; ok: boolean; text: ReactNode }[] };
@@ -150,8 +149,12 @@ export function SetupRepoSection({ machines, history = null }: {
   useEffect(() => {
     if (!path) return undefined;
     void load(path);
-    // The repo is edited outside Arbor, so it's read again whenever Arbor comes back to the front.
-    const again = () => void load(path, true);
+    // The repo is edited outside Arbor, so it's read again whenever Arbor comes back to the front, and so is where the
+    // machines stand against it.
+    const again = () => {
+      void load(path, true);
+      reloadSyncStanding();
+    };
     window.addEventListener('focus', again);
     return () => window.removeEventListener('focus', again);
   }, [path, load]);
@@ -161,7 +164,7 @@ export function SetupRepoSection({ machines, history = null }: {
     [repo, machines],
   );
   const behind = repo?.head && first?.commit === repo.head.sha
-    ? plans.filter((plan) => plan.machine.machine !== first.machine && !inStep(syncCounts(plan.files)))
+    ? plans.filter((plan) => plan.machine.machine !== first.machine && !nothingToApply(syncCounts(plan.files)))
     : [];
 
   const adoptFolder = (folder: string, found: SetupRepo | null = null) => {
@@ -224,7 +227,7 @@ export function SetupRepoSection({ machines, history = null }: {
     const confirmed = await askConfirmation({
       title: t(behind.length === 1 ? 'setup.repo.rest.confirm.one' : 'setup.repo.rest.confirm.other', { count: behind.length }),
       message: t('setup.repo.rest.message', { commit: short(repo.head.sha) }),
-      details: behind.map((plan) => ({ label: <MachinePill name={plan.machine.machine} size="sm" />, value: planSummary(plan, t).text })),
+      details: behind.map((plan) => ({ label: <MachinePill name={plan.machine.machine} size="sm" />, value: reviewText(plan, t) })),
       confirmText: t('setup.repo.rest.confirm.button'),
     });
     if (!confirmed) return;
@@ -394,13 +397,22 @@ function RepoSummary({ path, repo, error, onForget }: { path: string; repo: Setu
   );
 }
 
-/** Each machine against the repo's last commit, in a line; a machine opens its review. */
+/**
+ * Each machine against the repo, in a line, as Sync's standing has it (every kind, not only the files this review
+ * changes); a machine opens its review.
+ */
 function MachineStrip({ plans, onReview }: { plans: Plan[]; onReview: (machine: string) => void }) {
   const { t } = useI18n();
+  const { standing } = useSyncStanding();
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
       {plans.map((plan) => {
-        const summary = planSummary(plan, t);
+        const found = standingOf(standing, plan.machine.machine);
+        const words = found ? standingWords(found) : null;
+        const summary = {
+          inStep: found?.state !== 'behind',
+          text: words ? [t(words.key), ...words.parts.map((part) => t(part.key, { count: part.count }))].join(' · ') : '…',
+        };
         return (
           <button
             key={plan.machine.machine}

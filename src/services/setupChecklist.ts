@@ -25,7 +25,7 @@ import {
   type PlannedSkill,
   type SkillPlace,
 } from './setupSkills';
-import { inStep, scanned, syncCounts, syncPlan, type SyncCounts } from './setupSync';
+import { nothingToApply, scanned, syncCounts, syncPlan, type SyncCounts } from './setupSync';
 import { actionable, buildToolRows, checkPlace, TOOL_ORDER, type ToolId } from './setupToolchain';
 import type {
   LatestVersions,
@@ -276,7 +276,7 @@ export function repoStep(path: string | null, repo: SetupRepo | null, error: str
   if (!repo.head) return { state: 'unknown', why: 'noCommits', counts: null, error: null };
   if (!known(machine)) return { state: unread(machine), why: 'notRead', counts: null, error: null };
   const counts = syncCounts(syncPlan(repo, machine));
-  return inStep(counts) ? { state: 'done', why: 'inStep', counts, error: null } : { state: 'todo', why: 'behind', counts, error: null };
+  return nothingToApply(counts) ? { state: 'done', why: 'inStep', counts, error: null } : { state: 'todo', why: 'behind', counts, error: null };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   fileWanted,
-  inStep,
+  nothingToApply,
   isStoreSkill,
   removableKind,
   scanned,
@@ -167,11 +167,11 @@ describe('what applying changes', () => {
 describe('whether a machine is in step', () => {
   it('counts each state, and isn’t in step while anything the repo has differs or is missing', () => {
     expect(syncCounts(plan)).toEqual({ same: 1, update: 1, add: 1, extra: 1, removed: 0, linked: 1, noHome: 1, blocked: 0, offHere: 0, own: 0 });
-    expect(inStep(syncCounts(plan))).toBe(false);
+    expect(nothingToApply(syncCounts(plan))).toBe(false);
   });
 
   it('is in step with files only it has, links, and homes it hasn’t got', () => {
-    expect(inStep({ same: 3, update: 0, add: 0, extra: 2, removed: 0, linked: 1, noHome: 1, blocked: 2, offHere: 0, own: 0 })).toBe(true);
+    expect(nothingToApply({ same: 3, update: 0, add: 0, extra: 2, removed: 0, linked: 1, noHome: 1, blocked: 2, offHere: 0, own: 0 })).toBe(true);
   });
 
   it('has something to compare once it has been read', () => {
@@ -249,7 +249,7 @@ describe('skills against the repo', () => {
     expect(syncCounts(skillPlan)).toEqual({ same: 1, update: 1, add: 1, extra: 1, removed: 0, linked: 1, noHome: 0, blocked: 2, offHere: 0, own: 0 });
     const settled = syncPlan(repo([], [repoSkill('pdf', sha('1')), repoSkill('leaky', null, { problem: 'large' })]),
       machine([home('shared', '~/.agents', [storeSkill('pdf', sha('1'))])]));
-    expect(inStep(syncCounts(settled))).toBe(true);
+    expect(nothingToApply(syncCounts(settled))).toBe(true);
   });
 
   it('counts skills apart from files', () => {
@@ -277,7 +277,7 @@ describe('a skill’s own value on a machine', () => {
       ['~/.agents/skills/release-notes', 'offHere'],
     ]);
     expect(syncChanges(plan)).toEqual([]);
-    expect(inStep(syncCounts(plan))).toBe(true);
+    expect(nothingToApply(syncCounts(plan))).toBe(true);
     expect(skillWanted(wanted, '~/.agents/skills/pdf', 'CI 01')).toBe('off');
   });
 
@@ -304,8 +304,8 @@ describe('a skill the repo removed from every machine', () => {
     // Removed by default; what's only the machine's stays unless chosen.
     expect(syncChanges(plan)).toEqual([{ path: '~/.agents/skills/pdf', remove: true, before: sha('1') }]);
     expect(syncChanges(plan, { '~/.agents/skills/pdf': false })).toEqual([]);
-    expect(inStep(syncCounts(plan))).toBe(false);
-    expect(inStep(syncCounts(syncPlan(removed, machine([home('shared', '~/.agents', [])]))))).toBe(true);
+    expect(nothingToApply(syncCounts(plan))).toBe(false);
+    expect(nothingToApply(syncCounts(syncPlan(removed, machine([home('shared', '~/.agents', [])]))))).toBe(true);
   });
 });
 
@@ -346,7 +346,7 @@ describe('a file or skill the repo keeps but turned off on every machine', () =>
       { path: '~/.claude/agents/review.md', remove: true, before: sha('1') },
     ]);
     // Off everywhere isn't out of step once the copies are gone.
-    expect(inStep(syncCounts(syncPlan(setup, machine([home('claude', '~/.claude', []), home('shared', '~/.agents', [])]))))).toBe(true);
+    expect(nothingToApply(syncCounts(syncPlan(setup, machine([home('claude', '~/.claude', []), home('shared', '~/.agents', [])]))))).toBe(true);
     const own = { ...setup, fileMachines: { '~/.claude/agents/review.md': { ci01: 'own' as const } }, skillMachines: { pdf: { ci01: 'own' as const } } };
     expect(states(syncPlan(own, machine([agents, store]))).filter(([path]) => path === '~/.agents/skills/pdf' || path === '~/.claude/agents/review.md')).toEqual([
       ['~/.agents/skills/pdf', 'own'],

@@ -5,6 +5,7 @@
 import { emit } from '@tauri-apps/api/event';
 import type { SetupCommands } from '../../native/setup';
 import type {
+  BehindItem,
   CatalogPlugin,
   AgentKind,
   ChangeKind,
@@ -25,6 +26,9 @@ import type {
   HookState,
   HookWanted,
   HubSync,
+  ItemDrift,
+  KindCounts,
+  MachineStanding,
   ItemKind,
   LocalFileState,
   MachineProjects,
@@ -92,13 +96,17 @@ import type {
   SyncChange,
   SyncFileKind,
   SyncOutcome,
+  SyncStanding,
   ToolNeed,
   WorktreeRemoval,
 } from '../../native/types';
 import { projectInstructionsPath, projectOf, skillFolder, skillOf } from '../../services/repoBrowser';
 import { machineLookKey } from '../../services/machineLook';
-import { HARNESS_SYNC_HOMES, syncKind } from '../../services/setupSync';
+import { HARNESS_SYNC_HOMES, syncKind, syncPlan } from '../../services/setupSync';
+import { extensionsView, isCodexOwnMarketplace } from '../../services/setupPlugins';
+import { withCodexPluginRepo, withPluginRepo } from '../../services/setupPluginRepo';
 import type { CommandAnswers } from './answers';
+import { withNeeds } from './projectNeeds';
 import { freshInstall, hours, later, mockLog, params, realSize } from './scenario';
 
 // Sync › Cost's starting context: sessions' first requests over the last four weeks, from each machine's homes. See
@@ -419,6 +427,9 @@ if (hooksSample) {
 // ~/.claude turns release-notes off and lists pdf by name only, ci-01's turns browser-check off (so it isn't counted
 // missing there), and the second Claude home's settings.json has a value Claude Code doesn't know, so it ignores them all.
 const setupScenario = params.get('setup');
+// With `?setup=restored`, every scan is one Arbor kept from before it restarted, six hours old, and the background rounds
+// haven't reached any machine yet: only a Scan someone asks for reads them again.
+if (setupScenario === 'restored') for (const entry of setupMachines) entry.scannedAt = hours(6);
 if (setupScenario === 'overrides') {
   const homeOf = (machine: string, path: string) => setupMachines.find((entry) => entry.machine === machine)?.homes.find((home) => home.path === path);
   const override = (name: string, state: SkillOverride['state'], file = '~/.claude/settings.json'): SkillOverride => ({ name, state, source: 'settings', file });
@@ -652,6 +663,7 @@ if (setupChangeScenario) {
 }
 
 export const scanSetupMock = (machine: string | null, staleOnly: boolean) => {
+  if (setupScenario === 'restored' && staleOnly) return;
   const at = Date.now();
   const targets = setupMachines.filter((entry) => (machine === null || entry.machine === machine) && !entry.scanning
     && (!staleOnly || (entry.reachable && (entry.scannedAt === null || at - entry.scannedAt >= 10 * 60_000))));
@@ -1851,7 +1863,7 @@ const placeStatus = (extra: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
 
 const placeCell = (machine: string, path: string, state: ProjectCell['state'], extra: Partial<ProjectCell> = {}): ProjectCell => ({
   machine, path, state: placesScenario === 'unscanned' ? 'notScanned' : state, blocker: null, blockerRemote: null, link: null,
-  checkout: null, status: null, others: [], skillsTotal: 0, skillsOut: 0, ...(placesScenario === 'unscanned' ? {} : extra),
+  checkout: null, status: null, others: [], skillsTotal: 0, skillsOut: 0, needs: [], ...(placesScenario === 'unscanned' ? {} : extra),
 });
 
 /** What the mock's fixes changed, by `project\u0000machine`, with the backup that holds them. */
@@ -1865,7 +1877,85 @@ const fixedCell = (project: string, cell: ProjectCell): ProjectCell => {
 
 const mockDrift = (): ProjectsDrift => {
   const drift = baseDrift();
-  return { ...drift, projects: drift.projects.map((project) => ({ ...project, cells: project.cells.map((cell) => fixedCell(project.project, cell)) })) };
+  return { ...drift, projects: drift.projects.map((project) => ({ ...project, cells: project.cells.map((cell) => withNeeds(fixedCell(project.project, cell))) })) };
+};
+
+// Sync's standing, as setup_standing.rs works it out from the same replies the mock gives for the repo, its MCP servers
+// and hooks, and the projects. `?behind=plugins` leaves ci-01 behind on plugins alone.
+const behindScenario = params.get('behind');
+const SYNC_DRIFT: Partial<Record<string, ItemDrift>> = { add: 'add', update: 'update', removed: 'remove', extra: 'remove' };
+
+function mockBehind(repo: SetupRepo, mcp: McpRegistry | null, hooks: HookRegistry | null, drift: ProjectsDrift, machine: SetupMachine): BehindItem[] {
+  const items: BehindItem[] = [];
+  for (const file of syncPlan(repo, machine)) {
+    const change = SYNC_DRIFT[file.state];
+    if (!change || file.state === 'extra') continue;
+    const name = file.path.split('/').pop() ?? file.path;
+    if (file.kind === 'hookScript') {
+      for (const hook of hooks?.hooks.filter((entry) => !entry.removed && entry.script === name) ?? []) items.push({ kind: 'hook', key: `hook:repo:${hook.name}`, name: hook.name, drift: 'update' });
+    } else if (file.kind === 'skill') items.push({ kind: 'skill', key: `skill:${name}`, name, drift: change });
+    else items.push({ kind: 'file', key: `file:${file.path}`, name, drift: change });
+  }
+  const agentHomes = new Set(machine.homes.filter((home) => home.agent !== 'shared').map((home) => home.path));
+  for (const cell of mcp?.cells ?? []) {
+    if (cell.machine !== machine.machine || cell.state === 'same' || !agentHomes.has(cell.home) || !mcp?.servers.some((server) => server.name === cell.name)) continue;
+    items.push({ kind: 'mcp', key: `mcp:${cell.name}`, name: cell.name, drift: SYNC_DRIFT[cell.state] ?? 'update' });
+  }
+  for (const cell of hooks?.cells ?? []) {
+    if (cell.machine !== machine.machine || cell.state === 'same' || cell.name === null) continue;
+    items.push({ kind: 'hook', key: `hook:repo:${cell.name}`, name: cell.name, drift: SYNC_DRIFT[cell.state] ?? 'update' });
+  }
+  const view = withCodexPluginRepo(withPluginRepo(extensionsView([machine]), repo.plugins), repo.codexPlugins);
+  for (const [rows, agent] of [[view.plugins, 'claude'], [view.codexPlugins.filter((row) => !isCodexOwnMarketplace(row.marketplace)), 'codex']] as const) {
+    for (const row of rows) {
+      const cell = row.cells.find((entry) => entry.wanted?.differs);
+      if (!row.repo || !cell?.wanted) continue;
+      const change: ItemDrift = cell.wanted.value === 'removed' ? 'remove' : cell.place === 'on' || cell.place === 'off' ? 'update' : 'add';
+      items.push({ kind: 'plugin', key: `plugin:${agent}:${row.id}`, name: row.name, drift: change });
+    }
+  }
+  for (const project of drift.projects.filter((entry) => !entry.archived)) {
+    if (project.cells.some((cell) => cell.machine === machine.machine && cell.needs.some((need) => need !== 'scan'))) {
+      items.push({ kind: 'project', key: `project:${project.project}`, name: project.project.replace(/^_local\//, ''), drift: 'update' });
+    }
+  }
+  const seen = new Set<string>();
+  const order: BehindItem['kind'][] = ['file', 'skill', 'mcp', 'hook', 'plugin', 'project'];
+  const unique = items.filter((item) => !seen.has(item.key) && Boolean(seen.add(item.key)));
+  const kept = behindScenario === 'plugins' && machine.machine === 'ci-01' ? unique.filter((item) => item.kind === 'plugin') : unique;
+  return kept.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name));
+}
+
+const kindCounts = (items: BehindItem[]): KindCounts => {
+  const counts: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0 };
+  const slot = { file: 'files', skill: 'skills', mcp: 'mcp', hook: 'hooks', plugin: 'plugins', project: 'projects' } as const;
+  for (const item of items) counts[slot[item.kind]] += 1;
+  return counts;
+};
+
+const syncStandingMock = (path: string): SyncStanding => {
+  const repo = setupRepoReply(path);
+  const read = <T,>(reply: () => T): [T | null, string | null] => {
+    try {
+      return [reply(), null];
+    } catch (error) {
+      return [null, String(error)];
+    }
+  };
+  const [mcp, mcpError] = read(() => registryReply(path));
+  const [hooks, hooksError] = read(() => hookRegistryReply(path));
+  const drift = mockDrift();
+  const machines = setupMachines.map((machine): MachineStanding => {
+    const scannedOnce = machine.scannedAt !== null || machine.homes.length > 0;
+    const behind = scannedOnce ? mockBehind(repo, mcp, hooks, drift, machine) : [];
+    const state = !scannedOnce ? 'notScanned' : !machine.reachable ? 'unreachable' : behind.length ? 'behind' : 'inStep';
+    return { machine: machine.machine, state, reachable: machine.reachable, scannedAt: machine.scannedAt, behind, counts: kindCounts(behind) };
+  });
+  return {
+    repo, mcp, mcpError, hooks, hooksError, machines,
+    inStep: machines.filter((machine) => machine.state === 'inStep').length,
+    read: machines.filter((machine) => machine.state !== 'notScanned').length,
+  };
 };
 
 const baseDrift = (): ProjectsDrift => {
@@ -3413,6 +3503,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   },
   get_projects: () => projectsState.map(projectsReply),
   get_project_drift: () => later(250, mockDrift),
+  get_sync_standing: (args) => later(250, () => syncStandingMock(args.repo)),
   sync_local_project: (args) => {
     mockLog('sync_local_project', args);
     return later(1_100, (): HubSync => ({

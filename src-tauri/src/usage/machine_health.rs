@@ -65,6 +65,7 @@ pub(crate) mod setup_projects;
 pub(crate) mod setup_repo_browse;
 pub(crate) mod setup_repo_skills;
 pub(crate) mod setup_skills;
+pub(crate) mod setup_standing;
 pub(crate) mod setup_sync;
 pub(crate) mod setup_layers;
 pub(crate) mod setup_wanted;

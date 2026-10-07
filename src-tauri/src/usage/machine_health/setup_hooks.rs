@@ -497,9 +497,66 @@ async fn load_registry(folder: &Path, commit: Option<&str>) -> Result<(Option<St
 }
 
 async fn view(state: &MachineHealthState, folder: &Path) -> Result<HookRegistry, String> {
-    let (commit, found, uncommitted, registry) = load_registry(folder, None).await?;
     let machines = scanned_machines(&state.lock());
-    Ok(registry_view(commit, found, uncommitted, &registry, &machines))
+    registry_for(folder, &machines).await
+}
+
+/// The repo's hooks at its last commit against `machines`' last scans.
+pub(super) async fn registry_for(folder: &Path, machines: &[(String, MachineSetup)]) -> Result<HookRegistry, String> {
+    let (commit, found, uncommitted, registry) = load_registry(folder, None).await?;
+    Ok(registry_view(commit, found, uncommitted, &registry, machines))
+}
+
+impl HookRegistry {
+    /// Each repo hook a home of `machine` doesn't have as the repo has it, by its name: one to add, change or take
+    /// out there. A hook the repo hasn't got is the machine's own business.
+    pub(super) fn behind_on<'a>(&'a self, machine: &'a str) -> impl Iterator<Item = (&'a str, HookState)> + 'a {
+        self.cells.iter().filter(move |cell| cell.machine == machine && cell.state != HookState::Same).filter_map(|cell| Some((cell.name.as_deref()?, cell.state)))
+    }
+
+    /// The repo hooks that run `script`, from ~/.agents/hooks, and aren't removed.
+    pub(super) fn running(&self, script: &str) -> Vec<&str> {
+        self.hooks.iter().filter(|hook| !hook.removed && hook.script.as_deref() == Some(script)).map(|hook| hook.name.as_str()).collect()
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(hooks: &[(&str, &str)], cells: &[(&str, &str, HookState)]) -> Self {
+        Self {
+            commit: Some("a".repeat(40)),
+            found: true,
+            hooks: hooks
+                .iter()
+                .map(|(name, script)| HookView {
+                    name: name.to_string(),
+                    event: "Stop".into(),
+                    matcher: None,
+                    command: None,
+                    script: Some(script.to_string()),
+                    timeout: None,
+                    agents: vec![AgentKind::Claude],
+                    homes: None,
+                    removed: false,
+                    all_off: false,
+                    off: Vec::new(),
+                    problems: Vec::new(),
+                })
+                .collect(),
+            cells: cells
+                .iter()
+                .map(|(machine, name, state)| HookCell {
+                    machine: machine.to_string(),
+                    agent: AgentKind::Claude,
+                    home: "~/.claude".into(),
+                    name: Some(name.to_string()),
+                    event: "Stop".into(),
+                    script: String::new(),
+                    state: *state,
+                    blocked: None,
+                })
+                .collect(),
+            ..Self::default()
+        }
+    }
 }
 
 /// The repo's hooks, and how every machine's Claude Code and Codex homes stand against them as their last scans

@@ -155,7 +155,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   onCounts: (counts: Record<LibraryKind, number>) => void;
 }) {
   const { t } = useI18n();
-  const { repoPath, sources, setSources, loaded, loadError, rows } = useLibrary(machines);
+  const { repoPath, sources, setSources, loaded, loadError, kindErrors, rows } = useLibrary(machines);
   const [agent, setAgent] = useState<LibraryAgent | null>(null);
   const [query, setQuery] = useState('');
   const [running, setRunning] = useState<Running | null>(null);
@@ -317,6 +317,11 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       {loadError ? (
         <Alert variant="error" icon={<TriangleAlert />}>
           <AlertDescription>{t('library.loadFailed', { error: loadError })}</AlertDescription>
+        </Alert>
+      ) : null}
+      {kindErrors[kind] ? (
+        <Alert variant="error" icon={<TriangleAlert />} data-library-kind-error={kind}>
+          <AlertDescription>{t(kind === 'mcps' ? 'library.kindFailed.mcps' : 'library.kindFailed.hooks', { error: kindErrors[kind] ?? '' })}</AlertDescription>
         </Alert>
       ) : null}
       <TableCard

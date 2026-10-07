@@ -1245,6 +1245,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_sync_standing",
+        access: Access::Read,
+        summary: "Where every machine stands against the setup repo's last commit, from the machines' last scans, with the repo, its MCP servers and hooks as they were read for it. Remembers `repo` as the one the window names.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "read_setup_text",
         access: Access::Read,
         summary: "The content of a text file a scan found, for comparing it with another machine's.",
@@ -2304,6 +2312,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "reveal_session_archive" => done(Box::pin(crate::usage::machine_health::archive::reveal_session_archive(app.clone())).await),
         "get_setup_inventory" => done(Box::pin(crate::usage::machine_health::setup::get_setup_inventory(app.state())).await),
         "scan_setup" => async { done(Box::pin(crate::usage::machine_health::setup::scan_setup(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "staleOnly")?)).await) }.await,
+        "get_sync_standing" => async { done(Box::pin(crate::usage::machine_health::setup_standing::get_sync_standing(app.state(), arg(&args, "repo")?)).await) }.await,
         "read_setup_text" => async { done(Box::pin(crate::usage::machine_health::setup::read_setup_text(app.state(), arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "read_setup_skill" => async { done(Box::pin(crate::usage::machine_health::setup::read_setup_skill(app.state(), arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "get_setup_repo" => async { done(Box::pin(crate::usage::machine_health::setup_sync::get_setup_repo(arg(&args, "repo")?)).await) }.await,

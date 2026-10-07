@@ -32,7 +32,7 @@ any other machine, say so instead of trying.
 | Accounts and limits | `arbor accounts`, or `arbor accounts refresh` to read the limits again |
 | Automatic account order | `arbor routing` |
 | Alerts | `arbor alerts` |
-| How far machines are from the setup repo | `arbor sync`, then `arbor sync <machine>` for what would change there |
+| Where each machine stands against the setup repo: in step, or behind on files, skills, MCP servers, hooks, plugins or projects (the same count as Sync › Overview and the sidebar) | `arbor sync`, then `arbor sync <machine>` for the files and skills that would change there; `arbor call get_sync_standing repo=<setup repo folder>` lists each item behind |
 | Where the setup repo's projects are on each machine (its projects/ folder): in place, linked, elsewhere, missing or blocked | `arbor call get_project_drift repo=<setup repo folder>`; `arbor call scan_projects machine=<name> repo=<folder>` looks again |
 | Proxy core | `arbor core` |
 | Session archive | `arbor archive` |

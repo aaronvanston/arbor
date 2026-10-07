@@ -29,6 +29,7 @@ import type {
   ProjectFixes,
   ProjectSkillsOutcome,
   ProjectsDrift,
+  SyncStanding,
   RemovalResult,
   RepoChange,
   RepoCommit,
@@ -60,6 +61,7 @@ export type SetupCommands = {
 
   get_setup_repo: { args: { repo: string }; result: SetupRepo };
   get_project_drift: { args: { repo: string }; result: ProjectsDrift };
+  get_sync_standing: { args: { repo: string }; result: SyncStanding };
   add_setup_schemas: { args: { repo: string }; result: SetupRepo };
   apply_project_fixes: { args: { repo: string; machine: string; fixes: ProjectFixRequest[] }; result: ProjectFixes };
   apply_project_skills: { args: { repo: string; machine: string; project: string }; result: ProjectSkillsOutcome };

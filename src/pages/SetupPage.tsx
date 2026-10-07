@@ -604,6 +604,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
             <SetupOverviewHead
               machines={machines}
               onOpenItem={(itemKind, key) => onNavigate(libraryItemView(itemKind, key))}
+              onOpenProjects={() => onNavigate(setupView({ tab: 'projects' }))}
               onOpenRepo={() => onNavigate(setupView({ tab: 'repo' }))}
               onOpenHistory={() => onNavigate(setupView({ tab: 'repo', lens: 'changes' }))}
             />

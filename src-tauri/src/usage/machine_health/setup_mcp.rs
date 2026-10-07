@@ -1474,6 +1474,45 @@ async fn load_registry(folder: &Path, commit: Option<&str>) -> Result<(Option<St
     Ok((Some(commit), mode.is_some(), uncommitted, registry))
 }
 
+/// The repo's MCP servers at its last commit against `machines`' last scans.
+pub(super) async fn registry_for(folder: &Path, machines: &[(String, MachineSetup)]) -> Result<McpRegistry, String> {
+    let (commit, found, uncommitted, registry) = load_registry(folder, None).await?;
+    Ok(registry_view(commit, found, uncommitted, &registry, machines))
+}
+
+impl McpRegistry {
+    /// Each server the repo lists that a Claude Code or Codex home of `machine` doesn't have as the repo defines it:
+    /// missing, set up differently, or there where the repo keeps it off or removed it. Other harnesses' homes only
+    /// get what the repo sends them and aren't brought in line from Sync, so they don't count.
+    pub(super) fn behind_on<'a>(&'a self, machine: &'a str, setup: &'a MachineSetup) -> impl Iterator<Item = (&'a str, RegistryState)> + 'a {
+        let homes: Vec<&str> = setup.agent_homes().into_iter().filter(|(agent, _)| *agent != HomeAgent::Shared).map(|(_, path)| path).collect();
+        self.cells.iter().filter(move |cell| {
+            cell.machine == machine
+                && cell.state != RegistryState::Same
+                && homes.contains(&cell.home.as_str())
+                && self.servers.iter().any(|server| server.name == cell.name)
+        }).map(|cell| (cell.name.as_str(), cell.state))
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(servers: &[&str], cells: &[(&str, &str, &str, RegistryState)]) -> Self {
+        Self {
+            commit: Some("a".repeat(40)),
+            found: true,
+            uncommitted: false,
+            problems: Vec::new(),
+            servers: servers
+                .iter()
+                .map(|name| ServerView { name: name.to_string(), claude: None, codex: None, homes: None, agents: Vec::new(), own: Vec::new(), off: Vec::new(), all_off: false, problems: Vec::new() })
+                .collect(),
+            cells: cells
+                .iter()
+                .map(|(machine, home, name, state)| RegistryCell { machine: machine.to_string(), home: home.to_string(), name: name.to_string(), state: *state, own: false, blocked: None })
+                .collect(),
+        }
+    }
+}
+
 /// The repo's MCP servers, and how every machine's homes stand against them as their last scans found them.
 #[tauri::command]
 pub(crate) async fn get_mcp_registry(state: tauri::State<'_, MachineHealthState>, repo: String) -> Result<McpRegistry, String> {

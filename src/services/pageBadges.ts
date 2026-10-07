@@ -4,7 +4,7 @@ import { authFileStatusMessage } from './authFileHealth';
 import type { HealthStatus } from '../native/types';
 import { quotaKey, type AuthFile } from './quotaService';
 import type { SetupCheck } from './setupChecks';
-import { accountsView, machinesView, poolsView, setupChecksView, type AppView, type MainPageId } from '../navigation';
+import { accountsView, machinesView, poolsView, setupChecksView, setupView, type AppView, type MainPageId } from '../navigation';
 import type { FocusTarget } from '../focusRequests';
 
 /**
@@ -40,11 +40,25 @@ export function poolsBadge(standings: readonly string[]): PageBadge | null {
   return standings.includes('full') ? { tone: 'warning', label: 'sidebar.badge.pools.full' } : null;
 }
 
-/** Sync: how many problems its checks found. Warnings and notes wait on the Sync page. */
-export function setupBadge(checks: readonly Pick<SetupCheck, 'level'>[]): PageBadge | null {
-  const count = checks.filter((check) => check.level === 'problem').length;
-  return count ? { tone: 'warning', count, label: count === 1 ? 'sidebar.badge.setup.one' : 'sidebar.badge.setup.other' } : null;
+/**
+ * Sync: how many machines need a look there, each counted once: behind the setup repo (Sync's standing, worked out in
+ * Rust) or with a problem its checks found. One number in one unit, machines, so the two never read as a sum of unlike
+ * things; the label says which it is. Warnings and notes wait on the Sync page.
+ */
+export function setupBadge(checks: readonly Pick<SetupCheck, 'level' | 'machine'>[], behind: readonly string[] = []): PageBadge | null {
+  const troubled = new Set(checks.filter((check) => check.level === 'problem').map((check) => check.machine));
+  const count = new Set([...behind, ...troubled]).size;
+  if (!count) return null;
+  const which = !troubled.size ? 'behind' : !behind.length ? 'problems' : 'both';
+  const labels: Record<typeof which, [MessageKey, MessageKey]> = {
+    behind: ['sidebar.badge.setup.behind.one', 'sidebar.badge.setup.behind.other'],
+    problems: ['sidebar.badge.setup.one', 'sidebar.badge.setup.other'],
+    both: ['sidebar.badge.setup.both.one', 'sidebar.badge.setup.both.other'],
+  };
+  return { tone: 'warning', count, label: labels[which][count === 1 ? 0 : 1] };
 }
+
+const SETUP_PROBLEMS_ONLY: readonly MessageKey[] = ['sidebar.badge.setup.one', 'sidebar.badge.setup.other'];
 
 /**
  * Where a badge leads: the view with the things it counts, named for its tooltip ("Opens Sync › Checks"), and what to
@@ -56,8 +70,10 @@ export type BadgeDestination = { view: AppView; place: MessageKey; focus?: { tar
 export function badgeDestination(page: MainPageId, badge: PageBadge): BadgeDestination | null {
   switch (page) {
     case 'setup':
-      // Only the problems are counted, so only they show when the count is followed.
-      return { view: setupChecksView(), place: 'sidebar.badge.place.checks', focus: { target: 'setup-checks', id: 'problem' } };
+      // Problems alone open the checks on them; machines behind open Overview, which has both, the checks below.
+      return SETUP_PROBLEMS_ONLY.includes(badge.label)
+        ? { view: setupChecksView(), place: 'sidebar.badge.place.checks', focus: { target: 'setup-checks', id: 'problem' } }
+        : { view: setupView({ tab: 'overview' }), place: 'sidebar.badge.place.overview' };
     case 'accounts':
       return badge.label === 'sidebar.badge.accounts.signIn'
         ? { view: accountsView({ tab: 'sign-ins' }), place: 'sidebar.badge.place.signIns' }

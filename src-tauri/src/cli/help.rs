@@ -123,9 +123,10 @@ Recent alerts, or mark every one seen (asks first, so it needs --yes).
 arbor sync <machine>
 arbor sync apply <machine>
 
-How far each machine is from the setup repo, what Sync would change on one, or bring one in line. Applying asks
-first: it prints the plan and needs --yes. Every file is backed up before it changes, and Sync › Repo › History can
-undo it.
+Where each machine stands against the setup repo (in step, or behind on files, skills, MCP servers, hooks, plugins
+or projects, as Sync › Overview counts them), the files and skills Sync would change on one, or bring those in line.
+Applying asks first: it prints the plan and needs --yes. Every file is backed up before it changes, and Sync › Repo ›
+History can undo it.
 
   arbor sync
   arbor sync cam-mbp

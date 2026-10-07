@@ -8,7 +8,7 @@ import { directoryEntries, directorySources } from '../src/services/directory';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
 import { extensionsView, type PluginRow } from '../src/services/setupPlugins';
 import { lastItem, present } from './support/items';
-import type { HookRegistry, McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo } from '../src/native/types';
+import type { HookRegistry, McpRegistry, PluginChange, PluginResult, RepoPlugin, ServerView, SetupHome, SetupItem, SetupMachine, SetupRepo, SyncStanding } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, fields: Partial<SetupItem> = {}): SetupItem => ({
   kind, name, path: null, sum: null, size: null, link: null, value: null, note: null, count: null, enabled: null,
@@ -39,8 +39,18 @@ const fleet = () => [
   machine('cedar-02', [marketplace('acme-tools')]),
 ];
 
-const rowsOf = (machines: SetupMachine[], setup: SetupRepo | null) =>
-  libraryRows({ machines, view: withPluginRepo(extensionsView(machines), setup?.plugins ?? null), repo: setup, registryFound: false, hooks: null });
+/** Sync's standing as Rust would give it, saying only which machines are behind on which rows' keys. */
+const standingWith = (behind: Record<string, string[]>): SyncStanding => ({
+  repo: repo([]), mcp: null, mcpError: null, hooks: null, hooksError: null, inStep: 0, read: 0,
+  machines: Object.entries(behind).map(([name, keys]) => ({
+    machine: name, state: keys.length ? 'behind' : 'inStep', reachable: true, scannedAt: 1_000,
+    counts: { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0 },
+    behind: keys.map((key) => ({ kind: 'plugin', key, name: key, drift: 'update' })),
+  })),
+});
+const REVIEW_KEY = 'plugin:claude:review@acme-tools';
+const rowsOf = (machines: SetupMachine[], setup: SetupRepo | null, behind: Record<string, string[]> = {}) =>
+  libraryRows({ machines, view: withPluginRepo(extensionsView(machines), setup?.plugins ?? null), repo: setup, registryFound: false, hooks: null, standing: standingWith(behind) });
 const rowFor = (rows: LibraryRow[], name: string) => present(rows.find((row) => row.name === name));
 const pluginRow = (machines: SetupMachine[], setup: SetupRepo | null): PluginRow =>
   present(withPluginRepo(extensionsView(machines), setup?.plugins ?? null).plugins.find((row) => row.id === REVIEW));
@@ -58,8 +68,8 @@ afterEach(() => {
 });
 
 describe('the Library’s rows', () => {
-  it('sums a plugin up across machines: the repo’s word, where it’s on and which machines aren’t as the repo has it', () => {
-    const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on')])), 'review');
+  it('sums a plugin up across machines: the repo’s word, where it’s on, and the machines Sync’s standing has behind on it', () => {
+    const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on')]), { 'cam-mbp': [], 'ci-01': [REVIEW_KEY], 'cedar-02': [REVIEW_KEY] }), 'review');
     expect(row).toMatchObject({ kind: 'plugins', detail: 'acme-tools', agents: ['claude'], state: 'on', on: ['cam-mbp'], exceptions: 0 });
     expect(row.fleet).toEqual(['cam-mbp', 'ci-01', 'cedar-02']);
     expect(row.behind).toEqual(['ci-01', 'cedar-02']);
@@ -68,14 +78,15 @@ describe('the Library’s rows', () => {
   });
 
   it('says a plugin the repo doesn’t list is left to the machines that have it', () => {
-    const row = rowFor(rowsOf(fleet(), repo([])), 'review');
+    // What the repo doesn't list is never behind, whatever reaches the rows.
+    const row = rowFor(rowsOf(fleet(), repo([]), { 'ci-01': [REVIEW_KEY] }), 'review');
     expect(row.state).toBe('unlisted');
     expect(row.behind).toEqual([]);
     expect(libraryScope(row)).toEqual({ kind: 'unlisted', on: 1, of: 3 });
   });
 
   it('counts machines with a value of their own, so it isn’t on every machine', () => {
-    const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on', { ci01: 'off' })])), 'review');
+    const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on', { ci01: 'off' })]), { 'cedar-02': [REVIEW_KEY] }), 'review');
     expect(row.exceptions).toBe(1);
     expect(row.behind).toEqual(['cedar-02']);
     expect(libraryScope(row)).toEqual({ kind: 'some', on: 1, of: 3 });
@@ -191,7 +202,7 @@ describe('every kind’s switch', () => {
     const rows = libraryRows({
       machines: [withServer('linear'), withServer('mine')],
       view: withRegistry(extensionsView([withServer('linear'), withServer('mine')]), registry({ servers: [server({ allOff: true })] })),
-      repo: setup, registryFound: true, hooks: null,
+      repo: setup, registryFound: true, hooks: null, standing: null,
     });
     const by = (name: string) => rowFor(rows, name);
     expect([by('linear').state, by('linear').toggle]).toEqual(['off', { kind: 'mcp', name: 'linear' }]);
@@ -266,7 +277,7 @@ describe('an item’s own page', () => {
   });
 
   it('says for each machine what the repo wants there, its own value, and which homes have it', () => {
-    const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on', { ci01: 'off' })])), 'review');
+    const row = rowFor(rowsOf(fleet(), repo([listing(REVIEW, 'on', { ci01: 'off' })]), { 'cedar-02': [REVIEW_KEY] }), 'review');
     expect(row.places).toEqual({
       'cam-mbp': { own: null, wanted: true, homes: ['~/.claude'] },
       'ci-01': { own: 'off', wanted: false, homes: ['~/.claude'] },
@@ -330,13 +341,13 @@ describe('bringing a machine in line', () => {
   });
 
   it('plans each answering machine’s rows that the repo lists and that are behind there', () => {
-    const rows = rowsOf([...fleet(), machine('far-01', [], false)], repo([listing(REVIEW, 'on')]));
+    const rows = rowsOf([...fleet(), machine('far-01', [], false)], repo([listing(REVIEW, 'on')]), { 'ci-01': [REVIEW_KEY], 'cedar-02': [REVIEW_KEY], 'far-01': [REVIEW_KEY] });
     expect(linePlans(rows, [...fleet(), machine('far-01', [], false)]).map((plan) => [plan.machine, plan.rows.map((row) => row.name)])).toEqual([
       ['ci-01', ['review']],
       ['cedar-02', ['review']],
     ]);
     // What the repo doesn't list is each machine's own, so it's never brought in line.
-    expect(linePlans(rowsOf(fleet(), repo([])), fleet())).toEqual([]);
+    expect(linePlans(rowsOf(fleet(), repo([]), { 'ci-01': [REVIEW_KEY] }), fleet())).toEqual([]);
   });
 
   it('writes the hooks’ scripts before the hooks, since a hook runs one', async () => {
@@ -348,7 +359,7 @@ describe('bringing a machine in line', () => {
       apply_hooks: () => { calls.push('hooks'); return [{ home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: true, error: null }]; },
     });
     const machines = [machine('cam-mbp', [])];
-    const row = { ...rowFor(libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: hooks('add') }), 'guard') };
+    const row = { ...rowFor(libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: hooks('add'), standing: null }), 'guard') };
     const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row] });
     expect(calls).toEqual(['sync ~/.agents/hooks/guard.sh', 'hooks']);
     expect(done).toEqual({ changed: true, failed: [], needsYou: false });
@@ -435,7 +446,7 @@ describe('bringing an agent’s instructions in line', () => {
     const claude = { path: '~/.claude/CLAUDE.md', kind: 'instructions' as const, sum: 'new', ck: 'c1-10', size: 10 };
     const setup = repo([], { files: [claude] });
     const machines = [machine('cam-mbp', [item('instructions', 'CLAUDE.md', { path: claude.path, sum: 'old' })])];
-    const rows = libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: null });
+    const rows = libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: null, standing: standingWith({ 'cam-mbp': [`file:${claude.path}`] }) });
     const plans = linePlans(rows, machines);
     expect(plans.map((plan) => [plan.machine, plan.rows.map((row) => row.name)])).toEqual([['cam-mbp', ['CLAUDE.md']]]);
     const synced: unknown[] = [];

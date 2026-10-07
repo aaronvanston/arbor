@@ -11,7 +11,8 @@ import { fetchSetupInventory } from './setupInventory';
 import { fileName, providerForFile, quotaKey, type AuthFile } from './quotaService';
 import { getQuotaCacheSnapshot } from './quotaCache';
 import { getRoutingAuto, setRoutingAuto } from './quotaRouting';
-import { applySetupSync, getSetupRepo, inStep, scanned, storedSetupRepo, syncChanges, syncCounts, syncPlan } from './setupSync';
+import { applySetupSync, getSetupRepo, scanned, storedSetupRepo, syncChanges, syncPlan } from './setupSync';
+import { getSyncStanding } from './syncStanding';
 
 /*
  * The actions Arbor's window answers for `arbor` and its MCP server: the ones whose logic lives in the window. Each
@@ -198,16 +199,25 @@ export const cliHandlers: CliHandlers = {
   },
   'sync.status': {
     access: 'read',
-    summary: 'How far each machine is from the setup repo',
+    summary: 'Where each machine stands against the setup repo: in step, or behind on files, skills, MCP servers, hooks, plugins or projects',
     run: async () => {
-      const { repo, head, machines } = await syncRepo();
+      const path = storedSetupRepo();
+      if (!path) throw new Error('No setup repo is chosen yet. Pick one in Sync › Repo first.');
+      // The same standing Sync's Overview and the sidebar show, worked out in the app.
+      const standing = await getSyncStanding(path);
       return {
-        repo: repo.path,
-        commit: head.sha,
-        machines: machines.map((machine) => {
-          const counts = syncCounts(syncPlan(repo, machine));
-          return { machine: machine.machine, inStep: inStep(counts), counts };
-        }),
+        repo: standing.repo.path,
+        commit: standing.repo.head?.sha ?? null,
+        inStep: standing.inStep,
+        read: standing.read,
+        machines: standing.machines.map((machine) => ({
+          machine: machine.machine,
+          state: machine.state,
+          inStep: machine.state === 'inStep',
+          counts: machine.counts,
+          behind: machine.behind.map(({ kind, name, drift }) => ({ kind, name, drift })),
+        })),
+        problems: [standing.mcpError, standing.hooksError].filter(Boolean),
       };
     },
   },
