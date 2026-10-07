@@ -207,6 +207,7 @@ Usage: arbor [command] [flags]
   alerts [seen]                Recent alerts, or mark them all seen
   sync                         How far each machine is from the setup repo
   sync repo                    Whether the setup repo is kept in step with its remote
+  sync auto [pause|resume <m>] Machines brought in line by themselves, and pausing one
   sync <machine>               What Sync would change there
   sync apply <machine>         Bring it in line (backed up first)
   core [status|start|stop|restart|install [version]]
@@ -506,6 +507,19 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
         ["alerts"] => window_action(options, "alerts.list", json!({}), render::alerts),
         ["alerts", "seen"] => window_action(options, "alerts.seen", json!({}), |_| "Every alert is marked seen.".into()),
         ["sync"] => window_action(options, "sync.status", json!({}), render::sync_status),
+        ["sync", "auto"] => {
+            let mut client = connect(options)?;
+            let found = client.read("get_setup_autoline", Value::Null)?;
+            show(options, &found, |found| render::sync_auto(found, render::now_ms()));
+            Ok(())
+        }
+        ["sync", "auto", verb @ ("pause" | "resume"), machine] => {
+            let mut client = connect(options)?;
+            let machine = machine_name(&mut client, machine)?;
+            let found = client.read("set_setup_autoline_paused", json!({ "machine": machine, "paused": *verb == "pause" }))?;
+            show(options, &found, |found| render::sync_auto(found, render::now_ms()));
+            Ok(())
+        }
         ["sync", "repo"] => {
             let mut client = connect(options)?;
             let found = client.read("get_setup_repo_keeper", Value::Null)?;

@@ -67,6 +67,7 @@ import type {
 import { MachinePill } from '../components/identity/Identity';
 import { heldPaths, reloadSyncStanding, standingOf, standingWords, useSyncStanding } from '../services/syncStanding';
 import { keeperLine, SETUP_REPO_UPDATED_EVENT, useRepoKeeper } from '../services/setupRepoKeeper';
+import { autoLineWords, useAutoLine } from '../services/setupAutoline';
 import { listen } from '@tauri-apps/api/event';
 import { RepoBrowser } from './SetupRepoBrowser';
 
@@ -441,6 +442,7 @@ function RepoSummary({ path, repo, error, onForget }: { path: string; repo: Setu
 function MachineStrip({ plans, onReview }: { plans: Plan[]; onReview: (machine: string) => void }) {
   const { t } = useI18n();
   const { standing } = useSyncStanding();
+  const autoLine = useAutoLine();
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
       {plans.map((plan) => {
@@ -448,7 +450,9 @@ function MachineStrip({ plans, onReview }: { plans: Plan[]; onReview: (machine: 
         const words = found ? standingWords(found) : null;
         const summary = {
           inStep: found?.state !== 'behind',
-          text: words ? [t(words.key), ...words.parts.map((part) => t(part.key, { count: part.count }))].join(' · ') : '…',
+          text: words
+            ? [t(words.key), ...words.parts.map((part) => t(part.key, { count: part.count })), autoLineWords(autoLine, plan.machine.machine, (ms) => formatAgo(ms), t)].filter(Boolean).join(' · ')
+            : '…',
         };
         return (
           <button

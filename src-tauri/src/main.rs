@@ -1949,6 +1949,8 @@ fn main() {
             usage::machine_health::setup_standing::get_sync_standing,
             usage::machine_health::setup_repo_keeper::get_setup_repo_keeper,
             usage::machine_health::setup_repo_keeper::keep_setup_repo_now,
+            usage::machine_health::setup_autoline::get_setup_autoline,
+            usage::machine_health::setup_autoline::set_setup_autoline_paused,
             usage::machine_health::setup::read_setup_text,
             usage::machine_health::setup::read_setup_skill,
             usage::machine_health::setup_sync::get_setup_repo,

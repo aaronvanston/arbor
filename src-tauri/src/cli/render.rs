@@ -418,6 +418,32 @@ pub(crate) fn sync_repo(found: &Value, now_ms: i64) -> String {
     out.join("\n")
 }
 
+/// Machines brought in line by themselves, from `get_setup_autoline`.
+pub(crate) fn sync_auto(found: &Value, now_ms: i64) -> String {
+    if found.get("enabled") == Some(&Value::Bool(false)) {
+        return "Bringing machines in line by themselves is off (Settings › Machines › Sync).".into();
+    }
+    let rows: Vec<Vec<String>> = items(found, "machines")
+        .iter()
+        .map(|machine| {
+            let state = if machine.get("paused") == Some(&Value::Bool(true)) {
+                "paused".to_string()
+            } else if let Some(error) = machine.get("stopped").and_then(Value::as_str) {
+                format!("stopped: {error}")
+            } else if machine.get("running") == Some(&Value::Bool(true)) {
+                "running".into()
+            } else {
+                "on".into()
+            };
+            let waiting = machine.get("waiting").and_then(Value::as_u64).unwrap_or(0);
+            vec![field(machine, "machine"), state, ago(machine.get("lastRunMs").unwrap_or(&Value::Null), now_ms), if waiting > 0 { waiting.to_string() } else { String::new() }]
+        })
+        .collect();
+    let mut out = vec!["Machines are brought in line by themselves for what the repo moved on and Arbor backs up.".to_string()];
+    out.push(table(&["MACHINE", "STATE", "LAST RUN", "WAITING FOR YOU"], &rows));
+    out.join("\n")
+}
+
 /// `sync.plan` from the window.
 pub(crate) fn sync_plan(answer: &Value) -> String {
     let rows: Vec<Vec<String>> = items(answer, "files")
@@ -581,6 +607,20 @@ mod tests {
         assert!(shown.contains("Problem: It and origin/main each have commits") && shown.ends_with("  git said: rejected"), "{shown}");
         assert!(sync_repo(&json!({ "enabled": false, "repo": "/r" }), now).contains("is off"));
         assert!(sync_repo(&json!({ "enabled": true, "repo": "/r", "upstream": null }), now).contains("follows no remote branch"));
+    }
+
+    #[test]
+    fn sync_auto_says_each_machines_state_and_what_waits() {
+        let found = json!({ "enabled": true, "machines": [
+            { "machine": "cam-mbp", "paused": false, "running": false, "lastRunMs": 0, "stopped": null, "waiting": 0 },
+            { "machine": "ci-01", "paused": true, "running": false, "lastRunMs": null, "stopped": null, "waiting": 2 },
+            { "machine": "cedar-02", "paused": false, "running": false, "lastRunMs": null, "stopped": "~/.claude/CLAUDE.md (changed)", "waiting": 0 },
+        ] });
+        let shown = sync_auto(&found, 120_000);
+        assert!(shown.contains("cam-mbp   on") && shown.contains("2m ago"), "{shown}");
+        assert!(shown.contains("ci-01     paused") && shown.contains("2"), "{shown}");
+        assert!(shown.contains("stopped: ~/.claude/CLAUDE.md (changed)"), "{shown}");
+        assert!(sync_auto(&json!({ "enabled": false }), 0).contains("is off"));
     }
 
     #[test]

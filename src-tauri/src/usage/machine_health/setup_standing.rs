@@ -115,12 +115,64 @@ pub(crate) struct SyncStanding {
     read: u32,
 }
 
+impl BehindItem {
+    pub(super) fn kind(&self) -> StandingKind {
+        self.kind
+    }
+
+    pub(super) fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub(super) fn drift(&self) -> ItemDrift {
+        self.drift
+    }
+
+    pub(super) fn change(&self) -> Change {
+        self.change
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(kind: StandingKind, key: &str, drift: ItemDrift, change: Change) -> Self {
+        Self { kind, key: key.into(), name: key.rsplit(':').next().unwrap_or(key).into(), drift, change }
+    }
+}
+
+impl MachineStanding {
+    pub(super) fn machine(&self) -> &str {
+        &self.machine
+    }
+
+    pub(super) fn state(&self) -> MachineState {
+        self.state
+    }
+
+    pub(super) fn behind(&self) -> &[BehindItem] {
+        &self.behind
+    }
+}
+
+impl SyncStanding {
+    pub(super) fn repo(&self) -> &SetupRepo {
+        &self.repo
+    }
+
+    pub(super) fn machines(&self) -> &[MachineStanding] {
+        &self.machines
+    }
+
+    /// The commit the repo's hooks were read at, for writing them.
+    pub(super) fn hooks_commit(&self) -> Option<&str> {
+        self.hooks.as_ref().and_then(HookRegistry::commit)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Files and skills
 // ---------------------------------------------------------------------------
 
 /// A machine with no SHA-256 tool fingerprints with `cksum`: c, its checksum, a dash and the length.
-fn is_checksum(sum: &str) -> bool {
+pub(super) fn is_checksum(sum: &str) -> bool {
     sum.strip_prefix('c').and_then(|rest| rest.split_once('-')).is_some_and(|(crc, len)| {
         !crc.is_empty() && !len.is_empty() && crc.bytes().chain(len.bytes()).all(|byte| byte.is_ascii_digit())
     })
@@ -616,7 +668,7 @@ pub(super) async fn refresh(app: &tauri::AppHandle) {
     }
 }
 
-async fn standing_now(state: &MachineHealthState, repo: &str) -> Result<SyncStanding, String> {
+pub(super) async fn standing_now(state: &MachineHealthState, repo: &str) -> Result<SyncStanding, String> {
     let folder = Path::new(repo);
     let found = read_repo(folder).await?;
     let scanned = scanned_machines(&state.lock());

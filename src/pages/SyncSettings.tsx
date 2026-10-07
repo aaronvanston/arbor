@@ -2,6 +2,7 @@ import { SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Switch } from '../components/ui/switch';
 import { useI18n } from '../i18n';
 import { keepRepoNow, setKeepInStep, useKeepInStep } from '../services/setupRepoKeeper';
+import { setAppPreference, useAppPreferences } from '../appPreferences';
 
 /**
  * Settings › Machines › Sync: whether Arbor keeps the setup repo in step with its remote by itself. Off, the repo is
@@ -10,6 +11,7 @@ import { keepRepoNow, setKeepInStep, useKeepInStep } from '../services/setupRepo
 export function SyncSettings() {
   const { t } = useI18n();
   const on = useKeepInStep();
+  const autoLine = useAppPreferences().autoLineUp;
   const change = (next: boolean) => {
     setKeepInStep(next);
     // Turned on, it catches up straight away rather than at the next round; turned off, the round says so.
@@ -22,6 +24,12 @@ export function SyncSettings() {
         title={t('repoKeeper.settings.keep')}
         description={t('repoKeeper.settings.keepHint')}
         control={<Switch checked={on} onCheckedChange={change} aria-label={t('repoKeeper.settings.keep')} />}
+      />
+      <SettingsRow
+        settingId="machines.sync-auto-line"
+        title={t('autoLine.settings.title')}
+        description={t('autoLine.settings.hint')}
+        control={<Switch checked={autoLine} onCheckedChange={(next) => setAppPreference('autoLineUp', next)} aria-label={t('autoLine.settings.title')} />}
       />
     </SettingsSection>
   );

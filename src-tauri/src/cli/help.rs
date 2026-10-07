@@ -121,11 +121,16 @@ Recent alerts, or mark every one seen (asks first, so it needs --yes).
         "sync",
         "arbor sync
 arbor sync repo
+arbor sync auto
+arbor sync auto pause <machine>
+arbor sync auto resume <machine>
 arbor sync <machine>
 arbor sync apply <machine>
 
 Where each machine stands against the setup repo (in step, or behind on files, skills, MCP servers, hooks, plugins
 or projects, as Sync › Overview counts them), the files and skills Sync would change on one, or bring those in line.
+`sync auto` lists each machine brought in line by itself (only what the repo moved on and Arbor
+backs up; edits made on a machine, removals, plugins and MCP servers wait for you), and pauses or resumes one.
 `sync repo` says whether the setup repo is kept in step with its remote, when it was last
 fetched, pulled and pushed, and what stopped it. Applying asks first: it prints the plan and needs --yes. Every file is backed up before it changes, and Sync › Repo ›
 History can undo it.

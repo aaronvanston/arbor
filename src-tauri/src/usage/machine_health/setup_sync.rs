@@ -830,6 +830,13 @@ pub(crate) struct SyncChange {
     before: Option<String>,
 }
 
+impl SyncChange {
+    /// The repo's copy written at `path`, as the scan names it, over what the scan found there (`before`).
+    pub(super) fn write(path: &str, before: Option<String>) -> Self {
+        Self { path: path.to_string(), remove: false, before }
+    }
+}
+
 /// What a change writes.
 enum Content {
     File(Vec<u8>),
@@ -1016,6 +1023,8 @@ pub(crate) struct SetupBackup {
     at_ms: i64,
     /// What made it.
     what: ChangeKind,
+    /// Made by Sync bringing the machine in line by itself (`setup_autoline`), as this Mac remembers.
+    automatic: bool,
     /// The repo's commit it came from.
     commit: Option<String>,
     pub(super) undone_at_ms: Option<i64>,
@@ -1058,6 +1067,7 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                         id: id.to_string(),
                         at_ms,
                         what: ChangeKind::Sync,
+                        automatic: false,
                         commit: None,
                         undone_at_ms: undone.parse::<i64>().ok().map(|seconds| seconds * 1000),
                         deleted_at_ms: None,
@@ -1539,7 +1549,11 @@ pub(crate) async fn apply_setup_sync(
     }
     let stdout = run_on(&target, MachineOp::SetupApply, &apply_script(&new_stamp(), &commit, &planned)).await;
     rescan(&app, &machine);
-    Ok(parse_outcome(&stdout?))
+    let outcome = parse_outcome(&stdout?);
+    if outcome.failed.is_empty() {
+        super::setup_autoline::applied(&machine, outcome.backup.as_slice());
+    }
+    Ok(outcome)
 }
 
 async fn backups(machine: &Machine) -> Result<Vec<SetupBackup>, String> {
@@ -1551,7 +1565,11 @@ async fn backups(machine: &Machine) -> Result<Vec<SetupBackup>, String> {
 #[tauri::command]
 pub(crate) async fn list_setup_backups(state: tauri::State<'_, MachineHealthState>, machine: String) -> Result<Vec<SetupBackup>, String> {
     let target = covered_machine(&state.lock(), &machine)?.0;
-    backups(&target).await
+    let mut found = backups(&target).await?;
+    for backup in &mut found {
+        backup.automatic = super::setup_autoline::is_automatic(&backup.id);
+    }
+    Ok(found)
 }
 
 /// Puts back what one change on a machine replaced.

@@ -78,6 +78,14 @@ done: diverged, dirty, sign-in and network trouble are left as they are. Each sh
 Push buttons and raises one `setupRepo` alert, folded by the repo it's about. A pull re-reads the standing, so machines
 show behind at once.
 
+Machines are then brought in line by themselves (`setup_autoline.rs`, the machine-scoped preference `autoLineUp`, paused
+per machine from Overview's machine menu). A run starts after a pull, after a scan lands, and when a machine answers
+again. It only applies what the repo moved on (`Change::Update`) and Arbor backs up: files, skills in the store, and a
+machine's hooks with their scripts. An item with no base waits quietly. Edits made on the machine, removals, plugins and
+MCP servers wait for the user and are said once per machine. A run is a normal guarded apply, marked automatic in History
+by this Mac's list of its backups. It runs at most once every five minutes per machine. A failure stops runs on that
+machine until a person's apply works there or it's found in step.
+
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the
 limits, the next run's chances, where a burst would go. Settings › Pools only edits them.
 

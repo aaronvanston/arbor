@@ -162,6 +162,8 @@ mod tests {
         types.visit::<crate::usage::machine_health::project_places::ProjectsDrift>();
         types.visit::<crate::usage::machine_health::setup_standing::SyncStanding>();
         types.visit::<crate::usage::machine_health::setup_repo_keeper::RepoKeeper>();
+        types.visit::<crate::usage::machine_health::setup_autoline::AutoLine>();
+        types.visit::<crate::usage::machine_health::setup_autoline::AutoLineEvent>();
         types.visit::<crate::usage::machine_health::project_fixes::ProjectFixRequest>();
         types.visit::<crate::usage::machine_health::project_fixes::ProjectFixes>();
         types.visit::<crate::usage::machine_health::project_skills::ProjectSkillsOutcome>();

@@ -95,6 +95,9 @@ const CATEGORY: Record<AlertKind, AlertCategory | null> = {
   machineUp: 'machines',
   setupChanged: 'machines',
   setupRepo: 'machines',
+  setupAuto: 'machines',
+  setupAutoFailed: 'machines',
+  setupWaiting: 'machines',
   outage: 'outages',
   // The proxy's own trouble: Home says what's wrong, with the fix.
   proxySettings: 'outages',
@@ -115,7 +118,7 @@ export type AlertDestination =
   | { kind: 'accounts'; account?: string; provider?: string }
   | { kind: 'machines'; machine?: string }
   | { kind: 'automation'; automation: string }
-  | { kind: 'setup'; tab?: SetupChangeView | 'repo'; machine?: string }
+  | { kind: 'setup'; tab?: SetupChangeView | 'repo' | 'history' | 'overview'; machine?: string }
   | { kind: 'archive' }
   | { kind: 'session'; session: string }
   | { kind: 'sessions'; machine?: string }
@@ -156,6 +159,12 @@ function setupChangeDestination(subject: AlertSubject | undefined): AlertDestina
 export function alertDestination({ kind, subject }: Pick<AlertRecord, 'kind' | 'subject'>): AlertDestination | null {
   if (kind === 'setupChanged') return setupChangeDestination(subject);
   if (kind === 'setupRepo') return { kind: 'setup', tab: 'repo' };
+  // What a run by itself did, or why it stopped, is in the machine's History; what waits for you is on Overview.
+  if (kind === 'setupAuto' || kind === 'setupAutoFailed') {
+    const machine = onlyOne(subject?.machine, subject?.machines);
+    return { kind: 'setup', tab: 'history', ...(machine ? { machine } : {}) };
+  }
+  if (kind === 'setupWaiting') return { kind: 'setup', tab: 'overview' };
   if (kind === 'automationFailed' && subject?.automation) return { kind: 'automation', automation: subject.automation };
   // What's wrong with the archive, and what to do, is on its settings page.
   if (kind === 'archiveAway' || kind === 'archiveFailing') return { kind: 'archive' };

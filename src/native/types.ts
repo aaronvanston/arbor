@@ -233,6 +233,15 @@ export type AppUpdateTask = {
 };
 
 /**
+ * What a run brought in line.
+ */
+export type AppliedCounts = {
+  files: number,
+  skills: number,
+  hooks: number,
+};
+
+/**
  * The proxy session with the thread's agent session id, when its requests came through Arbor.
  */
 export type ArborSession = {
@@ -468,6 +477,46 @@ export type AttentionItem = {
  * The models a credential file keeps from its account, or why they can't be read.
  */
 export type AuthFileExcludedModels = { "kind": "rules", rules: Array<string>, } | { "kind": "invalidMetadata" } | { "kind": "invalidExclusions" };
+
+export type AutoLine = {
+  enabled: boolean,
+  machines: Array<AutoMachine>,
+};
+
+export type AutoLineEvent = {
+  machine: string,
+  kind: AutoLineKind,
+  applied: AppliedCounts,
+  error: string | null,
+  waiting: number,
+};
+
+/**
+ * What the window hears after a run, or when what waits on a machine changes.
+ */
+export type AutoLineKind = "applied" | "failed" | "waiting";
+
+/**
+ * One machine, as runs by themselves see it.
+ */
+export type AutoMachine = {
+  machine: string,
+  /**
+   * Its own value says not to, from Sync › Overview's machine menu.
+   */
+  paused: boolean,
+  running: boolean,
+  lastRunMs: number | null,
+  lastApplied: AppliedCounts | null,
+  /**
+   * Why the last run failed, which stops runs here until a person's apply works or a scan finds it in step.
+   */
+  stopped: string | null,
+  /**
+   * How many changes on it wait for the user.
+   */
+  waiting: number,
+};
 
 /**
  * One automation with all it's set to do.
@@ -4971,6 +5020,10 @@ export type SetupBackup = {
    * What made it.
    */
   what: ChangeKind,
+  /**
+   * Made by Sync bringing the machine in line by itself (`setup_autoline`), as this Mac remembers.
+   */
+  automatic: boolean,
   /**
    * The repo's commit it came from.
    */

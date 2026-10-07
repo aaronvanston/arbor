@@ -62,6 +62,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Cap an account at a percent of its limits, or clear it | `arbor accounts cap <id> 50`, `arbor accounts cap <id> off` |
 | Automatic account order for a provider | `arbor routing claude on`, `arbor routing codex off` |
 | Whether the setup repo is kept in step with its remote (fetched every 15 minutes, fast-forwarded when only behind, pushed when only ahead and after Arbor commits; never merged or forced), when it was last fetched, pulled and pushed, and what stopped it (diverged, synced files not committed, sign-in or network trouble) | `arbor sync repo`; `arbor call keep_setup_repo_now` runs a round now |
+| Whether machines are brought in line by themselves (only what the repo moved on and Arbor backs up; an edit made on the machine, a removal, plugins and MCP servers wait for the user), each one's last run, what stopped it, and pausing one | `arbor sync auto`; `arbor sync auto pause <machine>` / `arbor sync auto resume <machine>` |
 | Bring a machine in line with the setup repo | `arbor sync apply <machine>` (backed up first; undo it in Sync › Repo › History) |
 | Keep a project with no remote (projects/_local/<name>) in step across machines through the hub on this Mac | `arbor call sync_local_project repo=<setup repo folder> project=_local/<name>`; then each checkout can fast-forward to `arbor/<branch>` |
 | Put the schemas for machine and project files in the setup repo, each as a commit | `arbor call add_setup_schemas repo=<setup repo folder>` |

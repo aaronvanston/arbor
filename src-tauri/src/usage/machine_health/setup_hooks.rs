@@ -526,6 +526,10 @@ pub(super) async fn registry_for(folder: &Path, machines: &[(String, MachineSetu
 }
 
 impl HookRegistry {
+    pub(super) fn commit(&self) -> Option<&str> {
+        self.commit.as_deref()
+    }
+
     /// How each repo hook stands in each home of `machine`, as found for Sync's standing: its name, the home, its
     /// state, and both sides' fingerprints. A hook the repo hasn't got is the machine's own business, so it isn't here.
     pub(super) fn compared_on<'a>(&'a self, machine: &'a str) -> Vec<(&'a str, &'a str, HookState, &'a str, &'a str)> {
@@ -928,6 +932,10 @@ pub(crate) async fn apply_hooks(
         });
     }
     rescan(&app, &machine);
+    if edits.iter().all(|edit| edit.error.is_none()) {
+        let backups: Vec<String> = edits.iter().filter_map(|edit| edit.backup.clone()).collect();
+        super::setup_autoline::applied(&machine, &backups);
+    }
     Ok(edits)
 }
 

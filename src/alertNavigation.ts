@@ -16,6 +16,8 @@ export function alertDestinationView(destination: AlertDestination): AppView | n
     case 'setup':
       // The setup repo's own trouble is on Sync › Repo, beside its Pull and Push.
       if (destination.tab === 'repo') return setupView({ tab: 'repo' });
+      if (destination.tab === 'history') return setupView({ tab: 'repo', lens: 'changes', ...(destination.machine ? { machine: destination.machine } : {}) });
+      if (destination.tab === 'overview') return setupView({ tab: 'overview' });
       return (destination.tab ? movedSetupView(destination.tab) : null) ?? setupChecksView();
     case 'archive': return { kind: 'settings', page: 'session-archive' };
     case 'session': return sessionsView({ session: destination.session });

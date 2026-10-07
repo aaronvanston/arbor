@@ -60,6 +60,9 @@ import type {
   ProjectToolchain,
   ProjectWorktree,
   RegistryCell,
+  AutoLine,
+  AutoLineEvent,
+  AutoMachine,
   RepoKeeper,
   RegistryState,
   RemovalResult,
@@ -919,7 +922,9 @@ const mockRepo = (path: string) => {
   return repo;
 };
 
-type MockSetupBackup = SetupBackup & {
+type MockSetupBackup = Omit<SetupBackup, 'automatic'> & {
+  /** Made by a run by itself; cam-mbp's newest is, in the mock, so History shows one. */
+  automatic?: boolean;
   /** What each file was before, and what the change left, to put back and to check against. */
   was: Record<string, SetupItem | null>; left: Record<string, string | null>;
   /** What each skill's home and the store had before, and what the change left, by `home\u0000name`. */
@@ -2017,6 +2022,35 @@ const keepRepoMock = (olderThanMs: number | null): RepoKeeper => {
   void emit('setup-repo-keeper', repoKeeper);
   return repoKeeper;
 };
+
+// Machines brought in line by themselves (setup_autoline.rs). By default cam-mbp's last run was 12 minutes ago and the
+// others haven't run; `?autoline=applied`, `failed` or `waiting` has a run on cam-mbp report so four seconds after load
+// (an alert each), `paused` pauses ci-01 by its own value, and `off` turns it off in Settings › Machines › Sync.
+const autoLineScenario = params.get('autoline');
+const autoMachines = new Map<string, AutoMachine>();
+const autoMachine = (machine: string): AutoMachine => autoMachines.get(machine) ?? {
+  machine, paused: false, running: false, lastRunMs: machine === 'cam-mbp' ? Date.now() - 12 * 60_000 : null,
+  lastApplied: machine === 'cam-mbp' ? { files: 2, skills: 1, hooks: 0 } : null, stopped: null, waiting: machine === 'ci-01' ? 1 : 0,
+};
+if (autoLineScenario === 'paused') autoMachines.set('ci-01', { ...autoMachine('ci-01'), paused: true });
+const autoLineReply = (): AutoLine => {
+  const preferences = (() => { try { return JSON.parse(localStorage.getItem('arbor.preferences.v1') ?? '{}') as { autoLineUp?: boolean }; } catch { return {}; } })();
+  return { enabled: autoLineScenario !== 'off' && preferences.autoLineUp !== false, machines: setupMachines.map((entry) => autoMachine(entry.machine)) };
+};
+if (autoLineScenario === 'applied' || autoLineScenario === 'failed' || autoLineScenario === 'waiting') {
+  window.setTimeout(() => {
+    const failed = autoLineScenario === 'failed';
+    const event: AutoLineEvent = {
+      machine: 'cam-mbp',
+      kind: autoLineScenario === 'waiting' ? 'waiting' : failed ? 'failed' : 'applied',
+      applied: { files: 3, skills: 1, hooks: 0 },
+      error: failed ? '~/.claude/CLAUDE.md (changed)' : null,
+      waiting: autoLineScenario === 'waiting' ? 2 : 0,
+    };
+    autoMachines.set('cam-mbp', { ...autoMachine('cam-mbp'), lastRunMs: Date.now(), stopped: event.error, waiting: event.waiting });
+    void emit('setup-autoline', event);
+  }, 4_000);
+}
 
 const syncStandingMock = (path: string): SyncStanding => {
   const repo = setupRepoReply(path);
@@ -3407,8 +3441,8 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   },
   list_setup_backups: (args) => {
     if (params.get('changes') === 'fail') return later(300, () => { throw `ssh: connect to host ${args.machine} port 22: Operation timed out`; });
-    const backups = (setupBackups[args.machine] ?? []).map(({ id, atMs, what, commit, undoneAtMs, deletedAtMs, files, skills }) => ({
-      id, atMs, what, commit, undoneAtMs, ...(deletedAtMs === undefined ? {} : { deletedAtMs }), files, skills,
+    const backups = (setupBackups[args.machine] ?? []).map(({ id, atMs, what, commit, undoneAtMs, deletedAtMs, files, skills, automatic }, index) => ({
+      id, atMs, what, commit, undoneAtMs, automatic: automatic ?? (args.machine === 'cam-mbp' && index === 0), ...(deletedAtMs === undefined ? {} : { deletedAtMs }), files, skills,
     }));
     return later(300, () => backups);
   },
@@ -3607,6 +3641,13 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   get_projects: () => projectsState.map(projectsReply),
   get_project_drift: () => later(250, mockDrift),
   get_sync_standing: (args) => later(250, () => syncStandingMock(args.repo)),
+  get_setup_autoline: () => autoLineReply(),
+  set_setup_autoline_paused: (args) => {
+    mockLog('set_setup_autoline_paused', args);
+    autoMachines.set(args.machine, { ...autoMachine(args.machine), paused: args.paused });
+    void emit('setup-autoline', { machine: args.machine, kind: 'waiting', applied: { files: 0, skills: 0, hooks: 0 }, error: null, waiting: 0 });
+    return later(200, autoLineReply);
+  },
   get_setup_repo_keeper: () => ({ ...repoKeeper, enabled: localStorage.getItem('arbor.setup.keepInStep.v1') !== 'false' && repoKeepScenario !== 'off' }),
   keep_setup_repo_now: (args) => later(600, () => keepRepoMock(args.olderThanMs ?? null)),
   sync_local_project: (args) => {

@@ -2188,6 +2188,13 @@ pub(crate) async fn scan_setup(
     Ok(())
 }
 
+/// Scans `machine` now, as a Scan someone asked for: a machine back online after being away.
+pub(super) fn scan_now(app: &tauri::AppHandle, machine: &str) {
+    let now_ms = Local::now().timestamp_millis();
+    let targets = take_targets(&app.state::<MachineHealthState>(), Some(machine), false, now_ms);
+    start_scans(app, targets, now_ms, false);
+}
+
 /// Scans `machine` again in the background, after Arbor has changed something on it: what that
 /// scan finds is Arbor's doing, so it isn't reported as a change.
 pub(super) fn rescan(app: &tauri::AppHandle, machine: &str) {
@@ -2240,6 +2247,10 @@ fn start_scans_after(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, no
             let _ = app.emit(SETUP_INVENTORY_UPDATED_EVENT, at_ms);
             if after_change && !recorded.again {
                 super::setup_standing::refresh(&app).await;
+            }
+            // A machine read afresh may be behind the repo: Sync may bring it in line by itself.
+            if !recorded.again {
+                super::setup_autoline::consider(&app, Some(machine.name().to_string()));
             }
             if recorded.harnesses_changed {
                 let _ = app.emit(agent_homes::AGENT_HOMES_UPDATED_EVENT, ());
@@ -2443,6 +2454,19 @@ impl MachineSetup {
 
     pub(super) fn harness_homes(&self) -> &[HarnessHome] {
         &self.harness_homes
+    }
+}
+
+impl MachineSetup {
+    /// The fingerprint the last scan gave the file or skill folder at `path` (as the scan names it), when it's there
+    /// and isn't a link: what a guarded write checks it's still the same before replacing it.
+    pub(super) fn sum_at(&self, path: &str) -> Option<String> {
+        self.homes
+            .iter()
+            .flat_map(|home| &home.items)
+            .chain(self.harness_homes.iter().flat_map(|home| &home.items))
+            .find(|item| item.path.as_deref() == Some(path) && item.link.is_none())
+            .and_then(|item| item.sum.clone())
     }
 }
 

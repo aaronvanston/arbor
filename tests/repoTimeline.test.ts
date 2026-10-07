@@ -5,7 +5,7 @@ import type { RepoCommit, SetupBackup } from '../src/native/types';
 const commit = (sha: string, atMs: number): RepoCommit => ({ sha: sha.repeat(40).slice(0, 40), subject: `Commit ${sha}`, atMs });
 const change = (machine: string, id: string, atMs: number, from: string | null, what: SetupBackup['what'] = 'sync'): MachineChange => ({
   machine,
-  backup: { id, atMs, what, commit: from, undoneAtMs: null, files: [], skills: [] },
+  backup: { id, atMs, what, automatic: false, commit: from, undoneAtMs: null, files: [], skills: [] },
 });
 
 describe('the repo’s history with the machines’ changes', () => {

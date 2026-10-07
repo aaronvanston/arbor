@@ -32,6 +32,11 @@ export type AppPreferences = {
   machineNotifications: boolean;
   /** Read each machine's setup every half hour, and notify when a hook, MCP server, marketplace or plugin changes. */
   setupChangeAlerts: boolean;
+  /**
+   * Bring machines in line with the setup repo by themselves, for what the repo moved on and Arbor backs up
+   * (`setup_autoline.rs` reads it, and a machine's own value pauses one).
+   */
+  autoLineUp: boolean;
   /** Tokens one session, subagents included, can use in an hour before it's flagged as heavy; 0 turns that off. */
   heavySessionTokens: number;
   /** Notify when the session archive's drive has been away, or the archive failing, for an hour, and daily after. */
@@ -81,6 +86,7 @@ export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   outageNotifications: true,
   machineNotifications: true,
   setupChangeAlerts: true,
+  autoLineUp: true,
   heavySessionTokens: 100_000_000,
   archiveAlerts: true,
   weeklyDigest: false,

@@ -182,6 +182,7 @@ export function HistoryMode({ repo, machines, machine: asked }: {
               <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
                 <MachinePill name={item.change.machine} size="sm" />
                 <span className="truncate">{t(CHANGE_KIND[item.change.backup.what])}</span>
+                {item.change.backup.automatic ? <span className="shrink-0 text-xs text-muted-foreground" data-history-automatic>{t('autoLine.history')}</span> : null}
               </span>
               <span className="text-xs text-muted-foreground">{countText(backupCounts(item.change.backup), t)} · {formatAgo(item.change.backup.atMs, now)}</span>
             </button>

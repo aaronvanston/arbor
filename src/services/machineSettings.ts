@@ -11,6 +11,7 @@ export const MACHINE_SCOPED_PREFERENCES = [
   'heavySessionTokens',
   'machineNotifications',
   'setupChangeAlerts',
+  'autoLineUp',
   'agentPermissionAlerts',
   'agentWaitingAlerts',
 ] as const;

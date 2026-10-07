@@ -66,6 +66,7 @@ pub(crate) mod setup_mcp;
 pub(crate) mod setup_plugins;
 pub(crate) mod setup_projects;
 pub(crate) mod setup_repo_browse;
+pub(crate) mod setup_autoline;
 pub(crate) mod setup_repo_keeper;
 pub(crate) mod setup_repo_skills;
 pub(crate) mod setup_skills;
@@ -1267,14 +1268,16 @@ fn record_result(
     result: Result<Sampled, String>,
     latency_ms: Option<f32>,
     path: Option<NetworkPath>,
-) {
+) -> bool {
     let mut inner = state.lock();
     let Some(series) = inner.series.get_mut(machine) else {
-        return;
+        return false;
     };
     if matches!(result, Ok(Sampled::Waiting)) {
-        return;
+        return false;
     }
+    // Answering again after a check that failed: what's changed on it while it was away is worth a look.
+    let was_down = series.error.is_some();
     series.last_attempt_at = Some(at_ms);
     series.path = path;
     let derived = match result {
@@ -1309,6 +1312,7 @@ fn record_result(
             series.trim(at_ms);
         }
     }
+    was_down && series.error.is_none()
 }
 
 /// Brings Grove's registry in line with the machines the sampler reads, and follows the probes of those that have one.
@@ -1487,7 +1491,10 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
         };
         for (machine, result, network) in results {
             let path = network.address.and_then(|address| paths.get(&address).cloned());
-            record_result(&state, &machine, at_ms, result, network.latency_ms, path);
+            if record_result(&state, &machine, at_ms, result, network.latency_ms, path) {
+                // Its setup is read again now; once that lands, Sync may bring it in line (`setup_autoline`).
+                setup::scan_now(&app, &machine);
+            }
         }
         agents::check_due(&app, &state, at_ms);
         grove::upkeep_probes(&app, &state, at_ms);

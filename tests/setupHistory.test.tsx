@@ -8,6 +8,7 @@ const backup = (id: string, what: SetupBackup['what'], files: string[], undone =
   id,
   atMs: Date.UTC(2026, 8, 26, 1, 2, 3),
   what,
+  automatic: false,
   commit: null,
   undoneAtMs: undone ? Date.UTC(2026, 8, 26, 2, 0, 0) : null,
   files: files.map((path) => ({ path, change: 'changed', skill: false })),

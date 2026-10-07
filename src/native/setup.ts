@@ -31,6 +31,7 @@ import type {
   ProjectsDrift,
   SyncStanding,
   RepoKeeper,
+  AutoLine,
   RemovalResult,
   RepoChange,
   RepoCommit,
@@ -65,6 +66,8 @@ export type SetupCommands = {
   get_sync_standing: { args: { repo: string }; result: SyncStanding };
   get_setup_repo_keeper: { result: RepoKeeper };
   keep_setup_repo_now: { args: { olderThanMs?: number | null }; result: RepoKeeper };
+  get_setup_autoline: { result: AutoLine };
+  set_setup_autoline_paused: { args: { machine: string; paused: boolean }; result: AutoLine };
   add_setup_schemas: { args: { repo: string }; result: SetupRepo };
   apply_project_fixes: { args: { repo: string; machine: string; fixes: ProjectFixRequest[] }; result: ProjectFixes };
   apply_project_skills: { args: { repo: string; machine: string; project: string }; result: ProjectSkillsOutcome };

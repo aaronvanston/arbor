@@ -6,7 +6,7 @@ import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { TableEmpty } from '../components/ui/data-table';
-import { ChevronRight } from '../components/ui/icons';
+import { ChevronRight, MoreHorizontal } from '../components/ui/icons';
 import { Spinner } from '../components/ui/spinner';
 import { StatusDot } from '../components/ui/status-dot';
 import { toast } from '../components/ui/toast';
@@ -20,6 +20,8 @@ import { plainError } from '../services/plainError';
 import { bringToast, switchFailureText } from '../services/switchReport';
 import { getSetupRepoLog } from '../services/repoBrowser';
 import { applies, CHANGE_WORDS, standingOf } from '../services/syncStanding';
+import { autoLineWords, isPaused, setAutoLinePaused, useAutoLine } from '../services/setupAutoline';
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from '../components/ui/menu';
 import type { BehindItem, RepoCommit, SetupMachine } from '../native/types';
 import { KIND_LABEL } from './SetupLibrary';
 
@@ -52,6 +54,17 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
   const { repoPath, sources, loaded, loadError, rows, standing, kindErrors, readAgain } = useLibrary(machines);
+  const autoLine = useAutoLine();
+  /** Pauses or resumes a machine's runs by themselves: its own value, which Undo puts back. */
+  const pause = (machine: string, paused: boolean) => {
+    setAutoLinePaused(machine, paused)
+      .then(() => toast({
+        kind: 'success',
+        title: t(paused ? 'autoLine.paused.done' : 'autoLine.resumed.done', { machine }),
+        action: { label: t('common.undo'), onClick: () => { void setAutoLinePaused(machine, !paused).catch(() => undefined); } },
+      }))
+      .catch((error: unknown) => toast({ kind: 'error', title: t('autoLine.pause.failed', { machine }), description: String(error) }));
+  };
   const [running, setRunning] = useState<string | null>(null);
   const [problems, setProblems] = useState<Record<string, string[]>>({});
   const [log, setLog] = useState<RepoCommit[] | null>(null);
@@ -192,10 +205,25 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
                               </>
                             )}
                     </span>
+                    {autoLine?.enabled ? (
+                      <Menu>
+                        <MenuTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label={t('autoLine.menu', { machine: machine.machine })} title={t('autoLine.menu', { machine: machine.machine })} />}>
+                          <MoreHorizontal />
+                        </MenuTrigger>
+                        <MenuPopup align="end">
+                          <MenuItem onClick={() => pause(machine.machine, !isPaused(autoLine, machine.machine))}>
+                            {t(isPaused(autoLine, machine.machine) ? 'autoLine.resume' : 'autoLine.pause')}
+                          </MenuItem>
+                        </MenuPopup>
+                      </Menu>
+                    ) : null}
                     {running === machine.machine ? <Spinner className="size-4" /> : plan ? (
                       <Button variant="outline" size="sm" disabled={running !== null} onClick={() => void bring([plan])}>{t('overview.bring.one')}</Button>
                     ) : null}
                   </div>
+                  {autoLine?.enabled && state !== 'notScanned' ? (
+                    <p className="ps-48 text-xs text-muted-foreground" data-autoline-machine={machine.machine}>{autoLineWords(autoLine, machine.machine, (ms) => formatAgo(ms), t)}</p>
+                  ) : null}
                   {(problems[machine.machine] ?? []).map((text) => <p key={text} className="ps-48 text-xs text-error-foreground">{text}</p>)}
                 </li>
               );

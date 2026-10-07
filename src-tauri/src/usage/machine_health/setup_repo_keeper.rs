@@ -208,7 +208,7 @@ fn enabled(app: &tauri::AppHandle) -> bool {
 }
 
 /// The setup repo: the one the window last named, else the one its saved setting names.
-fn repo_folder(app: &tauri::AppHandle) -> Option<String> {
+pub(super) fn repo_folder(app: &tauri::AppHandle) -> Option<String> {
     let named = app.state::<MachineHealthState>().lock().setup_repo.clone();
     named.or_else(|| app.state::<crate::saved_store::SavedStoreState>().value(SETUP_REPO_SETTING)).filter(|repo| !repo.is_empty())
 }
@@ -237,6 +237,7 @@ async fn run(app: &tauri::AppHandle) -> RepoKeeper {
         let _ = app.emit(SETUP_REPO_UPDATED_EVENT, Local::now().timestamp_millis());
         // The machines are behind the repo now, and their bases are worth recording without the window.
         super::setup_standing::refresh(app).await;
+        super::setup_autoline::consider(app, None);
     }
     next
 }

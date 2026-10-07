@@ -147,6 +147,9 @@
  * reaching them yet, so Sync shows them as they were and only a Scan you ask for reads them again; `?behind=plugins` for
  * ci-01 behind the setup repo on plugins alone, with the sample plugins listed as `?pluginrepo=sample` lists them (Overview,
  * the Repo strip and the sidebar badge all say so);
+ * `?autoline=applied`, `failed` or `waiting` for cam-mbp's run by itself reporting four seconds after load (brought in
+ * line, stopped by a file changed since its scan, or changes waiting for you), each raising its alert; `?autoline=paused`
+ * for ci-01 paused by its own value, and `off` for bringing machines in line by themselves switched off;
  * `?repokeep=ahead`, `behind`, `diverged`, `dirty`, `pushfail`, `noremote` or `off` for the setup repo ahead of or
  * behind its remote (the next round, on focus or from Settings › Machines › Sync, pushes or pulls), ahead and behind,
  * behind with synced files changed, a push the remote turns down, a branch that follows no remote, or keeping it in step
