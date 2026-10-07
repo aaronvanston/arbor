@@ -3,9 +3,10 @@ import type { MessageKey, MessageVariables } from '../i18n/resources';
 import type { CallKind, ClearedCalls, DiagnosticCall } from '../native/types';
 
 export const getCallDiagnostics = () => invokeCommand('get_call_diagnostics');
-export const clearCallDiagnostics = () => invokeCommand('clear_call_diagnostics');
+/** Clears every call, or the machine Diagnostics is narrowed to: the calls shown. */
+export const clearCallDiagnostics = (machine: string | null) => invokeCommand('clear_call_diagnostics', { machine });
 export const undoClearCallDiagnostics = (cleared: ClearedCalls) =>
-  invokeCommand('undo_clear_call_diagnostics', { clearedAtMs: cleared.clearedAtMs, previousClearedAtMs: cleared.previousClearedAtMs });
+  invokeCommand('undo_clear_call_diagnostics', { clearedAtMs: cleared.clearedAtMs, previousClearedAtMs: cleared.previousClearedAtMs, machine: cleared.machine });
 
 /** A call that failed, ran out of time, or took too long. */
 export const isProblem = (call: DiagnosticCall) => call.outcome !== 'ok' || call.slow;

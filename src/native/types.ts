@@ -1227,6 +1227,10 @@ export type ClearedCalls = {
   count: number,
   clearedAtMs: number,
   previousClearedAtMs: number | null,
+  /**
+   * The machine whose calls were cleared; none for every call.
+   */
+  machine: string | null,
 };
 
 /**

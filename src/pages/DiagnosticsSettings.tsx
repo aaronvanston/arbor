@@ -47,6 +47,8 @@ export function DiagnosticsSettingsPage() {
   const [clearing, setClearing] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
   const clearButton = useRef<HTMLButtonElement>(null);
+  // The machine Settings is narrowed to shows its own calls; the core's are about no machine.
+  const scope = useSettingsScope();
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -74,7 +76,7 @@ export function DiagnosticsSettingsPage() {
     setClearing(true);
     setClearError(null);
     try {
-      const cleared = await clearCallDiagnostics();
+      const cleared = await clearCallDiagnostics(scope);
       await refresh();
       toast({
         title: t(cleared.count === 1 ? 'diagnostics.cleared.one' : 'diagnostics.cleared.other', { count: formatNumber(cleared.count) }),
@@ -97,12 +99,10 @@ export function DiagnosticsSettingsPage() {
     }
   };
 
-  // Clear empties every call, so whether there's anything to clear is about them all.
-  const clearBlocked = clearBlockedReason(data ? summarizeCalls(data.calls) : null, loadError !== null);
-  // The machine Settings is narrowed to shows its own calls; the core's are about no machine.
-  const scope = useSettingsScope();
   const shown = data ? { ...data, calls: callsOn(data.calls, scope) } : null;
   const summary = shown ? summarizeCalls(shown.calls) : null;
+  // Clear empties the calls shown: every call, or the narrowed machine's.
+  const clearBlocked = clearBlockedReason(summary, loadError !== null);
 
   return (
     <Page>

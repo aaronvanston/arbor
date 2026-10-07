@@ -1978,7 +1978,9 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         name: "clear_call_diagnostics",
         access: Access::Confirm,
         summary: "Clear call diagnostics",
-        args: &[],
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string | null", optional: true },
+        ],
     },
     CommandSpec {
         name: "undo_clear_call_diagnostics",
@@ -1987,6 +1989,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[
             ArgSpec { name: "clearedAtMs", ts_type: "number", optional: false },
             ArgSpec { name: "previousClearedAtMs", ts_type: "number | null", optional: true },
+            ArgSpec { name: "machine", ts_type: "string | null", optional: true },
         ],
     },
     CommandSpec {
@@ -2413,8 +2416,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "set_usage_retention" => async { done(Box::pin(crate::usage::storage::set_usage_retention(app.clone(), app.state(), arg(&args, "retentionDays")?, arg(&args, "dryRun")?)).await) }.await,
         "compact_usage_database" => done(Box::pin(crate::usage::storage::compact_usage_database()).await),
         "get_call_diagnostics" => done(Box::pin(crate::usage::diagnostics::get_call_diagnostics()).await),
-        "clear_call_diagnostics" => done(Box::pin(crate::usage::diagnostics::clear_call_diagnostics()).await),
-        "undo_clear_call_diagnostics" => async { done(Box::pin(crate::usage::diagnostics::undo_clear_call_diagnostics(arg(&args, "clearedAtMs")?, arg(&args, "previousClearedAtMs")?)).await) }.await,
+        "clear_call_diagnostics" => async { done(Box::pin(crate::usage::diagnostics::clear_call_diagnostics(arg(&args, "machine")?)).await) }.await,
+        "undo_clear_call_diagnostics" => async { done(Box::pin(crate::usage::diagnostics::undo_clear_call_diagnostics(arg(&args, "clearedAtMs")?, arg(&args, "previousClearedAtMs")?, arg(&args, "machine")?)).await) }.await,
         "save_usage_model_price" => async { done(Box::pin(crate::usage::save_usage_model_price(arg(&args, "price")?)).await) }.await,
         "delete_usage_model_price" => async { done(Box::pin(crate::usage::delete_usage_model_price(arg(&args, "model")?)).await) }.await,
         "sync_usage_model_prices" => async { done(Box::pin(crate::usage::sync_usage_model_prices(arg(&args, "query")?, app.state())).await) }.await,

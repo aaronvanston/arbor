@@ -103,6 +103,12 @@ function mockCalls(scenario: string): DiagnosticCall[] {
 let diagnosticsCalls = mockCalls(diagnosticsScenario);
 
 let diagnosticsClearedAt: number | null = null;
+// Each machine's own Clear, from Diagnostics narrowed to it, as the app keeps them.
+const machineClearedAt = new Map<string, number>();
+const clearedOnMachine = (call: DiagnosticCall) => {
+  const cleared = call.kind === 'machine' ? machineClearedAt.get(call.target) : undefined;
+  return cleared !== undefined && call.atMs <= cleared;
+};
 
 // Machine health: a synthetic fleet with one hour of five-second history so
 // the sparklines, statuses, and reasons all render in the browser.
@@ -936,22 +942,30 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
   },
   get_call_diagnostics: () => {
     if (diagnosticsScenario === 'error') throw 'Failed to read diagnostics: database is locked';
-    const shown = diagnosticsCalls.filter((call) => diagnosticsClearedAt === null || call.atMs > diagnosticsClearedAt);
+    const shown = diagnosticsCalls.filter((call) => (diagnosticsClearedAt === null || call.atMs > diagnosticsClearedAt) && !clearedOnMachine(call));
     return later(250, (): CallDiagnostics => ({ calls: shown, keepDays: 7, maxCalls: 2_000, machineSlowMs: 10_000, coreSlowMs: 3_000, clearedAtMs: diagnosticsClearedAt }));
   },
-  clear_call_diagnostics: () => {
-    // Like the app: only the latest Clear can be undone, so what an earlier one hid goes now.
-    const previous = diagnosticsClearedAt;
-    if (previous !== null) diagnosticsCalls = diagnosticsCalls.filter((call) => call.atMs > previous);
+  clear_call_diagnostics: ({ machine }) => {
+    // Like the app: only the latest Clear (of every call, or of that machine) can be undone, so what an earlier one
+    // hid goes now.
+    const ofMachine = (call: DiagnosticCall) => !machine || (call.kind === 'machine' && call.target === machine);
+    const previous = machine ? machineClearedAt.get(machine) ?? null : diagnosticsClearedAt;
+    if (previous !== null) diagnosticsCalls = diagnosticsCalls.filter((call) => call.atMs > previous || !ofMachine(call));
     const clearedAtMs = Date.now();
-    const count = diagnosticsCalls.filter((call) => call.atMs <= clearedAtMs).length;
-    diagnosticsClearedAt = clearedAtMs;
-    mockLog('clear_call_diagnostics', { count });
-    return { count, clearedAtMs, previousClearedAtMs: previous };
+    const count = diagnosticsCalls.filter((call) => ofMachine(call) && call.atMs <= clearedAtMs
+      && (diagnosticsClearedAt === null || call.atMs > diagnosticsClearedAt) && !clearedOnMachine(call)).length;
+    if (machine) machineClearedAt.set(machine, clearedAtMs);
+    else diagnosticsClearedAt = clearedAtMs;
+    mockLog('clear_call_diagnostics', { machine, count });
+    return { count, clearedAtMs, previousClearedAtMs: previous, machine: machine ?? null };
   },
   undo_clear_call_diagnostics: (args) => {
-    if (args.clearedAtMs !== diagnosticsClearedAt) throw 'These calls were cleared again since, so they can’t be brought back';
-    diagnosticsClearedAt = args.previousClearedAtMs ?? null;
+    const current = args.machine ? machineClearedAt.get(args.machine) ?? null : diagnosticsClearedAt;
+    if (args.clearedAtMs !== current) throw 'These calls were cleared again since, so they can’t be brought back';
+    const previous = args.previousClearedAtMs ?? null;
+    if (!args.machine) diagnosticsClearedAt = previous;
+    else if (previous === null) machineClearedAt.delete(args.machine);
+    else machineClearedAt.set(args.machine, previous);
     mockLog('undo_clear_call_diagnostics', args);
     return null;
   },

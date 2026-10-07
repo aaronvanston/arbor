@@ -83,6 +83,10 @@ export type MachineCommands = {
   };
 
   get_call_diagnostics: { result: CallDiagnostics };
-  clear_call_diagnostics: { result: ClearedCalls };
-  undo_clear_call_diagnostics: { args: { clearedAtMs: number; previousClearedAtMs?: number | null }; result: void };
+  /** Every call, or with `machine` that machine's only. */
+  clear_call_diagnostics: { args: { machine?: string | null }; result: ClearedCalls };
+  undo_clear_call_diagnostics: {
+    args: { clearedAtMs: number; previousClearedAtMs?: number | null; machine?: string | null };
+    result: void;
+  };
 };

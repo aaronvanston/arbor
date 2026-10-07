@@ -52,6 +52,8 @@ const CORE_TARGET: &str = "core";
 const MAX_PATH_SEGMENTS: usize = 4;
 const MAX_SEGMENT_CHARS: usize = 32;
 const CLEARED_KEY: &str = "cleared_at_ms";
+/// Followed by the machine's name: when that machine's calls were last cleared on their own.
+const MACHINE_CLEARED_PREFIX: &str = "cleared_at_ms:machine:";
 
 static QUEUE: Queue = Queue::new();
 /// usage.db's folder, once the app has set it up. Tests never set it, so their calls only
@@ -444,19 +446,24 @@ impl Queue {
         let pending: Vec<Call> = self.lock_pending().iter().cloned().collect();
         let (saved, cleared) = read_calls(connection, now_ms)?;
         let from = shown_from(cleared, now_ms);
+        let machines = machine_clears(connection)?;
         // Calls still waiting to be saved are newer than any saved one.
-        let mut calls: Vec<Call> = pending.into_iter().rev().filter(|call| call.at_ms >= from).collect();
+        let mut calls: Vec<Call> = pending
+            .into_iter()
+            .rev()
+            .filter(|call| call.at_ms >= from && !cleared_on_machine(&machines, call))
+            .collect();
         calls.extend(saved);
         calls.truncate(MAX_CALLS);
         Ok((calls, cleared))
     }
 
-    /// Hides every call so far, those still waiting included: they're saved first, so the count covers them and
-    /// Undo brings them back too.
-    fn clear(&self, connection: &mut Connection, now_ms: i64) -> Result<ClearedCalls, String> {
+    /// Hides every call so far, or one machine's, those still waiting included: they're saved first, so the count
+    /// covers them and Undo brings them back too.
+    fn clear(&self, connection: &mut Connection, now_ms: i64, machine: Option<&str>) -> Result<ClearedCalls, String> {
         let _saving = self.lock_saving();
         write_calls(connection, &self.take(), now_ms)?;
-        clear_calls(connection, now_ms)
+        clear_calls(connection, now_ms, machine)
     }
 }
 
@@ -557,6 +564,13 @@ fn prune(connection: &Connection, now_ms: i64, added: Option<&[Call]>) -> Result
     connection
         .execute("DELETE FROM diagnostic_calls WHERE at_ms < ?1", params![now_ms - KEEP_MS])
         .map_err(failed)?;
+    // A machine's own Clear from before the oldest call kept hides nothing any more.
+    connection
+        .execute(
+            "DELETE FROM diagnostic_settings WHERE substr(key, 1, ?1) = ?2 AND value < ?3",
+            params![MACHINE_CLEARED_PREFIX.len() as i64, MACHINE_CLEARED_PREFIX, now_ms - KEEP_MS],
+        )
+        .map_err(failed)?;
     let routine = |call: &&Call| call.outcome == Outcome::Ok && !call.slow;
     // The operations to check, as JSON for json_each: each call's kind, target and operation, and outcome.
     let touched = |calls: Vec<&Call>| -> String {
@@ -626,26 +640,56 @@ fn prune(connection: &Connection, now_ms: i64, added: Option<&[Call]>) -> Result
     Ok(())
 }
 
-fn cleared_at(connection: &Connection) -> Result<Option<i64>, String> {
+/// Where the last Clear of every call is kept, or of one machine's: Diagnostics narrowed to a machine clears only its
+/// calls, so each machine has a moment of its own beside the one for them all.
+fn cleared_key(machine: Option<&str>) -> String {
+    machine.map_or_else(|| CLEARED_KEY.to_string(), |machine| format!("{MACHINE_CLEARED_PREFIX}{machine}"))
+}
+
+fn cleared_at(connection: &Connection, machine: Option<&str>) -> Result<Option<i64>, String> {
     connection
-        .query_row("SELECT value FROM diagnostic_settings WHERE key = ?1", params![CLEARED_KEY], |row| row.get(0))
+        .query_row("SELECT value FROM diagnostic_settings WHERE key = ?1", params![cleared_key(machine)], |row| row.get(0))
         .optional()
         .map_err(|error| format!("Failed to read diagnostics: {error}"))
 }
 
-fn set_cleared_at(connection: &Connection, value: Option<i64>) -> Result<(), String> {
+fn set_cleared_at(connection: &Connection, machine: Option<&str>, value: Option<i64>) -> Result<(), String> {
+    let key = cleared_key(machine);
     let result = match value {
         Some(value) => connection.execute(
             "INSERT INTO diagnostic_settings (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![CLEARED_KEY, value],
+            params![key, value],
         ),
-        None => connection.execute("DELETE FROM diagnostic_settings WHERE key = ?1", params![CLEARED_KEY]),
+        None => connection.execute("DELETE FROM diagnostic_settings WHERE key = ?1", params![key]),
     };
     result
         .map(|_| ())
         .map_err(|error| format!("Failed to clear diagnostics: {error}"))
 }
+
+/// When each machine's calls were last cleared on their own.
+fn machine_clears(connection: &Connection) -> Result<HashMap<String, i64>, String> {
+    let failed = |error: rusqlite::Error| format!("Failed to read diagnostics: {error}");
+    let mut statement = connection
+        .prepare("SELECT substr(key, ?2), value FROM diagnostic_settings WHERE substr(key, 1, ?1) = ?3")
+        .map_err(failed)?;
+    let prefix = MACHINE_CLEARED_PREFIX.len() as i64;
+    let rows = statement
+        .query_map(params![prefix, prefix + 1, MACHINE_CLEARED_PREFIX], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+        .map_err(failed)?;
+    rows.collect::<Result<HashMap<_, _>, _>>().map_err(failed)
+}
+
+fn cleared_on_machine(machines: &HashMap<String, i64>, call: &Call) -> bool {
+    call.kind == CallKind::Machine && machines.get(&call.target).is_some_and(|cleared| call.at_ms <= *cleared)
+}
+
+/// A call to a machine at or before that machine's own Clear. `?3` is the machine prefix; the call is `diagnostic_calls`.
+const NOT_CLEARED_ON_MACHINE: &str = "NOT EXISTS (
+    SELECT 1 FROM diagnostic_settings s
+    WHERE diagnostic_calls.kind = 'machine' AND s.key = ?3 || diagnostic_calls.target AND diagnostic_calls.at_ms <= s.value
+)";
 
 /// The first moment a call is shown from: a week back, or just after the last Clear.
 fn shown_from(cleared: Option<i64>, now_ms: i64) -> i64 {
@@ -654,16 +698,18 @@ fn shown_from(cleared: Option<i64>, now_ms: i64) -> i64 {
 
 /// The calls shown, newest first, and when they were last cleared.
 fn read_calls(connection: &Connection, now_ms: i64) -> Result<(Vec<Call>, Option<i64>), String> {
-    let cleared = cleared_at(connection)?;
+    let cleared = cleared_at(connection, None)?;
     let failed = |error: rusqlite::Error| format!("Failed to read diagnostics: {error}");
     let mut statement = connection
         .prepare(
-            "SELECT at_ms, kind, target, operation, duration_ms, code, outcome, slow_after_ms, slow
-             FROM diagnostic_calls WHERE at_ms >= ?1 ORDER BY at_ms DESC, id DESC LIMIT ?2",
+            &format!(
+                "SELECT at_ms, kind, target, operation, duration_ms, code, outcome, slow_after_ms, slow
+                 FROM diagnostic_calls WHERE at_ms >= ?1 AND {NOT_CLEARED_ON_MACHINE} ORDER BY at_ms DESC, id DESC LIMIT ?2"
+            ),
         )
         .map_err(failed)?;
     let rows = statement
-        .query_map(params![shown_from(cleared, now_ms), MAX_CALLS as i64], |row| {
+        .query_map(params![shown_from(cleared, now_ms), MAX_CALLS as i64, MACHINE_CLEARED_PREFIX], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
@@ -699,37 +745,51 @@ fn read_calls(connection: &Connection, now_ms: i64) -> Result<(Vec<Call>, Option
     Ok((calls, cleared))
 }
 
-/// Hides every call so far. Only the latest Clear can be undone, so the calls an earlier
-/// one hid are deleted now.
-fn clear_calls(connection: &mut Connection, now_ms: i64) -> Result<ClearedCalls, String> {
+/// Hides every call so far, or with `machine` only that machine's. Only the latest Clear (of them all, or of that
+/// machine) can be undone, so the calls an earlier one hid are deleted now.
+fn clear_calls(connection: &mut Connection, now_ms: i64, machine: Option<&str>) -> Result<ClearedCalls, String> {
     let failed = |error: rusqlite::Error| format!("Failed to clear diagnostics: {error}");
     let transaction = connection.transaction().map_err(failed)?;
-    let previous = cleared_at(&transaction)?;
+    let previous = cleared_at(&transaction, machine)?;
     if let Some(previous) = previous {
         transaction
-            .execute("DELETE FROM diagnostic_calls WHERE at_ms <= ?1", params![previous])
+            .execute(
+                "DELETE FROM diagnostic_calls WHERE at_ms <= ?1 AND (?2 IS NULL OR (kind = 'machine' AND target = ?2))",
+                params![previous, machine],
+            )
             .map_err(failed)?;
     }
+    // What's shown now of what's cleared: the calls since every call's last Clear and this machine's own.
+    let from = shown_from(cleared_at(&transaction, None)?, now_ms);
     let count: i64 = transaction
         .query_row(
-            "SELECT COUNT(*) FROM diagnostic_calls WHERE at_ms >= ?1 AND at_ms <= ?2",
-            params![shown_from(previous, now_ms), now_ms],
+            &format!(
+                "SELECT COUNT(*) FROM diagnostic_calls WHERE at_ms >= ?1 AND at_ms <= ?2 AND {NOT_CLEARED_ON_MACHINE}
+                 AND (?4 IS NULL OR (kind = 'machine' AND target = ?4))"
+            ),
+            params![from, now_ms, MACHINE_CLEARED_PREFIX, machine],
             |row| row.get(0),
         )
         .map_err(failed)?;
-    set_cleared_at(&transaction, Some(now_ms))?;
+    set_cleared_at(&transaction, machine, Some(now_ms))?;
     transaction.commit().map_err(failed)?;
-    Ok(ClearedCalls { count: from_sql_i64(count), cleared_at_ms: now_ms, previous_cleared_at_ms: previous })
+    Ok(ClearedCalls {
+        count: from_sql_i64(count),
+        cleared_at_ms: now_ms,
+        previous_cleared_at_ms: previous,
+        machine: machine.map(str::to_string),
+    })
 }
 
-/// Shows again what the Clear at `cleared_at_ms` hid, unless the calls were cleared again since.
-fn undo_clear(connection: &mut Connection, cleared_at_ms: i64, previous: Option<i64>) -> Result<(), String> {
+/// Shows again what the Clear at `cleared_at_ms` (of every call, or of `machine`'s) hid, unless they were cleared again
+/// since.
+fn undo_clear(connection: &mut Connection, cleared_at_ms: i64, previous: Option<i64>, machine: Option<&str>) -> Result<(), String> {
     let failed = |error: rusqlite::Error| format!("Failed to bring diagnostics back: {error}");
     let transaction = connection.transaction().map_err(failed)?;
-    if cleared_at(&transaction)? != Some(cleared_at_ms) {
+    if cleared_at(&transaction, machine)? != Some(cleared_at_ms) {
         return Err("These calls were cleared again since, so they can't be brought back".into());
     }
-    set_cleared_at(&transaction, previous)?;
+    set_cleared_at(&transaction, machine, previous)?;
     transaction.commit().map_err(failed)
 }
 
@@ -750,6 +810,8 @@ pub(crate) struct ClearedCalls {
     count: u64,
     cleared_at_ms: i64,
     previous_cleared_at_ms: Option<i64>,
+    /// The machine whose calls were cleared; none for every call.
+    machine: Option<String>,
 }
 
 #[tauri::command]
@@ -770,19 +832,23 @@ pub(crate) async fn get_call_diagnostics() -> Result<CallDiagnostics, String> {
 }
 
 #[tauri::command]
-pub(crate) async fn clear_call_diagnostics() -> Result<ClearedCalls, String> {
+pub(crate) async fn clear_call_diagnostics(machine: Option<String>) -> Result<ClearedCalls, String> {
     run_usage_task(move || {
         let _write_guard = lock_usage_writes();
-        QUEUE.clear(&mut open_usage_database()?, now_ms())
+        QUEUE.clear(&mut open_usage_database()?, now_ms(), machine.as_deref())
     })
     .await
 }
 
 #[tauri::command]
-pub(crate) async fn undo_clear_call_diagnostics(cleared_at_ms: i64, previous_cleared_at_ms: Option<i64>) -> Result<(), String> {
+pub(crate) async fn undo_clear_call_diagnostics(
+    cleared_at_ms: i64,
+    previous_cleared_at_ms: Option<i64>,
+    machine: Option<String>,
+) -> Result<(), String> {
     run_usage_task(move || {
         let _write_guard = lock_usage_writes();
-        undo_clear(&mut open_usage_database()?, cleared_at_ms, previous_cleared_at_ms)
+        undo_clear(&mut open_usage_database()?, cleared_at_ms, previous_cleared_at_ms, machine.as_deref())
     })
     .await
 }
@@ -1052,25 +1118,59 @@ mod tests {
         let mut connection = crate::usage::schema::test_database();
         let now = 30 * 24 * HOUR;
         write_calls(&mut connection, &[fine("ci-01", "health check", now - 2 * HOUR), fine("ci-01", "setup scan", now - HOUR)], now).unwrap();
-        let cleared = clear_calls(&mut connection, now).unwrap();
-        assert_eq!(cleared, ClearedCalls { count: 2, cleared_at_ms: now, previous_cleared_at_ms: None });
+        let cleared = clear_calls(&mut connection, now, None).unwrap();
+        assert_eq!(cleared, ClearedCalls { count: 2, cleared_at_ms: now, previous_cleared_at_ms: None, machine: None });
         assert!(read_calls(&connection, now + 1).unwrap().0.is_empty());
         // What comes after shows.
         write_calls(&mut connection, &[fine("ci-01", "health check", now + 10)], now + 10).unwrap();
         assert_eq!(read_calls(&connection, now + 20).unwrap().0.len(), 1);
 
-        undo_clear(&mut connection, cleared.cleared_at_ms, cleared.previous_cleared_at_ms).unwrap();
+        undo_clear(&mut connection, cleared.cleared_at_ms, cleared.previous_cleared_at_ms, None).unwrap();
         let (calls, marker) = read_calls(&connection, now + 20).unwrap();
         assert_eq!((calls.len(), marker), (3, None));
 
-        let first = clear_calls(&mut connection, now + 30).unwrap();
-        let second = clear_calls(&mut connection, now + 40).unwrap();
+        let first = clear_calls(&mut connection, now + 30, None).unwrap();
+        let second = clear_calls(&mut connection, now + 40, None).unwrap();
         assert_eq!(second.previous_cleared_at_ms, Some(now + 30));
         // The first Clear's calls are gone for good, so it can't be undone any more.
         assert!(stored(&connection).is_empty());
-        assert!(undo_clear(&mut connection, first.cleared_at_ms, first.previous_cleared_at_ms).is_err());
-        undo_clear(&mut connection, second.cleared_at_ms, second.previous_cleared_at_ms).unwrap();
-        assert_eq!(cleared_at(&connection).unwrap(), Some(now + 30));
+        assert!(undo_clear(&mut connection, first.cleared_at_ms, first.previous_cleared_at_ms, None).is_err());
+        undo_clear(&mut connection, second.cleared_at_ms, second.previous_cleared_at_ms, None).unwrap();
+        assert_eq!(cleared_at(&connection, None).unwrap(), Some(now + 30));
+    }
+
+    #[test]
+    fn clearing_one_machine_leaves_the_others_and_the_core_and_undo_brings_it_back() {
+        let mut connection = crate::usage::schema::test_database();
+        let now = 30 * 24 * HOUR;
+        let core = call(CallKind::Core, "core", "GET /usage", now - HOUR, 20, Outcome::Ok);
+        write_calls(&mut connection, &[fine("ci-01", "health check", now - 2 * HOUR), fine("ci-01", "setup scan", now - HOUR), fine("cedar-02", "health check", now - HOUR), core], now).unwrap();
+        let targets = |connection: &Connection, at: i64| -> Vec<String> {
+            let mut targets: Vec<String> = read_calls(connection, at).unwrap().0.into_iter().map(|call| call.target).collect();
+            targets.sort();
+            targets
+        };
+
+        let cleared = clear_calls(&mut connection, now, Some("ci-01")).unwrap();
+        assert_eq!(cleared, ClearedCalls { count: 2, cleared_at_ms: now, previous_cleared_at_ms: None, machine: Some("ci-01".into()) });
+        assert_eq!(targets(&connection, now + 1), ["cedar-02", "core"]);
+        // Its later calls show, and the ones still waiting to be saved are hidden the same way.
+        write_calls(&mut connection, &[fine("ci-01", "health check", now + 10)], now + 10).unwrap();
+        assert_eq!(targets(&connection, now + 20), ["cedar-02", "ci-01", "core"]);
+        let machines = machine_clears(&connection).unwrap();
+        assert!(cleared_on_machine(&machines, &fine("ci-01", "setup scan", now - 5)));
+        assert!(!cleared_on_machine(&machines, &fine("cedar-02", "setup scan", now - 5)));
+
+        // A second Clear of that machine deletes only its earlier calls, and the first can't be undone any more.
+        let second = clear_calls(&mut connection, now + 30, Some("ci-01")).unwrap();
+        assert_eq!((second.count, second.previous_cleared_at_ms), (1, Some(now)));
+        assert_eq!(stored(&connection).len(), 3);
+        assert!(undo_clear(&mut connection, cleared.cleared_at_ms, cleared.previous_cleared_at_ms, Some("ci-01")).is_err());
+        undo_clear(&mut connection, second.cleared_at_ms, second.previous_cleared_at_ms, Some("ci-01")).unwrap();
+        assert_eq!(targets(&connection, now + 40), ["cedar-02", "ci-01", "core"]);
+        // Every call's Clear is apart from a machine's.
+        assert_eq!(cleared_at(&connection, None).unwrap(), None);
+        assert_eq!(clear_calls(&mut connection, now + 50, None).unwrap().count, 3);
     }
 
     /// SECRET: a script's text, its arguments and everything it prints stay out of the
