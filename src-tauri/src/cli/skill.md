@@ -79,6 +79,20 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 Stopping or restarting the proxy cuts off every agent using it for a moment, on every machine. Say so when you show
 the plan.
 
+## Cleaning up a machine
+
+What could come off a machine, and taking it off, are the same flow as its page's Clean up section. Nothing is deleted:
+things are set aside on the machine and can be put back, apart from a package manager's uninstall and Delete for good.
+
+1. Look: `arbor call check_machine_cleanup machine=cam-mbp --json`. It lists `homes` (with `archive`: how many session
+   files the session archive holds), `agents` (with `removal` and `command`), `leftovers`, `caches` and `aside`.
+2. Set something aside: `arbor call remove_cleanup_items machine=cam-mbp --args '{"items":[{"group":"cache","path":"~/.claude/debug"}]}' --yes`.
+   A home whose session files aren't all archived also needs `"allowUnarchived":true`; say how many first.
+3. Take an agent off: `arbor call uninstall_cleanup_agent machine=cam-mbp path=/opt/homebrew/bin/codex --yes`, after
+   showing the person the `command` it runs.
+4. Put it back: `arbor call restore_set_aside machine=cam-mbp stamp=<stamp> --yes`, or delete it for good with
+   `delete_set_aside` only when asked.
+
 ## Anything else
 
 `arbor commands [filter]` lists every command the app has, with its arguments and whether it reads, changes or asks

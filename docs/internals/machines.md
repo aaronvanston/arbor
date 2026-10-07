@@ -27,7 +27,8 @@ clearable is `harnesses::CLEARABLE`, each with the reason it's safe. A home Arbo
 archive (`archive/standing.rs`, counts only) at the look and again at Remove, which needs `allowUnarchived` when not
 every session file is safely in a store. Agents come off only the way their install's layout proves they were made
 (`agent_install::uninstall_plan`), proven again on the machine before the package manager runs, and never through a
-package manager found some other way: their own installer's copy is set aside like a folder.
+package manager found some other way: their own installer's copy is set aside like a folder. Removing from Settings › Agent homes or Sync's Other agents runs
+the same flow (`pages/cleanupActions.tsx`), looking at the machine first when its last look is over ten minutes old.
 
 ## Agent homes
 

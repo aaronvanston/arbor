@@ -6,7 +6,8 @@ import { mockCommands } from '../src/dev/mock/answers';
 import { I18nProvider, translate, translateRich } from '../src/i18n';
 import { outcomeText } from '../src/pages/SetupSync';
 import { CleanupContent, type CleanupProblem } from '../src/pages/MachineCleanup';
-import { allArchived, archiveLine, cleanupView, deleteSetAside, lastRoutedCopy, nextCopy, removalAsks, removeCleanup, restoreSetAside, uninstallAgent } from '../src/services/cleanup';
+import { CleanupRowMenu } from '../src/pages/cleanupActions';
+import { CLEANUP_FRESH_MS, allArchived, archiveLine, cleanupView, concreteHomePath, homeIn, runningAgent, scanIsFresh, deleteSetAside, lastRoutedCopy, nextCopy, removalAsks, removeCleanup, restoreSetAside, uninstallAgent } from '../src/services/cleanup';
 import { readCommandError } from '../src/services/commandError';
 import type { CleanupAgent, CleanupHome, CleanupScan, HomeArchive, SetAsideItem } from '../src/native/types';
 import { itemAt } from './support/items';
@@ -138,6 +139,34 @@ describe('a machine’s clean-up', () => {
     expect(nextCopy([first, second], first)).toBe(second);
     expect(nextCopy([first, second], second)).toBeNull();
     expect(nextCopy([first], first)).toBeNull();
+  });
+
+  it('lets other pages find a home or the running agent in a fresh look, and look again when it isn’t', () => {
+    const found = scan({
+      scannedAtMs: 1_000,
+      homes: [home('~/.factory')],
+      agents: [
+        { harness: 'codex', path: '/usr/local/bin/codex', real: null, version: '0.150.0', method: 'npm', first: false, removal: 'packageManager', command: 'npm uninstall -g --prefix /usr/local @openai/codex', onlyCopy: false },
+        { harness: 'codex', path: '/opt/homebrew/bin/codex', real: null, version: '0.161.0', method: 'homebrew', first: true, removal: 'packageManager', command: 'brew uninstall --cask codex', onlyCopy: false },
+      ],
+    });
+    expect(scanIsFresh(found, 1_000 + CLEANUP_FRESH_MS - 1)).toBe(true);
+    expect(scanIsFresh(found, 1_000 + CLEANUP_FRESH_MS)).toBe(false);
+    expect(scanIsFresh(scan({ scannedAtMs: null }), 0)).toBe(false);
+    expect(homeIn(found, '~/.factory')?.path).toBe('~/.factory');
+    expect(homeIn(found, '~/.claude')).toBeNull();
+    expect(runningAgent(found, 'codex')?.path).toBe('/opt/homebrew/bin/codex');
+    expect(runningAgent(found, 'amp')).toBeNull();
+    expect(['~/.factory', '/srv/agents/codex', '~/.tools/profiles/*', '$CLAUDE_CONFIG_DIR'].map(concreteHomePath)).toEqual([true, true, false, false]);
+  });
+
+  it('offers Remove from each machine on a row, for its home and its agent', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider><CleanupRowMenu machines={['cam-mbp', 'ci-01']} path="~/.factory" harness="droid" label="Clean up ~/.factory" /></I18nProvider>,
+    );
+    expect(html).toContain('aria-label="Clean up ~/.factory"');
+    expect(renderToStaticMarkup(<I18nProvider><CleanupRowMenu machines={[]} path="~/.factory" label="x" /></I18nProvider>)).toBe('');
+    expect(renderToStaticMarkup(<I18nProvider><CleanupRowMenu machines={['cam-mbp']} path={null} label="x" /></I18nProvider>)).toBe('');
   });
 
   it('lists what is set aside with Restore, Delete for good and the drive it is kept on', () => {

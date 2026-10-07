@@ -14,11 +14,6 @@ import {
   cleanupView,
   deleteSetAside,
   getCleanup,
-  lastRoutedCopy,
-  nextCopy,
-  removalAsks,
-  removeCleanup,
-  uninstallAgent,
   restoreSetAside,
 } from '../services/cleanup';
 import { readCommandError } from '../services/commandError';
@@ -37,6 +32,7 @@ import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Skeleton } from '../components/ui/skeleton';
 import { toast } from '../components/ui/toast';
+import { useCleanupActions, type CleanupActionResult } from './cleanupActions';
 
 const size = (kb: number | null) => (kb === null ? null : formatBytes(kb * 1024));
 
@@ -48,7 +44,6 @@ const size = (kb: number | null) => (kb === null ? null : formatBytes(kb * 1024)
 export function MachineCleanup({ machine, pill }: { machine: string; pill: ReactNode }) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
-  const harnessName = useHarnessName();
   const [scan, setScan] = useState<CleanupScan | null>(null);
   const [looking, setLooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,115 +74,18 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
     }
   };
 
-  const undo = async (stamp: string, label: string) => {
-    try {
-      const back = await restoreSetAside(machine, stamp);
-      setScan(back.scan);
-      if (back.failed.length) {
-        setProblem({ key: stamp, text: back.failed.map((failure) => `${failure.path}: ${t(RESTORE_PROBLEM[failure.problem])}`).join(' · '), changed: false });
-      } else {
-        toast({ kind: 'success', title: t('machine.cleanup.restored', { name: label }) });
-      }
-    } catch (reason) {
-      toast({ kind: 'error', title: t('machine.cleanup.undoFailed', { name: label }), description: readCommandError(reason).message });
-    }
+  // Removing and uninstalling go through the same flow as on Settings › Agent homes and Sync's Other agents.
+  const actions = useCleanupActions(setScan);
+  const settle = (key: string, result: CleanupActionResult | null) => {
+    if (result?.problem) setProblem({ key, text: result.problem.text, changed: result.problem.changed });
+    setBusy(null);
   };
-
-  const remove = async (group: CleanupGroup, path: string, from: CleanupScan | null = scan, again = false): Promise<void> => {
-    // A home with sessions the archive doesn't hold all of, or one an agent still runs from, asks first.
-    const home = group === 'home' ? from?.homes.find((entry) => entry.path === path) : undefined;
-    const asks = home ? removalAsks(home) : null;
-    if (home?.archive && asks) {
-      const standing = archiveLine(home.archive);
-      const confirmed = await askConfirmation({
-        variant: asks.unarchived ? 'danger' : 'primary',
-        title: t('machine.cleanup.ask.title', { name: path }),
-        message: tRich(asks.unarchived ? 'machine.cleanup.ask.unarchived' : 'machine.cleanup.ask.archived', {
-          standing: t(standing.key, standing.variables),
-          // A fresh pill: one already rendered carries React's own links back into the tree, which the queue can't compare.
-          machine: <MachinePill name={machine} size="md" />,
-        }),
-        warning: asks.active ? t('machine.cleanup.ask.active', { agent: harnessName(home.harness) }) : undefined,
-        confirmText: t('machine.cleanup.ask.confirm'),
-      });
-      if (!confirmed) return;
-    }
-    setBusy(path);
+  const begin = (key: string) => () => {
+    setBusy(key);
     setProblem(null);
-    try {
-      const done = await removeCleanup(machine, [{ group, path }], asks?.unarchived ?? false);
-      setScan(done.scan);
-      if (done.failed.length) setProblem({ key: path, text: t('machine.cleanup.moveFailed', { paths: done.failed.join(', ') }), changed: false });
-      const stamp = done.stamp;
-      if (stamp && done.removed.length) {
-        toast({
-          kind: 'success',
-          title: t('machine.cleanup.removed', { name: path }),
-          description: t(group === 'home' ? 'machine.cleanup.removedHome' : 'machine.cleanup.removedNote'),
-          action: { label: t('common.undo'), onClick: () => { void undo(stamp, path); } },
-          focusAction: true,
-        });
-      }
-    } catch (reason) {
-      const failure = readCommandError(reason);
-      // The archive moved on since the look: Arbor kept its fresh numbers, so ask again with them, once.
-      const fresh = failure.kind === 'unarchived' && !again ? await getCleanup(machine).catch(() => null) : null;
-      if (fresh) {
-        setScan(fresh);
-        setBusy(null);
-        await remove(group, path, fresh, true);
-        return;
-      }
-      setProblem({ key: path, text: failure.message, changed: failure.kind === 'changed' });
-    } finally {
-      setBusy((current) => (current === path ? null : current));
-    }
   };
-
-  const uninstall = async (agent: CleanupAgent) => {
-    const name = harnessName(agent.harness);
-    // A package manager's uninstall can't be undone, so it asks first, naming the command. Its own installer's copy is
-    // set aside, with Undo.
-    if (agent.removal === 'packageManager') {
-      const next = nextCopy(scan?.agents ?? [], agent);
-      const warnings = [
-        lastRoutedCopy(agent, scan?.routed ?? false) ? t('machine.cleanup.agent.ask.lastCopy', { name: machine, agent: name }) : null,
-        next ? (next.version ? t('machine.cleanup.agent.ask.nextCopy', { path: next.path, version: next.version }) : t('machine.cleanup.agent.ask.nextCopyUnknown', { path: next.path })) : null,
-      ].filter(Boolean);
-      const confirmed = await askConfirmation({
-        variant: 'danger',
-        title: t('machine.cleanup.agent.ask.title', { agent: name, name: machine }),
-        message: tRich('machine.cleanup.agent.ask.message', { machine: <MachinePill name={machine} size="md" /> }),
-        details: [{ label: t('machine.cleanup.agent.ask.command'), value: agent.command ?? '' }],
-        warning: warnings.length ? warnings.join(' ') : undefined,
-        confirmText: t('machine.cleanup.agent.ask.confirm'),
-      });
-      if (!confirmed) return;
-    }
-    setBusy(agent.path);
-    setProblem(null);
-    try {
-      const done = await uninstallAgent(machine, agent.path);
-      setScan(done.scan);
-      const remaining = done.remaining.length ? t('machine.cleanup.agent.remaining', { paths: done.remaining.join(', ') }) : t('machine.cleanup.agent.noneLeft');
-      const stamp = done.stamp;
-      if (stamp) {
-        toast({
-          kind: 'success',
-          title: t('machine.cleanup.agent.removed', { agent: name }),
-          description: `${t('machine.cleanup.agent.removedNote')} ${remaining}`,
-          action: { label: t('common.undo'), onClick: () => { void undo(stamp, agent.path); } },
-          focusAction: true,
-        });
-      } else {
-        toast({ kind: done.remaining.length ? 'warning' : 'success', title: t('machine.cleanup.agent.uninstalled', { agent: name }), description: remaining });
-      }
-    } catch (reason) {
-      setProblem({ key: agent.path, text: readCommandError(reason).message, changed: readCommandError(reason).kind === 'changed' });
-    } finally {
-      setBusy(null);
-    }
-  };
+  const remove = async (group: CleanupGroup, path: string) => settle(path, await actions.removeItem(machine, scan, group, path, begin(path)));
+  const uninstall = async (agent: CleanupAgent) => settle(agent.path, await actions.uninstall(machine, scan, agent, begin(agent.path)));
 
   const restore = async (item: SetAsideItem) => {
     const key = `${item.stamp}/${item.item}`;

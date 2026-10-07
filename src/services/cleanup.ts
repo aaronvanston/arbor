@@ -11,6 +11,7 @@ import type {
   CleanupLeftover,
   CleanupScan,
   ClearableKind,
+  Harness,
   HomeArchive,
   LeftoverKind,
   RestoreProblem,
@@ -68,6 +69,21 @@ export function nextCopy(agents: readonly CleanupAgent[], agent: CleanupAgent): 
   if (!agent.first) return null;
   return agents.find((other) => other !== agent && other.harness === agent.harness) ?? null;
 }
+
+/** A look this recent is what a removal from another page goes by; an older one is looked at again first. */
+export const CLEANUP_FRESH_MS = 10 * 60_000;
+
+export const scanIsFresh = (scan: CleanupScan, nowMs: number) => scan.scannedAtMs !== null && nowMs - scan.scannedAtMs < CLEANUP_FRESH_MS;
+
+/** The home at `path` in a look, when it found one there. */
+export const homeIn = (scan: CleanupScan, path: string) => scan.homes.find((home) => home.path === path) ?? null;
+
+/** The copy of `harness` that runs on the machine: the first on its PATH. */
+export const runningAgent = (scan: CleanupScan, harness: Harness) =>
+  scan.agents.find((agent) => agent.harness === harness && agent.first) ?? scan.agents.find((agent) => agent.harness === harness) ?? null;
+
+/** A home's folder that names one folder, rather than a pattern or where a variable points, which the clean-up can find. */
+export const concreteHomePath = (path: string) => (path.startsWith('~/') || path.startsWith('/')) && !path.includes('*');
 
 export const lastRoutedCopy = (agent: Pick<CleanupAgent, 'harness' | 'onlyCopy'>, routed: boolean) =>
   routed && agent.onlyCopy && (agent.harness === 'claude' || agent.harness === 'codex');

@@ -23,6 +23,8 @@ import { TableEmpty } from '../components/ui/data-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { toast } from '../components/ui/toast';
 import { cn } from '../lib/utils';
+import { concreteHomePath } from '../services/cleanup';
+import { CleanupRowMenu } from './cleanupActions';
 import { knownHarnessOrder } from '../services/knownHarnesses';
 import { useSettingsScope } from '../services/machineSettings';
 import {
@@ -129,7 +131,7 @@ function EveryMachineHomes({ view, onAdd }: { view: AgentHomesView; onAdd: () =>
       description={t('agentHomes.everywhere.description')}
       headerAction={<Button variant="outline" size="sm" onClick={onAdd}><Plus />{t('agentHomes.add.button')}</Button>}
     >
-      <HomesTable homes={view.everywhere} view={view} />
+      <HomesTable homes={view.everywhere} view={view} machines={view.machines.map((entry) => entry.machine)} />
     </SettingsSection>
   );
 }
@@ -267,7 +269,7 @@ function MachineHomes({ view, machine, onAdd }: { view: AgentHomesView; machine:
         </SettingsBlock>
       ) : null}
       {own.length ? (
-        <HomesTable homes={own} view={view} />
+        <HomesTable homes={own} view={view} machines={[machine.machine]} />
       ) : (
         <TableEmpty>{t(machine.scannedAtMs === null ? 'agentHomes.machine.emptyNotLooked' : 'agentHomes.machine.empty')}</TableEmpty>
       )}
@@ -330,7 +332,7 @@ async function ignoreFound(machine: string, found: MachineAgentHomes['suggested'
 }
 
 /** Homes with their roles. */
-function HomesTable({ homes, view }: { homes: AgentHome[]; view: AgentHomesView }) {
+function HomesTable({ homes, view, machines }: { homes: AgentHome[]; view: AgentHomesView; machines: string[] }) {
   const { t } = useI18n();
   return (
     <Table className="table-fixed">
@@ -344,13 +346,13 @@ function HomesTable({ homes, view }: { homes: AgentHome[]; view: AgentHomesView 
         </TableRow>
       </TableHeader>
       <TableBody>
-        {homes.map((home) => <HomeRow key={`${home.machine}:${home.agent}:${home.path}`} home={home} view={view} />)}
+        {homes.map((home) => <HomeRow key={`${home.machine}:${home.agent}:${home.path}`} home={home} view={view} machines={machines} />)}
       </TableBody>
     </Table>
   );
 }
 
-function HomeRow({ home, view }: { home: AgentHome; view: AgentHomesView }) {
+function HomeRow({ home, view, machines }: { home: AgentHome; view: AgentHomesView; machines: string[] }) {
   const { t } = useI18n();
   const [saving, setSaving] = useState(false);
   const change = async (next: AgentHome) => {
@@ -411,6 +413,8 @@ function HomeRow({ home, view }: { home: AgentHome; view: AgentHomesView }) {
         <RoleSelect home={home} disabled={saving} onChange={(next) => void change(next)} />
       </TableCell>
       <TableCell className="text-end">
+        {/* Taking the folder itself off a machine goes through its Clean up, with the same checks and Undo. */}
+        {concreteHomePath(home.path) ? <CleanupRowMenu machines={machines} path={home.path} label={t('machine.cleanup.from.menu', { name: home.path })} /> : null}
         {removable ? (
           <Button
             variant="ghost"

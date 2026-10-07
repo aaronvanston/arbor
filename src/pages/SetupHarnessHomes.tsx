@@ -34,6 +34,8 @@ import { applySkillChanges } from '../services/setupSkills';
 import { applyMcpChanges } from '../services/setupMcp';
 import { undoSetupSync } from '../services/setupSync';
 import type { McpAction, McpRegistry, RegistryState, SetupMachine, SkillAction, SyncOutcome } from '../native/types';
+import { concreteHomePath } from '../services/cleanup';
+import { CleanupRowMenu } from './cleanupActions';
 
 const STATE: Record<InstructionsState, { label: MessageKey; variant: 'success' | 'warning' | 'muted' } | null> = {
   same: { label: 'setup.harnessHomes.same', variant: 'success' },
@@ -122,6 +124,7 @@ export function HarnessCard({ group, run, onUpdateAll, onUpdate, onOpen }: {
                 </TableCell>
                 <TableCell className={TABLE_NUMERIC_CLASS}>{row.skills || '—'}</TableCell>
                 <TableCell className="text-end">
+                  <span className="inline-flex items-center gap-1">
                   {row.updateCommand ? (
                     <Button
                       variant="ghost-muted"
@@ -133,6 +136,9 @@ export function HarnessCard({ group, run, onUpdateAll, onUpdate, onOpen }: {
                       {t('machines.agents.update')}
                     </Button>
                   ) : null}
+                  {/* Its home or the agent itself off that machine, through its Clean up. */}
+                  <CleanupRowMenu machines={[row.machine]} path={concreteHomePath(row.path) ? row.path : null} harness={group.harness} label={t('machine.cleanup.from.menu', { name: `${name} · ${row.machine}` })} />
+                  </span>
                 </TableCell>
               </TableRow>
             );
