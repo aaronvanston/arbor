@@ -189,7 +189,7 @@ export function HistoryMode({ repo, machines, machine: asked }: {
               className={cn('mx-1 flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-start hover:bg-accent/60', active && 'bg-accent hover:bg-accent', (item.change.backup.undoneAtMs !== null || item.change.backup.deletedAtMs !== undefined) && 'opacity-60')}
             >
               <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
-                <MachinePill name={item.change.machine} size="sm" />
+                <MachinePill name={item.change.machine} size="sm" className="shrink-0" />
                 <span className="truncate">{t(CHANGE_KIND[item.change.backup.what])}</span>
                 {item.change.backup.automatic ? <span className="shrink-0 text-xs text-muted-foreground" data-history-automatic>{t('autoLine.history')}</span> : null}
               </span>
