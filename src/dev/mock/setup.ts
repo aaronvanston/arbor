@@ -2656,7 +2656,11 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
         setupItem('setting', 'model', 's1b', { value: 'sonnet' }),
         setupItem('setting', 'effortLevel', 's2', { value: 'high' }),
       ]),
-      setupHome('shared', '~/.agents', [setupSkill('find-skills', '~/.agents/skills/find-skills', 'q2', 1, 'vercel-labs/skills')]),
+      setupHome('shared', '~/.agents', [
+        setupSkill('find-skills', '~/.agents/skills/find-skills', 'q2', 1, 'vercel-labs/skills'),
+        // `?size=real`: the setup repo's fifty extra skills, which each machine at that size keeps too.
+        ...(realSize ? bigSkillNames(0).map((skill) => setupSkill(skill, `~/.agents/skills/${skill}`, `big-${skill}`, 3)) : []),
+      ]),
     ],
     installs: [setupInstall('claude', '~/.local/bin/claude', '2.1.270', '~/.local/share/claude/versions/2.1.270')],
   };

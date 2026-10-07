@@ -560,6 +560,8 @@ const joinMockMachine = (name: string, arrived: boolean) => {
   reporterHomes[name] = [{ agent: 'claude', home: '~/.claude', reporting: false }];
   reporterInstalled[name] = false;
 };
+// `?size=real`'s build machines are set up like any machine added since, so Sync has every one of them as a column.
+if (realSize) for (const host of healthHosts) if (host.machine.startsWith('build-') && host.endpoint) joinMockMachine(host.machine, true);
 if (params.get('machine') === 'new') {
   healthHosts.push({ machine: 'cedar-03', endpoint: 'cedar-03', port: 22, enabled: true, source: 'manual' });
   joinMockMachine('cedar-03', true);
