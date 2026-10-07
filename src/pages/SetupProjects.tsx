@@ -213,7 +213,8 @@ export function SetupProjects({ machines, embedded = false }: {
       ) : (
         // The filter and search only narrow this table, so they sit in its card's head.
         <TableCard
-          title={t('setup.projects.table.title')}
+          // A machine's page heads it Checkouts already, so there it says how it's laid out instead.
+          title={t(embedded ? 'setup.projects.table.titleEmbedded' : 'setup.projects.table.title')}
           count={shown.length === rows.length
             ? t(rows.length === 1 ? 'setup.projects.table.count.one' : 'setup.projects.table.count.other', { count: rows.length })
             : t('setup.projects.table.shown', { shown: shown.length, total: rows.length })}

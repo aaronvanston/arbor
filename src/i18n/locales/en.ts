@@ -3115,6 +3115,7 @@ export const en = {
   'setup.projects.notScanned.title': 'No projects looked at yet',
   'setup.projects.notScanned.description': 'Scan a machine to see the repos its sessions have worked in.',
   'setup.projects.table.title': 'Checkouts',
+  'setup.projects.table.titleEmbedded': 'By project',
   'setup.projects.table.count.one': '1 project',
   'setup.projects.table.count.other': '{count} projects',
   'setup.projects.table.shown': '{shown} of {total}',
