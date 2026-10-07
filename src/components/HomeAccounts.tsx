@@ -129,7 +129,7 @@ function ProviderAccounts({ limit, now, profiles, filesByKey, paused }: {
   const { t } = useI18n();
   const history = useLimitsHistory();
   const { provider, headline, pace, loading, stale } = limit;
-  const animated = useAnimatedNumber(headline.percent);
+  const animated = useAnimatedNumber(headline.percent, 1);
   const percent = animated === null ? null : Math.round(animated);
   const countdown = formatResetCountdown(headline.nextResetMs, now);
   const accounts = useMemo(() => homeAccounts(limit, now, filesByKey), [limit, now, filesByKey]);

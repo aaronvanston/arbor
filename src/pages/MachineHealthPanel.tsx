@@ -79,7 +79,7 @@ const toneFor = (value: number | null, warn: number, critical: number): StatusTo
   value === null ? 'muted' : value >= critical ? 'error' : value >= warn ? 'warning' : 'primary';
 
 function TweenNumber({ value, digits = 0, className }: { value: number | null; digits?: number; className?: string }) {
-  const shown = useAnimatedNumber(value);
+  const shown = useAnimatedNumber(value, 10 ** -digits);
   return <span className={className}>{shown === null ? '—' : shown.toFixed(digits)}</span>;
 }
 
@@ -269,7 +269,8 @@ function TimeSeries({
 }
 
 function Meter({ value, tone, className }: { value: number | null; tone: StatusTone; className?: string }) {
-  const shown = useAnimatedNumber(value);
+  // A tenth of a percent is under a pixel on any bar up to 1,000 px wide.
+  const shown = useAnimatedNumber(value, 0.1);
   return (
     <div className={cn('h-1.5 w-full overflow-hidden rounded-full bg-input/50 dark:bg-input/70', className)} role="presentation">
       <div

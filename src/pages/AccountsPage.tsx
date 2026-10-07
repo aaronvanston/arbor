@@ -794,7 +794,7 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
   const history = useLimitsHistory();
   const reset = formatQuotaReset(headline.nextResetMs, headline.nextResetFallback, now);
   const countdown = formatResetCountdown(headline.nextResetMs, now);
-  const animatedPercent = useAnimatedNumber(headline.percent);
+  const animatedPercent = useAnimatedNumber(headline.percent, 1);
   const percent = animatedPercent === null ? null : Math.round(animatedPercent);
   const pace = headlinePace(headline, now);
   const duration = headline.label ? windowDurationMs(headline.label) : null;
@@ -1263,7 +1263,7 @@ function WindowRow({ row, headline, warning, cap, now, muted = false, className,
   const relative = row.resetAtMs !== undefined && Number.isFinite(row.resetAtMs)
     ? row.resetAtMs > now ? formatRelative(row.resetAtMs, now) : t('quota.resetPassed')
     : row.reset ?? '';
-  const animated = useAnimatedNumber(row.remainingPercent);
+  const animated = useAnimatedNumber(row.remainingPercent, 1);
   const percent = animated === null ? null : Math.round(animated);
   const scope = onExplain ? limitScope(row) : null;
   const hints = [

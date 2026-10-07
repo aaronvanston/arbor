@@ -112,7 +112,7 @@ function SidebarLimitRow({ limit, filesByKey, status, now, onOpen }: {
   const { t } = useI18n();
   const accounts = useMemo(() => homeAccounts(limit, now, filesByKey), [limit, now, filesByKey]);
   const { provider, headline, pace, loading, stale } = limit;
-  const animated = useAnimatedNumber(headline.percent);
+  const animated = useAnimatedNumber(headline.percent, 1);
   const percent = animated === null ? null : Math.round(animated);
   const paceLabel = t(pace.tone === 'error' ? 'accounts.pace.critical' : pace.tone === 'warning' ? 'accounts.pace.ahead' : pace.tone === 'success' ? 'accounts.pace.onTrack' : 'accounts.pace.unknown');
   const countdown = formatResetCountdown(headline.nextResetMs, now);
