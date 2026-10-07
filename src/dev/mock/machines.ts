@@ -480,13 +480,14 @@ const healthFacts = (name: string): MachineFacts =>
     ? { hostname: 'cedar-03', os: 'Linux', osVersion: 'Ubuntu 26.04 LTS', arch: 'x86_64', model: 'NUC 14', productName: '', chip: 'Intel(R) Core(TM) Ultra 7 155H', gpu: 'Intel Arc Graphics', cores: 22, memTotalKb: 64_308_204, diskTotalKb: 482_797_652, swapTotalKb: 8_388_604, gpuMemTotalMb: null, ip: '192.168.1.41', uptimeS: 3_840, batteryPct: null, batteryState: '' }
     : { hostname: 'ci-01', os: 'Linux', osVersion: 'Ubuntu 26.04 LTS', arch: 'x86_64', model: 'MS-7D25', productName: '', chip: '12th Gen Intel(R) Core(TM) i9-12900K', gpu: 'NVIDIA GeForce RTX 3080', cores: 24, memTotalKb: 64_308_204, diskTotalKb: 482_797_652, swapTotalKb: 33_554_424, gpuMemTotalMb: 10_240, ip: '192.168.2.2', uptimeS: 860_270, batteryPct: null, batteryState: '' };
 
-// `?path=direct` or `?path=peer` shows ci-01's other Tailscale paths.
+// ci-01 is reached through a Tailscale relay (`?path=direct` or `?path=peer` shows its other paths) and every other
+// machine on the LAN; this Mac has no path to it.
 const healthPath = (name: string): NetworkPath | null =>
-  name === 'cedar-02'
-    ? { kind: 'lan', relay: null }
+  name === MOCK_THIS_MAC
+    ? null
     : name === 'ci-01'
     ? params.get('path') === 'direct' ? { kind: 'direct', relay: null } : { kind: 'relay', relay: params.get('path') === 'peer' ? null : 'syd' }
-    : null;
+    : { kind: 'lan', relay: null };
 
 const healthScenario = params.get('health');
 
