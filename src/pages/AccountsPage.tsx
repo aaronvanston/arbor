@@ -27,7 +27,7 @@ import { useQuotaCache } from '../services/quotaCache';
 import { accountsGap, ensureAccountsLoaded, refreshAccountQuotas, setAccountsError, useLiveAccounts } from '../services/accountsStore';
 import { authFileAvailability, isOAuthCredentialFile, type AuthFileAvailability } from '../services/authFiles';
 import { AuthFileFix, AuthFileMenuItems, AuthFileStatus, useAuthFileCommands, type AuthFileCommands } from '../components/AuthFileCommands';
-import { resolveAccountProfile, useAccountProfiles, type ResolvedProfile } from '../services/accountProfiles';
+import { profileTargetFor, resolveAccountProfile, useAccountProfiles, type ResolvedProfile } from '../services/accountProfiles';
 import { moveKey, setAccountOrder, sortByOrder, useAccountOrder } from '../services/accountOrder';
 import { AccountAvatar } from '../components/AccountAvatar';
 import { ProviderMark } from '../components/identity/Identity';
@@ -531,7 +531,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                         commands={commands}
                         reordering={reordering === provider}
                         onRefresh={() => void refreshFiles([account.file])}
-                        onEdit={() => setProfileTarget({ key: account.key, fileName: account.fileName, profile: profiles[account.key] })}
+                        onEdit={() => setProfileTarget(profileTargetFor(account.file, profiles))}
                         onExplain={(row, scope) => setLimitTarget({
                           account: account.key,
                           authIndex: normalizeAuthIndex(account.file.auth_index ?? account.file.authIndex),
@@ -548,7 +548,16 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                   </SortableContext>
                 </DndContext>
                 {paused.length && reordering !== provider ? (
-                  <PausedBlock items={paused} columns={labels.filter((label) => !hidden.includes(label))} reserves={reserves} failures={reserveFailures} flash={flash} />
+                  <PausedBlock
+                    items={paused}
+                    columns={labels.filter((label) => !hidden.includes(label))}
+                    reserves={reserves}
+                    failures={reserveFailures}
+                    flash={flash}
+                    availabilityOf={availabilityOf}
+                    commands={commands}
+                    onEdit={(item) => setProfileTarget(profileTargetFor(item.file, profiles))}
+                  />
                 ) : null}
                 {off.length && reordering !== provider ? (
                   <OffBlock
@@ -557,7 +566,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                     availabilityOf={availabilityOf}
                     commands={commands}
                     flash={flash}
-                    onEdit={(item) => setProfileTarget({ key: item.key, fileName: fileName(item.file), profile: profiles[item.key] })}
+                    onEdit={(item) => setProfileTarget(profileTargetFor(item.file, profiles))}
                   />
                 ) : null}
               </SettingsSection>
@@ -574,8 +583,12 @@ const formatPooled = (percent: number | null) => (percent === null ? '—' : `${
 const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slice(1);
 
 /** Accounts Arbor turned off at their cap, when each comes back, a way to bring one back now, and their limits grayed out. */
-function PausedBlock({ items, columns, reserves, failures, flash }: {
+function PausedBlock({ items, columns, reserves, failures, flash, availabilityOf, commands, onEdit }: {
   items: Paused[];
+  availabilityOf: (file: AuthFile) => AuthFileAvailability;
+  /** A paused account keeps its ⋯ menu: its name, priority and the rest don't wait for Resume. */
+  commands: AuthFileCommands;
+  onEdit: (item: Paused) => void;
   /** The provider's windows being shown, so the grayed-out limits line up with the accounts in use. */
   columns: string[];
   reserves: ReserveState;
@@ -630,6 +643,19 @@ function PausedBlock({ items, columns, reserves, failures, flash }: {
                   {busy === item.key ? <Spinner className="size-3" /> : <Play />}
                   {t('reserves.paused.resume')}
                 </Button>
+                <Menu>
+                  <MenuTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label={t('accounts.actions', { name: item.name })} />}>
+                    <MoreHorizontal />
+                  </MenuTrigger>
+                  <MenuPopup className="w-64">
+                    <MenuItem onClick={() => onEdit(item)}>
+                      <Pencil />
+                      {t('signIns.menu.editProfile')}
+                    </MenuItem>
+                    <MenuSeparator />
+                    <AuthFileMenuItems file={item.file} availability={availabilityOf(item.file)} commands={commands} paused={item.paused} />
+                  </MenuPopup>
+                </Menu>
               </div>
               <OffWindows quota={item.quota} columns={columns} cap={capOf(reserves, item.key)} now={now} />
             </li>

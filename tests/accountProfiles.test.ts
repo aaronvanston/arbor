@@ -7,11 +7,23 @@ import {
   fileProfile,
   getAccountProfiles,
   profilesByAuthIndex,
+  profileTargetFor,
   saveAccountProfile,
 } from '../src/services/accountProfiles';
+import { quotaKey } from '../src/services/quotaService';
 import { present } from './support/items';
 
 afterEach(() => clearAccountProfile('work.json::1'));
+
+// money-12: the name and avatar dialog shows the email whether it's opened from Limits or Sign-ins.
+describe('profileTargetFor', () => {
+  it('carries the account’s email with its key and saved profile', () => {
+    const file = { name: 'claude-max.json', provider: 'claude', auth_index: 'claude-1', email: 'cam@example.com' };
+    const key = quotaKey(file);
+    expect(profileTargetFor(file, { [key]: { name: 'Max' } })).toEqual({ key, fileName: 'claude-max.json', email: 'cam@example.com', profile: { name: 'Max' } });
+    expect(profileTargetFor({ ...file, email: '' }, {}).email).toBeUndefined();
+  });
+});
 
 describe('saveAccountProfile', () => {
   it('takes any color a machine can have: the palette, or a picked hex kept in lower case', () => {

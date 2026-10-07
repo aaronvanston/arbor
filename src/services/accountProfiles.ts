@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAppPreferences } from '../appPreferences';
 import { shownIdentity } from './emailPrivacy';
 import { isIdentityFill, keptColor, type IdentityColor, type IdentityFill, type PickedColor } from './identityColors';
-import { normalizeAuthIndex } from './managementApi';
+import { normalizeAuthIndex, readString } from './managementApi';
 import { fileName, quotaKey, type AuthFile } from './quotaService';
 import { savedStore, storedRecord } from './savedStore';
 
@@ -121,6 +121,15 @@ export function resolveAccountProfile(key: string, fileName: string, profile: Ac
     fill: profile?.fill ?? 'soft',
     custom: Boolean(profile && Object.keys(profile).length),
   };
+}
+
+/**
+ * What the name and avatar dialog edits for a credential file, the same wherever it's opened from: Limits, a paused or
+ * turned-off account, or Sign-ins. The email is the dialog's to show or mask.
+ */
+export function profileTargetFor(file: AuthFile, profiles: ProfileMap) {
+  const key = quotaKey(file);
+  return { key, fileName: fileName(file), email: readString(file, 'email') || undefined, profile: profiles[key] };
 }
 
 /** A credential file's profile, under the key its limits and profile are kept by. */

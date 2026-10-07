@@ -28,7 +28,7 @@ import { accountLimitsView, type AppView } from '../navigation';
 import { displayRows, useAccountLimitPrefs } from '../services/accountLimits';
 import { sortByOrder, useAccountOrder } from '../services/accountOrder';
 import { resumeAccount } from '../services/accountPause';
-import { fileProfile, useAccountProfiles, type ResolvedProfile } from '../services/accountProfiles';
+import { fileProfile, profileTargetFor, useAccountProfiles, type ResolvedProfile } from '../services/accountProfiles';
 import { capOf, useAccountReserves, type AccountCap, type PausedAccount } from '../services/accountReserves';
 import { accountsGap, ensureAccountsLoaded, setAccountsError, useLiveAccounts } from '../services/accountsStore';
 import { authFileAvailability, isAuthFileGoneFromDisk, isRuntimeOnlyAuthFile, parseAuthFilePriority, type AuthFileAvailability } from '../services/authFiles';
@@ -127,10 +127,7 @@ export function AccountSignInsPage({ onNavigate }: { onNavigate?: (view: AppView
     requestFocus('account', key);
     onNavigate(accountLimitsView());
   };
-  const editProfile = (file: AuthFile) => {
-    const key = quotaKey(file);
-    setProfileTarget({ key, fileName: fileName(file), email: readString(file, 'email'), profile: profiles[key] });
-  };
+  const editProfile = (file: AuthFile) => setProfileTarget(profileTargetFor(file, profiles));
 
   return (
     <Page width="main">
