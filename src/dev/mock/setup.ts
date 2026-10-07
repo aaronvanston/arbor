@@ -403,9 +403,12 @@ for (const entry of freshInstall ? setupMachines : []) {
   Object.assign(entry, { scannedAt: null, homes: [], harnessHomes: [], installs: [], harnessInstalls: [] });
 }
 
+// `?behind=plugins` lists the sample plugins too, so ci-01 has plugins to be behind on.
+const pluginSample = params.get('pluginrepo') === 'sample' || params.get('behind') === 'plugins';
+
 // With `?pluginrepo=sample`, ci-01 has agency from its own marketplace, which the repo has removed everywhere, and
 // cedar-02's settings still name a plugin that's gone, which the grid counts rather than lists.
-if (params.get('pluginrepo') === 'sample') {
+if (pluginSample) {
   const homeOf = (machine: string) => setupMachines.find((entry) => entry.machine === machine)?.homes.find((home) => home.path === '~/.claude');
   homeOf('ci-01')?.items.push(
     setupItem('plugin', 'agency@agency-skills', 'p9', { value: '1.2.0', enabled: true, note: mockAgo(9) }),
@@ -813,7 +816,7 @@ const mockMcpProjects: Record<string, Record<string, RepoProjectValue>> = mcpPro
  * context7 on with ci-01 keeping its own, pr-review-toolkit off everywhere; for cam/arbor, context7 off on every machine
  * and superpowers on ci-01 (P3: each arbor checkout's local settings).
  */
-const mockRepoPlugins: RepoPlugin[] = params.get('pluginrepo') === 'sample'
+const mockRepoPlugins: RepoPlugin[] = pluginSample
   ? [
     { id: 'agency@agency-skills', source: 'acme/agency-skills', all: 'removed', machines: {}, projects: {} },
     { id: 'context7@claude-plugins-official', source: 'anthropics/claude-plugins-official', all: 'on', machines: { ci01: 'own' }, projects: { 'cam/arbor': { all: 'off', machines: {} } } },
@@ -826,7 +829,7 @@ const mockRepoPlugins: RepoPlugin[] = params.get('pluginrepo') === 'sample'
  * `?pluginrepo=sample` also lists Codex plugins: sketch on everywhere, which the Mac has off, review, which no machine
  * has yet, and deploy, from a marketplace no machine has either, which Match adds first.
  */
-const mockCodexRepoPlugins: RepoPlugin[] = params.get('pluginrepo') === 'sample'
+const mockCodexRepoPlugins: RepoPlugin[] = pluginSample
   ? [
     { id: 'deploy@ops', source: 'acme/codex-ops', all: 'on', machines: {}, projects: {} },
     { id: 'review@team', source: 'acme/codex-plugins', all: 'on', machines: {}, projects: {} },
