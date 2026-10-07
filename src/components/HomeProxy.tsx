@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
-import { ArrowRight, Check, Copy, Eye, EyeOff, Monitor, Play, RotateCcw, Square, TerminalSquare, Users } from './ui/icons';
+import { ArrowRight, Check, Copy, Download, Eye, EyeOff, Monitor, Play, RotateCcw, Square, TerminalSquare, Users } from './ui/icons';
 import { invokeCommand } from '../native/commands';
 import { isCoreStarting, useCoreRuntime } from '../coreRuntime';
 import { useAppUpdate } from '../appUpdate';
@@ -15,6 +15,7 @@ import { accountLimitsView, machinesView, type AppView } from '../navigation';
 import { getAccountsSnapshot, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { clientApiProfiles } from '../services/clientAccess';
 import { CORE_ACTION_LABEL, runCoreProcess, type CoreProcessCommand } from '../services/coreProcess';
+import { coreLock } from '../services/coreLock';
 import { accountsFlow, type ProxyFlow } from '../services/homeOverview';
 import { useQuotaClock } from '../services/quotaTime';
 import { DetailRow, SettingsBlock, SettingsSection } from './layout/settings';
@@ -53,7 +54,7 @@ export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { mac
   const { askConfirmation } = useConfirmation();
   const { info: appUpdate } = useAppUpdate();
   const { status: coreStatus, statusError, refreshStatus, publishStatus } = useCoreRuntime();
-  const { files, loaded } = useAccountsStore();
+  const { files, disabled, error: accountsError, loaded } = useAccountsStore();
 
   const [installedAppVersion, setInstalledAppVersion] = useState('');
   const [listenHost, setListenHost] = useState('127.0.0.1');
@@ -173,11 +174,13 @@ export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { mac
     : coreStatus
       ? coreRunning ? t('kernel.status.running') : coreInstalled ? t('kernel.status.stopped') : t('kernel.status.notInstalled')
       : statusError ? t('common.detectionFailed') : t('common.detecting');
+  // Why it isn't answering, which picks the header's one action: Start core, Install core, or Check again.
+  const lock = coreLock(coreStatus, statusError);
   const coreVersion = coreStatus?.currentVersion ?? '';
   const appVersion = appUpdate?.currentVersion || installedAppVersion;
 
   const profiles = clientApiProfiles(port, tlsEnabled, listenHost).filter((profile) => profile.id !== 'gemini');
-  const accounts = useQuotaClock((now) => accountsFlow(coreReady && loaded ? files : null, now));
+  const accounts = useQuotaClock((now) => accountsFlow(coreReady && loaded ? { files, disabled, error: accountsError } : null, now));
   const flow: ProxyFlow = { machines, accounts };
   const keyToggleLabel = showApiKey ? t('config.keys.hide') : t('config.keys.show');
   const keyCopyLabel = copied === 'home:apikey' ? t('config.notice.keyCopied') : t('config.keys.copy');
@@ -201,8 +204,29 @@ export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { mac
               {coreProcessBusy ? <Spinner /> : <RotateCcw />}
               {t('kernel.control.restart')}
             </Button>
+          ) : lock === 'unreadable' ? (
+            // Its status couldn't be read, so whether it's there to start isn't known: read it again.
+            <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void refresh()}>
+              <RefreshIcon refreshing={refreshing} />
+              {refreshing ? t('app.coreLocked.checking') : t('app.coreLocked.check')}
+            </Button>
+          ) : lock === 'missing' ? (
+            <Button
+              size="sm"
+              disabled={!onNavigate}
+              disabledReason={onNavigate ? undefined : t('app.coreLocked.missing')}
+              onClick={() => onNavigate?.({ kind: 'settings', page: 'updates' })}
+            >
+              <Download />
+              {t('app.coreLocked.install')}
+            </Button>
           ) : (
-            <Button size="sm" disabled={!coreInstalled || coreProcessBusy} onClick={() => void runCoreProcessCommand('start_core_process')}>
+            <Button
+              size="sm"
+              disabled={!coreStatus || coreProcessBusy}
+              disabledReason={!coreStatus && !coreProcessBusy ? t('app.coreLocked.checking.title') : undefined}
+              onClick={() => void runCoreProcessCommand('start_core_process')}
+            >
               {coreProcessBusy ? <Spinner /> : <Play />}
               {coreProcessBusy ? t('common.processing') : t('kernel.control.start')}
             </Button>
@@ -233,11 +257,15 @@ export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { mac
         <ArrowRight className="size-4 text-icon-muted" aria-hidden="true" />
         <FlowEnd
           icon={<Users />}
-          value={flow.accounts ? t(flow.accounts.count === 1 ? 'home.proxy.accounts.one' : 'home.proxy.accounts.other', { count: flow.accounts.count }) : t('home.accounts.title')}
+          value={flow.accounts && !flow.accounts.failed ? t(flow.accounts.count === 1 ? 'home.proxy.accounts.one' : 'home.proxy.accounts.other', { count: flow.accounts.count }) : t('home.accounts.title')}
           hint={flow.accounts
-            ? !flow.accounts.count ? t('home.proxy.accountsNone') : flow.accounts.ready ? t('home.proxy.accountsReady', { count: flow.accounts.ready }) : t('home.proxy.accountsNoneReady')
+            ? flow.accounts.failed ? t('home.proxy.accountsFailed')
+              : !flow.accounts.count ? t('home.proxy.accountsNone')
+              : flow.accounts.ready ? t('home.proxy.accountsReady', { count: flow.accounts.ready })
+              : flow.accounts.off === flow.accounts.count ? t('home.proxy.accountsAllOff')
+              : t('home.proxy.accountsNoneReady')
             : coreReady ? t('common.loading') : t('home.proxy.accountsWaiting')}
-          warn={Boolean(flow.accounts && flow.accounts.count && !flow.accounts.ready)}
+          warn={Boolean(flow.accounts && (flow.accounts.failed || (flow.accounts.count && !flow.accounts.ready)))}
           onOpen={onNavigate ? () => onNavigate(accountLimitsView()) : undefined}
           openLabel={t('home.limits.open')}
         />

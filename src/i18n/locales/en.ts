@@ -657,6 +657,8 @@ export const en = {
   'home.proxy.accountsReady': '{count} ready for requests',
   'home.proxy.accountsNone': 'None signed in yet',
   'home.proxy.accountsNoneReady': 'None can take requests right now',
+  'home.proxy.accountsAllOff': 'All turned off',
+  'home.proxy.accountsFailed': 'Couldn’t read them',
   'home.proxy.accountsWaiting': 'Waiting for the proxy',
   'home.proxy.stoppedHint': 'Start it to pass requests on',
   'home.proxy.key': 'Key',

@@ -135,7 +135,16 @@ describe('proxy flow', () => {
       { name: 'b.json', provider: 'codex', disabled: true },
       { name: 'c.json', provider: 'claude', status: 'error', status_message: 'invalid_grant', unavailable: true },
     ] as AuthFile[];
-    expect(proxyFlow(machines, files, NOW)).toEqual({ machines: { count: 3, sentToday: 1 }, accounts: { count: 3, ready: 1 } });
+    expect(proxyFlow(machines, { files, disabled: [], error: '' }, NOW)).toEqual({ machines: { count: 3, sentToday: 1 }, accounts: { count: 3, ready: 1, off: 0, failed: false } });
+  });
+
+  test('counts accounts that are turned off, and says a list that failed is unknown rather than empty', () => {
+    const off = [{ name: 'a.json', provider: 'codex', disabled: true }] as AuthFile[];
+    expect(proxyFlow(null, { files: [], disabled: off, error: '' }, NOW).accounts).toEqual({ count: 1, ready: 0, off: 1, failed: false });
+    expect(proxyFlow(null, { files: [], disabled: [], error: 'connection refused' }, NOW).accounts).toEqual({ count: 0, ready: 0, off: 0, failed: true });
+    // Accounts from an earlier listing are still known after a later one fails.
+    expect(proxyFlow(null, { files: [], disabled: off, error: 'connection refused' }, NOW).accounts?.failed).toBe(false);
+    expect(proxyFlow(null, { files: [], disabled: [], error: '' }, NOW).accounts).toEqual({ count: 0, ready: 0, off: 0, failed: false });
   });
 
   test('leaves an end blank until it has been read', () => {

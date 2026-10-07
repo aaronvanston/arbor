@@ -178,20 +178,38 @@ export function homeMachines(
  */
 export type ProxyFlow = {
   machines: { count: number; sentToday: number } | null;
-  accounts: { count: number; ready: number } | null;
+  /**
+   * `count` is every account the core listed, turned off ones too; `off` how many of them are; `failed` the list
+   * couldn't be read and nothing earlier said what's there, so no count is known.
+   */
+  accounts: { count: number; ready: number; off: number; failed: boolean } | null;
 };
 
-export function proxyFlow(machines: readonly HomeMachine[] | null, files: readonly AuthFile[] | null, nowMs: number): ProxyFlow {
-  return { machines: machinesFlow(machines), accounts: accountsFlow(files, nowMs) };
+/** The core's listing as the accounts store keeps it: the accounts that are on, those turned off, and why it failed. */
+export type ListedAccounts = { files: readonly AuthFile[]; disabled: readonly AuthFile[]; error: string };
+
+export function proxyFlow(machines: readonly HomeMachine[] | null, accounts: ListedAccounts | null, nowMs: number): ProxyFlow {
+  return { machines: machinesFlow(machines), accounts: accountsFlow(accounts, nowMs) };
 }
 
 /** The machines' end of the proxy card, which changes with the machines but not with the time. */
 export const machinesFlow = (machines: readonly HomeMachine[] | null): ProxyFlow['machines'] =>
   machines ? { count: machines.length, sentToday: machines.filter((item) => (item.today?.requests ?? 0) > 0).length } : null;
 
-/** The accounts' end, which changes as limits reset. */
-export const accountsFlow = (files: readonly AuthFile[] | null, nowMs: number): ProxyFlow['accounts'] =>
-  files ? { count: files.length, ready: files.filter((file) => authFileAvailability(file, nowMs).kind === 'ready').length } : null;
+/**
+ * The accounts' end, which changes as limits reset. Accounts turned off still count, so every one off doesn't read as
+ * none signed in, and a list that failed with nothing known says so rather than none.
+ */
+export const accountsFlow = (listed: ListedAccounts | null, nowMs: number): ProxyFlow['accounts'] => {
+  if (!listed) return null;
+  const { files, disabled, error } = listed;
+  return {
+    count: files.length + disabled.length,
+    ready: files.filter((file) => authFileAvailability(file, nowMs).kind === 'ready').length,
+    off: disabled.length,
+    failed: !files.length && !disabled.length && Boolean(error),
+  };
+};
 
 /** What's pulling a machine's score down, in the words Machines uses. */
 export function healthReasonText(reason: HealthReason, latest: HealthPoint): { key: MessageKey; variables: MessageVariables } {
