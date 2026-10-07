@@ -1,6 +1,8 @@
 import type { MessageKey } from '../i18n/resources';
+import { formatCount } from '../lib/format';
 import { invokeCommand } from '../native/commands';
 import type {
+  ArchiveBlock,
   CleanupCache,
   CleanupGroup,
   CleanupHold,
@@ -8,6 +10,7 @@ import type {
   CleanupLeftover,
   CleanupScan,
   ClearableKind,
+  HomeArchive,
   LeftoverKind,
   RestoreProblem,
   SetAsideItem,
@@ -22,14 +25,14 @@ import type {
 
 export const getCleanup = (machine: string) => invokeCommand('get_machine_cleanup', { machine });
 export const checkCleanup = (machine: string) => invokeCommand('check_machine_cleanup', { machine });
-export const removeCleanup = (machine: string, items: { group: CleanupGroup; path: string }[]) => invokeCommand('remove_cleanup_items', { machine, items });
+export const removeCleanup = (machine: string, items: { group: CleanupGroup; path: string }[], allowUnarchived = false) =>
+  invokeCommand('remove_cleanup_items', { machine, items, allowUnarchived });
 export const restoreSetAside = (machine: string, stamp: string, item: number | null = null) => invokeCommand('restore_set_aside', { machine, stamp, item });
 export const deleteSetAside = (machine: string, items: Pick<SetAsideItem, 'stamp' | 'item'>[]) =>
   invokeCommand('delete_set_aside', { machine, items: items.map(({ stamp, item }) => ({ stamp, item })) });
 
 /** Why an item has no Remove, as its button says. */
 export const HOLD_REASON: Record<CleanupHold, MessageKey> = {
-  sessions: 'machine.cleanup.hold.sessions',
   unmeasured: 'machine.cleanup.hold.unmeasured',
   outsideHome: 'machine.cleanup.hold.outsideHome',
 };
@@ -56,6 +59,38 @@ export const RESTORE_PROBLEM: Record<RestoreProblem, MessageKey> = {
   gone: 'machine.cleanup.restore.gone',
   failed: 'machine.cleanup.restore.failed',
 };
+
+/** Why none of a home's sessions count as archived, as its row says. */
+export const ARCHIVE_BLOCK: Record<ArchiveBlock, MessageKey> = {
+  off: 'machine.cleanup.archive.off',
+  paused: 'machine.cleanup.archive.paused',
+  mainMissing: 'machine.cleanup.archive.mainMissing',
+  foreign: 'machine.cleanup.archive.foreign',
+  notKept: 'machine.cleanup.archive.notKept',
+  unreadable: 'machine.cleanup.archive.unreadable',
+};
+
+/** Every session file in the home is safely in the archive, and the archive has looked since the last was written. */
+export const allArchived = (archive: HomeArchive) => archive.blocked === null && archive.notArchived === 0 && !archive.newerThanPass;
+
+/** A home's archive standing as its row and its confirmation say it. */
+export function archiveLine(archive: HomeArchive): { key: MessageKey; variables: Record<string, string | number>; ok: boolean } {
+  if (archive.blocked) return { key: ARCHIVE_BLOCK[archive.blocked], variables: {}, ok: false };
+  if (archive.notArchived > 0) return { key: 'machine.cleanup.archive.partly', variables: { count: formatCount(archive.notArchived), total: formatCount(archive.sessions) }, ok: false };
+  if (archive.newerThanPass) return { key: 'machine.cleanup.archive.newer', variables: {}, ok: false };
+  if (archive.sessions === 0) return { key: 'machine.cleanup.archive.none', variables: {}, ok: true };
+  return { key: 'machine.cleanup.archive.all', variables: { total: formatCount(archive.sessions) }, ok: true };
+}
+
+/**
+ * Whether setting a home aside asks first, and why: some of its sessions aren't archived (ask, then allow), or an agent
+ * is still using it and will make a new one. Anything else goes at once, with Undo.
+ */
+export function removalAsks(home: Pick<CleanupHome, 'role' | 'archive'>): { unarchived: boolean; active: boolean } | null {
+  const unarchived = home.archive !== null && !allArchived(home.archive);
+  const active = home.role === 'active' && home.archive !== null;
+  return unarchived || active ? { unarchived, active } : null;
+}
 
 type Sized = { sizeKb: number | null };
 

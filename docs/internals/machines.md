@@ -23,7 +23,9 @@ The machine page's Clean up (`usage/machine_health/cleanup.rs`) never deletes wh
 rename and never a copy. That area is apart from `setup-backups` on purpose: backups are pruned to the newest 20, and
 nothing set aside may ever go except by the user's Delete for good. A pointer with the same stamp in `setup-backups`
 lists the removal on Sync › Repo › History, and Delete for good notes each item there so Undo stops offering it; pruning the pointer only drops it from that list. Which harness folders count as
-clearable is `harnesses::CLEARABLE`, each with the reason it's safe.
+clearable is `harnesses::CLEARABLE`, each with the reason it's safe. A home Arbor reads sessions from is asked of the
+archive (`archive/standing.rs`, counts only) at the look and again at Remove, which needs `allowUnarchived` when not
+every session file is safely in a store.
 
 ## Agent homes
 

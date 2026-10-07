@@ -124,7 +124,9 @@
  * logs and caches, the homes holding sessions shown without Remove, and cam-mbp has a launch agent set aside already;
  * `?cleanup=none` for nothing to clean, `fail` for the look failing, `changed` for Remove refusing because the item
  * changed since the look, `drive` for a home set aside on another drive and Remove of ~/.cache/opencode refused because
- * its drive can't take a set-aside folder;
+ * its drive can't take a set-aside folder; homes Arbor reads sessions from say how much the archive holds: by default
+ * 312 of ~/.claude's 1,284 session files aren't archived yet (Remove asks first), `?cleanuparchive=archived` for all of
+ * them archived (still asked for ~/.claude, which an agent runs from), `off` for the session archive turned off;
  * `?setup=fail` to have ci-01's setup scan fail; `?setup=overrides` for skills Claude Code's skillOverrides turn off or
  * list by name only on this Mac and ci-01, and a second Claude home whose overrides Claude Code ignores; `?setup=policy` for
  * a managed-settings policy that sets settings, env, a hook and a plugin and turns a skill off on this Mac, one ci-01

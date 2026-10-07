@@ -1,15 +1,26 @@
 /** The browser mock's answers for each machine's clean-up: what could come off it, and what's set aside there. */
 import type { CleanupCommands } from '../../native/cleanup';
-import type { CleanupAgent, CleanupCache, CleanupGroup, CleanupHome, CleanupLeftover, CleanupScan, CommandError, SetAsideItem } from '../../native/types';
+import type { CleanupAgent, CleanupCache, CleanupGroup, CleanupHome, CleanupLeftover, CleanupScan, CommandError, HomeArchive, SetAsideItem } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { freshInstall, later, mockLog, now, params } from './scenario';
 import { answerCleanupUndo, cleanupDeletedMock, cleanupUndoneMock, recordCleanupMock } from './setup';
 
 // `?cleanup=` (listed at the top of mockTauri.ts): `none` for nothing to clean anywhere, `fail` for the look failing,
 // `changed` for Remove refusing because the item changed since the look, `drive` for an item set aside on another drive
-// and Remove refusing one whose drive can't take a set-aside folder. By default each machine has things to clean,
-// among them homes that hold sessions (no Remove yet), and cam-mbp has a cache set aside already.
+// and Remove refusing one whose drive can't take a set-aside folder. By default each machine has things to clean, and
+// cam-mbp has a launch agent set aside already. `?cleanuparchive=` sets how much of the homes' sessions the archive
+// holds: by default some of ~/.claude's aren't archived yet and the rest are; `archived` for all of them, `off` for the
+// session archive turned off.
 const scenario = params.get('cleanup') ?? (freshInstall ? 'none' : 'some');
+const archiveScenario = params.get('cleanuparchive') ?? (freshInstall ? 'off' : 'partly');
+
+/** How much of a home's `sessions` session files the archive holds in the scenario; `behind` aren't, by default. */
+function archiveOf(sessions: number, behind: number, lastSessionMs: number | null): HomeArchive {
+  const lastPassMs = now - 20 * 60_000;
+  if (archiveScenario === 'off') return { sessions, notArchived: sessions, blocked: 'off', lastPassMs: null, newerThanPass: false };
+  const notArchived = archiveScenario === 'archived' ? 0 : behind;
+  return { sessions, notArchived, blocked: null, lastPassMs, newerThanPass: archiveScenario !== 'archived' && lastSessionMs !== null && lastSessionMs > lastPassMs };
+}
 
 const hour = 3_600_000;
 const day = 24 * hour;
@@ -18,18 +29,18 @@ const linux = (machine: string) => machine !== 'cam-mbp';
 function homesFor(machine: string): CleanupHome[] {
   const home = (path: string, agent: CleanupHome['agent'], harness: CleanupHome['harness'], more: Partial<CleanupHome>): CleanupHome => ({
     path, agent, harness, role: 'active', sizeKb: null, newestMs: null, lastSessionMs: null, sessionFiles: null, installed: true, inside: null,
-    ownSessions: null, ownSessionsArchived: false, held: null, ...more,
+    ownSessions: null, ownSessionsArchived: false, held: null, archive: null, ...more,
   });
   const homes = [
-    home('~/.claude', 'claude', 'claude', { sizeKb: 2_480_000, newestMs: now - 4 * 60_000, lastSessionMs: now - 4 * 60_000, sessionFiles: 1_284, held: 'sessions' }),
-    home('~/.codex', 'codex', 'codex', { sizeKb: 812_000, newestMs: now - 2 * hour, lastSessionMs: now - 2 * hour, sessionFiles: 342, held: 'sessions' }),
+    home('~/.claude', 'claude', 'claude', { sizeKb: 2_480_000, newestMs: now - 4 * 60_000, lastSessionMs: now - 4 * 60_000, sessionFiles: 1_284, archive: archiveOf(1_284, 312, now - 4 * 60_000) }),
+    home('~/.codex', 'codex', 'codex', { sizeKb: 812_000, newestMs: now - 2 * hour, lastSessionMs: now - 2 * hour, sessionFiles: 342, archive: archiveOf(342, 0, now - 2 * hour) }),
     home('~/.factory', 'droid', 'droid', { role: 'history', sizeKb: 48_200, newestMs: now - 81 * day, installed: false }),
     home('~/.config/amp', 'amp', 'amp', { role: 'active', sizeKb: 1_240, newestMs: now - 12 * day }),
     home('~/.pi/agent', 'pi-agent', 'pi', { role: 'active', sizeKb: 22_400, newestMs: now - 9 * day, ownSessions: '~/.pi/agent/sessions', ownSessionsArchived: true }),
   ];
   if (!linux(machine)) {
     homes.push(home('~/Library/Application Support/Agent App/claude', 'claude', 'claude', {
-      role: 'history', sizeKb: 192_000, newestMs: now - 40 * day, lastSessionMs: now - 40 * day, sessionFiles: 61, inside: 'Agent App', held: 'sessions',
+      role: 'history', sizeKb: 192_000, newestMs: now - 40 * day, lastSessionMs: now - 40 * day, sessionFiles: 61, inside: 'Agent App', archive: archiveOf(61, 0, now - 40 * day),
     }));
     homes.push(home('~/.prime/agent', 'prime-agent', 'primeAgent', { role: 'ignored', sizeKb: 3_100, newestMs: now - 120 * day, installed: false }));
   } else {
@@ -155,8 +166,8 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
     if (scenario === 'fail') return later(900, () => { throw `ssh: connect to host ${machine} port 22: Operation timed out`; });
     return later(1_400, () => look(machine));
   },
-  remove_cleanup_items: ({ machine, items }) => {
-    mockLog('remove_cleanup_items', { machine, items });
+  remove_cleanup_items: ({ machine, items, allowUnarchived }) => {
+    mockLog('remove_cleanup_items', { machine, items, allowUnarchived });
     const stored = seeded(machine);
     if (scenario === 'changed') return later(700, () => { throw refusal('changed', `${items.map((item) => item.path).join(', ')} changed since Arbor looked, so nothing was moved. Refresh and try again.`); });
     if (scenario === 'drive' && items.some((item) => item.path === '~/.cache/opencode')) {
@@ -170,6 +181,9 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
         const found = list.find((entry) => entry.path === path);
         if (!found) throw `${path} isn't in the last scan. Refresh and try again`;
         if (found.held) throw `${path} can't be set aside yet`;
+        if (group === 'home' && !allowUnarchived && 'archive' in found && found.archive && (found.archive.blocked || found.archive.notArchived || found.archive.newerThanPass)) {
+          throw `Not every session file is archived in ${path}. Setting it aside keeps them on the machine; pass allowUnarchived to go ahead.`;
+        }
         stored.removed.set(`${id}/${index}`, { group, item: found });
         stored.scan.aside = [{ stamp: id, item: index, group, path, atMs: Date.now(), sizeKb: found.sizeKb, volume: null, taken: false }, ...stored.scan.aside];
         if (group === 'home') stored.scan.homes = stored.scan.homes.filter((entry) => entry.path !== path);

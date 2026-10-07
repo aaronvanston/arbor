@@ -221,6 +221,11 @@ export type ArborSession = {
 };
 
 /**
+ * Why none of a home's sessions count as archived.
+ */
+export type ArchiveBlock = "off" | "paused" | "mainMissing" | "foreign" | "notKept" | "unreadable";
+
+/**
  * Where the archive stands, as the status names it.
  */
 export type ArchiveCondition = "off" | "ok" | "catching-up" | "paused" | "main-missing" | "foreign" | "error";
@@ -1039,7 +1044,7 @@ export type CleanupGroup = "home" | "cache" | "leftover";
 /**
  * Why an item has no Remove.
  */
-export type CleanupHold = "sessions" | "unmeasured" | "outsideHome";
+export type CleanupHold = "unmeasured" | "outsideHome";
 
 export type CleanupHome = {
   /**
@@ -1080,6 +1085,10 @@ export type CleanupHome = {
    */
   ownSessionsArchived: boolean,
   held: CleanupHold | null,
+  /**
+   * For a home Arbor reads sessions from, how much of them the archive holds safely.
+   */
+  archive: HomeArchive | null,
 };
 
 export type CleanupLeftover = {
@@ -2186,6 +2195,30 @@ export type HeavySessionCandidate = {
 export type HiddenReason = "secret" | "large" | "binary";
 
 export type HomeAgent = "claude" | "codex" | "shared";
+
+/**
+ * A home's sessions as the archive has them, from the clean-up's count of its session files and the archive's index.
+ */
+export type HomeArchive = {
+  /**
+   * Session files in the home, as the scan counted them.
+   */
+  sessions: number,
+  /**
+   * Of those, the ones not safely in a store: not listed yet, still growing, skipped, unreachable, or everything
+   * while `blocked`.
+   */
+  notArchived: number,
+  blocked: ArchiveBlock | null,
+  /**
+   * When the machine's last complete archive pass started.
+   */
+  lastPassMs: number | null,
+  /**
+   * A session file was written after that pass started, so it may not be archived as it is now.
+   */
+  newerThanPass: boolean,
+};
 
 export type HomeGuess = {
   role: AgentHomeRole,

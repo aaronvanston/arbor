@@ -16,10 +16,15 @@
 //! Each item is moved only while it's as the scan found it (its fingerprint), and put back only while its place is
 //! free and its set-aside copy unchanged. Removing a home also turns it to Ignored in the agent homes list, and
 //! putting it back puts its role back.
+//!
+//! A home Arbor reads sessions from also says how many of its session files the archive holds safely
+//! (`archive::standing`). It can still be set aside when some aren't, once the user says so: they stay on the
+//! machine, in the set-aside area, until deleted for good.
 
 use super::agent_homes::{self, AgentHome, AgentHomeKind, AgentHomeRole, AgentHomeSource};
 use super::agent_install::{method_from_paths, InstallMethod};
 use super::agents::{parse_version, AgentKind, AGENT_ENV};
+use super::archive::{self, standing::HomeCounts, ArchiveCondition};
 use super::guarded_writes::{is_stamp, new_stamp, prune_backups, stamp_ms, SyncFailure, SyncOutcome};
 use super::harnesses::{self, ClearableKind, Harness};
 use super::setup::{HELPERS, INSTALLS_SCRIPT};
@@ -66,8 +71,6 @@ impl CleanupGroup {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum CleanupHold {
-    /// A home Arbor reads sessions from, or one holding such a home, which waits for the archive check.
-    Sessions,
     /// The scan ran out of time before measuring it.
     Unmeasured,
     /// Outside the machine's home folder, which the clean-up never touches.
@@ -102,6 +105,8 @@ pub(crate) struct CleanupHome {
     /// That sessions folder is a home on the list Arbor reads and archives, which removing this one takes along.
     pub(crate) own_sessions_archived: bool,
     pub(crate) held: Option<CleanupHold>,
+    /// For a home Arbor reads sessions from, how much of them the archive holds safely.
+    pub(crate) archive: Option<HomeArchive>,
     #[serde(skip)]
     abs: String,
     #[serde(skip)]
@@ -109,6 +114,98 @@ pub(crate) struct CleanupHome {
     /// The agent homes list's path for it: the home's own, or the folder for one a pattern found.
     #[serde(skip)]
     list_path: String,
+}
+
+/// Why none of a home's sessions count as archived.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ArchiveBlock {
+    /// No session archive is set up.
+    Off,
+    Paused,
+    /// The archive's drive isn't connected.
+    MainMissing,
+    /// The archive's folder holds another archive, or isn't one.
+    Foreign,
+    /// The archive doesn't keep this machine's sessions.
+    NotKept,
+    /// The archive's index couldn't be read.
+    Unreadable,
+}
+
+/// A home's sessions as the archive has them, from the clean-up's count of its session files and the archive's index.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HomeArchive {
+    /// Session files in the home, as the scan counted them.
+    pub(crate) sessions: u32,
+    /// Of those, the ones not safely in a store: not listed yet, still growing, skipped, unreachable, or everything
+    /// while `blocked`.
+    pub(crate) not_archived: u32,
+    pub(crate) blocked: Option<ArchiveBlock>,
+    /// When the machine's last complete archive pass started.
+    #[ts(type = "number | null")]
+    pub(crate) last_pass_ms: Option<i64>,
+    /// A session file was written after that pass started, so it may not be archived as it is now.
+    pub(crate) newer_than_pass: bool,
+}
+
+impl HomeArchive {
+    pub(crate) fn all_archived(&self) -> bool {
+        self.blocked.is_none() && self.not_archived == 0 && !self.newer_than_pass
+    }
+}
+
+/// A home's standing from what the archive says and what the scan counted: `sessions` session files, the newest
+/// written at `last_session_ms`.
+fn home_archive(condition: Result<(ArchiveCondition, bool, HomeCounts), ()>, sessions: u32, last_session_ms: Option<i64>) -> HomeArchive {
+    let blocked = |block| HomeArchive { sessions, not_archived: sessions, blocked: Some(block), last_pass_ms: None, newer_than_pass: false };
+    let (condition, kept, counts) = match condition {
+        Ok(found) => found,
+        Err(()) => return blocked(ArchiveBlock::Unreadable),
+    };
+    let block = match condition {
+        ArchiveCondition::Off => Some(ArchiveBlock::Off),
+        ArchiveCondition::Paused => Some(ArchiveBlock::Paused),
+        ArchiveCondition::MainMissing => Some(ArchiveBlock::MainMissing),
+        ArchiveCondition::Foreign => Some(ArchiveBlock::Foreign),
+        ArchiveCondition::Ok | ArchiveCondition::CatchingUp | ArchiveCondition::Error if !kept => Some(ArchiveBlock::NotKept),
+        ArchiveCondition::Ok | ArchiveCondition::CatchingUp | ArchiveCondition::Error => None,
+    };
+    if let Some(block) = block {
+        return HomeArchive { last_pass_ms: counts.last_pass_ms, ..blocked(block) };
+    }
+    let unsafe_known = counts.known.saturating_sub(counts.safe);
+    let unseen = u64::from(sessions).saturating_sub(counts.known);
+    let newer_than_pass = sessions > 0 && match (last_session_ms, counts.last_pass_ms) {
+        (Some(written), Some(pass)) => written > pass,
+        (_, None) => true,
+        (None, Some(_)) => false,
+    };
+    HomeArchive {
+        sessions,
+        not_archived: u32::try_from((unsafe_known + unseen).min(u64::from(sessions))).unwrap_or(sessions),
+        blocked: None,
+        last_pass_ms: counts.last_pass_ms,
+        newer_than_pass,
+    }
+}
+
+/// Fills in the archive standing of each home Arbor reads sessions from.
+async fn add_standings(app: &tauri::AppHandle, target: &Machine, scan: &mut CleanupScan) {
+    let roots: Vec<String> = scan.homes.iter().filter(|home| home.agent.reads_sessions()).map(|home| home.abs.clone()).collect();
+    if roots.is_empty() {
+        return;
+    }
+    let found = archive::home_standings(app, target.name(), target.is_local(), roots.clone()).await;
+    for home in scan.homes.iter_mut().filter(|home| home.agent.reads_sessions()) {
+        let at = roots.iter().position(|root| *root == home.abs);
+        let counts = match (&found, at) {
+            (Ok((condition, kept, counts)), Some(at)) => counts.get(at).map(|counts| (*condition, *kept, *counts)).ok_or(()),
+            _ => Err(()),
+        };
+        home.archive = Some(home_archive(counts, home.session_files.unwrap_or(0), home.last_session_ms));
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -859,7 +956,6 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
         .filter_map(|(index, agent, folder)| {
             let listed = homes.get(*index)?;
             let measure = measured.get(folder);
-            let holds_sessions = agent.reads_sessions();
             let sessions = own_sessions.get(folder);
             // Archived when the folder is a home on the list that reads sessions and isn't Ignored.
             let archived = sessions.is_some_and(|sessions| {
@@ -879,7 +975,8 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
                 installed: installed.contains(&agent.harness()),
                 own_sessions: sessions.map(|sessions| tilde(sessions)),
                 own_sessions_archived: archived,
-                held: if holds_sessions && in_home(folder, &home_dir) { Some(CleanupHold::Sessions) } else { held(folder, measure) },
+                held: held(folder, measure),
+                archive: None,
                 print: measure.map(|measure| measure.print.clone()),
                 list_path: if listed.path.contains('*') { path.clone() } else { listed.path.clone() },
                 abs: folder.clone(),
@@ -1066,27 +1163,45 @@ pub(crate) async fn get_machine_cleanup(machine: String) -> Result<Option<Cleanu
 /// Looks at a machine for what could come off it: agent homes, agents, leftovers from apps that are gone, and the
 /// harnesses' logs and caches, with their sizes; and what's set aside there. Changes nothing.
 #[tauri::command]
-pub(crate) async fn check_machine_cleanup(state: tauri::State<'_, MachineHealthState>, machine: String) -> Result<CleanupScan, String> {
+pub(crate) async fn check_machine_cleanup(app: tauri::AppHandle, state: tauri::State<'_, MachineHealthState>, machine: String) -> Result<CleanupScan, String> {
     let target = find_machine(&state.lock(), &machine)?;
     let homes = agent_homes::every_home_on(&machine);
     let stdout = run_checked(&target, MachineOp::CleanupScan, &scan_script(&homes), SCAN_TIMEOUT).await?;
-    let scan = parse_scan(&machine, &homes, &stdout, Local::now().timestamp_millis());
+    let mut scan = parse_scan(&machine, &homes, &stdout, Local::now().timestamp_millis());
+    add_standings(&app, &target, &mut scan).await;
     store(&scan);
     Ok(scan)
 }
 
-/// Moves things the last scan found aside on a machine, all or none, each only while it's as the scan found it.
-/// Homes Arbor reads sessions from aren't moved yet. A home moved aside turns Ignored in the agent homes list.
+/// Moves things the last scan found aside on a machine, all or none, each only while it's as the scan found it. A home
+/// Arbor reads sessions from is asked of the archive again first: with session files it doesn't hold safely, it's
+/// moved only with `allowUnarchived` (they stay on the machine, set aside). A home moved aside turns Ignored in the agent
+/// homes list.
 #[tauri::command]
 pub(crate) async fn remove_cleanup_items(
     app: tauri::AppHandle,
     state: tauri::State<'_, MachineHealthState>,
     machine: String,
     items: Vec<CleanupTarget>,
+    allow_unarchived: Option<bool>,
 ) -> Result<CleanupRemoval, CommandError> {
     let target = find_machine(&state.lock(), &machine)?;
-    let scan = stored(&machine).filter(|scan| scan.scanned_at_ms.is_some()).ok_or_else(|| format!("Look at what's on {machine} first"))?;
+    let mut scan = stored(&machine).filter(|scan| scan.scanned_at_ms.is_some()).ok_or_else(|| format!("Look at what's on {machine} first"))?;
+    // The archive may have moved on since the look, either way: ask it again.
+    add_standings(&app, &target, &mut scan).await;
     let (planned, homes) = plan_removal(&scan, &items)?;
+    if allow_unarchived != Some(true) {
+        let unarchived: Vec<String> = homes
+            .iter()
+            .filter_map(|(_, home)| home.archive.as_ref().filter(|standing| !standing.all_archived()).map(|standing| format!("{} ({} of {})", home.path, standing.not_archived, standing.sessions)))
+            .collect();
+        if !unarchived.is_empty() {
+            return Err(CommandError::failed(format!(
+                "Not every session file is archived in {}. Setting it aside keeps them on the machine; pass allowUnarchived to go ahead.",
+                unarchived.join(", ")
+            )));
+        }
+    }
     let roles: Vec<RoleNote> = homes
         .iter()
         .map(|(n, home)| RoleNote {
@@ -1175,7 +1290,6 @@ fn plan_removal(scan: &CleanupScan, items: &[CleanupTarget]) -> Result<(Vec<Plan
             }
         };
         match held {
-            Some(CleanupHold::Sessions) => return Err(format!("{} holds sessions, which Arbor doesn't set aside yet", target.path)),
             Some(CleanupHold::OutsideHome) => return Err(format!("{} isn't in the home folder, so Arbor leaves it alone", target.path)),
             Some(CleanupHold::Unmeasured) => return Err(format!("Arbor hasn't measured {} yet. Refresh and try again", target.path)),
             None => {}
@@ -1458,6 +1572,33 @@ mod tests {
     }
 
     #[test]
+    fn a_homes_sessions_count_as_archived_only_when_the_archive_holds_them_all_and_has_looked_since() {
+        let counts = |known, safe, pass| HomeCounts { known, safe, last_pass_ms: pass };
+        let standing = |condition, kept, found: HomeCounts, sessions, newest| home_archive(Ok((condition, kept, found)), sessions, newest);
+        let all = standing(ArchiveCondition::Ok, true, counts(1_284, 1_284, Some(2_000)), 1_284, Some(1_000));
+        assert!(all.all_archived() && all.not_archived == 0, "{all:?}");
+        // Growing, skipped or never listed: 300 unsafe plus 12 the archive hasn't listed.
+        let partly = standing(ArchiveCondition::CatchingUp, true, counts(1_272, 972, Some(2_000)), 1_284, Some(1_000));
+        assert_eq!((partly.not_archived, partly.all_archived()), (312, false));
+        // Written since the last complete pass: not all archived, though every file it knows is safe.
+        let newer = standing(ArchiveCondition::Ok, true, counts(10, 10, Some(2_000)), 10, Some(3_000));
+        assert!(newer.newer_than_pass && !newer.all_archived());
+        assert!(!standing(ArchiveCondition::Ok, true, counts(0, 0, None), 3, None).all_archived(), "never passed");
+        for (condition, kept, block) in [
+            (ArchiveCondition::Off, true, ArchiveBlock::Off),
+            (ArchiveCondition::Paused, true, ArchiveBlock::Paused),
+            (ArchiveCondition::MainMissing, true, ArchiveBlock::MainMissing),
+            (ArchiveCondition::Foreign, true, ArchiveBlock::Foreign),
+            (ArchiveCondition::Ok, false, ArchiveBlock::NotKept),
+        ] {
+            let blocked = standing(condition, kept, counts(5, 5, Some(2_000)), 5, Some(1_000));
+            assert_eq!((blocked.blocked, blocked.not_archived), (Some(block), 5), "{condition:?}");
+        }
+        let unreadable = home_archive(Err(()), 7, None);
+        assert_eq!((unreadable.blocked, unreadable.not_archived), (Some(ArchiveBlock::Unreadable), 7));
+    }
+
+    #[test]
     fn a_change_since_the_scan_refuses_as_its_own_kind() {
         let planned = vec![Planned { group: CleanupGroup::Cache, abs: "/home/cam/.claude/debug".into(), print: "D1".into(), size_kb: 1 }];
         let error = refusal(&parse_moves("H\t/home/cam\nX\t0\tchanged\n").refused, &planned, "/home/cam").unwrap();
@@ -1548,9 +1689,9 @@ mod tests {
                 let scan = parse_scan("cam-mbp", &list, &stdout, 1);
                 let paths = |homes: &[CleanupHome]| homes.iter().map(|home| (home.path.clone(), home.held)).collect::<BTreeMap<_, _>>();
                 let found = paths(&scan.homes);
-                assert_eq!(found.get("~/.claude"), Some(&Some(CleanupHold::Sessions)), "{shell}: {found:?}");
+                assert_eq!(found.get("~/.claude"), Some(&None), "{shell}: homes with sessions can be set aside now: {found:?}");
                 assert_eq!(found.get("~/.factory"), Some(&None), "{shell}: {found:?}");
-                assert_eq!(found.get("~/.agent-app/homes/one"), Some(&Some(CleanupHold::Sessions)), "{shell}");
+                assert_eq!(found.get("~/.agent-app/homes/one"), Some(&None), "{shell}");
                 let factory = scan.homes.iter().find(|home| home.path == "~/.factory").unwrap();
                 assert!(factory.size_kb.is_some() && factory.print.as_deref().is_some_and(|print| print.starts_with('D')), "{shell}");
                 assert!(!factory.installed, "{shell}: no droid on the PATH");
@@ -1558,7 +1699,7 @@ mod tests {
                 // Pi's own folder can be removed, and says it holds the sessions folder Arbor archives.
                 let pi = scan.homes.iter().find(|home| home.path == "~/.pi/agent").unwrap();
                 assert_eq!((pi.held, pi.own_sessions.as_deref(), pi.own_sessions_archived), (None, Some("~/.pi/agent/sessions"), true), "{shell}");
-                assert_eq!(found.get("~/.pi/agent/sessions"), Some(&Some(CleanupHold::Sessions)), "{shell}");
+                assert_eq!(found.get("~/.pi/agent/sessions"), Some(&None), "{shell}");
                 let claude = scan.homes.iter().find(|home| home.path == "~/.claude").unwrap();
                 assert_eq!(claude.session_files, Some(1), "{shell}");
                 assert!(claude.last_session_ms.is_some(), "{shell}");

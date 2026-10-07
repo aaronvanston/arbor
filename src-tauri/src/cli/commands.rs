@@ -688,10 +688,11 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "remove_cleanup_items",
         access: Access::Confirm,
-        summary: "Moves things the last scan found aside on a machine, all or none, each only while it's as the scan found it. Homes Arbor reads sessions from aren't moved yet. A home moved aside turns Ignored in the agent homes list.",
+        summary: "Moves things the last scan found aside on a machine, all or none, each only while it's as the scan found it. A home Arbor reads sessions from is asked of the archive again first: with session files it doesn't hold safely, it's moved only with `allowUnarchived` (they stay on the machine, set aside). A home moved aside turns Ignored in the agent homes list.",
         args: &[
             ArgSpec { name: "machine", ts_type: "string", optional: false },
             ArgSpec { name: "items", ts_type: "Array<CleanupTarget>", optional: false },
+            ArgSpec { name: "allowUnarchived", ts_type: "boolean | null", optional: true },
         ],
     },
     CommandSpec {
@@ -2192,8 +2193,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "scan_agent_homes" => async { done(Box::pin(crate::usage::machine_health::agent_homes::scan_agent_homes(app.clone(), app.state(), arg(&args, "machine")?)).await) }.await,
         "preview_agent_home" => async { done(Box::pin(crate::usage::machine_health::agent_homes::preview_agent_home(app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "path")?)).await) }.await,
         "get_machine_cleanup" => async { done(Box::pin(crate::usage::machine_health::cleanup::get_machine_cleanup(arg(&args, "machine")?)).await) }.await,
-        "check_machine_cleanup" => async { done(Box::pin(crate::usage::machine_health::cleanup::check_machine_cleanup(app.state(), arg(&args, "machine")?)).await) }.await,
-        "remove_cleanup_items" => async { done(Box::pin(crate::usage::machine_health::cleanup::remove_cleanup_items(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "items")?)).await) }.await,
+        "check_machine_cleanup" => async { done(Box::pin(crate::usage::machine_health::cleanup::check_machine_cleanup(app.clone(), app.state(), arg(&args, "machine")?)).await) }.await,
+        "remove_cleanup_items" => async { done(Box::pin(crate::usage::machine_health::cleanup::remove_cleanup_items(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "items")?, arg(&args, "allowUnarchived")?)).await) }.await,
         "restore_set_aside" => async { done(Box::pin(crate::usage::machine_health::cleanup::restore_set_aside(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "stamp")?, arg(&args, "item")?)).await) }.await,
         "delete_set_aside" => async { done(Box::pin(crate::usage::machine_health::cleanup::delete_set_aside(app.state(), arg(&args, "machine")?, arg(&args, "items")?)).await) }.await,
         "get_pools" => done(Box::pin(crate::usage::machine_health::pools::get_pools()).await),

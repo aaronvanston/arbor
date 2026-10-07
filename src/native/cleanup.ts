@@ -4,7 +4,7 @@ import type { CleanupRemoval, CleanupRestore, CleanupScan, CleanupTarget, SetAsi
 export type CleanupCommands = {
   get_machine_cleanup: { args: { machine: string }; result: CleanupScan | null };
   check_machine_cleanup: { args: { machine: string }; result: CleanupScan };
-  remove_cleanup_items: { args: { machine: string; items: CleanupTarget[] }; result: CleanupRemoval };
+  remove_cleanup_items: { args: { machine: string; items: CleanupTarget[]; allowUnarchived?: boolean | null }; result: CleanupRemoval };
   restore_set_aside: { args: { machine: string; stamp: string; item?: number | null }; result: CleanupRestore };
   delete_set_aside: { args: { machine: string; items: SetAsideRef[] }; result: CleanupScan };
 };

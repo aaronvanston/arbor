@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useI18n } from '../i18n';
-import { formatAgo, formatDateTime } from '../lib/format';
+import { formatAgo, formatCount, formatDateTime } from '../lib/format';
 import { cn } from '../lib/utils';
 import type { CleanupAgent, CleanupGroup, CleanupHold, CleanupScan, SetAsideItem } from '../native/types';
 import {
+  archiveLine,
   CLEARABLE_KIND,
   GROUP_LABEL,
   HOLD_REASON,
@@ -13,6 +14,7 @@ import {
   cleanupView,
   deleteSetAside,
   getCleanup,
+  removalAsks,
   removeCleanup,
   restoreSetAside,
 } from '../services/cleanup';
@@ -43,6 +45,7 @@ const size = (kb: number | null) => (kb === null ? null : formatBytes(kb * 1024)
 export function MachineCleanup({ machine, pill }: { machine: string; pill: ReactNode }) {
   const { t, tRich } = useI18n();
   const { askConfirmation } = useConfirmation();
+  const harnessName = useHarnessName();
   const [scan, setScan] = useState<CleanupScan | null>(null);
   const [looking, setLooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,10 +91,28 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
   };
 
   const remove = async (group: CleanupGroup, path: string) => {
+    // A home with sessions the archive doesn't hold all of, or one an agent still runs from, asks first.
+    const home = group === 'home' ? scan?.homes.find((entry) => entry.path === path) : undefined;
+    const asks = home ? removalAsks(home) : null;
+    if (home?.archive && asks) {
+      const standing = archiveLine(home.archive);
+      const confirmed = await askConfirmation({
+        variant: asks.unarchived ? 'danger' : 'primary',
+        title: t('machine.cleanup.ask.title', { name: path }),
+        message: tRich(asks.unarchived ? 'machine.cleanup.ask.unarchived' : 'machine.cleanup.ask.archived', {
+          standing: t(standing.key, standing.variables),
+          // A fresh pill: one already rendered carries React's own links back into the tree, which the queue can't compare.
+          machine: <MachinePill name={machine} size="md" />,
+        }),
+        warning: asks.active ? t('machine.cleanup.ask.active', { agent: harnessName(home.harness) }) : undefined,
+        confirmText: t('machine.cleanup.ask.confirm'),
+      });
+      if (!confirmed) return;
+    }
     setBusy(path);
     setProblem(null);
     try {
-      const done = await removeCleanup(machine, [{ group, path }]);
+      const done = await removeCleanup(machine, [{ group, path }], asks?.unarchived ?? false);
       setScan(done.scan);
       if (done.failed.length) setProblem({ key: path, text: t('machine.cleanup.moveFailed', { paths: done.failed.join(', ') }), changed: false });
       const stamp = done.stamp;
@@ -268,7 +289,7 @@ export function CleanupContent({ machine, pill, scan, looking, error, busy, prob
                 home.lastSessionMs !== null
                   ? t('machine.cleanup.lastSession', { when: formatAgo(home.lastSessionMs) })
                   : home.newestMs !== null ? t('machine.cleanup.lastWritten', { when: formatAgo(home.newestMs) }) : null,
-                home.sessionFiles ? t(home.sessionFiles === 1 ? 'machine.cleanup.sessions.one' : 'machine.cleanup.sessions.other', { count: home.sessionFiles }) : null,
+                home.sessionFiles ? t(home.sessionFiles === 1 ? 'machine.cleanup.sessions.one' : 'machine.cleanup.sessions.other', { count: formatCount(home.sessionFiles) }) : null,
               ]}
               badges={[
                 home.inside ? <Badge key="inside" variant="outline" size="sm">{t('machine.cleanup.inside', { app: home.inside })}</Badge> : null,
@@ -276,6 +297,7 @@ export function CleanupContent({ machine, pill, scan, looking, error, busy, prob
                 <Badge key="role" variant="muted" size="sm">{t(ROLE_LABEL[home.role])}</Badge>,
               ]}
               action={removeButton('home', home.path, home.held)}
+              standing={home.archive ? (({ key, variables, ok }) => ({ text: t(key, variables), ok }))(archiveLine(home.archive)) : null}
               note={home.ownSessions
                 ? home.ownSessionsArchived
                   ? t('machine.cleanup.ownSessionsArchived', { agent: harnessName(home.harness), path: home.ownSessions })
@@ -388,13 +410,15 @@ function GroupHead({ title, kb, action }: { title: string; kb?: number; action?:
   );
 }
 
-function Row({ path, title, mark, facts, badges, action, note, problem }: {
+function Row({ path, title, mark, facts, badges, action, standing, note, problem }: {
   path: string;
   title?: string;
   mark?: ReactNode;
   facts: (string | null)[];
   badges?: ReactNode[];
   action: ReactNode;
+  /** A home's sessions as the archive has them. */
+  standing?: { text: string; ok: boolean } | null;
   /** A line about what removing it takes along. */
   note?: string | null;
   problem?: ReactNode;
@@ -410,6 +434,7 @@ function Row({ path, title, mark, facts, badges, action, note, problem }: {
         <p className={cn('truncate text-xs text-muted-foreground', title && 'font-mono')} title={title ? path : undefined}>
           {[title ? path : null, ...facts].filter(Boolean).join(' · ')}
         </p>
+        {standing ? <p className={cn('text-xs', standing.ok ? 'text-success-foreground' : 'text-warning-foreground')} data-archive-standing="">{standing.text}</p> : null}
         {note ? <p className="text-xs text-warning-foreground">{note}</p> : null}
         {problem}
       </div>
