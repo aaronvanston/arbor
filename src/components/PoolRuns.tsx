@@ -405,7 +405,7 @@ export function StartRunDialog({ pool, onClose }: { pool: MachinePool | null; on
               <Checkbox checked={draft.worktree === true} onCheckedChange={(on) => change({ worktree: on === true })} className="mt-0.5" />
               <span className="space-y-0.5">
                 <span className="block">{t('runs.dialog.worktree')}</span>
-                <span className="block text-xs text-muted-foreground">{t(takesModel ? 'runs.dialog.worktreeHint' : 'runs.dialog.orcaModel')}</span>
+                <span className="block text-xs text-muted-foreground">{t(draft.worktree !== true ? 'runs.dialog.checkoutHint' : takesModel ? 'runs.dialog.worktreeHint' : 'runs.dialog.orcaModel')}</span>
               </span>
             </label>
             {draft.harness === 'headless' ? (

@@ -5283,6 +5283,7 @@ export const en = {
   'runs.dialog.scanning': 'Looking at the repositories on {machines}…',
   'runs.dialog.worktree': 'Work in a new worktree',
   'runs.dialog.worktreeHint': 'Off the repository’s default branch, so sessions on one machine never edit the same files.',
+  'runs.dialog.checkoutHint': 'The session works in the folder’s checkout as it is, on the branch it’s on.',
   'runs.dialog.orcaModel': 'Orca starts the agent with its default model in a new worktree.',
   'runs.dialog.harness': 'Harness',
   'runs.dialog.agent': 'Agent',
