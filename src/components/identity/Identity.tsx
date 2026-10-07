@@ -190,15 +190,31 @@ export function modelProvider(model: string): string | null {
 }
 
 /**
+ * A model's name as rows show it: no leading `claude-` when its mark already says so, and no release date
+ * (`haiku-4-5-20251001` reads `haiku-4-5`, like its siblings) unless `exact`. The title keeps the full id.
+ */
+export function shownModelName(model: string, marked: boolean, exact = false): string {
+  const name = marked ? model.replace(/^claude-(?=.)/i, '') : model;
+  return exact ? name : name.replace(/(?<=.)-\d{8}$/, '');
+}
+
+/**
  * A model as Usage › Requests names it: its provider's mark, then the name without a leading `claude-` (the mark
  * already says so), then the reasoning effort in small print when there is one. The full name is its title.
  * `provider` is the one that served it when the row records it and Arbor has its mark; otherwise the name says.
  * Its name is medium and in the foreground color, which `className` can change (a menu's options are plain).
  */
-export function ModelName({ model, provider, effort, className }: { model: string; provider?: string | null; effort?: string | null; className?: string }) {
+export function ModelName({ model, provider, effort, exact = false, className }: {
+  model: string;
+  provider?: string | null;
+  effort?: string | null;
+  /** Keep a release date on the name, where dated ids are rows of their own (the price list). */
+  exact?: boolean;
+  className?: string;
+}) {
   const served = canonicalProvider(provider ?? '');
   const mark = PROVIDERS[served] ? served : modelProvider(model);
-  const shown = mark ? model.replace(/^claude-(?=.)/i, '') : model;
+  const shown = shownModelName(model, mark !== null, exact);
   return (
     <span className={cn(plainClass, 'font-medium text-foreground', className)} title={model}>
       {mark ? <ProviderMark provider={mark} /> : null}

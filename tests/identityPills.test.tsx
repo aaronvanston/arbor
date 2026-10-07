@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ClientName, ClientPill, MachinePill, ModelName, ModelNames, modelProvider, ProviderPill } from '../src/components/identity/Identity';
+import { ClientName, ClientPill, MachinePill, ModelName, ModelNames, modelProvider, ProviderPill, shownModelName } from '../src/components/identity/Identity';
 import { I18nProvider } from '../src/i18n';
 import { identityColorCss, identityColorIsLight, identityColors } from '../src/services/identityColors';
 import { defaultMachineColor, machineLookKey, resolveMachineLook, setMachineLook, useMachineLookChoices } from '../src/services/machineLook';
@@ -149,6 +149,15 @@ describe('identity pills', () => {
     const unknown = render(<ModelName model="mistral-large" />);
     expect(text(unknown)).toBe('mistral-large');
     expect(unknown).not.toContain('<img');
+  });
+
+  it('drops a release date from the shown name, unless the row needs the exact id', () => {
+    const haiku = render(<ModelName model="claude-haiku-4-5-20251001" />);
+    expect(text(haiku)).toBe('haiku-4-5');
+    expect(haiku).toContain('title="claude-haiku-4-5-20251001"');
+    expect(text(render(<ModelName model="claude-haiku-4-5-20251001" exact />))).toBe('haiku-4-5-20251001');
+    expect(shownModelName('gpt-4o-2024-08-06', true)).toBe('gpt-4o-2024-08-06');
+    expect(shownModelName('20251001', false)).toBe('20251001');
   });
 
   it('shows a session’s first model and counts the rest', () => {

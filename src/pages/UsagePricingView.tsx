@@ -265,7 +265,7 @@ export function PricingView({
                 <TableRow key={row.model}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <ModelName model={row.model} className="text-sm" />
+                      <ModelName model={row.model} exact className="text-sm" />
                       {row.price ? (
                         row.price.source === 'manual' ? <Badge variant="primary" size="sm">{row.price.source}</Badge> : <Badge variant="muted" size="sm">{row.price.source}</Badge>
                       ) : null}
