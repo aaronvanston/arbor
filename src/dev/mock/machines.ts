@@ -257,13 +257,15 @@ const mockTelemetryBreakdown = (fromMs: number, toMs: number, machine: string | 
   const sending = telemetryState.machines.filter((entry) => entry.lastMs !== null && (machine === null || entry.machine === machine));
   const share = sending.reduce((sum, entry) => sum + (TELEMETRY_SHARE[entry.machine] ?? 0), 0);
   const scale = telemetryScenario === 'quiet' ? 0 : days * share;
+  // Sessions grow slower than spend over a span, and narrow with the machines like everything else.
+  const sessionsFor = (part: number) => Math.min(days, 1) * part * Math.max(1, days / 3);
   const group = (rows: [string, number, number][]) => scale > 0
-    ? rows.map(([name, cost, sessions]) => ({ name, ...telemetrySpend(cost * scale, sessions * Math.min(scale, 1) * Math.max(1, days / 3)) }))
+    ? rows.map(([name, cost, sessions]) => ({ name, ...telemetrySpend(cost * scale, sessions * sessionsFor(share)) }))
     : [];
   const sources = group(TELEMETRY_DAY.sources ?? []);
   return {
-    total: scale > 0 ? telemetrySpend(sources.reduce((sum, row) => sum + row.cost, 0), 31 * Math.min(scale, 1) * Math.max(1, days / 3)) : telemetrySpend(0, 0),
-    machines: scale > 0 ? sending.map((entry) => ({ name: entry.machine, ...telemetrySpend(48.22 * days * (TELEMETRY_SHARE[entry.machine] ?? 0), 22 * Math.max(1, days / 3) * (TELEMETRY_SHARE[entry.machine] ?? 0)) })) : [],
+    total: scale > 0 ? telemetrySpend(sources.reduce((sum, row) => sum + row.cost, 0), 31 * sessionsFor(share)) : telemetrySpend(0, 0),
+    machines: scale > 0 ? sending.map((entry) => ({ name: entry.machine, ...telemetrySpend(48.22 * days * (TELEMETRY_SHARE[entry.machine] ?? 0), 31 * sessionsFor(TELEMETRY_SHARE[entry.machine] ?? 0)) })) : [],
     skills: group(TELEMETRY_DAY.skills ?? []),
     plugins: group(TELEMETRY_DAY.plugins ?? []),
     mcpServers: group(TELEMETRY_DAY.mcpServers ?? []),

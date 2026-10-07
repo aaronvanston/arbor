@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { accountSignInsView, canOpenView, hasMachineScope, keepMachineScope, libraryView, mainView, setupView, sessionsView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
+import { accountSignInsView, canOpenView, hasMachineScope, keepMachineScope, libraryView, mainView, rememberSyncMachine, setupView, sessionsView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
 
 describe('navigation', () => {
   test("pages that only read Arbor's own data open while the core is stopped, and the rest wait for it", () => {
@@ -59,5 +59,23 @@ describe('navigation', () => {
     // Views without a machine in their breadcrumb don't take one.
     expect(keepMachineScope(cost, setupView({ tab: 'software' }))).toEqual(setupView({ tab: 'software' }));
     expect(keepMachineScope(cost, libraryView('skills'))).toEqual(libraryView('skills'));
+  });
+
+  test("Sync keeps its last pick through views that can't be narrowed", () => {
+    const perHome = libraryView('skills', 'machines');
+    try {
+      rememberSyncMachine('cedar-02');
+      expect(keepMachineScope(perHome, libraryView(undefined, 'cost'))).toEqual(setupView({ tab: 'library', lens: 'cost', machine: 'cedar-02' }));
+      expect(keepMachineScope(setupView({ tab: 'software' }), setupView({ tab: 'repo', lens: 'changes' })))
+        .toEqual(setupView({ tab: 'repo', lens: 'changes', machine: 'cedar-02' }));
+      // It's Sync's own: other pages don't take it, and Sync's other views still don't.
+      expect(keepMachineScope(usageView({ tab: 'prices' }), usageView({ tab: 'overview' }))).toEqual(usageView({ tab: 'overview' }));
+      expect(keepMachineScope(perHome, setupView({ tab: 'software' }))).toEqual(setupView({ tab: 'software' }));
+      // Every machine picked again is kept too.
+      rememberSyncMachine('');
+      expect(keepMachineScope(perHome, libraryView(undefined, 'cost'))).toEqual(libraryView(undefined, 'cost'));
+    } finally {
+      rememberSyncMachine('');
+    }
   });
 });

@@ -164,13 +164,24 @@ const setupMachineScope = (params: SetupParams | undefined) =>
   (params?.tab === 'library' && params.lens === 'cost') || (params?.tab === 'repo' && params.lens === 'changes');
 
 /**
+ * Sync's last machine pick on Cost or History, '' for every machine. Most of Sync's views can't be narrowed, so
+ * moving through them would drop the pick; this keeps it for the next narrowed view opened from Sync.
+ */
+let syncMachine = '';
+export const rememberSyncMachine = (machine: string) => {
+  syncMachine = machine;
+};
+
+/**
  * The view `next` opens as, picked while `current` is on screen: a view of the same page that can be narrowed to a
- * machine keeps the machine the page is narrowed to, so moving between Sessions' views stays on that machine.
+ * machine keeps the machine the page is narrowed to, so moving between Sessions' views stays on that machine. On
+ * Sync, that's the last pick on any of its narrowed views.
  */
 export function keepMachineScope(current: AppView, next: AppView): AppView {
   if (current.kind !== 'main' || next.kind !== 'main' || current.page !== next.page) return next;
   if (next.page !== 'sessions' && next.page !== 'usage' && next.page !== 'setup') return next;
-  const machine = current.params && 'machine' in current.params ? current.params.machine : undefined;
+  const own = current.params && 'machine' in current.params ? current.params.machine : undefined;
+  const machine = own ?? (next.page === 'setup' ? syncMachine || undefined : undefined);
   const tab = next.params?.tab;
   const scoped = next.page === 'setup' ? setupMachineScope(next.params) : hasMachineScope(next.page, tab);
   if (!machine || !scoped || next.params?.machine !== undefined) return next;

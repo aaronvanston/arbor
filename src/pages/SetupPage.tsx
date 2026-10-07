@@ -26,7 +26,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { requestFocus } from '../focusRequests';
-import { isSetupTab, libraryItemView, libraryView, savedSetupView, setupView, type AppView, type LibraryKind, type SetupParams, type SetupTabId } from '../navigation';
+import { isSetupTab, keepMachineScope, libraryItemView, libraryView, rememberSyncMachine, savedSetupView, setupView, type AppView, type LibraryKind, type SetupParams, type SetupTabId } from '../navigation';
 import { isLibraryKind, libraryItemName } from '../services/library';
 import { SetupOverviewHead } from './SetupOverview';
 import { KIND_LABEL as LIBRARY_KIND_LABEL, LibraryBar, SetupLibrary, type LibraryLens } from './SetupLibrary';
@@ -352,8 +352,13 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   const libraryItem = tab === 'library' && libraryLens === 'list' ? params?.item ?? null : null;
   const repoChanges = tab === 'repo' && params?.lens === 'changes';
   const [libraryCounts, setLibraryCounts] = useState<Record<LibraryKind, number> | null>(null);
+  // What Cost and History are narrowed to, kept for when one is next opened from a view that can't be.
+  const scopedMachine = costLens || repoChanges ? params?.machine ?? '' : null;
+  useEffect(() => {
+    if (scopedMachine !== null) rememberSyncMachine(scopedMachine);
+  }, [scopedMachine]);
   const chooseLibrary = (next: LibraryKind, lens: LibraryLens) =>
-    onViewChange?.(libraryView(next, lens === 'list' ? undefined : lens), 'push');
+    onViewChange?.(keepMachineScope(setupView(params), libraryView(next, lens === 'list' ? undefined : lens)), 'push');
   const tableRef = useRef<HTMLDivElement>(null);
   // Once the table's there, it's scrolled to, the once: after every render until then, as it waits on the scans.
   const scrolledToShown = useRef(asked === null);
