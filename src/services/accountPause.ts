@@ -4,7 +4,7 @@ import { setOAuthCredentialFileDisabled } from './authFiles';
 import { quotaKey, type AuthFile } from './quotaService';
 
 /**
- * Turns an account off in the core by hand, as Disable on the Auth Files page does. Arbor never turns it back on by
+ * Turns an account off in the core by hand, as Disable on Accounts does. Arbor never turns it back on by
  * itself: only accounts it paused at their cap come back at the reset.
  */
 export async function pauseAccount(file: AuthFile) {

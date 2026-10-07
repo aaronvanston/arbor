@@ -23,7 +23,7 @@ const LABEL_ROOM = 0.76;
 /**
  * An account's squircle in its color and fill, with its one to three character label: the one mark for an account
  * wherever it's named. xs (20px, a machine pill's height) in rows and tables, sm (24px) in the Accounts page's lists, md (32px)
- * where the account is the subject, like an Auth Files row or its profile dialog.
+ * where the account is the subject, like a Sign-ins row or its profile dialog.
  */
 export function AccountAvatar({ profile, size = 'md', className, label }: { profile: ResolvedProfile; size?: Size; className?: string; label?: string }) {
   const text = useRef<HTMLSpanElement>(null);

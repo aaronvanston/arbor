@@ -85,7 +85,7 @@ const PROVIDER_ALIASES = new Map([
 
 /**
  * The one name for a provider, whichever alias the file used. Limits, re-sign-in, matching a fresh
- * credential and the Auth Files list all read it, so they can't disagree about which provider a file is.
+ * credential and Accounts › Sign-ins all read it, so they can't disagree about which provider a file is.
  */
 export const canonicalProvider = (value: string) => {
   const provider = value.trim().toLowerCase();

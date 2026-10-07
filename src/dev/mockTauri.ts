@@ -14,17 +14,17 @@
  * measures beside the default; `?core=stopped`, `?core=missing`,
  * `?core=unready` (process up, management port not answering yet), `?core=unreadable` (its status can't be read, so
  * pages that need it say so and offer Check again), `?core=stops` (running, then stopping eight seconds after load, so
- * a page that needs it, like Accounts or Settings › Auth Files, locks in place; Start core brings it back there);
+ * a page that needs it, like Accounts › Limits or Sign-ins, locks in place; Start core brings it back there);
  * `?accounts=none` for a core with no credentials, so Accounts, Home's limits card and the sidebar offer Add account;
  * `?accounts=fleet` for one person's accounts named with their email in the file name (Accounts › Sign-ins, and
  * Settings › Appearance's Hide email addresses), with `&off=1` adding a Codex account turned off by hand, whose
  * limits Accounts shows grayed out and counts in the total; Add account's sign-in finishes after two checks, unless
  * `?signin=wait` keeps it waiting, `?signin=link` has the browser not open (only the link shows) or `?signin=fail`
  * has the provider refuse it;
- * `?accounts=off` for every credential turned off, so Accounts and Home's limits card say so and point to Auth Files
+ * `?accounts=off` for every credential turned off, so Accounts and Home's limits card say so and point to Accounts
  * (the sidebar offers nothing); `?accounts=fail` for the core failing to list its credentials, so they say why and
- * offer Try again (Auth Files can't list them either);
- * `?page=accounts` or `?page=settings:auth-files` (any page id, `settings:` for a Settings page) to start on that page,
+ * offer Try again (Accounts › Sign-ins can't list them either);
+ * `?page=accounts` or `?page=settings:diagnostics` (any page id, `settings:` for a Settings page) to start on that page,
  * with Home one step back; with `?core=stopped` or `?core=missing` too, it shows locked with Start core or Install core;
  * `&tab=` with it starts on one of the page's views, by the id the view keeps: `?page=setup&tab=skills` (Sync's
  * `overview` is its Checks and `history` Arbor's changes; also `projects`, `agents`, `repo`, `plugins`, `toolchain` and `cost`), `?page=sessions&tab=projects&lens=checkouts` for Projects' Checkouts (without `lens`, its Activity),
@@ -202,7 +202,7 @@
  * cedar-02's and cam-mbp's days whose transcripts are gone, with cam-mbp's older days holding sessions only,
  * or with `?recovered=none` every day has its transcripts;
  * for Settings › Diagnostics (`?page=settings:diagnostics`), `?diagnostics=` picks Arbor's recorded calls to machines
- * and the core: by default a few slow ci-01 health checks, one that couldn't connect and one slow Auth Files read;
+ * and the core: by default a few slow ci-01 health checks, one that couldn't connect and one slow read of the core's credential list;
  * `ok` for calls with no problems, `empty` for none recorded yet, `slow` for ci-01's health checks mostly slow, a
  * minute-long transcript scan and slow provider calls, `fail` for ci-01 unreachable for the last quarter hour (exit
  * 255 and timeouts), 502s from the core, a failed agent update and a setup scan that ran out of time, or `error` for
@@ -381,8 +381,8 @@
  * For the search palette's actions: `?corecmd=fail` to have starting, stopping and restarting the core fail (Start
  * core on a locked page too);
  * `?pause=fail` to have the core refuse to turn an account off or on (Pause account… and Resume account…, and the
- * Auth Files page's Enable and Disable; a cap Arbor then can't act on is marked on the row and its Usage cap item);
- * the Auth Files rows each show one action for their state and the rest in ⋯, with runtime-gemini's and
+ * Accounts' Enable and Disable; a cap Arbor then can't act on is marked on the row and its Usage cap item);
+ * Accounts › Sign-ins rows each show one action for their state and the rest in ⋯, with runtime-gemini's and
  * grok-paid.json's menus saying why items can't be used; `?scan=fail` to have a setup scan fail to start; `?coreconfig=fail` to have the
  * core's settings fail to read, so Copy API key can't read the key (Settings › General can't load them either);
  * `?apikey=none` for a core with no API key (Copy API key has nothing to copy); `?recent=seed` to fill the palette's

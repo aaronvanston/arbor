@@ -207,7 +207,7 @@ const fileEntry = (name: string, fields: Json): Json => ({
   name, source: 'file', path: `${authDir}/${name}`, account_type: 'oauth', disabled: false, ...fields,
 });
 
-// One credential per state the Auth Files page tells apart, using the core's
+// One credential per state Accounts › Sign-ins tells apart, using the core's
 // own status markers and `cooldowns` shapes (7.3.x). Cooldowns hold an absolute
 // `retry_at`; each listing derives `remaining_seconds` and drops ended rests.
 // `modtime` is the file's own; account ids live in the files but are not listed.
@@ -267,7 +267,7 @@ if (fleetAccounts) {
 // With `?accounts=none`, the core lists no credentials at all: Accounts, Home's limits and the sidebar offer Add account.
 // A new install has none either, unless `?fresh=1&accounts=kept` keeps them, as after its first sign-ins.
 if (params.get('accounts') === 'none' || (freshInstall && params.get('accounts') !== 'kept')) authFiles.length = 0;
-// With `?accounts=off`, every credential is turned off, as if by hand on Auth Files.
+// With `?accounts=off`, every credential is turned off, as if by hand on Accounts.
 if (params.get('accounts') === 'off') authFiles.forEach((file) => Object.assign(file, { disabled: true, status: 'disabled' }));
 
 /** One listing entry the way the core reports it at `nowMs`. */
