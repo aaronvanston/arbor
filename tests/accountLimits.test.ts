@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildHeadline, capWarnings, defaultHeadlineWindow, displayRows, freshQuotas, freshRows, headlinePace, isStaleQuota, partialHeadline,
-  pooledPercent, rowWindowMs, staleLimits, staleNoteKey, usagePace, windowDurationMs, windowGrid, windowLabels, meteredWindowLabels,
+  pooledPercent, rowWindowMs, staleLimits, staleNoteKey, usagePace, windowDurationMs, windowGrid, windowGridStyle, windowLabels, meteredWindowLabels,
 } from '../src/services/accountLimits';
 import { evenPace } from '../src/services/limitPace';
 import { quotaRowsFor, type QuotaState } from '../src/services/quotaService';
@@ -261,6 +261,16 @@ describe('stale limits', () => {
     expect(staleLimits(headline)).toBeNull();
     // Its row is still stale where it shows.
     expect(staleLimits(buildHeadline(accounts, 'Extra usage'))).toMatchObject({ accounts: 1, all: true });
+  });
+});
+
+describe('windowGridStyle', () => {
+  // money-7: a mid-width card holds two windows to a line, so their names aren't cut to "7-day S…".
+  test('places each window two to a line and three to a line, lined up across accounts', () => {
+    const style = windowGridStyle(['5-hour window', '7-day window', '7-day Opus window', '7-day Sonnet window']);
+    expect(style.grid).toEqual({ '--window-columns-narrow': 'repeat(2, minmax(0, 1fr))', '--window-columns': 'repeat(3, minmax(0, 1fr))' });
+    expect(style.cell('7-day Opus window')).toEqual({ '--window-column-narrow': 1, '--window-row-narrow': 2, '--window-column': 3, '--window-row': 1 });
+    expect(style.cell('Extra usage')).toBeUndefined();
   });
 });
 

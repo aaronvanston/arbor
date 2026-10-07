@@ -127,11 +127,33 @@ export function meteredWindowLabels(accounts: AccountLike[]): string[] {
 const WINDOWS_PER_LINE = 3;
 
 /**
+ * The CSS variables that lay an account's windows out: two to a line in a mid-width card, where three would cut their
+ * names short ("7-day S…"), and three in a wide one. Below both, each window takes its own line.
+ */
+export function windowGridStyle(columns: string[]) {
+  const narrow = windowGrid(columns, 2);
+  const wide = windowGrid(columns);
+  return {
+    grid: {
+      '--window-columns-narrow': `repeat(${narrow.perLine}, minmax(0, 1fr))`,
+      '--window-columns': `repeat(${wide.perLine}, minmax(0, 1fr))`,
+    },
+    cell(label: string): Record<string, number> | undefined {
+      const near = narrow.place(label);
+      const far = wide.place(label);
+      return near && far
+        ? { '--window-column-narrow': near.column, '--window-row-narrow': near.row, '--window-column': far.column, '--window-row': far.row }
+        : undefined;
+    },
+  };
+}
+
+/**
  * Where an account's windows sit in its grid: a column each for the provider's windows being shown, up to three to a
  * line, so one window spans the row and the same window lines up across the provider's accounts. Positions are 1-based.
  */
-export function windowGrid(columns: string[]) {
-  const perLine = Math.min(Math.max(columns.length, 1), WINDOWS_PER_LINE);
+export function windowGrid(columns: string[], most = WINDOWS_PER_LINE) {
+  const perLine = Math.min(Math.max(columns.length, 1), most);
   return {
     perLine,
     place(label: string): { column: number; row: number } | null {

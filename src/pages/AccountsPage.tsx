@@ -66,7 +66,7 @@ import {
   staleNoteKey,
   toggleHiddenWindow,
   usagePace,
-  windowGrid,
+  windowGridStyle,
   useAccountLimitPrefs,
   windowDurationMs,
   meteredWindowLabels,
@@ -669,8 +669,8 @@ function OffBlock({ items, columns, availabilityOf, commands, flash, onEdit }: {
             <li key={item.key} className={cn('-mx-2 flex flex-col gap-2 rounded-md px-2 py-0.5', flash === item.key && 'row-highlight')} data-account-key={item.key}>
               <div className="flex items-center gap-3">
                 <AccountAvatar profile={item.profile} size="sm" />
-                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs">
-                  <strong className={cn('min-w-0 shrink truncate text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                  <strong className={cn('min-w-0 max-w-full truncate text-sm font-medium text-foreground', !item.profile.custom && 'font-mono')} title={fileName(item.file)}>{item.name}</strong>
                   <OffDetails file={item.file} quota={item.quota} now={now} />
                 </span>
                 <AuthFileFix file={item.file} availability={availability} commands={commands} />
@@ -1065,13 +1065,14 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
       ? t(quota.pendingAction === 'reset' ? 'quota.resetting' : refreshingWithData ? 'accounts.status.updating' : 'quota.querying')
       : quota.status === 'idle' ? t('accounts.status.idle') : '';
   const cellWarnings = new Map(warnings.map((warning) => [warning.row.label, warning.headline]));
-  const grid = windowGrid(columns);
+  const grid = windowGridStyle(columns);
   const header = (
     <div className="flex min-h-6 items-center gap-2.5">
       {reordering ? <GripVertical className="-ms-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
       <AccountAvatar profile={profile} size="sm" />
-      <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">
-        <strong className={cn('min-w-0 shrink truncate text-sm font-medium text-foreground', !profile.custom && 'font-mono')} title={account.fileName}>{name}</strong>
+      {/* Wraps rather than squeezing: in a narrow window the account's name stays whole and its chips move down. */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+        <strong className={cn('min-w-0 max-w-full truncate text-sm font-medium text-foreground', !profile.custom && 'font-mono')} title={account.fileName}>{name}</strong>
         {quota.plan ? <Badge variant={planVariant(quota.plan)}>{planLabel(quota.plan)}</Badge> : null}
         {!reordering ? <ResetCreditsChip quota={quota} claude={claude} blocked={resetBlocked} onReset={onReset} /> : null}
         {!reordering && cap !== undefined ? <ReserveChip accountKey={account.key} name={name} provider={providerForFile(account.file)} /> : null}
@@ -1165,13 +1166,13 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
         {rows.length ? (
           <div
             className={cn(
-              'grid gap-x-6 gap-y-2.5 transition-opacity duration-300 @lg:grid-cols-(--window-columns)',
+              'grid gap-x-6 gap-y-2.5 transition-opacity duration-300 @lg:grid-cols-(--window-columns-narrow) @3xl:grid-cols-(--window-columns)',
               stale ? 'opacity-55' : refreshingWithData && 'opacity-70',
             )}
-            style={{ '--window-columns': `repeat(${grid.perLine}, minmax(0, 1fr))` } as CSSProperties}
+            style={grid.grid as CSSProperties}
           >
             {rows.map((row) => {
-              const place = grid.place(row.label);
+              const place = grid.cell(row.label);
               return (
                 <WindowRow
                   key={row.label}
@@ -1181,8 +1182,8 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
                   cap={cap ?? null}
                   now={now}
                   onExplain={onExplain}
-                  className="@lg:col-start-(--window-column) @lg:row-start-(--window-row)"
-                  style={place ? { '--window-column': place.column, '--window-row': place.row } as CSSProperties : undefined}
+                  className="@lg:col-start-(--window-column-narrow) @lg:row-start-(--window-row-narrow) @3xl:col-start-(--window-column) @3xl:row-start-(--window-row)"
+                  style={place as CSSProperties | undefined}
                 />
               );
             })}
@@ -1216,15 +1217,15 @@ function OffWindows({ quota, columns, cap, now }: { quota: QuotaState; columns: 
     return <span className="text-xs text-muted-foreground" title={quota.error}>{t('accounts.status.error')}</span>;
   }
   if (!rows.length) return null;
-  const grid = windowGrid(columns);
+  const grid = windowGridStyle(columns);
   return (
     <div className="@container">
       <div
-        className={cn('grid gap-x-6 gap-y-2.5 @lg:grid-cols-(--window-columns)', isStaleQuota(quota) && 'opacity-55')}
-        style={{ '--window-columns': `repeat(${grid.perLine}, minmax(0, 1fr))` } as CSSProperties}
+        className={cn('grid gap-x-6 gap-y-2.5 @lg:grid-cols-(--window-columns-narrow) @3xl:grid-cols-(--window-columns)', isStaleQuota(quota) && 'opacity-55')}
+        style={grid.grid as CSSProperties}
       >
         {rows.map((row) => {
-          const place = grid.place(row.label);
+          const place = grid.cell(row.label);
           return (
             <WindowRow
               key={row.label}
@@ -1233,8 +1234,8 @@ function OffWindows({ quota, columns, cap, now }: { quota: QuotaState; columns: 
               cap={cap}
               now={now}
               muted
-              className="@lg:col-start-(--window-column) @lg:row-start-(--window-row)"
-              style={place ? { '--window-column': place.column, '--window-row': place.row } as CSSProperties : undefined}
+              className="@lg:col-start-(--window-column-narrow) @lg:row-start-(--window-row-narrow) @3xl:col-start-(--window-column) @3xl:row-start-(--window-row)"
+              style={place as CSSProperties | undefined}
             />
           );
         })}

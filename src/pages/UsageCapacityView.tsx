@@ -238,15 +238,17 @@ function ProviderCapacity({
           </p>
         </SettingsBlock>
       ))}
-      <Table>
+      {/* In a narrow card the plan moves beside the account's name and limit use wraps, so names stay readable
+          and every column fits without scrolling sideways. */}
+      <Table containerClassName="@container">
         <TableHeader>
           <TableRow>
-            <TableHead>{t('usage.capacity.column.account')}</TableHead>
-            <TableHead className="w-28">{t('usage.capacity.column.plan')}</TableHead>
+            <TableHead className="min-w-36">{t('usage.capacity.column.account')}</TableHead>
+            <TableHead className="hidden w-28 @3xl:table-cell">{t('usage.capacity.column.plan')}</TableHead>
             <TableHead className="w-32">{t('usage.capacity.column.cost')}</TableHead>
             <TableHead className={cn('w-28', TABLE_NUMERIC_CLASS)}>{t('usage.capacity.column.value')}</TableHead>
             <TableHead className={cn('w-24', TABLE_NUMERIC_CLASS)}>{t('usage.capacity.column.ratio')}</TableHead>
-            <TableHead className="w-56">{t('usage.capacity.column.use')}</TableHead>
+            <TableHead className="w-40 @3xl:w-56">{t('usage.capacity.column.use')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -254,15 +256,18 @@ function ProviderCapacity({
             const profile = profiles.get(account.key);
             return (
               <TableRow key={account.key}>
-                <TableCell className="max-w-0">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    {profile ? <AccountAvatar profile={profile} size="xs" className="me-1" /> : null}
-                    <span className="truncate font-medium text-foreground" title={account.name}>{account.name}</span>
+                <TableCell className="min-w-36">
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="flex min-w-0 max-w-full items-center">
+                      {profile ? <AccountAvatar profile={profile} size="xs" className="me-2.5" /> : null}
+                      <span className="min-w-0 truncate font-medium text-foreground" title={account.name}>{account.name}</span>
+                    </span>
+                    {account.plan ? <Badge variant={planVariant(account.plan)} size="sm" className="shrink-0 @3xl:hidden">{planLabel(account.plan)}</Badge> : null}
                     {account.spare ? <Badge variant="warning" size="sm" className="shrink-0">{t('usage.capacity.badge.spare')}</Badge> : null}
                     {account.idle && !account.spare ? <Badge variant="muted" size="sm" className="shrink-0">{t('usage.capacity.badge.idle')}</Badge> : null}
                   </span>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden @3xl:table-cell">
                   {account.plan ? <Badge variant={planVariant(account.plan)} size="sm">{planLabel(account.plan)}</Badge> : <span className="text-muted-foreground">—</span>}
                 </TableCell>
                 <TableCell>
@@ -279,7 +284,7 @@ function ProviderCapacity({
                 <TableCell className={cn(TABLE_NUMERIC_CLASS, account.ratio === null ? 'text-muted-foreground' : account.ratio >= 1 ? 'text-success-foreground' : 'text-warning-foreground')}>
                   {account.ratio === null ? '—' : formatRatio(account.ratio)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="whitespace-normal @3xl:whitespace-nowrap">
                   <UseCell account={account} nowMs={nowMs} />
                 </TableCell>
               </TableRow>
@@ -287,13 +292,13 @@ function ProviderCapacity({
           })}
           {provider.unlisted ? (
             <TableRow>
-              <TableCell className="max-w-0 text-muted-foreground">
+              <TableCell className="min-w-36 text-muted-foreground">
                 <Tooltip>
-                  <TooltipTrigger render={<span className="block truncate" />}>{t('usage.capacity.unlisted')}</TooltipTrigger>
+                  <TooltipTrigger render={<span className="block" />}>{t('usage.capacity.unlisted')}</TooltipTrigger>
                   <TooltipPopup>{t('usage.capacity.unlistedHint')}</TooltipPopup>
                 </Tooltip>
               </TableCell>
-              <TableCell className="text-muted-foreground">—</TableCell>
+              <TableCell className="hidden text-muted-foreground @3xl:table-cell">—</TableCell>
               <TableCell className="text-muted-foreground">—</TableCell>
               <TableCell className={cn(TABLE_NUMERIC_CLASS, 'text-muted-foreground')}>
                 {money(provider.unlisted.value)}
