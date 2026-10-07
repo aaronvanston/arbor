@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import { alertDestination } from '../src/services/alertHistory';
 import {
+  automationGroupSummary,
+  automationRows,
   automationMachines,
   automationRunner,
   sortAutomations,
@@ -272,5 +274,45 @@ describe('what stops Arbor’s automations starting', () => {
     expect(automationsHold({ ...noKey, automations: [summary({ source: 'codexApp' })] })).toBeNull();
     expect(automationsHold({ ...list([summary({})]), running: false })).toBe('off');
     expect(automationsHold(null)).toBeNull();
+  });
+});
+
+describe('folding automations of the same name', () => {
+  const scanOn = (machine: string, overrides: Partial<AutomationSummary> = {}) =>
+    summary({ id: `ultradian:${machine}:cofactor-scan`, source: 'ultradian', runsOn: 'machine', name: 'cofactor-scan', machine, target: { kind: 'machine', name: machine }, ...overrides });
+  const items = [
+    scanOn('cam-mbp', { nextRunAtMs: 300, lastRun: { status: 'done', atMs: 50 } }),
+    summary({ id: 'arbor:a', name: 'Sentry watch' }),
+    scanOn('cedar-02', { nextRunAtMs: 100, lastRun: { status: 'failed', atMs: 40 } }),
+    scanOn('ci-01', { name: 'Cofactor  Scan', enabled: false, nextRunAtMs: 50, schedule: { kind: 'daily', hour: 1, minute: 0 } }),
+    // Same name, but Orca runs it, so it's another thing.
+    summary({ id: 'orca:1', source: 'orca', name: 'cofactor-scan' }),
+  ];
+  const kinds = (rows: ReturnType<typeof automationRows>) => rows.map((row) => (row.kind === 'group' ? `group(${row.items.length})` : row.inGroup ? `  ${row.item.id}` : row.item.id));
+
+  it('folds the same name and runner into one row where the first was, and opens onto them', () => {
+    expect(kinds(automationRows(items, { grouped: false, open: new Set() }))).toEqual(items.map((item) => item.id));
+    const folded = automationRows(items, { grouped: true, open: new Set() });
+    expect(kinds(folded)).toEqual(['group(3)', 'arbor:a', 'orca:1']);
+    const group = itemAt(folded, 0);
+    if (group.kind !== 'group') throw new Error('a fold');
+    expect(kinds(automationRows(items, { grouped: true, open: new Set([group.key]) }))).toEqual(['group(3)', '  ultradian:cam-mbp:cofactor-scan', '  ultradian:cedar-02:cofactor-scan', '  ultradian:ci-01:cofactor-scan', 'arbor:a', 'orca:1']);
+  });
+
+  it('folds names that differ only in case, spacing, hyphens and underscores', () => {
+    expect(kinds(automationRows([scanOn('a', { name: 'Cofactor scan' }), scanOn('b', { name: ' cofactor__SCAN ' })], { grouped: true, open: new Set() }))).toEqual(['group(2)']);
+  });
+
+  it('sums a fold up: its machines, what they share, the soonest next run, the newest last run and how many fail', () => {
+    const together = automationGroupSummary([itemAt(items, 0), itemAt(items, 2), itemAt(items, 3)]);
+    expect(together.machines).toEqual(['cam-mbp', 'cedar-02', 'ci-01']);
+    expect(together.schedule).toEqual({ value: null, varies: true });
+    expect(together.project).toEqual({ value: 'billing', varies: false });
+    // The paused one's next run doesn't count.
+    expect(together.nextRunAtMs).toBe(100);
+    expect(together.lastRun).toEqual({ status: 'done', atMs: 50 });
+    expect(together.failing).toBe(1);
+    expect(together.enabled).toBe(2);
+    expect(automationGroupSummary([itemAt(items, 0), itemAt(items, 2)]).schedule).toEqual({ value: { kind: 'everyHours', hours: 1, minute: 0 }, varies: false });
   });
 });

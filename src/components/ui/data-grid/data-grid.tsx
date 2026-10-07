@@ -59,6 +59,8 @@ type GridActions<TData> = {
   onRowClick?: (row: TData) => void;
   /** The open row, marked as selected. */
   activeRowId?: string | null;
+  /** A row's own look, like one listed under another. */
+  rowClassName?: (row: TData) => string | undefined;
 };
 
 export const dataGridFeatures = tableFeatures({
@@ -153,7 +155,7 @@ const EDGE_START: Record<TableSurface, string> = { page: 'ps-5', card: 'ps-4' };
 const EDGE_END: Record<TableSurface, string> = { page: 'pe-5', card: 'pe-4' };
 const HEAD_EDGE_START: Record<TableSurface, string> = { page: 'ps-4', card: 'ps-3' };
 
-export function DataGrid<TData extends RowData>({ grid, label, surface = 'page', className, sorting = null, onSortingChange, onRowClick, activeRowId = null }: GridActions<TData> & {
+export function DataGrid<TData extends RowData>({ grid, label, surface = 'page', className, sorting = null, onSortingChange, onRowClick, activeRowId = null, rowClassName }: GridActions<TData> & {
   grid: DataGrid<TData>;
   /** What the table is, for screen readers. */
   label: string;
@@ -225,6 +227,7 @@ export function DataGrid<TData extends RowData>({ grid, label, surface = 'page',
           firstEnd={firstEnd}
           onRowClick={onRowClick}
           activeRowId={activeRowId}
+          rowClassName={rowClassName}
         />
       </table>
     </div>
@@ -243,6 +246,7 @@ type BodyProps<TData extends RowData> = {
   firstEnd: string | undefined;
   onRowClick: ((row: TData) => void) | undefined;
   activeRowId: string | null;
+  rowClassName: ((row: TData) => string | undefined) | undefined;
 };
 
 /** A click on something of the cell's own, like a link, or the end of selecting a cell's text, doesn't open the row. */
@@ -254,7 +258,7 @@ function opensRow(event: MouseEvent<HTMLTableRowElement>) {
 
 // While a column is dragged wider only the widths change, and they're variables on the table, so the rows stay as
 // they are until it's let go.
-const GridBody = memo(function GridBody<TData extends RowData>({ table, surface, fillerAt, lastStart, firstEnd, onRowClick, activeRowId }: BodyProps<TData>) {
+const GridBody = memo(function GridBody<TData extends RowData>({ table, surface, fillerAt, lastStart, firstEnd, onRowClick, activeRowId, rowClassName }: BodyProps<TData>) {
   return (
     <tbody>
       {table.getRowModel().rows.map((row) => {
@@ -278,6 +282,7 @@ const GridBody = memo(function GridBody<TData extends RowData>({ table, surface,
             open && 'cursor-pointer outline-none focus-visible:bg-muted/60 dark:focus-visible:bg-input/16',
             // The open row keeps the accent's tint while its detail is beside it.
             active && 'bg-primary/8 hover:bg-primary/10 dark:bg-primary/12 dark:hover:bg-primary/14',
+            rowClassName?.(row.original),
           )}
         >
           {cells.map((cell, index) => {

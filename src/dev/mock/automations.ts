@@ -24,7 +24,7 @@ import { freshInstall, later, mockLog, now, params } from './scenario';
  * the one Arbor carries, and `?runner=legacy` from before it kept only 30 days of runs. `?runner=failing`: writing
  * cedar-02's schedules failed. `?runner=none`: this build carries none. `?automations=nokey`: the proxy has no
  * Automations key yet, so Settings offers to add one.
- * Someone's own ultradian schedules: two on cedar-02. `?udian=none` hides them; `?udian=away` makes reading their
+ * Someone's own ultradian schedules: two on cedar-02, and index-sessions on cam-mbp and cedar-02, which the list folds. `?udian=none` hides them; `?udian=away` makes reading their
  * runs from cedar-02 fail. `?terminal=fail`: opening a run in Terminal fails.
  */
 const scenario = params.get('automations');
@@ -279,6 +279,14 @@ const SEEDS: Seed[] = [
       projectPath: '/home/cam/src/billing', precheck: 'gh pr list --search "review-requested:@me" --json number --jq ".[].number"', precheckTimeoutSecs: 3600, graceMinutes: 10,
       model: 'claude-sonnet-5',
     }),
+    // The same schedule on each machine, which the list folds into one row.
+    ...(['cam-mbp', 'cedar-02'] as const).map((on, index) => seed({
+      id: `ultradian:${on}:index-sessions`, source: 'ultradian', name: 'index-sessions', enabled: true, machine: on, project: null, agent: null, runsOn: 'machine',
+      schedule: { kind: 'everyMinutes', minutes: 15 }, nextRunAtMs: now + (4 + index * 3) * MINUTE,
+      lastRun: { status: failing && index === 1 ? 'failed' : 'done', atMs: now - (11 - index * 3) * MINUTE }, hasPrecheck: false, abilities: ULTRADIAN_ABILITIES,
+    }, {
+      prompt: 'session-index scan --json', projectPath: on === 'cam-mbp' ? '/Users/cam' : '/home/cam', graceMinutes: 0,
+    })),
     seed({
       id: 'ultradian:cedar-02:nightly-backup', source: 'ultradian', name: 'nightly-backup', enabled: false, machine: 'cedar-02', project: null, agent: null, runsOn: 'machine',
       schedule: { kind: 'daily', hour: 2, minute: 30 }, nextRunAtMs: null,
@@ -358,7 +366,7 @@ const notOff = (apps: AutomationSource[]) => apps.filter((app) => !appsOff.inclu
 const list = (): AutomationList => ({
   automations: automations.map((item) => item.summary).filter((summary) => !appsOff.includes(summary.source)),
   scans: [
-    { machine: 'cam-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff(['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : [])]), udian: runnerOn.get('cam-mbp') ?? null, placingError: null },
+    { machine: 'cam-mbp', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff(['codexApp', 'claudeDesktop', ...(withSuperset ? ['superset' as const] : []), ...(withOwnUdian ? ['ultradian' as const] : [])]), udian: runnerOn.get('cam-mbp') ?? null, placingError: null },
     {
       machine: 'cedar-02', scannedAtMs: now - 6 * MINUTE, scanning: false, error: null, apps: notOff([...(withOrca ? ['orca' as const] : []), ...(withSuperset ? ['superset' as const] : []), ...(withOwnUdian ? ['ultradian' as const] : [])]), udian: runnerOn.get('cedar-02') ?? null,
       placingError: runner === 'failing' ? 'cedar-02 didn\'t answer over SSH.' : null,

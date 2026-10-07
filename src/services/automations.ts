@@ -14,6 +14,7 @@ import type {
 import { formatTime } from '../lib/format';
 import type { StatusTone } from '../components/ui/status-dot';
 import { compareVersions } from './agentVersions';
+import { savedStore } from './savedStore';
 import type { SystemNotification } from './notify';
 
 type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
@@ -271,6 +272,97 @@ export function sortAutomations(automations: readonly AutomationSummary[], sort:
     if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
     return sort.descending ? b - a : a - b;
   });
+}
+
+// ── Folding automations of the same name together ─────────────────────────────────────────────────────────────────
+
+/**
+ * One row of the list: an automation, or a fold of the ones that share a name and what runs them (the same scan on
+ * every machine), which opens onto them.
+ */
+export type AutomationRow =
+  | { kind: 'item'; item: AutomationSummary; /** The fold it's listed under, while that's open. */ inGroup: string | null }
+  | { kind: 'group'; key: string; items: AutomationSummary[] };
+
+/**
+ * Automations fold together when they have the same name, give or take case, spaces, hyphens and underscores
+ * (`cofactor-scan`, `Cofactor scan`), and the same runner.
+ */
+export const automationGroupKey = (item: AutomationSummary) => `${automationRunner(item)}\n${item.name.trim().replace(/[\s_-]+/g, ' ').toLowerCase()}`;
+
+/** Whether the list folds automations of the same name together; on until it's turned off, in this window. */
+export const automationsGrouped = savedStore({
+  key: 'arbor.automations.grouped.v1',
+  parse: (raw) => (raw === null ? true : JSON.parse(raw) !== false),
+  fallback: true,
+  place: 'window',
+});
+
+export const automationRowId = (row: AutomationRow) => (row.kind === 'group' ? `group:${row.key}` : row.item.id);
+
+/**
+ * The list as rows. Folded, two or more of the same name and runner become one row where the first of them would be,
+ * and an open fold lists them under it; unfolded, one row each, as given.
+ */
+export function automationRows(items: readonly AutomationSummary[], { grouped, open }: { grouped: boolean; open: ReadonlySet<string> }): AutomationRow[] {
+  if (!grouped) return items.map((item) => ({ kind: 'item', item, inGroup: null }));
+  const byKey = new Map<string, AutomationSummary[]>();
+  for (const item of items) {
+    const key = automationGroupKey(item);
+    byKey.set(key, [...(byKey.get(key) ?? []), item]);
+  }
+  const rows: AutomationRow[] = [];
+  const placed = new Set<string>();
+  for (const item of items) {
+    const key = automationGroupKey(item);
+    const members = byKey.get(key) ?? [item];
+    if (members.length < 2) {
+      rows.push({ kind: 'item', item, inGroup: null });
+      continue;
+    }
+    if (placed.has(key)) continue;
+    placed.add(key);
+    rows.push({ kind: 'group', key, items: members });
+    if (open.has(key)) rows.push(...members.map((member): AutomationRow => ({ kind: 'item', item: member, inGroup: key })));
+  }
+  return rows;
+}
+
+/** What a fold's row says for its automations together. A value they don't all share is null with `varies`. */
+export type AutomationGroupSummary = {
+  machines: string[];
+  schedule: { value: ScheduleSummary | null; varies: boolean };
+  project: { value: string | null; varies: boolean };
+  model: { value: string | null; varies: boolean };
+  /** The soonest next run of the ones that are on. */
+  nextRunAtMs: number | null;
+  /** The newest last run of any of them. */
+  lastRun: AutomationSummary['lastRun'];
+  /** How many are on and whose last run failed or found the machine away. */
+  failing: number;
+  enabled: number;
+};
+
+const shared = <T,>(values: T[], same: (left: T, right: T) => boolean = Object.is): { value: T | null; varies: boolean } => {
+  const [first] = values;
+  if (first === undefined) return { value: null, varies: false };
+  return values.every((value) => same(value, first)) ? { value: first, varies: false } : { value: null, varies: true };
+};
+
+export function automationGroupSummary(items: readonly AutomationSummary[]): AutomationGroupSummary {
+  const on = items.filter((item) => item.enabled);
+  const next = on.flatMap((item) => (item.nextRunAtMs === null ? [] : [item.nextRunAtMs]));
+  const last = items.reduce<AutomationSummary['lastRun']>((newest, item) => (item.lastRun && (!newest || item.lastRun.atMs > newest.atMs) ? item.lastRun : newest), null);
+  return {
+    machines: [...new Set(items.flatMap((item) => (item.machine ? [item.machine] : [])))].sort((left, right) => left.localeCompare(right)),
+    schedule: shared(items.map((item) => item.schedule), (left, right) => JSON.stringify(left) === JSON.stringify(right)),
+    project: shared(items.map((item) => item.project)),
+    model: shared(items.map((item) => item.model)),
+    nextRunAtMs: next.length ? Math.min(...next) : null,
+    lastRun: last,
+    failing: on.filter((item) => item.lastRun?.status === 'failed' || item.lastRun?.status === 'unreachable').length,
+    enabled: on.length,
+  };
 }
 
 /** How many each state would list with the other filters as they are. */

@@ -306,7 +306,7 @@ describe('a row’s own controls in a grid', () => {
       storageKey: 'arbor.test-fixed-grid',
       initialLayout: () => ({ ...gridLayout(gridColumns.map((column) => ({ id: column.id ?? '' })), ['name', 'actions']), pinning: { start: [], end: ['actions'] } }),
     });
-    return <DataGrid grid={grid} label="Rows" surface="card" />;
+    return <DataGrid grid={grid} label="Rows" surface="card" rowClassName={(row) => (row.id === '1' ? 'row-under' : undefined)} />;
   }
 
   it('has no header menu or width to drag, only its name for screen readers', () => {
@@ -316,5 +316,6 @@ describe('a row’s own controls in a grid', () => {
     expect(heads[0]).toContain('aria-haspopup');
     expect(heads[1]).toBe('<span class="sr-only">Actions</span>');
     expect(html).toContain('style="right:var(--pin-actions)"');
+    expect(html).toMatch(/<tr[^>]*class="[^"]*row-under/);
   });
 });
