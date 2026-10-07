@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.1.1",
+    "summary": "A much smaller download, and a background runner that uses a fraction of the memory on every machine.",
+    "changes": [
+      "The download is about a quarter of its old size.",
+      "Automations that run on a machine use about a tenth of the memory and CPU they did.",
+      "The app icon keeps its colors in dark mode."
+    ]
+  },
+  {
     "version": "1.1.0",
     "summary": "Arbor is open source: run agent work across your machines, and keep every agent's setup in step from one Library.",
     "changes": [
