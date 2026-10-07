@@ -278,7 +278,8 @@ const GridBody = memo(function GridBody<TData extends RowData>({ table, surface,
             open();
           } : undefined}
           className={cn(
-            'group/row transition-colors hover:bg-muted/60 dark:hover:bg-input/16',
+            // No color transition: the pinned cell's hover layer can't share it, and a fade here lags behind that cell.
+            'group/row hover:bg-muted/60 dark:hover:bg-input/16',
             open && 'cursor-pointer outline-none focus-visible:bg-muted/60 dark:focus-visible:bg-input/16',
             // The open row keeps the accent's tint while its detail is beside it.
             active && 'bg-primary/8 hover:bg-primary/10 dark:bg-primary/12 dark:hover:bg-primary/14',
