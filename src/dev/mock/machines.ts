@@ -343,7 +343,8 @@ const t3Scenario = params.get('t3compat');
 const harnessScenario = params.get('harness');
 const t3Stopped = params.get('t3') === 'stopped';
 const t3On = (install: T3Install): T3Install | null => (harnessScenario === 'none' ? null : install);
-const orcaOn = (install: OrcaInstall): OrcaInstall | null => (harnessScenario === 'none' ? null : install);
+// `?orca=none` has no machine with Orca, as Automations has none of its schedules.
+const orcaOn = (install: OrcaInstall): OrcaInstall | null => (harnessScenario === 'none' || params.get('orca') === 'none' ? null : install);
 
 // Each machine's agents as its last check found them; the reporter's state is added as the snapshot is read.
 const healthAgents: Record<string, Omit<MachineAgents, 'reporter'>> = {

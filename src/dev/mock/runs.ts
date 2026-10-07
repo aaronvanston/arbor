@@ -91,7 +91,16 @@ function start(request: RunRequest, snapshot: MachineHealthSnapshot): HarnessRun
     if (!pool) return { ...run, state: 'refused', reason: 'noPool', endedAtMs: Date.now() };
     const likely = preview(pool, snapshot).likely;
     if (likely) {
-      const used = request.harness === 'headless' ? 'headless' : request.harness;
+      // As Rust's offer: the harness when the member runs it, else its agent's command line when the run allows it.
+      const agents = snapshot.machines.find((entry) => entry.machine === likely)?.agents;
+      const agent = /^(claude|claudeAgent)/i.test(request.setup) ? agents?.claude : /^codex/i.test(request.setup) ? agents?.codex : null;
+      const harnessHere = request.harness === 't3' ? Boolean(agents?.t3?.running) : request.harness === 'orca' ? Boolean(agents?.orca?.running) : false;
+      const used = harnessHere ? request.harness : (request.fallback || request.harness === 'headless') && agent ? 'headless' : null;
+      if (!used) {
+        return pool.whenFull === 'queue'
+          ? { ...run, state: 'queued', reason: 'noHarness', waitUntilMs: Date.now() + pool.queueTimeoutMin * minute }
+          : { ...run, state: 'refused', reason: 'noHarness', endedAtMs: Date.now() };
+      }
       const handle = used === 't3' ? { projectId: 'p-mock', threadId: `t-${Date.now().toString(36)}` } : used === 'orca' ? { terminal: 'term_new1' } : { pid: 51_000 };
       const worktree = request.worktree && used !== 't3' ? { worktree: `arbor-${Date.now().toString(16).slice(-8)}` } : {};
       // A run on a repo works in the member's checkout of it, as its Projects scan found it.

@@ -81,7 +81,9 @@ function nextRun(schedule: ScheduleSummary, from: number): number | null {
       at.setHours(schedule.hour, schedule.minute, 0, 0);
       for (let step = 0; step < 8; step += 1) {
         if (at.getTime() > from && days.includes(at.getDay())) return at.getTime();
+        // The hour again each day: on the day clocks go forward, a time in the gap moved an hour on.
         at.setDate(at.getDate() + 1);
+        at.setHours(schedule.hour, schedule.minute, 0, 0);
       }
       return null;
     }
@@ -111,6 +113,7 @@ function previousRun(schedule: ScheduleSummary, at: number): number | null {
       for (let step = 0; step < 8; step += 1) {
         if (time.getTime() <= at && days.includes(time.getDay())) return time.getTime();
         time.setDate(time.getDate() - 1);
+        time.setHours(schedule.hour, schedule.minute, 0, 0);
       }
       return null;
     }
@@ -311,11 +314,12 @@ const PRECHECK_OUTPUT: Record<string, { ran: string | null; skipped: string | nu
   'orca:7c1f': { ran: '14 strings missing: de (9), fr (5)', skipped: null },
 };
 
-// Sessions the mock's usage has, by agent, for the runs that started one to open. The app links a run to the session
-// its agent reported, and every run goes through the proxy, so Arbor has that session's requests.
-const RUN_SESSIONS: Record<string, string[]> = {
-  claude: ['6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', 'd4c3b2a1-7f6e-4d5c-9b8a-e1f2a3b4c5d6', 'b7e24c19-0d3a-4f6e-9b21-c4d5e6f7a8b9'],
-  codex: ['0199a0f4-6e21-7c3d-9a8b-1c2d3e4f5a6b', '0199a05d-91c2-7b4a-8e6f-2d3e4f5a6b7c'],
+// Sessions the mock's usage has, by machine and agent, for the runs that started one to open. The app links a run to
+// the session its agent reported, and every run goes through the proxy, so Arbor has that session's requests; a run on
+// a machine whose sessions the mock doesn't have links none, since Arbor never guesses one.
+const RUN_SESSIONS: Record<string, Record<string, string[]>> = {
+  'cam-mbp': { claude: ['6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c', 'd4c3b2a1-7f6e-4d5c-9b8a-e1f2a3b4c5d6'], codex: ['0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b'] },
+  'ci-runner': { claude: ['b7e24c19-0d3a-4f6e-9b21-c4d5e6f7a8b9'], codex: ['0199a0f4-6e21-7c3d-9a8b-1c2d3e4f5a6b'] },
 };
 
 /** Each automation's recent runs, newest first, at its schedule's times. */
@@ -334,13 +338,14 @@ function seedRuns(item: Seed): AutomationRun[] {
     const checked = ran || status === 'skipped';
     const output = PRECHECK_OUTPUT[item.summary.id];
     // A schedule of someone's own records the session only when its command starts an agent with ultradian's id.
-    const sessions = item.summary.agent ? RUN_SESSIONS[item.summary.agent] ?? [] : [];
+    // Superset's cloud runs them in its own workspace, on no machine of Arbor's.
+    const machine = item.summary.source === 'superset' && !item.summary.machine ? null : item.summary.machine ?? 'cedar-02';
+    const sessions = item.summary.agent && machine ? RUN_SESSIONS[machine]?.[item.summary.agent] ?? [] : [];
     const sessionId = ran ? sessions[sessionIndex++ % Math.max(1, sessions.length)] ?? null : null;
     return {
       id: `${item.summary.id}:run:${index}`,
       automationId: item.summary.id,
-      // Superset's cloud runs them in its own workspace, on no machine of Arbor's.
-      machine: item.summary.source === 'superset' && !item.summary.machine ? null : item.summary.machine ?? 'cedar-02',
+      machine,
       status,
       scheduledAtMs,
       startedAtMs: status === 'missed' || status === 'unreachable' ? null : scheduledAtMs + 2_000,
@@ -350,7 +355,8 @@ function seedRuns(item: Seed): AutomationRun[] {
       precheckOutput: checked && hasPrecheck ? (status === 'skipped' ? output?.skipped : output?.ran) ?? null : null,
       exitCode: ran ? (status === 'failed' ? 1 : 0) : null,
       sessionId,
-      error: status === 'failed' ? 'The agent stopped with exit code 1.' : status === 'unreachable' ? 'cedar-02 didn\'t answer over SSH.' : null,
+      // A schedule with no agent runs a command of its own.
+      error: status === 'failed' ? `The ${item.summary.agent ? 'agent' : 'command'} stopped with exit code 1.` : status === 'unreachable' ? `${machine} didn't answer over SSH.` : null,
     };
   });
 }
