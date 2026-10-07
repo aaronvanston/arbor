@@ -20,4 +20,10 @@ describe('English-only interface', () => {
       .flatMap(([key, message]) => britishSpellings(message).map((word) => `${key}: ${word}`));
     expect(british).toEqual([]);
   });
+
+  // money-4: a confirm's warning names its button the way the button reads.
+  it('names the reset button as it reads', () => {
+    expect(en['quota.confirm.warning']).toContain(en['quota.confirm.button']);
+    expect(en['quota.bankedReset.confirm.warning']).toContain(en['quota.confirm.button']);
+  });
 });
