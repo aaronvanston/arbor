@@ -4679,6 +4679,7 @@ export const en = {
   'machine.setup.unread': 'Sync hasn’t read {machine}’s setup yet.',
   'machine.setup.loading': 'Reading {machine}’s setup…',
   'machine.setup.reference': 'This is the machine Sync compares the others with.',
+  'machine.setup.scanFailed': 'The last read failed, so this may be out of date. {error}',
   'machine.setup.differences.one': '1 thing differs from {reference}.',
   'machine.setup.differences.other': '{count} things differ from {reference}.',
   'machine.setup.matches': 'Everything matches {reference}.',

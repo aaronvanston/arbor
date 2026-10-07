@@ -8,6 +8,7 @@ import { cn } from '../lib/utils';
 import { machineLiveView, machineSessionsView, movedSetupView, setupChecksView, setupView, type AppView } from '../navigation';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { newestAgents } from '../services/agentVersions';
+import { errorWords, plainError } from '../services/plainError';
 import { useFleetBoard } from '../services/fleetBoard';
 import { healthProblem } from '../services/fixPrompt';
 import { HOUR_MS, MACHINE_WINDOWS, machineWindowMs, type MachineWindowId } from '../services/machineHealth';
@@ -346,6 +347,12 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
                 <span className="text-warning-foreground">
                   {' · '}
                   {t(standing.problems === 1 ? 'machine.setup.problems.one' : 'machine.setup.problems.other', { count: standing.problems })}
+                </span>
+              ) : null}
+              {/* The figures above are from the read before, so a failed one says so rather than passing them off as now. */}
+              {scanned?.error ? (
+                <span className="mt-1 block text-xs text-warning-foreground" title={errorWords(scanned.error)}>
+                  {t('machine.setup.scanFailed', { error: plainError(scanned.error, t) })}
                 </span>
               ) : null}
             </SettingsBlock>

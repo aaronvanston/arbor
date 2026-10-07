@@ -18,6 +18,7 @@ import type { AppView } from '../navigation';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { fetchMachineHealth, saveMachineHosts } from '../services/machineHealth';
 import { formatCount } from '../lib/format';
+import { plainError } from '../services/plainError';
 import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import {
   agentsStep,
@@ -725,6 +726,8 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
     const ref = named(referenceName ?? '');
     const plural = (count: number, one: MessageKey, other: MessageKey, values: Record<string, string | number | T> = {}) =>
       say(count === 1 ? one : other, { count: formatCount(count), ...values });
+    // A failure in plain words, not ssh's or the OS's.
+    const plain = (error: string | null | undefined) => (error ? plainError(error, t) : '');
     // A step waiting on a machine's read, or stuck on one that failed.
     const unread = (state: StepState, both: boolean) =>
       state === 'unknown' ? say('setup.checklist.readFailed') : say(both ? 'setup.checklist.waitingBoth' : 'setup.checklist.notRead');
@@ -736,10 +739,10 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
           case 'noHost': return say('setup.checklist.connect.noHost');
           case 'connecting': return say('setup.checklist.connect.connecting');
           case 'healthUnread': return say('setup.checklist.connect.healthUnread');
-          case 'down': return say('setup.checklist.connect.down', { error: step.error ?? '' });
+          case 'down': return say('setup.checklist.connect.down', { error: plain(step.error) });
           case 'reading': return say('setup.checklist.connect.reading');
           case 'notRead': return say('setup.checklist.connect.notRead');
-          default: return say('setup.checklist.connect.scanFailed', { error: step.error ?? '' });
+          default: return say('setup.checklist.connect.scanFailed', { error: plain(step.error) });
         }
       }
       case 'agents': {
@@ -754,7 +757,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
           case 'noKey': return say('setup.checklist.proxy.noKey');
           case 'quiet': return say('setup.checklist.proxy.quiet');
           case 'loading': return say('setup.checklist.proxy.loading');
-          default: return say('setup.checklist.proxy.failed', { error: step.error ?? '' });
+          default: return say('setup.checklist.proxy.failed', { error: plain(step.error) });
         }
       }
       case 'repo': {
@@ -762,7 +765,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
         switch (step.why) {
           case 'noRepo': return say('setup.checklist.repo.noRepo');
           case 'loading': return say('setup.checklist.repo.loading');
-          case 'failed': return say('setup.checklist.repo.failed', { error: step.error ?? '' });
+          case 'failed': return say('setup.checklist.repo.failed', { error: plain(step.error) });
           case 'noCommits': return say('setup.checklist.repo.noCommits');
           case 'notRead': return unread(step.state, false);
           case 'inStep': return say('setup.checklist.repo.inStep');
@@ -786,7 +789,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
         switch (step.why) {
           case 'noRepo': return say('setup.checklist.repo.noRepo');
           case 'loading': return say('setup.checklist.mcp.loading');
-          case 'failed': return say('setup.checklist.mcp.failed', { error: step.error ?? '' });
+          case 'failed': return say('setup.checklist.mcp.failed', { error: plain(step.error) });
           case 'noFile': return say('setup.checklist.mcp.noFile');
           case 'broken': return say('setup.checklist.mcp.broken', { error: step.error ?? '' });
           case 'notRead': return unread(step.state, false);
