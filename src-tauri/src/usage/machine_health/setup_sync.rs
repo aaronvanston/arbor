@@ -360,7 +360,7 @@ pub(super) async fn git(folder: &Path, args: &[&str], timeout: Duration) -> Resu
         .map_err(|error| format!("git failed: {error}"))?;
     // Arbor's own commit in the setup repo goes to its remote straight away; the keeper checks it's that repo.
     if output.status.success() && args.contains(&"commit") {
-        super::setup_repo_keeper::committed();
+        super::setup_repo_keeper::committed(folder);
     }
     Ok(output)
 }

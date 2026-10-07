@@ -77,9 +77,40 @@ fn state() -> std::sync::MutexGuard<'static, RepoKeeper> {
     STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Called by `setup_sync::git` after any commit it made. Only one in the setup repo matters, which the round checks.
-pub(super) fn committed() {
-    WAKE.notify_one();
+/// Called by `setup_sync::git` after any commit it made: one in the setup repo wakes a round to push it, and one in any
+/// other repo (a hub, a project) is none of the keeper's business. Before the first round names the repo, the round a
+/// minute after launch pushes it anyway.
+pub(super) fn committed(folder: &Path) {
+    let repo = state().repo.clone();
+    if repo.is_some_and(|repo| same_folder(Path::new(&repo), folder)) {
+        WAKE.notify_one();
+    }
+}
+
+fn same_folder(a: &Path, b: &Path) -> bool {
+    a == b || matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
+}
+
+/// Pushes, never forced. When the remote turned it down for having moved since the fetch, fetches once more and tries
+/// again if the repo is still only ahead; otherwise they've diverged.
+async fn push(folder: &Path) -> Result<(), (KeepProblem, Option<String>)> {
+    for attempt in 0..2 {
+        let output = git(folder, &["push", "--quiet"], NETWORK_TIMEOUT).await.map_err(|error| (KeepProblem::Network, Some(error)))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let detail = complaint(&output);
+        let said = String::from_utf8_lossy(&output.stderr);
+        if !["rejected", "fetch first", "non-fast-forward"].iter().any(|sign| said.contains(sign)) {
+            return Err((classify(&detail), Some(detail)));
+        }
+        let fetched = git(folder, &["fetch", "--quiet"], NETWORK_TIMEOUT).await.is_ok_and(|output| output.status.success());
+        let still_ahead_only = fetched && counts(folder).await.is_some_and(|(behind, ahead)| behind == 0 && ahead > 0);
+        if attempt == 1 || !still_ahead_only {
+            return Err((KeepProblem::Diverged, Some(detail)));
+        }
+    }
+    Err((KeepProblem::Diverged, None))
 }
 
 /// What git's words for a failed fetch or push mean. They're another program's text, so matching on them is the only way.
@@ -160,15 +191,12 @@ pub(super) async fn round(folder: &Path, last: &RepoKeeper, now_ms: i64) -> (Rep
         };
     }
     if ahead > 0 {
-        // Never forced: a remote that moved since the fetch turns it down, and the next round sees them diverged.
-        return match git(folder, &["push", "--quiet"], NETWORK_TIMEOUT).await {
-            Ok(output) if output.status.success() => (RepoKeeper { ahead: 0, last_push_ms: Some(now_ms), ..next }, false),
-            Ok(output) => {
-                let detail = complaint(&output);
-                let problem = if detail.contains("rejected") || detail.contains("fetch first") { KeepProblem::Diverged } else { classify(&detail) };
-                (fail(next, problem, Some(detail)), false)
+        return match push(folder).await {
+            Ok(()) => (RepoKeeper { ahead: 0, last_push_ms: Some(now_ms), ..next }, false),
+            Err((problem, detail)) => {
+                let (behind, ahead) = counts(folder).await.unwrap_or((next.behind, next.ahead));
+                (fail(RepoKeeper { behind, ahead, ..next }, problem, detail), false)
             }
-            Err(error) => (fail(next, KeepProblem::Network, Some(error)), false),
         };
     }
     (next, false)
@@ -348,6 +376,26 @@ mod tests {
         assert_eq!(head(&mine), mine_head, "never merged or rebased");
         // What was known before stays known: the last fetch is this round's, the last pull nobody's.
         assert_eq!((diverged.last_fetch_ms, diverged.last_pull_ms), (Some(2), None));
+    }
+
+    #[test]
+    fn a_push_the_remote_turns_down_fetches_once_and_says_diverged_when_it_still_cant_fast_forward() {
+        let (_remote, mine, theirs) = three();
+        commit(&mine, ".claude/rules/mine.md", "mine\n", "Mine");
+        // The other computer pushes after this Mac's fetch: the push is turned down.
+        commit(&theirs, ".claude/CLAUDE.md", "theirs\n", "Theirs");
+        git_in(&theirs, &["push", "--quiet"]);
+        let result = block_on(push(&mine));
+        assert!(matches!(result, Err((KeepProblem::Diverged, Some(_)))), "{result:?}");
+        assert_eq!(block_on(counts(&mine)), Some((1, 1)), "it fetched again to see why");
+    }
+
+    #[test]
+    fn only_a_commit_in_the_setup_repo_wakes_a_round() {
+        let (_remote, mine, theirs) = three();
+        state().repo = Some(mine.display().to_string());
+        assert!(same_folder(&mine, &mine.join(".")));
+        assert!(!same_folder(&mine, &theirs));
     }
 
     #[test]

@@ -2254,7 +2254,7 @@ export const en = {
   'repoKeeper.alert.title': 'The setup repo isn’t in step with its remote',
   'repoKeeper.settings.title': 'Sync',
   'repoKeeper.settings.description': 'How the setup repo on this Mac follows its remote, on GitHub or elsewhere.',
-  'repoKeeper.settings.keep': 'Keep the setup repo in step with GitHub',
+  'repoKeeper.settings.keep': 'Keep the setup repo in step with its remote',
   'repoKeeper.settings.keepHint': 'Fetches every 15 minutes, pulls when it’s only behind and pushes Arbor’s commits. Never merges or forces; anything else waits for you on Sync › Repo. Off, it’s only pulled and pushed with the buttons there.',
   'repoKeeper.settings.keywords': 'setup repo git github pull push fetch remote auto',
   'sync.change.unknown': 'can’t tell who changed it',
