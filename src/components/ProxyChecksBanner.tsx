@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { requestFocus } from '../focusRequests';
 import { useI18n } from '../i18n';
 import { invokeCommand } from '../native/commands';
-import type { ProxyProblem } from '../native/types';
+import type { ProxyProblem, ProxyProblemKind } from '../native/types';
 import type { AppView } from '../navigation';
 import { getThisMac } from '../services/addMachine';
 import { addNewClientKey } from '../services/clientKeys';
@@ -26,20 +26,27 @@ import { toast } from './ui/toast';
  * What's wrong with the proxy settings Arbor depends on, on Home and the Usage pages, each with its fix: usage
  * statistics turn back on from here, a settings file the proxy didn't load is shown in Finder, and the rest open their
  * row in Settings. Shown only while a problem lasts.
+ *
+ * Settings › Proxy shows them too, where the settings are changed (`onProxySettings`): its buttons then find the row on
+ * the same page, and `omit` leaves out what the page already says inline.
  */
-export function ProxyChecksBanner({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+export function ProxyChecksBanner({ onNavigate, onProxySettings = false, omit = [] }: {
+  onNavigate?: (view: AppView) => void;
+  onProxySettings?: boolean;
+  omit?: ProxyProblemKind[];
+}) {
   const checks = useProxyChecks();
   const dismissed = useDismissedNetworkHost();
-  const problems = shownProxyProblems(checks, dismissed);
+  const problems = shownProxyProblems(checks, dismissed, omit);
   if (!problems.length) return null;
   return (
     <div className="flex flex-col gap-2" data-slot="proxy-checks">
-      {problems.map((problem) => <ProxyProblemAlert key={proxyProblemKey(problem)} problem={problem} onNavigate={onNavigate} />)}
+      {problems.map((problem) => <ProxyProblemAlert key={proxyProblemKey(problem)} problem={problem} onNavigate={onNavigate} onProxySettings={onProxySettings} />)}
     </div>
   );
 }
 
-function ProxyProblemAlert({ problem, onNavigate }: { problem: ProxyProblem; onNavigate?: (view: AppView) => void }) {
+function ProxyProblemAlert({ problem, onNavigate, onProxySettings }: { problem: ProxyProblem; onNavigate?: (view: AppView) => void; onProxySettings: boolean }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -50,9 +57,9 @@ function ProxyProblemAlert({ problem, onNavigate }: { problem: ProxyProblem; onN
   // Like a network warning, a guessable key is a risk to fix rather than something broken.
   const warning = network || kind === 'defaultClientKey';
 
-  const openSetting = onNavigate && kind !== 'settingsNotLoaded' ? () => {
+  const openSetting = (onNavigate || onProxySettings) && kind !== 'settingsNotLoaded' ? () => {
     requestFocus('setting', PROXY_PROBLEM_SETTING[kind]);
-    onNavigate({ kind: 'settings', page: 'general' });
+    onNavigate?.({ kind: 'settings', page: 'general' });
   } : undefined;
   const turnOn = async () => {
     setBusy(true);

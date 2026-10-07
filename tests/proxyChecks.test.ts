@@ -31,6 +31,11 @@ describe('proxy checks', () => {
     expect(nextProxyAlerts(['openToNetwork:0.0.0.0'], checks(network('192.168.1.20')), null).alert).toEqual([network('192.168.1.20')]);
   });
 
+  // money-21: Settings › Proxy shows the checks too, less what its key list already says inline.
+  test('leaves out what a page already says', () => {
+    expect(shownProxyProblems(checks(noKeys, usageOff, notLoaded('153')), null, ['noClientKeys'])).toEqual([usageOff, notLoaded('153')]);
+  });
+
   test('nothing shows before the core has been asked', () => {
     expect(shownProxyProblems(null, null)).toEqual([]);
   });

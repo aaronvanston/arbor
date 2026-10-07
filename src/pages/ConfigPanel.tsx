@@ -22,6 +22,7 @@ import { SoftwareSettingsSection } from './SoftwareSettings';
 import { CommandLineSettings } from './CommandLineSettings';
 import { UsageDataSettings } from './UsageDataSettings';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
+import { ProxyChecksBanner } from '../components/ProxyChecksBanner';
 import { FoldedSettingsSection, SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -875,6 +876,8 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
 
       {activeSubpage === 'general' ? (
         <PageBody>
+          {/* What Home warns about, also here where it's fixed. An empty key list already says the proxy is open. */}
+          <ProxyChecksBanner onProxySettings omit={['noClientKeys']} />
           <SettingsSection
             settingId="general.api-keys"
             title={t('config.keys.title')}

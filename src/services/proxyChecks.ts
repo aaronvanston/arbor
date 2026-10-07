@@ -37,9 +37,9 @@ export const useDismissedNetworkHost = dismissedHost.useValue;
 export const dismissNetworkWarning = (host: string) => dismissedHost.set(host);
 
 /** The problems a banner shows: all of them, less the network warning once it's been closed for this address. */
-export function shownProxyProblems(checks: ProxyChecks | null, dismissed: string | null): ProxyProblem[] {
+export function shownProxyProblems(checks: ProxyChecks | null, dismissed: string | null, omit: readonly ProxyProblemKind[] = []): ProxyProblem[] {
   if (!checks?.checked) return [];
-  return checks.problems.filter((problem) => problem.kind !== 'openToNetwork' || problem.detail !== dismissed);
+  return checks.problems.filter((problem) => !omit.includes(problem.kind) && (problem.kind !== 'openToNetwork' || problem.detail !== dismissed));
 }
 
 /** What makes a problem the same one as before: its kind, and for the network warning the address. */
