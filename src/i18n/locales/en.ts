@@ -5835,6 +5835,8 @@ export const en = {
   'authFiles.reauth.finalizing': 'Saving the refreshed credentials…',
   'authFiles.turnedOff': 'Turned off {name}',
   'authFiles.turnedOn': 'Turned on {name}',
+  'authFiles.turnOffFailed': 'Couldn’t turn it off: {error}',
+  'authFiles.turnOnFailed': 'Couldn’t turn it on: {error}',
   'authFiles.reauth.done': 'Credentials refreshed in “{name}”',
   'authFiles.reauth.doneRenamed': 'Credentials refreshed and saved as “{name}”. The core replaced “{from}” with this file and kept its settings.',
   'authFiles.reauth.missing': 'Sign-in finished, but “{name}” is no longer in the auth folder and no new credential for {account} was found. Refresh the list to see what the core saved.',

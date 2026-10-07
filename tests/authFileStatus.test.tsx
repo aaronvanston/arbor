@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../src/i18n';
-import { AuthFileStatus } from '../src/components/AuthFileCommands';
+import { AuthFileFix, AuthFileStatus, type AuthFileCommands } from '../src/components/AuthFileCommands';
 import { listingReloadDelay } from '../src/services/accountsStore';
 import { authFileAvailability, type AuthFileAvailability } from '../src/services/authFiles';
 
@@ -99,5 +99,18 @@ describe('when the Auth Files page reloads by itself', () => {
     expect(listingReloadDelay({ ...stale, failures: 20 })).toBe(301_000);
     expect(listingReloadDelay({ ...base, lingering: true, failures: 2 })).toBe(5_000);
     expect(listingReloadDelay({ ...base, changesAtMs: now + 60_000, failures: 2 })).toBe(61_000);
+  });
+});
+
+describe('turning an account off or on', () => {
+  it('says beside the account why the core refused, in plain words', () => {
+    const file = { name: 'codex-team.json', status: 'active' };
+    const commands = { busy: false, refreshingName: '', toggleFailures: { 'codex-team.json': 'Couldn’t turn it off: The core couldn’t finish the request.' } } as unknown as AuthFileCommands;
+    const html = renderToStaticMarkup(<I18nProvider><AuthFileFix file={file} availability={{ kind: 'ready' }} commands={commands} /></I18nProvider>);
+    expect(html).toContain('role="alert"');
+    expect(text(html)).toBe('Couldn’t turn it off: The core couldn’t finish the request.');
+    // Another account's row says nothing.
+    const other = renderToStaticMarkup(<I18nProvider><AuthFileFix file={{ name: 'grok-paid.json' }} availability={{ kind: 'ready' }} commands={commands} /></I18nProvider>);
+    expect(other).toBe('');
   });
 });

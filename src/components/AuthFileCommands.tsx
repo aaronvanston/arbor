@@ -221,6 +221,9 @@ type ModelsProvider = { provider: string; label: string };
 
 export type AuthFileCommands = ReturnType<typeof useAuthFileCommands>;
 
+const withoutKey = (record: Readonly<Record<string, string>>, key: string) =>
+  Object.fromEntries(Object.entries(record).filter(([name]) => name !== key));
+
 /**
  * The changes a credential takes, each followed by reading the listing again, with the dialogs and file picker they
  * open. A change that worked says so in a toast; one that failed says why above the list. Render `dialogs` once.
@@ -236,6 +239,8 @@ export function useAuthFileCommands(listing: AuthFile[]) {
   const [modelViewName, setModelViewName] = useState<string | null>(null);
   const [modelsTarget, setModelsTarget] = useState<OAuthModelTarget | null>(null);
   const [capTarget, setCapTarget] = useState<ReserveTarget | null>(null);
+  // Why the core refused to turn an account off or on, by its file name, shown on that account's row.
+  const [toggleFailures, setToggleFailures] = useState<Readonly<Record<string, string>>>({});
   const profiles = useAccountProfiles();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Provider-wide exclusions only apply to OAuth credential files, so runtime entries and API keys add no provider.
@@ -264,13 +269,31 @@ export function useAuthFileCommands(listing: AuthFile[]) {
     return !failure;
   };
 
+  /** Turns an account off or on, a refusal said on its row rather than above a list it may be far down. */
+  const turn = async (file: AuthFile, disabled: boolean): Promise<boolean> => {
+    const key = authFileName(file);
+    setToggleFailures((current) => withoutKey(current, key));
+    setBusy(true);
+    let failure = '';
+    try {
+      await setOAuthCredentialFileDisabled(file, disabled);
+    } catch (requestError) {
+      failure = plainError(requestError, t);
+    } finally {
+      setBusy(false);
+    }
+    await loadAccountFiles();
+    if (failure) setToggleFailures((current) => ({ ...current, [key]: t(disabled ? 'authFiles.turnOffFailed' : 'authFiles.turnOnFailed', { error: failure }) }));
+    return !failure;
+  };
+
   // Turning an account off or on is undone as easily as it's done, so it happens straight away with Undo.
   const toggle = async (file: AuthFile) => {
     const disabled = !readBoolean(file, 'disabled');
-    if (!await change(() => setOAuthCredentialFileDisabled(file, disabled))) return;
+    if (!await turn(file, disabled)) return;
     toast({
       title: t(disabled ? 'authFiles.turnedOff' : 'authFiles.turnedOn', { name: authFileName(file) }),
-      action: { label: t('common.undo'), onClick: () => { void change(() => setOAuthCredentialFileDisabled(file, !disabled)); } },
+      action: { label: t('common.undo'), onClick: () => { void turn(file, !disabled); } },
     });
   };
 
@@ -427,6 +450,7 @@ export function useAuthFileCommands(listing: AuthFile[]) {
     refreshingName,
     hasModelsProviders: modelsProviders.length > 0,
     toggle,
+    toggleFailures,
     remove,
     editPriority,
     reauth,
@@ -536,6 +560,21 @@ export function AuthFileMenuItems({ file, availability, commands, paused }: {
  * now while the core waits to retry, Enable when it's turned off. Nothing otherwise.
  */
 export function AuthFileFix({ file, availability, commands }: { file: AuthFile; availability: AuthFileAvailability; commands: AuthFileCommands }) {
+  const failure = commands.toggleFailures[authFileName(file)];
+  const fix = <AuthFileFixButton file={file} availability={availability} commands={commands} />;
+  if (!failure) return fix;
+  return (
+    <>
+      <span className="inline-flex max-w-72 items-center gap-1 text-xs text-error-foreground" role="alert" data-toggle-failure>
+        <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate" title={failure}>{failure}</span>
+      </span>
+      {fix}
+    </>
+  );
+}
+
+function AuthFileFixButton({ file, availability, commands }: { file: AuthFile; availability: AuthFileAvailability; commands: AuthFileCommands }) {
   const { t } = useI18n();
   const { primary } = authFileActions(file, availability);
   if (primary?.id === 'reauth') {
