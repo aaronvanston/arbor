@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { createColumnHelper } from '@tanstack/react-table';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DataGrid, useDataGrid, type DataGridColumnDef, type DataGridFeatures } from '../src/components/ui/data-grid/data-grid';
+import { DataGrid, opensRow, useDataGrid, type DataGridColumnDef, type DataGridFeatures } from '../src/components/ui/data-grid/data-grid';
 import { applyPreset, gridLayout, matchingPreset, sanitizeGridLayout } from '../src/components/ui/data-grid/data-grid-layout';
 import { I18nProvider } from '../src/i18n';
 import { RequestDetail, RequestsView } from '../src/pages/UsageRequestsGrid';
@@ -317,5 +317,30 @@ describe('a row’s own controls in a grid', () => {
     expect(heads[1]).toBe('<span class="sr-only">Actions</span>');
     expect(html).toContain('style="right:var(--pin-actions)"');
     expect(html).toMatch(/<tr[^>]*class="[^"]*row-under/);
+  });
+});
+
+describe('row clicks', () => {
+  // Stand-ins for DOM nodes: tests have no DOM, and the guard only asks where a click landed.
+  const node = (matches: string[] = []) => ({ closest: (selector: string) => (matches.some((match) => selector.includes(match)) ? {} : null) });
+  const cell = node();
+  const link = node(['a,']);
+  const menuItem = node(['[role="menuitem"]']);
+  const inRow = new Set<unknown>([cell, link]);
+  const row = { contains: (target: unknown) => inRow.has(target) };
+  const collapsed = { isCollapsed: true, anchorNode: null };
+
+  it('opens the row from a plain cell', () => {
+    expect(opensRow(cell as unknown as EventTarget, row, collapsed)).toBe(true);
+  });
+
+  it("leaves a click on the cell's own link alone", () => {
+    expect(opensRow(link as unknown as EventTarget, row, collapsed)).toBe(false);
+  });
+
+  it("doesn't open the row from a portaled menu item, whose click React bubbles to the row", () => {
+    expect(opensRow(menuItem as unknown as EventTarget, row, collapsed)).toBe(false);
+    inRow.add(menuItem);
+    expect(opensRow(menuItem as unknown as EventTarget, row, collapsed)).toBe(false);
   });
 });

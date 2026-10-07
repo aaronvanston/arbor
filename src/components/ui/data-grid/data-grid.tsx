@@ -249,11 +249,22 @@ type BodyProps<TData extends RowData> = {
   rowClassName: ((row: TData) => string | undefined) | undefined;
 };
 
-/** A click on something of the cell's own, like a link, or the end of selecting a cell's text, doesn't open the row. */
-function opensRow(event: MouseEvent<HTMLTableRowElement>) {
-  if (event.target instanceof Element && event.target.closest('a, button, input')) return false;
-  const selection = window.getSelection();
-  return !selection || selection.isCollapsed || !event.currentTarget.contains(selection.anchorNode);
+type RowClickTarget = { closest?: (selector: string) => unknown };
+
+/**
+ * A click on something of the cell's own, like a link, or the end of selecting a cell's text, doesn't open the row.
+ * Nor does a click in a menu opened from the row: the menu is portaled out of the row, but React still bubbles its
+ * clicks to the row, so a menu item would open the row's page instead of doing what it says.
+ */
+export function opensRow(
+  target: EventTarget | null,
+  row: { contains: (node: Node | null) => boolean },
+  selection: { isCollapsed: boolean; anchorNode: Node | null } | null,
+) {
+  const element = target as RowClickTarget | null;
+  if (!element || !row.contains(target as Node)) return false;
+  if (typeof element.closest === 'function' && element.closest('a, button, input, [role="menu"], [role="menuitem"]')) return false;
+  return !selection || selection.isCollapsed || !row.contains(selection.anchorNode);
 }
 
 // While a column is dragged wider only the widths change, and they're variables on the table, so the rows stay as
@@ -271,7 +282,7 @@ const GridBody = memo(function GridBody<TData extends RowData>({ table, surface,
           data-active={active || undefined}
           aria-selected={onRowClick ? active : undefined}
           tabIndex={open ? 0 : undefined}
-          onClick={open ? (event) => opensRow(event) && open() : undefined}
+          onClick={open ? (event: MouseEvent<HTMLTableRowElement>) => opensRow(event.target, event.currentTarget, window.getSelection()) && open() : undefined}
           onKeyDown={open ? (event: KeyboardEvent<HTMLTableRowElement>) => {
             if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
             event.preventDefault();
