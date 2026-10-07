@@ -175,6 +175,8 @@ export function SetupRepoSection({ machines, history = null }: {
     setProblem(null);
     setFirst(null);
     setBulk(null);
+    // The same folder again doesn't change the path, so the effect that reads it won't run: read it here.
+    if (!found && folder === path) void load(folder);
   };
   const choose = async () => {
     const folder = await open({ directory: true, multiple: false, title: t('setup.repo.chooseTitle') });
