@@ -121,8 +121,9 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
   const badge = (item: BehindItem) => {
     const row = rows.find((entry) => entry.key === item.key && bringable(entry));
     const open = row ? () => onOpenItem(row.kind, row.key) : item.kind === 'project' ? onOpenProjects : null;
-    const word = CHANGE_WORDS[item.change];
     const held = !applies(item.change);
+    // Not knowing who moved is said once per machine, not on every badge: after an update every item starts that way.
+    const word = held ? CHANGE_WORDS[item.change] : null;
     const label = word ? <>{item.name}<span className="text-muted-foreground">· {t(word)}</span></> : item.name;
     const variant = held ? 'info' : 'outline';
     return open
@@ -170,6 +171,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
               // What waits on a decision first, so it isn't lost among the rest.
               const behind = [...(found?.behind ?? [])].sort((a, b) => Number(applies(a.change)) - Number(applies(b.change)));
               const decide = found?.counts.decide ?? 0;
+              const unknown = behind.some((item) => item.change === 'unknown');
               const tone = state === 'behind' ? 'warning' : state === 'inStep' ? 'success' : 'muted';
               return (
                 <li key={machine.machine} className="flex flex-col gap-1.5 px-4 py-3" data-overview-machine={machine.machine}>
@@ -185,6 +187,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
                                 <span className="text-foreground">{t('overview.machine.behind', { count: behind.length })}</span>
                                 {behind.slice(0, NAMED).map(badge)}
                                 {behind.length > NAMED ? <span className="text-xs text-muted-foreground">{t('overview.machine.more', { count: behind.length - NAMED })}</span> : null}
+                                {unknown ? <span className="basis-full text-xs text-muted-foreground">{t('overview.machine.unknown')}</span> : null}
                                 {decide ? <span className="text-xs text-info-foreground">{t(decide === 1 ? 'overview.machine.decide.one' : 'overview.machine.decide.other', { count: decide })}</span> : null}
                               </>
                             )}

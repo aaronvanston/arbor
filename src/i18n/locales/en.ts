@@ -2244,6 +2244,7 @@ export const en = {
   'sync.change.bothChanged': 'both changed',
   'overview.machine.decide.one': '{count} edited on the machine waits for you: open it to decide',
   'overview.machine.decide.other': '{count} edited on the machine wait for you: open each to decide',
+  'overview.machine.unknown': 'Some of these have no record of when they last matched, so Arbor can’t tell whether the repo or the machine changed them. Bringing in line treats them as the repo’s.',
   'overview.bring.heldHooks': 'Its hooks were left alone: one was edited on the machine, and a machine’s hooks are written together. Decide on it first.',
   'library.edited': '{count} edited there',
   'library.edited.title': 'Edited on the machine since it last matched the repo: {machines}',
