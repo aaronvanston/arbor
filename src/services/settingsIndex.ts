@@ -255,6 +255,20 @@ export function indexSettings(t: Translate, entries: readonly SettingEntry[] = S
   });
 }
 
+/**
+ * Where each setting is, for a list that names it beside its page (the search palette): its page, and its section
+ * too when another setting on that page has the same title (Updates has an Update status for Arbor and for the core).
+ */
+export function settingPlaces(index: readonly IndexedSetting[]): Map<string, string> {
+  const key = (setting: IndexedSetting) => `${setting.page}\u0000${setting.title}`;
+  const seen = new Map<string, number>();
+  for (const setting of index) seen.set(key(setting), (seen.get(key(setting)) ?? 0) + 1);
+  return new Map(index.map((setting) => [
+    setting.entry.id,
+    (seen.get(key(setting)) ?? 0) > 1 ? `${setting.page} › ${setting.section}` : setting.page,
+  ]));
+}
+
 const terms = (query: string) => query.toLowerCase().split(/\s+/).filter(Boolean);
 
 /**

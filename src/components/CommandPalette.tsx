@@ -17,7 +17,7 @@ import { providerLabel } from '../services/providerLimits';
 import { fileName, providerForFile, quotaKey } from '../services/quotaService';
 import { formatAgo } from '../lib/format';
 import { matchesShortcut } from '../services/shortcuts';
-import type { IndexedSetting, SettingEntry } from '../services/settingsIndex';
+import { settingPlaces, type IndexedSetting, type SettingEntry } from '../services/settingsIndex';
 import { AccountAvatar } from './AccountAvatar';
 import { MachineMark, ProviderMark } from './identity/Identity';
 import { usePaletteActions } from './CommandPaletteActions';
@@ -223,6 +223,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       };
     });
     // Found by title first, then by section, page and the other words Settings search knows them by.
+    const places = settingPlaces(settings.map(({ setting }) => setting));
     const settingItems: PaletteItem[] = settings.map(({ setting, locked }) => ({
       id: `setting:${setting.entry.id}`,
       group: 'settings',
@@ -230,7 +231,7 @@ export function CommandPalette({ open, initialQuery = '', onOpenChange, finalFoc
       keywords: [setting.section, setting.page, setting.aliases].join(' '),
       shown: 'typed',
       icon: <IconBox><SlidersHorizontal /></IconBox>,
-      content: <span className="block truncate"><span className="text-muted-foreground">{`${setting.page} › `}</span>{setting.title}</span>,
+      content: <span className="block truncate"><span className="text-muted-foreground">{`${places.get(setting.entry.id) ?? setting.page} › `}</span>{setting.title}</span>,
       disabledReason: locked ? lockedHint : undefined,
       run: () => onOpenSetting(setting.entry),
     }));

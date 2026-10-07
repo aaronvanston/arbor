@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { translate } from '../src/i18n';
 import type { MessageKey, MessageVariables } from '../src/i18n/resources';
 import { settingsPageIds } from '../src/navigation';
-import { SETTINGS_INDEX, currentSettingId, indexSettings, revealStep, searchSettings, settingEntry, settingScore } from '../src/services/settingsIndex';
+import { SETTINGS_INDEX, currentSettingId, indexSettings, revealStep, searchSettings, settingEntry, settingPlaces, settingScore } from '../src/services/settingsIndex';
 import { itemAt, present } from './support/items';
 
 const t = (key: MessageKey, variables?: MessageVariables) => translate(key, variables);
@@ -116,5 +116,17 @@ describe('bringing a picked setting into view', () => {
     expect(revealStep(cert, on(), 2_000)).toBe('wait');
     expect(revealStep(cert, on(), 4_000)).toBe('give-up');
     expect(revealStep(present(settingEntry('general.port')), on(), 4_000)).toBe('give-up');
+  });
+});
+
+describe('where the search palette says a setting is', () => {
+  it('names the section too where two settings on a page share a title, and every title once per place', () => {
+    const index = indexSettings((key: MessageKey, variables?: MessageVariables) => translate(key, variables));
+    const places = settingPlaces(index);
+    expect(places.get('updates.app')).toBe('Updates › Desktop application');
+    expect(places.get('updates.core')).toBe('Updates › Proxy core kernel');
+    expect(places.get('updates.channel')).toBe('Updates');
+    const shown = index.map((setting) => `${places.get(setting.entry.id) ?? ''} › ${setting.title}`);
+    expect(new Set(shown).size).toBe(shown.length);
   });
 });
