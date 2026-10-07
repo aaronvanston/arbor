@@ -2581,4 +2581,79 @@ mod tests {
             }
         }
     }
+
+    /// Times one local look while T3 Code writes, on a database the size a busy user's gets. Ignored in the normal run;
+    /// run it in release:
+    ///
+    /// ```sh
+    /// cd src-tauri && cargo test --release t3_threads::tests::local_look_at_volume -- --ignored --nocapture
+    /// ```
+    ///
+    /// `ARBOR_BENCH_T3_THREADS` (default 5,000) sizes the history; a twentieth of the threads are in the window.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "benchmark: run in release with --ignored --nocapture"]
+    fn local_look_at_volume() {
+        use std::time::Instant;
+        let threads: i64 = std::env::var("ARBOR_BENCH_T3_THREADS").ok().and_then(|value| value.parse().ok()).unwrap_or(5_000);
+        let home = temp_dir("bench");
+        let dir = channel_dir(&home);
+        let now = now_ms();
+        let writer = state_database(&dir, &shape(NEWEST_MIGRATION), now);
+        runtime_file(&dir, i64::from(std::process::id()), now);
+        writer.execute_batch("BEGIN").unwrap();
+        for index in 0..threads {
+            let id = format!("thread-bench-{index}");
+            let recent = index % 20 == 0;
+            let updated_ms = if recent { now - index * 1_000 } else { now - 3 * 86_400_000 - index * 60_000 };
+            let cursor = claude_cursor(&id, CLAUDE_SESSION);
+            add_thread(&writer, Thread {
+                id: &id, project: "project-arbor", provider: "claudeAgent", status: if recent { "running" } else { "stopped" },
+                cursor: Some(&cursor), extra: vec![], turn: Some(("completed", updated_ms - 60_000, Some(updated_ms))), updated_ms,
+            });
+        }
+        writer.execute_batch("COMMIT; PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
+        // T3 Code writes as its agents work: an activity row and the thread's time, each its own commit.
+        let mut written = 0_i64;
+        let mut write = || {
+            written += 1;
+            insert(&writer, "projection_thread_activities", &[
+                ("activity_id", text(&format!("activity-bench-{written}"))), ("thread_id", text("thread-working")),
+                ("tone", text("info")), ("kind", text("tool")), ("summary", text(SECRET)), ("payload_json", text("{}")),
+                ("created_at", text(&iso(now))),
+            ]);
+            writer.execute("UPDATE projection_threads SET updated_at = ?1 WHERE thread_id = 'thread-working'", [iso(now + written)]).unwrap();
+        };
+        let mut log = T3Log::default();
+        assert!(look(&mut log, &home, now));
+        let shown = log.channels[0].threads.len();
+        // CPU time on this thread, which is what an idle app pays, and steadier than the clock on a busy Mac.
+        let cpu_ms = || {
+            let mut spec = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut spec) };
+            spec.tv_sec as f64 * 1_000.0 + spec.tv_nsec as f64 / 1_000_000.0
+        };
+        let mut sample = |label: &str, writing: bool| {
+            let (mut wall, mut cpu): (Vec<f64>, Vec<f64>) = (0..200)
+                .map(|_| {
+                    if writing {
+                        write();
+                    }
+                    let (started, cpu_started) = (Instant::now(), cpu_ms());
+                    look(&mut log, &home, now);
+                    (started.elapsed().as_secs_f64() * 1_000.0, cpu_ms() - cpu_started)
+                })
+                .unzip();
+            wall.sort_by(f64::total_cmp);
+            cpu.sort_by(f64::total_cmp);
+            println!(
+                "{label:<30} wall median {:>7.3} ms (p10 {:.3}, p90 {:.3})   cpu median {:>7.3} ms (p10 {:.3}, p90 {:.3})",
+                wall[100], wall[20], wall[180], cpu[100], cpu[20], cpu[180]
+            );
+        };
+        println!("T3 Code database: {threads} threads, {shown} shown");
+        sample("look, T3 Code writing", true);
+        sample("look, nothing written", false);
+        let _ = fs::remove_dir_all(&home);
+    }
 }
