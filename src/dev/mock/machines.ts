@@ -587,7 +587,8 @@ const homeSyncs = (agent: AgentHomeKind) => agent !== 'pi' && agent !== 'claude-
 const homeReadsSessions = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex' || agent === 'pi' || agent === 'claude-desktop';
 const DESKTOP_HOMES = '~/Library/Application Support/Claude/local-agent-mode-sessions/*/*';
 const savedHome = (machine: string, agent: AgentHomeKind, path: string, sync: boolean, chosen = false): AgentHome =>
-  ({ machine, agent, path, source: 'found', sessions: true, sync: homesScenario === 'old' ? homeSyncs(agent) : sync, chosen, guess: null });
+  // `?homes=old`: saved before roles, when nothing could be picked by hand either.
+  ({ machine, agent, path, source: 'found', sessions: true, sync: homesScenario === 'old' ? homeSyncs(agent) : sync, chosen: homesScenario !== 'old' && chosen, guess: null });
 
 // What the last look made of each home and suggestion, by machine, then agent and folder.
 const homeGuesses: Record<string, Record<string, HomeGuess>> = {
