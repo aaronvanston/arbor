@@ -1008,6 +1008,7 @@ export const en = {
   'notifications.machineUp.body': 'It answers its health checks again after {time}.',
   'notifications.machineUp.titleMany': '{count} machines are back',
   'notifications.machineUp.bodyMany': '{machines} answer their health checks again.',
+  'phoneAlerts.secrets.unreadable': 'Arbor can’t read the alert secrets it saved, so alerts that need one won’t send.',
   'phoneAlerts.title': 'Send alerts to your phone',
   'phoneAlerts.description': 'Arbor sends the alerts it shows on this Mac to your phone as well. Machine alerts reach your phone with a plain reason; the SSH error itself stays on this Mac.',
   'phoneAlerts.service.title': 'Service',

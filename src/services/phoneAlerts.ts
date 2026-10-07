@@ -275,9 +275,16 @@ const settings = savedStore<PhoneAlertSettings>({
 /** Which secrets the app holds, or null until it has said. */
 const saved = sharedStore<PhoneAlertSecretStatus | null>(null);
 const delivery = sharedStore<PhoneAlertDelivery | null>(null);
+/**
+ * Why the app couldn't say which secrets it holds (its secrets file is damaged, say), empty when it could: learned when
+ * it's read, so the page says so on opening rather than only once a secret is saved.
+ */
+const secretsProblem = sharedStore('');
 
 export const usePhoneAlertSettings = settings.useValue;
 export const usePhoneAlertSecrets = saved.useValue;
+export const usePhoneAlertSecretsProblem = secretsProblem.useValue;
+export const phoneAlertSecretsProblem = secretsProblem.get;
 export const usePhoneAlertDelivery = delivery.useValue;
 
 export function setPhoneAlertSetting<K extends keyof PhoneAlertSettings>(key: K, value: PhoneAlertSettings[K]) {
@@ -291,7 +298,10 @@ let secretWrites: Promise<unknown> = Promise.resolve();
 export function savePhoneAlertSecret(secret: PhoneAlertSecret, value: string): Promise<void> {
   const write = secretWrites
     .then(() => invokeCommand('set_phone_alert_secret', { secret, value }))
-    .then(saved.set);
+    .then((status) => {
+      saved.set(status);
+      secretsProblem.set('');
+    });
   secretWrites = write.catch(() => undefined);
   return write;
 }
@@ -313,8 +323,10 @@ export function preparePhoneAlerts(): Promise<void> {
     }
     try {
       saved.set(await invokeCommand('get_phone_alert_secrets'));
+      secretsProblem.set('');
     } catch (error) {
       console.warn('Failed to read which phone alert secrets are saved', error);
+      secretsProblem.set(String(error));
       done = false;
     }
     if (!done) preparing = null;

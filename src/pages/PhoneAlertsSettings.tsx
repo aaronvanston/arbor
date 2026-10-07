@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react';
-import { Check, Eye, EyeOff, Send, Sparkles } from '../components/ui/icons';
+import { AlertCircle, Check, Eye, EyeOff, Send, Sparkles } from '../components/ui/icons';
 import { useAppPreferences } from '../appPreferences';
 import { useI18n } from '../i18n';
 import { useConfirmation } from '../components/ConfirmationDialog';
-import { SettingsRow, SettingsSection } from '../components/layout/settings';
+import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
+import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
 import { cn } from '../lib/utils';
-import { NO_PHONE_ALERT_SECRETS, PHONE_ALERT_TOPICS, PHONE_SERVICES, phoneAlertSendRoute, preparePhoneAlerts, randomNtfyTopic, recordPhoneAlertDelivery, savePhoneAlertSecret, sendPhoneAlert, setPhoneAlertSetting, topicRaisedHere, usePhoneAlertDelivery, usePhoneAlertSecrets, usePhoneAlertSettings, withPhoneTopic, type PhoneService } from '../services/phoneAlerts';
+import { NO_PHONE_ALERT_SECRETS, PHONE_ALERT_TOPICS, PHONE_SERVICES, phoneAlertSendRoute, preparePhoneAlerts, randomNtfyTopic, recordPhoneAlertDelivery, savePhoneAlertSecret, sendPhoneAlert, setPhoneAlertSetting, topicRaisedHere, usePhoneAlertDelivery, usePhoneAlertSecrets, usePhoneAlertSecretsProblem, usePhoneAlertSettings, withPhoneTopic, type PhoneService } from '../services/phoneAlerts';
 import { useMachineOverrides, useProjectOverrides } from '../services/machineSettings';
 import { useQuotaClock } from '../services/quotaTime';
 import { formatAgo } from '../lib/format';
@@ -30,6 +32,8 @@ export function PhoneAlertsSettings() {
   const overrides = useMachineOverrides();
   const projects = useProjectOverrides();
   const secrets = usePhoneAlertSecrets();
+  const secretsProblem = usePhoneAlertSecretsProblem();
+  const [rereading, setRereading] = useState(false);
   const saved = secrets ?? NO_PHONE_ALERT_SECRETS;
   const delivery = usePhoneAlertDelivery();
   const now = useQuotaClock();
@@ -43,6 +47,11 @@ export function PhoneAlertsSettings() {
   useEffect(() => void preparePhoneAlerts(), []);
   // A result is about the settings it was sent with.
   useEffect(() => setTest({ state: 'idle' }), [settings, savedKey]);
+
+  const readAgain = () => {
+    setRereading(true);
+    void preparePhoneAlerts().finally(() => setRereading(false));
+  };
 
   const sendTest = async () => {
     if (!route) return;
@@ -67,6 +76,24 @@ export function PhoneAlertsSettings() {
   return (
     <>
       <SettingsSection title={t('phoneAlerts.title')} description={t('phoneAlerts.description')}>
+        {/* A damaged secrets file is said on opening, not only once a secret is saved. */}
+        {secretsProblem ? (
+          <SettingsBlock>
+            <Alert
+              variant="error"
+              icon={<AlertCircle />}
+              action={(
+                <Button variant="outline" size="xs" disabled={rereading} onClick={readAgain}>
+                  <RefreshIcon refreshing={rereading} />
+                  {t('common.tryAgain')}
+                </Button>
+              )}
+            >
+              <div className="font-medium">{t('phoneAlerts.secrets.unreadable')}</div>
+              <AlertDescription>{secretsProblem}</AlertDescription>
+            </Alert>
+          </SettingsBlock>
+        ) : null}
         <SettingsRow
           settingId="notifications.phone-service"
           title={t('phoneAlerts.service.title')}
