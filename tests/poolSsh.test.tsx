@@ -25,7 +25,7 @@ const ssh = (fields: Partial<PoolSsh> = {}): PoolSsh => ({
 const PICKED = Date.UTC(2026, 2, 14, 12);
 const connection = (fields: Partial<PoolSshConnection>): PoolSshConnection => ({ name: 'arbor-builds', machine: 'cam-mbp', open: 0, pickedAtMs: PICKED, ...fields });
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ').trim();
-const render = (value: PoolSsh | null, error: string | null = null) => text(renderToStaticMarkup(<I18nProvider><PoolSshBody poolId="p1" ssh={value} error={error} /></I18nProvider>));
+const render = (value: PoolSsh | null, error: string | null = null) => text(renderToStaticMarkup(<I18nProvider><PoolSshBody poolId="p1" ssh={value} error={error} onInstallCommand={() => undefined} /></I18nProvider>));
 
 describe('pools over SSH', () => {
   it('names the first thing in the way of connecting', () => {
@@ -61,7 +61,9 @@ describe('pools over SSH', () => {
   it('offers the Include line until ~/.ssh/config has it, and the command before anything else', () => {
     expect(render(ssh({ included: false }))).toContain('Add to SSH config Or add this line yourself: Include ~/.arbor/ssh/pools.conf');
     const noCommand = render(ssh({ commandReady: false, included: false }));
-    expect(noCommand).toContain('Install the arbor command');
+    expect(noCommand).toContain('Install the arbor command first.');
+    // A button to where it's installed, not only words naming the place.
+    expect(noCommand).toContain('Install the arbor command…');
     expect(noCommand).not.toContain('ssh arbor-builds');
     expect(noCommand).not.toContain('Add to SSH config');
     expect(render(ssh({ connections: [] }))).toContain('No host name has connected yet.');

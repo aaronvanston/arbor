@@ -44,7 +44,7 @@ export function PoolsPage({ params, onNavigate }: { params?: PoolsParams; onNavi
     <>
       <PoolDialog pool={editing} pools={pools ?? []} onClose={() => setEditing(null)} />
       <StartRunDialog pool={running} onClose={() => setRunning(null)} />
-      <PoolConnectDialog poolId={connecting} onClose={() => setConnecting(null)} />
+      <PoolConnectDialog poolId={connecting} onClose={() => setConnecting(null)} onNavigate={onNavigate} />
     </>
   );
   const startRun = (pool: MachinePool) => (

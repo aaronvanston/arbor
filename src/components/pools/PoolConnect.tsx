@@ -8,16 +8,21 @@ import { AlertCircle } from '../ui/icons';
 import { Skeleton } from '../ui/skeleton';
 import { toast } from '../ui/toast';
 import { useI18n } from '../../i18n';
+import { requestFocus } from '../../focusRequests';
+import type { AppView } from '../../navigation';
 import { invokeCommand } from '../../native/commands';
 import type { PoolSsh, PoolSshConnection } from '../../native/types';
 import { formatDate } from '../../lib/format';
 import { READINESS_LABEL, connectionWords, forgetBlocker, spreadExample, sshBlocker, usePoolSsh } from '../../services/poolSsh';
 
+// Settings › App's row that installs the arbor command.
+const CLI_INSTALL_SETTING = 'software.cli-install';
+
 /**
  * A pool's Connect dialog: reaching the pool as one SSH host. It sits behind a button rather than on the page, since
  * it's set up once and the page is for the pool's load and runs.
  */
-export function PoolConnectDialog({ poolId, onClose }: { poolId: string | null; onClose: () => void }) {
+export function PoolConnectDialog({ poolId, onClose, onNavigate }: { poolId: string | null; onClose: () => void; onNavigate: (view: AppView) => void }) {
   const { t } = useI18n();
   return (
     <Dialog open={poolId !== null} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
@@ -27,19 +32,34 @@ export function PoolConnectDialog({ poolId, onClose }: { poolId: string | null; 
           <DialogDescription>{t('pools.ssh.intro')}</DialogDescription>
         </DialogHeader>
         <DialogPanel className="flex flex-col gap-4 pb-6">
-          {poolId ? <PoolConnectBody poolId={poolId} /> : null}
+          {poolId ? (
+            <PoolConnectBody
+              poolId={poolId}
+              onInstallCommand={() => {
+                requestFocus('setting', CLI_INSTALL_SETTING);
+                onClose();
+                onNavigate({ kind: 'settings', page: 'software' });
+              }}
+            />
+          ) : null}
         </DialogPanel>
       </DialogPopup>
     </Dialog>
   );
 }
 
-function PoolConnectBody({ poolId }: { poolId: string }) {
+function PoolConnectBody({ poolId, onInstallCommand }: { poolId: string; onInstallCommand: () => void }) {
   const { ssh, error } = usePoolSsh(poolId);
-  return <PoolSshBody poolId={poolId} ssh={ssh} error={error} />;
+  return <PoolSshBody poolId={poolId} ssh={ssh} error={error} onInstallCommand={onInstallCommand} />;
 }
 
-export function PoolSshBody({ poolId, ssh, error }: { poolId: string; ssh: PoolSsh | null; error: string | null }) {
+export function PoolSshBody({ poolId, ssh, error, onInstallCommand }: {
+  poolId: string;
+  ssh: PoolSsh | null;
+  error: string | null;
+  /** Opens where the arbor command is installed, which ssh needs to reach the pool. */
+  onInstallCommand: () => void;
+}) {
   const { t } = useI18n();
   const [adding, setAdding] = useState(false);
   const [forgetting, setForgetting] = useState<string | null>(null);
@@ -71,7 +91,13 @@ export function PoolSshBody({ poolId, ssh, error }: { poolId: string; ssh: PoolS
   return (
     <>
       {blocker === 'command' ? (
-        <Alert variant="warning"><AlertCircle /><AlertDescription>{t('pools.ssh.needsCommand')}</AlertDescription></Alert>
+        <Alert variant="warning">
+          <AlertCircle />
+          <AlertDescription className="flex flex-col items-start gap-2">
+            {t('pools.ssh.needsCommand')}
+            <Button variant="outline" size="xs" onClick={onInstallCommand}>{t('pools.ssh.installCommand')}</Button>
+          </AlertDescription>
+        </Alert>
       ) : (
         <CommandLine command={`ssh ${ssh.host}`} />
       )}
