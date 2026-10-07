@@ -8,18 +8,20 @@
  *
  *   bun run perf:cpu                       every case, 3 runs of 30 s each
  *   bun run perf:cpu --case=machine --runs=5 --seconds=20 --no-build
+ *   bun run perf:cpu --unfocused           the window shows but another app has focus, so the sidebar art rests
  */
 import { spawnSync } from 'node:child_process';
 import { join, normalize } from 'node:path';
 import { webkit, type Page } from 'playwright';
 
 const REPO = normalize(join(import.meta.dir, '..'));
-const SITE = join(REPO, '.perf', 'site');
-
 const arg = (name: string) => process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+/** `--site=<dir>` measures another build, such as main's, for a before and after. */
+const SITE = arg('site') ?? join(REPO, '.perf', 'site');
 const RUNS = Number(arg('runs') ?? 3);
 const SECONDS = Number(arg('seconds') ?? 30);
 const HEALTH_EVERY_MS = 5_000;
+const UNFOCUSED = process.argv.includes('--unfocused');
 /** The owner's window when the cost was reported (2026-10-07): 2345 × 1410 points on a Retina display. */
 const VIEWPORT = { width: 2345, height: 1410 };
 
@@ -31,7 +33,7 @@ const CASES: Record<string, { page: string }> = {
 const only = arg('case');
 const cases = Object.entries(CASES).filter(([id]) => !only || only.split(',').includes(id));
 
-if (!process.argv.includes('--no-build')) {
+if (!process.argv.includes('--no-build') && !arg('site')) {
   console.log('Building the demo site into .perf/site…');
   const result = spawnSync('bunx', ['vite', 'build', '--mode', 'demo', '--outDir', SITE, '--emptyOutDir', '--logLevel', 'warn'], { cwd: REPO, stdio: 'inherit' });
   if (result.status !== 0) throw new Error('The demo build failed.');
@@ -78,7 +80,7 @@ function cpuSeconds(pids: number[]): Map<number, number> {
 }
 
 function footprintMb(pid: number): number | null {
-  const match = /Footprint:\s*([\d.]+)\s*(KB|MB|GB)/.exec(spawnSync('footprint', ['-p', String(pid)], { encoding: 'utf8' }).stdout);
+  const match = /Footprint:\s*([\d.]+)\s*(KB|MB|GB)/.exec(spawnSync('footprint', ['-p', String(pid)], { encoding: 'utf8', timeout: 15_000 }).stdout);
   if (!match?.[1] || !match[2]) return null;
   return Math.round(Number(match[1]) * { KB: 1 / 1024, MB: 1, GB: 1024 }[match[2] as 'KB' | 'MB' | 'GB']);
 }
@@ -112,6 +114,7 @@ async function measure(target: { page: string }): Promise<Run> {
     const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, timezoneId: 'UTC', locale: 'en-US', serviceWorkers: 'block' });
     const page: Page = await context.newPage();
     await page.addInitScript(countCommits);
+    if (UNFOCUSED) await page.addInitScript(() => { document.hasFocus = () => false; });
     await page.goto(`http://127.0.0.1:${server.port}/?size=real`, { waitUntil: 'load' });
     await page.waitForFunction(() => Boolean((window as Window & { __mockOpen?: unknown }).__mockOpen));
     await page.evaluate((name) => (window as unknown as { __mockOpen: (page: string) => Promise<void> }).__mockOpen(name), target.page);
@@ -128,8 +131,9 @@ async function measure(target: { page: string }): Promise<Run> {
     const end = cpuSeconds(pids);
     await page.evaluate((id) => window.clearInterval(id), emitter);
     const commits = await page.evaluate(() => (window as unknown as { __cpuCommits: number }).__cpuCommits);
-    const used = (kind: string) => pids.filter((pid) => kinds.get(pid) === kind).reduce((sum, pid) => sum + ((end.get(pid) ?? 0) - (start.get(pid) ?? 0)), 0);
-    const contentPid = pids.find((pid) => kinds.get(pid) === 'WebContent');
+    // A spare WebContent process WebKit started ahead of time can exit mid-run; only processes alive throughout count.
+    const used = (kind: string) => pids.filter((pid) => kinds.get(pid) === kind && start.has(pid) && end.has(pid)).reduce((sum, pid) => sum + ((end.get(pid) ?? 0) - (start.get(pid) ?? 0)), 0);
+    const contentPid = pids.filter((pid) => kinds.get(pid) === 'WebContent' && end.has(pid)).sort((a, b) => ((end.get(b) ?? 0) - (start.get(b) ?? 0)) - ((end.get(a) ?? 0) - (start.get(a) ?? 0)))[0];
     const webContent = used('WebContent');
     const gpu = used('GPU');
     return { webContent, gpu, total: webContent + gpu + used('UI'), footprintMb: contentPid ? footprintMb(contentPid) : null, commits };
@@ -143,7 +147,13 @@ const results: Record<string, unknown> = {};
 for (const [id, target] of cases) {
   const runs: Run[] = [];
   for (let run = 0; run < RUNS; run += 1) {
-    const result = await measure(target);
+    // A WebKit launch now and then never finishes loading the page; such a run is dropped and taken again.
+    const result = await Promise.race([measure(target), new Promise<null>((resolve) => setTimeout(() => resolve(null), (SECONDS + 60) * 1_000))]);
+    if (!result) {
+      console.log(`  ${id} #${run + 1}: timed out, again`);
+      run -= 1;
+      continue;
+    }
     runs.push(result);
     console.log(`  ${id} #${run + 1}: WebContent ${pct(result.webContent)}, GPU ${pct(result.gpu)}, all ${pct(result.total)}, footprint ${result.footprintMb ?? '?'} MB, ${result.commits} commits`);
   }
