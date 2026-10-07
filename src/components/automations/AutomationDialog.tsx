@@ -48,7 +48,8 @@ type Form = {
   access: AutomationAccess;
   /** As picked; the machine only when its background runner can take it (`backgroundRunnerCheck`). */
   runsOn: AutomationRunsOn;
-  schedule: ScheduleChoice;
+  /** None for a copy whose original's schedule Arbor couldn't read, until one is picked. */
+  schedule: ScheduleChoice | null;
   graceMinutes: number;
   precheck: string;
   precheckTimeoutSecs: number;
@@ -105,10 +106,24 @@ const formFrom = (automation: Automation): Form => ({
   effort: automation.effort,
 });
 
+/**
+ * A copy of another app's automation whose schedule Arbor couldn't read: everything else as the original has it, on
+ * the machine it was found on, paused, and the schedule left for the user to pick.
+ */
+const copyForm = (automation: Automation): Form => ({
+  ...formFrom(automation),
+  machine: automation.summary.machine ?? '',
+  runsOn: 'app',
+  schedule: null,
+  enabled: false,
+});
+
 const GRACE_CHOICES = [15, 30, 60, 120, 360, 720, 1440];
 const TIMEOUT_CHOICES = [15, 30, 60, 120, 300, 600];
 const SCHEDULE_KINDS: readonly ScheduleChoice['kind'][] = ['everyMinutes', 'hourly', 'daily', 'weekdays', 'weekly', 'custom'];
 const MINUTE_CHOICES = [5, 10, 15, 20, 30, 45];
+/** What a kind picked for a schedule that had none starts from: 9:00, as a new day's work usually does. */
+const DEFAULT_PICKED: ScheduleChoice = { kind: 'daily', hour: 9, minute: 0 };
 const HOUR_CHOICES = [1, 2, 3, 4, 6, 8, 12];
 const DAY_SHORT: readonly MessageKey[] = [
   'automations.day.short.sunday', 'automations.day.short.monday', 'automations.day.short.tuesday', 'automations.day.short.wednesday',
@@ -122,22 +137,24 @@ const twoDigits = (value: number) => String(value).padStart(2, '0');
  * New automation, or an Arbor automation edited. A new one starts from a sentence, which the proxy's drafting model
  * makes into a schedule, a precheck and a prompt, all left for the user to check; editing opens straight on the fields.
  */
-export function AutomationDialog({ open, onOpenChange, editing, machine = null, onSaved }: {
+export function AutomationDialog({ open, onOpenChange, editing, copyOf, machine = null, onSaved }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The Arbor automation to edit, by its id; none for a new one. */
   editing?: string;
+  /** Another app's automation to copy into a new one, opened on its fields with the schedule to pick. */
+  copyOf?: Automation;
   /** The machine a new one starts on, as the list was narrowed to. */
   machine?: string | null;
   onSaved: (automation: Automation) => void;
 }) {
   const { t } = useI18n();
-  const [step, setStep] = useState<Step>(editing ? 'review' : 'describe');
+  const [step, setStep] = useState<Step>(editing || copyOf ? 'review' : 'describe');
   const [description, setDescription] = useState('');
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [form, setForm] = useState<Form>(() => emptyForm(machine ?? ''));
+  const [form, setForm] = useState<Form>(() => (copyOf ? copyForm(copyOf) : emptyForm(machine ?? '')));
   const [loaded, setLoaded] = useState(!editing);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +204,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
   };
 
   const { list } = useAutomations();
-  const runsOnBlocked = backgroundRunnerCheck(list, isMachine(form.machine) || !form.machine ? form.machine : null, form.schedule.kind);
+  const runsOnBlocked = backgroundRunnerCheck(list, isMachine(form.machine) || !form.machine ? form.machine : null, form.schedule?.kind ?? '');
   const runsOn: AutomationRunsOn = runsOnBlocked ? 'app' : form.runsOn;
 
   const problem = !form.name.trim() ? t('automations.form.needName')
@@ -195,11 +212,12 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
       : !form.machine ? t('automations.form.needMachine')
         : form.machine === BEST ? t('automations.target.bestGone')
           : !form.projectPath.trim() ? t('automations.form.needProject')
-            : form.schedule.kind === 'custom' && !form.schedule.rrule.trim() ? t('automations.form.needRule')
-              : null;
+            : !form.schedule ? t('automations.form.needSchedule')
+              : form.schedule.kind === 'custom' && !form.schedule.rrule.trim() ? t('automations.form.needRule')
+                : null;
 
   const save = async () => {
-    if (problem) return;
+    if (problem || !form.schedule) return;
     setSaving(true);
     setError(null);
     const input: AutomationInput = {
@@ -294,7 +312,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
         <DialogPopup className="h-[min(48rem,100%)] max-w-5xl" initialFocus={nameRef}>
           <form className="contents" onSubmit={(event) => { event.preventDefault(); void save(); }}>
             <DialogHeader className="border-b pb-4">
-              <DialogTitle>{t(editing ? 'automations.form.editTitle' : 'automations.form.newTitle')}</DialogTitle>
+              <DialogTitle>{t(editing ? 'automations.form.editTitle' : copyOf ? 'automations.form.copyTitle' : 'automations.form.newTitle')}</DialogTitle>
               <DialogDescription>{t('automations.form.description')}</DialogDescription>
             </DialogHeader>
             {!loaded ? (
@@ -374,7 +392,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
                       </p>
                     ) : null}
                   </Field>
-                  <ScheduleField value={form.schedule} onChange={(schedule) => update({ schedule })} />
+                  <ScheduleField value={form.schedule} copied={Boolean(copyOf)} onChange={(schedule) => update({ schedule })} />
                   <Field label={t('automations.fact.grace')} hint={t('automations.form.graceHint')}>
                     <ChoiceSelect
                       label={t('automations.fact.grace')}
@@ -394,7 +412,7 @@ export function AutomationDialog({ open, onOpenChange, editing, machine = null, 
               </div>
             )}
             <DialogFooter className="items-center">
-              {!editing ? (
+              {!editing && !copyOf ? (
                 <Button type="button" variant="ghost" className="me-auto" disabled={saving} onClick={() => setStep('describe')}>
                   <ArrowLeft />
                   {t('automations.form.back')}
@@ -574,9 +592,20 @@ function ProjectField({ target, value, onChange }: { target: string; value: stri
   );
 }
 
-function ScheduleField({ value, onChange }: { value: ScheduleChoice; onChange: (choice: ScheduleChoice) => void }) {
+/** The schedule's fields. `value` is none for a copy whose original's schedule couldn't be read, until one is picked. */
+function ScheduleField({ value, copied = false, onChange }: { value: ScheduleChoice | null; copied?: boolean; onChange: (choice: ScheduleChoice) => void }) {
   const { t } = useI18n();
   const kindWords = (kind: ScheduleChoice['kind']) => t(`automations.form.schedule.${kind}`);
+  if (!value) {
+    return (
+      <Field label={t('automations.fact.schedule')} hint={<span className="text-warning-foreground">{t(copied ? 'automations.form.schedule.copyHint' : 'automations.form.needSchedule')}</span>}>
+        <Select value={null} onValueChange={(next) => onChange(switchSchedule(DEFAULT_PICKED, (next ?? 'daily') as ScheduleChoice['kind']))}>
+          <SelectTrigger aria-label={t('automations.fact.schedule')}><SelectValue>{t('automations.form.schedule.pick')}</SelectValue></SelectTrigger>
+          <SelectPopup>{SCHEDULE_KINDS.map((kind) => <SelectItem key={kind} value={kind}>{kindWords(kind)}</SelectItem>)}</SelectPopup>
+        </Select>
+      </Field>
+    );
+  }
   const time = 'hour' in value ? `${twoDigits(value.hour)}:${twoDigits(value.minute)}` : '';
   const setTime = (text: string) => {
     const [hour, minute] = text.split(':').map(Number);

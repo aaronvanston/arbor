@@ -502,13 +502,14 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
   copy_automation_into_arbor: ({ id, pauseOriginal }) => {
     mockLog('copy_automation_into_arbor', { id, pauseOriginal });
     const original = find(id);
+    if (!original.rrule) throw 'Arbor can\'t read this automation\'s schedule, so it can\'t copy it as it is. Make a new automation from its prompt and pick a schedule';
     if (pauseOriginal && original.summary.abilities.pause) original.summary.enabled = false;
     const copyId = `arbor:copy-${id.split(':').pop()}`;
     const copy: Seed = {
       ...structuredClone(original),
       summary: { ...structuredClone(original.summary), id: copyId, source: 'arbor', enabled: false, abilities: ARBOR_ABILITIES, lastRun: null, nextRunAtMs: null },
       sourcePath: null,
-      rrule: original.rrule ?? 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      rrule: original.rrule,
     };
     automations = [...automations, copy];
     runs.set(copyId, []);

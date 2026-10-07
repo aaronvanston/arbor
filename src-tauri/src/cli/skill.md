@@ -69,6 +69,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Mark every alert seen | `arbor alerts seen` |
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |
 | Run an automation now, precheck first | `arbor call run_automation_now id=<id>` |
+| Copy another app's automation into Arbor, paused | `arbor call copy_automation_into_arbor id=<id> pauseOriginal=false` (`true` pauses the original too). One whose schedule Arbor can't read, as a Claude scheduled task's, is refused rather than given a made-up one: ask the person for a schedule and make it with `save_automation` |
 | Set up or update the background runner on a machine, so its automations run with Arbor closed; also puts ultradian's skill in that machine's agent homes | `arbor call install_background_runner machine=<name>` (needs `--yes`) |
 | Put Grove's health probe on a machine, or update it, so its readings stream every two seconds instead of one SSH read a round; started under launchd or a systemd user unit there | `arbor call install_machine_probe machine=<name>` (needs `--yes`); `arbor call get_machine_probes` says which machines have one and are streaming |
 | Take a machine's health probe off it, with its folder (the history Arbor kept stays) | `arbor call uninstall_machine_probe machine=<name>` (needs `--yes`) |

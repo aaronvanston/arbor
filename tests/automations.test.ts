@@ -11,6 +11,7 @@ import {
   automationHold,
   automationsHold,
   choiceSummary,
+  copyKeepsSchedule,
   failedRunAlerts,
   automationModels,
   backgroundRunnerCheck,
@@ -51,6 +52,17 @@ const summary = (overrides: Partial<AutomationSummary>): AutomationSummary => ({
 });
 
 const list = (automations: AutomationSummary[]): AutomationList => ({ automations, scans: [], running: true, draftModel: 'gpt-6-luna', draftEffort: 'low', udianBundled: '1.0.0', udianSkill: null, agents: ['claude', 'codex'], proxyKey: true, proxyAddress: '', appsOff: [] });
+
+describe('copying into Arbor', () => {
+  it('keeps the schedule only when the app keeps a rule, never for a Claude task, whose schedule Claude keeps', () => {
+    const codex = summary({ source: 'codexApp', schedule: { kind: 'everyMinutes', minutes: 30 } });
+    expect(copyKeepsSchedule({ summary: codex, rrule: 'RRULE:FREQ=MINUTELY;INTERVAL=30' })).toBe(true);
+    expect(copyKeepsSchedule({ summary: summary({ source: 'claudeDesktop', schedule: { kind: 'elsewhere' } }), rrule: null })).toBe(false);
+    // An Orca automation with no rule reads as a custom schedule, but there's still nothing to copy.
+    expect(copyKeepsSchedule({ summary: summary({ source: 'orca', schedule: { kind: 'custom' } }), rrule: null })).toBe(false);
+    expect(copyKeepsSchedule({ summary: codex, rrule: '  ' })).toBe(false);
+  });
+});
 
 describe('schedules', () => {
   it('reads the rules the Codex app and Orca write into the dialog’s choices', () => {

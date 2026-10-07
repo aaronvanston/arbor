@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useI18n } from '../../i18n';
 import { automationView, automationsView, type AppView } from '../../navigation';
 import { invokeCommand } from '../../native/commands';
-import type { AutomationSummary } from '../../native/types';
-import { automationTargetGone, loadAutomations, showAutomations } from '../../services/automations';
+import type { Automation, AutomationSummary } from '../../native/types';
+import { automationTargetGone, copyKeepsSchedule, loadAutomations, showAutomations } from '../../services/automations';
 import { usePools } from '../../services/pools';
 import { useConfirmation } from '../ConfirmationDialog';
 import { Button } from '../ui/button';
@@ -24,6 +24,8 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
   const { t } = useI18n();
   const { askConfirmation, askChoice } = useConfirmation();
   const [editing, setEditing] = useState(false);
+  /** A copy whose schedule is to be picked, and whether the original is paused once it's saved. */
+  const [copying, setCopying] = useState<{ original: Automation; pause: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const { abilities } = item;
   // One with nowhere to run can't be started by hand either; it says why until it's given a machine or a pool.
@@ -80,7 +82,14 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
       ...(abilities.pause && item.enabled ? { secondaryText: t('automations.copy.keepBoth') } : {}),
     });
     if (choice === 'cancel') return;
-    const copy = await invokeCommand('copy_automation_into_arbor', { id: item.id, pauseOriginal: choice === 'confirm' && abilities.pause && item.enabled });
+    const pause = choice === 'confirm' && abilities.pause && item.enabled;
+    // A schedule Arbor can't read isn't made up: the copy opens with the schedule to pick, and is saved from there.
+    const original = await invokeCommand('get_automation', { id: item.id });
+    if (!copyKeepsSchedule(original)) {
+      setCopying({ original, pause });
+      return;
+    }
+    const copy = await invokeCommand('copy_automation_into_arbor', { id: item.id, pauseOriginal: pause });
     showAutomations(await invokeCommand('list_automations'));
     toast({ title: t('automations.copy.done', { name: copy.summary.name }) });
     onNavigate(automationView(copy.summary.id));
@@ -152,6 +161,17 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
         </Menu>
       ) : null}
       {editing ? <AutomationDialog open onOpenChange={setEditing} editing={item.id} onSaved={() => undefined} /> : null}
+      {copying ? (
+        <AutomationDialog
+          open
+          onOpenChange={(open) => { if (!open) setCopying(null); }}
+          copyOf={copying.original}
+          onSaved={(copy) => void act(async () => {
+            if (copying.pause) showAutomations(await invokeCommand('set_automation_enabled', { id: item.id, enabled: false }));
+            onNavigate(automationView(copy.summary.id));
+          })}
+        />
+      ) : null}
     </div>
   );
 }

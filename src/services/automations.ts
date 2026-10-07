@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { MessageKey } from '../i18n/resources';
 import { invokeCommand } from '../native/commands';
 import type {
+  Automation,
   AutomationList,
   AutomationScan,
   AutomationRunStatus,
@@ -73,6 +74,13 @@ export function automationTargetGone(item: Pick<AutomationSummary, 'source' | 't
   if (target.kind === 'pool' && pools && !pools.some((pool) => pool.id === target.id)) return 'pool';
   return null;
 }
+
+/**
+ * Whether copying an automation into Arbor keeps its schedule: the app keeps a rule Arbor can read. Claude keeps its
+ * scheduled tasks' schedules itself, so their copies are opened with the schedule asked for rather than made up.
+ */
+export const copyKeepsSchedule = (automation: Pick<Automation, 'rrule' | 'summary'>) =>
+  Boolean(automation.rrule?.trim()) && automation.summary.schedule.kind !== 'elsewhere';
 
 /** Sent by the native side whenever an automation, a run or a machine's look changes. */
 export const AUTOMATIONS_UPDATED_EVENT = 'automations-updated';

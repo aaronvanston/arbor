@@ -598,17 +598,22 @@ pub(crate) async fn open_automation_run_in_terminal(app: tauri::AppHandle, autom
 }
 
 /// What an Arbor automation copied from another app's starts as: its prompt and schedule, on the machine it was found
-/// on, paused until the user picks a project.
-pub(super) fn copied_input(automation: &Automation) -> AutomationInput {
+/// on, paused until the user picks a project. One whose schedule Arbor can't read (Claude keeps its tasks' schedules
+/// itself) isn't copied as it is: a made-up schedule would read as the original's, so the window asks for one instead.
+pub(super) fn copied_input(automation: &Automation) -> Result<AutomationInput, String> {
     let summary = &automation.summary;
-    let rrule = automation.rrule.clone().filter(|rule| schedule::parse(rule).is_some()).unwrap_or_else(|| "FREQ=DAILY;BYHOUR=9;BYMINUTE=0".into());
+    let rrule = automation
+        .rrule
+        .clone()
+        .filter(|rule| schedule::parse(rule).is_some())
+        .ok_or("Arbor can't read this automation's schedule, so it can't copy it as it is. Make a new automation from its prompt and pick a schedule")?;
     // A copy keeps its agent when Arbor can start it, with what that agent allows: one that can't be held to edits
     // runs with full access, as it did, and only Claude Code and Codex carry a session on.
     let agent = summary.agent.filter(|agent| agent.launches()).unwrap_or(Harness::Codex);
     let launcher = agent.spec().launcher;
     let limits_edits = launcher.is_none_or(Launcher::limits_edits);
     let carries_on = matches!(launcher, Some(Launcher::Claude | Launcher::Codex));
-    AutomationInput {
+    Ok(AutomationInput {
         id: None,
         name: summary.name.clone(),
         prompt: automation.prompt.clone(),
@@ -627,7 +632,7 @@ pub(super) fn copied_input(automation: &Automation) -> AutomationInput {
         precheck_timeout_secs: automation.precheck_timeout_secs.clamp(1, 3600),
         runs_on: AutomationRunsOn::App,
         enabled: false,
-    }
+    })
 }
 
 /// Puts the background runner Arbor carries on a machine, or updates an older one there, then looks at the machine
@@ -667,7 +672,7 @@ pub(crate) async fn copy_automation_into_arbor(app: tauri::AppHandle, id: String
     }
     // A copy works where the original did, so the project Arbor can tell comes along.
     let lookup = item.clone();
-    let record = run_usage_task(move || save_record(copied_input(&with_project(&open_usage_database()?, lookup)?.automation))).await?;
+    let record = run_usage_task(move || save_record(copied_input(&with_project(&open_usage_database()?, lookup)?.automation)?)).await?;
     if pause_original && item.automation.summary.enabled && item.automation.summary.abilities.pause {
         discover::set_enabled(&app, &item, false).await?;
     }
@@ -967,7 +972,7 @@ mod tests {
     fn a_copy_starts_paused_on_the_machine_it_was_found_on() {
         let stdout = "H\t/Users/cam\nC\t/Users/cam/.codex/automations/x/automation.toml\tbmFtZSA9ICJYIgpycnVsZSA9ICJSUlVMRTpGUkVRPUhPVVJMWTtJTlRFUlZBTD0yIgo=\n";
         let (found, _) = discover::parse_scan("cam-mbp", stdout);
-        let copy = copied_input(&found[0].automation);
+        let copy = copied_input(&found[0].automation).unwrap();
         assert!(!copy.enabled);
         assert_eq!(copy.rrule, "FREQ=HOURLY;INTERVAL=2");
         assert_eq!(copy.target, AutomationTarget::Machine { name: "cam-mbp".into() });
@@ -994,6 +999,22 @@ mod tests {
         assert_eq!(projects, [Some("billing"), None]);
         let item = with_project(&connection, found[0].clone()).unwrap();
         assert_eq!(item.automation.project_path.as_deref(), Some("/Users/cam/code/billing"));
-        assert_eq!(copied_input(&item.automation).project_path, "/Users/cam/code/billing");
+        let mut scheduled = item.automation.clone();
+        scheduled.rrule = Some("FREQ=DAILY;BYHOUR=9;BYMINUTE=0".into());
+        assert_eq!(copied_input(&scheduled).unwrap().project_path, "/Users/cam/code/billing");
+    }
+
+    #[test]
+    fn a_copy_never_makes_up_a_schedule_it_cant_read() {
+        // A Claude scheduled task: Claude keeps its schedule, so there's none to read.
+        let claude = "H\t/Users/cam\nS\t/Users/cam/.claude/scheduled-tasks/notes/SKILL.md\tLS0tCm5hbWU6IG5vdGVzCi0tLQpBZGQgdGhlIG5ld2VzdCBub3Rlcy4K\n";
+        let (found, _) = discover::parse_scan("cam-mbp", claude);
+        assert_eq!(found[0].automation.summary.source, AutomationSource::ClaudeDesktop);
+        assert!(copied_input(&found[0].automation).is_err());
+
+        // A rule Arbor can't follow is no better than none.
+        let mut garbled = found[0].automation.clone();
+        garbled.rrule = Some("FREQ=SOMETIMES".into());
+        assert!(copied_input(&garbled).is_err());
     }
 }
