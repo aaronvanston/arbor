@@ -36,7 +36,8 @@ function homesFor(machine: string): CleanupHome[] {
     home('~/.codex', 'codex', 'codex', { sizeKb: 812_000, newestMs: now - 2 * hour, lastSessionMs: now - 2 * hour, sessionFiles: 342, archive: archiveOf(342, 0, now - 2 * hour) }),
     home('~/.factory', 'droid', 'droid', { role: 'history', sizeKb: 48_200, newestMs: now - 81 * day, installed: false }),
     home('~/.config/amp', 'amp', 'amp', { role: 'active', sizeKb: 1_240, newestMs: now - 12 * day }),
-    home('~/.pi/agent', 'pi-agent', 'pi', { role: 'active', sizeKb: 22_400, newestMs: now - 9 * day, ownSessions: '~/.pi/agent/sessions', ownSessionsArchived: true }),
+    home('~/.pi/agent', 'pi-agent', 'pi', { role: 'active', sizeKb: 22_400, newestMs: now - 9 * day, ownSessions: '~/.pi/agent/sessions', ownSessionsArchived: true,
+      archive: archiveOf(118, 0, now - 9 * day) }),
   ];
   if (!linux(machine)) {
     homes.push(home('~/Library/Application Support/Agent App/claude', 'claude', 'claude', {
@@ -182,7 +183,7 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
         if (!found) throw `${path} isn't in the last scan. Refresh and try again`;
         if (found.held) throw `${path} can't be set aside yet`;
         if (group === 'home' && !allowUnarchived && 'archive' in found && found.archive && (found.archive.blocked || found.archive.notArchived || found.archive.newerThanPass)) {
-          throw `Not every session file is archived in ${path}. Setting it aside keeps them on the machine; pass allowUnarchived to go ahead.`;
+          throw refusal('unarchived', `Not every session file is archived in ${path}. Setting it aside keeps them on the machine; pass allowUnarchived to go ahead.`);
         }
         stored.removed.set(`${id}/${index}`, { group, item: found });
         stored.scan.aside = [{ stamp: id, item: index, group, path, atMs: Date.now(), sizeKb: found.sizeKb, volume: null, taken: false }, ...stored.scan.aside];

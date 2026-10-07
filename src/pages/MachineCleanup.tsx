@@ -90,9 +90,9 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
     }
   };
 
-  const remove = async (group: CleanupGroup, path: string) => {
+  const remove = async (group: CleanupGroup, path: string, from: CleanupScan | null = scan, again = false): Promise<void> => {
     // A home with sessions the archive doesn't hold all of, or one an agent still runs from, asks first.
-    const home = group === 'home' ? scan?.homes.find((entry) => entry.path === path) : undefined;
+    const home = group === 'home' ? from?.homes.find((entry) => entry.path === path) : undefined;
     const asks = home ? removalAsks(home) : null;
     if (home?.archive && asks) {
       const standing = archiveLine(home.archive);
@@ -127,9 +127,17 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
       }
     } catch (reason) {
       const failure = readCommandError(reason);
+      // The archive moved on since the look: Arbor kept its fresh numbers, so ask again with them, once.
+      const fresh = failure.kind === 'unarchived' && !again ? await getCleanup(machine).catch(() => null) : null;
+      if (fresh) {
+        setScan(fresh);
+        setBusy(null);
+        await remove(group, path, fresh, true);
+        return;
+      }
       setProblem({ key: path, text: failure.message, changed: failure.kind === 'changed' });
     } finally {
-      setBusy(null);
+      setBusy((current) => (current === path ? null : current));
     }
   };
 

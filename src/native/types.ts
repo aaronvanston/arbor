@@ -1190,7 +1190,7 @@ export type CliActivity = {
   /**
    * ok, plan (it needed confirming), or the failure's kind.
    */
-  outcome: "ok" | "plan" | "failed" | "canceled" | "core" | "changed" | "unsupported" | "unavailable",
+  outcome: "ok" | "plan" | "failed" | "canceled" | "core" | "changed" | "unarchived" | "unsupported" | "unavailable",
   ms: number,
 };
 
@@ -1367,7 +1367,7 @@ export type CommandError = {
   message: string,
 };
 
-export type CommandErrorKind = "failed" | "canceled" | "core" | "changed";
+export type CommandErrorKind = "failed" | "canceled" | "core" | "changed" | "unarchived";
 
 /**
  * One of a plugin's skills, commands or agents: what its listing adds to every session, and what

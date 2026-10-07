@@ -206,6 +206,16 @@ async fn add_standings(app: &tauri::AppHandle, target: &Machine, scan: &mut Clea
         };
         home.archive = Some(home_archive(counts, home.session_files.unwrap_or(0), home.last_session_ms));
     }
+    holders_take_standing(scan);
+}
+
+/// A home holding a sessions folder Arbor archives (Pi's own folder holds Pi's sessions) takes that folder's standing,
+/// since setting it aside sets them aside too.
+fn holders_take_standing(scan: &mut CleanupScan) {
+    let standings: Vec<(String, HomeArchive)> = scan.homes.iter().filter_map(|home| home.archive.clone().map(|archive| (home.path.clone(), archive))).collect();
+    for home in scan.homes.iter_mut().filter(|home| home.archive.is_none() && home.own_sessions_archived) {
+        home.archive = standings.iter().find(|(path, _)| Some(path) == home.own_sessions.as_ref()).map(|(_, archive)| archive.clone());
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -1196,7 +1206,17 @@ pub(crate) async fn remove_cleanup_items(
             .filter_map(|(_, home)| home.archive.as_ref().filter(|standing| !standing.all_archived()).map(|standing| format!("{} ({} of {})", home.path, standing.not_archived, standing.sessions)))
             .collect();
         if !unarchived.is_empty() {
-            return Err(CommandError::failed(format!(
+            // The fresh numbers go into the stored scan, so the page reads them and asks again.
+            if let Ok(mut scans) = SCANS.lock() {
+                if let Some(stored) = scans.get_mut(&machine) {
+                    for home in &mut stored.homes {
+                        if let Some(fresh) = scan.homes.iter().find(|fresh| fresh.abs == home.abs) {
+                            home.archive = fresh.archive.clone();
+                        }
+                    }
+                }
+            }
+            return Err(CommandError::unarchived(format!(
                 "Not every session file is archived in {}. Setting it aside keeps them on the machine; pass allowUnarchived to go ahead.",
                 unarchived.join(", ")
             )));
@@ -1596,6 +1616,27 @@ mod tests {
         }
         let unreadable = home_archive(Err(()), 7, None);
         assert_eq!((unreadable.blocked, unreadable.not_archived), (Some(ArchiveBlock::Unreadable), 7));
+    }
+
+    #[test]
+    fn a_home_holding_an_archived_sessions_folder_takes_its_standing() {
+        let standing = HomeArchive { sessions: 40, not_archived: 3, blocked: None, last_pass_ms: Some(1), newer_than_pass: false };
+        let home = |path: &str, agent, archive: Option<HomeArchive>, own: Option<&str>, archived| CleanupHome {
+            path: path.into(), agent, harness: agent.harness(), role: AgentHomeRole::Active, size_kb: Some(1), newest_ms: None, last_session_ms: None,
+            session_files: None, installed: true, inside: None, own_sessions: own.map(str::to_string), own_sessions_archived: archived, held: None,
+            archive, abs: String::new(), print: None, list_path: String::new(),
+        };
+        let mut scan = CleanupScan {
+            homes: vec![
+                home("~/.pi/agent/sessions", AgentHomeKind::Pi, Some(standing.clone()), None, false),
+                home("~/.pi/agent", AgentHomeKind::PiAgent, None, Some("~/.pi/agent/sessions"), true),
+                home("~/.old-pi", AgentHomeKind::PiAgent, None, Some("~/.old-pi/sessions"), false),
+            ],
+            ..CleanupScan::default()
+        };
+        holders_take_standing(&mut scan);
+        assert_eq!(scan.homes[1].archive.as_ref(), Some(&standing));
+        assert_eq!(scan.homes[2].archive, None, "its sessions folder isn't one Arbor archives");
     }
 
     #[test]

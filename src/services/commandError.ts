@@ -6,7 +6,7 @@
  */
 import type { CommandError, CommandErrorKind } from '../native/types';
 
-const KINDS: readonly CommandErrorKind[] = ['failed', 'canceled', 'core', 'changed'];
+const KINDS: readonly CommandErrorKind[] = ['failed', 'canceled', 'core', 'changed', 'unarchived'];
 const isKind = (value: string): value is CommandErrorKind => (KINDS as readonly string[]).includes(value);
 
 /** A command's failure as an Error, so code that shows `String(error)` or `error.message` shows the same sentence. */

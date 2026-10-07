@@ -5552,6 +5552,7 @@ export const en = {
   'cli.activity.outcome.canceled': 'Canceled',
   'cli.activity.outcome.core': 'Proxy refused',
   'cli.activity.outcome.changed': 'Changed since read',
+  'cli.activity.outcome.unarchived': 'Sessions not archived',
   'cli.activity.outcome.unsupported': 'Not allowed',
   'cli.activity.outcome.unavailable': 'Not ready',
   'cli.loadFailed': 'Couldn’t read the command line settings. {error}',

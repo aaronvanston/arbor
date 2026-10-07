@@ -7,6 +7,8 @@ describe('what a command said went wrong', () => {
     const core: CommandError = { kind: 'core', status: 502, reason: 'request failed', message: 'Management API error (502): request failed' };
     expect(readCommandError(core)).toEqual(core);
     expect(readCommandError({ kind: 'canceled', message: 'Download canceled' })).toEqual({ kind: 'canceled', message: 'Download canceled' });
+    expect(readCommandError({ kind: 'unarchived', message: '3 of 40 not archived' }).kind).toBe('unarchived');
+    expect(readCommandError({ kind: 'changed', message: 'Changed since the look' }).kind).toBe('changed');
     expect(readCommandError({ kind: 'from-a-newer-build', message: 'Something new' })).toEqual({ kind: 'failed', message: 'Something new' });
   });
 

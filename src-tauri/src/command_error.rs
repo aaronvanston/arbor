@@ -19,6 +19,8 @@ pub(crate) enum CommandErrorKind {
     Core,
     /// What it was to change isn't as Arbor last read it, so it changed nothing.
     Changed,
+    /// Sessions it would set aside aren't all archived, and nobody said to go ahead anyway.
+    Unarchived,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
@@ -48,6 +50,10 @@ impl CommandError {
 
     pub(crate) fn changed(message: impl Into<String>) -> Self {
         Self { kind: CommandErrorKind::Changed, ..Self::failed(message) }
+    }
+
+    pub(crate) fn unarchived(message: impl Into<String>) -> Self {
+        Self { kind: CommandErrorKind::Unarchived, ..Self::failed(message) }
     }
 }
 
