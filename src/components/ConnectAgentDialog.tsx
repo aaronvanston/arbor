@@ -56,7 +56,7 @@ export function ConnectAgentDialog({ open, onClose, from = 'here', onNavigate }:
     return () => { current = false; };
   }, [open, from]);
 
-  const key = loaded ? loaded.keys[keyIndex] ?? defaultClientKey(loaded) : null;
+  const key = loaded ? loaded.keys[keyIndex] ?? defaultClientKey({ apiKeys: loaded.keys }) : null;
   const origin = loaded ? proxyOrigin(loaded.listen, where, loaded.thisMac) : '';
   const real = key ? agentSetup(origin, key.apiKey) : null;
   const shown = key ? agentSetup(origin, maskApiKey(key.apiKey)) : null;
