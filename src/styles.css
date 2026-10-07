@@ -270,10 +270,14 @@
 @utility art-halo {
   /* The deep shade a scene lays under the title row (the light canopy's), else the sidebar. */
   --halo: var(--art-halo, var(--sidebar));
-  text-shadow: 0 0 1px var(--halo), 0 0 2px var(--halo), 0 0 4px var(--halo), 0 0 8px var(--halo);
+  /* The tight layers repeat so the edge right around each letter is solid shade: over the light canopy's pale or
+     orange leaves, a single soft layer let the bright pixels show through beside the light ink. */
+  text-shadow: 0 0 1px var(--halo), 0 0 1px var(--halo), 0 0 2px var(--halo), 0 0 2px var(--halo), 0 0 4px var(--halo),
+    0 0 6px var(--halo), 0 0 10px var(--halo);
 
   & svg {
-    filter: drop-shadow(0 0 1px var(--halo)) drop-shadow(0 0 2px var(--halo)) drop-shadow(0 0 4px var(--halo));
+    filter: drop-shadow(0 0 1px var(--halo)) drop-shadow(0 0 1px var(--halo)) drop-shadow(0 0 2px var(--halo))
+      drop-shadow(0 0 4px var(--halo));
   }
 }
 
