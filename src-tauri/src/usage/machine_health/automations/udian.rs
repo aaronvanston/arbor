@@ -526,6 +526,8 @@ pub(super) struct UdianRun {
     action_exit: Option<i32>,
     started_at_ms: Option<i64>,
     finished_at_ms: Option<i64>,
+    /// The agent session the run started, as ultradian 0.4 records it (`agent_session_id`).
+    agent_session: Option<String>,
 }
 
 /// A time as udian writes it: an RFC 3339 string, or a number of seconds or milliseconds.
@@ -571,6 +573,7 @@ pub(super) fn parse_sync(stdout: &str) -> (Vec<UdianRun>, BTreeMap<String, RunFi
                         action_exit: exit_code(run.get("action_exit")),
                         started_at_ms: time_ms(run.get("started_at")),
                         finished_at_ms: time_ms(run.get("finished_at")),
+                        agent_session: agent_session(&run),
                     });
                 }
             }
@@ -607,6 +610,7 @@ pub(super) fn as_run(udian: &UdianRun, files: Option<&RunFiles>, automation_id: 
         run.precheck_output = files.precheck_output.clone().or(run.precheck_output);
         run.session_id = files.session.clone().or(run.session_id);
     }
+    run.session_id = run.session_id.or_else(|| udian.agent_session.clone());
     run.exit_code = udian.action_exit.or(files.and_then(|files| files.exit)).or(run.exit_code);
     let (status, error) = match udian.status.as_str() {
         "running" => (AutomationRunStatus::Running, None),
@@ -639,6 +643,25 @@ pub(super) fn own_runs_script(name: &str, limit: usize) -> String {
     format!("{BIN} logs {} --limit {} --json </dev/null\n", shell_quote(name), limit.clamp(1, 200))
 }
 
+/// The agent session a run record names, when it's an id ultradian would have recorded: 1 to 128 of `A-Z a-z 0-9 .
+/// _ : -`, as its runner checks. Anything else is left out rather than trusted into a command line.
+fn agent_session(record: &serde_json::Value) -> Option<String> {
+    let id = record.get("agent_session_id")?.as_str()?.trim();
+    let fits = (1..=128).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || "._:-".contains(c));
+    fits.then(|| id.to_string())
+}
+
+/// Whether the machine's runner is older than the one this build carries, so putting this one there is an update. A
+/// newer one is never replaced: from 0.4 a runner moves the database on one way, and an older one refuses it.
+pub(super) fn older_than_bundled(installed: &str, bundled: &str) -> bool {
+    let parse = |text: &str| semver::Version::parse(text.trim().trim_start_matches('v')).ok();
+    match (parse(installed), parse(bundled)) {
+        (Some(installed), Some(bundled)) => installed < bundled,
+        // A version that doesn't read is replaced, as the build Arbor carries is known good.
+        _ => installed.trim().trim_start_matches('v') != bundled.trim().trim_start_matches('v'),
+    }
+}
+
 /// The runs `own_runs_script` listed, as Arbor shows a run.
 pub(super) fn parse_own_runs(stdout: &str, automation_id: &str, machine: &str) -> Vec<AutomationRun> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else { return Vec::new() };
@@ -655,6 +678,7 @@ pub(super) fn parse_own_runs(stdout: &str, automation_id: &str, machine: &str) -
             run.finished_at_ms = time_ms(record.get("finished_at"));
             run.precheck_exit = exit_code(record.get("gate_exit"));
             run.exit_code = exit_code(record.get("action_exit"));
+            run.session_id = agent_session(record);
             let status = record.get("status").and_then(serde_json::Value::as_str).unwrap_or_default();
             run.status = apps::ultradian::run_status(status);
             run.error = match status {
@@ -938,7 +962,7 @@ mod tests {
         assert!(!script.contains("--run"), "a run's log is never asked for");
         let stdout = r#"{"schema_version":2,"data":{"log":null,"total_runs":2,"runs":[
           {"action_exit":null,"cwd":"/home/cam","executor":null,"finished_at":"2026-10-07T03:00:02.000Z","gate_exit":0,"log_pointer":"/x","machine_id":"m","pgid":null,"run_id":"run_a","schedule":"triage","schedule_id":"s","started_at":"2026-10-07T03:00:00.000Z","status":"clean","trigger":"scheduled"},
-          {"action_exit":3,"cwd":"/home/cam","executor":null,"finished_at":"2026-10-07T04:01:00.000Z","gate_exit":0,"log_pointer":"/x","machine_id":"m","pgid":null,"run_id":"run_b","schedule":"triage","schedule_id":"s","started_at":"2026-10-07T04:00:00.000Z","status":"failed","trigger":"manual"}
+          {"action_exit":3,"agent_session_id":"6f2a1c9e-4b3d-4e21-9a7c-2d5b8e1f0a34","cwd":"/home/cam","executor":null,"finished_at":"2026-10-07T04:01:00.000Z","gate_exit":0,"log_pointer":"/x","machine_id":"m","pgid":null,"run_id":"run_b","schedule":"triage","schedule_id":"s","started_at":"2026-10-07T04:00:00.000Z","status":"failed","trigger":"manual"}
         ]}}"#;
         let runs = parse_own_runs(stdout, "ultradian:cam-mbp:triage", "cam-mbp");
         assert_eq!(runs.iter().map(|run| run.id.as_str()).collect::<Vec<_>>(), ["run_b", "run_a"]);
@@ -946,8 +970,20 @@ mod tests {
         assert_eq!(runs[0].error.as_deref(), Some("The command exited with 3"));
         assert!(runs[0].manual);
         assert_eq!(runs[1].status, AutomationRunStatus::Skipped);
+        assert_eq!(runs[0].session_id.as_deref(), Some("6f2a1c9e-4b3d-4e21-9a7c-2d5b8e1f0a34"));
         assert_eq!(runs[1].session_id, None);
         assert!(parse_own_runs("nope", "x", "y").is_empty());
+        let odd = serde_json::json!({ "agent_session_id": "x'; rm -rf ~" });
+        assert_eq!(agent_session(&odd), None, "only the ids ultradian itself accepts");
+    }
+
+    #[test]
+    fn never_replaces_a_newer_runner() {
+        assert!(older_than_bundled("0.3.1", "0.4.0"));
+        assert!(older_than_bundled("0.4.0-rc.1", "0.4.0"));
+        assert!(!older_than_bundled("0.4.0", "0.4.0"));
+        assert!(!older_than_bundled("v0.5.0", "0.4.0"));
+        assert!(older_than_bundled("unknown", "0.4.0"));
     }
 
     #[test]

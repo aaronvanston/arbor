@@ -527,13 +527,28 @@ fn resume_line(record: &Record, stored: &store::StoredRun, program: &str) -> Res
     Ok(if folders.is_empty() { resume } else { format!("{{ {cd}true; }} && {resume}") })
 }
 
+/// The shell line that picks up the agent session one of someone's own ultradian runs started, in the schedule's
+/// folder, when its command starts an agent Arbor knows how to resume.
+fn own_resume_line(agent: Option<Harness>, folder: Option<&str>, session: &str, program: &str) -> Option<String> {
+    let resume = match agent?.spec().launcher {
+        Some(Launcher::Claude) => format!("exec {} --resume {}", shell_quote(program), shell_quote(session)),
+        Some(Launcher::Codex) => format!("exec {} resume {}", shell_quote(program), shell_quote(session)),
+        _ => return None,
+    };
+    Some(match folder.filter(|folder| !folder.is_empty()) {
+        Some(folder) => format!("{{ cd {} 2>/dev/null || true; }} && {resume}", runner::path_word(folder)),
+        None => resume,
+    })
+}
+
 /// The shell line that shows one of someone's own ultradian runs: udian's own log of it, which only they read.
 fn udian_log_line(name: &str, run_id: &str) -> String {
     format!("exec {} logs {} --run {}", udian::BIN, shell_quote(name), shell_quote(run_id))
 }
 
-/// Opens a Terminal window on this Mac for an automation's run: an Arbor run's session resumed on the machine it ran
-/// on, or one of someone's own ultradian runs with udian's log of it. Answers with the same as one command to paste.
+/// Opens a Terminal window on this Mac for an automation's run: its agent session resumed on the machine it ran on, or,
+/// for one of someone's own ultradian runs that started none Arbor can resume, udian's log of it. Answers with the same
+/// as one command to paste.
 #[tauri::command]
 pub(crate) async fn open_automation_run_in_terminal(app: tauri::AppHandle, automation_id: String, run_id: String) -> Result<String, String> {
     use super::super::agents::AgentKind;
@@ -562,9 +577,21 @@ pub(crate) async fn open_automation_run_in_terminal(app: tauri::AppHandle, autom
         if item.automation.summary.source != AutomationSource::Ultradian {
             return Err("Arbor can open only ultradian's runs in Terminal; open this one in the app that keeps it".into());
         }
+        // The run's session comes from udian's own record of it, read again here rather than taken from the window.
+        let session = udian::own_runs(&app, &item, 200).await.ok().and_then(|runs| runs.into_iter().find(|run| run.id == run_id)).and_then(|run| run.session_id);
         let inner = app.state::<MachineHealthState>();
-        let place = place_of(&inner.lock(), &item.found_on)?;
-        Launch { place, line: udian_log_line(name, &run_id) }
+        let inner = inner.lock();
+        let place = place_of(&inner, &item.found_on)?;
+        let agent = item.automation.summary.agent;
+        let kind = match agent.and_then(|agent| agent.spec().launcher) {
+            Some(Launcher::Claude) => Some(AgentKind::Claude),
+            Some(Launcher::Codex) => Some(AgentKind::Codex),
+            _ => None,
+        };
+        let resume = session.zip(kind).and_then(|(session, kind)| {
+            own_resume_line(agent, item.automation.project_path.as_deref(), &session, &agent_program(&inner, &item.found_on, kind))
+        });
+        Launch { place, line: resume.unwrap_or_else(|| udian_log_line(name, &run_id)) }
     };
     fix_session::open_in_terminal(&app, &launch, "automation-run", "to open an automation's run")?;
     Ok(launch.typed())
@@ -613,8 +640,13 @@ pub(crate) async fn install_background_runner(app: tauri::AppHandle, machine: St
         .and_then(|find| find.udian.clone())
         .ok_or("Look for automations on this machine first, so Arbor knows its system")?;
     let found = shell::find_machine(&app.state::<MachineHealthState>().lock(), &machine)?;
-    // A machine already on this build's runner, with its daemon going, only needs the skill.
-    if !(there.live && there.version.as_deref() == Some(bundle.version.as_str())) {
+    // A machine already on this build's runner or a newer one, with its daemon going, only needs the skill. A newer one
+    // is never replaced, even stopped: an older runner refuses the database a newer one has moved on.
+    let current = there.version.as_deref().is_some_and(|version| !udian::older_than_bundled(version, &bundle.version));
+    if current && !there.live {
+        return Err("The background runner on this machine is newer than the one Arbor carries and isn't running. Start it there with udian daemon restart".into());
+    }
+    if !current {
         let target = there.target.clone().ok_or("Arbor has no background runner for this machine's system")?;
         let archive = udian::archive(&bundle, &target)?;
         udian::install(&found, &archive).await?;
@@ -823,6 +855,16 @@ mod tests {
         let line = resume_line(&record, &stored(Some("s"), None), "codex").unwrap();
         assert!(line.contains("cd \"$HOME/.arbor/automation-worktrees/\"'arbor-a1'/'run-1' 2>/dev/null || cd \"$HOME\"/'work/billing'"), "{line}");
         assert!(line.ends_with("exec 'codex' resume 's'"));
+    }
+
+    #[test]
+    fn an_ultradian_run_resumes_the_session_it_started_in_its_folder() {
+        assert_eq!(
+            own_resume_line(Some(Harness::Claude), Some("/home/cam/src/billing"), "6f2a1c9e", "claude").as_deref(),
+            Some("{ cd '/home/cam/src/billing' 2>/dev/null || true; } && exec 'claude' --resume '6f2a1c9e'"),
+        );
+        assert_eq!(own_resume_line(Some(Harness::Codex), None, "019a", "/opt/codex").as_deref(), Some("exec '/opt/codex' resume '019a'"));
+        assert_eq!(own_resume_line(None, None, "s", "x"), None, "a command that isn't an agent's has its log instead");
     }
 
     #[test]

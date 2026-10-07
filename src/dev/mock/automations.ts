@@ -276,7 +276,7 @@ const SEEDS: Seed[] = [
       schedule: { kind: 'everyHours', hours: 1, minute: 0 }, nextRunAtMs: now + 41 * MINUTE,
       lastRun: { status: failing ? 'failed' : 'skipped', atMs: now - 19 * MINUTE }, hasPrecheck: true, abilities: ULTRADIAN_ABILITIES,
     }, {
-      prompt: "claude -p 'Review the pull requests on stdin and leave comments' --model claude-sonnet-5",
+      prompt: "sh -c 'claude -p --session-id \"$ULTRADIAN_AGENT_SESSION_ID\" --model claude-sonnet-5 \"Review the pull requests on stdin and leave comments\"'",
       projectPath: '/home/cam/src/billing', precheck: 'gh pr list --search "review-requested:@me" --json number --jq ".[].number"', precheckTimeoutSecs: 3600, graceMinutes: 10,
       model: 'claude-sonnet-5',
     }),
@@ -332,8 +332,8 @@ function seedRuns(item: Seed): AutomationRun[] {
     const ran = status === 'done' || status === 'failed';
     const checked = ran || status === 'skipped';
     const output = PRECHECK_OUTPUT[item.summary.id];
-    // ultradian runs whatever command it's given, so its own schedules' runs have no session Arbor could know.
-    const sessions = item.summary.agent && item.summary.source !== 'ultradian' ? RUN_SESSIONS[item.summary.agent] ?? [] : [];
+    // A schedule of someone's own records the session only when its command starts an agent with ultradian's id.
+    const sessions = item.summary.agent ? RUN_SESSIONS[item.summary.agent] ?? [] : [];
     const sessionId = ran ? sessions[sessionIndex++ % Math.max(1, sessions.length)] ?? null : null;
     return {
       id: `${item.summary.id}:run:${index}`,
@@ -557,7 +557,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
     if (params.get('terminal') === 'fail') throw 'Couldn\'t open Terminal: no application can open the file';
     const run = runs.get(automationId)?.find((entry) => entry.id === runId);
     const item = find(automationId);
-    if (item.summary.source === 'ultradian') return `ssh -t cedar-02 'exec "$HOME/.ultradian/bin/udian" logs ${item.summary.name} --run ${runId}'`;
+    if (item.summary.source === 'ultradian' && !run?.sessionId) return `ssh -t cedar-02 'exec "$HOME/.ultradian/bin/udian" logs ${item.summary.name} --run ${runId}'`;
     if (!run?.sessionId) throw 'This run has no session to open';
     const program = item.summary.agent === 'codex' ? `codex resume ${run.sessionId}` : `claude --resume ${run.sessionId}`;
     return `ssh -t ${run.machine ?? 'cedar-02'} '{ cd ${item.projectPath ?? '~'} 2>/dev/null || true; } && exec ${program}'`;

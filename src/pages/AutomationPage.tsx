@@ -353,11 +353,11 @@ function RunRow({ run, now, own, onNavigate }: {
   const { copy } = useCopyToClipboard();
   const [stopping, setStopping] = useState(false);
   const [opening, setOpening] = useState(false);
-  // An Arbor run picks up its session; one of someone's own ultradian runs that started shows udian's log of it, which
-  // Arbor never reads.
-  const terminal = own
-    ? (run.startedAtMs !== null ? 'automations.runs.terminalLog' : null)
-    : run.sessionId && run.machine ? 'automations.runs.terminalSession' : null;
+  // A run that started an agent session picks it up; one of someone's own ultradian runs without one shows udian's log
+  // of it, which Arbor never reads.
+  const terminal = run.sessionId && run.machine
+    ? 'automations.runs.terminalSession'
+    : own && run.startedAtMs !== null ? 'automations.runs.terminalLog' : null;
   const openInTerminal = async () => {
     setOpening(true);
     try {

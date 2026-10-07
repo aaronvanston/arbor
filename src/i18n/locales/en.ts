@@ -6229,7 +6229,7 @@ export const en = {
   'automations.note.codex': 'The Codex app keeps this one, in {path}, and runs it. Arbor can pause it there or copy it into Arbor.',
   'automations.note.claude': 'Claude keeps this one, in {path}, and its schedule. Arbor shows it and can copy it into Arbor.',
   'automations.note.orca': 'Orca keeps this one and runs it. Arbor can pause it, start a run, or copy it into Arbor.',
-  'automations.note.ultradian': 'You made this schedule in ultradian, the background runner, on this machine. ultradian starts it whether Arbor is open or not and keeps its log there. Arbor can pause it, resume it or start a run; change or remove it with udian.',
+  'automations.note.ultradian': 'You made this schedule in ultradian, the background runner, on this machine. ultradian starts it whether Arbor is open or not and keeps its log there. Arbor can pause it, resume it or start a run; change or remove it with udian. A run whose command starts its agent with ultradian’s session id ($ULTRADIAN_AGENT_SESSION_ID) links to that session.',
   'automations.note.superset': 'Superset keeps this one for your organization and runs it. Arbor can pause it, start a run, or copy it into Arbor.',
   'automations.fact.schedule': 'Schedule',
   'automations.fact.nextRun': 'Next run',

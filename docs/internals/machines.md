@@ -56,10 +56,12 @@ way.
   schedule and scripts there and reads the runs back, so it runs with Arbor closed. Installing it also puts that
   skill in the machine's agent homes, through the same guarded write as Arbor's own CLI skill (`cli_skill.rs`).
 - Schedules someone made in ultradian themselves are the `ultradian` app (`apps/ultradian.rs`); Arbor's own are told
-  apart by their `arbor-` name or `arbor` group. They run a command, not a prompt, so a run has no session to link.
-  Their runs are asked of the machine when their page opens (`udian logs <name>` without `--run`) and never stored.
+  apart by their `arbor-` name or `arbor` group. They run a command, not a prompt, so a run links to a session only
+  by the `agent_session_id` ultradian (0.4 on) records when the command used its id or reported one; Arbor never
+  guesses. Their runs are asked of the machine when their page opens (`udian logs <name>` without `--run`) and never
+  stored. A newer runner on a machine is never replaced by the one Arbor carries: 0.4 moves the database on one way.
 - ultradian's run logs stay on the machine and Arbor never reads them. "Terminal" on a run opens a window on this Mac
-  that shows the log (`udian logs --run`) or resumes an Arbor run's session over SSH (`fix_session.rs`): the user
+  that resumes a run's session over SSH, or shows the log (`udian logs --run`) of one without (`fix_session.rs`): the user
   reads it there, and nothing of it comes back to Arbor.
 
 ## Pools
