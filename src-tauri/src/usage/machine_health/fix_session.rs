@@ -131,6 +131,9 @@ fn sweep_stale(dir: &Path) {
     }
 }
 
+/// What a window shows when macOS wouldn't start Terminal.
+const TERMINAL_FAILED: &str = "macOS wouldn’t start Terminal. Check that Terminal is in Applications › Utilities, then try again.";
+
 /// Opens a Terminal window on this Mac running `launch`. `name` goes in the file's name and `why` in its comment.
 pub(super) fn open_in_terminal(app: &tauri::AppHandle, launch: &Launch, name: &str, why: &str) -> Result<(), String> {
     let dir = sessions_dir()?;
@@ -147,8 +150,12 @@ pub(super) fn open_in_terminal(app: &tauri::AppHandle, launch: &Launch, name: &s
         let mut file = options.open(&path).map_err(|error| error.to_string())?;
         file.write_all(session_script(launch, why).as_bytes()).map_err(|error| error.to_string())?;
     }
-    crate::system_open::open_with_system(app, &path.to_string_lossy(), Some("Terminal"))
-        .map_err(|error| format!("Couldn't open Terminal: {error}"))
+    // The OS's own words ("no application can open the file") say nothing a person can act on, so they go to the log
+    // and the window gets what to check.
+    crate::system_open::open_with_system(app, &path.to_string_lossy(), Some("Terminal")).map_err(|error| {
+        eprintln!("Couldn't open Terminal: {error}");
+        TERMINAL_FAILED.to_string()
+    })
 }
 
 /// Opens Terminal with `agent` started on `prompt`, on the machine when `on_machine` and on this Mac otherwise.

@@ -28,6 +28,7 @@ import type { Automation, AutomationRun } from '../native/types';
 import { AUTOMATION_APPS, automationHold, automationTargetGone, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
 import { AutomationHoldNote } from '../components/automations/AutomationHoldNote';
 import { durationWords } from '../services/durationWords';
+import { plainError } from '../services/plainError';
 import { useQuotaClock } from '../services/quotaTime';
 import { usePools } from '../services/pools';
 
@@ -365,7 +366,7 @@ function RunRow({ run, now, own, onNavigate }: {
       const command = await invokeCommand('open_automation_run_in_terminal', { automationId: run.automationId, runId: run.id });
       toast({ kind: 'success', title: t('automations.runs.terminalOpened'), action: { label: t('automations.runs.terminalCopy'), onClick: () => { void copy(command); } } });
     } catch (reason) {
-      toast({ kind: 'error', title: t('automations.runs.terminalFailed'), description: String(reason) });
+      toast({ kind: 'error', title: t('automations.runs.terminalFailed'), description: plainError(reason, t) });
     } finally {
       setOpening(false);
     }
@@ -384,7 +385,7 @@ function RunRow({ run, now, own, onNavigate }: {
       await invokeCommand('cancel_automation_run', { runId: run.id });
       await loadAutomations();
     } catch (reason) {
-      toast({ kind: 'error', title: t('automations.runs.stopFailed'), description: String(reason) });
+      toast({ kind: 'error', title: t('automations.runs.stopFailed'), description: plainError(reason, t) });
     } finally {
       setStopping(false);
     }

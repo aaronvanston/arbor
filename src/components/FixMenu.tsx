@@ -6,6 +6,7 @@ import type { AgentKind, MachineHealth } from '../native/types';
 import { fixPrompt, fixSessions, type FixProblem } from '../services/fixPrompt';
 import { fetchMachineHealth } from '../services/machineHealth';
 import { machineName } from '../services/machineNames';
+import { plainError } from '../services/plainError';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 import { Copy, TerminalSquare, Wrench } from './ui/icons';
@@ -49,7 +50,7 @@ export function FixMenu({ machine, problem, item = null, compact = false, childr
       await invokeCommand('open_fix_session', { machine, agent, prompt, onMachine });
       toast({ kind: 'success', title: t('fix.menu.opened', { agent: name }) });
     } catch (error) {
-      toast({ kind: 'error', title: t('fix.menu.openFailed'), description: String(error) });
+      toast({ kind: 'error', title: t('fix.menu.openFailed'), description: plainError(error, t) });
     }
   };
 

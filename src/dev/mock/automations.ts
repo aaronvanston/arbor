@@ -556,7 +556,7 @@ export const automationsAnswers: CommandAnswers<AutomationCommands> = {
   },
   open_automation_run_in_terminal: ({ automationId, runId }) => later(300, () => {
     mockLog('open_automation_run_in_terminal', { automationId, runId });
-    if (params.get('terminal') === 'fail') throw 'Couldn\'t open Terminal: no application can open the file';
+    if (params.get('terminal') === 'fail') throw 'macOS wouldn’t start Terminal. Check that Terminal is in Applications › Utilities, then try again.';
     const run = runs.get(automationId)?.find((entry) => entry.id === runId);
     const item = find(automationId);
     if (item.summary.source === 'ultradian' && !run?.sessionId) return `ssh -t cedar-02 'exec "$HOME/.ultradian/bin/udian" logs ${item.summary.name} --run ${runId}'`;
