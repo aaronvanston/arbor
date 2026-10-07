@@ -180,8 +180,12 @@ function ProviderAccounts({ limit, now, profiles, filesByKey, paused }: {
           <span className="text-xs text-muted-foreground">{t('accounts.left')}</span>
         </span>
       </div>
-      {/* The name keeps a few letters' room, so on a narrow page the reset column gives way first. */}
-      <ul className="grid grid-cols-[auto_minmax(5rem,1fr)_minmax(4rem,10rem)_2.75rem_minmax(0,12.5rem)] items-center gap-x-3 gap-y-2 ps-11">
+      {/*
+        The name, the bar and the reset share the room by weight, the name most: a column with a fixed most (10rem) is
+        grown to it before any `fr` column gets a pixel, which squeezed names to a letter in a narrow window. The bar
+        keeps its old 10rem most on its own, beside the percent.
+      */}
+      <ul className="grid grid-cols-[auto_minmax(6rem,1.6fr)_minmax(3rem,1fr)_2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 ps-11">
         {accounts.map((account) => {
           const file = filesByKey.get(account.key);
           return (
@@ -233,7 +237,7 @@ function AccountRow({ account, profile, now, markTaking }: { account: HomeAccoun
         ) : null}
       </span>
       <span
-        className="block h-1.5 overflow-hidden rounded-full bg-input/60 dark:bg-input"
+        className="block h-1.5 w-full max-w-40 justify-self-end overflow-hidden rounded-full bg-input/60 dark:bg-input"
         role="img"
         aria-label={unknown ? t('accounts.segment.unknown', { name: account.name }) : t('accounts.segment.aria', { name: account.name, percent: Math.round(account.percent ?? 0) })}
       >
