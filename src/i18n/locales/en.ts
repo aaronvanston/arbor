@@ -3819,6 +3819,7 @@ export const en = {
   'limitUsage.note.untracked.other': '{count} requests in this window had no session.',
   'limitUsage.note.onlyArbor': 'Only requests that went through Arbor are counted. Using the account anywhere else uses up the limit too.',
   'machines.stat.machines': 'Machines',
+  'machines.stat.machinesHint': 'Ones that sent requests in this range',
   'machines.stat.requests': 'Requests',
   'machines.stat.tokens': 'Tokens',
   'machines.stat.unassigned': 'Unassigned share',

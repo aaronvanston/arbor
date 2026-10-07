@@ -1137,7 +1137,8 @@ function MachinesView({ overview, onOpen, onInspect, onAssign }: {
     <div className="flex flex-col gap-6">
       {overview ? (
         <StatsGrid columns={4}>
-          <StatBlock label={t('machines.stat.machines')} value={formatCount(machineNames.size)} />
+          {/* Counted from the requests, so a machine that sent none in the range isn't one of them. */}
+          <StatBlock label={t('machines.stat.machines')} value={formatCount(machineNames.size)} hint={t('machines.stat.machinesHint')} />
           <StatBlock label={t('machines.stat.requests')} value={formatCount(totalRequests)} />
           <StatBlock label={t('machines.stat.tokens')} value={formatCount(totalTokens)} />
           <StatBlock
