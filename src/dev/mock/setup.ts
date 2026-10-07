@@ -2042,6 +2042,19 @@ const autoLineReply = (): AutoLine => {
   const preferences = (() => { try { return JSON.parse(localStorage.getItem('arbor.preferences.v1') ?? '{}') as { autoLineUp?: boolean }; } catch { return {}; } })();
   return { enabled: autoLineScenario !== 'off' && preferences.autoLineUp !== false, machines: setupMachines.map((entry) => autoMachine(entry.machine)) };
 };
+// `?autoline=behind` has cedar-02 behind for a day, and `scanfailing` ci-01's setup scan failing a third time running.
+if (autoLineScenario === 'behind' || autoLineScenario === 'scanfailing') {
+  window.setTimeout(() => {
+    const behind = autoLineScenario === 'behind';
+    void emit('setup-autoline', {
+      machine: behind ? 'cedar-02' : 'ci-01',
+      kind: behind ? 'behindLong' : 'scanFailing',
+      applied: { files: 0, skills: 0, hooks: 0, mcp: 0 },
+      error: behind ? null : 'ssh: connect to host ci-01 port 22: Operation timed out',
+      waiting: behind ? 6 : 0,
+    } satisfies AutoLineEvent);
+  }, 4_000);
+}
 if (autoLineScenario === 'applied' || autoLineScenario === 'failed' || autoLineScenario === 'waiting') {
   window.setTimeout(() => {
     const failed = autoLineScenario === 'failed';

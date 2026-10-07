@@ -79,6 +79,10 @@ pub(crate) enum AutoLineKind {
     Applied,
     Failed,
     Waiting,
+    /// Behind the repo for a day: said once, again only after it's been in step.
+    BehindLong,
+    /// Its setup scan failed three times in a row while it answers otherwise.
+    ScanFailing,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -99,6 +103,8 @@ struct Held {
     /// Machines with a run under way: an apply on one of them now is the run's own.
     running: BTreeSet<String>,
     auto_stamps: Option<Vec<String>>,
+    behind_since: BTreeMap<String, i64>,
+    told_behind: BTreeSet<String>,
 }
 
 static HELD: LazyLock<std::sync::Mutex<Held>> = LazyLock::new(|| std::sync::Mutex::new(Held::default()));
@@ -218,6 +224,11 @@ fn auto_path() -> Option<PathBuf> {
 struct Kept {
     stamps: Vec<String>,
     stopped: BTreeMap<String, String>,
+    /// When each machine was first seen behind, since it was last in step, and which were told about it.
+    #[serde(default)]
+    behind_since: BTreeMap<String, i64>,
+    #[serde(default)]
+    told_behind: BTreeSet<String>,
 }
 
 fn read_kept(path: &Path) -> Kept {
@@ -226,7 +237,7 @@ fn read_kept(path: &Path) -> Kept {
     };
     // Before stops were kept, the file was the list of stamps alone.
     match value {
-        serde_json::Value::Array(_) => Kept { stamps: serde_json::from_value(value).unwrap_or_default(), stopped: BTreeMap::new() },
+        serde_json::Value::Array(_) => Kept { stamps: serde_json::from_value(value).unwrap_or_default(), ..Kept::default() },
         value => serde_json::from_value(value).unwrap_or_default(),
     }
 }
@@ -241,6 +252,8 @@ fn load(held: &mut Held) {
         held.machines.entry(machine.clone()).or_insert_with(|| AutoMachine { machine, ..AutoMachine::default() }).stopped.get_or_insert(reason);
     }
     held.auto_stamps = Some(kept.stamps);
+    held.behind_since = kept.behind_since;
+    held.told_behind = kept.told_behind;
 }
 
 fn stamps(held: &mut Held) -> &mut Vec<String> {
@@ -253,6 +266,8 @@ fn save(held: &Held) {
     let kept = Kept {
         stamps: held.auto_stamps.clone().unwrap_or_default(),
         stopped: held.machines.iter().filter_map(|(machine, entry)| Some((machine.clone(), entry.stopped.clone()?))).collect(),
+        behind_since: held.behind_since.clone(),
+        told_behind: held.told_behind.clone(),
     };
     if let (Some(path), Ok(text)) = (auto_path(), serde_json::to_vec(&kept)) {
         if let Err(error) = super::archive::store::write_atomic(&path, &text) {
@@ -292,9 +307,6 @@ pub(super) fn applied(machine: &str, backups: &[String]) {
 /// Looks over `only`, or every machine, for one to bring in line by itself. Nothing when it's switched off or no setup
 /// repo is named.
 pub(crate) fn consider(app: &tauri::AppHandle, only: Option<String>) {
-    if !enabled(app) {
-        return;
-    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let _looking = LOOKING.lock().await;
@@ -306,8 +318,61 @@ pub(crate) fn consider(app: &tauri::AppHandle, only: Option<String>) {
                 return;
             }
         };
-        look(&app, &repo, &standing, only.as_deref());
+        // How long each has been behind is watched whether runs by themselves are on or not.
+        let now = Local::now().timestamp_millis();
+        let due = {
+            let mut held = held();
+            load(&mut held);
+            let states: Vec<(String, MachineState, u32)> = standing.machines().iter().map(|machine| (machine.machine().to_string(), machine.state(), machine.behind().len() as u32)).collect();
+            let (due, changed) = behind_long(&mut held, &states, now);
+            if changed {
+                save(&held);
+            }
+            due
+        };
+        for (machine, count) in due {
+            let _ = app.emit(AUTOLINE_EVENT, AutoLineEvent { machine, kind: AutoLineKind::BehindLong, applied: AppliedCounts::default(), error: None, waiting: count });
+        }
+        if enabled(&app) {
+            look(&app, &repo, &standing, only.as_deref());
+        }
     });
+}
+
+/// A machine behind the repo this long is said, once.
+const BEHIND_SAID_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Notes when each machine was first seen behind and forgets it once it's in step; returns the machines behind a day
+/// that haven't been said, with how many items, and whether anything kept changed. A machine not answering or not
+/// scanned keeps what was noted: it isn't known to be in step.
+fn behind_long(held: &mut Held, machines: &[(String, MachineState, u32)], now: i64) -> (Vec<(String, u32)>, bool) {
+    let mut due = Vec::new();
+    let mut changed = false;
+    for (machine, state, count) in machines {
+        match state {
+            MachineState::InStep => {
+                changed |= held.behind_since.remove(machine).is_some();
+                changed |= held.told_behind.remove(machine);
+            }
+            MachineState::Behind => {
+                let since = *held.behind_since.entry(machine.clone()).or_insert_with(|| {
+                    changed = true;
+                    now
+                });
+                if now - since >= BEHIND_SAID_MS && held.told_behind.insert(machine.clone()) {
+                    changed = true;
+                    due.push((machine.clone(), *count));
+                }
+            }
+            MachineState::Unreachable | MachineState::NotScanned => {}
+        }
+    }
+    (due, changed)
+}
+
+/// Says a machine's setup scan has failed three times in a row while it answers its health checks.
+pub(super) fn scan_failing(app: &tauri::AppHandle, machine: &str, error: String) {
+    let _ = app.emit(AUTOLINE_EVENT, AutoLineEvent { machine: machine.to_string(), kind: AutoLineKind::ScanFailing, applied: AppliedCounts::default(), error: Some(error), waiting: 0 });
 }
 
 fn look(app: &tauri::AppHandle, repo: &str, standing: &SyncStanding, only: Option<&str>) {
@@ -551,12 +616,28 @@ mod tests {
     #[test]
     fn a_stop_and_its_reason_are_kept_and_an_older_file_of_stamps_still_reads() {
         let path = std::env::temp_dir().join(format!("arbor-setup-auto-{}.json", std::process::id()));
-        let kept = Kept { stamps: vec!["20261008T010203Z-ab12".into()], stopped: BTreeMap::from([("cedar-02".to_string(), "~/.claude/CLAUDE.md changed".to_string())]) };
+        let kept = Kept { stamps: vec!["20261008T010203Z-ab12".into()], stopped: BTreeMap::from([("cedar-02".to_string(), "~/.claude/CLAUDE.md changed".to_string())]), ..Kept::default() };
         fs::write(&path, serde_json::to_vec(&kept).unwrap()).unwrap();
         assert_eq!(read_kept(&path), kept);
         fs::write(&path, r#"["20261008T010203Z-ab12"]"#).unwrap();
-        assert_eq!(read_kept(&path), Kept { stamps: vec!["20261008T010203Z-ab12".into()], stopped: BTreeMap::new() });
+        assert_eq!(read_kept(&path), Kept { stamps: vec!["20261008T010203Z-ab12".into()], ..Kept::default() });
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_machine_behind_a_day_is_said_once_and_again_only_after_its_been_in_step() {
+        const HOUR: i64 = 60 * 60 * 1000;
+        let mut held = Held::default();
+        let behind = |count| vec![("cam-mbp".to_string(), MachineState::Behind, count), ("ci-01".to_string(), MachineState::InStep, 0)];
+        assert_eq!(behind_long(&mut held, &behind(2), 0), (vec![], true));
+        assert_eq!(behind_long(&mut held, &behind(2), 23 * HOUR).0, vec![]);
+        assert_eq!(behind_long(&mut held, &behind(3), 24 * HOUR).0, vec![("cam-mbp".to_string(), 3)]);
+        assert_eq!(behind_long(&mut held, &behind(3), 48 * HOUR).0, vec![], "said once");
+        // Not answering isn't in step: still said once.
+        assert_eq!(behind_long(&mut held, &[("cam-mbp".to_string(), MachineState::Unreachable, 3)], 50 * HOUR), (vec![], false));
+        assert!(behind_long(&mut held, &[("cam-mbp".to_string(), MachineState::InStep, 0)], 51 * HOUR).1);
+        assert_eq!(behind_long(&mut held, &behind(1), 52 * HOUR).0, vec![]);
+        assert_eq!(behind_long(&mut held, &behind(1), 76 * HOUR).0, vec![("cam-mbp".to_string(), 1)], "again after being in step");
     }
 
     #[test]

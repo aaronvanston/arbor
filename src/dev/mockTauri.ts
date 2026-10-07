@@ -153,6 +153,8 @@
  * `?autoline=applied`, `failed` or `waiting` for cam-mbp's run by itself reporting four seconds after load (brought in
  * line, stopped by a file changed since its scan, or changes waiting for you), each raising its alert; `?autoline=paused`
  * for ci-01 paused by its own value, and `off` for bringing machines in line by themselves switched off;
+ * `?autoline=behind` for cedar-02 behind the repo for a day and `scanfailing` for ci-01's setup scan failing a third time
+ * running, each raising its alert four seconds after load;
  * `?repokeep=ahead`, `behind`, `diverged`, `dirty`, `pushfail`, `noremote` or `off` for the setup repo ahead of or
  * behind its remote (the next round, on focus or from Settings › Machines › Sync, pushes or pulls), ahead and behind,
  * behind with synced files changed, a push the remote turns down, a branch that follows no remote, or keeping it in step

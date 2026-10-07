@@ -62,6 +62,8 @@ const KIND_LOOK: Record<AlertKind, { icon: AppIcon; tone: Tone }> = {
   setupAuto: { icon: Layers, tone: 'muted' },
   setupAutoFailed: { icon: Layers, tone: 'error' },
   setupWaiting: { icon: Layers, tone: 'info' },
+  setupBehind: { icon: Layers, tone: 'warning' },
+  setupScanFailing: { icon: Layers, tone: 'warning' },
   automationFailed: { icon: TimeSchedule, tone: 'error' },
   outage: { icon: CloudAlert, tone: 'warning' },
   proxySettings: { icon: ServerCog, tone: 'error' },

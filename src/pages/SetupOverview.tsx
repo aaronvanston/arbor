@@ -81,7 +81,12 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
   // How many machines are in step, and what's behind, is Sync's standing, worked out once in Rust.
   const behindKeys = new Set(standing?.machines.flatMap((machine) => machine.behind.map((item) => item.key)) ?? []);
   const counts = libraryCounts(rows);
-  const kindError = Object.values(kindErrors)[0] ?? null;
+  // Every registry that couldn't be read, or has a file Arbor can't use, is said here rather than counted as nothing.
+  const registryProblems = [
+    ...Object.values(kindErrors).map((error) => t('overview.kindFailed', { error })),
+    ...(sources.registry?.problems ?? []).map((problem) => t('overview.registryProblem.mcp', { problem })),
+    ...(sources.hooks?.problems ?? []).map((problem) => t('overview.registryProblem.hooks', { problem })),
+  ];
   const items = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
   const bring = async (chosen: LinePlan[]) => {
@@ -168,7 +173,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
           <Button variant="outline" size="sm" disabled={running !== null} onClick={() => void bring(plans)}>{t('overview.bring.all')}</Button>
         ) : undefined}
       >
-        {kindError ? <p className="px-4 pt-3 text-xs text-error-foreground" role="alert">{t('overview.kindFailed', { error: kindError })}</p> : null}
+        {registryProblems.map((text) => <p key={text} className="px-4 pt-3 text-xs text-error-foreground" role="alert" data-overview-registry-problem>{text}</p>)}
         {unreadable ? (
           <TableEmpty action={<Button variant="outline" size="sm" onClick={onOpenRepo}>{t('library.noRepo.open')}</Button>}>
             <span className="text-error-foreground" role="alert">{t('setup.repo.failed', { error: loadError })}</span>

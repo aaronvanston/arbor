@@ -98,6 +98,8 @@ const CATEGORY: Record<AlertKind, AlertCategory | null> = {
   setupAuto: 'machines',
   setupAutoFailed: 'machines',
   setupWaiting: 'machines',
+  setupBehind: 'machines',
+  setupScanFailing: 'machines',
   outage: 'outages',
   // The proxy's own trouble: Home says what's wrong, with the fix.
   proxySettings: 'outages',
@@ -164,7 +166,7 @@ export function alertDestination({ kind, subject }: Pick<AlertRecord, 'kind' | '
     const machine = onlyOne(subject?.machine, subject?.machines);
     return { kind: 'setup', tab: 'history', ...(machine ? { machine } : {}) };
   }
-  if (kind === 'setupWaiting') return { kind: 'setup', tab: 'overview' };
+  if (kind === 'setupWaiting' || kind === 'setupBehind') return { kind: 'setup', tab: 'overview' };
   if (kind === 'automationFailed' && subject?.automation) return { kind: 'automation', automation: subject.automation };
   // What's wrong with the archive, and what to do, is on its settings page.
   if (kind === 'archiveAway' || kind === 'archiveFailing') return { kind: 'archive' };

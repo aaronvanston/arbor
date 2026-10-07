@@ -495,7 +495,7 @@ export type AutoLineEvent = {
 /**
  * What the window hears after a run, or when what waits on a machine changes.
  */
-export type AutoLineKind = "applied" | "failed" | "waiting";
+export type AutoLineKind = "applied" | "failed" | "waiting" | "behindLong" | "scanFailing";
 
 /**
  * One machine, as runs by themselves see it.

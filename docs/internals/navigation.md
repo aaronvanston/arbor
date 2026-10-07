@@ -96,6 +96,12 @@ wait for the user and are said once per machine. A run is a normal guarded apply
 by this Mac's list of its backups. It runs at most once every five minutes per machine. A failure stops runs on that
 machine, kept across restarts in `setup-auto.json`, until a person's apply works there or it's found in step.
 
+Sync also says when something's wrong that nobody would otherwise see, each once, as an alert with its subject. A
+machine behind the repo for a day opens Overview, and is said again only after it's been in step; the time it first fell
+behind is kept in `setup-auto.json`. A setup scan that fails three times in a row on a machine that answers its health
+checks opens the machine's page. The repo's MCP servers or hooks file Arbor can't read or use is said on Overview, not
+counted as nothing. The setup repo's own trouble is the keeper's.
+
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the
 limits, the next run's chances, where a burst would go. Settings › Pools only edits them.
 

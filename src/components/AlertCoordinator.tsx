@@ -29,6 +29,8 @@ const TOAST_KIND: Record<AlertKind, ToastKind> = {
   setupAuto: 'info',
   setupAutoFailed: 'warning',
   setupWaiting: 'info',
+  setupBehind: 'warning',
+  setupScanFailing: 'warning',
   automationFailed: 'warning',
   outage: 'warning',
   proxySettings: 'error',

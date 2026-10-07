@@ -47,7 +47,9 @@ export const appliedText = (counts: AppliedCounts, t: Translate) =>
 
 /**
  * The alert after a run, or when what waits on a machine changed: one per machine (its subject), folded on repeat. A
- * run that did something is a quiet note; one that failed says Arbor stopped there; changes waiting say how many.
+ * run that did something is a quiet note; one that failed says Arbor stopped there; changes waiting say how many. Rust
+ * also says on this event when a machine has been behind for a day, and when its setup scan failed three times in a
+ * row while it answers.
  */
 export function autoLineNotification(event: AutoLineEvent, t: Translate): SystemNotification | null {
   const subject = { machine: event.machine };
@@ -62,6 +64,10 @@ export function autoLineNotification(event: AutoLineEvent, t: Translate): System
       return event.waiting
         ? { title: t(event.waiting === 1 ? 'autoLine.alert.waiting.one' : 'autoLine.alert.waiting.other', { count: event.waiting, machine: event.machine }), body: t('autoLine.alert.waitingBody'), kind: 'setupWaiting', subject }
         : null;
+    case 'behindLong':
+      return { title: t('autoLine.alert.behind', { machine: event.machine }), body: t(event.waiting === 1 ? 'autoLine.alert.behindBody.one' : 'autoLine.alert.behindBody.other', { count: event.waiting }), kind: 'setupBehind', subject };
+    case 'scanFailing':
+      return { title: t('autoLine.alert.scanFailing', { machine: event.machine }), body: t('autoLine.alert.scanFailingBody', { error: event.error ?? '' }), kind: 'setupScanFailing', subject };
   }
 }
 

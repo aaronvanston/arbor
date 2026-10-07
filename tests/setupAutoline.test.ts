@@ -47,3 +47,14 @@ describe('machines brought in line by themselves', () => {
     expect([isPaused(line, 'ci-01'), isPaused(line, 'cam-mbp')]).toEqual([true, false]);
   });
 });
+
+describe('saying when something’s wrong', () => {
+  it('says a machine behind for a day, which opens Overview, and a setup scan failing, which opens the machine', () => {
+    const behind = present(autoLineNotification(event({ kind: 'behindLong', machine: 'cedar-02', waiting: 6 }), t));
+    expect([behind.title, behind.kind]).toEqual(['cedar-02 has been behind the setup repo for a day', 'setupBehind']);
+    expect(alertDestinationView(present(alertDestination({ kind: 'setupBehind', subject: behind.subject })))).toEqual({ kind: 'main', page: 'setup', params: { tab: 'overview' } });
+    const failing = present(autoLineNotification(event({ kind: 'scanFailing', machine: 'ci-01', error: 'Operation timed out' }), t));
+    expect([failing.kind, failing.body.endsWith('Operation timed out')]).toEqual(['setupScanFailing', true]);
+    expect(alertDestinationView(present(alertDestination({ kind: 'setupScanFailing', subject: failing.subject })))).toEqual({ kind: 'main', page: 'machines', params: { machine: 'ci-01' } });
+  });
+});

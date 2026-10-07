@@ -811,6 +811,9 @@ pub(crate) struct MachineSetup {
     /// seen it: what scans find meanwhile isn't a change to tell anyone about.
     #[serde(skip)]
     arbor_wrote_ms: Option<i64>,
+    /// Scans in a row that failed, for saying so once three have while the machine answers otherwise.
+    #[serde(skip)]
+    failed_rounds: u32,
 }
 
 /// A hook, MCP server, plugin marketplace or plugin that came, went or changed between two scans
@@ -1908,6 +1911,8 @@ struct Recorded {
     /// The scan found a harness the last one didn't, or missed one it found, so the lists that show only the
     /// harnesses some machine has may change.
     harnesses_changed: bool,
+    /// This is the third scan in a row to fail on a machine that answers its health checks: why, to say so once.
+    failing: Option<String>,
 }
 
 /// Stores a scan's result, unless the machine has since been pointed somewhere else, and says what
@@ -1921,7 +1926,15 @@ fn record(state: &MachineHealthState, target: &Target, host: &MachineHost, start
         },
         Target::ThisMachine => &mut inner.local_setup,
     };
-    record_scan(setup, started_ms, at_ms, result)
+    let mut recorded = record_scan(setup, started_ms, at_ms, result);
+    let answering = match target {
+        Target::Series(machine) => inner.series.get(machine).is_some_and(|series| series.error.is_none() && series.last_ok_at.is_some()),
+        Target::ThisMachine => true,
+    };
+    if !answering {
+        recorded.failing = None;
+    }
+    recorded
 }
 
 fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Result<Scan, String>) -> Recorded {
@@ -1950,12 +1963,23 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
             setup.policy = scan.policy;
             setup.home_dir = scan.home_dir;
             setup.error = None;
+            setup.failed_rounds = 0;
             recorded.harnesses_changed = setup.harnesses() != before;
         }
-        Err(error) => setup.error = Some(error),
+        Err(error) => {
+            setup.failed_rounds += 1;
+            // Said on the third failure in a row, and not again until a scan works.
+            if setup.failed_rounds == SCAN_FAILURES_SAID {
+                recorded.failing = Some(error.clone());
+            }
+            setup.error = Some(error);
+        }
     }
     recorded
 }
+
+/// Scans in a row that fail on an answering machine before Sync says so.
+const SCAN_FAILURES_SAID: u32 = 3;
 
 // ---------------------------------------------------------------------------
 // Kept across restarts
@@ -2247,6 +2271,9 @@ fn start_scans_after(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, no
             let _ = app.emit(SETUP_INVENTORY_UPDATED_EVENT, at_ms);
             if after_change && !recorded.again {
                 super::setup_standing::refresh(&app).await;
+            }
+            if let Some(error) = recorded.failing.clone() {
+                super::setup_autoline::scan_failing(&app, machine.name(), error);
             }
             // A machine read afresh may be behind the repo: Sync may bring it in line by itself.
             if !recorded.again {
@@ -3585,6 +3612,17 @@ notifications = true
         state.lock().series.get_mut("cam-mbp").unwrap().setup.scanned_at = Some(9);
         restore_into(&mut state.lock(), saved);
         assert_eq!(state.lock().series["cam-mbp"].setup.scanned_at, Some(9));
+    }
+
+    #[test]
+    fn the_third_failed_scan_in_a_row_is_said_once_and_a_scan_that_works_starts_again() {
+        let mut setup = MachineSetup::default();
+        let fail = |setup: &mut MachineSetup| record_scan(setup, 1, 2, Err("Timed out after 60s".into())).failing;
+        assert_eq!((fail(&mut setup), fail(&mut setup)), (None, None));
+        assert_eq!(fail(&mut setup).as_deref(), Some("Timed out after 60s"));
+        assert_eq!(fail(&mut setup), None, "said once");
+        record_scan(&mut setup, 3, 4, Ok(scan_with_secrets("x")));
+        assert_eq!((fail(&mut setup), fail(&mut setup), fail(&mut setup).is_some()), (None, None, true));
     }
 
     #[test]
