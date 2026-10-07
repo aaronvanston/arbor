@@ -7,6 +7,7 @@ import { formatAgo, formatCount, formatDateTime, formatMoney, formatWhen } from 
 import { cn } from '../lib/utils';
 import { machineLiveView, machineSessionsView, movedSetupView, setupChecksView, setupView, type AppView } from '../navigation';
 import { useLatestAgentVersions } from '../services/agentReleases';
+import { requestAddMachine } from '../services/addMachine';
 import { newestAgents } from '../services/agentVersions';
 import { errorWords, plainError } from '../services/plainError';
 import { useFleetBoard } from '../services/fleetBoard';
@@ -189,7 +190,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           variant="info"
           icon={<Unplug />}
           action={(
-            <Button variant="outline" size="sm" onClick={() => onNavigate({ kind: 'settings', page: 'machines' })}>
+            <Button variant="outline" size="sm" onClick={() => requestAddMachine(name)}>
               <Settings2 />
               {t('machine.noHost.action')}
             </Button>

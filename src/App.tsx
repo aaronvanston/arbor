@@ -275,9 +275,11 @@ function AppContent({ navigateRef }: ShellProps) {
     if (pagePutsAwaySidebar(openPage.current, page)) putAwaySidebarOverlay();
     openPage.current = page;
   }, [view]);
-  const [addingMachine, setAddingMachine] = useState(false);
+  // The dialog's name filled in, or null while it's closed.
+  const [addingMachine, setAddingMachine] = useState<string | null>(null);
   // Stable, so the memoized page doesn't render again for it.
-  const addMachine = useCallback(() => setAddingMachine(true), []);
+  // Pages pass it as a click handler too, so anything but a name opens it empty.
+  const addMachine = useCallback((name?: unknown) => setAddingMachine(typeof name === 'string' ? name : ''), []);
   useEffect(() => onAddMachineRequest(addMachine), [addMachine]);
   const appliedTheme = useAppliedTheme();
   const sidebarArt = sidebarArtChoice(preferences.sidebarArt);
@@ -674,10 +676,11 @@ function AppContent({ navigateRef }: ShellProps) {
       </div>
 
       <AddMachineDialog
-        open={addingMachine}
-        onClose={() => setAddingMachine(false)}
+        open={addingMachine !== null}
+        name={addingMachine ?? ''}
+        onClose={() => setAddingMachine(null)}
         onAdded={(machine) => {
-          setAddingMachine(false);
+          setAddingMachine(null);
           toast({ kind: 'success', title: tRich('machines.hosts.added', { machine: <MachinePill name={machine} size="md" /> }) });
           // Its page, where the checklist brings it in line once it answers.
           navigate(machinesView(machine));

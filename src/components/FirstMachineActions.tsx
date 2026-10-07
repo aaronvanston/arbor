@@ -35,7 +35,7 @@ export function FirstMachineActions({ onAdded }: { onAdded?: (machine: string) =
           {busy ? <Spinner /> : <Laptop />}
           {t('machines.thisMac.add')}
         </Button>
-        <Button variant="outline" size="sm" onClick={requestAddMachine}>
+        <Button variant="outline" size="sm" onClick={() => requestAddMachine()}>
           <Plus />
           {t('machines.thisMac.other')}
         </Button>

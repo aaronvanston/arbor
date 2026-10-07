@@ -33,7 +33,13 @@ type Discovery = { state: 'loading' } | { state: 'failed'; error: string } | { s
  * while the list doesn't have it, then the machines this Mac already reaches, from its SSH config, its known hosts and
  * its tailnet; picking one only fills the fields in.
  */
-export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: (machine: string) => void }) {
+export function AddMachineDialog({ open, name: startName = '', onClose, onAdded }: {
+  open: boolean;
+  /** A machine the list has without a host, filled in so adding gives it one. */
+  name?: string;
+  onClose: () => void;
+  onAdded: (machine: string) => void;
+}) {
   const { t, tRich } = useI18n();
   const [name, setName] = useState('');
   const [endpoint, setEndpoint] = useState('');
@@ -61,7 +67,7 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
       discoveryRun.current += 1;
       return;
     }
-    setName('');
+    setName(startName);
     setEndpoint('');
     setPort('22');
     setError(null);
@@ -70,7 +76,7 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
     fetchMachineHosts().then(setHosts).catch(() => setHosts([]));
     getThisMac().then(setThisMac).catch(() => undefined);
     discover();
-  }, [open, discover]);
+  }, [open, discover, startName]);
 
   const machine = name.trim();
   const host = endpoint.trim();

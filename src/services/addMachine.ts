@@ -34,15 +34,18 @@ export function addMachineMissing(fields: { name: string; host: string; port: nu
   return null;
 }
 
-const listeners = new Set<() => void>();
+const listeners = new Set<(name?: string) => void>();
 
-/** Opens the app's Add machine dialog, for a page with no other way to reach it. */
-export function requestAddMachine() {
-  for (const listener of listeners) listener();
+/**
+ * Opens the app's Add machine dialog, for a page with no other way to reach it; with `name`, filled in with a machine
+ * the list has without a host, so adding one gives it its host.
+ */
+export function requestAddMachine(name?: string) {
+  for (const listener of listeners) listener(name);
 }
 
 /** Calls `listener` each time a page asks for the Add machine dialog; returns what stops it. */
-export function onAddMachineRequest(listener: () => void) {
+export function onAddMachineRequest(listener: (name?: string) => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
