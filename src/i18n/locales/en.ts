@@ -6400,6 +6400,7 @@ export const en = {
   'automations.runNow.message': 'Arbor runs its pre-flight check on the machine and, if that passes, starts the agent there. It uses your accounts like any other session.',
   'automations.runNow.messageNoCheck': 'Arbor starts the agent on the machine. It uses your accounts like any other session.',
   'automations.runNow.messageOther': 'The app that keeps it starts the run on its machine. It uses your accounts like any other session.',
+  'automations.runNow.messageCommand': 'ultradian runs its command on {machine} now, after its gate if it has one.',
   'automations.runNow.confirm': 'Run now',
   'automations.runNow.started': '{name} started',
   'automations.copy.action': 'Copy into Arbor',

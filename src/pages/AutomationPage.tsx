@@ -213,7 +213,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                   <TableHead>{t('automations.runs.when')}</TableHead>
                   <TableHead>{t('automations.runs.status')}</TableHead>
                   <TableHead>{t('automations.fact.machine')}</TableHead>
-                  <TableHead className="w-full">{t('automations.runs.precheck')}</TableHead>
+                  <TableHead className="w-full">{t(own ? 'automations.step.gate' : 'automations.runs.precheck')}</TableHead>
                   <TableHead className="text-end">{t('automations.runs.took')}</TableHead>
                   <TableHead><span className="sr-only">{t('automations.runs.session')}</span></TableHead>
                 </TableRow>
@@ -253,6 +253,8 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /** The model, or the agent while no run has said which model it used. */
 function ModelFact({ model, effort, agent, fromRun }: { model: string | null; effort: string | null; agent: Automation['summary']['agent']; fromRun: boolean }) {
   const { t } = useI18n();
+  // A schedule that runs a plain command has no agent, and so no model.
+  if (!model && !agent) return <span className="text-muted-foreground">—</span>;
   if (!model) {
     return (
       <span title={t('automations.model.unknown')}><HarnessName harness={agent} /></span>

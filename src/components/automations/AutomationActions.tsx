@@ -4,6 +4,7 @@ import { automationView, automationsView, type AppView } from '../../navigation'
 import { invokeCommand } from '../../native/commands';
 import type { Automation, AutomationSummary } from '../../native/types';
 import { automationTargetGone, copyKeepsSchedule, loadAutomations, showAutomations } from '../../services/automations';
+import { plainError } from '../../services/plainError';
 import { usePools } from '../../services/pools';
 import { useConfirmation } from '../ConfirmationDialog';
 import { Button } from '../ui/button';
@@ -38,7 +39,7 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
     try {
       await work();
     } catch (error) {
-      toast({ title: t('automations.action.failed'), description: String(error), kind: 'error' });
+      toast({ title: t('automations.action.failed'), description: plainError(error, t), kind: 'error' });
     } finally {
       setBusy(false);
     }
@@ -60,7 +61,10 @@ export function AutomationActions({ item, onNavigate, compact = false }: {
   const runNow = () => act(async () => {
     const confirmed = await askConfirmation({
       title: t('automations.runNow.title', { name: item.name }),
-      message: t(item.source !== 'arbor' ? 'automations.runNow.messageOther' : item.hasPrecheck ? 'automations.runNow.message' : 'automations.runNow.messageNoCheck'),
+      // A schedule that runs a plain command starts no agent, so it spends nothing of the accounts'.
+      message: item.source === 'ultradian' && !item.agent
+        ? t('automations.runNow.messageCommand', { machine: item.machine ?? '' })
+        : t(item.source !== 'arbor' ? 'automations.runNow.messageOther' : item.hasPrecheck ? 'automations.runNow.message' : 'automations.runNow.messageNoCheck'),
       confirmText: t('automations.runNow.confirm'),
     });
     if (!confirmed) return;
