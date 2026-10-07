@@ -1055,12 +1055,17 @@ const t3Channel = (machine: string, readAgoMs: number, threads: T3Thread[]): T3C
 
 const defaultT3Channels = (): T3Channel[] => {
   const proxied = usageSessions.find((item) => item.id === T3_PROXY_THREAD);
+  // T3 Code runs the session the reporter says is waiting, so it's waiting on the same thing there: with
+  // ?attention=question a question, not the approval T3 Code would otherwise still show over it.
+  const asked = attentionStart - 3 * 60_000 - 12_000;
+  const waiting = params.get('attention') === 'question'
+    ? { pendingQuestions: 1, questionSeenAtMs: asked }
+    : { pendingApprovals: 1, approvalSinceMs: asked, latestApprovalAtMs: asked };
   return [
     t3Channel('cam-mbp', 3_000, [
       t3Thread({
         threadId: '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', projectId: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e', workspaceRoot: '/Users/cam/src/arbor',
-        sessionStatus: 'running', sessionUpdatedAtMs: now - 3 * 60_000, pendingApprovals: 1, approvalSinceMs: attentionStart - 3 * 60_000 - 12_000,
-        latestApprovalAtMs: attentionStart - 3 * 60_000 - 12_000, turn: t3Turn('running', 9), latestUserMessageAtMs: now - 9 * 60_000, updatedAtMs: now - 3 * 60_000, agentSessionId: T3_PROXY_THREAD,
+        sessionStatus: 'running', sessionUpdatedAtMs: now - 3 * 60_000, ...waiting, turn: t3Turn('running', 9), latestUserMessageAtMs: now - 9 * 60_000, updatedAtMs: now - 3 * 60_000, agentSessionId: T3_PROXY_THREAD,
         arborSession: proxied ? { id: T3_PROXY_THREAD, lastActiveAtMs: proxied.lastActiveAtMs, lastRequestFailed: false } : null,
       }),
       t3Thread({
