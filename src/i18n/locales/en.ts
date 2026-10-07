@@ -3987,6 +3987,8 @@ export const en = {
   'usage.collector.collecting': 'Collecting locally',
   'usage.collector.error': 'Collection error',
   'usage.collector.waiting': 'Waiting for the core',
+  'usage.collector.noCore': 'No core installed',
+  'usage.collector.noCoreNote': 'The core isn’t installed, so there are no requests to record. Install it from Settings › Updates.',
   'usage.collector.lastRecord': 'Last record {time}',
   'usage.collector.bannerTitle': 'Usage isn’t being recorded',
   'usage.collector.openData': 'Open Data settings',

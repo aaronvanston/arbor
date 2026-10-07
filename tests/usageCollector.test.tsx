@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { CoreRuntimeProvider } from '../src/coreRuntime';
 import { I18nProvider, translate } from '../src/i18n';
 import { UsageCollectorBanner } from '../src/components/UsageCollectorBanner';
 import { UsageCollectorSection } from '../src/pages/UsageCollectorSection';
@@ -13,6 +14,12 @@ describe('usage collector status', () => {
     expect(collectorDisplay(null)).toEqual({ tone: 'warning', labelKey: 'usage.collector.waiting' });
   });
 
+  // system-17: with no core installed there's nothing to wait for, so it says so and where to install one.
+  test('says there is no core rather than waiting for one', () => {
+    expect(collectorDisplay({ state: 'waiting-core' }, true)).toEqual({ tone: 'warning', labelKey: 'usage.collector.noCore', noteKey: 'usage.collector.noCoreNote' });
+    expect(collectorDisplay({ state: 'collecting' }, true).labelKey).toBe('usage.collector.collecting');
+  });
+
   test('the last record time is read only when there is one', () => {
     expect(lastCollectedMs({ lastCollectedAt: '2026-09-25T10:00:00.000Z' })).toBe(Date.parse('2026-09-25T10:00:00.000Z'));
     expect(lastCollectedMs({ lastCollectedAt: null })).toBeNull();
@@ -21,7 +28,7 @@ describe('usage collector status', () => {
   });
 
   test('Settings › Data shows the collection section, before its first answer as loading', () => {
-    const html = renderToStaticMarkup(<I18nProvider><UsageCollectorSection /></I18nProvider>);
+    const html = renderToStaticMarkup(<I18nProvider><CoreRuntimeProvider><UsageCollectorSection /></CoreRuntimeProvider></I18nProvider>);
     expect(html).toContain('Collection');
     expect(html).toContain('Status');
     expect(html).toContain('data-slot="skeleton"');

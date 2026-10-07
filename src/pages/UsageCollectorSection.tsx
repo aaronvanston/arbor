@@ -2,7 +2,9 @@ import { SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusPill } from '../components/ui/status-dot';
 import { useCollectorStatus } from '../hooks/useCollectorStatus';
+import { useCoreRuntime } from '../coreRuntime';
 import { useI18n } from '../i18n';
+import { coreLock } from '../services/coreLock';
 import { formatAgo } from '../lib/format';
 import { collectorDisplay, collectorProblem, lastCollectedMs } from '../services/usageCollector';
 import { plainError } from '../services/plainError';
@@ -16,7 +18,8 @@ const REFRESH_MS = 5_000;
 export function UsageCollectorSection() {
   const { t } = useI18n();
   const { status, loadError, checkedAt } = useCollectorStatus(REFRESH_MS);
-  const { tone, labelKey } = collectorDisplay(status);
+  const { status: core, statusError } = useCoreRuntime();
+  const { tone, labelKey, noteKey } = collectorDisplay(status, coreLock(core, statusError) === 'missing');
   const last = lastCollectedMs(status);
 
   return (
@@ -24,7 +27,7 @@ export function UsageCollectorSection() {
       <SettingsRow
         settingId="data.collector"
         title={t('usage.collector.status')}
-        description={loadError ? t('usage.collector.loadFailed', { error: plainError(loadError, t) }) : status?.message ? (status.state === 'error' ? collectorProblem(status.message, t) : status.message) : undefined}
+        description={loadError ? t('usage.collector.loadFailed', { error: plainError(loadError, t) }) : noteKey ? t(noteKey) : status?.message ? (status.state === 'error' ? collectorProblem(status.message, t) : status.message) : undefined}
         status={last === null ? undefined : t('usage.collector.lastRecord', { time: formatAgo(last, checkedAt) })}
         control={status ? <StatusPill tone={tone}>{t(labelKey)}</StatusPill> : loadError ? null : <Skeleton className="h-6 w-32" />}
       />

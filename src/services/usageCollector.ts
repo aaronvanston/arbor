@@ -5,12 +5,20 @@ import { plainError } from './plainError';
 
 type Translate = (key: MessageKey, variables?: MessageVariables) => string;
 
-/** The pill for a collector status. Before the first answer it reads as waiting, like a core that isn't up yet. */
-export function collectorDisplay(status: Pick<UsageCollectorStatus, 'state'> | null): { tone: StatusTone; labelKey: MessageKey } {
+/**
+ * The pill for a collector status, and what to say under it when Arbor knows better than the collector: waiting for a
+ * core that isn't installed would wait forever. Before the first answer it reads as waiting, like a core not up yet.
+ */
+export function collectorDisplay(
+  status: Pick<UsageCollectorStatus, 'state'> | null,
+  coreMissing = false,
+): { tone: StatusTone; labelKey: MessageKey; noteKey?: MessageKey } {
   switch (status?.state) {
     case 'collecting': return { tone: 'success', labelKey: 'usage.collector.collecting' };
     case 'error': return { tone: 'error', labelKey: 'usage.collector.error' };
-    default: return { tone: 'warning', labelKey: 'usage.collector.waiting' };
+    default: return coreMissing
+      ? { tone: 'warning', labelKey: 'usage.collector.noCore', noteKey: 'usage.collector.noCoreNote' }
+      : { tone: 'warning', labelKey: 'usage.collector.waiting' };
   }
 }
 
