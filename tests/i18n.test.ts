@@ -26,6 +26,11 @@ describe('English-only interface', () => {
     expect(Object.entries(en).filter(([key, message]) => !key.toLowerCase().includes('keywords') && /authentication files?\b/i.test(message))).toEqual([]);
   });
 
+  // money-27: Settings' machine-scope copy puts the machine's pill in the sentence, and a pill can't take a possessive.
+  it('never puts a possessive straight after a machine pill in scoped Settings copy', () => {
+    expect(Object.entries(en).filter(([key, message]) => /^(machineScope|agentHomes)\./.test(key) && /\{machine\}[’']s\b/.test(message))).toEqual([]);
+  });
+
   // money-4: a confirm's warning names its button the way the button reads.
   it('names the reset button as it reads', () => {
     expect(en['quota.confirm.warning']).toContain(en['quota.confirm.button']);

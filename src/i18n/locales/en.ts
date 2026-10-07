@@ -180,7 +180,7 @@ export const en = {
   'machineScope.onMachine.title': 'On {machine}',
   'machineScope.onMachine.description': 'Set on this machine itself: the hooks that tell Arbor when an agent needs you, and Claude Code metrics.',
   'machineScope.onMachine.agentsTitle': 'Alerts and telemetry',
-  'machineScope.onMachine.agentsHint': '{machine}’s alerts reporter and Claude Code telemetry are set up on its own page, under Agents.',
+  'machineScope.onMachine.agentsHint': 'The alerts reporter and Claude Code telemetry on {machine} are set up on its page, under Agents.',
   'machineScope.onMachine.open': 'Open {machine}',
   'machineScope.onMachine.fleetWide': 'Machine assignments, SSH hosts, the live board and the metrics receiver cover every machine at once.',
   'machineScope.showAll': 'Show All machines',
