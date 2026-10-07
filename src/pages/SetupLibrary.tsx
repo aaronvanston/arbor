@@ -324,7 +324,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
         ...(run?.backups.length ? { action: { label: t('common.undo'), onClick: () => { void undoLineRun(machine, run).then((failed) => report(row.key, failed.map((entry) => t('library.undo.failed', { name: row.name, error: entry.message })))); } } } : {}),
       });
     } catch (error) {
-      report(row.key, [t('library.toggle.failed', { name: row.name, error: String(error) })]);
+      report(row.key, [t('library.toggle.failed', { name: row.name, error: plainError(error, t) })]);
     } finally {
       setRunning(null);
     }
