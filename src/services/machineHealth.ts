@@ -1,6 +1,6 @@
 import { invokeCommand } from '../native/commands';
 import type { AgentKind, HealthPoint, MachineHealthSnapshot, MachineHistory, MachineHost } from '../native/types';
-import { isWindowHidden } from './hiddenPace';
+import { isWindowInBackground } from './hiddenPace';
 import { tracked } from './productAnalytics';
 
 export const AGENT_KINDS: readonly AgentKind[] = ['claude', 'codex'];
@@ -34,11 +34,12 @@ export const historyRefreshMs = (history: MachineHistory | null) => Math.max(60_
 
 /**
  * A passive read doesn't count as watching, so it leaves the sampler on its background interval. Nobody watches a
- * hidden window, so a page left open in one reads passively too, and doesn't hold the fleet on the fast interval.
+ * hidden window, or one behind another app (the owner's call, 2026-10-08: once a minute then, every 5 s again as Arbor
+ * comes forward), so a page left open in one reads passively too, and doesn't hold the fleet on the fast interval.
  * `machine` keeps the history to that machine's; every machine still comes with its latest reading.
  */
 export function fetchMachineHealth(since: number | null, windowMs: number, passive = false, machine?: string) {
-  const args = { since, windowMs, passive: passive || isWindowHidden() };
+  const args = { since, windowMs, passive: passive || isWindowInBackground() };
   return invokeCommand('get_machine_health', machine === undefined ? args : { ...args, machine });
 }
 

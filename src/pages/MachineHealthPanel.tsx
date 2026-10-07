@@ -752,10 +752,14 @@ export function useMachineHealthSnapshot(windowMs: number, machine?: string) {
       })
       .catch(() => {});
     document.addEventListener('visibilitychange', refresh);
+    // Behind another app the reads are passive and the sampler slows to once a minute; coming forward reads at once,
+    // which sets it back to every 5 s.
+    window.addEventListener('focus', refresh);
     return () => {
       disposed = true;
       unlisten?.();
       document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
     };
   }, [load]);
 

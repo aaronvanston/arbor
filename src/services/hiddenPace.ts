@@ -16,6 +16,13 @@ type Timers = { setInterval: (run: () => void, ms: number) => number; clearInter
 export const isWindowHidden = (page: Pick<Document, 'visibilityState'> | null = typeof document === 'undefined' ? null : document) =>
   page?.visibilityState === 'hidden';
 
+/**
+ * Whether the window is out of the way: hidden, or showing behind another app that has focus. Live figures that only
+ * matter while someone looks at them (a machine page's 5-second health) rest then. False without a page, as in tests.
+ */
+export const isWindowInBackground = (page: Pick<Document, 'visibilityState' | 'hasFocus'> | null = typeof document === 'undefined' ? null : document) =>
+  page !== null && (isWindowHidden(page) || !page.hasFocus());
+
 /** The gap a background check keeps: its own while the window shows, at least a minute while it's hidden. */
 export const pacedMs = (ms: number, hidden: boolean) => (hidden ? Math.max(ms, HIDDEN_PACE_MS) : ms);
 

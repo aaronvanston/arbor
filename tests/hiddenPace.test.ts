@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { present } from './support/items';
-import { HIDDEN_PACE_MS, isWindowHidden, pacedInterval, pacedMs, throttleWaitMs } from '../src/services/hiddenPace';
+import { HIDDEN_PACE_MS, isWindowHidden, isWindowInBackground, pacedInterval, pacedMs, throttleWaitMs } from '../src/services/hiddenPace';
 
 /** A page whose visibility a test moves, and the visibilitychange listeners it would call. */
 function fakePage(state: DocumentVisibilityState = 'visible') {
@@ -50,6 +50,13 @@ describe('the hidden pace', () => {
     expect(isWindowHidden({ visibilityState: 'hidden' })).toBe(true);
     expect(isWindowHidden({ visibilityState: 'visible' })).toBe(false);
     expect(isWindowHidden(null)).toBe(false);
+  });
+
+  it('reads the window in the background when hidden or behind another app, and in front without a page', () => {
+    expect(isWindowInBackground({ visibilityState: 'hidden', hasFocus: () => true })).toBe(true);
+    expect(isWindowInBackground({ visibilityState: 'visible', hasFocus: () => false })).toBe(true);
+    expect(isWindowInBackground({ visibilityState: 'visible', hasFocus: () => true })).toBe(false);
+    expect(isWindowInBackground(null)).toBe(false);
   });
 
   it('starts its timer again at the new pace as the window hides and shows, and tells the caller first', () => {
