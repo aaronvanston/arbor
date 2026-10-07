@@ -22,6 +22,7 @@ any other machine, say so instead of trying.
 | Ask | Command |
 | --- | --- |
 | Machine health | `arbor machines`, or `arbor machines <name>` for one in full |
+| A machine's readings over more than the last hour (CPU, memory, disk, swap, load, temperatures, network, agent sessions), one value a bucket, null where nothing was read | `arbor call get_machine_history machine=<name> windowMs=86400000` (up to 90 days) |
 | Machine pools and who would take each one's next run | `arbor pools` |
 | Sessions started on pools, and how each went | `arbor pools recent`, or `arbor pools recent <pool>` |
 | Connect to a pool over SSH | `ssh arbor-<pool>`, once its page in Arbor says it's ready; `arbor pools connect` is that host's ProxyCommand, not something to run yourself. Each host name stays on its first machine; `arbor call forget_pool_ssh_name --args '{"poolId":"<id>","name":"<host>"}'` lets it pick again |

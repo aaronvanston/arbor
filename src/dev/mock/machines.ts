@@ -22,6 +22,7 @@ import type {
   MachineFacts,
   MachineHealth,
   MachineHealthSnapshot,
+  MachineHistory,
   MachineProbes,
   MachineHost,
   MachineTelemetry,
@@ -703,6 +704,29 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
   },
   get_machine_hosts: () => healthHosts,
   get_machine_probes: () => machineProbes(),
+  // A machine's history beyond the hour, as Grove keeps it: two hundred buckets, cam-mbp asleep from midnight to 7am.
+  // `?history=empty` has nothing stored yet; with `?grove=missing` it can't be read.
+  get_machine_history: ({ machine, windowMs }) => {
+    if (params.get('grove') === 'missing') throw 'Grove answered as 0.1.1 where this build of Arbor expects 0.1.2';
+    const buckets = 200;
+    const bucketMs = Math.max(60_000, Math.round(windowMs / buckets));
+    const since = Date.now() - buckets * bucketMs;
+    const empty = params.get('history') === 'empty';
+    const points = Array.from({ length: buckets }, (_, index) => {
+      const t = since + (index + 0.5) * bucketMs;
+      const asleep = machine === MOCK_THIS_MAC && new Date(t).getHours() < 7;
+      return empty || asleep ? null : healthPoint(machine, t);
+    });
+    const pick = (read: (point: HealthPoint) => number | null) => points.map((point) => (point ? read(point) : null));
+    const history: MachineHistory = {
+      machine, since, bucketMs, samples: empty ? 0 : points.filter(Boolean).length * Math.max(1, Math.round(bucketMs / 60_000)),
+      cpu: pick((point) => point.cpu), mem: pick((point) => point.mem), disk: pick((point) => point.disk), swap: pick((point) => point.swap),
+      load1: pick((point) => point.load1), cpuTemp: pick((point) => point.cpuTemp), gpuTemp: pick((point) => point.gpuTemp),
+      rxBps: pick((point) => point.rxBps), txBps: pick((point) => point.txBps),
+      agents: pick((point) => (point.claudeRunning ?? 0) + (point.codexRunning ?? 0)),
+    };
+    return history;
+  },
   install_machine_probe: ({ machine }) => later(2_000, () => {
     mockLog('install_machine_probe', { machine });
     if (probeScenario === 'fail') throw 'ssh: connect to host ' + machine + ' port 22: Operation timed out';

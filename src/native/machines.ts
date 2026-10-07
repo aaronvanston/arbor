@@ -16,6 +16,7 @@ import type {
   LatestVersions,
   MachinePool,
   MachineHealthSnapshot,
+  MachineHistory,
   MachineProbes,
   MachineHost,
   PoolPreview,
@@ -58,6 +59,7 @@ export type MachineCommands = {
     result: MachineHealthSnapshot;
   };
   get_machine_probes: { result: MachineProbes };
+  get_machine_history: { args: { machine: string; windowMs: number }; result: MachineHistory };
   install_machine_probe: { args: { machine: string }; result: MachineProbes };
   uninstall_machine_probe: { args: { machine: string }; result: MachineProbes };
 

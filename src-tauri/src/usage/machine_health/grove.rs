@@ -799,6 +799,82 @@ async fn uninstall_probe(state: &MachineHealthState, machine: &str) -> Result<Ma
     Ok(probes_of(state))
 }
 
+// ── Long history ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// Buckets a long window is drawn in: Grove's widest chart.
+const HISTORY_BUCKETS: &str = "200";
+/// The longest window asked of Grove, which keeps 90 days.
+const HISTORY_MAX_MS: i64 = 90 * 24 * 60 * 60 * 1000;
+
+/// A machine's readings over a window longer than the hour Arbor keeps, from what Grove stored: one value a bucket,
+/// the bucket's mean, null where nothing was stored (the machine was off or unread), so gaps show as gaps.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MachineHistory {
+    machine: String,
+    /// When the first bucket starts, and each one's length.
+    since: i64,
+    bucket_ms: i64,
+    /// Stored samples in the window; none yet when Grove only just started reading the machine.
+    samples: u64,
+    cpu: Vec<Option<f32>>,
+    mem: Vec<Option<f32>>,
+    disk: Vec<Option<f32>>,
+    swap: Vec<Option<f32>>,
+    load1: Vec<Option<f32>>,
+    cpu_temp: Vec<Option<f32>>,
+    gpu_temp: Vec<Option<f32>>,
+    rx_bps: Vec<Option<f64>>,
+    tx_bps: Vec<Option<f64>>,
+    agents: Vec<Option<f32>>,
+}
+
+/// `grove graph --json`'s buckets as Arbor's history.
+pub(crate) fn parse_graph(machine: &str, data: &Value) -> Result<MachineHistory, String> {
+    let since = data
+        .get("since")
+        .and_then(Value::as_str)
+        .and_then(|since| chrono::DateTime::parse_from_rfc3339(since).ok())
+        .map(|since| since.timestamp_millis())
+        .ok_or("Grove returned a history with no start")?;
+    let bucket_ms = data.get("bucket_ms").and_then(Value::as_i64).filter(|ms| *ms > 0).ok_or("Grove returned a history with no buckets")?;
+    let metrics: HashMap<&str, &Vec<Value>> = data
+        .get("metrics")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|metric| Some((metric.get("metric")?.as_str()?, metric.get("points")?.as_array()?)))
+        .collect();
+    let wide = |name: &str| metrics.get(name).map(|points| points.iter().map(Value::as_f64).collect::<Vec<_>>()).unwrap_or_default();
+    let narrow = |name: &str| wide(name).into_iter().map(|value| value.map(|value| value as f32)).collect::<Vec<_>>();
+    Ok(MachineHistory {
+        machine: machine.to_string(),
+        since,
+        bucket_ms,
+        samples: data.get("samples").and_then(Value::as_u64).unwrap_or(0),
+        cpu: narrow("cpu_pct"),
+        mem: narrow("mem_used_pct"),
+        disk: narrow("disk_used_pct"),
+        swap: narrow("swap_used_pct"),
+        load1: narrow("load1"),
+        cpu_temp: narrow("cpu_temp_c"),
+        gpu_temp: narrow("gpu_temp_c"),
+        rx_bps: wide("net_rx_bps"),
+        tx_bps: wide("net_tx_bps"),
+        agents: narrow("agent_sessions"),
+    })
+}
+
+/// A machine's history over `window_ms` (beyond the hour the page keeps itself), from what Grove stored on this Mac:
+/// nothing reaches the machine.
+#[tauri::command]
+pub(crate) async fn get_machine_history(state: tauri::State<'_, MachineHealthState>, machine: String, window_ms: i64) -> Result<MachineHistory, String> {
+    let (grove, slug) = grove_for(&state, &machine).await?;
+    let minutes = (window_ms.clamp(60 * 60 * 1000, HISTORY_MAX_MS) / 60_000).to_string() + "m";
+    let data = grove.call(&["graph", "--since", &minutes, "--width", HISTORY_BUCKETS, "--json", "--", &slug]).await?;
+    parse_graph(&machine, &data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1049,6 +1125,27 @@ mod tests {
         parent.cancel();
         streams.stop_all();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn grove_s_graph_becomes_the_page_s_long_history() {
+        // As grove 0.1.1 gave it, cut to three buckets.
+        let data = serde_json::json!({
+            "bucket_ms": 360000, "machine": "cedar01", "samples": 2,
+            "since": "2026-10-07T09:17:22.513Z", "until": "2026-10-07T10:17:22.513Z",
+            "metrics": [
+                { "metric": "cpu_pct", "unit": "%", "points": [null, 37.6, 12] },
+                { "metric": "mem_used_pct", "unit": "%", "points": [null, 61.1, 60] },
+                { "metric": "net_rx_bps", "unit": "B/s", "points": [null, 727916.7, null] },
+                { "metric": "battery_pct", "unit": "%", "points": [null, null, null] },
+            ],
+        });
+        let history = parse_graph("cedar-01", &data).unwrap();
+        assert_eq!((history.since, history.bucket_ms, history.samples), (chrono::DateTime::parse_from_rfc3339("2026-10-07T09:17:22.513Z").unwrap().timestamp_millis(), 360_000, 2));
+        assert_eq!(history.cpu, [None, Some(37.6), Some(12.0)]);
+        assert_eq!(history.rx_bps, [None, Some(727916.7), None]);
+        assert!(history.gpu_temp.is_empty(), "a metric grove didn't send is empty");
+        assert!(parse_graph("cedar-01", &serde_json::json!({ "metrics": [] })).is_err());
     }
 
     /// The pinned Grove unpacks from the checkout's bundle into a throwaway home and answers as its version. Ignored

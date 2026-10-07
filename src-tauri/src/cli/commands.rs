@@ -933,6 +933,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "get_machine_history",
+        access: Access::Read,
+        summary: "A machine's history over `window_ms` (beyond the hour the page keeps itself), from what Grove stored on this Mac: nothing reaches the machine.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "windowMs", ts_type: "number", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "install_machine_probe",
         access: Access::Confirm,
         summary: "Puts the probe Arbor carries on a machine, or updates the one there, under launchd or a systemd user unit, so it keeps reading the machine every two seconds and Arbor follows it.",
@@ -2256,6 +2265,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "cancel_automation_run" => async { done(Box::pin(crate::usage::machine_health::automations::commands::cancel_automation_run(app.clone(), arg(&args, "runId")?)).await) }.await,
         "install_background_runner" => async { done(Box::pin(crate::usage::machine_health::automations::commands::install_background_runner(app.clone(), arg(&args, "machine")?)).await) }.await,
         "get_machine_probes" => done(Box::pin(crate::usage::machine_health::grove::get_machine_probes(app.state())).await),
+        "get_machine_history" => async { done(Box::pin(crate::usage::machine_health::grove::get_machine_history(app.state(), arg(&args, "machine")?, arg(&args, "windowMs")?)).await) }.await,
         "install_machine_probe" => async { done(Box::pin(crate::usage::machine_health::grove::install_machine_probe(app.state(), arg(&args, "machine")?)).await) }.await,
         "uninstall_machine_probe" => async { done(Box::pin(crate::usage::machine_health::grove::uninstall_machine_probe(app.state(), arg(&args, "machine")?)).await) }.await,
         "copy_automation_into_arbor" => async { done(Box::pin(crate::usage::machine_health::automations::commands::copy_automation_into_arbor(app.clone(), arg(&args, "id")?, arg(&args, "pauseOriginal")?)).await) }.await,

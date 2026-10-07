@@ -2806,6 +2806,33 @@ export type MachineHealthSnapshot = {
   machines: Array<MachineHealth>,
 };
 
+/**
+ * A machine's readings over a window longer than the hour Arbor keeps, from what Grove stored: one value a bucket,
+ * the bucket's mean, null where nothing was stored (the machine was off or unread), so gaps show as gaps.
+ */
+export type MachineHistory = {
+  machine: string,
+  /**
+   * When the first bucket starts, and each one's length.
+   */
+  since: number,
+  bucketMs: number,
+  /**
+   * Stored samples in the window; none yet when Grove only just started reading the machine.
+   */
+  samples: number,
+  cpu: Array<number | null>,
+  mem: Array<number | null>,
+  disk: Array<number | null>,
+  swap: Array<number | null>,
+  load1: Array<number | null>,
+  cpuTemp: Array<number | null>,
+  gpuTemp: Array<number | null>,
+  rxBps: Array<number | null>,
+  txBps: Array<number | null>,
+  agents: Array<number | null>,
+};
+
 export type MachineHost = {
   machine: string,
   endpoint: string,

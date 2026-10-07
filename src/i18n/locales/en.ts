@@ -4539,6 +4539,8 @@ export const en = {
   'machine.noHost.action': 'Add host',
   'machine.gone': 'Arbor doesn’t list {machine} any more. It may have been renamed or removed in Settings › Machines.',
   'machine.health.title': 'Health',
+  'machine.history.failed': 'Couldn’t read this machine’s longer history: {error}. The latest readings still show.',
+  'machine.history.empty': 'Nothing stored for this window yet. Grove keeps a reading a minute from when it starts reading the machine.',
   'machine.health.description': 'Sampled every {seconds}s while this page is open.',
   'machine.live.title': 'Live',
   'machine.live.description': 'Its sessions working, waiting on you or done in the last six hours.',

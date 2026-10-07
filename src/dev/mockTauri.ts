@@ -77,6 +77,8 @@
  * (Machines and Sync › Software say why, and the sidebar lists no machines), `failafter` for reads failing from ten
  * seconds after load (Sync › Software keeps its table and, at its next read half a minute in, says it may be out of
  * date), or `slow` for each read taking four seconds (Sync › Software says it's reading);
+ * `?history=empty` for a machine page's 6h, 24h, 7d or 30d window with nothing stored yet (by default cam-mbp sleeps from
+ * midnight to 7am, so its long history has gaps);
  * `?probes=none` for no machine with Grove's health probe (by default ci-01 and cam-mbp stream and cedar-02 is read
  * over SSH), `?probes=fail` for installing or removing a probe failing, `?grove=missing` for Grove unavailable, so the
  * machine page and Settings › Machines say health comes from Arbor's own script;

@@ -1901,6 +1901,7 @@ fn main() {
             usage::machine_health::automations::commands::cancel_automation_run,
             usage::machine_health::automations::commands::install_background_runner,
             usage::machine_health::grove::get_machine_probes,
+            usage::machine_health::grove::get_machine_history,
             usage::machine_health::grove::install_machine_probe,
             usage::machine_health::grove::uninstall_machine_probe,
             usage::machine_health::automations::commands::copy_automation_into_arbor,

@@ -1,5 +1,5 @@
 import { invokeCommand } from '../native/commands';
-import type { AgentKind, HealthPoint, MachineHealthSnapshot, MachineHost } from '../native/types';
+import type { AgentKind, HealthPoint, MachineHealthSnapshot, MachineHistory, MachineHost } from '../native/types';
 import { isWindowHidden } from './hiddenPace';
 import { tracked } from './productAnalytics';
 
@@ -11,6 +11,26 @@ export const HEALTH_WINDOWS = [
   { id: '1h', ms: 60 * 60_000 },
 ] as const;
 export type HealthWindowId = (typeof HEALTH_WINDOWS)[number]['id'];
+
+/** The hour Arbor keeps of every machine; a machine's own page goes further back with Grove's stored history. */
+export const HOUR_MS = 60 * 60_000;
+export const MACHINE_WINDOWS = [
+  ...HEALTH_WINDOWS,
+  { id: '6h', ms: 6 * HOUR_MS },
+  { id: '24h', ms: 24 * HOUR_MS },
+  { id: '7d', ms: 7 * 24 * HOUR_MS },
+  { id: '30d', ms: 30 * 24 * HOUR_MS },
+] as const;
+export type MachineWindowId = (typeof MACHINE_WINDOWS)[number]['id'];
+export const machineWindowMs = (id: MachineWindowId) => MACHINE_WINDOWS.find((option) => option.id === id)?.ms ?? HOUR_MS;
+
+/** One of a history's metrics as a chart's series, each bucket's value at the bucket's middle; null leaves a gap. */
+export function historySeries(history: MachineHistory, values: readonly (number | null)[]): { t: number; v: number | null }[] {
+  return values.map((value, index) => ({ t: history.since + (index + 0.5) * history.bucketMs, v: value }));
+}
+
+/** How often a long window is read again while it shows: its buckets are minutes to hours wide. */
+export const historyRefreshMs = (history: MachineHistory | null) => Math.max(60_000, history?.bucketMs ?? 0);
 
 /**
  * A passive read doesn't count as watching, so it leaves the sampler on its background interval. Nobody watches a

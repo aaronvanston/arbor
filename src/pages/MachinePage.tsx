@@ -10,7 +10,7 @@ import { useLatestAgentVersions } from '../services/agentReleases';
 import { newestAgents } from '../services/agentVersions';
 import { useFleetBoard } from '../services/fleetBoard';
 import { healthProblem } from '../services/fixPrompt';
-import type { HealthWindowId } from '../services/machineHealth';
+import { HOUR_MS, MACHINE_WINDOWS, machineWindowMs, type MachineWindowId } from '../services/machineHealth';
 import { checklistOnPage, machineUsageTotal, setupStanding } from '../services/machinePage';
 import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import { useSetupInventory } from '../hooks/useSetupInventory';
@@ -34,13 +34,13 @@ import { MachineAgentsBlock, MachineAgentSummary } from './MachineAgents';
 import {
   HealthWindowToggle,
   headlineClass,
-  healthWindowMs,
   machineHeadline,
   MachineHealthDetail,
   MachineScore,
   STATUS_TONE,
   HealthReadFailed,
   useMachineHealthSnapshot,
+  useMachineHistory,
 } from './MachineHealthPanel';
 import { SetupChecklist, type ChecklistTab } from './SetupChecklist';
 import { SetupCompareDialog, type Comparison } from './SetupCompare';
@@ -69,9 +69,12 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
   onOpenRequests: (machine: string) => void;
 }) {
   const { t, tRich } = useI18n();
-  const [windowId, setWindowId] = useState<HealthWindowId>('15m');
-  const windowMs = healthWindowMs(windowId);
-  const { snapshot, error: healthError, readAt: healthReadAt, retry: retryHealth } = useMachineHealthSnapshot(windowMs, name);
+  const [windowId, setWindowId] = useState<MachineWindowId>('15m');
+  const windowMs = machineWindowMs(windowId);
+  // The last hour is kept here; a longer window's charts come from Grove's stored history, and the score's trend keeps to the hour.
+  const recentMs = Math.min(windowMs, HOUR_MS);
+  const { snapshot, error: healthError, readAt: healthReadAt, retry: retryHealth } = useMachineHealthSnapshot(recentMs, name);
+  const { history, error: historyError } = useMachineHistory(name, windowMs);
   const item = snapshot?.machines.find((entry) => entry.machine === name) ?? null;
   const latest = useLatestAgentVersions();
   const newest = useMemo(() => newestAgents(snapshot?.machines ?? [], latest), [snapshot, latest]);
@@ -170,7 +173,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
             <Skeleton className="h-4 w-56" />
           )}
         </div>
-        {item && !unconfigured ? <MachineScore item={item} windowMs={windowMs} /> : null}
+        {item && !unconfigured ? <MachineScore item={item} windowMs={recentMs} /> : null}
       </div>
 
       {healthError ? <HealthReadFailed error={healthError} stale={snapshot !== null} readAt={healthReadAt} onRetry={() => void retryHealth()} /> : null}
@@ -216,10 +219,15 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           <SettingsSection
             title={t('machine.health.title')}
             description={t('machine.health.description', { seconds: Math.round((snapshot?.intervalMs ?? 5_000) / 1000) })}
-            headerAction={<HealthWindowToggle value={windowId} onChange={setWindowId} />}
+            headerAction={<HealthWindowToggle value={windowId} onChange={setWindowId} options={MACHINE_WINDOWS} />}
           >
             <GroveUnavailableNote />
-            {item ? <MachineHealthDetail item={item} windowMs={windowMs} />
+            {windowMs > HOUR_MS && (historyError || (history && history.samples === 0)) ? (
+              <SettingsBlock className="text-xs text-muted-foreground">
+                {historyError ? t('machine.history.failed', { error: historyError }) : t('machine.history.empty')}
+              </SettingsBlock>
+            ) : null}
+            {item ? <MachineHealthDetail item={item} windowMs={windowMs} history={windowMs > HOUR_MS ? history : null} />
               : healthError ? <SettingsBlock className="text-xs text-muted-foreground">{t('machines.health.unavailable')}</SettingsBlock>
               : <SettingsBlock><Skeleton className="h-40 w-full" /></SettingsBlock>}
             <MachineProbeBlock machine={name} />

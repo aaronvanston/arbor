@@ -9,6 +9,9 @@ import {
   formatLatency,
   formatRate,
   HEALTH_WINDOWS,
+  historyRefreshMs,
+  historySeries,
+  HOUR_MS,
   KIB,
   latencyDigits,
   latencyStats,
@@ -32,12 +35,14 @@ import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot, StatusPill, type StatusTone } from '../components/ui/status-dot';
 import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
-import { formatAgo, formatDuration, formatTime } from '../lib/format';
+import { formatAgo, formatDateTime, formatDuration, formatTime } from '../lib/format';
 import { cn } from '../lib/utils';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { MachinePill } from '../components/identity/Identity';
 import { MachineAgentSummary } from './MachineAgents';
-import type { HealthPoint, HealthStatus, MachineHealth, MachineHealthSnapshot } from '../native/types';
+import type { HealthPoint, HealthStatus, MachineHealth, MachineHealthSnapshot, MachineHistory } from '../native/types';
+import { invokeCommand } from '../native/commands';
+import { isWindowHidden } from '../services/hiddenPace';
 import { machineName } from '../services/machineNames';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -473,20 +478,26 @@ function MachineRow({ item, newest, windowMs, onOpen }: { item: MachineHealth; n
  * Everything read from one machine, as its page shows it: what it is (model, chip, memory, system, uptime, address),
  * then a tile for each reading with its chart over the window.
  */
-export function MachineHealthDetail({ item, windowMs }: { item: MachineHealth; windowMs: number }) {
+export function MachineHealthDetail({ item, windowMs, history }: {
+  item: MachineHealth;
+  windowMs: number;
+  /** Grove's stored history, for a window longer than the hour kept here: its charts draw from it. */
+  history?: MachineHistory | null;
+}) {
   const { t } = useI18n();
   const latest = item.latest;
   const facts = item.facts;
   const identity = useMemo(() => machineIdentity(facts), [facts]);
   const id = `mh-${item.machine.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
   const pick = useCallback((read: (point: HealthPoint) => number | null): Series => item.points.map((point) => ({ t: point.t, v: read(point) })), [item.points]);
-  const cpuSeries = useMemo(() => pick((point) => point.cpu), [pick]);
-  const memSeries = useMemo(() => pick((point) => point.mem), [pick]);
-  const rxSeries = useMemo(() => pick((point) => point.rxBps), [pick]);
-  const txSeries = useMemo(() => pick((point) => point.txBps), [pick]);
-  const gpuSeries = useMemo(() => pick((point) => point.gpuUtil), [pick]);
-  const latencySeries = useMemo(() => pick((point) => point.latencyMs), [pick]);
-  const netMax = useMemo(() => Math.max(8 * KIB, ...item.points.flatMap((point) => [point.rxBps ?? 0, point.txBps ?? 0])) * 1.1, [item.points]);
+  // Grove's history has no GPU load or round trips, so over a long window those two tiles show their latest only.
+  const cpuSeries = useMemo(() => (history ? historySeries(history, history.cpu) : pick((point) => point.cpu)), [pick, history]);
+  const memSeries = useMemo(() => (history ? historySeries(history, history.mem) : pick((point) => point.mem)), [pick, history]);
+  const rxSeries = useMemo(() => (history ? historySeries(history, history.rxBps) : pick((point) => point.rxBps)), [pick, history]);
+  const txSeries = useMemo(() => (history ? historySeries(history, history.txBps) : pick((point) => point.txBps)), [pick, history]);
+  const gpuSeries = useMemo(() => (history ? [] : pick((point) => point.gpuUtil)), [pick, history]);
+  const latencySeries = useMemo(() => (history ? [] : pick((point) => point.latencyMs)), [pick, history]);
+  const netMax = useMemo(() => Math.max(8 * KIB, ...[...rxSeries, ...txSeries].map((point) => point.v ?? 0)) * 1.1, [rxSeries, txSeries]);
   const latencyMax = useMemo(() => Math.max(10, ...item.points.map((point) => point.latencyMs ?? 0)) * 1.2, [item.points]);
   const latencyRange = useMemo(() => latencyStats(item.points), [item.points]);
 
@@ -504,7 +515,7 @@ export function MachineHealthDetail({ item, windowMs }: { item: MachineHealth; w
   const totalRate = rateParts(total);
   const hasGpuTelemetry = latest ? latest.gpuUtil !== null || latest.gpuTemp !== null : false;
   const chartLabel = (metric: string) => t('machines.health.chartAria', { machine: item.machine, metric });
-  const chartTime = (at: number) => formatTime(at, { seconds: true });
+  const chartTime = (at: number) => (windowMs > HOUR_MS ? formatDateTime(at) : formatTime(at, { seconds: true }));
   const chartRate = (value: number) => { const rate = formatRate(value); return `${rate.value} ${rate.unit}`; };
   const pinged = item.pingTarget !== null;
   const latency = latest?.latencyMs ?? null;
@@ -770,15 +781,57 @@ export function HealthReadFailed({ error, stale, readAt, onRetry }: { error: str
   );
 }
 
+/**
+ * A machine's stored history for a window longer than the hour kept in memory, read from Grove while the window shows
+ * and again as each bucket fills; null for a shorter window, while it loads, or when it can't be read (`error`).
+ */
+export function useMachineHistory(machine: string, windowMs: number) {
+  const [history, setHistory] = useState<MachineHistory | null>(null);
+  const [error, setError] = useState('');
+  const long = windowMs > HOUR_MS;
+  useEffect(() => {
+    setHistory(null);
+    setError('');
+    if (!long) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const read = async () => {
+      let next: MachineHistory | null = null;
+      if (!isWindowHidden()) {
+        try {
+          next = await invokeCommand('get_machine_history', { machine, windowMs });
+          if (!stopped) {
+            setHistory(next);
+            setError('');
+          }
+        } catch (reason) {
+          if (!stopped) setError(String(reason));
+        }
+      }
+      if (!stopped) timer = setTimeout(() => void read(), historyRefreshMs(next));
+    };
+    void read();
+    return () => {
+      stopped = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [machine, windowMs, long]);
+  return { history: long ? history : null, error: long ? error : '' };
+}
+
 /** The window the charts cover, as its toggle's id. */
 export const healthWindowMs = (id: HealthWindowId) => HEALTH_WINDOWS.find((option) => option.id === id)?.ms ?? HEALTH_WINDOWS[1].ms;
 
-/** Picks the window the charts cover: 5, 15 or 60 minutes. */
-export function HealthWindowToggle({ value, onChange }: { value: HealthWindowId; onChange: (id: HealthWindowId) => void }) {
+/** Picks the window the charts cover: 5, 15 or 60 minutes, or on a machine's own page also its longer history. */
+export function HealthWindowToggle<Id extends string = HealthWindowId>({ value, onChange, options = HEALTH_WINDOWS as unknown as readonly { id: Id }[] }: {
+  value: Id;
+  onChange: (id: Id) => void;
+  options?: readonly { id: Id }[];
+}) {
   const { t } = useI18n();
   return (
-    <ToggleGroup value={[value]} onValueChange={(next) => { const id = next[0] as HealthWindowId | undefined; if (id) onChange(id); }} aria-label={t('machines.health.window')}>
-      {HEALTH_WINDOWS.map((option) => (
+    <ToggleGroup value={[value]} onValueChange={(next) => { const id = next[0] as Id | undefined; if (id) onChange(id); }} aria-label={t('machines.health.window')}>
+      {options.map((option) => (
         <Toggle key={option.id} value={option.id}>{option.id}</Toggle>
       ))}
     </ToggleGroup>
