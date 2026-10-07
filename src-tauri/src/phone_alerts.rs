@@ -745,7 +745,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(&path, r#""tk_secret""#).unwrap();
         let error = read_phone_alert_secrets(&path).unwrap_err();
-        assert!(error.contains("can't be read"), "{error}");
+        assert!(error.contains("can’t be read"), "{error}");
         assert!(!error.contains("tk_secret"), "{error}");
         // Nor is it overwritten, which would lose the others.
         assert!(save_phone_alert_secret(&path, PhoneAlertSecret::NtfyToken, "new").is_err());

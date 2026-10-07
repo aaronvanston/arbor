@@ -1335,7 +1335,7 @@ export type CliInstall = {
 };
 
 /**
- * What `install_cli_link` did.
+ * What `install_cli_link` or `remove_cli_link` did.
  */
 export type CliInstallResult = {
   install: CliInstall,
