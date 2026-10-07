@@ -3,6 +3,7 @@ import {
   accountsView,
   checkoutsView,
   failedRequestsView,
+  libraryView,
   sessionsView,
   setupView,
   usageView,
@@ -126,13 +127,16 @@ export const TREE_PAGES: readonly TreePage[] = SIDEBAR_TREE.flatMap((section) =>
 
 /**
  * Views the search palette lists under their page besides the tree's leaves: Requests with Failed on, which was
- * Usage's Failures, and Projects' Checkouts, which was Sync's Projects, so each is found by its old name and a recent
- * pick of it still opens it.
+ * Usage's Failures, Projects' Checkouts, which was Sync's Projects, the Library by cost, which was Sync's Context and
+ * Cost, and the Repo's History, which was Arbor's changes, so each is found by its old name and a recent pick of it
+ * still opens it.
  */
 export type PaletteView = { page: TreePageId; view: AppView; labelKey: MessageKey; keywords?: MessageKey };
 export const PALETTE_VIEWS: readonly PaletteView[] = [
   { page: 'usage', view: failedRequestsView(), labelKey: 'usage.failures.title', keywords: 'usage.requests.failedKeywords' },
   { page: 'sessions', view: checkoutsView(), labelKey: 'tree.projects.checkoutsTitle', keywords: 'tree.projects.checkoutsKeywords' },
+  { page: 'setup', view: libraryView(undefined, 'cost'), labelKey: 'tree.sync.costTitle', keywords: 'tree.sync.costKeywords' },
+  { page: 'setup', view: setupView({ tab: 'repo', lens: 'changes' }), labelKey: 'tree.sync.changesTitle', keywords: 'tree.sync.changesKeywords' },
 ];
 
 export const treePage = (id: MainPageId) => TREE_PAGES.find((page) => page.id === id);

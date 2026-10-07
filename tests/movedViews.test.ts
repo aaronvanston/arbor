@@ -119,9 +119,9 @@ describe('Sync’s Context and Usage’s Claude Code, then Sync › Cost, now th
     expect(mainPageView('setup', 'context')).toEqual(cost);
     expect(mainPageView('setup', 'cost')).toEqual(cost);
     expect(mainPageView('usage', 'telemetry')).toEqual(cost);
-    expect(savedSetupView('context')).toBe('library');
-    expect(savedSetupView('cost')).toBe('library');
-    expect(parseRecents(JSON.stringify(['page:main:setup:context', 'page:main:usage:telemetry', 'page:main:home']))).toEqual(['page:main:setup:library', 'page:main:home']);
+    expect(savedSetupView('context')).toEqual({ tab: 'library', lens: 'cost' });
+    expect(savedSetupView('cost')).toEqual({ tab: 'library', lens: 'cost' });
+    expect(parseRecents(JSON.stringify(['page:main:setup:context', 'page:main:usage:telemetry', 'page:main:home']))).toEqual(['page:main:setup:library:cost', 'page:main:home']);
   });
 
   it('opens Usage on Overview when Claude Code was the view Usage was left on, rather than leaving the page', () => {
@@ -142,8 +142,8 @@ describe('Sync’s Agents and Toolchain, now Sync › Software', () => {
   it('opens Software from either old id, which the palette still finds it by', () => {
     expect(mainPageView('setup', 'agents')).toEqual(setupView({ tab: 'software' }));
     expect(mainPageView('setup', 'toolchain')).toEqual(setupView({ tab: 'software' }));
-    expect(savedSetupView('agents')).toBe('software');
-    expect(savedSetupView('toolchain')).toBe('software');
+    expect(savedSetupView('agents')).toEqual({ tab: 'software' });
+    expect(savedSetupView('toolchain')).toEqual({ tab: 'software' });
     expect(palettePageId(setupView({ tab: 'software' }))).toBe('page:main:setup:software');
     expect(leafFound('setup', 'software', 'agent updates')).toBe(true);
     expect(leafFound('setup', 'software', 'rollout')).toBe(true);
@@ -157,7 +157,7 @@ describe('Sync’s Skills, MCP & plugins and Hooks, now the Library’s kinds', 
     expect(mainPageView('setup', 'skills')).toEqual(libraryView('skills', 'machines'));
     expect(mainPageView('setup', 'plugins')).toEqual(libraryView('plugins', 'machines'));
     expect(mainPageView('setup', 'hooks')).toEqual(libraryView('hooks', 'machines'));
-    expect(savedSetupView('skills')).toBe('library');
+    expect(savedSetupView('skills')).toEqual({ tab: 'library', kind: 'skills', lens: 'machines' });
     for (const word of ['skills', 'plugins', 'mcp', 'hooks', 'marketplaces']) expect(leafFound('setup', 'library', word)).toBe(true);
   });
 });
@@ -166,7 +166,7 @@ describe('Sync’s Checklist, now on each machine’s page', () => {
   it('opens Machines from its old id, in a link, a saved pick or a query string, and Sync where Sync was left on it', () => {
     expect(movedSetupView('checklist')).toEqual(machinesView());
     expect(mainPageView('setup', 'checklist')).toEqual(machinesView());
-    expect(savedSetupView('checklist')).toBe('overview');
+    expect(savedSetupView('checklist')).toEqual({ tab: 'overview' });
     expect(parseRecents(JSON.stringify(['page:main:setup:checklist']))).toEqual(['page:main:machines']);
   });
 
@@ -199,7 +199,7 @@ describe('Sessions › Projects’ Checkouts, once Sync’s Projects, and Sync �
   });
 
   it('opens Sync on Projects when it was last left there, and lists it in the sidebar', () => {
-    expect(savedSetupView('projects')).toBe('projects');
+    expect(savedSetupView('projects')).toEqual({ tab: 'projects' });
     expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.some((leaf) => (leaf.tab as string) === 'projects')).toBe(true);
   });
 });
@@ -208,18 +208,25 @@ describe('Sync’s views that kept their ids', () => {
   it('open Overview from `overview`, and Arbor’s changes, now the Repo’s, from `history`', () => {
     expect(mainPageView('setup', 'overview')).toEqual(setupView({ tab: 'overview' }));
     expect(mainPageView('setup', 'history')).toEqual(setupView({ tab: 'repo', lens: 'changes' }));
-    expect(savedSetupView('overview')).toBe('overview');
-    expect(savedSetupView('history')).toBe('repo');
+    expect(savedSetupView('overview')).toEqual({ tab: 'overview' });
+    expect(savedSetupView('history')).toEqual({ tab: 'repo', lens: 'changes' });
     expect(movedSetupView('overview')).toBeNull();
-    expect(parseRecents(JSON.stringify(['page:main:setup:overview', 'page:main:setup:history']))).toEqual(['page:main:setup:overview', 'page:main:setup:repo']);
+    expect(parseRecents(JSON.stringify(['page:main:setup:overview', 'page:main:setup:history']))).toEqual(['page:main:setup:overview', 'page:main:setup:repo:changes']);
     expect(translate('setup.tab.overview')).toBe('Overview');
     expect(leafFound('setup', 'repo', 'arbor’s changes')).toBe(true);
     expect(leafFound('setup', 'overview', 'checks')).toBe(true);
   });
 
+  it('keeps a recent pick of Context or Arbor’s changes on the lens it moved to, which the palette has a row of', () => {
+    const rows = PALETTE_VIEWS.map((item) => palettePageId(item.view));
+    for (const id of parseRecents(JSON.stringify(['page:main:setup:context', 'page:main:setup:history']))) expect(rows).toContain(id);
+    // Lenses the palette has no row of keep their tab's row, so the pick still opens Sync.
+    expect(palettePageId(libraryView('skills', 'machines'))).toBe('page:main:setup:library');
+  });
+
   it('opens Overview for a saved view that was never Sync’s, or none', () => {
-    expect(savedSetupView('nope')).toBe('overview');
-    expect(savedSetupView(null)).toBe('overview');
+    expect(savedSetupView('nope')).toEqual({ tab: 'overview' });
+    expect(savedSetupView(null)).toEqual({ tab: 'overview' });
     expect(movedSetupView('toString')).toBeNull();
   });
 

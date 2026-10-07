@@ -118,10 +118,10 @@ const store = (key: string, value: string) => {
 };
 
 /**
- * The view last open, for a view that doesn't name one: where it is now if it moved within Sync (Context is Cost), and
- * Checks when none was, or it's one that left Sync.
+ * The view last open, for a view that doesn't name one: where it is now if it moved within Sync (Context is the Library
+ * by cost), and Checks when none was, or it's one that left Sync.
  */
-const savedTab = (): SetupTab => savedSetupView(readStored(TAB_KEY));
+const savedView = () => savedSetupView(readStored(TAB_KEY));
 const savedKind = (): LibraryKind => {
   const saved = readStored(KIND_KEY);
   return isLibraryKind(saved) ? saved : 'plugins';
@@ -335,12 +335,16 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   const [onlyDifferences, setOnlyDifferences] = useState(asked === null);
   const [query, setQuery] = useState(asked ?? '');
   const [comparison, setComparison] = useState<Comparison | null>(null);
-  // A view that doesn't name one gets the one last open, which the effect below writes into the view.
-  const tab: SetupTab = isSetupTab(params?.tab) ? params.tab : savedTab();
+  // A view that doesn't name one gets the one last open, which the effect below writes into the view: one that moved
+  // opens as navigation.ts maps it, its lens included, rather than on its tab's first lens.
+  const tab: SetupTab = isSetupTab(params?.tab) ? params.tab : savedView().tab;
   const onViewChangeRef = useRef(onViewChange);
   onViewChangeRef.current = onViewChange;
   useEffect(() => {
-    if (params?.tab !== tab) onViewChangeRef.current?.(setupView({ tab }));
+    if (params?.tab !== tab) {
+      const saved = savedView();
+      onViewChangeRef.current?.(setupView(saved.tab === tab ? saved : { tab }));
+    }
     store(TAB_KEY, tab);
   }, [params?.tab, tab]);
   // The Library's kind, the one last open when the view doesn't name one, and how it's shown.

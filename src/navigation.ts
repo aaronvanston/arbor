@@ -236,12 +236,14 @@ export function movedSetupView(tab: string | null | undefined): AppView | null {
 
 /**
  * The Sync view to open for the one it was last left on, saved by its id: one that moved within Sync opens where it is
- * now, and one that left Sync, or was never one, opens Checks, since opening Sync shouldn't land on another page.
+ * now, lens and all (Context is the Library by cost, Arbor's changes the Repo's History), and one that left Sync, or was
+ * never one, opens Checks, since opening Sync shouldn't land on another page.
  */
-export function savedSetupView(saved: string | null | undefined): SetupTabId {
-  if (isSetupTab(saved)) return saved;
+export function savedSetupView(saved: string | null | undefined): SetupParams & { tab: SetupTabId } {
+  if (isSetupTab(saved)) return { tab: saved };
   const moved = movedSetupView(saved);
-  return moved?.kind === 'main' && moved.page === 'setup' && moved.params?.tab ? moved.params.tab : 'overview';
+  const params = moved?.kind === 'main' && moved.page === 'setup' ? moved.params : undefined;
+  return params?.tab ? { ...params, tab: params.tab } : { tab: 'overview' };
 }
 
 /** A Usage view as the page saves where it was left: its view, and Failed when that's on. */

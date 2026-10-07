@@ -182,7 +182,11 @@ export function palettePageId(view: AppView) {
   // A page's view is picked, and remembered, apart from the page.
   const tab = view.kind === 'main' && view.params && 'tab' in view.params ? view.params.tab : undefined;
   const result = view.kind === 'main' && view.page === 'usage' ? view.params?.result : undefined;
-  const lens = view.kind === 'main' && view.page === 'sessions' ? view.params?.lens : undefined;
+  // A lens is part of the id only where the palette has a row of it: Sessions' Checkouts, and Sync's Library by cost
+  // and Repo history.
+  const lens = view.kind === 'main' && view.page === 'sessions' ? view.params?.lens
+    : view.kind === 'main' && view.page === 'setup' && (view.params?.lens === 'cost' || view.params?.lens === 'changes') ? view.params.lens
+    : undefined;
   return `page:${view.kind}:${view.page}${tab ? `:${tab}` : ''}${result ? `:${result}` : ''}${lens ? `:${lens}` : ''}`;
 }
 
