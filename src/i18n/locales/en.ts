@@ -6005,6 +6005,7 @@ export const en = {
   'kernel.action.stop': 'stop',
   'kernel.action.restart': 'restart',
   'kernel.notice.actionFailed': 'Core {action} failed: {error}',
+  'kernel.stopFailed.next': 'Try Stop core again. If it’s still running, quit the core’s process in Activity Monitor.',
   'kernel.phase.preparingDownload': 'Preparing download',
   'kernel.phase.downloading': 'Downloading',
   'kernel.phase.verifying': 'Verifying',

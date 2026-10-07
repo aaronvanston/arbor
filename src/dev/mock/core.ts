@@ -633,9 +633,10 @@ function mockCoreReleases(): { version: string; releases: ReleaseNotes[] } {
   return { version: 'v8.0.5', releases: [newest, release('v8.0.4', ['Already installed, so not shown'])] };
 }
 
-// With `?corecmd=fail`, starting, stopping and restarting the core fail.
-const failCoreCommand = () => {
-  if (params.get('corecmd') === 'fail') throw 'The core didn’t answer on 127.0.0.1:8317 within 15 seconds';
+// With `?corecmd=fail`, starting, stopping and restarting the core fail, each with what the native side says then.
+const failCoreCommand = (stopping = false) => {
+  if (params.get('corecmd') !== 'fail') return;
+  throw stopping ? 'Failed to send process signal: PID 48213' : 'The core didn’t answer on 127.0.0.1:8317 within 15 seconds';
 };
 
 /** The core: its process, updates and config, model routing, its management API and signing in. */
@@ -650,7 +651,7 @@ export const coreAnswers: CommandAnswers<CoreCommands> = {
     return coreStatus;
   },
   stop_core_process: () => {
-    failCoreCommand();
+    failCoreCommand(true);
     coreStatus = { ...coreStatus, running: false, ready: false, processId: null };
     return coreStatus;
   },

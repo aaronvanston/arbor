@@ -73,7 +73,8 @@ describe('starting, stopping and restarting the core', () => {
   it('reads the status again after a failure and returns the error', async () => {
     scheduleIdleUpdate({ kind: 'restart' });
     const core = runtime();
-    expect(await runCoreProcess('stop_core_process', core)).toBe('The core didn’t stop within 10 seconds');
+    // A failed stop says what to do with a core that may still be running.
+    expect(await runCoreProcess('stop_core_process', core)).toBe('The core didn’t stop within 10 seconds. Try Stop core again. If it’s still running, quit the core’s process in Activity Monitor.');
     expect(core.published).toEqual([]);
     expect(core.refreshed()).toBe(1);
     // Stopped by hand, even unsuccessfully, a restart waiting for idle agents mustn't go ahead later.
