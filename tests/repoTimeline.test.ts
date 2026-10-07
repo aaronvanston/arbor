@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { repoTimeline, type MachineChange } from '../src/services/repoTimeline';
+import { nothingChangedOn, repoTimeline, type MachineChange } from '../src/services/repoTimeline';
 import type { RepoCommit, SetupBackup } from '../src/native/types';
 
 const commit = (sha: string, atMs: number): RepoCommit => ({ sha: sha.repeat(40).slice(0, 40), subject: `Commit ${sha}`, atMs });
@@ -31,5 +31,15 @@ describe('the repo’s history with the machines’ changes', () => {
     const items = repoTimeline(commits, changes, 'cam-mbp');
     expect(items.filter((item) => item.kind === 'commit')).toHaveLength(2);
     expect(items.flatMap((item) => (item.kind === 'commit' ? item.changes : [item.change])).map((entry) => entry.backup.id)).toEqual(['c1', 'c4']);
+  });
+});
+
+describe('a machine Arbor hasn’t changed', () => {
+  it('is said once its list is read and empty, never for All machines', () => {
+    const one = change('cam-mbp', 'x', 1_000, null).backup;
+    expect(nothingChangedOn({ 'cam-mbp': [] }, 'cam-mbp')).toBe(true);
+    expect(nothingChangedOn({ 'cam-mbp': [one] }, 'cam-mbp')).toBe(false);
+    expect(nothingChangedOn({}, 'cam-mbp')).toBe(false);
+    expect(nothingChangedOn({ 'cam-mbp': [] }, null)).toBe(false);
   });
 });

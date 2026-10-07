@@ -1829,6 +1829,7 @@ export const en = {
   'repo.commit.suggest.many': 'Edit {count} files',
   'repo.history.failed': 'Arbor can’t read the commits: {error}',
   'repo.history.empty': 'Nothing is committed yet.',
+  'repo.history.noChangesOn': 'Arbor hasn’t changed anything on {machine} yet, so only the repo’s commits are listed.',
   'repo.history.choose': 'Choose a commit to see what it changed.',
   'repo.history.files.one': '1 file',
   'repo.history.files.other': '{count} files',

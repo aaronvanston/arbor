@@ -11,7 +11,7 @@ import { useI18n } from '../i18n';
 import { formatAgo, formatDateTime } from '../lib/format';
 import { cn } from '../lib/utils';
 import { getSetupRepoChanges, getSetupRepoLog } from '../services/repoBrowser';
-import { changeKey, repoTimeline, type MachineChange } from '../services/repoTimeline';
+import { changeKey, nothingChangedOn, repoTimeline, type MachineChange } from '../services/repoTimeline';
 import { listSetupBackups, scanned, undoSetupSync } from '../services/setupSync';
 import type { RepoChange, RepoCommit, SetupBackup, SetupMachine, SetupRepo } from '../native/types';
 import { Diffs, type Loaded } from './SetupRepoChanges';
@@ -148,6 +148,9 @@ export function HistoryMode({ repo, machines, machine: asked }: {
         {log.state === 'loading' ? <div className="p-3"><ViewerSkeleton /></div> : null}
         {log.state === 'error' ? <p className="px-3 py-3 text-xs text-error-foreground" role="alert">{t('repo.history.failed', { error: log.error })}</p> : null}
         {log.state === 'ready' && !items.length ? <p className="px-3 py-3 text-xs text-muted-foreground">{t('repo.history.empty')}</p> : null}
+        {machine && nothingChangedOn(backups, machine) ? (
+          <p className="px-3 py-1 text-xs text-muted-foreground">{tRich('repo.history.noChangesOn', { machine: <MachinePill name={machine} size="sm" /> })}</p>
+        ) : null}
         {items.map((item) => {
           if (item.kind === 'commit') {
             const active = picked?.kind === 'commit' && picked.sha === item.commit.sha;

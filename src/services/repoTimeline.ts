@@ -32,3 +32,11 @@ export function repoTimeline(commits: readonly RepoCommit[], changes: readonly M
 
 /** A machine change's key in the list. */
 export const changeKey = (change: MachineChange) => `${change.machine}\u0000${change.backup.id}`;
+
+/**
+ * Whether Arbor has changed nothing on the machine History is narrowed to, as its backups list says: the list then
+ * says so, rather than leaving only the repo's commits. False until that machine's list is read.
+ */
+export function nothingChangedOn(backups: Readonly<Record<string, readonly SetupBackup[]>>, machine: string | null): boolean {
+  return machine !== null && backups[machine]?.length === 0;
+}

@@ -1596,6 +1596,9 @@ const setHookWantedMock = (path: string, name: string, machine: string | null, w
     if (wanted === 'removed') throw 'A hook is removed from every machine, or kept off one';
     hook.off = wanted === 'off' ? [...new Set([...hook.off, machine])] : hook.off.filter((one) => one !== machine);
   }
+  commitHooks(path, machine === null
+    ? wanted === 'removed' ? `Remove hook ${name} from all machines` : wanted === 'off' ? `Turn hook ${name} off on all machines` : `Turn hook ${name} on for all machines`
+    : wanted === 'off' ? `Keep hook ${name} off ${machine}` : `Give ${machine} hook ${name} as every machine has it`);
   return hookRegistryReply(path);
 };
 
@@ -1604,6 +1607,7 @@ const setHookAgentsMock = (path: string, name: string, agents: AgentKind[]): Hoo
   if (!hook) throw `The repo hasn't got ${name}`;
   if (!agents.length) throw 'A hook goes to Claude Code, Codex or both';
   hook.agents = (['claude', 'codex'] as const).filter((agent) => agents.includes(agent));
+  commitHooks(path, `Send hook ${name} to ${hook.agents.join(' and ')}`);
   return hookRegistryReply(path);
 };
 
@@ -1618,6 +1622,7 @@ const takeHookMock = (path: string, machine: string, home: string, event: string
   const agent: AgentKind = setupMachines.find((entry) => entry.machine === machine)?.homes.find((one) => one.path === home)?.agent === 'codex' ? 'codex' : 'claude';
   mockHooks.hooks.push({ name, event, matcher: null, command: `~/.agents/hooks/${script}`, script, timeout: null, agents: [agent], homes: null, removed: false, off: [], problems: [] });
   mockHooks.found = true;
+  commitHooks(path, `Take hook ${name} from ${machine}`);
   return hookRegistryReply(path);
 };
 
@@ -2791,6 +2796,27 @@ const registryFile = (): MockBlob => {
 };
 
 /** Commits the registry as it now stands, alone, as the backend's takes and changes to it do. */
+/** .agents/hooks.json as the repo's hooks now stand. */
+const hooksFile = (): MockBlob => textBlob(`${JSON.stringify({
+  version: 1,
+  hooks: mockHooks.hooks.map(({ name, event, matcher, command, timeout, agents, homes, removed, off, allOff }) => ({
+    name, event, ...(matcher ? { matcher } : {}), command, ...(timeout ? { timeout } : {}), agents,
+    ...(homes ? { homes } : {}), ...(removed ? { removed } : {}), ...(off.length ? { off } : {}), ...(allOff ? { allOff } : {}),
+  })),
+}, null, 2)}\n`);
+
+/** Commits the hooks file as it now stands, alone, as the backend's hook changes do, so History lists each one. */
+const commitHooks = (path: string, subject: string) => {
+  const repo = setupRepos[path];
+  if (!repo) return;
+  othersAtStart();
+  const head = repoHead(repo);
+  const others = othersAt(repo, repo.commits.length - 1);
+  const commit = repoCommit(subject, Date.now(), head?.files ?? [], head?.skills ?? []);
+  repo.commits.push(commit);
+  commitOthers.set(commit.sha, { ...others, '.agents/hooks.json': hooksFile() });
+};
+
 const commitRegistry = (repo: MockRepo, subject: string) => {
   const head = repoHead(repo);
   const others = othersAt(repo, repo.commits.length - 1);
