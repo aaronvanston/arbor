@@ -2044,7 +2044,7 @@ if (autoLineScenario === 'applied' || autoLineScenario === 'failed' || autoLineS
       machine: 'cam-mbp',
       kind: autoLineScenario === 'waiting' ? 'waiting' : failed ? 'failed' : 'applied',
       applied: { files: 3, skills: 1, hooks: 0 },
-      error: failed ? '~/.claude/CLAUDE.md (changed)' : null,
+      error: failed ? '~/.claude/CLAUDE.md changed' : null,
       waiting: autoLineScenario === 'waiting' ? 2 : 0,
     };
     autoMachines.set('cam-mbp', { ...autoMachine('cam-mbp'), lastRunMs: Date.now(), stopped: event.error, waiting: event.waiting });

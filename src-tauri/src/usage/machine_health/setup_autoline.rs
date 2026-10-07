@@ -366,7 +366,7 @@ async fn run(app: &tauri::AppHandle, repo: &str, machine: &str, plan: Plan) {
     if let (Some(commit), false) = (&plan.commit, plan.changes.is_empty()) {
         match super::setup_sync::apply_setup_sync(app.clone(), app.state(), repo.to_string(), commit.clone(), machine.to_string(), plan.changes).await {
             Ok(SyncOutcome { failed, .. }) if !failed.is_empty() => {
-                error = Some(failed.iter().map(|failure| format!("{} ({})", failure.path, failure.reason)).collect::<Vec<_>>().join(", "));
+                error = Some(failed.iter().map(|failure| format!("{} {}", failure.path, failure.reason)).collect::<Vec<_>>().join(", "));
             }
             Ok(_) => {}
             Err(failure) => error = Some(failure),
