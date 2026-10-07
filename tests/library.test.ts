@@ -445,7 +445,7 @@ describe('bringing a machine in line', () => {
     const row = { ...rowFor(libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: hooks('add'), standing: null }), 'guard') };
     const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row] });
     expect(calls).toEqual(['sync ~/.agents/hooks/guard.sh', 'hooks']);
-    expect(done).toEqual({ changed: true, failed: [], needsYou: false, heldHooks: false, backups: ['b1'] });
+    expect(done).toEqual({ changed: true, failed: [], needsYou: false, heldHooks: false, backups: ['b1', 'h1'] });
 
     // A hook edited on the machine holds its hooks, and their scripts, back.
     calls.length = 0;
@@ -459,6 +459,19 @@ describe('bringing a machine in line', () => {
     const row = rowFor(rows, 'review');
     expect([row.behind, row.edited]).toEqual([['cedar-02'], { 'ci-01': 'editedHere' }]);
     expect(linePlans(rows, fleet()).map((plan) => plan.machine)).toEqual(['cedar-02']);
+  });
+
+  it('says what’s wrong with the hooks file and a hook in it, rather than an empty list or a hook in step', () => {
+    const machines = [machine('cam-mbp', [])];
+    const unreadable: HookRegistry = { ...hooks('same'), problems: ['.agents/hooks.json isn’t a JSON object Arbor can read'], hooks: [], cells: [] };
+    expect(libraryKindProblems(unreadable, 'hooks')).toEqual(['.agents/hooks.json isn’t a JSON object Arbor can read']);
+    expect(libraryKindProblems(unreadable, 'mcps')).toEqual([]);
+    expect(libraryKindProblems(null, 'hooks')).toEqual([]);
+
+    const broken: HookRegistry = { ...hooks('same'), hooks: [{ ...hookView, problems: ['timeout should be seconds, from 1 to 3600'] }] };
+    const row = rowFor(libraryRows({ machines, view: extensionsView(machines), repo: repo([]), registryFound: false, hooks: broken, standing: null }), 'guard');
+    expect(libraryRowProblems(broken, row)).toEqual(['timeout should be seconds, from 1 to 3600']);
+    expect(libraryRowProblems(hooks('same'), row)).toEqual([]);
   });
 });
 
@@ -494,19 +507,6 @@ describe('deciding on a machine’s own edit', () => {
       ['sync', [{ path: claude.path, remove: false, before: 'mine' }]],
     ]);
     expect(used.run?.backups).toEqual(['b9']);
-  });
-
-  it('says what’s wrong with the hooks file and a hook in it, rather than an empty list or a hook in step', () => {
-    const machines = [machine('cam-mbp', [])];
-    const unreadable: HookRegistry = { ...hooks('same'), problems: ['.agents/hooks.json isn’t a JSON object Arbor can read'], hooks: [], cells: [] };
-    expect(libraryKindProblems(unreadable, 'hooks')).toEqual(['.agents/hooks.json isn’t a JSON object Arbor can read']);
-    expect(libraryKindProblems(unreadable, 'mcps')).toEqual([]);
-    expect(libraryKindProblems(null, 'hooks')).toEqual([]);
-
-    const broken: HookRegistry = { ...hooks('same'), hooks: [{ ...hookView, problems: ['timeout should be seconds, from 1 to 3600'] }] };
-    const row = rowFor(libraryRows({ machines, view: extensionsView(machines), repo: repo([]), registryFound: false, hooks: broken, standing: null }), 'guard');
-    expect(libraryRowProblems(broken, row)).toEqual(['timeout should be seconds, from 1 to 3600']);
-    expect(libraryRowProblems(hooks('same'), row)).toEqual([]);
   });
 });
 

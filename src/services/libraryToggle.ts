@@ -681,6 +681,7 @@ export async function bringInLine(repo: string, sources: { [K in keyof SwitchSou
     try {
       const edits = await applyHooks(repo, sources.hooks.commit, machine);
       changed ||= edits.some((edit) => edit.written);
+      backups.push(...unique(edits.flatMap((edit) => (edit.backup ? [edit.backup] : []))));
       failed.push(...edits.flatMap((edit) => (edit.error ? [{ machine, message: edit.error }] : [])));
     } catch (error) {
       failed.push(failure(machine, error));
