@@ -70,7 +70,8 @@ function LimitMeter({ limit, verdict, pool, children }: { limit: PoolLimit; verd
   return (
     <span className="flex items-center justify-end gap-2">
       <span className={cn('tabular-nums', tripped ? 'font-medium text-warning-foreground' : !load && 'text-muted-foreground')}>{children}</span>
-      <span className="relative h-1.5 w-12 shrink-0 rounded-full bg-muted" aria-hidden="true">
+      {/* The figure says it all in a narrow card, so the bar gives way first and Now stays in view. */}
+      <span className="relative hidden h-1.5 w-12 shrink-0 rounded-full bg-muted @2xl:block" aria-hidden="true">
         {load ? (
           <span className={cn('absolute inset-y-0 left-0 rounded-full', tripped ? 'bg-warning' : 'bg-foreground/35')} style={{ width: `${load.fill * 100}%` }} />
         ) : null}
@@ -87,7 +88,7 @@ export function PoolMembersTable({ pool, preview }: { pool: MachinePool; preview
   const { t } = useI18n();
   const none = t('pools.figure.none');
   return (
-    <Table>
+    <Table containerClassName="@container">
       <TableHeader>
         <TableRow>
           <TableHead>{t('pools.column.machine')}</TableHead>
@@ -121,7 +122,7 @@ export function PoolMembersTable({ pool, preview }: { pool: MachinePool; preview
                   {verdict?.memFree == null ? none : t('pools.figure.memFree', { percent: Math.round(verdict.memFree) })}
                 </LimitMeter>
               </TableCell>
-              <TableCell className={cn('text-xs', verdict && leftOut(verdict.kind) ? 'text-warning-foreground' : 'text-muted-foreground')}>
+              <TableCell className={cn('min-w-24 whitespace-normal text-xs', verdict && leftOut(verdict.kind) ? 'text-warning-foreground' : 'text-muted-foreground')}>
                 {message ? t(message.key, message.values) : t('pools.verdict.checking')}
               </TableCell>
               <TableCell className="text-end tabular-nums">
