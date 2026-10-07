@@ -38,6 +38,7 @@ const PARTS: { kind: keyof AppliedCounts; one: MessageKey; other: MessageKey }[]
   { kind: 'files', one: 'sync.standing.count.files.one', other: 'sync.standing.count.files.other' },
   { kind: 'skills', one: 'sync.standing.count.skills.one', other: 'sync.standing.count.skills.other' },
   { kind: 'hooks', one: 'sync.standing.count.hooks.one', other: 'sync.standing.count.hooks.other' },
+  { kind: 'mcp', one: 'sync.standing.count.mcp.one', other: 'sync.standing.count.mcp.other' },
 ];
 
 /** "3 files, 1 skill". */

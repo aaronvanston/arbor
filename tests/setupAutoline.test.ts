@@ -9,12 +9,12 @@ import type { AutoLine, AutoLineEvent } from '../src/native/types';
 const t = (key: keyof typeof en, values: Record<string, string | number> = {}) =>
   Object.entries(values).reduce((text, [name, value]) => text.split(`{${name}}`).join(String(value)), en[key] as string);
 const event = (fields: Partial<AutoLineEvent>): AutoLineEvent =>
-  ({ machine: 'cam-mbp', kind: 'applied', applied: { files: 0, skills: 0, hooks: 0 }, error: null, waiting: 0, ...fields });
+  ({ machine: 'cam-mbp', kind: 'applied', applied: { files: 0, skills: 0, hooks: 0, mcp: 0 }, error: null, waiting: 0, ...fields });
 
 describe('machines brought in line by themselves', () => {
   it('says what a run did, quietly, and opens that machine’s History', () => {
-    expect(appliedText({ files: 3, skills: 1, hooks: 0 }, t)).toBe('3 files, 1 skill');
-    const alert = present(autoLineNotification(event({ applied: { files: 3, skills: 1, hooks: 0 } }), t));
+    expect(appliedText({ files: 3, skills: 1, hooks: 0, mcp: 0 }, t)).toBe('3 files, 1 skill');
+    const alert = present(autoLineNotification(event({ applied: { files: 3, skills: 1, hooks: 0, mcp: 0 } }), t));
     expect([alert.title, alert.kind, alert.subject]).toEqual(['Brought cam-mbp in line: 3 files, 1 skill', 'setupAuto', { machine: 'cam-mbp' }]);
     const view = alertDestinationView(present(alertDestination({ kind: 'setupAuto', subject: alert.subject })));
     expect(view).toEqual({ kind: 'main', page: 'setup', params: { tab: 'repo', lens: 'changes', machine: 'cam-mbp' } });

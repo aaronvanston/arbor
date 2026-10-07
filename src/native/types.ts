@@ -239,6 +239,7 @@ export type AppliedCounts = {
   files: number,
   skills: number,
   hooks: number,
+  mcp: number,
 };
 
 /**

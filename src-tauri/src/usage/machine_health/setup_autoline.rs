@@ -2,16 +2,17 @@
 //!
 //! After the repo is pulled, after a scan lands, and when a machine answers again after being away, each machine's
 //! standing is looked at. Only an item the repo moved on (`Change::Update`, so the machine still has what it had when
-//! the two last matched) and that Arbor backs up before changing is applied: a file, a skill in the store, or the
-//! machine's hooks with their scripts. Everything else waits for the user and is said once per machine: an edit made on
-//! the machine, both sides changed, something the repo removed or turned off everywhere, and plugins and MCP servers,
-//! which change through the agents' own commands with no backup. An item with no base yet (`Unknown`) waits for one and
+//! the two last matched) and that Arbor backs up before changing is applied: a file, a skill in the store, the
+//! machine's hooks with their scripts, or an MCP server that differs only in Codex homes (a guarded config.toml edit).
+//! Everything else waits for the user and is said once per machine: an edit made on the machine, both sides changed,
+//! something the repo removed or turned off everywhere, plugins, and an MCP server a Claude Code home differs on, which
+//! change through the agents' own commands with no backup. An item with no base yet (`Unknown`) waits for one and
 //! isn't said, since that's every item right after Arbor starts keeping bases. Projects are never touched.
 //!
 //! Each run is the same guarded apply a person makes, backed up and listed in History (marked automatic here, on this
 //! Mac), then rescanned so the bases are recorded. At most one run per machine every five minutes, never two at once,
-//! and as many machines at once as the SSH cap lets through. A run that fails stops runs on that machine until a
-//! person's apply works there or a scan finds it in step.
+//! and as many machines at once as the SSH cap lets through. A run that fails stops runs on that machine, kept on this
+//! Mac with its reason across restarts, until a person's apply works there or a scan finds it in step.
 //!
 //! The setting `autoLineUp` (Settings › Machines › Sync) turns it off for every machine, and a machine's own value of it
 //! (Sync › Overview's machine menu) for one.
@@ -19,6 +20,8 @@
 use super::guarded_writes::SyncOutcome;
 use super::setup_repo_keeper::repo_folder;
 use super::setup_standing::{is_checksum, standing_now, BehindItem, Change, ItemDrift, MachineState, StandingKind, SyncStanding};
+use super::setup::MachineSetup;
+use super::setup_mcp::{McpChange, McpRegistry};
 use super::setup_sync::{SyncChange, SyncFileKind};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -43,6 +46,7 @@ pub(crate) struct AppliedCounts {
     files: u32,
     skills: u32,
     hooks: u32,
+    mcp: u32,
 }
 
 /// One machine, as runs by themselves see it.
@@ -117,12 +121,14 @@ pub(super) struct Selection<'a> {
     pub(super) sync: Vec<&'a BehindItem>,
     /// The machine's hooks, written together, with their scripts.
     pub(super) hooks: Vec<&'a BehindItem>,
+    /// MCP servers that differ only in Codex homes.
+    pub(super) mcp: Vec<&'a BehindItem>,
     pub(super) waiting: Vec<&'a BehindItem>,
 }
 
 /// Which of a machine's items a run applies. A hook edited on the machine, or one with no base, holds all its hooks
 /// back, since a machine's hooks are written together.
-pub(super) fn select(items: &[BehindItem]) -> Selection<'_> {
+pub(super) fn select<'a>(items: &'a [BehindItem], codex_only: &dyn Fn(&str) -> bool) -> Selection<'a> {
     let mut selection = Selection::default();
     let hooks_held = items.iter().any(|item| item.kind() == StandingKind::Hook && item.change() != Change::Update);
     for item in items {
@@ -133,6 +139,8 @@ pub(super) fn select(items: &[BehindItem]) -> Selection<'_> {
             _ if needs_user => selection.waiting.push(item),
             // Taking something off a machine, the repo's word for every machine, is a person's to do.
             (_, _, ItemDrift::Remove) => selection.waiting.push(item),
+            // A server only Codex homes differ on is a guarded config.toml edit; Claude Code's own command keeps no backup.
+            (StandingKind::Mcp, ..) if codex_only(item.key()) => selection.mcp.push(item),
             // Changed through the agents' own commands, which keep no backup.
             (StandingKind::Plugin | StandingKind::Mcp, ..) => selection.waiting.push(item),
             (StandingKind::Hook, ..) if hooks_held => {}
@@ -205,12 +213,52 @@ fn auto_path() -> Option<PathBuf> {
     None
 }
 
-fn read_stamps(path: &Path) -> Vec<String> {
-    fs::read(path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+/// What's kept on this Mac about runs by themselves: the backups they made, and the machines a failure stopped, with why.
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+struct Kept {
+    stamps: Vec<String>,
+    stopped: BTreeMap<String, String>,
+}
+
+fn read_kept(path: &Path) -> Kept {
+    let Some(value) = fs::read(path).ok().and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else {
+        return Kept::default();
+    };
+    // Before stops were kept, the file was the list of stamps alone.
+    match value {
+        serde_json::Value::Array(_) => Kept { stamps: serde_json::from_value(value).unwrap_or_default(), stopped: BTreeMap::new() },
+        value => serde_json::from_value(value).unwrap_or_default(),
+    }
+}
+
+/// Puts back what was kept, once: the stamps, and each stopped machine's reason.
+fn load(held: &mut Held) {
+    if held.auto_stamps.is_some() {
+        return;
+    }
+    let kept = auto_path().map(|path| read_kept(&path)).unwrap_or_default();
+    for (machine, reason) in kept.stopped {
+        held.machines.entry(machine.clone()).or_insert_with(|| AutoMachine { machine, ..AutoMachine::default() }).stopped.get_or_insert(reason);
+    }
+    held.auto_stamps = Some(kept.stamps);
 }
 
 fn stamps(held: &mut Held) -> &mut Vec<String> {
-    held.auto_stamps.get_or_insert_with(|| auto_path().map(|path| read_stamps(&path)).unwrap_or_default())
+    load(held);
+    held.auto_stamps.get_or_insert_with(Vec::new)
+}
+
+/// Writes what's kept now.
+fn save(held: &Held) {
+    let kept = Kept {
+        stamps: held.auto_stamps.clone().unwrap_or_default(),
+        stopped: held.machines.iter().filter_map(|(machine, entry)| Some((machine.clone(), entry.stopped.clone()?))).collect(),
+    };
+    if let (Some(path), Ok(text)) = (auto_path(), serde_json::to_vec(&kept)) {
+        if let Err(error) = super::archive::store::write_atomic(&path, &text) {
+            eprintln!("Couldn't keep what runs by themselves did: {error}");
+        }
+    }
 }
 
 /// Whether the backup with `id` was made by a run by itself.
@@ -221,27 +269,19 @@ pub(super) fn is_automatic(id: &str) -> bool {
 /// Called after any guarded apply of the repo's files or hooks has worked on `machine`: one a run made marks its
 /// backups automatic; one a person made lifts a stop on runs there.
 pub(super) fn applied(machine: &str, backups: &[String]) {
-    let snapshot = {
-        let mut held = held();
-        if held.running.contains(machine) {
-            let kept = stamps(&mut held);
-            kept.extend(backups.iter().cloned());
-            let excess = kept.len().saturating_sub(AUTO_KEPT);
-            kept.drain(..excess);
-            Some(kept.clone())
-        } else {
-            if let Some(entry) = held.machines.get_mut(machine) {
-                entry.stopped = None;
-            }
-            None
-        }
+    let mut held = held();
+    load(&mut held);
+    let changed = if held.running.contains(machine) {
+        let kept = stamps(&mut held);
+        kept.extend(backups.iter().cloned());
+        let excess = kept.len().saturating_sub(AUTO_KEPT);
+        kept.drain(..excess);
+        !backups.is_empty()
+    } else {
+        held.machines.get_mut(machine).is_some_and(|entry| entry.stopped.take().is_some())
     };
-    if let (Some(stamps), Some(path)) = (snapshot, auto_path()) {
-        if let Ok(text) = serde_json::to_vec(&stamps) {
-            if let Err(error) = super::archive::store::write_atomic(&path, &text) {
-                eprintln!("Couldn't keep which backups were automatic: {error}");
-            }
-        }
+    if changed {
+        save(&held);
     }
 }
 
@@ -278,25 +318,36 @@ fn look(app: &tauri::AppHandle, repo: &str, standing: &SyncStanding, only: Optio
         if only.is_some_and(|only| only != name) || matches!(machine.state(), MachineState::Unreachable | MachineState::NotScanned) {
             continue;
         }
-        let selection = select(machine.behind());
+        let setup = {
+            let inner = app.state::<MachineHealthState>();
+            let inner = inner.lock();
+            super::setup::covered_machine(&inner, name).ok().map(|(_, setup)| setup.clone())
+        };
+        let codex_only = |key: &str| {
+            let (Some(registry), Some(setup), Some(server)) = (standing.mcp(), setup.as_ref(), key.strip_prefix("mcp:")) else { return false };
+            registry.codex_changes(name, setup, server).is_some()
+        };
+        let selection = select(machine.behind(), &codex_only);
         let waiting: Vec<String> = selection.waiting.iter().map(|item| item.key().to_string()).collect();
         let mut tell_waiting = false;
         let go = {
             let mut held = held();
+            load(&mut held);
             let pause = paused(overrides.as_ref(), name);
             let busy = held.running.contains(name);
             let entry = held.machines.entry(name.to_string()).or_insert_with(|| AutoMachine { machine: name.to_string(), ..AutoMachine::default() });
             entry.paused = pause;
             entry.waiting = waiting.len() as u32;
             // In step again, by a person's hand or otherwise: a stopped machine is let go again.
-            if machine.state() == MachineState::InStep {
-                entry.stopped = None;
-            }
+            let unstopped = machine.state() == MachineState::InStep && entry.stopped.take().is_some();
             let due = entry.last_run_ms.is_none_or(|at| now - at >= DEBOUNCE_MS);
-            let go = !pause && !busy && entry.stopped.is_none() && due && !(selection.sync.is_empty() && selection.hooks.is_empty());
+            let go = !pause && !busy && entry.stopped.is_none() && due && !(selection.sync.is_empty() && selection.hooks.is_empty() && selection.mcp.is_empty());
             if held.told_waiting.get(name) != Some(&waiting) {
                 tell_waiting = !waiting.is_empty() && !pause;
                 held.told_waiting.insert(name.to_string(), waiting.clone());
+            }
+            if unstopped {
+                save(&held);
             }
             if go {
                 held.running.insert(name.to_string());
@@ -311,7 +362,7 @@ fn look(app: &tauri::AppHandle, repo: &str, standing: &SyncStanding, only: Optio
             let _ = app.emit(AUTOLINE_EVENT, AutoLineEvent { machine: name.to_string(), kind: AutoLineKind::Waiting, applied: AppliedCounts::default(), error: None, waiting: waiting.len() as u32 });
         }
         if go {
-            let plan = plan(standing, name, &selection, app);
+            let plan = plan(standing, name, &selection, app, setup.as_ref());
             let (app, repo, name) = (app.clone(), repo.to_string(), name.to_string());
             tauri::async_runtime::spawn(async move { run(&app, &repo, &name, plan).await });
         }
@@ -322,17 +373,14 @@ fn look(app: &tauri::AppHandle, repo: &str, standing: &SyncStanding, only: Optio
 struct Plan {
     commit: Option<String>,
     hooks_commit: Option<String>,
+    mcp_commit: Option<String>,
     changes: Vec<SyncChange>,
+    mcp: Vec<McpChange>,
     counts: AppliedCounts,
 }
 
-fn plan(standing: &SyncStanding, machine: &str, selection: &Selection, app: &tauri::AppHandle) -> Plan {
-    let setup = {
-        let inner = app.state::<MachineHealthState>();
-        let inner = inner.lock();
-        super::setup::covered_machine(&inner, machine).ok().map(|(_, setup)| setup.clone())
-    };
-    let sum = |path: &str| setup.as_ref().and_then(|setup| setup.sum_at(path));
+fn plan(standing: &SyncStanding, machine: &str, selection: &Selection, _app: &tauri::AppHandle, setup: Option<&MachineSetup>) -> Plan {
+    let sum = |path: &str| setup.and_then(|setup| setup.sum_at(path));
     let mut counts = AppliedCounts::default();
     let mut changes: Vec<SyncChange> = selection
         .sync
@@ -353,10 +401,22 @@ fn plan(standing: &SyncStanding, machine: &str, selection: &Selection, app: &tau
             }
         }
     }
+    let mcp: Vec<McpChange> = match (standing.mcp(), setup) {
+        (Some(registry), Some(setup)) => selection
+            .mcp
+            .iter()
+            .filter_map(|item| registry.codex_changes(machine, setup, item.key().strip_prefix("mcp:")?))
+            .flatten()
+            .collect(),
+        _ => Vec::new(),
+    };
+    counts.mcp = selection.mcp.len() as u32;
     Plan {
         commit: standing.repo().head_sha().map(str::to_string),
         hooks_commit: (!selection.hooks.is_empty()).then(|| standing.hooks_commit().map(str::to_string)).flatten(),
+        mcp_commit: (!mcp.is_empty()).then(|| standing.mcp().and_then(McpRegistry::commit).map(str::to_string)).flatten(),
         changes,
+        mcp,
         counts,
     }
 }
@@ -378,6 +438,13 @@ async fn run(app: &tauri::AppHandle, repo: &str, machine: &str, plan: Plan) {
             Err(failure) => error = Some(failure),
         }
     }
+    // Files and hooks first, as Bring in line does; then the MCP servers, each checked again on the machine.
+    if let (Some(commit), None, false) = (&plan.mcp_commit, &error, plan.mcp.is_empty()) {
+        match super::setup_mcp::apply_mcp_changes(app.clone(), app.state(), repo.to_string(), commit.clone(), machine.to_string(), plan.mcp).await {
+            Ok(results) => error = results.iter().find(|result| result.failed()).map(|result| result.describe()),
+            Err(failure) => error = Some(failure),
+        }
+    }
     {
         let mut held = held();
         held.running.remove(machine);
@@ -388,6 +455,9 @@ async fn run(app: &tauri::AppHandle, repo: &str, machine: &str, plan: Plan) {
             } else {
                 entry.last_applied = Some(plan.counts);
             }
+        }
+        if error.is_some() {
+            save(&held);
         }
     }
     let kind = if error.is_some() { AutoLineKind::Failed } else { AutoLineKind::Applied };
@@ -407,7 +477,8 @@ pub(crate) async fn get_setup_autoline(app: tauri::AppHandle) -> Result<AutoLine
         let inner = inner.lock();
         super::setup::covered_machines(&inner).into_iter().map(|(machine, _, _)| machine).collect::<Vec<_>>()
     };
-    let held = held();
+    let mut held = held();
+    load(&mut held);
     Ok(AutoLine {
         enabled: enabled(&app),
         machines: machines
@@ -454,12 +525,14 @@ mod tests {
             item(File, "file:~/.claude/rules/old.md", Remove, Change::Update),
             item(Plugin, "plugin:claude:paper@paper", ItemDrift::Update, Change::Update),
             item(Mcp, "mcp:linear", Add, Change::Update),
+            item(Mcp, "mcp:codex-only", ItemDrift::Update, Change::Update),
             item(Hook, "hook:repo:guard", ItemDrift::Update, Change::Update),
             item(Project, "project:cam/arbor", ItemDrift::Update, Change::Update),
         ];
-        let selection = select(&items);
+        let selection = select(&items, &|key| key == "mcp:codex-only");
         assert_eq!(keys(&selection.sync), ["file:~/.claude/CLAUDE.md", "skill:pdf"]);
         assert_eq!(keys(&selection.hooks), ["hook:repo:guard"]);
+        assert_eq!(keys(&selection.mcp), ["mcp:codex-only"], "a server only Codex homes differ on is a guarded edit");
         assert_eq!(keys(&selection.waiting), ["file:~/.claude/rules/mine.md", "skill:both", "file:~/.claude/rules/old.md", "plugin:claude:paper@paper", "mcp:linear"]);
     }
 
@@ -467,12 +540,23 @@ mod tests {
     fn one_hook_edited_there_or_with_no_base_holds_back_the_machines_hooks() {
         use {ItemDrift::*, StandingKind::*};
         let edited = [item(Hook, "hook:repo:guard", Update, Change::Update), item(Hook, "hook:repo:notify", Update, Change::EditedHere)];
-        let selection = select(&edited);
+        let selection = select(&edited, &|_| false);
         assert!(selection.hooks.is_empty());
         assert_eq!(keys(&selection.waiting), ["hook:repo:notify"]);
         let unknown = [item(Hook, "hook:repo:guard", Update, Change::Update), item(Hook, "hook:repo:notify", Add, Change::Unknown)];
-        let selection = select(&unknown);
+        let selection = select(&unknown, &|_| false);
         assert!(selection.hooks.is_empty() && selection.waiting.is_empty(), "no base yet waits quietly");
+    }
+
+    #[test]
+    fn a_stop_and_its_reason_are_kept_and_an_older_file_of_stamps_still_reads() {
+        let path = std::env::temp_dir().join(format!("arbor-setup-auto-{}.json", std::process::id()));
+        let kept = Kept { stamps: vec!["20261008T010203Z-ab12".into()], stopped: BTreeMap::from([("cedar-02".to_string(), "~/.claude/CLAUDE.md changed".to_string())]) };
+        fs::write(&path, serde_json::to_vec(&kept).unwrap()).unwrap();
+        assert_eq!(read_kept(&path), kept);
+        fs::write(&path, r#"["20261008T010203Z-ab12"]"#).unwrap();
+        assert_eq!(read_kept(&path), Kept { stamps: vec!["20261008T010203Z-ab12".into()], stopped: BTreeMap::new() });
+        let _ = fs::remove_file(&path);
     }
 
     #[test]

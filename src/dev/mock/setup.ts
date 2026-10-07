@@ -2035,7 +2035,7 @@ const autoLineScenario = params.get('autoline');
 const autoMachines = new Map<string, AutoMachine>();
 const autoMachine = (machine: string): AutoMachine => autoMachines.get(machine) ?? {
   machine, paused: false, running: false, lastRunMs: machine === 'cam-mbp' ? Date.now() - 12 * 60_000 : null,
-  lastApplied: machine === 'cam-mbp' ? { files: 2, skills: 1, hooks: 0 } : null, stopped: null, waiting: machine === 'ci-01' ? 1 : 0,
+  lastApplied: machine === 'cam-mbp' ? { files: 2, skills: 1, hooks: 0, mcp: 0 } : null, stopped: null, waiting: machine === 'ci-01' ? 1 : 0,
 };
 if (autoLineScenario === 'paused') autoMachines.set('ci-01', { ...autoMachine('ci-01'), paused: true });
 const autoLineReply = (): AutoLine => {
@@ -2048,7 +2048,7 @@ if (autoLineScenario === 'applied' || autoLineScenario === 'failed' || autoLineS
     const event: AutoLineEvent = {
       machine: 'cam-mbp',
       kind: autoLineScenario === 'waiting' ? 'waiting' : failed ? 'failed' : 'applied',
-      applied: { files: 3, skills: 1, hooks: 0 },
+      applied: { files: 3, skills: 1, hooks: 0, mcp: 0 },
       error: failed ? '~/.claude/CLAUDE.md changed' : null,
       waiting: autoLineScenario === 'waiting' ? 2 : 0,
     };
@@ -3703,7 +3703,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   set_setup_autoline_paused: (args) => {
     mockLog('set_setup_autoline_paused', args);
     autoMachines.set(args.machine, { ...autoMachine(args.machine), paused: args.paused });
-    void emit('setup-autoline', { machine: args.machine, kind: 'waiting', applied: { files: 0, skills: 0, hooks: 0 }, error: null, waiting: 0 });
+    void emit('setup-autoline', { machine: args.machine, kind: 'waiting', applied: { files: 0, skills: 0, hooks: 0, mcp: 0 }, error: null, waiting: 0 });
     return later(200, autoLineReply);
   },
   get_setup_repo_keeper: () => ({ ...repoKeeper, enabled: localStorage.getItem('arbor.setup.keepInStep.v1') !== 'false' && repoKeepScenario !== 'off' }),

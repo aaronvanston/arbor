@@ -1491,6 +1491,33 @@ impl McpRegistry {
     /// How each server the repo lists stands in each Claude Code and Codex home of `machine`, as found for Sync's
     /// standing: the server's name, the home, its state, and both sides' fingerprints. Other harnesses' homes only get
     /// what the repo sends them and aren't brought in line from Sync, so they aren't here.
+    /// The changes that bring `machine`'s Codex homes in line with the repo for `name`, when every home that differs is
+    /// a Codex one, whose config.toml is changed by a guarded write and backed up; None when a Claude Code home differs
+    /// (Claude Code's own command keeps no backup) or a home has it where the repo doesn't want it.
+    pub(super) fn codex_changes(&self, machine: &str, setup: &MachineSetup, name: &str) -> Option<Vec<McpChange>> {
+        let codex: Vec<&str> = setup.agent_homes().into_iter().filter(|(agent, _)| *agent == HomeAgent::Codex).map(|(_, path)| path).collect();
+        let mut changes = Vec::new();
+        for (cell_name, home, state, _, _) in self.compared_on(machine, setup) {
+            if cell_name != name || state == RegistryState::Same {
+                continue;
+            }
+            let action = match state {
+                RegistryState::Add => McpAction::Add,
+                RegistryState::Update => McpAction::Update,
+                _ => return None,
+            };
+            if !codex.contains(&home) {
+                return None;
+            }
+            changes.push(McpChange::new(home, name, action));
+        }
+        (!changes.is_empty()).then_some(changes)
+    }
+
+    pub(super) fn commit(&self) -> Option<&str> {
+        self.commit.as_deref()
+    }
+
     pub(super) fn compared_on<'a>(&'a self, machine: &'a str, setup: &MachineSetup) -> Vec<(&'a str, &'a str, RegistryState, &'a str, &'a str)> {
         let homes: Vec<&str> = setup.agent_homes().into_iter().filter(|(agent, _)| *agent != HomeAgent::Shared).map(|(_, path)| path).collect();
         self.cells
@@ -2119,8 +2146,9 @@ pub(crate) async fn apply_mcp_changes(
         return Ok(results);
     }
     let writes = codex_writes(&planned, &files, &homes)?;
+    let stamp = new_stamp();
     // Each change reports its own line, so a script that stopped part way still says what it did.
-    let output = run_on_machine(&target, MachineOp::McpApply, &apply_script(&new_stamp(), &planned, &writes), APPLY_TIMEOUT).await;
+    let output = run_on_machine(&target, MachineOp::McpApply, &apply_script(&stamp, &planned, &writes), APPLY_TIMEOUT).await;
     rescan(&app, &machine);
     let output = output?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -2128,7 +2156,34 @@ pub(crate) async fn apply_mcp_changes(
         return Err(failure_detail(&output));
     }
     results.extend(parse_results(&stdout, &planned, &writes));
+    if results.iter().all(|result| result.outcome == McpOutcome::Done) {
+        let mut backups: Vec<String> = results.iter().filter_map(|result| result.backup.clone()).collect();
+        if !writes.is_empty() {
+            backups.push(stamp);
+        }
+        super::setup_autoline::applied(&machine, &backups);
+    }
     Ok(results)
+}
+
+impl McpResult {
+    /// It didn't end as asked.
+    pub(super) fn failed(&self) -> bool {
+        self.outcome != McpOutcome::Done
+    }
+
+    /// What happened to it, in a line for a run's failure.
+    pub(super) fn describe(&self) -> String {
+        let what = if self.message.is_empty() { format!("{:?}", self.outcome).to_lowercase() } else { self.message.clone() };
+        format!("{} in {} {what}", self.name, self.home)
+    }
+}
+
+impl McpChange {
+    /// The repo's definition put in `home` as `action` says: what a run by itself makes in a Codex home.
+    pub(super) fn new(home: &str, name: &str, action: McpAction) -> Self {
+        Self { home: home.to_string(), name: name.to_string(), action }
+    }
 }
 
 // ---------------------------------------------------------------------------

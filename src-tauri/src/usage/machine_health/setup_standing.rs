@@ -161,6 +161,10 @@ impl SyncStanding {
         &self.machines
     }
 
+    pub(super) fn mcp(&self) -> Option<&McpRegistry> {
+        self.mcp.as_ref()
+    }
+
     /// The commit the repo's hooks were read at, for writing them.
     pub(super) fn hooks_commit(&self) -> Option<&str> {
         self.hooks.as_ref().and_then(HookRegistry::commit)
