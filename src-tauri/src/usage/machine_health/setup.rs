@@ -21,14 +21,19 @@
 //! - an MCP server's command line, headers and environment;
 //! - anything in config.toml that isn't on a short list.
 //!
-//! Those fingerprints are salted afresh each time Arbor starts, so they can't
-//! be matched against a guess, and a path in the machine's home counts the
-//! same on every machine. From Claude Code's .claude.json only the MCP servers
+//! Those fingerprints are salted with a random salt the window never sees, so
+//! they can't be matched against a guess there, and a path in the machine's
+//! home counts the same on every machine. The salt is kept beside the saved
+//! scans in Arbor's data folder, which holds the sign-ins already, so a scan
+//! put back after a restart still compares with a fresh one. From Claude Code's .claude.json only the MCP servers
 //! are read out, on the machine, so its history and projects never leave it.
 //! Arbor's own reporter hooks are left out, since Machines sets those up.
 //!
-//! Nothing is kept on disk. A file's content is fetched only when the page
-//! asks to compare it, and only for files a scan listed as text.
+//! Each machine's last scan, names, paths and fingerprints only, is kept in
+//! Arbor's data folder (`setup-scans.json`) and put back at launch, so Sync,
+//! change alerts and the harnesses found survive a restart. A file's content
+//! is fetched only when the page asks to compare it, and only for files a scan
+//! listed as text; it's never kept.
 
 use super::agents::{parse_version, AgentKind, AGENT_ENV};
 use ts_rs::TS;
@@ -47,13 +52,18 @@ const FRESH_MS: i64 = 10 * 60 * 1000;
 
 pub(crate) const SETUP_INVENTORY_UPDATED_EVENT: &str = "setup-inventory-updated";
 
-/// Salts the fingerprints of settings values for as long as Arbor runs.
-static SALT: LazyLock<[u8; 16]> = LazyLock::new(|| {
-    let mut salt = [0u8; 16];
-    // Without randomness the fingerprints still compare; they just aren't salted.
-    let _ = getrandom::fill(&mut salt);
-    salt
-});
+/// Salts the fingerprints of settings values. It's made once, kept beside the saved scans so a scan put back after a
+/// restart still compares with a fresh one, and never leaves this Mac's data folder.
+static SALT: std::sync::OnceLock<[u8; 16]> = std::sync::OnceLock::new();
+
+fn salt() -> &'static [u8] {
+    SALT.get_or_init(|| {
+        let mut salt = [0u8; 16];
+        // Without randomness the fingerprints still compare; they just aren't salted.
+        let _ = getrandom::fill(&mut salt);
+        salt
+    })
+}
 
 // Every setup script starts with these, after the agent homes' own helpers.
 //   sum_in       the fingerprint of what comes in: a SHA-256 where the machine
@@ -393,7 +403,7 @@ const CODEX_SHOWN: [&str; 11] = [
     "review_model",
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum HomeAgent {
     Claude,
@@ -402,7 +412,7 @@ pub(crate) enum HomeAgent {
     Shared,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum ItemKind {
     Instructions,
@@ -421,7 +431,7 @@ pub(crate) enum ItemKind {
 }
 
 /// A skill's folder, as the scan found it.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SkillFacts {
     files: u32,
@@ -441,7 +451,7 @@ pub(crate) struct SkillFacts {
 }
 
 /// Where an @import is, in the file that has it.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ImportFacts {
     /// The file with the @import, with the machine's home as ~.
@@ -453,7 +463,7 @@ pub(crate) struct ImportFacts {
 }
 
 /// One thing an agent home loads.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SetupItem {
     kind: ItemKind,
@@ -528,7 +538,7 @@ impl OverrideState {
 }
 
 /// Where a skill's override is set.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum OverrideSource {
     /// The home's own settings.json.
@@ -538,7 +548,7 @@ pub(crate) enum OverrideSource {
 }
 
 /// A skill Claude Code's settings turn off, or change how it's offered to the model.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SkillOverride {
     /// The skill's folder name, which is what Claude Code goes by.
@@ -597,7 +607,7 @@ const POLICY_KEYS_MAX: usize = 500;
 
 /// Something the machine's managed-settings policy sets, by name alone: a setting, an env
 /// variable's name, a hook event, a plugin or a marketplace, named as a home's items are.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PolicyKey {
     kind: ItemKind,
@@ -606,7 +616,7 @@ pub(crate) struct PolicyKey {
 
 /// The managed-settings policy Claude Code finds on a machine. It outranks every home's own
 /// settings, and Arbor only ever reads it: its values, env values above all, never leave the scan.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ClaudePolicy {
     /// Where it is on the machine.
@@ -678,7 +688,7 @@ fn read_policy(path: &str, size: &str, encoded: &str) -> (ClaudePolicy, Option<B
 
 /// Another Codex home on the machine that this one's entries are links into, the way T3 Code
 /// builds a shadow home: every entry but its sign-in leads to the same entry in the home it shares.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SharedHome {
     /// The home it shares, with the machine's home as ~.
@@ -691,7 +701,7 @@ pub(crate) struct SharedHome {
 const SHARED_ENTRIES_MAX: usize = 200;
 
 /// An agent home, or the machine's shared ~/.agents, and what's in it.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SetupHome {
     agent: HomeAgent,
@@ -720,7 +730,7 @@ pub(crate) struct SetupHome {
 }
 
 /// A hook in a home's settings that runs a script in ~/.agents/hooks.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub(super) struct FoundHook {
     pub(super) event: String,
     /// The script's file name in ~/.agents/hooks.
@@ -731,7 +741,7 @@ pub(super) struct FoundHook {
 
 /// A home of a harness other than Claude Code and Codex, as far as Sync reads it so far: its own instructions file
 /// and the skills in its own folder, which the setup repo and skill changes reach.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HarnessHome {
     harness: Harness,
@@ -746,7 +756,7 @@ pub(crate) struct HarnessHome {
 }
 
 /// A Claude Code or Codex on the machine's PATH. The first of each agent is the one that runs.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SetupInstall {
     agent: AgentKind,
@@ -759,7 +769,7 @@ pub(crate) struct SetupInstall {
 }
 
 /// Another harness's command on the machine's PATH. The first of each harness is the one that runs.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HarnessInstall {
     harness: Harness,
@@ -774,7 +784,7 @@ pub(crate) struct HarnessInstall {
 }
 
 /// What the last scan of a machine found. A failed scan keeps what the last good one found.
-#[derive(Clone, Debug, Default, Serialize, TS)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MachineSetup {
     homes: Vec<SetupHome>,
@@ -1592,7 +1602,7 @@ pub(super) fn normalized_mcp(agent: HomeAgent, server: &Value) -> Value {
 /// The fingerprint a scan gives an MCP server that `server` defines, in a home of `agent` on a
 /// machine whose home folder is `home`.
 pub(super) fn mcp_sum(agent: HomeAgent, server: &Value, home: &str) -> String {
-    fingerprint(&normalized_mcp(agent, server), home, SALT.as_slice())
+    fingerprint(&normalized_mcp(agent, server), home, salt())
 }
 
 /// Programs a repo hook may run its script with, rather than running the script itself.
@@ -1631,7 +1641,7 @@ fn hook_sum_with(matcher: Option<&str>, handler: &Value, home: &str, salt: &[u8]
 /// The fingerprint a scan gives a hook with this matcher and handler, on a machine whose home
 /// folder is `home`.
 pub(super) fn hook_sum(matcher: Option<&str>, handler: &Value, home: &str) -> String {
-    hook_sum_with(matcher, handler, home, SALT.as_slice())
+    hook_sum_with(matcher, handler, home, salt())
 }
 
 /// An MCP server: its name, how it's reached, and a fingerprint of the rest. Its command line,
@@ -1940,8 +1950,167 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
     recorded
 }
 
+// ---------------------------------------------------------------------------
+// Kept across restarts
+// ---------------------------------------------------------------------------
+
+/// Each machine's last setup scan, in Arbor's data folder.
+const SAVED_SCANS_FILE: &str = "setup-scans.json";
+/// Raised when the saved form changes, so an older file is dropped rather than misread.
+const SAVED_SCANS_VERSION: u32 = 1;
+static SAVING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct SavedScans {
+    version: u32,
+    /// The salt these scans' fingerprints were made with, which Arbor goes on using after a restart so they still
+    /// compare with fresh ones.
+    salt: String,
+    machines: Vec<SavedSetup>,
+}
+
+/// One machine's last scan, with what the window is never sent: its home folder, and the hooks that run the repo's
+/// scripts, by fingerprint.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub(super) struct SavedSetup {
+    machine: String,
+    /// How the machine was reached, so one pointed somewhere else since doesn't get another machine's scan; None for
+    /// this Mac when the Machines page doesn't list it.
+    endpoint: Option<(String, u16)>,
+    setup: MachineSetup,
+    home_dir: String,
+    repo_hooks: Vec<(String, Vec<FoundHook>)>,
+    harness_problems: Vec<(String, Vec<String>)>,
+}
+
+impl SavedSetup {
+    fn of(machine: &str, endpoint: Option<(String, u16)>, setup: &MachineSetup) -> Self {
+        Self {
+            machine: machine.to_string(),
+            endpoint,
+            setup: MachineSetup { scanning: false, arbor_wrote_ms: None, ..setup.clone() },
+            home_dir: setup.home_dir.clone(),
+            repo_hooks: setup.homes.iter().filter(|home| !home.repo_hooks.is_empty()).map(|home| (home.path.clone(), home.repo_hooks.clone())).collect(),
+            harness_problems: setup.harness_homes.iter().filter(|home| !home.problems.is_empty()).map(|home| (home.path.clone(), home.problems.clone())).collect(),
+        }
+    }
+
+    /// The scan as it was, with what the saved form keeps apart put back.
+    fn into_setup(self) -> MachineSetup {
+        let mut setup = self.setup;
+        setup.home_dir = self.home_dir;
+        for (path, hooks) in self.repo_hooks {
+            if let Some(home) = setup.homes.iter_mut().find(|home| home.path == path) {
+                home.repo_hooks = hooks;
+            }
+        }
+        for (path, problems) in self.harness_problems {
+            if let Some(home) = setup.harness_homes.iter_mut().find(|home| home.path == path) {
+                home.problems = problems;
+            }
+        }
+        setup
+    }
+}
+
+/// Every scanned machine's last scan, and the kept ones no listed machine has taken up yet, so they aren't lost
+/// meanwhile.
+fn saved_setups(inner: &Inner) -> Vec<SavedSetup> {
+    let mut saved: Vec<SavedSetup> = inner
+        .series
+        .values()
+        .filter(|series| series.setup.scanned_at.is_some())
+        .map(|series| SavedSetup::of(&series.host.machine, Some((series.host.endpoint.clone(), series.host.port)), &series.setup))
+        .collect();
+    if inner.local_setup.scanned_at.is_some() {
+        saved.push(SavedSetup::of(&this_machine_name(inner).unwrap_or_default(), None, &inner.local_setup));
+    }
+    for kept in &inner.restored_setups {
+        if !saved.iter().any(|entry| entry.machine == kept.machine && entry.endpoint.is_some() == kept.endpoint.is_some()) {
+            saved.push(kept.clone());
+        }
+    }
+    saved
+}
+
+fn write_saved_scans(path: &Path, machines: Vec<SavedSetup>, salt: &[u8]) -> Result<(), String> {
+    let text = serde_json::to_vec(&SavedScans { version: SAVED_SCANS_VERSION, salt: hex(salt), machines }).map_err(|error| error.to_string())?;
+    super::archive::store::write_atomic(path, &text)
+}
+
+/// The scans kept at `path` and their salt, or none when there's no file, or it's from another version or unreadable.
+fn read_saved_scans(path: &Path) -> Option<([u8; 16], Vec<SavedSetup>)> {
+    let saved = serde_json::from_slice::<SavedScans>(&fs::read(path).ok()?).ok().filter(|saved| saved.version == SAVED_SCANS_VERSION)?;
+    let bytes = (0..saved.salt.len())
+        .step_by(2)
+        .map(|at| saved.salt.get(at..at + 2).and_then(|pair| u8::from_str_radix(pair, 16).ok()))
+        .collect::<Option<Vec<u8>>>()?;
+    Some((bytes.try_into().ok()?, saved.machines))
+}
+
+/// Keeps what's in memory now, after a scan has landed: one save at a time, each taking what's there then.
+fn save_scans(app: &tauri::AppHandle) {
+    let saving = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _saving = SAVING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let machines = saved_setups(&saving.state::<MachineHealthState>().lock());
+        if let Err(error) = crate::core_base_dir().and_then(|dir| write_saved_scans(&dir.join(SAVED_SCANS_FILE), machines, salt())) {
+            eprintln!("Couldn't keep the setup scans: {error}");
+        }
+    });
+}
+
+/// Puts back each machine's last setup scan from before Arbor started, so Sync, change alerts and the harnesses found
+/// carry on from it rather than from nothing. It runs before the first scan, so the kept salt is the one every scan
+/// uses; were a fingerprint made already, the kept scans wouldn't compare and are left out.
+pub(crate) fn restore_saved_scans(app: &tauri::AppHandle) {
+    let Ok(dir) = crate::core_base_dir() else { return };
+    let Some((kept_salt, machines)) = read_saved_scans(&dir.join(SAVED_SCANS_FILE)) else { return };
+    if SALT.set(kept_salt).is_err() && salt() != kept_salt.as_slice() {
+        return;
+    }
+    {
+        let state = app.state::<MachineHealthState>();
+        let mut inner = state.lock();
+        for saved in machines {
+            restore_into(&mut inner, saved);
+        }
+    }
+    let _ = app.emit(SETUP_INVENTORY_UPDATED_EVENT, Local::now().timestamp_millis());
+    let _ = app.emit(agent_homes::AGENT_HOMES_UPDATED_EVENT, ());
+}
+
+/// Lays a kept scan where it belongs, this Mac's or a listed machine's reached the same way, unless a scan has
+/// finished there since. One for a machine not listed yet waits until it is (`take_restored`).
+fn restore_into(inner: &mut Inner, saved: SavedSetup) {
+    let target = match &saved.endpoint {
+        None => Some(&mut inner.local_setup),
+        Some((endpoint, port)) => match inner.series.get_mut(&saved.machine) {
+            Some(series) if series.host.endpoint == *endpoint && series.host.port == *port => Some(&mut series.setup),
+            Some(_) => return,
+            None => None,
+        },
+    };
+    match target {
+        Some(setup) if setup.scanned_at.is_none() => {
+            let scanning = setup.scanning;
+            *setup = MachineSetup { scanning, ..saved.into_setup() };
+        }
+        Some(_) => {}
+        None => inner.restored_setups.push(saved),
+    }
+}
+
+/// The kept scan of a machine the Machines page has just listed, when it's reached the way it was then.
+pub(super) fn take_restored(restored: &mut Vec<SavedSetup>, host: &MachineHost) -> Option<MachineSetup> {
+    let at = restored
+        .iter()
+        .position(|saved| saved.machine == host.machine && saved.endpoint.as_ref().is_some_and(|(endpoint, port)| *endpoint == host.endpoint && *port == host.port))?;
+    Some(restored.remove(at).into_setup())
+}
+
 async fn scan(machine: &Machine) -> Result<Scan, String> {
-    parse_scan(&run_checked(machine, MachineOp::SetupScan, &scan_script(machine.name()), SCAN_TIMEOUT).await?, SALT.as_slice())
+    parse_scan(&run_checked(machine, MachineOp::SetupScan, &scan_script(machine.name()), SCAN_TIMEOUT).await?, salt())
 }
 
 // ---------------------------------------------------------------------------
@@ -1999,8 +2168,11 @@ pub(crate) async fn scan_setup(
     stale_only: Option<bool>,
 ) -> Result<(), String> {
     let now_ms = Local::now().timestamp_millis();
-    let targets = take_targets(&state, machine.as_deref(), stale_only == Some(true), now_ms);
-    start_scans(&app, targets, now_ms, true);
+    let stale_only = stale_only == Some(true);
+    let targets = take_targets(&state, machine.as_deref(), stale_only, now_ms);
+    // Only the background rounds (stale only) spread machines over the interval; a Scan someone asked for runs now,
+    // as many at once as the SSH cap in `shell` lets through.
+    start_scans(&app, targets, now_ms, stale_only);
     Ok(())
 }
 
@@ -2046,6 +2218,7 @@ fn start_scans(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: 
             }
             let at_ms = Local::now().timestamp_millis();
             let recorded = record(&app.state::<MachineHealthState>(), &target, machine.host(), now_ms, at_ms, result);
+            save_scans(&app);
             let _ = app.emit(SETUP_INVENTORY_UPDATED_EVENT, at_ms);
             if recorded.harnesses_changed {
                 let _ = app.emit(agent_homes::AGENT_HOMES_UPDATED_EVENT, ());
@@ -2306,7 +2479,7 @@ impl MachineSetup {
     pub(super) fn with_mcp(mut self, path: &str, name: &str, server: &Value) -> Self {
         let dir = self.home_dir.clone();
         if let Some(home) = self.homes.iter_mut().find(|home| home.path == path) {
-            home.items.push(mcp_item(home.agent, name, server, &dir, SALT.as_slice()));
+            home.items.push(mcp_item(home.agent, name, server, &dir, salt()));
         }
         self
     }
@@ -2315,7 +2488,7 @@ impl MachineSetup {
     pub(super) fn with_harness_mcp(mut self, path: &str, name: &str, server: &Value) -> Self {
         let dir = self.home_dir.clone();
         if let Some(home) = self.harness_homes.iter_mut().find(|home| home.path == path) {
-            home.items.push(mcp_item(HomeAgent::Shared, name, server, &dir, SALT.as_slice()));
+            home.items.push(mcp_item(HomeAgent::Shared, name, server, &dir, salt()));
         }
         self
     }
@@ -3207,6 +3380,87 @@ notifications = true
         assert_eq!((setup.homes.len(), setup.installs.len()), (1, 1), "a failed scan keeps what the last good one found");
         assert_eq!((setup.error.as_deref(), setup.scanning), (Some("Timed out after 60s"), false));
         assert_eq!(inventory(&inner).machines.iter().map(|machine| machine.machine.as_str()).collect::<Vec<_>>(), ["down", "fresh", "up", "this-mac"]);
+    }
+
+    /// A machine's scan as it would be saved: a Claude Code home whose settings hold secrets in every place they can.
+    fn scan_with_secrets(secret: &str) -> Scan {
+        let settings = format!(
+            r#"{{ "model": "opus", "apiKeyHelper": "/Users/cam/bin/key --token {secret}", "env": {{ "ANTHROPIC_AUTH_TOKEN": "{secret}" }},
+  "hooks": {{ "SessionStart": [{{ "hooks": [{{ "type": "command", "command": "bash /Users/cam/.agents/hooks/start.sh --token {secret}" }}] }}] }},
+  "enabledPlugins": {{ "paper@paper": true }} }}"#
+        );
+        let mcp = format!(r#"{{ "linear": {{ "type": "http", "url": "https://mcp.linear.app/mcp", "headers": {{ "Authorization": "Bearer {secret}" }} }} }}"#);
+        let stdout = format!(
+            "H\t/Users/cam\nA\tclaude\t/Users/cam/.claude\n{}{}",
+            data("settings", "/Users/cam/.claude/settings.json", &settings),
+            data("mcp", "/Users/cam/.claude.json", &mcp),
+        );
+        parse_scan(&stdout, SALT).unwrap()
+    }
+
+    #[test]
+    fn a_kept_scan_holds_names_paths_and_fingerprints_and_never_a_secret() {
+        const SECRET: &str = "sk-KEPT-NEVER-12345";
+        let mut setup = MachineSetup::default();
+        let recorded = record_scan(&mut setup, 1, 2, Ok(scan_with_secrets(SECRET)));
+        assert!(recorded.changes.is_empty());
+        assert!(!setup.homes[0].repo_hooks.is_empty(), "the hook running a repo script is kept, by fingerprint");
+        let path = std::env::temp_dir().join(format!("arbor-setup-scans-{}-secret.json", std::process::id()));
+        write_saved_scans(&path, vec![SavedSetup::of("cam-mbp", Some(("cam-mbp".into(), 22)), &setup)], SALT).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        assert!(!text.contains("NEVER"), "a kept scan never holds a secret: {text}");
+        assert!(!text.contains("Bearer") && !text.contains("--token"), "nor a command line or header");
+        assert!(text.contains("~/.claude") && text.contains("linear"), "only names and paths, as the window sees them");
+    }
+
+    #[test]
+    fn a_kept_scan_comes_back_whole_with_its_salt_and_never_over_a_newer_one() {
+        let path = std::env::temp_dir().join(format!("arbor-setup-scans-{}-whole.json", std::process::id()));
+        let mut setup = MachineSetup::default();
+        record_scan(&mut setup, 1, 2, Ok(scan_with_secrets("x")));
+        setup.scanning = true;
+        let saved = SavedSetup::of("cam-mbp", Some(("cam-mbp.local".into(), 22)), &setup);
+        write_saved_scans(&path, vec![saved.clone()], b"0123456789abcdef").unwrap();
+        let (salt, machines) = read_saved_scans(&path).unwrap();
+        assert_eq!(&salt, b"0123456789abcdef");
+        let [read] = <[SavedSetup; 1]>::try_from(machines).unwrap();
+        assert_eq!((read.machine.as_str(), read.endpoint.clone()), ("cam-mbp", saved.endpoint.clone()));
+        let back = read.into_setup();
+        assert_eq!(back, MachineSetup { scanning: false, ..setup.clone() }, "the home folder and repo hooks come back too; a scan under way doesn't");
+        assert_eq!(back.scanned_at, Some(2), "it keeps when it was scanned, so it's still seen as stale in time");
+
+        let other_version = fs::read_to_string(&path).unwrap().replacen("\"version\":1", "\"version\":0", 1);
+        fs::write(&path, other_version).unwrap();
+        assert!(read_saved_scans(&path).is_none());
+        fs::write(&path, "{").unwrap();
+        assert!(read_saved_scans(&path).is_none());
+        let _ = fs::remove_file(&path);
+
+        // Kept for a machine not listed yet, it waits; listed the same way, it takes it up; reached elsewhere, it doesn't.
+        let state = MachineHealthState::default();
+        restore_into(&mut state.lock(), saved.clone());
+        let elsewhere = MachineHost { endpoint: "10.0.0.9".into(), ..host("cam-mbp") };
+        assert!(take_restored(&mut state.lock().restored_setups, &elsewhere).is_none());
+        apply_hosts(&state, vec![MachineHost { endpoint: "cam-mbp.local".into(), ..host("cam-mbp") }]);
+        assert_eq!(state.lock().series["cam-mbp"].setup.scanned_at, Some(2));
+        assert!(state.lock().restored_setups.is_empty());
+        // A scan that's landed since wins.
+        state.lock().series.get_mut("cam-mbp").unwrap().setup.scanned_at = Some(9);
+        restore_into(&mut state.lock(), saved);
+        assert_eq!(state.lock().series["cam-mbp"].setup.scanned_at, Some(9));
+    }
+
+    #[test]
+    fn a_kept_scan_is_the_baseline_for_change_alerts_after_a_restart() {
+        let mut before = MachineSetup::default();
+        record_scan(&mut before, 1, 2, Ok(scan_with_secrets("x")));
+        let mut setup = SavedSetup::of("cam-mbp", None, &before).into_setup();
+        assert!(record_scan(&mut setup, 3, 4, Ok(scan_with_secrets("x"))).changes.is_empty(), "the same setup isn't a change");
+        let changes = record_scan(&mut setup, 5, 6, Ok(scan_with_secrets("y"))).changes;
+        assert_eq!(changes.iter().map(|change| (change.kind, change.name.as_str(), change.change)).collect::<Vec<_>>(), [
+            (ItemKind::Mcp, "linear", ChangeKind::Changed),
+        ]);
     }
 
     #[cfg(unix)]

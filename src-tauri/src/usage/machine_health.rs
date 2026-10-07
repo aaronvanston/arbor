@@ -730,6 +730,8 @@ struct Inner {
     local_transcripts: transcripts::TranscriptScans,
     /// What this machine's agents load, when the Machines page doesn't list it.
     local_setup: setup::MachineSetup,
+    /// Setup scans kept from before Arbor started, for machines the Machines page hasn't listed yet this run.
+    restored_setups: Vec<setup::SavedSetup>,
     /// This machine's T3 Code threads, when the Machines page doesn't list it.
     local_t3: t3_threads::T3Log,
     /// Each machine's git checkouts, from the last scan of its projects.
@@ -789,6 +791,7 @@ impl Default for MachineHealthState {
                 local_names: Vec::new(),
                 local_transcripts: transcripts::TranscriptScans::default(),
                 local_setup: setup::MachineSetup::default(),
+                restored_setups: Vec::new(),
                 local_t3: t3_threads::T3Log::default(),
                 projects: BTreeMap::new(),
                 setup_repo: None,
@@ -1198,10 +1201,13 @@ fn peer_path(peer: &Value) -> Option<NetworkPath> {
     Some(NetworkPath { kind: "relay", relay })
 }
 
-fn apply_hosts(state: &MachineHealthState, hosts: Vec<MachineHost>) {
+/// Lists the hosts, keeping each one's history while it's reached the same way. True when a newly listed machine took
+/// up a setup scan kept from before Arbor started.
+fn apply_hosts(state: &MachineHealthState, hosts: Vec<MachineHost>) -> bool {
     let mut inner = state.lock();
     let local_names = inner.local_names.clone();
     let mut retained = BTreeMap::new();
+    let mut restored = false;
     for host in hosts {
         let local = is_local_endpoint(&host.endpoint, &local_names);
         let series = match inner.series.remove(&host.machine) {
@@ -1227,11 +1233,19 @@ fn apply_hosts(state: &MachineHealthState, hosts: Vec<MachineHost>) {
                 existing.local = local;
                 existing
             }
-            None => MachineSeries::new(host, local),
+            None => {
+                let mut series = MachineSeries::new(host, local);
+                if let Some(kept) = setup::take_restored(&mut inner.restored_setups, &series.host) {
+                    series.setup = kept;
+                    restored = true;
+                }
+                series
+            }
         };
         retained.insert(series.host.machine.clone(), series);
     }
     inner.series = retained;
+    restored
 }
 
 /// What one round read of a machine.
@@ -1449,7 +1463,10 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
             .await;
             match loaded {
                 Ok(hosts) => {
-                    apply_hosts(&state, hosts);
+                    if apply_hosts(&state, hosts) {
+                        let _ = app.emit(setup::SETUP_INVENTORY_UPDATED_EVENT, Local::now().timestamp_millis());
+                        let _ = app.emit(agent_homes::AGENT_HOMES_UPDATED_EVENT, ());
+                    }
                     resolve_ping_targets(&state, &mut ping_targets_resolved).await;
                 }
                 Err(error) => eprintln!("Failed to load machine hosts: {error}"),
