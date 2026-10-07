@@ -2706,8 +2706,12 @@ const repoRole = (path: string): RepoRole => {
   if (kind) return kind;
   if (skillOf(path)) return 'skill';
   if (projectOf(path)) return 'projectInstructions';
-  return RECORDS.has(path) ? 'record' : 'other';
+  return RECORDS.has(path) || layerFile(path) ? 'record' : 'other';
 };
+
+/** A machine's or project's own file (`setup_layers::is_layer_file`), which Arbor reads as a record, never syncs. */
+const layerFile = (path: string) =>
+  /^machines\/(_archive\/)?[^/]+\.json$/.test(path) || /^projects\/(_archive\/)?[^/]+\/[^/]+\/project\.json$/.test(path) || path.startsWith('schema/');
 
 /** Whether a path's text comes from a commit's synced files and skills, rather than the rest of the folder. */
 const fromSynced = (path: string) => repoRole(path) !== 'projectInstructions' && repoRole(path) !== 'record' && repoRole(path) !== 'other';
@@ -2759,8 +2763,31 @@ const othersAtStart = () => {
     '.agents/commands/review.md': textBlob('---\ndescription: Review the current branch\n---\n\nRead the diff and list what would break.\n'),
     ...(mockRegistry.found ? { '.agents/mcp-servers.json': registryFile() } : {}),
     ...instructionFilesOf(mockInstructions),
+    ...layerFiles(),
   };
   return startedOthers;
+};
+
+/** The machine and project files Sync › Projects reads (`mockLayers`), so the repo browser can open them. */
+const layerFiles = (): Record<string, MockBlob> => {
+  const layers = mockLayers();
+  const json = (value: Record<string, unknown>) => textBlob(`${JSON.stringify(value, null, 2)}\n`);
+  const values = (entry: { skills: object; plugins: object; mcp: object }) => ({
+    ...(Object.keys(entry.skills).length ? { skills: entry.skills } : {}),
+    ...(Object.keys(entry.plugins).length ? { plugins: entry.plugins } : {}),
+    ...(Object.keys(entry.mcp).length ? { mcp: entry.mcp } : {}),
+  });
+  return Object.fromEntries([
+    ...layers.machines.map((machine) => [machine.file, json({
+      name: machine.name, ...(machine.host ? { host: machine.host } : {}), ...(machine.role ? { role: machine.role } : {}), codeRoot: machine.codeRoot, ...values(machine),
+    })]),
+    ...layers.projects.map((project) => [`${project.folder}/project.json`, json({
+      ...(project.local ? { local: true } : {}), ...(project.remote ? { remote: project.remote } : {}), ...(project.path ? { path: project.path } : {}),
+      ...(project.branch ? { branch: project.branch } : {}),
+      machines: project.machines.kind === 'all' ? 'all' : Object.fromEntries(Object.entries(project.machines.machines).map(([key, own]) => [key, values(own)])),
+      ...values(project),
+    })]),
+  ]);
 };
 
 /** The rest of the folder as the browser's commits left it, by commit. */
