@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { CheckoutStatus, ProjectCell, ProjectDrift, ProjectsDrift } from '../src/native/types';
-import { behindByMachine, behindOnDefault, canMove, cellFixes, cellNeeds, dirtyCount, isStale, machineFixes, matchesQuery, PLACE_STALE_MS, projectInStep, projectName, splitProjects } from '../src/services/projectPlaces';
+import { behindByMachine, behindOnDefault, canMove, cellFixes, cellNeeds, dirtyCount, isStale, machineFixes, machinesToScan, matchesQuery, PLACE_STALE_MS, SCAN_REFRESH_MS, projectInStep, projectName, splitProjects } from '../src/services/projectPlaces';
 
 const status = (extra: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
   branch: 'main', changed: 0, untracked: 0, upstream: 'origin/main', ahead: 0, behind: 0, defaultBranch: 'origin/main',
@@ -58,6 +58,13 @@ describe('projects across the machines', () => {
 
   it('counts what each machine has to fix, leaving out machines only waiting on a scan', () => {
     expect(behindByMachine(drift)).toEqual(new Map([['ci-01', 1], ['cam-mbp', 1]]));
+  });
+
+  it('scans a machine when it opens if its places weren’t looked at, or its last scan was a while ago', () => {
+    const now = 10 * SCAN_REFRESH_MS;
+    const scanned = (machine: string, scannedAt: number | null) => ({ machine, scannedAt, scanning: false, error: null });
+    const machines = [scanned('cam-mbp', now - SCAN_REFRESH_MS), scanned('ci-01', now - SCAN_REFRESH_MS - 1), scanned('cedar-02', null)];
+    expect([...machinesToScan({ ...drift, machines }, now)].sort()).toEqual(['cedar-02', 'ci-01']);
   });
 
   it('keeps archived projects apart and says which are in step', () => {

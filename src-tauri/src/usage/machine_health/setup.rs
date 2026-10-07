@@ -504,7 +504,7 @@ impl SetupItem {
 }
 
 /// What a `skillOverrides` entry in Claude Code's settings does to a skill.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum OverrideState {
     On,

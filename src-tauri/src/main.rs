@@ -1667,6 +1667,7 @@ fn main() {
                 usage::start_usage_collector(usage_app.clone());
                 let telemetry_app = usage_app.clone();
                 tauri::async_runtime::spawn(async move { usage::machine_health::telemetry::restart(&telemetry_app).await });
+                usage::machine_health::setup_projects::restore_saved_scans(&usage_app);
                 usage::machine_health::project_places::start_place_fetcher(usage_app.clone());
                 usage::machine_health::start_machine_health_sampler(usage_app);
             });

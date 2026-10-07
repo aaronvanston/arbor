@@ -8,7 +8,8 @@
 //! with optional locks off, so even `git status` doesn't rewrite an index. It fetches only when
 //! asked to. A remote's address leaves the machine without the user name and password in it, and
 //! is kept as `host/owner/name`. Instruction files leave as a checksum and a size, and their text
-//! is read only when someone asks to compare them. Scans are kept in memory, not stored.
+//! is read only when someone asks to compare them. Each machine's last scan is also kept in Arbor's data folder, so
+//! the pages show it after a restart or an update instead of nothing until every machine is scanned again.
 //!
 //! Removing a worktree is `git worktree remove` without `--force`, for worktrees the last scan
 //! found clean, merged or with their upstream branch deleted, and not used lately. The machine
@@ -48,7 +49,7 @@ const NAME_CHARS: usize = 255;
 /// The instruction files looked for at the top of each checkout.
 pub(crate) const INSTRUCTION_FILES: [&str; 3] = [".claude/CLAUDE.md", "CLAUDE.md", "AGENTS.md"];
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum RepoState {
     #[default]
@@ -60,7 +61,7 @@ pub(crate) enum RepoState {
 }
 
 /// Why a worktree can't be removed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Blocker {
     Main,
@@ -105,7 +106,7 @@ impl Blocker {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProjectWorktree {
     path: String,
@@ -196,7 +197,7 @@ impl InstructionFile {
 }
 
 /// How a checkout has one of those files.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum LocalFileState {
     /// Not there, and Git ignores one there.
@@ -210,7 +211,7 @@ pub(crate) enum LocalFileState {
 }
 
 /// One of the instruction files in a checkout, with what Arbor's first line says it holds.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CheckoutInstructions {
     file: InstructionFile,
@@ -229,7 +230,7 @@ pub(crate) fn marker_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 }
 
 /// An MCP server a checkout's settings deny, by name, and nothing else of the entry.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CheckoutMcpDeny {
     name: String,
@@ -238,7 +239,7 @@ pub(crate) struct CheckoutMcpDeny {
 }
 
 /// A skill a checkout's settings name in skillOverrides: its name and the state, nothing else.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CheckoutSkill {
     name: String,
@@ -249,7 +250,7 @@ pub(crate) struct CheckoutSkill {
 
 /// A plugin a checkout's settings name in enabledPlugins. Only the id and whether it's on leave the
 /// scan; the rest of those files never does.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CheckoutPlugin {
     id: String,
@@ -258,7 +259,7 @@ pub(crate) struct CheckoutPlugin {
     local: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProjectFile {
     name: String,
@@ -266,7 +267,7 @@ pub(crate) struct ProjectFile {
     size: u64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProjectRepo {
     /// The main checkout, or a bare repo.
@@ -286,7 +287,7 @@ pub(crate) struct ProjectRepo {
 }
 
 /// What's at a place the setup repo wants a project.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum PlaceKind {
     /// Nothing there.
@@ -303,7 +304,7 @@ pub(crate) enum PlaceKind {
 }
 
 /// How a main checkout stands: what Sync › Projects needs to say whether it's up to date and safe to move.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CheckoutStatus {
     /// None when no branch is checked out.
@@ -324,7 +325,7 @@ pub(crate) struct CheckoutStatus {
 }
 
 /// A place the setup repo wants a project, as the last scan found it.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FoundPlace {
     /// As the repo gives it: `~/…` or absolute.
@@ -349,7 +350,7 @@ pub(super) struct FoundCheckout {
     pub(super) status: CheckoutStatus,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MachineProjects {
     machine: String,
@@ -1421,7 +1422,113 @@ fn release(app: &tauri::AppHandle, machine: &str, update: impl FnOnce(&mut Machi
         entry.clone()
     };
     let _ = app.emit(SETUP_PROJECTS_UPDATED_EVENT, Local::now().timestamp_millis());
+    let saving = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // One save at a time, each taking what's in memory then, so an older one never lands last.
+        let _saving = SAVING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let scans = saving.state::<MachineHealthState>().lock().projects.clone();
+        if let Err(error) = crate::core_base_dir().and_then(|dir| write_saved_scans(&dir.join(SAVED_SCANS_FILE), &scans)) {
+            eprintln!("Couldn't keep the projects scans: {error}");
+        }
+    });
     projects
+}
+
+/// Each machine's last project scan, in Arbor's data folder.
+const SAVED_SCANS_FILE: &str = "project-scans.json";
+/// Raised when the saved form changes, so an older file is dropped rather than misread.
+const SAVED_SCANS_VERSION: u32 = 1;
+static SAVING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[derive(Deserialize, Serialize)]
+struct SavedScans {
+    version: u32,
+    machines: Vec<SavedScan>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct SavedScan {
+    projects: MachineProjects,
+    /// What the window isn't sent, by worktree: its folder with links followed, and the skill folders Arbor wrote.
+    worktrees: Vec<SavedWorktree>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct SavedWorktree {
+    path: String,
+    real: Option<String>,
+    arbor_skills: Vec<(String, String)>,
+}
+
+fn write_saved_scans(path: &Path, scans: &BTreeMap<String, MachineProjects>) -> Result<(), String> {
+    let machines = scans
+        .values()
+        .filter(|scan| scan.scanned_at.is_some())
+        .map(|scan| SavedScan {
+            projects: MachineProjects { scanning: false, measuring: false, removing: false, ..scan.clone() },
+            worktrees: scan
+                .repos
+                .iter()
+                .flat_map(|repo| &repo.worktrees)
+                .filter(|worktree| worktree.real.is_some() || !worktree.arbor_skills.is_empty())
+                .map(|worktree| SavedWorktree { path: worktree.path.clone(), real: worktree.real.clone(), arbor_skills: worktree.arbor_skills.clone() })
+                .collect(),
+        })
+        .collect();
+    let text = serde_json::to_vec(&SavedScans { version: SAVED_SCANS_VERSION, machines }).map_err(|error| error.to_string())?;
+    super::archive::store::write_atomic(path, &text)
+}
+
+/// The scans kept at `path`, or none when there's no file or it's from another version or unreadable.
+fn read_saved_scans(path: &Path) -> Vec<MachineProjects> {
+    let Some(saved) = fs::read(path).ok().and_then(|bytes| serde_json::from_slice::<SavedScans>(&bytes).ok()) else {
+        return Vec::new();
+    };
+    if saved.version != SAVED_SCANS_VERSION {
+        return Vec::new();
+    }
+    saved
+        .machines
+        .into_iter()
+        .map(|SavedScan { mut projects, worktrees }| {
+            let extras: HashMap<String, SavedWorktree> = worktrees.into_iter().map(|worktree| (worktree.path.clone(), worktree)).collect();
+            for worktree in projects.repos.iter_mut().flat_map(|repo| &mut repo.worktrees) {
+                if let Some(extra) = extras.get(&worktree.path) {
+                    worktree.real = extra.real.clone();
+                    worktree.arbor_skills = extra.arbor_skills.clone();
+                }
+            }
+            projects
+        })
+        .collect()
+}
+
+/// Puts back each machine's last project scan from before Arbor started, for any machine not scanned since.
+pub(crate) fn restore_saved_scans(app: &tauri::AppHandle) {
+    let Ok(dir) = crate::core_base_dir() else { return };
+    let saved = read_saved_scans(&dir.join(SAVED_SCANS_FILE));
+    if saved.is_empty() {
+        return;
+    }
+    {
+        let state = app.state::<MachineHealthState>();
+        let mut inner = state.lock();
+        for scan in saved {
+            restore_into(&mut inner.projects, scan);
+        }
+    }
+    let _ = app.emit(SETUP_PROJECTS_UPDATED_EVENT, Local::now().timestamp_millis());
+}
+
+/// Lays a saved scan under what's in memory: a scan that's finished since wins, and work under way keeps going.
+fn restore_into(projects: &mut BTreeMap<String, MachineProjects>, saved: MachineProjects) {
+    match projects.get_mut(&saved.machine) {
+        Some(current) if current.scanned_at.is_some() => {}
+        Some(current) => *current = MachineProjects { scanning: current.scanning, measuring: current.measuring, removing: current.removing, ..saved },
+        None => {
+            projects.insert(saved.machine.clone(), saved);
+        }
+    }
 }
 
 /// Fetches the checkouts at the places the setup repo wants its projects on `machine`, and looks at them again, leaving
@@ -2120,6 +2227,40 @@ mod tests {
             }],
             ..MachineProjects::default()
         }
+    }
+
+    #[test]
+    fn a_kept_scan_comes_back_whole_and_never_over_a_newer_one() {
+        let path = std::env::temp_dir().join(format!("arbor-project-scans-{}-{NOW}.json", std::process::id()));
+        let mut kept = projects();
+        kept.scanning = true;
+        let worktree = &mut kept.repos[0].worktrees[1];
+        worktree.real = Some("/data/app/.claude/worktrees/done".into());
+        worktree.arbor_skills = vec![("ledger-digest".into(), "123 45".into()), ("!own".into(), String::new())];
+        let unscanned = MachineProjects { machine: "cedar".into(), ..MachineProjects::default() };
+        write_saved_scans(&path, &BTreeMap::from([("mini".to_string(), kept.clone()), ("cedar".to_string(), unscanned)])).unwrap();
+        // Work under way when it was kept isn't under way after a restart, and a machine never scanned isn't kept.
+        assert_eq!(read_saved_scans(&path), vec![MachineProjects { scanning: false, ..kept.clone() }]);
+
+        let other_version = fs::read_to_string(&path).unwrap().replacen("\"version\":1", "\"version\":0", 1);
+        fs::write(&path, other_version).unwrap();
+        assert!(read_saved_scans(&path).is_empty());
+        fs::write(&path, "{").unwrap();
+        assert!(read_saved_scans(&path).is_empty());
+        let _ = fs::remove_file(&path);
+
+        let saved = MachineProjects { scanning: false, ..kept };
+        let mut memory = BTreeMap::new();
+        restore_into(&mut memory, saved.clone());
+        assert_eq!(memory.get("mini"), Some(&saved));
+        // A scan started before the restore keeps going, over the kept results.
+        let mut memory = BTreeMap::from([("mini".to_string(), MachineProjects { machine: "mini".into(), scanning: true, ..MachineProjects::default() })]);
+        restore_into(&mut memory, saved.clone());
+        assert_eq!(memory.get("mini"), Some(&MachineProjects { scanning: true, ..saved.clone() }));
+        let newer = MachineProjects { scanned_at: Some(NOW), ..projects() };
+        let mut memory = BTreeMap::from([("mini".to_string(), newer.clone())]);
+        restore_into(&mut memory, saved);
+        assert_eq!(memory.get("mini"), Some(&newer));
     }
 
     fn removal(path: &str, head: &str) -> WorktreeRemoval {

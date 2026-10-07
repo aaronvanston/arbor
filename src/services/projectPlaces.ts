@@ -28,6 +28,18 @@ export const applyProjectSkills = (repo: string, machine: string, project: strin
 /** A checkout nobody has fetched for this long may not know what the remote has. */
 export const PLACE_STALE_MS = 86_400_000;
 
+/** A machine scanned longer ago than this, as a scan Arbor kept from before it restarted may be, is scanned again when Sync › Projects opens. */
+export const SCAN_REFRESH_MS = 15 * 60_000;
+
+/** The machines Sync › Projects scans when it opens: ones whose last scan didn't look at the repo's places, and ones scanned a while ago. */
+export function machinesToScan(drift: ProjectsDrift, now: number): Set<string> {
+  const due = new Set(drift.projects.flatMap((project) => project.cells.filter((cell) => cell.state === 'notScanned').map((cell) => cell.machine)));
+  for (const machine of drift.machines) {
+    if (machine.scannedAt !== null && now - machine.scannedAt > SCAN_REFRESH_MS) due.add(machine.machine);
+  }
+  return due;
+}
+
 /** What a cell needs before the project is where the repo wants it on that machine; empty when it's there. */
 export type CellNeed = 'link' | 'clone' | 'clear' | 'scan' | 'pull' | 'fetch' | 'skills';
 

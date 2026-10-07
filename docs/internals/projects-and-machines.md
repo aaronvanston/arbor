@@ -97,6 +97,10 @@ the other machines (from home), and counts one only when it's a checkout of the 
 machine with few sessions would look like it has no checkout and be offered a clone instead of a link.
 The scan reads the wanted paths as well as the ones sessions point at, and for each one records whether it's a link,
 where it leads, and which repo it is.
+Each machine's last scan is saved in Arbor's data folder (`project-scans.json`, versioned and dropped when it can't be
+read) and put back at launch, so a restart or an update doesn't turn every machine into Not scanned. The page rescans a
+machine whose scan is over 15 minutes old when it opens. A fix never trusts a kept scan: the machine's script checks
+what's there again before it changes anything.
 
 | State | Meaning | Fixes |
 |---|---|---|

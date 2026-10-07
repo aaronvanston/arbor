@@ -32,6 +32,7 @@ import {
   getProjectDrift,
   isStale,
   machineFixes,
+  machinesToScan,
   matchesQuery,
   projectInStep,
   projectName,
@@ -119,12 +120,13 @@ export function SyncProjects({ machines, onOpenInRepo, onOpenRepo }: {
     scanProjects(machine).catch((error) => setScanErrors((current) => ({ ...current, [machine]: String(error) })));
   }, []);
 
-  // A machine whose last scan didn't look at the repo's places is scanned once when the view opens; a scan only reads.
+  // A machine whose last scan didn't look at the repo's places, or was a while ago (kept from before Arbor restarted),
+  // is scanned once when the view opens; a scan only reads.
   useEffect(() => {
     if (!drift) return;
-    const unscanned = new Set(drift.projects.flatMap((project) => project.cells.filter((cell) => cell.state === 'notScanned').map((cell) => cell.machine)));
+    const due = machinesToScan(drift, Date.now());
     for (const machine of machines) {
-      if (!machine.reachable || !unscanned.has(machine.machine) || autoScanned.current.has(machine.machine)) continue;
+      if (!machine.reachable || !due.has(machine.machine) || autoScanned.current.has(machine.machine)) continue;
       if (drift.machines.find((entry) => entry.machine === machine.machine)?.scanning) continue;
       autoScanned.current.add(machine.machine);
       scan(machine.machine);
