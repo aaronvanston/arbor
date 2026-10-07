@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { TableCard } from '../components/ui/data-table';
-import { Empty, EmptyDescription } from '../components/ui/empty';
+import { Empty, EmptyContent, EmptyDescription, EmptyTitle } from '../components/ui/empty';
 import { ArrowUpRight, Info, TerminalSquare } from '../components/ui/icons';
 import { Skeleton } from '../components/ui/skeleton';
 import { StatusDot } from '../components/ui/status-dot';
@@ -46,7 +46,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   const now = useQuotaClock();
   const [automation, setAutomation] = useState<Automation | null>(null);
   const [runs, setRuns] = useState<AutomationRun[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   // A schedule someone made in ultradian has its runs read from its machine, which can be away.
   const [runsError, setRunsError] = useState<string | null>(null);
   const summary = list?.automations.find((item) => item.id === id) ?? automation?.summary ?? null;
@@ -60,7 +60,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
         setAutomation(next);
         setError(null);
       })
-      .catch((reason: unknown) => { if (current) setError(String(reason)); });
+      .catch((reason: unknown) => { if (current) setError(reason); });
     invokeCommand('list_automation_runs', { id, limit: RUNS_SHOWN })
       .then((nextRuns) => {
         if (!current) return;
@@ -82,11 +82,21 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   );
 
   if (!automation || !summary) {
+    // A link to one whose app or schedule went away: the list Arbor just read hasn't got it either.
+    const gone = error !== null && list !== null && !list.automations.some((item) => item.id === id);
     return (
       <Page width="main">
-        <PageTopbar><PageBreadcrumb segments={[back, summary?.name ?? '']} /></PageTopbar>
+        <PageTopbar><PageBreadcrumb segments={summary ? [back, summary.name] : [back]} /></PageTopbar>
         <PageBody gap="gap-4">
-          {error ? <p className="text-sm text-error-foreground">{error}</p> : <Skeleton className="h-96 rounded-2xl" />}
+          {gone ? (
+            <Empty>
+              <EmptyTitle>{t('automations.gone.title')}</EmptyTitle>
+              <EmptyDescription>{t('automations.gone.description')}</EmptyDescription>
+              <EmptyContent>
+                <Button variant="outline" size="sm" onClick={() => onNavigate(automationsView())}>{t('automations.gone.back')}</Button>
+              </EmptyContent>
+            </Empty>
+          ) : error !== null ? <p className="text-sm text-error-foreground">{plainError(error, t)}</p> : <Skeleton className="h-96 rounded-2xl" />}
         </PageBody>
       </Page>
     );
