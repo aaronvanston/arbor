@@ -1,8 +1,9 @@
 /** The browser mock's answers for each machine's clean-up: what could come off it, and what's set aside there. */
 import type { CleanupCommands } from '../../native/cleanup';
-import type { CleanupAgent, CleanupCache, CleanupGroup, CleanupHome, CleanupLeftover, CleanupScan, CommandError, HomeArchive, SetAsideItem } from '../../native/types';
+import type { AgentInstall, CleanupAgent, CleanupCache, CleanupGroup, CleanupHome, CleanupLeftover, CleanupScan, CommandError, HomeArchive, SetAsideItem } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { freshInstall, later, mockLog, now, params } from './scenario';
+import { mockAgentInstallsOf } from './machines';
 import { answerCleanupUndo, cleanupDeletedMock, cleanupUndoneMock, recordCleanupMock, recordUninstallMock } from './setup';
 
 // `?cleanup=` (listed at the top of mockTauri.ts): `none` for nothing to clean anywhere, `fail` for the look failing,
@@ -50,16 +51,41 @@ function homesFor(machine: string): CleanupHome[] {
   return homes;
 }
 
+const AGENT_PACKAGES = { claude: '@anthropic-ai/claude-code', codex: '@openai/codex' } as const;
+
+/** A path in the home folder from ~, as the scan shows it. */
+const fromHome = (path: string) => path.replace(/^\/(Users|home)\/[^/]+(?=\/)/, '~');
+
+/**
+ * Claude Code and Codex as the machine's own check found them (Machines' Agents), each copy with the removal its
+ * installer allows, the first on the PATH ahead of the rest.
+ */
+function harnessAgents(machine: string): Omit<CleanupAgent, 'onlyCopy'>[] {
+  const found = mockAgentInstallsOf(machine);
+  return (['claude', 'codex'] as const).flatMap((harness) => {
+    const install: AgentInstall | null = found[harness];
+    if (!install) return [];
+    const pkg = AGENT_PACKAGES[harness];
+    const removalOf = (path: string, method: CleanupAgent['method']): Pick<CleanupAgent, 'removal' | 'command'> => {
+      if (method === 'native') return { removal: 'native', command: null };
+      if (method === 'npm') return { removal: 'packageManager', command: `npm uninstall -g --prefix ${path.replace(/\/bin\/[^/]+$/, '')} ${pkg}` };
+      if (method === 'homebrew') return { removal: 'packageManager', command: linux(machine) ? `brew uninstall ${harness === 'claude' ? 'claude-code' : 'codex'}` : `brew uninstall --cask ${harness === 'claude' ? 'claude-code' : 'codex'}` };
+      if (method === 'bun') return { removal: 'packageManager', command: `bun remove -g ${pkg}` };
+      if (method === 'pnpm') return { removal: 'packageManager', command: `pnpm remove -g ${pkg}` };
+      return { removal: 'unknown', command: null };
+    };
+    return [
+      { harness, path: fromHome(install.path), real: install.real ? fromHome(install.real) : null, version: install.version, method: install.method, first: true, ...removalOf(fromHome(install.path), install.method) },
+      // An older copy further along the PATH (`?duplicate=`) is a Homebrew cask's.
+      ...install.copies.map((copy) => ({ harness, path: fromHome(copy.path), real: copy.real ? fromHome(copy.real) : null, version: copy.version, method: 'homebrew' as const, first: false, ...removalOf(copy.path, 'homebrew') })),
+    ];
+  });
+}
+
 function agentsFor(machine: string): CleanupAgent[] {
-  const brew = linux(machine) ? '/home/linuxbrew/.linuxbrew' : '/opt/homebrew';
   const agent = (more: Omit<CleanupAgent, 'onlyCopy' | 'first'> & { first?: boolean }): CleanupAgent => ({ first: true, onlyCopy: false, ...more });
   const agents = [
-    agent({ harness: 'claude', path: '~/.local/bin/claude', real: '~/.local/share/claude/versions/2.4.12', version: '2.4.12', method: 'native', removal: 'native', command: null }),
-    agent({
-      harness: 'claude', path: '/usr/local/bin/claude', real: '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js', version: '2.1.90', method: 'npm', first: false,
-      removal: 'packageManager', command: 'npm uninstall -g --prefix /usr/local @anthropic-ai/claude-code',
-    }),
-    agent({ harness: 'codex', path: `${brew}/bin/codex`, real: `${brew}/Caskroom/codex/0.161.0/codex`, version: '0.161.0', method: 'homebrew', removal: 'packageManager', command: 'brew uninstall --cask codex' }),
+    ...harnessAgents(machine).map(agent),
     agent({ harness: 'pi', path: '~/Library/pnpm/pi', real: '~/Library/pnpm/global/5/.pnpm/@earendil/pi@0.9.1/node_modules/@earendil/pi/dist/cli.js', version: '0.9.1', method: 'pnpm', removal: 'packageManager', command: 'pnpm remove -g @earendil/pi' }),
     agent({ harness: 'amp', path: '~/.bun/bin/amp', real: '~/.bun/install/global/node_modules/@sourcegraph/amp/dist/main.js', version: '0.0.17', method: 'bun', removal: 'packageManager', command: 'bun remove -g @sourcegraph/amp' }),
     agent({ harness: 'openCode', path: '~/.opencode/bin/opencode', real: null, version: '1.3.4', method: 'unknown', removal: 'unknown', command: null }),

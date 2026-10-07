@@ -405,6 +405,9 @@ if (duplicateScenario === 'claude' || duplicateScenario === 'codex') {
   });
 }
 
+/** A machine's Claude Code and Codex as its last check found them, which its Clean up lists too. */
+export const mockAgentInstallsOf = (machine: string) => ({ claude: healthAgents[machine]?.claude ?? null, codex: healthAgents[machine]?.codex ?? null });
+
 const noAgents: MachineAgents = { claude: null, codex: null, checkedAt: null, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, orca: null };
 
 const agentsOf = (machine: string): MachineAgents => {
