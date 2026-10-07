@@ -4878,6 +4878,10 @@ export type SettingsEdit = {
   change: FileChange,
   written: boolean,
   error: string | null,
+  /**
+   * The backup taken before it was written, which undo_setup_sync puts back; None when nothing was written.
+   */
+  backup: string | null,
 };
 
 export type SettingsInEffect = {

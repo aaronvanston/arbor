@@ -19,7 +19,9 @@ import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
 import { LIBRARY_KINDS, libraryCounts, libraryList, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
-import { removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources } from '../services/libraryToggle';
+import { removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources, type UndoResult } from '../services/libraryToggle';
+import { plainError } from '../services/plainError';
+import { switchFailureText, switchToast, undoToast } from '../services/switchReport';
 import { skillFolder } from '../services/repoBrowser';
 import { LibraryItemPage, type LibraryActions } from './SetupLibraryItem';
 import type { SetupMachine, SetupRepo } from '../native/types';
@@ -166,7 +168,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   const shown = useMemo(() => libraryList(rows, { kind, agent, query }), [rows, kind, agent, query]);
 
   const failedText = (failed: SwitchFailure[], needsYou: string[], name: string) => [
-    ...failed.map((entry) => t('library.toggle.machineFailed', { name, machine: entry.machine, message: entry.message })),
+    ...failed.map((entry) => t('library.toggle.machineFailed', { name, machine: entry.machine, message: switchFailureText(entry, t) })),
     ...(needsYou.length ? [t('library.toggle.needsYou', { name, machines: needsYou.join(', ') })] : []),
   ];
   // What a switch read back replaces what was read, so the row shows its new state straight away.
@@ -178,16 +180,23 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   const report = (key: string, texts: string[]) =>
     setProblems((current) => [...current.filter((problem) => problem.key !== key), ...texts.map((text) => ({ key, text }))]);
 
+  /** Puts back what an Undo can, saying in a toast that stays what it couldn't, and where. */
+  const undoWith = async (row: LibraryRow, undo: () => Promise<SwitchSources & UndoResult>) => {
+    try {
+      const back = await undo();
+      keep(back);
+      report(row.key, failedText(back.failed, [], row.name));
+      toast(undoToast(row.name, back, t));
+    } catch (error) {
+      const text = t('library.undo.failed', { name: row.name, error: plainError(error, t) });
+      report(row.key, [text]);
+      toast({ kind: 'error', title: text });
+    }
+  };
   const undo = async (row: LibraryRow, runKey: string, on: boolean, run: LibrarySwitch) => {
     setRunning({ key: runKey, on: !on });
     try {
-      const back = await run.undo();
-      keep(back);
-      const texts = failedText(back.failed, [], row.name);
-      report(row.key, texts);
-      if (!texts.length) toast({ kind: 'success', title: t('library.undo.done', { name: row.name }) });
-    } catch (error) {
-      report(row.key, [t('library.undo.failed', { name: row.name, error: String(error) })]);
+      await undoWith(row, run.undo);
     } finally {
       setRunning(null);
     }
@@ -206,9 +215,10 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       keep(run);
       const texts = failedText(run.failed, run.needsYou, row.name);
       report(row.key, texts);
+      const result = switchToast(row.name, title, run, t);
       toast({
-        kind: texts.length ? 'warning' : 'success',
-        title,
+        kind: result.kind === 'success' && texts.length ? 'warning' : result.kind,
+        title: result.title,
         description: [
           t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
           run.skipped.length ? t('library.toggle.skipped', { machines: run.skipped.join(', ') }) : null,
@@ -216,7 +226,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
         action: { label: t('common.undo'), onClick: () => { void undo(row, runKey, on, run); } },
       });
     } catch (error) {
-      report(row.key, [t('library.toggle.failed', { name: row.name, error: String(error) })]);
+      report(row.key, [t('library.toggle.failed', { name: row.name, error: plainError(error, t) })]);
     } finally {
       setRunning(null);
     }
@@ -235,10 +245,10 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       toast({
         kind: texts.length ? 'warning' : 'success',
         title: t('library.item.take.done', { name: row.name }),
-        ...(undo ? { action: { label: t('common.undo'), onClick: () => { void (async () => { try { const back = await undo(); keep(back); report(row.key, failedText(back.failed, [], row.name)); } catch (error) { report(row.key, [t('library.undo.failed', { name: row.name, error: String(error) })]); } })(); } } } : {}),
+        ...(undo ? { action: { label: t('common.undo'), onClick: () => { void undoWith(row, undo); } } } : {}),
       });
     } catch (error) {
-      report(row.key, [t('library.item.take.failed', { name: row.name, error: String(error) })]);
+      report(row.key, [t('library.item.take.failed', { name: row.name, error: plainError(error, t) })]);
     } finally {
       setRunning(null);
     }
@@ -253,13 +263,14 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       const run = await updatePlugin(target.row);
       const texts = failedText(run.failed, [], row.name);
       report(row.key, texts);
+      const result = switchToast(row.name, t('library.item.update.done', { name: row.name }), run, t);
       toast({
-        kind: texts.length ? 'warning' : 'success',
-        title: t('library.item.update.done', { name: row.name }),
+        kind: result.kind,
+        title: result.title,
         description: t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
       });
     } catch (error) {
-      report(row.key, [t('library.toggle.failed', { name: row.name, error: String(error) })]);
+      report(row.key, [t('library.toggle.failed', { name: row.name, error: plainError(error, t) })]);
     } finally {
       setRunning(null);
     }

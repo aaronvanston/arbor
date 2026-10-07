@@ -111,7 +111,7 @@ describe('spendShares', () => {
 
 describe('telemetryPlanText', () => {
   const file = (fields: Partial<SettingsEdit>): SettingsEdit => ({
-    home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: false, error: null, ...fields,
+    home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: false, error: null, backup: null, ...fields,
   });
 
   it('says what setting a machine up does to each file', () => {

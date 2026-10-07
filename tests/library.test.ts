@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { libraryCounts, libraryItemName, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { addPlugin, behindHomes, bringInLine, linePlans, marketplaceEverywhere, marketplaceHomes, takeIntoRepo, takeSources, updatePlugin, lineUp, relisted, removeEverywhere, switchFile, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { addPlugin, behindHomes, bringInLine, inverseChanges, linePlans, marketplaceEverywhere, marketplaceHomes, takeIntoRepo, takeSources, updatePlugin, lineUp, relisted, removeEverywhere, switchFile, switchHook, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { directoryEntries, directorySources } from '../src/services/directory';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
@@ -333,6 +333,81 @@ describe('an item’s own page', () => {
   });
 });
 
+describe('Undo puts each machine back as it was', () => {
+  const guard = { name: 'guard', event: 'PreToolUse', matcher: null, command: '~/.agents/hooks/guard.sh', script: 'guard.sh', timeout: null, agents: ['claude' as const], homes: null, removed: false, allOff: false, off: [] as string[], problems: [] };
+  const hooksAt = (state: 'extra' | 'same', off: string[] = []): HookRegistry => ({
+    commit: 'h'.repeat(40), found: true, uncommitted: false, problems: [], hooks: [{ ...guard, off }],
+    cells: [{ machine: 'ci-01', agent: 'claude', home: '~/.claude', name: 'guard', event: 'PreToolUse', script: 'guard.sh', state, blocked: null }],
+  });
+
+  it('restores a hook switch from each machine’s backup rather than applying the repo’s word again', async () => {
+    const calls: string[] = [];
+    mockCommands({
+      set_hook_wanted: ({ machine: name, wanted }) => { calls.push(`set ${name} ${wanted}`); return hooksAt(wanted === 'off' ? 'extra' : 'same', wanted === 'off' ? ['ci-01'] : []); },
+      apply_hooks: ({ machine: name }) => {
+        calls.push(`apply ${name}`);
+        return [
+          { home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: true, error: null, backup: 'b-claude' },
+          { home: '~/.agent-app/claude', path: '~/.agent-app/claude/settings.json', change: 'edit', written: true, error: null, backup: 'b-claude' },
+        ];
+      },
+      undo_setup_sync: ({ machine: name, backup }) => { calls.push(`undo ${name} ${backup}`); return { backup: null, done: ['~/.claude/settings.json'], failed: [] }; },
+    });
+    const machines = [machine('ci-01', [])];
+    const run = await switchMachine('/repo', machines, { kind: 'hook', name: 'guard' }, 'ci-01', false);
+    expect(run.changed).toEqual(['ci-01']);
+    const back = await run.undo();
+    expect(back.failed).toEqual([]);
+    // One backup for the file the two homes share, put back once; nothing is applied again.
+    expect(calls).toEqual(['set ci-01 off', 'apply ci-01', 'undo ci-01 b-claude', 'set ci-01 default']);
+  });
+
+  it('says which machine refused to be put back, and why, for every kind of hook switch', async () => {
+    mockCommands({
+      set_hook_wanted: ({ wanted }) => hooksAt(wanted === 'default' ? 'same' : 'extra'),
+      apply_hooks: () => [{ home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: true, error: null, backup: 'b1' }],
+      undo_setup_sync: () => ({ backup: null, done: [], failed: [{ path: '~/.claude/settings.json', reason: 'changed' }] }),
+    });
+    const machines = [machine('ci-01', [])];
+    for (const run of [await switchHook('/repo', machines, 'guard', false), await removeEverywhere('/repo', machines, { kind: 'hook', name: 'guard' })]) {
+      const back = await run.undo();
+      expect(back.failed).toEqual([{ machine: 'ci-01', message: 'changed', reason: 'changed', paths: ['~/.claude/settings.json'] }]);
+    }
+  });
+
+  it('takes back only the plugin changes a removal made, a plugin that was off going back in off', async () => {
+    const applied: { machine: string; actions: string[] }[] = [];
+    mockCommands({
+      set_setup_plugin: ({ wanted }) => repo(wanted ? [listing(REVIEW, wanted)] : []),
+      apply_plugin_changes: ({ machine: name, changes }) => {
+        applied.push({ machine: name, actions: changes.map((change) => change.action) });
+        return changes.map((change): PluginResult => ({ ...change, checkout: null, outcome: 'done', message: '' }));
+      },
+    });
+    const machines = fleet();
+    const row = pluginRow(machines, repo([listing(REVIEW, 'on', { ci01: 'off' })]));
+    const run = await removeEverywhere('/repo', machines, { kind: 'plugin', codex: false, row });
+    expect(applied).toEqual([{ machine: 'cam-mbp', actions: ['uninstall'] }, { machine: 'ci-01', actions: ['uninstall'] }]);
+    applied.length = 0;
+    await run.undo();
+    // cedar-02 never had it, so Undo leaves it alone rather than installing it there.
+    expect(applied).toEqual([{ machine: 'ci-01', actions: ['install', 'disable'] }, { machine: 'cam-mbp', actions: ['install'] }]);
+  });
+
+  it('turns each change around, the last first, leaving a marketplace it added', () => {
+    const change = (machine: string, action: 'install' | 'uninstall' | 'addMarketplace' | 'enable', wasOff = false) =>
+      ({ machine, home: '~/.claude', action, target: REVIEW, source: null, ...(wasOff ? { wasOff } : {}) });
+    expect(Object.fromEntries(inverseChanges([change('ci-01', 'addMarketplace'), change('ci-01', 'install'), change('cam-mbp', 'uninstall', true), change('cam-mbp', 'enable')]))).toEqual({
+      'cam-mbp': [
+        { machine: 'cam-mbp', home: '~/.claude', action: 'disable', target: REVIEW, source: null },
+        { machine: 'cam-mbp', home: '~/.claude', action: 'install', target: REVIEW, source: null },
+        { machine: 'cam-mbp', home: '~/.claude', action: 'disable', target: REVIEW, source: null },
+      ],
+      'ci-01': [{ machine: 'ci-01', home: '~/.claude', action: 'uninstall', target: REVIEW, source: null }],
+    });
+  });
+});
+
 describe('bringing a machine in line', () => {
   const hookView = { name: 'guard', event: 'PreToolUse', matcher: null, command: '~/.agents/hooks/guard.sh', script: 'guard.sh', timeout: null, agents: ['claude' as const], homes: null, removed: false, allOff: false, off: [], problems: [] };
   const hooks = (state: 'add' | 'same'): HookRegistry => ({
@@ -356,7 +431,7 @@ describe('bringing a machine in line', () => {
     const setup = repo([], { files: [script] });
     mockCommands({
       apply_setup_sync: ({ changes }) => { calls.push(`sync ${changes.map((change) => change.path).join(',')}`); return { backup: 'b1', done: changes.map((change) => change.path), failed: [] }; },
-      apply_hooks: () => { calls.push('hooks'); return [{ home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: true, error: null }]; },
+      apply_hooks: () => { calls.push('hooks'); return [{ home: '~/.claude', path: '~/.claude/settings.json', change: 'edit', written: true, error: null, backup: 'h1' }]; },
     });
     const machines = [machine('cam-mbp', [])];
     const row = { ...rowFor(libraryRows({ machines, view: extensionsView(machines), repo: setup, registryFound: false, hooks: hooks('add'), standing: null }), 'guard') };

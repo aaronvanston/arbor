@@ -207,7 +207,8 @@
  * that found no projects, `?toolchain=fail` to have cedar-02's toolchain scan fail, `?toolchain=partial` for a
  * scan of the Mac that ran out of time;
  * `?registry=none`, `?registry=bad`, `?registry=fail` or `?registry=dirty` for a setup repo with no MCP servers file,
- * one Arbor can't read, a repo it can't read, or changes not committed; `?mcpapply=fail` to have Claude Code fail to
+ * one Arbor can't read, a repo it can't read, or changes not committed (which turning a server on or off, taking one
+ * in and putting one back refuse, as Rust does); `?mcpapply=fail` to have Claude Code fail to
  * set a replaced MCP server up again, and Codex's config.toml and the other agents' MCP files change before they're written;
  * `?skillmachines=sample` for a setup repo keeping pdf off ci-01 and leaving cedar-02 its own frontend-design;
  * `?skillprojects=sample` for skills turned on or off in cam/arbor's checkouts (pdf off, frontend-design on, which
@@ -272,6 +273,8 @@
  *   ci-01 keeps notify off and runs an old script the repo hasn't got, and cedar-02 lacks the scripts; `broken`
  *   gives notify a problem, `bad` makes .agents/hooks.json unreadable;
  * `?hookapply=fail` to have bringing a machine's hooks in step fail as if a settings file changed since the scan;
+ * `?hookundo=fail` to have Undo of a hook switch refused, as if the machine's settings file changed since (a sticky
+ *   error toast names the machine);
  * `?hooktake=secret` to have taking a machine's hook into the repo refused for a secret in its command;
  * `?codexplugins=fail` to have Codex refuse installing or removing a plugin;
  * `?plugincost=fail` to have measuring cedar-02's plugins fail, or `old` for ci-01's Claude Code too old to say;

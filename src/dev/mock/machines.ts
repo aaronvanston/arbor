@@ -918,6 +918,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
       change: !enabled && !on ? 'none' : enabled && !on && home.path.includes('claude-other') ? 'create' : 'edit',
       written: false,
       error: null,
+      backup: null,
     }));
     const plan: TelemetrySetup = { endpoints: enabled ? [endpoint] : [], files };
     if (planOnly) return plan;
@@ -979,11 +980,11 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
         const home = entry.homes.find((candidate) => candidate.agent === 'claude' && candidate.path === path);
         if (!home) throw `Arbor hasn't found a Claude Code home at ${path} on ${machine}`;
         if (params.get('keep') === 'fail') {
-          return { home: path, path: `${path}/settings.json`, change: 'none', written: false, error: 'It changed while Arbor was editing it. Try again.' };
+          return { home: path, path: `${path}/settings.json`, change: 'none', written: false, error: 'It changed while Arbor was editing it. Try again.', backup: null };
         }
         const change = home.items.some((item) => item.kind === 'setting') ? 'edit' : 'create';
         home.items = [...home.items.filter((item) => !(item.kind === 'setting' && item.name === 'cleanupPeriodDays')), setupItem('setting', 'cleanupPeriodDays', 's6', { value: '36500' })];
-        return { home: path, path: `${path}/settings.json`, change, written: true, error: null };
+        return { home: path, path: `${path}/settings.json`, change, written: true, error: null, backup: null };
       });
       recordEditMock(machine, 'keepSessions', edits.filter((edit) => edit.written).map((edit) => ({ path: edit.path, added: edit.change === 'create' })));
       scanSetupMock(machine, false);

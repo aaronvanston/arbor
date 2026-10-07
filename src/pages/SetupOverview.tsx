@@ -16,6 +16,8 @@ import { formatAgo, formatCount } from '../lib/format';
 import type { LibraryKind } from '../navigation';
 import { libraryCounts } from '../services/library';
 import { bringable, bringInLine, linePlans, type LinePlan } from '../services/libraryToggle';
+import { plainError } from '../services/plainError';
+import { bringToast, switchFailureText } from '../services/switchReport';
 import { getSetupRepoLog } from '../services/repoBrowser';
 import { standingOf } from '../services/syncStanding';
 import type { BehindItem, RepoCommit, SetupMachine } from '../native/types';
@@ -79,27 +81,28 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
     });
     if (!confirmed) return;
     const failures: Record<string, string[]> = {};
+    // Machines that changed nothing they were asked to, and ones that changed some of it.
+    const notInLine: string[] = [];
+    let anyChanged = false;
     for (const plan of chosen) {
       setRunning(plan.machine);
       try {
         const done = await bringInLine(repoPath, sources, machines, plan);
+        anyChanged ||= done.changed;
         failures[plan.machine] = [
-          ...done.failed.map((entry) => entry.message),
+          ...done.failed.map((entry) => switchFailureText(entry, t)),
           ...(done.needsYou ? [t('overview.bring.needsYou')] : []),
         ];
+        if (done.failed.length || done.needsYou) notInLine.push(plan.machine);
       } catch (error) {
-        failures[plan.machine] = [String(error)];
+        failures[plan.machine] = [plainError(error, t)];
+        notInLine.push(plan.machine);
       }
     }
     setRunning(null);
     setProblems((current) => ({ ...current, ...failures }));
     readAgain();
-    const failed = Object.values(failures).some((texts) => texts.length);
-    toast({
-      kind: failed ? 'warning' : 'success',
-      title: chosen.length === 1 ? t('overview.bring.doneOne', { machine: chosen[0]?.machine ?? '' }) : t('overview.bring.doneAll', { count: chosen.length }),
-      description: t(failed ? 'overview.bring.someFailed' : 'overview.bring.undoHint'),
-    });
+    toast(bringToast(chosen.map((plan) => plan.machine), notInLine, anyChanged, t));
   };
 
   if (!repoPath) {

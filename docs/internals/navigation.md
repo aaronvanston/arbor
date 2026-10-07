@@ -49,12 +49,16 @@ window. Don't count "behind" anywhere else, even for one kind: that's how they d
 `setupSync.nothingToApply` only says whether the file review has changes. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
 plugin, MCP server, skill, hook and instruction file the setup repo gives the agents, one row each, with the repo's word
 for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
-brings each answering machine in line straight away, with Undo. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its
+brings each answering machine in line straight away, with Undo. Undo puts each machine back as it was rather than
+applying the repo's old word again, which would land on homes the change never touched: files, skills and hooks from
+the guarded-write backups the change took, plugins by turning around only the changes it made. A toast says done only
+when every machine it tried changed; otherwise it names the machines that didn't. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its
 own switch (a value of that machine's own in the repo, applied there at once, `switchMachine`), use and a plugin's
 measured cost, Update everywhere for a Claude Code plugin some homes have older (`updatePlugin`), Check connections for an MCP server, its values in a project (the Per home cards narrowed to it), Add to the repo for what only machines have (`takeIntoRepo`), and Remove from every machine (`removeEverywhere`), confirmed first and undone with Undo. Per home (`lens: 'machines'`) keeps the old grids for rare per-home fixes. Browse directory (`lens: 'directory'`, `pages/SetupDirectory.tsx` over `services/directory.ts`) lists what each
 marketplace offers, read from its GitHub repository by `get_marketplace_catalog` (no account, 15 minutes' cache): the
 marketplaces machines and the repo use, Anthropic's official one as a suggestion, and any `owner/repo` typed in. Adding
-one (`addPlugin`) lists it on for every machine with its marketplace's repository and installs it, with Undo; a
+one (`addPlugin`) lists it on for every machine with its marketplace's repository and installs it, with Undo (one no
+machine installs is taken back out of the repo at once); a
 marketplace the machines have can be refreshed or removed on all of them (`marketplaceEverywhere`). Software has the agent rollout, every machine's
 versions and the toolchain. Repo is the setup repo's files, changes and History, one timeline of its commits with the changes Arbor made on each machine from them (and on its own, from features that edit settings), each with Undo (`pages/SetupRepoHistory.tsx` over `services/repoTimeline.ts`).
 

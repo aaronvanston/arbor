@@ -349,13 +349,13 @@ pub(super) fn set_claude_setting(
 }
 
 /// Claude Code's settings with the setup repo's hooks as `wanted` has them, each an event, a matcher and a handler:
-/// every handler `is_repo` says is the repo's is taken out, a group that leaves empty goes too, and then each wanted
-/// hook is put back in a group of its own at the end of its event. Every other hook stays as it was, where it was.
-/// None when that leaves the file as it was.
+/// every handler `is_repo` says is one the repo lists, given its event and command, is taken out, a group that leaves
+/// empty goes too, and then each wanted hook is put back in a group of its own at the end of its event. Every other
+/// hook, a machine's own included, stays as it was, where it was. None when that leaves the file as it was.
 pub(super) fn set_repo_hooks(
     content: Option<&str>,
     wanted: &[(String, Option<String>, serde_json::Value)],
-    is_repo: impl Fn(&str) -> bool,
+    is_repo: impl Fn(&str, &str) -> bool,
 ) -> Result<Option<String>, String> {
     let (bom, mut settings) = read_claude_settings(content)?;
     let before = render_claude_settings(bom, &settings)?;
@@ -371,8 +371,8 @@ pub(super) fn set_repo_hooks(
     let Some((_, Json::Object(events))) = entries.iter_mut().find(|(key, _)| key == "hooks") else {
         return Err("hooks in settings.json isn't an object".into());
     };
-    let repo_handler = |handler: &Json| matches!(handler.field("command"), Some(Json::String(command)) if is_repo(command));
-    events.retain_mut(|(_, groups)| {
+    events.retain_mut(|(event, groups)| {
+        let repo_handler = |handler: &Json| matches!(handler.field("command"), Some(Json::String(command)) if is_repo(event.as_str(), command));
         let Json::Array(groups) = groups else { return true };
         let had = !groups.is_empty();
         groups.retain_mut(|group| {
@@ -858,6 +858,8 @@ pub(crate) struct SettingsEdit {
     pub(crate) change: FileChange,
     pub(crate) written: bool,
     pub(crate) error: Option<String>,
+    /// The backup taken before it was written, which undo_setup_sync puts back; None when nothing was written.
+    pub(crate) backup: Option<String>,
 }
 
 /// Changes settings.json in the Claude Code `homes` (named with the machine's
@@ -946,12 +948,13 @@ where
             Ok(None) => (FileChange::Unchanged, None),
             Err(error) => (FileChange::Unchanged, Some(error)),
         };
-        edits.push(SettingsEdit { home: home.clone(), path, change, written: false, error });
+        edits.push(SettingsEdit { home: home.clone(), path, change, written: false, error, backup: None });
     }
     if changes.is_empty() || !write {
         return Ok(edits);
     }
-    let output = run_on_machine(run(), write_op, &write_script(&new_stamp(), kind, &changes, false, true), SETUP_TIMEOUT).await?;
+    let stamp = new_stamp();
+    let output = run_on_machine(run(), write_op, &write_script(&stamp, kind, &changes, false, true), SETUP_TIMEOUT).await?;
     let outcomes = edit_outcomes(&String::from_utf8_lossy(&output.stdout));
     for (n, change) in changes.iter().enumerate() {
         let Some(outcome) = outcomes.get(&n) else {
@@ -961,6 +964,7 @@ where
         if let Some(edit) = edits.iter_mut().find(|edit| edit.path == path) {
             edit.written = *outcome == EditOutcome::Done;
             edit.error = (!edit.written).then(|| edit_error(*outcome));
+            edit.backup = edit.written.then(|| stamp.clone());
         }
     }
     Ok(edits)

@@ -1841,7 +1841,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "apply_hooks",
         access: Access::Confirm,
-        summary: "Puts the repo's hooks, as `commit` has them, in each of a machine's Claude Code and Codex homes that isn't in step: hooks that run a script in ~/.agents/hooks are replaced with the repo's for that home, and every other hook is left as it is. Each settings.json or hooks.json is changed the careful way, only while it's as read, backed up first and on Sync › Repo › History to undo. Codex then asks for a review of each hook that's new or changed before it runs it, which is left to its user. Then the machine is read again.",
+        summary: "Puts the repo's hooks, as `commit` has them, in each of a machine's Claude Code and Codex homes that isn't in step: only the hooks the repo lists, by event and script, are added, changed or taken out, and every other hook, one running a script of the machine's own in ~/.agents/hooks included, is left as it is. Each settings.json or hooks.json is changed the careful way, only while it's as read, backed up first and on Sync › Repo › History to undo. Codex then asks for a review of each hook that's new or changed before it runs it, which is left to its user. Then the machine is read again.",
         args: &[
             ArgSpec { name: "repo", ts_type: "string", optional: false },
             ArgSpec { name: "commit", ts_type: "string", optional: false },

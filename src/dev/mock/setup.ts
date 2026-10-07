@@ -1606,26 +1606,41 @@ const takeHookMock = (path: string, machine: string, home: string, event: string
   return hookRegistryReply(path);
 };
 
+/** Each home's hooks before a hooks backup was taken, by its id, so Undo puts them back as the real backup does. */
+const hookBackupsMock = new Map<string, Record<string, { event: string; script: string; same: boolean }[]>>();
+
+const listedHookMock = (one: { event: string; script: string }) => mockHooks.hooks.some((hook) => hook.event === one.event && hook.script === one.script);
+
 const applyHooksMock = (entry: SetupMachine): SettingsEdit[] => {
   const broken = mockHooks.hooks.filter((hook) => hook.problems.length).map((hook) => hook.name);
   if (broken.length) throw `Fix the repo's hooks first: ${broken.join(', ')}`;
   const cells = hookCellsMock(entry);
-  const homes = hookHomesMock(entry).filter(({ home }) => cells.some((cell) => cell.home === home.path && cell.state !== 'same'));
+  // A hook the repo doesn't list is the home's own, so it never puts a home out of step.
+  const homes = hookHomesMock(entry).filter(({ home }) => cells.some((cell) => cell.home === home.path && cell.name !== null && cell.state !== 'same'));
   if (!homes.length) throw `${entry.machine}'s hooks are in step with the repo already`;
   const scripts = new Set(entry.homes.flatMap((home) => home.items).filter((item) => item.kind === 'hook' && item.path !== null).map((item) => item.name));
   const missing = [...new Set(homes.flatMap(({ home, agent }) => mockHooks.hooks.filter((hook) => hookWantedMock(hook, entry.machine, agent, home.path)).map((hook) => hook.script)))]
     .filter((script) => !scripts.has(script));
   if (missing.length) throw `${entry.machine} hasn't got ${missing.map((script) => `~/.agents/hooks/${script}`).join(', ')} yet. Bring its files in step with the repo first, then its hooks.`;
   if (params.get('hookapply') === 'fail') throw `${entry.machine}'s ~/.claude/settings.json changed since Arbor read it. Scan again, then try again.`;
+  const before: Record<string, { event: string; script: string; same: boolean }[]> = {};
   const edits: SettingsEdit[] = homes.map(({ home, agent }) => {
-    mockHomeHooks[`${entry.machine}\u0000${home.path}`] = mockHooks.hooks
-      .filter((hook) => hookWantedMock(hook, entry.machine, agent, home.path))
-      .map((hook) => ({ event: hook.event, script: hook.script, same: true }));
-    return { home: home.path, path: `${home.path}/${agent === 'codex' ? 'hooks.json' : 'settings.json'}`, change: 'edit', written: true, error: null };
+    const key = `${entry.machine}\u0000${home.path}`;
+    const there = mockHomeHooks[key] ?? [];
+    before[key] = there;
+    // Only the hooks the repo lists change; the home's own stay, its own scripts in ~/.agents/hooks included.
+    mockHomeHooks[key] = [
+      ...there.filter((one) => !listedHookMock(one)),
+      ...mockHooks.hooks
+        .filter((hook) => hookWantedMock(hook, entry.machine, agent, home.path))
+        .map((hook) => ({ event: hook.event, script: hook.script, same: true })),
+    ];
+    return { home: home.path, path: `${home.path}/${agent === 'codex' ? 'hooks.json' : 'settings.json'}`, change: 'edit', written: true, error: null, backup: null };
   });
-  recordEditMock(entry.machine, 'hooks', edits.map((edit) => ({ path: edit.path, added: false })));
+  const backup = recordEditMock(entry.machine, 'hooks', edits.map((edit) => ({ path: edit.path, added: false })));
+  if (backup) hookBackupsMock.set(backup, before);
   scanSetupMock(entry.machine, false);
-  return edits;
+  return edits.map((edit) => ({ ...edit, backup }));
 };
 
 const registryReply = (path: string): McpRegistry => {
@@ -2379,6 +2394,7 @@ const scanToolchainMock = (machine: string) => {
 };
 
 const takeMcpMock = (path: string, machine: string, homePath: string, name: string, own: boolean) => {
+  refuseDirtyRegistryMock();
   // How the repo started is read before the registry changes, so the commit shows what this one changed.
   othersAtStart();
   const repo = mockRepo(path);
@@ -2427,6 +2443,7 @@ const takeMcpMock = (path: string, machine: string, homePath: string, name: stri
 const mockRemovedServers = new Map<string, MockRegistryServer>();
 
 const putBackMcpMock = (path: string, name: string) => {
+  refuseDirtyRegistryMock();
   // How the repo started is read before the registry changes, so the commit shows what this one changed.
   othersAtStart();
   const repo = mockRepo(path);
@@ -2442,7 +2459,13 @@ const putBackMcpMock = (path: string, name: string) => {
   return registryReply(path);
 };
 
+/** As Rust refuses: a commit of mcp-servers.json would take changes along that the user hasn't committed. */
+const refuseDirtyRegistryMock = () => {
+  if (params.get('registry') === 'dirty') throw ".agents/mcp-servers.json has changes in the repo that aren't committed. Commit or drop them, then try again.";
+};
+
 const setMcpWantedMock = (path: string, name: string, machine: string | null, wanted: McpWanted) => {
+  refuseDirtyRegistryMock();
   // How the repo started is read before the registry changes, so the commit shows what this one changed.
   othersAtStart();
   const repo = mockRepo(path);
@@ -2477,6 +2500,15 @@ const setMcpWantedMock = (path: string, name: string, machine: string | null, wa
 
 const undoSetupMock = (entry: SetupMachine, backup: MockSetupBackup): SyncOutcome => {
   if (backup.skills.length) return undoSkillsMock(entry, backup);
+  const hooksBefore = hookBackupsMock.get(backup.id);
+  if (hooksBefore) {
+    // `?hookundo=fail`: the settings file changed since, so the guarded write refuses to put it back.
+    if (params.get('hookundo') === 'fail') return { backup: null, done: [], failed: backup.files.map((file) => ({ path: file.path, reason: 'changed' })) };
+    Object.assign(mockHomeHooks, hooksBefore);
+    backup.undoneAtMs = Date.now();
+    scanSetupMock(entry.machine, false);
+    return { backup: null, done: backup.files.map((file) => file.path), failed: [] };
+  }
   if (backup.what !== 'sync') {
     // A settings edit: the mock keeps no copy of the file, so it's only marked undone.
     backup.undoneAtMs = Date.now();
@@ -3432,7 +3464,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
       const gone = home.items.filter((item) => item.kind === 'plugin' && names.has(item.name) && item.value === null);
       if (gone.length !== names.size) throw `${home.path} doesn't name ${[...names].join(', ')} as the last scan found it. Scan again.`;
       home.items = home.items.filter((item) => !gone.includes(item));
-      edits.push({ home: home.path, path: `${home.path}/settings.json`, change: 'edit', written: true, error: null });
+      edits.push({ home: home.path, path: `${home.path}/settings.json`, change: 'edit', written: true, error: null, backup: null });
     }
     recordEditMock(machine, 'plugins', edits.map((edit) => ({ path: edit.path, added: false })));
     scanSetupMock(machine, false);

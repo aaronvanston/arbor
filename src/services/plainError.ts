@@ -106,6 +106,9 @@ function describe(error: unknown, t: Translate): Plain {
     return plain(t('plainError.moduleLoad'), 'plainError.advice.restartArbor');
   }
   if (/database is locked|SQLITE_BUSY/i.test(words)) return plain(t('plainError.databaseBusy'), 'plainError.advice.moment');
+  // Codex's own words when a marketplace it has doesn't offer the plugin asked for.
+  const missing = /plugin `([^`]+)` was not found in marketplace `([^`]+)`/.exec(words);
+  if (missing?.[1] && missing[2]) return plain(t('plainError.codex.pluginNotFound', { plugin: missing[1], marketplace: missing[2] }), 'plainError.advice.codexMarketplace');
   const status = /\bHTTP (\d{3})\b/.exec(words)?.[1];
   // Words it doesn't know still end as a sentence, so the next step a screen adds after them reads as one.
   return sshFailure(words, t) ?? osFailure(words, t) ?? (status ? httpFailure(Number(status), t, false) : plain(/[.!?)]$/.test(words) || !words ? words : `${words}.`));

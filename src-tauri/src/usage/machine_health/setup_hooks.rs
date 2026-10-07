@@ -3,9 +3,10 @@
 //! script the repo keeps in .agents/hooks, which syncs into each machine's
 //! ~/.agents/hooks like any other file (see setup_sync), so every hook Arbor
 //! places runs something that was reviewed in the repo. That's also how a
-//! home's hooks are told apart: one running a script in ~/.agents/hooks is the
-//! repo's, and every other hook is the home's own, which Arbor never changes and
-//! only counts. Claude Code keeps a home's hooks in its settings.json and Codex
+//! home's hooks are told apart: one running a script in ~/.agents/hooks on an
+//! event the repo lists a hook for is the repo's, and every other hook is the
+//! home's own, which Arbor never changes and only counts. A script a machine
+//! keeps in ~/.agents/hooks that the repo has no hook for stays its own too. Claude Code keeps a home's hooks in its settings.json and Codex
 //! in its hooks.json, in the same shape.
 //!
 //! A hook goes in every home of the agents it lists, Claude Code's alone unless
@@ -132,6 +133,12 @@ struct Registry {
 }
 
 impl Registry {
+    /// Each event and script the repo has a hook for, on or off, kept off a machine or removed: the hooks Arbor may
+    /// add, change or take out of a home. Any other hook there is the home's own.
+    fn listed(&self) -> BTreeSet<(String, String)> {
+        self.hooks.iter().filter_map(|hook| Some((hook.event.clone(), hook.script()?.to_string()))).collect()
+    }
+
     #[cfg(test)]
     fn hook(&self, name: &str) -> Option<&Hook> {
         self.hooks.iter().find(|hook| hook.name == name)
@@ -338,7 +345,7 @@ fn hook_agent(agent: HomeAgent) -> Option<AgentKind> {
 }
 
 /// How each repo hook stands in each of a machine's Claude Code and Codex homes, with the hooks there that run a
-/// repo script the repo has no hook for.
+/// script from ~/.agents/hooks the repo has no hook for, the home's own, which are counted and never changed.
 fn machine_cells(registry: &Registry, machine: &str, setup: &MachineSetup) -> Vec<HookCell> {
     let mut cells = Vec::new();
     for (agent, home) in setup.agent_homes() {
@@ -827,6 +834,11 @@ pub(crate) async fn take_hook(
 /// handler.
 type HomePlan = (AgentKind, String, Vec<(String, Option<String>, Value)>);
 
+/// Whether a home's hook, on `event` running `command`, is one the repo lists.
+fn is_listed(listed: &BTreeSet<(String, String)>, event: &str, command: &str, home_dir: &str) -> bool {
+    hook_script(command, home_dir).is_some_and(|script| listed.contains(&(event.to_string(), script.to_string())))
+}
+
 /// What each of a machine's Claude Code and Codex homes that isn't in step gets. Refused while the repo's hooks have
 /// problems, or while a script a hook runs isn't on the machine yet, since the hook would run nothing.
 fn machine_plan(registry: &Registry, machine: &str, setup: &MachineSetup) -> Result<Vec<HomePlan>, String> {
@@ -844,7 +856,8 @@ fn machine_plan(registry: &Registry, machine: &str, setup: &MachineSetup) -> Res
         if home_place(home).is_none() {
             continue;
         }
-        if cells.iter().filter(|cell| cell.home == home).all(|cell| cell.state == HookState::Same) {
+        // A hook the repo has no name for is the home's own, so it never puts a home out of step.
+        if cells.iter().filter(|cell| cell.home == home && cell.name.is_some()).all(|cell| cell.state == HookState::Same) {
             continue;
         }
         let wanted: Vec<&Hook> = registry.hooks.iter().filter(|hook| hook.wanted(machine, agent, home)).collect();
@@ -865,8 +878,8 @@ fn machine_plan(registry: &Registry, machine: &str, setup: &MachineSetup) -> Res
 }
 
 /// Puts the repo's hooks, as `commit` has them, in each of a machine's Claude Code and Codex homes that isn't in
-/// step: hooks that run a script in ~/.agents/hooks are replaced with the repo's for that home, and every other hook
-/// is left as it is. Each settings.json or hooks.json is changed the careful way, only while it's as read, backed up
+/// step: only the hooks the repo lists, by event and script, are added, changed or taken out, and every other hook,
+/// one running a script of the machine's own in ~/.agents/hooks included, is left as it is. Each settings.json or hooks.json is changed the careful way, only while it's as read, backed up
 /// first and on Sync › Repo › History to undo. Codex then asks for a review of each hook that's new or changed
 /// before it runs it, which is left to its user. Then the machine is read again.
 #[tauri::command]
@@ -878,6 +891,7 @@ pub(crate) async fn apply_hooks(
     machine: String,
 ) -> Result<Vec<super::attention::SettingsEdit>, String> {
     let (_, _, _, registry) = load_registry(Path::new(&repo), Some(&commit)).await?;
+    let listed = registry.listed();
     let (target, homes, home_dir) = {
         let inner = state.lock();
         let (target, setup) = covered_machine(&inner, &machine)?;
@@ -888,7 +902,7 @@ pub(crate) async fn apply_hooks(
     }
     let mut edits = Vec::new();
     for (agent, home, wanted) in &homes {
-        let edit = |content: Option<&str>| super::attention::set_repo_hooks(content, wanted, |command| hook_script(command, &home_dir).is_some());
+        let edit = |content: Option<&str>| super::attention::set_repo_hooks(content, wanted, |event, command| is_listed(&listed, event, command, &home_dir));
         let home = std::slice::from_ref(home);
         let kind = super::guarded_writes::ChangeKind::Hooks;
         edits.extend(match agent {
@@ -1018,7 +1032,9 @@ mod tests {
   }
 }
 "#;
-        let is_repo = |command: &str| hook_script(command, "/Users/a").is_some();
+        // The repo lists guard, and old.sh and gone.sh on these events, taken off; mine.sh isn't from ~/.agents/hooks.
+        let listed: BTreeSet<(String, String)> = [("PreToolUse", "guard.sh"), ("PreToolUse", "old.sh"), ("Stop", "gone.sh")].iter().map(|(event, script)| (event.to_string(), script.to_string())).collect();
+        let is_repo = |event: &str, command: &str| is_listed(&listed, event, command, "/Users/a");
         let wanted = vec![("PreToolUse".to_string(), Some("Bash".to_string()), json!({ "type": "command", "command": "~/.agents/hooks/guard.sh", "timeout": 30 }))];
         let next = super::super::attention::set_repo_hooks(Some(settings), &wanted, is_repo).unwrap().unwrap();
         let value: Value = serde_json::from_str(&next).unwrap();
@@ -1037,6 +1053,34 @@ mod tests {
         assert_eq!(super::super::attention::set_repo_hooks(Some("{\"model\":\"opus\"}"), &[], is_repo).unwrap(), None);
         let emptied: Value = serde_json::from_str(&super::super::attention::set_repo_hooks(Some(&next), &[], is_repo).unwrap().unwrap()).unwrap();
         assert_eq!(emptied["hooks"], json!({ "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "mine.sh" }] }] }));
+    }
+
+    #[test]
+    fn a_machines_own_hooks_from_agents_hooks_are_kept() {
+        // The repo lists guard and ping (taken off every machine); old.sh is ci-01's own, in its ~/.agents/hooks.
+        let read = registry(json!({ "version": 1, "hooks": {
+            "guard": { "event": "PreToolUse", "matcher": "Bash", "command": "~/.agents/hooks/guard.sh" },
+            "ping": { "event": "Stop", "command": "~/.agents/hooks/notify.py", "removed": true },
+        } }));
+        let listed = read.listed();
+        assert!(listed.contains(&("Stop".to_string(), "notify.py".to_string())), "a removed hook is still the repo's to take out");
+        let is_repo = |event: &str, command: &str| is_listed(&listed, event, command, "/Users/a");
+        assert!(!is_repo("PreToolUse", "~/.agents/hooks/old.sh"));
+        assert!(!is_repo("Stop", "~/.agents/hooks/guard.sh"), "the same script on an event the repo doesn't list is the home's own");
+        let settings = r#"{ "hooks": {
+  "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "~/.agents/hooks/old.sh" }, { "type": "command", "command": "~/.agents/hooks/guard.sh", "timeout": 5 }] }],
+  "Stop": [{ "hooks": [{ "type": "command", "command": "/Users/a/.agents/hooks/notify.py" }] }]
+} }"#;
+        // guard switched off on this machine: only guard and the removed ping go.
+        let next: Value = serde_json::from_str(&super::super::attention::set_repo_hooks(Some(settings), &[], is_repo).unwrap().unwrap()).unwrap();
+        assert_eq!(next["hooks"], json!({ "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "~/.agents/hooks/old.sh" }] }] }));
+
+        // A home whose only difference is a hook of its own is in step, so there's nothing to apply.
+        let found = |event: &str, script: &str, sum: &str| FoundHook { event: event.into(), script: script.into(), sum: sum.into() };
+        let mut setup = MachineSetup::with_homes(&[(HomeAgent::Claude, "~/.claude")]).with_home_dir("/Users/a").with_hook_script("guard.sh").with_hook_script("old.sh");
+        let same = hook_sum(Some("Bash"), &read.hook("guard").unwrap().handler(), "/Users/a");
+        setup.set_home_hooks("~/.claude", vec![found("PreToolUse", "guard.sh", &same), found("PreToolUse", "old.sh", "x")]);
+        assert!(machine_plan(&read, "ci-01", &setup).unwrap().is_empty());
     }
 
     #[test]

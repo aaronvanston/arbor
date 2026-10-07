@@ -14,7 +14,9 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import type { LibraryKind } from '../navigation';
 import { directoryEntries, directorySources, getMarketplaceCatalog, type DirectoryAgent, type DirectoryEntry, type DirectorySource } from '../services/directory';
-import { addPlugin, marketplaceEverywhere, marketplaceHomes, type LibrarySwitch } from '../services/libraryToggle';
+import { addPlugin, marketplaceEverywhere, marketplaceHomes, switchVerdict, type LibrarySwitch, type SwitchFailure } from '../services/libraryToggle';
+import { plainError } from '../services/plainError';
+import { switchFailureText, switchToast, undoToast } from '../services/switchReport';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { formatAgo } from '../lib/format';
 import { extensionsView, isGithubRepo } from '../services/setupPlugins';
@@ -110,15 +112,18 @@ export function SetupDirectory({ machines, onOpenItem }: {
     setDraft('');
   };
 
+  const failuresText = (failed: SwitchFailure[]) => failed.map((item) => `${item.machine}: ${switchFailureText(item, t)}`).join(' · ');
   const undo = async (entry: DirectoryEntry, run: LibrarySwitch) => {
     setAdding(entry.id);
     try {
       const back = await run.undo();
       if (back.repo) setSources((current) => ({ ...current, repo: back.repo ?? current.repo }));
-      if (back.failed.length) setProblems((current) => ({ ...current, [entry.id]: back.failed.map((item) => `${item.machine}: ${item.message}`).join(' · ') }));
-      else toast({ kind: 'success', title: t('library.undo.done', { name: entry.name }) });
+      if (back.failed.length) setProblems((current) => ({ ...current, [entry.id]: failuresText(back.failed) }));
+      toast(undoToast(entry.name, back, t));
     } catch (error) {
-      setProblems((current) => ({ ...current, [entry.id]: t('library.undo.failed', { name: entry.name, error: String(error) }) }));
+      const text = t('library.undo.failed', { name: entry.name, error: plainError(error, t) });
+      setProblems((current) => ({ ...current, [entry.id]: text }));
+      toast({ kind: 'error', title: text });
     } finally {
       setAdding(null);
     }
@@ -132,18 +137,30 @@ export function SetupDirectory({ machines, onOpenItem }: {
       const run = await addPlugin(repoPath, machines, entry.id, source.source, source.agent === 'codex');
       setSources((current) => ({ ...current, repo: run.repo ?? current.repo }));
       const failed = [
-        ...run.failed.map((item) => `${item.machine}: ${item.message}`),
+        ...(run.failed.length ? [failuresText(run.failed)] : []),
         ...(run.needsYou.length ? [t('library.toggle.needsYou', { name: entry.name, machines: run.needsYou.join(', ') })] : []),
       ];
       if (failed.length) setProblems((current) => ({ ...current, [entry.id]: failed.join(' · ') }));
+      const result = switchToast(entry.name, t('directory.added', { name: entry.name }), run, t);
+      if (result.kind === 'error' && !run.needsYou.length) {
+        // No machine took it, so the listing goes back out rather than the Library holding a plugin nobody has.
+        const back = await run.undo().catch((error: unknown) => ({ repo: undefined, failed: [{ machine: '', message: String(error) }] }));
+        if (back.repo) setSources((current) => ({ ...current, repo: back.repo ?? current.repo }));
+        toast({
+          kind: 'error',
+          title: t('directory.addRefused', { name: entry.name, machines: switchVerdict(run.changed, run.failed).failedOn.join(', ') }),
+          description: t(back.failed.length ? 'directory.addRefusedKept' : 'directory.addRefusedTaken'),
+        });
+        return;
+      }
       toast({
-        kind: failed.length ? 'warning' : 'success',
-        title: t('directory.added', { name: entry.name }),
+        kind: result.kind === 'success' && failed.length ? 'warning' : result.kind,
+        title: result.title,
         description: t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
         action: { label: t('common.undo'), onClick: () => { void undo(entry, run); } },
       });
     } catch (error) {
-      setProblems((current) => ({ ...current, [entry.id]: t('library.toggle.failed', { name: entry.name, error: String(error) }) }));
+      setProblems((current) => ({ ...current, [entry.id]: t('library.toggle.failed', { name: entry.name, error: plainError(error, t) }) }));
     } finally {
       setAdding(null);
     }
