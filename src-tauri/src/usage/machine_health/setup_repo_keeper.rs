@@ -285,7 +285,9 @@ mod tests {
         let root = temp("repos");
         let (remote, mine, theirs) = (root.join("remote.git"), root.join("mine"), root.join("theirs"));
         git_in(&root, &["init", "--quiet", "--bare", remote.to_str().unwrap()]);
-        git_in(&root, &["clone", "--quiet", remote.to_str().unwrap(), mine.to_str().unwrap()]);
+        fs::create_dir_all(&mine).unwrap();
+        git_in(&mine, &["init", "--quiet"]);
+        git_in(&mine, &["remote", "add", "origin", remote.to_str().unwrap()]);
         write(&mine, ".claude/CLAUDE.md", "start\n");
         git_in(&mine, &["add", "-A"]);
         git_in(&mine, &["commit", "--quiet", "-m", "Start"]);
