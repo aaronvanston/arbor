@@ -231,8 +231,10 @@ const sharedItems: SetupItem[] = [
 const setupHome = (agent: HomeAgent, path: string, items: SetupItem[], problems: string[] = [], skillsLink: string | null = null): SetupHome =>
   ({ agent, path, items, problems, skillsLink, skillOverrides: [], ignoredOverrides: [], deniedMcp: [], shares: null });
 
-// The other harnesses' homes, read for their own instructions and skills. `?harnessHomes=none` for machines with none.
-const noHarnessHomes = params.get('harnessHomes') === 'none';
+// The other harnesses' homes, read for their own instructions and skills. `?harnessHomes=none` for machines with none,
+// and `?otheragents=none` for no agent but Claude Code and Codex anywhere: no other harness's home or command.
+const noOtherAgents = params.get('otheragents') === 'none';
+const noHarnessHomes = params.get('harnessHomes') === 'none' || noOtherAgents;
 const harnessHome = (harness: Harness, path: string, items: SetupItem[]): HarnessHome => ({ harness, path, items, skillsLink: null });
 const harnessHomes = (homes: HarnessHome[]) => (noHarnessHomes ? [] : homes);
 
@@ -366,8 +368,24 @@ const keepThisMacOnly = <T extends { machine: string }>(entries: T[]) => {
   entries.splice(0, entries.length, ...kept);
 };
 keepThisMacOnly(setupMachines);
+for (const entry of noOtherAgents ? setupMachines : []) entry.harnessInstalls = [];
 // Its own homes, without the other apps' ones a first look at the machine would add.
 for (const entry of freshInstall ? setupMachines : []) entry.homes = entry.homes.filter((home) => !home.path.startsWith('~/.agent-app/'));
+
+/** The machines each harness is on, as `setup::harnesses_found` reads the last scans: a home of its or its command. */
+export const mockHarnessesFound = (): Partial<Record<Harness, string[]>> => {
+  const found: Partial<Record<Harness, string[]>> = {};
+  for (const entry of setupMachines) {
+    const harnesses = new Set<Harness>([
+      ...entry.homes.flatMap((home): Harness[] => (home.agent === 'shared' ? [] : [home.agent])),
+      ...entry.installs.map((install): Harness => install.agent),
+      ...entry.harnessHomes.map((home) => home.harness),
+      ...entry.harnessInstalls.map((install) => install.harness),
+    ]);
+    for (const harness of harnesses) found[harness] = [...(found[harness] ?? []), entry.machine].sort();
+  }
+  return found;
+};
 
 /** What a machine's first scan finds, held back until Sync scans it: `?fresh=1`'s Mac hasn't been read yet. */
 const unscanned = new Map<string, Pick<SetupMachine, 'homes' | 'harnessHomes' | 'installs' | 'harnessInstalls'>>();

@@ -14,6 +14,7 @@
 //! sessions folder. A folder a `*` matched has to look like the agent's home as well, so a pattern never picks up a
 //! folder that only happens to sit beside one.
 
+use super::harnesses::{is_found, FoundOn};
 use super::shell::shell_quote;
 use super::*;
 use std::collections::BTreeSet;
@@ -995,7 +996,8 @@ pub(crate) const AGENT_HOMES_UPDATED_EVENT: &str = "agent-homes-updated";
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentHomesView {
-    /// The homes on every machine: the standard ones and those saved for every machine.
+    /// The homes on every machine: the standard ones of the harnesses found on some machine, and those saved for every
+    /// machine.
     everywhere: Vec<AgentHome>,
     machines: Vec<MachineHomes>,
     /// What Arbor knows about each harness: its home, sessions, instructions, skills and MCP config.
@@ -1017,7 +1019,7 @@ pub(crate) struct MachineHomes {
     suggested: Vec<FoundHome>,
 }
 
-fn view(connection: &Connection, machines: &[String]) -> Result<AgentHomesView, String> {
+fn view(connection: &Connection, machines: &[String], found_on: &FoundOn) -> Result<AgentHomesView, String> {
     let saved = read_homes(connection)?;
     let scans = read_scans(connection)?;
     let machines = machines
@@ -1044,7 +1046,13 @@ fn view(connection: &Connection, machines: &[String]) -> Result<AgentHomesView, 
             }
         })
         .collect();
-    Ok(AgentHomesView { everywhere: homes_on(&saved, ""), machines, harnesses: super::harnesses::infos() })
+    // A harness no machine has keeps its standard homes on the list, so a scan still finds it once it's installed, but
+    // they aren't shown until then. One the user saved for every machine is theirs, and shows.
+    let everywhere = homes_on(&saved, "")
+        .into_iter()
+        .filter(|home| home.source != AgentHomeSource::Standard || is_found(home.agent.harness(), found_on) || saved.iter().any(|kept| kept.agent == home.agent && kept.path == home.path && kept.machine.is_empty()))
+        .collect();
+    Ok(AgentHomesView { everywhere, machines, harnesses: super::harnesses::infos(found_on) })
 }
 
 fn machine_names(state: &MachineHealthState) -> Vec<String> {
@@ -1053,7 +1061,8 @@ fn machine_names(state: &MachineHealthState) -> Vec<String> {
 
 async fn read_view(state: &MachineHealthState) -> Result<AgentHomesView, String> {
     let machines = machine_names(state);
-    run_usage_task(move || view(&open_usage_database()?, &machines)).await
+    let found_on = super::setup::harnesses_found(&state.lock());
+    run_usage_task(move || view(&open_usage_database()?, &machines, &found_on)).await
 }
 
 #[tauri::command]
@@ -1349,11 +1358,37 @@ pub(crate) mod tests {
             [("~/.tools/*", AgentHomeSource::Found, FOUND_ROLE, false)]
         );
         assert!(store_scan(&mut connection, &scan(&["~/.tools/a", "~/.other"])).unwrap().added.is_empty(), "only suggested now");
-        let view = view(&connection, &["cedar-01".into()]).unwrap();
+        let view = view(&connection, &["cedar-01".into()], &FoundOn::new()).unwrap();
         let [cedar] = &view.machines[..] else { panic!() };
         assert_eq!(cedar.suggested, [FoundHome { agent: AgentHomeKind::Claude, path: "~/.other".into(), folders: 1, guess: None }]);
         assert!(cedar.homes.iter().any(|home| home.path == "~/.tools/*" && home.machine == "cedar-01"));
-        assert_eq!(view.everywhere.len(), standard_paths().count());
+        let shown: BTreeSet<AgentHomeKind> = view.everywhere.iter().map(|home| home.agent).collect();
+        assert_eq!(shown, BTreeSet::from([AgentHomeKind::Claude, AgentHomeKind::Codex]), "no machine has another harness yet");
+    }
+
+    #[test]
+    fn every_machine_shows_the_standard_homes_of_harnesses_a_machine_has_and_homes_the_user_saved() {
+        let connection = super::super::super::schema::test_database();
+        let amp = AgentHome {
+            machine: String::new(),
+            agent: AgentHomeKind::Amp,
+            path: "~/.agent-app/amp".into(),
+            source: AgentHomeSource::Added,
+            sessions: false,
+            sync: true,
+            chosen: true,
+            guess: None,
+        };
+        write_home(&connection, &amp).unwrap();
+        use super::super::harnesses::Harness;
+        let found_on = FoundOn::from([(Harness::Droid, vec!["cam-mbp".to_string()]), (Harness::Pi, vec!["cam-mbp".to_string()])]);
+        let view = view(&connection, &[], &found_on).unwrap();
+        let paths: Vec<&str> = view.everywhere.iter().map(|home| home.path.as_str()).collect();
+        assert!(paths.contains(&"~/.factory") && paths.contains(&"~/.pi/agent") && paths.contains(&"~/.pi/agent/sessions"), "{paths:?}");
+        assert!(!paths.contains(&"~/.config/opencode") && !paths.contains(&"~/.config/amp"), "{paths:?}");
+        assert!(paths.contains(&"~/.agent-app/amp"), "added by hand: {paths:?}");
+        // The scan still reads the hidden ones, so it finds a harness once it's installed.
+        assert!(shell_function_for(&[], "", HomeUse::Files).contains("home_line opencode "));
     }
     fn looked(found: &[(AgentHomeKind, &str)], recent: &[(AgentHomeKind, &str)]) -> StoredScan {
         let folders = |list: &[(AgentHomeKind, &str)]| list.iter().map(|(agent, path)| (*agent, path.to_string())).collect();
@@ -1434,7 +1469,7 @@ pub(crate) mod tests {
         let saved = roles(&read_homes(&connection).unwrap());
         assert_eq!(saved["~/.picked"], AgentHomeRole::Active, "the user's pick stays");
 
-        let view = view(&connection, &["cedar-01".into()]).unwrap();
+        let view = view(&connection, &["cedar-01".into()], &FoundOn::new()).unwrap();
         let [cedar] = &view.machines[..] else { panic!() };
         let old = cedar.homes.iter().find(|home| home.path == "~/.old-claude").unwrap();
         assert_eq!(old.guess, Some(HomeGuess { role: AgentHomeRole::History, reason: HomeGuessReason::Idle }));

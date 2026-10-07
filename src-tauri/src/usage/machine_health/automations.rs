@@ -272,7 +272,7 @@ pub(crate) struct AutomationList {
     /// The fingerprint of the skill that comes with it, which Arbor puts in each machine's agent homes beside it; null
     /// for a build without one.
     pub(crate) udian_skill: Option<String>,
-    /// The harnesses Arbor can start an automation with, in the catalog's order.
+    /// The harnesses Arbor can start an automation with that some machine has, in the catalog's order.
     pub(crate) agents: Vec<Harness>,
     /// The proxy has the Automations client key, which every Claude and Codex automation reaches it with.
     pub(crate) proxy_key: bool,

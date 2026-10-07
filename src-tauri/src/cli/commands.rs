@@ -2174,7 +2174,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "cancel_automation_run" => async { done(Box::pin(crate::usage::machine_health::automations::commands::cancel_automation_run(app.clone(), arg(&args, "runId")?)).await) }.await,
         "install_background_runner" => async { done(Box::pin(crate::usage::machine_health::automations::commands::install_background_runner(app.clone(), arg(&args, "machine")?)).await) }.await,
         "copy_automation_into_arbor" => async { done(Box::pin(crate::usage::machine_health::automations::commands::copy_automation_into_arbor(app.clone(), arg(&args, "id")?, arg(&args, "pauseOriginal")?)).await) }.await,
-        "draft_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::draft_automation(arg(&args, "input")?, app.state())).await) }.await,
+        "draft_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::draft_automation(app.clone(), arg(&args, "input")?, app.state())).await) }.await,
         "set_automations_running" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automations_running(app.clone(), arg(&args, "running")?)).await) }.await,
         "set_automation_app_enabled" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_app_enabled(app.clone(), arg(&args, "source")?, arg(&args, "enabled")?)).await) }.await,
         "set_automation_draft_model" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automation_draft_model(app.clone(), arg(&args, "model")?, arg(&args, "effort")?)).await) }.await,

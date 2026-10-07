@@ -1888,6 +1888,9 @@ struct Recorded {
     changes: Vec<SetupChange>,
     /// Arbor changed something after the scan started, so scan again.
     again: bool,
+    /// The scan found a harness the last one didn't, or missed one it found, so the lists that show only the
+    /// harnesses some machine has may change.
+    harnesses_changed: bool,
 }
 
 /// Stores a scan's result, unless the machine has since been pointed somewhere else, and says what
@@ -1910,6 +1913,7 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
     setup.scanned_at = Some(at_ms);
     match result {
         Ok(scan) => {
+            let before = setup.harnesses();
             match setup.arbor_wrote_ms {
                 // The first good scan has nothing to compare with.
                 None if !setup.home_dir.is_empty() => {
@@ -1929,6 +1933,7 @@ fn record_scan(setup: &mut MachineSetup, started_ms: i64, at_ms: i64, result: Re
             setup.policy = scan.policy;
             setup.home_dir = scan.home_dir;
             setup.error = None;
+            recorded.harnesses_changed = setup.harnesses() != before;
         }
         Err(error) => setup.error = Some(error),
     }
@@ -2042,6 +2047,9 @@ fn start_scans(app: &tauri::AppHandle, targets: Vec<(Target, Machine)>, now_ms: 
             let at_ms = Local::now().timestamp_millis();
             let recorded = record(&app.state::<MachineHealthState>(), &target, machine.host(), now_ms, at_ms, result);
             let _ = app.emit(SETUP_INVENTORY_UPDATED_EVENT, at_ms);
+            if recorded.harnesses_changed {
+                let _ = app.emit(agent_homes::AGENT_HOMES_UPDATED_EVENT, ());
+            }
             if !recorded.changes.is_empty() {
                 let _ = app.emit(SETUP_CHANGED_EVENT, SetupChanged { machine: machine.name().to_string(), changes: recorded.changes });
             }
@@ -2097,6 +2105,24 @@ pub(super) fn scanned_machines(inner: &Inner) -> Vec<(String, MachineSetup)> {
     machines
 }
 
+/// Each harness the last setup scans found, with the machines it's on, by name. A machine not scanned yet since Arbor
+/// started has none, so until the first scans land only Claude Code and Codex count as found (`harnesses::is_found`).
+pub(super) fn harnesses_found(inner: &Inner) -> harnesses::FoundOn {
+    let series = inner.series.values().filter(|series| runs_scripts(series)).map(|series| (series.host.machine.clone(), &series.setup));
+    let local = this_machine_name(inner).map(|name| (name, &inner.local_setup));
+    let mut found = harnesses::FoundOn::new();
+    for (machine, setup) in series.chain(local) {
+        for harness in setup.harnesses() {
+            found.entry(harness).or_default().push(machine.clone());
+        }
+    }
+    for machines in found.values_mut() {
+        machines.sort();
+        machines.dedup();
+    }
+    found
+}
+
 impl MachineSetup {
     /// The machine's home folder.
     pub(super) fn home_dir(&self) -> &str {
@@ -2109,6 +2135,24 @@ impl MachineSetup {
             .iter()
             .filter(|home| home.agent != HomeAgent::Shared)
             .map(|home| (home.agent, home.path.as_str()))
+            .collect()
+    }
+
+    /// The harnesses its last scan found: a home of theirs that's there, or their command on the PATH.
+    pub(super) fn harnesses(&self) -> BTreeSet<Harness> {
+        let homes = self.homes.iter().filter_map(|home| match home.agent {
+            HomeAgent::Claude => Some(Harness::Claude),
+            HomeAgent::Codex => Some(Harness::Codex),
+            HomeAgent::Shared => None,
+        });
+        let installs = self.installs.iter().map(|install| match install.agent {
+            AgentKind::Claude => Harness::Claude,
+            AgentKind::Codex => Harness::Codex,
+        });
+        homes
+            .chain(installs)
+            .chain(self.harness_homes.iter().map(|home| home.harness))
+            .chain(self.harness_installs.iter().map(|install| install.harness))
             .collect()
     }
 
@@ -3079,12 +3123,16 @@ notifications = true
             policy: None,
         };
         let mut setup = MachineSetup::default();
-        assert_eq!(record_scan(&mut setup, 100, 110, Ok(scan("m1"))), Recorded::default(), "the first scan has nothing to compare with");
+        assert_eq!(
+            record_scan(&mut setup, 100, 110, Ok(scan("m1"))),
+            Recorded { harnesses_changed: true, ..Recorded::default() },
+            "the first scan has nothing to compare with, and finds Claude Code"
+        );
         assert_eq!(record_scan(&mut setup, 200, 210, Ok(scan("m2"))).changes.len(), 1);
 
         // Arbor writes at 300, after a scan started at 250: that scan may not have seen it, so it's quiet and runs again.
         setup.arbor_wrote_ms = Some(300);
-        assert_eq!(record_scan(&mut setup, 250, 310, Ok(scan("m3"))), Recorded { changes: vec![], again: true });
+        assert_eq!(record_scan(&mut setup, 250, 310, Ok(scan("m3"))), Recorded { again: true, ..Recorded::default() });
         assert_eq!(record_scan(&mut setup, 320, 330, Ok(scan("m3"))), Recorded::default());
         assert_eq!(setup.arbor_wrote_ms, None);
         // From then on, changes are someone else's.
@@ -3092,6 +3140,29 @@ notifications = true
         // A failed scan changes nothing, and the next good one compares with the last good one.
         assert_eq!(record_scan(&mut setup, 500, 510, Err("Timed out after 60s".into())), Recorded::default());
         assert!(record_scan(&mut setup, 600, 610, Ok(scan("m4"))).changes.is_empty());
+    }
+
+    #[test]
+    fn a_harness_counts_as_on_a_machine_from_its_home_or_its_command() {
+        let mut setup = MachineSetup::default();
+        let scan = |harness_homes: Vec<HarnessHome>, harness_installs: Vec<HarnessInstall>| Scan {
+            home_dir: "/h".into(),
+            homes: vec![claude_home(vec![], &[])],
+            harness_homes,
+            installs: vec![],
+            harness_installs,
+            policy: None,
+        };
+        let droid = HarnessInstall { harness: Harness::Droid, path: "~/.local/bin/droid".into(), real: None, version: None, update_command: None };
+        let pi = HarnessHome { harness: Harness::Pi, path: "~/.pi/agent".into(), items: vec![], skills_link: None, problems: vec![] };
+        assert!(record_scan(&mut setup, 1, 2, Ok(scan(vec![], vec![droid.clone()]))).harnesses_changed);
+        assert_eq!(setup.harnesses(), BTreeSet::from([Harness::Claude, Harness::Droid]));
+        assert!(!record_scan(&mut setup, 3, 4, Ok(scan(vec![], vec![droid]))).harnesses_changed, "the same harnesses again");
+        assert!(record_scan(&mut setup, 5, 6, Ok(scan(vec![pi], vec![]))).harnesses_changed);
+        assert_eq!(setup.harnesses(), BTreeSet::from([Harness::Claude, Harness::Pi]));
+        // A failed scan keeps what the last good one found.
+        assert!(!record_scan(&mut setup, 7, 8, Err("Timed out after 60s".into())).harnesses_changed);
+        assert_eq!(setup.harnesses(), BTreeSet::from([Harness::Claude, Harness::Pi]));
     }
 
     fn host(name: &str) -> MachineHost {

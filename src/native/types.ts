@@ -88,7 +88,8 @@ export type AgentHomeSource = "standard" | "found" | "added";
  */
 export type AgentHomesView = {
   /**
-   * The homes on every machine: the standard ones and those saved for every machine.
+   * The homes on every machine: the standard ones of the harnesses found on some machine, and those saved for every
+   * machine.
    */
   everywhere: Array<AgentHome>,
   machines: Array<MachineAgentHomes>,
@@ -583,7 +584,7 @@ export type AutomationList = {
    */
   udianSkill: string | null,
   /**
-   * The harnesses Arbor can start an automation with, in the catalog's order.
+   * The harnesses Arbor can start an automation with that some machine has, in the catalog's order.
    */
   agents: Array<Harness>,
   /**
@@ -1856,6 +1857,14 @@ export type HarnessInfo = {
    * Arbor can hold it to editing files; one that can't only runs with full access.
    */
   limitsEdits: boolean,
+  /**
+   * Arbor shows it outside this list: Claude Code and Codex always, any other once a machine has it.
+   */
+  found: boolean,
+  /**
+   * The machines whose last setup scan found its command or its home, by name.
+   */
+  foundOn: Array<string>,
 };
 
 /**

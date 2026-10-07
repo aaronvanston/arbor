@@ -434,6 +434,10 @@ pub(crate) struct HarnessInfo {
     pub(crate) automations: bool,
     /// Arbor can hold it to editing files; one that can't only runs with full access.
     pub(crate) limits_edits: bool,
+    /// Arbor shows it outside this list: Claude Code and Codex always, any other once a machine has it.
+    pub(crate) found: bool,
+    /// The machines whose last setup scan found its command or its home, by name.
+    pub(crate) found_on: Vec<String>,
 }
 
 /// Inside the home when the path doesn't start from `~/`.
@@ -441,7 +445,7 @@ fn in_home(spec: &HarnessSpec, path: &str) -> String {
     if path.starts_with("~/") || path.starts_with('/') { path.to_string() } else { format!("{}/{path}", spec.home) }
 }
 
-fn info(spec: &HarnessSpec) -> HarnessInfo {
+fn info(spec: &HarnessSpec, found_on: &FoundOn) -> HarnessInfo {
     HarnessInfo {
         harness: spec.harness,
         binary: spec.binary.to_string(),
@@ -457,12 +461,24 @@ fn info(spec: &HarnessSpec) -> HarnessInfo {
         sync: spec.home_kind.is_some_and(AgentHomeKind::syncs),
         automations: spec.launcher.is_some(),
         limits_edits: spec.launcher.is_some_and(Launcher::limits_edits),
+        found: is_found(spec.harness, found_on),
+        found_on: found_on.get(&spec.harness).cloned().unwrap_or_default(),
     }
 }
 
 /// Every harness Arbor knows, for Settings › Agent homes.
-pub(crate) fn infos() -> Vec<HarnessInfo> {
-    CATALOG.iter().map(info).collect()
+pub(crate) fn infos(found_on: &FoundOn) -> Vec<HarnessInfo> {
+    CATALOG.iter().map(|spec| info(spec, found_on)).collect()
+}
+
+/// The machines each harness is on, by name, as the last setup scan of each found it (`setup::harnesses_found`).
+pub(crate) type FoundOn = BTreeMap<Harness, Vec<String>>;
+
+/// Whether Arbor shows `harness` anywhere but its list of the harnesses it knows. A feature tied to a named app stays
+/// hidden until a machine has it, so one nobody installed doesn't fill every machine's lists; Claude Code and Codex are
+/// what Arbor is for, so they always count, before any machine has been scanned too.
+pub(crate) fn is_found(harness: Harness, found_on: &FoundOn) -> bool {
+    matches!(harness, Harness::Claude | Harness::Codex) || found_on.get(&harness).is_some_and(|machines| !machines.is_empty())
 }
 
 #[cfg(test)]
@@ -535,12 +551,26 @@ mod tests {
                 assert!(env.starts_with('$'), "{env}");
             }
         }
-        let codex = info(Harness::Codex.spec());
+        let none = FoundOn::new();
+        let codex = info(Harness::Codex.spec(), &none);
         assert_eq!(codex.mcp.as_deref(), Some("~/.codex/config.toml"));
-        let claude = info(Harness::Claude.spec());
+        let claude = info(Harness::Claude.spec(), &none);
         assert_eq!(claude.mcp.as_deref(), Some("~/.claude.json"));
         assert!(claude.limits_edits);
-        assert!(!info(Harness::Pi.spec()).limits_edits);
-        assert!(!info(Harness::Amp.spec()).automations);
+        assert!(!info(Harness::Pi.spec(), &none).limits_edits);
+        assert!(!info(Harness::Amp.spec(), &none).automations);
+    }
+
+    #[test]
+    fn only_claude_code_and_codex_count_as_found_until_a_machine_has_another() {
+        let none = FoundOn::new();
+        let found: Vec<_> = infos(&none).into_iter().filter(|info| info.found).map(|info| info.harness).collect();
+        assert_eq!(found, [Harness::Claude, Harness::Codex]);
+        let on = FoundOn::from([(Harness::Droid, vec!["cam-mbp".to_string()]), (Harness::Amp, Vec::new())]);
+        let infos = infos(&on);
+        let droid = infos.iter().find(|info| info.harness == Harness::Droid).unwrap();
+        assert!(droid.found && droid.found_on == ["cam-mbp"]);
+        assert!(!infos.iter().find(|info| info.harness == Harness::Amp).unwrap().found, "no machine has it");
+        assert!(infos.iter().find(|info| info.harness == Harness::Claude).unwrap().found_on.is_empty());
     }
 }

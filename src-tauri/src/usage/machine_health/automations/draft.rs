@@ -36,12 +36,17 @@ found; the agent is given that output. Null when every run has work.\n\
 - note: one plain sentence on anything the user must fill in or check (a token, a project, a command that may not \
 be installed), or null.";
 
-/// The ids of the harnesses Arbor can start, for the model to pick from.
-fn launchable_ids() -> Vec<&'static str> {
-    Harness::ALL.into_iter().filter(|harness| harness.launches()).map(|harness| harness.spec().id).collect()
+/// The ids of the harnesses the model may pick from: those Arbor can start that some machine has, and Codex, the
+/// default, whatever the list says.
+fn agent_ids(agents: &[Harness]) -> Vec<&'static str> {
+    let mut ids: Vec<&'static str> = agents.iter().filter(|harness| harness.launches()).map(|harness| harness.spec().id).collect();
+    if !ids.contains(&Harness::Codex.spec().id) {
+        ids.push(Harness::Codex.spec().id);
+    }
+    ids
 }
 
-fn schema() -> serde_json::Value {
+fn schema(agents: &[Harness]) -> serde_json::Value {
     let nullable = |kind: &str| json!({ "type": [kind, "null"] });
     json!({
         "type": "object",
@@ -53,7 +58,7 @@ fn schema() -> serde_json::Value {
             "rrule": { "type": "string" },
             "precheck": nullable("string"),
             "precheckTimeoutSecs": { "type": "integer" },
-            "agent": { "type": "string", "enum": launchable_ids() },
+            "agent": { "type": "string", "enum": agent_ids(agents) },
             "session": { "type": "string", "enum": ["fresh", "reuse"] },
             "graceMinutes": { "type": "integer" },
             "note": nullable("string"),
@@ -72,14 +77,14 @@ fn user_text(input: &AutomationDraftInput) -> String {
     text
 }
 
-pub(super) fn request_body(model: &str, effort: &str, input: &AutomationDraftInput) -> serde_json::Value {
+pub(super) fn request_body(model: &str, effort: &str, input: &AutomationDraftInput, agents: &[Harness]) -> serde_json::Value {
     json!({
         "model": model,
         "instructions": INSTRUCTIONS,
         "input": user_text(input),
         "reasoning": { "effort": effort },
         "store": false,
-        "text": { "format": { "type": "json_schema", "name": "automation_draft", "strict": true, "schema": schema() } },
+        "text": { "format": { "type": "json_schema", "name": "automation_draft", "strict": true, "schema": schema(agents) } },
     })
 }
 
@@ -147,6 +152,7 @@ pub(crate) async fn draft(
     model: &str,
     effort: &str,
     input: &AutomationDraftInput,
+    agents: &[Harness],
 ) -> Result<AutomationDraft, String> {
     if input.description.trim().is_empty() {
         return Err("Describe the automation first".into());
@@ -155,7 +161,7 @@ pub(crate) async fn draft(
         .post(format!("{}/v1/responses", access.origin.trim_end_matches('/')))
         .bearer_auth(&access.key)
         .timeout(TIMEOUT)
-        .json(&request_body(model, effort, input))
+        .json(&request_body(model, effort, input, agents))
         .send()
         .await
         .map_err(|_| "Couldn't reach the proxy. Start it on Home, then try again".to_string())?;
@@ -206,11 +212,14 @@ mod tests {
 
     #[test]
     fn the_request_names_the_model_and_a_strict_schema() {
-        let body = request_body("gpt-6-luna", "low", &input());
+        let body = request_body("gpt-6-luna", "low", &input(), &[Harness::Claude, Harness::Droid, Harness::Amp]);
         assert_eq!(body["model"], "gpt-6-luna");
         assert_eq!(body["reasoning"]["effort"], "low");
         assert_eq!(body["text"]["format"]["strict"], true);
         assert!(body["input"].as_str().unwrap().contains("Machine: cam-mbp"));
+        // Only the harnesses some machine has, that Arbor can start, and Codex, the default.
+        let agents = &body["text"]["format"]["schema"]["properties"]["agent"]["enum"];
+        assert_eq!(agents, &json!(["claude", "droid", "codex"]));
     }
 
     #[test]
@@ -240,7 +249,7 @@ mod tests {
         });
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         let access = CoreAccess { origin, key: "sk-test-key".into() };
-        let draft = runtime.block_on(draft(&reqwest::Client::new(), &access, "gpt-6-luna", "low", &input())).unwrap();
+        let draft = runtime.block_on(draft(&reqwest::Client::new(), &access, "gpt-6-luna", "low", &input(), &[Harness::Claude, Harness::Codex])).unwrap();
         assert_eq!(draft.rrule, "FREQ=DAILY;BYHOUR=9;BYMINUTE=0");
         let request = server.join().unwrap();
         assert!(request.starts_with("POST /v1/responses"));
@@ -252,7 +261,7 @@ mod tests {
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let access = CoreAccess { origin: format!("http://127.0.0.1:{port}"), key: "sk-secret".into() };
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let error = runtime.block_on(draft(&reqwest::Client::new(), &access, "gpt-6-luna", "low", &input())).unwrap_err();
+        let error = runtime.block_on(draft(&reqwest::Client::new(), &access, "gpt-6-luna", "low", &input(), &[Harness::Claude, Harness::Codex])).unwrap_err();
         assert!(error.starts_with("Couldn't reach the proxy"));
         assert!(!error.contains("sk-secret"));
     }

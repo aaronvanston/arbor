@@ -14,6 +14,7 @@ import type {
 import { choiceSummary, scheduleChoice } from '../../services/automations';
 import type { CommandAnswers } from './answers';
 import { freshInstall, later, mockLog, now, params } from './scenario';
+import { mockHarnessesFound } from './setup';
 
 /**
  * `?automations=empty`: none anywhere, so the page offers New automation. `?automations=failing`: the newest runs of
@@ -381,7 +382,8 @@ const list = (): AutomationList => ({
   draftEffort,
   udianBundled: BUNDLED_RUNNER,
   udianSkill: BUNDLED_SKILL,
-  agents: ['claude', 'codex', 'pi', 'primeAgent', 'droid'],
+  // The harnesses Arbor can start that some machine has, as `launchable` lists them.
+  agents: (['claude', 'codex', 'pi', 'primeAgent', 'droid'] as const).filter((agent) => agent === 'claude' || agent === 'codex' || Boolean(mockHarnessesFound()[agent]?.length)),
   proxyKey,
   proxyAddress,
   appsOff,

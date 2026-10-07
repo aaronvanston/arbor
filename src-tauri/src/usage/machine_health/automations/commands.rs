@@ -4,7 +4,7 @@ use super::apps;
 use super::discover::{self, Found, MachineFind};
 use super::proxy;
 use super::store::{self, Record};
-use super::super::harnesses::Launcher;
+use super::super::harnesses::{self, Launcher};
 use super::super::shell::shell_quote;
 use super::*;
 use tauri::Manager;
@@ -177,7 +177,8 @@ pub(super) fn list_from(
         udian_bundled: udian::bundle().map(|bundle| bundle.version),
         udian_skill: udian::bundle().and_then(|bundle| bundle.skill()).map(|skill| super::super::guarded_writes::cksum(&skill)),
         agents: Harness::ALL.into_iter().filter(|harness| harness.launches()).collect(),
-        // Whether the core still has the key needs the app; `current_list` fills it in.
+        // Whether the core still has the key, and which harnesses the machines have, need the app; `current_list` fills
+        // them in.
         proxy_key: false,
         proxy_address: store::setting(connection, proxy::ADDRESS_SETTING)?.unwrap_or_default(),
         apps_off,
@@ -188,15 +189,23 @@ fn machine_names(app: &tauri::AppHandle) -> Vec<String> {
     agent_homes::machines_to_scan(&app.state::<MachineHealthState>().lock()).iter().map(|machine| machine.name().to_string()).collect()
 }
 
+/// The harnesses Arbor can start that some machine has, for the agent pickers: one nobody installed isn't offered.
+fn launchable(app: &tauri::AppHandle) -> Vec<Harness> {
+    let found_on = super::super::setup::harnesses_found(&app.state::<MachineHealthState>().lock());
+    Harness::ALL.into_iter().filter(|harness| harness.launches() && harnesses::is_found(*harness, &found_on)).collect()
+}
+
 async fn current_list(app: &tauri::AppHandle) -> Result<AutomationList, String> {
     let found = discover::found();
     let machines = machine_names(app);
+    let agents = launchable(app);
     let (mut list, fingerprint) = run_usage_task(move || {
         let connection = open_usage_database()?;
         Ok((list_from(&connection, &found, &machines)?, store::setting(&connection, proxy::KEY_SETTING)?))
     })
     .await?;
     list.proxy_key = proxy::has_key(app, fingerprint.as_deref());
+    list.agents = agents;
     Ok(list)
 }
 
@@ -637,9 +646,11 @@ pub(crate) async fn copy_automation_into_arbor(app: tauri::AppHandle, id: String
 /// Drafts an automation from a description with the model Settings names, through the proxy on this Mac.
 #[tauri::command]
 pub(crate) async fn draft_automation(
+    app: tauri::AppHandle,
     input: AutomationDraftInput,
     gui_config_state: tauri::State<'_, crate::GuiConfigState>,
 ) -> Result<AutomationDraft, String> {
+    let agents = launchable(&app);
     let config = gui_config_state.snapshot()?;
     let access = draft::CoreAccess {
         origin: crate::core_config::managed_core_loopback_origin(config.port),
@@ -662,6 +673,7 @@ pub(crate) async fn draft_automation(
         model.as_deref().unwrap_or(draft::DEFAULT_MODEL),
         effort.as_deref().unwrap_or(draft::DEFAULT_EFFORT),
         &input,
+        &agents,
     )
     .await
 }

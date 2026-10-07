@@ -24,6 +24,13 @@ Sync switch. Every script that looks in an agent home loops over its generated `
 (`shell_function`) instead of naming folders of its own. `harnesses.rs` knows each coding agent's homes, files and how
 to start it.
 
+A harness besides Claude Code and Codex stays out of sight until some machine has it: it counts as found once a
+machine's last setup scan saw its command or its home (`setup::harnesses_found`, `harnesses::is_found`). Scans are held
+in memory, so after a restart only Claude Code and Codex count until they land. Its standard homes stay on the list so
+the scans keep looking, but Settings › Agent homes hides them, and the automation pickers and the drafting model don't
+offer it; only Settings › Harnesses' reference table lists the whole catalog. A new list of harnesses filters the same
+way.
+
 ## Automations
 
 `usage/machine_health/automations/`:

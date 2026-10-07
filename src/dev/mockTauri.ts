@@ -85,7 +85,9 @@
  * active, no guess) until Look again sorts them;
  * `?harnessHomes=none` for no other harness's home (Pi's, Droid's, OpenCode's) on any machine, so Sync › Software,
  * Skills, MCP & plugins and Hooks leave their cards for them out, and `?harnessupdate=fail` for updating one of
- * them failing, as an agent without its update command does;
+ * them failing, as an agent without its update command does; `?otheragents=none` for no agent but Claude Code and
+ * Codex on any machine (no other harness's home or command), so Settings › Agent homes lists only their standard homes,
+ * Settings › Harnesses marks the rest not found and the automation dialog offers only Claude Code and Codex;
  * `?harness=none` for no T3 Code or Orca on any machine (each machine's page says no harness was found), and
  * `?t3=stopped` for T3 Code installed but not running on cam-mbp too;
  * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every

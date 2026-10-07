@@ -15,6 +15,7 @@ import type {
   DiscoveredHost,
   FoundHome,
   HomeGuess,
+  Harness,
   HarnessInfo,
   HealthPoint,
   MachineAgents,
@@ -42,7 +43,7 @@ import { poolAnswers, poolSshAnswers } from './pools';
 import { runAnswers } from './runs';
 import { configSettings } from './core';
 import { freshInstall, later, mockLog, now, params, realSize } from './scenario';
-import { joinSetupMachine, leaveToPolicy, recordEditMock, scanSetupMock, setupItem, setupMachines } from './setup';
+import { joinSetupMachine, leaveToPolicy, mockHarnessesFound, recordEditMock, scanSetupMock, setupItem, setupMachines } from './setup';
 import { reporterInstalled, setMockT3Enabled, setMockT3Titles } from './usage';
 
 // Settings › Diagnostics: Arbor's calls to machines and the core, by `?diagnostics=` (listed at the top).
@@ -532,6 +533,10 @@ const STANDARD_HOMES: readonly (readonly [AgentHomeKind, string])[] = [
   ['prime-agent', '$PRIME_AGENT_CODING_AGENT_DIR'], ['prime-agent', '~/.prime/agent'], ['opencode', '~/.config/opencode'], ['droid', '~/.factory'],
   ['amp', '~/.config/amp'],
 ];
+/** The harness each kind of home belongs to (`AgentHomeKind::harness`). */
+const HOME_HARNESS: Record<AgentHomeKind, Harness> = {
+  claude: 'claude', codex: 'codex', pi: 'pi', 'claude-desktop': 'claude', 'pi-agent': 'pi', 'prime-agent': 'primeAgent', opencode: 'openCode', droid: 'droid', amp: 'amp',
+};
 const standardHome = (agent: AgentHomeKind, path: string) => STANDARD_HOMES.some(([kind, standard]) => kind === agent && standard === path);
 const homeSyncs = (agent: AgentHomeKind) => agent !== 'pi' && agent !== 'claude-desktop';
 const homeReadsSessions = (agent: AgentHomeKind) => agent === 'claude' || agent === 'codex' || agent === 'pi' || agent === 'claude-desktop';
@@ -609,8 +614,8 @@ function homesOn(machine: string): AgentHome[] {
   return homes;
 }
 
-/** The harness catalog as the native side lists it (`harnesses.rs`). */
-const HARNESSES: HarnessInfo[] = [
+/** The harness catalog as the native side lists it (`harnesses.rs`), before what the scans found. */
+const HARNESSES: Omit<HarnessInfo, 'found' | 'foundOn'>[] = [
   { harness: 'claude', binary: 'claude', home: '~/.claude', homeEnv: '$CLAUDE_CONFIG_DIR', sessions: '~/.claude', globalInstructions: '~/.claude/CLAUDE.md', projectInstructions: ['CLAUDE.md', '.claude/CLAUDE.md'], skills: ['~/.claude/skills'], mcp: '~/.claude.json', mcpKey: 'mcpServers', mcpFormat: 'json', sync: true, automations: true, limitsEdits: true },
   { harness: 'codex', binary: 'codex', home: '~/.codex', homeEnv: '$CODEX_HOME', sessions: '~/.codex', globalInstructions: '~/.codex/AGENTS.md', projectInstructions: ['AGENTS.md'], skills: ['~/.agents/skills', '~/.codex/skills'], mcp: '~/.codex/config.toml', mcpKey: 'mcp_servers', mcpFormat: 'toml', sync: true, automations: true, limitsEdits: true },
   { harness: 'pi', binary: 'pi', home: '~/.pi/agent', homeEnv: '$PI_CODING_AGENT_DIR', sessions: '~/.pi/agent/sessions', globalInstructions: '~/.pi/agent/AGENTS.md', projectInstructions: ['AGENTS.md', 'CLAUDE.md'], skills: ['~/.pi/agent/skills', '~/.agents/skills'], mcp: '~/.pi/agent/mcp.json', mcpKey: 'mcpServers', mcpFormat: 'json', sync: true, automations: true, limitsEdits: false },
@@ -621,23 +626,32 @@ const HARNESSES: HarnessInfo[] = [
   { harness: 'gemini', binary: 'gemini', home: '~/.gemini', projectInstructions: [], skills: [], sync: false, automations: false, limitsEdits: false },
 ];
 
-const agentHomesView = (): AgentHomesView => ({
-  harnesses: HARNESSES,
-  everywhere: homesOn(''),
-  machines: homeMachines().map((machine) => {
-    const scan = homeScans[machine];
-    const homes = homesOn(machine);
-    return {
-      machine,
-      homes,
-      scannedAtMs: scan?.at ?? null,
-      error: scan?.error ?? null,
-      suggested: (scan?.suggested ?? [])
-        .filter((found) => !homes.some((home) => home.agent === found.agent && home.path === found.path))
-        .map((found) => ({ ...found, guess: guessFor(machine, found.agent, found.path) })),
-    };
-  }),
-});
+/** Claude Code and Codex always count as found; any other once a machine's last scan found it (`harnesses::is_found`). */
+const harnessFound = (harness: Harness, foundOn: Partial<Record<Harness, string[]>>) =>
+  harness === 'claude' || harness === 'codex' || (foundOn[harness]?.length ?? 0) > 0;
+
+const agentHomesView = (): AgentHomesView => {
+  const foundOn = mockHarnessesFound();
+  const savedEverywhere = (home: AgentHome) => savedHomes.some((saved) => saved.machine === '' && saved.agent === home.agent && saved.path === home.path);
+  return {
+    harnesses: HARNESSES.map((info) => ({ ...info, found: harnessFound(info.harness, foundOn), foundOn: foundOn[info.harness] ?? [] })),
+    // A harness no machine has keeps its standard homes out of sight until one does, unless one was saved for every machine.
+    everywhere: homesOn('').filter((home) => home.source !== 'standard' || harnessFound(HOME_HARNESS[home.agent], foundOn) || savedEverywhere(home)),
+    machines: homeMachines().map((machine) => {
+      const scan = homeScans[machine];
+      const homes = homesOn(machine);
+      return {
+        machine,
+        homes,
+        scannedAtMs: scan?.at ?? null,
+        error: scan?.error ?? null,
+        suggested: (scan?.suggested ?? [])
+          .filter((found) => !homes.some((home) => home.agent === found.agent && home.path === found.path))
+          .map((found) => ({ ...found, guess: guessFor(machine, found.agent, found.path) })),
+      };
+    }),
+  };
+};
 
 /** A look at one machine: the first fills its list, and each keeps what it found beside it. */
 function lookForHomes(machine: string) {

@@ -8,7 +8,7 @@ import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { SettingsMachineCrumb } from '../components/layout/MachineCrumb';
 import { HarnessName } from '../components/identity/Harness';
-import { MachinePill } from '../components/identity/Identity';
+import { MachinePill, MachinePills } from '../components/identity/Identity';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -22,6 +22,8 @@ import { Spinner } from '../components/ui/spinner';
 import { TableEmpty } from '../components/ui/data-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { toast } from '../components/ui/toast';
+import { cn } from '../lib/utils';
+import { knownHarnessOrder } from '../services/knownHarnesses';
 import { useSettingsScope } from '../services/machineSettings';
 import {
   AGENT_HOME_KINDS,
@@ -137,7 +139,7 @@ function EveryMachineHomes({ view, onAdd }: { view: AgentHomesView; onAdd: () =>
  * Harnesses, beside the apps that run them.
  */
 export function KnownHarnesses({ harnesses }: { harnesses: HarnessInfo[] }) {
-  const { t } = useI18n();
+  const { t, tRich } = useI18n();
   return (
     <SettingsSection settingId="harnesses.agents" title={t('agentHomes.harnesses.title')} description={t('agentHomes.harnesses.description')}>
       <Table containerClassName="@container" className="min-w-[52rem]">
@@ -152,9 +154,16 @@ export function KnownHarnesses({ harnesses }: { harnesses: HarnessInfo[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {harnesses.map((harness) => (
-            <TableRow key={harness.harness} className="align-top">
-              <TableCell className="whitespace-nowrap text-sm"><HarnessName harness={harness.harness} className="w-max" /></TableCell>
+          {knownHarnessOrder(harnesses).map((harness) => (
+            <TableRow key={harness.harness} className="align-top" data-found={harness.found ? 'true' : 'false'}>
+              <TableCell className="whitespace-nowrap text-sm">
+                <HarnessName harness={harness.harness} className={cn('w-max', !harness.found && 'text-muted-foreground')} />
+                {harness.foundOn.length ? (
+                  <span className="mt-1 block text-xs text-muted-foreground">{tRich('harnesses.app.foundOn', { machines: <MachinePills names={harness.foundOn} /> })}</span>
+                ) : !harness.found ? (
+                  <span className="mt-1 block text-xs text-muted-foreground">{t('harnesses.app.notFound')}</span>
+                ) : null}
+              </TableCell>
               <TableCell className="whitespace-nowrap">
                 <span className="flex flex-col items-start gap-1">
                   {harness.sessions ? <Badge variant="muted" size="sm">{t('agentHomes.harnesses.readsSessions')}</Badge> : null}
