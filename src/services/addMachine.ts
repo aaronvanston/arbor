@@ -1,3 +1,4 @@
+import type { MessageKey } from '../i18n/resources';
 import { invokeCommand } from '../native/commands';
 import { saveMachineHosts } from './machineHealth';
 import type { MachineHost, ThisMac } from '../native/types';
@@ -18,6 +19,19 @@ export async function addThisMac(): Promise<string> {
   const thisMac = await getThisMac();
   if (!thisMac.listed) await saveMachineHosts([thisMacHost(thisMac)]);
   return thisMac.name;
+}
+
+/**
+ * What the Add machine dialog still needs before it can add one, for its disabled button to say: a name, a host, a port
+ * from 1 to 65535, and the machine list read. Null once it has them all; a problem the dialog shows itself (a bad host,
+ * a name that's taken) is said there instead.
+ */
+export function addMachineMissing(fields: { name: string; host: string; port: number | null; hostsRead: boolean }): MessageKey | null {
+  if (!fields.name.trim()) return 'setup.checklist.addDialog.needsName';
+  if (!fields.host.trim()) return 'setup.checklist.addDialog.needsHost';
+  if (fields.port === null) return 'machines.hosts.portInvalid';
+  if (!fields.hostsRead) return 'setup.checklist.addDialog.needsHosts';
+  return null;
 }
 
 const listeners = new Set<() => void>();

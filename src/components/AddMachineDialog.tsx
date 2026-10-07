@@ -3,7 +3,7 @@ import { Check, Laptop, Plus } from './ui/icons';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
 import { fetchMachineHosts, parsePort, saveMachineHosts } from '../services/machineHealth';
-import { getThisMac } from '../services/addMachine';
+import { addMachineMissing, getThisMac } from '../services/addMachine';
 import {
   discoverMachineHosts,
   newSuggestions,
@@ -81,7 +81,8 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
   const problem: ReactNode = taken
     ? tRich('setup.checklist.addDialog.taken', { machine: <MachinePill name={machine} size="md" /> })
     : hostProblem ?? (port.trim() && parsedPort === null ? t('machines.hosts.portInvalid') : null);
-  const ready = Boolean(machine && host && parsedPort !== null && !problem && hosts !== null);
+  const missing = addMachineMissing({ name: machine, host, port: parsedPort, hostsRead: hosts !== null });
+  const ready = missing === null && !problem;
   const suggestions = discovery.state === 'ready' && hosts ? newSuggestions(discovery.found, hosts) : [];
 
   const fieldsFor = (suggestion: DiscoveredHost) => suggestionFields(suggestion, hosts ?? []);
@@ -236,7 +237,7 @@ export function AddMachineDialog({ open, onClose, onAdded }: { open: boolean; on
           </DialogPanel>
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving} onClick={onClose}>{t('common.cancel')}</Button>
-            <Button type="submit" disabled={!ready || saving}>
+            <Button type="submit" disabled={!ready || saving} disabledReason={missing ? t(missing) : problem ?? undefined}>
               {saving ? <Spinner /> : <Plus />}
               {t('setup.checklist.addDialog.add')}
             </Button>
