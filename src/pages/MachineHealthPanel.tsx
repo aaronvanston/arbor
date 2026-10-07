@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { ArrowDown, ArrowUp, ChevronRight, Cpu, Gpu, HardDrive, MemoryStick, Network, Radar, Settings2, Thermometer, TriangleAlert, Unplug } from '../components/ui/icons';
 import { useI18n } from '../i18n';
@@ -83,41 +83,37 @@ type Series = { t: number; v: number | null }[];
 const CHART_W = 300;
 const CHART_PAD = 2;
 
-/**
- * One clock for every chart, ticking each second while one is on screen and the window shows. The charts read it
- * themselves, so their lines scroll along without the rows around them rendering again each second.
- */
-const chartClock = (() => {
-  let now = Date.now();
-  const listeners = new Set<() => void>();
-  let timer: number | undefined;
-  const tick = () => {
-    if (document.hidden) return;
-    now = Date.now();
-    listeners.forEach((listener) => listener());
-  };
-  return {
-    subscribe(listener: () => void) {
-      listeners.add(listener);
-      if (timer === undefined) timer = window.setInterval(tick, 1_000);
-      return () => {
-        listeners.delete(listener);
-        if (!listeners.size && timer !== undefined) {
-          window.clearInterval(timer);
-          timer = undefined;
-        }
-      };
-    },
-    get: () => now,
-  };
-})();
+/** How far a chart's lines are scrolled at `t`, as a share of its width: "now" sits at the right edge. */
+const scrollAt = (t: number, anchor: number, windowMs: number) => `translateX(${(1 - (t - anchor) / windowMs) * 100}%)`;
+
+/** A day: one scroll animation outlasts any window left open, and starts again if the window changes. */
+const SCROLL_SPAN_MS = 86_400_000;
 
 /**
- * A sparkline drawn in absolute time coordinates. The plotted group is
- * translated so "now" sits at the right edge, and that translation is CSS
- * transitioned, so the line scrolls left continuously instead of snapping
- * whenever a poll lands. Null readings break the line rather than reading
- * as zero.
+ * Scrolls a chart's lines left on the compositor. A transform animated on an HTML layer moves pixels already drawn;
+ * the same transition on an SVG group repaints the whole chart every frame, which kept an idle machine page near a
+ * quarter of a core in WebContent and as much again in the GPU process. Nothing renders between readings.
+ */
+function useChartScroll(anchor: number, windowMs: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || typeof element.animate !== 'function') return;
+    const now = Date.now();
+    const animation = element.animate(
+      [{ transform: scrollAt(now, anchor, windowMs) }, { transform: scrollAt(now + SCROLL_SPAN_MS, anchor, windowMs) }],
+      { duration: SCROLL_SPAN_MS, easing: 'linear', fill: 'forwards' },
+    );
+    return () => animation.cancel();
+  }, [anchor, windowMs]);
+  return ref;
+}
+
+/**
+ * A sparkline drawn in absolute time coordinates. The plotted lines sit in a layer
+ * scrolled so "now" stays at the right edge (useChartScroll), so the line moves
+ * left continuously instead of snapping whenever a poll lands. Null readings
+ * break the line rather than reading as zero.
  */
 type HoverPoint = { t: number; values: (number | null)[] };
 
@@ -164,24 +160,23 @@ function TimeSeries({
   labels?: string[];
   formatTime?: (t: number) => string;
 }) {
-  const now = useSyncExternalStore(chartClock.subscribe, chartClock.get, chartClock.get);
-  const anchorRef = useRef(now);
-  const anchor = anchorRef.current;
+  const [anchor] = useState(() => Date.now());
+  const scrollRef = useChartScroll(anchor, windowMs);
   const pad = CHART_PAD;
   const usable = height - pad * 2;
   const x = (t: number) => ((t - anchor) / windowMs) * CHART_W;
   const y = (v: number) => pad + usable - (Math.max(0, Math.min(max, v)) / max) * usable;
-  const offset = CHART_W - x(now);
   const [hover, setHover] = useState<HoverPoint | null>(null);
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
     const sx = ((event.clientX - rect.left) / rect.width) * CHART_W;
+    const offset = CHART_W - x(Date.now());
     const t = anchor + ((sx - offset) / CHART_W) * windowMs;
     // Snap to a sample within ~8 chart units so gaps and the far edges do not show stale readings.
     setHover(nearestSample(series, t, (windowMs / CHART_W) * 8));
   };
-  const hoverX = hover ? x(hover.t) + offset : 0;
+  const hoverX = hover ? x(hover.t) + CHART_W - x(Date.now()) : 0;
   const hoverLeft = (hoverX / CHART_W) * 100;
   const flip = hoverLeft > 60;
   // The lines are drawn from the anchor, not from now, so they're the same each tick until the readings change.
@@ -216,17 +211,14 @@ function TimeSeries({
   const last = series.map((points) => [...points].reverse().find((point) => point.v !== null) ?? null);
   return (
     <div className="relative h-full w-full" onPointerMove={onPointerMove} onPointerLeave={() => setHover(null)} data-slot="time-series">
-    <svg className="block h-full w-full" viewBox={`0 0 ${CHART_W} ${height}`} preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
-      <defs>
-        <clipPath id={`${id}-clip`}>
-          <rect x="0" y="0" width={CHART_W} height={height} />
-        </clipPath>
-      </defs>
+    <div className="absolute inset-0 overflow-hidden" role="img" aria-label={ariaLabel}>
+    <svg className="absolute inset-0 block h-full w-full" viewBox={`0 0 ${CHART_W} ${height}`} preserveAspectRatio="none" aria-hidden="true">
       {guides.map((value) => (
         <line key={value} x1="0" x2={CHART_W} y1={y(value)} y2={y(value)} stroke="var(--border)" strokeDasharray="2,3" vectorEffect="non-scaling-stroke" />
       ))}
-      <g clipPath={`url(#${id}-clip)`}>
-        <g style={{ transform: `translateX(${offset}px)`, transition: 'transform 1000ms linear' }}>
+    </svg>
+    <div ref={scrollRef} className="absolute inset-0" style={{ transform: 'translateX(100%)' }}>
+      <svg className="block h-full w-full overflow-visible" viewBox={`0 0 ${CHART_W} ${height}`} preserveAspectRatio="none" aria-hidden="true">
           {paths.map((path, index) => (
             <g key={index} className={strokeClass[index]}>
               {fill ? (
@@ -248,9 +240,9 @@ function TimeSeries({
               )))}
             </g>
           ) : null}
-        </g>
-      </g>
-    </svg>
+      </svg>
+    </div>
+    </div>
     {hover ? (
       <div
         className={cn('pointer-events-none absolute bottom-full z-10 mb-1 flex flex-col gap-0.5 whitespace-nowrap rounded-md border border-border/70 bg-popover px-2 py-1 text-2xs leading-4 tabular-nums text-foreground shadow-md', flip ? '-translate-x-full' : '')}
