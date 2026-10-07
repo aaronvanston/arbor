@@ -68,7 +68,104 @@ pub(crate) enum TrayAction {
 #[derive(Default)]
 struct TraySections {
     rows: [Vec<TrayRow>; TRAY_SECTION_COUNT],
+    /// The items each section's rows were built into, row for row, so rows of the same shape are updated in place.
+    built: [Vec<TrayItem>; TRAY_SECTION_COUNT],
+    /// Every item in the menu below "Open Main Window", separators included, in order: what a rebuild removes.
     items: Vec<MenuItemKind<tauri::Wry>>,
+}
+
+/// A row's menu item, its id (empty for a separator) and its sub-menu's items.
+struct TrayItem<Item = MenuItemKind<tauri::Wry>> {
+    id: String,
+    item: Item,
+    children: Vec<TrayItem<Item>>,
+}
+
+/// Whether `new` can be shown by changing `old`'s items in place: the same rows, separators, sub-menus and dotted rows
+/// in the same places. A plain item can't gain a dot, so a dot coming or going needs new items.
+fn same_shape(old: &[TrayRow], new: &[TrayRow]) -> bool {
+    old.len() == new.len()
+        && old.iter().zip(new).all(|(old, new)| {
+            old.text.is_empty() == new.text.is_empty()
+                && old.dot.is_some() == new.dot.is_some()
+                && has_children(old) == has_children(new)
+                && same_shape(children_of(old), children_of(new))
+        })
+}
+
+fn has_children(row: &TrayRow) -> bool {
+    row.children.as_ref().is_some_and(|children| !children.is_empty())
+}
+
+fn children_of(row: &TrayRow) -> &[TrayRow] {
+    row.children.as_deref().unwrap_or_default()
+}
+
+/// How many items an update of `old` to `new` touches in place: one per row whose text, dot or action changed.
+#[cfg(test)]
+fn changed_items(old: &[TrayRow], new: &[TrayRow]) -> usize {
+    old.iter()
+        .zip(new)
+        .map(|(old, new)| {
+            usize::from(old.text != new.text || old.dot != new.dot || old.action.is_some() != new.action.is_some())
+                + changed_items(children_of(old), children_of(new))
+        })
+        .sum()
+}
+
+/// Shows `new` on the items built for `old`, which has the same shape, setting only what changed.
+fn update_items(items: &[TrayItem], old: &[TrayRow], new: &[TrayRow]) -> Result<(), String> {
+    let fail = |error: tauri::Error| error.to_string();
+    for ((built, old), new) in items.iter().zip(old).zip(new) {
+        if new.text.is_empty() {
+            continue;
+        }
+        let dot = (old.dot != new.dot).then(|| new.dot.map(tray_dot_image));
+        let enabled = (old.action.is_some() != new.action.is_some()).then(|| new.action.is_some());
+        match &built.item {
+            MenuItemKind::Submenu(submenu) => {
+                if old.text != new.text {
+                    submenu.set_text(&new.text).map_err(fail)?;
+                }
+                if let Some(icon) = dot {
+                    submenu.set_icon(icon).map_err(fail)?;
+                }
+            }
+            MenuItemKind::Icon(item) => {
+                if old.text != new.text {
+                    item.set_text(&new.text).map_err(fail)?;
+                }
+                if let Some(icon) = dot {
+                    item.set_icon(icon).map_err(fail)?;
+                }
+                if let Some(enabled) = enabled {
+                    item.set_enabled(enabled).map_err(fail)?;
+                }
+            }
+            MenuItemKind::MenuItem(item) => {
+                if old.text != new.text {
+                    item.set_text(&new.text).map_err(fail)?;
+                }
+                if let Some(enabled) = enabled {
+                    item.set_enabled(enabled).map_err(fail)?;
+                }
+            }
+            _ => {}
+        }
+        update_items(&built.children, children_of(old), children_of(new))?;
+    }
+    Ok(())
+}
+
+/// The action behind each item built for `rows`, by its id.
+fn collect_actions<Item>(items: &[TrayItem<Item>], rows: &[TrayRow], actions: &mut HashMap<String, TrayAction>) {
+    for (built, row) in items.iter().zip(rows) {
+        if has_children(row) {
+            collect_actions(&built.children, children_of(row), actions);
+        } else if let Some(action) = &row.action {
+            actions.insert(built.id.clone(), action.clone());
+        }
+    }
 }
 
 impl TrayRowsState {
@@ -99,16 +196,34 @@ pub(crate) async fn set_tray_rows(
     if sections.rows[index] == rows {
         return Ok(());
     }
+
+    // A machine's readings and check time change every health round while its rows stay the same shape, so most
+    // updates only set the text that changed. Building every item again each time made a new image for each dotted
+    // row and churned the menu's memory up to a couple of times a minute.
+    let built_for_rows = sections.built[index].len() == sections.rows[index].len();
+    if built_for_rows && !rows.is_empty() && same_shape(&sections.rows[index], &rows) {
+        update_items(&sections.built[index], &sections.rows[index], &rows)?;
+        sections.rows[index] = rows;
+        let mut actions = HashMap::new();
+        for (built, rows) in sections.built.iter().zip(&sections.rows) {
+            collect_actions(built, rows, &mut actions);
+        }
+        if let Ok(mut current) = state.actions.lock() {
+            *current = actions;
+        }
+        return Ok(());
+    }
     sections.rows[index] = rows;
 
     // Every section moves when one above it changes length, so all are put back.
-    let TraySections { rows, items } = &mut *sections;
+    let TraySections { rows, built, items } = &mut *sections;
     for item in items.drain(..) {
         state.menu.remove(&item).map_err(|error| error.to_string())?;
     }
     let mut actions = HashMap::new();
     let mut position = 1;
-    for section_rows in rows.iter() {
+    for (section_rows, section_built) in rows.iter().zip(built.iter_mut()) {
+        section_built.clear();
         if section_rows.is_empty() {
             continue;
         }
@@ -116,9 +231,10 @@ pub(crate) async fn set_tray_rows(
             let item = tray_item(&app, row, &mut actions)?;
             state
                 .menu
-                .insert(&item, position)
+                .insert(&item.item, position)
                 .map_err(|error| error.to_string())?;
-            items.push(item);
+            items.push(item.item.clone());
+            section_built.push(item);
             position += 1;
         }
         let separator = PredefinedMenuItem::separator(&app).map_err(|error| error.to_string())?;
@@ -140,33 +256,38 @@ fn tray_item(
     app: &tauri::AppHandle,
     row: &TrayRow,
     actions: &mut HashMap<String, TrayAction>,
-) -> Result<MenuItemKind<tauri::Wry>, String> {
+) -> Result<TrayItem, String> {
     let fail = |error: tauri::Error| error.to_string();
     if row.text.is_empty() {
-        return Ok(MenuItemKind::Predefined(PredefinedMenuItem::separator(app).map_err(fail)?));
+        let separator = PredefinedMenuItem::separator(app).map_err(fail)?;
+        return Ok(TrayItem { id: String::new(), item: MenuItemKind::Predefined(separator), children: Vec::new() });
     }
     let id = format!("tray-row-{}", next_tray_item_id());
     let icon = row.dot.map(tray_dot_image);
     if let Some(children) = row.children.as_ref().filter(|children| !children.is_empty()) {
         let submenu = Submenu::with_id(app, &id, &row.text, true).map_err(fail)?;
+        let mut built = Vec::with_capacity(children.len());
         for child in children {
-            submenu.append(&tray_item(app, child, actions)?).map_err(fail)?;
+            let child = tray_item(app, child, actions)?;
+            submenu.append(&child.item).map_err(fail)?;
+            built.push(child);
         }
         if icon.is_some() {
             submenu.set_icon(icon).map_err(fail)?;
         }
-        return Ok(MenuItemKind::Submenu(submenu));
+        return Ok(TrayItem { id, item: MenuItemKind::Submenu(submenu), children: built });
     }
     let enabled = row.action.is_some();
     if let Some(action) = &row.action {
         actions.insert(id.clone(), action.clone());
     }
-    Ok(match icon {
+    let item = match icon {
         Some(icon) => MenuItemKind::Icon(
-            IconMenuItem::with_id(app, id, &row.text, enabled, Some(icon), None::<&str>).map_err(fail)?,
+            IconMenuItem::with_id(app, &id, &row.text, enabled, Some(icon), None::<&str>).map_err(fail)?,
         ),
-        None => MenuItemKind::MenuItem(MenuItem::with_id(app, id, &row.text, enabled, None::<&str>).map_err(fail)?),
-    })
+        None => MenuItemKind::MenuItem(MenuItem::with_id(app, &id, &row.text, enabled, None::<&str>).map_err(fail)?),
+    };
+    Ok(TrayItem { id, item, children: Vec::new() })
 }
 
 /// A new number on every call, so no two items the menu has held share an id.
@@ -223,8 +344,20 @@ fn tray_dot_pixels(dot: TrayDot) -> Vec<u8> {
         .collect()
 }
 
+/// Each dot's pixels, drawn once: a dotted row's image is made from them every time its item is built or recolored.
 fn tray_dot_image(dot: TrayDot) -> tauri::image::Image<'static> {
-    tauri::image::Image::new_owned(tray_dot_pixels(dot), TRAY_DOT_WIDTH, TRAY_DOT_HEIGHT)
+    static PIXELS: std::sync::OnceLock<[Vec<u8>; 5]> = std::sync::OnceLock::new();
+    let pixels = PIXELS.get_or_init(|| {
+        [TrayDot::Green, TrayDot::Amber, TrayDot::Red, TrayDot::Gray, TrayDot::Blank].map(tray_dot_pixels)
+    });
+    let index = match dot {
+        TrayDot::Green => 0,
+        TrayDot::Amber => 1,
+        TrayDot::Red => 2,
+        TrayDot::Gray => 3,
+        TrayDot::Blank => 4,
+    };
+    tauri::image::Image::new(&pixels[index], TRAY_DOT_WIDTH, TRAY_DOT_HEIGHT)
 }
 
 /// Dot radius and the transparent gap cut around it, as fractions of the icon's size.
@@ -724,6 +857,82 @@ mod tests {
         assert_eq!(pixel_at(&green, TRAY_DOT_WIDTH, 12, 2)[3], 0, "the dot stays clear of the top");
         assert!(green.chunks(4).any(|pixel| pixel[3] > 0 && pixel[3] < 255), "the dot's edge should be anti-aliased");
         assert!(tray_dot_pixels(TrayDot::Blank).iter().all(|byte| *byte == 0));
+    }
+
+    /// The machines' section as the window sends it (services/glance.ts), for `machines` machines at a moment's readings.
+    fn machine_rows(machines: usize, cpu: usize, checked: &str) -> Vec<TrayRow> {
+        let row = |text: String| TrayRow { text, dot: None, action: None, children: None };
+        let mut rows = vec![row("Machines".into())];
+        for machine in 0..machines {
+            let name = format!("cam-{machine}");
+            let mut agent = row("Claude Code 2.4.1 · 2 running".into());
+            agent.dot = Some(TrayDot::Blank);
+            let mut open = row("Open machine page".into());
+            open.action = Some(TrayAction::OpenMachine { machine: name.clone() });
+            rows.push(TrayRow {
+                text: format!("{name} · 2 working"),
+                dot: Some(TrayDot::Green),
+                action: None,
+                children: Some(vec![
+                    row(format!("Healthy · {}", 100 - cpu / 4)),
+                    row(String::new()),
+                    row(format!("CPU {}% · load 1.2", cpu + machine)),
+                    row(format!("Memory {}% · 40 GB of 64 GB", 60 + cpu % 3)),
+                    row("Disk 61% · 180 GB free".into()),
+                    row(String::new()),
+                    agent,
+                    row(format!("Checked {checked}")),
+                    row(String::new()),
+                    open,
+                ]),
+            });
+        }
+        rows
+    }
+
+    fn items_in(rows: &[TrayRow]) -> usize {
+        rows.iter().map(|row| 1 + items_in(children_of(row))).sum()
+    }
+
+    #[test]
+    fn a_health_round_changes_only_the_readings_in_place() {
+        let before = machine_rows(5, 40, "8:47:34 am");
+        let after = machine_rows(5, 47, "8:48:34 am");
+        assert!(same_shape(&before, &after));
+        // Before, every item in the section was built again each round: 56 for five machines, 25 of them dotted.
+        assert_eq!(items_in(&after), 56);
+        // Now only the score, CPU, memory and check time of each machine are set: no items or images made.
+        assert_eq!(changed_items(&before, &after), 5 * 4);
+    }
+
+    #[test]
+    fn rows_of_another_shape_are_built_again() {
+        let base = machine_rows(2, 40, "now");
+        assert!(!same_shape(&base, &machine_rows(3, 40, "now")), "a machine added");
+        let mut no_dot = base.clone();
+        no_dot[1].dot = None;
+        assert!(!same_shape(&base, &no_dot), "a dot can't be taken off a dotted item");
+        let mut fewer = base.clone();
+        if let Some(children) = fewer[1].children.as_mut() {
+            children.remove(3);
+        }
+        assert!(!same_shape(&base, &fewer), "a reading gone from a sub-menu");
+        let mut recolored = base.clone();
+        recolored[1].dot = Some(TrayDot::Red);
+        assert!(same_shape(&base, &recolored), "a dot changing color is set in place");
+        assert_eq!(changed_items(&base, &recolored), 1);
+    }
+
+    #[test]
+    fn actions_follow_the_items_built_for_their_rows() {
+        let rows = machine_rows(1, 40, "now");
+        let built = |id: &str, children: Vec<TrayItem<()>>| TrayItem { id: id.into(), item: (), children };
+        let sub = (0..10).map(|n| built(&format!("child-{n}"), Vec::new())).collect();
+        let items = vec![built("header", Vec::new()), built("machine", sub)];
+        let mut actions = HashMap::new();
+        collect_actions(&items, &rows, &mut actions);
+        assert_eq!(actions.len(), 1);
+        assert!(actions.get("child-9") == Some(&TrayAction::OpenMachine { machine: "cam-0".into() }));
     }
 
     #[test]
