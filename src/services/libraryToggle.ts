@@ -126,6 +126,11 @@ export async function togglePlugin(repo: string, row: PluginRow, codex: boolean,
 /** What takes a change back. A marketplace added along the way stays, since other plugins may come from it. */
 const INVERSE: Partial<Record<PluginAction, PluginAction>> = { install: 'uninstall', uninstall: 'install', enable: 'disable', disable: 'enable' };
 
+/** What takes one plugin switch on a home back: on for off and off for on. An install or removal has none here. */
+export function switchBack(action: PluginAction): PluginAction | null {
+  return action === 'enable' || action === 'disable' ? INVERSE[action] ?? null : null;
+}
+
 /**
  * The changes that take `done` back, the last first, by machine: each home is put back as it was, and only the homes
  * that were changed. A plugin that was off when it was uninstalled goes back in turned off.

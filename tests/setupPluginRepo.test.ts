@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { changeKey, extensionsView } from '../src/services/setupPlugins';
-import { differs, ownValues, pluginRepoSuggestions, repoAction, wantedOn, withPluginRepo } from '../src/services/setupPluginRepo';
+import { differs, ownValues, pluginRepoSuggestions, repoAction, repoPluginValue, wantedOn, withPluginRepo } from '../src/services/setupPluginRepo';
 import type { RepoPlugin, SetupHome, SetupItem, SetupMachine } from '../src/native/types';
 
 const item = (kind: SetupItem['kind'], name: string, fields: Partial<SetupItem> = {}): SetupItem => ({
@@ -25,6 +25,16 @@ const listed: RepoPlugin[] = [
   { id: 'review@official', source: OFFICIAL, all: 'off', machines: { macmini: 'on' }, projects: {} },
   { id: 'lint@official', source: OFFICIAL, all: 'on', machines: { ci01: 'off' }, projects: {} },
 ];
+
+describe('a plugin’s repo value before a change', () => {
+  it('is All machines’ value or the machine’s own, looked up loosely, and nothing when unlisted', () => {
+    const [context7, review] = listed;
+    expect(repoPluginValue(context7 ?? null, null)).toBe('on');
+    expect(repoPluginValue(review ?? null, 'Mac Mini')).toBe('on');
+    expect(repoPluginValue(review ?? null, 'ci-01')).toBeNull();
+    expect(repoPluginValue(null, null)).toBeNull();
+  });
+});
 
 describe('the setup repo’s plugins', () => {
   it('gives a machine its own value, looked up loosely, else All machines’', () => {

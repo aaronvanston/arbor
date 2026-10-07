@@ -23,6 +23,7 @@ import {
   hookGrid,
   hookMachines,
   hookSummary,
+  hookValue,
   ownHookCount,
   setHookAgents,
   setHookWanted,
@@ -32,6 +33,7 @@ import {
   type HookRow,
 } from '../services/setupHooks';
 import { storedSetupRepo } from '../services/setupSync';
+import { repoValueToast } from '../services/switchReport';
 import { GridFilters, MachineCell, MachineHead } from './SetupPluginGrid';
 import { NameCell } from './SetupNameCell';
 
@@ -109,20 +111,28 @@ export function SetupHooks({ machines }: { machines: SetupMachine[] }) {
     return <p className="max-w-3xl text-sm text-muted-foreground">{t('setup.hooks.noRepo')}</p>;
   }
 
-  const save = async (run: () => Promise<HookRegistry>) => {
+  const save = async (run: () => Promise<HookRegistry>, done?: () => void) => {
     setSaving(true);
     setSaveError(null);
     try {
       setRegistry(await run());
+      done?.();
     } catch (error) {
       setSaveError(String(error));
     } finally {
       setSaving(false);
     }
   };
-  const setWanted = (name: string, machine: string | null, wanted: HookWanted) => void save(() => setHookWanted(repo, name, machine, wanted));
+  // A repo value is committed at once, so its toast offers Undo, which commits the value before it again.
+  const setWanted = (view: HookView, machine: string | null, wanted: HookWanted, undoing = false) => {
+    const before = hookValue(view, machine);
+    void save(() => setHookWanted(repo, view.name, machine, wanted), () => toast(repoValueToast(view.name, undoing, () => setWanted(view, machine, before, true), t)));
+  };
   const take = (cell: HookCell) => void save(() => takeHook(repo, cell.machine, cell.home, cell.event, cell.script));
-  const setAgents = (name: string, agents: HookAgents) => void save(() => setHookAgents(repo, name, HOOK_AGENT_KINDS[agents]));
+  const setAgents = (view: HookView, agents: HookAgents, undoing = false) => {
+    const before = hookAgents(view);
+    void save(() => setHookAgents(repo, view.name, HOOK_AGENT_KINDS[agents]), () => toast(repoValueToast(view.name, undoing, () => setAgents(view, before, true), t)));
+  };
 
   const bringInStep = async (machine: string) => {
     if (!registry?.commit) return;
@@ -300,7 +310,7 @@ export function SetupHooks({ machines }: { machines: SetupMachine[] }) {
                   />
                   <TableCell className="max-w-72 text-xs"><RunsCell row={row} t={t} /></TableCell>
                   <TableCell className="text-xs">
-                    {view ? <RepoMenu hook={view} busy={saving} onWanted={(wanted) => setWanted(view.name, null, wanted)} onAgents={(agents) => setAgents(view.name, agents)} /> : (
+                    {view ? <RepoMenu hook={view} busy={saving} onWanted={(wanted) => setWanted(view, null, wanted)} onAgents={(agents) => setAgents(view, agents)} /> : (
                       <span className="text-muted-foreground">{t('setup.hooks.repo.notIn')}</span>
                     )}
                   </TableCell>
@@ -333,7 +343,7 @@ export function SetupHooks({ machines }: { machines: SetupMachine[] }) {
                         )) : <p className="px-3.5 py-2.5 text-xs text-muted-foreground">{t('setup.hooks.cell.nothing')}</p>}
                         {view && !view.removed ? (
                           <div className="flex items-center justify-end border-t border-border/50 px-3.5 py-2.5">
-                            <MachineMenu hook={view} machine={machine.machine} busy={saving} onWanted={(wanted) => setWanted(view.name, machine.machine, wanted)} />
+                            <MachineMenu hook={view} machine={machine.machine} busy={saving} onWanted={(wanted) => setWanted(view, machine.machine, wanted)} />
                           </div>
                         ) : null}
                       </MachineCell>

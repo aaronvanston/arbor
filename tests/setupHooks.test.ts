@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { hookGrid, hookSummary, hookRows, ownHookCount } from '../src/services/setupHooks';
+import { hookGrid, hookSummary, hookRows, hookValue, ownHookCount } from '../src/services/setupHooks';
 import type { HookCell, HookRegistry, HookView, SetupHome, SetupItem, SetupMachine } from '../src/native/types';
 import { present } from './support/items';
 
@@ -22,6 +22,15 @@ const registry: HookRegistry = {
     cell('ci-01', '~/.agent-app/claude', null, 'old.sh', 'extra'),
   ],
 };
+
+describe('a hook’s repo value before a change', () => {
+  it('is what Undo sets back, for every machine or one', () => {
+    expect(hookValue(view('guard'), null)).toBe('default');
+    expect(hookValue(view('gone', { removed: true }), null)).toBe('removed');
+    expect(hookValue(view('notify', { off: ['ci-01'] }), 'ci-01')).toBe('off');
+    expect(hookValue(view('notify', { off: ['ci-01'] }), 'mac')).toBe('default');
+  });
+});
 
 describe('the hooks grid', () => {
   it('sums a hook up over a machine’s homes, saying why a machine has none', () => {

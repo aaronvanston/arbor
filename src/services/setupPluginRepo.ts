@@ -136,6 +136,15 @@ export function pluginRepoSuggestions(view: ExtensionsView, pending: PendingPlug
   return count ? [{ kind: 'repoPlugins', keys, count }] : [];
 }
 
+/**
+ * A plugin's value in the repo before a change, so Undo can set it back: All machines' value (`machine` null) or the
+ * machine's own; null when the repo doesn't list it there.
+ */
+export function repoPluginValue(plugin: RepoPlugin | null, machine: string | null): PluginWanted | null {
+  if (!plugin) return null;
+  return machine === null ? plugin.all : plugin.machines[machineLookKey(machine)] ?? null;
+}
+
 /** The machines with their own value for a plugin, by the names the page shows, with that value. */
 export function ownValues(plugin: RepoPlugin, machines: readonly string[]): { machine: string; value: PluginWanted }[] {
   return machines.flatMap((machine) => {

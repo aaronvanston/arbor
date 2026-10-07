@@ -16,6 +16,12 @@ export const applyHooks = (repo: string, commit: string, machine: string) =>
 /** The agents whose homes a hook goes in, committed to the repo straight away. */
 export const setHookAgents = (repo: string, name: string, agents: AgentKind[]) => invokeCommand('set_hook_agents', { repo, name, agents });
 
+/** A repo hook's value before a change, so Undo can set it back: every machine's (`machine` null) or one machine's. */
+export function hookValue(view: HookView, machine: string | null): HookWanted {
+  if (machine === null) return view.removed ? 'removed' : 'default';
+  return view.off.includes(machine) ? 'off' : 'default';
+}
+
 /** Which agents a hook goes to, as the repo menu offers them. */
 export type HookAgents = 'claude' | 'codex' | 'both';
 

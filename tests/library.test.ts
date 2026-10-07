@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { libraryCounts, libraryItemName, libraryRepoFile, libraryKindProblems, libraryList, libraryRowProblems, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
-import { addPlugin, behindHomes, bringInLine, inverseChanges, linePlans, marketplaceEverywhere, marketplaceHomes, takeIntoRepo, takeSources, updatePlugin, lineUp, relisted, removeEverywhere, switchFile, switchHook, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
+import { addPlugin, behindHomes, switchBack, bringInLine, inverseChanges, linePlans, marketplaceEverywhere, marketplaceHomes, takeIntoRepo, takeSources, updatePlugin, lineUp, relisted, removeEverywhere, switchFile, switchHook, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { directoryEntries, directorySources } from '../src/services/directory';
 import { withPluginRepo } from '../src/services/setupPluginRepo';
@@ -271,6 +271,15 @@ describe('every kind’s switch', () => {
       ['undo', 'cam-mbp', 'b1'],
       ['off', command.path, false],
     ]);
+  });
+});
+
+describe('taking one plugin switch back', () => {
+  it('turns it the other way, and leaves installs and removals to their confirmation', () => {
+    expect(switchBack('enable')).toBe('disable');
+    expect(switchBack('disable')).toBe('enable');
+    expect(switchBack('install')).toBeNull();
+    expect(switchBack('uninstall')).toBeNull();
   });
 });
 

@@ -44,6 +44,20 @@ export function switchToast(name: string, done: string, run: { changed: string[]
   return { kind: 'error', title: t('library.result.none', { name, machines }) };
 }
 
+/**
+ * A value set in the repo from Per home (a plugin's, a hook's), committed at once: said in a toast with Undo, which
+ * sets the value before it back. The Undo's own toast has none.
+ */
+export function repoValueToast(name: string, undoing: boolean, undo: () => void, t: Translate) {
+  if (undoing) return { kind: 'success' as const, title: t('library.undo.done', { name }) };
+  return {
+    kind: 'success' as const,
+    title: t('setup.repoValue.saved', { name }),
+    description: t('setup.repoValue.committed'),
+    action: { label: t('common.undo'), onClick: undo },
+  };
+}
+
 /** An Undo's toast: back as it was, or what it couldn't put back and where, which stays until dismissed. */
 export function undoToast(name: string, back: UndoResult, t: Translate): SwitchToast {
   if (back.repoError) return { kind: 'error', title: t('library.undo.repoFailed', { name, error: plainError(back.repoError, t) }) };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
-import { bringToast, machinesChangedText, switchFailureText, switchToast, undoToast } from '../src/services/switchReport';
+import { bringToast, machinesChangedText, repoValueToast, switchFailureText, switchToast, undoToast } from '../src/services/switchReport';
 
 const t = (key: Parameters<typeof translate>[0], variables?: Parameters<typeof translate>[1]) => translate(key, variables, {});
 
@@ -32,6 +32,17 @@ describe('how many machines a change reached', () => {
     // A plugin update or a marketplace refresh only runs on the machines.
     expect(machinesChangedText(1, false, t)).toBe('1 machine changed.');
     expect(machinesChangedText(3, false, t)).toBe('3 machines changed.');
+  });
+});
+
+describe('a repo value set from Per home', () => {
+  it('says it was committed and offers Undo, and the Undo’s own toast has none', () => {
+    let undone = 0;
+    const saved = repoValueToast('superpowers', false, () => { undone += 1; }, t);
+    expect(saved).toMatchObject({ kind: 'success', title: 'Saved the repo’s value for superpowers', description: 'Committed to the repo.' });
+    saved.action?.onClick();
+    expect(undone).toBe(1);
+    expect(repoValueToast('superpowers', true, () => undefined, t)).toEqual({ kind: 'success', title: 'superpowers is back as it was' });
   });
 });
 

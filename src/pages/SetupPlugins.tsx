@@ -75,7 +75,7 @@ import {
   type PluginRow,
   type PluginSuggestion,
 } from '../services/setupPlugins';
-import { ownValues, PLUGINS_FILE, pluginRepoSuggestions, setSetupCodexPlugin, setSetupPlugin, wantedOn, withCodexPluginRepo, withPluginRepo } from '../services/setupPluginRepo';
+import { ownValues, PLUGINS_FILE, pluginRepoSuggestions, repoPluginValue, setSetupCodexPlugin, setSetupPlugin, wantedOn, withCodexPluginRepo, withPluginRepo } from '../services/setupPluginRepo';
 import { leftoversByMachine, machineColumns, machineLooks, pluginGrid, type PluginGrid } from '../services/pluginGrid';
 import { toast } from '../components/ui/toast';
 import { machineName } from '../services/machineNames';
@@ -111,6 +111,8 @@ import type {
 import { FixMenu } from '../components/FixMenu';
 import { mcpServerProblem } from '../services/fixPrompt';
 import { errorWords, plainError } from '../services/plainError';
+import { switchBack } from '../services/libraryToggle';
+import { repoValueToast } from '../services/switchReport';
 import { MachinePill, MachinePills } from '../components/identity/Identity';
 
 /** How far back use is counted. */
@@ -294,12 +296,14 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
   const setPendingMcp = (updater: (current: PendingMcp) => PendingMcp) => setSyncMcp(updater);
   const fleet = useMemo(() => machines.filter((machine) => machine.homes.some((home) => home.agent === 'claude')).map((machine) => machine.machine), [machines]);
   // A plugin's value for All machines or one machine, committed to the repo straight away, as Sync's skills are.
-  const setWanted = async (row: PluginRow, machine: string | null, wanted: PluginWanted | null) => {
+  const setWanted = async (row: PluginRow, machine: string | null, wanted: PluginWanted | null, undoing = false) => {
     if (!repo) return;
+    const before = repoPluginValue(row.repo, machine);
     setSavingPlugin(true);
     setPluginRepoError(null);
     try {
       setRepoPlugins((await setSetupPlugin(repo, row.id, row.source, machine, wanted)).plugins);
+      toast(repoValueToast(row.id, undoing, () => { void setWanted(row, machine, before, true); }, t));
     } catch (error) {
       setPluginRepoError(String(error));
     } finally {
@@ -308,12 +312,14 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
   };
   const codexFleet = useMemo(() => machines.filter((machine) => machine.homes.some((home) => home.agent === 'codex')).map((machine) => machine.machine), [machines]);
   // A Codex plugin's value, under the repo's Codex section, committed straight away as Claude Code's are.
-  const setCodexWanted = async (row: PluginRow, machine: string | null, wanted: PluginWanted | null) => {
+  const setCodexWanted = async (row: PluginRow, machine: string | null, wanted: PluginWanted | null, undoing = false) => {
     if (!repo) return;
+    const before = repoPluginValue(row.repo, machine);
     setSavingPlugin(true);
     setCodexErrors([]);
     try {
       setRepoCodexPlugins((await setSetupCodexPlugin(repo, row.id, row.source, machine, wanted)).codexPlugins);
+      toast(repoValueToast(row.id, undoing, () => { void setCodexWanted(row, machine, before, true); }, t));
     } catch (error) {
       setCodexErrors([String(error)]);
     } finally {
@@ -430,7 +436,14 @@ export function SetupPlugins({ machines, homeLabel }: { machines: SetupMachine[]
         toast({ kind: 'success', title: t('setup.plugins.codex.matched', { name: row.id }) });
       } else {
         const already = results.every((result) => result.outcome === 'already');
-        toast({ kind: 'success', title: t(already ? 'setup.plugins.codex.already' : 'setup.plugins.codex.done', { name: row.id, home: changes[0]?.cell.home.path ?? '' }) });
+        const only = changes[0];
+        // Turning a plugin on or off is taken back by the opposite; an install or removal was confirmed instead.
+        const back = only && !already ? switchBack(only.action) : null;
+        toast({
+          kind: 'success',
+          title: t(already ? 'setup.plugins.codex.already' : 'setup.plugins.codex.done', { name: row.id, home: only?.cell.home.path ?? '', machine }),
+          ...(back && only ? { action: { label: t('common.undo'), onClick: () => { void runCodexChanges(row, machine, [{ cell: only.cell, action: back }]); } } } : {}),
+        });
       }
     } catch (error) {
       setCodexErrors([String(error)]);
