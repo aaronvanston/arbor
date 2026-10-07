@@ -24,7 +24,8 @@
     "perf:check": "bun perf/run.ts --check",
     "perf:ratchet": "bun perf/run.ts --ratchet",
     "perf:report": "bun perf/run.ts --report",
-    "perf:cpu": "bun perf/idleCpu.ts"
+    "perf:cpu": "bun perf/idleCpu.ts",
+    "perf:soak": "bun perf/soak.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

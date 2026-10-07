@@ -6,90 +6,49 @@
  * time the WebContent and GPU processes used over the idle stretch. Reported only: it's wall-clock noisy, so each
  * case runs several times and the median is printed.
  *
- *   bun run perf:cpu                       every case, 3 runs of 30 s each
+ *   bun run perf:cpu                       Home, a machine and Machines, 3 runs of 30 s each
+ *   bun run perf:cpu --case=all            every main page
  *   bun run perf:cpu --case=machine --runs=5 --seconds=20 --no-build
  *   bun run perf:cpu --unfocused           the window shows but another app has focus, so the sidebar art rests
  */
-import { spawnSync } from 'node:child_process';
-import { join, normalize } from 'node:path';
+import { join } from 'node:path';
 import { webkit, type Page } from 'playwright';
+import { arg, buildDemo, cpuSeconds, footprintMb, helperPids, median, REPO, serveSite } from './realClock';
 
-const REPO = normalize(join(import.meta.dir, '..'));
-const arg = (name: string) => process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
 /** `--site=<dir>` measures another build, such as main's, for a before and after. */
 const SITE = arg('site') ?? join(REPO, '.perf', 'site');
 const RUNS = Number(arg('runs') ?? 3);
 const SECONDS = Number(arg('seconds') ?? 30);
 const HEALTH_EVERY_MS = 5_000;
 const UNFOCUSED = process.argv.includes('--unfocused');
+/** `--css=<rules>`: a stylesheet added to the page, to test whether a style is what costs before changing the app. */
+const EXTRA_CSS = arg('css');
+/** `--script=<js>`: code run before the page's own, to try a change (say, a canvas option) before making it. */
+const EXTRA_SCRIPT = arg('script');
+/** `--reduced-motion`: what the page costs with its motion off, to price animations before changing them. */
+const REDUCED_MOTION = process.argv.includes('--reduced-motion');
 /** The owner's window when the cost was reported (2026-10-07): 2345 × 1410 points on a Retina display. */
 const VIEWPORT = { width: 2345, height: 1410 };
 
-const CASES: Record<string, { page: string }> = {
-  home: { page: 'home' },
-  machine: { page: 'machine:ci-01' },
-  machines: { page: 'machines' },
+/** The pages a window is left open on. `--case=all` measures every one. */
+const CASES: Record<string, { page: string; tab?: string; lens?: string; everyRun?: boolean }> = {
+  home: { page: 'home', everyRun: true },
+  machine: { page: 'machine:ci-01', everyRun: true },
+  machines: { page: 'machines', everyRun: true },
+  pools: { page: 'pools' },
+  sessions: { page: 'sessions' },
+  automations: { page: 'automations' },
+  sync: { page: 'setup' },
+  accounts: { page: 'accounts' },
+  usage: { page: 'usage' },
+  alerts: { page: 'alerts' },
+  settings: { page: 'settings:general' },
 };
 const only = arg('case');
-const cases = Object.entries(CASES).filter(([id]) => !only || only.split(',').includes(id));
+const cases = Object.entries(CASES).filter(([id, target]) => (only === 'all' ? true : only ? only.split(',').includes(id) : target.everyRun));
 
-if (!process.argv.includes('--no-build') && !arg('site')) {
-  console.log('Building the demo site into .perf/site…');
-  const result = spawnSync('bunx', ['vite', 'build', '--mode', 'demo', '--outDir', SITE, '--emptyOutDir', '--logLevel', 'warn'], { cwd: REPO, stdio: 'inherit' });
-  if (result.status !== 0) throw new Error('The demo build failed.');
-}
-
-const server = Bun.serve({
-  hostname: '127.0.0.1',
-  port: 0,
-  async fetch(request) {
-    const pathname = decodeURIComponent(new URL(request.url).pathname);
-    const path = normalize(join(SITE, pathname === '/' ? 'index.html' : pathname));
-    if (!path.startsWith(SITE)) return new Response('Not found', { status: 404 });
-    const file = Bun.file(path);
-    return (await file.exists()) ? new Response(file) : new Response('Not found', { status: 404 });
-  },
-});
-
-/** Playwright WebKit's helper processes, which launchd starts, so found by path: kind → pids. */
-function helperPids(): Map<number, string> {
-  const result = spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' });
-  const pids = new Map<number, string>();
-  for (const line of result.stdout.split('\n')) {
-    if (!line.includes('ms-playwright')) continue;
-    const kind = /WebKit\.(WebContent|GPU|Networking)/.exec(line)?.[1] ?? (line.includes('Playwright.app') ? 'UI' : null);
-    const pid = Number.parseInt(line.trim(), 10);
-    if (kind && pid) pids.set(pid, kind);
-  }
-  return pids;
-}
-
-/** CPU seconds used so far by each pid. */
-function cpuSeconds(pids: number[]): Map<number, number> {
-  const out = new Map<number, number>();
-  if (!pids.length) return out;
-  const result = spawnSync('ps', ['-o', 'pid=,time=', '-p', pids.join(',')], { encoding: 'utf8' });
-  for (const line of result.stdout.split('\n')) {
-    const [pid, time] = line.trim().split(/\s+/);
-    if (!pid || !time) continue;
-    // [[dd-]hh:]mm:ss.ss
-    const parts = time.replace('-', ':').split(':').map(Number);
-    out.set(Number(pid), parts.reduce((total, part) => total * 60 + part, 0));
-  }
-  return out;
-}
-
-function footprintMb(pid: number): number | null {
-  const match = /Footprint:\s*([\d.]+)\s*(KB|MB|GB)/.exec(spawnSync('footprint', ['-p', String(pid)], { encoding: 'utf8', timeout: 15_000 }).stdout);
-  if (!match?.[1] || !match[2]) return null;
-  return Math.round(Number(match[1]) * { KB: 1 / 1024, MB: 1, GB: 1024 }[match[2] as 'KB' | 'MB' | 'GB']);
-}
-
-const median = (values: number[]) => {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
-};
+buildDemo(SITE);
+const server = serveSite(SITE);
 
 type Run = { webContent: number; gpu: number; total: number; footprintMb: number | null; commits: number };
 
@@ -107,17 +66,21 @@ const countCommits = () => {
   };
 };
 
-async function measure(target: { page: string }): Promise<Run> {
+async function measure(target: { page: string; tab?: string; lens?: string }): Promise<Run> {
   const before = new Set(helperPids().keys());
   const browser = await webkit.launch();
   try {
-    const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, timezoneId: 'UTC', locale: 'en-US', serviceWorkers: 'block' });
+    const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, timezoneId: 'UTC', locale: 'en-US', serviceWorkers: 'block', reducedMotion: REDUCED_MOTION ? 'reduce' : 'no-preference' });
     const page: Page = await context.newPage();
     await page.addInitScript(countCommits);
     if (UNFOCUSED) await page.addInitScript(() => { document.hasFocus = () => false; });
+    if (EXTRA_SCRIPT) await page.addInitScript({ content: EXTRA_SCRIPT });
+    if (EXTRA_CSS) await page.addInitScript((css) => {
+      document.addEventListener('DOMContentLoaded', () => { const style = document.createElement('style'); style.textContent = css; document.head.append(style); });
+    }, EXTRA_CSS);
     await page.goto(`http://127.0.0.1:${server.port}/?size=real`, { waitUntil: 'load' });
     await page.waitForFunction(() => Boolean((window as Window & { __mockOpen?: unknown }).__mockOpen));
-    await page.evaluate((name) => (window as unknown as { __mockOpen: (page: string) => Promise<void> }).__mockOpen(name), target.page);
+    await page.evaluate(({ page, tab, lens }) => (window as unknown as { __mockOpen: (page: string, tab?: string, lens?: string) => Promise<void> }).__mockOpen(page, tab, lens), target);
     await page.bringToFront();
     // Let launch work and the page's first reads finish before counting.
     await page.waitForTimeout(6_000);

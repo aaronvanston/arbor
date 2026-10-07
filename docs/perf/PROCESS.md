@@ -30,6 +30,9 @@ Each journey (cold launch to Home, open each main page, an hour of idle compress
 `bun run perf:cpu` (`perf/idleCpu.ts`) is the real-clock companion: it idles a page in WebKit at a large Retina
 window, sends health rounds every five seconds, and reports the CPU the WebContent and GPU processes used. It sees
 what the page clock can't, CSS transitions and painting, so check it after touching anything that animates.
+`bun run perf:soak` (`perf/soak.ts`) leaves a page open for hours of page-clock time, with health rounds every five
+seconds, and fails `--check` when elements, live timers, window listeners or native event listeners grow; it reports
+the WebContent footprint's slope per hour. A window left visible never reloads, so anything that only adds shows here.
 
 The Rust side has `src-tauri/src/usage/bench.rs` (page reads on a million requests, release mode only) and grows
 the same way: a slow command or background loop gets a bench before it gets a fix.
