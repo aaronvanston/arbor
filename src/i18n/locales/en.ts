@@ -3228,7 +3228,7 @@ export const en = {
   'setup.projects.review.confirm.other': 'Remove these {count} worktrees on {machine}?',
   'setup.projects.review.remove': 'Remove',
   'setup.projects.review.working': 'Removing worktrees on {machine}…',
-  'setup.projects.review.failed': 'Arbor couldn’t remove them: {error}',
+  'setup.projects.review.failed': 'Arbor couldn’t remove them. {error}',
   'setup.projects.review.nothing': 'None of these can go any more. Scan again to see why.',
   'setup.projects.review.waitBusy': 'Another machine’s worktrees are still being removed.',
   'setup.projects.review.waitScan': 'Arbor is looking at {machine}’s projects again.',

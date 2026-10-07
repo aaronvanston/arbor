@@ -2284,7 +2284,8 @@ const removeWorktreesMock = (machine: string, removals: WorktreeRemoval[]) => {
   if (!removals.length) throw "There's nothing to remove";
   if (projectsScenario === 'fail' && machine === 'cedar-02') throw 'ssh: connect to host cedar-02 port 22: Operation timed out';
   return later(1_500, () => {
-    if (params.get('worktrees') === 'fail') throw 'Could not start ssh: No such file or directory';
+    // This Mac's are removed without SSH, so only another machine's failure can be about reaching it.
+    if (params.get('worktrees') === 'fail') throw machine === 'cam-mbp' ? 'git worktree remove failed: Permission denied (os error 13)' : 'Could not start ssh: No such file or directory';
     const results = removals.map((removal, index): RemovalResult => {
       const repo = entry.repos.find((candidate) => candidate.path === removal.repo);
       const worktree = repo?.worktrees.find((candidate) => candidate.path === removal.path);

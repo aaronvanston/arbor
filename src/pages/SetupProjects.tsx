@@ -17,6 +17,7 @@ import { Toggle, ToggleGroup } from '../components/ui/toggle-group';
 import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { useI18n } from '../i18n';
+import { plainError } from '../services/plainError';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import type { FileView } from '../services/fileView';
@@ -706,7 +707,7 @@ function RemoveDialog({ open, chosen, byMachine, onClose, onDone }: {
       setRuns((current) => ({ ...current, [machine]: { state: 'done', results } }));
       onDone(machine);
     } catch (error) {
-      setRuns((current) => ({ ...current, [machine]: { state: 'error', error: String(error) } }));
+      setRuns((current) => ({ ...current, [machine]: { state: 'error', error: plainError(error, t) } }));
     }
   };
 
