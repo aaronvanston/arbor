@@ -190,9 +190,12 @@ Every transfer starts on this Mac over the SSH Arbor already uses, so the other 
 
 ## Where it shows
 
-- **Sync › Projects** (a fifth leaf):
+- **Sync › Projects**:
   - a grid of projects by machines, one cell per state above;
   - a page per project with the wanted path on each machine, other checkouts, skills, instructions and the fixes;
   - an Archived list.
 - **A machine's page** gets a Projects card and its machine file's role and code root.
-- **Sync › Overview** counts project drift in each machine's "behind".
+- **Sync's standing** (`setup_standing.rs`) counts a project as behind on a machine when its cell needs anything but a
+  scan. Each cell's needs are worked out in Rust (`project_places::cell_needs`), so Overview, the sidebar badge, `arbor
+  sync` and Sync › Projects' counts agree. Overview lists such a project with the machine and opens Projects for it;
+  Bring in line never fixes projects.

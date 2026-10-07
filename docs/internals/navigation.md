@@ -23,8 +23,9 @@ An old view id can still turn up in links, the palette's saved picks and the vie
 land somewhere. `movedUsageView` sends Usage's old Capacity, Analysis, Failures and Claude Code (`telemetry`) to
 Accounts › Value, Overview, Requests with Failed on, and the Library's Cost. `movedSetupView` sends Sync's old Agents and
 Toolchain to Software; Skills, MCP & plugins and Hooks to their Library kind per home (`libraryView(kind, 'machines')`);
-Cost and Context to the Library's Cost; Arbor's changes (`history`) to the Repo's History (`lens: 'changes'`); Projects to
-`checkoutsView()` (Sessions with `lens: 'checkouts'`); and Checklist to Machines. `savedUsageView` and `savedSetupView`
+Cost and Context to the Library's Cost; Arbor's changes (`history`) to the Repo's History (`lens: 'changes'`); and
+Checklist to Machines. Projects is a Sync view again under its own id; Sessions' Checkouts (`checkoutsView()`) is a
+separate view of the checkouts sessions ran in. `savedUsageView` and `savedSetupView`
 read a page's saved last view through them. Overview kept Checks' id, `overview`. `tests/movedViews.test.ts` covers all of it; extend these maps when you move a view.
 
 ## Machines and pools
@@ -36,10 +37,16 @@ machine's things go on its page; comparing machines is Sync's.
 
 ## Sync
 
-Sync has four views. Overview (`pages/SetupOverview.tsx` atop the checks and the machine comparison) says which
-machines are in step with the repo and brings one or all in line, confirmed first, with `bringInLine`: each Library row
-behind there, files and hook scripts first, then plugins and MCP servers, the machine's hooks, and skills. The Library
-and Overview read the same rows through `hooks/useLibrary.ts`, so they count the same things behind. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
+Sync has five views: Overview, Library, Projects, Software and Repo. Overview (`pages/SetupOverview.tsx` atop the
+checks and the machine comparison) says which machines are in step with the repo, what each is behind on, and brings one
+or all in line, confirmed first, with `bringInLine`: each Library row behind there, files and hook scripts first, then
+plugins and MCP servers, the machine's hooks, and skills. A project behind opens Projects, which has its own fixes.
+
+Whether a machine is in step is decided in one place, `setup_standing.rs`, from the machines' last scans and the repo's
+HEAD, over every kind and the projects. Overview, the Repo strip, the Library's behind, the sidebar badge (machines
+behind or with problems, each once) and `arbor sync` read it through `services/syncStanding.ts`, one read shared by the
+window. Don't count "behind" anywhere else, even for one kind: that's how they disagreed before.
+`setupSync.nothingToApply` only says whether the file review has changes. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
 plugin, MCP server, skill, hook and instruction file the setup repo gives the agents, one row each, with the repo's word
 for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
 brings each answering machine in line straight away, with Undo. Each row opens its own page (`libraryItemView(kind, key)`, `pages/SetupLibraryItem.tsx`): every machine with its

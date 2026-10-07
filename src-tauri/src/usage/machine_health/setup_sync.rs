@@ -23,8 +23,10 @@
 //! setup_repo_skills). MCP servers are kept in .agents/mcp-servers.json and set
 //! up through each agent (see setup_mcp). The scripts hooks run sync from
 //! .agents/hooks into each machine's ~/.agents/hooks, made runnable, and the
-//! hooks themselves are kept in .agents/hooks.json (see setup_hooks). Settings
-//! and plugins aren't synced.
+//! hooks themselves are kept in .agents/hooks.json (see setup_hooks). Plugins
+//! are listed in .agents/plugins.json (see setup_wanted) and changed through
+//! Claude Code's and Codex's own commands, never written here. Settings aren't
+//! synced. Whether a machine is in step over all of it is `setup_standing`'s to say.
 
 use super::shell::shell_quote;
 use ts_rs::TS;
