@@ -46,7 +46,15 @@ Whether a machine is in step is decided in one place, `setup_standing.rs`, from 
 HEAD, over every kind and the projects. Overview, the Repo strip, the Library's behind, the sidebar badge (machines
 behind or with problems, each once) and `arbor sync` read it through `services/syncStanding.ts`, one read shared by the
 window. Don't count "behind" anywhere else, even for one kind: that's how they disagreed before.
-`setupSync.nothingToApply` only says whether the file review has changes. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
+`setupSync.nothingToApply` only says whether the file review has changes.
+
+Each difference also says who moved since the two sides last matched, from a base per machine and item kept on this Mac
+(`setup-bases.json`, written by `get_sync_standing` whenever it finds an item in step, so a rescan after any apply
+records one). Without it an edit made on a machine looked like the repo moving on and was overwritten by default. An
+edit made there (`editedHere`, `bothChanged`) is never brought in line, ticked in the review or applied by `arbor sync
+apply`; the item page's Take into repo, Keep this machine's or Use the repo's (`services/editedHere.ts`) settles it.
+The bases compare fingerprints like for like, each side with itself, so a `cksum` machine or a salted MCP definition
+never has to match the repo's form; a new salt drops the salted bases rather than make them all look edited. Library (`pages/SetupLibrary.tsx` over `services/library.ts`) lists every
 plugin, MCP server, skill, hook and instruction file the setup repo gives the agents, one row each, with the repo's word
 for every machine and the machines behind it; a row's switch (`services/libraryToggle.ts`) commits the new word and
 brings each answering machine in line straight away, with Undo. Undo puts each machine back as it was rather than
