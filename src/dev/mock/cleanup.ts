@@ -210,6 +210,11 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
         if (group === 'leftover') stored.scan.leftovers = stored.scan.leftovers.filter((entry) => entry.path !== path);
         removed.push(path);
       });
+      // Whatever was inside a folder moved aside went with it, as Rust drops it from the scan.
+      const inside = (path: string) => removed.some((folder) => path.startsWith(`${folder}/`));
+      stored.scan.homes = stored.scan.homes.filter((entry) => !inside(entry.path));
+      stored.scan.caches = stored.scan.caches.filter((entry) => !inside(entry.path));
+      stored.scan.leftovers = stored.scan.leftovers.filter((entry) => !inside(entry.path));
       recordCleanupMock(machine, id, removed);
       stored.stamps.set(id, { paths: removed, deleted: [] });
       stored.scan = { ...stored.scan };
