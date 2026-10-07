@@ -5,6 +5,7 @@ import { automationsView, automationView, type AppView } from '../../navigation'
 import { filterAutomations, RUN_STATUS_LABEL, scanAutomations, scheduleWords, SOURCE_LABEL, useAutomations } from '../../services/automations';
 import { errorWords, plainError } from '../../services/plainError';
 import { HarnessMark } from '../identity/Harness';
+import { PoolName } from '../PoolName';
 import { SettingsBlock, SettingsSection } from '../layout/settings';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -16,7 +17,9 @@ export function MachineAutomations({ machine, small, onNavigate }: { machine: st
   const { list } = useAutomations();
   if (!list) return null;
   const scan = list.scans.find((entry) => entry.machine === machine);
-  const here = filterAutomations(list.automations.filter((item) => item.target.kind === 'machine'), { search: '', source: 'all', machine });
+  // The same ones All automations lists for the machine: those placed on it, and those a pool or Arbor places when due,
+  // which can land here.
+  const here = filterAutomations(list.automations, { search: '', source: 'all', machine });
   return (
     <SettingsSection
       title={t('automations.machine.title')}
@@ -47,7 +50,11 @@ export function MachineAutomations({ machine, small, onNavigate }: { machine: st
                   {item.source !== 'arbor' ? <Badge variant="outline" size="sm" className="shrink-0">{t(SOURCE_LABEL(item.source))}</Badge> : null}
                   {!item.enabled ? <Badge variant="outline" size="sm" className="shrink-0">{t('automations.status.paused')}</Badge> : null}
                 </span>
-                <span className="truncate text-xs text-muted-foreground">{scheduleWords(item.schedule, t)}</span>
+                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="truncate">{scheduleWords(item.schedule, t)}</span>
+                  {item.target.kind === 'pool' ? <><span aria-hidden="true">·</span><PoolName id={item.target.id} /></> : null}
+                  {item.target.kind === 'best' ? <><span aria-hidden="true">·</span><span className="whitespace-nowrap">{t('automations.target.best')}</span></> : null}
+                </span>
               </span>
               <span className="shrink-0 text-right text-xs tabular-nums">
                 <span className="block text-foreground">{item.nextRunAtMs ? formatWhen(item.nextRunAtMs) : '—'}</span>

@@ -6510,7 +6510,7 @@ export const en = {
   'automations.effort.medium': 'Medium',
   'automations.effort.high': 'High',
   'automations.machine.title': 'Automations',
-  'automations.machine.description': 'What runs on a schedule on this machine: Arbor’s own and the ones other apps keep here.',
+  'automations.machine.description': 'What runs on a schedule on this machine: Arbor’s own, the ones other apps keep here, and the ones a pool or Arbor places when they’re due.',
   'automations.machine.count.one': '{count} automation',
   'automations.machine.count.other': '{count} automations',
   'automations.machine.all': 'All automations',
