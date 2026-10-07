@@ -249,7 +249,7 @@ const matching = (automations: readonly AutomationSummary[], filter: AutomationF
   const words = filter.search.trim().toLowerCase();
   return automations
     .filter((item) => filter.source === 'all' || automationRunner(item) === filter.source)
-    .filter((item) => !filter.model || filter.model === 'all' || item.model === filter.model)
+    .filter((item) => !filter.model || filter.model === 'all' || modelChoice(item) === filter.model)
     .filter((item) => !filter.machine || item.machine === filter.machine || item.target.kind !== 'machine')
     .filter((item) => !words || [item.name, item.project ?? '', item.machine ?? '', item.model ?? ''].some((text) => text.toLowerCase().includes(words)));
 };
@@ -380,9 +380,19 @@ export function stateCounts(automations: readonly AutomationSummary[], filter: A
   return { all: shown.length, on: count('on'), paused: count('paused'), failing: count('failing') };
 }
 
-/** The models automations run with, for the model filter. */
+const AGENT_CHOICE = 'agent:';
+
+// What the Model column shows: the model, or the agent while no run has said which model it used.
+const modelChoice = (item: AutomationSummary): string | null => item.model ?? (item.agent ? `${AGENT_CHOICE}${item.agent}` : null);
+
+/** The agent a model filter choice stands for, when it's an agent shown in place of a model. */
+export const agentOfModelChoice = (choice: string): AutomationSummary['agent'] =>
+  choice.startsWith(AGENT_CHOICE) ? (choice.slice(AGENT_CHOICE.length) as AutomationSummary['agent']) : null;
+
+/** What the Model column shows, for the model filter: each model, then each agent standing in for one. */
 export const automationModels = (automations: readonly AutomationSummary[]): string[] =>
-  [...new Set(automations.flatMap((item) => (item.model ? [item.model] : [])))].sort((left, right) => left.localeCompare(right));
+  [...new Set(automations.flatMap((item) => { const choice = modelChoice(item); return choice ? [choice] : []; }))]
+    .sort((left, right) => Number(left.startsWith(AGENT_CHOICE)) - Number(right.startsWith(AGENT_CHOICE)) || left.localeCompare(right));
 
 /** The machines automations run on, for the breadcrumb's picker. */
 export const automationMachines = (automations: readonly AutomationSummary[]) =>

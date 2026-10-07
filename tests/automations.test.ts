@@ -14,6 +14,7 @@ import {
   copyKeepsSchedule,
   failedRunAlerts,
   automationModels,
+  agentOfModelChoice,
   backgroundRunnerCheck,
   canInstallRunner,
   runnerPrunesHistory,
@@ -114,16 +115,21 @@ describe('the list', () => {
       summary({ id: 'arbor:off', name: 'B', enabled: false, agent: 'codex', model: 'gpt-6-sol', lastRun: { status: 'failed', atMs: 1 } }),
       summary({ id: 'arbor:bad', name: 'C', agent: 'codex', model: 'gpt-6-sol', lastRun: { status: 'unreachable', atMs: 1 } }),
       summary({ id: 'orca:x', source: 'orca', name: 'D', agent: null }),
+      summary({ id: 'arbor:new', name: 'E', agent: 'codex', model: null }),
     ];
     const ids = (state: 'all' | 'on' | 'paused' | 'failing', model = 'all') =>
       filterAutomations(mixed, { search: '', source: 'all', machine: '', state, model }).map((item) => item.id);
-    expect(ids('on')).toEqual(['arbor:on', 'arbor:bad', 'orca:x']);
+    expect(ids('on')).toEqual(['arbor:on', 'arbor:bad', 'arbor:new', 'orca:x']);
     expect(ids('paused')).toEqual(['arbor:off']);
     expect(ids('failing')).toEqual(['arbor:bad']);
     expect(ids('all', 'gpt-6-sol')).toEqual(['arbor:off', 'arbor:bad']);
-    expect(automationModels(mixed)).toEqual(['claude-opus-5-5', 'gpt-6-sol']);
+    // One no run has named a model for yet is picked by the agent the column shows instead.
+    expect(automationModels(mixed)).toEqual(['claude-opus-5-5', 'gpt-6-sol', 'agent:codex']);
+    expect(ids('all', 'agent:codex')).toEqual(['arbor:new']);
+    expect(agentOfModelChoice('agent:codex')).toBe('codex');
+    expect(agentOfModelChoice('gpt-6-sol')).toBeNull();
     // A paused one that failed counts as paused, not failing.
-    expect(stateCounts(mixed, { search: '', source: 'all', machine: '' })).toEqual({ all: 4, on: 3, paused: 1, failing: 1 });
+    expect(stateCounts(mixed, { search: '', source: 'all', machine: '' })).toEqual({ all: 5, on: 4, paused: 1, failing: 1 });
     expect(stateCounts(mixed, { search: 'gpt', source: 'all', machine: '' })).toEqual({ all: 2, on: 1, paused: 1, failing: 1 });
   });
 

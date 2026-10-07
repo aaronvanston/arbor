@@ -46,6 +46,7 @@ import {
   automationMachines,
   automationsHold,
   automationModels,
+  agentOfModelChoice,
   filterAutomations,
   loadAutomations,
   scanAutomations,
@@ -124,7 +125,11 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   useShortcut('page.refresh', refresh, !loading);
 
   const sourceLabel = (value: AutomationSource | 'all') => (value === 'all' ? t('automations.source.all') : <AutomationAppName source={value} />);
-  const modelLabel = (value: string) => (value === 'all' ? t('automations.model.all') : <ModelName model={value} />);
+  const modelLabel = (value: string) => {
+    if (value === 'all') return t('automations.model.all');
+    const agent = agentOfModelChoice(value);
+    return agent ? <HarnessName harness={agent} /> : <ModelName model={value} />;
+  };
 
   return (
     <Page width="main">
