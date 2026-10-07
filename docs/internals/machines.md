@@ -10,6 +10,20 @@ Every script on a machine goes through `usage/machine_health/shell.rs`: `find_ma
 big to hold). It caps how many run at once and notes each run in Diagnostics, so never build SSH commands or take its
 slots anywhere else.
 
+## Health readings
+
+Machine health comes from Grove (`usage/machine_health/grove.rs`), which Arbor carries pinned in `grove-version.txt`
+and runs on this Mac with its own `GROVE_HOME` in Arbor's data folder. Arbor's machine list is the source of truth:
+each hosts reload reconciles Grove's registry to it under slug names (`normalize_machine_name`), and the names people
+see stay in Arbor. A machine that keeps a probe in Grove's registry is never removed from it, so a removal that's
+undone keeps its probe. A machine with a probe is followed by a long-lived `grove stream <slug> --jsonl`, up to
+`MAX_STREAMS`, an allowance of their own: they never take a script slot. Every other machine gets one `grove sample` a
+round, which does hold a slot (`shell::run_in_slot`) and lands in Diagnostics. Grove's SSH runs ride Arbor's control
+sockets through `GROVE_SSH_COMMAND`. The round itself, pings, Tailscale paths, discovery and agent versions stay in
+Arbor; a machine read by `grove sample` takes its round trip and address from Grove's ping instead. When Grove is
+missing or answers as another version, the sampler falls back to its own script (`SAMPLE_SCRIPT`) for one release,
+then to a reachability check (`LEGACY_SAMPLER`).
+
 ## Changing a file
 
 Every change to a file on a machine goes through `usage/machine_health/guarded_writes.rs` (`edit_start`, `edit_call`

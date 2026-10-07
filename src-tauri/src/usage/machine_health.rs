@@ -1,11 +1,13 @@
 //! Machine health sampling for the fleet.
 //!
-//! One background loop samples every configured host (local shell or SSH),
-//! derives a 0–100 health score from CPU, memory, swap, disk, load and
-//! temperature pressure, and keeps a bounded in-memory ring of points per
-//! machine. Nothing is persisted: the ring is capped at one hour and the
-//! process never holds more than `MAX_POINTS` samples per machine, so memory
-//! stays flat no matter how long the app runs.
+//! One background loop reads every configured host each round through Grove
+//! (`grove`): the newest reading of a machine whose probe it follows, or one
+//! `grove sample` of the rest. Grove scores each reading 0–100 from CPU,
+//! memory, swap, disk, load and temperature pressure, and keeps the long
+//! history. Arbor keeps a bounded in-memory ring of points per machine: one
+//! hour, never more than `MAX_POINTS` samples, so memory stays flat no matter
+//! how long the app runs. Without a working Grove the loop samples with its own
+//! script (`SAMPLE_SCRIPT`), kept for one release as the fallback.
 //!
 //! Cadence is adaptive: while the Machines page is being viewed the loop
 //! samples every `ACTIVE_INTERVAL`; otherwise it drops to `IDLE_INTERVAL` so
@@ -91,7 +93,7 @@ use self::shell::{
     configure_helper_command, failure_detail, find_machine, not_checked, run_checked, run_on_machine, runs_scripts, this_machine_name,
     Machine, MachineCommand,
 };
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::IpAddr;
 use std::process::Stdio;
 use std::time::Instant;
@@ -113,6 +115,12 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 /// `TAILSCALE_RETRIES` in turn, then only this often.
 const TAILSCALE_READ_TTL: Duration = Duration::from_secs(60);
 const TAILSCALE_RETRIES: [Duration; 2] = [Duration::from_secs(10), Duration::from_secs(30)];
+
+/// What Grove knows of a machine that rarely changes (model, chip, OS version) is asked again this often.
+const GROVE_FACTS_REFRESH_MS: i64 = 10 * 60 * 1000;
+/// Without a working Grove, machines are sampled with Arbor's own script for one more release; after that they're
+/// only checked for being reachable.
+const LEGACY_SAMPLER: bool = true;
 
 pub(crate) const MACHINE_HEALTH_UPDATED_EVENT: &str = "machine-health-updated";
 
@@ -653,6 +661,8 @@ struct MachineSeries {
     facts: Option<MachineFacts>,
     points: VecDeque<HealthPoint>,
     counters: Option<Counters>,
+    /// Grove's record of the machine (model, chip, OS version, address) and when it was read.
+    grove_facts: Option<(i64, Value)>,
     reason: Option<HealthReason>,
     error: Option<String>,
     last_ok_at: Option<i64>,
@@ -676,6 +686,7 @@ impl MachineSeries {
             facts: None,
             points: VecDeque::new(),
             counters: None,
+            grove_facts: None,
             reason: None,
             error: None,
             last_ok_at: None,
@@ -731,10 +742,34 @@ struct Inner {
     /// Sessions working now on each machine (normalized name), as the window's live board last
     /// counted them; None until it has. Pools count agents by it, so they match the sidebar and Home.
     working_sessions: Option<BTreeMap<String, u32>>,
+    /// What the last reconcile with Grove's registry found.
+    grove: GroveView,
+}
+
+/// Grove's registry as the sampler last read it.
+#[derive(Default)]
+struct GroveView {
+    /// The name Grove knows each machine by, keyed by Arbor's name.
+    slugs: BTreeMap<String, String>,
+    /// Each probe's folder on its machine, by slug.
+    probes: BTreeMap<String, String>,
+    /// The slugs whose probes are being followed.
+    streaming: BTreeSet<String>,
+    /// Why Grove can't be used right now; machines are then sampled without it.
+    unavailable: Option<String>,
+}
+
+/// Grove as the sampler runs it.
+#[derive(Default)]
+struct GroveRuntime {
+    /// Grove ready to run, or why it isn't, worked out once.
+    ready: tokio::sync::OnceCell<Result<grove::Grove, String>>,
+    streams: grove::Streams,
 }
 
 pub(crate) struct MachineHealthState {
     inner: Mutex<Inner>,
+    grove: GroveRuntime,
     notify: Notify,
     /// Held while a read runs, so the sampler and the Add machine dialog never read at once.
     tailscale: tokio::sync::Mutex<TailscaleCache<fn() -> Instant, TailscaleStatus>>,
@@ -759,7 +794,9 @@ impl Default for MachineHealthState {
                 setup_repo: None,
                 toolchain: BTreeMap::new(),
                 working_sessions: None,
+                grove: GroveView::default(),
             }),
+            grove: GroveRuntime::default(),
             notify: Notify::new(),
             tailscale: tokio::sync::Mutex::new(TailscaleCache::new(Instant::now as fn() -> Instant)),
         }
@@ -787,7 +824,33 @@ impl MachineHealthState {
         if let Some(token) = self.lock().token.take() {
             token.cancel();
         }
+        self.grove.streams.stop_all();
         self.notify.notify_one();
+    }
+
+    /// Grove ready to run, unpacked and checked the first time it's asked for; None when it can't be, with the reason
+    /// kept in the view.
+    async fn grove(&self) -> Option<&grove::Grove> {
+        let ready = self
+            .grove
+            .ready
+            .get_or_init(|| async {
+                let prepared = tokio::task::spawn_blocking(|| grove::prepare(grove::bundle(), &grove::home()?))
+                    .await
+                    .unwrap_or_else(|error| Err(error.to_string()));
+                if let Err(reason) = &prepared {
+                    eprintln!("Machine health is sampled without Grove: {reason}");
+                }
+                prepared
+            })
+            .await;
+        match ready {
+            Ok(grove) => Some(grove),
+            Err(reason) => {
+                self.lock().grove.unavailable = Some(reason.clone());
+                None
+            }
+        }
     }
 
     fn is_active(&self) -> bool {
@@ -1147,6 +1210,7 @@ fn apply_hosts(state: &MachineHealthState, hosts: Vec<MachineHost>) {
                     // A different target is a different history.
                     existing.points.clear();
                     existing.counters = None;
+                    existing.grove_facts = None;
                     existing.facts = None;
                     existing.error = None;
                     existing.last_ok_at = None;
@@ -1170,11 +1234,46 @@ fn apply_hosts(state: &MachineHealthState, hosts: Vec<MachineHost>) {
     inner.series = retained;
 }
 
+/// What one round read of a machine.
+enum Sampled {
+    /// Arbor's own script's output, without Grove.
+    Script(RawSample),
+    /// A Grove reading, with Grove's record of the machine when it was read again this round.
+    Grove { reading: Value, facts: Option<Value> },
+    /// Only that the machine answered, without Grove or Arbor's script.
+    Reached,
+    /// A probe's stream that hasn't sent anything yet: the machine stays pending.
+    Waiting,
+}
+
+/// How a machine is read this round.
+#[derive(Clone, Debug, PartialEq)]
+enum Plan {
+    /// The newest reading from its probe's stream, by its slug.
+    Stream(String),
+    /// One `grove sample`, by its slug.
+    Once(String),
+    /// Arbor's own script, without Grove.
+    Script,
+    /// A reachability check, without Grove or Arbor's script.
+    Reach,
+}
+
+/// Grove when it's working and knows the machine; otherwise the fallback.
+fn plan_for(view: &GroveView, machine: &str) -> Plan {
+    match view.slugs.get(machine).filter(|_| view.unavailable.is_none()) {
+        Some(slug) if view.streaming.contains(slug) => Plan::Stream(slug.clone()),
+        Some(slug) => Plan::Once(slug.clone()),
+        None if LEGACY_SAMPLER => Plan::Script,
+        None => Plan::Reach,
+    }
+}
+
 fn record_result(
     state: &MachineHealthState,
     machine: &str,
     at_ms: i64,
-    result: Result<RawSample, String>,
+    result: Result<Sampled, String>,
     latency_ms: Option<f32>,
     path: Option<NetworkPath>,
 ) {
@@ -1182,17 +1281,36 @@ fn record_result(
     let Some(series) = inner.series.get_mut(machine) else {
         return;
     };
+    if matches!(result, Ok(Sampled::Waiting)) {
+        return;
+    }
     series.last_attempt_at = Some(at_ms);
     series.path = path;
-    match result.and_then(|sample| derive_point(&sample, series.counters, at_ms)) {
-        Ok((facts, mut point, counters, reason)) => {
+    let derived = match result {
+        Ok(Sampled::Script(sample)) => derive_point(&sample, series.counters, at_ms).map(|(facts, point, counters, reason)| Some((facts, point, Some(counters), reason))),
+        Ok(Sampled::Grove { reading, facts }) => {
+            if let Some(facts) = facts {
+                series.grove_facts = Some((at_ms, facts));
+            }
+            grove::point_from(&reading, series.grove_facts.as_ref().map(|(_, facts)| facts), at_ms).map(|(facts, point, reason)| Some((facts, point, None, reason)))
+        }
+        Ok(Sampled::Reached | Sampled::Waiting) => Ok(None),
+        Err(error) => Err(error),
+    };
+    match derived {
+        Ok(Some((facts, mut point, counters, reason))) => {
             point.latency_ms = latency_ms;
             series.facts = Some(facts);
-            series.counters = Some(counters);
+            series.counters = counters;
             series.reason = reason;
             series.error = None;
             series.last_ok_at = Some(at_ms);
             series.push(point);
+        }
+        Ok(None) => {
+            series.error = None;
+            series.last_ok_at = Some(at_ms);
+            series.trim(at_ms);
         }
         Err(error) => {
             series.error = Some(error);
@@ -1200,6 +1318,87 @@ fn record_result(
             series.trim(at_ms);
         }
     }
+}
+
+/// Brings Grove's registry in line with the machines the sampler reads, and follows the probes of those that have one.
+/// Without Grove the view says why, and every machine falls back.
+async fn sync_grove(state: &MachineHealthState, token: &CancellationToken) {
+    let Some(grove) = state.grove().await else {
+        state.grove.streams.stop_all();
+        return;
+    };
+    let mut wanted: Vec<(String, grove::Entry)> = Vec::new();
+    {
+        let inner = state.lock();
+        let mut taken = BTreeSet::new();
+        for series in inner.series.values().filter(|series| runs_scripts(series)) {
+            // Two names Arbor treats as one machine get one entry: the first, by name.
+            let Some(slug) = grove::slug(&series.host.machine).filter(|slug| taken.insert(slug.clone())) else {
+                continue;
+            };
+            let endpoint = if series.local { "localhost".to_string() } else { series.host.endpoint.trim().to_string() };
+            wanted.push((series.host.machine.clone(), grove::Entry { name: slug, endpoint, port: series.host.port }));
+        }
+    }
+    let entries: Vec<grove::Entry> = wanted.iter().map(|(_, entry)| entry.clone()).collect();
+    match grove::reconcile(grove, &entries).await {
+        Ok(registered) => {
+            let probes: BTreeMap<String, String> = registered.into_iter().filter_map(|registered| Some((registered.entry.name, registered.probe?))).collect();
+            let follow: Vec<(String, String)> =
+                wanted.iter().filter(|(_, entry)| probes.contains_key(&entry.name)).map(|(machine, entry)| (entry.name.clone(), machine.clone())).collect();
+            let streaming = state.grove.streams.sync(grove, &follow, token);
+            let mut inner = state.lock();
+            inner.grove = GroveView {
+                slugs: wanted.into_iter().map(|(machine, entry)| (machine, entry.name)).collect(),
+                probes,
+                streaming,
+                unavailable: None,
+            };
+        }
+        Err(error) => {
+            eprintln!("Machine health is sampled without Grove this round: {error}");
+            state.grove.streams.stop_all();
+            state.lock().grove = GroveView { unavailable: Some(error), ..GroveView::default() };
+        }
+    }
+}
+
+/// One machine's reading this round, by its plan, and the pings that go with it. A machine read with `grove sample`
+/// isn't pinged here: Grove pings it, and its reading carries the round trip and the address for the Tailscale path.
+async fn read_machine(state: &MachineHealthState, machine: Machine, plan: Plan, ping_target: Option<String>, facts_due: bool, now_ms: i64) -> (Result<Sampled, String>, PingReading) {
+    let ping = async {
+        match &ping_target {
+            Some(target) if !matches!(plan, Plan::Once(_)) => ping_host(target).await,
+            _ => PingReading::default(),
+        }
+    };
+    let read = async {
+        let grove = match &plan {
+            Plan::Stream(_) | Plan::Once(_) => state.grove().await,
+            Plan::Script | Plan::Reach => None,
+        };
+        let reading = match (&plan, grove) {
+            (Plan::Script, _) => return sample_host(&machine).await.map(Sampled::Script),
+            (Plan::Reach, _) => return run_checked(&machine, MachineOp::HealthCheck, "true\n", SAMPLE_TIMEOUT).await.map(|_| Sampled::Reached),
+            (_, None) => return Err("Grove stopped answering".into()),
+            (Plan::Stream(slug), Some(_)) => match state.grove.streams.read(slug, now_ms) {
+                Some(grove::StreamRead::Fresh(reading)) => reading,
+                Some(grove::StreamRead::Waiting) | None => return Ok(Sampled::Waiting),
+                Some(grove::StreamRead::Failed(error)) => return Err(error),
+            },
+            (Plan::Once(slug), Some(grove)) => grove::sample_once(grove, machine.name(), slug).await?,
+        };
+        let facts = match (&plan, grove) {
+            (Plan::Stream(slug) | Plan::Once(slug), Some(grove)) if facts_due => grove::machine_facts(grove, slug).await.ok(),
+            _ => None,
+        };
+        Ok(Sampled::Grove { reading, facts })
+    };
+    let (sampled, mut ping) = tokio::join!(read, ping);
+    if let (Plan::Once(_), Ok(Sampled::Grove { reading, .. })) = (&plan, &sampled) {
+        ping = PingReading { address: grove::ping_address(reading), latency_ms: reading.get("latency_ms").and_then(Value::as_f64).map(|ms| ms as f32) };
+    }
+    (sampled, ping)
 }
 
 /// Compare current readings without treating a new sample timestamp as a
@@ -1255,26 +1454,28 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
                 }
                 Err(error) => eprintln!("Failed to load machine hosts: {error}"),
             }
+            sync_grove(&state, &token).await;
             hosts_loaded_at = Some(Instant::now());
             state.lock().reload_hosts = false;
         }
-        let targets: Vec<(Machine, Option<String>)> = state
-            .lock()
-            .series
-            .values()
-            .filter(|series| series.host.enabled && !series.host.endpoint.trim().is_empty())
-            .map(|series| (Machine::listed(series), series.ping_target.clone()))
-            .collect();
         let at_ms = Local::now().timestamp_millis();
-        let results = futures_util::future::join_all(targets.into_iter().map(|(machine, ping_target)| async move {
-            let ping = async {
-                match &ping_target {
-                    Some(target) => ping_host(target).await,
-                    None => PingReading::default(),
-                }
-            };
-            let (sample, ping) = tokio::join!(sample_host(&machine), ping);
-            (machine.name().to_string(), sample, ping)
+        let targets: Vec<(Machine, Plan, Option<String>, bool)> = {
+            let inner = state.lock();
+            inner
+                .series
+                .values()
+                .filter(|series| series.host.enabled && !series.host.endpoint.trim().is_empty())
+                .map(|series| {
+                    let facts_due = series.grove_facts.as_ref().is_none_or(|(at, _)| at_ms - at >= GROVE_FACTS_REFRESH_MS);
+                    (Machine::listed(series), plan_for(&inner.grove, &series.host.machine), series.ping_target.clone(), facts_due)
+                })
+                .collect()
+        };
+        let state_ref: &MachineHealthState = &state;
+        let results = futures_util::future::join_all(targets.into_iter().map(|(machine, plan, ping_target, facts_due)| async move {
+            let name = machine.name().to_string();
+            let (sample, ping) = read_machine(state_ref, machine, plan, ping_target, facts_due, at_ms).await;
+            (name, sample, ping)
         }))
         .await;
         if token.is_cancelled() {
@@ -1796,6 +1997,47 @@ mod tests {
     }
 
     #[test]
+    fn grove_reads_machines_it_knows_and_the_rest_fall_back() {
+        let mut view = GroveView::default();
+        view.slugs.insert("Cedar 01".into(), "cedar01".into());
+        view.slugs.insert("cam-mbp".into(), "cammbp".into());
+        view.streaming.insert("cedar01".into());
+        assert_eq!(plan_for(&view, "Cedar 01"), Plan::Stream("cedar01".into()));
+        assert_eq!(plan_for(&view, "cam-mbp"), Plan::Once("cammbp".into()));
+        assert_eq!(plan_for(&view, "--"), if LEGACY_SAMPLER { Plan::Script } else { Plan::Reach });
+        view.unavailable = Some("Grove answered as 0.1.1 where this build of Arbor expects 0.1.2".into());
+        assert_eq!(plan_for(&view, "Cedar 01"), if LEGACY_SAMPLER { Plan::Script } else { Plan::Reach });
+    }
+
+    #[test]
+    fn grove_readings_fill_the_ring_and_a_waiting_stream_leaves_the_machine_pending() {
+        let state = MachineHealthState::default();
+        let host = |machine: &str| MachineHost { machine: machine.into(), endpoint: machine.into(), port: 22, enabled: true, source: String::new() };
+        apply_hosts(&state, vec![host("cedar-01"), host("cam-mini"), host("elm-02")]);
+        let reading = serde_json::json!({
+            "cores": 8, "cpu_pct": 12.5, "mem_total_kb": 1000, "mem_available_kb": 400, "mem_used_pct": 60.0,
+            "disk_total_kb": 2000, "disk_used_kb": 500, "disk_used_pct": 25.0, "load1": 0.5, "os": "Linux",
+            "health": { "score": 100, "status": "healthy", "reason": null },
+        });
+        let facts = serde_json::json!({ "chip": "Ampere Altra", "os_version": "Ubuntu 26.04 LTS" });
+        record_result(&state, "cedar-01", 1_000, Ok(Sampled::Grove { reading: reading.clone(), facts: Some(facts) }), Some(3.0), None);
+        record_result(&state, "cedar-01", 6_000, Ok(Sampled::Grove { reading, facts: None }), Some(4.0), None);
+        record_result(&state, "cam-mini", 6_000, Ok(Sampled::Waiting), None, None);
+        record_result(&state, "elm-02", 6_000, Err("No reading from its probe for 25s".into()), None, None);
+        let inner = state.lock();
+        let snapshot = build_snapshot(&inner, 6_000, None, HISTORY_MS, None);
+        let by_name = |name: &str| snapshot.machines.iter().find(|machine| machine.machine == name).unwrap();
+        let cedar = by_name("cedar-01");
+        assert_eq!((cedar.status, cedar.points.len(), cedar.last_ok_at), (HealthStatus::Healthy, 2, Some(6_000)));
+        assert_eq!(cedar.latest.map(|point| (point.cpu, point.mem_used_kb, point.latency_ms)), Some((Some(12.5), 600, Some(4.0))));
+        // Grove's record of the machine is kept between the rounds that read it again.
+        assert_eq!(cedar.facts.as_ref().map(|facts| facts.chip.as_str()), Some("Ampere Altra"));
+        assert_eq!(by_name("cam-mini").status, HealthStatus::Pending);
+        let elm = by_name("elm-02");
+        assert_eq!((elm.status, elm.error.as_deref()), (HealthStatus::Unreachable, Some("No reading from its probe for 25s")));
+    }
+
+    #[test]
     fn snapshot_reports_status_and_incremental_points() {
         let state = MachineHealthState::default();
         apply_hosts(
@@ -1808,8 +2050,8 @@ mod tests {
         );
         let sample = RawSample::parse(LINUX_SAMPLE).unwrap();
         let lan = NetworkPath { kind: "lan", relay: None };
-        record_result(&state, "up", 1_000, Ok(sample.clone()), Some(5.5), Some(lan.clone()));
-        record_result(&state, "up", 6_000, Ok(sample), Some(6.5), Some(lan.clone()));
+        record_result(&state, "up", 1_000, Ok(Sampled::Script(sample.clone())), Some(5.5), Some(lan.clone()));
+        record_result(&state, "up", 6_000, Ok(Sampled::Script(sample)), Some(6.5), Some(lan.clone()));
         let inner = state.lock();
         let snapshot = build_snapshot(&inner, 6_000, None, HISTORY_MS, None);
         assert_eq!(snapshot.machines.len(), 2);

@@ -121,6 +121,23 @@ fn control_socket_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
+/// The options that let one SSH connection to a machine carry every run there, for as long as runs keep coming and
+/// two minutes after. Grove's runs pass them too (`GROVE_SSH_COMMAND`), so its sessions ride the same connections.
+pub(super) fn ssh_sharing_options() -> Vec<String> {
+    #[cfg(unix)]
+    if let Some(dir) = control_socket_dir() {
+        return vec![
+            "-o".into(),
+            "ControlMaster=auto".into(),
+            "-o".into(),
+            format!("ControlPath={}", dir.join("cm-%C").display()),
+            "-o".into(),
+            "ControlPersist=120".into(),
+        ];
+    }
+    Vec::new()
+}
+
 /// A script's way onto one machine: SSH for a remote one, `sh` for this Mac. It carries the
 /// machine's name so Diagnostics can say where each run went. A bare shell command, as tests
 /// use, has none, and its runs aren't noted.
@@ -164,16 +181,7 @@ fn machine_command(host: &MachineHost, local: bool) -> MachineCommand {
             .arg("StrictHostKeyChecking=accept-new")
             .arg("-o")
             .arg("ServerAliveInterval=15");
-        #[cfg(unix)]
-        if let Some(dir) = control_socket_dir() {
-            command
-                .arg("-o")
-                .arg("ControlMaster=auto")
-                .arg("-o")
-                .arg(format!("ControlPath={}", dir.join("cm-%C").display()))
-                .arg("-o")
-                .arg("ControlPersist=120");
-        }
+        command.args(ssh_sharing_options());
         command.arg("--").arg(host.endpoint.trim()).arg("sh");
         command
     };
@@ -214,6 +222,23 @@ pub(in crate::usage) async fn run_on_machine(
     if let Some(machine) = machine {
         diagnostics::record(diagnostics::machine_call(&machine, op, started.elapsed(), finished.as_ref()));
     }
+    finished.unwrap_or_else(|| Err(timed_out(timeout)))
+}
+
+/// Runs a program on this Mac that reaches `machine` itself, as Grove's one-shot sample does, once one of SCRIPT_SLOTS
+/// is free, so it counts against the same cap as a script, and notes it in Diagnostics like one.
+pub(in crate::usage) async fn run_in_slot(
+    machine: &str,
+    op: MachineOp,
+    command: tokio::process::Command,
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
+    let _slot = SCRIPT_SLOTS.acquire().await.map_err(|error| error.to_string())?;
+    #[cfg(test)]
+    let _active = ScriptActiveGuard::new();
+    let started = Instant::now();
+    let finished = run_script_within(command, "", timeout).await;
+    diagnostics::record(diagnostics::machine_call(machine, op, started.elapsed(), finished.as_ref()));
     finished.unwrap_or_else(|| Err(timed_out(timeout)))
 }
 

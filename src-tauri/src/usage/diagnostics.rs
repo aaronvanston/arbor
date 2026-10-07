@@ -115,6 +115,7 @@ impl Outcome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MachineOp {
     HealthCheck,
+    HealthStream,
     AgentVersions,
     AgentUpdate,
     NeedsYouPoll,
@@ -171,6 +172,7 @@ impl MachineOp {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::HealthCheck => "health check",
+            Self::HealthStream => "health stream",
             Self::AgentVersions => "agent versions",
             Self::AgentUpdate => "agent update",
             Self::NeedsYouPoll => "needs-you check",
