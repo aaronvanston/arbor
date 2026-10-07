@@ -21,6 +21,11 @@ describe('English-only interface', () => {
     expect(british).toEqual([]);
   });
 
+  // money-8: one name for a provider's sign-in file, apart from search keywords that also match the old one.
+  it('calls sign-in files credential files', () => {
+    expect(Object.entries(en).filter(([key, message]) => !key.toLowerCase().includes('keywords') && /authentication files?\b/i.test(message))).toEqual([]);
+  });
+
   // money-4: a confirm's warning names its button the way the button reads.
   it('names the reset button as it reads', () => {
     expect(en['quota.confirm.warning']).toContain(en['quota.confirm.button']);

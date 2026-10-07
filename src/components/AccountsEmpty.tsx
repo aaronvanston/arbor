@@ -26,7 +26,7 @@ export function AccountsEmpty({ gap, icon, description, error, retrying = false,
   onNavigate?: (view: AppView) => void;
   /** Adds an account in place, on the page that does; elsewhere Add account opens Accounts › Sign-ins. */
   onAddAccount?: () => void;
-  /** Imports authentication files, where the page offers it. */
+  /** Imports credential files, where the page offers it. */
   onImport?: () => void;
 }) {
   const { t } = useI18n();
