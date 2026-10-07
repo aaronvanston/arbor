@@ -250,7 +250,9 @@ export function RequestsView({ events, filters, summary, failedOnly = false, pag
       label={failedOnly ? t('usage.failures.title') : t('usage.events.title')}
       toolbar={
         <>
-          <div className="min-w-0 flex-1">{filters}</div>
+          {/* The filters keep the room their controls need, so a long summary goes onto a line of its own instead of
+              squeezing the time range to a letter. */}
+          <div className="min-w-0 flex-[1_1_auto]">{filters}</div>
           {summary}
           <DataGridColumnsMenu grid={grid} presets={presets} defaultLayout={failedOnly ? defaultFailedRequestsLayout : defaultRequestsLayout} />
         </>
