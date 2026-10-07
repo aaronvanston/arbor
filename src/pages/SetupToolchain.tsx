@@ -513,12 +513,11 @@ function NodeVersions({ toolchain }: { toolchain: MachineToolchain }) {
     try {
       const [result] = await changeNodeVersions(machine, [change]);
       if (result && !result.ok) setError(t('setup.toolchain.node.failed', { error: result.message ?? '' }));
-      else {
-        toast({ kind: 'success', title: t(NODE_DONE[change.action], { version: change.version, machine }) });
-        if (change.action === 'install') setVersion('');
-      }
-      // What the version manager did is only known once the machine is looked at again.
+      else if (change.action === 'install') setVersion('');
+      // What the version manager did is only known once the machine is looked at again, so the toast waits for that
+      // look: said earlier, it would call a version the default while the list still marks the old one.
       await scanToolchain(machine).catch(() => undefined);
+      if (!result || result.ok) toast({ kind: 'success', title: t(NODE_DONE[change.action], { version: change.version, machine }) });
     } catch (failure) {
       setError(String(failure));
     } finally {
