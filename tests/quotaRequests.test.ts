@@ -82,6 +82,15 @@ describe('quota API compatibility', () => {
     expect(await loadQuota({ ...codexFile, disabled: true })).toMatchObject({ status: 'success', resetCredits: 2 });
   });
 
+  // money-3: the provider's status said plainly, its own words quoted, and what to do next.
+  it('says a provider’s refused limits read plainly, quoting what it said', async () => {
+    handler = () => ({ status_code: 503, body: JSON.stringify({ error: { message: 'upstream unavailable' } }) });
+    expect(await loadQuota({ name: 'claude.json', provider: 'claude', auth_index: 'c' })).toMatchObject({
+      status: 'error',
+      error: 'The server had a problem on its end. It said “upstream unavailable”. Try again in a moment.',
+    });
+  });
+
   it('Codex 详情返回坏数据时报告非致命错误而不是吞掉失败', async () => {
     handler = (request) => success(request.url.endsWith('/usage') ? codexUsage : { unexpected: true });
     const result = await loadQuota(codexFile);
@@ -192,7 +201,7 @@ describe('xAI quota queries aligned with Management Center', () => {
   it('账单和回退都失败时保留原始账单错误', async () => {
     handler = (request) => request.url.includes('cli-chat-proxy')
       ? { status_code: 403, body: 'billing denied' } : { status_code: 429, body: 'paid denied' };
-    expect(await loadQuota(file)).toMatchObject({ status: 'error', error: 'billing denied' });
+    expect(await loadQuota(file)).toMatchObject({ status: 'error', error: 'The server refused the request. It said “billing denied”.' });
     expect(calls).toHaveLength(4);
   });
 
@@ -200,7 +209,7 @@ describe('xAI quota queries aligned with Management Center', () => {
     handler = (request) => request.url.endsWith('/me')
       ? success({}) : { status_code: 429, body: 'chat denied' };
     expect(await loadQuota({ ...file, using_api: true, prefix: 'paid' }))
-      .toMatchObject({ status: 'error', error: 'chat denied' });
+      .toMatchObject({ status: 'error', error: 'The server is getting too many requests. It said “chat denied”. Try again in a few minutes.' });
     expect(calls).toHaveLength(2);
   });
 

@@ -1,6 +1,7 @@
 import { buildXaiBillingSummary, mergeXaiBillingSummaries, type XaiBillingConfig } from './xaiBilling';
 import {
   apiCallErrorMessage,
+  apiCallWords,
   isRecord,
   managementApi,
   normalizeAuthIndex,
@@ -9,7 +10,7 @@ import {
 import { invokeCommand } from '../native/commands';
 import { authFileName, canonicalProvider } from './authFiles';
 import { readCommandError } from './commandError';
-import { plainErrorReason } from './plainError';
+import { plainErrorParts, plainErrorReason } from './plainError';
 import {
   codexConsumeOutcome, codexRedeemRequestId, nextCodexResetCredit, rememberCodexRedeem, settleCodexRedeem,
   unsettledCodexRedeem, type UnsettledCodexRedeem,
@@ -843,6 +844,25 @@ const coreGotNoAnswer = (reason: unknown) => {
   return failure.kind === 'core' && failure.status === 502 && failure.reason === 'request failed';
 };
 
+/** A provider answered a limits read with an error status. Its message stays the provider's words. */
+class ProviderAnswered extends Error {
+  constructor(readonly status: number, readonly words: string, message: string) {
+    super(message);
+    this.name = 'ProviderAnswered';
+  }
+}
+
+/**
+ * Why a limits read failed, said plainly: what the provider's status means and what to do, with its own words kept
+ * in quotes since they're often the only clue ("account suspended"). Other failures are already Arbor's sentences.
+ */
+function quotaFailure(error: unknown): string {
+  if (!(error instanceof ProviderAnswered)) return error instanceof Error ? error.message : String(error);
+  const { reason, advice } = plainErrorParts(`HTTP ${error.status}`, quotaText);
+  const words = error.words.trim().replace(/[.!]+$/, '');
+  return [reason, words ? quotaText('quota.service.error.providerSaid', { words }) : '', advice ?? ''].filter(Boolean).join(' ');
+}
+
 const requestQuotaPayload = async (
   authIndex: string,
   url: string,
@@ -870,7 +890,7 @@ const requestQuotaPayload = async (
   }
   const status = Number(response.status_code ?? response.statusCode ?? 0);
   if (status < 200 || status >= 300) {
-    throw new Error(apiCallErrorMessage(response));
+    throw new ProviderAnswered(status, apiCallWords(response), apiCallErrorMessage(response));
   }
   if (responseClock) {
     const header = isRecord(response.header) ? response.header : {};
@@ -1040,7 +1060,8 @@ async function callUpstreamQuota(
   const urls = provider === 'antigravity'
     ? [endpointByProvider.antigravity, 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary', 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary']
     : [endpointByProvider[provider]];
-  let lastError = '';
+  // The last failure as it was thrown, so a provider's refusal is still told apart from Arbor's own sentences.
+  let lastError: unknown = null;
   let hadSuccessfulResponse = false;
   for (const url of urls) {
     try {
@@ -1056,22 +1077,16 @@ async function callUpstreamQuota(
       if (provider === 'antigravity') {
         hadSuccessfulResponse = true;
         if (quotaRowsFor('antigravity', payload).length === 0) {
-          lastError = quotaText('quota.service.error.antigravityEmpty');
+          lastError = new Error(quotaText('quota.service.error.antigravityEmpty'));
           continue;
         }
       }
       return payload;
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      lastError = error;
     }
   }
-  throw new Error(
-    lastError || quotaText(
-      hadSuccessfulResponse
-        ? 'quota.service.error.upstreamEmpty'
-        : 'quota.service.error.noResponse',
-    ),
-  );
+  throw lastError ?? new Error(quotaText(hadSuccessfulResponse ? 'quota.service.error.upstreamEmpty' : 'quota.service.error.noResponse'));
 }
 
 const requestCodexResetCredits = async (file: AuthFile, accountId: string): Promise<Record<string, unknown>> => {
@@ -1193,7 +1208,7 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
     return {
       status: 'error',
       rows: [],
-      error: error instanceof Error ? error.message : String(error),
+      error: quotaFailure(error),
     };
   }
 }

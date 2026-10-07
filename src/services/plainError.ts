@@ -127,6 +127,12 @@ export function plainError(error: unknown, t: Translate): string {
   return advice ? `${reason} ${t(advice)}` : reason;
 }
 
+/** What went wrong and the usual next step, apart, for a sentence that puts something between them. */
+export function plainErrorParts(error: unknown, t: Translate): { reason: string; advice: string | null } {
+  const { reason, advice } = describe(error, t);
+  return { reason, advice: advice ? t(advice) : null };
+}
+
 /** Only what went wrong, for a sentence that already says what to do next. */
 export function plainErrorReason(error: unknown, t: Translate): string {
   return describe(error, t).reason;

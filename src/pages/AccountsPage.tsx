@@ -9,6 +9,7 @@ import { ProviderStatusBanner } from '../components/ProviderStatusBanner';
 import { canResetQuota, resetClaudeQuotaWithConfirmation, resetCodexQuotaWithConfirmation, resetUnconfirmed } from '../services/quotaActions';
 import { formatQuotaReset, useQuotaClock } from '../services/quotaTime';
 import { codexResetEarlyUse } from '../services/resetReadiness';
+import { plainError } from '../services/plainError';
 import { formatRelative, formatWhen } from '../lib/format';
 import {
   fileName,
@@ -208,7 +209,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
         ].filter(Boolean).join(' '),
       }));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : String(requestError));
+      setError(plainError(requestError, t));
     }
   }, [askConfirmation, setError, t]);
 
@@ -238,7 +239,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
         ].filter(Boolean).join(' '),
       }));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : String(requestError));
+      setError(plainError(requestError, t));
     }
   }, [askConfirmation, setError, t]);
 
@@ -584,7 +585,7 @@ function PausedBlock({ items, columns, reserves, failures, flash }: {
     try {
       await resumeAccount(item.key, item.file);
     } catch (resumeError) {
-      setAccountsError(t('reserves.paused.resumeFailed', { name: item.name, error: resumeError instanceof Error ? resumeError.message : String(resumeError) }));
+      setAccountsError(t('reserves.paused.resumeFailed', { name: item.name, error: plainError(resumeError, t) }));
     } finally {
       setBusy(null);
     }

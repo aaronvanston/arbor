@@ -150,6 +150,10 @@ const messageFromPayload = (value: unknown, depth = 0): string => {
   return '';
 };
 
+/** What an upstream answer says went wrong in its own words, or '' when it says nothing. */
+export const apiCallWords = (response: Record<string, unknown>): string =>
+  messageFromPayload(response.body ?? response.bodyText);
+
 export function apiCallErrorMessage(
   response: Record<string, unknown>,
   fallback = translate('management.error.upstream'),
