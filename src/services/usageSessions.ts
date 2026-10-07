@@ -58,8 +58,8 @@ function codexHost(rest: string, surface: string): string | undefined {
   return client && client.toLowerCase() !== surface ? client : undefined;
 }
 
-/** A session id short enough for a table: the first block of the UUID. */
-export const shortSessionId = (id: string) => (id.length > 12 ? id.split('-')[0]!.slice(0, 8) : id);
+/** A session id short enough for a table: the first block of a UUID; any other id whole, for the table to truncate. */
+export const shortSessionId = (id: string) => (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) ? id.slice(0, 8) : id);
 
 /** Where a session ran, as the Sessions pages label it. */
 export type SessionPlace = {

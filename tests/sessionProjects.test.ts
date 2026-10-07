@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { translate } from '../src/i18n';
 import {
   branchPullRequests,
+  githubNote,
   projectsTotals,
+  pullRequestsHint,
   pullRequestStatus,
   summarizePullRequests,
 } from '../src/services/sessionProjects';
@@ -123,5 +126,26 @@ describe('projects', () => {
     ];
     expect(branchPullRequests(pullRequests, 'arbor', 'fix/login-loop').map((item) => item.number)).toEqual([1]);
     expect(branchPullRequests(pullRequests, 'arbor', '')).toEqual([]);
+  });
+});
+
+const t = (key: Parameters<typeof translate>[0], variables?: Record<string, string | number>) => translate(key, variables);
+const status = (fields: Partial<SessionProjectsReport['github']>): SessionProjectsReport['github'] => ({ checking: false, last: 'ok', message: '', detailError: '', atMs: 0, ...fields });
+
+describe('what GitHub couldn’t say', () => {
+  test('keeps GitHub’s own words for the tooltip, not the note', () => {
+    const detail = githubNote(status({ detailError: "Field 'checkRunCountsByState' doesn't exist on type 'StatusCheckRollupContextConnection'" }), t);
+    expect(detail?.text).toBe('GitHub said which pull requests merged, but not how open ones’ checks and reviews stand.');
+    expect(detail?.detail).toContain('checkRunCountsByState');
+    expect(detail?.unavailable).toBe(false);
+    expect(githubNote(status({ last: 'missing' }), t)).toMatchObject({ unavailable: true });
+    expect(githubNote(status({ last: 'failed', message: 'gh: network down' }), t)?.unavailable).toBe(true);
+    expect(githubNote(status({}), t)).toBeNull();
+  });
+
+  test('the tile adds up to the table: closed and not known count too', () => {
+    const count = (value: number) => String(value);
+    expect(pullRequestsHint({ merged: 1, open: 5, closed: 1, unknown: 0 }, t, count)).toBe('1 merged · 5 open · 1 closed');
+    expect(pullRequestsHint({ merged: 2, open: 0, closed: 0, unknown: 3 }, t, count)).toBe('2 merged · 0 open · 3 not known');
   });
 });

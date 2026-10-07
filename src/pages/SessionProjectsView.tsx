@@ -4,10 +4,12 @@ import { ChevronDown, ChevronRight, GitBranch } from '../components/ui/icons';
 import { useNothingRecorded } from '../hooks/useCollectorStatus';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
-import { formatAgo, formatCount, formatDate, formatDateTime, formatMoney } from '../lib/format';
+import { formatAgo, formatCount, formatDate, formatDateTime, formatMoney, formatTokens } from '../lib/format';
 import {
   branchPullRequests,
+  githubNote,
   projectsTotals,
+  pullRequestsHint,
   pullRequestStatus,
   summarizePullRequests,
 } from '../services/sessionProjects';
@@ -24,7 +26,6 @@ import { MiddleTruncate } from '../components/ui/middle-truncate';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { cn } from '../lib/utils';
 import { pullRequestSignals, pullRequestSignalsText } from '../services/pullRequestSignals';
-import { plainError } from '../services/plainError';
 import { PULL_REQUEST_BADGES, PullRequestSignals, PullRequestStateBadge } from '../components/PullRequestSignals';
 import type { ProjectPullRequest, ProjectTotals, SessionProjectsReport } from '../native/types';
 
@@ -103,7 +104,7 @@ export function SessionProjectsView({
             ? t('usage.projects.stat.noPullRequests')
             : summary.unknown === summary.total
               ? t('usage.projects.stat.notChecked')
-              : t('usage.projects.stat.pullRequestsHint', { merged: compactNumber(summary.merged), open: compactNumber(summary.open) })}
+              : pullRequestsHint(summary, t, compactNumber)}
         />
         <StatBlock label={costStat.label} value={costStat.value} hint={costStat.hint} />
         <StatBlock
@@ -133,19 +134,11 @@ function GithubNote({ report, onRetry }: { report: SessionProjectsReport; onRetr
       </p>
     );
   }
-  const message = github.last === 'missing'
-    ? t('usage.projects.github.missing')
-    : github.last === 'signedOut'
-      ? t('usage.projects.github.signedOut')
-      : github.last === 'failed'
-        ? t('usage.projects.github.failed', { message: plainError(github.message, t) })
-        : github.last === 'ok' && github.detailError
-          ? t('usage.projects.github.detailFailed', { message: plainError(github.detailError, t) })
-          : '';
-  if (!message) return null;
+  const note = githubNote(github, t);
+  if (!note) return null;
   return (
     <p className="-mt-3 flex flex-wrap items-center gap-x-2 px-1 text-xs text-muted-foreground">
-      <span>{message}</span>
+      <span title={note.detail || undefined}>{note.text}</span>
       <Button variant="ghost-muted" size="xs" onClick={onRetry}>
         <RefreshIcon />
         {t('common.retry')}
@@ -210,7 +203,7 @@ function TotalsCells({ totals, pullRequests, now, onOpenSessions }: {
       <TableCell className={TABLE_NUMERIC_CLASS}>
         {totals.sessionsWithLines ? <Lines added={totals.linesAdded} removed={totals.linesRemoved} /> : <span className="text-muted-foreground">—</span>}
       </TableCell>
-      <TableCell className={TABLE_NUMERIC_CLASS}>{compactNumber(totals.totalTokens)}</TableCell>
+      <TableCell className={TABLE_NUMERIC_CLASS}>{formatTokens(totals.totalTokens)}</TableCell>
       <TableCell className={TABLE_NUMERIC_CLASS}>{formatUsd(totals.pricedRequests ? totals.estimatedCost : null)}</TableCell>
       <TableCell className="text-muted-foreground" title={totals.lastActiveAtMs ? formatDateTime(totals.lastActiveAtMs, { year: 'always' }) : undefined}>
         {totals.lastActiveAtMs ? formatAgo(totals.lastActiveAtMs, now) : '—'}

@@ -43,6 +43,9 @@ describe('naming the client behind a session', () => {
   it('shortens UUID session ids to their first block', () => {
     expect(shortSessionId('a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7')).toBe('a3f1c2d4');
     expect(shortSessionId('custom-id')).toBe('custom-id');
+    // Not a UUID, so no first block to stand for it.
+    expect(shortSessionId('does-not-exist')).toBe('does-not-exist');
+    expect(shortSessionId('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b')).toBe('0199a1b2');
   });
 });
 

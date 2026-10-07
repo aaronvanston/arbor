@@ -33,6 +33,7 @@ import {
   toolLabel,
   toolRows,
 } from '../services/usageSessions';
+import { githubNote } from '../services/sessionProjects';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
@@ -249,7 +250,7 @@ export function SessionDetailPage({ sessionId, onBack, onViewRequests }: { sessi
         ) : !session || !main || !thread || !totals ? (
           <Empty>
             <EmptyMedia><MessagesSquare /></EmptyMedia>
-            <EmptyDescription>{t('sessions.notFound')}</EmptyDescription>
+            <EmptyDescription>{t('sessions.notFound', { id: sessionId })}</EmptyDescription>
           </Empty>
         ) : (
           <>
@@ -400,6 +401,8 @@ function SessionPullRequests({ pullRequests }: { pullRequests: PullRequestLink[]
   const [states, setStates] = useState<ReadonlyMap<string, PullRequestState | null>>(() => new Map());
   // GitHub may answer whether they merged but turn down how checks and reviews stand: say so, as Projects does.
   const [detailError, setDetailError] = useState('');
+  // Without GitHub there are no states at all; say why, as Projects does, rather than leave the links bare.
+  const [unavailable, setUnavailable] = useState('');
   // The page reloads its session every few seconds; the same links shouldn't ask again.
   const links = useRef(pullRequests);
   links.current = pullRequests;
@@ -413,6 +416,8 @@ function SessionPullRequests({ pullRequests }: { pullRequests: PullRequestLink[]
           if (disposed) return;
           setStates(new Map(named.pullRequests.map((pullRequest) => [pullRequest.url, pullRequest.github])));
           setDetailError(named.github.last === 'ok' ? named.github.detailError : '');
+          const note = githubNote(named.github, t);
+          setUnavailable(note?.unavailable ? note.text : '');
           if (named.github.checking) recheck = window.setTimeout(load, GITHUB_RECHECK_MS);
         })
         // The links still work without their states.
@@ -423,6 +428,7 @@ function SessionPullRequests({ pullRequests }: { pullRequests: PullRequestLink[]
       disposed = true;
       window.clearTimeout(recheck);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes only with the language, which reloads anyway.
   }, [key]);
 
   return (
@@ -446,6 +452,9 @@ function SessionPullRequests({ pullRequests }: { pullRequests: PullRequestLink[]
           </span>
         );
       })}
+      {unavailable ? (
+        <span className="text-xs text-warning-foreground" title={unavailable}>{t('sessions.header.githubUnavailable')}</span>
+      ) : null}
       {detailError ? (
         <span className="text-xs text-warning-foreground" title={errorWords(detailError)}>
           {t('sessions.header.pullRequestDetailFailed')}
@@ -640,7 +649,7 @@ function SessionStats({ session, main, totals, checks }: { session: UsageSession
   const threads = session.threads.length;
   return (
     <StatsGrid columns={6}>
-      <StatBlock label={t('sessions.stat.cost')} value={cost(costTotal(totals.cost) === 0 && totals.unpricedRequests ? null : costTotal(totals.cost))} hint={t('sessions.stat.costHint', { tokens: tokens(totals.inputTokens + totals.outputTokens) })} />
+      <StatBlock label={t('sessions.stat.cost')} value={cost(costTotal(totals.cost) === 0 && totals.unpricedRequests ? null : costTotal(totals.cost))} hint={t('sessions.stat.costHint', { tokens: formatTokens(totals.inputTokens + totals.outputTokens) })} />
       <StatBlock
         label={t('sessions.stat.requests')}
         value={tokens(totals.requests)}
@@ -1035,7 +1044,7 @@ function SessionThreads({
                 {thread.peakContext ? formatTokens(thread.peakContext) : '—'}
               </TableCell>
               <TableCell className={TABLE_NUMERIC_CLASS}>{thread.compactions ? tokens(thread.compactions) : '—'}</TableCell>
-              <TableCell className={TABLE_NUMERIC_CLASS}>{tokens(thread.totalTokens)}</TableCell>
+              <TableCell className={TABLE_NUMERIC_CLASS}>{formatTokens(thread.totalTokens)}</TableCell>
               <TableCell className={TABLE_NUMERIC_CLASS}>{cost(thread.pricedRequests ? thread.estimatedCost : null)}</TableCell>
               <TableCell className="tabular-nums text-muted-foreground">{formatDateTime(thread.startedAtMs)}</TableCell>
               <TableCell className="text-end">

@@ -1,4 +1,8 @@
-import type { ProjectPullRequest, SessionProjectsReport } from '../native/types';
+import type { MessageKey, MessageVariables } from '../i18n/resources';
+import type { GithubStatus, ProjectPullRequest, SessionProjectsReport } from '../native/types';
+import { errorWords, plainError } from './plainError';
+
+type Translate = (key: MessageKey, variables?: MessageVariables) => string;
 
 /** A pull request's badge: GitHub's state with drafts on their own, `unknown` when GitHub couldn't find it, and `unchecked` before it's been asked. */
 export type PullRequestStatus = 'merged' | 'open' | 'draft' | 'closed' | 'unknown' | 'unchecked';
@@ -77,3 +81,28 @@ export const projectsTotals = (report: SessionProjectsReport) => {
 /** The pull requests that came from a project's branch. */
 export const branchPullRequests = (pullRequests: ProjectPullRequest[], project: string, branch: string) =>
   branch ? pullRequests.filter((pullRequest) => pullRequest.project === project && pullRequest.branch === branch) : [];
+
+/**
+ * Why pull requests show no state, or no checks and reviews, when GitHub couldn't say: `text` for the page, `detail`
+ * what GitHub said, for a tooltip, since its own words (a GraphQL field it doesn't have) mean nothing to most people.
+ * `unavailable` when GitHub couldn't be asked at all, so no state is known.
+ */
+export function githubNote(github: GithubStatus, t: Translate): { text: string; detail: string; unavailable: boolean } | null {
+  switch (github.last) {
+    case 'missing': return { text: t('usage.projects.github.missing'), detail: '', unavailable: true };
+    case 'signedOut': return { text: t('usage.projects.github.signedOut'), detail: '', unavailable: true };
+    case 'failed': return { text: t('usage.projects.github.failed', { message: plainError(github.message, t) }), detail: errorWords(github.message), unavailable: true };
+    case 'ok': return github.detailError ? { text: t('usage.projects.github.detailFailed'), detail: errorWords(github.detailError), unavailable: false } : null;
+    default: return null;
+  }
+}
+
+/** The pull requests at a glance: how many merged, are open (drafts with them) and closed, and aren't known yet. */
+export function pullRequestsHint(summary: Pick<PullRequestSummary, 'merged' | 'open' | 'closed' | 'unknown'>, t: Translate, count: (value: number) => string): string {
+  return [
+    t('usage.projects.stat.pullRequestsMerged', { count: count(summary.merged) }),
+    t('usage.projects.stat.pullRequestsOpen', { count: count(summary.open) }),
+    summary.closed ? t('usage.projects.stat.pullRequestsClosed', { count: count(summary.closed) }) : '',
+    summary.unknown ? t('usage.projects.stat.pullRequestsUnknown', { count: count(summary.unknown) }) : '',
+  ].filter(Boolean).join(' · ');
+}

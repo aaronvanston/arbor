@@ -140,7 +140,7 @@ export function SessionsView({
                     {formatCount(item.requests)}
                     {item.failures ? <span className="block text-2xs text-error-foreground">{t('usage.sessions.failed', { count: formatCount(item.failures) })}</span> : null}
                   </TableCell>
-                  <TableCell className="text-end text-xs tabular-nums">{formatCount(item.totalTokens)}</TableCell>
+                  <TableCell className="text-end text-xs tabular-nums">{formatTokens(item.totalTokens)}</TableCell>
                   <TableCell className="text-end text-xs tabular-nums">{formatMoney(item.pricedRequests ? item.estimatedCost : null)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground" title={formatDateTime(item.lastActiveAtMs, { year: 'always' })}>
                     {formatAgo(item.lastActiveAtMs, now)}
