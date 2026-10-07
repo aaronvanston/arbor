@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import type { AuthFileExcludedModels } from '../src/native/types';
 import {
-  authFileExcludedRulesFromPayload,
+  authFileExcludedRules,
   loadOAuthModelSettings,
   saveOAuthModelSettings,
   type OAuthModelTarget,
@@ -13,6 +14,15 @@ const account = (name: string): OAuthModelTarget => ({
   scope: 'credential', provider: 'codex', label: 'Codex', name,
 });
 const provider: OAuthModelTarget = { scope: 'provider', provider: 'codex', label: 'Codex' };
+
+/** Stands in for Rust's get_auth_file_excluded_models, whose own tests cover reading the file. */
+const excludedModelsIn = (file: Record<string, unknown>): AuthFileExcludedModels => {
+  const rules = 'excluded_models' in file ? file.excluded_models : file['excluded-models'];
+  if (rules === undefined || rules === null) return { kind: 'rules', rules: [] };
+  return Array.isArray(rules) && rules.every((rule) => typeof rule === 'string')
+    ? { kind: 'rules', rules }
+    : { kind: 'invalidExclusions' };
+};
 
 function createApi() {
   // a.json and b.json are always there, so tests edit them directly; any other name reads as missing.
@@ -30,12 +40,17 @@ function createApi() {
       if (path.startsWith('/model-definitions/')) return { models };
       if (path === '/oauth-excluded-models') return { 'oauth-excluded-models': structuredClone(globalRules) };
       const file = query?.name ? files[query.name] : undefined;
-      if (path === '/auth-files/download' && file) return structuredClone(file);
       if (path === '/auth-files/models' && file) {
-        const allowed = openOAuthModelNames(models, [...authFileExcludedRulesFromPayload(file), ...globalRules.codex ?? []]);
+        const allowed = openOAuthModelNames(models, [...authFileExcludedRules(excludedModelsIn(file)), ...globalRules.codex ?? []]);
         return { models: models.filter((model) => allowed.has(model.id)) };
       }
       throw new Error('file not found');
+    },
+    async excludedModels(name: string): Promise<AuthFileExcludedModels> {
+      reads.push({ path: 'get_auth_file_excluded_models', query: { name } });
+      const file = files[name];
+      if (!file) throw new Error('file not found');
+      return excludedModelsIn(file);
     },
     async patch(path: string, body: Record<string, unknown>): Promise<unknown> {
       writes.push({ path, body });
@@ -152,18 +167,16 @@ describe('OAuth model settings scopes', () => {
 });
 
 describe('credential model exclusion metadata', () => {
-  it('supports legacy keys and JSON text, with canonical empty values taking precedence', () => {
-    expect(authFileExcludedRulesFromPayload(JSON.stringify({ 'excluded-models': [' GPT-* ', 'gpt-*'] }))).toEqual(['gpt-*']);
-    expect(authFileExcludedRulesFromPayload({ excluded_models: [], 'excluded-models': ['gpt-*'] })).toEqual([]);
-    expect(authFileExcludedRulesFromPayload({ excluded_models: null, 'excluded-models': ['gpt-*'] })).toEqual([]);
-    expect(authFileExcludedRulesFromPayload({ type: 'codex' })).toEqual([]);
+  // Reading the file, its two key spellings and JSON text are Rust's (auth_file_contents.rs); the webview gets rules.
+  it('normalizes the rules Rust read from the file', () => {
+    expect(authFileExcludedRules({ kind: 'rules', rules: [' GPT-* ', 'gpt-*'] })).toEqual(['gpt-*']);
+    expect(authFileExcludedRules({ kind: 'rules', rules: [] })).toEqual([]);
   });
 
-  it('rejects malformed metadata without exposing credential contents', () => {
-    for (const payload of [null, [], 'invalid json', { excluded_models: {} }, { excluded_models: [123] }]) {
-      expect(() => authFileExcludedRulesFromPayload(payload)).toThrow();
-    }
-    expect(() => authFileExcludedRulesFromPayload('{"access_token": "sensitive-token"'))
+  it('shows a fixed message for a file that can’t be read for its rules', () => {
+    expect(() => authFileExcludedRules({ kind: 'invalidMetadata' }))
       .toThrow('Could not read the credential file; model settings were not loaded');
+    expect(() => authFileExcludedRules({ kind: 'invalidExclusions' }))
+      .toThrow('The credential file has invalid model exclusion rules; check the file first');
   });
 });

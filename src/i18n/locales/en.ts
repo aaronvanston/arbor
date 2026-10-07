@@ -5841,7 +5841,6 @@ export const en = {
   'authFiles.reauth.none': 'Sign-in finished, but no new credential appeared for this provider. “{name}” was left unchanged.',
   'authFiles.reauth.failed': 'Sign-in failed: {error}',
   'authFiles.reauth.unknownAccount': 'an unknown account',
-  'authFiles.reauth.invalidFile': 'The credential file “{name}” could not be read as JSON',
   'common.copyFailed': 'Copy failed',
   'common.undo': 'Undo',
   'page.actions.more': 'More actions',

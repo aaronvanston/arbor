@@ -288,6 +288,30 @@ const listingEntry = (file: Json, nowMs: number): Json => {
 /** Fields that live in the listing, not in the credential file itself. */
 const listingOnlyFields = ['status', 'status_message', 'unavailable', 'size', 'cooldowns', 'quota', 'source', 'path', 'next_retry_after', 'auth_index', 'runtime_only', 'lingering', 'updated_at', 'modtime', 'last_refresh'];
 
+/** A credential file as the core holds it. Only the mock's own commands read it, as only Rust does in the app. */
+const credentialContent = (name: string): Json => {
+  const file = authFiles.find((entry) => entry.name === name);
+  if (!file) throw coreFailure(404, 'file not found');
+  return { ...Object.fromEntries(Object.entries(file).filter(([key]) => !listingOnlyFields.includes(key))), access_token: `mock-access-${name}` };
+};
+
+/** Settings a re-login keeps from the account's file, and the ids that tell two accounts apart (auth_file_contents.rs). */
+const preservedCredentialFields = ['priority', 'disabled', 'prefix', 'websockets', 'note', 'proxy_url', 'weight', 'headers', 'models', 'thinking', 'excluded_models'];
+const credentialIdentityFields = ['account_id', 'organization_uuid', 'account_uuid'];
+
+/** Writes a credential file as the core does on an upload: a fresh listing entry with the file's fields. */
+function writeCredential(name: string, content: Json, size: number) {
+  const index = authFiles.findIndex((entry) => entry.name === name);
+  const previous = index >= 0 ? authFiles[index] : undefined;
+  const next = fileEntry(name, {
+    auth_index: previous?.auth_index ?? `upload-${name}`,
+    ...content,
+    name,
+    size, modtime: new Date().toISOString(), status: 'active', status_message: '', unavailable: false, cooldowns: [],
+  });
+  if (index >= 0) authFiles[index] = next; else authFiles.push(next);
+}
+
 /** A model aliases can start from, and which kinds it takes: Rust works that out from the model, the mock just says. */
 type MockAliasSource = ThinkingAliasSource & { supportsReasoning: boolean; supportsFast: boolean };
 const aliasSources: MockAliasSource[] = [
@@ -562,11 +586,9 @@ function managementRequest(request: ManagementRequest): unknown {
   if (path === '/auth-files/models') {
     return { models: [{ id: 'gpt-6-sol', display_name: 'GPT-6 Sol' }, { id: 'gpt-6-luna', display_name: 'GPT-6 Luna' }, { id: 'gpt-6-terra' }, { id: 'codex-mini-latest', display_name: 'Codex Mini' }] };
   }
-  if (path === '/auth-files/download') {
-    const file = authFiles.find((entry) => entry.name === query.name);
-    if (!file) throw coreFailure(404, 'file not found');
-    const content = Object.fromEntries(Object.entries(file).filter(([key]) => !listingOnlyFields.includes(key)));
-    return { ...content, access_token: `mock-access-${String(file.name)}`, refresh_token: `mock-refresh-${String(file.name)}` };
+  // As in Rust: a credential file holds the account's tokens, so the window can't fetch one.
+  if (path.replace(/\/+/g, '/').replace(/^\/|\/$/g, '').toLowerCase() === 'auth-files/download') {
+    throw { kind: 'failed', message: 'Credential files stay in Arbor and can’t be read from the window' };
   }
   if (path === '/api-call') return apiCall(body);
   if (path === '/reset-quota' && method === 'POST') {
@@ -850,18 +872,36 @@ export const coreAnswers: CommandAnswers<CoreCommands> = {
   upload_auth_file: (args) => {
     const text = new TextDecoder().decode(Uint8Array.from(args.data));
     const parsed = JSON.parse(text) as Json;
-    const name = args.name;
-    const index = authFiles.findIndex((entry) => entry.name === name);
-    const previous = index >= 0 ? authFiles[index] : undefined;
-    const next = fileEntry(name, {
-      auth_index: previous?.auth_index ?? `upload-${name}`,
-      ...parsed,
-      name,
-      size: text.length, modtime: new Date().toISOString(), status: 'active', status_message: '', unavailable: false, cooldowns: [],
-    });
-    if (index >= 0) authFiles[index] = next; else authFiles.push(next);
-    mockLog('upload_auth_file', { name, keys: Object.keys(parsed) });
+    writeCredential(args.name, parsed, text.length);
+    mockLog('upload_auth_file', { name: args.name, keys: Object.keys(parsed) });
     return { status: 'ok' };
+  },
+  fold_reauth_credential: ({ target, candidates }) => {
+    const existing = credentialContent(target);
+    const from = candidates.filter((name) => name !== target).find((name) => {
+      const content = credentialContent(name);
+      return credentialIdentityFields.every((field) => !existing[field] || !content[field] || existing[field] === content[field]);
+    });
+    mockLog('fold_reauth_credential', { target, candidates, from: from ?? null });
+    if (!from) return { kind: 'other-workspace' };
+    const merged: Json = { ...existing, ...credentialContent(from) };
+    for (const key of preservedCredentialFields) if (key in existing) merged[key] = existing[key];
+    writeCredential(target, merged, JSON.stringify(merged).length);
+    authFiles.splice(authFiles.findIndex((entry) => entry.name === from), 1);
+    return { kind: 'transplanted', from };
+  },
+  get_auth_file_project_id: ({ name }) => {
+    const content = credentialContent(name);
+    const records = [content, content.metadata, content.attributes, content.installed, content.web]
+      .filter((record): record is Json => typeof record === 'object' && record !== null && !Array.isArray(record));
+    return records.flatMap((record) => [record.project_id, record.projectId, record.gemini_virtual_project])
+      .find((id): id is string => typeof id === 'string' && id.trim() !== '')?.trim() ?? '';
+  },
+  get_auth_file_excluded_models: ({ name }) => {
+    const content = credentialContent(name);
+    const rules = 'excluded_models' in content ? content.excluded_models : content['excluded-models'];
+    if (rules === undefined || rules === null) return { kind: 'rules', rules: [] };
+    return Array.isArray(rules) && rules.every((rule) => typeof rule === 'string') ? { kind: 'rules', rules } : { kind: 'invalidExclusions' };
   },
   management_request: (args) => coreReply(managementRequest(args.request)),
 };

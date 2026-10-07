@@ -78,6 +78,8 @@ mod tests {
         types.visit::<crate::management_api::OAuthStatusResult>();
         types.visit::<crate::management_api::OAuthStartResult>();
         types.visit::<crate::management_api::ManagementRequest>();
+        types.visit::<crate::auth_file_contents::ReauthFold>();
+        types.visit::<crate::auth_file_contents::AuthFileExcludedModels>();
         types.visit::<crate::oauth_browser::OAuthBrowserOption>();
         // Usage
         types.visit::<crate::usage::UsageQuery>();

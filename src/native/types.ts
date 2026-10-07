@@ -465,6 +465,11 @@ export type AttentionItem = {
 };
 
 /**
+ * The models a credential file keeps from its account, or why they can't be read.
+ */
+export type AuthFileExcludedModels = { "kind": "rules", rules: Array<string>, } | { "kind": "invalidMetadata" } | { "kind": "invalidExclusions" };
+
+/**
  * One automation with all it's set to do.
  */
 export type Automation = {
@@ -4147,6 +4152,11 @@ export type PullRequestState = {
  * is down and kept only when nothing touched the files during the read.
  */
 export type ReadMode = "readonly" | "immutable";
+
+/**
+ * What folding a fresh login into an account's file did. Only names cross to the webview, never the file.
+ */
+export type ReauthFold = { "kind": "transplanted", from: string, } | { "kind": "other-workspace" };
 
 export type RecoveredDay = {
   /**

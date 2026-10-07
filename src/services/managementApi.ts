@@ -71,11 +71,6 @@ export const managementApi = {
       data,
     });
   },
-  uploadAuthFileText: (name: string, text: string) =>
-    invokeCommand('upload_auth_file', {
-      name,
-      data: Array.from(new TextEncoder().encode(text)),
-    }),
   openAuthFilesDirectory: () => invokeCommand('open_auth_files_directory'),
 };
 

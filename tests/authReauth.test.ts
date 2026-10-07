@@ -3,7 +3,6 @@ import {
   completeReauth,
   listingAfterSignIn,
   matchReauthCredential,
-  mergeReauthCredential,
   renamedCredentials,
   settleSignIn,
   type ReauthApi,
@@ -22,7 +21,7 @@ const fakeApi = (
   contents: Record<string, Record<string, unknown>>,
 ) => {
   const pages = (Array.isArray(listings[0]) ? listings : [listings]) as Record<string, unknown>[][];
-  const calls: { method: string; path: string; name?: string; text?: string }[] = [];
+  const calls: { method: string; path: string; name?: string; candidates?: string[] }[] = [];
   let listCount = 0;
   const api: ReauthApi = {
     get: async (path, query) => {
@@ -32,19 +31,22 @@ const fakeApi = (
         listCount += 1;
         return { files } as ManagementJson;
       }
-      if (path === '/auth-files/download') return contents[query?.name ?? ''] as ManagementJson;
       return null;
     },
-    delete: async (path, options) => {
-      calls.push({ method: 'DELETE', path, name: options?.query?.name });
-      return { ok: true };
-    },
-    uploadAuthFileText: async (name, text) => {
-      calls.push({ method: 'UPLOAD', path: '/auth-files', name, text });
-      return { status: 'ok' };
+    // Stands in for Rust's fold_reauth_credential, whose own tests cover reading, merging and deleting: it folds the
+    // first candidate whose file records no other workspace, organization or user than the target's.
+    foldCredential: async (name, candidates) => {
+      calls.push({ method: 'FOLD', path: '', name, candidates });
+      const existing = contents[name] ?? {};
+      const from = candidates.find((candidate) => ['account_id', 'organization_uuid', 'account_uuid'].every((field) => {
+        const [left, right] = [existing[field], contents[candidate]?.[field]];
+        return !left || !right || left === right;
+      }));
+      return from ? { kind: 'transplanted', from } : { kind: 'other-workspace' };
     },
   };
-  return { api, calls };
+  const folds = () => calls.filter((call) => call.method === 'FOLD').map(({ name, candidates }) => ({ name, candidates }));
+  return { api, calls, folds };
 };
 
 describe('re-authenticating an existing credential', () => {
@@ -56,35 +58,19 @@ describe('re-authenticating an existing credential', () => {
     expect(matchReauthCredential(target, [{ name: 'codex-3.json', email: 'nobody@example.com' }])).toBeNull();
   });
 
-  it('keeps user settings from the existing file while taking the new tokens', () => {
-    const merged = mergeReauthCredential(
-      { type: 'codex', access_token: 'old', refresh_token: 'old-r', priority: 10, disabled: true, excluded_models: ['x'], note: 'keep' },
-      { type: 'codex', access_token: 'new', refresh_token: 'new-r', id_token: 'id', priority: 0, expired: '2027-01-01' },
-    );
-    expect(merged).toEqual({
-      type: 'codex', access_token: 'new', refresh_token: 'new-r', id_token: 'id', expired: '2027-01-01',
-      priority: 10, disabled: true, excluded_models: ['x'], note: 'keep',
-    });
-  });
-
-  it('copies a differently named login into the existing file and removes the duplicate', async () => {
+  it('has Rust fold a differently named login into the existing file, and reads no file itself', async () => {
     const before = snapshotAuthFiles([target]);
     const fresh = { name: 'codex-abc-cam@example.com-pro.json', type: 'codex', email: 'cam@example.com', account_id: 'acct-1' };
     const { name: _targetName, ...targetContent } = target;
     const { name: _freshName, ...freshContent } = fresh;
-    const { api, calls } = fakeApi([target, fresh], {
+    const { api, calls, folds } = fakeApi([target, fresh], {
       [target.name]: { ...targetContent, access_token: 'old', excluded_models: ['gpt-x'] },
       [fresh.name]: { ...freshContent, access_token: 'new', refresh_token: 'new-r' },
     });
     const outcome = await completeReauth(target, 'codex', before, api, fast);
     expect(outcome).toEqual({ kind: 'transplanted', name: target.name, from: fresh.name });
-    const upload = calls.find((call) => call.method === 'UPLOAD');
-    expect(upload?.name).toBe(target.name);
-    expect(JSON.parse(upload?.text ?? '{}')).toEqual({
-      type: 'codex', email: 'cam@example.com', account_id: 'acct-1',
-      access_token: 'new', refresh_token: 'new-r', priority: 10, excluded_models: ['gpt-x'],
-    });
-    expect(calls.find((call) => call.method === 'DELETE')?.name).toBe(fresh.name);
+    expect(folds()).toEqual([{ name: target.name, candidates: [fresh.name] }]);
+    expect(calls.every((call) => call.method === 'FOLD' || call.path === '/auth-files')).toBe(true);
   });
 
   it('reports an in-place update without touching files when the core overwrote the same name', async () => {
@@ -123,7 +109,7 @@ describe('re-authenticating an existing credential', () => {
     });
     expect(await completeReauth(target, 'codex', before, api, fast))
       .toEqual({ kind: 'transplanted', name: target.name, from: fresh.name });
-    expect(calls.find((call) => call.method === 'DELETE')?.name).toBe(fresh.name);
+    expect(calls.find((call) => call.method === 'FOLD')?.candidates).toEqual([fresh.name]);
   });
 
   it('waits for the core to finish writing the new credential', async () => {
@@ -167,7 +153,7 @@ describe('re-authenticating an existing credential', () => {
       [fresh.name]: { type: 'codex', access_token: 'new' },
     });
     expect(await completeReauth(work, 'codex', before, api, fast)).toEqual({ kind: 'transplanted', name: work.name, from: fresh.name });
-    expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.name)).toEqual([fresh.name]);
+    expect(calls.filter((call) => call.method === 'FOLD').map((call) => call.candidates)).toEqual([[fresh.name]]);
   });
 
   it('keeps waiting while only unrelated credentials changed', async () => {
@@ -196,7 +182,7 @@ describe('re-authenticating an existing credential', () => {
       [fresh.name]: { type: 'codex', access_token: 'new' },
     });
     expect(await completeReauth(work, 'codex', before, api, fast)).toEqual({ kind: 'transplanted', name: work.name, from: fresh.name });
-    expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.name)).toEqual([fresh.name]);
+    expect(calls.filter((call) => call.method === 'FOLD').map((call) => call.candidates)).toEqual([[fresh.name]]);
   });
 
   it('takes an existing file the login rewrote only once the wait ends with nothing new', async () => {
@@ -211,7 +197,7 @@ describe('re-authenticating an existing credential', () => {
     expect(await completeReauth(listedTarget, 'codex', before, api, fast))
       .toEqual({ kind: 'transplanted', name: target.name, from: canonical.name });
     expect(calls.filter((call) => call.path === '/auth-files' && call.method === 'GET')).toHaveLength(fast.attempts);
-    expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.name)).toEqual([canonical.name]);
+    expect(calls.filter((call) => call.method === 'FOLD').map((call) => call.candidates)).toEqual([[canonical.name]]);
   });
 
   it('skips a same-email credential from another workspace that changed alongside the account’s own file', async () => {
@@ -228,8 +214,8 @@ describe('re-authenticating an existing credential', () => {
     });
     expect(await completeReauth(listedTarget, 'codex', before, api, fast))
       .toEqual({ kind: 'transplanted', name: target.name, from: canonical.name });
-    expect(JSON.parse(calls.find((call) => call.method === 'UPLOAD')?.text ?? '{}').access_token).toBe('new');
-    expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.name)).toEqual([canonical.name]);
+    // Both match by email; Rust reads the files and skips the other workspace's.
+    expect(calls.filter((call) => call.method === 'FOLD').map((call) => call.candidates)).toEqual([[team.name, canonical.name]]);
   });
 
   it('keeps a login to another workspace or organization of the same email as its own file', async () => {
@@ -245,7 +231,7 @@ describe('re-authenticating an existing credential', () => {
       });
       expect(await completeReauth(work, 'codex', snapshotAuthFiles([work]), api, fast))
         .toEqual({ kind: 'other-workspace', name: work.name, saved: fresh.name });
-      expect(calls.some((call) => call.method === 'UPLOAD' || call.method === 'DELETE')).toBe(false);
+      expect(calls.filter((call) => call.method === 'FOLD').map((call) => call.candidates)).toEqual([[fresh.name]]);
     }
   });
 });
@@ -423,10 +409,7 @@ describe('following up a sign-in from Add account', () => {
     expect(added).toEqual([]);
     expect(refreshed).toEqual([home.name]);
     expect(files.map((file) => file.name)).toEqual([home.name]);
-    expect(calls.filter((call) => call.method !== 'GET')).toMatchObject([
-      { method: 'UPLOAD', name: home.name },
-      { method: 'DELETE', name: copy.name },
-    ]);
+    expect(calls.filter((call) => call.method !== 'GET')).toMatchObject([{ method: 'FOLD', name: home.name, candidates: [copy.name] }]);
     expect(prioritized).toEqual([]);
   });
 
@@ -438,7 +421,8 @@ describe('following up a sign-in from Add account', () => {
     });
     const { added } = await settleSignIn([home], 'claude', api, { ...fast, migrateKeys: () => {}, setPriority: async () => {} });
     expect(added).toEqual([other.name]);
-    expect(calls.filter((call) => call.method !== 'GET')).toEqual([]);
+    // Rust found the files record different organizations and changed nothing.
+    expect(calls.filter((call) => call.method !== 'GET')).toMatchObject([{ method: 'FOLD', name: home.name, candidates: [other.name] }]);
   });
 
   it('keeps the sign-in when a priority couldn’t be set, and says why', async () => {

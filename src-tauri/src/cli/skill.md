@@ -31,6 +31,7 @@ any other machine, say so instead of trying.
 | Usage and cost | `arbor usage today`, `arbor usage 7d`, `arbor usage 30d` |
 | Accounts and limits | `arbor accounts`, or `arbor accounts refresh` to read the limits again |
 | Automatic account order | `arbor routing` |
+| The models one sign-in keeps from its account, or an Antigravity sign-in's project id (by its file name in Accounts › Sign-ins; the file itself is never shown) | `arbor call get_auth_file_excluded_models name=<file>.json`, `arbor call get_auth_file_project_id name=<file>.json` |
 | Alerts | `arbor alerts` |
 | Where each machine stands against the setup repo: in step, or behind on files, skills, MCP servers, hooks, plugins or projects (the same count as Sync › Overview and the sidebar) | `arbor sync`, then `arbor sync <machine>` for the files and skills that would change there; `arbor call get_sync_standing repo=<setup repo folder>` lists each item behind |
 | Where the setup repo's projects are on each machine (its projects/ folder): in place, linked, elsewhere, missing or blocked | `arbor call get_project_drift repo=<setup repo folder>`; `arbor call scan_projects machine=<name> repo=<folder>` looks again |
@@ -113,5 +114,5 @@ belongs to another user.
 
 ## What arbor never does
 
-It can't claim or spend resets, reach the proxy's raw management API, or show secrets: keys and tokens come back as
-`[hidden]`. Don't try to work around any of that.
+It can't claim or spend resets, reach the proxy's raw management API, read an account's credential file, or show
+secrets: keys and tokens come back as `[hidden]`. Don't try to work around any of that.

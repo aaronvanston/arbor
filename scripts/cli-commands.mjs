@@ -35,6 +35,7 @@ export const LEFT_OUT = {
   track_event: 'analytics belong to the window',
   report_exception: 'analytics belong to the window',
   management_request: 'it passes any request to the core, resets and claims included',
+  fold_reauth_credential: "it's one step of the window's Sign in again, which works out first which new login is the account's",
   save_digest_page: 'it opens a save dialog on the Mac',
   open_saved_page: 'it opens a page on the Mac',
   open_dev_build_log: 'it opens a file on the Mac',

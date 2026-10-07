@@ -304,6 +304,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_auth_file_project_id",
+        access: Access::Read,
+        summary: "The Antigravity project id recorded in a credential file, or \"\" when it records none.",
+        args: &[
+            ArgSpec { name: "name", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "get_auth_file_excluded_models",
+        access: Access::Read,
+        summary: "The models a credential file keeps from its account (`excluded_models`).",
+        args: &[
+            ArgSpec { name: "name", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "open_auth_files_directory",
         access: Access::Write,
         summary: "Open auth files directory",
@@ -2159,6 +2175,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "send_phone_alert" => async { done(Box::pin(crate::phone_alerts::send_phone_alert(app.state(), arg(&args, "route")?, arg(&args, "alert")?)).await) }.await,
         "get_phone_alert_secrets" => blocking(move || done(crate::phone_alerts::get_phone_alert_secrets())).await,
         "upload_auth_file" => async { done(Box::pin(crate::management_api::upload_auth_file(app.state(), arg(&args, "name")?, arg(&args, "data")?)).await) }.await,
+        "get_auth_file_project_id" => async { done(Box::pin(crate::auth_file_contents::get_auth_file_project_id(app.state(), arg(&args, "name")?)).await) }.await,
+        "get_auth_file_excluded_models" => async { done(Box::pin(crate::auth_file_contents::get_auth_file_excluded_models(app.state(), arg(&args, "name")?)).await) }.await,
         "open_auth_files_directory" => {
             let app = app.clone();
             blocking(move || done(crate::management_api::open_auth_files_directory(app.state()))).await

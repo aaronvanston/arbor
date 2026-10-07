@@ -1,4 +1,5 @@
 import type {
+  AuthFileExcludedModels,
   CoreConfigView,
   CoreInstallResult,
   CoreInstallTask,
@@ -18,6 +19,7 @@ import type {
   OAuthStartResult,
   OAuthStatusResult,
   ProxyChecks,
+  ReauthFold,
   SettingsInEffect,
   SpeedAliasEntry,
   ThinkingAliasEntry,
@@ -83,6 +85,10 @@ export type CoreCommands = {
   /** The core's own JSON, which the Rust side passes through untyped. Fails with a `CommandError` of kind `core`. */
   management_request: { args: { request: ManagementRequest }; result: JsonValue };
   upload_auth_file: { args: { name: string; data: number[] }; result: JsonValue };
+  /** Credential files are read in Rust; only names and kinds come back, never a file's tokens. */
+  fold_reauth_credential: { args: { target: string; candidates: string[] }; result: ReauthFold };
+  get_auth_file_project_id: { args: { name: string }; result: string };
+  get_auth_file_excluded_models: { args: { name: string }; result: AuthFileExcludedModels };
   open_auth_files_directory: { result: void };
   open_core_logs_directory: { result: void };
   reveal_core_config_file: { result: void };

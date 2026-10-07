@@ -1,5 +1,8 @@
 import { translate } from '../i18n';
-import { isRecord, managementApi } from './managementApi';
+import { invokeCommand } from '../native/commands';
+import type { AuthFileExcludedModels } from '../native/types';
+import { CommandFailure, readCommandError } from './commandError';
+import { managementApi } from './managementApi';
 import {
   normalizeOAuthExcludedRules,
   oauthExcludedRulesFromPayload,
@@ -24,49 +27,44 @@ type OAuthModelSettingsApi = {
   get: (path: string, query?: Record<string, string>) => Promise<unknown>;
   patch: (path: string, body: Record<string, unknown>) => Promise<unknown>;
   delete: (path: string, options?: { query?: Record<string, string> }) => Promise<unknown>;
+  /** A credential file's own excluded models, read in Rust so the file's tokens stay out of the webview. */
+  excludedModels: (name: string) => Promise<AuthFileExcludedModels>;
 };
 
-export const authFileExcludedRulesFromPayload = (payload: unknown): string[] => {
-  let metadata = payload;
-  if (typeof metadata === 'string') {
+const oauthModelSettingsApi: OAuthModelSettingsApi = {
+  get: managementApi.get,
+  patch: managementApi.patch,
+  delete: managementApi.delete,
+  excludedModels: async (name) => {
     try {
-      metadata = JSON.parse(metadata);
-    } catch {
-      // Parser errors can quote credential contents; show a fixed message instead.
-      throw new Error(translate('authFiles.models.invalidMetadata'));
+      return await invokeCommand('get_auth_file_excluded_models', { name });
+    } catch (reason) {
+      throw new CommandFailure(readCommandError(reason));
     }
-  }
-  if (!isRecord(metadata)) {
-    throw new Error(translate('authFiles.models.invalidMetadata'));
-  }
-  // CPA gives the canonical key precedence, including an explicit empty array or null.
-  const rules = Object.prototype.hasOwnProperty.call(metadata, 'excluded_models')
-    ? metadata.excluded_models
-    : metadata['excluded-models'];
-  if (rules === undefined || rules === null) return [];
-  if (!Array.isArray(rules) || rules.some((rule) => typeof rule !== 'string')) {
-    throw new Error(translate('authFiles.models.invalidExclusions'));
-  }
-  return normalizeOAuthExcludedRules(rules);
+  },
+};
+
+/** A credential file's excluded models as rules, or a fixed message when the file can't be read for them. */
+export const authFileExcludedRules = (read: AuthFileExcludedModels): string[] => {
+  if (read.kind === 'invalidMetadata') throw new Error(translate('authFiles.models.invalidMetadata'));
+  if (read.kind === 'invalidExclusions') throw new Error(translate('authFiles.models.invalidExclusions'));
+  return normalizeOAuthExcludedRules(read.rules);
 };
 
 export const loadOAuthModelSettings = async (
   target: OAuthModelTarget,
-  api: OAuthModelSettingsApi = managementApi,
+  api: OAuthModelSettingsApi = oauthModelSettingsApi,
 ): Promise<OAuthModelSettings> => {
-  const [catalog, payload] = await Promise.all([
+  const [catalog, excludedRules] = await Promise.all([
     (target.scope === 'credential'
       ? api.get('/auth-files/models', { name: target.name })
       : api.get(`/model-definitions/${encodeURIComponent(target.provider)}`))
       .then((definitions) => ({ models: oauthModelsFromPayload(definitions), error: '' }))
       .catch((error: unknown) => ({ models: [] as OAuthModelDefinition[], error: String(error) })),
     target.scope === 'credential'
-      ? api.get('/auth-files/download', { name: target.name })
-      : api.get('/oauth-excluded-models'),
+      ? api.excludedModels(target.name).then(authFileExcludedRules)
+      : api.get('/oauth-excluded-models').then((payload) => oauthExcludedRulesFromPayload(payload, target.provider)),
   ]);
-  const excludedRules = target.scope === 'credential'
-    ? authFileExcludedRulesFromPayload(payload)
-    : oauthExcludedRulesFromPayload(payload, target.provider);
   return {
     target,
     models: oauthModelCandidates(catalog.models, excludedRules),
@@ -78,7 +76,7 @@ export const loadOAuthModelSettings = async (
 export const saveOAuthModelSettings = async (
   settings: OAuthModelSettings,
   rules: Iterable<string>,
-  api: OAuthModelSettingsApi = managementApi,
+  api: OAuthModelSettingsApi = oauthModelSettingsApi,
 ): Promise<void> => {
   const excludedModels = normalizeOAuthExcludedRules(rules);
   if (excludedModels.length === settings.excludedRules.length

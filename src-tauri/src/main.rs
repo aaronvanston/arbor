@@ -4,6 +4,7 @@ mod app_menu;
 mod app_identity;
 mod app_settings;
 mod app_update;
+mod auth_file_contents;
 mod bindings;
 mod build_channel;
 mod cli;
@@ -1811,6 +1812,9 @@ fn main() {
             digest_export::save_digest_page,
             digest_export::open_saved_page,
             management_api::upload_auth_file,
+            auth_file_contents::fold_reauth_credential,
+            auth_file_contents::get_auth_file_project_id,
+            auth_file_contents::get_auth_file_excluded_models,
             management_api::open_auth_files_directory,
             management_api::open_core_logs_directory,
             management_api::reveal_core_config_file,

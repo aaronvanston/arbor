@@ -1,4 +1,5 @@
-import { translate } from '../i18n';
+import { invokeCommand } from '../native/commands';
+import type { ReauthFold } from '../native/types';
 import {
   canonicalProvider,
   changedAuthFileNames,
@@ -11,13 +12,28 @@ import {
   type AuthFileSnapshot,
 } from './authFiles';
 import { migrateAccountKeys, renamedCredentialKeys, type AccountKeyRename } from './accountKeys';
-import { isRecord, managementApi, readString, responseList, type ManagementJson } from './managementApi';
+import { CommandFailure, readCommandError } from './commandError';
+import { managementApi, readString, responseList, type ManagementJson } from './managementApi';
 import type { OAuthProviderId } from './oauthCallback';
 
 export type ReauthApi = {
   get: (path: string, query?: Record<string, string>) => Promise<ManagementJson>;
-  delete: (path: string, options?: { query?: Record<string, string> }) => Promise<ManagementJson>;
-  uploadAuthFileText: (name: string, text: string) => Promise<ManagementJson>;
+  /**
+   * Folds the first of `candidates` whose file records the same account as `target` into `target`, keeping
+   * `target`'s settings, and deletes it. The files are read in Rust; only the outcome comes back.
+   */
+  foldCredential: (target: string, candidates: string[]) => Promise<ReauthFold>;
+};
+
+const reauthApi: ReauthApi = {
+  get: managementApi.get,
+  foldCredential: async (target, candidates) => {
+    try {
+      return await invokeCommand('fold_reauth_credential', { target, candidates });
+    } catch (reason) {
+      throw new CommandFailure(readCommandError(reason));
+    }
+  },
 };
 
 export type ListingPollOptions = {
@@ -81,58 +97,9 @@ export function matchReauthCredential(
   return sameAccountCredentials(target, candidates)[0] ?? null;
 }
 
-/** User-configured fields that a re-login must never clobber (mirrors the core's re-login preserve list). */
-export const PRESERVED_AUTH_FIELDS = [
-  'priority',
-  'disabled',
-  'prefix',
-  'websockets',
-  'note',
-  'proxy_url',
-  'weight',
-  'headers',
-  'models',
-  'thinking',
-  'excluded_models',
-] as const;
-
-/** Overlay fresh OAuth tokens onto the existing file while keeping its settings. */
-export function mergeReauthCredential(
-  existing: Record<string, unknown>,
-  fresh: Record<string, unknown>,
-): Record<string, unknown> {
-  const merged: Record<string, unknown> = { ...existing, ...fresh };
-  for (const key of PRESERVED_AUTH_FIELDS) {
-    if (key in existing) merged[key] = existing[key];
-  }
-  return merged;
-}
-
-const downloadAuthFile = async (api: ReauthApi, name: string) => {
-  const payload = await api.get('/auth-files/download', { name });
-  if (!isRecord(payload)) {
-    throw new Error(translate('authFiles.reauth.invalidFile', { name }));
-  }
-  return payload;
-};
-
 /** Changed files whose names did not exist before the sign-in. */
 const newFilesAmong = (candidates: AuthFileRecord[], knownNames: Set<string>) =>
   candidates.filter((file) => !knownNames.has(readString(file, 'name')));
-
-/**
- * Identity fields a credential file records about its account: the Codex
- * workspace, the Claude organization and user. The listing leaves them out.
- */
-const FILE_IDENTITY_FIELDS = ['account_id', 'organization_uuid', 'account_uuid'] as const;
-
-/** Whether two credential files name different accounts; a file that records no id never conflicts. */
-const conflictingIdentity = (left: Record<string, unknown>, right: Record<string, unknown>) =>
-  FILE_IDENTITY_FIELDS.some((field) => {
-    const leftId = readString(left, field);
-    const rightId = readString(right, field);
-    return Boolean(leftId && rightId && leftId !== rightId);
-  });
 
 /** Credential files of `provider` from before a sign-in that are no longer on disk. */
 const vanishedCredentials = (before: AuthFileRecord[], after: AuthFileRecord[], provider: string) => {
@@ -258,7 +225,7 @@ async function foldIntoListedAccounts(
 export async function settleSignIn(
   before: AuthFileRecord[],
   provider: OAuthProviderId,
-  api: ReauthApi = managementApi,
+  api: ReauthApi = reauthApi,
   options: SettleSignInOptions = {},
 ): Promise<SignInResult> {
   let files = await listingAfterSignIn(before, provider, api, options);
@@ -308,7 +275,7 @@ export async function completeReauth(
   target: AuthFileRecord,
   provider: OAuthProviderId,
   before: AuthFileSnapshot,
-  api: ReauthApi = managementApi,
+  api: ReauthApi = reauthApi,
   options: CompleteReauthOptions = {},
 ): Promise<ReauthOutcome> {
   const name = readString(target, 'name');
@@ -374,21 +341,10 @@ export async function completeReauth(
 
   // The files themselves record the workspace or organization the listing
   // leaves out. Never fold one account's login into another's file: take the
-  // first candidate whose file agrees with the target's.
-  const existing = await downloadAuthFile(api, name);
-  let fresh: Record<string, unknown> | undefined;
-  let freshName = '';
-  for (const candidate of matches) {
-    const candidateName = readString(candidate, 'name');
-    const content = await downloadAuthFile(api, candidateName);
-    if (conflictingIdentity(existing, content)) continue;
-    fresh = content;
-    freshName = candidateName;
-    break;
-  }
-  if (!fresh) return { kind: 'other-workspace', name, saved: readString(match, 'name') };
-  const merged = mergeReauthCredential(existing, fresh);
-  await api.uploadAuthFileText(name, `${JSON.stringify(merged, null, 2)}\n`);
-  await api.delete('/auth-files', { query: { name: freshName } });
-  return { kind: 'transplanted', name, from: freshName };
+  // first candidate whose file agrees with the target's. Rust reads the files,
+  // merges the tokens and deletes the copy, so no token reaches the webview.
+  const folded = await api.foldCredential(name, matches.map((candidate) => readString(candidate, 'name')));
+  return folded.kind === 'transplanted'
+    ? { kind: 'transplanted', name, from: folded.from }
+    : { kind: 'other-workspace', name, saved: readString(match, 'name') };
 }

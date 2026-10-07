@@ -81,6 +81,10 @@ pub(crate) async fn management_request(
     if path.is_empty() || path.contains("://") || path.contains("..") {
         return Err(CommandError::failed("Invalid management API path"));
     }
+    // A credential file holds the account's tokens, which never reach the webview.
+    if crate::auth_file_contents::reads_credential_contents(path) {
+        return Err(CommandError::failed("Credential files stay in Arbor and can't be read from the window"));
+    }
 
     let client = management_http_client()?;
     let mut builder = client
@@ -120,16 +124,22 @@ pub(crate) async fn upload_auth_file(
     if name.is_empty() || !name.to_ascii_lowercase().ends_with(".json") {
         return Err("Credentials filename must end with .json".to_string());
     }
-
     let config = gui_config_state.snapshot()?;
+    upload_auth_file_bytes(&config, &name, data).await
+}
+
+/// Writes `data` to the credential file `name` through the core.
+pub(crate) async fn upload_auth_file_bytes(
+    config: &GuiConfigFile,
+    name: &str,
+    data: Vec<u8>,
+) -> Result<serde_json::Value, String> {
     let client = management_http_client()?;
-    let mut query = HashMap::new();
-    query.insert("name".to_string(), name);
     let response = send_management(
         client
-            .post(management_endpoint(&config, "auth-files")?)
-            .header("Authorization", management_authorization(&config)?)
-            .query(&query)
+            .post(management_endpoint(config, "auth-files")?)
+            .header("Authorization", management_authorization(config)?)
+            .query(&[("name", name)])
             .header("Content-Type", "application/json")
             .body(data),
     )
@@ -476,7 +486,7 @@ fn management_error_reason(body: &str) -> Option<String> {
 }
 
 /// The core answered `status`, with `body`.
-fn management_status_error(status: u16, body: &str) -> CommandError {
+pub(crate) fn management_status_error(status: u16, body: &str) -> CommandError {
     CommandError {
         kind: CommandErrorKind::Core,
         status: Some(status),

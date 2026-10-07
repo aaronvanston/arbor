@@ -6,6 +6,7 @@ import {
   normalizeAuthIndex,
   readString,
 } from './managementApi';
+import { invokeCommand } from '../native/commands';
 import { authFileName, canonicalProvider } from './authFiles';
 import { readCommandError } from './commandError';
 import { plainErrorReason } from './plainError';
@@ -806,8 +807,8 @@ const resolveProjectId = async (file: AuthFile): Promise<string> => {
   const direct = antigravityProjectFor(file);
   if (direct) return direct;
   try {
-    const payload = parseBody(await managementApi.get('/auth-files/download', { name: fileName(file) }));
-    return isRecord(payload) ? antigravityProjectFor(payload) : '';
+    // Rust reads the credential file and answers with the id alone; the file's tokens stay out of the webview.
+    return await invokeCommand('get_auth_file_project_id', { name: fileName(file) });
   } catch {
     return '';
   }

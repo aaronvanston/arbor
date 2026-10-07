@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn, type Mock } from 'bun:test';
+import { clearMocks } from '@tauri-apps/api/mocks';
+import { mockCommands } from '../src/dev/mock/answers';
 import { CommandFailure } from '../src/services/commandError';
 import { managementApi } from '../src/services/managementApi';
 import { consumeCodexResetCredit, loadQuota } from '../src/services/quotaService';
@@ -118,14 +120,23 @@ describe('quota API compatibility', () => {
     expect(Math.abs((result.serverTimeOffsetMs ?? 0) - (Date.parse(serverTime) - Date.now()))).toBeLessThan(1000);
   });
 
-  it('Antigravity 项目缺失时从下载的 JSON 中提取 installed 项目', async () => {
-    get.mockImplementation(async () => JSON.stringify({ installed: { project_id: 'downloaded-project' } }) as never);
-    handler = (request) => success(request.url.endsWith(':loadCodeAssist') ? {} : {
-      groups: [{ buckets: [{ remainingFraction: 1 }] }],
-    });
-    expect((await loadQuota({ name: 'anti-download.json', provider: 'antigravity', auth_index: 'a' })).status).toBe('success');
-    expect(get).toHaveBeenCalledWith('/auth-files/download', { name: 'anti-download.json' });
-    expect(calls.find((request) => request.url.endsWith(':retrieveUserQuotaSummary'))?.data).toBe('{"project":"downloaded-project"}');
+  it('asks Rust for an Antigravity project id the listing leaves out, never for the credential file', async () => {
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    Object.defineProperty(globalThis, 'window', { value: {}, writable: true, configurable: true });
+    const native = mockCommands({ get_auth_file_project_id: ({ name }) => (name === 'anti-file.json' ? 'file-project' : '') });
+    try {
+      handler = (request) => success(request.url.endsWith(':loadCodeAssist') ? {} : {
+        groups: [{ buckets: [{ remainingFraction: 1 }] }],
+      });
+      expect((await loadQuota({ name: 'anti-file.json', provider: 'antigravity', auth_index: 'a' })).status).toBe('success');
+      expect(native.map(({ command, args }) => ({ command, args }))).toEqual([{ command: 'get_auth_file_project_id', args: { name: 'anti-file.json' } }]);
+      expect(get).not.toHaveBeenCalled();
+      expect(calls.find((request) => request.url.endsWith(':retrieveUserQuotaSummary'))?.data).toBe('{"project":"file-project"}');
+    } finally {
+      clearMocks();
+      if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+      else Reflect.deleteProperty(globalThis, 'window');
+    }
   });
 
   it('makes no request without an auth index, nor to reset a turned-off account', async () => {
