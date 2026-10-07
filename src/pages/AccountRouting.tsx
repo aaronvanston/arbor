@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Check } from '../components/ui/icons';
+import { AlertCircle, Check, Play, ServerCog, Users } from '../components/ui/icons';
+import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { AccountAvatar } from '../components/AccountAvatar';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -16,7 +17,10 @@ import { resolveAccountProfile, useAccountProfiles } from '../services/accountPr
 import { accountFilesFromListing, loadAccountFiles, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { formatResetCountdown, providerLabel } from '../services/providerLimits';
 import { getQuotaCacheSnapshot, useQuotaCache } from '../services/quotaCache';
+import { runCoreProcess } from '../services/coreProcess';
+import { plainError } from '../services/plainError';
 import {
+  accountOrderGap,
   applyRoutingPlan,
   providerRoutingPlans,
   setRoutingAuto,
@@ -36,7 +40,7 @@ const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slic
  * and the limits of any never read, which the suggestions go by.
  */
 export function AccountOrderSection() {
-  const { files } = useAccountsStore();
+  const { files, loaded } = useAccountsStore();
   const coreReady = Boolean(useCoreRuntime().status?.ready);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -48,19 +52,19 @@ export function AccountOrderSection() {
   return (
     <>
       {error ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{error}</AlertDescription></Alert> : null}
-      <AccountRouting files={files} onError={setError} coreReady={coreReady} />
+      <AccountRouting files={files} loaded={loaded} onError={setError} coreReady={coreReady} />
     </>
   );
 }
 
 /**
  * Suggested credential priorities for each provider, from the limits the Accounts page reads, with a
- * button to apply them and a switch to keep them applied. Nothing shows until a provider has accounts
- * to order.
+ * button to apply them and a switch to keep them applied. With nothing to order it says why.
  */
-export function AccountRouting({ files, onError, coreReady = true }: {
+export function AccountRouting({ files, loaded, onError, coreReady = true }: {
   /** The core's whole listing; only the accounts in use are ordered. */
   files: AuthFile[];
+  loaded: boolean;
   onError: (message: string) => void;
   /** Priorities are the running core's, so there's nothing to apply them to while it's stopped. */
   coreReady?: boolean;
@@ -70,15 +74,64 @@ export function AccountRouting({ files, onError, coreReady = true }: {
   const profiles = useAccountProfiles();
   const prefs = useAccountLimitPrefs();
   const order = useAccountOrder();
+  const inUse = useMemo(() => accountFilesFromListing(files), [files]);
   const routings = useMemo(
-    () => providerRoutingPlans(accountFilesFromListing(files), quotas, profiles, prefs, Date.now(), order),
-    [files, quotas, profiles, prefs, order],
+    () => providerRoutingPlans(inUse, quotas, profiles, prefs, Date.now(), order),
+    [inUse, quotas, profiles, prefs, order],
   );
-  if (!routings.length) return null;
+  const gap = accountOrderGap({
+    coreReady,
+    loaded,
+    accounts: inUse.length,
+    reading: inUse.some((file) => quotas[quotaKey(file)]?.status === 'loading'),
+    routings: routings.length,
+  });
   return (
     <SettingsSection settingId="routing.accounts" title={t('accounts.routing.title')} description={t('accounts.routing.description')}>
-      {routings.map((routing) => <ProviderRoutingBlock key={routing.provider} routing={routing} onError={onError} coreReady={coreReady} />)}
+      {gap === 'core' ? <CoreStoppedOrder onError={onError} /> : gap === 'none' || gap === 'unread' ? (
+        <Empty size="sm">
+          <EmptyMedia><Users /></EmptyMedia>
+          <div>
+            <EmptyTitle>{t(gap === 'none' ? 'accounts.routing.none.title' : 'accounts.routing.unread.title')}</EmptyTitle>
+            <EmptyDescription>{t(gap === 'none' ? 'accounts.routing.none.description' : 'accounts.routing.unread.description')}</EmptyDescription>
+          </div>
+        </Empty>
+      ) : gap === 'loading' ? (
+        <SettingsBlock className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="size-3.5" />
+          {t('accounts.routing.loading')}
+        </SettingsBlock>
+      ) : routings.map((routing) => <ProviderRoutingBlock key={routing.provider} routing={routing} onError={onError} coreReady={coreReady} />)}
     </SettingsSection>
+  );
+}
+
+/** The order is read from the running core, so with it stopped the section offers to start it, as a locked page does. */
+function CoreStoppedOrder({ onError }: { onError: (message: string) => void }) {
+  const { t } = useI18n();
+  const { publishStatus, refreshStatus } = useCoreRuntime();
+  const [busy, setBusy] = useState(false);
+  const start = async () => {
+    setBusy(true);
+    onError('');
+    try {
+      onError((await runCoreProcess('start_core_process', { publishStatus, refreshStatus })) ?? '');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Empty size="sm">
+      <EmptyMedia><ServerCog /></EmptyMedia>
+      <div>
+        <EmptyTitle>{t('accounts.routing.core.title')}</EmptyTitle>
+        <EmptyDescription>{t('accounts.routing.core.description')}</EmptyDescription>
+      </div>
+      <Button variant="outline" size="sm" onClick={() => void start()} disabled={busy}>
+        {busy ? <Spinner /> : <Play />}
+        {busy ? t('app.coreLocked.starting') : t('app.coreLocked.start')}
+      </Button>
+    </Empty>
   );
 }
 
@@ -95,7 +148,7 @@ function ProviderRoutingBlock({ routing: { provider, window, plan }, onError, co
     try {
       await applyRoutingPlan(plan.changes);
     } catch (applyError) {
-      onError(t('accounts.routing.failed', { error: applyError instanceof Error ? applyError.message : String(applyError) }));
+      onError(t('accounts.routing.failed', { error: plainError(applyError, t) }));
     } finally {
       setApplying(false);
       // The Accounts page and automatic routing read the priorities from here.

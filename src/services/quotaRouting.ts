@@ -143,6 +143,26 @@ export function providerRoutingPlans(
   });
 }
 
+/**
+ * Why Settings › Routing's account order has nothing to show, so it says so rather than vanishing: the core isn't
+ * running, the accounts are still being read, there are none in use, or none has a limit reading to order by yet.
+ */
+export function accountOrderGap({ coreReady, loaded, accounts, reading, routings }: {
+  coreReady: boolean;
+  loaded: boolean;
+  /** Accounts in use. */
+  accounts: number;
+  /** Whether any of their limits is being read. */
+  reading: boolean;
+  routings: number;
+}): 'core' | 'loading' | 'none' | 'unread' | null {
+  if (routings > 0) return null;
+  if (!coreReady) return 'core';
+  if (!loaded) return 'loading';
+  if (accounts === 0) return 'none';
+  return reading ? 'loading' : 'unread';
+}
+
 /** Sets the suggested priorities through the core. It picks each one up straight away. */
 export async function applyRoutingPlan(
   changes: RoutingItem[],
