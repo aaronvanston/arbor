@@ -220,15 +220,18 @@ const realSizeBuildMachines = realSize ? Array.from({ length: 8 }, (_, index) =>
 
 const machines = realSize
   ? [
-    machineShare('cam-mbp', 'dev', 0.4, 0.025, 4, iso(-120_000)),
+    machineShare('cam-mbp', 'dev', 0.39, 0.025, 4, iso(-120_000)),
     machineShare('ci-01', 'ci', 0.15, 0.017, 0, iso(-900_000)),
+    machineShare('ci-runner', 'ci', 0.01, 0.08, 0, iso(-18 * 60_000)),
     machineShare('cedar-02', 'dev', 0.12, 0.02, 1, iso(-300_000)),
     ...realSizeBuildMachines.map((machine, index) => machineShare(machine, 'ci', 0.035, 0.01, 0, iso(-(index + 2) * 600_000))),
     machineShare('', '', 0.05, 0, 0, iso(-5_400_000)),
   ]
   : [
-    machineShare('cam-mbp', 'dev', 0.726, 0.025, 4, iso(-120_000)),
+    machineShare('cam-mbp', 'dev', 0.714, 0.025, 4, iso(-120_000)),
     machineShare('ci-01', 'ci', 0.251, 0.017, 0, iso(-900_000)),
+    // The GitHub runner's two sessions (Sessions lists them), one ending on a failed request.
+    machineShare('ci-runner', 'ci', 0.012, 0.08, 0, iso(-18 * 60_000)),
     machineShare('', '', 0.023, 0, 0, iso(-5_400_000)),
   ];
 if (freshInstall) machines.length = 0;
