@@ -306,6 +306,20 @@ export function savePhoneAlertSecret(secret: PhoneAlertSecret, value: string): P
   return write;
 }
 
+/**
+ * Reads which secrets the app holds, and so whether it can read them at all: on startup, as the settings page opens,
+ * and on its Try again. Throws what the app said, which is kept for the page too.
+ */
+export async function readPhoneAlertSecrets(): Promise<void> {
+  try {
+    saved.set(await invokeCommand('get_phone_alert_secrets'));
+    secretsProblem.set('');
+  } catch (error) {
+    secretsProblem.set(String(error));
+    throw error;
+  }
+}
+
 let preparing: Promise<void> | null = null;
 
 /**
@@ -322,11 +336,9 @@ export function preparePhoneAlerts(): Promise<void> {
       done = false;
     }
     try {
-      saved.set(await invokeCommand('get_phone_alert_secrets'));
-      secretsProblem.set('');
+      await readPhoneAlertSecrets();
     } catch (error) {
       console.warn('Failed to read which phone alert secrets are saved', error);
-      secretsProblem.set(String(error));
       done = false;
     }
     if (!done) preparing = null;

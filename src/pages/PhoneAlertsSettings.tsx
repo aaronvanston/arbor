@@ -13,7 +13,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
 import { cn } from '../lib/utils';
-import { NO_PHONE_ALERT_SECRETS, PHONE_ALERT_TOPICS, PHONE_SERVICES, phoneAlertSendRoute, preparePhoneAlerts, randomNtfyTopic, recordPhoneAlertDelivery, savePhoneAlertSecret, sendPhoneAlert, setPhoneAlertSetting, topicRaisedHere, usePhoneAlertDelivery, usePhoneAlertSecrets, usePhoneAlertSecretsProblem, usePhoneAlertSettings, withPhoneTopic, type PhoneService } from '../services/phoneAlerts';
+import { NO_PHONE_ALERT_SECRETS, PHONE_ALERT_TOPICS, PHONE_SERVICES, phoneAlertSendRoute, preparePhoneAlerts, randomNtfyTopic, readPhoneAlertSecrets, recordPhoneAlertDelivery, savePhoneAlertSecret, sendPhoneAlert, setPhoneAlertSetting, topicRaisedHere, usePhoneAlertDelivery, usePhoneAlertSecrets, usePhoneAlertSecretsProblem, usePhoneAlertSettings, withPhoneTopic, type PhoneService } from '../services/phoneAlerts';
 import { useMachineOverrides, useProjectOverrides } from '../services/machineSettings';
 import { useQuotaClock } from '../services/quotaTime';
 import { formatAgo } from '../lib/format';
@@ -43,14 +43,15 @@ export function PhoneAlertsSettings() {
   const serviceLabel = (service: PhoneService) => t(`phoneAlerts.service.${service}`);
   const savedKey = JSON.stringify(saved);
 
-  // Startup does this too; asked again in case the app couldn't answer then.
-  useEffect(() => void preparePhoneAlerts(), []);
+  // Startup does this too; asked again in case the app couldn't answer then. The secrets are read again either way, so
+  // a file damaged since startup is said on opening.
+  useEffect(() => void preparePhoneAlerts().then(readPhoneAlertSecrets).catch(() => undefined), []);
   // A result is about the settings it was sent with.
   useEffect(() => setTest({ state: 'idle' }), [settings, savedKey]);
 
   const readAgain = () => {
     setRereading(true);
-    void preparePhoneAlerts().finally(() => setRereading(false));
+    void readPhoneAlertSecrets().catch(() => undefined).finally(() => setRereading(false));
   };
 
   const sendTest = async () => {
