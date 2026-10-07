@@ -14,13 +14,16 @@ import { Badge } from '../components/ui/badge';
 import { requestFocus } from '../focusRequests';
 import type { AppView } from '../navigation';
 import type { ProductAnalyticsSettings } from '../native/types';
+import type { MessageKey } from '../i18n/resources';
 
 /** Each one's name and description are `about.credit.<id>.name` and `.description` in en.ts. */
 type CreditId = 'cliproxyapi' | 'easycliproxyapi' | 't3code' | 'antiburn' | 'codexbar' | 'cossui' | 'lobeicons' | 'orca' | 'superset' | 'hugeicons' | 'modelsdev' | 'macmon';
-type Credit = { id: CreditId; url: string };
+/** `license` is the license line when it isn't plain MIT. */
+type Credit = { id: CreditId; url: string; license?: MessageKey };
 
 /**
- * The projects Arbor runs, is forked from, borrows designs from, includes or reads data with, all MIT licensed. Only
+ * The projects Arbor runs, is forked from, borrows designs from, includes or reads data with, all MIT licensed (official
+ * builds' Hugeicons Pro icons aside, which say so). Only
  * ones the code actually draws on are listed; a project that was only looked at isn't. THIRD_PARTY_NOTICES.md
  * (bun run notices) has every package's license, and ships in the app.
  */
@@ -39,7 +42,8 @@ export const CREDITS = {
     { id: 'lobeicons', url: 'https://github.com/lobehub/lobe-icons' },
     { id: 'orca', url: 'https://github.com/stablyai/orca' },
     { id: 'superset', url: 'https://github.com/superset-sh/superset' },
-    { id: 'hugeicons', url: 'https://github.com/hugeicons/hugeicons-react' },
+    // Official builds add Hugeicons Pro's duotone set (docs/operations/development.md), which isn't MIT.
+    { id: 'hugeicons', url: 'https://github.com/hugeicons/hugeicons-react', license: 'about.license.hugeicons' },
   ],
   sources: [
     { id: 'modelsdev', url: 'https://models.dev' },
@@ -169,7 +173,7 @@ export function CreditRows({ credits }: { credits: readonly Credit[] }) {
           key={item.id}
           title={t(`about.credit.${item.id}.name`)}
           description={t(`about.credit.${item.id}.description`)}
-          status={t('about.license')}
+          status={t(item.license ?? 'about.license')}
           url={item.url}
         />
       ))}

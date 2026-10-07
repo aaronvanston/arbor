@@ -1208,6 +1208,7 @@ export const en = {
   'about.tagline': 'Open source under the MIT license, built on EasyCLIProxyAPI.',
   'about.version': 'Version {version}',
   'about.license': 'MIT License',
+  'about.license.hugeicons': 'MIT License, with Hugeicons Pro icons in official builds under a commercial license',
   'about.open': 'Open',
   'about.openLabel': 'View {name} in the browser',
   'about.openFailed': 'Couldn’t open {name}',
