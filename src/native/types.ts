@@ -2832,7 +2832,8 @@ export type MachineHealth = {
   lastOkAt: number | null,
   lastAttemptAt: number | null,
   /**
-   * Where pings go, from `ssh -G`. None for this machine or behind a jump host, which aren't pinged.
+   * Where SSH goes, from `ssh -G`, which Grove pings for a machine with no probe. None for this machine or behind a
+   * jump host; a streamed machine's round trip is measured over its stream either way.
    */
   pingTarget: string | null,
   /**

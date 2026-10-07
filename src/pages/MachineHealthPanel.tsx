@@ -17,6 +17,7 @@ import {
   latencyStats,
   mergeSnapshots,
   READING_LIMITS,
+  showsRoundTrip,
   type HealthWindowId,
 } from '../services/machineHealth';
 import { useLatestAgentVersions } from '../services/agentReleases';
@@ -44,6 +45,7 @@ import type { HealthPoint, HealthStatus, MachineHealth, MachineHealthSnapshot, M
 import { invokeCommand } from '../native/commands';
 import { isWindowHidden } from '../services/hiddenPace';
 import { machineName } from '../services/machineNames';
+import { probeState, useMachineProbes } from '../services/machineProbes';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
@@ -422,7 +424,7 @@ function MachineRow({ item, newest, windowMs, onOpen }: { item: MachineHealth; n
   const latest = item.latest;
   const totalRate = rateParts(latest && (latest.rxBps !== null || latest.txBps !== null) ? (latest.rxBps ?? 0) + (latest.txBps ?? 0) : null);
   // Latency is tracked for remote machines only and never feeds the score, so it keeps a neutral tone.
-  const pinged = item.pingTarget !== null;
+  const pinged = showsRoundTrip(item);
   const latency = latest?.latencyMs ?? null;
   const sampled = item.status !== 'unconfigured';
 
@@ -518,7 +520,10 @@ export function MachineHealthDetail({ item, windowMs, history }: {
   const chartLabel = (metric: string) => t('machines.health.chartAria', { machine: item.machine, metric });
   const chartTime = (at: number) => (windowMs > HOUR_MS ? formatDateTime(at) : formatTime(at, { seconds: true }));
   const chartRate = (value: number) => { const rate = formatRate(value); return `${rate.value} ${rate.unit}`; };
-  const pinged = item.pingTarget !== null;
+  const pinged = showsRoundTrip(item);
+  // A streamed machine's round trip is timed over its probe's SSH connection; one without a probe is pinged.
+  const overSsh = probeState(useMachineProbes(), item.machine) === 'streaming';
+  const latencyLabel = t(overSsh ? 'machines.health.tile.roundTripSsh' : 'machines.health.tile.latency');
   const latency = latest?.latencyMs ?? null;
   const ms = (value: number) => value.toFixed(latencyDigits(value));
   const pathBadge = item.path ? (
@@ -653,13 +658,13 @@ export function MachineHealthDetail({ item, windowMs, history }: {
           {pinged ? (
             <Tile
               icon={<Radar />}
-              label={t('machines.health.tile.latency')}
+              label={latencyLabel}
               badge={pathBadge}
               value={<BigValue value={latency} digits={latencyDigits(latency ?? 0)} unit="ms" />}
-              chart={<TimeSeries id={`${id}-latency`} formatTime={chartTime} series={[latencySeries]} windowMs={windowMs} max={latencyMax} height={32} strokeClass={['text-primary']} format={formatLatency} ariaLabel={chartLabel(t('machines.health.tile.latency'))} />}
+              chart={<TimeSeries id={`${id}-latency`} formatTime={chartTime} series={[latencySeries]} windowMs={windowMs} max={latencyMax} height={32} strokeClass={['text-primary']} format={formatLatency} ariaLabel={chartLabel(latencyLabel)} />}
               footer={
                 latest && latency === null
-                  ? t('machines.health.noPingReply')
+                  ? t(overSsh ? 'machines.health.noRoundTrip' : 'machines.health.noPingReply')
                   : latencyRange
                   ? t('machines.health.latencyStats', { min: ms(latencyRange.min), avg: ms(latencyRange.avg), max: ms(latencyRange.max) })
                   : null

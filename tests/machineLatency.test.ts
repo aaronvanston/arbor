@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { formatLatency, latencyStats } from '../src/services/machineHealth';
-import type { HealthPoint } from '../src/native/types';
+import { formatLatency, latencyStats, showsRoundTrip } from '../src/services/machineHealth';
+import type { HealthPoint, MachineHealth } from '../src/native/types';
 
 const point = (t: number, latencyMs: number | null): HealthPoint => ({
   t, score: 100, cpu: 5, mem: 40, memUsedKb: 1, swap: null, swapUsedKb: null, disk: 30, diskFreeKb: 1,
@@ -26,5 +26,13 @@ describe('machine latency', () => {
   it('has no summary until something replies', () => {
     expect(latencyStats([])).toBeNull();
     expect(latencyStats([point(0, null), point(5_000, null)])).toBeNull();
+  });
+
+  it('shows a round trip for remote machines, including one behind a jump host whose stream times it', () => {
+    const machine = (local: boolean, pingTarget: string | null, points: HealthPoint[]) => ({ local, pingTarget, points }) as MachineHealth;
+    expect(showsRoundTrip(machine(false, 'cedar-01.tailc0ffee.ts.net', []))).toBe(true);
+    expect(showsRoundTrip(machine(false, null, [point(0, 4.2)]))).toBe(true);
+    expect(showsRoundTrip(machine(false, null, [point(0, null)]))).toBe(false);
+    expect(showsRoundTrip(machine(true, null, [point(0, 0.1)]))).toBe(false);
   });
 });

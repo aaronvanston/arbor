@@ -19,8 +19,10 @@ see stay in Arbor. A machine that keeps a probe in Grove's registry is never rem
 undone keeps its probe. A machine with a probe is followed by a long-lived `grove stream <slug> --jsonl`, up to
 `MAX_STREAMS`, an allowance of their own: they never take a script slot. Every other machine gets one `grove sample` a
 round, which does hold a slot (`shell::run_in_slot`) and lands in Diagnostics. Grove's SSH runs ride Arbor's control
-sockets through `GROVE_SSH_COMMAND`. The round itself, pings, Tailscale paths, discovery and agent versions stay in
-Arbor; a machine read by `grove sample` takes its round trip and address from Grove's ping instead. When Grove is
+sockets through `GROVE_SSH_COMMAND`. The round itself, Tailscale paths, discovery and agent versions stay in Arbor,
+which sends no pings: a streamed machine's round trip is Grove's echo over the stream's own SSH connection (so it holds
+behind a jump host, where a ping would measure another path), and a machine read by `grove sample` takes its round
+trip and address from Grove's ping. The Tailscale path looks up the address `ssh -G` resolves to. When Grove is
 missing or answers as another version, the sampler falls back to its own script (`SAMPLE_SCRIPT`) for one release,
 then to a reachability check (`LEGACY_SAMPLER`).
 

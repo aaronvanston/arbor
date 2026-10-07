@@ -1,5 +1,5 @@
 import { invokeCommand } from '../native/commands';
-import type { AgentKind, HealthPoint, MachineHealthSnapshot, MachineHistory, MachineHost } from '../native/types';
+import type { AgentKind, HealthPoint, MachineHealth, MachineHealthSnapshot, MachineHistory, MachineHost } from '../native/types';
 import { isWindowInBackground } from './hiddenPace';
 import { tracked } from './productAnalytics';
 
@@ -159,6 +159,12 @@ export const latencyDigits = (ms: number) => (ms < 10 ? 1 : 0);
 export const formatLatency = (ms: number) => `${ms.toFixed(latencyDigits(ms))} ms`;
 
 /** Lowest, mean and highest round trip across the points that got a reply. */
+/**
+ * Whether a machine's round trip is shown: remote ones only, which Grove either times over a probe's stream (through
+ * any jump host) or pings when it has no probe (not behind a jump host).
+ */
+export const showsRoundTrip = (item: MachineHealth) => !item.local && (item.pingTarget !== null || item.points.some((point) => point.latencyMs !== null));
+
 export function latencyStats(points: HealthPoint[]): { min: number; avg: number; max: number } | null {
   const values = points.flatMap((point) => (point.latencyMs === null ? [] : [point.latencyMs]));
   if (!values.length) return null;

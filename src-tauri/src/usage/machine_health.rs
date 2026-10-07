@@ -13,11 +13,13 @@
 //! samples every `ACTIVE_INTERVAL`; otherwise it drops to `IDLE_INTERVAL` so
 //! the hour of history stays continuous without hammering the fleet.
 //!
-//! Each round also pings the remote machines at the address SSH resolves them
-//! to, and asks Tailscale (about once a minute) how it reaches the ones on a
-//! tailnet: on the local network, directly over the internet, or through a
-//! relay. Latency is tracked alongside the other readings but never counts
-//! toward the score.
+//! Each reading carries its round trip from Grove: a streamed machine's is
+//! timed with echoes over its stream's own SSH connection (so a jump host in
+//! the way is measured too), and one read with `grove sample` is pinged by
+//! Grove. Each round also asks Tailscale (about once a minute) how it reaches
+//! the machines on a tailnet: on the local network, directly over the
+//! internet, or through a relay. Latency is tracked alongside the other
+//! readings but never counts toward the score.
 //!
 //! Each sample also counts the Claude Code and Codex processes running on the
 //! machine; which versions are installed is checked less often, in `agents`.
@@ -110,7 +112,6 @@ const SAMPLE_TIMEOUT: Duration = Duration::from_secs(12);
 const HOSTS_REFRESH: Duration = Duration::from_secs(60);
 /// `ssh -G` runs again for a host only when it's new or changed, or an hour on, to catch a change to ~/.ssh/config.
 const PING_TARGET_REFRESH: Duration = Duration::from_secs(60 * 60);
-const PING_TIMEOUT: Duration = Duration::from_secs(4);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 /// A Tailscale status read is reused this long. A failed one is tried again after each of
 /// `TAILSCALE_RETRIES` in turn, then only this often.
@@ -668,9 +669,12 @@ struct MachineSeries {
     error: Option<String>,
     last_ok_at: Option<i64>,
     last_attempt_at: Option<i64>,
-    /// Where pings go: the host name SSH resolves the endpoint to. None for
-    /// this machine, and when SSH goes through a jump host or proxy command.
+    /// The host name SSH resolves the endpoint to, which Grove's one-shot
+    /// sample pings. None for this machine, and when SSH goes through a jump
+    /// host or proxy command.
     ping_target: Option<String>,
+    /// The address `ping_target` resolves to, for the Tailscale path.
+    address: Option<IpAddr>,
     path: Option<NetworkPath>,
     agents: agents::MachineAgents,
     transcripts: transcripts::TranscriptScans,
@@ -693,6 +697,7 @@ impl MachineSeries {
             last_ok_at: None,
             last_attempt_at: None,
             ping_target: None,
+            address: None,
             path: None,
             agents: agents::MachineAgents::default(),
             transcripts: transcripts::TranscriptScans::default(),
@@ -919,8 +924,8 @@ async fn sample_host(machine: &Machine) -> Result<RawSample, String> {
     RawSample::parse(&run_checked(machine, MachineOp::HealthCheck, SAMPLE_SCRIPT, SAMPLE_TIMEOUT).await?)
 }
 
-/// Where a remote host's pings go, read from `ssh -G` so aliases, `user@`
-/// endpoints and HostName overrides reach the same machine the samples do.
+/// Where SSH goes for a remote host, read from `ssh -G` so aliases, `user@`
+/// endpoints and HostName overrides name the same machine the samples reach.
 async fn resolve_ping_target(host: &MachineHost) -> Option<String> {
     let mut command = tokio::process::Command::new("ssh");
     command
@@ -942,7 +947,7 @@ async fn resolve_ping_target(host: &MachineHost) -> Option<String> {
 }
 
 /// The resolved host name from `ssh -G` output. None when a jump host or proxy
-/// command sits in between, where a direct ping would measure another path.
+/// command sits in between, where the address reached directly isn't the path SSH takes.
 fn ping_target_from_ssh_config(config: &str) -> Option<String> {
     let mut hostname = None;
     for line in config.lines() {
@@ -961,9 +966,8 @@ fn ping_target_from_ssh_config(config: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Re-reads where each remote machine's pings go. Runs with every host
-/// refresh, so SSH config edits are picked up within a minute.
-/// Resolves the hosts `resolved` has no fresh answer for, and notes when each was.
+/// Re-reads where SSH goes for each remote machine, and the address that is. Runs with every host refresh, for the
+/// hosts `resolved` has no fresh answer for, and notes when each was.
 async fn resolve_ping_targets(state: &MachineHealthState, resolved: &mut HashMap<String, (MachineHost, Instant)>) {
     let hosts: Vec<(String, MachineHost)> = state
         .lock()
@@ -982,78 +986,39 @@ async fn resolve_ping_targets(state: &MachineHealthState, resolved: &mut HashMap
     }
     let answers = futures_util::future::join_all(hosts.into_iter().map(|(machine, host)| async move {
         let target = resolve_ping_target(&host).await;
-        (machine, host, target)
+        let address = match &target {
+            Some(target) => lookup_address(target).await,
+            None => None,
+        };
+        (machine, host, target, address)
     }))
     .await;
     let mut inner = state.lock();
     let now = Instant::now();
-    for (machine, host, target) in answers {
+    for (machine, host, target, address) in answers {
         if let Some(series) = inner.series.get_mut(&machine).filter(|series| series.host == host) {
             series.ping_target = target;
+            series.address = address;
         }
         resolved.insert(machine, (host, now));
     }
 }
 
-/// What a round of pings learned: the address the target resolved to, and the
-/// median round trip of the replies.
+/// What a round learned of the way to a machine: the address it's reached at, for the Tailscale path, and the
+/// round trip Grove measured.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct PingReading {
+struct NetworkReading {
     address: Option<IpAddr>,
     latency_ms: Option<f32>,
 }
 
-fn ping_command(target: &str) -> tokio::process::Command {
-    // Three pings, 0.2s apart, capped at a few seconds.
-    let mut command = tokio::process::Command::new("/sbin/ping");
-    command.args(["-c", "3", "-i", "0.2", "-t", "3"]);
-    command
-        .arg(target)
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    configure_helper_command(&mut command);
-    command
-}
-
-async fn ping_host(target: &str) -> PingReading {
-    match tokio::time::timeout(PING_TIMEOUT, ping_command(target).output()).await {
-        Ok(Ok(output)) => parse_ping(target, &String::from_utf8_lossy(&output.stdout)),
-        _ => PingReading::default(),
+/// The address a host name resolves to, IPv4 first, as a ping would pick. Nothing is sent to it.
+async fn lookup_address(target: &str) -> Option<IpAddr> {
+    if let Ok(address) = target.parse::<IpAddr>() {
+        return Some(address);
     }
-}
-
-/// Reads ping's output on macOS, Linux or Windows. The median keeps one slow
-/// reply from reading as a spike; no replies leave the latency unknown.
-fn parse_ping(target: &str, output: &str) -> PingReading {
-    let address = target.parse::<IpAddr>().ok().or_else(|| {
-        let header = output
-            .lines()
-            .find(|line| line.starts_with("PING ") || line.starts_with("Pinging "))?;
-        let end = header.find(|c| c == ')' || c == ']')?;
-        let start = header[..end].rfind(|c| c == '(' || c == '[')? + 1;
-        header[start..end].parse().ok()
-    });
-    let mut times: Vec<f32> = output
-        .lines()
-        .filter_map(|line| {
-            let at = line.find("time=").or_else(|| line.find("time<"))? + "time=".len();
-            let digits: String = line[at..]
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-            digits.parse().ok()
-        })
-        .collect();
-    times.sort_by(f32::total_cmp);
-    let latency_ms = match times.len() {
-        0 => None,
-        count if count % 2 == 1 => Some(times[count / 2]),
-        count => Some((times[count / 2 - 1] + times[count / 2]) / 2.0),
-    };
-    PingReading { address, latency_ms }
+    let found: Vec<IpAddr> = tokio::time::timeout(COMMAND_TIMEOUT, tokio::net::lookup_host((target, 0))).await.ok()?.ok()?.map(|socket| socket.ip()).collect();
+    found.iter().find(|address| address.is_ipv4()).or(found.first()).copied()
 }
 
 /// Tailscale's address ranges: 100.64.0.0/10 and fd7a:115c:a1e0::/48.
@@ -1223,6 +1188,7 @@ fn apply_hosts(state: &MachineHealthState, hosts: Vec<MachineHost>) -> bool {
                     existing.last_ok_at = None;
                     existing.last_attempt_at = None;
                     existing.ping_target = None;
+                    existing.address = None;
                     existing.path = None;
                     existing.agents = agents::MachineAgents::default();
                     existing.transcripts = transcripts::TranscriptScans::default();
@@ -1378,15 +1344,10 @@ async fn sync_grove(state: &MachineHealthState, token: &CancellationToken) {
     }
 }
 
-/// One machine's reading this round, by its plan, and the pings that go with it. A machine read with `grove sample`
-/// isn't pinged here: Grove pings it, and its reading carries the round trip and the address for the Tailscale path.
-async fn read_machine(state: &MachineHealthState, machine: Machine, plan: Plan, ping_target: Option<String>, facts_due: bool, now_ms: i64) -> (Result<Sampled, String>, PingReading) {
-    let ping = async {
-        match &ping_target {
-            Some(target) if !matches!(plan, Plan::Once(_)) => ping_host(target).await,
-            _ => PingReading::default(),
-        }
-    };
+/// One machine's reading this round, by its plan, and the way to it. Arbor sends no pings of its own: a Grove reading
+/// carries its round trip (echoes over a stream, or Grove's ping for `grove sample`, which also gives the address it
+/// reached); otherwise the address SSH resolves to stands for the Tailscale path, with no round trip.
+async fn read_machine(state: &MachineHealthState, machine: Machine, plan: Plan, address: Option<IpAddr>, facts_due: bool, now_ms: i64) -> (Result<Sampled, String>, NetworkReading) {
     let read = async {
         let grove = match &plan {
             Plan::Stream(_) | Plan::Once(_) => state.grove().await,
@@ -1409,11 +1370,20 @@ async fn read_machine(state: &MachineHealthState, machine: Machine, plan: Plan, 
         };
         Ok(Sampled::Grove { reading, facts })
     };
-    let (sampled, mut ping) = tokio::join!(read, ping);
-    if let (Plan::Once(_), Ok(Sampled::Grove { reading, .. })) = (&plan, &sampled) {
-        ping = PingReading { address: grove::ping_address(reading), latency_ms: reading.get("latency_ms").and_then(Value::as_f64).map(|ms| ms as f32) };
+    let sampled = read.await;
+    let network = network_of(&sampled, address);
+    (sampled, network)
+}
+
+/// The round trip a Grove reading carries, and the address it reached (a ping's), else the one SSH resolves to.
+fn network_of(sampled: &Result<Sampled, String>, address: Option<IpAddr>) -> NetworkReading {
+    match sampled {
+        Ok(Sampled::Grove { reading, .. }) => NetworkReading {
+            address: grove::ping_address(reading).or(address),
+            latency_ms: reading.get("latency_ms").and_then(Value::as_f64).map(|ms| ms as f32),
+        },
+        _ => NetworkReading { address, latency_ms: None },
     }
-    (sampled, ping)
 }
 
 /// Compare current readings without treating a new sample timestamp as a
@@ -1477,7 +1447,7 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
             state.lock().reload_hosts = false;
         }
         let at_ms = Local::now().timestamp_millis();
-        let targets: Vec<(Machine, Plan, Option<String>, bool)> = {
+        let targets: Vec<(Machine, Plan, Option<IpAddr>, bool)> = {
             let inner = state.lock();
             inner
                 .series
@@ -1485,29 +1455,29 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
                 .filter(|series| series.host.enabled && !series.host.endpoint.trim().is_empty())
                 .map(|series| {
                     let facts_due = series.grove_facts.as_ref().is_none_or(|(at, _)| at_ms - at >= GROVE_FACTS_REFRESH_MS);
-                    (Machine::listed(series), plan_for(&inner.grove, &series.host.machine), series.ping_target.clone(), facts_due)
+                    (Machine::listed(series), plan_for(&inner.grove, &series.host.machine), series.address, facts_due)
                 })
                 .collect()
         };
         let state_ref: &MachineHealthState = &state;
-        let results = futures_util::future::join_all(targets.into_iter().map(|(machine, plan, ping_target, facts_due)| async move {
+        let results = futures_util::future::join_all(targets.into_iter().map(|(machine, plan, address, facts_due)| async move {
             let name = machine.name().to_string();
-            let (sample, ping) = read_machine(state_ref, machine, plan, ping_target, facts_due, at_ms).await;
-            (name, sample, ping)
+            let (sample, network) = read_machine(state_ref, machine, plan, address, facts_due, at_ms).await;
+            (name, sample, network)
         }))
         .await;
         if token.is_cancelled() {
             return;
         }
         // One status read covers every machine on the tailnet.
-        let paths = if results.iter().any(|(_, _, ping)| ping.address.is_some_and(is_tailnet)) {
+        let paths = if results.iter().any(|(_, _, network)| network.address.is_some_and(is_tailnet)) {
             state.tailscale_status().await.map(|status| status.paths).unwrap_or_default()
         } else {
             HashMap::new()
         };
-        for (machine, result, ping) in results {
-            let path = ping.address.and_then(|address| paths.get(&address).cloned());
-            record_result(&state, &machine, at_ms, result, ping.latency_ms, path);
+        for (machine, result, network) in results {
+            let path = network.address.and_then(|address| paths.get(&address).cloned());
+            record_result(&state, &machine, at_ms, result, network.latency_ms, path);
         }
         agents::check_due(&app, &state, at_ms);
         runs::after_round(&app, at_ms);
@@ -1670,7 +1640,8 @@ pub(crate) struct MachineHealth {
     error: Option<String>,
     last_ok_at: Option<i64>,
     last_attempt_at: Option<i64>,
-    /// Where pings go, from `ssh -G`. None for this machine or behind a jump host, which aren't pinged.
+    /// Where SSH goes, from `ssh -G`, which Grove pings for a machine with no probe. None for this machine or behind a
+    /// jump host; a streamed machine's round trip is measured over its stream either way.
     ping_target: Option<String>,
     /// Tailscale's current path to the machine; None when it isn't on the tailnet or is idle.
     path: Option<NetworkPath>,
@@ -2217,43 +2188,20 @@ mod tests {
         assert_eq!((facts.model.as_str(), facts.product_name.as_str()), ("Mac16,8", "MacBook Pro (14-inch, 2024)"));
     }
 
+    /// A streamed reading's round trip is Grove's echo median, with the address SSH resolves to for the Tailscale
+    /// path; a one-shot sample's address is where Grove's ping went; a machine Grove doesn't read keeps the address and
+    /// has no round trip.
     #[test]
-    fn ping_output_gives_the_address_and_the_median_round_trip() {
-        let mac = "PING cedar-01.tailc0ffee.ts.net (100.64.0.21): 56 data bytes\n\
-            64 bytes from 100.64.0.21: icmp_seq=0 ttl=64 time=5.733 ms\n\
-            64 bytes from 100.64.0.21: icmp_seq=1 ttl=64 time=123.634 ms\n\
-            64 bytes from 100.64.0.21: icmp_seq=2 ttl=64 time=6.1 ms\n\n\
-            --- cedar-01.tailc0ffee.ts.net ping statistics ---\n\
-            3 packets transmitted, 3 packets received, 0.0% packet loss\n\
-            round-trip min/avg/max/stddev = 5.733/45.156/123.634/55.3 ms\n";
-        let reading = parse_ping("cedar-01.tailc0ffee.ts.net", mac);
-        assert_eq!(reading.address, Some(IpAddr::from([100, 64, 0, 21])));
-        assert_eq!(reading.latency_ms, Some(6.1), "one slow reply doesn't move the median");
-
-        let linux = "PING cedar-02(fd7a:115c:a1e0::a17 (fd7a:115c:a1e0::a17)) 56 data bytes\n\
-            64 bytes from fd7a:115c:a1e0::a17: icmp_seq=1 ttl=64 time=6.00 ms\n\
-            64 bytes from fd7a:115c:a1e0::a17: icmp_seq=3 ttl=64 time=7.00 ms\n\n\
-            3 packets transmitted, 2 received, 33.3333% packet loss, time 402ms\n";
-        let reading = parse_ping("cedar-02", linux);
-        assert_eq!(reading.address, Some("fd7a:115c:a1e0::a17".parse().unwrap()));
-        assert_eq!(reading.latency_ms, Some(6.5));
-
-        let windows = "Pinging cam-macbook-air [100.64.0.22] with 32 bytes of data:\r\n\
-            Reply from 100.64.0.22: bytes=32 time=39ms TTL=64\r\n\
-            Reply from 100.64.0.22: bytes=32 time<1ms TTL=64\r\n\
-            Reply from 100.64.0.22: bytes=32 time=41ms TTL=64\r\n";
-        let reading = parse_ping("cam-macbook-air", windows);
-        assert_eq!(reading.address, Some(IpAddr::from([100, 64, 0, 22])));
-        assert_eq!(reading.latency_ms, Some(39.0));
-
-        let silent = "PING cedar-01.tailc0ffee.ts.net (100.64.0.21): 56 data bytes\n\
-            Request timeout for icmp_seq 0\n\n3 packets transmitted, 0 packets received, 100.0% packet loss\n";
-        assert_eq!(
-            parse_ping("cedar-01.tailc0ffee.ts.net", silent),
-            PingReading { address: Some(IpAddr::from([100, 64, 0, 21])), latency_ms: None },
-        );
-        assert_eq!(parse_ping("nowhere", ""), PingReading::default());
-        assert_eq!(parse_ping("100.64.0.22", "Pinging 100.64.0.22 with 32 bytes of data:\r\nRequest timed out.\r\n").address, Some(IpAddr::from([100, 64, 0, 22])));
+    fn the_round_trip_comes_from_grove_s_reading_and_the_address_from_ssh_s_target() {
+        let ssh = Some(IpAddr::from([100, 64, 0, 21]));
+        let streamed = Ok(Sampled::Grove { reading: serde_json::json!({ "latency_ms": 4.2, "address": null }), facts: None });
+        assert_eq!(network_of(&streamed, ssh), NetworkReading { address: ssh, latency_ms: Some(4.2) });
+        let pinged = Ok(Sampled::Grove { reading: serde_json::json!({ "latency_ms": 6.1, "address": "100.64.0.22" }), facts: None });
+        assert_eq!(network_of(&pinged, ssh), NetworkReading { address: Some(IpAddr::from([100, 64, 0, 22])), latency_ms: Some(6.1) });
+        let silent = Ok(Sampled::Grove { reading: serde_json::json!({ "latency_ms": null }), facts: None });
+        assert_eq!(network_of(&silent, None).latency_ms, None);
+        assert_eq!(network_of(&Ok(Sampled::Reached), ssh), NetworkReading { address: ssh, latency_ms: None });
+        assert_eq!(network_of(&Err("down".into()), ssh), NetworkReading { address: ssh, latency_ms: None });
     }
 
     #[test]
@@ -2365,12 +2313,10 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
-    fn pinging_this_machine_measures_a_round_trip() {
+    fn an_address_target_is_its_own_address_and_a_name_is_looked_up() {
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let reading = runtime.block_on(ping_host("127.0.0.1"));
-        assert_eq!(reading.address, Some(IpAddr::from([127, 0, 0, 1])));
-        assert!(reading.latency_ms.is_some_and(|ms| (0.0..50.0).contains(&ms)), "{reading:?}");
+        assert_eq!(runtime.block_on(lookup_address("100.64.0.21")), Some(IpAddr::from([100, 64, 0, 21])));
+        assert_eq!(runtime.block_on(lookup_address("localhost")).map(|address| address.is_loopback()), Some(true));
     }
 }
