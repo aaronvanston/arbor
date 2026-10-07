@@ -18,7 +18,7 @@ import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
-import { LIBRARY_KINDS, libraryCounts, libraryList, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
+import { LIBRARY_KINDS, libraryCounts, libraryKindProblems, libraryList, libraryRowProblems, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
 import { removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, type LibrarySwitch, type SwitchFailure, type SwitchSources, type UndoResult } from '../services/libraryToggle';
 import { plainError } from '../services/plainError';
 import { switchFailureText, switchToast, undoToast } from '../services/switchReport';
@@ -177,6 +177,12 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
     registry: next.registry ?? current.registry,
     hooks: next.hooks ?? current.hooks,
   }));
+  // A hook the repo's file has with a problem says so on its row and page, as Per home does, beside what a change hit.
+  const problemsOf = (row: LibraryRow) => [
+    ...libraryRowProblems(sources.hooks, row),
+    ...problems.filter((problem) => problem.key === row.key).map((problem) => problem.text),
+  ];
+  const fileProblems = libraryKindProblems(sources.hooks, kind);
   const report = (key: string, texts: string[]) =>
     setProblems((current) => [...current.filter((problem) => problem.key !== key), ...texts.map((text) => ({ key, text }))]);
 
@@ -284,7 +290,11 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
     const repoFile = row.kind === 'skills' ? `${skillFolder(row.name)}/SKILL.md` : row.kind === 'instructions' && row.detail ? row.detail.replace(/^~\//, '') : null;
     return {
       running: running?.key ?? null,
-      problems: problems.filter((problem) => problem.key === row.key).map((problem) => problem.text),
+      // The page has no List above it, so a hooks file Arbor can't read is said here too.
+      problems: [
+        ...libraryKindProblems(sources.hooks, row.kind).map((problem) => t('library.kindProblem.hooks', { problem })),
+        ...problemsOf(row),
+      ],
       onToggle: (on) => toggle(row, on),
       onMachine: (machine, on) => {
         if (!target) return;
@@ -330,6 +340,11 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
           <AlertDescription>{t('library.loadFailed', { error: loadError })}</AlertDescription>
         </Alert>
       ) : null}
+      {fileProblems.length ? (
+        <Alert variant="error" icon={<TriangleAlert />} data-library-kind-problem={kind}>
+          <AlertDescription>{t('library.kindProblem.hooks', { problem: fileProblems.join('; ') })}</AlertDescription>
+        </Alert>
+      ) : null}
       {kindErrors[kind] ? (
         <Alert variant="error" icon={<TriangleAlert />} data-library-kind-error={kind}>
           <AlertDescription>{t(kind === 'mcps' ? 'library.kindFailed.mcps' : 'library.kindFailed.hooks', { error: kindErrors[kind] ?? '' })}</AlertDescription>
@@ -357,7 +372,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
         {!loaded ? (
           <TableEmpty><span className="inline-flex items-center gap-2"><Spinner />{t('library.loading')}</span></TableEmpty>
         ) : !shown.rows.length ? (
-          <TableEmpty>{query.trim() ? t('library.empty.search', { query: query.trim() }) : t('library.empty')}</TableEmpty>
+          <TableEmpty>{query.trim() ? t('library.empty.search', { query: query.trim() }) : fileProblems.length ? t('setup.hooks.grid.unreadable') : t('library.empty')}</TableEmpty>
         ) : (
           <ul className="divide-y divide-border/50">
             {shown.rows.map((row) => (
@@ -366,7 +381,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
                 row={row}
                 running={running?.key === row.key ? running : null}
                 held={running !== null && running.key !== row.key}
-                problems={problems.filter((problem) => problem.key === row.key).map((problem) => problem.text)}
+                problems={problemsOf(row)}
                 onToggle={(on) => toggle(row, on)}
                 onOpen={() => onOpenItem(row.key)}
               />

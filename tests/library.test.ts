@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
-import { libraryCounts, libraryItemName, libraryList, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
+import { libraryCounts, libraryItemName, libraryKindProblems, libraryList, libraryRowProblems, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
 import { addPlugin, behindHomes, bringInLine, inverseChanges, linePlans, marketplaceEverywhere, marketplaceHomes, takeIntoRepo, takeSources, updatePlugin, lineUp, relisted, removeEverywhere, switchFile, switchHook, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { directoryEntries, directorySources } from '../src/services/directory';
@@ -438,6 +438,19 @@ describe('bringing a machine in line', () => {
     const done = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row] });
     expect(calls).toEqual(['sync ~/.agents/hooks/guard.sh', 'hooks']);
     expect(done).toEqual({ changed: true, failed: [], needsYou: false });
+  });
+
+  it('says what’s wrong with the hooks file and a hook in it, rather than an empty list or a hook in step', () => {
+    const machines = [machine('cam-mbp', [])];
+    const unreadable: HookRegistry = { ...hooks('same'), problems: ['.agents/hooks.json isn’t a JSON object Arbor can read'], hooks: [], cells: [] };
+    expect(libraryKindProblems(unreadable, 'hooks')).toEqual(['.agents/hooks.json isn’t a JSON object Arbor can read']);
+    expect(libraryKindProblems(unreadable, 'mcps')).toEqual([]);
+    expect(libraryKindProblems(null, 'hooks')).toEqual([]);
+
+    const broken: HookRegistry = { ...hooks('same'), hooks: [{ ...hookView, problems: ['timeout should be seconds, from 1 to 3600'] }] };
+    const row = rowFor(libraryRows({ machines, view: extensionsView(machines), repo: repo([]), registryFound: false, hooks: broken, standing: null }), 'guard');
+    expect(libraryRowProblems(broken, row)).toEqual(['timeout should be seconds, from 1 to 3600']);
+    expect(libraryRowProblems(hooks('same'), row)).toEqual([]);
   });
 });
 

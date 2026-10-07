@@ -249,6 +249,20 @@ export function libraryRows({ machines, view, repo, registryFound, hooks, standi
   return rows.map((row) => (row.state === 'unlisted' && row.behind.length ? { ...row, behind: [] } : row));
 }
 
+/**
+ * Why the repo's file for a kind can't be relied on, as the hooks file read: it couldn't be read, or isn't hooks Arbor
+ * can follow. With it, an empty list or a row with nothing behind isn't every machine in step, so the List says so.
+ */
+export function libraryKindProblems(hooks: HookRegistry | null, kind: LibraryKind): string[] {
+  return kind === 'hooks' ? hooks?.problems ?? [] : [];
+}
+
+/** What's wrong with the repo's copy of a row, as a hook the hooks file has with a problem: shown on its row and page. */
+export function libraryRowProblems(hooks: HookRegistry | null, row: LibraryRow): string[] {
+  if (row.kind !== 'hooks' || row.state === 'unlisted') return [];
+  return hooks?.hooks.find((hook) => hook.name === row.name)?.problems ?? [];
+}
+
 /** A row's name from its key, for the breadcrumb before the row is read: what follows the kind (and agent). */
 export function libraryItemName(key: string): string {
   const [kind, ...rest] = key.split(':');

@@ -2169,6 +2169,7 @@ export const en = {
   'library.loading': 'Reading the setup repo…',
   'library.loadFailed': 'Couldn’t read the setup repo: {error}',
   'library.kindFailed.mcps': 'Couldn’t read the setup repo’s MCP servers, so whether machines are behind on them isn’t known: {error}',
+  'library.kindProblem.hooks': 'The setup repo’s hooks file has a problem, so whether machines are in step on hooks isn’t known: {problem}',
   'library.kindFailed.hooks': 'Couldn’t read the setup repo’s hooks, so whether machines are behind on them isn’t known: {error}',
   'library.empty': 'Nothing of this kind on any machine or in the repo.',
   'library.empty.search': 'Nothing matches “{query}”.',
