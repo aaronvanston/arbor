@@ -301,7 +301,7 @@ export function ConfigPanelPage({ section }: { section: ConfigSubpage }) {
       const checked = action !== 'management-secret' && action !== 'delete-paused-key';
       const notice = checked ? notLoadedNotice(await confirmSettingsInEffect()) : null;
       if (notice) mutationFeedback.showNotice(notice, 'error');
-      else if (action !== 'routing') toast({ kind: 'success', title: successMessage });
+      else toast({ kind: 'success', title: successMessage });
       return true;
     } catch (error) {
       if (settings) setSettings(settings);

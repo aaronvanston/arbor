@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
+import { toast } from '../components/ui/toast';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { useCoreRuntime } from '../coreRuntime';
 import { useI18n } from '../i18n';
@@ -22,6 +23,7 @@ import { plainError } from '../services/plainError';
 import {
   accountOrderGap,
   applyRoutingPlan,
+  mostAccountsForOneProvider,
   providerRoutingPlans,
   setRoutingAuto,
   useRoutingAuto,
@@ -61,10 +63,11 @@ export function AccountOrderSection() {
  * Suggested credential priorities for each provider, from the limits the Accounts page reads, with a
  * button to apply them and a switch to keep them applied. With nothing to order it says why.
  */
-export function AccountRouting({ files, loaded, onError, coreReady = true }: {
+export function AccountRouting({ files, loaded = true, onError, coreReady = true }: {
   /** The core's whole listing; only the accounts in use are ordered. */
   files: AuthFile[];
-  loaded: boolean;
+  /** Whether the listing has arrived, so an empty one means no accounts rather than not yet. */
+  loaded?: boolean;
   onError: (message: string) => void;
   /** Priorities are the running core's, so there's nothing to apply them to while it's stopped. */
   coreReady?: boolean;
@@ -83,17 +86,18 @@ export function AccountRouting({ files, loaded, onError, coreReady = true }: {
     coreReady,
     loaded,
     accounts: inUse.length,
+    mostForOneProvider: mostAccountsForOneProvider(inUse),
     reading: inUse.some((file) => quotas[quotaKey(file)]?.status === 'loading'),
     routings: routings.length,
   });
   return (
     <SettingsSection settingId="routing.accounts" title={t('accounts.routing.title')} description={t('accounts.routing.description')}>
-      {gap === 'core' ? <CoreStoppedOrder onError={onError} /> : gap === 'none' || gap === 'unread' ? (
+      {gap === 'core' ? <CoreStoppedOrder onError={onError} /> : gap === 'none' || gap === 'single' || gap === 'unread' ? (
         <Empty size="sm">
           <EmptyMedia><Users /></EmptyMedia>
           <div>
-            <EmptyTitle>{t(gap === 'none' ? 'accounts.routing.none.title' : 'accounts.routing.unread.title')}</EmptyTitle>
-            <EmptyDescription>{t(gap === 'none' ? 'accounts.routing.none.description' : 'accounts.routing.unread.description')}</EmptyDescription>
+            <EmptyTitle>{t(`accounts.routing.${gap}.title`)}</EmptyTitle>
+            <EmptyDescription>{t(`accounts.routing.${gap}.description`)}</EmptyDescription>
           </div>
         </Empty>
       ) : gap === 'loading' ? (
@@ -147,6 +151,7 @@ function ProviderRoutingBlock({ routing: { provider, window, plan }, onError, co
     onError('');
     try {
       await applyRoutingPlan(plan.changes);
+      toast({ kind: 'success', title: t('accounts.routing.applied', { provider: label }) });
     } catch (applyError) {
       onError(t('accounts.routing.failed', { error: plainError(applyError, t) }));
     } finally {

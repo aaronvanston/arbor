@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { CoreRuntimeProvider } from '../src/coreRuntime';
 import { I18nProvider } from '../src/i18n';
 import { AccountRouting } from '../src/pages/AccountRouting';
 import { updateQuotaCache } from '../src/services/quotaCache';
@@ -33,9 +34,15 @@ describe('the account order on Settings › Routing', () => {
     expect(html).toContain('aria-label="Apply Claude priorities automatically"');
   });
 
-  it('shows nothing until a provider has two accounts to order', () => {
+  // money-22: with nothing to order the section stays and says why.
+  it('says an order needs two accounts from one provider', () => {
     const only = { name: 'only.json', provider: 'claude', auth_index: 'only' };
     updateQuotaCache({ [quotaKey(only)]: weekly(45, 20 * HOUR) });
-    expect(render([only])).toBe('');
+    expect(text(render([only]))).toContain('One account per provider');
+  });
+
+  it('says when there are no accounts or the core is stopped', () => {
+    expect(text(render([]))).toContain('No accounts in use');
+    expect(text(renderToStaticMarkup(<I18nProvider><CoreRuntimeProvider><AccountRouting files={[]} coreReady={false} onError={() => undefined} /></CoreRuntimeProvider></I18nProvider>))).toContain('The core isn’t running');
   });
 });

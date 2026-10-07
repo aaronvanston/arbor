@@ -9,6 +9,8 @@ import {
 } from 'react';
 import { invokeCommand } from '../native/commands';
 import { ArrowRight, BrainCircuit, Check, GitFork, Search, Trash2, Zap } from '../components/ui/icons';
+import { toast } from '../components/ui/toast';
+import { plainError } from '../services/plainError';
 import { translate, useI18n } from '../i18n';
 import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -79,7 +81,6 @@ export function ThinkingAliasesPage() {
   const [busyAlias, setBusyAlias] = useState('');
   const [busyAction, setBusyAction] = useState<'create' | 'delete' | ''>('');
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,7 +111,7 @@ export function ThinkingAliasesPage() {
         reselectAliasSource(current, selectedSourceRef.current, nextBaseSources)
       ));
     } catch (requestError) {
-      setError(String(requestError));
+      setError(plainError(requestError, t));
     } finally {
       setLoading(false);
     }
@@ -274,7 +275,6 @@ export function ThinkingAliasesPage() {
     setBusyAlias(normalizedAlias);
     setBusyAction('create');
     setError('');
-    setNotice('');
     try {
       if (normalizedEffort) {
         await invokeCommand('create_thinking_alias', {
@@ -283,16 +283,16 @@ export function ThinkingAliasesPage() {
           effort: normalizedEffort,
           fast: fastEnabled,
         });
-        setNotice(t(fastEnabled ? 'aliases.createdCombined' : 'aliases.created', {
+        toast({ kind: 'success', title: t(fastEnabled ? 'aliases.createdCombined' : 'aliases.created', {
           alias: normalizedAlias,
           effort: normalizedEffort,
-        }));
+        }) });
       } else if (fastEnabled) {
         await invokeCommand('create_speed_alias', {
           sourceId: selectedSource.id,
           alias: normalizedAlias,
         });
-        setNotice(t('speedAliases.created', { alias: normalizedAlias }));
+        toast({ kind: 'success', title: t('speedAliases.created', { alias: normalizedAlias }) });
       } else {
         await invokeCommand('create_thinking_alias', {
           sourceId: selectedSource.id,
@@ -300,12 +300,12 @@ export function ThinkingAliasesPage() {
           effort: '',
           fast: false,
         });
-        setNotice(t('aliases.createdPlain', { alias: normalizedAlias }));
+        toast({ kind: 'success', title: t('aliases.createdPlain', { alias: normalizedAlias }) });
       }
       setAlias('');
       await load();
     } catch (requestError) {
-      setError(String(requestError));
+      setError(plainError(requestError, t));
     } finally {
       setBusyAlias('');
       setBusyAction('');
@@ -317,7 +317,6 @@ export function ThinkingAliasesPage() {
     setBusyAlias(entry.alias);
     setBusyAction('delete');
     setError('');
-    setNotice('');
     try {
       if (entry.effort || !entry.serviceTier) {
         await invokeCommand('delete_thinking_alias', {
@@ -330,10 +329,10 @@ export function ThinkingAliasesPage() {
           oauthChannel: entry.oauthChannel,
         });
       }
-      setNotice(t('aliases.deleted', { alias: entry.alias }));
+      toast({ kind: 'success', title: t('aliases.deleted', { alias: entry.alias }) });
       await load();
     } catch (requestError) {
-      setError(String(requestError));
+      setError(plainError(requestError, t));
     } finally {
       setBusyAlias('');
       setBusyAction('');
@@ -355,8 +354,6 @@ export function ThinkingAliasesPage() {
       <div aria-live="polite" className="empty:hidden">
         {error ? (
           <Alert variant="error"><AlertDescription>{error}</AlertDescription></Alert>
-        ) : notice ? (
-          <Alert variant="success" icon={<Check />}><AlertDescription>{notice}</AlertDescription></Alert>
         ) : null}
       </div>
 

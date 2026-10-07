@@ -6,6 +6,7 @@ import { AccountAvatar } from './AccountAvatar';
 import { ColorPicker } from './identity/ColorPicker';
 import { FillPicker } from './identity/FillPicker';
 import { Button } from './ui/button';
+import { toast } from './ui/toast';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -24,7 +25,17 @@ export function AccountProfileDialog({ target, onClose }: { target: ProfileTarge
   const submit = () => {
     if (!target) return;
     saveAccountProfile(target.key, draft);
+    toast({ kind: 'success', title: t('accounts.profile.saved') });
     onClose();
+  };
+  // Reversible, so it happens at once with Undo rather than behind a confirm.
+  const reset = () => {
+    if (!target) return;
+    const before = target.profile ? { ...target.profile } : {};
+    const key = target.key;
+    clearAccountProfile(key);
+    onClose();
+    toast({ kind: 'success', title: t('accounts.profile.wasReset'), action: { label: t('common.undo'), onClick: () => saveAccountProfile(key, before) } });
   };
   return (
     <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -92,13 +103,7 @@ export function AccountProfileDialog({ target, onClose }: { target: ProfileTarge
             </form>
           </DialogPanel>
           <DialogFooter className="justify-between">
-            <Button
-              variant="ghost-muted"
-              onClick={() => {
-                clearAccountProfile(target.key);
-                onClose();
-              }}
-            >
+            <Button variant="ghost-muted" onClick={reset}>
               {t('accounts.profile.reset')}
             </Button>
             <div className="flex gap-2">

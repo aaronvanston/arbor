@@ -143,23 +143,36 @@ export function providerRoutingPlans(
   });
 }
 
+/** The most accounts any one provider has among these: ordering a provider's accounts takes two. */
+export function mostAccountsForOneProvider(files: AuthFile[]): number {
+  const counts = new Map<string, number>();
+  files.forEach((file) => {
+    const provider = providerForFile(file);
+    if (provider) counts.set(provider, (counts.get(provider) ?? 0) + 1);
+  });
+  return Math.max(0, ...counts.values());
+}
+
 /**
  * Why Settings › Routing's account order has nothing to show, so it says so rather than vanishing: the core isn't
  * running, the accounts are still being read, there are none in use, or none has a limit reading to order by yet.
  */
-export function accountOrderGap({ coreReady, loaded, accounts, reading, routings }: {
+export function accountOrderGap({ coreReady, loaded, accounts, mostForOneProvider, reading, routings }: {
   coreReady: boolean;
   loaded: boolean;
   /** Accounts in use. */
   accounts: number;
+  /** The most accounts in use any one provider has: an order needs two. */
+  mostForOneProvider: number;
   /** Whether any of their limits is being read. */
   reading: boolean;
   routings: number;
-}): 'core' | 'loading' | 'none' | 'unread' | null {
+}): 'core' | 'loading' | 'none' | 'single' | 'unread' | null {
   if (routings > 0) return null;
   if (!coreReady) return 'core';
   if (!loaded) return 'loading';
   if (accounts === 0) return 'none';
+  if (mostForOneProvider < 2) return 'single';
   return reading ? 'loading' : 'unread';
 }
 

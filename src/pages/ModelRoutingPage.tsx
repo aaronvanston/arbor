@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { ArrowRight, Check, Route, Trash2, Zap } from '../components/ui/icons';
+import { toast } from '../components/ui/toast';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
@@ -76,7 +77,6 @@ export function ModelRoutingPage() {
   const [sources, setSources] = useState<RouteSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const [requested, setRequested] = useState('');
   const [sourceId, setSourceId] = useState('');
@@ -116,7 +116,6 @@ export function ModelRoutingPage() {
   const create = async (nextRequested: string, nextSourceId: string, options: { longContext: boolean; forceMapping: boolean }) => {
     const source = sources.find((entry) => entry.id === nextSourceId);
     setError('');
-    setNotice('');
     if (!nextRequested) {
       setError(t('overrides.error.emptyRequested'));
       return;
@@ -142,7 +141,7 @@ export function ModelRoutingPage() {
         forceMapping: options.forceMapping,
         includeLongContext: options.longContext,
       }));
-      setNotice(t('overrides.created', { requested: nextRequested, upstream: source.model }));
+      toast({ kind: 'success', title: t('overrides.created', { requested: nextRequested, upstream: source.model }) });
       setRequested('');
     } catch (requestError) {
       setError(plainError(requestError, t));
@@ -160,10 +159,9 @@ export function ModelRoutingPage() {
     })) return;
     setBusy(entry.requestedModel);
     setError('');
-    setNotice('');
     try {
       setOverrides(await invokeCommand('delete_model_override', { requestedModel: entry.requestedModel, oauthChannel: entry.oauthChannel }));
-      setNotice(t('overrides.deleted', { requested: entry.requestedModel }));
+      toast({ kind: 'success', title: t('overrides.deleted', { requested: entry.requestedModel }) });
     } catch (requestError) {
       setError(plainError(requestError, t));
     } finally {
@@ -191,8 +189,6 @@ export function ModelRoutingPage() {
         <div aria-live="polite" className="empty:hidden">
           {error ? (
             <Alert variant="error"><AlertDescription>{error}</AlertDescription></Alert>
-          ) : notice ? (
-            <Alert variant="success" icon={<Check />}><AlertDescription>{notice}</AlertDescription></Alert>
           ) : null}
         </div>
 

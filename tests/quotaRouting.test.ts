@@ -3,11 +3,12 @@ import { accountOrderGap, applyRoutingPlan, providerRoutingPlans, routingPlan, t
 
 // money-22: Account order says why it has nothing to show rather than vanishing.
 describe('accountOrderGap', () => {
-  const base = { coreReady: true, loaded: true, accounts: 2, reading: false, routings: 0 };
+  const base = { coreReady: true, loaded: true, accounts: 2, mostForOneProvider: 2, reading: false, routings: 0 };
   it('says why there is no order', () => {
     expect(accountOrderGap({ ...base, coreReady: false })).toBe('core');
     expect(accountOrderGap({ ...base, loaded: false })).toBe('loading');
-    expect(accountOrderGap({ ...base, accounts: 0 })).toBe('none');
+    expect(accountOrderGap({ ...base, accounts: 0, mostForOneProvider: 0 })).toBe('none');
+    expect(accountOrderGap({ ...base, mostForOneProvider: 1 })).toBe('single');
     expect(accountOrderGap({ ...base, reading: true })).toBe('loading');
     expect(accountOrderGap(base)).toBe('unread');
   });
