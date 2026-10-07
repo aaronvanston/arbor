@@ -376,7 +376,16 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
           <SettingsRow
             title={t('sessionArchive.ownDisk.title')}
             description={t('sessionArchive.ownDisk.description')}
-            control={<Badge variant="warning">{t('sessionArchive.ownDisk.badge')}</Badge>}
+            control={(
+              <>
+                <Badge variant="warning">{t('sessionArchive.ownDisk.badge')}</Badge>
+                {/* The copy on another drive is picked up from here, as the description says. */}
+                <Button variant="outline" size="sm" onClick={() => void find()}>
+                  <FolderSearch />
+                  {t('sessionArchive.folder.find')}
+                </Button>
+              </>
+            )}
           />
         ) : null}
         {status.warnings.includes('noowners') && main ? (

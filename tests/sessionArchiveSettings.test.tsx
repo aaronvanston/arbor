@@ -112,6 +112,13 @@ describe('Settings › Session archive', () => {
     }
   });
 
+  // system-11: the own-disk warning names Find archive, so the button is there beside it.
+  it('offers Find archive where the own-disk warning says to use it', () => {
+    const shown = overview({ warnings: ['own-disk'] });
+    expect(shown).toContain('choose it there with Find archive');
+    expect(shown).toContain('Find archive…');
+  });
+
   it('says what to do in every state', () => {
     const missing = overview({ state: 'main-missing', main: { root: '/Volumes/Backup/a.noindex', connected: false, mountPoint: null, freeBytes: null, noowners: false, lastSeenAt: null } });
     expect(missing).toContain('Connect the archive’s drive and Arbor carries on where it left off.');
