@@ -4,6 +4,7 @@ import { I18nProvider } from '../src/i18n';
 import { UsageLifetimeContent } from '../src/pages/UsageLifetimeView';
 import {
   byMonth,
+  countedSources,
   countingState,
   groupCounts,
   joinKey,
@@ -17,6 +18,7 @@ import {
 import { buildUsageTrendSeries } from '../src/services/usageTrend';
 import { itemAt } from './support/items';
 import type { LifetimeTokens } from '../src/native/types';
+import type { ArchiveTrouble } from '../src/services/sessionArchive';
 
 const counts = (calls: number, cacheRead: number, output = 100) => ({ calls, input: 10 * calls, cacheWrite: 50 * calls, cacheRead, output, reasoning: 0 });
 const row = (month: string, model: string, fields: Partial<LifetimeMonth> = {}): LifetimeMonth => ({
@@ -66,8 +68,8 @@ const recovered = (): Pick<LifetimeTokens, 'recovered' | 'recoveredOverlap'> => 
 });
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-const render = (data: LifetimeTokens, onOpenArchive?: () => void, machine = '') =>
-  text(renderToStaticMarkup(<I18nProvider><UsageLifetimeContent data={data} machine={machine} onOpenArchive={onOpenArchive} /></I18nProvider>));
+const render = (data: LifetimeTokens, onOpenArchive?: () => void, machine = '', trouble: ArchiveTrouble | null = null) =>
+  text(renderToStaticMarkup(<I18nProvider><UsageLifetimeContent data={data} machine={machine} trouble={trouble} onOpenArchive={onOpenArchive} /></I18nProvider>));
 
 describe('all-time tokens', () => {
   it('adds every kind of token, and keeps reasoning inside output', () => {
@@ -165,6 +167,22 @@ describe('all-time tokens', () => {
     // Homes from old backups count too, and the line says so.
     const backups = render(lifetime({ sources: [...lifetime().sources, { machine: 'mini', home: '/Volumes/Backup/dot-claude', agent: 'claude', kind: 'import' }] }));
     expect(backups).toContain('from agent homes on mini and old backups');
+  });
+
+  it('names only the machines something was counted from', () => {
+    const data = lifetime({ sources: [...lifetime().sources, { machine: 'cedar', home: '~/.claude', agent: 'claude', kind: 'home' }] });
+    expect(countedSources(data).map((source) => source.machine)).toEqual(['mini', 'mini']);
+    const shown = render(data);
+    expect(shown).toContain('from 2 agent homes on mini');
+    expect(shown).not.toContain('cedar');
+  });
+
+  it('says when the archive is away or failing, since the counts stop with it', () => {
+    const away = render(lifetime(), () => {}, '', { kind: 'away', since: null });
+    expect(away).toContain('The archive’s drive isn’t connected, so these counts stop at what it last took in.');
+    expect(away).toContain('Open session archive');
+    expect(render(lifetime(), undefined, '', { kind: 'failing', since: null })).toContain('The archive’s passes are failing, so these counts may be behind.');
+    expect(render(lifetime())).not.toContain('The archive’s');
   });
 
   it('says how much is left to count, and what could not be', () => {

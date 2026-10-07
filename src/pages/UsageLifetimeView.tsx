@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { formatCount, formatDate, formatDateRange, formatDateWith, formatNumber, formatPercent } from '../lib/format';
 import {
   byMonth,
+  countedSources,
   countingState,
   getLifetimeTokens,
   groupCounts,
@@ -17,7 +18,8 @@ import {
   type TokenGroup,
 } from '../services/lifetimeTokens';
 import { formatBytes } from '../services/machineHealth';
-import { errorWords, plainErrorReason } from '../services/plainError';
+import { errorWords, plainError, plainErrorReason } from '../services/plainError';
+import { archiveTrouble, getSessionArchiveStatus, type ArchiveTrouble } from '../services/sessionArchive';
 import { SettingsSection } from '../components/layout/settings';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -29,6 +31,7 @@ import { TABLE_NUMERIC_CLASS } from '../components/ui/data-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { UsageTrendSection } from './UsageTrendChart';
 import type { LifetimeTokens } from '../native/types';
+import { cn } from '../lib/utils';
 
 /** Counting runs with the archive's passes, a few minutes apart, or seconds apart while it catches up. */
 /** While the archive is still counting old versions the tab follows along; after that, counts grow only with passes. */
@@ -45,13 +48,19 @@ const AGENT_KEYS = { claude: 'usage.lifetime.agent.claude', codex: 'usage.lifeti
 export function UsageLifetimeView({ refreshKey, machine = '', onOpenArchive }: { refreshKey: number; machine?: string; onOpenArchive?: () => void }) {
   const { t } = useI18n();
   const [data, setData] = useState<LifetimeTokens | null>(null);
+  const [trouble, setTrouble] = useState<ArchiveTrouble | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let disposed = false;
     let timer: number | undefined;
-    const load = () =>
-      getLifetimeTokens(machine).then(
+    const load = () => {
+      // The counts stop where the archive does, so a drive that's away or passes that fail are said beside them.
+      void getSessionArchiveStatus().then(
+        (status) => { if (!disposed) setTrouble(archiveTrouble(status)); },
+        () => { if (!disposed) setTrouble(null); },
+      );
+      return getLifetimeTokens(machine).then(
         (next) => {
           if (disposed) return;
           setData(next);
@@ -60,10 +69,11 @@ export function UsageLifetimeView({ refreshKey, machine = '', onOpenArchive }: {
         },
         (loadError) => {
           if (disposed) return;
-          setError(String(loadError));
+          setError(plainError(loadError, t));
           schedule(REFRESH_MS);
         },
       );
+    };
     const schedule = (ms: number) => {
       timer = window.setTimeout(function next() {
         if (document.hidden) timer = window.setTimeout(next, ms);
@@ -75,6 +85,7 @@ export function UsageLifetimeView({ refreshKey, machine = '', onOpenArchive }: {
       disposed = true;
       window.clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes only with the language, which reloads anyway.
   }, [refreshKey, machine]);
 
   if (!data) {
@@ -87,10 +98,22 @@ export function UsageLifetimeView({ refreshKey, machine = '', onOpenArchive }: {
       </div>
     );
   }
-  return <UsageLifetimeContent data={data} machine={machine} onOpenArchive={onOpenArchive} />;
+  return <UsageLifetimeContent data={data} machine={machine} trouble={trouble} onOpenArchive={onOpenArchive} />;
 }
 
-export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { data: LifetimeTokens; machine?: string; onOpenArchive?: () => void }) {
+const TROUBLE_KEYS = {
+  away: 'usage.lifetime.trouble.away',
+  foreign: 'usage.lifetime.trouble.foreign',
+  failing: 'usage.lifetime.trouble.failing',
+} as const;
+
+export function UsageLifetimeContent({ data, machine = '', trouble = null, onOpenArchive }: {
+  data: LifetimeTokens;
+  machine?: string;
+  /** Why the archive isn't keeping sessions just now, when it isn't. */
+  trouble?: ArchiveTrouble | null;
+  onOpenArchive?: () => void;
+}) {
   const { t, tRich } = useI18n();
   const state = countingState(data);
   const summary = useMemo(() => lifetimeSummary(data), [data]);
@@ -136,7 +159,8 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
 
   const { totals, total } = summary;
   // Own names: each pill shows the name a machine was given in Arbor.
-  const machines = [...new Set(data.sources.map((source) => source.machine))];
+  const sources = countedSources(data);
+  const machines = [...new Set(sources.map((source) => source.machine))];
   const share = (part: number) => formatPercent(total > 0 ? part / total : 0);
   const agentName = (agent: string) => (agent in AGENT_KEYS ? t(AGENT_KEYS[agent as keyof typeof AGENT_KEYS]) : agent);
   const firstDay = summary.firstDay ? formatDate(`${summary.firstDay}T00:00:00`) : null;
@@ -172,6 +196,17 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
         />
       </StatsGrid>
 
+      {trouble ? (
+        <Alert
+          variant="warning"
+          icon={<TriangleAlert />}
+          action={onOpenArchive ? <Button variant="outline" size="sm" onClick={onOpenArchive}>{t('usage.lifetime.openArchive')}</Button> : undefined}
+        >
+          <AlertDescription>
+            {t(TROUBLE_KEYS[trouble.kind])}
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {state === 'counting' ? (
         <Alert variant="info" icon={<Spinner />}>
           <AlertDescription>
@@ -186,9 +221,9 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
       ) : null}
       <div className="flex flex-col gap-1 px-4 text-xs leading-[1.45] text-muted-foreground">
         <p>
-          {data.sources.some((source) => source.kind === 'import')
+          {sources.some((source) => source.kind === 'import')
             ? tRich('usage.lifetime.coverage.backups', { machines: <MachinePills names={machines} /> })
-            : tRich(data.sources.length === 1 ? 'usage.lifetime.coverage.one' : 'usage.lifetime.coverage.other', { machines: <MachinePills names={machines} />, count: data.sources.length })}
+            : tRich(sources.length === 1 ? 'usage.lifetime.coverage.one' : 'usage.lifetime.coverage.other', { machines: <MachinePills names={machines} />, count: sources.length })}
         </p>
         {recovered.tokens > 0 ? (
           <p data-slot="lifetime-recovered-line">
@@ -209,6 +244,7 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
         <GroupTable
           groups={models}
           head={[t('usage.lifetime.column.model'), t('usage.lifetime.column.agent')]}
+          minWidths={['min-w-36', 'min-w-24']}
           cells={(key) => {
             const [agent = '', model = ''] = splitKey(key);
             return [
@@ -223,6 +259,7 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
         <GroupTable
           groups={homes}
           head={[t('usage.lifetime.column.machine'), t('usage.lifetime.column.home')]}
+          minWidths={['min-w-24', 'min-w-44']}
           cells={(key) => {
             const [machine = '', home = '', agent = ''] = splitKey(key);
             return [
@@ -240,7 +277,8 @@ export function UsageLifetimeContent({ data, machine = '', onOpenArchive }: { da
         <GroupTable
           groups={months}
           head={[t('usage.lifetime.column.month')]}
-          cells={(key) => [<span key="month" className="tabular-nums">{formatMonth(key)}</span>]}
+          minWidths={['min-w-20']}
+          cells={(key) => [<span key="month" className="whitespace-nowrap tabular-nums">{formatMonth(key)}</span>]}
           breakdown
         />
       </SettingsSection>
@@ -300,11 +338,17 @@ function GroupTable({
   groups,
   head,
   cells,
+  minWidths = [],
   breakdown = false,
 }: {
   groups: TokenGroup[];
   head: string[];
   cells: (key: string) => ReactNode[];
+  /**
+   * Each label column's narrowest width, so a narrow window scrolls the table sideways rather than squeezing a name
+   * to a letter or running it into the numbers beside it.
+   */
+  minWidths?: string[];
   /** Shows each kind of token, rather than the share of the whole. */
   breakdown?: boolean;
 }) {
@@ -331,7 +375,7 @@ function GroupTable({
       <TableBody>
         {groups.map((group) => (
           <TableRow key={group.key}>
-            {cells(group.key).map((cell, index) => <TableCell key={index} className="max-w-0">{cell}</TableCell>)}
+            {cells(group.key).map((cell, index) => <TableCell key={index} className={cn('max-w-0', minWidths[index])}>{cell}</TableCell>)}
             <TableCell className={number}>{formatNumber(group.calls)}</TableCell>
             {breakdown ? (
               <>

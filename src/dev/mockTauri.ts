@@ -186,7 +186,7 @@
  * `catching-up`, `ok` (the default), `missing` (its drive unplugged since yesterday), `foreign` (another archive
  * where it was, for 3 hours), `noowners` (a drive that doesn't enforce permissions), `own-disk` (kept on this Mac's own
  * disk), `error` (failing for 2 hours) or
- * `paused`; `missing`, `foreign` and `error` show the Sessions page's archive banner and, two minutes in, its alert;
+ * `paused`; `missing`, `foreign` and `error` show the Sessions page's archive banner and, two minutes in, its alert, and say on Usage › All time that its counts stop there;
  * its Old backups section has one backup imported and one partway, or `?imports=none` for none, `starting` for the
  * second not listed yet, `away` for its drive unplugged, or `failed` for the first finished with 3 files it couldn't
  * read; the other machines' homes are kept too,

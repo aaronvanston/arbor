@@ -194,3 +194,12 @@ export function countingState(data: LifetimeTokens): CountingState {
   if (data.versionsLeft > 0) return 'counting';
   return data.months.length ? 'done' : 'waiting';
 }
+
+/**
+ * The homes the archive keeps on machines it has counted something from. A machine whose sessions aren't counted yet
+ * (one just added, or one whose transcripts are all gone) isn't named as one the total comes from.
+ */
+export function countedSources(data: Pick<LifetimeTokens, 'sources' | 'months'>): LifetimeTokens['sources'] {
+  const counted = new Set(data.months.map((row) => row.machine));
+  return data.sources.filter((source) => counted.has(source.machine));
+}
