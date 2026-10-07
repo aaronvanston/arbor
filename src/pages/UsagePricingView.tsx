@@ -24,6 +24,7 @@ import type { ModelPrice, UsagePricing, UsageQuery } from '../native/types';
 import { trackFeature } from '../services/productAnalytics';
 import { TableEmpty } from '../components/ui/data-table';
 import { UsageEmpty } from './UsageEmpty';
+import { missingPriceFields, type RequiredPriceField } from '../services/priceDraft';
 
 type PriceDraft = {
   model: string;
@@ -75,8 +76,10 @@ export function PricingView({
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [localError, setLocalError] = useState('');
-  // Said beside the field, in the dialog, rather than on the page behind it.
-  const [modelMissing, setModelMissing] = useState(false);
+  // Said beside each field, in the dialog, rather than on the page behind it.
+  const [missing, setMissing] = useState<RequiredPriceField[]>([]);
+  const modelMissing = missing.includes('model');
+  const filled = (field: RequiredPriceField) => setMissing((current) => current.filter((entry) => entry !== field));
   const visibleRows = pricing.rows.filter((row) => {
     const keyword = search.trim().toLowerCase();
     return !keyword || row.model.toLowerCase().includes(keyword);
@@ -85,13 +88,15 @@ export function PricingView({
   // What the editor said goes with it, so the next one opens clean.
   const closeEditor = () => {
     setDraft(null);
-    setModelMissing(false);
+    setMissing([]);
     setLocalError('');
   };
 
   const savePrice = async () => {
-    if (!draft?.model.trim()) {
-      setModelMissing(true);
+    if (!draft) return;
+    const unfilled = missingPriceFields(draft);
+    if (unfilled.length) {
+      setMissing(unfilled);
       return;
     }
     setSaving(true);
@@ -159,20 +164,29 @@ export function PricingView({
     }
   };
 
-  const priceField = (label: string, key: Exclude<keyof PriceDraft, 'model'>, placeholder?: string) => (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={`usage-price-${key}`}>{label}</Label>
-      <NumberField
-        id={`usage-price-${key}`}
-        min={0}
-        step={0.0001}
-        font="mono"
-        value={numberFromDraft(draft?.[key] ?? '')}
-        onValueChange={(next) => draft && setDraft({ ...draft, [key]: draftFromNumber(next) })}
-        placeholder={placeholder}
-      />
-    </div>
-  );
+  const priceField = (label: string, key: Exclude<keyof PriceDraft, 'model'>, placeholder?: string) => {
+    const unfilled = (key === 'prompt' || key === 'completion') && missing.includes(key);
+    return (
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`usage-price-${key}`}>{label}</Label>
+        <NumberField
+          id={`usage-price-${key}`}
+          min={0}
+          step={0.0001}
+          font="mono"
+          value={numberFromDraft(draft?.[key] ?? '')}
+          onValueChange={(next) => {
+            if (key === 'prompt' || key === 'completion') filled(key);
+            if (draft) setDraft({ ...draft, [key]: draftFromNumber(next) });
+          }}
+          placeholder={placeholder}
+          aria-invalid={unfilled || undefined}
+          aria-describedby={unfilled ? `usage-price-${key}-error` : undefined}
+        />
+        {unfilled ? <p id={`usage-price-${key}-error`} className="text-xs text-error-foreground">{t('usage.pricing.priceRequired')}</p> : null}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -308,7 +322,7 @@ export function PricingView({
                   font="mono"
                   autoFocus
                   value={draft?.model ?? ''}
-                  onChange={(event) => { setModelMissing(false); if (draft) setDraft({ ...draft, model: event.currentTarget.value }); }}
+                  onChange={(event) => { filled('model'); if (draft) setDraft({ ...draft, model: event.currentTarget.value }); }}
                   placeholder="gpt-5.6-terra"
                   aria-invalid={modelMissing || undefined}
                   aria-describedby={modelMissing ? 'usage-price-model-error' : undefined}

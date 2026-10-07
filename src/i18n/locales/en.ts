@@ -3948,6 +3948,7 @@ export const en = {
   'usage.pricing.actions': 'Actions',
   'usage.pricing.optional': 'Optional; blank uses fallback',
   'usage.pricing.modelRequired': 'Enter a model name',
+  'usage.pricing.priceRequired': 'Enter a price, or 0 if it’s free',
   'usage.pricing.saving': 'Saving',
   'usage.pricing.saved': 'Model price saved; overview cost updated',
   'usage.pricing.deleted': 'Model price deleted; overview cost updated',
