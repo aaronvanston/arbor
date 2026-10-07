@@ -281,14 +281,15 @@ const AUTOMATIONS_GRID_KEY = 'arbor.automations-grid.v1';
 
 type AutomationColumnId = 'name' | 'runsIn' | 'schedule' | 'project' | 'machine' | 'model' | 'nextRun' | 'lastRun' | 'actions';
 
+// Every column at its own size fits the card in a 1440 px window, so Last run isn't cut under the actions there.
 const COLUMN_SIZES: Record<AutomationColumnId, { size: number; minSize: number }> = {
-  name: { size: 220, minSize: 120 },
+  name: { size: 180, minSize: 120 },
   runsIn: { size: 110, minSize: 80 },
-  schedule: { size: 150, minSize: 90 },
-  project: { size: 100, minSize: 60 },
-  machine: { size: 130, minSize: 80 },
-  model: { size: 130, minSize: 80 },
-  nextRun: { size: 170, minSize: 100 },
+  schedule: { size: 155, minSize: 90 },
+  project: { size: 90, minSize: 60 },
+  machine: { size: 115, minSize: 80 },
+  model: { size: 120, minSize: 80 },
+  nextRun: { size: 160, minSize: 100 },
   lastRun: { size: 140, minSize: 90 },
   actions: { size: 44, minSize: 44 },
 };
