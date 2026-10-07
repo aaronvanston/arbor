@@ -5,7 +5,7 @@ import { invokeCommand } from '../native/commands';
 import type { CoreApiKeyView } from '../native/types';
 import type { AppView } from '../navigation';
 import { getThisMac } from '../services/addMachine';
-import { addNewClientKey, clientKeyName, maskApiKey } from '../services/clientKeys';
+import { addNewClientKey, clientKeyName, defaultClientKey, maskApiKey } from '../services/clientKeys';
 import { agentSetup, listensOnlyHere, proxyOrigin, type AgentOrigin, type ProxyListen } from '../services/connectAgent';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
@@ -56,7 +56,7 @@ export function ConnectAgentDialog({ open, onClose, from = 'here', onNavigate }:
     return () => { current = false; };
   }, [open, from]);
 
-  const key = loaded?.keys[keyIndex] ?? loaded?.keys[0] ?? null;
+  const key = loaded ? loaded.keys[keyIndex] ?? defaultClientKey(loaded) : null;
   const origin = loaded ? proxyOrigin(loaded.listen, where, loaded.thisMac) : '';
   const real = key ? agentSetup(origin, key.apiKey) : null;
   const shown = key ? agentSetup(origin, maskApiKey(key.apiKey)) : null;

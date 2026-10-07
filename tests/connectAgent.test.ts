@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { newClientKey } from '../src/services/clientKeys';
+import { clientKeyName, defaultClientKey, newClientKey } from '../src/services/clientKeys';
 import { agentSetup, listensOnlyHere, proxyOrigin } from '../src/services/connectAgent';
 
 describe('connecting an agent', () => {
@@ -29,5 +29,19 @@ describe('connecting an agent', () => {
   it('makes a key from 24 random bytes, written as hex after sk-', () => {
     const counting = (bytes: Uint8Array) => bytes.map((_, index) => index * 11);
     expect(newClientKey(counting)).toBe('sk-000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2fd');
+  });
+});
+
+describe('the key Arbor hands out without asking', () => {
+  it('is the first the core accepts, named so Home, Copy API key and Connect an agent say which', () => {
+    const cam = { apiKey: 'sk-4f1e', apiKeyHash: 'hash-cam', remark: 'Cam laptop' };
+    const ci = { apiKey: 'sk-9b2d0000', apiKeyHash: 'hash-ci', remark: '' };
+    expect(defaultClientKey({ apiKeys: [cam, ci] })).toBe(cam);
+    expect(clientKeyName(cam)).toBe('Cam laptop');
+    // After Cam laptop's key is paused, the next is handed out, by its masked value when it has no name.
+    const next = defaultClientKey({ apiKeys: [ci] });
+    expect(next).toBe(ci);
+    expect(next && clientKeyName(next)).toBe('sk******00');
+    expect(defaultClientKey({ apiKeys: [] })).toBeNull();
   });
 });

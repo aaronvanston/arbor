@@ -3,6 +3,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import { ArrowRight, Check, Copy, Download, Eye, EyeOff, Monitor, Play, RotateCcw, Square, TerminalSquare, Users } from './ui/icons';
 import { invokeCommand } from '../native/commands';
+import type { CoreApiKeyView } from '../native/types';
 import { isCoreStarting, useCoreRuntime } from '../coreRuntime';
 import { useAppUpdate } from '../appUpdate';
 import { displayAppVersion } from '../appUpdateModel';
@@ -14,6 +15,7 @@ import { cn } from '../lib/utils';
 import { accountLimitsView, machinesView, type AppView } from '../navigation';
 import { getAccountsSnapshot, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { clientApiProfiles } from '../services/clientAccess';
+import { clientKeyName, defaultClientKey } from '../services/clientKeys';
 import { CORE_ACTION_LABEL, runCoreProcess, type CoreProcessCommand } from '../services/coreProcess';
 import { coreLock } from '../services/coreLock';
 import { accountsFlow, type ProxyFlow } from '../services/homeOverview';
@@ -64,7 +66,7 @@ export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { mac
   const processFeedback = useAppNotice();
   const { showNotice: showProcessNotice, clearNotice: clearProcessNotice } = processFeedback;
   const { copy, copied } = useCopyToClipboard({ inline: true });
-  const [apiKey, setApiKey] = useState<string | null | undefined>(undefined);
+  const [apiKey, setApiKey] = useState<CoreApiKeyView | null | undefined>(undefined);
   const [apiKeyError, setApiKeyError] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -85,7 +87,7 @@ export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { mac
     const loadApiKey = () => invokeCommand('get_core_config_settings')
       .then((settings) => {
         if (disposed.current) return;
-        setApiKey(settings.apiKeys[0]?.apiKey ?? null);
+        setApiKey(defaultClientKey(settings));
         setApiKeyError(false);
       })
       .catch(() => {
@@ -284,16 +286,16 @@ export const HomeProxy = memo(function HomeProxy({ machines, onNavigate }: { mac
             </ConnectField>
           );
         })}
-        <ConnectField label={t('home.proxy.key')}>
+        <ConnectField label={apiKey ? t('home.proxy.keyNamed', { name: clientKeyName(apiKey) }) : t('home.proxy.key')}>
           {apiKeyError ? (
             <span className="text-xs text-error-foreground">{t('common.detectionFailed')}</span>
           ) : apiKey ? (
             <>
-              <code className="min-w-0 truncate rounded-md bg-muted px-2 py-1 font-mono text-sm text-foreground dark:bg-input/32">{showApiKey ? apiKey : MASKED_KEY}</code>
+              <code className="min-w-0 truncate rounded-md bg-muted px-2 py-1 font-mono text-sm text-foreground dark:bg-input/32">{showApiKey ? apiKey.apiKey : MASKED_KEY}</code>
               <Button variant="ghost-muted" size="icon-sm" onClick={() => setShowApiKey((current) => !current)} title={keyToggleLabel} aria-label={keyToggleLabel}>
                 {showApiKey ? <EyeOff /> : <Eye />}
               </Button>
-              <Button variant="ghost-muted" size="icon-sm" onClick={() => void copy(apiKey, { id: 'home:apikey' })} title={keyCopyLabel} aria-label={keyCopyLabel}>
+              <Button variant="ghost-muted" size="icon-sm" onClick={() => void copy(apiKey.apiKey, { id: 'home:apikey' })} title={keyCopyLabel} aria-label={keyCopyLabel}>
                 {copied === 'home:apikey' ? <Check className="text-success" /> : <Copy />}
               </Button>
             </>

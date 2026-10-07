@@ -12,6 +12,7 @@ import { useAccountReserves } from '../services/accountReserves';
 import { plainError } from '../services/plainError';
 import { getAccountsSnapshot, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { loadProxyBaseUrl } from '../services/clientAccess';
+import { clientKeyName, defaultClientKey } from '../services/clientKeys';
 import { copyPendingText } from '../lib/clipboard';
 import { paletteActions, type PaletteActionId } from '../services/commandPalette';
 import { CORE_ACTION_LABEL, runCoreProcess, type CoreProcessCommand } from '../services/coreProcess';
@@ -136,11 +137,19 @@ export function usePaletteActions({ onNavigate, confirmCore = false }: { onNavig
       'resume-account': undefined,
       'copy-base-url': () => copy(loadProxyBaseUrl, (url) => t('palette.outcome.copiedUrl', { url }), t('palette.outcome.noUrl')),
       // Read, copied and dropped: the key is never put on screen or kept.
-      'copy-api-key': () => copy(
-        async () => (await invokeCommand('get_core_config_settings')).apiKeys[0]?.apiKey ?? null,
-        () => t('palette.outcome.copiedKey'),
-        t('palette.outcome.noKey'),
-      ),
+      'copy-api-key': () => {
+        // Named in its toast, as Home names the key it shows.
+        let name = '';
+        return copy(
+          async () => {
+            const key = defaultClientKey(await invokeCommand('get_core_config_settings'));
+            name = key ? clientKeyName(key) : '';
+            return key?.apiKey ?? null;
+          },
+          () => t('palette.outcome.copiedKey', { name }),
+          t('palette.outcome.noKey'),
+        );
+      },
       'scan-setup': () => {
         // Checks shows the scan running and what it finds; the view Sync was left on might not (Agents has no scan).
         onNavigate(setupChecksView());

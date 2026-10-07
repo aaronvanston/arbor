@@ -27,6 +27,12 @@ export async function addNewClientKey(remark: string) {
 /** A key by its remark, or masked when it has none. */
 export const clientKeyName = (key: CoreApiKeyView) => key.remark || maskApiKey(key.apiKey);
 
+/**
+ * The key Arbor hands out when it doesn't ask which: the first the core accepts. Home's Key shows it, Copy API key
+ * copies it and Connect an agent starts on it, each naming it, so they never quietly disagree after a pause.
+ */
+export const defaultClientKey = ({ apiKeys }: Pick<CoreConfigView, 'apiKeys'>): CoreApiKeyView | null => apiKeys[0] ?? null;
+
 const clientKeys = ({ apiKeys, pausedApiKeys }: CoreConfigView): ClientKeys => ({ apiKeys, pausedApiKeys });
 
 /** The client keys, loaded while `enabled`, with pause and resume keeping them current. */
