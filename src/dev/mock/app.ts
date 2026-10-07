@@ -4,7 +4,7 @@ import { PHONE_ALERT_SECRETS } from '../../services/phoneAlerts';
 import { QUIT_GUARD_ARMED_EVENT, QUIT_GUARD_WINDOW_MS, pressQuit } from '../../services/quitGuard';
 import { nearestZoomStep, ZOOM_CHANGED_EVENT, zoomLevelAt } from '../../services/zoom';
 import type { AppCommands } from '../../native/app';
-import type { AppIconChoice, AppIconSetting, DevBuildStatus, PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, UpdateChannel, ZoomLevel } from '../../native/types';
+import type { AppIconChoice, AppIconSetting, AppUpdatePhase, AppUpdateTask, DevBuildStatus, PhoneAlertSecret, ProductAnalyticsSettings, ReleaseNotes, SoftwareSettings, UpdateChannel, ZoomLevel } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { configSettings, coreStatus } from './core';
 import { freshInstall, mockLog, params } from './scenario';
@@ -109,6 +109,23 @@ const phoneSecretStatus = () =>
 const channelParam = params.get('channel');
 let updateChannel: UpdateChannel = channelParam === 'nightly' || channelParam === 'dev' ? channelParam : 'stable';
 
+/** An install's progress still to come, which canceling stops, and the last it sent. */
+let updateTimers: number[] = [];
+let lastUpdateFrame: AppUpdateTask | null = null;
+
+/** Sends an install's progress `afterMs` from now, as Rust sends each step. */
+const updateFrame = (frame: AppUpdateTask, afterMs: number) => {
+  updateTimers.push(window.setTimeout(() => {
+    lastUpdateFrame = frame;
+    void emit('app-update-progress', frame);
+  }, afterMs));
+};
+
+const stopUpdateFrames = () => {
+  updateTimers.forEach((timer) => window.clearTimeout(timer));
+  updateTimers = [];
+};
+
 const DEV_COMMIT = '7c41e2a9d03b5f68a1e4c2b7d9f0e3a6b5c8d1f2';
 const DEV_NEXT_COMMIT = 'e93b07d4a1c6f2e85b0d7a3c9e1f4b6a8d2c5e70';
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -121,7 +138,8 @@ function mockDevBuildStatus(): DevBuildStatus {
     installed: true, repository: '/Users/cam/src/arbor', state: 'idle', commit: DEV_COMMIT, step: null, startedAt: minutesAgo(21), finishedAt: minutesAgo(12),
     error: null, hasLog: true, requested: false, settlesAt: null, ...built,
   };
-  if (scenario === 'none') {
+  // `nosign` isn't set up either: turning it on is what fails.
+  if (scenario === 'none' || scenario === 'nosign') {
     return { ...base, installed: false, repository: null, commit: null, startedAt: null, finishedAt: null, hasLog: false, builtVersion: null, builtCommit: null, builtAt: null };
   }
   if (scenario === 'building') return { ...base, state: 'building', step: 'building', commit: DEV_NEXT_COMMIT, startedAt: minutesAgo(3), finishedAt: null };
@@ -200,35 +218,44 @@ export const appAnswers: CommandAnswers<AppCommands> = {
   get_app_update_task: () => ({ running: false, cancelable: false, phase: 'idle', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null, fromThisMac: false }),
   start_app_update: () => {
     mockLog('start_app_update', null);
+    stopUpdateFrames();
     // Starting only spawns the install, as in the app: it checks the feed again first, and a failure comes later
     // as progress.
-    const checking = { running: true, cancelable: true, phase: 'checking', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null, fromThisMac: false };
+    const checking: AppUpdateTask = { running: true, cancelable: true, phase: 'checking', targetVersion: null, downloadedBytes: 0, totalBytes: null, percent: null, message: null, fromThisMac: false };
     if (params.get('appupdate') === 'gone') {
-      window.setTimeout(() => void emit('app-update-progress', checking), 100);
-      window.setTimeout(() => void emit('app-update-progress', { ...checking, running: false, cancelable: false, phase: 'failed', message: 'There’s no update to install anymore; check for updates again' }), 1_200);
+      updateFrame(checking, 100);
+      updateFrame({ ...checking, running: false, cancelable: false, phase: 'failed', message: 'There’s no update to install anymore; check for updates again' }, 1_200);
     } else if (params.get('appupdate') === 'fail') {
-      const task = (phase: string, message: string | null = null) => ({
+      const task = (phase: AppUpdatePhase, message: string | null = null): AppUpdateTask => ({
         running: phase !== 'failed', cancelable: phase === 'downloading', phase, targetVersion: '0.3.201',
         downloadedBytes: 12_000_000, totalBytes: 48_120_000, percent: 25, message, fromThisMac: false,
       });
-      window.setTimeout(() => void emit('app-update-progress', checking), 100);
-      window.setTimeout(() => void emit('app-update-progress', task('downloading')), 700);
-      window.setTimeout(() => void emit('app-update-progress', task('failed', 'Download failed: the release asset’s signature didn’t match.')), 2_000);
+      updateFrame(checking, 100);
+      updateFrame(task('downloading'), 700);
+      updateFrame(task('failed', 'Download failed: the release asset’s signature didn’t match.'), 2_000);
     } else {
       // Every step to Restarting, where the real app quits; on the dev channel the build is copied, with no percent.
       const fromThisMac = updateChannel === 'dev';
       const total = 48_120_000;
-      const at = (phase: string, downloaded = 0) => ({
+      const at = (phase: AppUpdatePhase, downloaded = 0): AppUpdateTask => ({
         running: true, cancelable: phase === 'checking' || phase === 'downloading', phase, targetVersion: '0.3.201', fromThisMac,
         downloadedBytes: downloaded, totalBytes: total, percent: fromThisMac ? null : (downloaded / total) * 100,
         message: fromThisMac || phase !== 'downloading' ? null : `${(downloaded / 1_000_000).toFixed(1)} MB / ${(total / 1_000_000).toFixed(1)} MB`,
       });
       const frames = [checking, ...(fromThisMac ? [at('downloading')] : [0.1, 0.35, 0.6, 0.85, 1].map((part) => at('downloading', Math.round(total * part)))), at('verifying', total), at('staging', total), at('restarting', total)];
-      frames.forEach((frame, index) => window.setTimeout(() => void emit('app-update-progress', frame), 100 + index * 900));
+      frames.forEach((frame, index) => updateFrame(frame, 100 + index * 900));
     }
     return null;
   },
-  cancel_app_update: () => null,
+  // Like Rust, only a check or a download can be canceled; the install stops there and says so.
+  cancel_app_update: () => {
+    mockLog('cancel_app_update', null);
+    if (!lastUpdateFrame?.running || !lastUpdateFrame.cancelable) throw 'The application update cannot be canceled at this stage';
+    stopUpdateFrames();
+    void emit('app-update-progress', { ...lastUpdateFrame, running: false, cancelable: false, phase: 'canceled', message: 'Application update download canceled' });
+    lastUpdateFrame = null;
+    return null;
+  },
   get_dev_build_status: () => currentDevBuildStatus(),
   set_dev_builds: async ({ enabled, repository }) => {
     mockLog('set_dev_builds', { enabled, repository });
