@@ -505,8 +505,18 @@ fn schedule_flush() {
     });
 }
 
-/// Saves a batch of calls and trims the table back to its limits.
+/// Saves a batch of calls and trims the table back to its limits. The first save of a run trims every operation, in
+/// case the table was left past a cap some other way; after it only the operations a batch adds to can be.
 fn write_calls(connection: &mut Connection, calls: &[Call], now_ms: i64) -> Result<(), String> {
+    save_calls(connection, calls, now_ms, !TRIMMED_ALL.load(Ordering::Acquire))?;
+    TRIMMED_ALL.store(true, Ordering::Release);
+    Ok(())
+}
+
+/// Whether a save this run has trimmed every operation back to its caps.
+static TRIMMED_ALL: AtomicBool = AtomicBool::new(false);
+
+fn save_calls(connection: &mut Connection, calls: &[Call], now_ms: i64, trim_all: bool) -> Result<(), String> {
     let transaction = connection
         .transaction()
         .map_err(|error| format!("Failed to start saving diagnostics: {error}"))?;
@@ -534,55 +544,85 @@ fn write_calls(connection: &mut Connection, calls: &[Call], now_ms: i64) -> Resu
                 .map_err(|error| format!("Failed to save diagnostics: {error}"))?;
         }
     }
-    prune(&transaction, now_ms)?;
+    prune(&transaction, now_ms, (!trim_all).then_some(calls))?;
     transaction
         .commit()
         .map_err(|error| format!("Failed to save diagnostics: {error}"))
 }
 
-fn prune(connection: &Connection, now_ms: i64) -> Result<(), String> {
+/// Trims the table back to its limits. With `added`, only the operations those calls belong to are checked against
+/// their own caps: the rest were within them after the last trim, and nothing but a save adds a call.
+fn prune(connection: &Connection, now_ms: i64, added: Option<&[Call]>) -> Result<(), String> {
     let failed = |error: rusqlite::Error| format!("Failed to trim diagnostics: {error}");
     connection
         .execute("DELETE FROM diagnostic_calls WHERE at_ms < ?1", params![now_ms - KEEP_MS])
         .map_err(failed)?;
-    connection
-        .execute(
-            "DELETE FROM diagnostic_calls WHERE id IN (
-                SELECT id FROM (
-                    SELECT id, ROW_NUMBER() OVER (
-                        PARTITION BY kind, target, operation ORDER BY at_ms DESC, id DESC
-                    ) AS newer
-                    FROM diagnostic_calls WHERE outcome = 'ok' AND slow = 0
-                ) WHERE newer > ?1
-            )",
-            params![ROUTINE_PER_OPERATION as i64],
-        )
-        .map_err(failed)?;
+    let routine = |call: &&Call| call.outcome == Outcome::Ok && !call.slow;
+    // The operations to check, as JSON for json_each: each call's kind, target and operation, and outcome.
+    let touched = |calls: Vec<&Call>| -> String {
+        let keys: HashSet<(&str, &str, &str, &str)> = calls
+            .iter()
+            .map(|call| (call.kind.as_str(), call.target.as_str(), call.operation.as_str(), call.outcome.as_str()))
+            .collect();
+        serde_json::to_string(&keys.into_iter().map(|(kind, target, operation, outcome)| [kind, target, operation, outcome]).collect::<Vec<_>>())
+            .unwrap_or_else(|_| "[]".into())
+    };
+    let (routine_only, problems_only) = match added {
+        Some(calls) => (
+            Some(touched(calls.iter().filter(routine).collect())),
+            Some(touched(calls.iter().filter(|call| !routine(call)).collect())),
+        ),
+        None => (None, None),
+    };
+    if routine_only.as_deref() != Some("[]") {
+        connection
+            .execute(
+                "DELETE FROM diagnostic_calls WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY kind, target, operation ORDER BY at_ms DESC, id DESC
+                        ) AS newer
+                        FROM diagnostic_calls WHERE outcome = 'ok' AND slow = 0
+                        AND (?2 IS NULL OR (kind, target, operation) IN
+                            (SELECT value ->> 0, value ->> 1, value ->> 2 FROM json_each(?2)))
+                    ) WHERE newer > ?1
+                )",
+                params![ROUTINE_PER_OPERATION as i64, routine_only],
+            )
+            .map_err(failed)?;
+    }
     // A call that went fine but slowly is outcome 'ok', so the outcome keeps slow calls apart from failures.
-    connection
-        .execute(
-            "DELETE FROM diagnostic_calls WHERE id IN (
-                SELECT id FROM (
-                    SELECT id, ROW_NUMBER() OVER (
-                        PARTITION BY kind, target, operation, outcome ORDER BY at_ms DESC, id DESC
-                    ) AS newer
-                    FROM diagnostic_calls WHERE NOT (outcome = 'ok' AND slow = 0)
-                ) WHERE newer > ?1
-            )",
-            params![PROBLEMS_PER_OPERATION as i64],
-        )
-        .map_err(failed)?;
+    if problems_only.as_deref() != Some("[]") {
+        connection
+            .execute(
+                "DELETE FROM diagnostic_calls WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY kind, target, operation, outcome ORDER BY at_ms DESC, id DESC
+                        ) AS newer
+                        FROM diagnostic_calls WHERE NOT (outcome = 'ok' AND slow = 0)
+                        AND (?2 IS NULL OR (kind, target, operation, outcome) IN
+                            (SELECT value ->> 0, value ->> 1, value ->> 2, value ->> 3 FROM json_each(?2)))
+                    ) WHERE newer > ?1
+                )",
+                params![PROBLEMS_PER_OPERATION as i64, problems_only],
+            )
+            .map_err(failed)?;
+    }
     // Past the cap, calls that went fine go first, oldest first; then the oldest problems.
-    connection
-        .execute(
-            "DELETE FROM diagnostic_calls WHERE id IN (
-                SELECT id FROM diagnostic_calls
-                ORDER BY (outcome = 'ok' AND slow = 0), at_ms DESC, id DESC
-                LIMIT -1 OFFSET ?1
-            )",
-            params![MAX_CALLS as i64],
-        )
-        .map_err(failed)?;
+    let count: i64 = connection.query_row("SELECT COUNT(*) FROM diagnostic_calls", [], |row| row.get(0)).map_err(failed)?;
+    if count > MAX_CALLS as i64 {
+        connection
+            .execute(
+                "DELETE FROM diagnostic_calls WHERE id IN (
+                    SELECT id FROM diagnostic_calls
+                    ORDER BY (outcome = 'ok' AND slow = 0), at_ms DESC, id DESC
+                    LIMIT -1 OFFSET ?1
+                )",
+                params![MAX_CALLS as i64],
+            )
+            .map_err(failed)?;
+    }
     Ok(())
 }
 
@@ -918,6 +958,46 @@ mod tests {
         assert_eq!(count("cedar-02", "timedOut"), 1);
     }
 
+    #[test]
+    fn trimming_only_the_operations_a_batch_added_to_keeps_what_trimming_everything_keeps() {
+        let mut everything = crate::usage::schema::test_database();
+        let mut added = crate::usage::schema::test_database();
+        let now = 30 * 24 * HOUR;
+        let outcomes = [Outcome::Ok, Outcome::Ok, Outcome::Ok, Outcome::Failed, Outcome::TimedOut];
+        let mut seed = 0x2545_f491_u64;
+        let mut next = move |bound: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % bound
+        };
+        let (mut full, mut problems_capped) = (false, false);
+        for round in 0..400_i64 {
+            let calls: Vec<Call> = (0..1 + next(30) as i64)
+                .map(|index| {
+                    let outcome = outcomes[next(outcomes.len() as u64) as usize];
+                    // A routine call now and then runs slow, which counts it with the problems.
+                    let duration = if next(15) == 0 { 20_000 } else { 400 };
+                    // Problems come mostly from one machine, so their caps are reached too.
+                    let target = if outcome == Outcome::Ok && next(4) != 0 { format!("machine-{}", next(8)) } else { "machine-0".into() };
+                    let operation = ["health check", "setup scan", "ping"][next(3) as usize];
+                    // Some calls arrive late, older than ones already saved, and some fall out of the week.
+                    let at = now - 8 * 24 * HOUR + round * 30 * 60_000 + index - next(4) as i64 * HOUR;
+                    call(CallKind::Machine, &target, operation, at, duration, outcome)
+                })
+                .collect();
+            let at = now - 8 * 24 * HOUR + round * 30 * 60_000;
+            save_calls(&mut everything, &calls, at, true).unwrap();
+            save_calls(&mut added, &calls, at, false).unwrap();
+            let rows = stored(&added);
+            assert_eq!(stored(&everything), rows, "after round {round}");
+            full |= rows.len() == MAX_CALLS;
+            problems_capped |= rows.iter().filter(|row| row.1 == "machine-0" && row.2 == "ping" && row.3 == "failed").count()
+                == PROBLEMS_PER_OPERATION;
+        }
+        assert!(full && problems_capped, "the run reaches the table's cap and an operation's problem cap");
+    }
+
     /// A read copies the calls waiting and then reads the table, while a save takes the calls waiting and then
     /// commits them. Neither may fall between the other's two steps, or a call shows twice or not at all.
     #[test]
@@ -1043,5 +1123,65 @@ mod tests {
         for secret in [ARGUMENT, OUTPUT, STDERR, "cam@example.com", "sk-live"] {
             assert!(!shown.contains(secret));
         }
+    }
+
+    /// Times a flush with the table full, as it is on a fleet after a week: twelve machines' routine calls past each
+    /// operation's cap and a sprinkling of problems. Ignored in the normal run; run it in release:
+    ///
+    /// ```sh
+    /// cd src-tauri && cargo test --release diagnostics::tests::flush_at_volume -- --ignored --nocapture
+    /// ```
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "benchmark: run in release with --ignored --nocapture"]
+    fn flush_at_volume() {
+        use std::time::Instant;
+        let root = std::env::temp_dir().join(format!("arbor-diagnostics-bench-{}", std::process::id()));
+        let now = now_ms();
+        let machines: Vec<String> = (0..12).map(|index| format!("machine-{index}")).collect();
+        let operations = ["health check", "setup scan", "transcript scan", "agent homes", "ping"];
+        let mut tick = 0_i64;
+        // One flush's worth: a call from each of a few machines, and now and then a failure.
+        let batch = |tick: &mut i64| -> Vec<Call> {
+            (0..4)
+                .map(|index| {
+                    *tick += 1;
+                    let machine = &machines[(*tick as usize) % machines.len()];
+                    let operation = operations[(*tick as usize / machines.len()) % operations.len()];
+                    let outcome = if *tick % 37 == 0 { Outcome::Failed } else { Outcome::Ok };
+                    call(CallKind::Machine, machine, operation, now - 3_600_000 + *tick * 100 + index, 400, outcome)
+                })
+                .collect()
+        };
+        {
+            let mut connection = open_usage_database_at(&root).unwrap();
+            for _ in 0..1_500 {
+                let calls = batch(&mut tick);
+                write_calls(&mut connection, &calls, now).unwrap();
+            }
+        }
+        let count: i64 = open_usage_database_at(&root).unwrap().query_row("SELECT COUNT(*) FROM diagnostic_calls", [], |row| row.get(0)).unwrap();
+        let cpu_ms = || {
+            let mut spec = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut spec) };
+            spec.tv_sec as f64 * 1_000.0 + spec.tv_nsec as f64 / 1_000_000.0
+        };
+        // As a flush runs it: open usage.db, then save the batch.
+        let (mut wall, mut cpu): (Vec<f64>, Vec<f64>) = (0..200)
+            .map(|_| {
+                let calls = batch(&mut tick);
+                let (started, cpu_started) = (Instant::now(), cpu_ms());
+                write_calls(&mut open_usage_database_at(&root).unwrap(), &calls, now).unwrap();
+                (started.elapsed().as_secs_f64() * 1_000.0, cpu_ms() - cpu_started)
+            })
+            .unzip();
+        wall.sort_by(f64::total_cmp);
+        cpu.sort_by(f64::total_cmp);
+        println!("diagnostic_calls: {count} rows");
+        println!(
+            "{:<30} wall median {:>7.3} ms (p10 {:.3}, p90 {:.3})   cpu median {:>7.3} ms (p10 {:.3}, p90 {:.3})",
+            "flush, 4 calls", wall[100], wall[20], wall[180], cpu[100], cpu[20], cpu[180]
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 }
