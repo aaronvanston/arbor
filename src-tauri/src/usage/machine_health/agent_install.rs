@@ -217,6 +217,75 @@ pub(super) fn method_from_paths(agent: Option<AgentKind>, path: &str, real: &str
     }
 }
 
+/// How an install can be taken off its machine, when Arbor can prove what made it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Uninstall {
+    /// The agent's own installer: its command and the folder of versions it keeps, both moved aside like any folder.
+    Native { link: String, folder: String },
+    Npm { prefix: String, package: String },
+    Bun { package: String },
+    Pnpm { package: String },
+    Homebrew { prefix: String, cask: bool, name: String },
+}
+
+/// The package a global install's real path names: what follows its last `node_modules/`, scope and all.
+fn package_after_node_modules(real: &str) -> Option<String> {
+    let after = &real[real.rfind("/node_modules/")? + "/node_modules/".len()..];
+    let mut parts = after.split('/');
+    let first = parts.next()?;
+    let package = if first.starts_with('@') { format!("{first}/{}", parts.next()?) } else { first.to_string() };
+    (plain_name(&package, &['/']) && !package.starts_with('.')).then_some(package)
+}
+
+/// How the install at `path` (leading to `real`) comes off, from the same layout proof `classify` goes by: npm's,
+/// bun's and pnpm's global folders name the package, a Homebrew keg its formula or cask, and Claude Code's and Codex's
+/// own installers their versions folders in `home`. None for anything else, mise included, which is left to the user.
+/// The script that acts proves it again on the machine (brew owning the keg, the package folder still there).
+pub(crate) fn uninstall_plan(agent: Option<AgentKind>, path: &str, real: &str, home: &str) -> Option<Uninstall> {
+    let home = home.trim_end_matches('/');
+    let in_home = |dir: &str| dir.starts_with(&format!("{home}/")) && !dir.split('/').any(|part| part == "..");
+    match agent {
+        Some(AgentKind::Claude) if is_native(AgentKind::Claude, path) || is_native(AgentKind::Claude, real) => {
+            let folder = format!("{home}/.local/share/claude");
+            return (path == format!("{home}/.local/bin/claude") && real.starts_with(&format!("{folder}/"))).then(|| Uninstall::Native { link: path.into(), folder });
+        }
+        Some(AgentKind::Codex) if is_native(AgentKind::Codex, path) || is_native(AgentKind::Codex, real) => {
+            let at = real.find("/packages/standalone/")?;
+            let folder = format!("{}/packages/standalone", &real[..at]);
+            return (in_home(&folder) && in_home(path) && path != real).then(|| Uninstall::Native { link: path.into(), folder });
+        }
+        _ => {}
+    }
+    let lowered = lower(real);
+    if lowered.contains("/mise/") || is_mise_shim(path) {
+        return None;
+    }
+    if lowered.contains("/.bun/install/global/node_modules/") {
+        return package_after_node_modules(real).map(|package| Uninstall::Bun { package });
+    }
+    if is_pnpm(real) {
+        return package_after_node_modules(real).map(|package| Uninstall::Pnpm { package });
+    }
+    if let Some(package) = package_after_node_modules(real) {
+        if let Some(prefix) = npm_prefix(real, &package) {
+            return Some(Uninstall::Npm { prefix, package });
+        }
+    }
+    homebrew_keg(real).filter(|(_, _, name)| plain_name(name, &[]) && name != "mise").map(|(prefix, cask, name)| Uninstall::Homebrew { prefix, cask, name })
+}
+
+/// The command an uninstall runs, as the confirmation shows it; none for a native install, which is set aside instead.
+pub(crate) fn uninstall_command(plan: &Uninstall) -> Option<String> {
+    Some(match plan {
+        Uninstall::Native { .. } => return None,
+        Uninstall::Npm { prefix, package } => format!("npm uninstall -g --prefix {} {}", shell_word(prefix), shell_word(package)),
+        Uninstall::Bun { package } => format!("bun remove -g {}", shell_word(package)),
+        Uninstall::Pnpm { package } => format!("pnpm remove -g {}", shell_word(package)),
+        Uninstall::Homebrew { cask: true, name, .. } => format!("brew uninstall --cask {}", shell_word(name)),
+        Uninstall::Homebrew { cask: false, name, .. } => format!("brew uninstall {}", shell_word(name)),
+    })
+}
+
 /// A word that pastes into a POSIX shell as one argument.
 pub(super) fn shell_word(word: &str) -> String {
     if !word.is_empty() && word.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '@' | ':' | '=' | '+' | ',')) {
@@ -381,6 +450,42 @@ mod tests {
         // mise not answering, or giving another version than the one on PATH: not proven.
         assert_eq!(method(AgentKind::Codex, shim, "/opt/homebrew/Cellar/mise/2026.9.1/bin/mise", &[("brew_prefix", "/opt/homebrew"), ("brew_owner", "formula mise")]).0, InstallMethod::Unknown);
         assert_eq!(method(AgentKind::Codex, "/x/mise/installs/codex/0.150.0/bin/codex", "/x/mise/installs/codex/0.150.0/bin/codex", &[("mise_tool", "codex"), ("mise_real", "/x/mise/installs/codex/0.157.0/bin/codex")]).0, InstallMethod::Unknown);
+    }
+
+    #[test]
+    fn an_install_comes_off_only_the_way_its_layout_proves_it_was_made() {
+        let home = "/Users/cam";
+        let plan = |agent, path: &str, real: &str| uninstall_plan(agent, path, real, home);
+        assert_eq!(
+            plan(Some(AgentKind::Claude), "/Users/cam/.local/bin/claude", "/Users/cam/.local/share/claude/versions/2.4.12"),
+            Some(Uninstall::Native { link: "/Users/cam/.local/bin/claude".into(), folder: "/Users/cam/.local/share/claude".into() })
+        );
+        assert_eq!(
+            plan(Some(AgentKind::Codex), "/Users/cam/.local/bin/codex", "/Users/cam/.codex/packages/standalone/0.161.0/bin/codex"),
+            Some(Uninstall::Native { link: "/Users/cam/.local/bin/codex".into(), folder: "/Users/cam/.codex/packages/standalone".into() })
+        );
+        assert_eq!(
+            plan(None, "/Users/cam/.bun/bin/amp", "/Users/cam/.bun/install/global/node_modules/@sourcegraph/amp/dist/main.js"),
+            Some(Uninstall::Bun { package: "@sourcegraph/amp".into() })
+        );
+        assert_eq!(
+            plan(None, "/Users/cam/Library/pnpm/pi", "/Users/cam/Library/pnpm/global/5/.pnpm/@earendil+pi@0.9.1/node_modules/@earendil/pi/dist/cli.js"),
+            Some(Uninstall::Pnpm { package: "@earendil/pi".into() })
+        );
+        assert_eq!(
+            plan(None, "/usr/local/bin/droid", "/usr/local/lib/node_modules/droid/bin/droid.js"),
+            Some(Uninstall::Npm { prefix: "/usr/local".into(), package: "droid".into() })
+        );
+        assert_eq!(
+            plan(Some(AgentKind::Codex), "/opt/homebrew/bin/codex", "/opt/homebrew/Caskroom/codex/0.161.0/codex"),
+            Some(Uninstall::Homebrew { prefix: "/opt/homebrew".into(), cask: true, name: "codex".into() })
+        );
+        // mise, a project's own node_modules, a bare binary, and Claude Code's installer outside the home: not proven.
+        assert_eq!(plan(Some(AgentKind::Codex), "/Users/cam/.local/share/mise/shims/codex", "/opt/homebrew/bin/mise"), None);
+        assert_eq!(plan(None, "/src/app/node_modules/.bin/pi", "/src/app/node_modules/x/lib/node_modules/pi/cli.js"), None);
+        assert_eq!(plan(None, "/usr/bin/opencode", "/usr/bin/opencode"), None);
+        assert_eq!(plan(Some(AgentKind::Claude), "/opt/tools/.local/bin/claude", "/opt/tools/.local/share/claude/versions/1"), None);
+        assert_eq!(uninstall_command(&Uninstall::Homebrew { prefix: "/opt/homebrew".into(), cask: false, name: "claude-code".into() }).as_deref(), Some("brew uninstall claude-code"));
     }
 
     #[test]

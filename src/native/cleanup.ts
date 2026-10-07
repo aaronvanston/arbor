@@ -1,4 +1,4 @@
-import type { CleanupRemoval, CleanupRestore, CleanupScan, CleanupTarget, SetAsideRef } from './types';
+import type { AgentUninstall, CleanupRemoval, CleanupRestore, CleanupScan, CleanupTarget, SetAsideRef } from './types';
 
 /** A machine's clean-up: what could come off it, set aside rather than deleted, and what's set aside there. */
 export type CleanupCommands = {
@@ -7,4 +7,5 @@ export type CleanupCommands = {
   remove_cleanup_items: { args: { machine: string; items: CleanupTarget[]; allowUnarchived?: boolean | null }; result: CleanupRemoval };
   restore_set_aside: { args: { machine: string; stamp: string; item?: number | null }; result: CleanupRestore };
   delete_set_aside: { args: { machine: string; items: SetAsideRef[] }; result: CleanupScan };
+  uninstall_cleanup_agent: { args: { machine: string; path: string }; result: AgentUninstall };
 };

@@ -164,6 +164,7 @@ pub(crate) enum MachineOp {
     CleanupList,
     CleanupMove,
     CleanupDelete,
+    CleanupUninstall,
 }
 
 impl MachineOp {
@@ -219,12 +220,13 @@ impl MachineOp {
             Self::CleanupList => "set-aside list",
             Self::CleanupMove => "clean-up move",
             Self::CleanupDelete => "set-aside delete",
+            Self::CleanupUninstall => "agent uninstall",
         }
     }
 
     fn slow_after_ms(self) -> u64 {
         match self {
-            Self::AgentUpdate | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall => {
+            Self::AgentUpdate | Self::CleanupUninstall | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall => {
                 MACHINE_INSTALL_SLOW_MS
             }
             Self::TranscriptScan

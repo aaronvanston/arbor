@@ -14,8 +14,10 @@ import {
   cleanupView,
   deleteSetAside,
   getCleanup,
+  lastRoutedCopy,
   removalAsks,
   removeCleanup,
+  uninstallAgent,
   restoreSetAside,
 } from '../services/cleanup';
 import { readCommandError } from '../services/commandError';
@@ -141,6 +143,46 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
     }
   };
 
+  const uninstall = async (agent: CleanupAgent) => {
+    const name = harnessName(agent.harness);
+    // A package manager's uninstall can't be undone, so it asks first, naming the command. Its own installer's copy is
+    // set aside, with Undo.
+    if (agent.removal === 'packageManager') {
+      const confirmed = await askConfirmation({
+        variant: 'danger',
+        title: t('machine.cleanup.agent.ask.title', { agent: name, name: machine }),
+        message: tRich('machine.cleanup.agent.ask.message', { machine: <MachinePill name={machine} size="md" /> }),
+        details: [{ label: t('machine.cleanup.agent.ask.command'), value: agent.command ?? '' }],
+        warning: lastRoutedCopy(agent, scan?.routed ?? false) ? t('machine.cleanup.agent.ask.lastCopy', { name: machine, agent: name }) : undefined,
+        confirmText: t('machine.cleanup.agent.ask.confirm'),
+      });
+      if (!confirmed) return;
+    }
+    setBusy(agent.path);
+    setProblem(null);
+    try {
+      const done = await uninstallAgent(machine, agent.path);
+      setScan(done.scan);
+      const remaining = done.remaining.length ? t('machine.cleanup.agent.remaining', { paths: done.remaining.join(', ') }) : t('machine.cleanup.agent.noneLeft');
+      const stamp = done.stamp;
+      if (stamp) {
+        toast({
+          kind: 'success',
+          title: t('machine.cleanup.agent.removed', { agent: name }),
+          description: `${t('machine.cleanup.agent.removedNote')} ${remaining}`,
+          action: { label: t('common.undo'), onClick: () => { void undo(stamp, agent.path); } },
+          focusAction: true,
+        });
+      } else {
+        toast({ kind: done.remaining.length ? 'warning' : 'success', title: t('machine.cleanup.agent.uninstalled', { agent: name }), description: remaining });
+      }
+    } catch (reason) {
+      setProblem({ key: agent.path, text: readCommandError(reason).message, changed: readCommandError(reason).kind === 'changed' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const restore = async (item: SetAsideItem) => {
     const key = `${item.stamp}/${item.item}`;
     setBusy(key);
@@ -196,6 +238,7 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
       onRemove={(group, path) => void remove(group, path)}
       onRestore={(item) => void restore(item)}
       onDelete={(items) => void deleteForGood(items)}
+      onUninstall={(agent) => void uninstall(agent)}
     />
   );
 }
@@ -204,7 +247,7 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
 export type CleanupProblem = { key: string; text: string; changed: boolean };
 
 /** The section as it stands: what the last look found, what's set aside, and what's under way. */
-export function CleanupContent({ machine, pill, scan, looking, error, busy, problem, onLook, onRemove, onRestore, onDelete }: {
+export function CleanupContent({ machine, pill, scan, looking, error, busy, problem, onLook, onRemove, onRestore, onDelete, onUninstall }: {
   machine: string;
   pill: ReactNode;
   scan: CleanupScan | null;
@@ -216,6 +259,7 @@ export function CleanupContent({ machine, pill, scan, looking, error, busy, prob
   onRemove: (group: CleanupGroup, path: string) => void;
   onRestore: (item: SetAsideItem) => void;
   onDelete: (items: SetAsideItem[]) => void;
+  onUninstall: (agent: CleanupAgent) => void;
 }) {
   const { t, tRich } = useI18n();
   const harnessName = useHarnessName();
@@ -316,7 +360,16 @@ export function CleanupContent({ machine, pill, scan, looking, error, busy, prob
           ))}
 
           {scan?.agents.length ? <GroupHead title={t('machine.cleanup.group.agents')} /> : null}
-          {scan?.agents.map((agent) => <AgentRow key={agent.path} agent={agent} />)}
+          {scan?.agents.map((agent) => (
+            <AgentRow
+              key={agent.path}
+              agent={agent}
+              busy={busy === agent.path}
+              disabled={busy !== null || looking}
+              onUninstall={() => onUninstall(agent)}
+              problem={problemLine(agent.path)}
+            />
+          ))}
 
           {view.leftovers.length ? <GroupHead title={t('machine.cleanup.group.leftover')} kb={sumKb(view.leftovers)} /> : null}
           {view.leftovers.map((leftover) => (
@@ -452,10 +505,11 @@ function Row({ path, title, mark, facts, badges, action, standing, note, problem
 }
 
 /** An agent's command, with its version and how it was installed. Removing agents comes later, so it has no button. */
-function AgentRow({ agent }: { agent: CleanupAgent }) {
+function AgentRow({ agent, busy, disabled, onUninstall, problem }: { agent: CleanupAgent; busy: boolean; disabled: boolean; onUninstall: () => void; problem: ReactNode }) {
   const { t } = useI18n();
   const harnessName = useHarnessName();
   const method = INSTALL_METHOD[agent.method];
+  const names = { agent: harnessName(agent.harness), path: agent.path };
   return (
     <div className="flex items-start gap-3 px-4 py-2.5" data-cleanup-agent={agent.path}>
       <span className="mt-0.5 flex shrink-0"><HarnessMark harness={agent.harness} /></span>
@@ -469,7 +523,21 @@ function AgentRow({ agent }: { agent: CleanupAgent }) {
           <MiddleTruncate value={agent.path} className="font-mono" />
           <span className="shrink-0">· {method ? t(method) : t('machine.cleanup.agent.unknownMethod')}</span>
         </p>
+        {agent.removal === 'unknown' ? <p className="text-xs text-muted-foreground">{t('machine.cleanup.agent.unknownHow')}</p> : null}
+        {problem}
       </div>
+      {agent.removal === 'unknown' ? null : (
+        <Button
+          variant="ghost-muted"
+          size="xs"
+          disabled={disabled}
+          onClick={onUninstall}
+          aria-label={t(agent.removal === 'native' ? 'machine.cleanup.agent.removeLabel' : 'machine.cleanup.agent.uninstallLabel', names)}
+        >
+          {busy ? <RefreshIcon refreshing /> : <Trash2 />}
+          {t(agent.removal === 'native' ? 'machine.cleanup.agent.remove' : 'machine.cleanup.agent.uninstall')}
+        </Button>
+      )}
     </div>
   );
 }

@@ -1868,6 +1868,7 @@ fn main() {
             usage::machine_health::cleanup::remove_cleanup_items,
             usage::machine_health::cleanup::restore_set_aside,
             usage::machine_health::cleanup::delete_set_aside,
+            usage::machine_health::cleanup::uninstall_cleanup_agent,
             usage::machine_health::pools::get_pools,
             usage::machine_health::pools::save_pool,
             usage::machine_health::pools::remove_pool,

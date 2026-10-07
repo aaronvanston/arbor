@@ -129,6 +129,30 @@ export type AgentInstall = {
 export type AgentKind = "claude" | "codex";
 
 /**
+ * How an agent's install can come off its machine.
+ */
+export type AgentRemoval = "native" | "packageManager" | "unknown";
+
+/**
+ * What uninstalling an agent did.
+ */
+export type AgentUninstall = {
+  /**
+   * For its own installer's copy, the removal that set it aside, which Undo puts back.
+   */
+  stamp: string | null,
+  /**
+   * For a package manager's, the command that ran.
+   */
+  command: string | null,
+  /**
+   * Other copies of its harness still on the machine's PATH.
+   */
+  remaining: Array<string>,
+  scan: CleanupScan,
+};
+
+/**
  * What an update did, for the page.
  */
 export type AgentUpdate = {
@@ -844,7 +868,7 @@ export type CatalogPlugin = {
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup" | "uninstall";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.
@@ -1024,6 +1048,18 @@ export type CleanupAgent = {
    * The first of its harness on the PATH, the one that runs.
    */
   first: boolean,
+  /**
+   * How Arbor can take it off: set aside (its own installer), through the package manager that made it, or not.
+   */
+  removal: AgentRemoval,
+  /**
+   * The command a package-manager uninstall runs.
+   */
+  command: string | null,
+  /**
+   * No other copy of its harness is on the PATH.
+   */
+  onlyCopy: boolean,
 };
 
 export type CleanupCache = {
@@ -1039,7 +1075,7 @@ export type CleanupCache = {
   held: CleanupHold | null,
 };
 
-export type CleanupGroup = "home" | "cache" | "leftover";
+export type CleanupGroup = "home" | "cache" | "leftover" | "agent";
 
 /**
  * Why an item has no Remove.
@@ -1144,6 +1180,10 @@ export type CleanupScan = {
    * The scan ran out of time before measuring everything.
    */
   partial: boolean,
+  /**
+   * The machine is in a pool, so Arbor routes work to it.
+   */
+  routed: boolean,
 };
 
 /**

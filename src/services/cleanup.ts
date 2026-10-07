@@ -3,6 +3,7 @@ import { formatCount } from '../lib/format';
 import { invokeCommand } from '../native/commands';
 import type {
   ArchiveBlock,
+  CleanupAgent,
   CleanupCache,
   CleanupGroup,
   CleanupHold,
@@ -28,6 +29,7 @@ export const checkCleanup = (machine: string) => invokeCommand('check_machine_cl
 export const removeCleanup = (machine: string, items: { group: CleanupGroup; path: string }[], allowUnarchived = false) =>
   invokeCommand('remove_cleanup_items', { machine, items, allowUnarchived });
 export const restoreSetAside = (machine: string, stamp: string, item: number | null = null) => invokeCommand('restore_set_aside', { machine, stamp, item });
+export const uninstallAgent = (machine: string, path: string) => invokeCommand('uninstall_cleanup_agent', { machine, path });
 export const deleteSetAside = (machine: string, items: Pick<SetAsideItem, 'stamp' | 'item'>[]) =>
   invokeCommand('delete_set_aside', { machine, items: items.map(({ stamp, item }) => ({ stamp, item })) });
 
@@ -51,7 +53,15 @@ export const GROUP_LABEL: Record<CleanupGroup, MessageKey> = {
   home: 'machine.cleanup.kind.home',
   cache: 'machine.cleanup.kind.cache',
   leftover: 'machine.cleanup.kind.leftover',
+  agent: 'machine.cleanup.kind.agent',
 };
+
+/**
+ * Whether uninstalling an agent takes a machine's last copy of Claude Code or Codex, on a machine Arbor routes work to
+ * (one in a pool): its confirmation says the machine will no longer run it.
+ */
+export const lastRoutedCopy = (agent: Pick<CleanupAgent, 'harness' | 'onlyCopy'>, routed: boolean) =>
+  routed && agent.onlyCopy && (agent.harness === 'claude' || agent.harness === 'codex');
 
 export const RESTORE_PROBLEM: Record<RestoreProblem, MessageKey> = {
   taken: 'machine.cleanup.restore.taken',

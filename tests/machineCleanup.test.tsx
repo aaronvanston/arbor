@@ -6,9 +6,9 @@ import { mockCommands } from '../src/dev/mock/answers';
 import { I18nProvider, translate, translateRich } from '../src/i18n';
 import { outcomeText } from '../src/pages/SetupSync';
 import { CleanupContent, type CleanupProblem } from '../src/pages/MachineCleanup';
-import { allArchived, archiveLine, cleanupView, deleteSetAside, removalAsks, removeCleanup, restoreSetAside } from '../src/services/cleanup';
+import { allArchived, archiveLine, cleanupView, deleteSetAside, lastRoutedCopy, removalAsks, removeCleanup, restoreSetAside, uninstallAgent } from '../src/services/cleanup';
 import { readCommandError } from '../src/services/commandError';
-import type { CleanupHome, CleanupScan, HomeArchive, SetAsideItem } from '../src/native/types';
+import type { CleanupAgent, CleanupHome, CleanupScan, HomeArchive, SetAsideItem } from '../src/native/types';
 import { itemAt } from './support/items';
 
 const home = (path: string, more: Partial<CleanupHome> = {}): CleanupHome => ({
@@ -23,7 +23,7 @@ const aside = (path: string, more: Partial<SetAsideItem> = {}): SetAsideItem => 
 });
 
 const scan = (more: Partial<CleanupScan> = {}): CleanupScan => ({
-  machine: 'cam-mbp', scannedAtMs: 1, homes: [], agents: [], leftovers: [], caches: [], aside: [], partial: false, ...more,
+  machine: 'cam-mbp', scannedAtMs: 1, homes: [], agents: [], leftovers: [], caches: [], aside: [], partial: false, routed: false, ...more,
 });
 
 function render(found: CleanupScan | null, more: { problem?: CleanupProblem; looking?: boolean; error?: string } = {}) {
@@ -42,6 +42,7 @@ function render(found: CleanupScan | null, more: { problem?: CleanupProblem; loo
       onRemove={noop}
       onRestore={noop}
       onDelete={noop}
+      onUninstall={noop}
     />,
   ));
 }
@@ -114,6 +115,26 @@ describe('a machine’s clean-up', () => {
     expect(text([{ path: '~/.factory', reason: 'deleted' }], ['~/.claude/debug'])).toContain('~/.factory was deleted for good');
   });
 
+  it('offers to take each agent off the way it was installed, and says when Arbor can’t tell how', () => {
+    const agent = (path: string, more: Partial<CleanupAgent>): CleanupAgent => ({
+      harness: 'codex', path, real: null, version: '0.161.0', method: 'unknown', first: true, removal: 'unknown', command: null, onlyCopy: true, ...more,
+    });
+    const html = render(scan({ agents: [
+      agent('~/.local/bin/claude', { harness: 'claude', method: 'native', removal: 'native' }),
+      agent('/opt/homebrew/bin/codex', { method: 'homebrew', removal: 'packageManager', command: 'brew uninstall --cask codex' }),
+      agent('~/.opencode/bin/opencode', { harness: 'openCode' }),
+    ] }));
+    const row = (path: string) => itemAt(html.split('data-cleanup-agent=').filter((entry) => entry.startsWith(`"${path}"`)), 0);
+    expect(row('~/.local/bin/claude')).toContain('>Remove</button>');
+    expect(row('/opt/homebrew/bin/codex')).toContain('>Uninstall</button>');
+    expect(row('~/.opencode/bin/opencode')).toContain('Remove it the way you installed it.');
+    expect(row('~/.opencode/bin/opencode')).not.toContain('</button>');
+    expect(lastRoutedCopy({ harness: 'codex', onlyCopy: true }, true)).toBe(true);
+    expect(lastRoutedCopy({ harness: 'codex', onlyCopy: true }, false)).toBe(false);
+    expect(lastRoutedCopy({ harness: 'codex', onlyCopy: false }, true)).toBe(false);
+    expect(lastRoutedCopy({ harness: 'openCode', onlyCopy: true }, true)).toBe(false);
+  });
+
   it('lists what is set aside with Restore, Delete for good and the drive it is kept on', () => {
     const html = render(scan({ aside: [aside('~/Scratch/old-agent', { group: 'home', volume: '~/Scratch' }), aside('~/.codex/log', { item: 1, taken: true })] }));
     expect(html).toContain('Delete all for good');
@@ -149,15 +170,18 @@ describe('a machine’s clean-up, on the machine', () => {
       },
       restore_set_aside: () => ({ restored: ['~/.factory'], failed: [], scan: scan() }),
       delete_set_aside: () => scan(),
+      uninstall_cleanup_agent: () => ({ stamp: null, command: 'brew uninstall --cask codex', remaining: [], scan: scan() }),
     });
     const refused = await removeCleanup('cam-mbp', [{ group: 'home', path: '~/.factory' }]).catch((reason: unknown) => readCommandError(reason));
     expect(refused).toMatchObject({ kind: 'changed' });
     await restoreSetAside('cam-mbp', '20261007T010203Z-00aa');
     await deleteSetAside('cam-mbp', [aside('~/.codex/log', { item: 3 })]);
+    await uninstallAgent('cam-mbp', '/opt/homebrew/bin/codex');
     expect(calls.map((call) => [call.command, call.args])).toEqual([
       ['remove_cleanup_items', { machine: 'cam-mbp', items: [{ group: 'home', path: '~/.factory' }], allowUnarchived: false }],
       ['restore_set_aside', { machine: 'cam-mbp', stamp: '20261007T010203Z-00aa', item: null }],
       ['delete_set_aside', { machine: 'cam-mbp', items: [{ stamp: '20261007T010203Z-00aa', item: 3 }] }],
+      ['uninstall_cleanup_agent', { machine: 'cam-mbp', path: '/opt/homebrew/bin/codex' }],
     ]);
   });
 });

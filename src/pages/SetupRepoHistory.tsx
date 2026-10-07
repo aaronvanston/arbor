@@ -117,7 +117,9 @@ export function HistoryMode({ repo, machines, machine: asked }: {
   const unshown = changes.state === 'ready' ? changes.value.filter((entry) => entry.problem !== null) : [];
   const machineLabel = (value: string | null) => (value ?? t('repo.history.allMachines'));
 
-  const undoButton = (entry: MachineChange) => (entry.backup.deletedAtMs !== undefined ? (
+  const undoButton = (entry: MachineChange) => (entry.backup.what === 'uninstall' ? (
+    <Badge variant="outline" size="sm">{t('setup.sync.history.noUndo')}</Badge>
+  ) : entry.backup.deletedAtMs !== undefined ? (
     <Badge variant="outline" size="sm" title={formatDateTime(entry.backup.deletedAtMs, { year: 'always' })}>{t('setup.sync.history.deleted', { when: formatAgo(entry.backup.deletedAtMs) })}</Badge>
   ) : entry.backup.undoneAtMs !== null ? (
     <Badge variant="outline" size="sm">{t('setup.sync.history.undone')}</Badge>

@@ -715,6 +715,15 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "uninstall_cleanup_agent",
+        access: Access::Confirm,
+        summary: "Takes one agent's install off a machine, the way it was installed. Its own installer's copy is set aside (its command and versions folder, one removal, with Undo); a package manager's is uninstalled by that package manager, proven again first, which can't be undone and is noted among Arbor's changes. Afterwards its PATH is looked through again for that agent. An install Arbor can't prove is refused: it's removed the way it was installed.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "path", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_pools",
         access: Access::Read,
         summary: "Every machine pool, with its members, their weights, and its limits.",
@@ -2197,6 +2206,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "remove_cleanup_items" => async { done(Box::pin(crate::usage::machine_health::cleanup::remove_cleanup_items(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "items")?, arg(&args, "allowUnarchived")?)).await) }.await,
         "restore_set_aside" => async { done(Box::pin(crate::usage::machine_health::cleanup::restore_set_aside(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "stamp")?, arg(&args, "item")?)).await) }.await,
         "delete_set_aside" => async { done(Box::pin(crate::usage::machine_health::cleanup::delete_set_aside(app.state(), arg(&args, "machine")?, arg(&args, "items")?)).await) }.await,
+        "uninstall_cleanup_agent" => async { done(Box::pin(crate::usage::machine_health::cleanup::uninstall_cleanup_agent(app.state(), arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "get_pools" => done(Box::pin(crate::usage::machine_health::pools::get_pools()).await),
         "save_pool" => async { done(Box::pin(crate::usage::machine_health::pools::save_pool(app.clone(), arg(&args, "pool")?)).await) }.await,
         "remove_pool" => async { done(Box::pin(crate::usage::machine_health::pools::remove_pool(app.clone(), arg(&args, "id")?)).await) }.await,

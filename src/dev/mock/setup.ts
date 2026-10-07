@@ -965,6 +965,15 @@ export const recordCleanupMock = (machine: string, id: string, paths: string[], 
   setupBackups[machine] = [backup, ...(setupBackups[machine] ?? [])].sort((a, b) => b.atMs - a.atMs).slice(0, 20);
 };
 
+/** An agent a package manager uninstalled, as the list of changes has it: nothing to undo. */
+export const recordUninstallMock = (machine: string, path: string, atMs = Date.now()) => {
+  const backup: MockSetupBackup = {
+    id: mockStamp(atMs), atMs, what: 'uninstall', commit: null, undoneAtMs: null, was: {}, left: {}, skills: [], skillWas: {}, skillLeft: {},
+    files: [{ path, change: 'removed', skill: false }],
+  };
+  setupBackups[machine] = [backup, ...(setupBackups[machine] ?? [])].sort((a, b) => b.atMs - a.atMs).slice(0, 20);
+};
+
 /** Marks a clean-up deleted for good once everything it set aside is. */
 export const cleanupDeletedMock = (machine: string, id: string) => {
   const backup = setupBackups[machine]?.find((candidate) => candidate.id === id);
@@ -3218,6 +3227,7 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     const backup = setupBackups[machine]?.find((candidate) => candidate.id === args.backup);
     if (!entry || !backup) throw "That change's backup isn't on this machine any more.";
     if (backup.undoneAtMs !== null) throw 'That change was undone already.';
+    if (backup.what === 'uninstall') throw 'An uninstall can’t be undone: install the agent again the way it was installed.';
     if (backup.deletedAtMs !== undefined) throw 'Everything that clean-up set aside was deleted for good, so there’s nothing to put back.';
     if (backup.what === 'projects') return later(700, () => undoFixesMock(backup));
     if (backup.what === 'cleanup' && undoCleanupMock) {

@@ -969,6 +969,21 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                     backup.places.push(place);
                 }
             }
+            // An agent a package manager uninstalled, listed with nothing to undo.
+            ["U", ..] => {
+                if let (Some(backup), Some(path)) = (current.and_then(|index| backups.get_mut(index)), super::cleanup::uninstalled(&fields)) {
+                    backup.files.push(BackupFile {
+                        path: agent_homes::tilde(path, home),
+                        change: "removed",
+                        skill: false,
+                        edit: true,
+                        rel: String::new(),
+                        before: String::new(),
+                        after_sum: String::new(),
+                        after_ck: String::new(),
+                    });
+                }
+            }
             // One of a clean-up's folders deleted for good, and when.
             ["Y", n, seconds] => {
                 if let (Some(listed), Ok(seconds)) = (current.and_then(|index| gone.get_mut(index)), seconds.parse::<i64>()) {
@@ -1421,6 +1436,9 @@ pub(crate) async fn undo_setup_sync(
         .ok_or("That change's backup isn't on this machine any more.")?;
     if found.undone_at_ms.is_some() {
         return Err("That change was undone already.".into());
+    }
+    if found.what == ChangeKind::Uninstall {
+        return Err("An uninstall can't be undone: install the agent again the way it was installed.".into());
     }
     if found.what == ChangeKind::Cleanup {
         if found.deleted_at_ms.is_some() {

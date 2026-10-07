@@ -108,6 +108,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'remove_cleanup_items',
   'restore_set_aside',
   'delete_set_aside',
+  'uninstall_cleanup_agent',
 ]);
 
 /** Commands that only look: everything else changes something. */

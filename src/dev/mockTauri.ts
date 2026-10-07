@@ -126,7 +126,10 @@
  * changed since the look, `drive` for a home set aside on another drive and Remove of ~/.cache/opencode refused because
  * its drive can't take a set-aside folder; homes Arbor reads sessions from say how much the archive holds: by default
  * 312 of ~/.claude's 1,284 session files aren't archived yet (Remove asks first), `?cleanuparchive=archived` for all of
- * them archived (still asked for ~/.claude, which an agent runs from), `off` for the session archive turned off;
+ * them archived (still asked for ~/.claude, which an agent runs from), `off` for the session archive turned off; its
+ * Agents list one of each installer (Claude Code's own installer, npm, a Homebrew cask, pnpm, bun, and an unknown one),
+ * `?cleanupuninstall=fail` for a package manager's uninstall failing and `stillthere` for another copy left on the PATH
+ * (machines other than this Mac are in a pool, so uninstalling their last Claude Code or Codex says so);
  * `?setup=fail` to have ci-01's setup scan fail; `?setup=overrides` for skills Claude Code's skillOverrides turn off or
  * list by name only on this Mac and ci-01, and a second Claude home whose overrides Claude Code ignores; `?setup=policy` for
  * a managed-settings policy that sets settings, env, a hook and a plugin and turns a skill off on this Mac, one ci-01

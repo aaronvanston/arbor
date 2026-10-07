@@ -22,7 +22,7 @@
 //! machine, in the set-aside area, until deleted for good.
 
 use super::agent_homes::{self, AgentHome, AgentHomeKind, AgentHomeRole, AgentHomeSource};
-use super::agent_install::{method_from_paths, InstallMethod};
+use super::agent_install::{method_from_paths, uninstall_command, uninstall_plan, InstallMethod, Uninstall};
 use super::agents::{parse_version, AgentKind, AGENT_ENV};
 use super::archive::{self, standing::HomeCounts, ArchiveCondition};
 use super::guarded_writes::{is_stamp, new_stamp, prune_backups, stamp_ms, SyncFailure, SyncOutcome};
@@ -51,6 +51,8 @@ pub(crate) enum CleanupGroup {
     Home,
     Cache,
     Leftover,
+    /// An agent its own installer put there, set aside as its command and its versions folder.
+    Agent,
 }
 
 impl CleanupGroup {
@@ -59,11 +61,12 @@ impl CleanupGroup {
             Self::Home => "home",
             Self::Cache => "cache",
             Self::Leftover => "leftover",
+            Self::Agent => "agent",
         }
     }
 
     fn parse(value: &str) -> Option<Self> {
-        [Self::Home, Self::Cache, Self::Leftover].into_iter().find(|group| group.name() == value)
+        [Self::Home, Self::Cache, Self::Leftover, Self::Agent].into_iter().find(|group| group.name() == value)
     }
 }
 
@@ -231,6 +234,30 @@ pub(crate) struct CleanupAgent {
     pub(crate) method: InstallMethod,
     /// The first of its harness on the PATH, the one that runs.
     pub(crate) first: bool,
+    /// How Arbor can take it off: set aside (its own installer), through the package manager that made it, or not.
+    pub(crate) removal: AgentRemoval,
+    /// The command a package-manager uninstall runs.
+    pub(crate) command: Option<String>,
+    /// No other copy of its harness is on the PATH.
+    pub(crate) only_copy: bool,
+    #[serde(skip)]
+    abs: String,
+    #[serde(skip)]
+    real_abs: String,
+    #[serde(skip)]
+    plan: Option<Uninstall>,
+}
+
+/// How an agent's install can come off its machine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum AgentRemoval {
+    /// Its own installer's command and versions folder, set aside like any folder, with Undo.
+    Native,
+    /// The package manager that made it uninstalls it, which can't be undone.
+    PackageManager,
+    /// Arbor can't prove what installed it, so the user removes it the way they installed it.
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
@@ -333,6 +360,8 @@ pub(crate) struct CleanupScan {
     pub(crate) aside: Vec<SetAsideItem>,
     /// The scan ran out of time before measuring everything.
     pub(crate) partial: bool,
+    /// The machine is in a pool, so Arbor routes work to it.
+    pub(crate) routed: bool,
     #[serde(skip)]
     home_dir: String,
     #[serde(skip)]
@@ -925,6 +954,12 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
                     real: (*real != *path && !real.is_empty()).then(|| real.to_string()),
                     version: parse_version(version).or_else(|| Some(version.trim().to_string()).filter(|version| !version.is_empty() && version.len() <= 80)),
                     first,
+                    removal: AgentRemoval::Unknown,
+                    command: None,
+                    only_copy: false,
+                    abs: path.to_string(),
+                    real_abs: if real.is_empty() { path.to_string() } else { real.to_string() },
+                    plan: None,
                 });
             }
             ["Z", path, kb, newest, session, sessions, print] if whole(path) && is_print(print) => {
@@ -948,10 +983,7 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
     }
     let tilde = |path: &str| agent_homes::tilde(path, &home_dir);
     let installed: BTreeSet<Harness> = agents.iter().map(|agent| agent.harness).collect();
-    for agent in &mut agents {
-        agent.path = tilde(&agent.path);
-        agent.real = agent.real.as_deref().map(tilde);
-    }
+    finish_agents(&mut agents, &home_dir);
     let held = |path: &str, measure: Option<&Measured>| -> Option<CleanupHold> {
         if !in_home(path, &home_dir) {
             Some(CleanupHold::OutsideHome)
@@ -1041,8 +1073,26 @@ fn parse_scan(machine: &str, homes: &[AgentHome], stdout: &str, now_ms: i64) -> 
         caches,
         aside,
         partial,
+        routed: false,
         home_dir,
         roles,
+    }
+}
+
+/// Fills in how each agent comes off and whether it's its harness's only copy, and writes its paths from ~.
+fn finish_agents(agents: &mut [CleanupAgent], home_dir: &str) {
+    let counts: Vec<Harness> = agents.iter().map(|agent| agent.harness).collect();
+    for agent in agents.iter_mut() {
+        agent.plan = uninstall_plan(harness_kind(agent.harness), &agent.abs, &agent.real_abs, home_dir);
+        agent.removal = match &agent.plan {
+            Some(Uninstall::Native { .. }) => AgentRemoval::Native,
+            Some(_) => AgentRemoval::PackageManager,
+            None => AgentRemoval::Unknown,
+        };
+        agent.command = agent.plan.as_ref().and_then(uninstall_command);
+        agent.only_copy = counts.iter().filter(|harness| **harness == agent.harness).count() == 1;
+        agent.path = agent_homes::tilde(&agent.abs, home_dir);
+        agent.real = agent.real.as_deref().map(|real| agent_homes::tilde(real, home_dir));
     }
 }
 
@@ -1125,6 +1175,7 @@ enum Removed {
     Home(CleanupHome),
     Cache(CleanupCache),
     Leftover(CleanupLeftover),
+    Agent(CleanupAgent),
 }
 
 static REMOVED: Mutex<BTreeMap<(String, String, u32), Removed>> = Mutex::new(BTreeMap::new());
@@ -1179,6 +1230,7 @@ pub(crate) async fn check_machine_cleanup(app: tauri::AppHandle, state: tauri::S
     let stdout = run_checked(&target, MachineOp::CleanupScan, &scan_script(&homes), SCAN_TIMEOUT).await?;
     let mut scan = parse_scan(&machine, &homes, &stdout, Local::now().timestamp_millis());
     add_standings(&app, &target, &mut scan).await;
+    scan.routed = routed(&machine).await;
     store(&scan);
     Ok(scan)
 }
@@ -1308,6 +1360,7 @@ fn plan_removal(scan: &CleanupScan, items: &[CleanupTarget]) -> Result<(Vec<Plan
                 let leftover = scan.leftovers.iter().find(|leftover| leftover.path == target.path).ok_or_else(|| gone(&target.path))?;
                 (leftover.abs.clone(), leftover.print.clone(), leftover.size_kb, leftover.held, None)
             }
+            CleanupGroup::Agent => return Err("An agent comes off with uninstall_cleanup_agent".into()),
         };
         match held {
             Some(CleanupHold::OutsideHome) => return Err(format!("{} isn't in the home folder, so Arbor leaves it alone", target.path)),
@@ -1403,6 +1456,8 @@ fn take_out(scan: &mut CleanupScan, item: &Planned) -> Option<Removed> {
             let at = scan.leftovers.iter().position(|leftover| leftover.abs == item.abs)?;
             Some(Removed::Leftover(scan.leftovers.remove(at)))
         }
+        // An agent's own folders come with its row, taken out by its uninstall.
+        CleanupGroup::Agent => None,
     }
 }
 
@@ -1475,6 +1530,7 @@ async fn restore(app: &tauri::AppHandle, target: &Machine, stamp: &str, item: Op
                 Some(Removed::Home(home)) if !scan.homes.iter().any(|seen| seen.abs == home.abs) => scan.homes.push(home),
                 Some(Removed::Cache(cache)) if !scan.caches.iter().any(|seen| seen.abs == cache.abs) => scan.caches.push(cache),
                 Some(Removed::Leftover(leftover)) if !scan.leftovers.iter().any(|seen| seen.abs == leftover.abs) => scan.leftovers.push(leftover),
+                Some(Removed::Agent(agent)) if !scan.agents.iter().any(|seen| seen.abs == agent.abs) => scan.agents.push(agent),
                 _ => {}
             }
         }
@@ -1543,6 +1599,226 @@ pub(crate) async fn delete_set_aside(
         return Err(format!("Arbor couldn't delete {}", failed.join(", ")));
     }
     Ok(scan)
+}
+
+// ---------------------------------------------------------------------------
+// Uninstalling agents
+// ---------------------------------------------------------------------------
+
+const UNINSTALL_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Whether the machine is in a pool, so Arbor routes work to it.
+async fn routed(machine: &str) -> bool {
+    let machine = machine.to_string();
+    run_usage_task(|| super::pools::read_pools(&open_usage_database()?))
+        .await
+        .is_ok_and(|pools| pools.iter().any(|pool| pool.members.iter().any(|member| member.machine == machine)))
+}
+
+/// What uninstalling an agent did.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentUninstall {
+    /// For its own installer's copy, the removal that set it aside, which Undo puts back.
+    pub(crate) stamp: Option<String>,
+    /// For a package manager's, the command that ran.
+    pub(crate) command: Option<String>,
+    /// Other copies of its harness still on the machine's PATH.
+    pub(crate) remaining: Vec<String>,
+    pub(crate) scan: CleanupScan,
+}
+
+// Runs a proven package manager's uninstall, after proving it again on the machine: the install is still there, the
+// package manager is the one that made it (brew owning the keg under its own prefix, the package's folder in the global
+// folder it uninstalls from). Lines out: `P ok`, `P refused why` or `P failed detail`, then `K stamp` once it's among
+// Arbor's changes, then the PATH search for the agent again (setup's `B` lines). What the command printed isn't kept,
+// apart from the last lines of a failure.
+const UNINSTALL_FUNCTIONS: &str = r##"refuse() { printf 'P\trefused\t%s\n' "$1"; }
+run_pm() {
+  if "$@" </dev/null >"$work/out" 2>&1; then printf 'P\tok\n'; ok=1
+  else printf 'P\tfailed\t%s\n' "$(tail -n 3 "$work/out" | tr '\t\n' '  ' | cut -c 1-300)"; fi
+}
+ok=0
+"##;
+
+fn uninstall_script(stamp: &str, abs: &str, real: &str, plan: &Uninstall, binary: &str, login_path: bool) -> String {
+    let (q, path, real) = (shell_quote, shell_quote(abs), shell_quote(real));
+    let mut script = format!("set -u\nexport LC_ALL=C\n{HELPERS}{COMMON}{UNINSTALL_FUNCTIONS}stamp={}\n", q(stamp));
+    script.push_str(&format!("if [ ! -e {real} ]; then refuse gone\nelse\n"));
+    script.push_str(&match plan {
+        Uninstall::Npm { prefix, package } => format!(
+            "  prefix={}; pkg={}\n\
+             \x20 PATH=\"$prefix/bin:$PATH\"; export PATH\n\
+             \x20 if [ -x \"$prefix/bin/npm\" ]; then pm=\"$prefix/bin/npm\"; else pm=$(command -v npm 2>/dev/null || true); fi\n\
+             \x20 if [ -z \"$pm\" ]; then refuse nopm\n\
+             \x20 elif [ ! -d \"$prefix/lib/node_modules/$pkg\" ]; then refuse notowned\n\
+             \x20 else run_pm \"$pm\" uninstall -g --prefix \"$prefix\" \"$pkg\"; fi\n",
+            q(prefix),
+            q(package)
+        ),
+        Uninstall::Bun { package } => format!(
+            "  pkg={}\n\
+             \x20 if [ -x \"$HOME/.bun/bin/bun\" ]; then pm=\"$HOME/.bun/bin/bun\"; else pm=$(command -v bun 2>/dev/null || true); fi\n\
+             \x20 if [ -z \"$pm\" ]; then refuse nopm\n\
+             \x20 elif [ ! -d \"$HOME/.bun/install/global/node_modules/$pkg\" ]; then refuse notowned\n\
+             \x20 else run_pm \"$pm\" remove -g \"$pkg\"; fi\n",
+            q(package)
+        ),
+        Uninstall::Pnpm { package } => format!(
+            "  pkg={}\n\
+             \x20 PNPM_HOME=${{PNPM_HOME:-$(dirname {path})}}; PATH=\"$PNPM_HOME:$PATH\"; export PNPM_HOME PATH\n\
+             \x20 pm=$(command -v pnpm 2>/dev/null || true)\n\
+             \x20 if [ -z \"$pm\" ]; then refuse nopm\n\
+             \x20 else case {real} in */node_modules/\"$pkg\"/*) run_pm \"$pm\" remove -g \"$pkg\" ;; *) refuse notowned ;; esac; fi\n",
+            q(package)
+        ),
+        Uninstall::Homebrew { prefix, cask, name } => format!(
+            "  prefix={}; name={}\n\
+             \x20 pm=\"$prefix/bin/brew\"\n\
+             \x20 export NONINTERACTIVE=1 HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1\n\
+             \x20 if [ ! -x \"$pm\" ]; then refuse nopm\n\
+             \x20 elif [ \"$(\"$pm\" --prefix </dev/null 2>/dev/null)\" != \"$prefix\" ] || ! \"$pm\" list {kind} \"$name\" </dev/null >/dev/null 2>&1; then refuse notowned\n\
+             \x20 else run_pm \"$pm\" uninstall {flag}\"$name\"; fi\n",
+            q(prefix),
+            q(name),
+            kind = if *cask { "--cask" } else { "--formula" },
+            flag = if *cask { "--cask " } else { "" }
+        ),
+        Uninstall::Native { .. } => "  refuse native\n".into(),
+    });
+    script.push_str("fi\n");
+    let command = uninstall_command(plan).unwrap_or_default();
+    script.push_str(&format!(
+        "if [ \"$ok\" = 1 ]; then\n\
+         \x20 root=\"$HOME/.arbor/setup-backups\"\n\
+         \x20 if (umask 077 && mkdir -p \"$root/$stamp\") && chmod 700 \"$root\" && printf 'what\\tuninstall\\nU\\t%s\\t%s\\n' {path} {} > \"$root/$stamp/manifest\"; then\n\
+         \x20   printf 'K\\t%s\\n' \"$stamp\"\n\
+         \x20 fi\n\
+         {}fi\n",
+        q(&command),
+        prune_backups()
+    ));
+    // The agent's command looked for again, alone, along the PATH the setup scan uses.
+    script.push_str(&harnesses::installs_script());
+    script.push_str(&format!("install_agents={}\n", q(binary)));
+    script.push_str(INSTALLS_SCRIPT);
+    script.push_str(&format!("(\n{}emit_installs \"$PATH\"\n)\n", if login_path { AGENT_ENV } else { "" }));
+    script
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct PmOutcome {
+    ok: bool,
+    refused: Option<String>,
+    failed: Option<String>,
+}
+
+fn parse_pm(stdout: &str) -> PmOutcome {
+    let mut outcome = PmOutcome::default();
+    for line in stdout.lines() {
+        match line.split('\t').collect::<Vec<_>>().as_slice() {
+            ["P", "ok"] => outcome.ok = true,
+            ["P", "refused", why] => outcome.refused = Some(why.to_string()),
+            ["P", "failed", detail] => outcome.failed = Some(detail.trim().to_string()),
+            ["P", "failed"] => outcome.failed = Some(String::new()),
+            _ => {}
+        }
+    }
+    outcome
+}
+
+/// The agents a PATH search for one harness printed, as the scan lists them.
+fn rescanned(stdout: &str, harness: Harness, home_dir: &str) -> Vec<CleanupAgent> {
+    let scan = parse_scan("", &[], &format!("H\t{home_dir}\n{stdout}"), 0);
+    scan.agents.into_iter().filter(|agent| agent.harness == harness).collect()
+}
+
+/// Takes one agent's install off a machine, the way it was installed. Its own installer's copy is set aside (its
+/// command and versions folder, one removal, with Undo); a package manager's is uninstalled by that package manager,
+/// proven again first, which can't be undone and is noted among Arbor's changes. Afterwards its PATH is looked through
+/// again for that agent. An install Arbor can't prove is refused: it's removed the way it was installed.
+#[tauri::command]
+pub(crate) async fn uninstall_cleanup_agent(
+    state: tauri::State<'_, MachineHealthState>,
+    machine: String,
+    path: String,
+) -> Result<AgentUninstall, CommandError> {
+    let target = find_machine(&state.lock(), &machine)?;
+    let scan = stored(&machine).filter(|scan| scan.scanned_at_ms.is_some()).ok_or_else(|| format!("Look at what's on {machine} first"))?;
+    let agent = scan.agents.iter().find(|agent| agent.path == path).cloned().ok_or_else(|| gone(&path))?;
+    let plan = agent.plan.clone().ok_or_else(|| format!("Arbor can't tell what installed {path}, so it leaves it alone. Remove it the way you installed it."))?;
+    let stamp = new_stamp();
+    if let Uninstall::Native { link, folder } = &plan {
+        // Measured now, then moved only while still as measured, as one removal.
+        let script = format!("set -u\nexport LC_ALL=C\n{HELPERS}{COMMON}{FIND_FUNCTIONS}measure {}\nmeasure {}\n", shell_quote(link), shell_quote(folder));
+        let stdout = run_checked(&target, MachineOp::CleanupScan, &script, MOVE_TIMEOUT).await?;
+        let planned: Vec<Planned> = [link, folder]
+            .into_iter()
+            .map(|abs| {
+                let line = stdout.lines().find(|line| line.split('\t').nth(1) == Some(abs.as_str())).ok_or_else(|| format!("{} isn't there any more. Refresh and try again", agent_homes::tilde(abs, &scan.home_dir)))?;
+                let fields: Vec<&str> = line.split('\t').collect();
+                Ok(Planned { group: CleanupGroup::Agent, abs: abs.clone(), print: fields.get(6).copied().unwrap_or("-").to_string(), size_kb: fields.get(2).and_then(|kb| kb.parse().ok()).unwrap_or(0) })
+            })
+            .collect::<Result<_, String>>()?;
+        if planned.iter().any(|item| !in_home(&item.abs, &scan.home_dir)) {
+            return Err(CommandError::failed(format!("{path} isn't in the home folder, so Arbor leaves it alone")));
+        }
+        let stdout = run_checked(&target, MachineOp::CleanupMove, &remove_script(&stamp, &planned, &[]), MOVE_TIMEOUT).await?;
+        let moves = parse_moves(&stdout);
+        if let Some(refusal) = refusal(&moves.refused, &planned, &scan.home_dir) {
+            return Err(refusal);
+        }
+        let home_dir = home_dir_of(&stdout);
+        let (aside, roles) = parse_aside(&stdout, &home_dir);
+        let mut updated = stored(&machine).unwrap_or(scan);
+        updated.agents.retain(|seen| seen.abs != agent.abs);
+        let remaining: Vec<String> = updated.agents.iter().filter(|seen| seen.harness == agent.harness).map(|seen| seen.path.clone()).collect();
+        if let Ok(mut removed) = REMOVED.lock() {
+            if let Some(stamp) = &moves.stamp {
+                removed.insert((machine.clone(), stamp.clone(), 0), Removed::Agent(agent.clone()));
+            }
+        }
+        updated.aside = aside;
+        updated.roles = roles;
+        store(&updated);
+        if !moves.failed.is_empty() {
+            return Err(CommandError::failed(format!("Arbor set part of {path} aside but couldn't move the rest; Undo puts back what moved")));
+        }
+        return Ok(AgentUninstall { stamp: moves.stamp, command: None, remaining, scan: updated });
+    }
+    let real = agent.real_abs.clone();
+    let binary = agent.harness.spec().binary;
+    let script = uninstall_script(&stamp, &agent.abs, &real, &plan, binary, true);
+    let stdout = run_checked(&target, MachineOp::CleanupUninstall, &script, UNINSTALL_TIMEOUT).await?;
+    let outcome = parse_pm(&stdout);
+    let command = uninstall_command(&plan);
+    if let Some(why) = outcome.refused {
+        return Err(CommandError::failed(match why.as_str() {
+            "gone" => format!("{path} isn't there any more. Refresh to look again."),
+            "nopm" => format!("The package manager that installed {path} isn't on {machine} any more, so Arbor ran nothing."),
+            _ => format!("Arbor couldn't prove {path} is still the package manager's own, so it ran nothing. Remove it the way you installed it."),
+        }));
+    }
+    let home_dir = home_dir_of(&stdout);
+    let found = rescanned(&stdout, agent.harness, &home_dir);
+    let mut updated = stored(&machine).unwrap_or(scan);
+    updated.agents.retain(|seen| seen.harness != agent.harness);
+    updated.agents.extend(found);
+    finish_agents(&mut updated.agents, &home_dir);
+    store(&updated);
+    if let Some(detail) = outcome.failed {
+        return Err(CommandError::failed(format!("{} failed on {machine}: {detail}", command.unwrap_or_default())));
+    }
+    let remaining = updated.agents.iter().filter(|seen| seen.harness == agent.harness).map(|seen| seen.path.clone()).collect();
+    Ok(AgentUninstall { stamp: None, command, remaining, scan: updated })
+}
+
+/// The agent a `U` line of an uninstall's entry among Arbor's changes took off: `U path command`.
+pub(super) fn uninstalled<'a>(fields: &[&'a str]) -> Option<&'a str> {
+    match fields {
+        ["U", path, command] if whole(path) && !command.is_empty() => Some(*path),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1852,6 +2128,102 @@ mod tests {
                 let listed = history();
                 let all_gone = listed.iter().find(|backup| backup.id == stamp).unwrap();
                 assert!(all_gone.deleted_at_ms.is_some_and(|at| at > 0), "{shell}");
+                let _ = fs::remove_dir_all(&home);
+            }
+        }
+
+
+        fn shim(path: &Path, body: &str) {
+            write(path, &format!("#!/bin/sh\n{body}\n"));
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        fn run_with(shell: &str, home: &Path, path_var: &str, script: &str) -> String {
+            let mut command = tokio::process::Command::new(shell);
+            command
+                .env_clear()
+                .env("HOME", home)
+                .env("PATH", path_var)
+                .env("TMPDIR", home)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true);
+            let output = tokio::runtime::Runtime::new().unwrap().block_on(run_script(command, script, Duration::from_secs(60))).unwrap();
+            assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        }
+
+        #[test]
+        fn a_homebrew_install_is_uninstalled_by_its_own_brew_only_once_brew_says_it_owns_it() {
+            for shell in shells() {
+                let home = temp_home(&format!("brew-{shell}"));
+                let prefix = home.join("brew");
+                let keg = prefix.join("Cellar/codex/0.161.0/bin/codex");
+                shim(&keg, "echo 'codex-cli 0.161.0'");
+                fs::create_dir_all(prefix.join("bin")).unwrap();
+                std::os::unix::fs::symlink(&keg, prefix.join("bin/codex")).unwrap();
+                // A fake brew under the keg's own prefix: it answers for its prefix and its formula, and notes what it was asked.
+                let brew = |owns: bool| {
+                    shim(
+                        &prefix.join("bin/brew"),
+                        &format!(
+                            "echo \"$@\" >> \"$HOME/brew.log\"\ncase \"$1\" in\n  --prefix) echo '{}' ;;\n  list) {} ;;\n  uninstall) rm -rf '{}' '{}' ;;\nesac",
+                            prefix.display(),
+                            if owns { "exit 0" } else { "exit 1" },
+                            prefix.join("Cellar/codex").display(),
+                            prefix.join("bin/codex").display()
+                        ),
+                    )
+                };
+                // Another copy on the PATH, which stays.
+                shim(&home.join("bin/codex"), "echo 'codex-cli 0.150.0'");
+                let path_var = format!("{}:/usr/bin:/bin", home.join("bin").display());
+                let plan = Uninstall::Homebrew { prefix: prefix.display().to_string(), cask: false, name: "codex".into() };
+                let abs = prefix.join("bin/codex").display().to_string();
+                let real = keg.display().to_string();
+
+                brew(false);
+                let stdout = run_with(shell, &home, &path_var, &uninstall_script("20261007T010203Z-0a01", &abs, &real, &plan, "codex", false));
+                assert_eq!(parse_pm(&stdout).refused.as_deref(), Some("notowned"), "{shell}: {stdout}");
+                assert!(!fs::read_to_string(home.join("brew.log")).unwrap().contains("uninstall"), "{shell}: nothing ran");
+                assert!(keg.exists());
+
+                brew(true);
+                let stdout = run_with(shell, &home, &path_var, &uninstall_script("20261007T010203Z-0a02", &abs, &real, &plan, "codex", false));
+                assert!(parse_pm(&stdout).ok, "{shell}: {stdout}");
+                assert!(fs::read_to_string(home.join("brew.log")).unwrap().contains("uninstall codex"), "{shell}");
+                assert!(!keg.exists(), "{shell}");
+                let left = rescanned(&stdout, Harness::Codex, &home.display().to_string());
+                assert_eq!(left.iter().map(|agent| agent.path.as_str()).collect::<Vec<_>>(), ["~/bin/codex"], "{shell}: the other copy is still on the PATH");
+                // Listed among Arbor's changes, with nothing to undo.
+                let backups = setup_sync::parse_backups(&run_with(shell, &home, &path_var, &format!("set -u\nexport LC_ALL=C\n{}", guarded_writes::BACKUPS_SCRIPT)));
+                let entry = backups.iter().find(|backup| backup.id == "20261007T010203Z-0a02").unwrap();
+                assert_eq!(serde_json::to_value(entry).unwrap()["what"], "uninstall", "{shell}");
+                assert_eq!(serde_json::to_value(entry).unwrap()["files"][0]["path"], "~/brew/bin/codex", "{shell}");
+                let _ = fs::remove_dir_all(&home);
+            }
+        }
+
+        #[test]
+        fn an_npm_install_is_uninstalled_with_the_npm_beside_its_prefix() {
+            for shell in shells() {
+                let home = temp_home(&format!("npm-{shell}"));
+                let prefix = home.join(".npm-global");
+                let entry = prefix.join("lib/node_modules/@openai/codex/bin/codex.js");
+                write(&entry, SECRET);
+                fs::create_dir_all(prefix.join("bin")).unwrap();
+                std::os::unix::fs::symlink(&entry, prefix.join("bin/codex")).unwrap();
+                shim(&prefix.join("bin/npm"), "echo \"$@\" >> \"$HOME/npm.log\"\nrm -rf \"$4/lib/node_modules/$5\" \"$4/bin/codex\"");
+                let plan = uninstall_plan(Some(AgentKind::Codex), &prefix.join("bin/codex").display().to_string(), &entry.display().to_string(), &home.display().to_string()).unwrap();
+                assert_eq!(uninstall_command(&plan).unwrap(), format!("npm uninstall -g --prefix {} @openai/codex", prefix.display()));
+                let stdout = run_with(shell, &home, "/usr/bin:/bin", &uninstall_script("20261007T010203Z-0b01", &prefix.join("bin/codex").display().to_string(), &entry.display().to_string(), &plan, "codex", false));
+                assert!(parse_pm(&stdout).ok && !stdout.contains(SECRET), "{shell}: {stdout}");
+                assert_eq!(fs::read_to_string(home.join("npm.log")).unwrap().trim(), format!("uninstall -g --prefix {} @openai/codex", prefix.display()));
+                assert!(rescanned(&stdout, Harness::Codex, &home.display().to_string()).is_empty(), "{shell}");
+                // Gone already: nothing runs.
+                let stdout = run_with(shell, &home, "/usr/bin:/bin", &uninstall_script("20261007T010203Z-0b02", &prefix.join("bin/codex").display().to_string(), &entry.display().to_string(), &plan, "codex", false));
+                assert_eq!(parse_pm(&stdout).refused.as_deref(), Some("gone"), "{shell}");
                 let _ = fs::remove_dir_all(&home);
             }
         }

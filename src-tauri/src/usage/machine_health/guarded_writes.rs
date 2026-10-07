@@ -52,10 +52,12 @@ pub(crate) enum ChangeKind {
     Projects,
     /// Folders set aside from a machine by its clean-up, which Undo puts back (`cleanup`).
     Cleanup,
+    /// An agent a package manager uninstalled, which nothing can put back.
+    Uninstall,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 14] = [
         Self::Sync,
         Self::Skills,
         Self::Reporter,
@@ -69,6 +71,7 @@ impl ChangeKind {
         Self::Ssh,
         Self::Projects,
         Self::Cleanup,
+        Self::Uninstall,
     ];
 
     pub(super) fn name(self) -> &'static str {
@@ -86,6 +89,7 @@ impl ChangeKind {
             Self::Ssh => "ssh",
             Self::Projects => "projects",
             Self::Cleanup => "cleanup",
+            Self::Uninstall => "uninstall",
         }
     }
 

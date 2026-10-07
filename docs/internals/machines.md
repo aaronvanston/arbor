@@ -25,7 +25,9 @@ nothing set aside may ever go except by the user's Delete for good. A pointer wi
 lists the removal on Sync › Repo › History, and Delete for good notes each item there so Undo stops offering it; pruning the pointer only drops it from that list. Which harness folders count as
 clearable is `harnesses::CLEARABLE`, each with the reason it's safe. A home Arbor reads sessions from is asked of the
 archive (`archive/standing.rs`, counts only) at the look and again at Remove, which needs `allowUnarchived` when not
-every session file is safely in a store.
+every session file is safely in a store. Agents come off only the way their install's layout proves they were made
+(`agent_install::uninstall_plan`), proven again on the machine before the package manager runs, and never through a
+package manager found some other way: their own installer's copy is set aside like a folder.
 
 ## Agent homes
 

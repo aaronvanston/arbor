@@ -130,6 +130,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::cleanup::SetAsideRef>();
         types.visit::<crate::usage::machine_health::cleanup::CleanupRemoval>();
         types.visit::<crate::usage::machine_health::cleanup::CleanupRestore>();
+        types.visit::<crate::usage::machine_health::cleanup::AgentUninstall>();
         types.visit::<crate::usage::machine_health::pools::MachinePool>();
         types.visit::<crate::usage::machine_health::pools::PoolPreview>();
         types.visit::<crate::usage::machine_health::pool_ssh::PoolSsh>();

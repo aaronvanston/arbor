@@ -3,7 +3,7 @@ import type { CleanupCommands } from '../../native/cleanup';
 import type { CleanupAgent, CleanupCache, CleanupGroup, CleanupHome, CleanupLeftover, CleanupScan, CommandError, HomeArchive, SetAsideItem } from '../../native/types';
 import type { CommandAnswers } from './answers';
 import { freshInstall, later, mockLog, now, params } from './scenario';
-import { answerCleanupUndo, cleanupDeletedMock, cleanupUndoneMock, recordCleanupMock } from './setup';
+import { answerCleanupUndo, cleanupDeletedMock, cleanupUndoneMock, recordCleanupMock, recordUninstallMock } from './setup';
 
 // `?cleanup=` (listed at the top of mockTauri.ts): `none` for nothing to clean anywhere, `fail` for the look failing,
 // `changed` for Remove refusing because the item changed since the look, `drive` for an item set aside on another drive
@@ -51,14 +51,25 @@ function homesFor(machine: string): CleanupHome[] {
 }
 
 function agentsFor(machine: string): CleanupAgent[] {
-  const brew = linux(machine) ? '/home/linuxbrew/.linuxbrew/bin' : '/opt/homebrew/bin';
-  return [
-    { harness: 'claude', path: '~/.local/bin/claude', real: '~/.local/share/claude/versions/2.4.12', version: '2.4.12', method: 'native', first: true },
-    { harness: 'claude', path: '/usr/local/bin/claude', real: '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js', version: '2.1.90', method: 'npm', first: false },
-    { harness: 'codex', path: `${brew}/codex`, real: null, version: '0.161.0', method: linux(machine) ? 'unknown' : 'homebrew', first: true },
-    { harness: 'openCode', path: '~/.opencode/bin/opencode', real: null, version: '1.3.4', method: 'unknown', first: true },
+  const brew = linux(machine) ? '/home/linuxbrew/.linuxbrew' : '/opt/homebrew';
+  const agent = (more: Omit<CleanupAgent, 'onlyCopy' | 'first'> & { first?: boolean }): CleanupAgent => ({ first: true, onlyCopy: false, ...more });
+  const agents = [
+    agent({ harness: 'claude', path: '~/.local/bin/claude', real: '~/.local/share/claude/versions/2.4.12', version: '2.4.12', method: 'native', removal: 'native', command: null }),
+    agent({
+      harness: 'claude', path: '/usr/local/bin/claude', real: '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js', version: '2.1.90', method: 'npm', first: false,
+      removal: 'packageManager', command: 'npm uninstall -g --prefix /usr/local @anthropic-ai/claude-code',
+    }),
+    agent({ harness: 'codex', path: `${brew}/bin/codex`, real: `${brew}/Caskroom/codex/0.161.0/codex`, version: '0.161.0', method: 'homebrew', removal: 'packageManager', command: 'brew uninstall --cask codex' }),
+    agent({ harness: 'pi', path: '~/Library/pnpm/pi', real: '~/Library/pnpm/global/5/.pnpm/@earendil/pi@0.9.1/node_modules/@earendil/pi/dist/cli.js', version: '0.9.1', method: 'pnpm', removal: 'packageManager', command: 'pnpm remove -g @earendil/pi' }),
+    agent({ harness: 'amp', path: '~/.bun/bin/amp', real: '~/.bun/install/global/node_modules/@sourcegraph/amp/dist/main.js', version: '0.0.17', method: 'bun', removal: 'packageManager', command: 'bun remove -g @sourcegraph/amp' }),
+    agent({ harness: 'openCode', path: '~/.opencode/bin/opencode', real: null, version: '1.3.4', method: 'unknown', removal: 'unknown', command: null }),
   ];
+  return agents.map((entry) => ({ ...entry, onlyCopy: agents.filter((other) => other.harness === entry.harness).length === 1 }));
 }
+
+// `?cleanupuninstall=` for uninstalling an agent: `fail` for the package manager failing, `stillthere` for another copy
+// still on the PATH afterwards. Machines other than this Mac are in a pool, so their last Claude Code or Codex says so.
+const uninstallScenario = params.get('cleanupuninstall') ?? 'ok';
 
 function leftoversFor(machine: string): CleanupLeftover[] {
   if (linux(machine)) {
@@ -83,7 +94,7 @@ const stamp = (atMs: number) => `${new Date(atMs).toISOString().replace(/[-:]/g,
 
 type Stored = {
   scan: CleanupScan;
-  removed: Map<string, { group: CleanupGroup; item: CleanupHome | CleanupCache | CleanupLeftover }>;
+  removed: Map<string, { group: CleanupGroup; item: CleanupHome | CleanupCache | CleanupLeftover | CleanupAgent }>;
   /** What each removal set aside, by its stamp, and which of those were deleted for good since. */
   stamps: Map<string, { paths: string[]; deleted: string[] }>;
 };
@@ -101,7 +112,7 @@ function seeded(machine: string): Stored {
     const at = now - 26 * hour;
     aside.push({ stamp: stamp(at), item: 0, group: 'home', path: '~/Scratch/old-agent', atMs: at, sizeKb: 3_400_000, volume: '~/Scratch', taken: false });
   }
-  stored = { scan: { machine, scannedAtMs: null, homes: [], agents: [], leftovers: [], caches: [], aside, partial: false }, removed: new Map(), stamps: new Map() };
+  stored = { scan: { machine, scannedAtMs: null, homes: [], agents: [], leftovers: [], caches: [], aside, partial: false, routed: false }, removed: new Map(), stamps: new Map() };
   machines.set(machine, stored);
   return stored;
 }
@@ -117,6 +128,7 @@ function look(machine: string): CleanupScan {
     leftovers: empty ? [] : leftoversFor(machine),
     caches: empty ? [] : cachesFor(),
     partial: !empty && linux(machine),
+    routed: linux(machine),
   };
   return stored.scan;
 }
@@ -141,6 +153,7 @@ function putBack(machine: string, stampId: string, item: number | null) {
       if (back.group === 'home') stored.scan.homes = [...stored.scan.homes, back.item as CleanupHome];
       if (back.group === 'cache') stored.scan.caches = [...stored.scan.caches, back.item as CleanupCache];
       if (back.group === 'leftover') stored.scan.leftovers = [...stored.scan.leftovers, back.item as CleanupLeftover];
+      if (back.group === 'agent') stored.scan.agents = [...stored.scan.agents, back.item as CleanupAgent];
     }
   }
   if (!stored.scan.aside.some((entry) => entry.stamp === stampId)) cleanupUndoneMock(machine, stampId);
@@ -201,6 +214,35 @@ export const cleanupAnswers: CommandAnswers<CleanupCommands> = {
   restore_set_aside: ({ machine, stamp: id, item }) => {
     mockLog('restore_set_aside', { machine, stamp: id, item });
     return later(600, () => putBack(machine, id, item ?? null));
+  },
+  uninstall_cleanup_agent: ({ machine, path }) => {
+    mockLog('uninstall_cleanup_agent', { machine, path });
+    const stored = seeded(machine);
+    const agent = stored.scan.agents.find((entry) => entry.path === path);
+    if (!agent) return later(300, () => { throw `${path} isn't in the last scan. Refresh and try again`; });
+    if (agent.removal === 'unknown') return later(300, () => { throw `Arbor can't tell what installed ${path}, so it leaves it alone. Remove it the way you installed it.`; });
+    if (agent.removal === 'packageManager' && uninstallScenario === 'fail') {
+      return later(1_200, () => { throw refusal('failed', `${agent.command} failed on ${machine}: npm error code EACCES npm error path ${path}`); });
+    }
+    return later(agent.removal === 'native' ? 700 : 1_800, () => {
+      const others = stored.scan.agents.filter((entry) => entry !== agent);
+      const kept = uninstallScenario === 'stillthere' && !others.some((entry) => entry.harness === agent.harness)
+        ? [{ ...agent, path: '/usr/local/bin/' + path.split('/').pop(), first: true, removal: 'unknown' as const, command: null, method: 'unknown' as const }]
+        : [];
+      const agents = [...others, ...kept];
+      stored.scan = { ...stored.scan, agents: agents.map((entry) => ({ ...entry, onlyCopy: agents.filter((other) => other.harness === entry.harness).length === 1 })) };
+      const remaining = stored.scan.agents.filter((entry) => entry.harness === agent.harness).map((entry) => entry.path);
+      if (agent.removal === 'native') {
+        const id = stamp(Date.now());
+        stored.removed.set(`${id}/0`, { group: 'agent', item: agent });
+        stored.scan.aside = [{ stamp: id, item: 0, group: 'agent', path, atMs: Date.now(), sizeKb: 214_000, volume: null, taken: false }, ...stored.scan.aside];
+        recordCleanupMock(machine, id, [path]);
+        stored.stamps.set(id, { paths: [path], deleted: [] });
+        return { stamp: id, command: null, remaining, scan: stored.scan };
+      }
+      recordUninstallMock(machine, path);
+      return { stamp: null, command: agent.command, remaining, scan: stored.scan };
+    });
   },
   delete_set_aside: ({ machine, items }) => {
     mockLog('delete_set_aside', { machine, items });
