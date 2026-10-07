@@ -501,6 +501,7 @@ export function VersionManagementPage() {
           </div>
           <SettingsRow
             settingId="updates.app"
+            wideControl
             title={t('appUpdate.status')}
             description={updateChannel === 'dev' ? t('appUpdate.feedDev') : t('appUpdate.feed')}
             status={appUpdateError ? null : !appUpdate?.autoUpdateSupported ? t('appUpdate.manualFallback') : null}
@@ -560,6 +561,7 @@ export function VersionManagementPage() {
           {devBuild && devLine ? (
             <SettingsRow
               settingId="updates.dev-build"
+              wideControl
               title={t('appUpdate.devBuild')}
               description={devBuild.installed ? t('appUpdate.devBuild.description') : t('appUpdate.devBuild.offDescription')}
               status={devBuildsSaving ? t('appUpdate.devBuild.settingUp') : devBuild.installed || updateChannel === 'dev' ? (
@@ -618,6 +620,7 @@ export function VersionManagementPage() {
           </div>
           <SettingsRow
             settingId="updates.core"
+            wideControl
             title={t('kernel.versions.updateStatus')}
             description={t('kernel.versions.coreSourceHint')}
             control={

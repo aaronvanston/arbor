@@ -233,7 +233,7 @@ export function CallStats({ data, summary, loading, now }: { data: CallDiagnosti
 export function ProblemTable({ groups, now }: { groups: CallGroup[]; now: number }) {
   const { t } = useI18n();
   return (
-    <Table>
+    <Table containerClassName="@container">
       <TableHeader>
         <TableRow>
           <TableHead>{t('diagnostics.column.where')}</TableHead>
@@ -278,12 +278,13 @@ export function ProblemTable({ groups, now }: { groups: CallGroup[]; now: number
               </TableCell>
               <TableCell>
                 {group.lastProblem && problem ? (
-                  <span className="flex items-center gap-1.5">
+                  // In a narrow table when it happened goes under what happened, so nothing is cut off at the edge.
+                  <span className="flex flex-col @3xl:flex-row @3xl:items-center @3xl:gap-1.5">
                     <span className={group.lastProblem.outcome === 'ok' ? 'text-warning-foreground' : 'text-error-foreground'}>
                       {t(problem.key, problem.variables)}
                     </span>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="text-muted-foreground">{formatAgo(group.lastProblem.atMs, now)}</span>
+                    <span className="hidden text-muted-foreground @3xl:inline">·</span>
+                    <span className="text-xs text-muted-foreground @3xl:text-sm">{formatAgo(group.lastProblem.atMs, now)}</span>
                   </span>
                 ) : null}
               </TableCell>

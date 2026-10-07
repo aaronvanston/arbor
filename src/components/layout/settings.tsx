@@ -198,6 +198,7 @@ export function SettingsRow({
   reset,
   marker,
   held,
+  wideControl = false,
 }: {
   title: ReactNode;
   description?: ReactNode;
@@ -213,16 +214,27 @@ export function SettingsRow({
   marker?: ReactNode;
   /** Why the control can't be changed here, as for a fleet-wide setting while one machine is picked. */
   held?: string;
+  /**
+   * For a row of several buttons: in a narrow row they move under the words and wrap, rather than squeezing the
+   * description into a column a few words wide.
+   */
+  wideControl?: boolean;
 }) {
   const controls = control !== undefined ? (
-    <div className={cn('flex shrink-0 items-center justify-end gap-2', held && 'pointer-events-none opacity-50')} inert={held ? true : undefined}>
+    <div className={cn('flex shrink-0 items-center gap-2', wideControl ? 'flex-wrap justify-start @2xl:justify-end' : 'justify-end', held && 'pointer-events-none opacity-50')} inert={held ? true : undefined}>
       {reset && !held ? <ResetToDefault reset={reset} /> : null}
       {control}
     </div>
   ) : null;
   return (
-    <div className={cn('px-4 py-3', settingId && HIGHLIGHT_CLASS, className)} data-slot="settings-row" data-setting-id={settingId}>
-      <div className={cn('grid grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] gap-8', align === 'center' ? 'items-center' : 'items-start')}>
+    <div className={cn('px-4 py-3', wideControl && '@container', settingId && HIGHLIGHT_CLASS, className)} data-slot="settings-row" data-setting-id={settingId}>
+      <div
+        className={cn(
+          'grid',
+          wideControl ? 'grid-cols-1 gap-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] @2xl:gap-8' : 'grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] gap-8',
+          align === 'center' ? 'items-center' : 'items-start',
+        )}
+      >
         <div className="min-w-0 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-sm font-medium tracking-title text-foreground">{title}</h3>
