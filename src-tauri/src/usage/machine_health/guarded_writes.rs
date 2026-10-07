@@ -54,10 +54,12 @@ pub(crate) enum ChangeKind {
     Cleanup,
     /// An agent a package manager uninstalled, which nothing can put back.
     Uninstall,
+    /// Grove's health probe updated to a newer release; Arbor never puts an older one back.
+    Probe,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Sync,
         Self::Skills,
         Self::Reporter,
@@ -72,6 +74,7 @@ impl ChangeKind {
         Self::Projects,
         Self::Cleanup,
         Self::Uninstall,
+        Self::Probe,
     ];
 
     pub(super) fn name(self) -> &'static str {
@@ -90,6 +93,7 @@ impl ChangeKind {
             Self::Projects => "projects",
             Self::Cleanup => "cleanup",
             Self::Uninstall => "uninstall",
+            Self::Probe => "probe",
         }
     }
 

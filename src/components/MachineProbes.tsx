@@ -4,13 +4,14 @@ import { invokeCommand } from '../native/commands';
 import {
   PROBE_STATE_LABEL,
   PROBE_STATE_TONE,
-  canInstallProbe,
   canRemoveProbe,
+  probeAction,
   probeState,
   showMachineProbes,
   useMachineProbes,
   type ProbeState,
 } from '../services/machineProbes';
+import type { MachineProbes } from '../native/types';
 import { plainError } from '../services/plainError';
 import { useConfirmation } from './ConfirmationDialog';
 import { MachinePill } from './identity/Identity';
@@ -73,31 +74,45 @@ function useProbeActions() {
 
 type Actions = ReturnType<typeof useProbeActions>;
 
-function ProbeLine({ machine, state, version, actions, pill }: { machine: string; state: ProbeState; version: string | null; actions: Actions; pill: boolean }) {
+/**
+ * One machine's probe: its state and release, and Install, Update (only for a probe older than the one Arbor carries)
+ * and Remove. Arbor updates an older probe by itself too; while it does the row says so, and if that failed, why.
+ */
+function ProbeLine({ machine, probes, actions, pill }: { machine: string; probes: MachineProbes; actions: Actions; pill: boolean }) {
   const { t } = useI18n();
-  const busy = actions.busy === machine;
+  const state = probeState(probes, machine);
+  const probe = probes.machines.find((entry) => entry.machine === machine);
+  const action = probes.version ? probeAction(probes, machine) : null;
+  const updating = probe?.updating ?? false;
+  const busy = actions.busy === machine || updating;
   const failed = actions.failed?.machine === machine ? actions.failed.error : null;
+  const label = t(PROBE_STATE_LABEL[state]);
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-3">
         {pill ? <MachinePill name={machine} /> : null}
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
           <StatusDot tone={PROBE_STATE_TONE[state]} />
-          {t(PROBE_STATE_LABEL[state])}
+          {updating && probes.version
+            ? t('machines.probe.updating', { version: probes.version })
+            : probe?.installed && probe.version
+            ? t('machines.probe.withVersion', { state: label, version: probe.version })
+            : label}
         </span>
         {busy ? <Spinner /> : null}
         {canRemoveProbe(state) ? (
-          <Button size="xs" variant="ghost-muted" disabled={actions.busy !== null} onClick={() => void actions.remove(machine)}>
+          <Button size="xs" variant="ghost-muted" disabled={actions.busy !== null || updating} onClick={() => void actions.remove(machine)}>
             {t('machines.probe.remove')}
           </Button>
         ) : null}
-        {version && canInstallProbe(state) ? (
-          <Button size="xs" variant="outline" disabled={actions.busy !== null} onClick={() => void actions.install(machine, state, version)}>
-            {t(state === 'none' ? 'machines.probe.install' : 'machines.probe.update')}
+        {action && probes.version ? (
+          <Button size="xs" variant="outline" disabled={actions.busy !== null || updating} onClick={() => void actions.install(machine, state, probes.version)}>
+            {t(action === 'install' ? 'machines.probe.install' : 'machines.probe.update')}
           </Button>
         ) : null}
       </div>
       {failed ? <p className="text-xs text-error-foreground" role="alert">{failed}</p> : null}
+      {!failed && probe?.updateError ? <p className="text-xs text-error-foreground" role="alert">{t('machines.probe.updateFailed', { error: probe.updateError })}</p> : null}
     </div>
   );
 }
@@ -126,7 +141,7 @@ export function MachineProbeBlock({ machine }: { machine: string }) {
   return (
     <SettingsBlock className="flex flex-col gap-1.5">
       <p className="text-xs font-medium">{t('machines.probe.title')}</p>
-      <ProbeLine machine={machine} state={state} version={probes.version} actions={actions} pill={false} />
+      <ProbeLine machine={machine} probes={probes} actions={actions} pill={false} />
       {state === 'none' ? <p className="text-xs text-muted-foreground">{t('machines.probe.noneHint')}</p> : null}
     </SettingsBlock>
   );
@@ -151,7 +166,7 @@ export function MachineProbesSettings() {
           <ul className="divide-y divide-border/60 rounded-lg border border-border/70">
             {probes.machines.map((probe) => (
               <li key={probe.machine} className="px-3 py-2">
-                <ProbeLine machine={probe.machine} state={probeState(probes, probe.machine)} version={probes.version} actions={actions} pill />
+                <ProbeLine machine={probe.machine} probes={probes} actions={actions} pill />
               </li>
             ))}
           </ul>

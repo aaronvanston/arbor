@@ -3,6 +3,7 @@ import type { MessageKey } from '../i18n/resources';
 import { invokeCommand } from '../native/commands';
 import type { MachineProbes } from '../native/types';
 import type { StatusTone } from '../components/ui/status-dot';
+import { compareVersions } from './agentVersions';
 
 /** A machine's health probe as its row shows it. */
 export type ProbeState = 'streaming' | 'starting' | 'none' | 'unknown';
@@ -33,8 +34,23 @@ export const PROBE_STATE_TONE: Record<ProbeState, StatusTone> = {
   unknown: 'muted',
 };
 
-/** Installing is offered where Grove reads the machine: once for one without a probe, as an update for one with. */
-export const canInstallProbe = (state: ProbeState) => state !== 'unknown';
+/** A machine's probe is older than the release Arbor carries. A prerelease comes before its release. */
+export function probeOutOfDate(probes: MachineProbes | null, machine: string): boolean {
+  const probe = probes?.machines.find((entry) => entry.machine === machine);
+  return Boolean(probes?.version && probe?.installed && probe.version && compareVersions(probe.version, probes.version) < 0);
+}
+
+/**
+ * The row's button: Install where Grove reads a machine with no probe, Update where its probe is older than the one
+ * Arbor carries (which Arbor also does by itself), and nothing where it's up to date or its release isn't known yet.
+ */
+export function probeAction(probes: MachineProbes | null, machine: string): 'install' | 'update' | null {
+  const state = probeState(probes, machine);
+  if (state === 'none') return 'install';
+  if (state !== 'unknown' && probeOutOfDate(probes, machine)) return 'update';
+  return null;
+}
+
 export const canRemoveProbe = (state: ProbeState) => state === 'streaming' || state === 'starting';
 
 /** How long after a change the list is read again, so a new probe shows as streaming once the sampler follows it. */

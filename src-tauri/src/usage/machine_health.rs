@@ -51,6 +51,7 @@ pub(crate) mod harness_update;
 pub(crate) mod harnesses;
 pub(crate) mod keep_sessions;
 pub(crate) mod pool_ssh;
+pub(crate) mod probe_updates;
 pub(crate) mod pools;
 pub(crate) mod runs;
 pub(crate) mod plugin_catalog;
@@ -773,6 +774,14 @@ struct GroveRuntime {
     /// Grove ready to run, or why it isn't, worked out once.
     ready: tokio::sync::OnceCell<Result<grove::Grove, String>>,
     streams: grove::Streams,
+    /// Each probe's release, and updating the older ones.
+    upkeep: Mutex<grove::ProbeUpkeep>,
+}
+
+impl GroveRuntime {
+    fn upkeep(&self) -> std::sync::MutexGuard<'_, grove::ProbeUpkeep> {
+        self.upkeep.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 pub(crate) struct MachineHealthState {
@@ -1480,6 +1489,7 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
             record_result(&state, &machine, at_ms, result, network.latency_ms, path);
         }
         agents::check_due(&app, &state, at_ms);
+        grove::upkeep_probes(&app, &state, at_ms);
         runs::after_round(&app, at_ms);
         transcripts::scan_due(&app, &state, at_ms);
         agent_homes::scan_due(&app, &state, at_ms);

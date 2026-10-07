@@ -1093,6 +1093,21 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                     });
                 }
             }
+            // A health probe Arbor updated, listed with nothing to undo: `P dir from to`.
+            ["P", dir, _, _] if dir.starts_with('/') => {
+                if let Some(backup) = current.and_then(|index| backups.get_mut(index)) {
+                    backup.files.push(BackupFile {
+                        path: agent_homes::tilde(&format!("{}/grove-probe", dir.trim_end_matches('/')), home),
+                        change: "changed",
+                        skill: false,
+                        edit: true,
+                        rel: String::new(),
+                        before: String::new(),
+                        after_sum: String::new(),
+                        after_ck: String::new(),
+                    });
+                }
+            }
             // One of a clean-up's folders deleted for good, and when.
             ["Y", n, seconds] => {
                 if let (Some(listed), Ok(seconds)) = (current.and_then(|index| gone.get_mut(index)), seconds.parse::<i64>()) {
@@ -1548,6 +1563,9 @@ pub(crate) async fn undo_setup_sync(
     }
     if found.what == ChangeKind::Uninstall {
         return Err("An uninstall can't be undone: install the agent again the way it was installed.".into());
+    }
+    if found.what == ChangeKind::Probe {
+        return Err("A probe update can't be undone: Arbor never puts an older probe back.".into());
     }
     if found.what == ChangeKind::Cleanup {
         if found.deleted_at_ms.is_some() {

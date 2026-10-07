@@ -13,7 +13,8 @@
 //! Grove's runs reach machines through Arbor's own SSH connections (`GROVE_SSH_COMMAND`).
 
 use super::diagnostics::{self, MachineOp};
-use super::shell::{configure_helper_command, failure_detail, run_in_slot, ssh_sharing_options};
+use super::probe_updates::{self, Next};
+use super::shell::{configure_helper_command, failure_detail, run_in_slot, shell_quote, ssh_sharing_options, Machine};
 use super::shell::not_checked;
 use super::{HealthMetric, HealthPoint, HealthReason, MachineFacts, MachineHealthState};
 use serde::Serialize;
@@ -26,6 +27,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncBufReadExt;
+use tauri::Manager;
 use tokio_util::sync::CancellationToken;
 
 const VERSION_FILE: &str = "grove-version.txt";
@@ -387,6 +389,8 @@ pub(crate) struct Feed {
     /// Why the stream last dropped, until a reading comes again.
     error: Option<String>,
     started_ms: i64,
+    /// The running probe's release, from its facts; None from a probe too old to say.
+    probe_version: Option<String>,
 }
 
 /// What a round can use from a stream.
@@ -421,6 +425,10 @@ impl Feed {
                 let reading = event.pointer("/data/reading")?.clone();
                 self.reading = Some((now_ms, reading));
                 self.error = None;
+                None
+            }
+            Some("facts") => {
+                self.probe_version = event.pointer("/data/probe_version").and_then(Value::as_str).filter(|version| !version.is_empty()).map(str::to_string);
                 None
             }
             Some("disconnected") => {
@@ -488,6 +496,11 @@ impl Streams {
 
     pub(crate) fn read(&self, slug: &str, now_ms: i64) -> Option<StreamRead> {
         self.feeds().get(slug).map(|feed| feed.read(now_ms))
+    }
+
+    /// The release a followed probe said it is.
+    pub(crate) fn probe_version(&self, slug: &str) -> Option<String> {
+        self.feeds().get(slug).and_then(|feed| feed.probe_version.clone())
     }
 
     /// Stops following one probe, as before it's taken off its machine.
@@ -727,21 +740,40 @@ pub(crate) struct MachineProbe {
     installed: bool,
     /// Its probe is being followed now; installed and not followed is starting, or past the streams' allowance.
     streaming: bool,
+    /// The probe's release, as it last said; None until it's known.
+    version: Option<String>,
+    /// Arbor is updating it to the release it carries now.
+    updating: bool,
+    /// Why Arbor's last update of it failed. The old probe is left as it was, and Arbor tries again later.
+    update_error: Option<String>,
 }
 
 fn probes_of(state: &MachineHealthState) -> MachineProbes {
-    let inner = state.lock();
-    let view = &inner.grove;
     let version = state.grove.ready.get().and_then(|ready| ready.as_ref().ok()).map(|grove| grove.bundle.version.clone()).or_else(|| bundle().map(|bundle| bundle.version));
-    MachineProbes {
-        version,
-        unavailable: view.unavailable.clone(),
-        machines: view
-            .slugs
-            .iter()
-            .map(|(machine, slug)| MachineProbe { machine: machine.clone(), installed: view.probes.contains_key(slug), streaming: view.streaming.contains(slug) })
-            .collect(),
-    }
+    let (unavailable, listed) = {
+        let inner = state.lock();
+        let view = &inner.grove;
+        let listed: Vec<(String, String, bool, bool)> =
+            view.slugs.iter().map(|(machine, slug)| (machine.clone(), slug.clone(), view.probes.contains_key(slug), view.streaming.contains(slug))).collect();
+        (view.unavailable.clone(), listed)
+    };
+    let streamed: HashMap<String, Option<String>> = listed.iter().map(|(_, slug, ..)| (slug.clone(), state.grove.streams.probe_version(slug))).collect();
+    let upkeep = state.grove.upkeep();
+    let machines = listed
+        .into_iter()
+        .map(|(machine, slug, installed, streaming)| {
+            let failed = upkeep.attempts.get(&slug).filter(|attempt| !attempt.done && version.as_deref() == Some(attempt.bundled.as_str()));
+            MachineProbe {
+                machine,
+                installed,
+                streaming,
+                version: installed.then(|| upkeep.installed(&slug, streamed.get(&slug).cloned().flatten())).flatten(),
+                updating: upkeep.busy.as_deref() == Some(slug.as_str()) && upkeep.updating,
+                update_error: failed.and_then(|attempt| attempt.error.clone()),
+            }
+        })
+        .collect();
+    MachineProbes { version, unavailable, machines }
 }
 
 /// Grove and the machine's slug, or why a probe can't be put on or taken off it.
@@ -751,7 +783,8 @@ async fn grove_for(state: &MachineHealthState, machine: &str) -> Result<(Grove, 
     Ok((grove, slug))
 }
 
-/// Which machines have Grove's probe and which are followed now, and why Grove isn't read when it isn't.
+/// Which machines have Grove's probe and which are followed now, each probe's release and why Arbor's own update of it
+/// failed, and why Grove isn't read when it isn't.
 #[tauri::command]
 pub(crate) async fn get_machine_probes(state: tauri::State<'_, MachineHealthState>) -> Result<MachineProbes, String> {
     Ok(probes_of(&state))
@@ -765,15 +798,144 @@ pub(crate) async fn install_machine_probe(state: tauri::State<'_, MachineHealthS
 }
 
 async fn install_probe(state: &MachineHealthState, machine: &str) -> Result<MachineProbes, String> {
+    put_probe(state, machine, MachineOp::ProbeInstall).await?;
+    Ok(probes_of(state))
+}
+
+/// Puts the carried probe on a machine with `grove probe install`, which checks each archive against its checksums
+/// and swaps the program in only once it runs. When that updated a probe already there, the update is listed among
+/// Arbor's changes on the machine, and the stream starts again so the new release follows it.
+async fn put_probe(state: &MachineHealthState, machine: &str, op: MachineOp) -> Result<(), String> {
     let (grove, slug) = grove_for(state, machine).await?;
+    let had = state.lock().grove.probes.contains_key(&slug);
+    let streamed = state.grove.streams.probe_version(&slug);
+    let was = state.grove.upkeep().installed(&slug, streamed);
     let from = grove.bundle.dir.display().to_string();
     let command = grove.command(["probe", "install", "--from", from.as_str(), "--json", "--", slug.as_str()]);
-    let data = envelope_data(&run_in_slot(machine, MachineOp::ProbeInstall, command, PROBE_TIMEOUT).await?)?;
+    let data = envelope_data(&run_in_slot(machine, op, command, PROBE_TIMEOUT).await?)?;
     let dir = data.get("dir").and_then(Value::as_str).unwrap_or_default().to_string();
-    state.lock().grove.probes.insert(slug, dir);
+    let bundled = grove.bundle.version.clone();
+    state.lock().grove.probes.insert(slug.clone(), dir.clone());
+    {
+        let now = chrono::Local::now().timestamp_millis();
+        let mut upkeep = state.grove.upkeep();
+        upkeep.read.insert(slug.clone(), (now, Some(bundled.clone())));
+        let done = probe_updates::record(upkeep.attempts.get(&slug), &bundled, now, Ok(()));
+        upkeep.attempts.insert(slug.clone(), done);
+    }
+    if had {
+        // The follower already running is the old release, which doesn't answer the stream's echoes.
+        state.grove.streams.stop(&slug);
+        note_update(state, machine, &dir, was.as_deref(), &bundled).await;
+    }
     // The next round reads the registry again and starts following it.
     state.request_reload();
-    Ok(probes_of(state))
+    Ok(())
+}
+
+/// Lists a probe update among Arbor's changes on its machine, with nothing to undo: Arbor never puts an older probe
+/// back. A failure here leaves the update done and is only logged.
+async fn note_update(state: &MachineHealthState, machine: &str, dir: &str, from: Option<&str>, to: &str) {
+    let Some(target) = state.lock().series.get(machine).map(Machine::listed) else {
+        return;
+    };
+    let script = probe_change_script(&super::guarded_writes::new_stamp(), dir, from.unwrap_or("-"), to);
+    if let Err(error) = super::guarded_writes::run_on(&target, MachineOp::ProbeUpdate, &script).await {
+        eprintln!("The probe update on {machine} wasn't listed among Arbor's changes: {error}");
+    }
+}
+
+/// Writes a change's manifest for a probe update: `what probe`, then `P dir from to`. Older changes aren't pruned for
+/// it, so it never pushes out a backup that Undo needs.
+pub(crate) fn probe_change_script(stamp: &str, dir: &str, from: &str, to: &str) -> String {
+    let word = |value: &str| shell_quote(&value.chars().filter(|c| !c.is_control()).collect::<String>());
+    format!(
+        "root=\"$HOME/.arbor/setup-backups\"\n\
+         (umask 077 && mkdir -p \"$root\"/{stamp}) && chmod 700 \"$root\" && printf 'what\\tprobe\\nP\\t%s\\t%s\\t%s\\n' {dir} {from} {to} > \"$root\"/{stamp}/manifest\n",
+        stamp = word(stamp),
+        dir = word(dir),
+        from = word(from),
+        to = word(to),
+    )
+}
+
+// ── Probe releases and updates ───────────────────────────────────────────────────────────────────────────────────
+
+/// A probe whose release isn't known (one too old to say over its stream) is asked again this often.
+const VERSION_RECHECK_MS: i64 = 60 * 60 * 1000;
+/// How long asking a probe its release may take.
+const VERSION_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// What Arbor knows of each probe's release and of updating it, by slug.
+#[derive(Default)]
+pub(crate) struct ProbeUpkeep {
+    /// Each probe's release as `grove probe status` last read it, and when; None when it couldn't be read.
+    read: HashMap<String, (i64, Option<String>)>,
+    attempts: HashMap<String, probe_updates::Attempt>,
+    /// The probe being asked its release or updated: one at a time, so it never crowds the round.
+    busy: Option<String>,
+    /// Updating rather than asking.
+    updating: bool,
+}
+
+impl ProbeUpkeep {
+    /// A probe's release: what its stream says, else what it said when asked.
+    fn installed(&self, slug: &str, streamed: Option<String>) -> Option<String> {
+        streamed.or_else(|| self.read.get(slug).and_then(|(_, version)| version.clone()))
+    }
+}
+
+/// The release `grove probe status --json` says one probe is.
+pub(crate) fn parse_probe_version(data: &Value) -> Option<String> {
+    data.pointer("/0/version").and_then(Value::as_str).filter(|version| !version.is_empty()).map(str::to_string)
+}
+
+/// After each round: asks a probe its release where that isn't known, or updates one older than the release Arbor
+/// carries, by itself and through the same checked install as Update probe. Only a machine that already has a probe is
+/// updated, never to an older release, once per carried release, with backoff after a failure.
+pub(crate) fn upkeep_probes(app: &tauri::AppHandle, state: &MachineHealthState, now_ms: i64) {
+    let Some(Ok(grove)) = state.grove.ready.get() else {
+        return;
+    };
+    let probed: Vec<(String, String)> = {
+        let inner = state.lock();
+        inner.grove.slugs.iter().filter(|(_, slug)| inner.grove.probes.contains_key(*slug)).map(|(machine, slug)| (machine.clone(), slug.clone())).collect()
+    };
+    let streamed: Vec<Option<String>> = probed.iter().map(|(_, slug)| state.grove.streams.probe_version(slug)).collect();
+    let mut upkeep = state.grove.upkeep();
+    if upkeep.busy.is_some() {
+        return;
+    }
+    for ((machine, slug), streamed) in probed.into_iter().zip(streamed) {
+        let installed = upkeep.installed(&slug, streamed);
+        let ask = installed.is_none() && upkeep.read.get(&slug).is_none_or(|(at, _)| now_ms - at >= VERSION_RECHECK_MS);
+        let update = probe_updates::next(installed.as_deref(), &grove.bundle.version, upkeep.attempts.get(&slug), now_ms) == Next::Update;
+        if !ask && !update {
+            continue;
+        }
+        upkeep.busy = Some(slug.clone());
+        upkeep.updating = update;
+        let (app, grove) = (app.clone(), grove.clone());
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<MachineHealthState>();
+            if update {
+                let result = put_probe(&state, &machine, MachineOp::ProbeUpdate).await;
+                let mut upkeep = state.grove.upkeep();
+                if let Err(error) = result {
+                    let failed = probe_updates::record(upkeep.attempts.get(&slug), &grove.bundle.version, chrono::Local::now().timestamp_millis(), Err(error));
+                    upkeep.attempts.insert(slug, failed);
+                }
+                upkeep.busy = None;
+            } else {
+                let command = grove.command(["probe", "status", "--json", "--", slug.as_str()]);
+                let version = run_in_slot(&machine, MachineOp::ProbeCheck, command, VERSION_TIMEOUT).await.and_then(|output| envelope_data(&output)).ok().as_ref().and_then(parse_probe_version);
+                let mut upkeep = state.grove.upkeep();
+                upkeep.read.insert(slug, (chrono::Local::now().timestamp_millis(), version));
+                upkeep.busy = None;
+            }
+        });
+        return;
+    }
 }
 
 /// Stops a machine's probe and takes it off the machine, with its folder; the history Arbor's Grove kept stays.
@@ -1022,6 +1184,9 @@ mod tests {
         // The last reading stands until it's stale; then the drop is why.
         assert!(matches!(feed.read(50_000), StreamRead::Fresh(_)));
         assert_eq!(feed.read(70_000), StreamRead::Failed("The stream ended".into()));
+        let facts = r#"{"data":{"machine":"cedar01","probe_version":"0.1.3"},"schemaVersion":1,"timestamp":"x","type":"facts"}"#;
+        assert_eq!(feed.apply(facts, 47_000), None);
+        assert_eq!(feed.probe_version.as_deref(), Some("0.1.3"), "the release the probe says it is");
         assert_eq!(feed.apply("not json", 1), None);
         assert_eq!(feed.apply(&reading.replace("\"schemaVersion\":1", "\"schemaVersion\":2"), 80_000), None);
         assert_eq!(feed.read(80_000), StreamRead::Failed("The stream ended".into()));
@@ -1094,6 +1259,8 @@ mod tests {
         let probe = |probes: &MachineProbes, machine: &str| probes.machines.iter().find(|probe| probe.machine == machine).map(|probe| probe.installed);
         let installed = install_probe(&state, "cedar-01").await.unwrap();
         assert_eq!((probe(&installed, "cedar-01"), installed.version.as_deref()), (Some(true), Some("0.1.2")));
+        let shown = installed.machines.iter().find(|probe| probe.machine == "cedar-01").unwrap();
+        assert_eq!((shown.version.as_deref(), shown.updating, shown.update_error.as_deref()), (Some("0.1.2"), false, None), "it's the carried release now");
         assert!(install_probe(&state, "elm-02").await.unwrap_err().contains("No probe build for SunOS"));
         assert!(install_probe(&state, "oak-03").await.unwrap_err().contains("oak-03"));
         let removed = uninstall_probe(&state, "cedar-01").await.unwrap();
@@ -1108,6 +1275,40 @@ mod tests {
             ]
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `grove probe status` names each probe's release, older ones included; one it couldn't reach has none.
+    #[test]
+    fn a_probe_s_release_is_read_from_its_status() {
+        let status = serde_json::json!([{ "name": "cedar01", "running": true, "version": "0.1.2", "dir": "/home/cam/.grove-probe" }]);
+        assert_eq!(parse_probe_version(&status).as_deref(), Some("0.1.2"));
+        assert_eq!(parse_probe_version(&serde_json::json!([{ "name": "cedar01", "running": false, "version": null }])), None);
+        assert_eq!(parse_probe_version(&serde_json::json!([])), None);
+    }
+
+    /// An update is listed among Arbor's changes on the machine, under sh and dash, with its probe's path and nothing
+    /// to undo, and without pruning the backups Undo needs.
+    #[test]
+    fn a_probe_update_is_listed_among_arbor_s_changes() {
+        use super::super::{guarded_writes, setup_sync};
+        for shell in super::super::shell::shells() {
+            let home = temp_dir(&format!("probe-change-{shell}"));
+            std::fs::create_dir_all(&home).unwrap();
+            let dir = home.join(".grove-probe").display().to_string();
+            let run = |script: &str| {
+                let output = std::process::Command::new(shell).arg("-c").arg(script).env("HOME", &home).output().unwrap();
+                assert!(output.status.success(), "{shell}: {}", String::from_utf8_lossy(&output.stderr));
+                String::from_utf8(output.stdout).unwrap()
+            };
+            run(&probe_change_script("20261008T010203Z-0b01", &dir, "0.1.2", "0.1.3"));
+            let listed = setup_sync::parse_backups(&run(&format!("set -u\nexport LC_ALL=C\n{}", guarded_writes::BACKUPS_SCRIPT)));
+            assert_eq!(listed.len(), 1, "{shell}");
+            let entry = serde_json::to_value(&listed[0]).unwrap();
+            assert_eq!((&entry["what"], &entry["files"][0]["path"]), (&serde_json::json!("probe"), &serde_json::json!("~/.grove-probe/grove-probe")), "{shell}");
+            let mode = std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(home.join(".arbor/setup-backups")).unwrap().permissions());
+            assert_eq!(mode & 0o777, 0o700, "{shell}");
+            let _ = std::fs::remove_dir_all(&home);
+        }
     }
 
     #[test]

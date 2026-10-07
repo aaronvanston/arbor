@@ -899,7 +899,7 @@ export type Change = "update" | "editedHere" | "bothChanged" | "unknown";
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup" | "uninstall";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup" | "uninstall" | "probe";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.
@@ -2945,6 +2945,18 @@ export type MachineProbe = {
    * Its probe is being followed now; installed and not followed is starting, or past the streams' allowance.
    */
   streaming: boolean,
+  /**
+   * The probe's release, as it last said; None until it's known.
+   */
+  version: string | null,
+  /**
+   * Arbor is updating it to the release it carries now.
+   */
+  updating: boolean,
+  /**
+   * Why Arbor's last update of it failed. The old probe is left as it was, and Arbor tries again later.
+   */
+  updateError: string | null,
 };
 
 /**

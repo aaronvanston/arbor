@@ -45,7 +45,7 @@ import { poolAnswers, poolSshAnswers } from './pools';
 import { runAnswers } from './runs';
 import { configSettings } from './core';
 import { freshInstall, later, mockLog, now, params, realSize } from './scenario';
-import { joinSetupMachine, leaveToPolicy, mockHarnessesFound, recordEditMock, scanSetupMock, setupItem, setupMachines } from './setup';
+import { joinSetupMachine, leaveToPolicy, mockHarnessesFound, recordEditMock, recordProbeUpdateMock, scanSetupMock, setupItem, setupMachines } from './setup';
 import { reporterInstalled, setMockT3Enabled, setMockT3Titles } from './usage';
 
 // Settings › Diagnostics: Arbor's calls to machines and the core, by `?diagnostics=` (listed at the top).
@@ -138,20 +138,35 @@ if (freshInstall) healthHosts.length = 0;
 /** This Mac's name in the mock, the one it's listed under by default. */
 const MOCK_THIS_MAC = 'cam-mbp';
 
-// Grove's health probes: ci-01 and this Mac stream by default, cedar-02 is read over SSH each round. `?probes=none` has
-// no probe anywhere, `?probes=fail` has installing or removing one fail, and `?grove=missing` has Grove unavailable,
-// so health comes from Arbor's own script and the machine page and Settings › Machines say why.
+// Grove's health probes: ci-01 and this Mac stream by default, on the release Arbor carries, and cedar-02 is read over
+// SSH each round. `?probes=none` has no probe anywhere, `?probes=fail` has installing or removing one fail,
+// `?probes=outdated` has ci-01's probe older than the one Arbor carries (so it offers Update probe), and
+// `?probes=update-failed` has Arbor's own update of it fail (so it says why beside the button). `?grove=missing` has
+// Grove unavailable, so health comes from Arbor's own script and the machine page and Settings › Machines say why.
 const probeScenario = params.get('probes');
 const probesInstalled = new Set(probeScenario === 'none' ? [] : ['cam-mbp', 'ci-01']);
-const MOCK_GROVE = '0.1.2';
+const MOCK_GROVE = '0.1.3';
+const probeVersions = new Map<string, string>(
+  probeScenario === 'outdated' || probeScenario === 'update-failed' ? [['ci-01', '0.1.2']] : [],
+);
+const probeUpdateError = (machine: string) =>
+  probeScenario === 'update-failed' && probeVersions.has(machine) ? `ssh: connect to host ${machine} port 22: Operation timed out` : null;
 const machineProbes = (): MachineProbes => params.get('grove') === 'missing'
-  ? { version: MOCK_GROVE, unavailable: 'Grove answered as 0.1.1 where this build of Arbor expects 0.1.2', machines: [] }
+  ? { version: MOCK_GROVE, unavailable: `Grove answered as 0.1.2 where this build of Arbor expects ${MOCK_GROVE}`, machines: [] }
   : {
     version: MOCK_GROVE,
     unavailable: null,
-    machines: healthHosts.filter((host) => host.enabled && host.endpoint).map((host) => ({
-      machine: host.machine, installed: probesInstalled.has(host.machine), streaming: probesInstalled.has(host.machine),
-    })),
+    machines: healthHosts.filter((host) => host.enabled && host.endpoint).map((host) => {
+      const installed = probesInstalled.has(host.machine);
+      return {
+        machine: host.machine,
+        installed,
+        streaming: installed,
+        version: installed ? probeVersions.get(host.machine) ?? MOCK_GROVE : null,
+        updating: false,
+        updateError: installed ? probeUpdateError(host.machine) : null,
+      };
+    }),
   };
 
 const healthPoint = (name: string, t: number): HealthPoint => {
@@ -715,7 +730,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
   // A machine's history beyond the hour, as Grove keeps it: two hundred buckets, cam-mbp asleep from midnight to 7am.
   // `?history=empty` has nothing stored yet; with `?grove=missing` it can't be read.
   get_machine_history: ({ machine, windowMs }) => {
-    if (params.get('grove') === 'missing') throw 'Grove answered as 0.1.1 where this build of Arbor expects 0.1.2';
+    if (params.get('grove') === 'missing') throw 'Grove answered as 0.1.2 where this build of Arbor expects 0.1.3';
     const buckets = 200;
     const bucketMs = Math.max(60_000, Math.round(windowMs / buckets));
     const since = Date.now() - buckets * bucketMs;
@@ -738,7 +753,9 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
   install_machine_probe: ({ machine }) => later(2_000, () => {
     mockLog('install_machine_probe', { machine });
     if (probeScenario === 'fail') throw 'ssh: connect to host ' + machine + ' port 22: Operation timed out';
+    if (probesInstalled.has(machine)) recordProbeUpdateMock(machine);
     probesInstalled.add(machine);
+    probeVersions.delete(machine);
     return machineProbes();
   }),
   uninstall_machine_probe: ({ machine }) => later(1_200, () => {

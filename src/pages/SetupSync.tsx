@@ -973,6 +973,7 @@ export const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
   projects: 'setup.history.what.projects',
   cleanup: 'setup.history.what.cleanup',
   uninstall: 'setup.history.what.uninstall',
+  probe: 'setup.history.what.probe',
 };
 
 /**
@@ -1016,7 +1017,7 @@ export function BackupList({ machine, backups, error, busy, undoing, onUndo, onR
                 .filter(Boolean)
                 .join(' · ')}
             </span>
-            {backup.what === 'uninstall' ? (
+            {backup.what === 'uninstall' || backup.what === 'probe' ? (
               <Badge variant="outline" size="sm">{t('setup.sync.history.noUndo')}</Badge>
             ) : backup.deletedAtMs !== undefined ? (
               <Badge variant="outline" size="sm" title={formatDateTime(backup.deletedAtMs, { year: 'always' })}>{t('setup.sync.history.deleted', { when: formatAgo(backup.deletedAtMs) })}</Badge>

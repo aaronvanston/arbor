@@ -29,7 +29,12 @@ then to a reachability check (`LEGACY_SAMPLER`).
 A probe goes on a machine only when the user confirms it (machine page, Settings › Machines, or `arbor call
 install_machine_probe … --yes`): `grove probe install --from` the carried archives, under launchd or a systemd user
 unit, through `run_in_slot`. It isn't a guarded write, as the background runner's install isn't; Remove beside it is
-the way back.
+the way back. A probe already on a machine is updated by Arbor itself, through the same install, when the carried
+release is newer (`probe_updates`): never where there's no probe, never down, once per carried release per machine,
+with backoff after a failure, one machine at a time. Its release comes from its stream's facts, or for a probe too old
+to say, from `grove probe status`. A failed update leaves the old probe streaming and shows why beside Update probe; a
+done one is listed among Arbor's changes on the machine (`what probe`, nothing to undo, no pruning) and the stream
+restarts, since the old follower doesn't answer echoes.
 
 ## Changing a file
 

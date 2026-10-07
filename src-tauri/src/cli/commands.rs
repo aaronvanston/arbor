@@ -945,7 +945,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "get_machine_probes",
         access: Access::Read,
-        summary: "Which machines have Grove's probe and which are followed now, and why Grove isn't read when it isn't.",
+        summary: "Which machines have Grove's probe and which are followed now, each probe's release and why Arbor's own update of it failed, and why Grove isn't read when it isn't.",
         args: &[],
     },
     CommandSpec {

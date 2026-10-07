@@ -119,6 +119,10 @@ pub(crate) enum MachineOp {
     HealthCheck,
     HealthStream,
     ProbeInstall,
+    /// Arbor updating a probe already on a machine by itself.
+    ProbeUpdate,
+    /// Asking a probe which release it is.
+    ProbeCheck,
     ProbeUninstall,
     AgentVersions,
     AgentUpdate,
@@ -178,6 +182,8 @@ impl MachineOp {
             Self::HealthCheck => "health check",
             Self::HealthStream => "health stream",
             Self::ProbeInstall => "health probe install",
+            Self::ProbeUpdate => "health probe update",
+            Self::ProbeCheck => "health probe check",
             Self::ProbeUninstall => "health probe removal",
             Self::AgentVersions => "agent versions",
             Self::AgentUpdate => "agent update",
@@ -234,7 +240,7 @@ impl MachineOp {
 
     fn slow_after_ms(self) -> u64 {
         match self {
-            Self::AgentUpdate | Self::CleanupUninstall | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall | Self::ProbeInstall => {
+            Self::AgentUpdate | Self::CleanupUninstall | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall | Self::ProbeInstall | Self::ProbeUpdate => {
                 MACHINE_INSTALL_SLOW_MS
             }
             Self::TranscriptScan

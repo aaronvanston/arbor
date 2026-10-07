@@ -80,8 +80,10 @@
  * `?history=empty` for a machine page's 6h, 24h, 7d or 30d window with nothing stored yet (by default cam-mbp sleeps from
  * midnight to 7am, so its long history has gaps);
  * `?probes=none` for no machine with Grove's health probe (by default ci-01 and cam-mbp stream and cedar-02 is read
- * over SSH), `?probes=fail` for installing or removing a probe failing, `?grove=missing` for Grove unavailable, so the
- * machine page and Settings › Machines say health comes from Arbor's own script;
+ * over SSH), `?probes=fail` for installing or removing a probe failing, `?probes=outdated` for ci-01's probe older than
+ * the one Arbor carries (Update probe is offered), `?probes=update-failed` for Arbor's own update of it failing (the
+ * reason shows beside Update probe), `?grove=missing` for Grove unavailable, so the machine page and Settings ›
+ * Machines say health comes from Arbor's own script;
  * `?machines=unhosted` for no machine with a host yet, so Machines lists them waiting for one and Sync › Software has
  * no agents to list and offers Add hosts;
  * `?homes=fresh` for no machine looked at for agent homes yet (Settings › Agent homes lists only the standard homes
