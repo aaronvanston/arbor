@@ -2094,6 +2094,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "remove_cli_link",
+        access: Access::Write,
+        summary: "Takes `arbor` off the PATH again, removing ~/.local/bin/arbor when it runs an Arbor.",
+        args: &[],
+    },
+    CommandSpec {
         name: "install_cli_skill",
         access: Access::Write,
         summary: "Puts the skill in this Mac's store and its Claude Code homes, backed up so Sync › Repo › History can undo it.",
@@ -2469,6 +2475,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         }
         "get_cli_overview" => blocking(move || done(crate::cli::settings::get_cli_overview())).await,
         "install_cli_link" => blocking(move || done(crate::cli::settings::install_cli_link())).await,
+        "remove_cli_link" => blocking(move || done(crate::cli::settings::remove_cli_link())).await,
         "install_cli_skill" => done(Box::pin(crate::usage::machine_health::cli_skill::install_cli_skill(app.clone(), app.state())).await),
         _ => return None,
     };

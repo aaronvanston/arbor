@@ -2043,6 +2043,7 @@ fn main() {
             cli::settings::get_cli_overview,
             cli::settings::save_cli_settings,
             cli::settings::install_cli_link,
+            cli::settings::remove_cli_link,
             usage::machine_health::cli_skill::install_cli_skill,
         ])
         .build(tauri::generate_context!())

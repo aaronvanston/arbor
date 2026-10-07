@@ -98,6 +98,12 @@ export const cliAnswers: CommandAnswers<CliCommands> = {
     installState = 'installed';
     return { install: install() };
   },
+  remove_cli_link: () => {
+    if (installState === 'taken') throw `Something else is at ${LINK}, so Arbor left it alone.`;
+    mockLog('remove_cli_link', LINK);
+    installState = 'missing';
+    return { install: install() };
+  },
   install_cli_skill: () => {
     if (skillScenario === 'failed') throw "Arbor couldn't write the skill anywhere on this Mac.";
     mockLog('install_cli_skill', skillScenario);

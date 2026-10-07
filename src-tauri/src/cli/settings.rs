@@ -138,6 +138,22 @@ pub(crate) fn install_link(home: &Path, executable: Option<&Path>) -> Result<Ins
     Ok(install_status(home, executable))
 }
 
+/// Takes `~/.local/bin/arbor` away again, when it's a link to an Arbor; anything else there is left alone.
+pub(crate) fn remove_link(home: &Path, executable: Option<&Path>) -> Result<Install, String> {
+    let status = install_status(home, executable);
+    let link = link_path(home);
+    let ours = fs::read_link(&link).ok().is_some_and(|target| runs_arbor(&target));
+    match status.state {
+        InstallState::Missing => Ok(status),
+        _ if ours => {
+            fs::remove_file(&link).map_err(|error| format!("Couldn't remove {}: {error}", link.display()))?;
+            Ok(install_status(home, executable))
+        }
+        _ if link.symlink_metadata().is_err() => Ok(status),
+        _ => Err(format!("Something else is at {}, so Arbor left it alone.", link.display())),
+    }
+}
+
 fn home() -> Result<PathBuf, String> {
     std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| "Can't find your home folder".to_string())
 }
@@ -177,7 +193,13 @@ pub(crate) fn install_cli_link() -> Result<CliInstallResult, String> {
     install_link(&home()?, linkable_executable().as_deref()).map(|install| CliInstallResult { install })
 }
 
-/// What `install_cli_link` did.
+/// Takes `arbor` off the PATH again, removing ~/.local/bin/arbor when it runs an Arbor.
+#[tauri::command]
+pub(crate) fn remove_cli_link() -> Result<CliInstallResult, String> {
+    remove_link(&home()?, linkable_executable().as_deref()).map(|install| CliInstallResult { install })
+}
+
+/// What `install_cli_link` or `remove_cli_link` did.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CliInstallResult {
@@ -220,6 +242,26 @@ mod tests {
         fs::write(link_path(&home), "#!/bin/sh\n").unwrap();
         assert_eq!(install_status(&home, Some(&exe)).state, InstallState::Taken);
         assert!(install_link(&home, Some(&exe)).is_err());
+        assert_eq!(fs::read_to_string(link_path(&home)).unwrap(), "#!/bin/sh\n");
+    }
+
+    // system-9: a way back out, which only ever takes away a link to an Arbor.
+    #[test]
+    fn the_link_comes_off_again_but_someone_elses_arbor_stays() {
+        let home = super::super::test_dir("remove");
+        let exe = fake_app(&home, "Arbor");
+        assert_eq!(remove_link(&home, Some(&exe)).unwrap().state, InstallState::Missing);
+        install_link(&home, Some(&exe)).unwrap();
+        assert_eq!(remove_link(&home, Some(&exe)).unwrap().state, InstallState::Missing);
+        assert!(link_path(&home).symlink_metadata().is_err());
+
+        // A link to an Arbor that has moved comes off too, from the copy that's running now.
+        let moved = fake_app(&home, "Moved/Arbor");
+        install_link(&home, Some(&moved)).unwrap();
+        assert_eq!(remove_link(&home, Some(&exe)).unwrap().state, InstallState::Missing);
+
+        fs::write(link_path(&home), "#!/bin/sh\n").unwrap();
+        assert!(remove_link(&home, Some(&exe)).is_err());
         assert_eq!(fs::read_to_string(link_path(&home)).unwrap(), "#!/bin/sh\n");
     }
 }

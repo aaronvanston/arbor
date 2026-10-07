@@ -66,15 +66,29 @@ export function CommandLineSettings() {
     }
   };
 
+  // Putting arbor on the PATH and taking it off again each happen at once, with the other as Undo.
   const install = async () => {
     setBusy(true);
     try {
       const { install: installed } = await invokeCommand('install_cli_link');
       setOverview((current) => (current ? { ...current, install: installed } : current));
       setError(null);
-      toast({ kind: 'success', title: t('cli.install.done') });
+      toast({ kind: 'success', title: t('cli.install.done'), action: { label: t('common.undo'), onClick: () => void remove() } });
     } catch (installError) {
       setError(t('cli.install.failed', { error: plainError(installError, t) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    setBusy(true);
+    try {
+      const { install: removed } = await invokeCommand('remove_cli_link');
+      setOverview((current) => (current ? { ...current, install: removed } : current));
+      setError(null);
+      toast({ kind: 'success', title: t('cli.install.removed'), action: { label: t('common.undo'), onClick: () => void install() } });
+    } catch (removeError) {
+      setError(t('cli.install.removeFailed', { error: plainError(removeError, t) }));
     } finally {
       setBusy(false);
     }
@@ -123,7 +137,15 @@ export function CommandLineSettings() {
             {busy ? <Spinner /> : null}
             {t(note.action)}
           </Button>
-        ) : overview?.install.state === 'installed' ? <Badge variant="success">{t('cli.install.linked')}</Badge> : null}
+        ) : overview?.install.state === 'installed' ? (
+          <>
+            <Badge variant="success">{t('cli.install.linked')}</Badge>
+            <Button size="sm" variant="ghost-muted" disabled={busy} onClick={() => void remove()}>
+              {busy ? <Spinner /> : null}
+              {t('cli.install.remove')}
+            </Button>
+          </>
+        ) : null}
       />
       <SettingsRow
         settingId="software.cli-enabled"
