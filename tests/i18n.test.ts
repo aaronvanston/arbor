@@ -31,6 +31,11 @@ describe('English-only interface', () => {
     expect(Object.entries(en).filter(([key, message]) => /^(machineScope|agentHomes)\./.test(key) && /\{machine\}[’']s\b/.test(message))).toEqual([]);
   });
 
+  // system-15: one apostrophe style in copy, the curly one, never a straight one inside a word (don't, Arbor's).
+  it('uses curly apostrophes', () => {
+    expect(Object.entries(en).filter(([, message]) => /[A-Za-z]'[A-Za-z]/.test(message)).map(([key]) => key)).toEqual([]);
+  });
+
   // money-4: a confirm's warning names its button the way the button reads.
   it('names the reset button as it reads', () => {
     expect(en['quota.confirm.warning']).toContain(en['quota.confirm.button']);

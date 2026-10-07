@@ -119,7 +119,7 @@ pub(crate) async fn install_cli_skill(app: tauri::AppHandle, state: tauri::State
     rescan(&app, target.name());
     let result = parse_install(&stdout);
     if result.written.is_empty() && result.already.is_empty() {
-        return Err("Arbor couldn't write the skill anywhere on this Mac.".into());
+        return Err("Arbor couldn’t write the skill anywhere on this Mac.".into());
     }
     Ok(result)
 }

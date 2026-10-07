@@ -131,13 +131,13 @@ fn read_phone_alert_secrets(path: &Path) -> Result<PhoneAlertSecrets, String> {
         Ok(content) => content,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(PhoneAlertSecrets::default()),
         Err(error) => {
-            return Err(format!("Couldn't read the saved alert secrets in {}: {error}", path_to_string(path)));
+            return Err(format!("Couldn’t read the saved alert secrets in {}: {error}", path_to_string(path)));
         }
     };
     // serde's reason can quote the file, so it's left out.
     serde_json::from_slice(&content).map_err(|_| {
         format!(
-            "The saved alert secrets in {} can't be read. Delete the file and enter them again.",
+            "The saved alert secrets in {} can’t be read. Delete the file and enter them again.",
             path_to_string(path)
         )
     })

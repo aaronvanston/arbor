@@ -105,7 +105,7 @@ export const cliAnswers: CommandAnswers<CliCommands> = {
     return { install: install() };
   },
   install_cli_skill: () => {
-    if (skillScenario === 'failed') throw "Arbor couldn't write the skill anywhere on this Mac.";
+    if (skillScenario === 'failed') throw 'Arbor couldn’t write the skill anywhere on this Mac.';
     mockLog('install_cli_skill', skillScenario);
     skillState = 'current';
     return {

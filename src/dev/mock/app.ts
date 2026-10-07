@@ -98,7 +98,7 @@ export function pressMockZoom(key: '=' | '-' | '0') {
 const phoneSecrets: Record<PhoneAlertSecret, string> = { ntfyToken: '', pushoverUserKey: '', pushoverAppToken: '', telegramBotToken: '', webhookUrl: '' };
 
 const PHONE_SECRETS_UNREADABLE =
-  "The saved alert secrets in /Users/cam/Library/Application Support/onl.arbor.app/phone-alert-secrets.json can't be read. Delete the file and enter them again.";
+  'The saved alert secrets in /Users/cam/Library/Application Support/onl.arbor.app/phone-alert-secrets.json can’t be read. Delete the file and enter them again.';
 const phoneSecretStatus = () =>
   Object.fromEntries(PHONE_ALERT_SECRETS.map((secret) => [secret, Boolean(phoneSecrets[secret])])) as Record<PhoneAlertSecret, boolean>;
 
