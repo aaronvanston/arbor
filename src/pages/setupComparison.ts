@@ -31,16 +31,26 @@ export const storeSetupHome = (key: string) => store(HOME_KEY, key);
 
 /** What the next Checks to open shows in its table; only for that one visit, so it's not stored. */
 let pendingShow: string | null = null;
+/** Whether the next Overview to open starts at Compare machines, for a machine's page's Compare in Sync. */
+let pendingCompare = false;
 
 /**
  * Sets what Checks opens on, as picking them there would: the machine it compares with and the agent home whose table
  * it shows. For a link from elsewhere (a machine's page) that opens Checks on a comparison. `show` is one thing to
  * show in that table, as its Show in the table does: searched for, with matching copies too, and scrolled to.
  */
-export function rememberSetupComparison({ reference, home, show }: { reference?: string | null; home?: string | null; show?: string }) {
+export function rememberSetupComparison({ reference, home, show, compare = false }: { reference?: string | null; home?: string | null; show?: string; compare?: boolean }) {
   if (reference) storeSetupReference(reference);
   if (home) storeSetupHome(home);
   pendingShow = show ?? null;
+  pendingCompare = compare;
+}
+
+/** Whether a link asked Overview to start at Compare machines, once. */
+export function takeSetupCompare() {
+  const compare = pendingCompare;
+  pendingCompare = false;
+  return compare;
 }
 
 /** The thing a link asked Checks to show, once. */

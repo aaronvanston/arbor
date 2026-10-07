@@ -67,7 +67,7 @@ import { SetupSkills } from './SetupSkills';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import type { ArchiveStatus, SetupItem, SetupMachine } from '../native/types';
 import { useAgo } from '../hooks/useNow';
-import { homeLabel, storedSetupHome, storedSetupReference, storeSetupHome, storeSetupReference, takeSetupShow } from './setupComparison';
+import { homeLabel, storedSetupHome, storedSetupReference, storeSetupHome, storeSetupReference, takeSetupCompare, takeSetupShow } from './setupComparison';
 
 // The directory reads marketplaces from GitHub and is opened now and then, so it loads on its own when it is.
 const SetupDirectory = lazy(() => import('./SetupDirectory').then((module) => ({ default: module.SetupDirectory })));
@@ -332,6 +332,8 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
   const [chosenHome, setChosenHome] = useState<string | null>(storedSetupHome);
   // A thing asked for from elsewhere is shown as Show in the table here shows it.
   const [asked] = useState(takeSetupShow);
+  // A machine's Compare in Sync starts at Compare machines, where that machine's card is, rather than at the top.
+  const [askedCompare] = useState(takeSetupCompare);
   const [onlyDifferences, setOnlyDifferences] = useState(asked === null);
   const [query, setQuery] = useState(asked ?? '');
   const [comparison, setComparison] = useState<Comparison | null>(null);
@@ -372,6 +374,13 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
     if (scrolledToShown.current || !tableRef.current) return;
     scrolledToShown.current = true;
     window.requestAnimationFrame(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  });
+  const compareRef = useRef<HTMLHeadingElement>(null);
+  const scrolledToCompare = useRef(!askedCompare || asked !== null);
+  useEffect(() => {
+    if (scrolledToCompare.current || !compareRef.current) return;
+    scrolledToCompare.current = true;
+    window.requestAnimationFrame(() => compareRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   });
 
   const machines = useMemo(() => inventory?.machines ?? [], [inventory]);
@@ -628,7 +637,7 @@ export function SetupPage({ params, onNavigate, onViewChange }: {
                 onCompare={compareCopies}
               />
             ) : null}
-            <h2 className="mt-4 text-sm font-normal tracking-title text-foreground/70">{t('overview.compare.title')}</h2>
+            <h2 ref={compareRef} className="mt-4 scroll-mt-4 text-sm font-normal tracking-title text-foreground/70">{t('overview.compare.title')}</h2>
             <p className="-mt-3 max-w-3xl text-xs leading-[1.5] text-muted-foreground">
               {tRich(compared ? 'setup.intro' : 'setup.introOne', { machine: <MachinePill name={reference} size="sm" /> })}
             </p>

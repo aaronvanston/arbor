@@ -121,8 +121,8 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
     if (tab === 'skills' || tab === 'plugins') setSyncMachine(machine);
     onNavigate(tab === 'repo' ? setupView({ tab }) : movedSetupView(tab) ?? setupView());
   };
-  const openChecks = (reference: string | null, home: string | null) => {
-    rememberSetupComparison({ reference, home });
+  const openChecks = (reference: string | null, home: string | null, compare = false) => {
+    rememberSetupComparison({ reference, home, compare });
     onNavigate(setupChecksView());
   };
   const compareCopies = (check: SetupCheck, subject: SetupCheckSubject) => {
@@ -322,7 +322,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           <SettingsSection
             title={t('machine.setup.title')}
             headerAction={(
-              <Button variant="ghost-muted" size="sm" onClick={() => openChecks(null, standing.reference === name ? null : standing.homes[0]?.key ?? null)}>
+              <Button variant="ghost-muted" size="sm" onClick={() => openChecks(null, standing.reference === name ? null : standing.homes[0]?.key ?? null, standing.reference !== name)}>
                 {t(standing.reference === name ? 'machine.setup.open' : 'machine.setup.compare')}
                 <ArrowUpRight />
               </Button>
