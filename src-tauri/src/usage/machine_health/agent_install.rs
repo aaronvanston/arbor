@@ -249,6 +249,9 @@ pub(crate) fn uninstall_plan(agent: Option<AgentKind>, path: &str, real: &str, h
             let folder = format!("{home}/.local/share/claude");
             return (path == format!("{home}/.local/bin/claude") && real.starts_with(&format!("{folder}/"))).then(|| Uninstall::Native { link: path.into(), folder });
         }
+        // Codex's standalone installer keeps each version under <CODEX_HOME>/packages/standalone and links its command
+        // to the current one; only that folder and the link are set aside. Everything else in CODEX_HOME is the home
+        // (sessions, settings, sign-in), which is the agent homes list's to keep or remove, not the installer's.
         Some(AgentKind::Codex) if is_native(AgentKind::Codex, path) || is_native(AgentKind::Codex, real) => {
             let at = real.find("/packages/standalone/")?;
             let folder = format!("{}/packages/standalone", &real[..at]);

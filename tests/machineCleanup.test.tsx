@@ -6,7 +6,7 @@ import { mockCommands } from '../src/dev/mock/answers';
 import { I18nProvider, translate, translateRich } from '../src/i18n';
 import { outcomeText } from '../src/pages/SetupSync';
 import { CleanupContent, type CleanupProblem } from '../src/pages/MachineCleanup';
-import { allArchived, archiveLine, cleanupView, deleteSetAside, lastRoutedCopy, removalAsks, removeCleanup, restoreSetAside, uninstallAgent } from '../src/services/cleanup';
+import { allArchived, archiveLine, cleanupView, deleteSetAside, lastRoutedCopy, nextCopy, removalAsks, removeCleanup, restoreSetAside, uninstallAgent } from '../src/services/cleanup';
 import { readCommandError } from '../src/services/commandError';
 import type { CleanupAgent, CleanupHome, CleanupScan, HomeArchive, SetAsideItem } from '../src/native/types';
 import { itemAt } from './support/items';
@@ -133,6 +133,11 @@ describe('a machine’s clean-up', () => {
     expect(lastRoutedCopy({ harness: 'codex', onlyCopy: true }, false)).toBe(false);
     expect(lastRoutedCopy({ harness: 'codex', onlyCopy: false }, true)).toBe(false);
     expect(lastRoutedCopy({ harness: 'openCode', onlyCopy: true }, true)).toBe(false);
+    const first = agent('/opt/homebrew/bin/codex', { removal: 'packageManager', onlyCopy: false });
+    const second = agent('~/.local/bin/codex', { first: false, version: '0.150.0', onlyCopy: false });
+    expect(nextCopy([first, second], first)).toBe(second);
+    expect(nextCopy([first, second], second)).toBeNull();
+    expect(nextCopy([first], first)).toBeNull();
   });
 
   it('lists what is set aside with Restore, Delete for good and the drive it is kept on', () => {

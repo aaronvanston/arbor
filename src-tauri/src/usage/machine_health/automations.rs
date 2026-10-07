@@ -340,3 +340,9 @@ pub(crate) struct AutomationDraftInput {
     pub(crate) machine: Option<String>,
     pub(crate) project_path: Option<String>,
 }
+
+/// Whether an enabled Arbor automation is aimed at `machine` by name, for the clean-up to say what uninstalling its last
+/// agent would stop.
+pub(crate) fn aimed_at(connection: &Connection, machine: &str) -> Result<bool, String> {
+    Ok(store::records(connection)?.iter().any(|record| record.enabled && matches!(&record.input.target, AutomationTarget::Machine { name } if name == machine)))
+}

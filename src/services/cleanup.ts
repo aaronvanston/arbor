@@ -60,6 +60,15 @@ export const GROUP_LABEL: Record<CleanupGroup, MessageKey> = {
  * Whether uninstalling an agent takes a machine's last copy of Claude Code or Codex, on a machine Arbor routes work to
  * (one in a pool): its confirmation says the machine will no longer run it.
  */
+/**
+ * The copy of an agent's harness that runs instead once `agent`, the first on the PATH, comes off; none when it isn't
+ * the first or no other copy is there.
+ */
+export function nextCopy(agents: readonly CleanupAgent[], agent: CleanupAgent): CleanupAgent | null {
+  if (!agent.first) return null;
+  return agents.find((other) => other !== agent && other.harness === agent.harness) ?? null;
+}
+
 export const lastRoutedCopy = (agent: Pick<CleanupAgent, 'harness' | 'onlyCopy'>, routed: boolean) =>
   routed && agent.onlyCopy && (agent.harness === 'claude' || agent.harness === 'codex');
 

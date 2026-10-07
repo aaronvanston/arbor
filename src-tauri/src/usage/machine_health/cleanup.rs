@@ -360,7 +360,7 @@ pub(crate) struct CleanupScan {
     pub(crate) aside: Vec<SetAsideItem>,
     /// The scan ran out of time before measuring everything.
     pub(crate) partial: bool,
-    /// The machine is in a pool, so Arbor routes work to it.
+    /// Arbor routes work to the machine: it's in a pool, or an automation is aimed at it.
     pub(crate) routed: bool,
     #[serde(skip)]
     home_dir: String,
@@ -1607,12 +1607,16 @@ pub(crate) async fn delete_set_aside(
 
 const UNINSTALL_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Whether the machine is in a pool, so Arbor routes work to it.
+/// Whether Arbor routes work to the machine: it's in a pool, or an automation is aimed at it.
 async fn routed(machine: &str) -> bool {
     let machine = machine.to_string();
-    run_usage_task(|| super::pools::read_pools(&open_usage_database()?))
-        .await
-        .is_ok_and(|pools| pools.iter().any(|pool| pool.members.iter().any(|member| member.machine == machine)))
+    run_usage_task(move || {
+        let connection = open_usage_database()?;
+        let pooled = super::pools::read_pools(&connection)?.iter().any(|pool| pool.members.iter().any(|member| member.machine == machine));
+        Ok(pooled || super::automations::aimed_at(&connection, &machine)?)
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// What uninstalling an agent did.
@@ -1669,7 +1673,12 @@ fn uninstall_script(stamp: &str, abs: &str, real: &str, plan: &Uninstall, binary
              \x20 PNPM_HOME=${{PNPM_HOME:-$(dirname {path})}}; PATH=\"$PNPM_HOME:$PATH\"; export PNPM_HOME PATH\n\
              \x20 pm=$(command -v pnpm 2>/dev/null || true)\n\
              \x20 if [ -z \"$pm\" ]; then refuse nopm\n\
-             \x20 else case {real} in */node_modules/\"$pkg\"/*) run_pm \"$pm\" remove -g \"$pkg\" ;; *) refuse notowned ;; esac; fi\n",
+             \x20 else case {real} in\n\
+             \x20   */node_modules/\"$pkg\"/*)\n\
+             \x20     # pnpm has to list the package among its own globals, as brew has to own its keg.\n\
+             \x20     if \"$pm\" ls -g --depth=0 --json </dev/null 2>/dev/null | grep -F \"\\\"$pkg\\\"\" >/dev/null; then run_pm \"$pm\" remove -g \"$pkg\"; else refuse notowned; fi ;;\n\
+             \x20   *) refuse notowned ;;\n\
+             \x20 esac; fi\n",
             q(package)
         ),
         Uninstall::Homebrew { prefix, cask, name } => format!(
@@ -2201,6 +2210,39 @@ mod tests {
                 let entry = backups.iter().find(|backup| backup.id == "20261007T010203Z-0a02").unwrap();
                 assert_eq!(serde_json::to_value(entry).unwrap()["what"], "uninstall", "{shell}");
                 assert_eq!(serde_json::to_value(entry).unwrap()["files"][0]["path"], "~/brew/bin/codex", "{shell}");
+                let _ = fs::remove_dir_all(&home);
+            }
+        }
+
+        #[test]
+        fn a_pnpm_install_is_uninstalled_only_once_pnpm_lists_it_among_its_globals() {
+            for shell in shells() {
+                let home = temp_home(&format!("pnpm-{shell}"));
+                let global = home.join("Library/pnpm");
+                let entry = global.join("global/5/.pnpm/@earendil+pi@0.9.1/node_modules/@earendil/pi/dist/cli.js");
+                write(&entry, SECRET);
+                std::os::unix::fs::symlink(&entry, global.join("pi")).unwrap();
+                let pnpm = |owns: bool| {
+                    shim(
+                        &global.join("pnpm"),
+                        &format!(
+                            "echo \"$@\" >> \"$HOME/pnpm.log\"\ncase \"$1\" in\n  ls) echo '[{{\"dependencies\":{{{}}}}}]' ;;\n  remove) rm -rf '{}' ;;\nesac",
+                            if owns { "\"@earendil/pi\":{\"version\":\"0.9.1\"}" } else { "" },
+                            global.join("pi").display()
+                        ),
+                    )
+                };
+                let abs = global.join("pi").display().to_string();
+                let plan = uninstall_plan(None, &abs, &entry.display().to_string(), &home.display().to_string()).unwrap();
+                assert_eq!(plan, Uninstall::Pnpm { package: "@earendil/pi".into() });
+                pnpm(false);
+                let stdout = run_with(shell, &home, "/usr/bin:/bin", &uninstall_script("20261007T010203Z-0c01", &abs, &entry.display().to_string(), &plan, "pi", false));
+                assert_eq!(parse_pm(&stdout).refused.as_deref(), Some("notowned"), "{shell}: {stdout}");
+                assert!(!fs::read_to_string(home.join("pnpm.log")).unwrap().contains("remove"), "{shell}: nothing ran");
+                pnpm(true);
+                let stdout = run_with(shell, &home, "/usr/bin:/bin", &uninstall_script("20261007T010203Z-0c02", &abs, &entry.display().to_string(), &plan, "pi", false));
+                assert!(parse_pm(&stdout).ok, "{shell}: {stdout}");
+                assert!(fs::read_to_string(home.join("pnpm.log")).unwrap().contains("remove -g @earendil/pi"), "{shell}");
                 let _ = fs::remove_dir_all(&home);
             }
         }

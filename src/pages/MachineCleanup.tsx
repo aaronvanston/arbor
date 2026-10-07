@@ -15,6 +15,7 @@ import {
   deleteSetAside,
   getCleanup,
   lastRoutedCopy,
+  nextCopy,
   removalAsks,
   removeCleanup,
   uninstallAgent,
@@ -148,12 +149,17 @@ export function MachineCleanup({ machine, pill }: { machine: string; pill: React
     // A package manager's uninstall can't be undone, so it asks first, naming the command. Its own installer's copy is
     // set aside, with Undo.
     if (agent.removal === 'packageManager') {
+      const next = nextCopy(scan?.agents ?? [], agent);
+      const warnings = [
+        lastRoutedCopy(agent, scan?.routed ?? false) ? t('machine.cleanup.agent.ask.lastCopy', { name: machine, agent: name }) : null,
+        next ? (next.version ? t('machine.cleanup.agent.ask.nextCopy', { path: next.path, version: next.version }) : t('machine.cleanup.agent.ask.nextCopyUnknown', { path: next.path })) : null,
+      ].filter(Boolean);
       const confirmed = await askConfirmation({
         variant: 'danger',
         title: t('machine.cleanup.agent.ask.title', { agent: name, name: machine }),
         message: tRich('machine.cleanup.agent.ask.message', { machine: <MachinePill name={machine} size="md" /> }),
         details: [{ label: t('machine.cleanup.agent.ask.command'), value: agent.command ?? '' }],
-        warning: lastRoutedCopy(agent, scan?.routed ?? false) ? t('machine.cleanup.agent.ask.lastCopy', { name: machine, agent: name }) : undefined,
+        warning: warnings.length ? warnings.join(' ') : undefined,
         confirmText: t('machine.cleanup.agent.ask.confirm'),
       });
       if (!confirmed) return;

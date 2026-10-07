@@ -1181,7 +1181,7 @@ export type CleanupScan = {
    */
   partial: boolean,
   /**
-   * The machine is in a pool, so Arbor routes work to it.
+   * Arbor routes work to the machine: it's in a pool, or an automation is aimed at it.
    */
   routed: boolean,
 };
