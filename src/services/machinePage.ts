@@ -30,8 +30,9 @@ export function setupStanding(machines: SetupMachine[], name: string, chosenRefe
 /**
  * Whether a machine's page opens on "Bring … in line", and whether its steps start folded. It's there for a machine
  * with no host, one never scanned, and one that differs from the reference or has problems; not for the reference
- * itself, nor before the scans have loaded. Its steps are open for a machine still being set up (no host, no scan) and
- * folded for one that's only drifted, so its health stays in sight.
+ * itself, nor before the scans have loaded. Its steps are open for a machine still being set up (no host, no scan, or
+ * `quiet`: no requests from its agents through the proxy yet in the range) and folded for one that's only drifted, so
+ * its health stays in sight.
  */
 export function checklistOnPage(
   status: HealthStatus | null,
@@ -39,9 +40,10 @@ export function checklistOnPage(
   standing: SetupStanding,
   loaded: boolean,
   name: string,
+  quiet = false,
 ): { show: boolean; folded: boolean } {
   if (!loaded || standing.reference === name) return { show: false, folded: false };
-  const settingUp = status === 'unconfigured' || !scanned || (scanned.scannedAt === null && !scanned.homes.length);
+  const settingUp = status === 'unconfigured' || !scanned || (scanned.scannedAt === null && !scanned.homes.length) || quiet;
   return { show: settingUp || standing.differences > 0 || standing.problems > 0, folded: !settingUp };
 }
 

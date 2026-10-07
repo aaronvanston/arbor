@@ -58,6 +58,8 @@ describe('the checklist on a machine’s page', () => {
     expect(checklistOnPage('unconfigured', null, same, true, 'lab')).toEqual({ show: true, folded: false });
     expect(checklistOnPage('healthy', null, same, true, 'lab')).toEqual({ show: true, folded: false });
     expect(checklistOnPage('healthy', machine('lab', [], { scannedAt: null }), same, true, 'lab')).toEqual({ show: true, folded: false });
+    // Read, and different from the reference, but its agents haven't come through the proxy yet.
+    expect(checklistOnPage('healthy', box, drifted, true, 'box', true)).toEqual({ show: true, folded: false });
   });
 
   it('is there but folded for a machine that has only drifted, or has problems', () => {

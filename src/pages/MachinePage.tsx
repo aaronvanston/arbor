@@ -89,7 +89,10 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
 
   const unconfigured = item?.status === 'unconfigured';
   const problem = item ? healthProblem(item, t) : null;
-  const checklist = checklistOnPage(item?.status ?? null, scanned, standing, inventory !== null, name);
+  // A machine whose agents haven't come through the proxy in the range is still being set up, however its setup reads.
+  const quiet = overview !== null && machineUsageTotal(overview.machines, name) === null;
+  // Its steps start open or folded once, so it waits for the usage that says which.
+  const checklist = checklistOnPage(item?.status ?? null, scanned, standing, inventory !== null && overview !== null, name, quiet);
   // A machine never scanned isn't in the inventory yet: the checklist starts from it known only by its name, and its
   // first step says why it isn't answering (no host, or not yet).
   const standIn: SetupMachine = scanned ?? {
