@@ -16,6 +16,7 @@ import {
   useTelemetrySpan,
   type TelemetrySpan,
 } from '../services/agentTelemetry';
+import { plainError } from '../services/plainError';
 import { STARTING_CONTEXT_DAYS } from '../services/startingContext';
 import { SetupContext } from './SetupContext';
 import { TelemetryView } from './UsageTelemetryView';
@@ -59,9 +60,10 @@ export function SetupCost({ machines, homeLabel, machine, reads, onNavigate }: {
       setTelemetry({ span, machine, data });
       setError(null);
     } catch (failure) {
-      if (current()) setError(String(failure));
+      // The raw words name a table and SQLite's state; the sentence says what happened and what to do.
+      if (current()) setError(plainError(failure, t));
     }
-  }, [span, machine]);
+  }, [span, machine, t]);
   useEffect(() => {
     let live = true;
     const current = () => live;

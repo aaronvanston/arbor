@@ -23,6 +23,7 @@ import {
 } from '../services/startingContext';
 import type { SetupMachine, StartingContext } from '../native/types';
 import { FixMenu } from '../components/FixMenu';
+import { plainError } from '../services/plainError';
 import { startingContextProblem } from '../services/fixPrompt';
 import { MachinePill, ModelName } from '../components/identity/Identity';
 import { MetaLine } from '../components/MetaLine';
@@ -55,8 +56,8 @@ export function SetupContext({ machines, machine = null, homeLabel }: {
     setNowMs(now);
     getStartingContext(now - STARTING_CONTEXT_DAYS * DAY_MS, now + 60_000)
       .then((next) => { setData(next); setError(null); })
-      .catch((failure) => setError(String(failure)));
-  }, []);
+      .catch((failure) => setError(plainError(failure, t)));
+  }, [t]);
   useEffect(() => {
     load();
     let unlisten: (() => void) | null = null;
