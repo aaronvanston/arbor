@@ -4584,6 +4584,8 @@ export const en = {
   'usage.request.effort': 'Reasoning effort',
   'usage.request.serviceTier': 'Service tier',
   'usage.request.authType': 'Sign-in type',
+  'usage.request.authType.oauth': 'Account sign-in',
+  'usage.request.authType.apiKey': 'API key',
   'usage.request.endpoint': 'Endpoint',
   'usage.request.userAgent': 'User agent',
   'usage.request.requestId': 'Request id',

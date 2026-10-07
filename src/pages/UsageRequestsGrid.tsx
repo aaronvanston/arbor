@@ -1,5 +1,5 @@
 import { createColumnHelper } from '@tanstack/react-table';
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { AccountAvatar } from '../components/AccountAvatar';
 import { ClientPill, MachinePill, ModelName, ProviderPill } from '../components/identity/Identity';
 import { Button } from '../components/ui/button';
@@ -27,6 +27,7 @@ import {
   defaultRequestsLayout,
   failureSummary,
   legacyRequestsLayout,
+  authTypeLabel,
   readableFailureBody,
   requestJson,
   requestOrderFor,
@@ -38,6 +39,8 @@ import type { UsageEventPage, UsageRecord, UsageRequestOrder } from '../native/t
 import { useShownIdentity } from '../services/emailPrivacy';
 
 const helper = createColumnHelper<DataGridFeatures, UsageRecord>();
+/** The server lists requests newest first when no order is picked. */
+const NEWEST_FIRST = { column: 'time', descending: true };
 const columnSize = new Map(REQUEST_COLUMNS.map((column) => [column.id, column]));
 
 const Muted = ({ children }: { children: ReactNode }) => <span className="text-muted-foreground">{children}</span>;
@@ -220,6 +223,12 @@ export function RequestsView({ events, filters, summary, failedOnly = false, pag
   const { t } = useI18n();
   // The request whose detail is open. It's the record itself, so it stays open while its page refreshes or turns.
   const [open, setOpen] = useState<UsageRecord | null>(null);
+  const rows = useRef<HTMLDivElement>(null);
+  // Closing the detail hands the focus back to the row it was opened from, so the keyboard keeps its place.
+  const closeDetail = () => {
+    rows.current?.querySelector<HTMLElement>('tbody tr[data-active]')?.focus({ preventScroll: true });
+    setOpen(null);
+  };
   const columns = useRequestColumns();
   const grid = useDataGrid({
     data: events?.items ?? NO_RECORDS,
@@ -263,13 +272,14 @@ export function RequestsView({ events, filters, summary, failedOnly = false, pag
         <TableSkeleton surface="page" />
       ) : events.items.length ? (
         <div
+          ref={rows}
           className="relative flex min-h-0 flex-1"
           onKeyDown={(event: KeyboardEvent) => {
             if (!open || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
             // Keys pressed in a menu or a field are theirs.
             if (event.target instanceof Element && event.target.closest('input, textarea, [role="menu"], [role="listbox"]')) return;
             if (event.key === 'Escape') {
-              setOpen(null);
+              closeDetail();
             } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
               const next = steppedRecord(events.items, open.id, event.key === 'ArrowDown' ? 1 : -1);
               if (!next) return;
@@ -284,11 +294,12 @@ export function RequestsView({ events, filters, summary, failedOnly = false, pag
             surface="page"
             className="min-h-0 min-w-0 flex-1"
             sorting={requestSortColumn(order)}
+            unsorted={NEWEST_FIRST}
             onSortingChange={(sorting) => onOrderChange(requestOrderFor(sorting))}
             onRowClick={(record) => setOpen((current) => (current?.id === record.id ? null : record))}
             activeRowId={open?.id ?? null}
           />
-          {open ? <RequestDetail record={open} onClose={() => setOpen(null)} /> : null}
+          {open ? <RequestDetail record={open} onClose={closeDetail} /> : null}
         </div>
       ) : (
         <div className="flex flex-1 items-center justify-center">{empty}</div>
@@ -407,7 +418,7 @@ export function RequestDetail({ record, onClose }: { record: UsageRecord; onClos
           <DetailRow label={t('usage.column.provider')}>{record.provider ? <ProviderPill provider={record.provider} /> : <Muted>—</Muted>}</DetailRow>
           <DetailRow label={t('usage.request.effort')}>{record.reasoning_effort || 'auto'}</DetailRow>
           {tier.length ? <DetailRow label={t('usage.request.serviceTier')}>{tier.join(' → ')}</DetailRow> : null}
-          <DetailRow label={t('usage.request.authType')}>{orDash(record.auth_type)}</DetailRow>
+          <DetailRow label={t('usage.request.authType')}>{authTypeLabel(record.auth_type, t) || <Muted>—</Muted>}</DetailRow>
           <DetailRow label={t('usage.request.endpoint')} className="font-mono text-xs">{orDash(record.endpoint)}</DetailRow>
         </DetailSection>
         <DetailSection title={t('usage.request.section.network')}>

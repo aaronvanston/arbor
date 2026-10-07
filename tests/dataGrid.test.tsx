@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { createColumnHelper } from '@tanstack/react-table';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DataGrid, opensRow, useDataGrid, type DataGridColumnDef, type DataGridFeatures } from '../src/components/ui/data-grid/data-grid';
+import { columnOrder, DataGrid, opensRow, useDataGrid, type DataGridColumnDef, type DataGridFeatures } from '../src/components/ui/data-grid/data-grid';
 import { applyPreset, gridLayout, matchingPreset, sanitizeGridLayout } from '../src/components/ui/data-grid/data-grid-layout';
 import { I18nProvider } from '../src/i18n';
 import { RequestDetail, RequestsView } from '../src/pages/UsageRequestsGrid';
 import type { UsageEventPage, UsageRecord, UsageRequestOrder } from '../src/native/types';
 import {
   REQUEST_COLUMNS,
+  authTypeLabel,
   REQUEST_PRESETS,
   REQUESTS_GRID_KEY,
   defaultRequestsLayout,
@@ -247,6 +248,27 @@ describe('requests grid view', () => {
     expect(steppedRecord(rows, 'c', 1)).toBeUndefined();
     expect(steppedRecord(rows, 'a', -1)).toBeUndefined();
     expect(steppedRecord(rows, 'gone', 1)).toBeUndefined();
+  });
+});
+
+describe('the order a column’s menu checks', () => {
+  it('is the sort picked, or with none, the order the rows come in', () => {
+    const newest = { column: 'time', descending: true };
+    expect(columnOrder('time', null, newest)).toEqual(newest);
+    expect(columnOrder('time', { column: 'time', descending: false }, newest)).toEqual({ column: 'time', descending: false });
+    // Sorted by another column, time is in no order of its own.
+    expect(columnOrder('time', { column: 'input', descending: true }, newest)).toBeNull();
+    expect(columnOrder('input', null, newest)).toBeNull();
+  });
+});
+
+describe('the sign-in type', () => {
+  it('reads in words, and keeps what it doesn’t know as the core said it', () => {
+    const t = (key: string) => key;
+    expect(authTypeLabel('oauth', t)).toBe('usage.request.authType.oauth');
+    expect(authTypeLabel('apikey', t)).toBe('usage.request.authType.apiKey');
+    expect(authTypeLabel('vertex', t)).toBe('vertex');
+    expect(authTypeLabel(' ', t)).toBe('');
   });
 });
 

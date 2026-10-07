@@ -1,5 +1,6 @@
 import { gridLayout, type DataGridLayout } from '../components/ui/data-grid/data-grid-layout';
 import type { UsageRecord, UsageRequestOrder, UsageRequestSortKey } from '../native/types';
+import type { MessageKey, MessageVariables } from '../i18n/resources';
 
 /** The columns of Usage › Requests. */
 export type RequestColumnId =
@@ -206,4 +207,18 @@ export function saveRequestOrder(storage: Pick<Storage, 'setItem' | 'removeItem'
 /** A request as JSON to paste into an issue or a chat: what the grid and sheet show, in the proxy's own field names. */
 export function requestJson(record: UsageRecord): string {
   return JSON.stringify(record, null, 2);
+}
+
+const AUTH_TYPE_KEYS: Record<string, MessageKey> = {
+  oauth: 'usage.request.authType.oauth',
+  apikey: 'usage.request.authType.apiKey',
+  'api-key': 'usage.request.authType.apiKey',
+  api_key: 'usage.request.authType.apiKey',
+};
+
+/** How the core signed the request in, in words: an account's sign-in or an API key; anything else as the core said it. */
+export function authTypeLabel(authType: string, t: (key: MessageKey, variables?: MessageVariables) => string): string {
+  const value = authType.trim();
+  const key = AUTH_TYPE_KEYS[value.toLowerCase()];
+  return key ? t(key) : value;
 }

@@ -367,8 +367,9 @@ const usageRecords = Array.from({ length: realSize ? 1_000 : 25 }, (_, index): U
     timestamp: iso(-index * 240_000),
     latency_ms: 1_800 + (index * 731) % 6_000,
     ttft_ms: 320 + (index * 97) % 900,
-    source: claude ? 'claude-code' : 'codex-cli',
-    source_display: claude ? 'Claude Code' : 'Codex CLI',
+    // The core records the account's email as the source, as the Source filter lists them: claude-1 and codex-2 below.
+    source: claude ? 'cam@example.com' : 'team@example.com',
+    source_display: claude ? 'cam@example.com' : 'team@example.com',
     failed,
     canceled: false,
     failure_status: failed ? failureStatus : 0,

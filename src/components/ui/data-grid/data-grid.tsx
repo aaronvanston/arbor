@@ -50,9 +50,20 @@ export type DataGridColumnMeta = {
 /** The column rows are sorted by, and which way. */
 export type DataGridSort = { column: string; descending: boolean };
 
+/** The order `column`'s rows are in: the sort picked on it, or with none picked, the order they come in, if it's that column's. */
+export function columnOrder(column: string, sorting: DataGridSort | null, unsorted: DataGridSort | null): DataGridSort | null {
+  if (sorting) return sorting.column === column ? sorting : null;
+  return unsorted?.column === column ? unsorted : null;
+}
+
 /** What a grid's owner does with a sort picked from a column's menu, and a row opened by a click. */
 type GridActions<TData> = {
   sorting?: DataGridSort | null;
+  /**
+   * The order rows come in with no sort picked, like newest first. Its column's menu shows it checked, without the
+   * header's arrow, which marks a sort someone picked.
+   */
+  unsorted?: DataGridSort | null;
   /** A sort picked from a column's menu, or null when it's cleared. */
   onSortingChange?: (sorting: DataGridSort | null) => void;
   /** A row clicked, or picked with Enter; rows only take focus and a pointer when this is given. */
@@ -155,7 +166,7 @@ const EDGE_START: Record<TableSurface, string> = { page: 'ps-5', card: 'ps-4' };
 const EDGE_END: Record<TableSurface, string> = { page: 'pe-5', card: 'pe-4' };
 const HEAD_EDGE_START: Record<TableSurface, string> = { page: 'ps-4', card: 'ps-3' };
 
-export function DataGrid<TData extends RowData>({ grid, label, surface = 'page', className, sorting = null, onSortingChange, onRowClick, activeRowId = null, rowClassName }: GridActions<TData> & {
+export function DataGrid<TData extends RowData>({ grid, label, surface = 'page', className, sorting = null, unsorted = null, onSortingChange, onRowClick, activeRowId = null, rowClassName }: GridActions<TData> & {
   grid: DataGrid<TData>;
   /** What the table is, for screen readers. */
   label: string;
@@ -210,6 +221,7 @@ export function DataGrid<TData extends RowData>({ grid, label, surface = 'page',
                   first={index === 0}
                   edge={edgeClass(header.column, lastStart, firstEnd)}
                   sorting={sorting}
+                  unsorted={unsorted}
                   onSortingChange={onSortingChange}
                 />
               </Fragment>
@@ -327,8 +339,9 @@ const GridBody = memo(function GridBody<TData extends RowData>({ table, surface,
   );
 }, (previous, next) => next.frozen && previous.data === next.data && previous.activeRowId === next.activeRowId) as <TData extends RowData>(props: BodyProps<TData>) => ReactNode;
 
-function GridHead<TData extends RowData>({ header, table, surface, first, edge, sorting, onSortingChange }: Pick<GridActions<TData>, 'onSortingChange'> & {
+function GridHead<TData extends RowData>({ header, table, surface, first, edge, sorting, unsorted, onSortingChange }: Pick<GridActions<TData>, 'onSortingChange'> & {
   sorting: DataGridSort | null;
+  unsorted: DataGridSort | null;
   header: Header<Features, TData, unknown>;
   table: GridTable<TData>;
   surface: TableSurface;
@@ -349,17 +362,19 @@ function GridHead<TData extends RowData>({ header, table, surface, first, edge, 
     >
       {column.columnDef.meta?.fixed
         ? <span className="sr-only">{column.columnDef.meta.label}</span>
-        : <ColumnMenu header={header} table={table} sorted={sorted} onSortingChange={onSortingChange} />}
+        : <ColumnMenu header={header} table={table} sorted={sorted} shown={columnOrder(column.id, sorting, unsorted)} onSortingChange={onSortingChange} />}
       {column.getCanResize() && !column.columnDef.meta?.fixed ? <ResizeHandle header={header} /> : null}
     </th>
   );
 }
 
 /** The header is a button: its menu pins, moves, resets or hides the column. */
-function ColumnMenu<TData extends RowData>({ header, table, sorted, onSortingChange }: {
+function ColumnMenu<TData extends RowData>({ header, table, sorted, shown, onSortingChange }: {
   header: Header<Features, TData, unknown>;
   table: GridTable<TData>;
   sorted: DataGridSort | null;
+  /** The order the column's rows are in: the sort picked, or the one they come in with none. */
+  shown: DataGridSort | null;
   onSortingChange: ((sorting: DataGridSort | null) => void) | undefined;
 }) {
   const { t } = useI18n();
@@ -418,7 +433,7 @@ function ColumnMenu<TData extends RowData>({ header, table, sorted, onSortingCha
         {sortKind && onSortingChange ? (
           <>
             <MenuRadioGroup
-              value={sorted ? (sorted.descending ? 'descending' : 'ascending') : ''}
+              value={shown ? (shown.descending ? 'descending' : 'ascending') : ''}
               onValueChange={(value) => onSortingChange({ column: column.id, descending: value === 'descending' })}
             >
               <MenuRadioItem value="ascending" closeOnClick>
