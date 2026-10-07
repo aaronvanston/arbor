@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
-import { libraryCounts, libraryItemName, libraryKindProblems, libraryList, libraryRowProblems, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
+import { libraryCounts, libraryItemName, libraryRepoFile, libraryKindProblems, libraryList, libraryRowProblems, libraryRows, libraryScope, type LibraryRow } from '../src/services/library';
 import { addPlugin, behindHomes, bringInLine, inverseChanges, linePlans, marketplaceEverywhere, marketplaceHomes, takeIntoRepo, takeSources, updatePlugin, lineUp, relisted, removeEverywhere, switchFile, switchHook, switchMachine, switchServer, togglePlugin, undoToggle } from '../src/services/libraryToggle';
 import { withRegistry } from '../src/services/setupMcp';
 import { directoryEntries, directorySources } from '../src/services/directory';
@@ -282,6 +282,14 @@ describe('an item’s own page', () => {
     expect(libraryItemName('hook:repo:guard')).toBe('guard');
     expect(libraryItemName('hook:extra:SessionStart\u0000old.sh')).toBe('old.sh');
     expect(libraryItemName('file:~/.claude/commands/ship.md')).toBe('ship.md');
+  });
+
+  it('opens a listed plugin, a skill or an instructions file in the repo, and nothing the repo doesn’t list', () => {
+    expect(libraryRepoFile({ kind: 'plugins', name: 'review', detail: 'acme-tools', state: 'on' })).toBe('.agents/plugins.json');
+    expect(libraryRepoFile({ kind: 'plugins', name: 'context7', detail: 'official', state: 'unlisted' })).toBeNull();
+    expect(libraryRepoFile({ kind: 'skills', name: 'pdf', detail: null, state: 'on' })).toBe('.agents/skills/pdf/SKILL.md');
+    expect(libraryRepoFile({ kind: 'instructions', name: 'CLAUDE.md', detail: '~/.claude/CLAUDE.md', state: 'on' })).toBe('.claude/CLAUDE.md');
+    expect(libraryRepoFile({ kind: 'mcps', name: 'linear', detail: null, state: 'on' })).toBeNull();
   });
 
   it('says for each machine what the repo wants there, its own value, and which homes have it', () => {

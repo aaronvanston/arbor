@@ -3,6 +3,8 @@ import { machineColumns, pluginSummary } from './pluginGrid';
 import { mcpSummary } from './mcpGrid';
 import { HOOK_AGENT_KINDS, hookAgents, hookRows, hookSummary } from './setupHooks';
 import { isRemovedServer } from './setupMcp';
+import { skillFolder } from './repoBrowser';
+import { PLUGINS_FILE } from './setupPluginRepo';
 import { removableKind } from './setupSync';
 import { isCodexOwnMarketplace, type ExtensionsView, type PluginRow } from './setupPlugins';
 import { fleetSkills, repoSkillState, type FleetSkillRow } from './setupSkills';
@@ -64,6 +66,18 @@ export type LibraryRow = {
   places: Record<string, LibraryPlace>;
   toggle: LibraryToggle | null;
 };
+
+/**
+ * The repo file an item page's "Open in the repo" opens: a skill's SKILL.md, an instructions file, or the plugins list
+ * a listed plugin is in. Nothing for a row the repo doesn't list.
+ */
+export function libraryRepoFile(row: Pick<LibraryRow, 'kind' | 'name' | 'detail' | 'state'>): string | null {
+  if (row.state === 'unlisted') return null;
+  if (row.kind === 'skills') return `${skillFolder(row.name)}/SKILL.md`;
+  if (row.kind === 'instructions' && row.detail) return row.detail.replace(/^~\//, '');
+  if (row.kind === 'plugins') return PLUGINS_FILE;
+  return null;
+}
 
 /**
  * One machine's part of a row. `own`: the machine's own value in the repo (on, off, its own copy, removed), when it has

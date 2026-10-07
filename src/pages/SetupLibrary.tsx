@@ -20,11 +20,10 @@ import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
-import { LIBRARY_KINDS, libraryCounts, libraryKindProblems, libraryList, libraryRowProblems, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
+import { LIBRARY_KINDS, libraryCounts, libraryRepoFile, libraryKindProblems, libraryList, libraryRowProblems, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
 import { behindHomes, removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, undoLineRun, type LibrarySwitch, type SwitchFailure, type SwitchSources, type UndoResult } from '../services/libraryToggle';
 import { plainError } from '../services/plainError';
 import { machinesChangedText, switchFailureText, switchToast, undoToast } from '../services/switchReport';
-import { skillFolder } from '../services/repoBrowser';
 import { LibraryItemPage, type LibraryActions } from './SetupLibraryItem';
 import type { SetupMachine, SetupRepo } from '../native/types';
 import type { LibrarySources } from '../hooks/useLibrary';
@@ -343,7 +342,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   };
   const actionsFor = (row: LibraryRow): LibraryActions => {
     const target = row.toggle;
-    const repoFile = row.kind === 'skills' ? `${skillFolder(row.name)}/SKILL.md` : row.kind === 'instructions' && row.detail ? row.detail.replace(/^~\//, '') : null;
+    const repoFile = libraryRepoFile(row);
     return {
       running: running?.key ?? null,
       // The page has no List above it, so a hooks file Arbor can't read is said here too.
@@ -361,7 +360,7 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
         if (target) void perform(row, row.key, false, t('library.item.removedToast', { name: row.name }), (repo) => removeEverywhere(repo, machines, target));
       },
       onOpenByMachine,
-      onOpenInRepo: repoFile && row.state !== 'unlisted' ? () => onOpenInRepo(repoFile) : null,
+      onOpenInRepo: repoFile ? () => onOpenInRepo(repoFile) : null,
       takeFrom: takeSources(row, machines),
       onTake: (from) => void take(row, from),
       onUpdate: () => void update(row),

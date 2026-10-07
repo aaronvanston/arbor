@@ -2347,6 +2347,7 @@ export const en = {
   'library.item.health.check': 'Check connections',
   'library.item.health.unknown': 'not set up here',
   'library.item.health.failed': 'Couldn’t check some machines: {error}',
+  'library.item.unlistedPlugin': 'The repo doesn’t list this plugin, so each machine keeps its own. Add it to the repo to keep it on for every machine; Undo takes it back out.',
   'library.item.take.from': 'The copy to add',
   'library.item.take.button': 'Add to the repo',
   'library.item.take.title': 'Add {name} to the setup repo?',

@@ -165,6 +165,16 @@ export function LibraryItemPage({ row, machines, actions, children }: {
       </header>
       {actions.problems.map((text) => <p key={text} className="-mt-5 text-xs text-error-foreground">{text}</p>)}
       {row.state === 'unlisted' && row.kind !== 'plugins' ? <TakeIn row={row} actions={actions} /> : null}
+      {row.state === 'unlisted' && row.kind === 'plugins' && row.toggle ? (
+        // A plugin has no copy to pick: it's listed by its id, on for every machine, as its switch on the list does.
+        <div className="-mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3">
+          <p className="flex-1 text-sm text-muted-foreground">{t('library.item.unlistedPlugin')}</p>
+          <Button size="sm" disabled={busy} onClick={() => actions.onToggle(true)}>
+            {actions.running === row.key ? <Spinner className="size-3.5" /> : null}
+            {t('library.item.take.button')}
+          </Button>
+        </div>
+      ) : null}
       {older.length ? (
         <div className="-mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 text-sm">
           <span className="flex-1 text-muted-foreground">
