@@ -4155,6 +4155,7 @@ export const en = {
   'usage.sessions.stat.subagentsHint': 'Counted within the session that started them',
   'usage.sessions.stat.averageCost': 'Average cost',
   'usage.sessions.stat.averageCostHint': 'Per session · {total} estimated in all',
+  'usage.sessions.stat.averageCostNone': 'No sessions in this range',
   'usage.sessions.stat.noPrices': 'No prices for these models',
   'usage.sessions.untracked.one': '1 request in these filters has no session. It was recorded before the core tagged sessions.',
   'usage.sessions.untracked.other': '{count} requests in these filters have no session. They were recorded before the core tagged sessions.',

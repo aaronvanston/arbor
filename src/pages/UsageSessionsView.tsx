@@ -67,7 +67,14 @@ export function SessionsView({
         <StatBlock label={t('usage.sessions.stat.sessions')} value={formatCount(summary.sessions)} hint={t('usage.sessions.stat.sessionsHint', { requests: formatCount(summary.requests) })} />
         <StatBlock label={t('usage.sessions.stat.active')} value={formatCount(summary.active)} tone={summary.active ? 'success' : 'default'} hint={t('usage.sessions.stat.activeHint')} />
         <StatBlock label={t('usage.sessions.stat.subagents')} value={formatCount(summary.subagentThreads)} hint={t('usage.sessions.stat.subagentsHint')} />
-        <StatBlock label={t('usage.sessions.stat.averageCost')} value={formatMoney(priced ? averageCost : null)} hint={priced ? t('usage.sessions.stat.averageCostHint', { total: formatMoney(summary.estimatedCost) }) : t('usage.sessions.stat.noPrices')} />
+        {/* Without a session there's no average to take, which $0.00 would read as free. */}
+        <StatBlock
+          label={t('usage.sessions.stat.averageCost')}
+          value={!summary.sessions ? '—' : formatMoney(priced ? averageCost : null)}
+          hint={!summary.sessions
+            ? t('usage.sessions.stat.averageCostNone')
+            : priced ? t('usage.sessions.stat.averageCostHint', { total: formatMoney(summary.estimatedCost) }) : t('usage.sessions.stat.noPrices')}
+        />
       </StatsGrid>
       {summary.untrackedRequests > 0 ? (
         <p className="-mt-3 px-1 text-xs text-muted-foreground">
@@ -118,7 +125,8 @@ export function SessionsView({
             <TableBody>
               {sessions.items.map((item) => (
                 <TableRow key={item.id} className="cursor-pointer transition-colors hover:bg-muted/50 dark:hover:bg-input/16" onClick={() => onOpen(item.id)}>
-                  <TableCell className="w-full max-w-0 text-xs">
+                  {/* Past the columns that drop out, the name keeps enough room to read and the table scrolls instead. */}
+                  <TableCell className="w-full max-w-0 min-w-52 text-xs">
                     <SessionName session={item} onOpen={onOpen} />
                   </TableCell>
                   <TableCell className="text-xs">
