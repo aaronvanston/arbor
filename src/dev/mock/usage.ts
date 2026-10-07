@@ -1029,7 +1029,7 @@ const mockAgentAttention = (): AgentAttentionReport => {
 // What get_fleet_sources returns for the live fleet board: T3 Code's threads, the reporters' waits and the proxy
 // sessions active in the last six hours. On cam-mbp T3 Code has a Claude thread asking to run a command (the Claude
 // Code session a3f1…, whose reporter wait is the same one), one asking a question, a Codex plan ready to build and one
-// filed away; on cedar-02 a Codex thread is working. The reporters add a Codex session done with its turn and a
+// filed away; on cedar-02, which has no Codex, a Claude thread is working. The reporters add a Codex session done with its turn and a
 // Claude Code session on cedar-02 whose requests didn't come through Arbor; the proxy adds a Codex run on ci-runner
 // whose last request failed and a few idle sessions. `?fleet=` changes it (listed at the top).
 export const fleetScenario = params.get('fleet') ?? '';
@@ -1091,8 +1091,8 @@ const defaultT3Channels = (): T3Channel[] => {
     t3Channel('cedar-02', 12_000, [
       t3Thread({
         threadId: '6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e', projectId: 'd3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a', workspaceRoot: '/home/cam/src/billing',
-        provider: 'codex', sessionStatus: 'running', sessionUpdatedAtMs: now - 4 * 60_000, turn: t3Turn('running', 4),
-        latestUserMessageAtMs: now - 4 * 60_000, updatedAtMs: now - 30_000, agentSessionId: '0199b7c8-d9e0-7f1a-8b2c-3d4e5f6a7b8c',
+        sessionStatus: 'running', sessionUpdatedAtMs: now - 4 * 60_000, turn: t3Turn('running', 4),
+        latestUserMessageAtMs: now - 4 * 60_000, updatedAtMs: now - 30_000, agentSessionId: 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b',
       }),
     ]),
   ];

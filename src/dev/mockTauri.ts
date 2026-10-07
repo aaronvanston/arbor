@@ -98,7 +98,7 @@
  * Settings › Harnesses marks the rest not found and the automation dialog offers only Claude Code and Codex;
  * `?harness=none` for no T3 Code or Orca on any machine (each machine's page says no harness was found, and Settings ›
  * Harnesses has no card for either), and
- * `?t3=stopped` for T3 Code installed but not running on cam-mbp too;
+ * `?t3=stopped` for T3 Code installed but not running on cam-mbp and cedar-02;
  * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every
  * pool too busy to take a run (the preview says why each is left out), `?pools=stale` for every reading too old to
  * go by, and `?pools=open` for pools with every limit off; by default there are two pools, one spilling into the other;
@@ -321,7 +321,7 @@
  * couldn't.
  * For the live fleet board (`get_fleet_sources`): by default T3 Code on cam-mbp has a thread asking for approval
  * (the Claude Code session a3f1…, merged with its reporter wait), one asking a question, a Codex plan ready and one
- * filed away, and a Codex thread is working on cedar-02; the reporters add a Codex session done with its turn and
+ * filed away, and a Claude thread is working on cedar-02 (which has no Codex); the reporters add a Codex session done with its turn and
  * one on cedar-02 not through Arbor, and the proxy a failed Codex run on ci-runner and idle sessions.
  * `?fleet=empty` for nothing on the board, `t3down` for T3 Code's server not running on either machine (its database
  * still says running, so the work reads "last active" and the requests "can't be answered now", and Home's card has
@@ -329,7 +329,7 @@
  * T3 Code hasn't started a turn for yet ("starting"), `schema` for cam-mbp's database skipped at migration 57,
  * `older` for it at migration 30, `unrecognized` for a database whose migrations don't carry the names Arbor knows,
  * `unreadable` for one that couldn't be read, `nosqlite` for cedar-02 with T3 Code but no sqlite3, `snoozed` for
- * the question and the working Codex thread snoozed on the board (so the tray counts one) and the plan snoozed in T3
+ * the question and the working cedar-02 thread snoozed on the board (so the tray counts one) and the plan snoozed in T3
  * Code itself, `many` for 40 T3 Code threads across four machines, `fail` for every read failing (the board says so
  * with Retry), or `failafter` for reads failing after the first (the board keeps the last read and says so).
  * `?fleet=not3` for no machine with T3 Code, which hides T3 Code's switch in Settings › Machines and its notice here.

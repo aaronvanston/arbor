@@ -189,7 +189,7 @@ const healthPoint = (name: string, t: number): HealthPoint => {
       : Math.round((name === 'ci-01' ? 38 + 22 * wave(1.6, 2) : 2.2 + 3.5 * wave(2.7)) * 10) / 10,
     cpuTemp: name === 'cam-mbp' ? null : Math.round(48 + 30 * wave(1.3)), gpuTemp: name === 'cedar-02' ? Math.round(52 + 8 * wave(0.8)) : null,
     gpuUtil: name === 'cedar-02' ? Math.round(5 + 40 * wave(2.1)) : null, gpuMemUsedMb: null,
-    claudeRunning: name === 'cam-mbp' ? 3 : name === 'ci-01' ? 1 : 0, codexRunning: name === 'cam-mbp' ? 2 : name === 'cedar-02' ? 1 : 0,
+    claudeRunning: name === 'cam-mbp' ? 3 : name === 'ci-01' || name === 'cedar-02' ? 1 : 0, codexRunning: name === 'cam-mbp' ? 2 : 0,
   };
 };
 
@@ -337,8 +337,8 @@ function mockInstallAt(agent: AgentKind, version: string | null, home: string, m
 
 // T3 Code keeps its home on cam-mbp and cedar-02 (0.0.42, from its app); `?t3compat=broken` puts it on ci-01 too,
 // with a version Arbor couldn't read. Harnesses a run can be handed to: T3 Code runs on cam-mbp with a setup of its own
-// beside the built-ins, and is installed but stopped on cedar-02; Orca runs on cam-mbp and is installed on ci-01.
-// `?harness=none` has neither anywhere, and `?t3=stopped` stops T3 Code on cam-mbp too.
+// beside the built-ins, and runs on cedar-02 with only the built-in Claude setup (it has no Codex); Orca runs on
+// cam-mbp and is installed on ci-01. `?harness=none` has neither anywhere, and `?t3=stopped` stops T3 Code on both.
 const t3Scenario = params.get('t3compat');
 const harnessScenario = params.get('harness');
 const t3Stopped = params.get('t3') === 'stopped';
@@ -367,7 +367,7 @@ const healthAgents: Record<string, Omit<MachineAgents, 'reporter'>> = {
   },
   'cedar-02': {
     claude: mockInstall('claude', '2.1.281', '/home/cam', false), codex: null, checkedAt: Date.now() - 2 * 60_000, error: null, updating: [],
-    t3: t3On({ version: '0.0.42', running: false, setups: [{ id: 'claudeAgent', driver: 'claudeAgent', name: null, enabled: true }] }),
+    t3: t3On({ version: '0.0.42', running: !t3Stopped, setups: [{ id: 'claudeAgent', driver: 'claudeAgent', name: null, enabled: true }] }),
     orca: null,
   },
 };
