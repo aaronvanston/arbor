@@ -61,7 +61,7 @@ export function setupBadge(checks: readonly Pick<SetupCheck, 'level' | 'machine'
 const SETUP_PROBLEMS_ONLY: readonly MessageKey[] = ['sidebar.badge.setup.one', 'sidebar.badge.setup.other'];
 
 /**
- * Where a badge leads: the view with the things it counts, named for its tooltip ("Opens Sync › Checks"), and what to
+ * Where a badge leads: the view with the things it counts, named for its tooltip ("Opens the checks on Sync › Overview"), and what to
  * pick out there. A badge can always be followed, so a number in the sidebar never leaves anyone guessing what it's
  * about. Null for a page whose badges aren't known here.
  */

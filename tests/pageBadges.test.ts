@@ -86,7 +86,7 @@ describe('where a sidebar badge leads', () => {
   });
 
   it('names each place in words the tooltip can show', () => {
-    expect(en['sidebar.badge.place.checks']).toBe('Sync › Checks');
+    expect(en['sidebar.badge.place.checks']).toBe('the checks on Sync › Overview');
     expect(badgeDestination('machines', present(machinesBadge(['degraded'])))?.place).toBe('sidebar.badge.place.machines');
   });
 });

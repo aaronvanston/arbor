@@ -71,7 +71,7 @@ export const en = {
   'sidebar.badge.setup.both.one': '{count} machine behind the setup repo or with setup problems',
   'sidebar.badge.setup.both.other': '{count} machines behind the setup repo or with setup problems',
   'sidebar.badge.opens': 'Opens {place}',
-  'sidebar.badge.place.checks': 'Sync › Checks',
+  'sidebar.badge.place.checks': 'the checks on Sync › Overview',
   'sidebar.badge.place.signIns': 'Accounts › Sign-ins',
   'sidebar.badge.place.limits': 'Accounts › Limits',
   'sidebar.badge.place.machines': 'Machines',
