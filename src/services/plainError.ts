@@ -106,6 +106,10 @@ function describe(error: unknown, t: Translate): Plain {
     return plain(t('plainError.moduleLoad'), 'plainError.advice.restartArbor');
   }
   if (/database is locked|SQLITE_BUSY/i.test(words)) return plain(t('plainError.databaseBusy'), 'plainError.advice.moment');
+  // reqwest's words when the request never got an answer: no connection, no DNS, or nothing listening.
+  if (/error sending request|dns error|failed to lookup address/i.test(words)) {
+    return plain(t(/github/i.test(words) ? 'plainError.network.github' : 'plainError.network.other'), 'plainError.advice.connection');
+  }
   // Codex's own words when a marketplace it has doesn't offer the plugin asked for.
   const missing = /plugin `([^`]+)` was not found in marketplace `([^`]+)`/.exec(words);
   if (missing?.[1] && missing[2]) return plain(t('plainError.codex.pluginNotFound', { plugin: missing[1], marketplace: missing[2] }), 'plainError.advice.codexMarketplace');

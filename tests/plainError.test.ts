@@ -65,6 +65,11 @@ describe('plainError', () => {
     expect(plainError(new TypeError('Importing a module script failed.'), t)).toBe('Part of Arbor didn’t load. Try again, and restart Arbor if it keeps happening.');
   });
 
+  it('says a request that never got an answer couldn’t reach where it went', () => {
+    expect(plainError("Arbor couldn't reach GitHub: error sending request", t)).toBe('Arbor couldn’t reach GitHub. Check the internet connection, then try again.');
+    expect(plainError('error sending request for url (https://example.test/x): dns error', t)).toBe('Arbor couldn’t reach the server. Check the internet connection, then try again.');
+  });
+
   it('keeps words it doesn’t recognize, less the "Error: " in front', () => {
     expect(plainError('Error: Orca couldn’t find the run’s terminal. It may have been closed.', t)).toBe('Orca couldn’t find the run’s terminal. It may have been closed.');
   });

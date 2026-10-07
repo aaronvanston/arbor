@@ -79,10 +79,11 @@ export function SetupDirectory({ machines, onOpenItem }: {
       toast({
         kind: run.failed.length ? 'warning' : 'success',
         title: t(action === 'refresh' ? 'directory.marketplace.refreshed' : 'directory.marketplace.removed', { name }),
-        description: t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
+        // A marketplace lives on the machines only, so nothing is committed to the repo.
+        description: t(run.changed.length === 1 ? 'directory.marketplace.machines.one' : 'directory.marketplace.machines.other', { count: run.changed.length }),
       });
     } catch (error) {
-      setProblems((current) => ({ ...current, [`market:${name}`]: String(error) }));
+      setProblems((current) => ({ ...current, [`market:${name}`]: plainError(error, t) }));
     } finally {
       setBusyMarketplace(null);
     }
@@ -92,7 +93,7 @@ export function SetupDirectory({ machines, onOpenItem }: {
     setReads((current) => ({ ...current, [sourceKey(source)]: { state: 'loading' } }));
     getMarketplaceCatalog(source.source, force)
       .then((catalog) => setReads((current) => ({ ...current, [sourceKey(source)]: { state: 'ready', catalog } })))
-      .catch((error) => setReads((current) => ({ ...current, [sourceKey(source)]: { state: 'error', error: String(error) } })));
+      .catch((error) => setReads((current) => ({ ...current, [sourceKey(source)]: { state: 'error', error: plainError(error, t) } })));
   };
   useEffect(() => {
     for (const source of sources) if (!reads[sourceKey(source)]) read(source);
