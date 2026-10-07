@@ -27,6 +27,7 @@ import {
   type CallGroup,
   type CallSummary,
 } from '../services/callDiagnostics';
+import { plainError } from '../services/plainError';
 import { useQuotaClock } from '../services/quotaTime';
 import type { CallDiagnostics } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
@@ -56,11 +57,11 @@ export function DiagnosticsSettingsPage() {
       setData(await getCallDiagnostics());
       setLoadError(null);
     } catch (error) {
-      setLoadError(String(error));
+      setLoadError(plainError(error, t));
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void refresh();
@@ -93,7 +94,7 @@ export function DiagnosticsSettingsPage() {
         focusAction: true,
       });
     } catch (error) {
-      setClearError(t('diagnostics.clearFailed', { error: String(error) }));
+      setClearError(t('diagnostics.clearFailed', { error: plainError(error, t) }));
     } finally {
       setClearing(false);
     }

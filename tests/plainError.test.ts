@@ -62,6 +62,9 @@ describe('plainError', () => {
   it('explains a busy database and a part of the window that didn’t load', () => {
     expect(plainError(new Error('database is locked'), t)).toBe('Arbor’s records were busy. Try again in a moment.');
     expect(plainError('Failed to read the fleet: database is locked', t)).toBe('Arbor’s records were busy. Try again in a moment.');
+    // system-6: Diagnostics' read failure, as the page now says it.
+    expect(t('diagnostics.loadFailed', { error: plainError('Failed to read diagnostics: database is locked', t) }))
+      .toBe('Couldn’t read the calls. Arbor’s records were busy. Try again in a moment.');
     expect(plainError(new TypeError('Importing a module script failed.'), t)).toBe('Part of Arbor didn’t load. Try again, and restart Arbor if it keeps happening.');
   });
 
