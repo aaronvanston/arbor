@@ -84,6 +84,12 @@ export function harnessGroups(rows: HarnessHomeRow[]): HarnessGroup[] {
   });
 }
 
+/**
+ * What an agent card's update button brings up: the homes behind the newest, as Update everything does, so its count
+ * agrees with the card's "behind"; every home Arbor can update once none is behind (a newer release may be out).
+ */
+export const harnessUpdateRows = (group: HarnessGroup): HarnessHomeRow[] => (group.behind.length ? group.behind : group.updatable);
+
 /** One update "update everything" runs: an agent on a machine, with its command and the version it's on. */
 export type FleetUpdate =
   | { kind: 'agent'; agent: AgentKind; machine: string; command: string; version: string | null }

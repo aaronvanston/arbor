@@ -46,8 +46,11 @@ const add = (total: Tally, hour: Tally): Tally => ({
 export const errorsOf = (tally: Tally) => tally.failed - tally.rateLimited;
 export const shareOf = (count: number, requests: number) => (requests > 0 ? count / requests : 0);
 
-/** A version's requests in the window, and the machines they came from. */
-export type VersionUse = Tally & { version: string; machines: string[]; firstMs: number; lastMs: number };
+/**
+ * A version's requests in the window, and the machines they came from. `unassigned`: some came through a key that isn't
+ * assigned to a machine, so more machines may run it than `machines` names.
+ */
+export type VersionUse = Tally & { version: string; machines: string[]; unassigned: boolean; firstMs: number; lastMs: number };
 
 type AgentHour = ClientHour & { version: string };
 
@@ -61,11 +64,12 @@ const agentHours = (data: ClientVersions, agent: AgentKind): AgentHour[] =>
 export function versionUses(data: ClientVersions, agent: AgentKind): VersionUse[] {
   const uses = new Map<string, VersionUse>();
   for (const hour of agentHours(data, agent)) {
-    const use = uses.get(hour.version) ?? { ...EMPTY, version: hour.version, machines: [], firstMs: hour.hourMs, lastMs: hour.hourMs };
+    const use = uses.get(hour.version) ?? { ...EMPTY, version: hour.version, machines: [], unassigned: false, firstMs: hour.hourMs, lastMs: hour.hourMs };
     uses.set(hour.version, {
       ...add(use, hour),
       version: hour.version,
       machines: hour.machine && !use.machines.includes(hour.machine) ? [...use.machines, hour.machine].sort() : use.machines,
+      unassigned: use.unassigned || !hour.machine,
       firstMs: Math.min(use.firstMs, hour.hourMs),
       lastMs: Math.max(use.lastMs, hour.hourMs),
     });

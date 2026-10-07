@@ -21,6 +21,7 @@ import {
   rollbackCommand,
   ROLLOUT_DAYS,
   shareOf,
+  BASELINE_MIN_REQUESTS,
   TRIAL_MIN_REQUESTS,
   type AgentRollout,
   type RolloutVerdict,
@@ -352,7 +353,12 @@ export function VersionHistory({ uses, target }: { uses: VersionUse[]; target: s
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {use.machines.length ? t(use.machines.length === 1 ? 'agents.history.machines.one' : 'agents.history.machines.other', { count: use.machines.length }) : t('rollout.table.noMachine')}
+                    {/* A key no machine is assigned to names none, so the count is a floor, said as one. */}
+                    {!use.machines.length
+                      ? t('rollout.table.noMachine')
+                      : use.unassigned
+                      ? t(use.machines.length === 1 ? 'agents.history.machinesPlus.one' : 'agents.history.machinesPlus.other', { count: use.machines.length })
+                      : t(use.machines.length === 1 ? 'agents.history.machines.one' : 'agents.history.machines.other', { count: use.machines.length })}
                   </TableCell>
                   <TableCell className={TABLE_NUMERIC_CLASS}>
                     <span className="inline-flex items-center justify-end gap-2" title={use.machines.join(', ')}>
@@ -392,6 +398,8 @@ function VerdictText({ rollout }: { rollout: AgentRollout }) {
       : comparison.verdict === 'fine'
       ? [t('rollout.verdict.fine', { version: newest })]
       : [t('rollout.verdict.noBaseline', { version: newest })];
+  // The older versions went quiet once it arrived (their machines idle, or updated): what they sent before stands in.
+  if (comparison.baseline === 'before' && comparison.verdict !== 'noBaseline') lines.push(t('rollout.baseline.before', { version: newest, min: formatCount(BASELINE_MIN_REQUESTS) }));
   return (
     <div className={cn('flex flex-col gap-0.5', comparison.verdict === 'worse' ? 'text-warning-foreground' : 'text-muted-foreground')}>
       {lines.map((line) => <p key={line}>{line}</p>)}

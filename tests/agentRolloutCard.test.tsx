@@ -101,8 +101,11 @@ describe('another agent’s card on Sync › Agents', () => {
     expect(html.match(/data-slot="agent-card"/g)?.length).toBe(1);
     expect(html).toContain('1 behind');
     expect(html).toContain('Newest is 0.70.2');
-    expect(html).toContain('Update all (2)');
+    // The button brings up what's behind, so its count agrees with the badge's.
+    expect(html).toContain('Update the one behind');
+    expect(html).not.toContain('Update all');
     expect(html).toContain('aria-label="Update Pi on ci-01"');
+    expect(renderGroup([home('cam-mbp', '0.70.2'), home('ci-01', '0.70.2')])).toContain('Update all (2)');
   });
 
   it('leaves a lone machine’s update to its own row', () => {

@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { toast } from '../components/ui/toast';
 import { ArrowUpCircle } from '../components/ui/icons';
 import { AgentCard, RunResults, UpdatingNow, type AgentRun } from './AgentRollout';
-import type { HarnessGroup } from '../services/agentFleet';
+import { harnessUpdateRows, type HarnessGroup } from '../services/agentFleet';
 import { cn } from '../lib/utils';
 import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
@@ -51,7 +51,7 @@ const STATE: Record<InstructionsState, { label: MessageKey; variant: 'success' |
 export function HarnessCard({ group, run, onUpdateAll, onUpdate, onOpen }: {
   group: HarnessGroup;
   run: AgentRun | undefined;
-  onUpdateAll: () => void;
+  onUpdateAll: (rows: HarnessHomeRow[]) => void;
   onUpdate: (row: HarnessHomeRow) => void;
   onOpen: (machine: string) => void;
 }) {
@@ -78,9 +78,11 @@ export function HarnessCard({ group, run, onUpdateAll, onUpdate, onOpen }: {
       summary={summary}
       // One machine's update is its row's own button; the card's is for bringing several up at once.
       actions={here ? <UpdatingNow machine={here} /> : group.updatable.length > 1 ? (
-        <Button variant={group.behind.length ? 'default' : 'outline'} size="sm" disabled={busy} onClick={onUpdateAll}>
+        <Button variant={group.behind.length ? 'default' : 'outline'} size="sm" disabled={busy} onClick={() => onUpdateAll(harnessUpdateRows(group))}>
           <ArrowUpCircle />
-          {t('agents.updateAll.plain', { count: group.updatable.length })}
+          {group.behind.length
+            ? t(group.behind.length === 1 ? 'agents.updateBehind.one' : 'agents.updateBehind.other', { count: group.behind.length })
+            : t('agents.updateAll.plain', { count: group.updatable.length })}
         </Button>
       ) : null}
       footer={<RunResults run={run} group={group.harness} />}

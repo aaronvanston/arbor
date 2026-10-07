@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { agentRollout } from '../src/services/agentRollout';
-import { fleetUpdates, harnessGroups, rolloutStanding, rolloutTarget, rolloutTargets, untried } from '../src/services/agentFleet';
+import { fleetUpdates, harnessGroups, harnessUpdateRows, rolloutStanding, rolloutTarget, rolloutTargets, untried } from '../src/services/agentFleet';
 import type { HarnessHomeRow } from '../src/services/harnessHomes';
 import type { HealthStatus, MachineHealth } from '../src/native/types';
 
@@ -70,6 +70,13 @@ describe('the other agents across the fleet', () => {
     expect(pi?.behind.map((row) => row.machine)).toEqual(['ci-01']);
     // Arbor can't update this one, so it's never offered.
     expect(openCode?.updatable).toEqual([]);
+  });
+
+  it('updates the homes behind from the card, or every one once none is behind', () => {
+    const [split] = harnessGroups([home('cam-mbp', '0.70.2'), home('ci-01', '0.68.0')]);
+    expect(split && harnessUpdateRows(split).map((row) => row.machine)).toEqual(['ci-01']);
+    const [even] = harnessGroups([home('cam-mbp', '0.70.2'), home('ci-01', '0.70.2')]);
+    expect(even && harnessUpdateRows(even).map((row) => row.machine)).toEqual(['cam-mbp', 'ci-01']);
   });
 });
 

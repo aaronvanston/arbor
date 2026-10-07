@@ -340,7 +340,7 @@ export function SetupAgents({ onNavigate, setupMachines }: { onNavigate: (view: 
               key={group.harness}
               group={group}
               run={run}
-              onUpdateAll={() => void updateHarness(group.harness, group.updatable)}
+              onUpdateAll={(rows) => void updateHarness(group.harness, rows)}
               onUpdate={(row) => void updateHarness(group.harness, [row])}
               onOpen={open}
             />

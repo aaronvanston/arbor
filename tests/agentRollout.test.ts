@@ -52,7 +52,9 @@ describe('versionUses', () => {
       hour('mbp', 'codex_cli_rs/0.156.1', 1, 7),
     ]), 'claude');
     expect(uses.map((use) => use.version)).toEqual(['2.1.282', '2.1.90']);
-    expect(uses[0]).toEqual({ version: '2.1.282', requests: 26, failed: 2, rateLimited: 1, machines: ['cedar', 'mbp'], firstMs: T0, lastMs: T0 + 4 * HOUR });
+    // One hour came through a key no machine is assigned to, so more machines may run it than it names.
+    expect(uses[0]).toEqual({ version: '2.1.282', requests: 26, failed: 2, rateLimited: 1, machines: ['cedar', 'mbp'], unassigned: true, firstMs: T0, lastMs: T0 + 4 * HOUR });
+    expect(uses[1]?.unassigned).toBe(false);
   });
 });
 
