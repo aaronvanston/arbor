@@ -77,7 +77,7 @@ export function AutomationSettings() {
       showAutomations(await invokeCommand('set_automation_proxy_address', { address: address.trim() }));
       toast({ title: t('automations.proxy.addressSaved') });
     } catch (reason) {
-      setAddressError(String(reason));
+      setAddressError(plainError(reason, t));
     } finally {
       setSaving(false);
     }
@@ -173,8 +173,10 @@ export function AutomationSettings() {
               value={address}
               onChange={(event) => setAddress(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter' && addressChanged) void saveAddress(); }}
+              // Saved on leaving the field, like other inline fields, unless it's for its own Save button.
+              onBlur={(event) => { if (addressChanged && !saving && event.relatedTarget?.getAttribute('data-save') !== 'proxy-address') void saveAddress(); }}
             />
-            {addressChanged ? <Button size="sm" disabled={saving} onClick={() => void saveAddress()}>{t('common.save')}</Button> : null}
+            {addressChanged ? <Button size="sm" data-save="proxy-address" disabled={saving} onClick={() => void saveAddress()}>{t('common.save')}</Button> : null}
           </div>
         }
       />
