@@ -61,7 +61,8 @@
  * `?reserves=eased` for caps on two accounts: codex-backup up to 50% easing toward each reset (its bars' ticks sit
  * further along than half) and codex-cam up to 80% held flat; `?reserves=paused` also caps claude-max at 50% easing,
  * which Arbor pauses as the page loads (its Sonnet week is past the 71% the cap has eased to), back in under three days
- * rather than at that week's reset;
+ * rather than at that week's reset (like `?oldviews=`, `?recent=seed` and `?fleet=snoozed`, it fills in the window's
+ * storage for that load alone, and the next load without it starts without them);
  * `?codexreset=already`, `nothing` or `none` to have Codex answer a reset as already redeemed, nothing to
  * reset or no credit left; `?codexreset=lost` to lose the first reset's reply after it went through;
  * `?codexreset=clear-fails` to have the core refuse to clear an account's cooldown after a reset;
@@ -621,9 +622,37 @@ function seedAlerts() {
   recordAlerts([{ title: 'Claude account paused', body: 'work reached its cap of 90% and stays paused until it resets.', kind: 'accountPaused', subject: { account: 'claude-work.json' } }], now - 12 * minutes);
 }
 
+/** The window's storage a scenario flag filled in on the last load, so a load without that flag starts without it. */
+const FLAG_SEEDS_KEY = 'arbor.mock.flag-seeds.v1';
+
+/** Takes away what the last load's flags put in the window's storage; a flag on this load puts its own back. */
+function dropFlagSeeds() {
+  try {
+    const keys: unknown = JSON.parse(window.localStorage.getItem(FLAG_SEEDS_KEY) ?? '[]');
+    if (Array.isArray(keys)) for (const key of keys) if (typeof key === 'string') window.localStorage.removeItem(key);
+  } catch {
+    /* nothing to drop */
+  }
+  window.localStorage.removeItem(FLAG_SEEDS_KEY);
+}
+
+/** Saves `value` for this load alone, as a scenario flag shapes only the load it's on. */
+function seedForThisLoad(key: string, value: string) {
+  window.localStorage.setItem(key, value);
+  let keys: string[] = [];
+  try {
+    const kept: unknown = JSON.parse(window.localStorage.getItem(FLAG_SEEDS_KEY) ?? '[]');
+    if (Array.isArray(kept)) keys = kept.filter((entry): entry is string => typeof entry === 'string');
+  } catch {
+    /* start the list again */
+  }
+  window.localStorage.setItem(FLAG_SEEDS_KEY, JSON.stringify([...new Set([...keys, key])]));
+}
+
 export function installTauriMock() {
   // A first launch has nothing saved in the window yet; the stores read it lazily, so this comes before any of them.
   if (freshInstall) window.localStorage.clear();
+  dropFlagSeeds();
   // The notification plugin falls back to the Web Notification API outside Tauri; capture it so tests can see it.
   Object.defineProperty(window, 'Notification', { value: MockNotification, configurable: true, writable: true });
   // Answer the status pages locally so the dev shell works offline and can show incidents on demand.
@@ -710,7 +739,7 @@ export function installTauriMock() {
   if (fleetScenario === 'snoozed') {
     // Snoozed after each began, so neither wakes early: the question for an hour, the Codex work until tonight.
     const snoozedAt = Date.now() - 60_000;
-    window.localStorage.setItem('arbor.fleet-snoozes.v1', JSON.stringify({
+    seedForThisLoad('arbor.fleet-snoozes.v1', JSON.stringify({
       't3:cam-mbp:userdata:2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d': { untilMs: Date.now() + 3_600_000, atMs: snoozedAt },
       't3:cedar-02:userdata:6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e': { untilMs: Date.now() + 5 * 3_600_000, atMs: snoozedAt },
     }));
@@ -718,17 +747,17 @@ export function installTauriMock() {
   }
   if (params.get('oldviews') === 'seed') {
     const oldPicks = ['page:main:usage:capacity', 'page:main:usage:analysis', 'page:main:usage:failures', 'page:main:home'];
-    window.localStorage.setItem('arbor.palette.recent.v1', JSON.stringify(oldPicks));
-    window.localStorage.setItem('arbor.usage-records-tab.v1', 'failures');
+    seedForThisLoad('arbor.palette.recent.v1', JSON.stringify(oldPicks));
+    seedForThisLoad('arbor.usage-records-tab.v1', 'failures');
   }
   if (params.get('oldviews') === 'sync') {
     const oldPicks = ['page:main:setup:context', 'page:main:setup:projects', 'page:main:usage:telemetry', 'page:main:setup:overview', 'page:main:setup:history'];
-    window.localStorage.setItem('arbor.palette.recent.v1', JSON.stringify(oldPicks));
-    window.localStorage.setItem('arbor.setup.tab.v1', 'context');
+    seedForThisLoad('arbor.palette.recent.v1', JSON.stringify(oldPicks));
+    seedForThisLoad('arbor.setup.tab.v1', 'context');
   }
   const reservesScenario = params.get('reserves');
   if (reservesScenario === 'eased' || reservesScenario === 'paused') {
-    window.localStorage.setItem('arbor.account-reserves.v1', JSON.stringify({
+    seedForThisLoad('arbor.account-reserves.v1', JSON.stringify({
       caps: { 'codex-backup.json::codex-3': 50, 'codex-cam.json::codex-1': 80, ...(reservesScenario === 'paused' ? { 'claude-max.json::claude-1': 50 } : {}) },
       easing: { 'codex-backup.json::codex-3': true, ...(reservesScenario === 'paused' ? { 'claude-max.json::claude-1': true } : {}) },
       paused: {},
@@ -736,7 +765,7 @@ export function installTauriMock() {
     }));
   }
   if (params.get('recent') === 'seed') {
-    window.localStorage.setItem('arbor.palette.recent.v1', JSON.stringify(['page:settings:auth-files', 'action:pause-account', 'page:main:setup', 'action:theme-dark']));
+    seedForThisLoad('arbor.palette.recent.v1', JSON.stringify(['page:settings:auth-files', 'action:pause-account', 'page:main:setup', 'action:theme-dark']));
   }
   const historyScenario = params.get('history');
   if (historyScenario === 'back' || historyScenario === 'both') {
