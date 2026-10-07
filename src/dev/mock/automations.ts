@@ -30,7 +30,8 @@ import { mockHarnessesFound } from './setup';
  */
 const scenario = params.get('automations');
 const failing = scenario === 'failing';
-const withOrca = params.get('orca') !== 'none';
+// `?harness=none` has no Orca anywhere, so its automations aren't found either.
+const withOrca = params.get('orca') !== 'none' && params.get('harness') !== 'none';
 const withSuperset = params.get('superset') !== 'none';
 const udianScenario = params.get('udian');
 const withOwnUdian = udianScenario !== 'none';

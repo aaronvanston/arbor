@@ -1130,8 +1130,8 @@ const titled = (channel: T3Channel): T3Channel => ({
   threads: channel.threads.map((thread, index) => ({ ...thread, title: MOCK_TITLES[index % MOCK_TITLES.length] ?? null })),
 });
 
-// `?fleet=not3`: no machine has T3 Code, so neither the board nor Settings mentions it.
-const mockT3Found = fleetScenario !== 'not3' && !freshInstall;
+// `?fleet=not3`: no machine has T3 Code, so neither the board nor Settings mentions it; nor with `?harness=none`.
+const mockT3Found = fleetScenario !== 'not3' && params.get('harness') !== 'none' && !freshInstall;
 
 let fleetReads = 0;
 
