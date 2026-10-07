@@ -103,6 +103,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
 
   section('machines', 'assignments', 'usage.assignments.title', { description: 'usage.assignments.description' }),
   section('machines', 'hosts', 'machines.hosts.title', { description: 'machines.hosts.description', keywords: 'settingsSearch.keywords.ssh' }),
+  row('machines', 'health-probes', 'machines.probe.settings.title', 'machines.probe.title', { description: 'machines.probe.settings.description', keywords: 'machines.probe.settings.keywords' }),
   row('machines', 'automations-running', 'automations.settings.title', 'automations.settings.running', { description: 'automations.settings.runningHint', keywords: 'tree.automations.keywords' }),
   row('machines', 'automations-runner', 'automations.settings.title', 'automations.runner.title', { description: 'automations.runner.descriptionSearch', keywords: 'automations.runner.keywords' }),
   row('machines', 'automations-proxy-key', 'automations.settings.title', 'automations.proxy.key', { description: 'automations.proxy.keyHint', keywords: 'automations.proxy.keywords' }),

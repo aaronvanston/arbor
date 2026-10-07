@@ -90,7 +90,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'discard_setup_repo_changes',
   'push_setup_repo',
   'run_automation_now',
-  'install_background_runner',
+  'install_background_runner', 'install_machine_probe', 'uninstall_machine_probe',
   'add_automations_key',
   'delete_automation',
   'cancel_automation_run',

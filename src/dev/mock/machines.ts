@@ -22,6 +22,7 @@ import type {
   MachineFacts,
   MachineHealth,
   MachineHealthSnapshot,
+  MachineProbes,
   MachineHost,
   MachineTelemetry,
   NetworkPath,
@@ -129,6 +130,22 @@ if (params.get('machines') === 'unhosted') for (const host of healthHosts) host.
 if (freshInstall) healthHosts.length = 0;
 /** This Mac's name in the mock, the one it's listed under by default. */
 const MOCK_THIS_MAC = 'cam-mbp';
+
+// Grove's health probes: ci-01 and this Mac stream by default, cedar-02 is read over SSH each round. `?probes=none` has
+// no probe anywhere, `?probes=fail` has installing or removing one fail, and `?grove=missing` has Grove unavailable,
+// so health comes from Arbor's own script and the machine page and Settings › Machines say why.
+const probeScenario = params.get('probes');
+const probesInstalled = new Set(probeScenario === 'none' ? [] : ['cam-mbp', 'ci-01']);
+const MOCK_GROVE = '0.1.2';
+const machineProbes = (): MachineProbes => params.get('grove') === 'missing'
+  ? { version: MOCK_GROVE, unavailable: 'Grove answered as 0.1.1 where this build of Arbor expects 0.1.2', machines: [] }
+  : {
+    version: MOCK_GROVE,
+    unavailable: null,
+    machines: healthHosts.filter((host) => host.enabled && host.endpoint).map((host) => ({
+      machine: host.machine, installed: probesInstalled.has(host.machine), streaming: probesInstalled.has(host.machine),
+    })),
+  };
 
 const healthPoint = (name: string, t: number): HealthPoint => {
   const phase = t / 60_000;
@@ -685,6 +702,19 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     return healthScenario === 'slow' ? later(4_000, snapshot) : snapshot();
   },
   get_machine_hosts: () => healthHosts,
+  get_machine_probes: () => machineProbes(),
+  install_machine_probe: ({ machine }) => later(2_000, () => {
+    mockLog('install_machine_probe', { machine });
+    if (probeScenario === 'fail') throw 'ssh: connect to host ' + machine + ' port 22: Operation timed out';
+    probesInstalled.add(machine);
+    return machineProbes();
+  }),
+  uninstall_machine_probe: ({ machine }) => later(1_200, () => {
+    mockLog('uninstall_machine_probe', { machine });
+    if (probeScenario === 'fail') throw 'Removing the probe from "' + machine + '" failed: launchctl exited 5.';
+    probesInstalled.delete(machine);
+    return machineProbes();
+  }),
   get_this_mac: () => {
     const listed = healthHosts.find((host) => host.endpoint === 'localhost');
     return { name: listed?.machine ?? MOCK_THIS_MAC, listed: Boolean(listed) };

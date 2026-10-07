@@ -113,6 +113,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::transcripts::PullRequestLink>();
         // Automations
         types.visit::<crate::usage::machine_health::automations::AutomationList>();
+        types.visit::<crate::usage::machine_health::grove::MachineProbes>();
         types.visit::<crate::usage::machine_health::automations::Automation>();
         types.visit::<crate::usage::machine_health::automations::AutomationRun>();
         types.visit::<crate::usage::machine_health::automations::AutomationInput>();

@@ -16,6 +16,7 @@ import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import { FleetMachineSection } from '../components/FleetBoard';
 import { FixMenu } from '../components/FixMenu';
+import { GroveUnavailableNote, MachineProbeBlock } from '../components/MachineProbes';
 import { MachineHarnessesBlock } from '../components/MachineHarnesses';
 import { machineHarnesses } from '../services/harnesses';
 import { MachinePill } from '../components/identity/Identity';
@@ -217,9 +218,11 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
             description={t('machine.health.description', { seconds: Math.round((snapshot?.intervalMs ?? 5_000) / 1000) })}
             headerAction={<HealthWindowToggle value={windowId} onChange={setWindowId} />}
           >
+            <GroveUnavailableNote />
             {item ? <MachineHealthDetail item={item} windowMs={windowMs} />
               : healthError ? <SettingsBlock className="text-xs text-muted-foreground">{t('machines.health.unavailable')}</SettingsBlock>
               : <SettingsBlock><Skeleton className="h-40 w-full" /></SettingsBlock>}
+            <MachineProbeBlock machine={name} />
           </SettingsSection>
 
           {live ? (

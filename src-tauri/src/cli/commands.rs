@@ -927,6 +927,28 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_machine_probes",
+        access: Access::Read,
+        summary: "Which machines have Grove's probe and which are followed now, and why Grove isn't read when it isn't.",
+        args: &[],
+    },
+    CommandSpec {
+        name: "install_machine_probe",
+        access: Access::Confirm,
+        summary: "Puts the probe Arbor carries on a machine, or updates the one there, under launchd or a systemd user unit, so it keeps reading the machine every two seconds and Arbor follows it.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "uninstall_machine_probe",
+        access: Access::Confirm,
+        summary: "Stops a machine's probe and takes it off the machine, with its folder; the history Arbor's Grove kept stays.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "copy_automation_into_arbor",
         access: Access::Write,
         summary: "Copy automation into arbor",
@@ -2233,6 +2255,9 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "run_automation_now" => async { done(Box::pin(crate::usage::machine_health::automations::commands::run_automation_now(app.clone(), arg(&args, "id")?)).await) }.await,
         "cancel_automation_run" => async { done(Box::pin(crate::usage::machine_health::automations::commands::cancel_automation_run(app.clone(), arg(&args, "runId")?)).await) }.await,
         "install_background_runner" => async { done(Box::pin(crate::usage::machine_health::automations::commands::install_background_runner(app.clone(), arg(&args, "machine")?)).await) }.await,
+        "get_machine_probes" => done(Box::pin(crate::usage::machine_health::grove::get_machine_probes(app.state())).await),
+        "install_machine_probe" => async { done(Box::pin(crate::usage::machine_health::grove::install_machine_probe(app.state(), arg(&args, "machine")?)).await) }.await,
+        "uninstall_machine_probe" => async { done(Box::pin(crate::usage::machine_health::grove::uninstall_machine_probe(app.state(), arg(&args, "machine")?)).await) }.await,
         "copy_automation_into_arbor" => async { done(Box::pin(crate::usage::machine_health::automations::commands::copy_automation_into_arbor(app.clone(), arg(&args, "id")?, arg(&args, "pauseOriginal")?)).await) }.await,
         "draft_automation" => async { done(Box::pin(crate::usage::machine_health::automations::commands::draft_automation(app.clone(), arg(&args, "input")?, app.state())).await) }.await,
         "set_automations_running" => async { done(Box::pin(crate::usage::machine_health::automations::commands::set_automations_running(app.clone(), arg(&args, "running")?)).await) }.await,

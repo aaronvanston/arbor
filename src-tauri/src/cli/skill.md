@@ -68,6 +68,8 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |
 | Run an automation now, precheck first | `arbor call run_automation_now id=<id>` |
 | Set up or update the background runner on a machine, so its automations run with Arbor closed; also puts ultradian's skill in that machine's agent homes | `arbor call install_background_runner machine=<name>` (needs `--yes`) |
+| Put Grove's health probe on a machine, or update it, so its readings stream every two seconds instead of one SSH read a round; started under launchd or a systemd user unit there | `arbor call install_machine_probe machine=<name>` (needs `--yes`); `arbor call get_machine_probes` says which machines have one and are streaming |
+| Take a machine's health probe off it, with its folder (the history Arbor kept stays) | `arbor call uninstall_machine_probe machine=<name>` (needs `--yes`) |
 | Give automations their proxy key (Claude and Codex automations reach the proxy with it, whatever a machine is signed in to) | `arbor call add_automations_key` (needs `--yes`) |
 | Set the address machines try first to reach the proxy, or clear it | `arbor call set_automation_proxy_address address=<url>` (`address=` clears it) |
 | Put kept sessions back together from the session archive, one folder per session with its transcripts and a session.json naming its machine, project and branch | `arbor archive export --project <name> --since 30d --out <new or empty folder>` (also `--machine <name>`, `--since 2026-09-01`, `--all-versions`). The folder holds whole transcripts, unencrypted: only export when asked, to where they asked |

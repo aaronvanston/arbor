@@ -16,6 +16,7 @@ import type {
   LatestVersions,
   MachinePool,
   MachineHealthSnapshot,
+  MachineProbes,
   MachineHost,
   PoolPreview,
   PoolSsh,
@@ -56,6 +57,9 @@ export type MachineCommands = {
     args: { since?: number | null; windowMs?: number | null; passive?: boolean | null; machine?: string | null };
     result: MachineHealthSnapshot;
   };
+  get_machine_probes: { result: MachineProbes };
+  install_machine_probe: { args: { machine: string }; result: MachineProbes };
+  uninstall_machine_probe: { args: { machine: string }; result: MachineProbes };
 
   get_agent_latest_versions: { result: LatestVersions };
   get_t3_compatibility: { result: T3Policy[] | null };

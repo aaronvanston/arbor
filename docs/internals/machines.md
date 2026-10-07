@@ -24,6 +24,11 @@ Arbor; a machine read by `grove sample` takes its round trip and address from Gr
 missing or answers as another version, the sampler falls back to its own script (`SAMPLE_SCRIPT`) for one release,
 then to a reachability check (`LEGACY_SAMPLER`).
 
+A probe goes on a machine only when the user confirms it (machine page, Settings › Machines, or `arbor call
+install_machine_probe … --yes`): `grove probe install --from` the carried archives, under launchd or a systemd user
+unit, through `run_in_slot`. It isn't a guarded write, as the background runner's install isn't; Remove beside it is
+the way back.
+
 ## Changing a file
 
 Every change to a file on a machine goes through `usage/machine_health/guarded_writes.rs` (`edit_start`, `edit_call`

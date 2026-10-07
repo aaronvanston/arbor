@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button';
 import { UsageMachineAssignments } from './UsageMachineAssignments';
 import { MachineHostsSettings } from './MachineHostsSettings';
 import { AgentTelemetrySettings } from './AgentTelemetrySettings';
+import { MachineProbesSettings } from '../components/MachineProbes';
 import { AutomationSettings } from '../components/automations/AutomationSettings';
 import { FleetWideNotice, SettingsScopeSentence } from '../components/layout/machineScope';
 import { MachinePill } from '../components/identity/Identity';
@@ -49,6 +50,7 @@ export function MachineAssignmentsSettingsPage({ onNavigate }: { onNavigate?: (v
           <>
             <UsageMachineAssignments assignments={assignments} onSaved={() => void load()} />
             <MachineHostsSettings />
+            <MachineProbesSettings />
             <AutomationSettings />
             <AgentTelemetrySettings />
           </>

@@ -2851,6 +2851,36 @@ export type MachinePool = {
   queueTimeoutMin: number,
 };
 
+export type MachineProbe = {
+  machine: string,
+  /**
+   * It has a probe Arbor knows of.
+   */
+  installed: boolean,
+  /**
+   * Its probe is being followed now; installed and not followed is starting, or past the streams' allowance.
+   */
+  streaming: boolean,
+};
+
+/**
+ * Which machines have Grove's probe, for the machine page and Settings › Machines.
+ */
+export type MachineProbes = {
+  /**
+   * The Grove release this build carries, and installs on machines; None when it carries none.
+   */
+  version: string | null,
+  /**
+   * Why machine health isn't read through Grove right now; None while it is.
+   */
+  unavailable: string | null,
+  /**
+   * The machines Grove reads, by Arbor's name.
+   */
+  machines: Array<MachineProbe>,
+};
+
 export type MachineProjects = {
   machine: string,
   homeDir: string,

@@ -116,6 +116,8 @@ impl Outcome {
 pub(crate) enum MachineOp {
     HealthCheck,
     HealthStream,
+    ProbeInstall,
+    ProbeUninstall,
     AgentVersions,
     AgentUpdate,
     NeedsYouPoll,
@@ -173,6 +175,8 @@ impl MachineOp {
         match self {
             Self::HealthCheck => "health check",
             Self::HealthStream => "health stream",
+            Self::ProbeInstall => "health probe install",
+            Self::ProbeUninstall => "health probe removal",
             Self::AgentVersions => "agent versions",
             Self::AgentUpdate => "agent update",
             Self::NeedsYouPoll => "needs-you check",
@@ -228,7 +232,7 @@ impl MachineOp {
 
     fn slow_after_ms(self) -> u64 {
         match self {
-            Self::AgentUpdate | Self::CleanupUninstall | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall => {
+            Self::AgentUpdate | Self::CleanupUninstall | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall | Self::ProbeInstall => {
                 MACHINE_INSTALL_SLOW_MS
             }
             Self::TranscriptScan

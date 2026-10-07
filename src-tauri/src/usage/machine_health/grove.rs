@@ -14,7 +14,10 @@
 
 use super::diagnostics::{self, MachineOp};
 use super::shell::{configure_helper_command, failure_detail, run_in_slot, ssh_sharing_options};
-use super::{HealthMetric, HealthPoint, HealthReason, MachineFacts};
+use super::shell::not_checked;
+use super::{HealthMetric, HealthPoint, HealthReason, MachineFacts, MachineHealthState};
+use serde::Serialize;
+use ts_rs::TS;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -487,6 +490,14 @@ impl Streams {
         self.feeds().get(slug).map(|feed| feed.read(now_ms))
     }
 
+    /// Stops following one probe, as before it's taken off its machine.
+    pub(crate) fn stop(&self, slug: &str) {
+        if let Some(token) = self.running().remove(slug) {
+            token.cancel();
+        }
+        self.feeds().remove(slug);
+    }
+
     pub(crate) fn stop_all(&self) {
         for (_, token) in std::mem::take(&mut *self.running()) {
             token.cancel();
@@ -691,6 +702,103 @@ pub(crate) fn ping_address(reading: &Value) -> Option<std::net::IpAddr> {
     reading.get("address").and_then(Value::as_str).and_then(|address| address.parse().ok())
 }
 
+// ── Probes ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// How long installing or removing a probe may take: the archive goes over SSH and the service manager starts it.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Which machines have Grove's probe, for the machine page and Settings › Machines.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MachineProbes {
+    /// The Grove release this build carries, and installs on machines; None when it carries none.
+    version: Option<String>,
+    /// Why machine health isn't read through Grove right now; None while it is.
+    unavailable: Option<String>,
+    /// The machines Grove reads, by Arbor's name.
+    machines: Vec<MachineProbe>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MachineProbe {
+    machine: String,
+    /// It has a probe Arbor knows of.
+    installed: bool,
+    /// Its probe is being followed now; installed and not followed is starting, or past the streams' allowance.
+    streaming: bool,
+}
+
+fn probes_of(state: &MachineHealthState) -> MachineProbes {
+    let inner = state.lock();
+    let view = &inner.grove;
+    let version = state.grove.ready.get().and_then(|ready| ready.as_ref().ok()).map(|grove| grove.bundle.version.clone()).or_else(|| bundle().map(|bundle| bundle.version));
+    MachineProbes {
+        version,
+        unavailable: view.unavailable.clone(),
+        machines: view
+            .slugs
+            .iter()
+            .map(|(machine, slug)| MachineProbe { machine: machine.clone(), installed: view.probes.contains_key(slug), streaming: view.streaming.contains(slug) })
+            .collect(),
+    }
+}
+
+/// Grove and the machine's slug, or why a probe can't be put on or taken off it.
+async fn grove_for(state: &MachineHealthState, machine: &str) -> Result<(Grove, String), String> {
+    let grove = state.grove().await.cloned().ok_or_else(|| state.lock().grove.unavailable.clone().unwrap_or_else(|| "Grove isn't available".into()))?;
+    let slug = state.lock().grove.slugs.get(machine).cloned().ok_or_else(|| not_checked(machine))?;
+    Ok((grove, slug))
+}
+
+/// Which machines have Grove's probe and which are followed now, and why Grove isn't read when it isn't.
+#[tauri::command]
+pub(crate) async fn get_machine_probes(state: tauri::State<'_, MachineHealthState>) -> Result<MachineProbes, String> {
+    Ok(probes_of(&state))
+}
+
+/// Puts the probe Arbor carries on a machine, or updates the one there, under launchd or a systemd user unit, so it
+/// keeps reading the machine every two seconds and Arbor follows it.
+#[tauri::command]
+pub(crate) async fn install_machine_probe(state: tauri::State<'_, MachineHealthState>, machine: String) -> Result<MachineProbes, String> {
+    install_probe(&state, &machine).await
+}
+
+async fn install_probe(state: &MachineHealthState, machine: &str) -> Result<MachineProbes, String> {
+    let (grove, slug) = grove_for(state, machine).await?;
+    let from = grove.bundle.dir.display().to_string();
+    let command = grove.command(["probe", "install", "--from", from.as_str(), "--json", "--", slug.as_str()]);
+    let data = envelope_data(&run_in_slot(machine, MachineOp::ProbeInstall, command, PROBE_TIMEOUT).await?)?;
+    let dir = data.get("dir").and_then(Value::as_str).unwrap_or_default().to_string();
+    state.lock().grove.probes.insert(slug, dir);
+    // The next round reads the registry again and starts following it.
+    state.request_reload();
+    Ok(probes_of(state))
+}
+
+/// Stops a machine's probe and takes it off the machine, with its folder; the history Arbor's Grove kept stays.
+#[tauri::command]
+pub(crate) async fn uninstall_machine_probe(state: tauri::State<'_, MachineHealthState>, machine: String) -> Result<MachineProbes, String> {
+    uninstall_probe(&state, &machine).await
+}
+
+async fn uninstall_probe(state: &MachineHealthState, machine: &str) -> Result<MachineProbes, String> {
+    let (grove, slug) = grove_for(state, machine).await?;
+    state.grove.streams.stop(&slug);
+    let command = grove.command(["probe", "uninstall", "--json", "--", slug.as_str()]);
+    let removed = run_in_slot(machine, MachineOp::ProbeUninstall, command, PROBE_TIMEOUT).await.and_then(|output| envelope_data(&output));
+    {
+        let mut inner = state.lock();
+        if removed.is_ok() {
+            inner.grove.probes.remove(&slug);
+        }
+        inner.grove.streaming.remove(&slug);
+    }
+    state.request_reload();
+    removed?;
+    Ok(probes_of(state))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -878,6 +986,51 @@ mod tests {
         assert!(streams.sync(&grove, &[], &parent).is_empty());
         assert_eq!(streams.read("cedar01", 0), None);
         parent.cancel();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Installing and removing go through grove's own probe commands with the carried archives, and the list says so
+    /// at once; a failure comes back in grove's words and leaves the probe as it was. A stand-in grove answers.
+    #[tokio::test]
+    async fn a_probe_is_installed_from_the_carried_release_and_removed() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("install");
+        let bin = dir.join("grove");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$GROVE_HOME/calls\"\n\
+             case \"$*\" in\n\
+             \x20 *'-- elm02') echo '{\"error\":{\"code\":\"probe_install_failed\",\"message\":\"No probe build for SunOS i86pc.\"},\"ok\":false,\"schemaVersion\":1}' >&2; exit 1 ;;\n\
+             \x20 'probe install'*) echo '{\"command\":\"probe install\",\"data\":{\"dir\":\"/home/cam/.grove-probe\"},\"ok\":true,\"schemaVersion\":1}' ;;\n\
+             \x20 *) echo '{\"command\":\"probe uninstall\",\"data\":{\"removed\":true},\"ok\":true,\"schemaVersion\":1}' ;;\n\
+             esac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let state = MachineHealthState::default();
+        let grove = Grove { bin, home: dir.clone(), bundle: Bundle { version: "0.1.2".into(), dir: PathBuf::from("/Applications/Arbor.app/Contents/Resources/grove") } };
+        assert!(state.grove.ready.set(Ok(grove)).is_ok());
+        {
+            let mut inner = state.lock();
+            inner.grove.slugs.insert("cedar-01".into(), "cedar01".into());
+            inner.grove.slugs.insert("elm-02".into(), "elm02".into());
+        }
+        let probe = |probes: &MachineProbes, machine: &str| probes.machines.iter().find(|probe| probe.machine == machine).map(|probe| probe.installed);
+        let installed = install_probe(&state, "cedar-01").await.unwrap();
+        assert_eq!((probe(&installed, "cedar-01"), installed.version.as_deref()), (Some(true), Some("0.1.2")));
+        assert!(install_probe(&state, "elm-02").await.unwrap_err().contains("No probe build for SunOS"));
+        assert!(install_probe(&state, "oak-03").await.unwrap_err().contains("oak-03"));
+        let removed = uninstall_probe(&state, "cedar-01").await.unwrap();
+        assert_eq!(probe(&removed, "cedar-01"), Some(false));
+        let calls = std::fs::read_to_string(dir.join("calls")).unwrap();
+        assert_eq!(
+            calls.lines().collect::<Vec<_>>(),
+            [
+                "probe install --from /Applications/Arbor.app/Contents/Resources/grove --json -- cedar01",
+                "probe install --from /Applications/Arbor.app/Contents/Resources/grove --json -- elm02",
+                "probe uninstall --json -- cedar01",
+            ]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
