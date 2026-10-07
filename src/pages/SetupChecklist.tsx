@@ -1069,16 +1069,25 @@ function StepRow({ number, state, title, summary, summaryText, open, onToggle, c
   children: ReactNode;
 }) {
   const { t } = useI18n();
+  const line = (
+    <>
+      <StepMark number={number} state={state} />
+      <span className="sr-only">{t(STATE_TEXT[state])}</span>
+      <span className="w-56 shrink-0 truncate text-sm font-medium text-foreground">{title}</span>
+      <span className={cn('min-w-0 flex-1 truncate text-sm', state === 'todo' ? 'text-warning-foreground' : 'text-muted-foreground')} title={summaryText}>{summary}</span>
+    </>
+  );
+  // A step with nothing more to show (one waiting for a host) is a plain line, not a button that opens onto nothing.
+  if (children === null || children === undefined || children === false) {
+    return <li className="flex w-full items-center gap-3 px-4 py-3">{line}</li>;
+  }
   return (
     <Collapsible render={<li />} open={open} onOpenChange={onToggle}>
       <CollapsibleTrigger
         chevron="end"
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none dark:hover:bg-input/16"
       >
-        <StepMark number={number} state={state} />
-        <span className="sr-only">{t(STATE_TEXT[state])}</span>
-        <span className="w-56 shrink-0 truncate text-sm font-medium text-foreground">{title}</span>
-        <span className={cn('min-w-0 flex-1 truncate text-sm', state === 'todo' ? 'text-warning-foreground' : 'text-muted-foreground')} title={summaryText}>{summary}</span>
+        {line}
       </CollapsibleTrigger>
       {children ? (
         <CollapsiblePanel>
