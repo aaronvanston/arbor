@@ -73,14 +73,20 @@ export const loadOAuthModelSettings = async (
   };
 };
 
+/** Whether the rules as typed differ from the saved ones, ignoring order, case, blanks and repeats. */
+export const oauthRulesChanged = (settings: OAuthModelSettings, rules: Iterable<string>): boolean => {
+  const excludedModels = normalizeOAuthExcludedRules(rules);
+  return excludedModels.length !== settings.excludedRules.length
+    || !excludedModels.every((rule) => settings.excludedRules.includes(rule));
+};
+
 export const saveOAuthModelSettings = async (
   settings: OAuthModelSettings,
   rules: Iterable<string>,
   api: OAuthModelSettingsApi = oauthModelSettingsApi,
 ): Promise<void> => {
   const excludedModels = normalizeOAuthExcludedRules(rules);
-  if (excludedModels.length === settings.excludedRules.length
-    && excludedModels.every((rule) => settings.excludedRules.includes(rule))) return;
+  if (!oauthRulesChanged(settings, excludedModels)) return;
   if (settings.target.scope === 'credential') {
     // Patch only this field: never upload a stale copy of tokens or other metadata.
     await api.patch('/auth-files/fields', {

@@ -3,6 +3,7 @@ import type { AuthFileExcludedModels } from '../src/native/types';
 import {
   authFileExcludedRules,
   loadOAuthModelSettings,
+  oauthRulesChanged,
   saveOAuthModelSettings,
   type OAuthModelTarget,
 } from '../src/services/oauthModelSettings';
@@ -14,6 +15,19 @@ const account = (name: string): OAuthModelTarget => ({
   scope: 'credential', provider: 'codex', label: 'Codex', name,
 });
 const provider: OAuthModelTarget = { scope: 'provider', provider: 'codex', label: 'Codex' };
+
+// money-15: Save stays off, and no "updated" toast shows, until the rules really change.
+describe('oauthRulesChanged', () => {
+  const settings = { target: provider, models: [], excludedRules: ['gpt-image-*', 'gpt-5.4'], catalogError: '' };
+  it('reads the same rules typed differently as unchanged', () => {
+    expect(oauthRulesChanged(settings, ['GPT-5.4 ', '', 'gpt-image-*', 'gpt-5.4'])).toBe(false);
+    expect(oauthRulesChanged({ ...settings, excludedRules: [] }, [])).toBe(false);
+  });
+  it('sees an added or removed rule', () => {
+    expect(oauthRulesChanged(settings, ['gpt-image-*'])).toBe(true);
+    expect(oauthRulesChanged(settings, ['gpt-image-*', 'gpt-5.4', 'gpt-6'])).toBe(true);
+  });
+});
 
 /** Stands in for Rust's get_auth_file_excluded_models, whose own tests cover reading the file. */
 const excludedModelsIn = (file: Record<string, unknown>): AuthFileExcludedModels => {
@@ -175,7 +189,7 @@ describe('credential model exclusion metadata', () => {
 
   it('shows a fixed message for a file that can’t be read for its rules', () => {
     expect(() => authFileExcludedRules({ kind: 'invalidMetadata' }))
-      .toThrow('Could not read the credential file; model settings were not loaded');
+      .toThrow('Couldn’t read the credential file, so its model settings didn’t load.');
     expect(() => authFileExcludedRules({ kind: 'invalidExclusions' }))
       .toThrow('The credential file has invalid model exclusion rules; check the file first');
   });

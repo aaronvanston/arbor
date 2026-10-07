@@ -6046,6 +6046,7 @@ export const en = {
   'common.saving': 'Saving',
   'authFiles.models.save.one': 'Save ({count} rule)',
   'authFiles.models.save.other': 'Save ({count} rules)',
+  'authFiles.models.unchanged': 'Nothing’s changed yet.',
   'common.edit': 'Edit',
   'common.save': 'Save',
   'common.clear': 'Clear',

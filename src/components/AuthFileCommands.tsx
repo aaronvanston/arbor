@@ -44,7 +44,7 @@ import { reauthProviderForFile, type ReauthOutcome } from '../services/authReaut
 import { shownIdentity } from '../services/emailPrivacy';
 import { managementApi, readBoolean, readString } from '../services/managementApi';
 import { modelMatchesRule, normalizeOAuthExcludedRules, openOAuthModelNames, setOAuthModelsExcluded, type OAuthModelDefinition } from '../services/oauthModels';
-import { loadOAuthModelSettings, saveOAuthModelSettings, type OAuthModelSettings, type OAuthModelTarget } from '../services/oauthModelSettings';
+import { loadOAuthModelSettings, oauthRulesChanged, saveOAuthModelSettings, type OAuthModelSettings, type OAuthModelTarget } from '../services/oauthModelSettings';
 import { fileName, providerForFile, quotaKey, type AuthFile } from '../services/quotaService';
 import { formatQuotaReset } from '../services/quotaTime';
 import { formatCount } from '../lib/format';
@@ -716,7 +716,8 @@ function ExcludedModelsDialog({ target, providers, onTarget, onClose }: {
   };
 
   const save = async () => {
-    if (!settings || loading || savingRef.current) return;
+    // Nothing changed, nothing saved: no toast claiming otherwise.
+    if (!settings || loading || savingRef.current || !oauthRulesChanged(settings, rules)) return;
     savingRef.current = true;
     setSaving(true);
     setError('');
@@ -850,7 +851,11 @@ function ExcludedModelsDialog({ target, providers, onTarget, onClose }: {
         </DialogPanel>
         <DialogFooter>
           <Button variant="outline" onClick={close} disabled={saving}>{t('common.cancel')}</Button>
-          <Button onClick={() => void save()} disabled={dialogBusy || !settings}>
+          <Button
+            onClick={() => void save()}
+            disabled={dialogBusy || !settings}
+            disabledReason={settings && !dialogBusy && !oauthRulesChanged(settings, rules) ? t('authFiles.models.unchanged') : undefined}
+          >
             {saving ? <Spinner /> : <Check />}
             {saving ? t('common.saving') : t(rules.length === 1 ? 'authFiles.models.save.one' : 'authFiles.models.save.other', { count: formatCount(rules.length) })}
           </Button>
