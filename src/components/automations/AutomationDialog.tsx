@@ -16,6 +16,7 @@ import {
   useAutomations,
   type ScheduleChoice,
 } from '../../services/automations';
+import { durationWords } from '../../services/durationWords';
 import { usePools } from '../../services/pools';
 import { PoolName } from '../PoolName';
 import { useFleetMachines } from '../../services/fleetHealth';
@@ -398,7 +399,7 @@ export function AutomationDialog({ open, onOpenChange, editing, copyOf, machine 
                       label={t('automations.fact.grace')}
                       value={form.graceMinutes}
                       choices={GRACE_CHOICES}
-                      words={(minutes) => (minutes < 60 ? t('automations.form.minutes', { count: minutes }) : t('automations.form.hours', { count: minutes / 60 }))}
+                      words={(minutes) => durationWords(minutes * 60)}
                       onChange={(graceMinutes) => update({ graceMinutes })}
                     />
                   </Field>
@@ -619,7 +620,7 @@ function ScheduleField({ value, copied = false, onChange }: { value: ScheduleCho
         <SelectPopup>{SCHEDULE_KINDS.map((kind) => <SelectItem key={kind} value={kind}>{kindWords(kind)}</SelectItem>)}</SelectPopup>
       </Select>
       {value.kind === 'everyMinutes' ? (
-        <ChoiceSelect label={t('automations.form.schedule.every')} value={value.minutes} choices={MINUTE_CHOICES} words={(minutes) => t('automations.form.minutes', { count: minutes })} onChange={(minutes) => onChange({ ...value, minutes })} />
+        <ChoiceSelect label={t('automations.form.schedule.every')} value={value.minutes} choices={MINUTE_CHOICES} words={(minutes) => durationWords(minutes * 60)} onChange={(minutes) => onChange({ ...value, minutes })} />
       ) : null}
       {value.kind === 'hourly' ? (
         <div className="grid grid-cols-2 gap-2">
@@ -662,7 +663,7 @@ function PrecheckField({ value, timeout, onChange, onTimeoutChange }: { value: s
             label={t('automations.form.precheckTimeout')}
             value={timeout}
             choices={TIMEOUT_CHOICES}
-            words={(seconds) => (seconds < 60 ? t('automations.form.seconds', { count: seconds }) : t('automations.form.minutes', { count: seconds / 60 }))}
+            words={durationWords}
             onChange={onTimeoutChange}
           />
         </div>

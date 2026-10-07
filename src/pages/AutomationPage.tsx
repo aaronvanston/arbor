@@ -27,6 +27,7 @@ import { invokeCommand } from '../native/commands';
 import type { Automation, AutomationRun } from '../native/types';
 import { AUTOMATION_APPS, automationHold, automationTargetGone, loadAutomations, RUN_STATUS_LABEL, RUN_STATUS_TONE, scheduleWords, useAutomations } from '../services/automations';
 import { AutomationHoldNote } from '../components/automations/AutomationHoldNote';
+import { durationWords } from '../services/durationWords';
 import { useQuotaClock } from '../services/quotaTime';
 import { usePools } from '../services/pools';
 
@@ -169,7 +170,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
                   </span>
                 </Fact>
               ) : null}
-              <Fact label={t('automations.fact.grace')}>{formatDuration(automation.graceMinutes * 60_000)}</Fact>
+              <Fact label={t('automations.fact.grace')}>{durationWords(automation.graceMinutes * 60)}</Fact>
             </>
           ) : null}
         </FactGrid>
@@ -254,7 +255,7 @@ function RunSteps({ automation, runs, now, command }: { automation: Automation; 
           title={t(command ? 'automations.step.gate' : 'automations.step.precheck')}
           meta={automation.precheck ? (
             <>
-              <span>{t('automations.step.precheckLimit', { seconds: automation.precheckTimeoutSecs })}</span>
+              <span>{t('automations.step.precheckLimit', { limit: durationWords(automation.precheckTimeoutSecs) })}</span>
               {checked && checked.precheckExit !== null ? (
                 <span className={cn('inline-flex items-center gap-1.5', checked.precheckExit === 0 && 'text-success-foreground')} title={checked.precheckOutput ?? undefined}>
                   <StatusDot tone={checked.precheckExit === 0 ? 'success' : 'muted'} />
