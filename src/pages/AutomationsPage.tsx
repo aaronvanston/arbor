@@ -30,7 +30,7 @@ import { useShortcut } from '../hooks/useShortcuts';
 import { useI18n } from '../i18n';
 import { formatAgo, formatDateTime, formatRelative, formatWhen } from '../lib/format';
 import { cn } from '../lib/utils';
-import { automationView, automationsView, type AppView, type AutomationsParams } from '../navigation';
+import { automationView, automationsListView, type AppView, type AutomationsParams } from '../navigation';
 import type { AutomationSource, AutomationSummary } from '../native/types';
 import {
   AUTOMATION_APPS,
@@ -76,12 +76,14 @@ export function AutomationsPage({ params, onNavigate, onViewChange }: {
   onViewChange: (view: AppView) => void;
 }) {
   useEffect(() => { void loadAutomations(); }, []);
-  if (params?.automation) return <AutomationPage id={params.automation} onNavigate={onNavigate} />;
-  return <AutomationsList machine={params?.machine ?? ''} onNavigate={onNavigate} onViewChange={onViewChange} />;
+  if (params?.automation) return <AutomationPage id={params.automation} back={automationsListView(params)} onNavigate={onNavigate} />;
+  return <AutomationsList machine={params?.machine ?? ''} state={params?.state ?? 'on'} onNavigate={onNavigate} onViewChange={onViewChange} />;
 }
 
-function AutomationsList({ machine, onNavigate, onViewChange }: {
+function AutomationsList({ machine, state, onNavigate, onViewChange }: {
   machine: string;
+  /** On, paused, failing or all: in the view, so an automation opened from the list goes back to the same one. */
+  state: AutomationState;
   onNavigate: (view: AppView) => void;
   onViewChange: (view: AppView) => void;
 }) {
@@ -90,7 +92,7 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
   const now = useQuotaClock();
   const [search, setSearch] = useState('');
   const [source, setSource] = useState<AutomationSource | 'all'>('all');
-  const [state, setState] = useState<AutomationState>('on');
+  const setState = (next: AutomationState) => onViewChange(automationsListView({ machine, state: next }));
   const [model, setModel] = useState('all');
   const [sort, setSort] = useState<AutomationSort | null>(null);
   const [creating, setCreating] = useState(false);
@@ -151,7 +153,7 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
       >
         <PageBreadcrumb segments={[
           t('app.nav.automations'),
-          <MachineCrumb key="machine" machine={machine} machines={machines} onChange={(next) => onViewChange(automationsView(next ? { machine: next } : {}))} />,
+          <MachineCrumb key="machine" machine={machine} machines={machines} onChange={(next) => onViewChange(automationsListView({ machine: next || undefined, state }))} />,
         ]}
         />
       </PageTopbar>
@@ -258,7 +260,7 @@ function AutomationsList({ machine, onNavigate, onViewChange }: {
                 surface="card"
                 sorting={sort}
                 onSortingChange={(next: DataGridSort | null) => setSort(next && (next.column === 'nextRun' || next.column === 'lastRun') ? { column: next.column, descending: next.descending } : null)}
-                onRowClick={(row) => (row.kind === 'group' ? toggle(row.key) : onNavigate(automationView(row.item.id)))}
+                onRowClick={(row) => (row.kind === 'group' ? toggle(row.key) : onNavigate(automationView(row.item.id, { machine: machine || undefined, state })))}
                 rowClassName={(row) => (row.kind === 'item' && row.inGroup ? 'bg-muted/30 dark:bg-input/8' : undefined)}
               />
             ) : (

@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { accountSignInsView, canOpenView, hasMachineScope, keepMachineScope, libraryView, mainView, rememberSyncMachine, setupView, sessionsView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
+import { accountSignInsView, automationView, automationsListView, canOpenView, hasMachineScope, keepMachineScope, libraryView, mainView, rememberSyncMachine, setupView, sessionsView, settingsPageIds, settingsPageView, usageView } from '../src/navigation';
 
 describe('navigation', () => {
+  test('an automation opened from the list goes back to the list as it was left', () => {
+    const opened = automationView('arbor:x', { machine: 'cam-mbp', state: 'paused' });
+    expect(opened).toEqual({ kind: 'main', page: 'automations', params: { machine: 'cam-mbp', state: 'paused', automation: 'arbor:x' } });
+    expect(automationsListView({ automation: 'arbor:x', machine: 'cam-mbp', state: 'paused' })).toEqual({ kind: 'main', page: 'automations', params: { machine: 'cam-mbp', state: 'paused' } });
+    // On is the list's own default, so the view going back to it carries nothing.
+    expect(automationsListView({ automation: 'arbor:x', state: 'on' })).toEqual({ kind: 'main', page: 'automations', params: {} });
+  });
+
   test("pages that only read Arbor's own data open while the core is stopped, and the rest wait for it", () => {
     for (const view of [mainView('home'), mainView('usage'), { kind: 'settings', page: 'notifications' } as const]) {
       expect(canOpenView(view, false)).toBe(true);

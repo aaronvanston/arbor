@@ -40,7 +40,12 @@ const MarkdownPreview = lazy(() => import('../components/MarkdownPreview').then(
 const RUNS_SHOWN = 50;
 
 /** One automation: what it's set to do, the prompt, and its runs, newest first. */
-export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (view: AppView) => void }) {
+export function AutomationPage({ id, back: backTo = automationsView(), onNavigate }: {
+  id: string;
+  /** The list it was opened from, which its breadcrumb goes back to. */
+  back?: AppView;
+  onNavigate: (view: AppView) => void;
+}) {
   const { t } = useI18n();
   const { list } = useAutomations();
   const { pools } = usePools();
@@ -79,7 +84,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
   }, [id, list, runsRead]);
 
   const back = (
-    <button type="button" className="cursor-pointer hover:text-foreground" onClick={() => onNavigate(automationsView())}>
+    <button type="button" className="cursor-pointer hover:text-foreground" onClick={() => onNavigate(backTo)}>
       {t('app.nav.automations')}
     </button>
   );
@@ -96,7 +101,7 @@ export function AutomationPage({ id, onNavigate }: { id: string; onNavigate: (vi
               <EmptyTitle>{t('automations.gone.title')}</EmptyTitle>
               <EmptyDescription>{t('automations.gone.description')}</EmptyDescription>
               <EmptyContent>
-                <Button variant="outline" size="sm" onClick={() => onNavigate(automationsView())}>{t('automations.gone.back')}</Button>
+                <Button variant="outline" size="sm" onClick={() => onNavigate(backTo)}>{t('automations.gone.back')}</Button>
               </EmptyContent>
             </Empty>
           ) : error !== null ? <p className="text-sm text-error-foreground">{plainError(error, t)}</p> : <Skeleton className="h-96 rounded-2xl" />}

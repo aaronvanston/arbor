@@ -1,3 +1,4 @@
+import type { AutomationState } from './services/automations';
 import type { UsageResultFilter } from './services/usageFilters';
 
 export type MainPageId = 'home' | 'accounts' | 'usage' | 'sessions' | 'machines' | 'pools' | 'automations' | 'setup' | 'alerts';
@@ -79,10 +80,11 @@ export type AccountsParams = { tab?: AccountsTabId };
 /** What Machines shows: the fleet at a glance, or one machine's own page. */
 export type MachinesParams = { machine?: string };
 /**
- * What Automations shows: every automation, narrowed to the machine they run on, or one automation's own page, with
- * what it's set to do and its runs.
+ * What Automations shows: every automation, narrowed to the machine they run on and to on, paused or failing ones, or
+ * one automation's own page, with what it's set to do and its runs. An automation opened from the list keeps the list's
+ * machine and state, so going back shows the list as it was left.
  */
-export type AutomationsParams = { automation?: string; machine?: string };
+export type AutomationsParams = { automation?: string; machine?: string; state?: AutomationState };
 /** What Pools shows: every pool's health at a glance, or one pool's own page. */
 export type PoolsParams = { pool?: string };
 
@@ -134,7 +136,11 @@ export const poolsView = (pool?: string): AppView => ({ kind: 'main', page: 'poo
 /** Automations: every one, or `automation`'s own page when it's given. */
 export const automationsView = (params: AutomationsParams = {}): AppView => ({ kind: 'main', page: 'automations', params });
 /** One automation's own page. */
-export const automationView = (automation: string): AppView => automationsView({ automation });
+export const automationView = (automation: string, list: Omit<AutomationsParams, 'automation'> = {}): AppView =>
+  automationsView({ ...list, automation });
+/** The list an automation's page goes back to: the one it was opened from. */
+export const automationsListView = ({ machine, state }: AutomationsParams = {}): AppView =>
+  automationsView({ ...(machine ? { machine } : {}), ...(state && state !== 'on' ? { state } : {}) });
 /** Sessions › Projects' Checkouts: each repo's branches and worktrees on each machine, with the ones that can go. */
 export const checkoutsView = (): AppView => sessionsView({ tab: 'projects', lens: 'checkouts' });
 /** The live board: every machine's sessions working, waiting on their user or done, on the Sessions page. */
