@@ -66,6 +66,8 @@ import type {
 } from '../native/types';
 import { MachinePill } from '../components/identity/Identity';
 import { heldPaths, reloadSyncStanding, standingOf, standingWords, useSyncStanding } from '../services/syncStanding';
+import { keeperLine, SETUP_REPO_UPDATED_EVENT, useRepoKeeper } from '../services/setupRepoKeeper';
+import { listen } from '@tauri-apps/api/event';
 import { RepoBrowser } from './SetupRepoBrowser';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -157,7 +159,12 @@ export function SetupRepoSection({ machines, history = null }: {
       reloadSyncStanding();
     };
     window.addEventListener('focus', again);
-    return () => window.removeEventListener('focus', again);
+    // The keeper fast-forwarded it: what's in it now is new.
+    const pulled = listen(SETUP_REPO_UPDATED_EVENT, again);
+    return () => {
+      window.removeEventListener('focus', again);
+      void pulled.then((off) => off()).catch(() => undefined);
+    };
   }, [path, load]);
 
   const plans = useMemo<Plan[]>(
@@ -356,6 +363,31 @@ export function SetupRepoSection({ machines, history = null }: {
   );
 }
 
+/**
+ * Whether the repo is kept in step with its remote, and when it last was, or what stopped it: the Pull and Push
+ * buttons stay for the user to sort that out.
+ */
+function KeeperLineView() {
+  const { t } = useI18n();
+  const found = useRepoKeeper();
+  if (!found) return null;
+  const line = keeperLine(found);
+  if (line.kind === 'problem') {
+    return (
+      <p className="text-xs text-warning-foreground" role="status" data-repo-keeper="problem" title={line.detail ?? undefined}>
+        {t(line.key, { upstream: found.upstream ?? t('repoKeeper.theRemote') })}
+        {line.detail ? <span className="text-muted-foreground"> {t('repoKeeper.gitSaid', { detail: line.detail })}</span> : null}
+      </p>
+    );
+  }
+  const text = line.kind === 'off' ? t('repoKeeper.off')
+    : line.kind === 'noRemote' ? t('repoKeeper.noRemote')
+      : line.running ? t('repoKeeper.checking', { upstream: line.upstream })
+        : line.fetchedMs ? t('repoKeeper.kept', { upstream: line.upstream, time: formatAgo(line.fetchedMs) })
+          : t('repoKeeper.keptNotYet', { upstream: line.upstream });
+  return <p className="text-xs text-muted-foreground" data-repo-keeper={line.kind}>{text}</p>;
+}
+
 /** Where the repo is, its last commit, and what in it isn't synced. */
 function RepoSummary({ path, repo, error, onForget }: { path: string; repo: SetupRepo | null; error: string | null; onForget: () => void }) {
   const { t } = useI18n();
@@ -388,6 +420,7 @@ function RepoSummary({ path, repo, error, onForget }: { path: string; repo: Setu
           {[repo.branch, `${short(repo.head.sha)} ${repo.head.subject}`, formatAgo(repo.head.atMs, now)].filter(Boolean).join(' · ')}
         </p>
       ) : null}
+      <KeeperLineView />
       {error ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-error-foreground" role="alert">
           <span className="min-w-0 flex-1">{t('setup.repo.failed', { error })}</span>

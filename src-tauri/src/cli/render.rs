@@ -383,6 +383,41 @@ pub(crate) fn sync_status(answer: &Value) -> String {
     out.join("\n")
 }
 
+/// The setup repo against its remote, from `get_setup_repo_keeper`: when it was last fetched, pulled and pushed, and
+/// what stopped it, if anything did.
+pub(crate) fn sync_repo(found: &Value, now_ms: i64) -> String {
+    let repo = found.get("repo").and_then(Value::as_str).unwrap_or("(no setup repo chosen yet)");
+    let mut out = vec![format!("Setup repo {repo}")];
+    if found.get("enabled") == Some(&Value::Bool(false)) {
+        out.push("Keeping it in step is off (Settings › Machines › Sync): Pull and Push on Sync › Repo only.".into());
+        return out.join("\n");
+    }
+    let Some(upstream) = found.get("upstream").and_then(Value::as_str) else {
+        out.push("Its branch follows no remote branch, so there's nothing to keep it in step with.".into());
+        return out.join("\n");
+    };
+    let count = |name: &str| found.get(name).and_then(Value::as_u64).unwrap_or(0);
+    out.push(format!("Follows {upstream}: {} ahead, {} behind", count("ahead"), count("behind")));
+    for (label, field) in [("Last fetch", "lastFetchMs"), ("Last pull", "lastPullMs"), ("Last push", "lastPushMs")] {
+        out.push(format!("  {label:<11}{}", ago(found.get(field).unwrap_or(&Value::Null), now_ms)));
+    }
+    let problem = match found.get("problem").and_then(Value::as_str) {
+        Some("diverged") => Some(format!("It and {upstream} each have commits the other hasn't. Arbor never merges: merge or rebase in a terminal.")),
+        Some("dirty") => Some("Synced files have changes that aren't committed, so it isn't pulled. Commit or drop them.".to_string()),
+        Some("auth") => Some(format!("{upstream} turned down the sign-in. Check git's credentials for it.")),
+        Some("network") => Some(format!("{upstream} couldn't be reached.")),
+        Some(_) => Some("Git couldn't keep it in step.".to_string()),
+        None => None,
+    };
+    if let Some(problem) = problem {
+        out.push(format!("Problem: {problem}"));
+        if let Some(detail) = found.get("detail").and_then(Value::as_str) {
+            out.push(format!("  git said: {detail}"));
+        }
+    }
+    out.join("\n")
+}
+
 /// `sync.plan` from the window.
 pub(crate) fn sync_plan(answer: &Value) -> String {
     let rows: Vec<Vec<String>> = items(answer, "files")
@@ -531,6 +566,21 @@ mod tests {
         assert!(shown.contains("lab-box  not scanned"), "{shown}");
         assert!(shown.contains("  ci-01: plugin paper") && !shown.contains("plugin linear"), "{shown}");
         assert!(shown.ends_with("Not counted: .agents/hooks.json isn't JSON Arbor can read"), "{shown}");
+    }
+
+    #[test]
+    fn sync_repo_says_when_it_was_last_kept_in_step_and_what_stopped_it() {
+        let now = 10 * 60_000;
+        let kept = json!({ "enabled": true, "repo": "/Users/cam/agent-setup", "upstream": "origin/main", "ahead": 0, "behind": 0,
+            "lastFetchMs": now - 3 * 60_000, "lastPullMs": null, "lastPushMs": now - 120_000, "problem": null, "detail": null });
+        let shown = sync_repo(&kept, now);
+        assert!(shown.contains("Follows origin/main: 0 ahead, 0 behind") && shown.contains("Last fetch 3m ago") && shown.contains("Last pull  –"), "{shown}");
+        assert!(!shown.contains("Problem"), "{shown}");
+        let diverged = json!({ "enabled": true, "repo": "/r", "upstream": "origin/main", "ahead": 1, "behind": 2, "problem": "diverged", "detail": "rejected" });
+        let shown = sync_repo(&diverged, now);
+        assert!(shown.contains("Problem: It and origin/main each have commits") && shown.ends_with("  git said: rejected"), "{shown}");
+        assert!(sync_repo(&json!({ "enabled": false, "repo": "/r" }), now).contains("is off"));
+        assert!(sync_repo(&json!({ "enabled": true, "repo": "/r", "upstream": null }), now).contains("follows no remote branch"));
     }
 
     #[test]

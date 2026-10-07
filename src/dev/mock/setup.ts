@@ -60,6 +60,7 @@ import type {
   ProjectToolchain,
   ProjectWorktree,
   RegistryCell,
+  RepoKeeper,
   RegistryState,
   RemovalResult,
   RepoChange,
@@ -1977,6 +1978,46 @@ const kindCounts = (items: BehindItem[]): KindCounts => {
   return counts;
 };
 
+// Keeping the setup repo in step with its remote (setup_repo_keeper.rs). By default it was fetched three minutes ago and
+// is in step; `?repokeep=` puts it `ahead` or `behind` (the next round, on focus or from Settings, pushes or pulls),
+// `diverged`, `dirty` (synced files changed, so it can't pull), `pushfail` (the remote turns the push down),
+// `noremote` (its branch follows none) or `off` (switched off in Settings › Machines › Sync).
+const repoKeepScenario = params.get('repokeep');
+let repoKeeper: RepoKeeper = ((): RepoKeeper => {
+  const base: RepoKeeper = {
+    enabled: repoKeepScenario !== 'off', repo: MOCK_REPO, upstream: 'origin/main', ahead: 0, behind: 0,
+    lastFetchMs: Date.now() - 3 * 60_000, lastPullMs: hours(26), lastPushMs: hours(2), checkedMs: Date.now() - 3 * 60_000,
+    problem: null, detail: null, running: false,
+  };
+  switch (repoKeepScenario) {
+    case 'ahead': return { ...base, ahead: 2 };
+    case 'behind': return { ...base, behind: 1 };
+    case 'diverged': return { ...base, ahead: 1, behind: 2, problem: 'diverged' };
+    case 'dirty': return { ...base, behind: 1, problem: 'dirty' };
+    case 'pushfail': return { ...base, ahead: 1, problem: 'auth', detail: "fatal: Authentication failed for 'https://github.com/cam/agent-setup.git/'" };
+    case 'noremote': return { ...base, upstream: null, lastFetchMs: null, lastPullMs: null, lastPushMs: null };
+    default: return base;
+  }
+})();
+
+const keepRepoMock = (olderThanMs: number | null): RepoKeeper => {
+  const now = Date.now();
+  const enabled = localStorage.getItem('arbor.setup.keepInStep.v1') !== 'false' && repoKeepScenario !== 'off';
+  if (!enabled) repoKeeper = { ...repoKeeper, enabled: false };
+  else if (olderThanMs && repoKeeper.lastFetchMs !== null && now - repoKeeper.lastFetchMs < olderThanMs) return repoKeeper;
+  else if (repoKeeper.upstream) {
+    const fetched = { ...repoKeeper, enabled: true, lastFetchMs: now, checkedMs: now };
+    if (repoKeeper.problem) repoKeeper = fetched;
+    else if (repoKeeper.behind) {
+      repoKeeper = { ...fetched, behind: 0, lastPullMs: now };
+      void emit('setup-repo-updated', now);
+    } else if (repoKeeper.ahead) repoKeeper = { ...fetched, ahead: 0, lastPushMs: now };
+    else repoKeeper = fetched;
+  }
+  void emit('setup-repo-keeper', repoKeeper);
+  return repoKeeper;
+};
+
 const syncStandingMock = (path: string): SyncStanding => {
   const repo = setupRepoReply(path);
   const read = <T,>(reply: () => T): [T | null, string | null] => {
@@ -3566,6 +3607,8 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   get_projects: () => projectsState.map(projectsReply),
   get_project_drift: () => later(250, mockDrift),
   get_sync_standing: (args) => later(250, () => syncStandingMock(args.repo)),
+  get_setup_repo_keeper: () => ({ ...repoKeeper, enabled: localStorage.getItem('arbor.setup.keepInStep.v1') !== 'false' && repoKeepScenario !== 'off' }),
+  keep_setup_repo_now: (args) => later(600, () => keepRepoMock(args.olderThanMs ?? null)),
   sync_local_project: (args) => {
     mockLog('sync_local_project', args);
     return later(1_100, (): HubSync => ({

@@ -109,6 +109,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('machines', 'automations-proxy-key', 'automations.settings.title', 'automations.proxy.key', { description: 'automations.proxy.keyHint', keywords: 'automations.proxy.keywords' }),
   row('machines', 'automations-proxy-address', 'automations.settings.title', 'automations.proxy.address', { description: 'automations.proxy.addressHint', keywords: 'automations.proxy.keywords' }),
   row('machines', 'automations-draft-model', 'automations.settings.title', 'automations.settings.model', { description: 'automations.settings.modelHint', keywords: 'tree.automations.keywords' }),
+  row('machines', 'sync-keep-repo', 'repoKeeper.settings.title', 'repoKeeper.settings.keep', { description: 'repoKeeper.settings.keepHint', keywords: 'repoKeeper.settings.keywords' }),
   row('machines', 'telemetry', 'telemetry.settings.title', 'telemetry.settings.receive', { description: 'telemetry.settings.receiveHint' }),
   row('machines', 'telemetry-port', 'telemetry.settings.title', 'telemetry.settings.port', { description: 'telemetry.settings.portHint' }),
   row('machines', 'telemetry-machines', 'telemetry.settings.title', 'telemetry.settings.machines'),

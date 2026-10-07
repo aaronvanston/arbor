@@ -206,6 +206,7 @@ Usage: arbor [command] [flags]
   routing [<provider> on|off]  Automatic account order per provider
   alerts [seen]                Recent alerts, or mark them all seen
   sync                         How far each machine is from the setup repo
+  sync repo                    Whether the setup repo is kept in step with its remote
   sync <machine>               What Sync would change there
   sync apply <machine>         Bring it in line (backed up first)
   core [status|start|stop|restart|install [version]]
@@ -505,6 +506,12 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
         ["alerts"] => window_action(options, "alerts.list", json!({}), render::alerts),
         ["alerts", "seen"] => window_action(options, "alerts.seen", json!({}), |_| "Every alert is marked seen.".into()),
         ["sync"] => window_action(options, "sync.status", json!({}), render::sync_status),
+        ["sync", "repo"] => {
+            let mut client = connect(options)?;
+            let found = client.read("get_setup_repo_keeper", Value::Null)?;
+            show(options, &found, |found| render::sync_repo(found, render::now_ms()));
+            Ok(())
+        }
         ["sync", "apply", machine] => {
             let machine = machine_name(&mut connect(options)?, machine)?;
             window_action(options, "sync.apply", json!({ "machine": machine }), pretty)

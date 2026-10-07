@@ -20,6 +20,8 @@ export type AlertSubject = {
   on?: string;
   /** An automation, by its id. */
   automation?: string;
+  /** The setup repo, by its folder. */
+  repo?: string;
   /**
    * What opening it shows, beyond what it's about, so these don't count when telling a repeat from news: the provider
    * whose accounts an outage affects, the kinds of setup item a setup change touched (`hook`, `mcp`, `plugin`,
@@ -92,6 +94,7 @@ const CATEGORY: Record<AlertKind, AlertCategory | null> = {
   automationFailed: 'machines',
   machineUp: 'machines',
   setupChanged: 'machines',
+  setupRepo: 'machines',
   outage: 'outages',
   // The proxy's own trouble: Home says what's wrong, with the fix.
   proxySettings: 'outages',
@@ -112,7 +115,7 @@ export type AlertDestination =
   | { kind: 'accounts'; account?: string; provider?: string }
   | { kind: 'machines'; machine?: string }
   | { kind: 'automation'; automation: string }
-  | { kind: 'setup'; tab?: SetupChangeView; machine?: string }
+  | { kind: 'setup'; tab?: SetupChangeView | 'repo'; machine?: string }
   | { kind: 'archive' }
   | { kind: 'session'; session: string }
   | { kind: 'sessions'; machine?: string }
@@ -152,6 +155,7 @@ function setupChangeDestination(subject: AlertSubject | undefined): AlertDestina
  */
 export function alertDestination({ kind, subject }: Pick<AlertRecord, 'kind' | 'subject'>): AlertDestination | null {
   if (kind === 'setupChanged') return setupChangeDestination(subject);
+  if (kind === 'setupRepo') return { kind: 'setup', tab: 'repo' };
   if (kind === 'automationFailed' && subject?.automation) return { kind: 'automation', automation: subject.automation };
   // What's wrong with the archive, and what to do, is on its settings page.
   if (kind === 'archiveAway' || kind === 'archiveFailing') return { kind: 'archive' };
@@ -202,6 +206,7 @@ function aboutThings(subject: AlertSubject | undefined): string[] {
     ...ids(subject.url).map((id) => `url:${id}`),
     ...ids(subject.provider).map((id) => `provider:${id}`),
     ...ids(subject.automation).map((id) => `automation:${id}`),
+    ...ids(subject.repo).map((id) => `repo:${id}`),
   ];
 }
 

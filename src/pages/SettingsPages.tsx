@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invokeCommand } from '../native/commands';
+import { SyncSettings } from './SyncSettings';
 import { AlertCircle, ArrowUpRight } from '../components/ui/icons';
 import { useI18n } from '../i18n';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
@@ -52,6 +53,7 @@ export function MachineAssignmentsSettingsPage({ onNavigate }: { onNavigate?: (v
             <MachineHostsSettings />
             <MachineProbesSettings />
             <AutomationSettings />
+            <SyncSettings />
             <AgentTelemetrySettings />
           </>
         )}

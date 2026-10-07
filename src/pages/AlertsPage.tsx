@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArchiveX, Bell, CalendarRange, ChevronRight, CirclePause, CirclePlay, CloudAlert, ExternalLink, Flame, Gauge, HardDrive, Hourglass, Layers, MessageSquareMore, MonitorCheck, RotateCcw, Send, ServerCog, Settings2, ShieldQuestionMark, Smartphone, TimeSchedule, Trash2, TriangleAlert, Unplug, type AppIcon } from '../components/ui/icons';
+import { ArchiveX, Bell, CalendarRange, ChevronRight, CirclePause, CirclePlay, CloudAlert, ExternalLink, Flame, Gauge, HardDrive, Hourglass, Layers, MessageSquareMore, MonitorCheck, RotateCcw, Send, ServerCog, Settings2, ShieldQuestionMark, Smartphone, TimeSchedule, Trash2, TriangleAlert, Unplug, type AppIcon, FolderGit2 } from '../components/ui/icons';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { MachineText } from '../components/identity/MachineText';
 import { MachineCrumb } from '../components/layout/MachineCrumb';
@@ -58,6 +58,7 @@ const KIND_LOOK: Record<AlertKind, { icon: AppIcon; tone: Tone }> = {
   machineDown: { icon: Unplug, tone: 'error' },
   machineUp: { icon: MonitorCheck, tone: 'success' },
   setupChanged: { icon: Layers, tone: 'info' },
+  setupRepo: { icon: FolderGit2, tone: 'warning' },
   automationFailed: { icon: TimeSchedule, tone: 'error' },
   outage: { icon: CloudAlert, tone: 'warning' },
   proxySettings: { icon: ServerCog, tone: 'error' },

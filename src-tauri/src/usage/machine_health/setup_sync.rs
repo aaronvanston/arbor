@@ -230,6 +230,11 @@ impl SetupRepo {
         &self.files
     }
 
+    /// Synced files and skills with changes that aren't committed.
+    pub(super) fn uncommitted_files(&self) -> &[String] {
+        &self.uncommitted
+    }
+
     pub(super) fn skills(&self) -> &[RepoSkill] {
         &self.skills
     }
@@ -349,10 +354,15 @@ pub(super) async fn git(folder: &Path, args: &[&str], timeout: Duration) -> Resu
         .kill_on_drop(true);
     configure_helper_command(&mut command);
     let child = command.spawn().map_err(|error| format!("Could not run git: {error}"))?;
-    tokio::time::timeout(timeout, child.wait_with_output())
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
         .await
         .map_err(|_| format!("git timed out after {}s", timeout.as_secs()))?
-        .map_err(|error| format!("git failed: {error}"))
+        .map_err(|error| format!("git failed: {error}"))?;
+    // Arbor's own commit in the setup repo goes to its remote straight away; the keeper checks it's that repo.
+    if output.status.success() && args.contains(&"commit") {
+        super::setup_repo_keeper::committed();
+    }
+    Ok(output)
 }
 
 /// What a git command printed, or why it failed.

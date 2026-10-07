@@ -66,6 +66,7 @@ pub(crate) mod setup_mcp;
 pub(crate) mod setup_plugins;
 pub(crate) mod setup_projects;
 pub(crate) mod setup_repo_browse;
+pub(crate) mod setup_repo_keeper;
 pub(crate) mod setup_repo_skills;
 pub(crate) mod setup_skills;
 pub(crate) mod setup_standing;

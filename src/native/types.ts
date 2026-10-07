@@ -2501,6 +2501,11 @@ export type ItemKind = "instructions" | "import" | "rule" | "skill" | "subagent"
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
 /**
+ * Why a round left the repo as it was.
+ */
+export type KeepProblem = "diverged" | "dirty" | "auth" | "network" | "failed";
+
+/**
  * A version a version manager keeps, which a project that pins it gets.
  */
 export type KeptVersion = {
@@ -4314,6 +4319,42 @@ export type RepoInstructions = {
    */
   hash: string,
   size: number,
+};
+
+/**
+ * How the keeper last found the repo.
+ */
+export type RepoKeeper = {
+  /**
+   * Keeping in step is switched on.
+   */
+  enabled: boolean,
+  /**
+   * The repo's folder, once the window has named one.
+   */
+  repo: string | null,
+  /**
+   * The remote branch it follows, like `origin/main`; None when it follows none, which leaves it to the buttons.
+   */
+  upstream: string | null,
+  ahead: number,
+  behind: number,
+  lastFetchMs: number | null,
+  lastPullMs: number | null,
+  lastPushMs: number | null,
+  /**
+   * When the last round finished.
+   */
+  checkedMs: number | null,
+  problem: KeepProblem | null,
+  /**
+   * Git's own words for a problem, when they say more than the kind does.
+   */
+  detail: string | null,
+  /**
+   * A round is under way.
+   */
+  running: boolean,
 };
 
 /**

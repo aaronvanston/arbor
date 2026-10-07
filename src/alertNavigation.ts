@@ -1,6 +1,6 @@
 import { invokeCommand } from './native/commands';
 import { requestFocus, type FocusTarget } from './focusRequests';
-import { accountLimitsView, automationView, machinesView, movedSetupView, sessionsView, setupChecksView, usageView, type AppView } from './navigation';
+import { accountLimitsView, automationView, machinesView, movedSetupView, sessionsView, setupChecksView, setupView, usageView, type AppView } from './navigation';
 import type { AlertDestination } from './services/alertHistory';
 import { settingEntry } from './services/settingsIndex';
 import { setSyncMachine } from './services/syncScope';
@@ -13,7 +13,10 @@ export function alertDestinationView(destination: AlertDestination): AppView | n
     case 'automation': return automationView(destination.automation);
     // A change of one kind opens that kind in the Library by machine, where each machine's homes are; others, Overview's
     // table of each machine's setup.
-    case 'setup': return (destination.tab ? movedSetupView(destination.tab) : null) ?? setupChecksView();
+    case 'setup':
+      // The setup repo's own trouble is on Sync › Repo, beside its Pull and Push.
+      if (destination.tab === 'repo') return setupView({ tab: 'repo' });
+      return (destination.tab ? movedSetupView(destination.tab) : null) ?? setupChecksView();
     case 'archive': return { kind: 'settings', page: 'session-archive' };
     case 'session': return sessionsView({ session: destination.session });
     // An agent waiting on one machine is on the live board, narrowed to that machine.

@@ -147,6 +147,10 @@
  * reaching them yet, so Sync shows them as they were and only a Scan you ask for reads them again; `?behind=plugins` for
  * ci-01 behind the setup repo on plugins alone, with the sample plugins listed as `?pluginrepo=sample` lists them (Overview,
  * the Repo strip and the sidebar badge all say so);
+ * `?repokeep=ahead`, `behind`, `diverged`, `dirty`, `pushfail`, `noremote` or `off` for the setup repo ahead of or
+ * behind its remote (the next round, on focus or from Settings › Machines › Sync, pushes or pulls), ahead and behind,
+ * behind with synced files changed, a push the remote turns down, a branch that follows no remote, or keeping it in step
+ * switched off; Sync › Repo says each, and a problem raises an alert;
  * `?base=edited` for ci-01's first item behind edited on the machine since it last matched the repo (Overview,
  * the Library, its page's three choices, the Repo review leaving it unticked), `?base=both` for cedar-02's first item
  * edited there while the repo moved on too, and `?base=none` for every item with no base yet, so Sync can't tell who

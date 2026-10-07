@@ -1269,6 +1269,20 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_setup_repo_keeper",
+        access: Access::Read,
+        summary: "How the keeper last found the setup repo.",
+        args: &[],
+    },
+    CommandSpec {
+        name: "keep_setup_repo_now",
+        access: Access::Write,
+        summary: "A round now: always when `older_than_ms` is none, else only when the last fetch is older than that (the window coming back to the front passes five minutes). Turning the switch on asks for one too.",
+        args: &[
+            ArgSpec { name: "olderThanMs", ts_type: "number | null", optional: true },
+        ],
+    },
+    CommandSpec {
         name: "read_setup_text",
         access: Access::Read,
         summary: "The content of a text file a scan found, for comparing it with another machine's.",
@@ -2334,6 +2348,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_setup_inventory" => done(Box::pin(crate::usage::machine_health::setup::get_setup_inventory(app.state())).await),
         "scan_setup" => async { done(Box::pin(crate::usage::machine_health::setup::scan_setup(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "staleOnly")?)).await) }.await,
         "get_sync_standing" => async { done(Box::pin(crate::usage::machine_health::setup_standing::get_sync_standing(app.state(), arg(&args, "repo")?)).await) }.await,
+        "get_setup_repo_keeper" => done(Box::pin(crate::usage::machine_health::setup_repo_keeper::get_setup_repo_keeper(app.clone())).await),
+        "keep_setup_repo_now" => async { done(Box::pin(crate::usage::machine_health::setup_repo_keeper::keep_setup_repo_now(app.clone(), arg(&args, "olderThanMs")?)).await) }.await,
         "read_setup_text" => async { done(Box::pin(crate::usage::machine_health::setup::read_setup_text(app.state(), arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "read_setup_skill" => async { done(Box::pin(crate::usage::machine_health::setup::read_setup_skill(app.state(), arg(&args, "machine")?, arg(&args, "path")?)).await) }.await,
         "get_setup_repo" => async { done(Box::pin(crate::usage::machine_health::setup_sync::get_setup_repo(arg(&args, "repo")?)).await) }.await,

@@ -70,6 +70,14 @@ machine installs is taken back out of the repo at once); a
 marketplace the machines have can be refreshed or removed on all of them (`marketplaceEverywhere`). Software has the agent rollout, every machine's
 versions and the toolchain. Repo is the setup repo's files, changes and History, one timeline of its commits with the changes Arbor made on each machine from them (and on its own, from features that edit settings), each with Undo (`pages/SetupRepoHistory.tsx` over `services/repoTimeline.ts`).
 
+The repo keeps itself in step with the remote branch it follows (`setup_repo_keeper.rs`, switched off on Settings ›
+Machines › Sync). It fetches a minute after launch, every 15 minutes, and when the window comes back to the front after
+five minutes. It fast-forwards when the repo is only behind and no synced file has uncommitted changes. It pushes when
+the repo is only ahead, and straight after any commit Arbor makes (`setup_sync::git` wakes it). Nothing else is ever
+done: diverged, dirty, sign-in and network trouble are left as they are. Each shows on Sync › Repo beside the Pull and
+Push buttons and raises one `setupRepo` alert, folded by the repo it's about. A pull re-reads the standing, so machines
+show behind at once.
+
 Pools (`pages/PoolsPage.tsx`) shows every pool's health, and `poolsView(id)` one pool's page: members' load against the
 limits, the next run's chances, where a burst would go. Settings › Pools only edits them.
 

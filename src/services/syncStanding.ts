@@ -19,6 +19,8 @@ import { storedSetupRepo, subscribeSetupRepo } from './setupSync';
 export const getSyncStanding = (repo: string) => invokeCommand('get_sync_standing', { repo });
 
 const SETUP_PROJECTS_UPDATED_EVENT = 'setup-projects-updated';
+/** The keeper pulled the repo, so machines may be behind it now (setupRepoKeeper.ts). */
+const SETUP_REPO_UPDATED_EVENT = 'setup-repo-updated';
 
 export type StandingSnapshot = {
   /** The setup repo's folder, or null when none is chosen. */
@@ -80,7 +82,7 @@ export function reloadSyncStanding() {
 
 function start() {
   let disposed = false;
-  const unlisten = [SETUP_INVENTORY_UPDATED_EVENT, SETUP_PROJECTS_UPDATED_EVENT].map((event) => listen(event, () => reloadSyncStanding()));
+  const unlisten = [SETUP_INVENTORY_UPDATED_EVENT, SETUP_PROJECTS_UPDATED_EVENT, SETUP_REPO_UPDATED_EVENT].map((event) => listen(event, () => reloadSyncStanding()));
   const stopRepo = subscribeSetupRepo(() => reloadSyncStanding());
   reloadSyncStanding();
   stopEvents = () => {

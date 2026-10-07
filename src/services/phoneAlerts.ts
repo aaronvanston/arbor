@@ -51,6 +51,7 @@ export type AlertKind =
   | 'machineDown'
   | 'machineUp'
   | 'setupChanged'
+  | 'setupRepo'
   | 'automationFailed'
   | 'archiveAway'
   | 'archiveFailing'
@@ -84,6 +85,7 @@ const TOPIC: Record<AlertKind, PhoneAlertTopic | null> = {
   machineDown: 'machines',
   machineUp: 'machines',
   setupChanged: 'setup',
+  setupRepo: 'setup',
   automationFailed: 'machines',
   agentPermission: 'needsYou',
   agentWaiting: 'needsYou',

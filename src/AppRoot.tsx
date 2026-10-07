@@ -11,6 +11,7 @@ import { LiveSessionsMonitor } from './components/LiveSessionsMonitor';
 import { WeeklyDigestMonitor } from './components/WeeklyDigestMonitor';
 import { MachineMonitor } from './components/MachineMonitor';
 import { SetupChangeMonitor } from './components/SetupChangeMonitor';
+import { SetupRepoKeeperMonitor } from './components/SetupRepoKeeperMonitor';
 import { AutomationMonitor } from './components/AutomationMonitor';
 import { ArchiveMonitor } from './components/ArchiveMonitor';
 import { AgentAttentionMonitor } from './components/AgentAttentionMonitor';
@@ -99,6 +100,7 @@ function AppMonitors({ shell, onNavigate }: { shell: boolean; onNavigate: (view:
         <MonitorBoundary name="SessionMonitor"><SessionMonitor /></MonitorBoundary>
         <MonitorBoundary name="WeeklyDigestMonitor"><WeeklyDigestMonitor /></MonitorBoundary>
         <MonitorBoundary name="SetupChangeMonitor"><SetupChangeMonitor /></MonitorBoundary>
+        <MonitorBoundary name="SetupRepoKeeperMonitor"><SetupRepoKeeperMonitor /></MonitorBoundary>
         <MonitorBoundary name="AutomationMonitor"><AutomationMonitor /></MonitorBoundary>
         <MonitorBoundary name="ArchiveMonitor"><ArchiveMonitor /></MonitorBoundary>
         <MonitorBoundary name="AgentAttentionMonitor"><AgentAttentionMonitor /></MonitorBoundary>
