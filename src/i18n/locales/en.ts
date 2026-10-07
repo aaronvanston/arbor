@@ -1340,7 +1340,7 @@ export const en = {
   'heavySession.paused': '{key} is paused. The core refuses clients using it until you resume it.',
   'heavySession.onlyKey': 'This is the only authentication key. Without one the core lets any client in, so it can’t be paused.',
   'heavySession.pauseTitle': 'Pause {key}?',
-  'heavySession.pauseMessage': 'The core stops accepting this key until you resume it, here or in Settings under Authentication Keys. Every client using it is refused, not just this session.',
+  'heavySession.pauseMessage': 'The core stops accepting this key until you resume it, here or on Settings › Proxy under Authentication keys. Every client using it is refused, not just this session.',
   'heavySession.detail.machine': 'Machine',
   'heavySession.detail.key': 'Key',
   'heavySession.pauseOthers.one': '1 other session used this key in the last hour. It will be refused too.',

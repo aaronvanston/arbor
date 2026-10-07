@@ -998,7 +998,7 @@ export function UsageRecordsPage({ variant = 'usage', params, onNavigate, onView
           {/* Prices too: each model's requests and cost come from the recorded usage, which goes stale with it. */}
           <UsageCollectorBanner onOpenData={onNavigate ? () => onNavigate({ kind: 'settings', page: 'data' }) : undefined} />
           {variant === 'usage' || variant === 'value' ? <ProviderStatusBanner /> : null}
-          {variant === 'usage' || variant === 'sessions' ? <HeavySessionBanner machine={machineCrumb ? machine : ''} onOpenSession={openSession} /> : null}
+          {variant === 'usage' || variant === 'sessions' || variant === 'pricing' ? <HeavySessionBanner machine={machineCrumb ? machine : ''} onOpenSession={openSession} /> : null}
           {variant === 'sessions' ? <ArchiveBanner onOpen={onNavigate ? () => onNavigate({ kind: 'settings', page: 'session-archive' }) : undefined} /> : null}
         </div>
 

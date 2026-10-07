@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { clientKeyName, defaultClientKey, newClientKey } from '../src/services/clientKeys';
+import { clientKeyName, defaultClientKey, maskApiKey, newClientKey } from '../src/services/clientKeys';
 import { agentSetup, listensOnlyHere, proxyOrigin } from '../src/services/connectAgent';
 
 describe('connecting an agent', () => {
@@ -41,7 +41,16 @@ describe('the key Arbor hands out without asking', () => {
     // After Cam laptop's key is paused, the next is handed out, by its masked value when it has no name.
     const next = defaultClientKey({ apiKeys: [ci] });
     expect(next).toBe(ci);
-    expect(next && clientKeyName(next)).toBe('sk******00');
+    expect(next && clientKeyName(next)).toBe('sk-9••••0000');
     expect(defaultClientKey({ apiKeys: [] })).toBeNull();
+  });
+});
+
+describe('a key with its middle hidden', () => {
+  it('shows the ends as usage records keep them, so a key reads the same everywhere', () => {
+    // The same cases as mask_api_key's in usage.rs.
+    expect(maskApiKey('123456')).toBe('12••••');
+    expect(maskApiKey('sk-1234567890')).toBe('sk-1••••7890');
+    expect(maskApiKey('  ')).toBe('');
   });
 });

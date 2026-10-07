@@ -391,7 +391,7 @@ const usageRecords = Array.from({ length: realSize ? 1_000 : 25 }, (_, index): U
     reasoning_effort: index % 4 === 0 ? 'high' : index % 4 === 1 ? 'medium' : '',
     endpoint: model.startsWith('claude') ? '/v1/messages' : '/v1/responses',
     api_key_hash: index % 4 === 0 ? 'c3d4' : 'a1b2',
-    api_key_display: index % 4 === 0 ? 'sk-…0a2c' : 'sk-…3f5a',
+    api_key_display: index % 4 === 0 ? 'sk-c••••0a2c' : 'sk-l••••3f5a',
     api_key_remark: index % 4 === 0 ? 'CI runner' : 'Cam laptop',
     tokens: requestTokens(index, claude),
   };

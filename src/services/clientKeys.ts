@@ -5,13 +5,15 @@ import type { CoreApiKeyView, CoreConfigView } from '../native/types';
 /** The keys the core accepts, and the ones paused: kept by Arbor, out of the core's list until resumed. */
 type ClientKeys = Pick<CoreConfigView, 'apiKeys' | 'pausedApiKeys'>;
 
+/**
+ * A key with only its ends showing, as usage records keep it (`mask_api_key` in usage.rs), so a key reads the same on
+ * Settings, the heavy-session banner and Usage › Requests: "sk-1••••0a2c", or for a short one its first two.
+ */
 export function maskApiKey(apiKey: string) {
-  const value = apiKey.trim();
-  if (!value) {
-    return '';
-  }
-  const visible = value.length < 4 ? 1 : 2;
-  return `${value.slice(0, visible)}${'*'.repeat(Math.max(6, 10 - visible * 2))}${value.slice(-visible)}`;
+  const value = [...apiKey.trim()];
+  if (!value.length) return '';
+  if (value.length <= 8) return `${value.slice(0, 2).join('')}••••`;
+  return `${value.slice(0, 4).join('')}••••${value.slice(-4).join('')}`;
 }
 
 /** A new client key: `sk-` and 48 random hex digits. */
