@@ -130,6 +130,9 @@ describe('relative times and durations', () => {
     expect(formatElapsed(9_960, AU12)).toBe('10s');
     expect(formatElapsed(12_300)).toBe('12s');
     expect(formatElapsed(65_000)).toBe('1m 5s');
+    // system-5: a whole minute, and the command line log's 6120 ms, read like every other duration.
+    expect(formatElapsed(60_000)).toBe('1m');
+    expect(formatElapsed(6_120, AU12)).toBe('6.1s');
     expect(formatElapsed(94 * MINUTE)).toBe('1h 34m');
     expect(formatElapsed(Number.NaN)).toBe('0 ms');
   });

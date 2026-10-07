@@ -180,7 +180,10 @@ export function formatElapsed(durationMs: number, place: FormatRegion = region):
   if (ms < 9_950) return text('format.span.seconds', { seconds: formatNumber(ms / 1_000, 1, place) });
   const seconds = Math.round(ms / 1_000);
   if (seconds < 60) return text('format.span.seconds', { seconds });
-  if (seconds < 3_600) return text('format.span.minutesSeconds', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
+  // A whole minute reads "1m", not "1m 0s".
+  if (seconds < 3_600) {
+    return seconds % 60 ? text('format.span.minutesSeconds', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 }) : text('format.span.minutes', { minutes: seconds / 60 });
+  }
   return formatDuration(ms);
 }
 

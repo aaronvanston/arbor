@@ -5779,7 +5779,6 @@ export const en = {
   'cli.activity.access.read': 'Reads',
   'cli.activity.access.write': 'Changes',
   'cli.activity.access.confirm': 'Asks first',
-  'cli.activity.took': '{ms} ms',
   'cli.activity.client.cli': 'arbor',
   'cli.activity.client.mcp': 'Agent',
   'cli.activity.outcome.ok': 'Done',

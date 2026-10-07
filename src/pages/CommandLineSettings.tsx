@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { useI18n } from '../i18n';
-import { formatAgo } from '../lib/format';
+import { formatAgo, formatElapsed } from '../lib/format';
 import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -251,7 +251,7 @@ function ActivityTable({ rows }: { rows: CliActivityRow[] }) {
             <TableCell className="max-w-0 truncate font-mono" title={row.method}>{row.method}</TableCell>
             <TableCell className="whitespace-nowrap text-muted-foreground">{row.access ? t(row.access) : '–'}</TableCell>
             <TableCell><Badge variant={row.tone} size="sm">{t(row.outcome)}</Badge></TableCell>
-            <TableCell className={TABLE_NUMERIC_CLASS}>{t('cli.activity.took', { ms: row.ms })}</TableCell>
+            <TableCell className={TABLE_NUMERIC_CLASS}>{formatElapsed(row.ms)}</TableCell>
           </TableRow>
         ))}
       </TableBody>
