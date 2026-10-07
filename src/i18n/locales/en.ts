@@ -3623,6 +3623,7 @@ export const en = {
   'fileView.loading': 'Loading the viewer…',
   'fileView.failed': 'Couldn’t show this file: {error}',
   'dialog.loadFailed': 'Couldn’t open this: {error}',
+  'dialog.opening': 'Opening…',
   'fileView.whole': 'These copies are too far apart to line up line by line, so everything between what they share at the start and end shows as removed and added.',
   'fileView.fold.lines.one': '{count} unchanged line',
   'fileView.fold.lines.other': '{count} unchanged lines',

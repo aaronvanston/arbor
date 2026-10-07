@@ -2,13 +2,15 @@ import { useEffect, useRef, useState, type ComponentProps, type ComponentType } 
 import { useI18n } from '../i18n';
 import { mockableChunk } from '../lib/mockableChunk';
 import { plainError } from '../services/plainError';
+import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
 
 /**
  * A dialog whose code loads the first time it opens, rather than with the app: each brings libraries and services that
  * only it uses. It mounts once its code is here, and stays mounted after, so it can close with its animation and opens
  * at once the next time. Not through `lazy()`: a suspended dialog would show 300 ms late, as React holds back what
- * appears after a Suspense fallback, where the code itself takes a few milliseconds.
+ * appears after a Suspense fallback, where the code itself takes a few milliseconds. When the code is slow to arrive
+ * (a busy Mac), a small "Opening…" shows where the dialog will, so the click reads as taken.
  */
 function whenOpened<P extends { open: boolean }>(load: () => Promise<ComponentType<P>>, close: (props: P) => void) {
   const importDialog = mockableChunk(load);
@@ -30,11 +32,14 @@ function whenOpened<P extends { open: boolean }>(load: () => Promise<ComponentTy
     // Held as { component } since a component is itself a function, which useState would call.
     const [dialog, setDialog] = useState(() => (loaded ? { component: loaded } : null));
     const opening = props.open && !dialog;
+    const [slow, setSlow] = useState(false);
     const latest = useRef(props);
     latest.current = props;
     useEffect(() => {
       if (!opening) return undefined;
       let live = true;
+      // Only once it's slower than a blink, so the usual few milliseconds don't flash it.
+      const timer = window.setTimeout(() => setSlow(true), SLOW_MS);
       loadDialog().then(
         (component) => { if (live) setDialog({ component }); },
         (error: unknown) => {
@@ -46,12 +51,29 @@ function whenOpened<P extends { open: boolean }>(load: () => Promise<ComponentTy
       );
       return () => {
         live = false;
+        window.clearTimeout(timer);
+        setSlow(false);
       };
     }, [opening, t]);
-    if (!dialog) return null;
+    if (!dialog) return opening && slow ? <OpeningDialog /> : null;
     const Dialog = dialog.component;
     return <Dialog {...props} />;
   };
+}
+
+const SLOW_MS = 200;
+
+/** Where the dialog will appear, while its code is still on its way. */
+export function OpeningDialog() {
+  const { t } = useI18n();
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-[20vh] z-50 flex justify-center" role="status">
+      <span className="flex items-center gap-2 rounded-full border border-border/70 bg-popover px-3 py-1.5 text-sm text-muted-foreground shadow-lg/5">
+        <Spinner />
+        {t('dialog.opening')}
+      </span>
+    </div>
+  );
 }
 
 type AddMachineProps = ComponentProps<typeof import('./AddMachineDialog').AddMachineDialog>;
