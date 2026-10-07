@@ -24,6 +24,15 @@ export function switchFailureText(failure: SwitchFailure, t: Translate): string 
 export type SwitchToast = { kind: 'success' | 'warning' | 'error'; title: string };
 
 /**
+ * How many machines a change reached, for a toast's description. `committed` when the change also went into the setup
+ * repo; a plugin update or a marketplace refresh only touches the machines, so it mustn't claim a commit.
+ */
+export function machinesChangedText(count: number, committed: boolean, t: Translate): string {
+  if (committed) return t(count === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count });
+  return t(count === 1 ? 'library.machinesChanged.one' : 'library.machinesChanged.other', { count });
+}
+
+/**
  * A change's toast: `done` when every machine it tried changed, the machines it failed on otherwise. Made on none of
  * them, it's an error that stays until dismissed.
  */

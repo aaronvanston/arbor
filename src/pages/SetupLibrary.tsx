@@ -21,9 +21,9 @@ import { cn } from '../lib/utils';
 import type { LibraryKind, SetupLens } from '../navigation';
 import { identityColorCss, identityColors } from '../services/identityColors';
 import { LIBRARY_KINDS, libraryCounts, libraryKindProblems, libraryList, libraryRowProblems, libraryScope, type LibraryAgent, type LibraryRow, type LibraryToggle } from '../services/library';
-import { removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, undoLineRun, type LibrarySwitch, type SwitchFailure, type SwitchSources, type UndoResult } from '../services/libraryToggle';
+import { behindHomes, removeEverywhere, takeIntoRepo, takeSources, updatePlugin, switchFile, switchHook, switchMachine, switchPlugin, switchServer, switchSkill, undoLineRun, type LibrarySwitch, type SwitchFailure, type SwitchSources, type UndoResult } from '../services/libraryToggle';
 import { plainError } from '../services/plainError';
-import { switchFailureText, switchToast, undoToast } from '../services/switchReport';
+import { machinesChangedText, switchFailureText, switchToast, undoToast } from '../services/switchReport';
 import { skillFolder } from '../services/repoBrowser';
 import { LibraryItemPage, type LibraryActions } from './SetupLibraryItem';
 import type { SetupMachine, SetupRepo } from '../native/types';
@@ -278,6 +278,13 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
   const update = async (row: LibraryRow) => {
     const target = row.toggle;
     if (target?.kind !== 'plugin' || running) return;
+    const homes = behindHomes(target.row).length;
+    const confirmed = await askConfirmation({
+      title: t('library.item.update.confirmTitle', { name: row.name }),
+      message: t(homes === 1 ? 'library.item.update.confirmMessage.one' : 'library.item.update.confirmMessage.other', { name: row.name, count: homes }),
+      confirmText: t('library.item.update.button'),
+    });
+    if (!confirmed) return;
     setRunning({ key: `${row.key}\u0000update`, on: true });
     report(row.key, []);
     try {
@@ -288,7 +295,8 @@ export function SetupLibrary({ machines, kind, item, onOpenItem, onOpenByMachine
       toast({
         kind: result.kind,
         title: result.title,
-        description: t(run.changed.length === 1 ? 'library.toggle.machines.one' : 'library.toggle.machines.other', { count: run.changed.length }),
+        // An update runs Claude Code's own command on the machines; the repo doesn't record versions.
+        description: machinesChangedText(run.changed.length, false, t),
       });
     } catch (error) {
       report(row.key, [t('library.toggle.failed', { name: row.name, error: plainError(error, t) })]);

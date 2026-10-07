@@ -16,6 +16,7 @@ import type { LibraryKind } from '../navigation';
 import { directoryEntries, directorySources, getMarketplaceCatalog, type DirectoryAgent, type DirectoryEntry, type DirectorySource } from '../services/directory';
 import { addPlugin, marketplaceEverywhere, marketplaceHomes, switchVerdict, type LibrarySwitch, type SwitchFailure } from '../services/libraryToggle';
 import { plainError } from '../services/plainError';
+import { machinesChangedText } from '../services/switchReport';
 import { switchFailureText, switchToast, undoToast } from '../services/switchReport';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { formatAgo } from '../lib/format';
@@ -80,7 +81,7 @@ export function SetupDirectory({ machines, onOpenItem }: {
         kind: run.failed.length ? 'warning' : 'success',
         title: t(action === 'refresh' ? 'directory.marketplace.refreshed' : 'directory.marketplace.removed', { name }),
         // A marketplace lives on the machines only, so nothing is committed to the repo.
-        description: t(run.changed.length === 1 ? 'directory.marketplace.machines.one' : 'directory.marketplace.machines.other', { count: run.changed.length }),
+        description: machinesChangedText(run.changed.length, false, t),
       });
     } catch (error) {
       setProblems((current) => ({ ...current, [`market:${name}`]: plainError(error, t) }));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
-import { bringToast, switchFailureText, switchToast, undoToast } from '../src/services/switchReport';
+import { bringToast, machinesChangedText, switchFailureText, switchToast, undoToast } from '../src/services/switchReport';
 
 const t = (key: Parameters<typeof translate>[0], variables?: Parameters<typeof translate>[1]) => translate(key, variables, {});
 
@@ -23,6 +23,15 @@ describe('a Library change’s toast', () => {
     expect(switchFailureText({ machine: 'cam-mbp', message: 'plugin `review` was not found in marketplace `team`' }, t))
       .toBe('Codex couldn’t find review in the team marketplace. Check that the machine has that marketplace and that it’s up to date.');
     expect(switchFailureText({ machine: 'cam-mbp', message: 'Error: something else' }, t)).toBe('something else.');
+  });
+});
+
+describe('how many machines a change reached', () => {
+  it('claims a commit only for a change that went into the repo', () => {
+    expect(machinesChangedText(2, true, t)).toBe('Committed to the repo, and 2 machines changed.');
+    // A plugin update or a marketplace refresh only runs on the machines.
+    expect(machinesChangedText(1, false, t)).toBe('1 machine changed.');
+    expect(machinesChangedText(3, false, t)).toBe('3 machines changed.');
   });
 });
 
