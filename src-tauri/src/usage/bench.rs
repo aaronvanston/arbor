@@ -271,6 +271,53 @@ fn live_board_at_volume() {
     }
 }
 
+/// One live usage message saved as the collector saves it, opening usage.db for each, against the same save on a
+/// connection kept open, so the cost of opening per message shows.
+///
+/// ```sh
+/// cd src-tauri && cargo test --release usage::bench::collector -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn collector_message_at_volume() {
+    let database = bench_database();
+    let config = GuiConfigFile::default();
+    let mut sequence = 0_u64;
+    let mut message = || {
+        sequence += 1;
+        serde_json::json!({
+            "timestamp": Local::now().to_rfc3339(),
+            "request_id": format!("bench-collector-{}-{sequence}", std::process::id()),
+            "api_key": "key-0",
+            "model": "claude-opus-5-5",
+            "tokens": { "input_tokens": 1_200, "output_tokens": 300, "cache_read_tokens": 40_000 }
+        })
+        .to_string()
+    };
+    let samples = |label: &str, save: &mut dyn FnMut() -> Result<usize, String>| {
+        let mut samples = (0..100)
+            .map(|_| {
+                let started = Instant::now();
+                assert_eq!(save().unwrap(), 1);
+                started.elapsed().as_secs_f64() * 1_000.0
+            })
+            .collect::<Vec<_>>();
+        samples.sort_by(f64::total_cmp);
+        println!("{label:<44} median {:>7.3} ms   p10 {:>7.3}   p90 {:>7.3}", samples[50], samples[10], samples[90]);
+    };
+    let root = database.root.clone();
+    for _ in 0..3 {
+        samples("collector: message, opening usage.db", &mut || {
+            collector::persist_raw_usage_message_from_source(&root, "redis_subscribe:usage", message(), &config)
+        });
+        let mut kept = open_usage_database_at(&root).unwrap();
+        samples("collector: message, connection kept", &mut || {
+            collector::enqueue_usage_raw_messages(&mut kept, "redis_subscribe:usage", vec![message()])?;
+            collector::process_usage_inbox(&mut kept, &config)
+        });
+    }
+}
+
 fn bench_database() -> BenchDatabase {
     let events = env_number("ARBOR_BENCH_EVENTS", 1_000_000);
     let days = env_number("ARBOR_BENCH_DAYS", 90);
