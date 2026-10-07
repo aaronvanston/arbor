@@ -1,4 +1,3 @@
-import { useConfirmation } from '../components/ConfirmationDialog';
 import { useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { AlertCircle, CircleCheck, Pencil, Plus, Search, Trash2 } from '../components/ui/icons';
@@ -25,6 +24,7 @@ import { trackFeature } from '../services/productAnalytics';
 import { TableEmpty } from '../components/ui/data-table';
 import { UsageEmpty } from './UsageEmpty';
 import { missingPriceFields, type RequiredPriceField } from '../services/priceDraft';
+import { plainError } from '../services/plainError';
 
 type PriceDraft = {
   model: string;
@@ -68,7 +68,6 @@ export function PricingView({
   query: UsageQuery;
   onChanged: () => void | Promise<void>;
 }) {
-  const { askConfirmation } = useConfirmation();
   const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<PriceDraft | null>(null);
@@ -124,21 +123,37 @@ export function PricingView({
       toast({ kind: 'success', title: t('usage.pricing.saved') });
       await onChanged();
     } catch (saveError) {
-      setLocalError(String(saveError));
+      setLocalError(plainError(saveError, t));
     } finally {
       setSaving(false);
     }
   };
 
-  const deletePrice = async (model: string) => {
-    if (!await askConfirmation({ title: t('common.delete'), message: t('usage.pricing.deleteConfirm', { model }), confirmText: t('common.delete'), variant: 'danger' })) return;
+  // A manual price is easy to put back, so it goes at once and Undo saves it again.
+  const deletePrice = async (price: ModelPrice) => {
+    setLocalError('');
     try {
-      await invokeCommand('delete_usage_model_price', { model });
+      await invokeCommand('delete_usage_model_price', { model: price.model });
       setMessage('');
-      toast({ kind: 'success', title: t('usage.pricing.deleted') });
+      toast({
+        kind: 'success',
+        title: t('usage.pricing.deleted', { model: price.model }),
+        focusAction: true,
+        action: { label: t('common.undo'), onClick: () => void restorePrice(price) },
+      });
       await onChanged();
     } catch (deleteError) {
-      setLocalError(String(deleteError));
+      setLocalError(plainError(deleteError, t));
+    }
+  };
+
+  const restorePrice = async (price: ModelPrice) => {
+    try {
+      await invokeCommand('save_usage_model_price', { price });
+      toast({ kind: 'success', title: t('usage.pricing.restored', { model: price.model }) });
+      await onChanged();
+    } catch (restoreError) {
+      toast({ kind: 'error', title: t('usage.pricing.restoreFailed', { model: price.model }), description: plainError(restoreError, t) });
     }
   };
 
@@ -158,7 +173,7 @@ export function PricingView({
       );
       await onChanged();
     } catch (syncError) {
-      setLocalError(String(syncError));
+      setLocalError(plainError(syncError, t));
     } finally {
       setSyncing(false);
     }
@@ -281,7 +296,7 @@ export function PricingView({
                       </Tooltip>
                       {row.price?.source === 'manual' ? (
                         <Tooltip>
-                          <TooltipTrigger render={<Button variant="ghost-muted" size="icon-xs" className="hover:text-destructive-foreground" onClick={() => void deletePrice(row.model)} aria-label={t('common.delete')} />}>
+                          <TooltipTrigger render={<Button variant="ghost-muted" size="icon-xs" className="hover:text-destructive-foreground" onClick={() => { if (row.price) void deletePrice(row.price); }} aria-label={t('common.delete')} />}>
                             <Trash2 />
                           </TooltipTrigger>
                           <TooltipPopup>{t('common.delete')}</TooltipPopup>
