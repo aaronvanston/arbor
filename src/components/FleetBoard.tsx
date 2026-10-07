@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { clearFocusRequest, useFocusRequest } from '../focusRequests';
 import { AlarmClock, AlertCircle, AlarmClockOff, Bot, Eye, FolderGit2, MoreHorizontal, Radio, TriangleAlert } from './ui/icons';
 import { setAppPreference } from '../appPreferences';
 import { useI18n } from '../i18n';
@@ -123,13 +124,24 @@ export function FleetStatusDot({ row, now }: { row: FleetSession; now: number })
   );
 }
 
+// The board's row brought into view from elsewhere (Home's Needs you), tinted for a moment.
+const FlashedRow = createContext<string | null>(null);
+
 /**
  * One session: its agent's icon with a dot for its status, its name, what runs it and for how long, a note when the
  * status may not be what it seems, and a menu to mark it seen or snooze it. `place` adds its project and machine, for
- * lists that don't group by them. A session whose requests came through Arbor opens its page, and is seen.
+ * lists that don't group by them. A session whose requests came through Arbor opens its page, and is seen; any other
+ * opens `onOpenBoard` where a list offers it (Home's rows open the board at them).
  */
-export function FleetRow({ row, now, place = false, onOpen }: { row: FleetSession; now: number; place?: boolean; onOpen?: (id: string) => void }) {
+export function FleetRow({ row, now, place = false, onOpen, onOpenBoard }: {
+  row: FleetSession;
+  now: number;
+  place?: boolean;
+  onOpen?: (id: string) => void;
+  onOpenBoard?: (key: string) => void;
+}) {
   const { t } = useI18n();
+  const flashed = useContext(FlashedRow) === row.key;
   const name = fleetSessionName(row, t);
   const provider = row.agent ? AGENT_PROVIDER[row.agent] : undefined;
   const detail: ReactNode[] = [];
@@ -165,10 +177,10 @@ export function FleetRow({ row, now, place = false, onOpen }: { row: FleetSessio
   const open = onOpen && row.arborSessionId ? () => {
     markFleetSeen(row.key);
     if (row.arborSessionId) onOpen(row.arborSessionId);
-  } : undefined;
+  } : onOpenBoard ? () => onOpenBoard(row.key) : undefined;
   const className = 'flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2.5 ps-4 text-left';
   return (
-    <div className="flex items-center gap-1 pe-2" data-fleet-row={row.key}>
+    <div className={cn('flex items-center gap-1 pe-2', flashed && 'row-highlight')} data-fleet-row={row.key}>
       {open ? (
         <button
           type="button"
@@ -320,6 +332,7 @@ export function FleetBoardView({ board, failure, now, retrying = false, onRetry,
   onTurnOnT3?: () => void;
 }) {
   const { t } = useI18n();
+  const flash = useBoardFocus(board !== null);
   const retry = onRetry ? (
     <Button variant="outline" size="sm" onClick={onRetry} disabled={retrying}>
       <RefreshIcon refreshing={retrying} />
@@ -350,39 +363,63 @@ export function FleetBoardView({ board, failure, now, retrying = false, onRetry,
   }
   const empty = !board.rows.length && !board.machines.some((group) => group.skipped.length);
   return (
-    <div className="flex flex-col gap-6">
-      {error}
-      <p className="px-1 text-xs text-muted-foreground" role="status">{fleetSummary(board, t)}</p>
-      {!board.t3Enabled && board.t3Found ? (
-        <Alert
-          variant="info"
-          icon={<Radio />}
-          action={onTurnOnT3 ? <Button variant="outline" size="sm" onClick={onTurnOnT3}>{t('fleet.t3Off.action')}</Button> : undefined}
-        >
-          <AlertDescription>{t('fleet.t3Off')}</AlertDescription>
-        </Alert>
-      ) : null}
-      {empty ? (
-        <Empty>
-          <EmptyMedia><Radio /></EmptyMedia>
-          <EmptyTitle>{t('fleet.empty.title')}</EmptyTitle>
-          <EmptyDescription>{t('fleet.empty.description')}</EmptyDescription>
-        </Empty>
-      ) : null}
-      {board.machines.map((group) => <FleetMachineSection key={group.machine} group={group} now={now} onOpen={onOpenSession} />)}
-      {board.snoozed.length ? (
-        <SettingsSection title={t('fleet.snoozed.title')} description={t('fleet.snoozed.description')}>
-          <FoldedRows
-            label={t(board.snoozed.length === 1 ? 'fleet.snoozed.show.one' : 'fleet.snoozed.show.other', { count: board.snoozed.length })}
-            rows={board.snoozed}
-            now={now}
-            onOpen={onOpenSession}
-            place
-          />
-        </SettingsSection>
-      ) : null}
-    </div>
+    <FlashedRow.Provider value={flash}>
+      <div className="flex flex-col gap-6">
+        {error}
+        <p className="px-1 text-xs text-muted-foreground" role="status">{fleetSummary(board, t)}</p>
+        {!board.t3Enabled && board.t3Found ? (
+          <Alert
+            variant="info"
+            icon={<Radio />}
+            action={onTurnOnT3 ? <Button variant="outline" size="sm" onClick={onTurnOnT3}>{t('fleet.t3Off.action')}</Button> : undefined}
+          >
+            <AlertDescription>{t('fleet.t3Off')}</AlertDescription>
+          </Alert>
+        ) : null}
+        {empty ? (
+          <Empty>
+            <EmptyMedia><Radio /></EmptyMedia>
+            <EmptyTitle>{t('fleet.empty.title')}</EmptyTitle>
+            <EmptyDescription>{t('fleet.empty.description')}</EmptyDescription>
+          </Empty>
+        ) : null}
+        {board.machines.map((group) => <FleetMachineSection key={group.machine} group={group} now={now} onOpen={onOpenSession} />)}
+        {board.snoozed.length ? (
+          <SettingsSection title={t('fleet.snoozed.title')} description={t('fleet.snoozed.description')}>
+            <FoldedRows
+              label={t(board.snoozed.length === 1 ? 'fleet.snoozed.show.one' : 'fleet.snoozed.show.other', { count: board.snoozed.length })}
+              rows={board.snoozed}
+              now={now}
+              onOpen={onOpenSession}
+              place
+            />
+          </SettingsSection>
+        ) : null}
+      </div>
+    </FlashedRow.Provider>
   );
+}
+
+/** The row Home asked to see, once the board is read: scrolled to and tinted for as long as the highlight lasts. */
+function useBoardFocus(read: boolean): string | null {
+  const asked = useFocusRequest('fleet-session');
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    if (!asked || !read) return;
+    clearFocusRequest('fleet-session');
+    setFlash(asked);
+    // After this render lays the row out.
+    window.setTimeout(() => {
+      document.querySelector(`[data-fleet-row="${window.CSS.escape(asked)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 0);
+  }, [asked, read]);
+  useEffect(() => {
+    if (!flash) return;
+    // As long as the row-highlight animation in styles.css.
+    const timer = window.setTimeout(() => setFlash(null), 1_600);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
+  return flash;
 }
 
 /**

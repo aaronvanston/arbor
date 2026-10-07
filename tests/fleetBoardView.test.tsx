@@ -120,6 +120,18 @@ describe('Home’s Needs you card', () => {
     expect(renderToStaticMarkup(<I18nProvider><NeedsYouSection /></I18nProvider>)).toBe('');
   });
 
+  test('opens every row: a session Arbor has a page for opens it, any other opens the board at its row', () => {
+    setFleetSources(busy);
+    const html = renderToStaticMarkup(<I18nProvider><NeedsYouSection onNavigate={() => {}} /></I18nProvider>);
+    const rows = html.split('data-fleet-row=').slice(1);
+    expect(rows).toHaveLength(2);
+    // Neither has an Arbor session: a T3 Code thread and an agent that only reports.
+    for (const row of rows) expect(row).toMatch(/^"[^"]+"><button type="button"/);
+    // Without a way to navigate, there's nothing to open.
+    const still = renderToStaticMarkup(<I18nProvider><NeedsYouSection /></I18nProvider>);
+    expect(still).not.toContain('<button type="button" class="flex min-h-14');
+  });
+
   test('says how many more the board has when it lists only some', () => {
     const asking = Array.from({ length: 8 }, (_, index) => thread({ threadId: `thread-${index}`, pendingApprovals: 1, approvalSinceMs: NOW - index * MINUTE }));
     setFleetSources(sources({ t3: [channel('cam-mbp', asking)] }));

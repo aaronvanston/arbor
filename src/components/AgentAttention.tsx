@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { ArrowUpRight } from './ui/icons';
+import { requestFocus } from '../focusRequests';
 import { useI18n } from '../i18n';
 import { liveBoardView, sessionsView, type AppView } from '../navigation';
 import { needsYouRows, needsYouSummary, useFleetBoard } from '../services/fleetBoard';
@@ -31,9 +32,14 @@ export function NeedsYouSection({ onNavigate }: { onNavigate?: (view: AppView) =
   }
   if (!rows.length) return null;
   const openSession = onNavigate ? (id: string) => onNavigate(sessionsView({ session: id })) : undefined;
+  // A session Arbor has no page for (a T3 Code thread, an agent that only reports) opens the board at its row.
+  const openOnBoard = onNavigate ? (key: string) => {
+    requestFocus('fleet-session', key);
+    onNavigate(liveBoardView());
+  } : undefined;
   return needsYouFrame(t, onNavigate, `${needsYouSummary(rows, t)} · ${t('home.attention.window')}`, (
     <>
-      {rows.map((row) => <FleetRow key={row.key} row={row} now={now} place onOpen={openSession} />)}
+      {rows.map((row) => <FleetRow key={row.key} row={row} now={now} place onOpen={openSession} onOpenBoard={openOnBoard} />)}
       {more > 0 ? (
         <SettingsBlock className="py-2 text-xs text-muted-foreground">
           {/* The rest are on the board, so the line opens it. */}
