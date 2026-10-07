@@ -11,6 +11,7 @@ import {
   formatMoney,
   formatNumber,
   formatPercent,
+  formatRate,
   formatRegion,
   formatRelative,
   formatTime,
@@ -193,6 +194,10 @@ describe('numbers', () => {
 
   it('writes shares as percentages', () => {
     expect(formatPercent(0.42, 0, AU12)).toBe('42%');
+    expect(formatRate(0.4234)).toBe('42.3%');
+    expect(formatRate(0)).toBe('0.0%');
+    // Nothing to measure a rate from is no rate, not 0%.
+    expect(formatRate(null)).toBe('—');
     expect(formatPercent(0.0125, 1, AU12)).toBe('1.3%');
   });
 });

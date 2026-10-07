@@ -4021,7 +4021,7 @@ export const en = {
   'usage.stat.performanceMetaTitle': 'TPS {tps}, {samples} valid samples, RPM {rpm}, average latency {latency} ms',
   'usage.stat.cacheHitRate': 'Cache hit rate',
   'usage.stat.cacheHitMeta': 'Cache read {hit} · Input {input}',
-  'usage.stat.cacheHitMetaTitle': 'Cache hit rate {rate}%, cache read {hit} tokens, input {input} tokens',
+  'usage.stat.cacheHitMetaTitle': 'Cache hit rate {rate}, cache read {hit} tokens, input {input} tokens',
   'usage.stat.estimatedCost': 'Estimated cost',
   'usage.stat.costMeta': 'Price coverage: {priced} / {total} requests',
   'usage.stat.costMetaTitle': '{priced} of {total} requests estimated from model prices; {unpriced} unpriced',

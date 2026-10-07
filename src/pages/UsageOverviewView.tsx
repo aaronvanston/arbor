@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useI18n } from '../i18n';
 import { parseLocalHourKey } from '../services/usageTrend';
-import { formatCount, formatDateTime, formatMoney } from '../lib/format';
+import { formatCount, formatDateTime, formatMoney, formatRate } from '../lib/format';
 import { SectionAbout, SettingsSection } from '../components/layout/settings';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Badge } from '../components/ui/badge';
@@ -63,7 +63,8 @@ export function OverviewView({ overview, range }: { overview: UsageOverview; ran
     },
     {
       label: t('usage.stat.successRate'),
-      value: `${overview.successRate.toFixed(1)}%`,
+      // Without a request there's no rate, which 0.0% would read as every one failing.
+      value: formatRate(overview.totalRequests ? overview.successRate / 100 : null),
       meta: t('usage.stat.successMeta', {
         success: formatCount(overview.successCount),
         failed: formatCount(overview.failureCount),
@@ -91,13 +92,13 @@ export function OverviewView({ overview, range }: { overview: UsageOverview; ran
     },
     {
       label: t('usage.stat.cacheHitRate'),
-      value: `${(overview.cacheHitRate * 100).toFixed(1)}%`,
+      value: formatRate(overview.totalRequests ? overview.cacheHitRate : null),
       meta: t('usage.stat.cacheHitMeta', {
         hit: formatCount(overview.cacheReadTokens),
         input: formatCount(overview.inputTokens),
       }),
       metaTitle: t('usage.stat.cacheHitMetaTitle', {
-        rate: (overview.cacheHitRate * 100).toFixed(1),
+        rate: formatRate(overview.totalRequests ? overview.cacheHitRate : null),
         hit: formatCount(overview.cacheReadTokens),
         input: formatCount(overview.inputTokens),
       }),

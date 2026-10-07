@@ -249,6 +249,9 @@ export function formatTokens(value: number, place: FormatRegion = region): strin
   return numberFormat({ notation: 'compact', maximumFractionDigits: 1 }, place).format(Number.isFinite(value) ? value : 0);
 }
 
+/** A rate from 0 to 1 to a tenth of a percent, "42.0%", or "—" when nothing was there to measure it. */
+export const formatRate = (share: number | null) => (share === null || !Number.isFinite(share) ? '—' : `${(share * 100).toFixed(1)}%`);
+
 /** A share from 0 to 1 as a percentage: "42%". */
 export function formatPercent(share: number, maximumFractionDigits = 0, place: FormatRegion = region): string {
   return numberFormat({ style: 'percent', maximumFractionDigits }, place).format(Number.isFinite(share) ? share : 0);

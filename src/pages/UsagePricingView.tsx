@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { AlertCircle, CircleCheck, Pencil, Plus, Search, Trash2 } from '../components/ui/icons';
 import { useI18n } from '../i18n';
-import { formatCount, formatMoney } from '../lib/format';
+import { formatCount, formatMoney, formatRate } from '../lib/format';
 import { SettingsSection } from '../components/layout/settings';
 import { StatBlock, StatsGrid } from '../components/layout/stats';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -191,10 +191,11 @@ export function PricingView({
   return (
     <div className="flex flex-col gap-6">
       <StatsGrid columns={3}>
-        <StatBlock label={t('usage.pricing.total')} value={formatMoney(pricing.totalCost)} />
+        {/* With nothing priced the total isn't known, which $0.00 would hide. */}
+        <StatBlock label={t('usage.pricing.total')} value={formatMoney(pricing.pricedRequests || !pricing.totalRequests ? pricing.totalCost : null)} />
         <StatBlock
           label={t('usage.pricing.coverageLabel')}
-          value={`${pricing.totalRequests ? ((pricing.pricedRequests / pricing.totalRequests) * 100).toFixed(1) : '0.0'}%`}
+          value={formatRate(pricing.totalRequests ? pricing.pricedRequests / pricing.totalRequests : null)}
           hint={t('usage.pricing.coverageHint', { priced: formatCount(pricing.pricedRequests), total: formatCount(pricing.totalRequests) })}
         />
         <StatBlock label={t('usage.pricing.savedPrices')} value={formatCount(pricing.savedPrices)} hint={t('usage.pricing.savedPricesHint')} />
