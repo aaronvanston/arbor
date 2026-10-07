@@ -16,6 +16,8 @@ describe('navigation', () => {
     }
     expect(canOpenView({ kind: 'settings', page: 'overrides' }, false)).toBe(false);
     expect(canOpenView({ kind: 'settings', page: 'overrides' }, true)).toBe(true);
+    // money-24: Model aliases picks from the models the running core offers, so it waits for the core like Model routes.
+    expect(canOpenView({ kind: 'settings', page: 'aliases' }, false)).toBe(false);
   });
 
   test('Interface and Phone Alerts became Notifications, and their old ids still lead there', () => {

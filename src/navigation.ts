@@ -357,7 +357,8 @@ const alwaysAvailablePages = new Set<string>([
   // Main pages.
   'home', 'usage', 'sessions', 'machines', 'pools', 'automations', 'setup', 'alerts',
   // Settings pages.
-  'settings:general', 'settings:routing', 'settings:aliases', 'settings:extra-models', 'settings:software',
+  // Model aliases isn't here: its originals are the models the running core offers, like Model routes'.
+  'settings:general', 'settings:routing', 'settings:extra-models', 'settings:software',
   'settings:machines', 'settings:agent-homes', 'settings:harnesses', 'settings:pools', 'settings:data', 'settings:session-archive', 'settings:appearance', 'settings:notifications',
   'settings:updates', 'settings:diagnostics', 'settings:about',
 ]);
