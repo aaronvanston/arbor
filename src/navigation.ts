@@ -326,6 +326,15 @@ export const settingsPageIds: readonly SettingsPageId[] = [
  */
 const MOVED_SETTINGS_PAGES: Readonly<Record<string, SettingsPageId>> = { interface: 'notifications', 'phone-alerts': 'notifications', network: 'general' };
 
+/**
+ * Where on the page it was folded into a moved Settings page's old id lands: the setting it was named for, so Phone
+ * Alerts opens at the phone section rather than the top of Notifications. Its callers ask for that setting's focus.
+ */
+const MOVED_SETTINGS_FOCUS: Readonly<Record<string, string>> = { 'phone-alerts': 'notifications.phone-service' };
+
+/** The setting an old Settings page id should land on, or null when the top of the page is right. */
+export const movedSettingsFocus = (id: string): string | null => MOVED_SETTINGS_FOCUS[id] ?? null;
+
 /** The Settings page an id names today, following a page that moved, or null for an id that was never one. */
 function resolveSettingsPage(id: string): SettingsPageId | null {
   if ((settingsPageIds as readonly string[]).includes(id)) return id as SettingsPageId;

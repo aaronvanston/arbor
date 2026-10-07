@@ -17,6 +17,7 @@ import {
   type PaletteEntry,
 } from '../src/services/commandPalette';
 import { ZOOM_MAX_STEP, ZOOM_MIN_STEP, zoomLevelAt } from '../src/services/zoom';
+import { movedSettingsFocus } from '../src/navigation';
 
 const entry = (group: PaletteEntry['group'], label: string, fields: Partial<PaletteEntry> = {}): PaletteEntry => ({
   id: `${group}:${label}`, group, label, ...fields,
@@ -206,7 +207,14 @@ describe('the palette’s recent picks', () => {
   });
 
   it('follow a Settings page that moved, listing two picks that became one page once', () => {
-    expect(parseRecents(JSON.stringify(['page:settings:interface', 'page:main:setup', 'page:settings:phone-alerts', 'page:settings:gone']))).toEqual(['page:settings:notifications', 'page:main:setup', 'page:settings:gone']);
+    expect(parseRecents(JSON.stringify(['page:settings:interface', 'page:main:setup', 'page:settings:network', 'page:settings:general', 'page:settings:gone']))).toEqual(['page:settings:notifications', 'page:main:setup', 'page:settings:general', 'page:settings:gone']);
+  });
+
+  // system-13: Phone Alerts' old id lands on the phone section of Notifications, not the top of it.
+  it('brings Phone Alerts back as the phone section it was named for', () => {
+    expect(parseRecents(JSON.stringify(['page:settings:phone-alerts']))).toEqual(['setting:notifications.phone-service']);
+    expect(movedSettingsFocus('phone-alerts')).toBe('notifications.phone-service');
+    expect(movedSettingsFocus('interface')).toBeNull();
   });
 
   it('follow a setting whose row moved page with it', () => {

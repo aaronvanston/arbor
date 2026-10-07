@@ -1,5 +1,5 @@
 import type { MessageKey } from '../i18n/resources';
-import { movedSetupView, movedUsageView, settingsPageView, type AppView } from '../navigation';
+import { movedSettingsFocus, movedSetupView, movedUsageView, settingsPageView, type AppView } from '../navigation';
 import { savedStore } from './savedStore';
 import { currentSettingId } from './settingsIndex';
 import type { ZoomLevel } from '../native/types';
@@ -210,6 +210,9 @@ function currentPickId(id: string) {
   }
   if (id.startsWith(SETTING_PICK)) return `${SETTING_PICK}${currentSettingId(id.slice(SETTING_PICK.length))}`;
   if (!id.startsWith(SETTINGS_PAGE_PICK)) return id;
+  // A moved page named for one part of the page it joined comes back as that setting.
+  const focus = movedSettingsFocus(id.slice(SETTINGS_PAGE_PICK.length));
+  if (focus) return `${SETTING_PICK}${focus}`;
   const view = settingsPageView(id.slice(SETTINGS_PAGE_PICK.length));
   return view ? palettePageId(view) : id;
 }

@@ -427,7 +427,8 @@ import { isSidebarArt } from '../services/sidebarArt';
 import { isAppColor } from '../services/appColor';
 import { previewAppPreference } from '../appPreferences';
 import { goToView, resetViewHistory } from '../services/viewHistory';
-import { automationView, failedRequestsView, machinesView, mainPageView, poolsView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
+import { requestFocus } from '../focusRequests';
+import { automationView, failedRequestsView, machinesView, mainPageView, movedSettingsFocus, poolsView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
 import type { Commands } from '../native/commands';
 import { mockCommands, type CommandAnswers, type CommandObserver } from './mock/answers';
 import { appAnswers, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
@@ -477,7 +478,11 @@ function setMockWindow(state: MockWindowState) {
 function mockStartView(page: string | null, tab = params.get('tab'), lens = params.get('lens')): AppView | null {
   if (!page) return null;
   const settingsView = page.startsWith('settings:') ? settingsPageView(page.slice('settings:'.length)) : null;
-  if (settingsView) return settingsView;
+  if (settingsView) {
+    const focus = movedSettingsFocus(page.slice('settings:'.length));
+    if (focus) requestFocus('setting', focus);
+    return settingsView;
+  }
   if (page.startsWith('machine:')) return machinesView(page.slice('machine:'.length));
   if (page.startsWith('automation:')) return automationView(page.slice('automation:'.length));
   if (page.startsWith('pool:')) return poolsView(page.slice('pool:'.length));
