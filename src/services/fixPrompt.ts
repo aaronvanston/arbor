@@ -234,6 +234,20 @@ export function libraryLinesProblem(fields: { library: string; newest: string; u
   };
 }
 
+/**
+ * Several shared libraries to bump at once in the checkouts on one machine: each library with the version to go to,
+ * and each checkout with its package manager and what it has now. Arbor writes nothing in a repo; the agent does it
+ * on a branch for review.
+ */
+export function librariesBumpProblem(fields: { libraries: string[]; checkouts: string[] }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.librariesBump'),
+    goal: t('fix.goal.librariesBump'),
+    details: [...fields.libraries.map((library) => t('fix.detail.bumpTo', { value: library })), ...fields.checkouts.map((checkout) => t('fix.detail.checkout', { value: checkout }))],
+    from: 'machine',
+  };
+}
+
 /** Tools another machine has that this one lacks or has older; `reference` is the machine it's being brought in line with. */
 export function toolsInLineProblem(fields: { reference: string | null; missing: string[]; behind: string[] }, t: Translate): FixProblem {
   return {

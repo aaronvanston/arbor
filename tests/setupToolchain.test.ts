@@ -6,6 +6,7 @@ import {
   checkNeed,
   compareVersions,
   installableNode,
+  libraryBumps,
   libraryProblems,
   matchesPin,
   matchesToolchain,
@@ -24,6 +25,8 @@ import {
   TOOLCHAIN_FRESH_MS,
 } from '../src/services/setupToolchain';
 import { itemAt, present } from './support/items';
+import { translate } from '../src/i18n';
+import { librariesBumpProblem } from '../src/services/fixPrompt';
 import type {
   KeptVersion,
   MachineToolchain,
@@ -265,6 +268,23 @@ describe('rows', () => {
     expect(react.uses.map((use) => [use.name, use.version, use.installed])).toEqual([['arbor', '19.1.1', true], ['site', '18.3.1', true]]);
     expect(itemAt(libraries, 1).uses.map((use) => [use.name, use.version, use.installed, use.dev])).toEqual([['arbor', '7.1.2', true, true], ['site', '^7', false, true]]);
     expect([releaseLine('0.4.2'), releaseLine('^19.1.0'), releaseLine('latest')]).toEqual(['0.4', '19', null]);
+  });
+
+  it('bumps the chosen libraries in each machine’s older checkouts, one batch a machine', () => {
+    const rows = buildToolchainProjects([mbp, ci]);
+    const libraries = buildLibraries(rows);
+    const bumps = libraryBumps(libraries, new Set(['react', 'vite']), rows);
+    expect([...bumps.keys()]).toEqual(['mbp']);
+    const bump = present(bumps.get('mbp'));
+    expect(bump.libraries).toEqual([{ name: 'react', target: '19.1.1' }, { name: 'vite', target: '7.1.2' }]);
+    expect(bump.checkouts).toEqual([
+      { project: 'site', path: '/Users/cam/src/site', homeDir: '/Users/cam', manager: null, has: [{ name: 'react', version: '18.3.1' }, { name: 'vite', version: '^7' }] },
+    ]);
+    expect(libraryBumps(libraries, new Set(), rows).size).toBe(0);
+    const prompt = librariesBumpProblem({ libraries: ['react 19.1.1'], checkouts: ['site at ~/src/site (bun): has react 18.3.1'] }, translate);
+    expect(prompt.text).toBe('I want libraries my projects share bumped in the checkouts here that are behind on them.');
+    expect(prompt.goal).toContain('uncommitted on the branch');
+    expect(prompt.details).toEqual(['Bump to: react 19.1.1', 'Behind: site at ~/src/site (bun): has react 18.3.1']);
   });
 
   it('scans a machine again only when it hasn’t been lately', () => {

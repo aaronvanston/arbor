@@ -548,6 +548,48 @@ export function buildLibraries(rows: ToolchainRow[]): LibraryRow[] {
     .sort((a, b) => b.lines - a.lines || b.uses.length - a.uses.length || a.name.localeCompare(b.name));
 }
 
+/** The package manager a lockfile says installs a project. */
+const LOCK_MANAGER: Record<string, string> = { 'bun.lock': 'bun', 'bun.lockb': 'bun', 'pnpm-lock.yaml': 'pnpm', 'yarn.lock': 'yarn', 'package-lock.json': 'npm' };
+
+export type LibraryBump = {
+  /** Each library chosen with the version to go to: the newest any project uses. */
+  libraries: { name: string; target: string }[];
+  /** Each checkout on the machine that has one of them older, with its package manager and what it has now. */
+  checkouts: { project: string; path: string; homeDir: string; manager: string | null; has: { name: string; version: string }[] }[];
+};
+
+/**
+ * What bumping the chosen shared libraries means on each machine: the checkouts there that use one at a version older
+ * than the newest any project uses, so one prompt per machine does the batch. Machines with most checkouts first.
+ */
+export function libraryBumps(libraries: LibraryRow[], chosen: ReadonlySet<string>, projects: ToolchainRow[]): Map<string, LibraryBump> {
+  const out = new Map<string, LibraryBump>();
+  for (const row of libraries.filter((entry) => chosen.has(entry.name))) {
+    const [newest] = row.uses;
+    if (!newest) continue;
+    const target = newest.version.replace(/^[\^~>=<\s]+/, '');
+    for (const use of row.uses) {
+      if (compareVersions(use.version.replace(/^[\^~>=<\s]+/, ''), target) >= 0) continue;
+      const project = projects.find((entry) => entry.key === use.key);
+      for (const [machine, places] of Object.entries(project?.places ?? {})) {
+        for (const place of places.filter((entry) => !entry.project.missing)) {
+          const bump = out.get(machine) ?? { libraries: [], checkouts: [] };
+          if (!bump.libraries.some((entry) => entry.name === row.name)) bump.libraries.push({ name: row.name, target });
+          let checkout = bump.checkouts.find((entry) => entry.path === place.project.path);
+          if (!checkout) {
+            const lockfile = place.project.packages.find((entry) => entry.lockfile)?.lockfile ?? null;
+            checkout = { project: use.name, path: place.project.path, homeDir: place.homeDir, manager: lockfile ? LOCK_MANAGER[lockfile] ?? null : null, has: [] };
+            bump.checkouts.push(checkout);
+          }
+          if (!checkout.has.some((entry) => entry.name === row.name)) checkout.has.push({ name: row.name, version: use.version });
+          out.set(machine, bump);
+        }
+      }
+    }
+  }
+  return new Map([...out.entries()].sort((a, b) => b[1].checkouts.length - a[1].checkouts.length));
+}
+
 export const matchesLibrary = (row: LibraryRow, query: string) => {
   const text = query.trim().toLowerCase();
   return !text || row.name.toLowerCase().includes(text) || row.uses.some((use) => use.name.toLowerCase().includes(text));

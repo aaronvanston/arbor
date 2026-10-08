@@ -19,7 +19,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { tilde } from '../services/setupProjects';
-import { scanFailedProblem, libraryLinesProblem, projectToolchainProblem, toolBehindProblem, toolRemoveProblem } from '../services/fixPrompt';
+import { scanFailedProblem, librariesBumpProblem, libraryLinesProblem, projectToolchainProblem, toolBehindProblem, toolRemoveProblem } from '../services/fixPrompt';
 import { FixMenu } from '../components/FixMenu';
 import {
   actionable,
@@ -28,6 +28,7 @@ import {
   buildToolchainProjects,
   buildToolRows,
   changeNodeVersions,
+  libraryBumps,
   getToolchain,
   installableNode,
   matchesLibrary,
@@ -149,6 +150,7 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
   const [libraryQuery, setLibraryQuery] = useState('');
   const [splitOnly, setSplitOnly] = useState(true);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [chosenLibraries, setChosenLibraries] = useState<ReadonlySet<string>>(() => new Set());
   const autoScanned = useRef(new Set<string>());
   const { repoPath, standing } = useSyncStanding();
   const repoTools = standing?.repo.tools ?? null;
@@ -351,12 +353,25 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
                 <Table stickyHeader containerClassName="max-h-[28rem] overflow-auto">
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8"><span className="sr-only">{t('setup.toolchain.libraries.pickColumn')}</span></TableHead>
                       <TableHead className="min-w-48">{t('setup.toolchain.column.library')}</TableHead>
                       <TableHead>{t('setup.toolchain.column.versions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {shownLibraries.map((row) => <LibraryRowView key={row.name} row={row} projects={rows} />)}
+                    {shownLibraries.map((row) => (
+                      <LibraryRowView
+                        key={row.name}
+                        row={row}
+                        projects={rows}
+                        picked={chosenLibraries.has(row.name)}
+                        onPick={(on) => setChosenLibraries((current) => {
+                          const next = new Set(current);
+                          if (on) next.add(row.name); else next.delete(row.name);
+                          return next;
+                        })}
+                      />
+                    ))}
                   </TableBody>
                 </Table>
               ) : (
@@ -364,6 +379,7 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
                   {libraryQuery.trim() ? t('setup.toolchain.noMatches', { query: libraryQuery.trim() }) : t('setup.toolchain.libraries.allSame')}
                 </TableEmpty>
               )}
+              <LibraryBumpBar libraries={libraries} chosen={chosenLibraries} projects={rows} onClear={() => setChosenLibraries(new Set())} />
             </TableCard>
           ) : null}
         </>
@@ -1080,7 +1096,44 @@ function ProjectDetail({ row, columns }: { row: ToolchainRow; columns: string[] 
   );
 }
 
-function LibraryRowView({ row, projects }: { row: LibraryRow; projects: ToolchainRow[] }) {
+/**
+ * The libraries ticked in the shared libraries table, bumped with an agent: one prompt per machine, naming each library
+ * with the version to go to and each checkout there that's older, with its package manager. Arbor writes nothing in a
+ * repo itself.
+ */
+function LibraryBumpBar({ libraries, chosen, projects, onClear }: { libraries: LibraryRow[]; chosen: ReadonlySet<string>; projects: ToolchainRow[]; onClear: () => void }) {
+  const { t, tRich } = useI18n();
+  const bumps = useMemo(() => libraryBumps(libraries, chosen, projects), [libraries, chosen, projects]);
+  if (!chosen.size) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-border/50 bg-muted/40 px-4 py-2" role="region" aria-label={t('setup.toolchain.libraries.bump.label')}>
+      <span className="me-auto text-xs text-muted-foreground">
+        {t(chosen.size === 1 ? 'setup.toolchain.libraries.bump.chosen.one' : 'setup.toolchain.libraries.bump.chosen.other', { count: chosen.size })}
+        {bumps.size ? null : ` · ${t('setup.toolchain.libraries.bump.nothing')}`}
+      </span>
+      <Button variant="ghost-muted" size="xs" onClick={onClear}>{t('setup.toolchain.updates.clear')}</Button>
+      {[...bumps.entries()].map(([machine, bump]) => (
+        <FixMenu
+          key={machine}
+          machine={machine}
+          problem={librariesBumpProblem({
+            libraries: bump.libraries.map((library) => `${library.name} ${library.target}`),
+            checkouts: bump.checkouts.map((checkout) => t('setup.toolchain.libraries.bump.checkout', {
+              project: checkout.project,
+              path: tilde(checkout.path, checkout.homeDir),
+              manager: checkout.manager ?? t('setup.toolchain.libraries.bump.noManager'),
+              has: checkout.has.map((entry) => `${entry.name} ${entry.version}`).join(', '),
+            })),
+          }, t)}
+        >
+          {tRich(bump.libraries.length === 1 ? 'setup.toolchain.libraries.bump.on.one' : 'setup.toolchain.libraries.bump.on.other', { count: bump.libraries.length, machine: <MachinePill name={machine} size="sm" /> })}
+        </FixMenu>
+      ))}
+    </div>
+  );
+}
+
+function LibraryRowView({ row, projects, picked, onPick }: { row: LibraryRow; projects: ToolchainRow[]; picked: boolean; onPick: (on: boolean) => void }) {
   const { t } = useI18n();
   const [newest] = row.uses;
   // The checkouts on an older line, and the machine to fix them on: the one with most of them.
@@ -1095,6 +1148,9 @@ function LibraryRowView({ row, projects }: { row: LibraryRow; projects: Toolchai
   const fixOn = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   return (
     <TableRow>
+      <TableCell className="align-top">
+        <Checkbox checked={picked} onCheckedChange={(on) => onPick(on)} aria-label={t('setup.toolchain.libraries.pick', { library: row.name })} />
+      </TableCell>
       <TableCell className="align-top">
         <span className="flex flex-col gap-0.5">
           <span className="font-mono text-xs text-foreground">{row.name}</span>
