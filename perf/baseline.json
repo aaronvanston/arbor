@@ -189,7 +189,7 @@
     "real.page.machines.commandBytes": 877313,
     "real.page.machines.commands": 8,
     "real.page.machines.domMutations": 65,
-    "real.page.machines.reactCommits": 15,
+    "real.page.machines.reactCommits": 18,
     "real.page.pools.commandBytes": 3338,
     "real.page.pools.commands": 3,
     "real.page.pools.domMutations": 44,

@@ -282,11 +282,32 @@ async function flush(page: Page) {
   }));
 }
 
+/**
+ * Waits out the CSS transitions and animations about to end, and says whether there were any. They run on the real
+ * clock, not the page clock, and Base UI removes a closing toast or popup only once its exit has finished, so without
+ * this those removals land in whichever step happens to be running and the commits counted swing from run to run.
+ * Long ones, some of which run for a day, are left alone.
+ */
+async function animationsEnded(page: Page) {
+  const ending = page.evaluate(() => {
+    const ending = document.getAnimations().filter((animation) => {
+      if (animation.playState !== 'running') return false;
+      const left = Number(animation.effect?.getComputedTiming().endTime) - Number(animation.currentTime);
+      return left >= 0 && left <= 2_000;
+    });
+    return Promise.all(ending.map((animation) => animation.finished.catch(() => undefined))).then(() => ending.length > 0);
+  });
+  // A Node timer, as the page's are on the paused page clock.
+  return Promise.race([ending, new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000))]);
+}
+
 async function quiet(page: Page, network: ReturnType<typeof trackNetwork>) {
+  let animated: boolean;
   do {
     await network.idle();
     await flush(page);
-  } while (network.inflight > 0);
+    animated = await animationsEnded(page);
+  } while (network.inflight > 0 || animated);
 }
 
 /** Moves the page clock on by `totalMs` in steps, letting the page settle after each. */
