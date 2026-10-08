@@ -17,6 +17,7 @@ import {
   settingsInLineProblem,
   startingContextProblem,
   toolBehindProblem,
+  toolRemoveProblem,
   toolsInLineProblem,
   fixPrompt,
   fixSessions,
@@ -161,6 +162,15 @@ describe('fix prompts', () => {
     const tool = toolBehindProblem({ tool: 'Node', version: '20.11.0', newest: '22.4.0', path: '/usr/local/bin/node', kept: ['22.4.0 (nvm)'] }, t);
     expect(tool.text).toBe('Node 20.11.0 here is a release behind 22.4.0, the newest on my machines.');
     expect(tool.details).toEqual(['Path: /usr/local/bin/node', 'Also kept: 22.4.0 (nvm)']);
+
+    const remove = toolRemoveProblem({ tool: 'Deno', version: '2.9.3', path: '/opt/homebrew/bin/deno', kept: ['2.8.0 (mise)'], askedBy: ['edge-fns'] }, t);
+    expect(remove.text).toBe('Deno 2.9.3 is on this machine and I want it gone.');
+    expect(remove.goal).toContain('tell me before removing anything');
+    expect(remove.details).toEqual(['Path: /opt/homebrew/bin/deno', 'Also kept: 2.8.0 (mise)', 'Projects here that ask for it: edge-fns']);
+    // Only kept versions, nothing on the PATH: no path line, no version in the ask.
+    const keptOnly = toolRemoveProblem({ tool: 'pnpm', version: null, path: null, kept: ['9.0.0 (corepack)'], askedBy: [] }, t);
+    expect(keptOnly.text).toBe('pnpm is on this machine and I want it gone.');
+    expect(keptOnly.details).toEqual(['Also kept: 9.0.0 (corepack)']);
 
     const project = projectToolchainProblem({ project: 'arbor', path: '~/src/arbor', needs: ['Node >=22: 20.11.0 here'], packages: ['react: 18 installed, wants ^19'] }, t);
     expect(project.goal).toContain('In ~/src/arbor');

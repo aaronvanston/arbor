@@ -418,6 +418,11 @@ export function buildToolRows(machines: MachineToolchain[]): ToolRow[] {
   return rows;
 }
 
+/** The projects whose copy on a machine asks for a tool, so removing it there says what it would leave short. */
+export function projectsAsking(rows: ToolchainRow[], machine: string, tool: string): string[] {
+  return rows.filter((row) => (row.places[machine] ?? []).some((place) => place.project.needs.some((need) => need.tool === tool))).map((row) => row.name);
+}
+
 export type ToolchainRow = {
   key: string;
   name: string;

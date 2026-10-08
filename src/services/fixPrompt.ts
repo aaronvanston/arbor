@@ -190,6 +190,20 @@ export function toolBehindProblem(fields: { tool: string; version: string; newes
   };
 }
 
+/** A tool to take off a machine: the one a shell finds first at `path`, and every version a version manager keeps. */
+export function toolRemoveProblem(fields: { tool: string; version: string | null; path: string | null; kept: string[]; askedBy: string[] }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.toolRemove', { tool: fields.version ? `${fields.tool} ${fields.version}` : fields.tool }),
+    goal: t('fix.goal.toolRemove', { tool: fields.tool }),
+    details: [
+      ...(fields.path ? [t('fix.detail.path', { path: fields.path })] : []),
+      ...fields.kept.map((entry) => t('fix.detail.kept', { value: entry })),
+      ...(fields.askedBy.length ? [t('fix.detail.askedBy', { projects: fields.askedBy.join(', ') })] : []),
+    ],
+    from: 'machine',
+  };
+}
+
 /** A checkout missing what its project asks for: tool versions, and dependencies not installed as package.json asks. */
 export function projectToolchainProblem(fields: { project: string; path: string; needs: string[]; packages: string[] }, t: Translate): FixProblem {
   return {

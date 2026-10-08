@@ -20,7 +20,7 @@ const AGENT_NAME = { claude: 'machines.agents.name.claude', codex: 'machines.age
  * already started on it, on the machine or on this Mac. The machines are read again as the menu opens, so the prompt
  * carries their latest details and each agent's item says where it would run.
  */
-export function FixMenu({ machine, problem, item = null, compact = false, children, className }: {
+export function FixMenu({ machine, problem, item = null, compact = false, icon, label, children, className }: {
   machine: string;
   problem: FixProblem;
   /** The machine as the page has it, used until the menu's own read comes back. */
@@ -29,6 +29,9 @@ export function FixMenu({ machine, problem, item = null, compact = false, childr
   compact?: boolean;
   /** The button's words in place of "Fix", such as "Fix on" a machine's pill. */
   children?: ReactNode;
+  /** The trigger's icon and name in place of the wrench and "Fix this", for a menu that does something else, like remove. */
+  icon?: ReactNode;
+  label?: string;
   className?: string;
 }) {
   const { t } = useI18n();
@@ -62,12 +65,12 @@ export function FixMenu({ machine, problem, item = null, compact = false, childr
             variant="ghost"
             size={compact ? 'icon-xs' : 'xs'}
             className={cn('shrink-0', className)}
-            aria-label={t('fix.menu.aria', { machine: shown })}
-            title={compact ? t('fix.menu.aria', { machine: shown }) : undefined}
+            aria-label={label ?? t('fix.menu.aria', { machine: shown })}
+            title={compact ? label ?? t('fix.menu.aria', { machine: shown }) : undefined}
           />
         )}
       >
-        <Wrench />
+        {icon ?? <Wrench />}
         {compact ? null : children ?? t('fix.menu.label')}
       </MenuTrigger>
       <MenuPopup className="w-72">

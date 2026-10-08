@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { ChevronRight, Hammer, Search, TriangleAlert } from '../components/ui/icons';
+import { ChevronRight, Hammer, Search, Trash2, TriangleAlert } from '../components/ui/icons';
 import { SectionAbout } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -19,7 +19,7 @@ import { useI18n } from '../i18n';
 import type { MessageKey } from '../i18n/resources';
 import { cn } from '../lib/utils';
 import { tilde } from '../services/setupProjects';
-import { scanFailedProblem, libraryLinesProblem, projectToolchainProblem, toolBehindProblem } from '../services/fixPrompt';
+import { scanFailedProblem, libraryLinesProblem, projectToolchainProblem, toolBehindProblem, toolRemoveProblem } from '../services/fixPrompt';
 import { FixMenu } from '../components/FixMenu';
 import {
   actionable,
@@ -41,6 +41,7 @@ import {
   notInstalled,
   olderNodeVersions,
   placeSummary,
+  projectsAsking,
   scanToolchain,
   SETUP_TOOLCHAIN_UPDATED_EVENT,
   type LibraryRow,
@@ -243,7 +244,7 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {toolRows.map((row) => <ToolRowView key={row.tool} row={row} columns={columns} homes={byMachine} />)}
+                  {toolRows.map((row) => <ToolRowView key={row.tool} row={row} columns={columns} homes={byMachine} projects={rows} />)}
                 </TableBody>
               </Table>
             ) : (
@@ -432,10 +433,10 @@ function MachineCard({ machine, toolchain, rows, error, onScan }: {
 
 const Dash = ({ title }: { title?: string }) => <span className="text-muted-foreground/60" title={title}>—</span>;
 
-function ToolRowView({ row, columns, homes }: { row: ToolRow; columns: string[]; homes: Map<string, MachineToolchain> }) {
+function ToolRowView({ row, columns, homes, projects }: { row: ToolRow; columns: string[]; homes: Map<string, MachineToolchain>; projects: ToolchainRow[] }) {
   const { t } = useI18n();
   return (
-    <TableRow>
+    <TableRow className="group/tool">
       <TableCell className="text-sm">
         <span className="flex flex-col gap-0.5">
           <span className="text-foreground">{toolLabel(row.tool, t)}</span>
@@ -461,11 +462,30 @@ function ToolRowView({ row, columns, homes }: { row: ToolRow; columns: string[];
             }, t)}
           />
         ) : null;
+        // Arbor can't tell how a tool got onto a machine, so taking one off is an agent's job, like updating it. The
+        // button stays out of sight until the row is hovered, so a table of versions doesn't read as a row of deletes.
+        const remove = toolCell && (found || toolCell.kept.length) ? (
+          <FixMenu
+            compact
+            machine={machine}
+            icon={<Trash2 />}
+            label={t('setup.toolchain.tools.remove', { tool: toolLabel(row.tool, t), machine })}
+            className="opacity-0 focus-visible:opacity-100 group-hover/tool:opacity-100 data-popup-open:opacity-100"
+            problem={toolRemoveProblem({
+              tool: toolLabel(row.tool, t),
+              version: found?.version ?? null,
+              path: found?.path ?? null,
+              kept: toolCell.kept.map((entry) => `${entry.version} (${entry.manager})`),
+              askedBy: projectsAsking(projects, machine, row.tool),
+            }, t)}
+          />
+        ) : null;
         return (
           <TableCell key={machine} className="text-xs">
             <span className="flex min-w-0 items-center gap-1">
               {row.tool === 'node' && toolchain ? <NodeVersionsCell toolchain={toolchain} label={t('setup.toolchain.node.open', { machine })}>{cell}</NodeVersionsCell> : cell}
               {fix}
+              {remove}
             </span>
           </TableCell>
         );

@@ -17,6 +17,7 @@ import {
   notInstalled,
   olderNodeVersions,
   placeSummary,
+  projectsAsking,
   releaseLine,
   satisfiesPython,
   satisfiesRange,
@@ -248,6 +249,13 @@ describe('rows', () => {
     expect(matchesToolchain(arbor, 'BUN')).toBe(true);
     expect(matchesToolchain(arbor, '/home/ci/src')).toBe(true);
     expect(matchesToolchain(arbor, 'django')).toBe(false);
+  });
+
+  it('names the projects on a machine that ask for a tool, for removing it there', () => {
+    const rows = buildToolchainProjects([mbp, ci]);
+    expect(projectsAsking(rows, 'ci', 'bun')).toEqual(['arbor']);
+    expect(projectsAsking(rows, 'ci', 'deno')).toEqual([]);
+    expect(projectsAsking(rows, 'nowhere', 'bun')).toEqual([]);
   });
 
   it('shows which release of a shared library each project is on', () => {
