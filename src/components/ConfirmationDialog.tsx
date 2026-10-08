@@ -41,9 +41,9 @@ export function ConfirmationContent({
         <DialogDescription>{message}</DialogDescription>
       </DialogHeader>
       {details?.length || warning ? (
-        <div className="flex flex-col gap-3 px-6 pb-5">
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto px-6 pb-5">
           {details?.length ? (
-            <dl className="overflow-hidden rounded-lg border border-border/60 text-sm [&>div+div]:border-t [&>div+div]:border-border/50">
+            <dl className="shrink-0 overflow-hidden rounded-lg border border-border/60 text-sm [&>div+div]:border-t [&>div+div]:border-border/50">
               {details.map((detail, index) => (
                 // A fixed list, shown once, so its order is its identity.
                 <div key={index} className="flex items-center justify-between gap-4 px-3 py-1.5">
@@ -53,7 +53,7 @@ export function ConfirmationContent({
               ))}
             </dl>
           ) : null}
-          {warning ? <p className="rounded-lg border border-warning/32 bg-warning-surface px-3 py-2 text-xs text-warning-foreground">{warning}</p> : null}
+          {warning ? <p className="shrink-0 rounded-lg border border-warning/32 bg-warning-surface px-3 py-2 text-xs text-warning-foreground">{warning}</p> : null}
         </div>
       ) : null}
       <DialogFooter>
