@@ -1,7 +1,7 @@
 use super::{
     auth_dir_path_for_core, configure_background_command, core_install_dir, core_origin, core_own_logs_dir_path,
     current_core_tls_settings, is_hashed_management_secret_key, open_oauth_url_inner, path_to_string,
-    truncate_for_error, GuiConfigFile, GuiConfigState, CORE_CONFIG_FILE,
+    managed_core_is_running, truncate_for_error, CoreProcessState, GuiConfigFile, GuiConfigState, CORE_CONFIG_FILE,
 };
 use crate::command_error::{CommandError, CommandErrorKind};
 use crate::usage::diagnostics::{self, CoreReply};
@@ -13,9 +13,10 @@ use std::{
     fs,
     path::Path,
     process::{Command, Stdio},
-    sync::LazyLock,
+    sync::{LazyLock, OnceLock},
     time::{Duration, Instant},
 };
+use tauri::Manager;
 
 #[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -396,7 +397,30 @@ pub(crate) fn management_authorization(config: &GuiConfigFile) -> Result<String,
     Ok(format!("Bearer {secret_key}"))
 }
 
+/// The running app, kept at launch so a management request, which carries only the config, can ask whose core is up.
+static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+pub(crate) fn remember_app(app: &tauri::AppHandle) {
+    let _ = APP.set(app.clone());
+}
+
+const CORE_NOT_RUNNING: &str = "The core isn't running, so Arbor didn't ask it anything. Start it and try again.";
+
+/// Where a management request goes. Every request that carries the management key asks for this before it's built,
+/// so the key is never sent while no core of Arbor's is running.
 pub(crate) fn management_endpoint(config: &GuiConfigFile, path: &str) -> Result<String, String> {
+    let app = APP.get().ok_or_else(|| CORE_NOT_RUNNING.to_string())?;
+    management_endpoint_for(app.state::<CoreProcessState>().inner(), config, path)
+}
+
+/// The key goes only to a core that's Arbor's: one it started or adopted, or one running from its install folder.
+/// While none is, the port is free for anyone, and another account on this Mac could listen there, take the key from
+/// the first request, and use it on the real core once it starts. The key itself never changes on its own, so that
+/// would last until the user changed it.
+fn management_endpoint_for(process_state: &CoreProcessState, config: &GuiConfigFile, path: &str) -> Result<String, String> {
+    if !managed_core_is_running(process_state) {
+        return Err(CORE_NOT_RUNNING.to_string());
+    }
     if config.port == 0 {
         return Err("Invalid core port".to_string());
     }
@@ -522,6 +546,34 @@ mod tests {
         assert_eq!((plain.status, plain.reason, plain.message.as_str()), (Some(500), None, "Management API error (500): upstream exploded"));
         let empty = management_status_error(404, "");
         assert_eq!((empty.reason, empty.message.as_str()), (None, "Management API error (404)"));
+    }
+
+    fn config_for(port: u16) -> GuiConfigFile {
+        GuiConfigFile { port, management_secret_key: "known-plaintext".into(), ..GuiConfigFile::default() }
+    }
+
+    #[test]
+    fn nothing_is_sent_to_the_core_s_port_while_arbor_s_core_is_not_running() {
+        // Someone else listening on the core's port while it's stopped.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let config = config_for(listener.local_addr().unwrap().port());
+
+        let refused = management_endpoint_for(&CoreProcessState::new(false), &config, "auth-files");
+
+        assert_eq!(refused.unwrap_err(), CORE_NOT_RUNNING);
+        assert_eq!(listener.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+    }
+
+    #[test]
+    fn requests_go_to_the_core_arbor_runs() {
+        let state = CoreProcessState::new(false);
+        state.adopt_process_ids(&std::env::current_exe().unwrap(), vec![std::process::id()]).unwrap();
+
+        let endpoint = management_endpoint_for(&state, &config_for(8317), "/auth-files");
+        state.clear_adopted_processes().unwrap();
+
+        assert_eq!(endpoint.unwrap(), "http://127.0.0.1:8317/v0/management/auth-files");
     }
 
     #[test]

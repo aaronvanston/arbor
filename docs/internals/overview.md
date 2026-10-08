@@ -19,6 +19,10 @@ and updates (`core_runtime.rs`). Arbor reads and changes its state through the c
 - Every write to config.yaml, aliases included, patches the file under `lock_core_config_file`, never through the
   core's config API, and puts a setting only at its v8 path, removing the old spelling in the same edit.
 - An app update leaves the core running and the new version adopts it.
+- The management key goes only to a core that's Arbor's (started, adopted, or running from its install folder), so
+  every HTTP request that carries it gets its URL from `management_endpoint`, which refuses otherwise, and the usage
+  feed connects only once `current_core_status` says the core is ready. A stopped core's port is anyone's to listen
+  on, and the key never changes on its own.
 
 ## usage.db
 

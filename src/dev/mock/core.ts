@@ -546,7 +546,9 @@ const providerKey = (provider: unknown) => String(provider ?? '').toLowerCase().
 const providerExclusions: Record<string, string[]> = {};
 
 function managementRequest(request: ManagementRequest): unknown {
-  // A core that isn't up answers nothing, so every request fails as the native side's would.
+  // A core that isn't up answers nothing, so every request fails as the native side's would: without Arbor's core
+  // running, nothing is sent at all.
+  if (!coreStatus.running) throw { kind: 'failed', message: 'The core isn’t running, so Arbor didn’t ask it anything. Start it and try again.' };
   if (!coreStatus.ready) throw { kind: 'failed', message: 'Management API request failed: error sending request (connection refused)' };
   const method = String(request.method ?? 'GET');
   const path = String(request.path ?? '');

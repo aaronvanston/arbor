@@ -1636,6 +1636,8 @@ fn main() {
 
     let app = app
         .setup(move |app| {
+            // First, before anything can make a management request.
+            management_api::remember_app(app.handle());
             move_legacy_login_item(app.handle());
             if let Err(error) = restore_main_window_size(app.handle()) {
                 eprintln!("{error}");
