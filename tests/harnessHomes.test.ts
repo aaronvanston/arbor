@@ -34,14 +34,14 @@ describe('the other harnesses homes', () => {
     expect(harnessHomeRows(same).map((row) => row.state)).toEqual(['same', 'same']);
   });
 
-  it('gives each home the version of its harness that runs on its machine, the first on the path', () => {
+  it('gives each home the version of its harness that runs on its machine, the first on the path, and whether one does', () => {
     const installs: HarnessInstall[] = [
       { harness: 'droid', path: '~/.local/bin/droid', real: null, version: '0.22.1', updateCommand: 'droid update' },
       { harness: 'pi', path: '~/.npm-global/bin/pi', real: null, version: '0.70.2', updateCommand: 'pi update' },
       { harness: 'pi', path: '/opt/homebrew/bin/pi', real: null, version: '0.60.0', updateCommand: 'pi update' },
     ];
     const rows = harnessHomeRows([machine('a', [home('pi', '~/.pi/agent', 'p'), home('openCode', '~/.config/opencode', null)], installs)]);
-    expect(rows.map((row) => [row.harness, row.version, row.updateCommand])).toEqual([['pi', '0.70.2', 'pi update'], ['openCode', null, null]]);
+    expect(rows.map((row) => [row.harness, row.installed, row.version, row.updateCommand])).toEqual([['pi', true, '0.70.2', 'pi update'], ['openCode', false, null, null]]);
   });
 
   it('says whether an update moved the version on', () => {

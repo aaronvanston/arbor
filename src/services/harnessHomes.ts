@@ -28,6 +28,8 @@ export type HarnessHomeRow = {
   state: InstructionsState;
   /** The skills in its own folder. */
   skills: number;
+  /** Whether the scan found the harness itself installed on the machine, not just its home. */
+  installed: boolean;
   /** The version of the harness that runs on the machine, when the scan found it. */
   version: string | null;
   /** Its own command that updates it there, when Arbor can run one. */
@@ -52,7 +54,7 @@ export function harnessHomeRows(machines: SetupMachine[]): HarnessHomeRow[] {
       const install = machines.find((entry) => entry.machine === machine)?.harnessInstalls.find((found) => found.harness === home.harness);
       return {
         machine, harness: home.harness, path: home.path, instructions, state, skills: home.items.filter((item) => item.kind === 'skill').length,
-        version: install?.version ?? null, updateCommand: install?.updateCommand ?? null,
+        installed: install !== undefined, version: install?.version ?? null, updateCommand: install?.updateCommand ?? null,
       };
     })
     .sort((a, b) => byHarness(a.harness, b.harness) || a.machine.localeCompare(b.machine) || a.path.localeCompare(b.path));

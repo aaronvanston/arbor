@@ -19,7 +19,7 @@ const rollout = (machines: MachineHealth[], latest: string | null = null) => {
 };
 
 const home = (name: string, version: string | null, extra: Partial<HarnessHomeRow> = {}): HarnessHomeRow => ({
-  machine: name, harness: 'pi', path: '~/.pi/agent', instructions: null, state: 'missing', skills: 0, version, updateCommand: 'pi update', ...extra,
+  machine: name, harness: 'pi', path: '~/.pi/agent', instructions: null, state: 'missing', skills: 0, installed: true, version, updateCommand: 'pi update', ...extra,
 });
 
 describe('updating Claude Code or Codex everywhere', () => {

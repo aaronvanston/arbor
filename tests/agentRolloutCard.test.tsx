@@ -82,7 +82,7 @@ describe('Claude Code’s card on Sync › Agents', () => {
 });
 
 const home = (name: string, version: string | null, path = '~/.pi/agent'): HarnessHomeRow => ({
-  machine: name, harness: 'pi', path, instructions: null, state: 'missing', skills: 0, version, updateCommand: 'pi update',
+  machine: name, harness: 'pi', path, instructions: null, state: 'missing', skills: 0, installed: true, version, updateCommand: 'pi update',
 });
 
 describe('another agent’s card on Sync › Agents', () => {

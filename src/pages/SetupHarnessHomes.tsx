@@ -137,8 +137,9 @@ export function HarnessCard({ group, run, onUpdateAll, onUpdate, onOpen }: {
                       {t('machines.agents.update')}
                     </Button>
                   ) : null}
-                  {/* Its home or the agent itself off that machine, through its Clean up. */}
-                  <LazyCleanupRowMenu machines={[row.machine]} path={concreteHomePath(row.path) ? row.path : null} harness={group.harness} label={t('cleanupMenu.label', { name: `${name} · ${row.machine}` })} />
+                  {/* Its home or the agent itself off that machine, through its Clean up. The agent only where it's installed:
+                      a home can outlive it. */}
+                  <LazyCleanupRowMenu machines={[row.machine]} path={concreteHomePath(row.path) ? row.path : null} harness={row.installed ? group.harness : null} label={t('cleanupMenu.label', { name: `${name} · ${row.machine}` })} />
                   </span>
                 </TableCell>
               </TableRow>
