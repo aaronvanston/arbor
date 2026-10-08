@@ -9,6 +9,7 @@ import {
   resultsByTool,
   toolUpdates,
   trialMachine,
+  updatesByTool,
   updateVerdict,
 } from '../src/services/toolUpdates';
 import { ToolUpdatesCard } from '../src/pages/SetupToolUpdates';
@@ -65,6 +66,11 @@ describe('tool updates', () => {
     expect(trialMachine(updates)).toBe('cam-mbp');
     expect(trialMachine(updates.filter((update) => update.tool !== 'uv'))).toBeNull();
     expect([...changesByMachine(updates).keys()]).toEqual(['cam-mbp', 'cedar-02']);
+  });
+
+  it('names each tool once in a batch, with every machine it goes to', () => {
+    const uv = updatesByTool(toolUpdates([mac, box])).find((group) => group.tool === 'uv');
+    expect(uv).toEqual({ tool: 'uv', machines: ['cam-mbp', 'cedar-02'], haves: ['0.8.3', '0.7.20'], latests: ['0.9.1'] });
   });
 
   it('counts a change the run never answered for as a failure', () => {

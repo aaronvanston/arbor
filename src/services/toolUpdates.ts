@@ -147,3 +147,18 @@ export function resultsByTool(changes: ToolChange[], results: ToolResult[]): Map
   }
   return out;
 }
+
+export type ToolUpdateGroup = { tool: string; machines: string[]; haves: string[]; latests: string[] };
+
+/** A batch by tool, in the order the updates are listed, so a confirmation names each tool once. */
+export function updatesByTool(updates: ToolUpdate[]): ToolUpdateGroup[] {
+  const out = new Map<string, ToolUpdateGroup>();
+  for (const update of updates) {
+    const group = out.get(update.tool) ?? { tool: update.tool, machines: [], haves: [], latests: [] };
+    group.machines.push(update.machine);
+    if (!group.haves.includes(update.have)) group.haves.push(update.have);
+    if (!group.latests.includes(update.latest)) group.latests.push(update.latest);
+    out.set(update.tool, group);
+  }
+  return [...out.values()];
+}

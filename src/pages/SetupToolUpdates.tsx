@@ -29,6 +29,7 @@ import {
   sortUpdates,
   toolUpdates,
   trialMachine,
+  updatesByTool,
   updateVerdict,
   type ToolUpdate,
   type UpdateState,
@@ -36,6 +37,9 @@ import {
 import type { MachineToolchain, OwnerKind, ToolOwner } from '../native/types';
 
 type Translate = ReturnType<typeof useI18n>['t'];
+
+/** A tool going to more machines than this says how many instead of naming each. */
+const MOST_PILLS = 3;
 
 const OWNER_LABEL: Record<OwnerKind, MessageKey> = {
   brew: 'setup.toolchain.owner.brew',
@@ -143,14 +147,23 @@ export function ToolUpdatesCard({ toolchains, reachable, toolName }: {
 
   const updateMany = async (batch: ToolUpdate[]) => {
     const trial = trialMachine(batch);
+    const groups = updatesByTool(batch);
     const choice = await askChoice({
-      title: t(batch.length === 1 ? 'setup.toolchain.updates.confirm.title.one' : 'setup.toolchain.updates.confirm.title.other', { count: batch.length }),
+      title: t(groups.length === 1 ? 'setup.toolchain.updates.confirm.title.one' : 'setup.toolchain.updates.confirm.title.other', { count: groups.length }),
       message: t('setup.toolchain.updates.confirm.message'),
-      details: batch.map((update) => ({
-        label: <span className="flex items-center gap-1.5">{toolName(update.tool)}<MachinePill name={update.machine} size="sm" /></span>,
-        value: `${update.have} → ${update.latest} · ${ownerLabel(update.owner, t)}`,
+      // One row a tool, so a big batch reads as what's changing rather than every machine's copy of it.
+      details: groups.map((group) => ({
+        label: (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0">{toolName(group.tool)}</span>
+            {group.machines.length <= MOST_PILLS
+              ? group.machines.map((machine) => <MachinePill key={machine} name={machine} size="sm" />)
+              : <span title={group.machines.join(', ')}>{t('setup.toolchain.updates.confirm.machines', { count: group.machines.length })}</span>}
+          </span>
+        ),
+        value: group.haves.length === 1 ? `${group.haves[0]} → ${group.latests.join(', ')}` : `→ ${group.latests.join(', ')}`,
       })),
-      confirmText: t(batch.length === 1 ? 'setup.toolchain.updates.confirm.go.one' : 'setup.toolchain.updates.confirm.go.other', { count: batch.length }),
+      confirmText: t('setup.toolchain.updates.update'),
       secondaryText: trial ? t('setup.toolchain.updates.tryFirst', { machine: trial }) : undefined,
     });
     if (choice === 'confirm') await run(batch);

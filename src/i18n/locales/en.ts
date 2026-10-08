@@ -3402,6 +3402,7 @@ export const en = {
   'setup.toolchain.updates.confirm.title.one': 'Update 1 tool?',
   'setup.toolchain.updates.confirm.title.other': 'Update {count} tools?',
   'setup.toolchain.updates.confirm.message': 'Each runs with the installer that put it there, one after another on each machine. One that fails doesn’t stop the rest, and updates can’t be undone.',
+  'setup.toolchain.updates.confirm.machines': '{count} machines',
   'setup.toolchain.updates.confirm.go.one': 'Update 1',
   'setup.toolchain.updates.confirm.go.other': 'Update {count}',
   'setup.toolchain.updates.tryFirst': 'Try on {machine} first',
