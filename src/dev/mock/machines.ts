@@ -145,7 +145,7 @@ const MOCK_THIS_MAC = 'cam-mbp';
 // Grove unavailable, so health comes from Arbor's own script and the machine page and Settings › Machines say why.
 const probeScenario = params.get('probes');
 const probesInstalled = new Set(probeScenario === 'none' ? [] : ['cam-mbp', 'ci-01']);
-const MOCK_GROVE = '0.1.4';
+const MOCK_GROVE = '0.1.5';
 const probeVersions = new Map<string, string>(
   probeScenario === 'outdated' || probeScenario === 'update-failed' ? [['ci-01', '0.1.2']] : [],
 );
@@ -738,7 +738,7 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
   // A machine's history beyond the hour, as Grove keeps it: two hundred buckets, cam-mbp asleep from midnight to 7am.
   // `?history=empty` has nothing stored yet; with `?grove=missing` it can't be read.
   get_machine_history: ({ machine, windowMs }) => {
-    if (params.get('grove') === 'missing') throw 'Grove answered as 0.1.3 where this build of Arbor expects 0.1.4';
+    if (params.get('grove') === 'missing') throw 'Grove answered as 0.1.4 where this build of Arbor expects 0.1.5';
     const buckets = 200;
     const bucketMs = Math.max(60_000, Math.round(windowMs / buckets));
     const since = Date.now() - buckets * bucketMs;
