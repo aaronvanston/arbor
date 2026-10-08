@@ -74,7 +74,8 @@ function ConfirmationDialog(props: ConfirmationOptions & Decisions) {
   const { onDecision } = props;
   return (
     <AlertDialog open onOpenChange={(open) => { if (!open) onDecision(false); }}>
-      <DialogPopup className="max-w-md" initialFocus={cancelRef}>
+      {/* A third button needs the room to sit on one line with the other two. */}
+      <DialogPopup className={props.secondaryText ? 'max-w-xl' : 'max-w-md'} initialFocus={cancelRef}>
         <ConfirmationContent {...props} cancelRef={cancelRef} />
       </DialogPopup>
     </AlertDialog>

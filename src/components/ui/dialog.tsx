@@ -61,11 +61,12 @@ function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return <div className={cn('flex flex-col gap-2 p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pb-3', className)} data-slot="dialog-header" {...props} />;
 }
 
+// Buttons never shrink, so a footer too narrow for its buttons wraps them rather than pushing them out of the dialog.
 function DialogFooter({ className, variant = 'default', ...props }: React.ComponentProps<'div'> & { variant?: 'default' | 'bare' }) {
   return (
     <div
       className={cn(
-        'flex flex-row justify-end gap-2 rounded-b-[calc(var(--radius-2xl)-1px)] px-6',
+        'flex flex-row flex-wrap justify-end gap-2 rounded-b-[calc(var(--radius-2xl)-1px)] px-6',
         variant === 'default' && 'border-t bg-muted/72 py-4 dark:bg-input/16',
         variant === 'bare' && 'py-4',
         className,
