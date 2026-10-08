@@ -747,8 +747,12 @@ const repoSkillFiles: Record<string, SetupSkillFile[]> = {
   ],
 };
 
-// How each skill's source stands, as GitHub would say; find-skills has a newer copy there.
-const sourceStates: Record<string, SourceState> = { 'agents-md': 'current', 'find-skills': 'update', 'frontend-design': 'changedHere', pdf: 'current' };
+// How each skill's source stands, as GitHub would say; find-skills has a newer copy there, and with `?sources=updates`
+// agents-md and pdf do too.
+const manyUpdates = params.get('sources') === 'updates';
+const sourceStates: Record<string, SourceState> = {
+  'agents-md': manyUpdates ? 'update' : 'current', 'find-skills': 'update', 'frontend-design': 'changedHere', pdf: manyUpdates ? 'update' : 'current',
+};
 
 let sourcesCheckedAt: number | null = null;
 
@@ -3457,24 +3461,33 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
     });
     return later(asked ? 1_100 : 250, () => checks);
   },
-  update_setup_skill: (args) => {
-    const { repo: path, name } = args;
-    mockLog('update_setup_skill', { repo: path, name });
+  update_setup_skills: (args) => {
+    const { repo: path } = args;
+    const names = [...new Set(args.names)].sort();
+    mockLog('update_setup_skills', { repo: path, names });
     const repo = mockRepo(path);
     const head = repoHead(repo);
-    const skill = head?.skills.find((entry) => entry.name === name);
-    if (!head || !skill?.source) throw `The repo has no ${name} skill from GitHub`;
-    if (skill.problem) throw `Arbor can't sync ${name} as the repo has it, so it doesn't update it either`;
-    const sum = `${skill.sum ?? name}-new`;
-    repoSkillFiles[sum] ??= [...(repoSkillFiles[skill.sum ?? ''] ?? []), skillFile('references/notes.md', `${sum}-notes`, '# Notes\n\nFrom the latest copy.\n')];
-    const files = repoSkillFiles[sum]!.length;
-    const updated: SetupRepoSkill = {
-      ...skill, sum, ck: `c${parseInt(mockSha(sum).slice(0, 8), 16)}-${files * 40}`, files, size: files * 1_536,
-      source: { ...skill.source, skillFolderHash: mockSha(sum) },
-    };
-    return later(1_400, () => {
-      sourceStates[name] = 'current';
-      repo.commits.push(repoCommit(`Update ${name} from ${skill.source!.source}`, Date.now(), head.files, head.skills.map((entry) => (entry.name === name ? updated : entry))));
+    if (!head) throw 'Nothing is committed in the repo yet';
+    if (!names.length) throw 'No skills were named to update';
+    // Every skill is fetched before anything's written, so one that can't be stops them all.
+    const updated = new Map<string, SetupRepoSkill>();
+    for (const name of names) {
+      const skill = head.skills.find((entry) => entry.name === name);
+      if (!skill?.source) throw `The repo has no ${name} skill from GitHub`;
+      if (skill.problem) throw `Arbor can't sync ${name} as the repo has it, so it doesn't update it either`;
+      const sum = `${skill.sum ?? name}-new`;
+      repoSkillFiles[sum] ??= [...(repoSkillFiles[skill.sum ?? ''] ?? []), skillFile('references/notes.md', `${sum}-notes`, '# Notes\n\nFrom the latest copy.\n')];
+      const files = repoSkillFiles[sum]?.length ?? 0;
+      updated.set(name, {
+        ...skill, sum, ck: `c${parseInt(mockSha(sum).slice(0, 8), 16)}-${files * 40}`, files, size: files * 1_536,
+        source: { ...skill.source, skillFolderHash: mockSha(sum) },
+      });
+    }
+    const [only] = names;
+    const message = names.length === 1 && only ? `Update ${only} from ${updated.get(only)?.source?.source ?? 'its source'}` : `Update ${names.join(', ')} from their sources`;
+    return later(names.length > 1 ? 2_200 : 1_400, () => {
+      for (const name of names) sourceStates[name] = 'current';
+      repo.commits.push(repoCommit(message, Date.now(), head.files, head.skills.map((entry) => updated.get(entry.name) ?? entry)));
       if (repo.upstream) repo.upstream = { ...repo.upstream, ahead: repo.upstream.ahead + 1 };
       return setupRepoReply(path);
     });

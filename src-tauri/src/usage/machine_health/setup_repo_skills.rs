@@ -1506,11 +1506,14 @@ async fn download(client: &reqwest::Client, apis: GithubApis<'_>, repo: &str, co
     Ok(downloaded)
 }
 
-/// Replaces the repo's copy of skill `name` with its source's latest, as one commit that records the
-/// source's new tree for it.
-async fn update_skill(folder: &Path, name: &str, client: &reqwest::Client, apis: GithubApis<'_>, git_config: &[&str]) -> Result<(), String> {
-    let commit = head(folder).await?.ok_or("Nothing is committed in the repo yet")?;
-    let sources = committed_sources(folder, &commit).await;
+/// Skill `name` as its source has it now, with the source recorded for it, and the tree it came from,
+/// to keep for later checks.
+async fn latest_skill(
+    name: &str,
+    sources: &BTreeMap<String, SkillSource>,
+    client: &reqwest::Client,
+    apis: GithubApis<'_>,
+) -> Result<(Vec<SkillFile>, SkillSource, UpstreamTree), String> {
     let source = sources.get(name).ok_or_else(|| format!("The repo doesn't record where {name} came from"))?;
     let repo = source.github().ok_or("Arbor can update skills from GitHub only")?;
     let place = source.folder().ok_or_else(|| format!("The repo's record of {name} doesn't say where in {repo} it is"))?;
@@ -1547,28 +1550,61 @@ async fn update_skill(folder: &Path, name: &str, client: &reqwest::Client, apis:
     let downloaded = download(client, apis, repo, &upstream, files).await?;
     let mut updated = source.clone();
     updated.skill_folder_hash = Some(hash);
-    let sources = BTreeMap::from([(name.to_string(), updated)]);
-    commit_skills(folder, &[(name.to_string(), downloaded)], &sources, &format!("Update {name} from {repo}"), git_config).await?;
+    Ok((downloaded, updated, tree))
+}
+
+/// What the commit that updates `names` says.
+fn update_message(names: &[String], sources: &BTreeMap<String, SkillSource>) -> String {
+    match names {
+        [name] => format!("Update {name} from {}", sources.get(name).map_or("its source", |source| source.source.as_str())),
+        _ => format!("Update {} from their sources", names.join(", ")),
+    }
+}
+
+/// Replaces the repo's copy of each skill in `names` with its source's latest, as one commit that
+/// records each source's new tree. Nothing is written unless every skill could be fetched.
+async fn update_skills(folder: &Path, names: &[String], client: &reqwest::Client, apis: GithubApis<'_>, git_config: &[&str]) -> Result<(), String> {
+    let commit = head(folder).await?.ok_or("Nothing is committed in the repo yet")?;
+    let sources = committed_sources(folder, &commit).await;
+    let mut skills = Vec::new();
+    let mut updated = BTreeMap::new();
+    let mut trees = Vec::new();
+    for name in names {
+        let (files, source, tree) = latest_skill(name, &sources, client, apis).await?;
+        let key = (source.github().unwrap_or_default().to_string(), source.reference.clone().unwrap_or_default());
+        skills.push((name.clone(), files));
+        updated.insert(name.clone(), source);
+        trees.push((key, tree));
+    }
+    commit_skills(folder, &skills, &updated, &update_message(names, &sources), git_config).await?;
     // A check after this compares with what was just taken.
-    let key = (repo.to_string(), source.reference.clone().unwrap_or_default());
-    TREES.lock().unwrap_or_else(PoisonError::into_inner).insert(key, (Instant::now(), Ok(Arc::new(tree))));
+    let mut cache = TREES.lock().unwrap_or_else(PoisonError::into_inner);
+    for (key, tree) in trees {
+        cache.insert(key, (Instant::now(), Ok(Arc::new(tree))));
+    }
     Ok(())
 }
 
-/// Replaces the repo's copy of a skill with its source's latest on GitHub, as a commit. Machines get
-/// it once they're brought in step.
+/// Replaces the repo's copy of each named skill with its source's latest on GitHub, as one commit.
+/// Machines get them once they're brought in step.
 #[tauri::command]
-pub(crate) async fn update_setup_skill(
+pub(crate) async fn update_setup_skills(
     gui_config_state: tauri::State<'_, GuiConfigState>,
     repo: String,
-    name: String,
+    names: Vec<String>,
 ) -> Result<SetupRepo, String> {
-    if !is_skill_name(&name) {
+    let mut names = names;
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return Err("No skills were named to update".into());
+    }
+    if let Some(name) = names.iter().find(|name| !is_skill_name(name)) {
         return Err(format!("Arbor doesn't sync a skill called {name}"));
     }
     let client = github_client(&gui_config_state)?;
     let folder = Path::new(&repo);
-    update_skill(folder, &name, &client, GITHUB, &[]).await?;
+    update_skills(folder, &names, &client, GITHUB, &[]).await?;
     read_repo(folder).await
 }
 
@@ -1624,6 +1660,14 @@ mod tests {
             assert_eq!(source.github(), None, "{bad}");
         }
         assert_eq!(parse_sources(b"not json"), BTreeMap::new());
+    }
+
+    #[test]
+    fn an_update_says_what_it_took_from_where() {
+        let source = SkillSource { source: "acme/skills".into(), source_type: "github".into(), ..SkillSource::default() };
+        let sources = BTreeMap::from([("pdf".to_string(), source)]);
+        assert_eq!(update_message(&["pdf".into()], &sources), "Update pdf from acme/skills");
+        assert_eq!(update_message(&["docx".into(), "pdf".into()], &sources), "Update docx, pdf from their sources");
     }
 
     #[test]
@@ -2101,7 +2145,13 @@ mod tests {
             };
             assert_eq!(states(true), [("gone".into(), SourceState::Gone), ("mine".into(), SourceState::Unchecked), ("pdf".into(), SourceState::Update)]);
 
-            block_on(update_skill(&setup, "pdf", &client, apis, &IDENTITY)).unwrap();
+            // One that can't be fetched stops them all, before anything's written.
+            let refused = block_on(update_skills(&setup, &["gone".into(), "pdf".into()], &client, apis, &IDENTITY)).unwrap_err();
+            assert!(refused.contains("hasn't got gone"), "{refused}");
+            assert_eq!(fs::read(setup.join(".agents/skills/pdf/SKILL.md")).unwrap(), b"v1\n");
+            assert_eq!(log(&setup)[0], "Take 3 skills");
+
+            block_on(update_skills(&setup, &["pdf".into()], &client, apis, &IDENTITY)).unwrap();
             assert_eq!(log(&setup)[0], format!("Update pdf from {repo_name}"));
             assert_eq!(committed(&setup, "pdf"), ["100644 SKILL.md", "100755 scripts/run.py"], "metadata.json stays out, as an install leaves it");
             assert_eq!(fs::read(setup.join(".agents/skills/pdf/SKILL.md")).unwrap(), skill);
@@ -2116,7 +2166,7 @@ mod tests {
 
             // A file that doesn't come back as GitHub lists it stops the update.
             routes.lock().unwrap().insert(format!("/{repo_name}/{commit}/skills/pdf/SKILL.md"), (200, Vec::new(), b"tampered\n".to_vec()));
-            let refused = block_on(update_skill(&setup, "pdf", &client, apis, &IDENTITY)).unwrap_err();
+            let refused = block_on(update_skills(&setup, &["pdf".into()], &client, apis, &IDENTITY)).unwrap_err();
             assert!(refused.contains("SKILL.md came back"), "{refused}");
             assert_eq!(fs::read(setup.join(".agents/skills/pdf/SKILL.md")).unwrap(), b"Mine.\n");
 

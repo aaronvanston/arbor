@@ -1999,7 +1999,7 @@ fn main() {
             usage::machine_health::setup_repo_skills::take_setup_skills,
             usage::machine_health::setup_repo_skills::read_setup_repo_skill,
             usage::machine_health::setup_repo_skills::check_setup_skill_sources,
-            usage::machine_health::setup_repo_skills::update_setup_skill,
+            usage::machine_health::setup_repo_skills::update_setup_skills,
             usage::machine_health::setup_skills::apply_skill_changes,
             usage::machine_health::transcripts::get_skill_usage,
             usage::machine_health::setup_plugins::apply_plugin_changes,

@@ -54,7 +54,7 @@ import {
   type Standing,
 } from '../services/repoBrowser';
 import type { FileView } from '../services/fileView';
-import { checkSetupSkillSources, removableKind, setSetupFileRemoved, setSetupSkillRemoved, updateSetupSkill } from '../services/setupSync';
+import { checkSetupSkillSources, removableKind, setSetupFileRemoved, setSetupSkillRemoved, updateSetupSkills } from '../services/setupSync';
 import { ChangesMode } from './SetupRepoChanges';
 import { HistoryMode } from './SetupRepoHistory';
 import { ProjectInstructionsStanding } from './ProjectInstructionsCard';
@@ -145,6 +145,29 @@ export function RepoBrowser({ repo, machines, history = null, onRepo, onReview }
     checkSetupSkillSources(repo.path, false).then((found) => { if (current) setSources(found); }).catch(() => undefined);
     return () => { current = false; };
   }, [repo.path, head, sourced]);
+
+  /** The skills being updated from their sources just now, which keeps another update from starting beside them. */
+  const [updating, setUpdating] = useState<readonly string[]>([]);
+  const updateSkills = useCallback(async (names: string[]) => {
+    const [only] = names;
+    if (!only || updating.length) return;
+    const skill = repo.skills.find((found) => found.name === only);
+    const from = skill?.source ? (skill.source.ref ? `${skill.source.source}@${skill.source.ref}` : skill.source.source) : '';
+    const confirmed = await askConfirmation(names.length === 1
+      ? { title: t('repo.skill.updateTitle', { name: only }), message: t('setup.sources.confirm', { name: only, source: skill?.source?.source ?? '' }), confirmText: t('setup.sources.update') }
+      : { title: t('repo.sources.confirmTitle', { count: names.length }), message: t('repo.sources.confirm', { names: names.join(', ') }), confirmText: t('repo.sources.updateAll') });
+    if (!confirmed) return;
+    setUpdating(names);
+    try {
+      onRepo(await updateSetupSkills(repo.path, names));
+      toast({ kind: 'success', title: names.length === 1 ? t('setup.sources.updated', { name: only, source: from }) : t('repo.sources.updated', { count: names.length }) });
+    } catch (reason) {
+      toast({ kind: 'error', title: names.length === 1 ? t('setup.sources.updateFailed', { name: only, error: String(reason) }) : t('repo.sources.updateFailed', { error: String(reason) }) });
+    } finally {
+      setUpdating([]);
+    }
+  }, [updating, repo.skills, repo.path, askConfirmation, onRepo, t]);
+  const outdated = useMemo(() => (sources ?? []).filter((check) => check.state === 'update').map((check) => check.name).sort(), [sources]);
 
   const entries = useMemo(() => tree?.entries ?? [], [tree]);
   const byPath = useMemo(() => new Map(entries.map((entry) => [entry.path, entry])), [entries]);
@@ -307,6 +330,7 @@ export function RepoBrowser({ repo, machines, history = null, onRepo, onReview }
                   <RepoFileTree entries={entries} selected={selected} onSelect={choose} decorate={decorate} renderMenu={menu} />
                 </div>
                 {tree.truncated ? <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">{t('repo.tree.truncated')}</p> : null}
+                <SourceUpdates names={outdated} updating={updating} onOpen={(name) => choose(skillFolder(name))} onUpdate={(names) => void updateSkills(names)} />
                 <RemovedEverywhere repo={repo} onRepo={onRepo} />
               </Suspense>
             ) : !error ? <TreeSkeleton /> : null}
@@ -319,6 +343,8 @@ export function RepoBrowser({ repo, machines, history = null, onRepo, onReview }
                 machines={machines}
                 entry={entry}
                 sources={sources}
+                updating={updating}
+                onUpdate={(names) => void updateSkills(names)}
                 onTree={setTree}
                 onRepo={onRepo}
                 onReview={onReview}
@@ -410,11 +436,15 @@ function TreeMenu({ item, entry, onNewFile, onRename, onDelete, onDiscard }: {
 type Loaded = { state: 'loading' } | { state: 'error'; error: string } | { state: 'ready'; text: RepoText };
 
 /** The chosen file: what it is and where it goes, how each machine's copy stands, and the file itself. */
-function FilePane({ repo, machines, entry, sources, onTree, onRepo, onReview, onUnsaved, onChanges, onRename, onDelete, onDiscard }: {
+function FilePane({ repo, machines, entry, sources, updating, onUpdate, onTree, onRepo, onReview, onUnsaved, onChanges, onRename, onDelete, onDiscard }: {
   repo: SetupRepo;
   machines: SetupMachine[];
   entry: RepoEntry;
   sources: SourceCheck[] | null;
+  /** The skills being updated from their sources just now. */
+  updating: readonly string[];
+  /** Updates the named skills from their sources, once confirmed. */
+  onUpdate: (names: string[]) => void;
   onTree: (tree: RepoTree) => void;
   onRepo: (repo: SetupRepo) => void;
   /** Opens a machine's review, with `path`'s copy there opened in it. */
@@ -564,7 +594,7 @@ function FilePane({ repo, machines, entry, sources, onTree, onRepo, onReview, on
             )}
           </div>
         </div>
-        <RoleLine repo={repo} machines={machines} entry={entry} sources={sources} onRepo={onRepo} onReview={onReview} />
+        <RoleLine repo={repo} machines={machines} entry={entry} sources={sources} updating={updating} onUpdate={onUpdate} onReview={onReview} />
         {problem ? <p className="text-xs text-error-foreground" role="alert">{problem}</p> : null}
       </header>
       <div className="min-h-0 flex-1 overflow-auto">
@@ -637,18 +667,19 @@ const SKILL_PROBLEM: Record<NonNullable<SetupRepoSkill['problem']>, MessageKey> 
  * What Arbor does with the file, in a line: where it goes on every machine, the skill it's part of and that skill's
  * source, the project whose checkouts get it, a record Arbor keeps, or nothing. Then each machine's committed copy.
  */
-function RoleLine({ repo, machines, entry, sources, onRepo, onReview }: {
+function RoleLine({ repo, machines, entry, sources, updating, onUpdate, onReview }: {
   repo: SetupRepo;
   machines: SetupMachine[];
   entry: RepoEntry;
   sources: SourceCheck[] | null;
-  onRepo: (repo: SetupRepo) => void;
+  /** The skills being updated from their sources just now. */
+  updating: readonly string[];
+  /** Updates the named skills from their sources, once confirmed. */
+  onUpdate: (names: string[]) => void;
   /** Opens a machine's review, with `path`'s copy there opened in it. */
   onReview: (machine: string, path?: string) => void;
 }) {
   const { t, tRich } = useI18n();
-  const { askConfirmation } = useConfirmation();
-  const [updating, setUpdating] = useState(false);
   const target = homePath(entry);
   const code = (text: string) => <code className="font-mono text-2xs text-foreground">{text}</code>;
   let line: ReactNode;
@@ -664,30 +695,13 @@ function RoleLine({ repo, machines, entry, sources, onRepo, onReview }: {
     line = tRich('repo.role.skill', { name: code(name), path: code(target ?? '') });
     if (skill?.source) {
       const from = skill.source.ref ? `${skill.source.source}@${skill.source.ref}` : skill.source.source;
-      const update = async () => {
-        const confirmed = await askConfirmation({
-          title: t('repo.skill.updateTitle', { name }),
-          message: t('setup.sources.confirm', { name, source: skill.source?.source ?? '' }),
-          confirmText: t('setup.sources.update'),
-        });
-        if (!confirmed) return;
-        setUpdating(true);
-        try {
-          onRepo(await updateSetupSkill(repo.path, name));
-          toast({ kind: 'success', title: t('setup.sources.updated', { name, source: from }) });
-        } catch (reason) {
-          toast({ kind: 'error', title: t('setup.sources.updateFailed', { name, error: String(reason) }) });
-        } finally {
-          setUpdating(false);
-        }
-      };
       extra = (
         <span className="flex items-center gap-1.5">
           <span className="text-muted-foreground">{t('repo.skill.from', { source: from })}</span>
           {check ? <Badge variant={SOURCE_LOOK[check.state].variant} size="sm">{t(SOURCE_LOOK[check.state].key)}</Badge> : null}
           {check?.state === 'update' ? (
-            <Button variant="outline" size="xs" disabled={updating} onClick={() => void update()} title={t('setup.sources.updateTitle', { source: skill.source.source })}>
-              {updating ? <Spinner /> : null}
+            <Button variant="outline" size="xs" disabled={updating.length > 0} onClick={() => onUpdate([name])} title={t('setup.sources.updateTitle', { source: skill.source.source })}>
+              {updating.includes(name) ? <Spinner /> : null}
               {t('setup.sources.update')}
             </Button>
           ) : null}
@@ -755,6 +769,56 @@ function RoleLine({ repo, machines, entry, sources, onRepo, onReview }: {
  * Rules, subagents, commands and skills taken off every machine, each of which can be put back. It folds to one row under
  * the tree, and opened it scrolls in a capped height, so however many there are the tree keeps its room.
  */
+/**
+ * The skills whose sources have a newer copy than the repo's, each opening its SKILL.md, with one button that takes
+ * them all in a single commit.
+ */
+function SourceUpdates({ names, updating, onOpen, onUpdate }: {
+  names: readonly string[];
+  updating: readonly string[];
+  onOpen: (name: string) => void;
+  onUpdate: (names: string[]) => void;
+}) {
+  const { t } = useI18n();
+  if (!names.length) return null;
+  const busy = updating.length > 0;
+  return (
+    <Collapsible className="shrink-0 border-t border-border/60" data-slot="repo-source-updates">
+      <div className="flex items-center gap-2 pe-2">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2 text-start text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground">
+          {t('repo.sources.title', { count: names.length })}
+        </CollapsibleTrigger>
+        <Button
+          variant="outline"
+          size="xs"
+          disabled={busy}
+          disabledReason={busy ? t('repo.sources.busy') : undefined}
+          onClick={() => onUpdate([...names])}
+          title={t('repo.sources.updateAllTitle')}
+        >
+          {busy && updating.length > 1 ? <Spinner /> : null}
+          {names.length === 1 ? t('setup.sources.update') : t('repo.sources.updateAll')}
+        </Button>
+      </div>
+      <CollapsiblePanel>
+        <div className="flex max-h-64 flex-col gap-1 overflow-y-auto px-3 pb-2">
+          {names.map((name) => (
+            <div key={name} className="flex min-w-0 items-center gap-2">
+              <button type="button" className="min-w-0 flex-1 truncate text-start font-mono text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground" onClick={() => onOpen(name)}>
+                {name}
+              </button>
+              <Button variant="ghost-muted" size="xs" disabled={busy} onClick={() => onUpdate([name])}>
+                {updating.includes(name) && updating.length === 1 ? <Spinner /> : null}
+                {t('setup.sources.update')}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
 function RemovedEverywhere({ repo, onRepo }: { repo: SetupRepo; onRepo: (repo: SetupRepo) => void }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState<string | null>(null);

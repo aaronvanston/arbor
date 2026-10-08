@@ -47,7 +47,7 @@ export const readSetupRepoSkill = (repo: string, commit: string, name: string, c
 /** Asks GitHub about each skill with a recorded source; what it said in the last 15 minutes is used again, unless `force`. */
 export const checkSetupSkillSources = (repo: string, force: boolean) => invokeCommand('check_setup_skill_sources', { repo, force });
 /** Replaces the repo's copy of a skill with its source's latest, as a commit. */
-export const updateSetupSkill = (repo: string, name: string) => invokeCommand('update_setup_skill', { repo, name });
+export const updateSetupSkills = (repo: string, names: string[]) => invokeCommand('update_setup_skills', { repo, names });
 
 /** The setup repo's folder, as the Repo tab remembers it; a setting the app keeps, so `arbor sync` finds it too. */
 const setupRepo = savedStore<string | null>({

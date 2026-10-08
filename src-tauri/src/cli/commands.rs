@@ -1715,12 +1715,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
-        name: "update_setup_skill",
+        name: "update_setup_skills",
         access: Access::Write,
-        summary: "Replaces the repo's copy of a skill with its source's latest on GitHub, as a commit. Machines get it once they're brought in step.",
+        summary: "Replaces the repo's copy of each named skill with its source's latest on GitHub, as one commit. Machines get them once they're brought in step.",
         args: &[
             ArgSpec { name: "repo", ts_type: "string", optional: false },
-            ArgSpec { name: "name", ts_type: "string", optional: false },
+            ArgSpec { name: "names", ts_type: "Array<string>", optional: false },
         ],
     },
     CommandSpec {
@@ -2416,7 +2416,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "take_setup_skills" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::take_setup_skills(app.state(), arg(&args, "repo")?, arg(&args, "machine")?, arg(&args, "paths")?)).await) }.await,
         "read_setup_repo_skill" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::read_setup_repo_skill(arg(&args, "repo")?, arg(&args, "commit")?, arg(&args, "name")?, arg(&args, "ck")?)).await) }.await,
         "check_setup_skill_sources" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::check_setup_skill_sources(app.state(), arg(&args, "repo")?, arg(&args, "force")?)).await) }.await,
-        "update_setup_skill" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::update_setup_skill(app.state(), arg(&args, "repo")?, arg(&args, "name")?)).await) }.await,
+        "update_setup_skills" => async { done(Box::pin(crate::usage::machine_health::setup_repo_skills::update_setup_skills(app.state(), arg(&args, "repo")?, arg(&args, "names")?)).await) }.await,
         "apply_skill_changes" => async { done(Box::pin(crate::usage::machine_health::setup_skills::apply_skill_changes(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "changes")?)).await) }.await,
         "get_skill_usage" => async { done(Box::pin(crate::usage::machine_health::transcripts::get_skill_usage(arg(&args, "days")?)).await) }.await,
         "apply_plugin_changes" => async { done(Box::pin(crate::usage::machine_health::setup_plugins::apply_plugin_changes(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "changes")?)).await) }.await,

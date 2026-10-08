@@ -118,7 +118,7 @@ export type SetupCommands = {
   read_setup_repo_skill: { args: { repo: string; commit: string; name: string; ck: boolean }; result: SetupSkillFile[] };
   check_setup_skill_sources: { args: { repo: string; force: boolean }; result: SourceCheck[] };
   get_marketplace_catalog: { args: { source: string; force: boolean }; result: MarketplaceCatalog };
-  update_setup_skill: { args: { repo: string; name: string }; result: SetupRepo };
+  update_setup_skills: { args: { repo: string; names: string[] }; result: SetupRepo };
   apply_skill_changes: { args: { machine: string; changes: SkillChange[] }; result: SyncOutcome };
   get_skill_usage: { args: { days: number }; result: SkillUsageReport };
 

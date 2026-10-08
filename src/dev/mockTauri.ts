@@ -214,7 +214,8 @@
  * minute-long transcript scan and slow provider calls, `fail` for ci-01 unreachable for the last quarter hour (exit
  * 255 and timeouts), 502s from the core, a failed agent update and a setup scan that ran out of time, or `error` for
  * the calls failing to read. Clear and Undo work on what's shown;
- * `?sources=fail` to have GitHub's limit on checking skills' sources used up;
+ * `?sources=fail` to have GitHub's limit on checking skills' sources used up, or `?sources=updates` for three skills
+ * with newer copies at their sources (Update all on Sync › Repo);
  * for Sessions › Projects' Checkouts (`?page=sessions&tab=projects&lens=checkouts`):
  * `?places=none` for a setup repo with no project files yet (Sync › Projects offers the schemas), `?places=unscanned`
  * for machines whose scans haven't looked at the repo's places yet, `?places=problems` for project and machine files
