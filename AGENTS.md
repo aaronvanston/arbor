@@ -116,6 +116,22 @@ http://127.0.0.1:1420 (plain `vite` binds only `::1`, and `bun run dev` binds ev
 query-string flags such as `?core=stopped` or `?fresh=1`; read the list at the top of `src/dev/mockTauri.ts` instead of
 guessing. Gate details, the mock's internals and the benchmark: [Development](docs/operations/development.md).
 
+### macOS builds from a Linux box
+
+On the Linux dev boxes `src-tauri` doesn't compile, because its macOS-only code isn't gated. When a change touches
+`src-tauri`, run `mac-build` once before you finish, and it compiles the commit on the Mac Mini:
+
+```sh
+mac-build          # cargo check in src-tauri, for HEAD as committed
+mac-build test     # cargo test there; `build` is a debug cargo build
+```
+
+It sends unpushed commits itself and pushes nothing, but uncommitted changes stay behind, so commit first. Don't run it
+after every edit: the Mac runs one build at a time, at low priority because it's a desktop, and a newer request takes an
+older one's place in the queue. `mac-build bundle` runs `tauri build` for the app alone in a throwaway worktree on the
+Mac; use it only when the maintainer asks. The modes are in `.mac-build.toml`, and the `mac-build` skill covers the
+rest.
+
 ## How it works
 
 The webview never touches files, processes or the network: it calls Rust commands through `invokeCommand`, and Rust
