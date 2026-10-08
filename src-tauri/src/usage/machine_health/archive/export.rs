@@ -124,19 +124,14 @@ pub(crate) fn session_tags(usage: &Connection) -> Result<HashMap<String, Session
     rows.collect::<Result<_, _>>().map_err(|error| error.to_string())
 }
 
-/// Where kept bytes are read from: the store's chunks, and growing tails from the index's own
-/// copies first, as a pass reads them.
+/// Where kept bytes are read from: the store's chunks and its growing tails, nowhere else.
 pub(crate) struct Reader {
     pub(crate) store_root: PathBuf,
-    pub(crate) pending_dir: PathBuf,
 }
 
 impl Reader {
     fn pending(&self, vk: &str, gen: i64) -> Result<Vec<u8>, String> {
-        match fs::read(self.pending_dir.join(format!("{vk}.{gen}.zst"))).map_err(|error| error.to_string()).and_then(|frame| codec::decode(&frame)) {
-            Ok(bytes) => Ok(bytes),
-            Err(_) => read_pending_in(&self.store_root, vk, gen),
-        }
+        read_pending_in(&self.store_root, vk, gen)
     }
 
     /// A version's bytes as its file held them, checked against the size and hash the index has.
@@ -474,7 +469,7 @@ mod tests {
     const OTHER: &str = "1a2b3c4d-5555-4666-8777-888899990000";
 
     fn reader(fixture: &Fixture) -> Reader {
-        Reader { store_root: fixture.places.store.root().to_path_buf(), pending_dir: fixture.base.join("index/pending") }
+        Reader { store_root: fixture.places.store.root().to_path_buf() }
     }
 
     fn tags(branch: &str, remote: &str, checkout: &str) -> SessionTags {

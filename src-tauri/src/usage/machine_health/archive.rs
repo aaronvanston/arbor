@@ -202,7 +202,6 @@ fn make_private_dir(path: &Path) -> Result<(), String> {
 
 fn open_index(dir: &Path) -> Result<Connection, String> {
     make_private_dir(dir)?;
-    make_private_dir(&dir.join("pending"))?;
     index::open(&dir.join("archive.db"))
 }
 
@@ -590,7 +589,7 @@ pub(crate) async fn export_session_archive(request: export::ArchiveExportRequest
             Err(_) => Default::default(),
         };
         let root = PathBuf::from(root);
-        let reader = export::Reader { store_root: root.clone(), pending_dir: dir.join("pending") };
+        let reader = export::Reader { store_root: root.clone() };
         export::run(&db, &reader, &tags, &request, &[root, dir])
     })
     .await
@@ -956,7 +955,9 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
     }
     let store = open_main(&settings, &archive_id, device(&dir)).map_err(|(_, error)| error)?;
     saw_main(&db, &store, index::now_ms())?;
-    let places = Places { store, pending_dir: dir.join("pending") };
+    // Tails an older Arbor also kept on this Mac's disk move to the store, the one place for them.
+    ingest::drop_local_tails(&db, &dir.join("pending"), &store)?;
+    let places = Places { store };
     // Lines left from a pass that stopped before its flush go first.
     journal::flush(&db, &places.store)?;
     // A project the user chose to keep or leave out is found by its sessions' ids in usage.db. If

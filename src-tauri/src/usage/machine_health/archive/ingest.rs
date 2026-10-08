@@ -12,7 +12,8 @@ use super::index::{get_meta, lock_writes, set_meta};
 use super::journal::emit;
 use super::lister::{allowed, ListedFile, ListedRoot, Listing};
 use super::super::archive::SessionFilter;
-use super::store::{drop_pending_in, write_atomic, ChunkMeta, NewChunk, Store};
+use super::sha::sha256;
+use super::store::{ChunkMeta, NewChunk, Store};
 use super::tokens::{pieces, read_piece};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
@@ -24,7 +25,7 @@ use std::time::{Duration, Instant};
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// A version that hasn't grown for this long is settled.
 const SETTLE_AFTER_MS: i64 = DAY_MS;
-/// Growing tails are kept on this Mac's disk; past this much in all, the oldest settle.
+/// Growing tails are kept in the store's `pending/`; past this much in all, the oldest settle.
 const PENDING_MAX: i64 = 256 << 20;
 /// A file is at risk this long before its home's cleanup would delete it.
 const AT_RISK_DAYS: i64 = 7;
@@ -33,16 +34,10 @@ const LONG_RETENTION_DAYS: i64 = 3_650;
 /// What Claude Code keeps sessions for when a home doesn't say.
 const CLAUDE_DEFAULT_RETENTION_DAYS: i64 = 30;
 
-/// Chunks go to the store, and growing tails to this Mac's disk with a copy in the store.
+/// Chunks and growing tails both go to the store, the one place raw bytes live. Nothing of a
+/// transcript is kept on this Mac's disk beside it; a pass can't run without the store anyway.
 pub(crate) struct Places {
     pub(crate) store: Store,
-    pub(crate) pending_dir: PathBuf,
-}
-
-impl Places {
-    fn pending_path(&self, vk: &str, gen: i64) -> PathBuf {
-        self.pending_dir.join(format!("{vk}.{gen}.zst"))
-    }
 }
 
 impl Blobs for Places {
@@ -59,22 +54,63 @@ impl Blobs for Places {
     }
 
     fn put_pending(&self, vk: &str, gen: i64, tail: &[u8]) -> Result<(), String> {
-        let frame = codec::encode(tail)?;
-        write_atomic(&self.pending_path(vk, gen), &frame)?;
-        self.store.put_pending(vk, gen, &frame)
+        self.store.put_pending(vk, gen, &codec::encode(tail)?)
     }
 
     fn read_pending(&self, vk: &str, gen: i64) -> Result<Vec<u8>, String> {
-        match std::fs::read(self.pending_path(vk, gen)).map_err(|error| error.to_string()).and_then(|frame| codec::decode(&frame)) {
-            Ok(bytes) => Ok(bytes),
-            Err(_) => self.store.read_pending(vk, gen),
-        }
+        self.store.read_pending(vk, gen)
     }
 
     fn drop_pending(&self, vk: &str, keep: Option<i64>) {
-        drop_pending_in(&self.pending_dir, vk, keep);
         self.store.drop_pending(vk, keep);
     }
+}
+
+/// Arbor used to keep a second copy of each growing tail in the index's own `pending/` folder,
+/// on this Mac's disk, outside the store the user picked. Each such copy goes once the store
+/// holds the tail the index names, checked against the index's hash, after being put there
+/// from this copy when the store's own is missing or damaged. A copy the index doesn't name is
+/// a tail since settled into a chunk or grown past, whose store copy went when it did, so it
+/// goes too. A named copy neither place can prove stays until its version settles. The folder
+/// goes once it's empty.
+pub(crate) fn drop_local_tails(db: &Connection, dir: &Path, store: &Store) -> Result<(), String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some((vk, gen)) = name.strip_suffix(".zst").and_then(|rest| rest.rsplit_once('.')) else {
+            continue;
+        };
+        let Ok(gen) = gen.parse::<i64>() else {
+            continue;
+        };
+        let named: Option<Option<Vec<u8>>> = db
+            .query_row(
+                "SELECT tail_sha FROM versions WHERE vk = ?1 AND state = 'growing' AND pending_gen = ?2 AND tail_len > 0",
+                params![vk, gen],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        let goes = match named {
+            None => true,
+            Some(sha) => {
+                let holds = |bytes: &[u8]| sha.as_deref() == Some(&sha256(bytes)[..]);
+                let in_store = || store.read_pending(vk, gen).is_ok_and(|bytes| holds(&bytes));
+                in_store()
+                    || match std::fs::read(entry.path()) {
+                        Ok(frame) if codec::decode(&frame).is_ok_and(|bytes| holds(&bytes)) => store.put_pending(vk, gen, &frame).is_ok() && in_store(),
+                        _ => false,
+                    }
+            }
+        };
+        if goes {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    let _ = std::fs::remove_dir(dir);
+    Ok(())
 }
 
 /// Paces reads to a number of bytes a second, across every file in a pass.
@@ -602,9 +638,7 @@ pub(crate) mod tests {
             fs::create_dir_all(db_path.parent().unwrap()).unwrap();
             let db = index::open(&db_path).unwrap();
             db.execute("INSERT INTO stores(store_id, role, machine, root, added_at) VALUES(?1, 'main', 'mac', ?2, 0)", params![store.info().store_id, store.root().to_string_lossy()]).unwrap();
-            let pending_dir = base.join("index/pending");
-            fs::create_dir_all(&pending_dir).unwrap();
-            Fixture { base, home, db_path, db, places: Places { store, pending_dir } }
+            Fixture { base, home, db_path, db, places: Places { store } }
         }
 
         pub(crate) fn write(&self, rel: &str, text: &str) {
@@ -840,6 +874,15 @@ pub(crate) mod tests {
             }
         }
         assert!(checked >= 1);
+        // Nothing on this Mac's side holds it either, decompressed or not: a growing tail lives
+        // only in the store.
+        let local = fixture.db_path.parent().unwrap();
+        assert!(!local.join("pending").exists());
+        for path in walk(local) {
+            let bytes = fs::read(&path).unwrap();
+            let plain = codec::decode(&bytes).unwrap_or_default();
+            assert!(!contains(&bytes) && !contains(&plain), "{}", path.display());
+        }
         for entry in fs::read_dir(fixture.places.store.root().join("journal")).unwrap().flatten() {
             assert!(!contains(&fs::read(entry.path()).unwrap()));
         }
@@ -870,6 +913,61 @@ pub(crate) mod tests {
             }
             assert!(contains(&bytes), "version {id}");
         }
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn tails_an_older_arbor_kept_on_this_macs_disk_move_to_the_store_and_go() {
+        let fixture = Fixture::new("local-tails");
+        let rel = format!(".claude/projects/-Users-me-app/{SID}.jsonl");
+        fixture.write(&rel, &claude_lines(30));
+        fixture.pass();
+        fixture.write(&rel, &format!("{}{{\"partial\":\"{SECRET_TEXT}", claude_lines(31)));
+        fixture.pass();
+        let (vk, gen): (String, i64) = fixture.db.query_row("SELECT vk, pending_gen FROM versions WHERE state = 'growing' AND tail_len > 0", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        let tail = fixture.places.read_pending(&vk, gen).unwrap();
+        let in_store = fixture.places.store.root().join(format!("pending/{vk}.{gen}.zst"));
+        let local = fixture.db_path.parent().unwrap().join("pending");
+        let mine = local.join(format!("{vk}.{gen}.zst"));
+        let superseded = local.join(format!("{vk}.{}.zst", gen - 1));
+        let stray = local.join("not-a-version.1.zst");
+        let chunks = || {
+            let mut paths = walk(&fixture.places.store.root().join("chunks"));
+            paths.sort();
+            paths.into_iter().map(|path| (fs::read(&path).unwrap(), path)).collect::<Vec<_>>()
+        };
+        let chunks_before = chunks();
+
+        // The store's copy intact, gone, or damaged: the local one goes, after it's put back in
+        // the store where it had to be. Copies the index doesn't name go too.
+        for store_copy in ["intact", "gone", "damaged"] {
+            fs::create_dir_all(&local).unwrap();
+            fs::copy(&in_store, &mine).unwrap();
+            for other in [&superseded, &stray] {
+                fs::write(other, codec::encode(SECRET_TEXT.as_bytes()).unwrap()).unwrap();
+            }
+            match store_copy {
+                "gone" => fs::remove_file(&in_store).unwrap(),
+                "damaged" => fs::write(&in_store, codec::encode(b"something else").unwrap()).unwrap(),
+                _ => {}
+            }
+            drop_local_tails(&fixture.db, &local, &fixture.places.store).unwrap();
+            assert!(!local.exists(), "{store_copy}");
+            assert_eq!(fixture.places.read_pending(&vk, gen).unwrap(), tail, "{store_copy}");
+        }
+        assert!(chunks() == chunks_before, "chunks aren't touched");
+
+        // A copy neither place can prove stays while the index names it, and goes once it doesn't.
+        fs::create_dir_all(&local).unwrap();
+        fs::write(&mine, b"not zstd").unwrap();
+        fs::remove_file(&in_store).unwrap();
+        drop_local_tails(&fixture.db, &local, &fixture.places.store).unwrap();
+        assert!(mine.exists());
+        fixture.db.execute("UPDATE versions SET state = 'lost-tail' WHERE vk = ?1", [&vk]).unwrap();
+        drop_local_tails(&fixture.db, &local, &fixture.places.store).unwrap();
+        assert!(!local.exists());
+        // With no folder there, it's nothing.
+        drop_local_tails(&fixture.db, &local, &fixture.places.store).unwrap();
         let _ = fs::remove_dir_all(&fixture.base);
     }
 
