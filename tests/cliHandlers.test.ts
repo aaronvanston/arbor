@@ -61,3 +61,36 @@ describe('the window’s account and routing actions for arbor', () => {
     expect(getRoutingAuto()).not.toHaveProperty('nope');
   });
 });
+
+describe('ChatGPT’s counts for Codex accounts, for arbor', () => {
+  const work = { ...account('cam-work@example.com', 'codex'), id_token: { chatgpt_account_id: 'acct-1' } } as AuthFile;
+  const again = { ...account('cam-work-2@example.com', 'codex'), auth_index: 'again', id_token: { chatgpt_account_id: 'acct-1' } } as AuthFile;
+  const other = { ...account('cam-side@example.com', 'codex'), id_token: { chatgpt_account_id: 'acct-2' } } as AuthFile;
+
+  beforeEach(() => {
+    mockCommands({
+      management_request: ({ request }) => {
+        if (request.path === '/auth-files') return coreReply({ files: [listing[0], work, again, other] });
+        if (request.path === '/api-call') {
+          const body = request.body as { authIndex: string; url: string; header: Record<string, string> };
+          if (!body.url.endsWith('/wham/profiles/me')) throw 'offline';
+          if (body.authIndex === 'cam-side@example.com') return coreReply({ status_code: 401, body: JSON.stringify({ detail: 'Unauthorized' }) });
+          // The token stays a placeholder the core fills in.
+          expect(body.header.Authorization).toBe('Bearer $TOKEN$');
+          return coreReply({ status_code: 200, body: JSON.stringify({ stats: { lifetime_tokens: 1_000, daily_usage_buckets: [] } }) });
+        }
+        throw 'offline';
+      },
+    });
+  });
+
+  it('read every Codex account, count a ChatGPT account signed in twice once, and keep a failure on its row', async () => {
+    const { result, error } = await ask('accounts.codexProfile');
+    expect(error).toBeNull();
+    const { lifetimeTokens, accounts } = result as { lifetimeTokens: number; accounts: Array<{ id: string; profile: unknown; error: string | null }> };
+    expect(accounts).toHaveLength(3);
+    expect(lifetimeTokens).toBe(1_000);
+    expect(accounts.filter((row) => row.error !== null)).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain('acct-1');
+  });
+});

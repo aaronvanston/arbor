@@ -109,7 +109,7 @@ const CODEX_RESET_CREDITS_CONSUME_URL =
 const ANTIGRAVITY_CODE_ASSIST_URL =
   'https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist';
 
-const headersByProvider: Record<QuotaProvider, Record<string, string>> = {
+export const headersByProvider: Record<QuotaProvider, Record<string, string>> = {
   claude: {
     Authorization: 'Bearer $TOKEN$',
     'Content-Type': 'application/json',
@@ -856,14 +856,14 @@ class ProviderAnswered extends Error {
  * Why a limits read failed, said plainly: what the provider's status means and what to do, with its own words kept
  * in quotes since they're often the only clue ("account suspended"). Other failures are already Arbor's sentences.
  */
-function quotaFailure(error: unknown): string {
+export function quotaFailure(error: unknown): string {
   if (!(error instanceof ProviderAnswered)) return error instanceof Error ? error.message : String(error);
   const { reason, advice } = plainErrorParts(`HTTP ${error.status}`, quotaText);
   const words = error.words.trim().replace(/[.!]+$/, '');
   return [reason, words ? quotaText('quota.service.error.providerSaid', { words }) : '', advice ?? ''].filter(Boolean).join(' ');
 }
 
-const requestQuotaPayload = async (
+export const requestQuotaPayload = async (
   authIndex: string,
   url: string,
   header: Record<string, string>,

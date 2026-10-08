@@ -137,6 +137,17 @@ export const cliHandlers: CliHandlers = {
       return { accounts: all.map(describeAccount) };
     },
   },
+  'accounts.codexProfile': {
+    access: 'read',
+    summary: 'ChatGPT\'s own token counts for each Codex account (or one, with account): lifetime tokens, busiest day, streaks and tokens a day, as its profile page shows them',
+    args: [arg('account', 'string', true)],
+    run: async (args) => {
+      const chosen = args.account === undefined || args.account === null ? null : await findAccount(args);
+      const codex = chosen ? [chosen] : (await accounts()).filter((account) => providerForFile(account.file) === 'codex');
+      const { readCodexProfiles } = await import('./codexProfile');
+      return readCodexProfiles(codex.map((account) => ({ ...describeAccount(account), file: account.file, key: account.key })), accountId);
+    },
+  },
   'accounts.pause': {
     access: 'confirm',
     summary: 'Turns an account off in the proxy, so no agent uses it until it is resumed',

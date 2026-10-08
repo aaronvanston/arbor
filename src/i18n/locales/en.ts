@@ -4042,6 +4042,7 @@ export const en = {
   'quota.resetCreditsWarning': 'Reset credit details unavailable: {error}',
   'quota.service.window.sevenDayFable': '7-day Fable window',
   'quota.service.error.resetCreditsInvalid': 'The reset credits endpoint returned unrecognized data',
+  'quota.service.error.profileInvalid': 'ChatGPT’s profile didn’t include a token count',
   'quota.confirm.early': '{limit} still has {percent}% left, so using a reset now spends it early.',
   'quota.confirm.title': 'Reset the Codex quota for “{name}”?',
   'quota.confirm.warning': 'This uses one manual reset credit. It runs only after Confirm reset; canceling or closing uses nothing.',

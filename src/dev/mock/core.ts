@@ -409,6 +409,33 @@ function apiCall(body: Json): Json {
   if (quotaErrorScenario && ['claude-2', 'codex-3'].includes(authIndex) && /oauth\/usage|wham\/usage/.test(url)) {
     return { status_code: 503, body: JSON.stringify({ error: { message: 'upstream unavailable' } }) };
   }
+  if (url.includes('chatgpt.com/backend-api/wham/profiles/me')) {
+    // ChatGPT's own counts for the account: a made-up month of days, its total the lifetime.
+    const seed = [...authIndex].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const daily = Array.from({ length: 30 }, (_, day) => ({
+      start_date: iso(-(30 - day) * 86_400_000).slice(0, 10),
+      tokens: ((seed * (day + 7)) % 900 + 100) * 1_000_000,
+    }));
+    const lifetime = daily.reduce((sum, day) => sum + day.tokens, 0);
+    return ok({
+      profile: { username: 'cam', display_name: 'Cam', profile_picture_url: null },
+      stats: {
+        lifetime_tokens: lifetime,
+        peak_daily_tokens: Math.max(...daily.map((day) => day.tokens)),
+        current_streak_days: 4,
+        longest_streak_days: 12,
+        total_threads: 380,
+        longest_running_turn_sec: 9_000,
+        fast_mode_usage_percentage: 6.5,
+        most_used_reasoning_effort: 'high',
+        most_used_reasoning_effort_percentage: 41.2,
+        total_skills_used: 210,
+        unique_skills_used: 18,
+        daily_usage_buckets: daily,
+      },
+      metadata: { stats_as_of: iso(0).slice(0, 10) },
+    });
+  }
   if (url.includes('chatgpt.com/backend-api/wham/usage')) {
     // Drift a little on every call so refreshes visibly animate in the dev shell.
     const drift = (quotaCalls++ % 4) * 9;

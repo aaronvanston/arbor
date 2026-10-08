@@ -30,6 +30,7 @@ any other machine, say so instead of trying.
 | Sessions that used a lot of tokens lately, as Arbor's heavy-session alert sees them | `arbor call get_heavy_sessions start=<ISO time> minTokens=<tokens>` |
 | Usage and cost | `arbor usage today`, `arbor usage 7d`, `arbor usage 30d` |
 | Accounts and limits | `arbor accounts`, or `arbor accounts refresh` to read the limits again |
+| ChatGPT's own token counts for each Codex account, as its profile page shows them (lifetime tokens, busiest day, streaks, tokens a day), with a total that counts an account signed in twice once. It's every Codex use the account had, where Usage › All time only counts transcripts the archive keeps | `arbor call accounts.codexProfile --json` (`account=<id>` for one) |
 | Automatic account order | `arbor routing` |
 | The models one sign-in keeps from its account, or an Antigravity sign-in's project id (by its file name in Accounts › Sign-ins; the file itself is never shown) | `arbor call get_auth_file_excluded_models name=<file>.json`, `arbor call get_auth_file_project_id name=<file>.json` |
 | Alerts | `arbor alerts` |
