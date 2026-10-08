@@ -117,6 +117,9 @@ export async function firstScreenJourney(browser: Browser, origin: string, site:
     await page.clock.install({ time: startMs - 1_000 });
     await page.addInitScript((seed: Record<string, string>) => {
       for (const [key, value] of Object.entries(seed)) localStorage.setItem(key, value);
+      // The static screen is built for the Mac the window runs on (⌘K in the search row); React reads the platform,
+      // so on a Linux host it would draw Ctrl+K and count a difference the app never shows.
+      Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' });
     }, seed);
     await page.clock.pauseAt(startMs);
     page.on('pageerror', (error) => { errors.push(`first screen: ${error.message}`); });
