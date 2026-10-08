@@ -123,7 +123,7 @@ pub(super) async fn hub_git(dir: &Path, args: &[&str]) -> Result<String, String>
         .arg(dir)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15")
+        .env("GIT_SSH_COMMAND", super::host_keys::git_ssh_command())
         .env("GCM_INTERACTIVE", "never")
         .env("GIT_ASKPASS", "false")
         .stdin(std::process::Stdio::null())

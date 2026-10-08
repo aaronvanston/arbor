@@ -31,11 +31,13 @@ export type MachineAlert = {
 };
 
 /** What a failed check's error comes down to. */
-export type SshFailure = 'hostKey' | 'auth' | 'dns' | 'refused' | 'timeout' | 'other';
+export type SshFailure = 'unknownHostKey' | 'hostKey' | 'auth' | 'dns' | 'refused' | 'timeout' | 'other';
 
 const FAILURES: [SshFailure, RegExp][] = [
-  // Checks accept a first host key on their own, so a key that fails to verify is one that changed.
-  ['hostKey', /host key verification failed|remote host identification has changed|host key for .+ has changed|no \S+ host key is known/i],
+  // Checks never take a host key on their own. ssh ends both of these with "Host key verification failed.", so each is
+  // told by the line before it, and that line alone says nothing about which.
+  ['unknownHostKey', /no \S+ host key is known for/i],
+  ['hostKey', /remote host identification has changed|host key for .+ has changed/i],
   // SSH's own wording, which a script's "Permission denied" on a file doesn't have.
   ['auth', /permission denied \(|permission denied, please try again|too many authentication failures|no supported authentication methods/i],
   ['dns', /could not resolve hostname|name or service not known|nodename nor servname|name resolution|no address associated with hostname/i],
@@ -47,8 +49,22 @@ export function sshFailure(error: string | null): SshFailure {
   return FAILURES.find(([, pattern]) => pattern.test(error ?? ''))?.[0] ?? 'other';
 }
 
-/** A host key that changed or a login that's turned down stays that way until someone fixes it. */
-export const needsFixing = (failure: SshFailure) => failure === 'hostKey' || failure === 'auth';
+/** A host key not trusted yet or changed, or a login that's turned down, stays that way until someone fixes it. */
+export const needsFixing = (failure: SshFailure) => failure === 'unknownHostKey' || failure === 'hostKey' || failure === 'auth';
+
+/** A machine whose checks fail only because its host key isn't trusted yet, which Connect on its card fixes. */
+export const needsHostKey = (machine: Pick<MachineHealth, 'status' | 'local' | 'error'>) =>
+  machine.status === 'unreachable' && !machine.local && sshFailure(machine.error) === 'unknownHostKey';
+
+/**
+ * What to run on a machine to see its own host key's fingerprint, to compare with one Arbor read ("ED25519 SHA256:…"):
+ * the ED25519 key's when it offered one, else the first one's type.
+ */
+export function hostKeyCheckCommand(fingerprints: string[]) {
+  const types = fingerprints.map((fingerprint) => fingerprint.split(' ')[0]?.toLowerCase() ?? '');
+  const type = types.find((kind) => kind === 'ed25519') ?? types.find((kind) => /^[a-z0-9-]+$/.test(kind)) ?? 'ed25519';
+  return `ssh-keygen -lf /etc/ssh/ssh_host_${type}_key.pub`;
+}
 
 /** Whether this Mac slept between two monitor ticks meant to come `intervalMs` apart. */
 export const sleptBetween = (lastTickMs: number, nowMs: number, intervalMs: number) => nowMs - lastTickMs > intervalMs + SLEEP_GAP_MS;
@@ -104,6 +120,7 @@ type Translate = (key: MessageKey, variables?: MessageVariables) => string;
 const clip = (text: string) => (text.length > ERROR_MAX ? `${text.slice(0, ERROR_MAX - 1).trimEnd()}…` : text);
 
 const REASONS: Record<Exclude<SshFailure, 'other'>, MessageKey> = {
+  unknownHostKey: 'machines.sshFailure.unknownHostKey',
   hostKey: 'machines.sshFailure.hostKey',
   auth: 'machines.sshFailure.auth',
   dns: 'machines.sshFailure.dns',

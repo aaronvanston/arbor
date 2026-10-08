@@ -37,6 +37,11 @@ function pathIn(words: string): string | null {
 }
 
 function sshFailure(words: string, t: Translate): Plain | null {
+  // A host key that didn't verify: ssh's line before "Host key verification failed." says whether it's unknown or changed.
+  const unknownKey = /No \S+ host key is known for (\S+) and/.exec(words)?.[1];
+  if (unknownKey) return plain(t('plainError.ssh.hostKeyUnknown', { machine: unknownKey }), 'plainError.advice.hostKeyConnect');
+  const changedKey = /Host key for (\S+) has changed/.exec(words)?.[1];
+  if (changedKey) return plain(t('plainError.ssh.hostKeyChanged', { machine: changedKey }));
   const host = /ssh: (?:connect to host |Could not resolve hostname )([^\s:]+)/.exec(words)?.[1]
     ?? /^(?:\S+@)?([^\s:@]+): Permission denied \(publickey/.exec(words)?.[1];
   if (!host) return null;

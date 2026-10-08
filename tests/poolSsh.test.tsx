@@ -48,7 +48,7 @@ describe('pools over SSH', () => {
     const page = render(ssh({ connections: [connection({ open: 2 }), connection({ name: 'arbor-builds-b', machine: 'lab-box' })] }));
     expect(page).toContain('ssh arbor-builds');
     expect(page).toContain('Machines, connected to as cam');
-    expect(page).toContain('Connect to it over SSH once, so this Mac saves its host key');
+    expect(page).toContain('Trust its host key first, with Connect on Machines or one SSH login from Terminal');
     expect(page).toContain('Reached as another user than cam');
     expect(page).toContain('This Mac. The host is opened from here, so it’s never picked');
     expect(page).toContain('2 connections open');

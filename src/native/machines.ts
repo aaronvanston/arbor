@@ -19,6 +19,7 @@ import type {
   MachineHistory,
   MachineProbes,
   MachineHost,
+  MachineHostKeyScan,
   PoolPreview,
   PoolSsh,
   ReporterSetup,
@@ -36,6 +37,10 @@ export type MachineCommands = {
   get_this_mac: { result: ThisMac };
   save_machine_hosts: { args: { hosts: MachineHost[]; removed?: string[] | null }; result: MachineHost[] };
   discover_machine_hosts: { result: DiscoveredHost[] };
+  /** Reads the host key a machine offers, for the user to compare; only its fingerprints come back. */
+  scan_machine_host_key: { args: { machine: string }; result: MachineHostKeyScan };
+  /** Trusts the key the last scan found, when `fingerprints` are the ones it showed. Fails with a `CommandError` of kind `changed` otherwise. */
+  trust_machine_host_key: { args: { machine: string; fingerprints: string[] }; result: void };
   get_agent_homes: { result: AgentHomesView };
   save_agent_home: { args: { home: AgentHome }; result: AgentHomesView };
   remove_agent_home: { args: { machine: string; agent: AgentHomeKind; path: string }; result: AgentHomesView };

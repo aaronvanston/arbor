@@ -1868,6 +1868,8 @@ fn main() {
             usage::machine_health::get_this_mac,
             usage::machine_health::save_machine_hosts,
             usage::machine_health::discovery::discover_machine_hosts,
+            usage::machine_health::host_keys::scan_machine_host_key,
+            usage::machine_health::host_keys::trust_machine_host_key,
             usage::machine_health::agent_homes::get_agent_homes,
             usage::machine_health::agent_homes::save_agent_home,
             usage::machine_health::agent_homes::remove_agent_home,

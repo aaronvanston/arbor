@@ -174,6 +174,8 @@ pub(crate) enum MachineOp {
     CleanupMove,
     CleanupDelete,
     CleanupUninstall,
+    /// Reading the host key a machine offers, for the user to trust.
+    HostKeyScan,
 }
 
 impl MachineOp {
@@ -235,6 +237,7 @@ impl MachineOp {
             Self::CleanupMove => "clean-up move",
             Self::CleanupDelete => "set-aside delete",
             Self::CleanupUninstall => "agent uninstall",
+            Self::HostKeyScan => "host key check",
         }
     }
 

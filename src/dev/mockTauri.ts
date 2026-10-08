@@ -74,7 +74,9 @@
  * default it offers a few, leaving out ci-01 and cedar-02, which are already added, and lab-box's fills in its host;
  * `?health=down` (ci-01 unreachable for 90s), `?health=down-long` (for 12 minutes; the alert still waits for
  * five minutes of failed checks), `?health=hostkey` or `?health=auth` (ci-01's host key changed, or its login is
- * turned down: alerts once the first minute is up); `?health=pending` for every machine but this Mac not checked yet,
+ * turned down: alerts once the first minute is up); `?health=newhost` for ci-01's host key not trusted yet, as for a
+ * machine just added, with Connect on its row and page reading a made-up fingerprint that Trust key accepts, after which
+ * it's healthy (`&hostscan=fail` has reading the key time out, `&hostscan=changed` has Trust find the key changed); `?health=pending` for every machine but this Mac not checked yet,
  * as in the first seconds after Arbor starts (a gray dot beside each in the sidebar); `?health=fail` for every read of the machines' health failing
  * (Machines and Sync › Software say why, and the sidebar lists no machines), `failafter` for reads failing from ten
  * seconds after load (Sync › Software keeps its table and, at its next read half a minute in, says it may be out of
@@ -363,7 +365,8 @@
  * `window.__mockOpen(page, tab?, lens?)` goes to a page as `?page=`, `&tab=` and `&lens=` would start on it, without a
  * reload (the website's demo moves the app this way from its own tabs).
  * `window.__mockEmit(event, payload?)` sends one of the native side's events, as `machine-health-updated` after each
- * sampling round (`bun run perf` uses it to count what a round re-renders; the mock never sends that one itself).
+ * sampling round (`bun run perf` uses it to count what a round re-renders; the mock sends that one itself only after
+ * `?health=newhost`'s Trust key).
  * ⌘=, ⌘− and ⌘0 act like the app's View menu (Zoom In, Zoom Out, Actual Size), from 83% to 144%, logged as `zoom`;
  * `?zoom=1.2` (any factor) starts at that zoom for this load without saving it, as a level the app saved would. The
  * mock can't zoom its own tab the way WKWebView does: in a same-origin frame of a set size (how screenshots are taken)

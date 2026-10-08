@@ -81,7 +81,7 @@ describe('alert mentions', () => {
   it('names each of several machines in the body that lists them', () => {
     const alerts = machineNotifications([
       machineAlert('ci-02', 'down', 'ci@ci-02: Permission denied (publickey).'),
-      machineAlert('ci-03', 'down', 'Host key verification failed.'),
+      machineAlert('ci-03', 'down', 'Host key for ci-03 has changed and you have requested strict checking.'),
       machineAlert('lab-box', 'up'),
       machineAlert('mac-mini', 'up'),
     ], now, t);

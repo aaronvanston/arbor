@@ -603,7 +603,10 @@ fn pool_connect(options: &args::Options, pool: &str, host: &str) -> Result<(), F
             // ssh's own config knows the way to a machine behind a jump host; it then opens the machine's own sshd.
             let mut command = Command::new("ssh");
             command
-                .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-W"])
+                .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"])
+                // The member's own key, checked as Arbor's runs check it: only one already trusted.
+                .args(crate::usage::machine_health::host_keys::strict_options())
+                .arg("-W")
                 .arg(format!("127.0.0.1:{port}"))
                 .arg("--")
                 .arg(render::field(&target, "endpoint"));

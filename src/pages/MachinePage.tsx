@@ -18,6 +18,8 @@ import type { SetupCheck, SetupCheckSubject } from '../services/setupChecks';
 import { useSetupInventory } from '../hooks/useSetupInventory';
 import { FleetMachineSection, FleetReadFailure } from '../components/FleetBoard';
 import { FixMenu } from '../components/FixMenu';
+import { ConnectMachineButton } from '../components/MachineHostKey';
+import { needsHostKey } from '../services/machineAlerts';
 import { GroveUnavailableNote, MachineProbeBlock } from '../components/MachineProbes';
 import { MachineHarnessesBlock } from '../components/MachineHarnesses';
 import { machineHarnesses } from '../services/harnesses';
@@ -172,7 +174,8 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           {item && !unconfigured ? (
             <div className="flex min-w-0 items-center gap-2">
               <p className={cn('truncate text-sm', headlineClass(item.status))} title={item.error ?? undefined}>{machineHeadline(item, t)}</p>
-              {problem ? <FixMenu machine={item.machine} item={item} problem={problem} className="-my-1" /> : null}
+              {needsHostKey(item) ? <ConnectMachineButton machine={item.machine} className="-my-1" />
+                : problem ? <FixMenu machine={item.machine} item={item} problem={problem} className="-my-1" /> : null}
             </div>
           ) : snapshot || healthError ? null : (
             <Skeleton className="h-4 w-56" />

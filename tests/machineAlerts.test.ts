@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import {
+  hostKeyCheckCommand,
   machineNotifications,
+  needsHostKey,
   nextMachineNotifications,
   sleptBetween,
   sshFailure,
@@ -55,7 +57,7 @@ describe('machine alerts', () => {
   it('announces a host key that changed or a login turned down at the first failed check', () => {
     const now = 1_000 * MINUTE;
     const next = nextMachineNotifications({}, [
-      down('ci-01', now - MINUTE, 'Host key verification failed.'),
+      down('ci-01', now - MINUTE, 'Host key for ci-01 has changed and you have requested strict checking.'),
       down('lab-box', now - MINUTE, 'ci@lab-box: Permission denied (publickey).'),
       down('cedar-02', now - MINUTE, 'ssh: Could not resolve hostname cedar-02: nodename nor servname provided, or not known'),
     ], now);
@@ -66,14 +68,14 @@ describe('machine alerts', () => {
       'cedar-02': { downSinceMs: now, notified: false },
     });
     // One that was counting down is announced as soon as its failure turns into one that needs fixing.
-    const fixing = nextMachineNotifications(next.state, [down('cedar-02', now - MINUTE, 'Host key verification failed.')], now + MINUTE);
+    const fixing = nextMachineNotifications(next.state, [down('cedar-02', now - MINUTE, 'Host key for cedar-02 has changed and you have requested strict checking.')], now + MINUTE);
     expect(fixing.alerts).toMatchObject([{ machine: 'cedar-02', failure: 'hostKey', downSinceMs: now }]);
   });
 
   it('keeps quiet while this Mac is offline or its network is coming back', () => {
     const woke = 1_000 * MINUTE;
     const stored = { 'ci-01': { downSinceMs: woke - 3 * MINUTE, notified: false }, 'lab-box': { downSinceMs: woke - 60 * MINUTE, notified: true } };
-    const failing = (at: number) => [down('ci-01', 0, REFUSED('ci-01'), at), down('cedar-02', 0, 'Host key verification failed.', at), down('lab-box', 0, REFUSED('lab-box'), at)];
+    const failing = (at: number) => [down('ci-01', 0, REFUSED('ci-01'), at), down('cedar-02', 0, 'Host key for cedar-02 has changed and you have requested strict checking.', at), down('lab-box', 0, REFUSED('lab-box'), at)];
 
     // Offline, failures start nothing and end nothing: each keeps what it had.
     const offline = nextMachineNotifications(stored, failing(woke), woke, { offline: true, resumedAtMs: null });
@@ -132,9 +134,14 @@ describe('machine alerts', () => {
 
   it('sorts SSH errors into what they come down to', () => {
     const cases: [string | null, ReturnType<typeof sshFailure>][] = [
-      ['Host key verification failed.', 'hostKey'],
+      // ssh ends both host key failures with the same line; the one before it says which.
+      ['No ED25519 host key is known for ci-01 and you have requested strict checking.', 'unknownHostKey'],
+      ['No ED25519 host key is known for ci-01 and you have requested strict checking.\nHost key verification failed.', 'unknownHostKey'],
+      ['Host key for ci-01 has changed and you have requested strict checking.', 'hostKey'],
+      ['Host key for ci-01 has changed and you have requested strict checking.\nHost key verification failed.', 'hostKey'],
       ['@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @', 'hostKey'],
-      ['No ED25519 host key is known for ci-01 and you have requested strict checking.', 'hostKey'],
+      // Alone, it doesn't say whether the key is new or changed, so the error itself is shown.
+      ['Host key verification failed.', 'other'],
       ['ci@ci-01: Permission denied (publickey).', 'auth'],
       ['cam@lab-box: Permission denied (publickey,password).', 'auth'],
       ['Received disconnect from 10.0.0.2 port 22:2: Too many authentication failures', 'auth'],
@@ -155,7 +162,9 @@ describe('machine alerts', () => {
   });
 
   it('says why on the Machines page, keeping the error when there is nothing plainer', () => {
-    expect(unreachableReason('Host key verification failed.', t)).toBe('Its SSH host key changed.');
+    expect(unreachableReason('Host key for ci-01 has changed and you have requested strict checking.', t)).toBe('Its SSH host key changed.');
+    expect(unreachableReason('No ED25519 host key is known for ci-01 and you have requested strict checking.', t)).toBe('Its SSH host key isn’t trusted yet. Connect to check it.');
+    expect(unreachableReason('Host key verification failed.', t)).toBe('Host key verification failed.');
     expect(unreachableReason(REFUSED('ci-01'), t)).toBe('It refused the SSH connection.');
     expect(unreachableReason('ssh: connect to host ci-01 port 22: No route to host', t)).toBe('ssh: connect to host ci-01 port 22: No route to host');
     expect(unreachableReason(null, t)).toBeNull();
@@ -174,9 +183,9 @@ describe('machine alerts', () => {
       urgent: true,
       subject: { machine: 'ci-01' },
     }]);
-    expect(machineNotifications([alert('ci-01', 'down', 0, 'Host key verification failed.')], now, t)).toEqual([{
+    expect(machineNotifications([alert('ci-01', 'down', 0, 'Host key for ci-01 has changed and you have requested strict checking.')], now, t)).toEqual([{
       title: 'ci-01 needs fixing',
-      body: 'Its SSH host key changed. Checks will fail until that’s fixed. Host key verification failed.',
+      body: 'Its SSH host key changed. Checks will fail until that’s fixed. Host key for ci-01 has changed and you have requested strict checking.',
       phoneBody: 'Its SSH host key changed. Checks will fail until that’s fixed.',
       kind: 'machineDown',
       urgent: true,
@@ -186,12 +195,12 @@ describe('machine alerts', () => {
       alert('ci-01', 'down', 6),
       alert('cedar-02', 'down', 5),
       alert('ci-02', 'down', 0, 'ci@ci-02: Permission denied (publickey).'),
-      alert('ci-03', 'down', 0, 'Host key verification failed.'),
+      alert('ci-03', 'down', 0, 'No ED25519 host key is known for ci-01 and you have requested strict checking.'),
       alert('lab-box', 'up', 72),
     ], now, t)).toEqual([
       {
         title: '2 machines need fixing',
-        // One has a changed host key, which is this Mac turning it down, so the reason is left to the Machines page.
+        // One has a host key not trusted yet, which is this Mac turning it down, so the reason is left to the Machines page.
         body: 'ci-02 and ci-03 can’t be checked over SSH until they’re fixed. The Machines page says why.',
         kind: 'machineDown',
         urgent: true,
@@ -225,6 +234,29 @@ describe('machine alerts', () => {
     expect(long.endsWith('x…')).toBe(true);
     expect(long.length).toBeLessThan(260);
     expect(machineNotifications([], now, t)).toEqual([]);
+  });
+
+  it('alerts at once for a host key not trusted yet, and offers Connect for it alone', () => {
+    const now = 1_000 * MINUTE;
+    const first = nextMachineNotifications({}, [down('ci-01', null, 'No ED25519 host key is known for ci-01 and you have requested strict checking.')], now);
+    expect(kinds(first.alerts)).toEqual(['down:ci-01']);
+    expect(machineNotifications(first.alerts, now, t)[0]).toMatchObject({
+      title: 'ci-01 needs fixing',
+      phoneBody: 'Its SSH host key isn’t trusted yet. Connect to check it. Checks will fail until that’s fixed.',
+    });
+    expect(needsHostKey(down('ci-01', null, 'No ED25519 host key is known for ci-01 and you have requested strict checking.\nHost key verification failed.'))).toBe(true);
+    expect(needsHostKey(down('ci-01', null, 'Host key for ci-01 has changed and you have requested strict checking.'))).toBe(false);
+    expect(needsHostKey(down('ci-01', null, 'Host key verification failed.'))).toBe(false);
+    expect(needsHostKey(machine('ci-01', { error: 'No ED25519 host key is known for ci-01 and you have requested strict checking.' }))).toBe(false);
+    expect(needsHostKey({ ...down('ci-01', null, 'No ED25519 host key is known for ci-01 and you have requested strict checking.'), local: true })).toBe(false);
+  });
+
+  it('tells the user how to see the machine’s own fingerprint to compare', () => {
+    expect(hostKeyCheckCommand(['ED25519 SHA256:abc'])).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub');
+    expect(hostKeyCheckCommand(['RSA SHA256:def', 'ED25519 SHA256:abc'])).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub');
+    expect(hostKeyCheckCommand(['ECDSA SHA256:abc'])).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub');
+    expect(hostKeyCheckCommand([])).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub');
+    expect(hostKeyCheckCommand(['$(boom) SHA256:abc'])).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub');
   });
 
   it('sends the phone the plain reason and never the error', () => {

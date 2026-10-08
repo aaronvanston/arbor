@@ -25,7 +25,8 @@ import { useLatestAgentVersions } from '../services/agentReleases';
 import { newestAgents, type NewestAgents } from '../services/agentVersions';
 import { healthReasonText } from '../services/homeOverview';
 import { machineIdentity, osLabel } from '../services/machineIdentity';
-import { unreachableReason } from '../services/machineAlerts';
+import { needsHostKey, unreachableReason } from '../services/machineAlerts';
+import { ConnectMachineButton } from '../components/MachineHostKey';
 import { errorWords, plainError } from '../services/plainError';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -450,9 +451,12 @@ function MachineRow({ item, newest, windowMs, onOpen }: { item: MachineHealth; n
               {item.local ? <Badge variant="muted" size="sm">{t('machines.health.local')}</Badge> : null}
               <MachineAgentSummary item={item} newest={newest} />
             </div>
-            <p className={cn('mt-1 truncate text-xs', headlineClass(item.status))} title={item.error ?? undefined}>
-              {machineHeadline(item, t)}
-            </p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <p className={cn('truncate text-xs', headlineClass(item.status))} title={item.error ?? undefined}>
+                {machineHeadline(item, t)}
+              </p>
+              {needsHostKey(item) ? <ConnectMachineButton machine={item.machine} className="-my-1" /> : null}
+            </div>
           </div>
         </div>
 

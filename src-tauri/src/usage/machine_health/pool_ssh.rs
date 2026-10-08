@@ -9,10 +9,11 @@
 //! check is replaced, on the next connection, and the person can forget a name on the pool's page. Each name is pinned
 //! on its own (`arbor-builds`, `arbor-builds-b`), so two workspaces can spread out.
 //!
-//! Host keys are only ever ones the person's own known_hosts already trusts for a member. Arbor copies them under one
-//! alias into a file of its own, so ssh accepts whichever member answers, and never scans for new ones. A member
-//! without a saved key, or reached as another user than the pool's, isn't picked, and neither is this Mac, where the
-//! ProxyCommand runs: an app would only be connected back to itself.
+//! Host keys are only ever ones ssh already trusts for a member: in the person's own known_hosts, or trusted from the
+//! Machines page into Arbor's machines file (`host_keys`). Arbor copies them under one alias into a file of its own,
+//! so ssh accepts whichever member answers, and never scans for new ones. A member without a saved key, or reached as
+//! another user than the pool's, isn't picked, and neither is this Mac, where the ProxyCommand runs: an app would only
+//! be connected back to itself.
 //!
 //! The files live in ~/.arbor/ssh and are Arbor's alone, rewritten whenever pools or their members change. The person's
 //! own ~/.ssh/config gets one Include line, added only when asked, through a guarded write they can undo.
@@ -34,7 +35,7 @@ const HOST_KEY_ALIAS: &str = "arbor-pools";
 const RESOLVED_FOR: Duration = Duration::from_secs(60);
 const HELPER_TIMEOUT: Duration = Duration::from_secs(5);
 /// Where Arbor's SSH files live, in the home folder; no spaces, so ssh's config needs no quoting for them.
-const SSH_DIR: &str = ".arbor/ssh";
+pub(super) const SSH_DIR: &str = ".arbor/ssh";
 const CONFIG_FILE: &str = "pools.conf";
 const KNOWN_HOSTS_FILE: &str = "pools_known_hosts";
 pub(crate) const INCLUDE_LINE: &str = "Include ~/.arbor/ssh/pools.conf";
@@ -119,7 +120,7 @@ struct MemberSsh {
     keys: Vec<String>,
 }
 
-fn home_dir() -> Option<PathBuf> {
+pub(super) fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
@@ -140,7 +141,12 @@ async fn helper_output(program: &str, args: &[&str]) -> Option<String> {
 
 async fn resolve_member(host: &MachineHost) -> MemberSsh {
     let port = host.port.to_string();
-    let Some(settings) = helper_output("ssh", &["-G", "-p", &port, "--", host.endpoint.trim()]).await.and_then(|text| parse_ssh_settings(&text)) else {
+    // With the options Arbor's runs pass, so the keys the user trusted from Arbor's Machines page count too.
+    let strict = super::host_keys::strict_options();
+    let mut args: Vec<&str> = vec!["-G", "-p", &port];
+    args.extend(strict.iter().map(String::as_str));
+    args.extend(["--", host.endpoint.trim()]);
+    let Some(settings) = helper_output("ssh", &args).await.and_then(|text| parse_ssh_settings(&text)) else {
         return MemberSsh::default();
     };
     let mut keys = Vec::new();
@@ -390,6 +396,11 @@ fn render_known_hosts(resolved: &BTreeMap<String, MemberSsh>) -> String {
 
 /// Writes one of Arbor's files when it says something new: beside it first, then moved into place, private to the user.
 fn write_private(path: &Path, text: &str) -> Result<bool, String> {
+    write_private_with_mode(path, text, 0o600)
+}
+
+/// `write_private` with the file's own mode, for one that has to be run.
+pub(super) fn write_private_with_mode(path: &Path, text: &str, mode: u32) -> Result<bool, String> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     if std::fs::read_to_string(path).is_ok_and(|current| current == text) {
         return Ok(false);
@@ -402,7 +413,7 @@ fn write_private(path: &Path, text: &str) -> Result<bool, String> {
         .write(true)
         .create(true)
         .truncate(true)
-        .mode(0o600)
+        .mode(mode)
         .open(&tmp)
         .and_then(|mut file| std::io::Write::write_all(&mut file, text.as_bytes()))
         .and_then(|()| std::fs::rename(&tmp, path));

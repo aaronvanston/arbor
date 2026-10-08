@@ -49,6 +49,7 @@ pub(crate) mod grove;
 pub(crate) mod guarded_writes;
 pub(crate) mod harness_update;
 pub(crate) mod harnesses;
+pub(crate) mod host_keys;
 pub(crate) mod keep_sessions;
 pub(crate) mod pool_ssh;
 pub(crate) mod probe_updates;
@@ -1422,7 +1423,13 @@ async fn read_machine(state: &MachineHealthState, machine: Machine, plan: Plan, 
         };
         Ok(Sampled::Grove { reading, facts })
     };
-    let sampled = read.await;
+    let sampled = match read.await {
+        // Grove keeps only ssh's last line, the same for an unknown host key and a changed one, so ssh is asked which.
+        Err(error) if !machine.is_local() && host_keys::is_bare_host_key_failure(&error) => {
+            Err(run_checked(&machine, MachineOp::HealthCheck, "true\n", SAMPLE_TIMEOUT).await.err().unwrap_or(error))
+        }
+        sampled => sampled,
+    };
     let network = network_of(&sampled, address);
     (sampled, network)
 }
@@ -1834,12 +1841,19 @@ pub(crate) async fn save_machine_hosts(
     hosts: Vec<MachineHost>,
     removed: Option<Vec<String>>,
 ) -> Result<Vec<MachineHost>, String> {
+    let removed = removed.unwrap_or_default();
+    let dropped = removed.clone();
     let saved = run_usage_task(move || {
         let mut connection = open_usage_database()?;
-        save_hosts(&mut connection, &hosts, &removed.unwrap_or_default())?;
+        save_hosts(&mut connection, &hosts, &removed)?;
         read_hosts(&connection)
     })
     .await?;
+    // A machine taken off the list takes the host keys trusted for it in Arbor with it.
+    let gone: Vec<String> = dropped.into_iter().filter(|machine| !saved.iter().any(|host| &host.machine == machine)).collect();
+    if !gone.is_empty() {
+        host_keys::forget_machines(&gone);
+    }
     state.request_reload();
     Ok(saved)
 }

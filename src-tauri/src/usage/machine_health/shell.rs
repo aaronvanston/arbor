@@ -193,9 +193,9 @@ fn machine_command(host: &MachineHost, local: bool) -> MachineCommand {
             .arg("-o")
             .arg("ConnectTimeout=5")
             .arg("-o")
-            .arg("StrictHostKeyChecking=accept-new")
-            .arg("-o")
             .arg("ServerAliveInterval=15");
+        // Never a key it hasn't seen: one is trusted only from known_hosts or the user's explicit Connect (`host_keys`).
+        command.args(super::host_keys::strict_options());
         command.args(ssh_sharing_options());
         command.arg("--").arg(host.endpoint.trim()).arg("sh");
         command
@@ -494,15 +494,17 @@ pub(in crate::usage) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Why a script failed: the last thing it (or SSH) wrote to stderr.
+/// Why a script failed: the last thing it (or SSH) wrote to stderr. ssh ends an unknown host key and a changed one with
+/// the same line, so for those it's the line before, which says which.
 pub(in crate::usage) fn failure_detail(output: &std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr);
-    stderr
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .last()
-        .map_or_else(|| format!("Exited with {}", output.status), str::to_string)
+    let lines: Vec<&str> = stderr.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    if lines.last() == Some(&super::host_keys::HOST_KEY_FAILED) {
+        if let Some(cause) = lines.iter().rev().find(|line| super::host_keys::is_host_key_cause(line)) {
+            return (*cause).to_string();
+        }
+    }
+    lines.last().map_or_else(|| format!("Exited with {}", output.status), |line| (*line).to_string())
 }
 
 /// The shells a feature's scripts are tested under: `sh`, and `dash` where it's installed, as
@@ -518,6 +520,32 @@ mod tests {
 
     fn host(name: &str, enabled: bool) -> MachineHost {
         MachineHost { machine: name.into(), endpoint: format!("{name}.local"), port: 22, enabled, source: String::new() }
+    }
+
+    #[test]
+    fn a_remote_machine_is_reached_with_strict_host_key_checking() {
+        let command = machine_command(&host("cedar", true), false).command;
+        let args: Vec<String> = command.as_std().get_args().map(|arg| arg.to_string_lossy().into_owned()).collect();
+        assert!(args.windows(2).any(|pair| pair == ["-o", "StrictHostKeyChecking=yes"]));
+        assert!(args.iter().any(|arg| arg.starts_with("GlobalKnownHostsFile=/etc/ssh/ssh_known_hosts /etc/ssh/ssh_known_hosts2 ") && arg.ends_with("/.arbor/ssh/machines_known_hosts")));
+        assert!(!args.iter().any(|arg| arg.contains("accept-new") || arg.starts_with("UserKnownHostsFile")));
+        assert_eq!(args[args.len() - 3..], ["--", "cedar.local", "sh"]);
+    }
+
+    #[test]
+    fn a_host_key_that_fails_says_whether_it_was_unknown_or_changed() {
+        use std::os::unix::process::ExitStatusExt;
+        let failed = |stderr: &str| failure_detail(&std::process::Output { status: std::process::ExitStatus::from_raw(255 << 8), stdout: Vec::new(), stderr: stderr.as_bytes().to_vec() });
+        assert_eq!(
+            failed("No ED25519 host key is known for cedar.local and you have requested strict checking.\nHost key verification failed.\n"),
+            "No ED25519 host key is known for cedar.local and you have requested strict checking."
+        );
+        assert_eq!(
+            failed("@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\nOffending ED25519 key in /Users/cam/.ssh/known_hosts:4\nHost key for cedar.local has changed and you have requested strict checking.\nHost key verification failed.\n"),
+            "Host key for cedar.local has changed and you have requested strict checking."
+        );
+        assert_eq!(failed("Host key verification failed.\n"), "Host key verification failed.");
+        assert_eq!(failed("cam@cedar.local: Permission denied (publickey).\n"), "cam@cedar.local: Permission denied (publickey).");
     }
 
     #[test]

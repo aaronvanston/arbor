@@ -25,6 +25,12 @@ describe('errorWords', () => {
 });
 
 describe('plainError', () => {
+  it('says whether a machine’s host key is new to Arbor or changed', () => {
+    expect(plainError('No ED25519 host key is known for ci-01 and you have requested strict checking.', t))
+      .toBe('Arbor doesn’t trust ci-01’s SSH host key yet. Connect to it from its card on Machines to check and trust its key.');
+    expect(plainError('Host key for ci-01 has changed and you have requested strict checking.', t)).toBe('ci-01’s SSH host key changed.');
+  });
+
   it('names the machine ssh couldn’t reach and why', () => {
     expect(plainError('ssh: connect to host cam-mbp port 22: Operation timed out', t)).toBe('cam-mbp didn’t answer over SSH. Check that it’s on and connected.');
     expect(plainError('ssh: connect to host ci-01 port 22: Connection refused', t)).toBe('ci-01 refused the SSH connection. Check that its SSH server is running.');

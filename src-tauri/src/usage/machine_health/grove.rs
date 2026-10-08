@@ -10,11 +10,11 @@
 //! `grove rm`); the names people see stay in Arbor. A machine with a probe is followed through `grove stream <slug>
 //! --jsonl`, one long-lived process each, up to `MAX_STREAMS` of them: they never take one of the eight script slots,
 //! which are for short runs. Every other machine is read with one `grove sample` a round, which does hold a slot.
-//! Grove's runs reach machines through Arbor's own SSH connections (`GROVE_SSH_COMMAND`).
+//! Grove's runs reach machines through Arbor's own SSH connections and host key checks (`GROVE_SSH_COMMAND`).
 
 use super::diagnostics::{self, MachineOp};
 use super::probe_updates::{self, Next};
-use super::shell::{configure_helper_command, failure_detail, run_in_slot, shell_quote, ssh_sharing_options, Machine};
+use super::shell::{configure_helper_command, failure_detail, run_in_slot, shell_quote, Machine};
 use super::shell::not_checked;
 use super::{HealthMetric, HealthPoint, HealthReason, MachineFacts, MachineHealthState};
 use serde::Serialize;
@@ -140,9 +140,7 @@ impl Grove {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        if let Some(ssh) = ssh_command() {
-            command.env("GROVE_SSH_COMMAND", ssh);
-        }
+        command.env("GROVE_SSH_COMMAND", super::host_keys::grove_ssh_command());
         configure_helper_command(&mut command);
         command
     }
@@ -153,13 +151,6 @@ impl Grove {
         let output = run_quick(command, CALL_TIMEOUT).await?;
         envelope_data(&output)
     }
-}
-
-/// `ssh` with the options that share Arbor's connections, as grove reads `GROVE_SSH_COMMAND`: words split on
-/// whitespace, so a socket folder with a space in its path can't be passed and grove opens its own connections.
-fn ssh_command() -> Option<String> {
-    let options = ssh_sharing_options();
-    (!options.is_empty() && !options.iter().any(|word| word.contains(char::is_whitespace))).then(|| format!("ssh {}", options.join(" ")))
 }
 
 async fn run_quick(mut command: tokio::process::Command, timeout: Duration) -> Result<std::process::Output, String> {

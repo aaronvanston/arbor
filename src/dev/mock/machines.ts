@@ -10,6 +10,7 @@ import type {
   AgentUpdate,
   CallDiagnostics,
   ClientHour,
+  CommandError,
   ClientVersions,
   DiagnosticCall,
   DiscoveredHost,
@@ -495,10 +496,17 @@ const healthScenario = params.get('health');
 const healthDown = healthScenario === 'down' || healthScenario === 'down-long' || healthScenario === 'hostkey' || healthScenario === 'auth';
 
 const healthError = healthScenario === 'hostkey'
-  ? 'Host key verification failed.'
+  ? 'Host key for ci-01.tailc0ffee.ts.net has changed and you have requested strict checking.'
   : healthScenario === 'auth'
   ? 'ci@ci-01.tailc0ffee.ts.net: Permission denied (publickey).'
   : 'ssh: connect to host ci-01 port 22: Connection refused';
+
+// `?health=newhost`: ci-01's host key isn't trusted yet, as for a machine just added, until Connect trusts it.
+// `&hostscan=fail` has reading its key time out, `&hostscan=changed` has the key change before Trust.
+let newHostTrusted = false;
+const newHostWaiting = () => healthScenario === 'newhost' && !newHostTrusted;
+const NEW_HOST_ERROR = 'No ED25519 host key is known for ci-01.tailc0ffee.ts.net and you have requested strict checking.';
+const NEW_HOST_FINGERPRINTS = ['ED25519 SHA256:bW9ja2VkLWtleS1mb3ItY2ktMDEtbm90LXJlYWwtYXQtYWxs'];
 
 /** `only` keeps the history to that machine's, as Rust does for a machine's own page. */
 const machineHealthSnapshot = (since: number | null, windowMs: number, only: string | null = null): MachineHealthSnapshot => {
@@ -510,6 +518,7 @@ const machineHealthSnapshot = (since: number | null, windowMs: number, only: str
       if (!host.endpoint) return { machine: host.machine, host, local: false, status: 'unconfigured', score: null, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: null, lastAttemptAt: null, pingTarget: null, path: null, agents: noAgents, historyRev: 0 };
       // `?health=pending`: the first seconds after Arbor starts, before a machine's first check has come back.
       if (healthScenario === 'pending' && host.endpoint !== 'localhost') return { machine: host.machine, host, local: false, status: 'pending', score: null, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: null, lastAttemptAt: null, pingTarget: null, path: null, agents: noAgents, historyRev: 0 };
+      if (host.machine === 'ci-01' && newHostWaiting()) return { machine: host.machine, host, local: false, status: 'unreachable', score: null, reason: null, facts: null, latest: null, points: [], error: NEW_HOST_ERROR, lastOkAt: null, lastAttemptAt: at - 800, pingTarget: 'ci-01.tailc0ffee.ts.net', path: null, agents: noAgents, historyRev: 0 };
       if (host.machine === 'ci-01' && healthDown) return { machine: host.machine, host, local: false, status: 'unreachable', score: null, reason: null, facts: healthFacts(host.machine), latest: null, points: [], error: healthError, lastOkAt: at - (healthScenario === 'down-long' ? 12 * 60_000 : 90_000), lastAttemptAt: at - 800, pingTarget: 'ci-01.tailc0ffee.ts.net', path: null, agents: agentsOf(host.machine), historyRev: 0 };
       const points: HealthPoint[] = [];
       if (only === null || only === host.machine) {
@@ -771,6 +780,23 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
     if (probeScenario === 'fail') throw 'Removing the probe from "' + machine + '" failed: launchctl exited 5.';
     probesInstalled.delete(machine);
     return machineProbes();
+  }),
+  scan_machine_host_key: ({ machine }) => later(1_200, () => {
+    mockLog('scan_machine_host_key', { machine });
+    if (params.get('hostscan') === 'fail') throw `ssh: connect to host ${machine}.tailc0ffee.ts.net port 22: Operation timed out`;
+    const waiting = machine === 'ci-01' && newHostWaiting();
+    return { fingerprints: waiting ? NEW_HOST_FINGERPRINTS : [], alreadyTrusted: !waiting };
+  }),
+  trust_machine_host_key: ({ machine, fingerprints }) => later(600, () => {
+    mockLog('trust_machine_host_key', { machine, fingerprints });
+    const shown = fingerprints.join() === NEW_HOST_FINGERPRINTS.join();
+    if (params.get('hostscan') === 'changed' || !shown || machine !== 'ci-01') {
+      const failure: CommandError = { kind: 'changed', message: `${machine}'s host key isn't the one you checked, so nothing was trusted. Check it again.` };
+      throw failure;
+    }
+    newHostTrusted = true;
+    // As the app checks the machine again at once, and says so when that round ends.
+    window.setTimeout(() => void emit('machine-health-updated', Math.floor(Date.now() / 5_000)), 800);
   }),
   get_this_mac: () => {
     const listed = healthHosts.find((host) => host.endpoint === 'localhost');

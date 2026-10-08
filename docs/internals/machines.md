@@ -10,6 +10,22 @@ Every script on a machine goes through `usage/machine_health/shell.rs`: `find_ma
 big to hold). It caps how many run at once and notes each run in Diagnostics, so never build SSH commands or take its
 slots anywhere else.
 
+## Host keys
+
+Every SSH run to a machine (scripts, Grove's runs through its `GROVE_SSH_COMMAND` script, the project hub's git, a
+pool's hop) passes `StrictHostKeyChecking=yes` (`usage/machine_health/host_keys.rs`), so a key it hasn't seen is never
+taken: accepting the first key that answers would hand scripts, setup files and keys to whatever sat on the path that
+first time. A key counts when the user's own known_hosts or the system's has it, or when the user trusted it from
+Arbor, which keeps those in `~/.arbor/ssh/machines_known_hosts`. Runs add that file through `GlobalKnownHostsFile`
+(after the system's two), never `UserKnownHostsFile`, so the user's setting and file are left as they are, and with
+strict checking ssh writes to none of them.
+
+A machine whose key isn't known fails its checks with `unknownHostKey`, and its row and page offer Connect. That's the
+only way a key is enrolled: a scan connects once with a known-hosts file of its own, the window gets only the
+fingerprints, and Trust writes the held lines only if the window sends back the fingerprints the user compared.
+Grove keeps only ssh's last line, which is the same for an unknown key and a changed one, so the health round asks ssh
+itself which it was. Removing a machine drops its block from the file.
+
 ## Health readings
 
 Machine health comes from Grove (`usage/machine_health/grove.rs`), which Arbor carries pinned in `grove-version.txt`
@@ -112,5 +128,5 @@ carries the bytes.
 - A host name stays pinned (in usage.db) to the member its first connection went to, until that member is off, removed
   or not answering, or the name is forgotten on the pool's page.
 - This Mac is never picked: the ProxyCommand runs here and would connect an app to itself.
-- Host keys come only from the user's known_hosts, never a scan.
+- Host keys come only from those ssh already trusts for the member (see Host keys); pools never scan for one.
 - `~/.ssh/config` gets its one Include line only through a guarded write.

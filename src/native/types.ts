@@ -2957,6 +2957,20 @@ export type MachineHost = {
   source: string,
 };
 
+/**
+ * What a machine's host key check found.
+ */
+export type MachineHostKeyScan = {
+  /**
+   * Each key the machine offered, as its type and SHA-256 fingerprint ("ED25519 SHA256:…"); never the key itself.
+   */
+  fingerprints: Array<string>,
+  /**
+   * ssh already trusts the machine's key, so there's nothing to trust.
+   */
+  alreadyTrusted: boolean,
+};
+
 export type MachineLive = {
   machine: string,
   tokens: [number, number, number, number, number, number, number, number, number, number, number, number],
