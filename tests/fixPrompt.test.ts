@@ -52,6 +52,7 @@ const machine = (fields: Partial<MachineHealth> = {}): MachineHealth => ({
   local: false, status: 'degraded', score: 60, reason: { metric: 'swap', value: 73 }, facts, latest, points: [],
   error: null, lastOkAt: 0, lastAttemptAt: 0, pingTarget: null, path: null,
   agents: agents({ claude: install('2.1.3', '/home/cam/.local/bin/claude'), codex: install('0.150.0', '/usr/local/bin/codex') }),
+  historyRev: 0,
   ...fields,
 });
 const thisMac = (fields: Partial<MachineAgents> = {}) =>

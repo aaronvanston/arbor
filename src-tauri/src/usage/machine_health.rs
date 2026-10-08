@@ -108,6 +108,9 @@ use tokio::sync::Notify;
 
 const MAX_POINTS: usize = 720;
 const HISTORY_MS: i64 = 60 * 60 * 1000;
+/// Readings further apart than this leave a gap (Arbor wasn't running, the Mac slept, the machine was away) that's
+/// filled from what Grove stored meanwhile. Above the idle interval, so a background round never counts as one.
+const FILL_GAP_MS: i64 = 90_000;
 const ACTIVE_INTERVAL: Duration = Duration::from_secs(5);
 const IDLE_INTERVAL: Duration = Duration::from_secs(60);
 const ACTIVE_GRACE: Duration = Duration::from_secs(20);
@@ -665,6 +668,10 @@ struct MachineSeries {
     local: bool,
     facts: Option<MachineFacts>,
     points: VecDeque<HealthPoint>,
+    /// The hour has a gap Grove's stored readings may fill: from the start, and after a gap between readings.
+    fill_due: bool,
+    /// Goes up each time older readings are filled in, so a reader holding the series reads it whole again.
+    history_rev: u32,
     counters: Option<Counters>,
     /// Grove's record of the machine (model, chip, OS version, address) and when it was read.
     grove_facts: Option<(i64, Value)>,
@@ -693,6 +700,8 @@ impl MachineSeries {
             local,
             facts: None,
             points: VecDeque::new(),
+            fill_due: true,
+            history_rev: 0,
             counters: None,
             grove_facts: None,
             reason: None,
@@ -711,8 +720,36 @@ impl MachineSeries {
     }
 
     fn push(&mut self, point: HealthPoint) {
+        if self.points.back().is_some_and(|last| point.t - last.t > FILL_GAP_MS) {
+            self.fill_due = true;
+        }
         self.points.push_back(point);
         self.trim(point.t);
+    }
+
+    /// Puts stored readings into the stretches of the hour this series has none for, and says whether any went in.
+    /// Never past the newest reading, which stays the machine's latest, so with no reading yet nothing goes in.
+    fn fill(&mut self, stored: impl IntoIterator<Item = HealthPoint>, now_ms: i64) -> bool {
+        let times: Vec<i64> = self.points.iter().map(|point| point.t).collect();
+        let in_gap = |t: i64| {
+            let after = times.partition_point(|&seen| seen <= t);
+            match (after.checked_sub(1).and_then(|before| times.get(before)), times.get(after)) {
+                (_, None) => false,
+                (None, Some(_)) => true,
+                (Some(before), Some(next)) => *before < t && next - before > FILL_GAP_MS,
+            }
+        };
+        let added: Vec<HealthPoint> = stored.into_iter().filter(|point| point.t >= now_ms - HISTORY_MS && in_gap(point.t)).collect();
+        if added.is_empty() {
+            return false;
+        }
+        let mut points: Vec<HealthPoint> = self.points.drain(..).chain(added).collect();
+        points.sort_by_key(|point| point.t);
+        points.dedup_by_key(|point| point.t);
+        self.points = points.into();
+        self.trim(now_ms);
+        self.history_rev += 1;
+        true
     }
 
     fn trim(&mut self, now_ms: i64) {
@@ -1192,6 +1229,7 @@ fn apply_hosts(state: &MachineHealthState, hosts: Vec<MachineHost>) -> bool {
                 if existing.host.endpoint != host.endpoint || existing.host.port != host.port {
                     // A different target is a different history.
                     existing.points.clear();
+                    existing.history_rev += 1;
                     existing.counters = None;
                     existing.grove_facts = None;
                     existing.facts = None;
@@ -1496,13 +1534,14 @@ async fn sampler_loop(app: tauri::AppHandle, token: CancellationToken) {
                 setup::scan_now(&app, &machine);
             }
         }
+        let filled = grove::fill_history(&state, at_ms).await;
         agents::check_due(&app, &state, at_ms);
         grove::upkeep_probes(&app, &state, at_ms);
         runs::after_round(&app, at_ms);
         transcripts::scan_due(&app, &state, at_ms);
         agent_homes::scan_due(&app, &state, at_ms);
         let interval = if state.is_active() { ACTIVE_INTERVAL } else { IDLE_INTERVAL };
-        let changed = before != health_signature(&state.lock());
+        let changed = filled || before != health_signature(&state.lock());
         let seq = {
             let mut inner = state.lock();
             inner.seq += 1;
@@ -1664,6 +1703,8 @@ pub(crate) struct MachineHealth {
     /// Tailscale's current path to the machine; None when it isn't on the tailnet or is idle.
     path: Option<NetworkPath>,
     agents: agents::MachineAgents,
+    /// Changes when older points were put in (`MachineSeries::fill`), which an incremental read wouldn't bring.
+    history_rev: u32,
 }
 
 #[derive(Serialize, TS)]
@@ -1721,6 +1762,7 @@ fn build_snapshot(inner: &Inner, now: i64, since: Option<i64>, window_ms: i64, o
                 ping_target: series.ping_target.clone(),
                 path: series.path.clone(),
                 agents: series.agents.clone(),
+                history_rev: series.history_rev,
             }
         })
         .collect();
@@ -1928,6 +1970,42 @@ mod tests {
         point.t = base + 3 * HISTORY_MS;
         series.push(point);
         assert_eq!(series.points.len(), 1);
+    }
+
+    #[test]
+    fn stored_readings_fill_only_the_hour_s_gaps() {
+        let host = MachineHost { machine: "m".into(), endpoint: "m".into(), port: 22, enabled: true, source: String::new() };
+        let mut series = MachineSeries::new(host, false);
+        let at = |t: i64, score: u8| HealthPoint {
+            t, score, cpu: None, mem: 0.0, mem_used_kb: 0, swap: None, swap_used_kb: None, disk: 0.0,
+            disk_free_kb: 0, load1: 0.0, load5: 0.0, load15: 0.0, rx_bps: None, tx_bps: None, latency_ms: None,
+            cpu_temp: None, gpu_temp: None, gpu_util: None, gpu_mem_used_mb: None, claude_running: None, codex_running: None,
+        };
+        let now = 10 * HISTORY_MS;
+        let minute = 60_000;
+        assert!(series.fill_due, "a new series starts with its hour to fill");
+        assert!(!series.fill([at(now - 5 * minute, 1)], now), "with no reading yet nothing goes in");
+
+        series.push(at(now - 20 * minute, 100));
+        series.push(at(now - 20 * minute + 5_000, 100));
+        series.fill_due = false;
+        series.push(at(now, 100));
+        assert!(series.fill_due, "a gap between readings calls for a fill");
+
+        let stored = [
+            at(now - 2 * HISTORY_MS, 1),          // before the hour
+            at(now - 30 * minute, 2),             // before the first reading
+            at(now - 20 * minute + 2_000, 3),     // between two readings 5 s apart
+            at(now - 10 * minute, 4),             // in the gap
+            at(now - 20 * minute, 5),             // on a reading already there
+            at(now + minute, 6),                  // past the newest reading
+        ];
+        assert!(series.fill(stored, now));
+        let kept: Vec<(i64, u8)> = series.points.iter().map(|point| ((point.t - now) / 1_000, point.score)).collect();
+        assert_eq!(kept, [(-1800, 2), (-1200, 100), (-1195, 100), (-600, 4), (0, 100)]);
+        assert_eq!(series.history_rev, 1);
+        assert!(!series.fill([at(now - 10 * minute, 4)], now), "nothing new to put in");
+        assert_eq!(series.history_rev, 1);
     }
 
     #[test]

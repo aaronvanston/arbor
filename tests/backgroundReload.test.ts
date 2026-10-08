@@ -187,6 +187,7 @@ describe('no alert goes out twice across a reload', () => {
       status: 'unreachable', score: null, reason: null, facts: null, latest: null, points: [],
       error: `ssh: connect to host ${name} port 22: Connection refused`, lastOkAt: 0, lastAttemptAt: T0 + 4 * MINUTE, pingTarget: null, path: null,
       agents: { claude: null, codex: null, checkedAt: 0, error: null, updating: [], reporter: { installed: false, homes: [] }, t3: null, orca: null },
+      historyRev: 0,
     });
     // Down since T0 + 2m, not announced yet, when the window reloads at T0 + 4m; the page before last resumed at T0.
     const counting = { 'ci-01': { downSinceMs: T0 + 2 * MINUTE, notified: false } };

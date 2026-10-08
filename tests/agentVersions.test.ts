@@ -13,6 +13,7 @@ const machine = (name: string, fields: Partial<MachineHealth> = {}): MachineHeal
   local: false, status: 'healthy', score: 90, reason: null, facts: null, latest: null, points: [],
   error: null, lastOkAt: 0, lastAttemptAt: 0, pingTarget: null, path: null,
   agents: agents(),
+  historyRev: 0,
   ...fields,
 });
 const withAgents = (name: string, claude: string | null, codex: string | null) =>

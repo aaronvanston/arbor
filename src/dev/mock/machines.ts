@@ -507,10 +507,10 @@ const machineHealthSnapshot = (since: number | null, windowMs: number, only: str
   return {
     seq: Math.floor(at / 5_000), now: at, intervalMs: 5_000, sampledAt: at - 800, historyMs: 3_600_000,
     machines: healthHosts.filter((host) => host.enabled).map((host): MachineHealth => {
-      if (!host.endpoint) return { machine: host.machine, host, local: false, status: 'unconfigured', score: null, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: null, lastAttemptAt: null, pingTarget: null, path: null, agents: noAgents };
+      if (!host.endpoint) return { machine: host.machine, host, local: false, status: 'unconfigured', score: null, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: null, lastAttemptAt: null, pingTarget: null, path: null, agents: noAgents, historyRev: 0 };
       // `?health=pending`: the first seconds after Arbor starts, before a machine's first check has come back.
-      if (healthScenario === 'pending' && host.endpoint !== 'localhost') return { machine: host.machine, host, local: false, status: 'pending', score: null, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: null, lastAttemptAt: null, pingTarget: null, path: null, agents: noAgents };
-      if (host.machine === 'ci-01' && healthDown) return { machine: host.machine, host, local: false, status: 'unreachable', score: null, reason: null, facts: healthFacts(host.machine), latest: null, points: [], error: healthError, lastOkAt: at - (healthScenario === 'down-long' ? 12 * 60_000 : 90_000), lastAttemptAt: at - 800, pingTarget: 'ci-01.tailc0ffee.ts.net', path: null, agents: agentsOf(host.machine) };
+      if (healthScenario === 'pending' && host.endpoint !== 'localhost') return { machine: host.machine, host, local: false, status: 'pending', score: null, reason: null, facts: null, latest: null, points: [], error: null, lastOkAt: null, lastAttemptAt: null, pingTarget: null, path: null, agents: noAgents, historyRev: 0 };
+      if (host.machine === 'ci-01' && healthDown) return { machine: host.machine, host, local: false, status: 'unreachable', score: null, reason: null, facts: healthFacts(host.machine), latest: null, points: [], error: healthError, lastOkAt: at - (healthScenario === 'down-long' ? 12 * 60_000 : 90_000), lastAttemptAt: at - 800, pingTarget: 'ci-01.tailc0ffee.ts.net', path: null, agents: agentsOf(host.machine), historyRev: 0 };
       const points: HealthPoint[] = [];
       if (only === null || only === host.machine) {
         for (let t = Math.ceil(floor / 5_000) * 5_000; t <= at; t += 5_000) if (since === null || t > since) points.push(healthPoint(host.machine, t));
@@ -518,7 +518,7 @@ const machineHealthSnapshot = (since: number | null, windowMs: number, only: str
       const latest = healthPoint(host.machine, at);
       const reason = host.machine === 'cam-mbp' ? { metric: 'disk' as const, value: latest.disk } : host.machine === 'ci-01' ? { metric: 'memory' as const, value: latest.mem } : null;
       const local = host.endpoint === 'localhost';
-      return { machine: host.machine, host, local, status: latest.score >= 75 ? 'healthy' : latest.score >= 45 ? 'degraded' : 'critical', score: latest.score, reason, facts: healthFacts(host.machine), latest, points, error: null, lastOkAt: at - 800, lastAttemptAt: at - 800, pingTarget: local ? null : `${host.endpoint}.tailc0ffee.ts.net`, path: healthPath(host.machine), agents: agentsOf(host.machine) };
+      return { machine: host.machine, host, local, status: latest.score >= 75 ? 'healthy' : latest.score >= 45 ? 'degraded' : 'critical', score: latest.score, reason, facts: healthFacts(host.machine), latest, points, error: null, lastOkAt: at - 800, lastAttemptAt: at - 800, pingTarget: local ? null : `${host.endpoint}.tailc0ffee.ts.net`, path: healthPath(host.machine), agents: agentsOf(host.machine), historyRev: 0 };
     }),
   };
 };

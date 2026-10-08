@@ -24,7 +24,10 @@ which sends no pings: a streamed machine's round trip is Grove's echo over the s
 behind a jump host, where a ping would measure another path), and a machine read by `grove sample` takes its round
 trip and address from Grove's ping. The Tailscale path looks up the address `ssh -G` resolves to. When Grove is
 missing or answers as another version, the sampler falls back to its own script (`SAMPLE_SCRIPT`) for one release,
-then to a reachability check (`LEGACY_SAMPLER`).
+then to a reachability check (`LEGACY_SAMPLER`). The hour each machine's charts draw lives in memory; after Arbor starts or
+any gap over 90 s (the Mac slept, the machine was away), it's filled from Grove's stored samples (`grove history`,
+about one a minute, read on this Mac), never past the newest live reading, and `historyRev` tells a page holding the
+series to read it whole, since incremental reads only bring newer points.
 
 A probe goes on a machine only when the user confirms it (machine page, Settings › Machines, or `arbor call
 install_machine_probe … --yes`): `grove probe install --from` the carried archives, under launchd or a systemd user

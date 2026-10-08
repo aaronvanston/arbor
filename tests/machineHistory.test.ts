@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import type { MachineHistory } from '../src/native/types';
-import { HOUR_MS, MACHINE_WINDOWS, historyRefreshMs, historySeries, machineWindowMs } from '../src/services/machineHealth';
+import type { MachineHealthSnapshot, MachineHistory } from '../src/native/types';
+import { HOUR_MS, MACHINE_WINDOWS, historyRefilled, historyRefreshMs, historySeries, machineWindowMs } from '../src/services/machineHealth';
 
 const history = (fields: Partial<MachineHistory> = {}): MachineHistory => ({
   machine: 'cedar-01', since: 1_000_000, bucketMs: 432_000, samples: 3,
@@ -27,5 +27,17 @@ describe('a machine’s long history', () => {
     expect(historyRefreshMs(null)).toBe(60_000);
     expect(historyRefreshMs(history({ bucketMs: 108_000 }))).toBe(108_000);
     expect(historyRefreshMs(history({ bucketMs: 18_000 }))).toBe(60_000);
+  });
+});
+
+describe('the hour filled from Grove', () => {
+  const snapshot = (revs: Record<string, number>): MachineHealthSnapshot =>
+    ({ seq: 1, now: 0, intervalMs: 5_000, sampledAt: null, historyMs: HOUR_MS, machines: Object.entries(revs).map(([machine, historyRev]) => ({ machine, historyRev })) }) as unknown as MachineHealthSnapshot;
+
+  it('reads a series whole again when older readings went into it, and not otherwise', () => {
+    expect(historyRefilled(null, snapshot({ 'cedar-01': 1 }))).toBe(false);
+    expect(historyRefilled(snapshot({ 'cedar-01': 0 }), snapshot({ 'cedar-01': 0 }))).toBe(false);
+    expect(historyRefilled(snapshot({ 'cedar-01': 0 }), snapshot({ 'cedar-01': 1 }))).toBe(true);
+    expect(historyRefilled(snapshot({ 'cedar-01': 0 }), snapshot({ 'cedar-01': 0, 'cam-mbp': 3 })), 'a machine just listed comes whole anyway').toBe(false);
   });
 });

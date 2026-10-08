@@ -122,6 +122,16 @@ export function mergeSnapshots(previous: MachineHealthSnapshot | null, next: Mac
   };
 }
 
+/**
+ * Whether a machine's series took in older readings since `previous` (Arbor fills the hour from Grove's stored
+ * samples after it starts or the Mac wakes). An incremental read only brings newer points, so the series is read whole.
+ */
+export function historyRefilled(previous: MachineHealthSnapshot | null, next: MachineHealthSnapshot): boolean {
+  if (!previous) return false;
+  const revs = new Map(previous.machines.map((item) => [item.machine, item.historyRev]));
+  return next.machines.some((item) => revs.has(item.machine) && revs.get(item.machine) !== item.historyRev);
+}
+
 /** Where a reading turns warning and critical, matching the backend's score ramps. */
 export const READING_LIMITS = { cpu: [75, 98], mem: [78, 96], disk: [82, 96] } as const satisfies Record<string, readonly [number, number]>;
 

@@ -2907,6 +2907,10 @@ export type MachineHealth = {
    */
   path: NetworkPath | null,
   agents: MachineAgents,
+  /**
+   * Changes when older points were put in (`MachineSeries::fill`), which an incremental read wouldn't bring.
+   */
+  historyRev: number,
 };
 
 export type MachineHealthSnapshot = {

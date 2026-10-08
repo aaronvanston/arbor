@@ -1037,6 +1037,67 @@ pub(crate) async fn get_machine_history(state: tauri::State<'_, MachineHealthSta
     parse_graph(&machine, &data)
 }
 
+// ── Filling the hour ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// Stored samples a fill reads. Grove keeps about one a minute (a probe's minute, or a `grove sample` that stores one
+/// at most every 55 s), so this covers the hour with room to spare.
+const FILL_SAMPLES: &str = "90";
+
+/// Fills each machine's hour that has a gap (after Arbor starts, or after the Mac slept or the machine was away) from
+/// the samples Grove stored on this Mac, so the charts don't start empty. Nothing reaches the machine. True when any
+/// series took in older points.
+pub(crate) async fn fill_history(state: &MachineHealthState, now_ms: i64) -> bool {
+    let due: Vec<(String, String)> = {
+        let inner = state.lock();
+        if inner.grove.unavailable.is_some() {
+            return false;
+        }
+        inner
+            .series
+            .values()
+            .filter(|series| series.fill_due && !series.points.is_empty())
+            .filter_map(|series| Some((series.host.machine.clone(), inner.grove.slugs.get(&series.host.machine)?.clone())))
+            .collect()
+    };
+    if due.is_empty() {
+        return false;
+    }
+    let Some(grove) = state.grove().await else {
+        return false;
+    };
+    let read = futures_util::future::join_all(due.into_iter().map(|(machine, slug)| async move {
+        let stored = grove.call(&["history", "--limit", FILL_SAMPLES, "--json", "--", &slug]).await.map(|data| parse_history(&data));
+        (machine, stored)
+    }))
+    .await;
+    let mut inner = state.lock();
+    let mut filled = false;
+    for (machine, stored) in read {
+        let Some(series) = inner.series.get_mut(&machine) else { continue };
+        // A failed read waits for the next gap: the charts fill from live readings meanwhile, as they always did.
+        series.fill_due = false;
+        match stored {
+            Ok(points) => filled |= series.fill(points, now_ms),
+            Err(error) => eprintln!("Could not read {machine}'s stored health from Grove: {error}"),
+        }
+    }
+    filled
+}
+
+/// `grove history --json`'s samples as points, each at the time it was taken. A sample stores the same fields as a
+/// reading, so it's read the same way; one that can't be read whole is left out.
+pub(crate) fn parse_history(data: &Value) -> Vec<HealthPoint> {
+    data.get("samples")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|sample| {
+            let taken_at = sample.get("taken_at").and_then(Value::as_str).and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())?;
+            point_from(sample, None, taken_at.timestamp_millis()).ok().map(|(_, point, _)| point)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1347,6 +1408,25 @@ mod tests {
         assert_eq!(history.rx_bps, [None, Some(727916.7), None]);
         assert!(history.gpu_temp.is_empty(), "a metric grove didn't send is empty");
         assert!(parse_graph("cedar-01", &serde_json::json!({ "metrics": [] })).is_err());
+    }
+
+    #[test]
+    fn grove_s_stored_samples_become_points_at_the_time_they_were_taken() {
+        // As grove 0.1.4's `history --json` gives them, cut to what a reading needs; the second lacks memory.
+        let sample = |taken_at: &str, cpu: f64| serde_json::json!({
+            "taken_at": taken_at, "health": { "score": 91 }, "cpu_pct": cpu, "mem_total_kb": 1000, "mem_available_kb": 400,
+            "mem_used_pct": 60, "disk_total_kb": 2000, "disk_used_kb": 500, "disk_used_pct": 25, "load1": 0.5,
+            "net_rx_bps": 1200.5, "net_tx_bps": null,
+        });
+        let mut broken = sample("2026-10-07T10:16:00.000Z", 9.0);
+        broken.as_object_mut().unwrap().remove("mem_total_kb");
+        let data = serde_json::json!({ "machine": "cedar01", "samples": [sample("2026-10-07T10:17:00.000Z", 22.5), broken] });
+        let points = parse_history(&data);
+        assert_eq!(points.len(), 1, "a sample missing a reading is left out");
+        let point = points[0];
+        assert_eq!(point.t, chrono::DateTime::parse_from_rfc3339("2026-10-07T10:17:00.000Z").unwrap().timestamp_millis());
+        assert_eq!((point.score, point.cpu, point.mem_used_kb, point.rx_bps, point.tx_bps), (91, Some(22.5), 600, Some(1200.5), None));
+        assert!(parse_history(&serde_json::json!({})).is_empty());
     }
 
     /// The pinned Grove unpacks from the checkout's bundle into a throwaway home and answers as its version. Ignored

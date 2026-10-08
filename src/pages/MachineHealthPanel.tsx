@@ -15,6 +15,7 @@ import {
   KIB,
   latencyDigits,
   latencyStats,
+  historyRefilled,
   mergeSnapshots,
   READING_LIMITS,
   showsRoundTrip,
@@ -723,8 +724,10 @@ export function useMachineHealthSnapshot(windowMs: number, machine?: string) {
     try {
       const previous = fullReload.current ? null : snapshotRef.current;
       const since = previous ? Math.max(-Infinity, ...previous.machines.flatMap((item) => item.points.map((point) => point.t))) : null;
-      const next = await fetchMachineHealth(Number.isFinite(since) ? since : null, windowMs, false, machine);
-      const merged = mergeSnapshots(previous, next, windowMs);
+      let next = await fetchMachineHealth(Number.isFinite(since) ? since : null, windowMs, false, machine);
+      const refilled = historyRefilled(previous, next);
+      if (refilled) next = await fetchMachineHealth(null, windowMs, false, machine);
+      const merged = refilled ? next : mergeSnapshots(previous, next, windowMs);
       snapshotRef.current = merged;
       fullReload.current = false;
       setSnapshot(merged);
