@@ -172,6 +172,30 @@ pub(crate) fn list_layouts(roots: &[ImportRoot], listing: &mut Listing) {
     listing.ended &= listed.ended;
 }
 
+/// Leaves out of an import's listing every file that, its links followed, isn't inside its own
+/// root. Live homes follow links (a rollout moved to another disk and linked back), but a backup
+/// can come from anywhere, and a link in it named like a session could lead to this Mac's own
+/// keys or sign-ins. Pass `LocalFiles` reads only the very files kept here.
+pub(crate) fn confine(listing: &mut Listing) {
+    use std::os::unix::fs::MetadataExt;
+    for root in &mut listing.roots {
+        let home = Path::new(&root.home);
+        // A root is recorded with its links resolved; one that has since become a link isn't read through.
+        if fs::canonicalize(home).ok().as_deref() != Some(home) {
+            root.files.clear();
+            root.complete = false;
+            continue;
+        }
+        root.files.retain(|file| {
+            fs::canonicalize(home.join(&file.rel_path))
+                .ok()
+                .filter(|real| real.starts_with(home))
+                .and_then(|real| fs::metadata(real).ok())
+                .is_some_and(|meta| (meta.dev(), meta.ino()) == (file.dev, file.ino))
+        });
+    }
+}
+
 /// Where a home an import found stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -623,6 +647,7 @@ mod tests {
     fn listing(roots: &[ImportRoot]) -> Listing {
         let mut listed = parse(&run_list("sh", Path::new("/nonexistent-home"), &roots_script(&home_roots(roots))));
         list_layouts(roots, &mut listed);
+        confine(&mut listed);
         listed
     }
 
@@ -887,6 +912,57 @@ mod tests {
         for path in walk(&fixture.places.store.root().join("journal")) {
             assert!(!contains(&fs::read(&path).unwrap()), "{}", path.display());
         }
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn a_backup_never_keeps_what_its_links_lead_to_outside_it() {
+        use std::os::unix::fs::symlink;
+        let fixture = Fixture::new("imports-links");
+        let base = fs::canonicalize(&fixture.base).unwrap();
+        // A key of this Mac's own, outside any backup.
+        let key = base.join("dot-ssh/id_ed25519");
+        write(&key, SIGN_IN);
+        let backup = base.join("drive/Shared");
+        let home = backup.join("dot-claude");
+        let app = home.join("projects/-Users-me-app");
+        write(&app.join(format!("{SID}.jsonl")), &claude_lines(SID, 2));
+        // Links named like sessions, to the key and to the folder it's in, beside one that stays inside the backup.
+        symlink(&key, app.join(format!("{SID2}.jsonl"))).unwrap();
+        symlink(key.parent().unwrap(), home.join("projects/-keys")).unwrap();
+        symlink(app.join(format!("{SID}.jsonl")), app.join(format!("{SID3}.jsonl"))).unwrap();
+        // And in a layout listed here rather than by the script.
+        let claw = backup.join("openclaw-agents/main");
+        write(&claw.join("sessions/sessions.json"), "{}");
+        fs::create_dir_all(claw.join("agent")).unwrap();
+        symlink(&key, claw.join(format!("sessions/{SID2}.jsonl"))).unwrap();
+
+        let never = [fixture.places.store.root().to_path_buf()];
+        let plan = plan(&fixture.db, &backup, &never, "mac").unwrap();
+        let listed = listing(&plan.new_roots());
+        let names: Vec<&str> = listed.roots.iter().flat_map(|root| root.files.iter().map(|file| file.rel_path.as_str())).collect();
+        assert!(!names.iter().any(|name| name.contains(SID2) || name.contains("-keys")), "{names:?}");
+        assert!(names.contains(&format!("projects/-Users-me-app/{SID3}.jsonl").as_str()), "a link that stays inside is kept: {names:?}");
+        assert!(listed.roots.iter().all(|root| root.complete));
+
+        add(&fixture.db, &plan, "mini").unwrap();
+        while run_imports(&fixture, 1 << 40) {}
+        assert!(statuses(&fixture.db).unwrap()[0].finished_at.is_some());
+        assert_eq!(fixture.count(&format!("SELECT COUNT(*) FROM files WHERE rel_path LIKE '%{SID2}%' OR rel_path LIKE '%-keys%'")), 0);
+        let secret = SIGN_IN.as_bytes();
+        for path in walk(fixture.places.store.root()) {
+            let bytes = fs::read(&path).unwrap();
+            let bytes = super::super::codec::decode(&bytes).unwrap_or(bytes);
+            assert!(!bytes.windows(secret.len()).any(|window| window == secret), "{}", path.display());
+        }
+
+        // A root that has since been swapped for a link isn't read through.
+        let moved = base.join("drive/dot-claude-real");
+        fs::rename(&home, &moved).unwrap();
+        symlink(&moved, &home).unwrap();
+        let roots = vec![ImportRoot { agent: "claude".into(), root: home.to_string_lossy().into_owned(), layout: HOME.into(), machine: None }];
+        let relisted = listing(&roots);
+        assert!(relisted.roots.iter().all(|root| root.files.is_empty() && !root.complete));
         let _ = fs::remove_dir_all(&fixture.base);
     }
 }

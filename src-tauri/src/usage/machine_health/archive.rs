@@ -874,6 +874,7 @@ async fn list_import(machine: &str, roots: Vec<imports::ImportRoot>) -> Result<l
     let mut listing = if homes.is_empty() { lister::Listing { ended: true, ..lister::Listing::default() } } else { list_with(machine, &lister::roots_script(&homes)).await? };
     blocking(move || {
         imports::list_layouts(&roots, &mut listing);
+        imports::confine(&mut listing);
         Ok(listing)
     })
     .await

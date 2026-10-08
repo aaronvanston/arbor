@@ -208,11 +208,20 @@ pub(crate) fn random_id() -> String {
     hex(&bytes)
 }
 
+/// Whether `path` is a folder itself, not a link to one.
+fn real_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
+}
+
+/// Makes one of the store's own folders. One that's there already has to be a folder and not a
+/// link: a store is on a drive others may write to, and a link would send writes and the
+/// clearing of tmp/ somewhere outside it.
 fn make_dir(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::DirBuilderExt;
     match fs::DirBuilder::new().mode(0o700).create(path) {
         Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && real_dir(path) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Err(format!("{} isn't a folder of the archive's own, so Arbor won't write through it", path.display())),
         Err(error) => Err(format!("Couldn't make {}: {error}", path.display())),
     }
 }
@@ -288,7 +297,10 @@ impl Store {
             FolderKind::Missing => return Err("That folder isn't there.".into()),
             FolderKind::NotWritable => return Err("Arbor can't write to that folder.".into()),
         }
-        make_dir(root)?;
+        // The folder the user picked may be reached through a link; only what's made in it is held to `make_dir`.
+        if !root.is_dir() {
+            make_dir(root)?;
+        }
         for dir in DIRS {
             make_dir(&root.join(dir))?;
         }
@@ -499,6 +511,10 @@ fn lock(path: &Path) -> Result<File, String> {
 }
 
 fn clear_old_tmp(dir: &Path) {
+    // Checked again right before clearing, so a tmp/ swapped for a link since never has its target cleared.
+    if !real_dir(dir) {
+        return;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -688,6 +704,50 @@ pub(crate) mod tests {
         assert_eq!(names, ["vk1.2.zst", "vk10.1.zst"]);
         store.drop_pending("vk1", None);
         assert_eq!(fs::read_dir(base.join("s/pending")).unwrap().count(), 1);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_store_whose_own_folders_are_links_is_never_written_through() {
+        let base = temp_dir("store-links");
+        let root = base.join("s");
+        drop(Store::create(&root, "a1", "mac", None).unwrap());
+        // Someone else's folder, with a day-old file in it that clearing tmp/ would take.
+        let victim = base.join("victim");
+        fs::create_dir_all(&victim).unwrap();
+        let old = victim.join("thesis.txt");
+        fs::write(&old, b"mine").unwrap();
+        File::options().write(true).open(&old).unwrap().set_modified(SystemTime::now() - TMP_MAX_AGE * 2).unwrap();
+        for dir in DIRS {
+            let moved = base.join(format!("{dir}.real"));
+            fs::rename(root.join(dir), &moved).unwrap();
+            std::os::unix::fs::symlink(&victim, root.join(dir)).unwrap();
+            assert!(Store::open(&root, "a1").is_err(), "{dir}/ as a link is refused");
+            fs::remove_file(root.join(dir)).unwrap();
+            fs::rename(&moved, root.join(dir)).unwrap();
+        }
+        // A file where a folder goes is refused too.
+        fs::rename(root.join("tmp"), base.join("tmp.real")).unwrap();
+        fs::write(root.join("tmp"), b"x").unwrap();
+        assert!(Store::open(&root, "a1").is_err());
+        fs::remove_file(root.join("tmp")).unwrap();
+        fs::rename(base.join("tmp.real"), root.join("tmp")).unwrap();
+
+        // A chunk folder swapped for a link once the store is open gets nothing written through it.
+        let store = Store::open(&root, "a1").unwrap();
+        let data = b"line\n".to_vec();
+        let hash = sha256(&data);
+        let shard = store.chunk_path(&hash).parent().unwrap().to_path_buf();
+        let _ = fs::remove_dir(&shard);
+        std::os::unix::fs::symlink(&victim, &shard).unwrap();
+        assert!(store.put_chunks(&[NewChunk { hash, data: &data, mid_line: false }]).is_err());
+        // Nor is a tmp/ swapped for one cleared through.
+        fs::remove_dir(root.join("tmp")).unwrap();
+        std::os::unix::fs::symlink(&victim, root.join("tmp")).unwrap();
+        clear_old_tmp(&root.join("tmp"));
+        let left: Vec<String> = fs::read_dir(&victim).unwrap().flatten().map(|entry| entry.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(left, ["thesis.txt"], "nothing outside the store is written or cleared");
+        drop(store);
         let _ = fs::remove_dir_all(&base);
     }
 

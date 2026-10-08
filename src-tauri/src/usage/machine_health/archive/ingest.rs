@@ -16,6 +16,7 @@ use super::store::{drop_pending_in, write_atomic, ChunkMeta, NewChunk, Store};
 use super::tokens::{pieces, read_piece};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -125,25 +126,43 @@ pub(crate) trait Files {
 /// This Mac's disk.
 pub(crate) struct LocalFiles {
     throttle: Throttle,
+    /// Only the very files the listing stat'ed are read, as for a backup, whose listing kept only
+    /// files inside it (see `imports::confine`).
+    listed_only: bool,
+    /// Each stat'ed file's device and inode, which what's opened at its path has to be. Paths are
+    /// followed through links, so a link changed in between would otherwise read another file.
+    seen: HashMap<PathBuf, (u64, u64)>,
 }
 
 impl LocalFiles {
     pub(crate) fn new(bytes_per_second: u64) -> Self {
-        LocalFiles { throttle: Throttle::new(bytes_per_second) }
+        LocalFiles { throttle: Throttle::new(bytes_per_second), listed_only: false, seen: HashMap::new() }
+    }
+
+    fn open_seen(&self, path: &Path) -> Result<File, String> {
+        use std::os::unix::fs::MetadataExt;
+        let file = File::open(path).map_err(|error| format!("Couldn't open a session file: {error}"))?;
+        let meta = file.metadata().map_err(|error| format!("Couldn't open a session file: {error}"))?;
+        match self.seen.get(path) {
+            Some(seen) if *seen != (meta.dev(), meta.ino()) => Err(CHANGED.to_string()),
+            _ => Ok(file),
+        }
     }
 }
 
 impl Files for LocalFiles {
-    fn stat(&mut self, path: &Path, _listed: &ListedFile) -> Option<Seen> {
-        stat(path)
+    fn stat(&mut self, path: &Path, listed: &ListedFile) -> Option<Seen> {
+        let seen = stat(path).filter(|seen| !self.listed_only || (seen.dev, seen.ino) == (listed.dev, listed.ino))?;
+        self.seen.insert(path.to_path_buf(), (seen.dev, seen.ino));
+        Some(seen)
     }
 
     fn head(&mut self, path: &Path, _size: u64) -> Option<Vec<u8>> {
-        head(path)
+        head(path, self.open_seen(path).ok()?)
     }
 
     fn open(&mut self, path: &Path, _size: u64) -> Result<Box<dyn Source + '_>, String> {
-        let file = File::open(path).map_err(|error| format!("Couldn't open a session file: {error}"))?;
+        let file = self.open_seen(path)?;
         Ok(Box::new(LocalFile { file, throttle: &mut self.throttle }))
     }
 }
@@ -367,9 +386,8 @@ fn stat(path: &Path) -> Option<Seen> {
 }
 
 /// The start of a file, decompressed for a .zst, for reading the ids at its top.
-fn head(path: &Path) -> Option<Vec<u8>> {
+fn head(path: &Path, file: File) -> Option<Vec<u8>> {
     use std::io::Read;
-    let file = File::open(path).ok()?;
     if path.extension().is_some_and(|ext| ext == "zst") {
         return codec::decode_head(file, identity::HEAD_LIMIT).ok();
     }
@@ -380,7 +398,9 @@ fn head(path: &Path) -> Option<Vec<u8>> {
 
 /// Runs one pass of this Mac's listing. `stop` is asked between files.
 pub(crate) fn run_pass(db: &Connection, places: &Places, listing: &Listing, options: &PassOptions, stop: &dyn Fn() -> bool) -> Result<PassReport, String> {
-    run_pass_from(db, places, listing, options, &mut LocalFiles::new(options.bytes_per_second), stop)
+    let mut files = LocalFiles::new(options.bytes_per_second);
+    files.listed_only = options.import;
+    run_pass_from(db, places, listing, options, &mut files, stop)
 }
 
 /// Runs one pass of a machine's listing, reading its files from `files`.
@@ -627,6 +647,32 @@ pub(crate) mod tests {
 
     fn claude_lines(count: usize) -> String {
         (0..count).map(|n| format!("{{\"type\":\"user\",\"sessionId\":\"{SID}\",\"n\":{n},\"text\":\"{SECRET_TEXT}\"}}\n")).collect()
+    }
+
+    #[test]
+    fn a_file_is_read_only_while_it_is_the_one_that_was_stated() {
+        let base = temp_dir("ingest-swap");
+        let file = base.join("rollout-2026-01-01T00-00-00-a.jsonl");
+        fs::write(&file, "{}\n").unwrap();
+        let key = base.join("id_ed25519");
+        fs::write(&key, SECRET_TEXT).unwrap();
+        let seen = stat(&file).unwrap();
+        let listed = ListedFile { rel_path: String::new(), dev: seen.dev, ino: seen.ino, size: seen.size, mtime: 0, ctime: 0, via_link: false };
+        let mut files = LocalFiles::new(1 << 40);
+        files.listed_only = true;
+        assert!(files.stat(&file, &listed).is_some());
+        // Swapped for a link to a key between being stat'ed and read.
+        fs::remove_file(&file).unwrap();
+        std::os::unix::fs::symlink(&key, &file).unwrap();
+        assert_eq!(files.open(&file, 3).err().as_deref(), Some(CHANGED));
+        assert!(files.head(&file, 3).is_none());
+        // A backup's file that isn't the one its listing stat'ed isn't read at all.
+        assert!(files.stat(&file, &listed).is_none());
+        // A live home's links are followed, so the same path read through one reads.
+        let mut live = LocalFiles::new(1 << 40);
+        assert!(live.stat(&file, &listed).is_some());
+        assert!(live.open(&file, 3).is_ok());
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -14,6 +14,10 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
 - **Collection.** This Mac's agent homes are read from disk; each other machine's over SSH by `archive/remote.rs`,
   after this Mac's. `archive/imports.rs` takes in old backups of agent homes the user picks, and `archive/layouts.rs`
   finds backups in other shapes (OpenClaw, Claude's desktop app).
+- **Links.** A live home's links are followed, since a rollout moved to another disk and linked back is still that
+  home's. A backup's aren't: it can come from anywhere, so `imports::confine` keeps only files that resolve inside their
+  own root, and the pass reads only the file the listing stat'ed. A store's own folders must be real folders, never
+  links, because a store can sit on a drive others write to.
 - **Tokens.** `archive/tokens.rs` counts tokens for Usage › All time, keeping each call's hashed id with its day, model
   name and token numbers. `archive/recovered.rs` reads Claude Code's own `stats-cache.json` daily totals (each
   machine's days with model names, token and session counts) for days whose transcripts are gone.
