@@ -108,7 +108,7 @@ async function machinePlan(machine: string) {
   const view = withCodexPluginRepo(withPluginRepo(withRegistry(extensionsView(machines), standing.mcp), standing.repo.plugins), standing.repo.codexPlugins);
   const registryFound = standing.mcp?.found === true && standing.mcp.problems.length === 0;
   const rows = libraryRows({ machines, view, repo: standing.repo, registryFound, hooks: standing.hooks, standing });
-  const plan = linePlans(rows, machines).find((entry) => entry.machine === machine) ?? null;
+  const plan = linePlans(rows, machines, standing).find((entry) => entry.machine === machine) ?? null;
   return { repo, head, machines, sources, plan, files: syncPlan(repo, found), held: heldPaths(standing, machine) };
 }
 
@@ -262,7 +262,7 @@ export const cliHandlers: CliHandlers = {
       if (!plan) return { machine, changed: false, failed: [], needsYou: false, heldHooks: false, backups: [] };
       // The same plan and steps as Overview's Bring in line.
       const { bringInLine } = await import('./libraryToggle');
-      return { machine, items: plan.rows.map((row) => ({ kind: row.kind, name: row.name })), ...(await bringInLine(repo.path, sources, machines, plan)) };
+      return { machine, items: [...plan.rows.map((row) => ({ kind: row.kind, name: row.name })), ...(plan.tools ?? []).map((name) => ({ kind: 'tool', name }))], ...(await bringInLine(repo.path, sources, machines, plan)) };
     },
   },
   'core.install': {

@@ -21,6 +21,8 @@
 //! Archived machines and projects stay on record and are planned for no more. See
 //! docs/internals/projects-and-machines.md.
 
+use super::setup_tools::{RepoTools, ToolWanted};
+use super::setup_toolchain::is_tool;
 use super::setup_wanted::{is_project, PluginWanted, ProjectValue, RepoPlugin, SkillMachines, SkillProjects, SkillWanted};
 use super::setup_projects::normalize_remote;
 use super::shell::{runs_scripts, this_machine_name};
@@ -43,11 +45,12 @@ pub(super) const DEFAULT_CODE_ROOT: &str = "~/code";
 /// Larger than any machine or project file should be.
 pub(super) const LAYER_FILE_MAX_BYTES: u64 = 64 * 1024;
 
-/// The schemas for machine and project files, which editors check them against. Arbor's own; it reads the files
+/// The schemas for machine and project files and .agents/tools.json, which editors check them against. Arbor's own; it reads the files
 /// with its own parser and puts these in the repo for people editing them by hand.
-pub(super) const SCHEMAS: [(&str, &str); 2] = [
+pub(super) const SCHEMAS: [(&str, &str); 3] = [
     ("schema/machine.schema.json", include_str!("schema/machine.schema.json")),
     ("schema/project.schema.json", include_str!("schema/project.schema.json")),
+    ("schema/tools.schema.json", include_str!("schema/tools.schema.json")),
 ];
 
 /// A file Arbor may commit for the layers: a machine or project file, or a schema.
@@ -75,6 +78,8 @@ pub(crate) struct RepoMachine {
     plugins: BTreeMap<String, PluginWanted>,
     /// Kept for the MCP registry; on or off.
     mcp: BTreeMap<String, PluginWanted>,
+    /// Its own value for a tool: latest, a version, own or removed.
+    tools: BTreeMap<String, String>,
 }
 
 /// Which machines a project is on.
@@ -283,6 +288,10 @@ fn on_off(value: &str) -> Option<PluginWanted> {
     }
 }
 
+fn tool_value(value: &str) -> Option<String> {
+    ToolWanted::read(value).map(|_| value.trim().to_string())
+}
+
 fn plugin_value(value: &str) -> Option<PluginWanted> {
     serde_json::from_value(Value::from(value)).ok()
 }
@@ -333,6 +342,7 @@ pub(super) fn parse_machine(file: &str, key: &str, stem: &str, archived: bool, b
         skills: values_at(&object, "skills", is_name, skill_value, "off or own", &mut problems),
         plugins: values_at(&object, "plugins", is_plugin, plugin_value, "on, off, own or removed", &mut problems),
         mcp: values_at(&object, "mcp", is_name, on_off, "on or off", &mut problems),
+        tools: values_at(&object, "tools", is_tool, tool_value, "latest, a version like 22, own or removed", &mut problems),
     })
 }
 
@@ -602,6 +612,31 @@ impl SetupLayers {
         }
     }
 
+    /// Puts machine files' own values for tools into what tools.json gives, the files' winning. A tool only a machine
+    /// file names is listed for that machine alone.
+    pub(super) fn merge_tools(&self, tools: &mut RepoTools) {
+        for machine in self.machines.iter().filter(|machine| !machine.archived) {
+            for (tool, value) in &machine.tools {
+                let list = tools.tools_mut();
+                let index = match list.iter().position(|found| found.tool() == tool) {
+                    Some(index) => index,
+                    None => {
+                        list.push(RepoTools::own_tool(tool));
+                        list.len() - 1
+                    }
+                };
+                if let Some(found) = list.get_mut(index) {
+                    found.set_machine(&machine.key, value);
+                }
+            }
+        }
+    }
+
+    /// A machine's role, from its file, for values a repo gives `@role`.
+    pub(super) fn role_of(&self, machine: &str) -> Option<&str> {
+        self.machine(&normalize_machine_name(machine)).and_then(|found| found.role.as_deref())
+    }
+
     /// The machines a project's own entries can mean: those it names, and those with a role it names.
     fn machine_keys(&self, project: &RepoProject) -> BTreeSet<String> {
         let Assignment::Some { machines } = &project.machines else {
@@ -864,7 +899,7 @@ pub(super) async fn hint_paths(state: &MachineHealthState, machine: &str) -> Vec
     hints.into_iter().collect()
 }
 
-/// Puts Arbor's schemas for machine and project files in the repo, or brings them up to date, each a commit of its own.
+/// Puts Arbor's schemas for machine and project files and tools.json in the repo, or brings them up to date, each a commit of its own.
 #[tauri::command]
 pub(crate) async fn add_setup_schemas(repo: String) -> Result<super::setup_sync::SetupRepo, String> {
     let folder = Path::new(&repo);
@@ -1034,9 +1069,10 @@ mod tests {
             let schema: Value = serde_json::from_str(text).unwrap();
             schema["properties"].as_object().unwrap().keys().filter(|key| *key != "$schema").cloned().collect()
         };
-        let [(machine_rel, machine), (project_rel, project)] = SCHEMAS;
-        assert!(is_layer_file(machine_rel) && is_layer_file(project_rel));
-        assert_eq!(keys(machine), BTreeSet::from(["name", "host", "role", "codeRoot", "skills", "plugins", "mcp"].map(String::from)));
+        let [(machine_rel, machine), (project_rel, project), (tools_rel, tools)] = SCHEMAS;
+        assert!(is_layer_file(machine_rel) && is_layer_file(project_rel) && is_layer_file(tools_rel));
+        assert_eq!(keys(tools), BTreeSet::from(["version", "installers", "tools"].map(String::from)));
+        assert_eq!(keys(machine), BTreeSet::from(["name", "host", "role", "codeRoot", "skills", "plugins", "mcp", "tools"].map(String::from)));
         assert_eq!(keys(project), BTreeSet::from(["remote", "local", "path", "branch", "machines", "skills", "plugins", "mcp"].map(String::from)));
     }
 }

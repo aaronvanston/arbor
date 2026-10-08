@@ -19,6 +19,7 @@ use super::setup_hooks::{self, HookRegistry, HookState};
 use super::setup_layers::arbor_machines;
 use super::setup_mcp::{self, McpRegistry, RegistryState};
 use super::setup_sync::{managed, read_repo, SetupRepo, SyncFileKind};
+use super::setup_tools::{MachineTools, ToolWanted};
 use super::setup_wanted::{PluginWanted, SkillWanted};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,6 +36,8 @@ pub(crate) enum StandingKind {
     /// A hook, or the script it runs.
     Hook,
     Plugin,
+    /// A tool .agents/tools.json puts on machines, never applied by itself.
+    Tool,
     Project,
 }
 
@@ -56,7 +59,7 @@ pub(crate) enum ItemDrift {
 pub(crate) struct BehindItem {
     kind: StandingKind,
     /// The Library row's key (`file:~/.claude/CLAUDE.md`, `skill:pdf`, `mcp:linear`, `hook:repo:guard`,
-    /// `plugin:claude:paper@paper`), or `project:owner/name`.
+    /// `plugin:claude:paper@paper`), `tool:node`, or `project:owner/name`.
     key: String,
     name: String,
     drift: ItemDrift,
@@ -84,6 +87,7 @@ pub(crate) struct KindCounts {
     mcp: u32,
     hooks: u32,
     plugins: u32,
+    tools: u32,
     projects: u32,
     /// Of all of them, those edited on the machine (alone or with the repo), which wait for the user's decision.
     decide: u32,
@@ -391,6 +395,41 @@ fn plugin_items(repo: &SetupRepo, machine: &str, setup: &MachineSetup, codex: bo
 }
 
 // ---------------------------------------------------------------------------
+// Tools
+// ---------------------------------------------------------------------------
+
+/// The tools the repo lists against what the machine's last toolchain scan found, and the newest its installers had at
+/// the last check. A machine whose tools were never looked at has nothing compared, so it isn't counted behind on them.
+fn tool_items(repo: &SetupRepo, machine: &str, here: Option<&MachineTools>) -> Vec<Compared> {
+    let Some(here) = here else { return Vec::new() };
+    let key = normalize_machine_name(machine);
+    let role = repo.layers().role_of(machine);
+    repo.tools()
+        .tools()
+        .iter()
+        .filter_map(|tool| {
+            let name = tool.tool();
+            let wanted = tool.wanted_on(&key, role);
+            let have = here.version_of(name);
+            let drift = match (&wanted, have) {
+                (ToolWanted::Own, _) => return None,
+                (ToolWanted::Removed, found) => found.is_some().then_some(ItemDrift::Remove),
+                (_, None) => Some(ItemDrift::Add),
+                // A copy that didn't say its version can't be said to be behind.
+                (_, Some(None)) => None,
+                (ToolWanted::Latest, Some(Some(version))) => here.newer(name, version).then_some(ItemDrift::Update),
+                (ToolWanted::Version(pin), Some(Some(version))) => (!super::setup_tools::matches_pin(version, pin)).then_some(ItemDrift::Update),
+            };
+            let machine_side = match have {
+                None => "-".to_string(),
+                Some(version) => version.unwrap_or("?").to_string(),
+            };
+            Some(compared(StandingKind::Tool, format!("tool:{name}"), name.to_string(), drift, format!("{wanted:?}"), machine_side))
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Every kind
 // ---------------------------------------------------------------------------
 
@@ -421,7 +460,7 @@ fn by_home(kind: StandingKind, key: String, name: &str, cells: &[(&str, Option<I
 }
 
 /// Every item the repo lists as compared on one machine, each once, in kind order.
-fn compare(repo: &SetupRepo, mcp: Option<&McpRegistry>, hooks: Option<&HookRegistry>, projects: &ProjectsDrift, machine: &str, setup: &MachineSetup) -> Vec<Compared> {
+fn compare(repo: &SetupRepo, mcp: Option<&McpRegistry>, hooks: Option<&HookRegistry>, projects: &ProjectsDrift, machine: &str, setup: &MachineSetup, tools: Option<&MachineTools>) -> Vec<Compared> {
     let mut items = Vec::new();
     let mut scripts = Vec::new();
     for item in file_items(repo, machine, setup) {
@@ -456,6 +495,7 @@ fn compare(repo: &SetupRepo, mcp: Option<&McpRegistry>, hooks: Option<&HookRegis
     items.extend(hook_items.into_values());
     items.extend(plugin_items(repo, machine, setup, false));
     items.extend(plugin_items(repo, machine, setup, true));
+    items.extend(tool_items(repo, machine, tools));
     items.extend(projects.behind_on(machine).into_iter().map(|project| {
         compared(StandingKind::Project, format!("project:{project}"), project.strip_prefix("_local/").unwrap_or(project).to_string(), Some(ItemDrift::Update), "", "")
     }));
@@ -496,8 +536,9 @@ impl Change {
 }
 
 fn classify(item: &Compared, base: Option<&Base>) -> Change {
-    // A project's checkout isn't edited the way a file is: behind is the remote moving on.
-    if item.kind == StandingKind::Project {
+    // A project's checkout isn't edited the way a file is: behind is the remote moving on. A tool is never brought in line
+    // by itself, so who moved doesn't hold it back: Sync lists it until the user applies it.
+    if matches!(item.kind, StandingKind::Project | StandingKind::Tool) {
         return Change::Update;
     }
     let Some(base) = base else { return Change::Unknown };
@@ -590,6 +631,7 @@ fn counts(items: &[BehindItem]) -> KindCounts {
             StandingKind::Mcp => &mut counts.mcp,
             StandingKind::Hook => &mut counts.hooks,
             StandingKind::Plugin => &mut counts.plugins,
+            StandingKind::Tool => &mut counts.tools,
             StandingKind::Project => &mut counts.projects,
         };
         *slot += 1;
@@ -608,6 +650,7 @@ fn standing(
     hooks: Result<HookRegistry, String>,
     projects: &ProjectsDrift,
     machines: &[(String, bool, MachineSetup)],
+    tools: &BTreeMap<String, MachineTools>,
     bases: &mut BTreeMap<String, BTreeMap<String, Base>>,
 ) -> (SyncStanding, bool) {
     let (mcp, mcp_error) = match mcp {
@@ -625,7 +668,7 @@ fn standing(
         .map(|(machine, reachable, setup)| {
             let read = setup.is_read();
             let items = if read {
-                let found = compare(&repo, mcp.as_ref(), hooks.as_ref(), projects, machine, setup);
+                let found = compare(&repo, mcp.as_ref(), hooks.as_ref(), projects, machine, setup, tools.get(machine));
                 let (items, changed) = settle(bases.entry(normalize_machine_name(machine)).or_default(), found, &commit);
                 saved |= changed;
                 items
@@ -677,16 +720,18 @@ pub(super) async fn standing_now(state: &MachineHealthState, repo: &str) -> Resu
     let found = read_repo(folder).await?;
     let scanned = scanned_machines(&state.lock());
     let (mcp, hooks) = tokio::join!(setup_mcp::registry_for(folder, &scanned), setup_hooks::registry_for(folder, &scanned));
-    let (projects, machines) = {
+    let (projects, machines, tools) = {
         let inner = state.lock();
-        (drift(found.layers(), &arbor_machines(&inner), &inner.projects), covered_machines(&inner))
+        let tools: BTreeMap<String, MachineTools> =
+            inner.toolchain.iter().filter_map(|(machine, toolchain)| Some((machine.clone(), MachineTools::of(toolchain)?))).collect();
+        (drift(found.layers(), &arbor_machines(&inner), &inner.projects), covered_machines(&inner), tools)
     };
     let path = bases_path();
     let salt_check = super::setup::salt_check();
     let (standing, snapshot) = {
         let mut held = BASES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let bases = held.get_or_insert_with(|| path.as_deref().map_or_else(Bases::default, |path| read_bases(path, &salt_check)));
-        let (standing, changed) = standing(found, mcp, hooks, &projects, &machines, &mut bases.machines);
+        let (standing, changed) = standing(found, mcp, hooks, &projects, &machines, &tools, &mut bases.machines);
         (standing, changed.then(|| Bases { version: BASES_VERSION, salt: salt_check.clone(), machines: bases.machines.clone() }))
     };
     if let (Some(path), Some(bases)) = (path, snapshot) {
@@ -729,7 +774,7 @@ mod tests {
     }
 
     fn one_with(repo: SetupRepo, mcp: Option<McpRegistry>, hooks: Option<HookRegistry>, setup: MachineSetup, bases: &mut BTreeMap<String, BTreeMap<String, Base>>) -> MachineStanding {
-        let (found, _) = standing(repo, mcp.ok_or_else(|| "unread".to_string()), hooks.ok_or_else(|| "unread".to_string()), &no_projects(), &[("cam-mbp".into(), true, setup)], bases);
+        let (found, _) = standing(repo, mcp.ok_or_else(|| "unread".to_string()), hooks.ok_or_else(|| "unread".to_string()), &no_projects(), &[("cam-mbp".into(), true, setup)], &BTreeMap::new(), bases);
         found.machines.into_iter().next().unwrap()
     }
 
@@ -804,6 +849,38 @@ mod tests {
     }
 
     #[test]
+    fn tools_count_against_the_machines_last_look_and_its_installers_last_check() {
+        use super::super::setup_tools::{RepoTool, RepoTools};
+        let tools = RepoTools::for_test(vec![
+            RepoTool::for_test("node", "22", &[]),
+            RepoTool::for_test("uv", "latest", &[]),
+            RepoTool::for_test("go", "latest", &[]),
+            RepoTool::for_test("deno", "removed", &[]),
+            RepoTool::for_test("bun", "latest", &[("cammbp", "own")]),
+            RepoTool::for_test("jq", "1.7", &[]),
+            RepoTool::for_test("gh", "removed", &[]),
+        ]);
+        let here = MachineTools::for_test(
+            &[("node", Some("24.1.0")), ("uv", Some("0.8.3")), ("deno", Some("2.4.0")), ("bun", Some("1.0.0")), ("jq", Some("1.7.1")), ("rg", None)],
+            &[("uv", "0.9.1")],
+        );
+        let repo = SetupRepo::for_test().with_tools(tools);
+        let (found, _) = standing(repo, Err("unread".into()), Err("unread".into()), &no_projects(), &[("cam-mbp".into(), true, machine())], &BTreeMap::from([("cam-mbp".to_string(), here)]), &mut BTreeMap::new());
+        let cam = found.machines.into_iter().next().unwrap();
+        assert_eq!(keys(&cam.behind), [
+            ("tool:deno", ItemDrift::Remove),
+            ("tool:go", ItemDrift::Add),
+            ("tool:node", ItemDrift::Update),
+            ("tool:uv", ItemDrift::Update),
+        ]);
+        assert!(cam.behind.iter().all(|item| item.change == Change::Update), "nothing about a tool waits on who moved");
+        assert_eq!(cam.counts, KindCounts { tools: 4, ..KindCounts::default() });
+        // A machine whose tools were never looked at isn't behind on them.
+        let repo = SetupRepo::for_test().with_tools(RepoTools::for_test(vec![RepoTool::for_test("go", "latest", &[])]));
+        assert!(one(repo, None, None, machine()).behind.is_empty());
+    }
+
+    #[test]
     fn mcp_servers_and_hooks_count_from_their_registries_and_a_hook_script_puts_its_hooks_behind() {
         let repo = SetupRepo::for_test().with_file("~/.agents/hooks/guard.sh", SUM);
         let setup = machine().with_file("~/.agents", ItemKind::Hook, "~/.agents/hooks/guard.sh", Some(OTHER));
@@ -854,7 +931,7 @@ mod tests {
             ("b".into(), false, behind.clone()),
             ("c".into(), true, MachineSetup::default()),
             ("d".into(), true, behind),
-        ], &mut BTreeMap::new());
+        ], &BTreeMap::new(), &mut BTreeMap::new());
         let states: Vec<_> = found.machines.iter().map(|machine| (machine.machine.as_str(), machine.state)).collect();
         assert_eq!(states, [("a", MachineState::InStep), ("b", MachineState::Unreachable), ("c", MachineState::NotScanned), ("d", MachineState::Behind)]);
         assert_eq!((found.in_step, found.read), (1, 3));

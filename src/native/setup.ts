@@ -173,6 +173,8 @@ export type SetupCommands = {
   change_node_versions: { args: { machine: string; changes: NodeChange[] }; result: NodeResult[] };
   check_tool_updates: { args: { machine: string; refresh: boolean }; result: MachineToolchain };
   change_tools: { args: { machine: string; changes: ToolChange[] }; result: ToolResult[] };
+  apply_repo_tools: { args: { repo: string; machine: string }; result: ToolResult[] };
+  set_setup_tool: { args: { repo: string; tool: string; machine: string | null; value: string | null }; result: SetupRepo };
 
   get_starting_context: { args: { fromMs: number; toMs: number }; result: StartingContext };
 };

@@ -1,7 +1,7 @@
 import { mcpSummary } from './mcpGrid';
 import { machineColumns } from './pluginGrid';
 import { planSkills, undoSkillRun, type RunProblem } from './skillRuns';
-import { applyCodexPlugins, applyFiles, applyHookSet, applyMcp, applyPlugins, runSkills } from './applyEngine';
+import { applyCodexPlugins, applyFiles, applyHookSet, applyMcp, applyPlugins, applyTools, runSkills } from './applyEngine';
 import { hookChanges, setHookWanted, takeHook } from './setupHooks';
 import { mcpChanges, plannedMcp, putBackMcpServer, setMcpWanted, takeMcpServer, withRegistry, type PendingMcp } from './setupMcp';
 import { codexRepoChanges, differs, repoAction, setSetupCodexPlugin, setSetupPlugin, wantedOn, withCodexPluginRepo, withPluginRepo } from './setupPluginRepo';
@@ -10,7 +10,7 @@ import { getSetupRepo, setSetupFileMachine, setSetupFileOff, setSetupFileRemoved
 import { skillsView, STORE } from './setupSkills';
 import { machineLookKey } from './machineLook';
 import type { LibraryRow, LibraryToggle } from './library';
-import type { HookRegistry, McpRegistry, PluginAction, PluginResult, PluginWanted, RepoPlugin, SetupMachine, SetupRepo, SyncFailure } from '../native/types';
+import type { HookRegistry, McpRegistry, PluginAction, PluginResult, PluginWanted, RepoPlugin, SetupMachine, SetupRepo, SyncFailure, SyncStanding } from '../native/types';
 
 /**
  * A Library switch, made straight away: the repo's word for every machine committed, then each machine that answers
@@ -606,10 +606,11 @@ export async function removeEverywhere(repo: string, machines: SetupMachine[], t
 // ---------------------------------------------------------------------------
 
 /**
- * What bringing one machine in line changes: each Library row behind there that the repo lists. `holdsHooks`: a hook
- * on the machine was edited there; a machine's hooks are written together, so none are while that waits.
+ * What bringing one machine in line changes: each Library row behind there that the repo lists, and the tools
+ * .agents/tools.json puts there that it isn't in step on. `holdsHooks`: a hook on the machine was edited there; a
+ * machine's hooks are written together, so none are while that waits.
  */
-export type LinePlan = { machine: string; rows: LibraryRow[]; holdsHooks?: boolean };
+export type LinePlan = { machine: string; rows: LibraryRow[]; holdsHooks?: boolean; tools?: string[] };
 
 /**
  * A row bringing a machine in line can change: anything the repo lists, on, off or removed from every machine. What it
@@ -621,14 +622,15 @@ export const bringable = (row: LibraryRow) => row.state !== 'unlisted';
  * Each answering machine with rows behind there that it may change, in the machines' order. A row edited on the
  * machine isn't one of them: Bring in line never overwrites an edit made there.
  */
-export function linePlans(rows: LibraryRow[], machines: SetupMachine[]): LinePlan[] {
+export function linePlans(rows: LibraryRow[], machines: SetupMachine[], standing: SyncStanding | null = null): LinePlan[] {
   return reachableMachines(machines)
     .map((machine) => ({
       machine: machine.machine,
       rows: rows.filter((row) => bringable(row) && row.behind.includes(machine.machine)),
       holdsHooks: rows.some((row) => row.kind === 'hooks' && row.edited[machine.machine] !== undefined),
+      tools: standing?.machines.find((entry) => entry.machine === machine.machine)?.behind.filter((item) => item.kind === 'tool').map((item) => item.name) ?? [],
     }))
-    .filter((plan) => plan.rows.length > 0);
+    .filter((plan) => plan.rows.length > 0 || plan.tools.length > 0);
 }
 
 /**
@@ -703,6 +705,16 @@ export async function bringInLine(repo: string, sources: { [K in keyof SwitchSou
       changed ||= done.touched.length > 0;
       backups.push(...done.backups.map((made) => made.backup));
       failed.push(...runFailures(done.problems));
+    }
+  }
+  // Tools last: an install can take minutes, and it can't be backed up, so the rest isn't held up behind it.
+  if (plan.tools?.length) {
+    try {
+      const results = await applyTools(repo, machine);
+      changed ||= results.some((result) => result.ok);
+      failed.push(...results.filter((result) => !result.ok).map((result) => ({ machine, message: `${result.tool}: ${result.message ?? ''}` })));
+    } catch (error) {
+      failed.push(failure(machine, error));
     }
   }
   return { changed, failed, needsYou, heldHooks, backups };

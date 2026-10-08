@@ -42,8 +42,8 @@ describe('tool updates', () => {
     const updates = toolUpdates([mac, box]);
     expect(updates.map((update) => `${update.tool}@${update.machine}`)).toEqual(['node@cam-mbp', 'uv@cam-mbp', 'uv@cedar-02', 'rust@cam-mbp', 'jq@cam-mbp']);
     // A Node version manager is told the version to move to; the rest go to the newest their installer has.
-    expect(itemAt(updates, 0).change).toEqual({ tool: 'node', action: 'update', version: '22.18.0' });
-    expect(itemAt(updates, 1).change).toEqual({ tool: 'uv', action: 'update', version: null });
+    expect(itemAt(updates, 0).change).toEqual({ tool: 'node', action: 'update', version: '22.18.0', via: null });
+    expect(itemAt(updates, 1).change).toEqual({ tool: 'uv', action: 'update', version: null, via: null });
     // The system's packages need sudo, so they're an agent's; a tool nothing proves isn't listed at all.
     expect(itemAt(updates, 4).native).toBe(false);
     expect(updates.some((update) => update.tool === 'go')).toBe(false);
@@ -68,7 +68,7 @@ describe('tool updates', () => {
   });
 
   it('counts a change the run never answered for as a failure', () => {
-    const results = resultsByTool([{ tool: 'uv', action: 'update', version: null }, { tool: 'gh', action: 'update', version: null }], [{ tool: 'uv', action: 'update', ok: true, message: null }]);
+    const results = resultsByTool([{ tool: 'uv', action: 'update', version: null, via: null }, { tool: 'gh', action: 'update', version: null, via: null }], [{ tool: 'uv', action: 'update', ok: true, message: null }]);
     expect(results.get('uv')?.ok).toBe(true);
     expect(results.get('gh')?.ok).toBe(false);
   });
@@ -105,5 +105,12 @@ describe('tool updates', () => {
       </I18nProvider>,
     );
     expect(none).toContain('Every tool is the newest its installer has.');
+  });
+});
+
+describe('pinning a tool in the repo', () => {
+  it('pins a fast-moving major alone, and a slow one with its minor', async () => {
+    const { pinLine } = await import('../src/pages/SetupToolchain');
+    expect(['22.17.0', '10.12.1', '1.24.4', '3.12.4', '0.8.3', '2.50.1'].map(pinLine)).toEqual(['22', '10', '1.24', '3.12', '0.8', '2.50']);
   });
 });

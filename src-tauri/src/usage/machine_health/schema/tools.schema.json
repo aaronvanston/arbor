@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arbor.onl/schema/tools.schema.json",
+  "title": "Arbor tools",
+  "description": "The tools the setup repo puts on every machine: .agents/tools.json. Sync lists a machine whose tools differ and waits for you to bring it in line; nothing is installed by itself.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "installers": {
+      "type": "object",
+      "description": "The installers a machine tries, in order, for a tool it hasn't got. Default: brew, mise, npm on a Mac; mise, brew, npm on Linux.",
+      "properties": {
+        "mac": { "$ref": "#/$defs/installers" },
+        "linux": { "$ref": "#/$defs/installers" }
+      },
+      "additionalProperties": false
+    },
+    "tools": {
+      "type": "object",
+      "description": "Each tool by the name Sync › Software gives it.",
+      "propertyNames": { "enum": ["node", "npm", "pnpm", "yarn", "bun", "deno", "python", "uv", "go", "rust", "cargo", "git", "gh", "jq", "rg", "docker"] },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "all": { "$ref": "#/$defs/value", "description": "Every machine's value." },
+          "machines": {
+            "type": "object",
+            "description": "A machine's own value, by its name, or every machine with a role as @role.",
+            "additionalProperties": { "$ref": "#/$defs/value" }
+          }
+        },
+        "required": ["all"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "value": {
+      "type": "string",
+      "pattern": "^(latest|own|removed|v?[0-9]+(\\.[0-9]+){0,2})$",
+      "description": "latest: the newest its installer has. A version or the start of one (22, 0.9.1). own: the machine's business. removed: taken off."
+    },
+    "installers": { "type": "array", "items": { "enum": ["brew", "mise", "npm"] } }
+  }
+}

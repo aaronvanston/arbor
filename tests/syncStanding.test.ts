@@ -4,7 +4,7 @@ import { behindParts, heldPaths, machinesBehind, machinesBehindOn, machinesEdite
 import { present } from './support/items';
 import type { BehindItem, KindCounts, MachineStanding, SyncStanding } from '../src/native/types';
 
-const none: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0, decide: 0 };
+const none: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, tools: 0, projects: 0, decide: 0 };
 const item = (kind: BehindItem['kind'], key: string, change: BehindItem['change'] = 'update'): BehindItem => ({ kind, key, name: key.split(':').pop() ?? key, drift: 'update', change });
 const machine = (name: string, state: MachineStanding['state'], behind: BehindItem[] = [], counts: Partial<KindCounts> = {}): MachineStanding =>
   ({ machine: name, state, reachable: state !== 'unreachable', behind, counts: { ...none, ...counts } });

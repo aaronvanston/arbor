@@ -467,7 +467,7 @@ export function SyncReviewDialog({ repo, machine, focus = null, onClose, line, o
   // What was edited on the machine is never brought in line; its own row has the decisions.
   const { standing } = useSyncStanding();
   const held = useMemo(() => heldPaths(standing, name ?? ''), [standing, name]);
-  const plan = useMemo(() => (name ? linePlans(line.rows, line.machines).find((entry) => entry.machine === name) ?? null : null), [line.rows, line.machines, name]);
+  const plan = useMemo(() => (name ? linePlans(line.rows, line.machines, standing).find((entry) => entry.machine === name) ?? null : null), [line.rows, line.machines, name, standing]);
   // Until the machine has been read again after a change, what it has isn't known.
   const reading = machine?.scanning === true;
   const same = files.filter((file) => file.state === 'same').map((file) => file.path);

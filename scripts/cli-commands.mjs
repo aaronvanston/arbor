@@ -110,6 +110,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'remove_worktrees',
   'change_node_versions',
   'change_tools',
+  'apply_repo_tools',
   'remove_cleanup_items',
   'restore_set_aside',
   'delete_set_aside',

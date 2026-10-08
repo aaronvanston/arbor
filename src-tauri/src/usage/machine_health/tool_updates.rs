@@ -15,6 +15,8 @@ use super::agent_releases::{client, fetch, parse_npm_latest};
 use super::agents::AGENT_ENV;
 use super::guarded_writes::{new_stamp, prune_backups, ChangeKind};
 use super::setup::covered_machine;
+use super::setup_sync::read_repo;
+use super::setup_tools::{matches_pin, RepoTools, ToolWanted};
 use super::setup_toolchain::{MachineToolchain, ToolFound, SETUP_TOOLCHAIN_UPDATED_EVENT, SYSTEM_PATHS, TOOL_ENV};
 use super::shell::shell_quote;
 use super::*;
@@ -66,10 +68,12 @@ impl ToolOwner {
         Self { kind, name: Some(name.to_string()), prefix: None }
     }
 
+    #[cfg(test)]
     pub(super) fn kind(&self) -> OwnerKind {
         self.kind
     }
 
+    #[cfg(test)]
     pub(super) fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
@@ -260,6 +264,10 @@ pub(crate) struct ToolUpdates {
 impl ToolUpdates {
     pub(super) fn checked_at(&self) -> i64 {
         self.checked_at
+    }
+
+    pub(super) fn latest(&self) -> Vec<(&str, &str)> {
+        self.latest.iter().map(|entry| (entry.tool.as_str(), entry.version.as_str())).collect()
     }
 }
 
@@ -645,6 +653,8 @@ const MOST_TOOL_CHANGES: usize = 16;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum ToolAction {
+    /// A tool the machine hasn't got, with the installer `via` names.
+    Install,
     /// To the version given, or the newest its installer has.
     Update,
     Remove,
@@ -655,9 +665,11 @@ pub(crate) enum ToolAction {
 pub(crate) struct ToolChange {
     tool: String,
     action: ToolAction,
-    /// For an update, the version to go to; none for the newest its installer has. A Node version manager's Node needs
-    /// one, as it keeps each version apart.
+    /// For an install or update, the version to go to; none for the newest its installer has. A Node version manager's
+    /// Node needs one, as it keeps each version apart.
     version: Option<String>,
+    /// For an install, the installer to use: brew, mise or npm.
+    via: Option<OwnerKind>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -784,8 +796,119 @@ fn tool_command(found: &ToolFound, owner: &ToolOwner, facts: &OwnerFacts, change
     })
 }
 
-/// Checks each change against the machine's last scan: a tool it has, with an owner Arbor proved, a version passed on
-/// only as plain numbers, and each tool once.
+/// Homebrew's formula for a tool. Cargo comes with Rust, and npm with Node.
+fn brew_formula(tool: &str) -> Option<&'static str> {
+    Some(match tool {
+        "node" => "node",
+        "pnpm" => "pnpm",
+        "yarn" => "yarn",
+        "bun" => "oven-sh/bun/bun",
+        "deno" => "deno",
+        "python" => "python",
+        "uv" => "uv",
+        "go" => "go",
+        "rust" => "rust",
+        "git" => "git",
+        "gh" => "gh",
+        "jq" => "jq",
+        "rg" => "ripgrep",
+        _ => return None,
+    })
+}
+
+/// mise's name for a tool.
+fn mise_name(tool: &str) -> Option<&'static str> {
+    Some(match tool {
+        "node" => "node",
+        "pnpm" => "pnpm",
+        "yarn" => "yarn",
+        "bun" => "bun",
+        "deno" => "deno",
+        "python" => "python",
+        "uv" => "uv",
+        "go" => "go",
+        "rust" => "rust",
+        "gh" => "gh",
+        "jq" => "jq",
+        "rg" => "ripgrep",
+        _ => return None,
+    })
+}
+
+/// The installers on the machine, as its last scan found them.
+pub(super) fn installers_on(scan: &MachineToolchain) -> Vec<OwnerKind> {
+    let mut found = Vec::new();
+    if scan.facts().brew_prefix.is_some() {
+        found.push(OwnerKind::Brew);
+    }
+    if scan.facts().mise.is_some() {
+        found.push(OwnerKind::Mise);
+    }
+    if scan.tools().iter().any(|tool| tool.tool() == "npm") {
+        found.push(OwnerKind::Npm);
+    }
+    found
+}
+
+/// The command that installs a tool the machine hasn't got, with `via`, or why that installer can't.
+fn install_command(scan: &MachineToolchain, tool: &str, via: OwnerKind, version: Option<&str>) -> Result<String, String> {
+    let q = shell_word;
+    let facts = scan.facts();
+    match via {
+        OwnerKind::Brew => {
+            let formula = brew_formula(tool).ok_or_else(|| format!("Arbor doesn't install {tool} with Homebrew"))?;
+            if version.is_some() {
+                return Err(format!("Homebrew installs only the newest {tool}"));
+            }
+            let brew = facts.brew_prefix.as_deref().map(|prefix| q(&format!("{prefix}/bin/brew"))).ok_or("Homebrew wasn't found on the last scan")?;
+            Ok(format!("{brew} install --formula {}", q(formula)))
+        }
+        OwnerKind::Mise => {
+            let name = mise_name(tool).ok_or_else(|| format!("Arbor doesn't install {tool} with mise"))?;
+            let mise = facts.mise.as_deref().map(q).ok_or("mise wasn't found on the last scan")?;
+            Ok(format!("{mise} use -g {}", q(&format!("{name}@{}", version.unwrap_or("latest")))))
+        }
+        OwnerKind::Npm => {
+            let package = npm_package(tool).filter(|package| *package != "npm").ok_or_else(|| format!("Arbor doesn't install {tool} with npm"))?;
+            let npm = scan.tools().iter().find(|found| found.tool() == "npm").map(|found| q(found.path())).ok_or("npm wasn't found on the last scan")?;
+            Ok(format!("{npm} install -g {}", q(&format!("{package}@{}", version.unwrap_or("latest")))))
+        }
+        _ => Err(format!("Arbor installs tools only with Homebrew, mise or npm, not {}", owner_label(&ToolOwner::new(via)))),
+    }
+}
+
+/// The first installer in `order` the machine has that can give it `tool` at `version`.
+pub(super) fn installer_for(scan: &MachineToolchain, order: &[OwnerKind], tool: &str, version: Option<&str>) -> Option<OwnerKind> {
+    let here = installers_on(scan);
+    order.iter().copied().find(|via| here.contains(via) && install_command(scan, tool, *via, version).is_ok())
+}
+
+/// Checks one change against the machine's last scan: a tool it has, with an owner Arbor proved (or one it hasn't, for
+/// an install), and a version passed on only as plain numbers.
+fn plan_one(scan: &MachineToolchain, change: &ToolChange) -> Result<Planned, String> {
+    if let Some(version) = change.version.as_deref() {
+        if plain_version(version).as_deref() != Some(version.trim_start_matches('v')) || change.action == ToolAction::Remove {
+            return Err(format!("{version} isn't a version Arbor passes on: use numbers like 22 or 0.9.1"));
+        }
+    }
+    let found = scan.tools().iter().find(|found| found.tool() == change.tool);
+    if change.action == ToolAction::Install {
+        if found.is_some() {
+            return Err(format!("{} is on {} already", change.tool, scan.machine()));
+        }
+        let via = change.via.ok_or_else(|| format!("No installer Arbor uses on {} can give it {}: hand it to an agent", scan.machine(), change.tool))?;
+        let command = install_command(scan, &change.tool, via, change.version.as_deref())?;
+        let what = format!("{} {} ({})", change.tool, change.version.as_deref().unwrap_or("latest"), owner_label(&ToolOwner::new(via)));
+        return Ok(Planned { command, what, removes: false });
+    }
+    let found = found.ok_or_else(|| format!("{} isn't on {} as its last scan found. Scan again.", change.tool, scan.machine()))?;
+    let owner = found.owner().ok_or_else(|| format!("Arbor can't tell how {} got onto {}, so it leaves it to an agent", change.tool, scan.machine()))?;
+    let command = tool_command(found, owner, scan.facts(), change)?;
+    let have = found.version().unwrap_or("?");
+    Ok(Planned { command, what: format!("{} {have} ({})", change.tool, owner_label(owner)), removes: change.action == ToolAction::Remove })
+}
+
+/// Checks each change against the machine's last scan, as `plan_one` does, with each tool once.
 fn plan_tool_changes(scan: &MachineToolchain, changes: &[ToolChange]) -> Result<Vec<Planned>, String> {
     if changes.is_empty() {
         return Err("There's nothing to change".into());
@@ -798,16 +921,7 @@ fn plan_tool_changes(scan: &MachineToolchain, changes: &[ToolChange]) -> Result<
         if changes[..index].iter().any(|earlier| earlier.tool == change.tool) {
             return Err(format!("{} is in the list twice", change.tool));
         }
-        if let Some(version) = change.version.as_deref() {
-            if plain_version(version).as_deref() != Some(version.trim_start_matches('v')) || change.action == ToolAction::Remove {
-                return Err(format!("{version} isn't a version Arbor passes on: use numbers like 22 or 0.9.1"));
-            }
-        }
-        let found = scan.tools().iter().find(|found| found.tool() == change.tool).ok_or_else(|| format!("{} isn't on {} as its last scan found. Scan again.", change.tool, scan.machine()))?;
-        let owner = found.owner().ok_or_else(|| format!("Arbor can't tell how {} got onto {}, so it leaves it to an agent", change.tool, scan.machine()))?;
-        let command = tool_command(found, owner, scan.facts(), change)?;
-        let have = found.version().unwrap_or("?");
-        planned.push(Planned { command, what: format!("{} {have} ({})", change.tool, owner_label(owner)), removes: change.action == ToolAction::Remove });
+        planned.push(plan_one(scan, change)?);
     }
     Ok(planned)
 }
@@ -861,6 +975,16 @@ fn parse_tool_results(stdout: &str, changes: &[ToolChange]) -> Vec<ToolResult> {
     results
 }
 
+/// Runs planned changes on a machine and reads how each went.
+async fn run_planned(target: &Machine, planned: &[Planned], changes: &[ToolChange]) -> Result<Vec<ToolResult>, String> {
+    let output = run_on_machine(target, MachineOp::ToolChange, &change_script(planned, &new_stamp()), CHANGE_TIMEOUT).await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.lines().any(|line| line.starts_with("R\t")) {
+        return Err(failure_detail(&output));
+    }
+    Ok(parse_tool_results(&stdout, changes))
+}
+
 /// Updates or removes tools on a machine with the installers that put them there, each change on its own, so one that
 /// fails doesn't stop the rest. The page looks at the machine's tools again after.
 #[tauri::command]
@@ -879,13 +1003,84 @@ pub(crate) async fn change_tools(
         }
         (target, plan_tool_changes(scan, &changes)?)
     };
-    let output = run_on_machine(&target, MachineOp::ToolChange, &change_script(&planned, &new_stamp()), CHANGE_TIMEOUT).await?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if !stdout.lines().any(|line| line.starts_with("R\t")) {
-        return Err(failure_detail(&output));
-    }
-    let results = parse_tool_results(&stdout, &changes);
+    let results = run_planned(&target, &planned, &changes).await?;
     let _ = app.emit(SETUP_TOOLCHAIN_UPDATED_EVENT, Local::now().timestamp_millis());
+    Ok(results)
+}
+
+/// What bringing a machine's tools in line with the setup repo changes, from its last look and the newest its
+/// installers had at the last check. A tool it hasn't got is installed with the first installer the repo's order for
+/// its OS names that it has and that can give it.
+pub(super) fn repo_changes(scan: &MachineToolchain, tools: &RepoTools, role: Option<&str>) -> Vec<ToolChange> {
+    let key = normalize_machine_name(scan.machine());
+    let order = tools.installers_for(scan.os());
+    let latest = scan.latest();
+    let newer = |tool: &str, have: &str| latest.iter().any(|(name, version)| *name == tool && compare_versions(version, have) == Ordering::Greater);
+    tools
+        .tools()
+        .iter()
+        .filter_map(|listed| {
+            let tool = listed.tool();
+            let found = scan.tools().iter().find(|found| found.tool() == tool);
+            let change = |action, version: Option<&str>, via| ToolChange { tool: tool.to_string(), action, version: version.map(str::to_string), via };
+            match (listed.wanted_on(&key, role), found) {
+                (ToolWanted::Own, _) | (ToolWanted::Removed, None) => None,
+                (ToolWanted::Removed, Some(_)) => Some(change(ToolAction::Remove, None, None)),
+                (ToolWanted::Latest, None) => Some(change(ToolAction::Install, None, installer_for(scan, order, tool, None))),
+                (ToolWanted::Version(pin), None) => Some(change(ToolAction::Install, Some(&pin), installer_for(scan, order, tool, Some(&pin)))),
+                (ToolWanted::Latest, Some(found)) => {
+                    let have = found.version()?;
+                    newer(tool, have).then(|| change(ToolAction::Update, None, None))
+                }
+                (ToolWanted::Version(pin), Some(found)) => {
+                    let have = found.version()?;
+                    (!matches_pin(have, &pin)).then(|| change(ToolAction::Update, Some(&pin), None))
+                }
+            }
+        })
+        .collect()
+}
+
+/// Brings a machine's tools in line with the setup repo's .agents/tools.json, each change on its own, then looks at the
+/// machine's tools again and asks its installers what's newer, so Sync's standing says what's left.
+#[tauri::command]
+pub(crate) async fn apply_repo_tools(app: tauri::AppHandle, repo: String, machine: String) -> Result<Vec<ToolResult>, String> {
+    let found = read_repo(Path::new(&repo)).await?;
+    let role = found.layers().role_of(&machine).map(str::to_string);
+    let (target, changes, plans) = {
+        let state = app.state::<MachineHealthState>();
+        let inner = state.lock();
+        let target = covered_machine(&inner, &machine)?.0;
+        let scan = inner.toolchain.get(&machine).filter(|scan| scan.scanned_at().is_some()).ok_or_else(|| format!("Look at the tools on {machine} first"))?;
+        if scan.is_scanning() {
+            return Err(format!("Arbor is looking at the tools on {machine}. Try again once it's done."));
+        }
+        let changes = repo_changes(scan, found.tools(), role.as_deref());
+        let plans: Vec<Result<Planned, String>> = changes.iter().map(|change| plan_one(scan, change)).collect();
+        (target, changes, plans)
+    };
+    let mut results: Vec<ToolResult> = changes
+        .iter()
+        .zip(&plans)
+        .map(|(change, plan)| ToolResult { tool: change.tool.clone(), action: change.action, ok: false, message: plan.as_ref().err().cloned() })
+        .collect();
+    let runnable: Vec<(usize, Planned)> = plans.into_iter().enumerate().filter_map(|(index, plan)| Some((index, plan.ok()?))).collect();
+    if !runnable.is_empty() {
+        let planned: Vec<Planned> = runnable.iter().map(|(_, plan)| plan.clone()).collect();
+        let ran: Vec<ToolChange> = runnable.iter().filter_map(|(index, _)| changes.get(*index).cloned()).collect();
+        let outcome = run_planned(&target, &planned, &ran).await;
+        for (slot, (index, _)) in runnable.iter().enumerate() {
+            if let Some(result) = results.get_mut(*index) {
+                match &outcome {
+                    Ok(outcomes) => *result = outcomes.get(slot).cloned().unwrap_or_else(|| result.clone()),
+                    Err(error) => result.message = Some(error.clone()),
+                }
+            }
+        }
+        let _ = super::setup_toolchain::scan_toolchain(app.clone(), app.state(), machine.clone()).await;
+        let _ = run_check(&app, &machine, false).await;
+    }
+    super::setup_standing::refresh(&app).await;
     Ok(results)
 }
 
@@ -1053,7 +1248,7 @@ mod tests {
     }
 
     fn change(tool: &str, action: ToolAction, version: Option<&str>) -> ToolChange {
-        ToolChange { tool: tool.into(), action, version: version.map(str::to_string) }
+        ToolChange { tool: tool.into(), action, version: version.map(str::to_string), via: None }
     }
 
     fn machine_with(tools: Vec<ToolFound>, facts: OwnerFacts) -> MachineToolchain {
@@ -1102,6 +1297,57 @@ mod tests {
         assert!(refused(&[change("npm", ToolAction::Remove, None)]).contains("came with its Node"));
         assert!(refused(&[change("uv", ToolAction::Update, None), change("uv", ToolAction::Remove, None)]).contains("twice"));
         assert!(refused(&[]).contains("nothing"));
+    }
+
+    #[test]
+    fn the_repo_says_what_to_install_update_and_remove_and_with_which_installer() {
+        use super::super::setup_tools::RepoTool;
+        let mut scan = machine_with(
+            vec![
+                found("node", "24.1.0", Some(ToolOwner::new(OwnerKind::Nvm))),
+                found("uv", "0.8.3", Some(ToolOwner::named(OwnerKind::Brew, "uv"))),
+                found("deno", "2.4.0", Some(ToolOwner::new(OwnerKind::Deno))),
+                found("pnpm", "10.1.0", None),
+            ],
+            facts(),
+        );
+        scan.set_updates(ToolUpdates { latest: vec![ToolLatest { tool: "uv".into(), version: "0.9.1".into() }], ..ToolUpdates::default() });
+        let tools = RepoTools::for_test(vec![
+            RepoTool::for_test("node", "22", &[]),
+            RepoTool::for_test("uv", "latest", &[]),
+            RepoTool::for_test("deno", "removed", &[]),
+            RepoTool::for_test("go", "latest", &[]),
+            RepoTool::for_test("jq", "1.7", &[]),
+            RepoTool::for_test("rg", "latest", &[("cedar", "own")]),
+            RepoTool::for_test("docker", "latest", &[]),
+            RepoTool::for_test("pnpm", "10", &[]),
+        ]);
+        let changes = repo_changes(&scan, &tools, None);
+        let summary: Vec<(&str, ToolAction, Option<&str>, Option<OwnerKind>)> =
+            changes.iter().map(|change| (change.tool.as_str(), change.action, change.version.as_deref(), change.via)).collect();
+        // Linux tries mise first; Homebrew can't give jq at 1.7, and nothing Arbor uses gives Docker.
+        assert_eq!(summary, [
+            ("node", ToolAction::Update, Some("22"), None),
+            ("uv", ToolAction::Update, None, None),
+            ("deno", ToolAction::Remove, None, None),
+            ("go", ToolAction::Install, None, Some(OwnerKind::Mise)),
+            ("jq", ToolAction::Install, Some("1.7"), Some(OwnerKind::Mise)),
+            ("docker", ToolAction::Install, None, None),
+        ]);
+        let plans: Vec<Result<String, String>> = changes.iter().map(|change| plan_one(&scan, change).map(|plan| plan.command)).collect();
+        assert!(plans[0].as_ref().unwrap().contains("nvm install '22'"));
+        assert_eq!(plans[1].as_deref(), Ok("/opt/homebrew/bin/brew upgrade --formula uv"));
+        assert!(plans[2].as_ref().unwrap_err().contains("agent"));
+        assert_eq!(plans[3].as_deref(), Ok("/Users/a/.local/bin/mise use -g go@latest"));
+        assert_eq!(plans[4].as_deref(), Ok("/Users/a/.local/bin/mise use -g jq@1.7"));
+        assert!(plans[5].as_ref().unwrap_err().contains("No installer"));
+        // A Mac tries Homebrew first, and a pin skips it for the next.
+        let mac = RepoTools::for_test(vec![RepoTool::for_test("go", "latest", &[]), RepoTool::for_test("node", "20", &[])]);
+        let order = mac.installers_for("Darwin");
+        assert_eq!(installer_for(&scan, order, "go", None), Some(OwnerKind::Brew));
+        assert_eq!(installer_for(&scan, order, "node", Some("20")), Some(OwnerKind::Mise));
+        assert_eq!(installer_for(&scan, order, "cargo", None), None, "cargo comes with Rust");
+        assert!(plan_one(&scan, &ToolChange { tool: "uv".into(), action: ToolAction::Install, version: None, via: Some(OwnerKind::Brew) }).unwrap_err().contains("already"));
     }
 
     #[cfg(unix)]

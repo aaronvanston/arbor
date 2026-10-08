@@ -18,6 +18,8 @@ import type { MessageKey } from '../i18n/resources';
 import { toolUpdateProblem } from '../services/fixPrompt';
 import { tickRows } from '../services/skillRuns';
 import { scanToolchain } from '../services/setupToolchain';
+import { applyTools } from '../services/applyEngine';
+import { useSyncStanding, standingOf } from '../services/syncStanding';
 import {
   changesByMachine,
   changeTools,
@@ -249,6 +251,56 @@ export function ToolUpdatesCard({ toolchains, reachable, toolName }: {
     </TableCard>
   );
 }
+
+/**
+ * What the setup repo's tools.json asks of one machine that it isn't in step on, from Sync's standing, and a way to
+ * bring its tools in line with the repo: each installed, updated or removed with its installer, on its own.
+ */
+export function RepoToolsLine({ repo, machine, reachable }: { repo: string; machine: string; reachable: boolean }) {
+  const { t } = useI18n();
+  const { standing } = useSyncStanding();
+  const [busy, setBusy] = useState(false);
+  const [failures, setFailures] = useState<string[]>([]);
+  const items = standingOf(standing, machine)?.behind.filter((item) => item.kind === 'tool') ?? [];
+  const bring = async () => {
+    setBusy(true);
+    setFailures([]);
+    try {
+      const results = await applyTools(repo, machine);
+      const done = results.filter((result) => result.ok).length;
+      setFailures(results.filter((result) => !result.ok).map((result) => `${result.tool}: ${result.message ?? ''}`));
+      if (done) toast({ kind: 'success', title: t(done === 1 ? 'setup.toolchain.repo.done.one' : 'setup.toolchain.repo.done.other', { count: done, machine }) });
+    } catch (error) {
+      setFailures([String(error)]);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-muted-foreground">
+        {items.length
+          ? t('setup.toolchain.repo.behind', { tools: items.map((item) => t(REPO_DRIFT[item.drift], { tool: item.name })).join(', ') })
+          : t('setup.toolchain.repo.inStep')}
+      </p>
+      {items.length ? (
+        <span>
+          <Button variant="outline" size="xs" disabledReason={!reachable ? t('setup.toolchain.repo.away') : undefined} disabled={busy} onClick={() => void bring()}>
+            {busy ? <Spinner /> : null}
+            {t('setup.toolchain.repo.bring')}
+          </Button>
+        </span>
+      ) : null}
+      {failures.map((text) => <p key={text} className="text-xs text-error-foreground" role="alert">{text}</p>)}
+    </div>
+  );
+}
+
+const REPO_DRIFT: Record<'add' | 'update' | 'remove', MessageKey> = {
+  add: 'setup.toolchain.repo.add',
+  update: 'setup.toolchain.repo.update',
+  remove: 'setup.toolchain.repo.remove',
+};
 
 function UpdateRow({ row, toolName, state, open, picked, busy, onTick, onUpdate }: {
   row: ToolUpdate;

@@ -2029,6 +2029,8 @@ fn main() {
             usage::machine_health::setup_toolchain::change_node_versions,
             usage::machine_health::tool_updates::check_tool_updates,
             usage::machine_health::tool_updates::change_tools,
+            usage::machine_health::tool_updates::apply_repo_tools,
+            usage::machine_health::setup_tools::set_setup_tool,
             usage::machine_health::transcripts::get_mcp_usage,
             usage::get_usage_pricing,
             usage::repair_usage_cache_records,

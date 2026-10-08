@@ -15,6 +15,7 @@ use super::setup_hooks::HOOKS_FILE;
 use super::setup_mcp::MCP_FILE;
 use super::setup_repo_skills::{SKILLS_DIR, SOURCES_FILE};
 use super::setup_sync::{blobs, git, git_out, is_commit, managed, parse_commit, read_repo, sha256_hex, RepoCommit, SetupRepo, SyncFileKind, FILE_MAX_BYTES, GIT_TIMEOUT};
+use super::setup_tools::TOOLS_FILE;
 use super::setup_wanted::{MACHINES_FILE, PLUGINS_FILE};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,7 +29,7 @@ const CHANGES_TEXT_MAX: usize = 8 * 1024 * 1024;
 /// How far into a file git looks for a zero byte to call it binary, and so does Arbor.
 const BINARY_SNIFF: usize = 8_000;
 /// The records Arbor keeps in the repo about what it syncs.
-const RECORDS: [&str; 5] = [MCP_FILE, HOOKS_FILE, MACHINES_FILE, PLUGINS_FILE, SOURCES_FILE];
+const RECORDS: [&str; 6] = [MCP_FILE, HOOKS_FILE, MACHINES_FILE, PLUGINS_FILE, TOOLS_FILE, SOURCES_FILE];
 
 /// What a file in the repo is to Arbor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
@@ -44,8 +45,8 @@ pub(crate) enum RepoRole {
     Skill,
     /// A project's own instructions, in its folder under projects/ (or .agents/projects).
     ProjectInstructions,
-    /// One of the records Arbor keeps: which machines get what, MCP servers, hooks, plugins, skill sources, machine and
-    /// project files and their schemas.
+    /// One of the records Arbor keeps: which machines get what, MCP servers, hooks, plugins, tools, skill sources,
+    /// machine and project files and their schemas.
     Record,
     /// Anything else, which stays in the repo.
     Other,

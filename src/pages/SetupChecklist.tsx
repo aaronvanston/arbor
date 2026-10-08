@@ -60,6 +60,7 @@ import { SetupChecks } from './SetupChecks';
 import { ReviewDialog as ExtensionsReviewDialog } from './SetupPlugins';
 import { SkillReviewDialog } from './SetupSkills';
 import { toolLabel } from './SetupToolchain';
+import { RepoToolsLine } from './SetupToolUpdates';
 import type {
   AgentKind,
   MachineHealth,
@@ -644,6 +645,7 @@ export function SetupChecklist({ machines, target, folded: startFolded = false, 
                   : tRich('setup.checklist.tools.referenceNotScanned', { reference: ref })}
               </p>
             ) : null}
+            {repoPath && repo?.tools.tools.length ? <RepoToolsLine repo={repoPath} machine={name} reachable={machine.reachable} /> : null}
             <Actions>
               <Button variant="outline" size="xs" disabled={step.why === 'scanning' || !machine.reachable} onClick={() => void scanToolchain(name).catch(() => undefined)}>
                 <RefreshIcon refreshing={step.why === 'scanning'} />

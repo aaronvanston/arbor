@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { ChevronRight, Hammer, Search, Trash2, TriangleAlert } from '../components/ui/icons';
+import { ChevronDown, ChevronRight, Hammer, Search, Trash2, TriangleAlert } from '../components/ui/icons';
 import { SectionAbout } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -54,14 +54,16 @@ import {
   type ToolchainRow,
   type ToolRow,
 } from '../services/setupToolchain';
-import type { MachineToolchain, NodeChange, SetupMachine, ToolFound, ToolNeed } from '../native/types';
+import type { MachineToolchain, NodeChange, RepoTools, SetupMachine, ToolFound, ToolNeed } from '../native/types';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { Popover, PopoverPopup, PopoverTrigger } from '../components/ui/popover';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from '../components/ui/toast';
 import { MachinePill } from '../components/identity/Identity';
 import { useAgo } from '../hooks/useNow';
-import { changeTools, newerOn, removesNatively } from '../services/toolUpdates';
+import { changeTools, newerOn, removesNatively, repoTool, setSetupTool } from '../services/toolUpdates';
+import { reloadSyncStanding, useSyncStanding } from '../services/syncStanding';
+import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from '../components/ui/menu';
 import { ownerLabel, ToolUpdatesCard } from './SetupToolUpdates';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -148,6 +150,8 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
   const [splitOnly, setSplitOnly] = useState(true);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const autoScanned = useRef(new Set<string>());
+  const { repoPath, standing } = useSyncStanding();
+  const repoTools = standing?.repo.tools ?? null;
 
   const reload = useCallback(() => {
     getToolchain()
@@ -248,7 +252,7 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {toolRows.map((row) => <ToolRowView key={row.tool} row={row} columns={columns} homes={byMachine} projects={rows} />)}
+                  {toolRows.map((row) => <ToolRowView key={row.tool} row={row} columns={columns} homes={byMachine} projects={rows} repoPath={repoPath} repoTools={repoTools} />)}
                 </TableBody>
               </Table>
             ) : (
@@ -437,14 +441,22 @@ function MachineCard({ machine, toolchain, rows, error, onScan }: {
 
 const Dash = ({ title }: { title?: string }) => <span className="text-muted-foreground/60" title={title}>—</span>;
 
-function ToolRowView({ row, columns, homes, projects }: { row: ToolRow; columns: string[]; homes: Map<string, MachineToolchain>; projects: ToolchainRow[] }) {
+function ToolRowView({ row, columns, homes, projects, repoPath, repoTools }: {
+  row: ToolRow;
+  columns: string[];
+  homes: Map<string, MachineToolchain>;
+  projects: ToolchainRow[];
+  repoPath: string | null;
+  repoTools: RepoTools | null;
+}) {
   const { t } = useI18n();
   return (
     <TableRow className="group/tool">
       <TableCell className="text-sm">
-        <span className="flex flex-col gap-0.5">
+        <span className="flex flex-col items-start gap-0.5">
           <span className="text-foreground">{toolLabel(row.tool, t)}</span>
           {row.newest && row.anyBehind ? <span className="text-2xs text-muted-foreground">{t('setup.toolchain.tools.newest', { version: row.newest })}</span> : null}
+          {repoPath && repoTools ? <ToolRepoMenu repo={repoPath} tool={row.tool} tools={repoTools} newest={row.newest} /> : null}
         </span>
       </TableCell>
       {columns.map((machine) => {
@@ -722,6 +734,65 @@ const NODE_DONE: Record<NodeChange['action'], MessageKey> = {
   setDefault: 'setup.toolchain.node.done.setDefault',
 };
 
+/**
+ * A release line to pin a tool to: its major where majors move often (Node 22, pnpm 10), else its major and minor
+ * (Go 1.24, Python 3.12, uv 0.9), since a major there spans years.
+ */
+export const pinLine = (version: string) => {
+  const [major = '0', minor = '0'] = version.split('.');
+  return Number(major) >= 10 ? major : `${major}.${minor}`;
+};
+
+/**
+ * What the setup repo's .agents/tools.json keeps a tool at on every machine: its newest, the line the newest copy here
+ * is on, removed, or not listed. A machine's own value stays as it is; Sync lists each machine that differs.
+ */
+function ToolRepoMenu({ repo, tool, tools, newest }: { repo: string; tool: string; tools: RepoTools; newest: string | null }) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const listed = repoTool(tools, tool);
+  const line = newest ? pinLine(newest) : null;
+  const value = listed?.all ?? 'none';
+  const own = listed ? Object.keys(listed.machines).length : 0;
+  const label = !listed ? t('setup.toolchain.repoMenu.none') : listed.all === 'latest' ? t('setup.toolchain.repoMenu.latest') : listed.all === 'removed' ? t('setup.toolchain.repoMenu.removed') : t('setup.toolchain.repoMenu.version', { version: listed.all });
+  const choose = async (next: string) => {
+    if (next === value) return;
+    setBusy(true);
+    try {
+      await setSetupTool(repo, tool, null, next === 'none' ? null : next);
+      reloadSyncStanding();
+      toast({ kind: 'success', title: t('setup.toolchain.repoMenu.saved', { tool: toolLabel(tool, t) }) });
+    } catch (error) {
+      toast({ kind: 'error', title: t('setup.toolchain.repoMenu.failed', { tool: toolLabel(tool, t) }), description: String(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Menu>
+      <MenuTrigger
+        render={<Button variant="ghost-muted" size="xs" disabled={busy} aria-label={t('setup.toolchain.repoMenu.aria', { tool: toolLabel(tool, t) })} />}
+        className={cn('-ms-2 h-5 max-w-44 px-2 text-2xs', !listed && 'opacity-0 focus-visible:opacity-100 group-hover/tool:opacity-100 data-popup-open:opacity-100')}
+      >
+        <span className="truncate">{own ? t('setup.toolchain.repoMenu.withOwn', { value: label, count: own }) : label}</span>
+        {busy ? <Spinner className="size-3" /> : <ChevronDown />}
+      </MenuTrigger>
+      <MenuPopup align="start" className="min-w-56">
+        <MenuGroup>
+          <MenuGroupLabel>{t('setup.toolchain.repoMenu.allMachines')}</MenuGroupLabel>
+          <MenuRadioGroup value={value} onValueChange={(next: string) => void choose(next)}>
+            <MenuRadioItem value="latest" closeOnClick>{t('setup.toolchain.repoMenu.choice.latest')}</MenuRadioItem>
+            {line && line !== value ? <MenuRadioItem value={line} closeOnClick>{t('setup.toolchain.repoMenu.choice.version', { version: line })}</MenuRadioItem> : null}
+            {listed && listed.all !== 'latest' && listed.all !== 'removed' ? <MenuRadioItem value={listed.all} closeOnClick>{t('setup.toolchain.repoMenu.choice.version', { version: listed.all })}</MenuRadioItem> : null}
+            <MenuRadioItem value="removed" closeOnClick>{t('setup.toolchain.repoMenu.choice.removed')}</MenuRadioItem>
+            <MenuRadioItem value="none" closeOnClick>{t('setup.toolchain.repoMenu.choice.none')}</MenuRadioItem>
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 /** Takes a tool off a machine with the installer that put it there, once the user says so. */
 function RemoveTool({ machine, tool, found, askedBy }: { machine: string; tool: string; found: ToolFound; askedBy: string[] }) {
   const { t, tRich } = useI18n();
@@ -741,7 +812,7 @@ function RemoveTool({ machine, tool, found, askedBy }: { machine: string; tool: 
     if (!confirmed) return;
     setBusy(true);
     try {
-      const [result] = await changeTools(machine, [{ tool, action: 'remove', version: null }]);
+      const [result] = await changeTools(machine, [{ tool, action: 'remove', version: null, via: null }]);
       if (result && !result.ok) toast({ kind: 'error', title: t('setup.toolchain.tools.removeFailed', { tool: name, error: result.message ?? '' }) });
       await scanToolchain(machine).catch(() => undefined);
       if (!result || result.ok) toast({ kind: 'success', title: t('setup.toolchain.tools.removed', { tool: name, machine }) });

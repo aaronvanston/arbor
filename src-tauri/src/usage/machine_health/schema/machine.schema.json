@@ -24,6 +24,11 @@
       "type": "object",
       "description": "This machine's own value for an MCP server.",
       "additionalProperties": { "enum": ["on", "off"] }
+    },
+    "tools": {
+      "type": "object",
+      "description": "This machine's own value for a tool, like node or uv: latest, a version or the start of one (22, 0.9.1), own to leave it to the machine, or removed.",
+      "additionalProperties": { "type": "string", "pattern": "^(latest|own|removed|v?[0-9]+(\\.[0-9]+){0,2})$" }
     }
   },
   "additionalProperties": false,

@@ -44,6 +44,7 @@ import type {
   NodeChange,
   NodeResult,
   OwnerKind,
+  RepoTools,
   ToolChange,
   ToolOwner,
   ToolResult,
@@ -880,6 +881,21 @@ const repoInstructions = (): RepoInstructions[] => Object.entries(mockInstructio
 const instructionsFor = (project: string, machine: string) =>
   mockInstructions[`${project}\u0000${machine.toLowerCase().replace(/[^a-z0-9]/g, '')}`] ?? mockInstructions[`${project}\u0000`] ?? null;
 
+// .agents/tools.json. None by default; `?toolsrepo=1` has the repo keep Node at 22, uv and Go at their newest, Rust at
+// its newest but cedar-02's own, and Deno off every machine, so the Mac and ci-01 are behind on tools.
+const mockRepoTools: RepoTools = {
+  tools: params.get('toolsrepo') === '1' ? [
+    { tool: 'node', all: '22', machines: {} },
+    { tool: 'uv', all: 'latest', machines: {} },
+    { tool: 'go', all: 'latest', machines: {} },
+    { tool: 'rust', all: 'latest', machines: { cedar02: 'own' } },
+    { tool: 'deno', all: 'removed', machines: {} },
+  ] : [],
+  mac: ['brew', 'mise', 'npm'],
+  linux: ['mise', 'brew', 'npm'],
+  problems: [],
+};
+
 /** Skills the repo has taken off every machine, and what each had in the repo before, to put back. */
 const mockRemovedSkills = new Set<string>();
 const removedRepoSkills = new Map<string, SetupRepoSkill>();
@@ -920,6 +936,7 @@ const setupRepoReply = (path: string): SetupRepo => {
     mcpProjects: structuredClone(mockMcpProjects),
     plugins: structuredClone(mockRepoPlugins),
     codexPlugins: structuredClone(mockCodexRepoPlugins),
+    tools: structuredClone(mockRepoTools),
     instructions: repoInstructions(),
     layers: mockLayers(),
   };
@@ -1885,10 +1902,10 @@ const mockProject = (key: string, extra: Partial<RepoProject>): RepoProject => (
 
 const mockLayers = (): SetupLayers => placesScenario === 'none' ? { machines: [], projects: [], problems: [] } : {
   machines: [
-    { key: 'cammbp', file: 'machines/cam-mbp.json', archived: false, name: 'cam-mbp', host: null, role: 'workstation', codeRoot: '~/code', skills: {}, plugins: {}, mcp: {} },
-    { key: 'ci01', file: 'machines/ci-01.json', archived: false, name: 'ci-01', host: 'ci-01', role: 'devbox', codeRoot: '~/work', skills: { pdf: 'off' }, plugins: {}, mcp: {} },
-    { key: 'cedar02', file: 'machines/cedar-02.json', archived: false, name: 'cedar-02', host: 'cedar-02', role: 'devbox', codeRoot: '~/code', skills: {}, plugins: {}, mcp: {} },
-    { key: 'labbox', file: 'machines/_archive/lab-box.json', archived: true, name: 'lab-box', host: 'lab-box', role: null, codeRoot: '~/code', skills: {}, plugins: {}, mcp: {} },
+    { key: 'cammbp', file: 'machines/cam-mbp.json', archived: false, name: 'cam-mbp', host: null, role: 'workstation', codeRoot: '~/code', skills: {}, plugins: {}, mcp: {}, tools: {} },
+    { key: 'ci01', file: 'machines/ci-01.json', archived: false, name: 'ci-01', host: 'ci-01', role: 'devbox', codeRoot: '~/work', skills: { pdf: 'off' }, plugins: {}, mcp: {}, tools: {} },
+    { key: 'cedar02', file: 'machines/cedar-02.json', archived: false, name: 'cedar-02', host: 'cedar-02', role: 'devbox', codeRoot: '~/code', skills: {}, plugins: {}, mcp: {}, tools: {} },
+    { key: 'labbox', file: 'machines/_archive/lab-box.json', archived: true, name: 'lab-box', host: 'lab-box', role: null, codeRoot: '~/code', skills: {}, plugins: {}, mcp: {}, tools: {} },
   ],
   projects: [
     mockProject('cam/arbor', { remote: 'git@github.com:cam/arbor.git', ownSkills: [{ name: 'release-notes', sum: 'a1'.repeat(32), ck: 'c1234-560', problem: null }] }),
@@ -1973,23 +1990,43 @@ function mockBehind(repo: SetupRepo, mcp: McpRegistry | null, hooks: HookRegistr
       items.push({ kind: 'plugin', key: `plugin:${agent}:${row.id}`, name: row.name, drift: change });
     }
   }
+  items.push(...mockToolItems(repo, machine.machine));
   for (const project of drift.projects.filter((entry) => !entry.archived)) {
     if (project.cells.some((cell) => cell.machine === machine.machine && cell.needs.some((need) => need !== 'scan'))) {
       items.push({ kind: 'project', key: `project:${project.project}`, name: project.project.replace(/^_local\//, ''), drift: 'update' });
     }
   }
   const seen = new Set<string>();
-  const order: BehindItem['kind'][] = ['file', 'skill', 'mcp', 'hook', 'plugin', 'project'];
+  const order: BehindItem['kind'][] = ['file', 'skill', 'mcp', 'hook', 'plugin', 'tool', 'project'];
   const unique = items.filter((item) => !seen.has(item.key) && Boolean(seen.add(item.key)));
   const kept = behindScenario === 'plugins' && machine.machine === 'ci-01' ? unique.filter((item) => item.kind === 'plugin') : unique;
   return kept
     .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name))
-    .map((item, index) => ({ ...item, change: item.kind === 'project' ? 'update' : mockChange(machine.machine, index) }));
+    .map((item, index) => ({ ...item, change: item.kind === 'project' || item.kind === 'tool' ? 'update' : mockChange(machine.machine, index) }));
+}
+
+/** What tools.json asks of a machine against its tools, as setup_standing.rs's tool_items works it out. */
+function mockToolItems(repo: SetupRepo, machine: string): Omit<BehindItem, 'change'>[] {
+  const here = toolchainState.find((entry) => entry.machine === machine);
+  if (!here?.scannedAt) return [];
+  const key = machine.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return repo.tools.tools.flatMap((listed): Omit<BehindItem, 'change'>[] => {
+    const wanted = listed.machines[key] ?? listed.all;
+    const found = here.tools.find((tool) => tool.tool === listed.tool);
+    const latest = here.updates?.latest.find((entry) => entry.tool === listed.tool)?.version;
+    const item = (drift: ItemDrift) => [{ kind: 'tool' as const, key: `tool:${listed.tool}`, name: listed.tool, drift }];
+    if (wanted === 'own') return [];
+    if (wanted === 'removed') return found ? item('remove') : [];
+    if (!found) return item('add');
+    if (!found.version) return [];
+    if (wanted === 'latest') return latest && compareMockVersions(latest, found.version) > 0 ? item('update') : [];
+    return found.version.split('.').slice(0, wanted.split('.').length).join('.') === wanted ? [] : item('update');
+  });
 }
 
 const kindCounts = (items: BehindItem[]): KindCounts => {
-  const counts: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0, decide: 0 };
-  const slot = { file: 'files', skill: 'skills', mcp: 'mcp', hook: 'hooks', plugin: 'plugins', project: 'projects' } as const;
+  const counts: KindCounts = { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, tools: 0, projects: 0, decide: 0 };
+  const slot = { file: 'files', skill: 'skills', mcp: 'mcp', hook: 'hooks', plugin: 'plugins', tool: 'tools', project: 'projects' } as const;
   for (const item of items) {
     counts[slot[item.kind]] += 1;
     if (item.change === 'editedHere' || item.change === 'bothChanged') counts.decide += 1;
@@ -2559,6 +2596,41 @@ const changeToolsMock = (machine: string, changes: ToolChange[]) => {
     }
     return done(true);
   }));
+};
+
+/** Brings a machine's tools in line with tools.json, as tool_updates.rs's apply_repo_tools does. */
+const applyRepoToolsMock = (repo: string, machine: string) => {
+  const source = toolchainMachines[machine];
+  if (!source) throw `Look at the tools on ${machine} first`;
+  const items = mockToolItems(setupRepoReply(repo), machine);
+  return later(2_600, () => {
+    const results = items.map((item): ToolResult => {
+      const listed = mockRepoTools.tools.find((entry) => entry.tool === item.name);
+      const wanted = listed?.machines[machine.toLowerCase().replace(/[^a-z0-9]/g, '')] ?? listed?.all ?? 'own';
+      const action = item.drift === 'add' ? 'install' : item.drift === 'remove' ? 'remove' : 'update';
+      const done = (ok: boolean, message: string | null = null): ToolResult => ({ tool: item.name, action, ok, message });
+      const found = source.tools.find((tool) => tool.tool === item.name);
+      if (action === 'remove') {
+        if (!found?.owner || !['brew', 'mise', 'npm', 'corepack'].includes(found.owner.kind)) return done(false, `${item.name} came from its own installer, which has no command to take it off: hand it to an agent`);
+        source.tools = source.tools.filter((tool) => tool !== found);
+        return done(true);
+      }
+      const version = wanted === 'latest' ? MOCK_LATEST[machine]?.[item.name] ?? '1.0.0' : `${wanted}.${wanted.split('.').length === 1 ? '0.0' : '0'}`;
+      if (action === 'install') {
+        if (machine === 'ci-01') return done(false, `No installer Arbor uses on ${machine} can give it ${item.name}: hand it to an agent`);
+        source.tools = [...source.tools, { tool: item.name, path: `/opt/homebrew/bin/${item.name}`, version, owner: own('brew', item.name) }];
+        return done(true);
+      }
+      if (found?.owner?.kind === 'system') return done(false, `${item.name} came with the system, and changing it needs sudo: hand it to an agent`);
+      source.tools = source.tools.map((tool) => (tool === found ? { ...tool, version } : tool));
+      return done(true);
+    });
+    const index = toolchainState.findIndex((entry) => entry.machine === machine);
+    const next = toolchainReply(machine, source, Date.now());
+    if (index >= 0) toolchainState[index] = next;
+    void emit('setup-toolchain-updated', Date.now());
+    return results;
+  });
 };
 
 // `?nodechange=fail` has every install fail to download, as it does off the network.
@@ -3886,6 +3958,28 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   change_tools: (args) => {
     mockLog('change_tools', { machine: args.machine, changes: args.changes });
     return changeToolsMock(args.machine, args.changes);
+  },
+  apply_repo_tools: (args) => {
+    mockLog('apply_repo_tools', { repo: args.repo, machine: args.machine });
+    return applyRepoToolsMock(args.repo, args.machine);
+  },
+  set_setup_tool: (args) => {
+    mockLog('set_setup_tool', { repo: args.repo, tool: args.tool, machine: args.machine, value: args.value });
+    return later(400, () => {
+      const listed = mockRepoTools.tools.find((entry) => entry.tool === args.tool);
+      if (args.machine === null) {
+        if (args.value === null) mockRepoTools.tools = mockRepoTools.tools.filter((entry) => entry !== listed);
+        else if (listed) listed.all = args.value;
+        else mockRepoTools.tools = [...mockRepoTools.tools, { tool: args.tool, all: args.value, machines: {} }];
+      } else {
+        if (!listed) throw `The repo doesn't list ${args.tool}. Give it a value for every machine first.`;
+        const key = args.machine.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (args.value === null) delete listed.machines[key];
+        else listed.machines[key] = args.value;
+      }
+      void emit('setup-repo-updated', Date.now());
+      return setupRepoReply(args.repo);
+    });
   },
   scan_toolchain: (args) => {
     mockLog('scan_toolchain', { machine: args.machine });

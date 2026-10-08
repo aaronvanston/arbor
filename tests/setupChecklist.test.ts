@@ -209,7 +209,7 @@ describe('the setup repo', () => {
   const repo = (sum: string): SetupRepo => ({
     path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha, subject: 'Start', atMs: NOW }, upstream: null, uncommitted: [],
     files: [{ path: '~/.claude/CLAUDE.md', kind: 'instructions', sum, ck: 'c1-10', size: 10 }], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {}, skillProjects: {}, mcpProjects: {}, instructions: [],
-    plugins: [], codexPlugins: [], layers: { machines: [], projects: [], problems: [] },
+    plugins: [], codexPlugins: [], tools: { tools: [], mac: ['brew', 'mise', 'npm'], linux: ['mise', 'brew', 'npm'], problems: [] }, layers: { machines: [], projects: [], problems: [] },
   });
 
   it('is in step when nothing is to add or update', () => {

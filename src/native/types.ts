@@ -840,7 +840,7 @@ export type BehindItem = {
   kind: StandingKind,
   /**
    * The Library row's key (`file:~/.claude/CLAUDE.md`, `skill:pdf`, `mcp:linear`, `hook:repo:guard`,
-   * `plugin:claude:paper@paper`), or `project:owner/name`.
+   * `plugin:claude:paper@paper`), `tool:node`, or `project:owner/name`.
    */
   key: string,
   name: string,
@@ -2580,6 +2580,7 @@ export type KindCounts = {
   mcp: number,
   hooks: number,
   plugins: number,
+  tools: number,
   projects: number,
   /**
    * Of all of them, those edited on the machine (alone or with the repo), which wait for the user's decision.
@@ -4474,6 +4475,10 @@ export type RepoMachine = {
    * Kept for the MCP registry; on or off.
    */
   mcp: { [key in string]: PluginWanted },
+  /**
+   * Its own value for a tool: latest, a version, own or removed.
+   */
+  tools: { [key in string]: string },
 };
 
 /**
@@ -4567,6 +4572,40 @@ export type RepoText = {
   content: string | null,
   sum: string | null,
   problem: RepoFileProblem | null,
+};
+
+/**
+ * A tool the repo lists.
+ */
+export type RepoTool = {
+  /**
+   * As Sync › Software names it: node, pnpm, uv, rust…
+   */
+  tool: string,
+  /**
+   * Every machine's value: `latest`, a version like `22`, `own` or `removed`.
+   */
+  all: string,
+  /**
+   * Machines' own values, by normalized name, and roles' as `@role`.
+   */
+  machines: { [key in string]: string },
+};
+
+/**
+ * What .agents/tools.json says.
+ */
+export type RepoTools = {
+  tools: Array<RepoTool>,
+  /**
+   * The installers a Mac tries for a tool it hasn't got, in order.
+   */
+  mac: Array<OwnerKind>,
+  linux: Array<OwnerKind>,
+  /**
+   * What Arbor couldn't read in it and left out.
+   */
+  problems: Array<string>,
 };
 
 /**
@@ -5297,6 +5336,10 @@ export type SetupRepo = {
    */
   codexPlugins: Array<RepoPlugin>,
   /**
+   * The tools .agents/tools.json puts on machines, with machine files' own values in.
+   */
+  tools: RepoTools,
+  /**
    * Projects' own instructions, for every machine and for one, from each project's folder (or .agents/projects).
    */
   instructions: Array<RepoInstructions>,
@@ -5613,7 +5656,7 @@ export type SpendGroup = {
 /**
  * The kind of thing a machine can be behind on.
  */
-export type StandingKind = "file" | "skill" | "mcp" | "hook" | "plugin" | "project";
+export type StandingKind = "file" | "skill" | "mcp" | "hook" | "plugin" | "tool" | "project";
 
 export type StartingContext = {
   /**
@@ -5915,16 +5958,20 @@ export type TokenEstimate = {
   under: boolean,
 };
 
-export type ToolAction = "update" | "remove";
+export type ToolAction = "install" | "update" | "remove";
 
 export type ToolChange = {
   tool: string,
   action: ToolAction,
   /**
-   * For an update, the version to go to; none for the newest its installer has. A Node version manager's Node needs
-   * one, as it keeps each version apart.
+   * For an install or update, the version to go to; none for the newest its installer has. A Node version manager's
+   * Node needs one, as it keeps each version apart.
    */
   version: string | null,
+  /**
+   * For an install, the installer to use: brew, mise or npm.
+   */
+  via: OwnerKind | null,
 };
 
 /**

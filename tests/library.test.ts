@@ -29,7 +29,7 @@ const listing = (id: string, all: RepoPlugin['all'], machines: RepoPlugin['machi
 const repo = (plugins: RepoPlugin[], fields: Partial<SetupRepo> = {}): SetupRepo => ({
   path: '/Users/cam/src/agent-setup', branch: 'main', head: { sha: 'ab'.repeat(32), subject: 'Start', atMs: 1_000 },
   upstream: null, uncommitted: [], files: [], skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
-  skillProjects: {}, mcpProjects: {}, instructions: [], plugins, codexPlugins: [], layers: { machines: [], projects: [], problems: [] }, ...fields,
+  skillProjects: {}, mcpProjects: {}, instructions: [], plugins, codexPlugins: [], tools: { tools: [], mac: ['brew', 'mise', 'npm'], linux: ['mise', 'brew', 'npm'], problems: [] }, layers: { machines: [], projects: [], problems: [] }, ...fields,
 });
 
 const REVIEW = 'review@acme-tools';
@@ -48,7 +48,7 @@ const standingWith = (behind: Record<string, string[]>, edited: Record<string, s
     const own = edited[name] ?? [];
     return {
       machine: name, state: keys.length + own.length ? 'behind' : 'inStep', reachable: true,
-      counts: { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, projects: 0, decide: own.length },
+      counts: { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, tools: 0, projects: 0, decide: own.length },
       behind: [
         ...keys.map((key): BehindItem => ({ kind: 'plugin', key, name: key, drift: 'update', change: 'update' })),
         ...own.map((key): BehindItem => ({ kind: 'plugin', key, name: key, drift: 'update', change: 'editedHere' })),
@@ -469,6 +469,34 @@ describe('bringing a machine in line', () => {
     const held = await bringInLine('/repo', { repo: setup, registry: null, hooks: hooks('add') }, machines, { machine: 'cam-mbp', rows: [row], holdsHooks: true });
     expect(calls).toEqual([]);
     expect(held.heldHooks).toBe(true);
+  });
+
+  it('plans the tools a machine is behind on from the standing, and brings them in line last', async () => {
+    const standing = standingWith({});
+    standing.machines = [{
+      machine: 'cedar-02', state: 'behind', reachable: true,
+      counts: { files: 0, skills: 0, mcp: 0, hooks: 0, plugins: 0, tools: 2, projects: 0, decide: 0 },
+      behind: [
+        { kind: 'tool', key: 'tool:go', name: 'go', drift: 'add', change: 'update' },
+        { kind: 'tool', key: 'tool:uv', name: 'uv', drift: 'update', change: 'update' },
+      ],
+    }];
+    const plans = linePlans([], fleet(), standing);
+    expect(plans.map((plan) => [plan.machine, plan.rows.length, plan.tools])).toEqual([['cedar-02', 0, ['go', 'uv']]]);
+    expect(linePlans([], fleet())).toEqual([]);
+    const asked: string[] = [];
+    mockCommands({
+      apply_repo_tools: ({ repo: folder, machine: name }) => {
+        asked.push(`${folder} ${name}`);
+        return [{ tool: 'go', action: 'install', ok: true, message: null }, { tool: 'uv', action: 'update', ok: false, message: 'error: Self-update is not possible' }];
+      },
+    });
+    const [plan] = plans;
+    if (!plan) throw new Error('a plan');
+    const done = await bringInLine('/repo', { repo: repo([]), registry: null, hooks: null }, fleet(), plan);
+    expect(asked).toEqual(['/repo cedar-02']);
+    expect(done.changed).toBe(true);
+    expect(done.failed).toEqual([{ machine: 'cedar-02', message: 'uv: error: Self-update is not possible' }]);
   });
 
   it('never plans an edit made on the machine, and says which machines have one', () => {

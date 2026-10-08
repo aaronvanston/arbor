@@ -38,7 +38,7 @@ const repoFile = (path: string, sum: string): SetupRepoFile => ({ path, kind: sy
 const repo = (files: SetupRepoFile[], head = true): SetupRepo => ({
   path: '/Users/cam/src/agent-setup', branch: 'main', head: head ? { sha: 'ab'.repeat(20), subject: 'Start', atMs: 1_000 } : null,
   upstream: null, uncommitted: [], files, skills: [], ignored: [], skillMachines: {}, removedSkills: [], removedFiles: [], offSkills: [], offFiles: [], fileMachines: {},
-  skillProjects: {}, mcpProjects: {}, instructions: [], plugins: [], codexPlugins: [], layers: { machines: [], projects: [], problems: [] },
+  skillProjects: {}, mcpProjects: {}, instructions: [], plugins: [], codexPlugins: [], tools: { tools: [], mac: ['brew', 'mise', 'npm'], linux: ['mise', 'brew', 'npm'], problems: [] }, layers: { machines: [], projects: [], problems: [] },
 });
 
 describe('what a path in the repo is', () => {

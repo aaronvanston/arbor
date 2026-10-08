@@ -60,6 +60,11 @@ const TOOLS: [(&str, &str); 16] = [
     ("docker", "docker --version"),
 ];
 
+/// Whether `name` is one of the tools Arbor looks for.
+pub(super) fn is_tool(name: &str) -> bool {
+    TOOLS.iter().any(|(tool, _)| *tool == name)
+}
+
 /// Lockfiles, and the tool each says a project is installed with.
 const LOCKFILES: [(&str, &str); 6] = [
     ("bun.lock", "bun"),
@@ -244,6 +249,15 @@ impl MachineToolchain {
 
     pub(super) fn set_checking(&mut self, checking: bool) {
         self.checking = checking;
+    }
+
+    pub(super) fn os(&self) -> &str {
+        &self.os
+    }
+
+    /// The newest each tool's installer had at the last update check.
+    pub(super) fn latest(&self) -> Vec<(&str, &str)> {
+        self.updates.as_ref().map(ToolUpdates::latest).unwrap_or_default()
     }
 
     pub(super) fn updates_checked_at(&self) -> Option<i64> {

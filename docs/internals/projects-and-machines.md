@@ -19,7 +19,7 @@ projects/<owner>/<name>/machines/<machine>.md  instructions for that project on 
 projects/<owner>/<name>/skills/<skill>/        skills only that project's checkouts get
 projects/_local/<name>/…              a project with no remote
 projects/_archive/<owner>/<name>/…    an archived project; _archive/_local/<name> for a local one
-schema/machine.schema.json, schema/project.schema.json
+schema/machine.schema.json, schema/project.schema.json, schema/tools.schema.json
 ```
 
 **Why the layout is shaped this way**
@@ -47,7 +47,8 @@ schema/machine.schema.json, schema/project.schema.json
   "codeRoot": "~/code",           // where projects go on this machine (default ~/code)
   "skills":  { "pdf": "off" },    // this machine's own values: on | off | own | removed, as in .agents/*.json
   "plugins": { "codex@openai-codex": "off" },
-  "mcp":     { "linear": "off" }
+  "mcp":     { "linear": "off" },
+  "tools":   { "node": "own" }       // latest | a version like 22 | own | removed, over .agents/tools.json
 }
 
 // projects/buildpass-au/ledger/project.json
@@ -77,7 +78,8 @@ schema/machine.schema.json, schema/project.schema.json
   machine Arbor watches that isn't archived in the repo. Where a machine is named both directly and through a role, the
   direct entry wins.
 - **Layer order: global → machine → project → project-on-machine.** The later layer wins. Global values stay in
-  `.agents/machines.json`, `plugins.json` and `mcp-servers.json` as `all`.
+  `.agents/machines.json`, `plugins.json`, `mcp-servers.json` and `tools.json` as `all`. Tools have no project layer:
+  a machine has one copy of each on its PATH, whatever project it's in.
 - **Old project and machine values are still read.** Values in `skills.X.machines`, `skills.X.projects`,
   `plugins.X.projects` and `mcp.X.projects` count as the machine and project layers, but a value in a machine or
   project file wins over them.

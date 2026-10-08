@@ -76,6 +76,7 @@ pub(crate) mod setup_sync;
 pub(crate) mod setup_layers;
 pub(crate) mod setup_wanted;
 pub(crate) mod setup_toolchain;
+pub(crate) mod setup_tools;
 pub(crate) mod shell;
 pub(crate) mod starting_context;
 pub(crate) mod t3_threads;

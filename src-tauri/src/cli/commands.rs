@@ -1363,7 +1363,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "add_setup_schemas",
         access: Access::Write,
-        summary: "Puts Arbor's schemas for machine and project files in the repo, or brings them up to date, each a commit of its own.",
+        summary: "Puts Arbor's schemas for machine and project files and tools.json in the repo, or brings them up to date, each a commit of its own.",
         args: &[
             ArgSpec { name: "repo", ts_type: "string", optional: false },
         ],
@@ -1972,6 +1972,26 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "apply_repo_tools",
+        access: Access::Confirm,
+        summary: "Brings a machine's tools in line with the setup repo's .agents/tools.json, each change on its own, then looks at the machine's tools again and asks its installers what's newer, so Sync's standing says what's left.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "set_setup_tool",
+        access: Access::Write,
+        summary: "Lists `tool` in the repo with `value` for every machine, gives `machine` its own, or with `value` None takes the machine's own value out (or the tool, for every machine), and commits .agents/tools.json alone.",
+        args: &[
+            ArgSpec { name: "repo", ts_type: "string", optional: false },
+            ArgSpec { name: "tool", ts_type: "string", optional: false },
+            ArgSpec { name: "machine", ts_type: "string | null", optional: true },
+            ArgSpec { name: "value", ts_type: "string | null", optional: true },
+        ],
+    },
+    CommandSpec {
         name: "get_mcp_usage",
         access: Access::Read,
         summary: "The MCP servers sessions called in the last `days` days, and which of `plugins` they used.",
@@ -2468,6 +2488,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "change_node_versions" => async { done(Box::pin(crate::usage::machine_health::setup_toolchain::change_node_versions(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "changes")?)).await) }.await,
         "check_tool_updates" => async { done(Box::pin(crate::usage::machine_health::tool_updates::check_tool_updates(app.clone(), arg(&args, "machine")?, arg(&args, "refresh")?)).await) }.await,
         "change_tools" => async { done(Box::pin(crate::usage::machine_health::tool_updates::change_tools(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "changes")?)).await) }.await,
+        "apply_repo_tools" => async { done(Box::pin(crate::usage::machine_health::tool_updates::apply_repo_tools(app.clone(), arg(&args, "repo")?, arg(&args, "machine")?)).await) }.await,
+        "set_setup_tool" => async { done(Box::pin(crate::usage::machine_health::setup_tools::set_setup_tool(arg(&args, "repo")?, arg(&args, "tool")?, arg(&args, "machine")?, arg(&args, "value")?)).await) }.await,
         "get_mcp_usage" => async { done(Box::pin(crate::usage::machine_health::transcripts::get_mcp_usage(arg(&args, "days")?, arg(&args, "plugins")?)).await) }.await,
         "get_usage_pricing" => async { done(Box::pin(crate::usage::get_usage_pricing(arg(&args, "query")?)).await) }.await,
         "repair_usage_cache_records" => done(Box::pin(crate::usage::repair_usage_cache_records(app.clone())).await),

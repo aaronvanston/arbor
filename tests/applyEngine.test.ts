@@ -8,7 +8,7 @@ import { join } from 'node:path';
  * itself would skip that, so only the engine (and the services that define them, and skill runs, the engine's own skill
  * step) may name them.
  */
-const RAW = ['applySetupSync', 'applyHooks', 'applyMcpChanges', 'applyPluginChanges', 'applyCodexPluginChanges', 'runSkillPlan'];
+const RAW = ['applySetupSync', 'applyHooks', 'applyMcpChanges', 'applyPluginChanges', 'applyCodexPluginChanges', 'runSkillPlan', 'applyRepoToolsCommand'];
 const ALLOWED = new Set([
   'src/services/applyEngine.ts',
   'src/services/setupSync.ts',
@@ -16,6 +16,7 @@ const ALLOWED = new Set([
   'src/services/setupMcp.ts',
   'src/services/setupPlugins.ts',
   'src/services/skillRuns.ts',
+  'src/services/toolUpdates.ts',
 ]);
 
 function files(dir: string): string[] {

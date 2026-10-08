@@ -149,6 +149,8 @@ pub(super) fn select<'a>(items: &'a [BehindItem], codex_only: &dyn Fn(&str) -> b
             (StandingKind::Mcp, ..) if codex_only(item.key()) => selection.mcp.push(item),
             // Changed through the agents' own commands, which keep no backup.
             (StandingKind::Plugin | StandingKind::Mcp, ..) => selection.waiting.push(item),
+            // Installers keep no backup either, and an install can't be put back as it was.
+            (StandingKind::Tool, ..) => selection.waiting.push(item),
             (StandingKind::Hook, ..) if hooks_held => {}
             (StandingKind::Hook, ..) => selection.hooks.push(item),
             (StandingKind::File | StandingKind::Skill, ..) => selection.sync.push(item),

@@ -36,6 +36,7 @@ use super::setup_hooks::HOOKS_FILE;
 use super::project_instructions as instructions;
 use super::project_fixes::{undo_place_actions, undo_place_checks, BackupPlace};
 use super::setup_layers::{self as layers, LayerPath, SetupLayers};
+use super::setup_tools::{self as repo_tools, RepoTools, TOOLS_FILE};
 use super::setup_wanted::{self as wanted, RepoPlugin, SkillMachines, SkillProjects, MACHINES_FILE, PLUGINS_FILE};
 use super::setup_repo_skills::{self as repo_skills, RepoSkill, SkillEntry, SkillFiles, SKILLS_DIR, SOURCES_FILE};
 use super::guarded_writes::{
@@ -210,6 +211,8 @@ pub(crate) struct SetupRepo {
     /// The Codex plugins .agents/plugins.json lists under `codex`, with each one's value for every machine and the
     /// machines' own. Codex's plugins and marketplaces aren't Claude Code's, so they're never compared.
     codex_plugins: Vec<RepoPlugin>,
+    /// The tools .agents/tools.json puts on machines, with machine files' own values in.
+    tools: RepoTools,
     /// Projects' own instructions, for every machine and for one, from each project's folder (or .agents/projects).
     instructions: Vec<instructions::RepoInstructions>,
     /// Its machine and project files. Their values are in the maps above already.
@@ -270,6 +273,10 @@ impl SetupRepo {
     pub(super) fn codex_plugins(&self) -> &[RepoPlugin] {
         &self.codex_plugins
     }
+
+    pub(super) fn tools(&self) -> &RepoTools {
+        &self.tools
+    }
 }
 
 impl RepoFile {
@@ -310,9 +317,15 @@ impl SetupRepo {
             mcp_projects: SkillProjects::new(),
             plugins: Vec::new(),
             codex_plugins: Vec::new(),
+            tools: RepoTools::none(),
             instructions: Vec::new(),
             layers: SetupLayers::default(),
         }
+    }
+
+    pub(super) fn with_tools(mut self, tools: RepoTools) -> Self {
+        self.tools = tools;
+        self
     }
 
     pub(super) fn with_file(mut self, path: &str, sum: &str) -> Self {
@@ -468,7 +481,7 @@ async fn uncommitted(folder: &Path, prefix: &str) -> Result<Vec<String>, String>
 /// The files and skills the repo syncs as `commit` has them, and the others it holds under the agents' folders.
 /// What a commit's tree holds: files, skills, what's ignored, the machines' values and removed marks, what's off
 /// everywhere, projects' values and plugins.
-type Tree = (Vec<RepoFile>, Vec<RepoSkill>, Vec<String>, (SkillMachines, Vec<String>, Vec<String>, SkillMachines), (Vec<String>, Vec<String>), (SkillProjects, SkillProjects), (Vec<RepoPlugin>, Vec<RepoPlugin>), SetupLayers);
+type Tree = (Vec<RepoFile>, Vec<RepoSkill>, Vec<String>, (SkillMachines, Vec<String>, Vec<String>, SkillMachines), (Vec<String>, Vec<String>), (SkillProjects, SkillProjects), (Vec<RepoPlugin>, Vec<RepoPlugin>, RepoTools), SetupLayers);
 
 async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String> {
     let listing = git_out(folder, &["ls-tree", "-r", "-l", "-z", "--full-name", commit, "--", "."]).await?;
@@ -477,6 +490,7 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String>
     let mut sources = None;
     let mut machines_file = None;
     let mut plugins_file = None;
+    let mut tools_file = None;
     let mut ignored = Vec::new();
     let mut layer_files: Vec<(String, LayerPath, String)> = Vec::new();
     let mut project_skills: Vec<(String, String)> = Vec::new();
@@ -506,6 +520,10 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String>
         }
         if rel == PLUGINS_FILE && file {
             plugins_file = Some(object.to_string());
+            continue;
+        }
+        if rel == TOOLS_FILE && file {
+            tools_file = Some(object.to_string());
             continue;
         }
         match layers::layer_path(rel) {
@@ -576,10 +594,14 @@ async fn tree(folder: &Path, prefix: &str, commit: &str) -> Result<Tree, String>
     };
     let plugins = plugins_bytes.as_deref().map(wanted::parse_plugins).unwrap_or_default();
     let codex_plugins = plugins_bytes.as_deref().map(wanted::parse_codex_plugins).unwrap_or_default();
+    let tools = match tools_file {
+        Some(object) => blobs(folder, &[object.as_str()]).await?.into_iter().next().map_or_else(RepoTools::none, |bytes| repo_tools::parse_tools(&bytes)),
+        None => RepoTools::none(),
+    };
     let layer_objects: Vec<&str> = layer_files.iter().map(|(_, _, object)| object.as_str()).collect();
     let layer_contents = blobs(folder, &layer_objects).await?;
     let layers = layers::read_layers(layer_files.into_iter().zip(layer_contents).map(|((rel, path, _), bytes)| (rel, path, bytes)).collect(), &project_skills);
-    Ok((files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (skill_projects, mcp_projects), (plugins, codex_plugins), layers))
+    Ok((files, skills, ignored, (skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (skill_projects, mcp_projects), (plugins, codex_plugins, tools), layers))
 }
 
 /// What the repo in `folder` holds and where its branch stands.
@@ -601,7 +623,7 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         .filter(|branch| !branch.is_empty());
     let last = git(folder, &["log", "-1", "--format=%H%x00%s%x00%ct"], GIT_TIMEOUT).await?;
     let head = last.status.success().then(|| parse_commit(&String::from_utf8_lossy(&last.stdout))).flatten();
-    let (files, skills, ignored, (mut skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (mut skill_projects, mut mcp_projects), (mut plugins, codex_plugins), mut layers) = match &head {
+    let (files, skills, ignored, (mut skill_machines, removed_skills, removed_files, file_machines), (off_skills, off_files), (mut skill_projects, mut mcp_projects), (mut plugins, codex_plugins, mut tools), mut layers) = match &head {
         Some(head) => tree(folder, &prefix, &head.sha).await?,
         None => (
             Vec::new(),
@@ -610,11 +632,12 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
             (SkillMachines::new(), Vec::new(), Vec::new(), SkillMachines::new()),
             (Vec::new(), Vec::new()),
             (SkillProjects::new(), SkillProjects::new()),
-            (Vec::new(), Vec::new()),
+            (Vec::new(), Vec::new(), RepoTools::none()),
             SetupLayers::default(),
         ),
     };
     layers.merge(&mut skill_machines, &mut plugins, &mut skill_projects, &mut mcp_projects);
+    layers.merge_tools(&mut tools);
     if let Some(head) = &head {
         layers.fingerprint_skills(folder, &head.sha).await;
     }
@@ -641,6 +664,7 @@ pub(super) async fn read_repo(folder: &Path) -> Result<SetupRepo, String> {
         mcp_projects,
         plugins,
         codex_plugins,
+        tools,
         instructions,
         layers,
     })
@@ -750,7 +774,7 @@ async fn start_repo(folder: &Path, home: &Path, machine: &str, git_config: &[&st
 /// with no changes in the repo that aren't committed, and not a link.
 pub(super) async fn take_files_into_repo(folder: &Path, files: &[(String, Vec<u8>)], message: &str) -> Result<(), String> {
     for (rel, _) in files {
-        if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && instructions::instructions_file(rel).is_none() && !layers::is_layer_file(rel) {
+        if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && rel != TOOLS_FILE && instructions::instructions_file(rel).is_none() && !layers::is_layer_file(rel) {
             return Err(format!("Arbor doesn't sync {rel}"));
         }
         let changes = git_out(folder, &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", &format!("./{rel}")]).await?;
@@ -785,7 +809,7 @@ pub(super) async fn take_files_into_repo(folder: &Path, files: &[(String, Vec<u8
 
 /// Commits `content` as the repo's copy of `rel`, and nothing else.
 pub(super) async fn take_into_repo(folder: &Path, rel: &str, content: &[u8], message: &str, git_config: &[&str]) -> Result<(), String> {
-    if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && instructions::instructions_file(rel).is_none() && !layers::is_layer_file(rel) {
+    if managed(rel).is_none() && rel != MCP_FILE && rel != HOOKS_FILE && rel != MACHINES_FILE && rel != PLUGINS_FILE && rel != TOOLS_FILE && instructions::instructions_file(rel).is_none() && !layers::is_layer_file(rel) {
         return Err(format!("Arbor doesn't sync {rel}"));
     }
     let pathspec = format!("./{rel}");

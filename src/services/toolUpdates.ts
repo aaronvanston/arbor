@@ -1,7 +1,7 @@
 import { invokeCommand } from '../native/commands';
 import { tracked } from './productAnalytics';
 import { compareVersions, TOOL_ORDER } from './setupToolchain';
-import type { MachineToolchain, OwnerKind, ToolChange, ToolFound, ToolOwner, ToolResult } from '../native/types';
+import type { MachineToolchain, OwnerKind, RepoTool, RepoTools, ToolChange, ToolFound, ToolOwner, ToolResult } from '../native/types';
 
 /**
  * What each tool's installer says is newer than the copy a machine's shell finds first, and updating it the way it
@@ -17,6 +17,17 @@ export const checkToolUpdates = (machine: string, refresh: boolean) => invokeCom
 
 export const changeTools = (machine: string, changes: ToolChange[]) =>
   tracked('tools-changed', invokeCommand('change_tools', { machine, changes }), { count: changes.length });
+
+/** Brings a machine's tools in line with the setup repo's .agents/tools.json. Only `applyEngine` calls it. */
+export const applyRepoToolsCommand = (repo: string, machine: string) =>
+  tracked('tools-changed', invokeCommand('apply_repo_tools', { repo, machine }), { kind: 'repo' });
+
+/** Gives a tool a value in the setup repo for every machine, or for one, or takes it out with null. */
+export const setSetupTool = (repo: string, tool: string, machine: string | null, value: string | null) =>
+  invokeCommand('set_setup_tool', { repo, tool, machine, value });
+
+/** The repo's listing of a tool, when it has one. */
+export const repoTool = (tools: RepoTools | null | undefined, tool: string): RepoTool | null => tools?.tools.find((entry) => entry.tool === tool) ?? null;
 
 /** Node version managers keep each version apart, so an update names the one to move to. */
 const NODE_MANAGERS: ReadonlySet<OwnerKind> = new Set(['nvm', 'fnm', 'asdf', 'volta']);
@@ -67,7 +78,7 @@ export function toolUpdates(machines: MachineToolchain[]): ToolUpdate[] {
         owner: found.owner,
         path: found.path,
         native: found.owner.kind !== 'system',
-        change: { tool: found.tool, action: 'update', version: NODE_MANAGERS.has(found.owner.kind) ? latest.version : null },
+        change: { tool: found.tool, action: 'update', version: NODE_MANAGERS.has(found.owner.kind) ? latest.version : null, via: null },
       });
     }
   });

@@ -4,6 +4,7 @@ import { applyMcpChanges } from './setupMcp';
 import { applyCodexPluginChanges, applyPluginChanges } from './setupPlugins';
 import { applySetupSync } from './setupSync';
 import { runSkillPlan, type SkillPlan, type SkillRunProgress } from './skillRuns';
+import { applyRepoToolsCommand } from './toolUpdates';
 import { reloadSyncStanding } from './syncStanding';
 
 /**
@@ -17,7 +18,7 @@ import { reloadSyncStanding } from './syncStanding';
  * - then read the standing here again, so every page shows the result.
  *
  * Bringing a whole machine in line (`libraryToggle.bringInLine`) runs them in one order: files and hook scripts, then
- * plugins, MCP servers, the machine's hooks, and skills. `tests/applyEngine.test.ts` keeps the commands these wrap out
+ * plugins, MCP servers, the machine's hooks, skills, and tools. `tests/applyEngine.test.ts` keeps the commands these wrap out
  * of every other file, so a new apply path can't skip the steps.
  */
 
@@ -46,3 +47,6 @@ export const applyCodexPlugins = (machine: string, changes: CodexPluginChange[])
 
 /** Skills into or out of the store and the homes, machine by machine (`skillRuns` is this step's own planner). */
 export const runSkills = (plan: SkillPlan, repo: SetupRepo | null, onProgress: (progress: SkillRunProgress) => void) => then(runSkillPlan(plan, repo, onProgress));
+
+/** Tools, as .agents/tools.json has them, with the installers that put them there; Rust looks at the machine again after. */
+export const applyTools = (repo: string, machine: string) => then(applyRepoToolsCommand(repo, machine));

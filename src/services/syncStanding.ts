@@ -21,6 +21,8 @@ export const getSyncStanding = (repo: string) => invokeCommand('get_sync_standin
 const SETUP_PROJECTS_UPDATED_EVENT = 'setup-projects-updated';
 /** The keeper pulled the repo, so machines may be behind it now (setupRepoKeeper.ts). */
 const SETUP_REPO_UPDATED_EVENT = 'setup-repo-updated';
+/** A look at a machine's tools, or at what its installers have newer, which the repo's tools are compared with. */
+const SETUP_TOOLCHAIN_UPDATED_EVENT = 'setup-toolchain-updated';
 
 export type StandingSnapshot = {
   /** The setup repo's folder, or null when none is chosen. */
@@ -82,7 +84,7 @@ export function reloadSyncStanding() {
 
 function start() {
   let disposed = false;
-  const unlisten = [SETUP_INVENTORY_UPDATED_EVENT, SETUP_PROJECTS_UPDATED_EVENT, SETUP_REPO_UPDATED_EVENT].map((event) => listen(event, () => reloadSyncStanding()));
+  const unlisten = [SETUP_INVENTORY_UPDATED_EVENT, SETUP_PROJECTS_UPDATED_EVENT, SETUP_REPO_UPDATED_EVENT, SETUP_TOOLCHAIN_UPDATED_EVENT].map((event) => listen(event, () => reloadSyncStanding()));
   const stopRepo = subscribeSetupRepo(() => reloadSyncStanding());
   reloadSyncStanding();
   stopEvents = () => {
@@ -169,6 +171,7 @@ const KIND_WORDS: { kind: keyof KindCounts; one: MessageKey; other: MessageKey }
   { kind: 'mcp', one: 'sync.standing.count.mcp.one', other: 'sync.standing.count.mcp.other' },
   { kind: 'hooks', one: 'sync.standing.count.hooks.one', other: 'sync.standing.count.hooks.other' },
   { kind: 'plugins', one: 'sync.standing.count.plugins.one', other: 'sync.standing.count.plugins.other' },
+  { kind: 'tools', one: 'sync.standing.count.tools.one', other: 'sync.standing.count.tools.other' },
   { kind: 'projects', one: 'sync.standing.count.projects.one', other: 'sync.standing.count.projects.other' },
 ];
 

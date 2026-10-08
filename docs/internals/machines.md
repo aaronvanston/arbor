@@ -88,6 +88,12 @@ tool. The scan stays offline; asking what's newer is a separate check (`brew out
 can't be undone, so it's recorded in History without Undo, and a run checks each machine again after it, because an
 installer saying it worked doesn't mean the shell finds the new copy first.
 
+The setup repo's `.agents/tools.json` (`setup_tools.rs`) says which tools every machine should have, and Sync's standing
+counts a machine behind on one like any other item. Tools are never brought in line by themselves (`setup_autoline`):
+like plugins and MCP servers, an install keeps no backup, so it waits for the user's Bring in line. A tool a machine
+hasn't got goes on with the first installer in the file's per-OS order that the machine has and that can give it,
+which is what lets one file serve Macs with Homebrew and Linux boxes with mise.
+
 ## Agent homes
 
 Which folders are a machine's agent homes comes only from `usage/machine_health/agent_homes.rs`: the standard Claude

@@ -32,10 +32,13 @@ const NAMED = 4;
 
 /** Plans as the confirmation lists them: each machine's kinds, with the names that change. */
 function planDetails(plans: LinePlan[], t: ReturnType<typeof useI18n>['t']) {
-  return plans.flatMap((plan) => [...new Set(plan.rows.map((row) => row.kind))].map((kind) => ({
-    label: plans.length > 1 ? `${plan.machine} · ${t(KIND_LABEL[kind])}` : t(KIND_LABEL[kind]),
-    value: plan.rows.filter((row) => row.kind === kind).map((row) => row.name).join(', '),
-  })));
+  return plans.flatMap((plan) => [
+    ...[...new Set(plan.rows.map((row) => row.kind))].map((kind) => ({
+      label: plans.length > 1 ? `${plan.machine} · ${t(KIND_LABEL[kind])}` : t(KIND_LABEL[kind]),
+      value: plan.rows.filter((row) => row.kind === kind).map((row) => row.name).join(', '),
+    })),
+    ...(plan.tools?.length ? [{ label: plans.length > 1 ? `${plan.machine} · ${t('overview.bring.tools')}` : t('overview.bring.tools'), value: plan.tools.join(', ') }] : []),
+  ]);
 }
 
 /**
@@ -77,7 +80,7 @@ export function SetupOverviewHead({ machines, onOpenItem, onOpenProjects, onOpen
     return () => { current = false; };
   }, [repoPath, head]);
 
-  const plans = useMemo(() => linePlans(rows, machines), [rows, machines]);
+  const plans = useMemo(() => linePlans(rows, machines, standing), [rows, machines, standing]);
   // How many machines are in step, and what's behind, is Sync's standing, worked out once in Rust.
   const behindKeys = new Set(standing?.machines.flatMap((machine) => machine.behind.map((item) => item.key)) ?? []);
   const counts = libraryCounts(rows);
