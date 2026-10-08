@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Arbor sign-in</title>
+<style>
+:root{--bg:#fbfbfb;--fg:#27272a;--muted:#6b6b73;--card:#fff;--border:#e4e4e7;--primary:oklch(0.5 0.1 180);--failed:oklch(0.55 0.2 27)}
+@media (prefers-color-scheme:dark){:root{--bg:#0a0a0a;--fg:#f5f5f5;--muted:#9a9a9a;--card:#121212;--border:rgba(255,255,255,.08);--primary:oklch(0.76 0.12 172);--failed:oklch(0.7 0.17 25)}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+main{width:100%;max-width:340px;text-align:center;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:32px 28px 24px}
+.icon{width:44px;height:44px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;color:var(--primary);background:color-mix(in oklab,var(--primary) 14%,transparent)}
+.failed .icon{color:var(--failed);background:color-mix(in oklab,var(--failed) 14%,transparent)}
+.unknown .icon{color:var(--muted);background:color-mix(in oklab,var(--muted) 14%,transparent)}
+.icon svg{display:none}
+.finishing .spinner,.done .check,.failed .cross,.unknown .info{display:block}
+.spinner{animation:spin 0.9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+.provider{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:3px 10px;border:1px solid var(--border);border-radius:999px;margin-bottom:12px}
+.provider svg{width:14px;height:14px}
+h1{font-size:17px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+p{margin:0;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+footer{margin-top:20px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);display:flex;justify-content:center;align-items:center;gap:6px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--primary);display:none}
+.done .dot{display:block}
+</style>
+</head>
+<body>
+<main id="card" class="finishing">
+  <div class="icon" aria-hidden="true">
+    <svg class="spinner" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>
+    <svg class="check" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+    <svg class="info" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 16v-5M12 8h.01"/></svg>
+    <svg class="cross" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </div>
+  <div class="provider">/*PROVIDER_ICON*/<span id="provider"></span></div>
+  <h1 id="title" role="status"></h1>
+  <p id="detail"></p>
+  <footer><span class="dot"></span><span id="footer"></span></footer>
+</main>
+<script>
+// Arbor fills PAGE in with the provider's name and, when the sign-in already failed, why.
+// Everything from it is set as text, never as markup.
+const PAGE = /*PAGE*/null;
+const card = document.getElementById('card');
+const text = (id, value) => { document.getElementById(id).textContent = value; };
+const COPY = {
+  finishing: ['Finishing sign-in', 'Arbor is adding this account.', 'Keep this tab open for a moment'],
+  done: ["You're signed in", 'Your account is added to Arbor. You can go back to the app.', 'This tab closes in 5 seconds'],
+  failed: ["Sign-in didn't finish", '', 'Go back to Arbor and try again'],
+  unknown: ['Check Arbor', 'This page lost track of the sign-in. Arbor shows whether the account was added.', 'You can close this tab'],
+};
+function show(phase, detail) {
+  const [title, body, footer] = COPY[phase];
+  card.className = phase;
+  text('title', title);
+  text('detail', detail || body);
+  text('footer', footer);
+  if (phase === 'done') setTimeout(() => window.close(), 5000);
+}
+text('provider', PAGE.provider);
+show(PAGE.phase, PAGE.error);
+if (PAGE.phase === 'finishing') {
+  const started = Date.now();
+  const check = async () => {
+    try {
+      const reply = await fetch('/status', { cache: 'no-store' });
+      const status = await reply.json();
+      if (status.status === 'ok') return show('done');
+      if (status.status === 'error') return show('failed', status.error);
+    } catch {
+      return show('unknown');
+    }
+    if (Date.now() - started > 3 * 60 * 1000) return show('unknown');
+    setTimeout(check, 1000);
+  };
+  setTimeout(check, 500);
+}
+</script>
+</body>
+</html>

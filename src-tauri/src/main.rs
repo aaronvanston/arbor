@@ -18,6 +18,7 @@ mod instance_lock;
 mod main_window;
 mod management_api;
 mod oauth_browser;
+mod oauth_callback;
 mod phone_alerts;
 mod product_analytics;
 mod progress;

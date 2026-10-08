@@ -30,8 +30,8 @@ pub(crate) struct OAuthStartResult {
 #[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OAuthStatusResult {
-    status: String,
-    error: Option<String>,
+    pub(crate) status: String,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -210,6 +210,12 @@ pub(crate) async fn start_oauth_login(
 ) -> Result<OAuthStartResult, String> {
     let config = gui_config_state.snapshot()?;
     let provider_key = normalize_management_oauth_provider(&provider)?;
+    // Arbor answers the provider's redirect itself when it can take the port; otherwise the
+    // core's own listener does, as `is_webui` asks it to.
+    let callback = match crate::oauth_callback::route(&provider_key) {
+        Some(route) => crate::oauth_callback::bind(route).await,
+        None => None,
+    };
     let client = management_http_client()?;
     let mut request = client
         .get(management_endpoint(
@@ -217,7 +223,7 @@ pub(crate) async fn start_oauth_login(
             &format!("{provider_key}-auth-url"),
         )?)
         .header("Authorization", management_authorization(&config)?);
-    if management_oauth_uses_webui_callback(&provider_key) {
+    if callback.is_none() && management_oauth_uses_webui_callback(&provider_key) {
         request = request.query(&[("is_webui", "true")]);
     }
     let response = send_management(request)
@@ -240,6 +246,9 @@ pub(crate) async fn start_oauth_login(
         .state
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
+    if let (Some(callback), Some(state)) = (callback, &state) {
+        crate::oauth_callback::serve(callback, state.clone(), config.clone());
+    }
 
     let (opened, open_error) = match open_oauth_url_inner(&app, &url, browser.as_deref()) {
         Ok(()) => (true, None),
@@ -264,11 +273,16 @@ pub(crate) async fn get_oauth_status(
         return Err("OAuth state must not be empty".to_string());
     }
     let config = gui_config_state.snapshot()?;
+    fetch_oauth_status(&config, &state).await
+}
+
+/// What the core says of the sign-in with `state`: "wait", "ok" or "error".
+pub(crate) async fn fetch_oauth_status(config: &GuiConfigFile, state: &str) -> Result<OAuthStatusResult, String> {
     let client = management_http_client()?;
     let response = send_management(
         client
-            .get(management_endpoint(&config, "get-auth-status")?)
-            .header("Authorization", management_authorization(&config)?)
+            .get(management_endpoint(config, "get-auth-status")?)
+            .header("Authorization", management_authorization(config)?)
             .query(&[("state", state)]),
     )
     .await
@@ -301,15 +315,23 @@ pub(crate) async fn submit_oauth_callback(
     }
     let config = gui_config_state.snapshot()?;
     let provider_key = normalize_management_oauth_provider(&provider)?;
+    post_oauth_callback(
+        &config,
+        serde_json::json!({
+            "provider": provider_key,
+            "redirect_url": redirect_url,
+        }),
+    )
+    .await
+}
+
+/// Hands a provider's redirect to the core, which finishes the sign-in waiting on its state.
+pub(crate) async fn post_oauth_callback(config: &GuiConfigFile, body: serde_json::Value) -> Result<(), String> {
     let client = management_http_client()?;
-    let body = serde_json::json!({
-        "provider": provider_key,
-        "redirect_url": redirect_url,
-    });
     let response = send_management(
         client
-            .post(management_endpoint(&config, "oauth-callback")?)
-            .header("Authorization", management_authorization(&config)?)
+            .post(management_endpoint(config, "oauth-callback")?)
+            .header("Authorization", management_authorization(config)?)
             .json(&body),
     )
     .await
