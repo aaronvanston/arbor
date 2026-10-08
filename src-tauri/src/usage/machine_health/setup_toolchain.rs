@@ -12,6 +12,7 @@
 //! Nothing else in them (scripts, config) leaves the parser. Scans are kept in memory.
 
 use super::agents::AGENT_ENV;
+use super::tool_updates::{prove_owner, OwnerFacts, ToolOwner, ToolUpdates};
 use ts_rs::TS;
 use super::setup::covered_machine;
 use super::shell::shell_quote;
@@ -77,6 +78,31 @@ pub(crate) struct ToolFound {
     path: String,
     /// None when it didn't answer, or didn't say a version.
     version: Option<String>,
+    /// The installer that put it there, when Arbor can prove it.
+    owner: Option<ToolOwner>,
+}
+
+impl ToolFound {
+    pub(super) fn tool(&self) -> &str {
+        &self.tool
+    }
+
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub(super) fn version(&self) -> Option<&str> {
+        self.version.as_deref()
+    }
+
+    pub(super) fn owner(&self) -> Option<&ToolOwner> {
+        self.owner.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(tool: &str, path: &str, version: Option<&str>, owner: Option<ToolOwner>) -> Self {
+        Self { tool: tool.into(), path: path.into(), version: version.map(str::to_string), owner }
+    }
 }
 
 /// A version a version manager keeps, which a project that pins it gets.
@@ -179,6 +205,64 @@ pub(crate) struct MachineToolchain {
     tools: Vec<ToolFound>,
     kept: Vec<KeptVersion>,
     projects: Vec<ProjectToolchain>,
+    /// What proves who installed each tool, kept for the update check.
+    #[serde(skip)]
+    #[ts(skip)]
+    facts: OwnerFacts,
+    /// Asking the installers what's newer.
+    checking: bool,
+    /// What the last update check found.
+    updates: Option<ToolUpdates>,
+    /// Why the last update check failed.
+    check_error: Option<String>,
+}
+
+impl MachineToolchain {
+    pub(super) fn machine(&self) -> &str {
+        &self.machine
+    }
+
+    pub(super) fn is_scanning(&self) -> bool {
+        self.scanning
+    }
+
+    pub(super) fn scanned_at(&self) -> Option<i64> {
+        self.scanned_at
+    }
+
+    pub(super) fn tools(&self) -> &[ToolFound] {
+        &self.tools
+    }
+
+    pub(super) fn facts(&self) -> &OwnerFacts {
+        &self.facts
+    }
+
+    pub(super) fn checking(&self) -> bool {
+        self.checking
+    }
+
+    pub(super) fn set_checking(&mut self, checking: bool) {
+        self.checking = checking;
+    }
+
+    pub(super) fn updates_checked_at(&self) -> Option<i64> {
+        self.updates.as_ref().map(ToolUpdates::checked_at)
+    }
+
+    pub(super) fn set_updates(&mut self, updates: ToolUpdates) {
+        self.updates = Some(updates);
+        self.check_error = None;
+    }
+
+    pub(super) fn set_check_error(&mut self, error: String) {
+        self.check_error = Some(error);
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(machine: &str, tools: Vec<ToolFound>, facts: OwnerFacts) -> Self {
+        Self { machine: machine.into(), scanned_at: Some(1), tools, facts, ..Self::default() }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -187,13 +271,13 @@ pub(crate) struct MachineToolchain {
 
 // Where tools are on a real machine, past what AGENT_ENV already adds. Tests leave it out, so the
 // tools installed where they run are never found.
-const SYSTEM_PATHS: &str = r##"PATH="$PATH:/usr/local/go/bin"
+pub(super) const SYSTEM_PATHS: &str = r##"PATH="$PATH:/usr/local/go/bin"
 cellars="/opt/homebrew/Cellar /usr/local/Cellar /home/linuxbrew/.linuxbrew/Cellar"
 "##;
 
 // A shell with a version manager loaded finds its default first, so nvm's and fnm's defaults and
 // the shims go in front. Nothing a version check starts may install, download or ask anything.
-const TOOL_ENV: &str = r##"export LC_ALL=C NO_COLOR=1 TERM=dumb
+pub(super) const TOOL_ENV: &str = r##"export LC_ALL=C NO_COLOR=1 TERM=dumb
 export GOTOOLCHAIN=local RUSTUP_AUTO_INSTALL=0 MISE_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 \
   COREPACK_ENABLE_NETWORK=0 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 COREPACK_ENABLE_AUTO_PIN=0 COREPACK_ENABLE_STRICT=0 \
   NO_UPDATE_NOTIFIER=1 npm_config_update_notifier=false GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1 \
@@ -248,15 +332,15 @@ b64=0
 command -v base64 >/dev/null 2>&1 && b64=1
 printf 'H\t%s\n' "$HOME"
 printf 'U\t%s\t%s\n' "$os" "$(uname -m 2>/dev/null || true)"
-# Runs a command with stdin closed for at most $probe_s seconds, and puts the first line it wrote
-# with a version in it in $probed, when it finished without an error. Each run writes its own file,
-# so a stopped check that left something running can't write into the next one's.
+# Runs a command with stdin closed for at most $probe_s seconds, into a file of its own, so a stopped
+# check that left something running can't write into the next one's. Its errors go in with what it
+# says unless $quiet is 1.
 probes=0
-probe() {
+quiet=0
+capped() {
   probes=$((probes + 1))
   out="$work/out.$probes"
-  probed=
-  ( exec "$@" </dev/null >"$out" 2>&1 ) &
+  if [ "$quiet" = 1 ]; then ( exec "$@" </dev/null >"$out" 2>/dev/null ) & else ( exec "$@" </dev/null >"$out" 2>&1 ) & fi
   pid=$!
   ( sleep "$probe_s"; kill -9 "$pid" ) </dev/null >/dev/null 2>&1 &
   dog=$!
@@ -264,11 +348,27 @@ probe() {
   status=$?
   kill "$dog" 2>/dev/null
   wait "$dog" 2>/dev/null
+}
+# Puts the first line a command wrote with a version in it in $probed, when it finished without an error.
+probe() {
+  probed=
+  capped "$@"
   if [ "$status" = 0 ]; then probed=$(awk '/[0-9]+\.[0-9]+/ { gsub(/[\t\r]/, " "); print substr($0, 1, 200); exit }' "$out"); fi
 }
-# `V name path version-line` for the tool a shell finds first.
+# Puts the first line a command wrote to its output in $asked, when it finished without an error.
+ask() {
+  asked=
+  quiet=1
+  capped "$@"
+  quiet=0
+  if [ "$status" = 0 ]; then asked=$(awk 'NF { gsub(/[\t\r]/, " "); print substr($0, 1, 300); exit }' "$out"); fi
+}
+real_path() { realpath "$1" 2>/dev/null || readlink -f "$1" 2>/dev/null || printf '%s' "$1"; }
+# `V name path version-line` for the tool a shell finds first, then `L name real-path mise-tool`: where
+# the binary really is and, for one of mise's, the tool mise says gives it, which prove who installed it.
 tool() {
   name=$1; shift
+  cmd=$1
   bin=$(command -v "$1" 2>/dev/null || true)
   case "$bin" in /*) ;; *) return 0 ;; esac
   case "$bin" in *"$nl"*|*"$tab"*) return 0 ;; esac
@@ -294,7 +394,44 @@ tool() {
     *) probe "$bin" "$@" ;;
   esac
   printf 'V\t%s\t%s\t%s\n' "$name" "$bin" "$probed"
+  real=$(real_path "$bin")
+  plugin=
+  case "$bin:$real" in
+    */mise/shims/*|*/mise/installs/*)
+      if command -v mise >/dev/null 2>&1; then
+        ask mise which --plugin "$cmd"
+        plugin=$asked
+        ask mise which "$cmd"
+        case "$asked" in /*) real=$(real_path "$asked") ;; esac
+      fi
+      ;;
+  esac
+  case "$real$plugin" in *"$nl"*|*"$tab"*) return 0 ;; esac
+  printf 'L\t%s\t%s\t%s\n' "$name" "$real" "$plugin"
 }
+"##;
+
+// Follows the tools. What the installers that own tools need proven, past each tool's own path:
+//   B brew prefix         where Homebrew keeps its kegs, from `brew --prefix`
+//   B mise path           mise itself
+//   B rustup path         rustup, whose proxies are rustc and cargo when they sit beside it
+//   B uv-receipt 1        uv's standalone installer put it there, so it updates itself
+//   B system manager      the system's package manager, which needs sudo
+const OWNERS_BODY: &str = r##"for installer in brew mise rustup; do
+  at=$(command -v "$installer" 2>/dev/null || true)
+  case "$at" in /*) ;; *) continue ;; esac
+  case "$at" in *"$nl"*|*"$tab"*) continue ;; esac
+  if [ "$installer" = brew ]; then
+    ask "$at" --prefix
+    case "$asked" in /*) printf 'B\tbrew\t%s\n' "$(real_path "$asked")" ;; esac
+  else
+    printf 'B\t%s\t%s\n' "$installer" "$at"
+  fi
+done
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/uv/uv-receipt.json" ]; then printf 'B\tuv-receipt\t1\n'; fi
+for manager in apt-get dnf yum pacman zypper apk; do
+  if command -v "$manager" >/dev/null 2>&1; then printf 'B\tsystem\t%s\n' "$manager"; break; fi
+done
 "##;
 
 // Follows TOOL_ENV. `M tool manager name` for each version a version manager keeps; rustup's
@@ -410,6 +547,7 @@ fn scan_script(paths: &str, repos: &[String]) -> String {
     for (name, command) in TOOLS {
         script.push_str(&format!("tool {name} {command}\n"));
     }
+    script.push_str(OWNERS_BODY);
     script.push_str(KEPT_BODY);
     script.push_str(REPOS_HEAD);
     for repo in repos.iter().filter(|repo| is_path(repo)) {
@@ -422,7 +560,7 @@ fn scan_script(paths: &str, repos: &[String]) -> String {
 
 /// The first version in a line: `1.2.3` from `go version go1.2.3 linux/amd64`, with a pre-release
 /// tag like `-nightly` or `rc1` kept.
-fn version_in(text: &str) -> Option<String> {
+pub(super) fn version_in(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
@@ -683,11 +821,14 @@ struct Scanned {
     kept: Vec<KeptVersion>,
     projects: Vec<ProjectToolchain>,
     partial: bool,
+    facts: OwnerFacts,
 }
 
 fn parse_scan(stdout: &str, used: &HashMap<String, i64>) -> Scanned {
     let mut scanned = Scanned::default();
     let mut locks: Vec<String> = Vec::new();
+    // Each tool's real path and the tool mise names for it, by tool.
+    let mut real: HashMap<String, (String, String)> = HashMap::new();
     let finish = |project: Option<&mut ProjectToolchain>, locks: &mut Vec<String>| {
         if let Some(project) = project {
             for lock in locks.drain(..) {
@@ -707,9 +848,15 @@ fn parse_scan(stdout: &str, used: &HashMap<String, i64>) -> Scanned {
             ["Q"] => scanned.partial = true,
             ["V", tool, path, line] => {
                 if TOOLS.iter().any(|(name, _)| name == tool) && is_path(path) && !scanned.tools.iter().any(|found| found.tool == *tool) {
-                    scanned.tools.push(ToolFound { tool: tool.to_string(), path: path.to_string(), version: version_in(line) });
+                    scanned.tools.push(ToolFound { tool: tool.to_string(), path: path.to_string(), version: version_in(line), owner: None });
                 }
             }
+            ["L", tool, path, plugin] => {
+                if is_path(path) {
+                    real.entry(tool.to_string()).or_insert_with(|| (path.to_string(), plugin.to_string()));
+                }
+            }
+            ["B", key, value] => scanned.facts.read(key, value),
             ["M", tool, manager, name, rest @ ..] => {
                 let (version, label) = if *manager == "rustup" {
                     (rest.first().and_then(|line| version_in(line)), Some(channel(name)).filter(|label| !label.is_empty()))
@@ -761,6 +908,11 @@ fn parse_scan(stdout: &str, used: &HashMap<String, i64>) -> Scanned {
         }
     }
     finish(scanned.projects.last_mut(), &mut locks);
+    for found in &mut scanned.tools {
+        if let Some((path, plugin)) = real.get(&found.tool) {
+            found.owner = prove_owner(&found.tool, &found.path, path, plugin, &scanned.facts);
+        }
+    }
     scanned
 }
 
@@ -933,6 +1085,7 @@ pub(crate) async fn scan_toolchain(
             entry.kept = scanned.kept;
             entry.projects = scanned.projects;
             entry.partial = scanned.partial;
+            entry.facts = scanned.facts;
             entry.scanned_at = Some(Local::now().timestamp_millis());
             entry.error = None;
         }
@@ -940,7 +1093,16 @@ pub(crate) async fn scan_toolchain(
     });
     match failure {
         Some(error) => Err(error),
-        None => Ok(toolchain),
+        None => {
+            // What the installers have newer is asked after the scan, apart from it, since the scan never goes online.
+            if super::tool_updates::check_due(&toolchain, Local::now().timestamp_millis()) {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = super::tool_updates::run_check(&app, &machine, false).await;
+                });
+            }
+            Ok(toolchain)
+        }
     }
 }
 
@@ -1074,6 +1236,12 @@ fn node_command(change: &NodeChange) -> String {
         // Volta's install makes the version its default too.
         (_, _) => format!("volta install node@{bare}"),
     }
+}
+
+/// The command that moves a Node version manager's default to `version`: installed, then made the default.
+pub(super) fn node_update_command(manager: &str, version: &str) -> String {
+    let change = |action| NodeChange { manager: manager.to_string(), version: version.to_string(), action };
+    format!("{} && {}", node_command(&change(NodeAction::Install)), node_command(&change(NodeAction::SetDefault)))
 }
 
 /// Makes each change in turn, each in its own shell with stdin closed, and says how each went: `R index status`,
@@ -1272,8 +1440,8 @@ mod tests {
         assert_eq!(
             scanned.tools,
             vec![
-                ToolFound { tool: "node".into(), path: "/home/cam/.nvm/versions/node/v22.17.0/bin/node".into(), version: Some("22.17.0".into()) },
-                ToolFound { tool: "pnpm".into(), path: "/usr/bin/pnpm".into(), version: None },
+                ToolFound { tool: "node".into(), path: "/home/cam/.nvm/versions/node/v22.17.0/bin/node".into(), version: Some("22.17.0".into()), owner: None },
+                ToolFound { tool: "pnpm".into(), path: "/usr/bin/pnpm".into(), version: None, owner: None },
             ]
         );
         assert_eq!(
@@ -1484,6 +1652,49 @@ mod tests {
         }
 
         #[test]
+        fn a_scan_proves_who_installed_each_tool() {
+            for shell in shells() {
+                let root = temp_dir(&format!("owners-{shell}"));
+                let home = root.join("home");
+                let bin = home.join(".local/bin");
+                // Homebrew's uv, linked from its keg into the prefix's bin.
+                let brew = home.join("brew");
+                fake(&brew.join("Cellar/uv/0.8.3/bin/uv"), "echo uv 0.8.3");
+                fs::create_dir_all(brew.join("bin")).unwrap();
+                std::os::unix::fs::symlink(brew.join("Cellar/uv/0.8.3/bin/uv"), brew.join("bin/uv")).unwrap();
+                fake(&brew.join("bin/brew"), &format!("cat >/dev/null; [ \"$1\" = --prefix ] && echo '{}'", brew.display()));
+                // mise's shim, which mise says gives python from its installs.
+                let shims = home.join(".local/share/mise/shims");
+                let python = home.join(".local/share/mise/installs/python/3.12.4/bin/python3");
+                fake(&python, "echo Python 3.12.4");
+                fake(&shims.join("python3"), "echo Python 3.12.4");
+                fake(&bin.join("mise"), &format!("[ \"$1 $2\" = 'which --plugin' ] && {{ echo python; exit 0; }}; [ \"$1\" = which ] && echo '{}'", python.display()));
+                // rustup's proxies beside rustup.
+                let cargo = home.join(".cargo/bin");
+                fake(&cargo.join("rustup"), "echo 'rustc 1.88.0 (6b00bc388 2026-06-23)'");
+                std::os::unix::fs::symlink(cargo.join("rustup"), cargo.join("rustc")).unwrap();
+                // A bun nothing proves.
+                fake(&bin.join("bun"), "echo 1.3.2");
+                write(&home.join(".config/uv/uv-receipt.json"), "{}");
+
+                let paths = format!("PATH=\"{}:{}:/usr/bin:/bin\"\ncellars=\"\"\n", bin.display(), brew.join("bin").display());
+                let stdout = run(shell, &home, &scan_script(&paths, &[]));
+                let scanned = parse_scan(&stdout, &HashMap::new());
+                let owner = |name: &str| {
+                    let found = scanned.tools.iter().find(|found| found.tool == name)?;
+                    let owner = found.owner.as_ref()?;
+                    Some((format!("{:?}", owner.kind()), owner.name().map(str::to_string)))
+                };
+                assert_eq!(owner("uv"), Some(("Brew".into(), Some("uv".into()))), "{shell}: {stdout}");
+                assert_eq!(owner("python"), Some(("Mise".into(), Some("python".into()))), "{shell}: {stdout}");
+                assert_eq!(owner("rust"), Some(("Rustup".into(), None)), "{shell}: {stdout}");
+                assert_eq!(owner("bun"), None, "{shell}");
+                assert!(scanned.facts.uv_receipt);
+                fs::remove_dir_all(&root).ok();
+            }
+        }
+
+        #[test]
         fn node_changes_run_through_each_version_manager_and_say_how_each_went() {
             for shell in shells() {
                 let root = temp_dir(&format!("node-{shell}"));
@@ -1515,7 +1726,7 @@ mod tests {
         let scan = MachineToolchain {
             machine: "cedar".into(),
             scanned_at: Some(1),
-            tools: vec![ToolFound { tool: "node".into(), path: "/Users/a/.nvm/versions/node/v22.17.0/bin/node".into(), version: Some("22.17.0".into()) }],
+            tools: vec![ToolFound { tool: "node".into(), path: "/Users/a/.nvm/versions/node/v22.17.0/bin/node".into(), version: Some("22.17.0".into()), owner: None }],
             kept: vec![kept("nvm", "v22.17.0"), kept("nvm", "v18.20.0"), kept("volta", "20.1.0")],
             ..MachineToolchain::default()
         };
@@ -1531,7 +1742,7 @@ mod tests {
         assert!(plan_node_changes(&scan, &[]).is_err());
         // mise's shim hides the version in its path; the version node gave says which is the default.
         let shimmed = MachineToolchain {
-            tools: vec![ToolFound { tool: "node".into(), path: "/Users/a/.local/share/mise/shims/node".into(), version: Some("24.1.0".into()) }],
+            tools: vec![ToolFound { tool: "node".into(), path: "/Users/a/.local/share/mise/shims/node".into(), version: Some("24.1.0".into()), owner: None }],
             kept: vec![kept("mise", "24.1.0"), kept("mise", "22.0.0")],
             ..scan
         };

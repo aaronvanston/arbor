@@ -156,6 +156,10 @@ pub(crate) enum MachineOp {
     ToolchainScan,
     PackageScan,
     NodeChange,
+    /// Asking a machine's installers what's newer than the tools they put there.
+    ToolCheck,
+    /// Updating or removing tools with the installers that put them there.
+    ToolChange,
     ArchiveList,
     ArchiveRead,
     AgentHomesScan,
@@ -219,6 +223,8 @@ impl MachineOp {
             Self::ToolchainScan => "toolchain scan",
             Self::PackageScan => "package scan",
             Self::NodeChange => "Node versions",
+            Self::ToolCheck => "tool update check",
+            Self::ToolChange => "tool changes",
             Self::ArchiveList => "archive list",
             Self::ArchiveRead => "archive read",
             Self::AgentHomesScan => "agent homes scan",
@@ -243,7 +249,7 @@ impl MachineOp {
 
     fn slow_after_ms(self) -> u64 {
         match self {
-            Self::AgentUpdate | Self::CleanupUninstall | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::RunnerInstall | Self::ProbeInstall | Self::ProbeUpdate => {
+            Self::AgentUpdate | Self::CleanupUninstall | Self::PluginApply | Self::CodexPluginApply | Self::McpApply | Self::NodeChange | Self::ToolChange | Self::RunnerInstall | Self::ProbeInstall | Self::ProbeUpdate => {
                 MACHINE_INSTALL_SLOW_MS
             }
             Self::TranscriptScan
@@ -261,6 +267,7 @@ impl MachineOp {
             | Self::WorktreeRemoval
             | Self::ToolchainScan
             | Self::PackageScan
+            | Self::ToolCheck
             | Self::ArchiveList
             | Self::ArchiveRead
             | Self::AgentHomesScan

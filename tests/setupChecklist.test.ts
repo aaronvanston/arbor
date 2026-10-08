@@ -423,13 +423,13 @@ describe('reads that failed or haven’t happened', () => {
 });
 
 describe('tools', () => {
-  const found = (tool: string, version: string): ToolFound => ({ tool, path: `/usr/bin/${tool}`, version });
+  const found = (tool: string, version: string): ToolFound => ({ tool, path: `/usr/bin/${tool}`, version, owner: null });
   const project = (needs: ProjectToolchain['needs']): ProjectToolchain => ({
     path: '/home/cam/src/app', missing: false, remote: 'github.com/cam/app', lastUsedMs: NOW, needs, libraries: [], librariesMore: 0, packages: [], unread: [],
   });
   const tools = (name: string, list: ToolFound[], projects: ProjectToolchain[] = [], fields: Partial<MachineToolchain> = {}): MachineToolchain => ({
     machine: name, homeDir: '/home/cam', os: 'Linux', arch: 'x86_64', scannedAt: NOW, partial: false, scanning: false, error: null,
-    tools: list, kept: [], projects, ...fields,
+    tools: list, kept: [], projects, checking: false, updates: null, checkError: null, ...fields,
   });
 
   it('names tools the reference has, ones behind, and projects that need a look', () => {

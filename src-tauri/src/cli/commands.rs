@@ -1954,6 +1954,24 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "check_tool_updates",
+        access: Access::Read,
+        summary: "Asks each installer that owns a tool on the machine what's newer. A scan does this by itself when the last answer is old; this is for when the user asks, or after an update.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "refresh", ts_type: "boolean", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "change_tools",
+        access: Access::Confirm,
+        summary: "Updates or removes tools on a machine with the installers that put them there, each change on its own, so one that fails doesn't stop the rest. The page looks at the machine's tools again after.",
+        args: &[
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "changes", ts_type: "Array<ToolChange>", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "get_mcp_usage",
         access: Access::Read,
         summary: "The MCP servers sessions called in the last `days` days, and which of `plugins` they used.",
@@ -2448,6 +2466,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         }
         "scan_toolchain" => async { done(Box::pin(crate::usage::machine_health::setup_toolchain::scan_toolchain(app.clone(), app.state(), arg(&args, "machine")?)).await) }.await,
         "change_node_versions" => async { done(Box::pin(crate::usage::machine_health::setup_toolchain::change_node_versions(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "changes")?)).await) }.await,
+        "check_tool_updates" => async { done(Box::pin(crate::usage::machine_health::tool_updates::check_tool_updates(app.clone(), arg(&args, "machine")?, arg(&args, "refresh")?)).await) }.await,
+        "change_tools" => async { done(Box::pin(crate::usage::machine_health::tool_updates::change_tools(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "changes")?)).await) }.await,
         "get_mcp_usage" => async { done(Box::pin(crate::usage::machine_health::transcripts::get_mcp_usage(arg(&args, "days")?, arg(&args, "plugins")?)).await) }.await,
         "get_usage_pricing" => async { done(Box::pin(crate::usage::get_usage_pricing(arg(&args, "query")?)).await) }.await,
         "repair_usage_cache_records" => done(Box::pin(crate::usage::repair_usage_cache_records(app.clone())).await),

@@ -190,6 +190,16 @@ export function toolBehindProblem(fields: { tool: string; version: string; newes
   };
 }
 
+/** A tool its installer has something newer for, which Arbor couldn't update itself or whose update didn't take. */
+export function toolUpdateProblem(fields: { tool: string; version: string; latest: string; installer: string; path: string; output: string | null }, t: Translate): FixProblem {
+  return {
+    text: t('fix.text.toolUpdate', { tool: fields.tool, version: fields.version, latest: fields.latest, installer: fields.installer }),
+    goal: t('fix.goal.toolUpdate', { tool: fields.tool, latest: fields.latest, installer: fields.installer }),
+    details: [t('fix.detail.path', { path: fields.path }), ...(fields.output ? [t('fix.detail.output', { output: fields.output })] : [])],
+    from: 'machine',
+  };
+}
+
 /** A tool to take off a machine: the one a shell finds first at `path`, and every version a version manager keeps. */
 export function toolRemoveProblem(fields: { tool: string; version: string | null; path: string | null; kept: string[]; askedBy: string[] }, t: Translate): FixProblem {
   return {

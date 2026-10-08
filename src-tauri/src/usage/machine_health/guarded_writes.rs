@@ -56,10 +56,12 @@ pub(crate) enum ChangeKind {
     Uninstall,
     /// Grove's health probe updated to a newer release; Arbor never puts an older one back.
     Probe,
+    /// Tools an installer updated or removed, which nothing can put back as they were.
+    Tools,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 15] = [
+    const ALL: [Self; 16] = [
         Self::Sync,
         Self::Skills,
         Self::Reporter,
@@ -75,6 +77,7 @@ impl ChangeKind {
         Self::Cleanup,
         Self::Uninstall,
         Self::Probe,
+        Self::Tools,
     ];
 
     pub(super) fn name(self) -> &'static str {
@@ -94,6 +97,7 @@ impl ChangeKind {
             Self::Cleanup => "cleanup",
             Self::Uninstall => "uninstall",
             Self::Probe => "probe",
+            Self::Tools => "tools",
         }
     }
 

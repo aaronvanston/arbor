@@ -52,6 +52,8 @@ import type {
   SyncChange,
   SyncOutcome,
   WorktreeRemoval,
+  ToolChange,
+  ToolResult,
 } from './types';
 
 /** Setup: what each machine's agents load, the setup repo that keeps them in line, and the changes Arbor makes to them. */
@@ -169,6 +171,8 @@ export type SetupCommands = {
   get_toolchain: { result: MachineToolchain[] };
   scan_toolchain: { args: { machine: string }; result: MachineToolchain };
   change_node_versions: { args: { machine: string; changes: NodeChange[] }; result: NodeResult[] };
+  check_tool_updates: { args: { machine: string; refresh: boolean }; result: MachineToolchain };
+  change_tools: { args: { machine: string; changes: ToolChange[] }; result: ToolResult[] };
 
   get_starting_context: { args: { fromMs: number; toMs: number }; result: StartingContext };
 };

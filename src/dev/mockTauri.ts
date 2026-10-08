@@ -231,6 +231,10 @@
  * `?toolchain=fresh` for machines whose tools haven't been scanned (the tab scans them), `?toolchain=none` for scans
  * that found no projects, `?toolchain=fail` to have cedar-02's toolchain scan fail, `?toolchain=partial` for a
  * scan of the Mac that ran out of time;
+ * `?toolupdates=none` for every tool at the newest its installer has, `?toolupdates=unchecked` for machines whose
+ * installers haven't been asked yet, `?toolupdates=checkfail` for cedar-02's update check failing and Homebrew not
+ * answering on the Mac, `?toolupdates=failing` for uv's update failing on cedar-02 and go's on the Mac, or
+ * `?toolupdates=stillbehind` for go's update saying it worked while the Mac keeps the old one (Sync › Software);
  * `?registry=none`, `?registry=bad`, `?registry=fail` or `?registry=dirty` for a setup repo with no MCP servers file,
  * one Arbor can't read, a repo it can't read, or changes not committed (which turning a server on or off, taking one
  * in and putting one back refuse, as Rust does); `?mcpapply=fail` to have Claude Code fail to

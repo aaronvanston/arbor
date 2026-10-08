@@ -37,14 +37,14 @@ import type {
 const NOW = Date.parse('2026-09-25T12:00:00Z');
 
 const need = (tool: string, wants: string, kind: NeedKind = 'range', fields: Partial<ToolNeed> = {}): ToolNeed => ({ tool, wants, kind, file: 'package.json', field: null, ...fields });
-const tool = (name: string, version: string | null, path = `/usr/local/bin/${name}`): ToolFound => ({ tool: name, path, version });
+const tool = (name: string, version: string | null, path = `/usr/local/bin/${name}`): ToolFound => ({ tool: name, path, version, owner: null });
 const kept = (name: string, manager: string, version: string, label: string | null = null): KeptVersion => ({ tool: name, manager, version, label });
 const library = (name: string, wants: string, installed: string | null, fields: Partial<ProjectLibrary> = {}): ProjectLibrary => ({ dir: '', name, wants, dev: false, installed, checked: true, ...fields });
 const project = (path: string, remote: string | null, fields: Partial<ProjectToolchain> = {}): ProjectToolchain => ({
   path, missing: false, remote, lastUsedMs: null, needs: [], libraries: [], librariesMore: 0, packages: [], unread: [], ...fields,
 });
 const machine = (name: string, homeDir: string, fields: Partial<MachineToolchain> = {}): MachineToolchain => ({
-  machine: name, homeDir, os: 'Darwin', arch: 'arm64', scannedAt: NOW, partial: false, scanning: false, error: null, tools: [], kept: [], projects: [], ...fields,
+  machine: name, homeDir, os: 'Darwin', arch: 'arm64', scannedAt: NOW, partial: false, scanning: false, error: null, tools: [], kept: [], projects: [], checking: false, updates: null, checkError: null, ...fields,
 });
 
 describe('versions', () => {

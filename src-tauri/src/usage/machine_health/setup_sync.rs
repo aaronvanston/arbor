@@ -1113,6 +1113,21 @@ pub(super) fn parse_backups(stdout: &str) -> Vec<SetupBackup> {
                     });
                 }
             }
+            // A tool an installer updated or removed, listed with nothing to undo: `T what changed|removed`.
+            ["T", what, change @ ("changed" | "removed")] if !what.is_empty() && what.len() <= 200 => {
+                if let Some(backup) = current.and_then(|index| backups.get_mut(index)) {
+                    backup.files.push(BackupFile {
+                        path: what.to_string(),
+                        change: if *change == "removed" { "removed" } else { "changed" },
+                        skill: false,
+                        edit: true,
+                        rel: String::new(),
+                        before: String::new(),
+                        after_sum: String::new(),
+                        after_ck: String::new(),
+                    });
+                }
+            }
             // A health probe Arbor updated, listed with nothing to undo: `P dir from to`.
             ["P", dir, _, _] if dir.starts_with('/') => {
                 if let Some(backup) = current.and_then(|index| backups.get_mut(index)) {
@@ -1591,6 +1606,9 @@ pub(crate) async fn undo_setup_sync(
     }
     if found.what == ChangeKind::Uninstall {
         return Err("An uninstall can't be undone: install the agent again the way it was installed.".into());
+    }
+    if found.what == ChangeKind::Tools {
+        return Err("A tool's update or removal can't be undone: install the version you want again.".into());
     }
     if found.what == ChangeKind::Probe {
         return Err("A probe update can't be undone: Arbor never puts an older probe back.".into());

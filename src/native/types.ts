@@ -949,7 +949,7 @@ export type Change = "update" | "editedHere" | "bothChanged" | "unknown";
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup" | "uninstall" | "probe";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup" | "uninstall" | "probe" | "tools";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.
@@ -1903,7 +1903,7 @@ export type FacetCount = {
 /**
  * The features `feature.used` can name.
  */
-export type Feature = "account-signed-in" | "machines-saved" | "sync-applied" | "sync-undone" | "skills-changed" | "plugins-changed" | "mcp-changed" | "hooks-changed" | "worktrees-removed" | "node-versions-changed" | "alert-sent" | "digest-exported" | "palette-used" | "update-started" | "core-started" | "core-stopped" | "core-restarted" | "prices-synced" | "antiburn-opened";
+export type Feature = "account-signed-in" | "machines-saved" | "sync-applied" | "sync-undone" | "skills-changed" | "plugins-changed" | "mcp-changed" | "hooks-changed" | "worktrees-removed" | "node-versions-changed" | "tools-changed" | "alert-sent" | "digest-exported" | "palette-used" | "update-started" | "core-started" | "core-stopped" | "core-restarted" | "prices-synced" | "antiburn-opened";
 
 /**
  * What a change does, or did, to a settings file.
@@ -3149,6 +3149,18 @@ export type MachineToolchain = {
   tools: Array<ToolFound>,
   kept: Array<KeptVersion>,
   projects: Array<ProjectToolchain>,
+  /**
+   * Asking the installers what's newer.
+   */
+  checking: boolean,
+  /**
+   * What the last update check found.
+   */
+  updates: ToolUpdates | null,
+  /**
+   * Why the last update check failed.
+   */
+  checkError: string | null,
 };
 
 export type MachineUsage = {
@@ -3451,6 +3463,11 @@ export type OverrideSource = "settings" | "policy";
  * What a `skillOverrides` entry in Claude Code's settings does to a skill.
  */
 export type OverrideState = "on" | "nameOnly" | "userInvocableOnly" | "off";
+
+/**
+ * The installer that put a tool where the shell finds it.
+ */
+export type OwnerKind = "brew" | "mise" | "npm" | "corepack" | "bun" | "deno" | "uv" | "rustup" | "nvm" | "fnm" | "asdf" | "volta" | "system";
 
 /**
  * A folder with a package.json.
@@ -5898,6 +5915,18 @@ export type TokenEstimate = {
   under: boolean,
 };
 
+export type ToolAction = "update" | "remove";
+
+export type ToolChange = {
+  tool: string,
+  action: ToolAction,
+  /**
+   * For an update, the version to go to; none for the newest its installer has. A Node version manager's Node needs
+   * one, as it keeps each version apart.
+   */
+  version: string | null,
+};
+
 /**
  * A tool a shell on the machine finds.
  */
@@ -5908,6 +5937,18 @@ export type ToolFound = {
    * None when it didn't answer, or didn't say a version.
    */
   version: string | null,
+  /**
+   * The installer that put it there, when Arbor can prove it.
+   */
+  owner: ToolOwner | null,
+};
+
+/**
+ * The newest release of a tool its installer offers, as the last check found it.
+ */
+export type ToolLatest = {
+  tool: string,
+  version: string,
 };
 
 /**
@@ -5928,6 +5969,43 @@ export type ToolNeed = {
    * Where in the file, like `engines.node`.
    */
   field: string | null,
+};
+
+export type ToolOwner = {
+  kind: OwnerKind,
+  /**
+   * Homebrew's formula, mise's tool, npm's package, or the system's package manager.
+   */
+  name: string | null,
+  /**
+   * npm's global prefix, or the Node whose corepack it is.
+   */
+  prefix: string | null,
+};
+
+export type ToolResult = {
+  tool: string,
+  action: ToolAction,
+  ok: boolean,
+  /**
+   * The last thing the installer said, when it failed.
+   */
+  message: string | null,
+};
+
+/**
+ * What a machine's last update check found.
+ */
+export type ToolUpdates = {
+  checkedAt: number,
+  /**
+   * The tools whose installer answered; the version is the one there when it's the newest.
+   */
+  latest: Array<ToolLatest>,
+  /**
+   * The installers that didn't answer, each with the last thing it said.
+   */
+  problems: Array<string>,
 };
 
 /**

@@ -144,7 +144,7 @@ fn still_fresh<T: Clone>(heard: Option<&Heard<T>>, now: Instant) -> Option<Optio
 static LATEST: LazyLock<Mutex<HashMap<AgentKind, Heard<String>>>> = LazyLock::new(Default::default);
 static T3_POLICIES: LazyLock<Mutex<Option<Heard<Vec<T3Policy>>>>> = LazyLock::new(Default::default);
 
-fn client(gui_config_state: &GuiConfigState) -> Option<reqwest::Client> {
+pub(super) fn client(gui_config_state: &GuiConfigState) -> Option<reqwest::Client> {
     let proxy_url = gui_config_state.snapshot().ok()?.proxy_url;
     crate::core_runtime::build_http_client_with_proxy(
         reqwest::Client::builder()
@@ -157,7 +157,7 @@ fn client(gui_config_state: &GuiConfigState) -> Option<reqwest::Client> {
     .ok()
 }
 
-async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
+pub(super) async fn fetch(client: &reqwest::Client, url: &str) -> Option<String> {
     let response = client.get(url).header(reqwest::header::ACCEPT, "application/json").send().await.ok()?;
     if !response.status().is_success() || response.content_length().is_some_and(|length| length as usize > BODY_MAX_BYTES) {
         return None;

@@ -54,13 +54,15 @@ import {
   type ToolchainRow,
   type ToolRow,
 } from '../services/setupToolchain';
-import type { MachineToolchain, NodeChange, SetupMachine, ToolNeed } from '../native/types';
+import type { MachineToolchain, NodeChange, SetupMachine, ToolFound, ToolNeed } from '../native/types';
 import { useConfirmation } from '../components/ConfirmationDialog';
 import { Popover, PopoverPopup, PopoverTrigger } from '../components/ui/popover';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from '../components/ui/toast';
 import { MachinePill } from '../components/identity/Identity';
 import { useAgo } from '../hooks/useNow';
+import { changeTools, newerOn, removesNatively } from '../services/toolUpdates';
+import { ownerLabel, ToolUpdatesCard } from './SetupToolUpdates';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 type Filter = 'all' | 'look';
@@ -177,6 +179,7 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
   }, [toolchain, machines]);
 
   const byMachine = useMemo(() => new Map((toolchain ?? []).map((entry) => [entry.machine, entry])), [toolchain]);
+  const reachable = useMemo(() => new Set(machines.filter((machine) => machine.reachable).map((machine) => machine.machine)), [machines]);
   const ordered = useMemo(() => machines.flatMap((machine) => byMachine.get(machine.machine) ?? []), [machines, byMachine]);
   const columns = useMemo(() => ordered.filter((entry) => entry.scannedAt !== null).map((entry) => entry.machine), [ordered]);
   const toolRows = useMemo(() => buildToolRows(ordered), [ordered]);
@@ -231,6 +234,7 @@ export function SetupToolchain({ machines }: { machines: SetupMachine[] }) {
         )
       ) : (
         <>
+          <ToolUpdatesCard toolchains={ordered} reachable={reachable} toolName={(tool) => toolLabel(tool, t)} />
           <TableCard
             title={<CardTitle title={t('setup.toolchain.tools.title')} description={t('setup.toolchain.tools.description')} />}
             count={t(toolRows.length === 1 ? 'setup.toolchain.machine.tools.one' : 'setup.toolchain.machine.tools.other', { count: toolRows.length })}
@@ -446,7 +450,7 @@ function ToolRowView({ row, columns, homes, projects }: { row: ToolRow; columns:
       {columns.map((machine) => {
         const toolchain = homes.get(machine);
         const toolCell = row.cells[machine] ?? null;
-        const cell = <ToolCellView cell={toolCell} machine={machine} homeDir={toolchain?.homeDir ?? ''} newest={row.newest} />;
+        const cell = <ToolCellView cell={toolCell} machine={machine} homeDir={toolchain?.homeDir ?? ''} newest={row.newest} newer={toolchain ? newerOn(toolchain, row.tool) : null} />;
         const found = toolCell?.found;
         // Outside the Node cell's own button, which opens its versions.
         const fix = toolCell?.behind && found?.version && row.newest ? (
@@ -462,9 +466,12 @@ function ToolRowView({ row, columns, homes, projects }: { row: ToolRow; columns:
             }, t)}
           />
         ) : null;
-        // Arbor can't tell how a tool got onto a machine, so taking one off is an agent's job, like updating it. The
-        // button stays out of sight until the row is hovered, so a table of versions doesn't read as a row of deletes.
-        const remove = toolCell && (found || toolCell.kept.length) ? (
+        // A tool whose installer Arbor proved comes off with that installer; anything else is an agent's job. The button
+        // stays out of sight until the row is hovered, so a table of versions doesn't read as a row of deletes.
+        const askedBy = projectsAsking(projects, machine, row.tool);
+        const remove = found && removesNatively(found) ? (
+          <RemoveTool machine={machine} tool={row.tool} found={found} askedBy={askedBy} />
+        ) : toolCell && (found || toolCell.kept.length) ? (
           <FixMenu
             compact
             machine={machine}
@@ -476,7 +483,7 @@ function ToolRowView({ row, columns, homes, projects }: { row: ToolRow; columns:
               version: found?.version ?? null,
               path: found?.path ?? null,
               kept: toolCell.kept.map((entry) => `${entry.version} (${entry.manager})`),
-              askedBy: projectsAsking(projects, machine, row.tool),
+              askedBy,
             }, t)}
           />
         ) : null;
@@ -715,7 +722,52 @@ const NODE_DONE: Record<NodeChange['action'], MessageKey> = {
   setDefault: 'setup.toolchain.node.done.setDefault',
 };
 
-function ToolCellView({ cell, machine, homeDir, newest }: { cell: ToolCell | null; machine: string; homeDir: string; newest: string | null }) {
+/** Takes a tool off a machine with the installer that put it there, once the user says so. */
+function RemoveTool({ machine, tool, found, askedBy }: { machine: string; tool: string; found: ToolFound; askedBy: string[] }) {
+  const { t, tRich } = useI18n();
+  const { askConfirmation } = useConfirmation();
+  const [busy, setBusy] = useState(false);
+  const name = toolLabel(tool, t);
+  const remove = async () => {
+    if (!found.owner) return;
+    const confirmed = await askConfirmation({
+      title: t('setup.toolchain.tools.removeTitle', { tool: name, machine }),
+      message: tRich('setup.toolchain.tools.removeMessage', { installer: ownerLabel(found.owner, t), tool: name, version: found.version ?? '', machine: <MachinePill name={machine} size="sm" /> }),
+      details: [{ label: t('setup.toolchain.tools.owner', { installer: ownerLabel(found.owner, t) }), value: found.path }],
+      warning: askedBy.length ? t('setup.toolchain.tools.removeAsked', { projects: askedBy.join(', ') }) : undefined,
+      confirmText: t('setup.toolchain.tools.removeConfirm'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      const [result] = await changeTools(machine, [{ tool, action: 'remove', version: null }]);
+      if (result && !result.ok) toast({ kind: 'error', title: t('setup.toolchain.tools.removeFailed', { tool: name, error: result.message ?? '' }) });
+      await scanToolchain(machine).catch(() => undefined);
+      if (!result || result.ok) toast({ kind: 'success', title: t('setup.toolchain.tools.removed', { tool: name, machine }) });
+    } catch (error) {
+      toast({ kind: 'error', title: t('setup.toolchain.tools.removeFailed', { tool: name, error: String(error) }) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const label = t('setup.toolchain.tools.remove', { tool: name, machine });
+  return (
+    <Button
+      variant="ghost-muted"
+      size="icon-xs"
+      className={cn(!busy && 'opacity-0 focus-visible:opacity-100 group-hover/tool:opacity-100')}
+      disabled={busy}
+      onClick={() => void remove()}
+      aria-label={label}
+      title={label}
+    >
+      {busy ? <Spinner /> : <Trash2 />}
+    </Button>
+  );
+}
+
+function ToolCellView({ cell, machine, homeDir, newest, newer }: { cell: ToolCell | null; machine: string; homeDir: string; newest: string | null; newer: string | null }) {
   const { t } = useI18n();
   if (!cell) return <Dash />;
   const others = cell.kept.filter((entry) => entry.version !== cell.found?.version);
@@ -725,13 +777,22 @@ function ToolCellView({ cell, machine, homeDir, newest }: { cell: ToolCell | nul
       {cell.found ? (
         <span
           className={cn('truncate font-mono', cell.behind ? 'text-warning-foreground' : 'text-foreground/85')}
-          title={[tilde(cell.found.path, homeDir), cell.behind && newest ? t('setup.toolchain.tools.behind', { newest }) : null].filter(Boolean).join('\n')}
+          title={[
+            tilde(cell.found.path, homeDir),
+            cell.found.owner ? t('setup.toolchain.tools.owner', { installer: ownerLabel(cell.found.owner, t) }) : null,
+            cell.behind && newest ? t('setup.toolchain.tools.behind', { newest }) : null,
+          ].filter(Boolean).join('\n')}
         >
           {cell.found.version ?? t('setup.toolchain.tools.noVersion')}
         </span>
       ) : (
         <Dash title={t('setup.toolchain.tools.notFound', { machine })} />
       )}
+      {newer && cell.found?.owner ? (
+        <span className="truncate text-2xs text-info-foreground" title={t('setup.toolchain.tools.newerHint', { installer: ownerLabel(cell.found.owner, t), version: newer })}>
+          {t('setup.toolchain.tools.newer', { version: newer })}
+        </span>
+      ) : null}
       {others.length ? (
         <span className="truncate text-2xs text-muted-foreground" title={keptTitle}>
           {t(others.length === 1 ? 'setup.toolchain.tools.kept.one' : 'setup.toolchain.tools.kept.other', { count: others.length })}

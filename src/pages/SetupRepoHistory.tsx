@@ -15,7 +15,7 @@ import { changeKey, nothingChangedOn, repoTimeline, type MachineChange } from '.
 import { listSetupBackups, scanned, undoSetupSync } from '../services/setupSync';
 import type { RepoChange, RepoCommit, SetupBackup, SetupMachine, SetupRepo } from '../native/types';
 import { Diffs, type Loaded } from './SetupRepoChanges';
-import { backupCounts, CHANGE_KIND, countText, outcomeText, undoMessage } from './SetupBackups';
+import { backupCounts, cannotUndo, CHANGE_KIND, countText, outcomeText, undoMessage } from './SetupBackups';
 
 /** How many commits History lists. */
 const LOG_LIMIT = 100;
@@ -123,7 +123,7 @@ export function HistoryMode({ repo, machines, machine: asked }: {
   const unshown = changes.state === 'ready' ? changes.value.filter((entry) => entry.problem !== null) : [];
   const machineLabel = (value: string | null) => (value ?? t('repo.history.allMachines'));
 
-  const undoButton = (entry: MachineChange) => (entry.backup.what === 'uninstall' || entry.backup.what === 'probe' ? (
+  const undoButton = (entry: MachineChange) => (cannotUndo(entry.backup.what) ? (
     <Badge variant="outline" size="sm">{t('setup.sync.history.noUndo')}</Badge>
   ) : entry.backup.deletedAtMs !== undefined ? (
     <Badge variant="outline" size="sm" title={formatDateTime(entry.backup.deletedAtMs, { year: 'always' })}>{t('setup.sync.history.deleted', { when: formatAgo(entry.backup.deletedAtMs) })}</Badge>

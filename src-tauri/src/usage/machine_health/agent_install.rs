@@ -75,17 +75,17 @@ fn is_native(agent: AgentKind, path: &str) -> bool {
     }
 }
 
-fn is_bun(path: &str) -> bool {
+pub(super) fn is_bun(path: &str) -> bool {
     let path = lower(path);
     path.contains("/.bun/bin/") || path.contains("/.bun/install/global/")
 }
 
-fn is_pnpm(path: &str) -> bool {
+pub(super) fn is_pnpm(path: &str) -> bool {
     let path = lower(path);
     ["/.local/share/pnpm/", "/library/pnpm/", "/pnpm/global/"].iter().any(|dir| path.contains(dir))
 }
 
-fn is_mise_shim(path: &str) -> bool {
+pub(super) fn is_mise_shim(path: &str) -> bool {
     lower(path).contains("/mise/shims/")
 }
 
@@ -124,7 +124,7 @@ pub(super) fn homebrew_keg(real: &str) -> Option<(String, bool, String)> {
 }
 
 /// A name that can go in a command as it is.
-fn plain_name(name: &str, extra: &[char]) -> bool {
+pub(super) fn plain_name(name: &str, extra: &[char]) -> bool {
     !name.is_empty()
         && !name.starts_with('-')
         && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '.' | '_' | '-' | '+') || extra.contains(&c))

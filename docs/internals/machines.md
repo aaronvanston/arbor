@@ -75,6 +75,19 @@ every session file is safely in a store. Agents come off only the way their inst
 package manager found some other way: their own installer's copy is set aside like a folder. Removing from Settings › Agent homes or Sync's Other agents runs
 the same flow (`pages/cleanupActions.tsx`), looking at the machine first when its last look is over ten minutes old.
 
+## Tools
+
+Sync › Software updates and removes a machine's tools only through the installer that put them there
+(`usage/machine_health/tool_updates.rs`), proven from where the binary really is: Homebrew's Cellar under the prefix
+`brew --prefix` gives, the tool mise names for a shim, npm's global layout naming the package, rustup's proxies beside
+rustup, Bun's, Deno's and uv's own install folders. Nothing is guessed from an installer merely being there, since
+running `brew upgrade` or `npm i -g` against a tool another installer made leaves two copies and a PATH that picks the
+wrong one. What the system's packages own needs sudo, which Arbor never runs, so it goes to an agent like an unproven
+tool. The scan stays offline; asking what's newer is a separate check (`brew outdated`, `mise outdated`, `npm outdated
+-g`, `rustup check` on the machine, and Node's, Bun's, Deno's and uv's release feeds read on this Mac). An update
+can't be undone, so it's recorded in History without Undo, and a run checks each machine again after it, because an
+installer saying it worked doesn't mean the shell finds the new copy first.
+
 ## Agent homes
 
 Which folders are a machine's agent homes comes only from `usage/machine_health/agent_homes.rs`: the standard Claude

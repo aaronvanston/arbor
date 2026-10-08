@@ -43,6 +43,11 @@ import type {
   McpWanted,
   NodeChange,
   NodeResult,
+  OwnerKind,
+  ToolChange,
+  ToolOwner,
+  ToolResult,
+  ToolUpdates,
   PlaceFix,
   PluginAction,
   PluginChange,
@@ -2346,26 +2351,28 @@ const arborLibraries = (react: string, zod: string) => [
 
 const bunPackages = [{ dir: '', lockfile: 'bun.lock', modules: true }];
 
+const own = (kind: OwnerKind, name: string | null = null, prefix: string | null = null): ToolOwner => ({ kind, name, prefix });
+
 const proxyNeeds = [toolNeed('go', '1.23', 'min', 'go.mod', 'go'), toolNeed('go', '1.24.4', 'pin', '.tool-versions', 'go')];
 
-const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scannedAt' | 'partial' | 'scanning' | 'error'>> = {
+const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scannedAt' | 'partial' | 'scanning' | 'error' | 'checking' | 'updates' | 'checkError'>> = {
   'cam-mbp': {
     homeDir: '/Users/cam', os: 'Darwin', arch: 'arm64',
     tools: [
-      { tool: 'node', path: '/Users/cam/.nvm/versions/node/v22.17.0/bin/node', version: '22.17.0' },
-      { tool: 'npm', path: '/Users/cam/.nvm/versions/node/v22.17.0/bin/npm', version: '10.9.2' },
-      { tool: 'pnpm', path: '/opt/homebrew/bin/pnpm', version: '10.12.1' },
-      { tool: 'bun', path: '/Users/cam/.bun/bin/bun', version: '1.3.2' },
-      { tool: 'python', path: '/Users/cam/.local/share/mise/shims/python3', version: '3.12.4' },
-      { tool: 'uv', path: '/opt/homebrew/bin/uv', version: '0.8.3' },
-      { tool: 'go', path: '/opt/homebrew/bin/go', version: '1.24.4' },
-      { tool: 'rust', path: '/Users/cam/.cargo/bin/rustc', version: '1.88.0' },
-      { tool: 'cargo', path: '/Users/cam/.cargo/bin/cargo', version: '1.88.0' },
-      { tool: 'git', path: '/opt/homebrew/bin/git', version: '2.50.1' },
-      { tool: 'gh', path: '/opt/homebrew/bin/gh', version: '2.74.0' },
-      { tool: 'jq', path: '/usr/bin/jq', version: '1.7.1' },
-      { tool: 'rg', path: '/opt/homebrew/bin/rg', version: '14.1.1' },
-      { tool: 'docker', path: '/usr/local/bin/docker', version: '28.3.0' },
+      { tool: 'node', path: '/Users/cam/.nvm/versions/node/v22.17.0/bin/node', version: '22.17.0' , owner: own('nvm') },
+      { tool: 'npm', path: '/Users/cam/.nvm/versions/node/v22.17.0/bin/npm', version: '10.9.2' , owner: own('npm', 'npm', '/Users/cam/.nvm/versions/node/v22.17.0') },
+      { tool: 'pnpm', path: '/opt/homebrew/bin/pnpm', version: '10.12.1' , owner: own('brew', 'pnpm') },
+      { tool: 'bun', path: '/Users/cam/.bun/bin/bun', version: '1.3.2' , owner: own('bun') },
+      { tool: 'python', path: '/Users/cam/.local/share/mise/shims/python3', version: '3.12.4' , owner: own('mise', 'python') },
+      { tool: 'uv', path: '/opt/homebrew/bin/uv', version: '0.8.3' , owner: own('brew', 'uv') },
+      { tool: 'go', path: '/opt/homebrew/bin/go', version: '1.24.4' , owner: own('brew', 'go') },
+      { tool: 'rust', path: '/Users/cam/.cargo/bin/rustc', version: '1.88.0' , owner: own('rustup') },
+      { tool: 'cargo', path: '/Users/cam/.cargo/bin/cargo', version: '1.88.0' , owner: own('rustup') },
+      { tool: 'git', path: '/opt/homebrew/bin/git', version: '2.50.1' , owner: own('brew', 'git') },
+      { tool: 'gh', path: '/opt/homebrew/bin/gh', version: '2.74.0' , owner: own('brew', 'gh') },
+      { tool: 'jq', path: '/usr/bin/jq', version: '1.7.1' , owner: own('system', 'system') },
+      { tool: 'rg', path: '/opt/homebrew/bin/rg', version: '14.1.1' , owner: own('brew', 'ripgrep') },
+      { tool: 'docker', path: '/usr/local/bin/docker', version: '28.3.0' , owner: null },
     ],
     kept: [
       { tool: 'node', manager: 'nvm', version: '20.19.0', label: null },
@@ -2389,15 +2396,15 @@ const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scan
   'ci-01': {
     homeDir: '/home/ci', os: 'Linux', arch: 'x86_64',
     tools: [
-      { tool: 'node', path: '/usr/bin/node', version: '20.19.0' },
-      { tool: 'npm', path: '/usr/bin/npm', version: '10.8.2' },
-      { tool: 'python', path: '/usr/bin/python3', version: '3.10.12' },
-      { tool: 'go', path: '/usr/local/go/bin/go', version: '1.22.2' },
-      { tool: 'rust', path: '/home/ci/.cargo/bin/rustc', version: '1.85.0' },
-      { tool: 'cargo', path: '/home/ci/.cargo/bin/cargo', version: '1.85.0' },
-      { tool: 'git', path: '/usr/bin/git', version: '2.43.0' },
-      { tool: 'jq', path: '/usr/bin/jq', version: '1.7.1' },
-      { tool: 'docker', path: '/usr/bin/docker', version: '27.5.1' },
+      { tool: 'node', path: '/usr/bin/node', version: '20.19.0' , owner: own('system', 'apt-get') },
+      { tool: 'npm', path: '/usr/bin/npm', version: '10.8.2' , owner: own('system', 'apt-get') },
+      { tool: 'python', path: '/usr/bin/python3', version: '3.10.12' , owner: own('system', 'apt-get') },
+      { tool: 'go', path: '/usr/local/go/bin/go', version: '1.22.2' , owner: null },
+      { tool: 'rust', path: '/home/ci/.cargo/bin/rustc', version: '1.85.0' , owner: own('rustup') },
+      { tool: 'cargo', path: '/home/ci/.cargo/bin/cargo', version: '1.85.0' , owner: own('rustup') },
+      { tool: 'git', path: '/usr/bin/git', version: '2.43.0' , owner: own('system', 'apt-get') },
+      { tool: 'jq', path: '/usr/bin/jq', version: '1.7.1' , owner: own('system', 'apt-get') },
+      { tool: 'docker', path: '/usr/bin/docker', version: '27.5.1' , owner: own('system', 'apt-get') },
     ],
     kept: [{ tool: 'rust', manager: 'rustup', version: '1.85.0', label: 'stable' }],
     projects: [
@@ -2410,17 +2417,17 @@ const toolchainMachines: Record<string, Omit<MachineToolchain, 'machine' | 'scan
   'cedar-02': {
     homeDir: '/home/cam', os: 'Linux', arch: 'aarch64',
     tools: [
-      { tool: 'node', path: '/home/cam/.local/share/mise/shims/node', version: '22.12.0' },
-      { tool: 'npm', path: '/home/cam/.local/share/mise/shims/npm', version: '10.9.0' },
-      { tool: 'pnpm', path: '/home/cam/.local/share/pnpm/pnpm', version: '9.15.0' },
-      { tool: 'bun', path: '/home/cam/.bun/bin/bun', version: '1.3.0' },
-      { tool: 'python', path: '/usr/bin/python3', version: '3.12.3' },
-      { tool: 'uv', path: '/home/cam/.local/bin/uv', version: '0.7.20' },
-      { tool: 'rust', path: '/home/cam/.cargo/bin/rustc', version: '1.88.0' },
-      { tool: 'cargo', path: '/home/cam/.cargo/bin/cargo', version: '1.88.0' },
-      { tool: 'git', path: '/usr/bin/git', version: '2.45.2' },
-      { tool: 'gh', path: '/usr/bin/gh', version: '2.63.0' },
-      { tool: 'rg', path: '/usr/bin/rg', version: '14.1.0' },
+      { tool: 'node', path: '/home/cam/.local/share/mise/shims/node', version: '22.12.0' , owner: own('mise', 'node') },
+      { tool: 'npm', path: '/home/cam/.local/share/mise/shims/npm', version: '10.9.0' , owner: own('npm', 'npm', '/home/cam/.local/share/mise/installs/node/22.12.0') },
+      { tool: 'pnpm', path: '/home/cam/.local/share/pnpm/pnpm', version: '9.15.0' , owner: null },
+      { tool: 'bun', path: '/home/cam/.bun/bin/bun', version: '1.3.0' , owner: own('bun') },
+      { tool: 'python', path: '/usr/bin/python3', version: '3.12.3' , owner: own('system', 'apt-get') },
+      { tool: 'uv', path: '/home/cam/.local/bin/uv', version: '0.7.20' , owner: own('uv') },
+      { tool: 'rust', path: '/home/cam/.cargo/bin/rustc', version: '1.88.0' , owner: own('rustup') },
+      { tool: 'cargo', path: '/home/cam/.cargo/bin/cargo', version: '1.88.0' , owner: own('rustup') },
+      { tool: 'git', path: '/usr/bin/git', version: '2.45.2' , owner: own('system', 'apt-get') },
+      { tool: 'gh', path: '/usr/bin/gh', version: '2.63.0' , owner: own('system', 'apt-get') },
+      { tool: 'rg', path: '/usr/bin/rg', version: '14.1.0' , owner: own('system', 'apt-get') },
     ],
     kept: [
       { tool: 'node', manager: 'mise', version: '20.18.1', label: null },
@@ -2449,8 +2456,38 @@ if (params.get('nodeversions') === 'many') {
   }
 }
 
+// What each machine's installers say is newer, as `check_tool_updates` finds it: Node's line, npm, Homebrew's uv, go and
+// git, rustup's Rust and the self-updating uv on cedar-02 are behind; the rest are the newest. `?toolupdates=none` has
+// everything at its newest, `?toolupdates=unchecked` has nothing checked yet, `?toolupdates=checkfail` has cedar-02's
+// check fail and Homebrew not answer on the Mac, `?toolupdates=failing` has uv's update fail on cedar-02 and go's on the
+// Mac, and `?toolupdates=stillbehind` has go's update say it worked while the Mac keeps the old one.
+const toolUpdatesScenario = params.get('toolupdates');
+const MOCK_LATEST: Record<string, Record<string, string>> = {
+  'cam-mbp': { node: '22.18.0', npm: '11.4.2', pnpm: '10.12.1', bun: '1.3.2', python: '3.12.4', uv: '0.9.1', go: '1.25.1', rust: '1.89.0', cargo: '1.89.0', git: '2.51.0', gh: '2.74.0', rg: '14.1.1' },
+  'ci-01': { rust: '1.89.0', cargo: '1.89.0' },
+  'cedar-02': { node: '22.12.0', npm: '11.4.2', bun: '1.3.2', uv: '0.9.1', rust: '1.88.0', cargo: '1.88.0' },
+};
+const mockUpdates = (machine: string): ToolUpdates | null => {
+  const latest = MOCK_LATEST[machine];
+  const source = toolchainMachines[machine];
+  if (!latest || !source) return null;
+  return {
+    checkedAt: Date.now() - 40 * 60_000,
+    latest: source.tools.flatMap((found) => {
+      const version = latest[found.tool];
+      if (!version || !found.version) return [];
+      return [{ tool: found.tool, version: toolUpdatesScenario === 'none' ? found.version : version }];
+    }),
+    problems: toolUpdatesScenario === 'checkfail' && machine === 'cam-mbp' ? ['brew: Error: Another active Homebrew update process is already in progress.'] : [],
+  };
+};
+const toolUpdatesState: Record<string, ToolUpdates | null> = toolUpdatesScenario === 'unchecked'
+  ? {}
+  : Object.fromEntries(Object.keys(toolchainMachines).map((machine) => [machine, mockUpdates(machine)]));
+
 const toolchainReply = (machine: string, entry: (typeof toolchainMachines)[string], scannedAt: number | null): MachineToolchain => ({
   machine, scannedAt, partial: toolchainScenario === 'partial' && machine === 'cam-mbp', scanning: false, error: null,
+  checking: false, updates: scannedAt === null ? null : toolUpdatesState[machine] ?? null, checkError: null,
   ...structuredClone(entry),
   projects: toolchainScenario === 'none' || scannedAt === null ? [] : structuredClone(entry.projects),
   ...(scannedAt === null ? { tools: [], kept: [] } : {}),
@@ -2459,6 +2496,70 @@ const toolchainReply = (machine: string, entry: (typeof toolchainMachines)[strin
 const toolchainState: MachineToolchain[] = Object.entries(toolchainMachines).map(([machine, entry]) =>
   toolchainReply(machine, entry, toolchainScenario === 'fresh' ? null : Date.now() - 12 * 60_000));
 keepThisMacOnly(toolchainState);
+
+const checkToolUpdatesMock = (machine: string) => {
+  const current = toolchainState.find((candidate) => candidate.machine === machine);
+  if (!current?.scannedAt) throw `Look at the tools on ${machine} first`;
+  if (current.checking) throw `Arbor is already checking for updates on ${machine}`;
+  current.checking = true;
+  void emit('setup-toolchain-updated', Date.now());
+  return later(1_800, () => {
+    current.checking = false;
+    if (toolUpdatesScenario === 'checkfail' && machine === 'cedar-02') {
+      current.checkError = 'ssh: connect to host cedar-02 port 22: Operation timed out';
+      void emit('setup-toolchain-updated', Date.now());
+      throw current.checkError;
+    }
+    const updates = mockUpdates(machine);
+    if (updates) {
+      updates.checkedAt = Date.now();
+      // What was updated since is the newest now.
+      updates.latest = updates.latest.map((entry) => {
+        const found = current.tools.find((tool) => tool.tool === entry.tool);
+        return found?.version && compareMockVersions(found.version, entry.version) >= 0 ? { ...entry, version: found.version } : entry;
+      });
+    }
+    toolUpdatesState[machine] = updates;
+    current.updates = updates;
+    current.checkError = null;
+    void emit('setup-toolchain-updated', Date.now());
+    return structuredClone(current);
+  });
+};
+
+const compareMockVersions = (a: string, b: string) => {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference) return Math.sign(difference);
+  }
+  return 0;
+};
+
+const changeToolsMock = (machine: string, changes: ToolChange[]) => {
+  const source = toolchainMachines[machine];
+  const current = toolchainState.find((candidate) => candidate.machine === machine);
+  if (!source || !current?.scannedAt) throw `Look at the tools on ${machine} first`;
+  return later(2_400, () => changes.map((change): ToolResult => {
+    const done = (ok: boolean, message: string | null = null): ToolResult => ({ tool: change.tool, action: change.action, ok, message });
+    const found = source.tools.find((tool) => tool.tool === change.tool);
+    if (!found?.owner) return done(false, `Arbor can't tell how ${change.tool} got onto ${machine}, so it leaves it to an agent`);
+    if (change.action === 'remove') {
+      source.tools = source.tools.filter((tool) => tool !== found);
+      return done(true);
+    }
+    if (toolUpdatesScenario === 'failing' && ((machine === 'cedar-02' && change.tool === 'uv') || (machine === 'cam-mbp' && change.tool === 'go'))) {
+      return done(false, change.tool === 'uv' ? 'error: Self-update is not possible because network failed' : 'Error: go: Download failed: Failed to download resource "go"');
+    }
+    const version = change.version ?? MOCK_LATEST[machine]?.[change.tool] ?? found.version;
+    if (!(toolUpdatesScenario === 'stillbehind' && change.tool === 'go')) {
+      source.tools = source.tools.map((tool) => (tool === found ? { ...tool, version } : tool));
+      if (change.tool === 'rust') source.tools = source.tools.map((tool) => (tool.tool === 'cargo' ? { ...tool, version } : tool));
+    }
+    return done(true);
+  }));
+};
 
 // `?nodechange=fail` has every install fail to download, as it does off the network.
 const changeNodeMock = (machine: string, changes: NodeChange[]) => {
@@ -2688,10 +2789,10 @@ export const joinSetupMachine = (name: string, arrived: boolean) => {
   const toolchain = {
     homeDir: '/home/cam', os: 'Linux', arch: 'x86_64', kept: [], projects: [],
     tools: [
-      { tool: 'node', path: '/usr/bin/node', version: '20.19.2' },
-      { tool: 'npm', path: '/usr/bin/npm', version: '10.8.2' },
-      { tool: 'python', path: '/usr/bin/python3', version: '3.12.3' },
-      { tool: 'git', path: '/usr/bin/git', version: '2.43.0' },
+      { tool: 'node', path: '/usr/bin/node', version: '20.19.2', owner: own('system', 'apt-get') },
+      { tool: 'npm', path: '/usr/bin/npm', version: '10.8.2', owner: own('system', 'apt-get') },
+      { tool: 'python', path: '/usr/bin/python3', version: '3.12.3', owner: own('system', 'apt-get') },
+      { tool: 'git', path: '/usr/bin/git', version: '2.43.0', owner: own('system', 'apt-get') },
     ],
   };
   toolchainMachines[name] = toolchain;
@@ -3777,6 +3878,14 @@ export const setupAnswers: CommandAnswers<SetupCommands> = {
   change_node_versions: (args) => {
     mockLog('change_node_versions', { machine: args.machine, changes: args.changes });
     return changeNodeMock(args.machine, args.changes);
+  },
+  check_tool_updates: (args) => {
+    mockLog('check_tool_updates', { machine: args.machine, refresh: args.refresh });
+    return checkToolUpdatesMock(args.machine);
+  },
+  change_tools: (args) => {
+    mockLog('change_tools', { machine: args.machine, changes: args.changes });
+    return changeToolsMock(args.machine, args.changes);
   },
   scan_toolchain: (args) => {
     mockLog('scan_toolchain', { machine: args.machine });

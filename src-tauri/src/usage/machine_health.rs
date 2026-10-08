@@ -79,6 +79,7 @@ pub(crate) mod setup_toolchain;
 pub(crate) mod shell;
 pub(crate) mod starting_context;
 pub(crate) mod t3_threads;
+pub(crate) mod tool_updates;
 pub(crate) mod telemetry;
 pub(crate) mod transcripts;
 

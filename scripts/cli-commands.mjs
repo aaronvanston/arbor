@@ -109,6 +109,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'apply_checkout_instructions',
   'remove_worktrees',
   'change_node_versions',
+  'change_tools',
   'remove_cleanup_items',
   'restore_set_aside',
   'delete_set_aside',

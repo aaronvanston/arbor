@@ -206,6 +206,9 @@ mod tests {
         types.visit::<crate::usage::machine_health::setup_toolchain::MachineToolchain>();
         types.visit::<crate::usage::machine_health::setup_toolchain::NodeChange>();
         types.visit::<crate::usage::machine_health::setup_toolchain::NodeResult>();
+        types.visit::<crate::usage::machine_health::tool_updates::OwnerKind>();
+        types.visit::<crate::usage::machine_health::tool_updates::ToolChange>();
+        types.visit::<crate::usage::machine_health::tool_updates::ToolResult>();
         types.visit::<crate::usage::machine_health::starting_context::StartingContext>();
         // Archive
         types.visit::<crate::usage::machine_health::archive::ArchiveStatus>();

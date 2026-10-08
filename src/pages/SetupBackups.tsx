@@ -77,7 +77,11 @@ export const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
   cleanup: 'setup.history.what.cleanup',
   uninstall: 'setup.history.what.uninstall',
   probe: 'setup.history.what.probe',
+  tools: 'setup.history.what.tools',
 };
+
+/** Changes nothing can put back as they were: an uninstall, a probe update, and tools an installer changed. */
+export const cannotUndo = (what: ChangeKind) => what === 'uninstall' || what === 'probe' || what === 'tools';
 
 /**
  * The changes Arbor made on a machine, newest first, each with Undo: setup sync's files and skills, the Skills tab's
@@ -120,7 +124,7 @@ export function BackupList({ machine, backups, error, busy, undoing, onUndo, onR
                 .filter(Boolean)
                 .join(' · ')}
             </span>
-            {backup.what === 'uninstall' || backup.what === 'probe' ? (
+            {cannotUndo(backup.what) ? (
               <Badge variant="outline" size="sm">{t('setup.sync.history.noUndo')}</Badge>
             ) : backup.deletedAtMs !== undefined ? (
               <Badge variant="outline" size="sm" title={formatDateTime(backup.deletedAtMs, { year: 'always' })}>{t('setup.sync.history.deleted', { when: formatAgo(backup.deletedAtMs) })}</Badge>
