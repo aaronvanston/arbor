@@ -28,6 +28,9 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
   index or the journal. Its answer holds the same ids, paths and counts as every archive command. A session's
   project and branch come from usage.db by session id, so a session Arbor hasn't read a transcript of has none.
 
+Stored frames and compressed transcripts are only ever decompressed through `archive/codec.rs`, which stops at a
+ceiling: a store or a backup can come from someone else, and a few kilobytes of zstd can claim gigabytes.
+
 Working out which session a file is, and counting its tokens, uses structs that name only those fields. The archive's
 SECRET tests prove nothing more leaves `chunks/`; every new archive command extends them. Archive tests build stores and
 homes in temp folders and run the lister under both `sh` and `dash` against a temp HOME.

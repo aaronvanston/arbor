@@ -21,6 +21,7 @@
 //! it arrived, and a change of rule counts it all again.
 
 use super::classify::{load_version, Blobs, Version};
+use super::codec;
 use super::recovered::{self, RecoveredDay, RecoveredOverlap};
 use super::index::{get_meta, lock_writes, set_meta};
 use super::ingest::{self, Throttle};
@@ -644,7 +645,8 @@ fn count_version(db: &Connection, blobs: &dyn Blobs, progress: Progress, throttl
             enough(bytes.len() as u64);
         }
         let mut parser = Parser::new(progress.agent, Carry::default(), fallback_day);
-        let mut decoder = zstd::stream::Decoder::new(&frame[..]).map_err(|error| format!("Couldn't decompress a kept file: {error}"))?;
+        // Read as a stream, and no further than a real transcript could decompress to.
+        let mut decoder = codec::transcript(&frame)?;
         let mut lines = Lines::new(0);
         let mut buffer = vec![0u8; 1 << 20];
         loop {
@@ -1115,7 +1117,7 @@ pub(crate) mod tests {
         text
     }
 
-    fn codex_session(thread: &str, responses: &[&str]) -> String {
+    pub(crate) fn codex_session(thread: &str, responses: &[&str]) -> String {
         let mut text = format!("{{\"timestamp\":\"2026-09-21T01:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{{\"id\":\"{thread}\",\"instructions\":\"{SECRET_TEXT}\"}}}}\n");
         text += &codex_turn("2026-09-21T01:00:00.500Z", "gpt-6-sol", SECRET_TEXT);
         for (n, response) in responses.iter().enumerate() {
@@ -1213,6 +1215,36 @@ pub(crate) mod tests {
         assert!(fixture.pass().complete);
         count(&fixture, &everything());
         assert_eq!(totals(&fixture), (3, 3 * (500 + 1_500 + 100)));
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    /// A compressed rollout a few kilobytes long that decompresses to past `codec::transcript_max`:
+    /// the session's top line, then 65 MB of blank lines.
+    pub(crate) fn bomb_rollout(thread: &str) -> Vec<u8> {
+        use std::io::Write;
+        let mut encoder = zstd::stream::Encoder::new(Vec::new(), 3).unwrap();
+        encoder.write_all(codex_session(thread, &["resp_1"]).as_bytes()).unwrap();
+        let blank = vec![b'\n'; 1 << 20];
+        for _ in 0..65 {
+            encoder.write_all(&blank).unwrap();
+        }
+        let frame = encoder.finish().unwrap();
+        assert!(codec::transcript_max(frame.len() as u64) < 65 << 20, "{}", frame.len());
+        frame
+    }
+
+    #[test]
+    fn a_compressed_rollout_that_decompresses_past_any_real_transcript_is_not_counted() {
+        let fixture = Fixture::new("tokens-zstd-bomb");
+        let archived = fixture.home.join(format!(".codex/archived_sessions/rollout-2026-09-21T01-00-00-{THREAD}.jsonl.zst"));
+        fs::create_dir_all(archived.parent().unwrap()).unwrap();
+        fs::write(&archived, bomb_rollout(THREAD)).unwrap();
+        assert!(fixture.pass().complete);
+        assert_eq!(fixture.count("SELECT COUNT(*) FROM versions WHERE encoding = 'zstd'"), 1);
+        let report = count(&fixture, &everything());
+        assert_eq!(report.failures, 1);
+        assert!(report.first_failure.as_deref().is_some_and(|error| error.contains("MB decompressed")), "{:?}", report.first_failure);
+        assert_eq!(totals(&fixture), (0, 0));
         let _ = fs::remove_dir_all(&fixture.base);
     }
 

@@ -308,13 +308,28 @@ fn version_path(path: &Path, version_id: i64) -> PathBuf {
     path.with_file_name(named)
 }
 
-fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
+fn create_new(path: &Path) -> Result<fs::File, String> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     if let Some(dir) = path.parent() {
         fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(|error| format!("Couldn't make {}: {error}", dir.display()))?;
     }
-    let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(path).map_err(|error| format!("Couldn't write {}: {error}", path.display()))?;
-    file.write_all(bytes).map_err(|error| format!("Couldn't write {}: {error}", path.display()))
+    OpenOptions::new().write(true).create_new(true).mode(0o600).open(path).map_err(|error| format!("Couldn't write {}: {error}", path.display()))
+}
+
+fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    create_new(path)?.write_all(bytes).map_err(|error| format!("Couldn't write {}: {error}", path.display()))
+}
+
+/// Writes what a compressed transcript holds, streamed so it's never all in memory, and stopping
+/// at `codec::transcript_max`. A file left half written is removed; it was only just made here.
+fn write_decoded(path: &Path, frame: &[u8]) -> Result<u64, String> {
+    let mut file = create_new(path)?;
+    let written = codec::transcript(frame).and_then(|mut plain| std::io::copy(&mut plain, &mut file).map_err(|error| format!("Couldn't write {}: {error}", path.display())));
+    if written.is_err() {
+        drop(file);
+        let _ = fs::remove_file(path);
+    }
+    written
 }
 
 fn iso(ms: i64) -> String {
@@ -373,9 +388,9 @@ fn export_session(db: &Connection, reader: &Reader, session: &Picked, tags: Opti
                 taken.insert(path.clone());
             }
             let read = reader.read(db, version_id).and_then(|(version, bytes)| {
-                let bytes = if version.encoding == "zstd" { codec::decode(&bytes)? } else { bytes };
-                write_new(&folder.join(&path), &bytes)?;
-                Ok((version.state, bytes.len() as u64))
+                let target = folder.join(&path);
+                let written = if version.encoding == "zstd" { write_decoded(&target, &bytes)? } else { write_new(&target, &bytes).map(|()| bytes.len() as u64)? };
+                Ok((version.state, written))
             });
             match read {
                 Ok((state, bytes)) => {
@@ -586,6 +601,32 @@ mod tests {
         let older: Vec<String> = fs::read_dir(&session).unwrap().flatten().map(|entry| entry.file_name().to_string_lossy().into_owned()).filter(|name| name.starts_with("main.v")).collect();
         let [older] = &older[..] else { panic!("{older:?}") };
         assert_eq!(fs::read_to_string(session.join(older)).unwrap(), lines(40, SID));
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn a_compressed_rollout_comes_back_decompressed_and_one_past_any_real_transcript_does_not() {
+        use super::super::tokens::tests::{bomb_rollout, codex_session};
+        const GOOD: &str = "019a1b2c-3d4e-7f00-8111-555566667777";
+        const BOMB: &str = "019a1b2c-3d4e-7f00-8111-888899990000";
+        let fixture = Fixture::new("export-zstd");
+        let plain = codex_session(GOOD, &["resp_1", "resp_2"]);
+        let archived = fixture.home.join(".codex/archived_sessions");
+        fs::create_dir_all(&archived).unwrap();
+        fs::write(archived.join(format!("rollout-2026-09-21T01-00-00-{GOOD}.jsonl.zst")), zstd::encode_all(plain.as_bytes(), 3).unwrap()).unwrap();
+        fs::write(archived.join(format!("rollout-2026-09-21T02-00-00-{BOMB}.jsonl.zst")), bomb_rollout(BOMB)).unwrap();
+        assert!(fixture.pass().complete);
+        assert_eq!(fixture.count("SELECT COUNT(*) FROM versions WHERE encoding = 'zstd'"), 2);
+
+        let out = fixture.base.join("exported");
+        let report = run(&fixture.db, &reader(&fixture), &HashMap::new(), &request(&out), &[]).unwrap();
+        assert_eq!(report.files, 1, "{report:?}");
+        let [failed] = &report.failed[..] else { panic!("{report:?}") };
+        assert!(failed.session_id == BOMB && failed.error.contains("MB decompressed"), "{failed:?}");
+        // The good one is as the agent wrote it; nothing of the bomb is left half written.
+        let written: Vec<PathBuf> = walk(&out).into_iter().filter(|path| !path.ends_with("session.json") && !path.ends_with("export.json")).collect();
+        let [rollout] = &written[..] else { panic!("{written:?}") };
+        assert_eq!(fs::read_to_string(rollout).unwrap(), plain);
         let _ = fs::remove_dir_all(&fixture.base);
     }
 
