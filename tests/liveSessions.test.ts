@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { translate } from '../src/i18n';
-import { clientCountsText, compactionOutlook, contextShare, liveSessionName, liveTrayRows } from '../src/services/liveSessions';
+import { clientCountsText, compactionOutlook, contextShare, liveSessionName, liveTrayRows, untitledSessionName } from '../src/services/liveSessions';
 import type { LiveContext, LiveSession, LiveSessionsReport, SessionTranscript } from '../src/native/types';
 
 const MINUTE = 60_000;
@@ -54,6 +54,11 @@ describe('live context', () => {
     expect(liveSessionName(session('a', { transcript: transcript({ branch: '' }) }))).toBe('arbor');
     expect(liveSessionName(session('a'))).toBe('Claude Code');
     expect(liveSessionName(session('5f0c2a8e-3b1d-4c6f-9e2a-7d4b1c8e0f31', { userAgent: null }))).toBe('5f0c2a8e');
+  });
+
+  test('what is kept or sent on names a session without its title', () => {
+    expect(untitledSessionName(session('a', { transcript: transcript({ title: 'Fix the login loop', titleSource: 'ai' }) }))).toBe('arbor · fix/login-loop');
+    expect(untitledSessionName(session('a'))).toBe('Claude Code');
   });
 });
 

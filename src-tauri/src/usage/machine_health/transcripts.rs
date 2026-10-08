@@ -1,9 +1,15 @@
-//! Where each session ran and what it was called, from Claude Code's and
-//! Codex's own transcripts on the machine that ran it: the folder, its git
-//! worktree and branch, the session's title, the pull requests it opened, the
-//! lines it changed, each compaction with what set it off, how often it called
-//! each tool, and which skills Claude Code called for by name. The homes looked
-//! in are the machine's agent homes with Sessions on (agent_homes).
+//! Where each session ran, from Claude Code's and Codex's own transcripts on
+//! the machine that ran it: the folder, its git worktree and branch, the pull
+//! requests it opened, the lines it changed, each compaction with what set it
+//! off, how often it called each tool, and which skills Claude Code called for
+//! by name. The homes looked in are the machine's agent homes with Sessions on
+//! (agent_homes).
+//!
+//! A session's title (Claude Code's own or the one its user gave it, or a Codex
+//! thread's name) is conversation text, so it's read only while Settings ›
+//! Harnesses' Session titles is on (`set_session_titles`), and only held in
+//! memory (`TitleMemory`). usage.db never has one, and turning the switch off
+//! drops every title held.
 //!
 //! Every few minutes, each machine that answered its last health sample is
 //! asked, over the same shell or SSH connection, about the sessions Arbor has
@@ -20,6 +26,7 @@ use super::agent_homes::{self, tilde, HomeUse};
 use super::*;
 use ts_rs::TS;
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// How often each machine's transcripts are looked through.
 const SCAN_INTERVAL_MS: i64 = 5 * 60 * 1000;
@@ -30,6 +37,8 @@ const LOOKBACK_MS: i64 = 30 * 86_400_000;
 /// At most this many sessions are asked about in one scan, the most recent first.
 const WANTED_LIMIT: usize = 5_000;
 const TITLE_CHARS: usize = 300;
+/// The most titles held at once. Past it they're all dropped and read again, so a long run can't grow without end.
+const TITLES_KEPT: usize = 50_000;
 const PATH_CHARS: usize = 4_096;
 const PULL_REQUESTS_KEPT: usize = 50;
 /// The most names kept in each of a session's tool lists, the most called first.
@@ -40,21 +49,149 @@ const RE_READS_PER_SCAN: usize = 200;
 
 pub(crate) const SESSION_TRANSCRIPTS_UPDATED_EVENT: &str = "session-transcripts-updated";
 
+/// Off until the webview says otherwise, so no title is read before the setting is known.
+static TITLES: AtomicBool = AtomicBool::new(false);
+/// Moves on each time titles are turned on or off, so a scan that began before keeps none of what it read.
+static TITLE_EPOCH: AtomicU64 = AtomicU64::new(0);
+static TITLE_MEMORY: std::sync::Mutex<TitleMemory> = std::sync::Mutex::new(TitleMemory::new());
+
+fn titles_on() -> bool {
+    TITLES.load(Ordering::SeqCst)
+}
+
+fn title_memory() -> std::sync::MutexGuard<'static, TitleMemory> {
+    TITLE_MEMORY.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Sessions' titles while Session titles is on. Only ever in memory: never in usage.db, a log or the archive.
+#[derive(Debug, Default, PartialEq)]
+struct TitleMemory {
+    /// Each session's title and where it came from ("custom", "ai" or "codex"), by session id.
+    titles: BTreeMap<String, (String, &'static str)>,
+    /// The sessions whose transcripts have been looked through for titles since they came on, titled or not, so a
+    /// transcript that hasn't changed isn't looked through again.
+    looked_up: BTreeSet<String>,
+}
+
+impl TitleMemory {
+    const fn new() -> Self {
+        Self { titles: BTreeMap::new(), looked_up: BTreeSet::new() }
+    }
+
+    /// Holds a session's title, or drops it when it's empty. True when that changed what's held.
+    fn set(&mut self, id: &str, title: &str, source: &'static str) -> bool {
+        if title.is_empty() {
+            return self.titles.remove(id).is_some();
+        }
+        if self.titles.get(id).is_some_and(|(held, held_source)| held == title && *held_source == source) {
+            return false;
+        }
+        self.titles.insert(id.to_string(), (title.to_string(), source));
+        true
+    }
+}
+
+/// A Claude Code session's title: the one its user gave it, else Claude Code's own.
+fn claude_title<'a>(ai: &'a str, custom: &'a str) -> (&'a str, &'static str) {
+    if custom.is_empty() {
+        (ai, "ai")
+    } else {
+        (custom, "custom")
+    }
+}
+
+/// Folds the titles a scan read into `memory`, and returns how many sessions' titles changed.
+fn remember_titles(memory: &mut TitleMemory, scan: &ScanOutput) -> usize {
+    let mut changed = 0;
+    for file in scan.files.iter().filter(|file| file.agent == TranscriptAgent::Claude) {
+        let (title, source) = claude_title(&file.ai_title, &file.custom_title);
+        changed += usize::from(memory.set(&file.session_id, title, source));
+    }
+    for (id, (ai, custom)) in &scan.claude_titles {
+        let (title, source) = claude_title(ai, custom);
+        changed += usize::from(memory.set(id, title, source));
+    }
+    // A Codex thread can be named, or its name cleared, without its transcript growing.
+    for (id, title) in &scan.titles {
+        changed += usize::from(memory.set(id, title, "codex"));
+    }
+    // Every transcript found was looked through for titles: read whole, or for its titles alone.
+    memory.looked_up.extend(scan.agent_homes.keys().cloned());
+    if memory.titles.len() > TITLES_KEPT || memory.looked_up.len() > TITLES_KEPT {
+        *memory = TitleMemory::new();
+    }
+    changed
+}
+
+/// Holds what a scan that began at `epoch` read of titles, unless titles have been turned on or off since.
+fn remember_scan_titles(scan: &ScanOutput, epoch: u64) -> usize {
+    let mut memory = title_memory();
+    if !titles_on() || TITLE_EPOCH.load(Ordering::SeqCst) != epoch {
+        return 0;
+    }
+    remember_titles(&mut memory, scan)
+}
+
+/// Puts the titles held in `memory` on transcripts read from usage.db, which never holds one.
+fn put_titles(memory: &TitleMemory, found: &mut HashMap<String, SessionTranscript>) {
+    if memory.titles.is_empty() {
+        return;
+    }
+    for (id, transcript) in found.iter_mut() {
+        if let Some((title, source)) = memory.titles.get(id) {
+            transcript.title = title.clone();
+            transcript.title_source = (*source).to_string();
+        }
+    }
+}
+
+/// Turns reading sessions' titles on or off (Settings › Harnesses' Session titles). Either way every title held is
+/// dropped, so none outlives the switch. On, every machine is looked through again at its next health round, so
+/// titles show soon after.
+#[tauri::command]
+pub(crate) async fn set_session_titles(
+    enabled: bool,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, MachineHealthState>,
+) -> Result<(), String> {
+    {
+        let mut memory = title_memory();
+        if TITLES.swap(enabled, Ordering::SeqCst) == enabled {
+            return Ok(());
+        }
+        TITLE_EPOCH.fetch_add(1, Ordering::SeqCst);
+        *memory = TitleMemory::new();
+    }
+    if enabled {
+        let mut inner = state.lock();
+        for series in inner.series.values_mut() {
+            series.transcripts.scanned_at = None;
+        }
+        inner.local_transcripts.scanned_at = None;
+    }
+    let _ = app.emit(SESSION_TRANSCRIPTS_UPDATED_EVENT, Local::now().timestamp_millis());
+    Ok(())
+}
+
 // Runs with `sh` on the machine, fed on stdin like the health sample. The
 // sessions to look for arrive in the heredoc Rust puts between the two halves,
-// one "id size" line each, with the size the transcript had when last read.
+// one "id size titles" line each, with the size the transcript had when last
+// read and 1 when its titles are wanted even if it hasn't changed. Rust sets
+// `titles` to 1 above it only while Session titles is on; otherwise no title
+// record, thread name or name column is read at all.
 //
 // Lines out, tab-separated, each file's lines after its S line:
 //   H home                                  the machine's home directory
 //   W id agent-home                         the agent home a wanted transcript is in, changed or not
 //   S agent id size                         a transcript that changed
-//   R record                                Claude Code: a title, pull request or cost record, whole
+//   R record                                Claude Code: a pull request or cost record, whole, or a title
+//   Q id record                             Claude Code: a title of a transcript that hasn't changed, whole
 //   K timestamp trigger pre post duration   Claude Code: a compaction
 //   P "cwd":…,"sessionId":…,"gitBranch":…   Claude Code: where the session last was
 //   M "field":"value"                       Codex: the folder, branch and repository it started in
 //   C timestamp                             Codex: a compaction
 //   N record                                Codex: a thread's name, from a session index
-//   T id "name" "branch"                    Codex: a thread's name and branch, from a state database
+//   T id "name" "branch"                    Codex: a thread's branch, and its name with titles on, from a state database
 //   U count name                            how often the session called a tool
 //   V count name                            Claude Code: how often its subagents called a tool
 //   A count type                            Claude Code: the subagents it started of a type
@@ -84,6 +221,10 @@ remember() {
   dir=${dir%%\"*}
   case "$dir" in *\\*|'') ;; *) printf '%s\n' "$dir" >> "$work/cwds" ;; esac
 }
+
+# The Claude Code records read whole: pull requests and line counts, and titles only while Arbor is asked for them.
+records='pr-link|cost-state'
+if [ "$titles" = 1 ]; then records="ai-title|custom-title|$records"; fi
 
 # Every record that has a folder carries these fields together, in this order.
 place='"cwd":"([^"\\]|\\.)*","sessionId":"[^"]*"(,"version":"[^"]*")?(,"gitBranch":"([^"\\]|\\.)*")?'
@@ -119,7 +260,7 @@ calls='"type":"response_item","payload":\{"type":"(function_call|custom_tool_cal
 
 # A compaction's keys have come in more than one order, so it's found by its subtype.
 claude_file() {
-  grep -E '^\{"type":"(ai-title|custom-title|pr-link|cost-state)"|"subtype":"compact_boundary"' "$1" 2>/dev/null | awk '
+  grep -E '^\{"type":"('"$records"')"|"subtype":"compact_boundary"' "$1" 2>/dev/null | awk '
     function text(name) { return match($0, "\"" name "\":\"[^\"]*\"") ? substr($0, RSTART + length(name) + 4, RLENGTH - length(name) - 5) : "" }
     function number(name) { return match($0, "\"" name "\":[0-9]+") ? substr($0, RSTART + length(name) + 3, RLENGTH - length(name) - 3) : "" }
     /^\{"type":"ai-title"/ { ai = $0; next }
@@ -139,6 +280,14 @@ claude_file() {
     printf 'P\t%s\n' "$last"
     remember "$last"
   fi
+}
+
+# Only the latest titles of a transcript that hasn't changed since it was read, tagged with its session.
+claude_titles() {
+  grep -E '^\{"type":"(ai-title|custom-title)"' "$1" 2>/dev/null | awk -v id="$2" '
+    /^\{"type":"ai-title"/ { ai = $0; next }
+    { custom = $0 }
+    END { if (ai != "") print "Q\t" id "\t" ai; if (custom != "") print "Q\t" id "\t" custom }'
 }
 
 codex_file() {
@@ -212,16 +361,16 @@ place_of() {
   done < "$work/codex-homes"
 } > "$work/files"
 
-awk 'NR == FNR { want[$1] = $2; next }
+awk 'NR == FNR { want[$1] = $2; named[$1] = ($3 == "1"); next }
   {
     path = substr($0, length($1) + 2)
     name = path; sub(/.*\//, "", name); sub(/\.jsonl$/, "", name)
     # rollout-<19-character time>-<thread>, with _<rollout> after it once a thread has been reverted.
     if ($1 == "codex") { id = substr(name, 29); sub(/_.*/, "", id) } else id = name
-    if ((id in want) && !(id in found)) { found[id] = 1; print $1, id, want[id], path }
+    if ((id in want) && !(id in found)) { found[id] = 1; print $1, id, want[id], (named[id] ? 1 : 0), path }
   }' "$work/wanted" "$work/files" > "$work/matched"
 
-while read -r agent id known path; do
+while read -r agent id known named path; do
   # The home is the folder above Claude Code's projects, or above Codex's sessions.
   case $agent in
     claude) where=${path%/projects/*} ;;
@@ -229,24 +378,32 @@ while read -r agent id known path; do
   esac
   printf 'W\t%s\t%s\n' "$id" "$where"
   size=$(wc -c < "$path" 2>/dev/null | tr -d ' ')
+  if [ "$titles" = 1 ] && [ "$named" = 1 ] && [ "$agent" = claude ] && [ -n "$size" ] && [ "$size" = "$known" ]; then
+    claude_titles "$path" "$id"
+  fi
   [ -n "$size" ] && [ "$size" != "$known" ] || continue
   printf 'S\t%s\t%s\t%s\n' "$agent" "$id" "$size"
   if [ "$agent" = claude ]; then claude_file "$path"; else codex_file "$path"; fi
 done < "$work/matched"
 
-while IFS= read -r home; do
-  if [ -f "$home/session_index.jsonl" ]; then
-    awk 'NR == FNR { want[$1] = 1; next }
-      match($0, /"id":"[^"]*"/) && (substr($0, RSTART + 6, RLENGTH - 7) in want) { print "N\t" $0 }' "$work/wanted" "$home/session_index.jsonl"
-  fi
-done < "$work/codex-homes"
+if [ "$titles" = 1 ]; then
+  while IFS= read -r home; do
+    if [ -f "$home/session_index.jsonl" ]; then
+      awk 'NR == FNR { want[$1] = 1; next }
+        match($0, /"id":"[^"]*"/) && (substr($0, RSTART + 6, RLENGTH - 7) in want) { print "N\t" $0 }' "$work/wanted" "$home/session_index.jsonl"
+    fi
+  done < "$work/codex-homes"
+fi
 
-# Codex 0.145 on keeps thread names in its state database. Only the name and
-# branch are asked for; the query goes in on stdin, as it can be long. While
+# Codex 0.145 on keeps thread names in its state database. Only the branch is
+# asked for, and the name with titles on; the query goes in on stdin, as it can be long. While
 # Codex has the database open it reads read-only. Once Codex has closed it, a
 # read-only open can't start, and nothing is writing, so it's read as it lies.
 if command -v sqlite3 >/dev/null 2>&1; then
-  awk 'BEGIN { printf "SELECT \047T\047 || char(9) || id || char(9) || json_quote(coalesce(name, \047\047)) || char(9) || json_quote(coalesce(git_branch, \047\047)) FROM threads WHERE id IN (" }
+  awk -v titles="$titles" 'BEGIN {
+      name = titles == 1 ? "coalesce(name, \047\047)" : "\047\047"
+      printf "SELECT \047T\047 || char(9) || id || char(9) || json_quote(%s) || char(9) || json_quote(coalesce(git_branch, \047\047)) FROM threads WHERE id IN (", name
+    }
     { printf "%s\047%s\047", (NR > 1 ? "," : ""), $1 }
     END { print ");" }' "$work/wanted" > "$work/names.sql"
   { if [ -n "${CODEX_SQLITE_HOME:-}" ]; then printf '%s\n' "$CODEX_SQLITE_HOME"; fi; cat "$work/codex-homes"; } | awk '!seen[$0]++' |
@@ -442,6 +599,8 @@ enum FolderPlace {
 struct ScanOutput {
     home: String,
     files: Vec<TranscriptRead>,
+    /// Claude Code titles (its own, then the user's) of transcripts that hadn't changed, by session id.
+    claude_titles: HashMap<String, (String, String)>,
     /// Codex thread names by session id. An empty one was cleared.
     titles: HashMap<String, String>,
     /// Codex threads' branches by session id, from its state database.
@@ -580,6 +739,21 @@ fn parse_scan(stdout: &str) -> ScanOutput {
                 }
             }
             "G" => read_folder_place(&mut scan.places, rest),
+            "Q" => {
+                let Some((id, record)) = rest.split_once('\t').filter(|(id, _)| is_session_id(id)) else {
+                    continue;
+                };
+                // Only a title is taken from these, whatever else the record says.
+                let mut read = TranscriptRead::default();
+                read_claude_record(&mut read, record);
+                let titles = scan.claude_titles.entry(id.to_string()).or_default();
+                if !read.ai_title.is_empty() {
+                    titles.0 = read.ai_title;
+                }
+                if !read.custom_title.is_empty() {
+                    titles.1 = read.custom_title;
+                }
+            }
             "N" => {
                 let Ok(Value::Object(fields)) = serde_json::from_str::<Value>(rest) else {
                     continue;
@@ -1078,20 +1252,23 @@ fn row_transcript(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, u64, Ses
             branch: row.get(9)?,
             commit_hash: row.get(10)?,
             repository_url: row.get(11)?,
-            title: row.get(12)?,
-            title_source: row.get(13)?,
-            pull_requests: serde_json::from_str(&json(14)?).unwrap_or_default(),
-            lines_added: row.get::<_, Option<i64>>(15)?.and_then(|value| u64::try_from(value).ok()),
-            lines_removed: row.get::<_, Option<i64>>(16)?.and_then(|value| u64::try_from(value).ok()),
-            compactions: serde_json::from_str(&json(17)?).unwrap_or_default(),
-            tool_usage: row.get::<_, Option<String>>(18)?.and_then(|json| serde_json::from_str(&json).ok()),
-            agent_home: row.get(19)?,
+            // Only ever from memory (`put_titles`): usage.db's title columns are never read or written.
+            title: String::new(),
+            title_source: String::new(),
+            pull_requests: serde_json::from_str(&json(12)?).unwrap_or_default(),
+            lines_added: row.get::<_, Option<i64>>(13)?.and_then(|value| u64::try_from(value).ok()),
+            lines_removed: row.get::<_, Option<i64>>(14)?.and_then(|value| u64::try_from(value).ok()),
+            compactions: serde_json::from_str(&json(15)?).unwrap_or_default(),
+            tool_usage: row.get::<_, Option<String>>(16)?.and_then(|json| serde_json::from_str(&json).ok()),
+            agent_home: row.get(17)?,
         },
     ))
 }
 
+/// Every column read and written. `title` and `title_source` are left out: an older Arbor kept titles there, and
+/// they're only ever held in memory now.
 const TRANSCRIPT_COLUMNS: &str = "session_id, machine, agent, file_size, read_at_ms, home, cwd, repo_root, main_repo, \
-     branch, commit_hash, repository_url, title, title_source, pull_requests, lines_added, lines_removed, compactions, tool_usage, \
+     branch, commit_hash, repository_url, pull_requests, lines_added, lines_removed, compactions, tool_usage, \
      agent_home";
 
 /// The transcripts known for these sessions, by session id.
@@ -1116,6 +1293,7 @@ pub(in crate::usage) fn load_session_transcripts(
             found.insert(id, transcript);
         }
     }
+    put_titles(&title_memory(), &mut found);
     Ok(found)
 }
 
@@ -1139,6 +1317,7 @@ pub(in crate::usage) fn load_linked_transcripts(
         let (id, _, transcript) = row.map_err(|error| format!("Failed to read session transcripts: {error}"))?;
         found.insert(id, transcript);
     }
+    put_titles(&title_memory(), &mut found);
     Ok(found)
 }
 
@@ -1206,17 +1385,19 @@ fn re_reads(count: usize, per_scan: usize, now_ms: i64) -> Vec<usize> {
     (0..per_scan).map(|offset| (start + offset) % count).collect()
 }
 
-/// The scan of `machine`'s homes, for the sessions in `wanted`.
-fn scan_script(machine: &str, wanted: &[(String, u64)]) -> String {
+/// The scan of `machine`'s homes, for the sessions in `wanted`. `looked_up` is None while Session titles is off, so no
+/// title is read; on, it's the sessions already looked through for titles, which an unchanged transcript isn't again.
+fn scan_script(machine: &str, wanted: &[(String, u64)], looked_up: Option<&BTreeSet<String>>) -> String {
     let homes = agent_homes::shell_function(machine, HomeUse::Sessions);
-    let mut script = String::with_capacity(homes.len() + SCRIPT_HEAD.len() + SCRIPT_BODY.len() + wanted.len() * 48);
+    let mut script = String::with_capacity(homes.len() + SCRIPT_HEAD.len() + SCRIPT_BODY.len() + wanted.len() * 50 + 16);
     script.push_str(&homes);
+    script.push_str(if looked_up.is_some() { "titles=1\n" } else { "titles=0\n" });
     script.push_str(SCRIPT_HEAD);
     for (id, size) in wanted {
         script.push_str(id);
         script.push(' ');
         script.push_str(&size.to_string());
-        script.push('\n');
+        script.push_str(if looked_up.is_some_and(|looked_up| !looked_up.contains(id)) { " 1\n" } else { " 0\n" });
     }
     script.push_str(SCRIPT_BODY);
     script
@@ -1265,20 +1446,8 @@ fn store_scan(connection: &mut Connection, machine: &str, scan: &ScanOutput, now
             )
             .map_err(|error| format!("Failed to store a session's agent home: {error}"))?;
     }
-    // A Codex thread can be named, or its name cleared, without its transcript growing.
-    for (id, title) in &scan.titles {
-        if read.contains(id.as_str()) {
-            continue;
-        }
-        changed += transaction
-            .execute(
-                "UPDATE usage_session_transcripts SET title = ?2, title_source = CASE WHEN ?2 = '' THEN '' ELSE 'codex' END
-                 WHERE session_id = ?1 AND machine = ?3 AND agent = 'codex' AND title <> ?2",
-                params![id, title, machine],
-            )
-            .map_err(|error| format!("Failed to store a session title: {error}"))?;
-    }
-    // Its branch too, when nothing else said which it was.
+    // A Codex thread's branch can arrive without its transcript growing, when nothing else said which it was.
+    // Its name is only ever held in memory (`remember_titles`).
     for (id, branch) in &scan.branches {
         if read.contains(id.as_str()) {
             continue;
@@ -1331,15 +1500,6 @@ fn merge_transcript(
         .map(str::to_string)
         .or_else(|| same_folder.map(|previous| previous.branch.clone()))
         .unwrap_or_default();
-    let (title, title_source) = match file.agent {
-        TranscriptAgent::Claude if !file.custom_title.is_empty() => (file.custom_title.clone(), "custom"),
-        TranscriptAgent::Claude if !file.ai_title.is_empty() => (file.ai_title.clone(), "ai"),
-        TranscriptAgent::Codex => match scan.titles.get(&file.session_id) {
-            Some(title) => (title.clone(), "codex"),
-            None => previous.map_or_else(Default::default, |previous| (previous.title.clone(), "codex")),
-        },
-        TranscriptAgent::Claude => Default::default(),
-    };
     let keep = |value: &str, old: fn(&SessionTranscript) -> &String| {
         if value.is_empty() {
             previous.map(|previous| old(previous).clone()).unwrap_or_default()
@@ -1361,8 +1521,9 @@ fn merge_transcript(
         branch,
         commit_hash: keep(&file.commit_hash, |previous| &previous.commit_hash),
         repository_url: keep(&file.repository_url, |previous| &previous.repository_url),
-        title_source: if title.is_empty() { String::new() } else { title_source.to_string() },
-        title,
+        // Never stored: titles are only held in memory, while Session titles is on.
+        title: String::new(),
+        title_source: String::new(),
         pull_requests: file.pull_requests.clone(),
         lines_added: file.lines.map(|(added, _)| added).or(previous.and_then(|previous| previous.lines_added)),
         lines_removed: file.lines.map(|(_, removed)| removed).or(previous.and_then(|previous| previous.lines_removed)),
@@ -1381,7 +1542,7 @@ fn write_transcript(transaction: &Transaction<'_>, session_id: &str, size: u64, 
         .execute(
             &format!(
                 "INSERT OR REPLACE INTO usage_session_transcripts ({TRANSCRIPT_COLUMNS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)"
             ),
             params![
                 session_id,
@@ -1396,8 +1557,6 @@ fn write_transcript(transaction: &Transaction<'_>, session_id: &str, size: u64, 
                 transcript.branch,
                 transcript.commit_hash,
                 transcript.repository_url,
-                transcript.title,
-                transcript.title_source,
                 pull_requests,
                 transcript.lines_added.map(|value| value as i64),
                 transcript.lines_removed.map(|value| value as i64),
@@ -1490,13 +1649,21 @@ async fn scan_machine(target: &Machine, scanned: Vec<String>, now_ms: i64) -> Re
     if wanted.is_empty() {
         return Ok(0);
     }
-    let scan = parse_scan(&run_checked(target, MachineOp::TranscriptScan, &scan_script(machine, &wanted), SCAN_TIMEOUT).await?);
+    // Titles are asked for only while they're on, and kept only if they're still on, unswitched, when the scan ends.
+    let epoch = TITLE_EPOCH.load(Ordering::SeqCst);
+    let script = {
+        let memory = title_memory();
+        scan_script(machine, &wanted, titles_on().then_some(&memory.looked_up))
+    };
+    let scan = parse_scan(&run_checked(target, MachineOp::TranscriptScan, &script, SCAN_TIMEOUT).await?);
+    let retitled = remember_scan_titles(&scan, epoch);
     let machine = machine.to_string();
-    run_usage_task(move || {
+    let stored = run_usage_task(move || {
         let _write_guard = lock_usage_writes();
         store_scan(&mut open_usage_database()?, &machine, &scan, now_ms)
     })
-    .await
+    .await?;
+    Ok(stored + retitled)
 }
 
 /// Starts a scan on each machine that's due for one. Called after every health round.
@@ -2002,7 +2169,7 @@ mod tests {
 
         let stored = load_session_transcripts(&connection, &[CLAUDE_ID]).unwrap().remove(CLAUDE_ID).unwrap();
         assert_eq!((stored.repo_root.as_str(), stored.main_repo.as_str()), ("/home/cam/src/arbor-wt", "/home/cam/src/arbor"));
-        assert_eq!((stored.title.as_str(), stored.title_source.as_str()), ("Login loop", "custom"));
+        assert_eq!((stored.title.as_str(), stored.title_source.as_str()), ("", ""), "a title is never stored");
         assert_eq!(stored.branch, "fix/login");
         assert_eq!(stored.compactions.len(), 1);
         assert_eq!((stored.machine.as_str(), stored.home.as_str(), stored.read_at_ms), ("mini", "/home/cam", now + 1));
@@ -2012,27 +2179,113 @@ mod tests {
     }
 
     #[test]
-    fn codex_thread_names_arrive_without_the_transcript_growing() {
+    fn codex_thread_names_arrive_without_the_transcript_growing_and_are_only_held_in_memory() {
         let mut connection = database();
         let codex = TranscriptRead { agent: TranscriptAgent::Codex, session_id: CODEX_ID.into(), size: 9_000, cwd: "/src/api".into(), ..TranscriptRead::default() };
         store_scan(&mut connection, "cedar", &scan_of(vec![codex]), 1).unwrap();
+        let mut memory = TitleMemory::new();
         let mut named = scan_of(Vec::new());
         named.titles.insert(CODEX_ID.into(), "Rate limiter".into());
-        assert_eq!(store_scan(&mut connection, "mini", &named, 2).unwrap(), 0, "only the machine it's on can name it");
-        assert_eq!(store_scan(&mut connection, "cedar", &named, 2).unwrap(), 1);
-        assert_eq!(store_scan(&mut connection, "cedar", &named, 3).unwrap(), 0);
-        let stored = load_session_transcripts(&connection, &[CODEX_ID]).unwrap().remove(CODEX_ID).unwrap();
-        assert_eq!((stored.title.as_str(), stored.title_source.as_str(), stored.cwd.as_str()), ("Rate limiter", "codex", "/src/api"));
+        assert_eq!(store_scan(&mut connection, "cedar", &named, 2).unwrap(), 0, "a name is never stored");
+        assert_eq!(remember_titles(&mut memory, &named), 1);
+        assert_eq!(remember_titles(&mut memory, &named), 0, "the same name again isn't a change");
+        let mut found = load_session_transcripts(&connection, &[CODEX_ID]).unwrap();
+        assert_eq!(found[CODEX_ID].title, "");
+        put_titles(&memory, &mut found);
+        let shown = &found[CODEX_ID];
+        assert_eq!((shown.title.as_str(), shown.title_source.as_str(), shown.cwd.as_str()), ("Rate limiter", "codex", "/src/api"));
 
         let mut cleared = scan_of(Vec::new());
         cleared.titles.insert(CODEX_ID.into(), String::new());
         cleared.branches.insert(CODEX_ID.into(), "rate-limits".into());
-        assert_eq!(store_scan(&mut connection, "cedar", &cleared, 4).unwrap(), 2);
+        assert_eq!(store_scan(&mut connection, "cedar", &cleared, 4).unwrap(), 1, "only the branch is stored");
+        assert_eq!(remember_titles(&mut memory, &cleared), 1, "a name cleared is dropped");
+        assert!(memory.titles.is_empty());
         let mut moved = scan_of(Vec::new());
         moved.branches.insert(CODEX_ID.into(), "main".into());
         assert_eq!(store_scan(&mut connection, "cedar", &moved, 5).unwrap(), 0, "a branch already known stays");
         let stored = load_session_transcripts(&connection, &[CODEX_ID]).unwrap().remove(CODEX_ID).unwrap();
         assert_eq!((stored.title.as_str(), stored.title_source.as_str(), stored.branch.as_str()), ("", "", "rate-limits"));
+    }
+
+    #[test]
+    fn claude_titles_are_held_by_session_and_an_unchanged_transcript_is_asked_once() {
+        let other = "b2c3d4e5-6f70-4a81-9b2c-3d4e5f6a7b8c";
+        let unseen = "11111111-2222-4333-8444-555555555555";
+        let mut memory = TitleMemory::new();
+        let mut scan = scan_of(vec![claude_read(1)]);
+        scan.claude_titles.insert(other.into(), ("Its own".into(), "Named by the user".into()));
+        for id in [CLAUDE_ID, other] {
+            scan.agent_homes.insert(id.into(), "/home/cam/.claude".into());
+        }
+        assert_eq!(remember_titles(&mut memory, &scan), 2);
+        assert_eq!(memory.titles.get(CLAUDE_ID), Some(&("Fix the login loop".to_string(), "ai")));
+        assert_eq!(memory.titles.get(other), Some(&("Named by the user".to_string(), "custom")), "the user's name wins");
+        assert!(memory.looked_up.contains(CLAUDE_ID) && memory.looked_up.contains(other));
+
+        // On, an unchanged transcript is asked for its titles until it's been looked through. Off, nothing is.
+        let wanted = [(CLAUDE_ID.to_string(), 5), (unseen.to_string(), 5)];
+        let on = scan_script("", &wanted, Some(&memory.looked_up));
+        assert!(on.contains("titles=1\n"));
+        assert!(on.contains(&format!("{CLAUDE_ID} 5 0\n")) && on.contains(&format!("{unseen} 5 1\n")), "{on}");
+        let off = scan_script("", &wanted, None);
+        assert!(off.contains("titles=0\n"));
+        assert!(off.contains(&format!("{CLAUDE_ID} 5 0\n")) && off.contains(&format!("{unseen} 5 0\n")), "{off}");
+
+        // A transcript read again without a title gives up the one held.
+        let mut untitled = claude_read(2);
+        untitled.ai_title.clear();
+        assert_eq!(remember_titles(&mut memory, &scan_of(vec![untitled])), 1);
+        assert!(!memory.titles.contains_key(CLAUDE_ID));
+    }
+
+    #[test]
+    fn no_title_reaches_usage_db_or_what_commands_return_while_titles_are_off() {
+        const SECRET: &str = "TITLE-NEVER-STORED";
+        // Ids no other test uses, as titles are held app-wide.
+        let read_id = "5ec7e700-0000-4000-8000-000000000001";
+        let legacy_id = "5ec7e700-0000-4000-8000-000000000002";
+        let mut connection = database();
+        // An older Arbor kept titles in usage.db.
+        for id in [read_id, legacy_id] {
+            connection
+                .execute(
+                    "INSERT INTO usage_session_transcripts (session_id, machine, agent, title, title_source) VALUES (?1, 'mini', 'claude', ?2, 'ai')",
+                    params![id, SECRET],
+                )
+                .unwrap();
+        }
+        // A scan with every kind of title in it, which a scan with titles off never has.
+        let read = TranscriptRead {
+            agent: TranscriptAgent::Claude,
+            session_id: read_id.into(),
+            size: 10,
+            ai_title: SECRET.into(),
+            custom_title: SECRET.into(),
+            ..TranscriptRead::default()
+        };
+        let mut scan = scan_of(vec![read]);
+        scan.titles.insert(read_id.into(), SECRET.into());
+        scan.claude_titles.insert(legacy_id.into(), (SECRET.into(), SECRET.into()));
+        scan.agent_homes.insert(read_id.into(), "/home/cam/.claude".into());
+        store_scan(&mut connection, "mini", &scan, 1).unwrap();
+        assert!(!titles_on(), "nothing in the tests turns titles on");
+        assert_eq!(remember_scan_titles(&scan, TITLE_EPOCH.load(Ordering::SeqCst)), 0, "titles are off, so none is held");
+
+        let stored: Vec<String> = connection
+            .prepare("SELECT title || title_source FROM usage_session_transcripts WHERE session_id = ?1")
+            .unwrap()
+            .query_map([read_id], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(stored, [""], "a rewritten row drops the title an older Arbor stored");
+        let found = load_session_transcripts(&connection, &[read_id, legacy_id]).unwrap();
+        assert_eq!(found.len(), 2);
+        let json = serde_json::to_string(&found).unwrap();
+        assert!(!json.contains(SECRET), "a title reached a command's result:\n{json}");
+        let linked = serde_json::to_string(&load_linked_transcripts(&connection, &[""]).unwrap()).unwrap();
+        assert!(!linked.contains(SECRET), "{linked}");
     }
 
     #[test]
@@ -2091,7 +2344,7 @@ mod tests {
             fs::write(path, lines.join("\n") + "\n").unwrap();
         }
 
-        fn run(home: &Path, wanted: &[(String, u64)]) -> String {
+        fn run(home: &Path, wanted: &[(String, u64)], titles: Option<&BTreeSet<String>>) -> String {
             let mut command = tokio::process::Command::new("sh");
             command
                 .env_clear()
@@ -2103,7 +2356,7 @@ mod tests {
                 .kill_on_drop(true);
             let output = tokio::runtime::Runtime::new()
                 .unwrap()
-                .block_on(run_script(command, &scan_script("", wanted), Duration::from_secs(20)))
+                .block_on(run_script(command, &scan_script("", wanted, titles), Duration::from_secs(20)))
                 .unwrap();
             assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
             String::from_utf8(output.stdout).unwrap()
@@ -2267,7 +2520,8 @@ mod tests {
             );
 
             let wanted = [CLAUDE_ID, CODEX_ID, proxied_claude, proxied_codex].map(|id| (id.to_string(), 0));
-            let stdout = run(&home, &wanted);
+            // With Session titles on.
+            let stdout = run(&home, &wanted, Some(&BTreeSet::new()));
             assert!(!stdout.contains(SECRET), "a message got out:\n{stdout}");
             let scan = parse_scan(&stdout);
             assert_eq!(scan.home, home.display().to_string());
@@ -2361,16 +2615,60 @@ mod tests {
         }
 
         #[test]
+        fn with_titles_off_no_title_or_thread_name_leaves_the_machine() {
+            let home = temp_home("untitled");
+            let path = home.join(format!(".claude/projects/-src/{CLAUDE_ID}.jsonl"));
+            let mut lines = claude_transcript(CLAUDE_ID, &home);
+            lines.push(format!(r#"{{"type":"ai-title","aiTitle":"{SECRET}","sessionId":"{CLAUDE_ID}"}}"#));
+            lines.push(format!(r#"{{"type":"custom-title","customTitle":"{SECRET}","sessionId":"{CLAUDE_ID}"}}"#));
+            write(&path, &lines);
+            write(
+                &home.join(format!(".codex/sessions/2026/09/24/rollout-2026-09-24T02-00-00-{CODEX_ID}.jsonl")),
+                &codex_rollout(CODEX_ID, &home),
+            );
+            write(
+                &home.join(".codex/session_index.jsonl"),
+                &[format!(r#"{{"id":"{CODEX_ID}","thread_name":"{SECRET}","updated_at":"2026-09-24T03:00:00Z"}}"#)],
+            );
+            let open = thread_database(&home.join(".codex/state_5.sqlite"), &[(CODEX_ID, Some(SECRET), Some("rate-limits"))]);
+            let size = fs::metadata(&path).unwrap().len();
+
+            // Read whole, and unchanged.
+            for wanted in [vec![(CLAUDE_ID.to_string(), 0), (CODEX_ID.to_string(), 0)], vec![(CLAUDE_ID.to_string(), size)]] {
+                let stdout = run(&home, &wanted, None);
+                assert!(!stdout.contains(SECRET), "a title got out with titles off:\n{stdout}");
+                let scan = parse_scan(&stdout);
+                assert!(scan.titles.is_empty() && scan.claude_titles.is_empty(), "{stdout}");
+                assert!(scan.files.iter().all(|file| file.ai_title.is_empty() && file.custom_title.is_empty()), "{stdout}");
+            }
+            if Path::new("/usr/bin/sqlite3").exists() {
+                let stdout = run(&home, &[(CODEX_ID.to_string(), 0)], None);
+                assert_eq!(parse_scan(&stdout).branches.get(CODEX_ID).map(String::as_str), Some("rate-limits"), "the branch still comes");
+            }
+
+            // On, an unchanged transcript gives up its titles alone, once.
+            let stdout = run(&home, &[(CLAUDE_ID.to_string(), size)], Some(&BTreeSet::new()));
+            let scan = parse_scan(&stdout);
+            assert!(scan.files.is_empty(), "{stdout}");
+            assert_eq!(scan.claude_titles.get(CLAUDE_ID), Some(&(SECRET.to_string(), SECRET.to_string())), "{stdout}");
+            let looked_up = BTreeSet::from([CLAUDE_ID.to_string()]);
+            let stdout = run(&home, &[(CLAUDE_ID.to_string(), size)], Some(&looked_up));
+            assert!(parse_scan(&stdout).claude_titles.is_empty(), "{stdout}");
+            drop(open);
+            let _ = fs::remove_dir_all(&home);
+        }
+
+        #[test]
         fn a_transcript_that_hasnt_grown_is_skipped() {
             let home = temp_home("unchanged");
             let path = home.join(format!(".claude/projects/-src/{CLAUDE_ID}.jsonl"));
             write(&path, &claude_transcript(CLAUDE_ID, &home));
             let size = fs::metadata(&path).unwrap().len();
-            let stdout = run(&home, &[(CLAUDE_ID.into(), size)]);
+            let stdout = run(&home, &[(CLAUDE_ID.into(), size)], None);
             assert!(parse_scan(&stdout).files.is_empty(), "{stdout}");
             // Its home is still said, so a session read before homes were kept gets one without being read again.
             assert_eq!(parse_scan(&stdout).agent_homes.get(CLAUDE_ID), Some(&home.join(".claude").display().to_string()));
-            assert_eq!(parse_scan(&run(&home, &[(CLAUDE_ID.into(), size - 1)])).files.len(), 1);
+            assert_eq!(parse_scan(&run(&home, &[(CLAUDE_ID.into(), size - 1)], None)).files.len(), 1);
             let _ = fs::remove_dir_all(&home);
         }
 
@@ -2393,7 +2691,7 @@ mod tests {
             let gone = "0199a1b2-c3d4-7e5f-8a6b-000000000000";
             std::os::unix::fs::symlink(home.join("unmounted/x.jsonl"), home.join(format!(".codex/archived_sessions/rollout-2026-09-24T03-00-00-{gone}.jsonl"))).unwrap();
 
-            let stdout = run(&home, &[(CLAUDE_ID.into(), 0), (CODEX_ID.into(), 0), (gone.into(), 0)]);
+            let stdout = run(&home, &[(CLAUDE_ID.into(), 0), (CODEX_ID.into(), 0), (gone.into(), 0)], None);
             let scan = parse_scan(&stdout);
             assert_eq!(scan.agent_homes.get(CODEX_ID), Some(&home.join(".codex").display().to_string()), "archived rollouts are in the home too");
             let mut read: Vec<String> = scan.files.into_iter().map(|file| file.session_id).collect();
@@ -2411,7 +2709,7 @@ mod tests {
                 &home.join(format!(".codex/sessions/2026/09/24/rollout-2026-09-24T02-00-00-{CODEX_ID}_{rollout}.jsonl")),
                 &codex_rollout(CODEX_ID, &home),
             );
-            let stdout = run(&home, &[(CODEX_ID.into(), 0), (rollout.into(), 0)]);
+            let stdout = run(&home, &[(CODEX_ID.into(), 0), (rollout.into(), 0)], None);
             let read: Vec<String> = parse_scan(&stdout).files.into_iter().map(|file| file.session_id).collect();
             assert_eq!(read, [CODEX_ID], "{stdout}");
             let _ = fs::remove_dir_all(&home);
@@ -2420,7 +2718,7 @@ mod tests {
         #[test]
         fn a_machine_without_agents_answers_with_nothing() {
             let home = temp_home("empty");
-            let stdout = run(&home, &[(CLAUDE_ID.into(), 0)]);
+            let stdout = run(&home, &[(CLAUDE_ID.into(), 0)], None);
             let scan = parse_scan(&stdout);
             assert!(scan.files.is_empty() && scan.titles.is_empty() && scan.branches.is_empty() && scan.places.is_empty(), "{stdout}");
             let _ = fs::remove_dir_all(&home);

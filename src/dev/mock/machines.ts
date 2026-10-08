@@ -46,7 +46,7 @@ import { runAnswers } from './runs';
 import { configSettings } from './core';
 import { freshInstall, later, mockLog, now, params, realSize } from './scenario';
 import { joinSetupMachine, leaveToPolicy, mockHarnessesFound, recordEditMock, recordProbeUpdateMock, scanSetupMock, setupItem, setupMachines } from './setup';
-import { reporterInstalled, setMockT3Enabled, setMockT3Titles } from './usage';
+import { reporterInstalled, setMockSessionTitles, setMockT3Enabled, setMockT3Titles } from './usage';
 
 // Settings › Diagnostics: Arbor's calls to machines and the core, by `?diagnostics=` (listed at the top).
 const diagnosticsScenario = params.get('diagnostics') ?? (freshInstall ? 'empty' : 'mixed');
@@ -891,6 +891,11 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
   set_t3_thread_titles: ({ enabled }) => {
     setMockT3Titles(enabled);
     mockLog('set_t3_thread_titles', enabled);
+    return null;
+  },
+  set_session_titles: ({ enabled }) => {
+    setMockSessionTitles(enabled);
+    mockLog('set_session_titles', enabled);
     return null;
   },
   set_agent_reporter: ({ machine, enabled, plan: planOnly }) => {

@@ -100,6 +100,8 @@
  * `?harness=none` for no T3 Code or Orca on any machine (each machine's page says no harness was found, and Settings ›
  * Harnesses has no card for either), and
  * `?t3=stopped` for T3 Code installed but not running on cam-mbp and cedar-02;
+ * `?titles=on` for Settings › Harnesses' Session titles on, so sessions carry their Claude Code and Codex titles (by
+ * default it's off, as in the app, and no session has one);
  * `?pools=none` for no machine pools yet (Settings › Pools offers New pool), `?pools=full` for every member of every
  * pool too busy to take a run (the preview says why each is left out), `?pools=stale` for every reading too old to
  * go by, and `?pools=open` for pools with every limit off; by default there are two pools, one spilling into the other;
@@ -693,6 +695,7 @@ export function installTauriMock() {
   if (isSidebarArt(artScenario)) previewAppPreference('sidebarArt', artScenario);
   const colorScenario = params.get('color');
   if (isAppColor(colorScenario)) previewAppPreference('appColor', colorScenario);
+  if (params.get('titles') === 'on') previewAppPreference('sessionTitles', true);
   // Full screen changes end with a resize, the way macOS reports them.
   (window as Window & { __mockFullscreen?: (fullscreen: boolean) => void }).__mockFullscreen = (fullscreen) => {
     windowFullscreen = fullscreen;

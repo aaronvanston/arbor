@@ -24,6 +24,7 @@ export const LEFT_OUT = {
   frontend_ready: 'only the window can say it has drawn',
   set_quit_guard: 'the window owns ⌘Q',
   set_t3_thread_titles: 'the window keeps the Harnesses switches and passes them on',
+  set_session_titles: 'the window keeps the Harnesses switches and passes them on',
   set_run_harnesses_off: 'the window keeps the Harnesses switches and passes them on',
   get_zoom_level: 'the window owns its zoom',
   set_zoom_level: 'the window owns its zoom',

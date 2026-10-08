@@ -22,12 +22,13 @@ const CHECK_INTERVAL_MS = 30_000;
  */
 export function LiveSessionsMonitor() {
   const { t } = useI18n();
-  const { traySessions } = useAppPreferences();
+  const { traySessions, sessionTitles } = useAppPreferences();
   const report = useLiveSessions();
   const { board, now } = useFleetBoard();
   const names = useMachineNames();
   const trayRef = useRef(traySessions);
   trayRef.current = traySessions;
+  const checkRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let disposed = false;
@@ -59,6 +60,7 @@ export function LiveSessionsMonitor() {
         running = false;
       }
     };
+    checkRef.current = () => void check();
     void check();
     listen(USAGE_UPDATED_EVENT, schedule)
       .then((unlisten) => {
@@ -77,11 +79,31 @@ export function LiveSessionsMonitor() {
     });
     return () => {
       disposed = true;
+      checkRef.current = () => undefined;
       stop?.();
       stopTimer();
       if (pending !== undefined) window.clearTimeout(pending);
     };
   }, []);
+
+  // Titles are read only while Settings › Harnesses' Session titles is on, and the native side drops them when it goes
+  // off, so it's told on each change, and then the running sessions are read again. At launch it's only told when it's
+  // on: the native side starts with titles off, and only this turns them on.
+  const titlesToldRef = useRef(false);
+  useEffect(() => {
+    let stale = false;
+    const changed = titlesToldRef.current;
+    titlesToldRef.current = true;
+    if (!changed && !sessionTitles) return;
+    invokeCommand('set_session_titles', { enabled: sessionTitles })
+      .catch((error) => console.warn('Failed to turn reading session titles on or off', error))
+      .finally(() => {
+        if (!stale && changed) checkRef.current();
+      });
+    return () => {
+      stale = true;
+    };
+  }, [sessionTitles]);
 
   const waiting = useMemo((): TrayWaitingSession[] => (board?.rows ?? [])
     .filter((row) => row.countsAsWaiting && (row.status === 'approval' || row.status === 'question'))

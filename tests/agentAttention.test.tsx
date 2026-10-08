@@ -76,6 +76,7 @@ describe('needs-you alerts', () => {
   });
 
   test('alerts name the session and the machine, and pile up into one past three', () => {
+    // Never by its title, which the alert history would keep and the phone would get: by where it ran.
     const codex = wait({
       agent: 'codex', kind: 'waiting', sessionId: '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', machine: 'cedar-02',
       session: session('0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', { provider: 'codex', userAgent: 'codex_cli_rs/0.156.0', transcript: transcript({ branch: 'main', repoRoot: '/home/cam/src/api', mainRepo: '/home/cam/src/api', cwd: '/home/cam/src/api' }) }),
@@ -83,7 +84,7 @@ describe('needs-you alerts', () => {
     const unknown = wait({ kind: 'question', sessionId: 'e5d4c3b2-a190-4f8e-9d7c-6b5a4f3e2d1c', session: null });
     expect(attentionNotifications([wait(), codex, unknown], t)).toEqual([
       {
-        title: 'Claude Code needs permission', body: 'Fix the login redirect loop on cam-mbp', kind: 'agentPermission', urgent: true,
+        title: 'Claude Code needs permission', body: 'arbor · fix/login-loop on cam-mbp', kind: 'agentPermission', urgent: true,
         subject: { session: 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7', machine: 'cam-mbp' },
       },
       {
@@ -98,6 +99,7 @@ describe('needs-you alerts', () => {
     expect(many[0]).toMatchObject({ title: '4 sessions are waiting on you', kind: 'agentWaiting', urgent: false });
     expect(many[0]!.body.split('\n')).toHaveLength(4);
     expect(attentionNotifications([], t)).toEqual([]);
+    expect(JSON.stringify(attentionNotifications([wait(), wait(), wait(), wait()], t))).not.toContain('Fix the login redirect loop');
   });
 });
 

@@ -939,7 +939,7 @@ const toolUsage = (
 const sessionTranscripts: Record<string, SessionTranscript> = {
   '9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e': mockTranscript({
     machine: 'Cedar 01', home: '/home/cam', cwd: '/home/cam/src/billing/worker', repoRoot: '/home/cam/src/billing', mainRepo: '/home/cam/src/billing',
-    branch: 'feat/queue-worker', title: 'Move the billing worker onto queues', titleSource: 'custom',
+    branch: 'feat/queue-worker',
     pullRequests: [
       { number: 88, url: 'https://github.com/acme/billing/pull/88', repository: 'acme/billing' },
       { number: 91, url: 'https://github.com/acme/billing/pull/91', repository: 'acme/billing' },
@@ -949,7 +949,7 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
   }),
   'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7': mockTranscript({
     agentHome: '~/.agent-app/homes/claude-other', cwd: '/Users/cam/.agent-app/worktrees/arbor/login-loop', repoRoot: '/Users/cam/.agent-app/worktrees/arbor/login-loop', mainRepo: '/Users/cam/src/arbor',
-    branch: 'fix/login-loop', title: 'Fix the login redirect loop', titleSource: 'ai',
+    branch: 'fix/login-loop',
     pullRequests: [
       { number: 412, url: 'https://github.com/acme/arbor/pull/412', repository: 'acme/arbor' },
       { number: 415, url: 'https://github.com/acme/arbor/pull/415', repository: 'acme/arbor' },
@@ -964,12 +964,12 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
   // Codex carries on with the branch a Claude Code session opened a pull request from; Codex doesn't record pull requests.
   '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b': mockTranscript({
     agent: 'codex', agentHome: '~/.codex', cwd: '/Users/cam/src/proxy', repoRoot: '/Users/cam/src/proxy', mainRepo: '/Users/cam/src/proxy', branch: 'feat/rate-limiter',
-    commitHash: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', repositoryUrl: 'git@github.com:acme/proxy.git', title: 'Rate limiter for the proxy', titleSource: 'codex',
+    commitHash: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', repositoryUrl: 'git@github.com:acme/proxy.git',
     toolUsage: toolUsage({ exec_command: 184, apply_patch: 37, update_plan: 9, web_search: 4, 'collaboration/spawn_agent': 2, 'collaboration/wait_agent': 2, 'mcp__codex_apps__github/_create_pull_request': 1 }),
   }),
   '6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c': mockTranscript({
     cwd: '/Users/cam/src/proxy', repoRoot: '/Users/cam/src/proxy', mainRepo: '/Users/cam/src/proxy', branch: 'feat/rate-limiter',
-    repositoryUrl: 'git@github.com:acme/proxy.git', title: 'Add a token bucket to the proxy', titleSource: 'ai',
+    repositoryUrl: 'git@github.com:acme/proxy.git',
     pullRequests: [
       { number: 57, url: 'https://github.com/acme/proxy/pull/57', repository: 'acme/proxy' },
       { number: 52, url: 'https://github.com/acme/proxy/pull/52', repository: 'acme/proxy' },
@@ -985,7 +985,7 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
   }),
   '0199a05d-91c2-7b4a-8e6f-2d3e4f5a6b7c': mockTranscript({
     machine: 'studio', agent: 'codex', agentHome: '~/.codex', cwd: '/Users/cam/src/docs', repoRoot: '/Users/cam/src/docs', mainRepo: '/Users/cam/src/docs', branch: 'main',
-    repositoryUrl: 'https://github.com/acme/docs.git', title: 'Draft the 0.3 release notes', titleSource: 'codex', readAtMs: now - 3 * 60_000,
+    repositoryUrl: 'https://github.com/acme/docs.git', readAtMs: now - 3 * 60_000,
     toolUsage: toolUsage({}),
   }),
   // Its folder was a review worktree that was gone by the time Arbor looked, so only the transcript's branch is known.
@@ -997,6 +997,23 @@ const sessionTranscripts: Record<string, SessionTranscript> = {
     ],
   }),
 };
+// Sessions' titles, which the native side reads only while Settings › Harnesses' Session titles is on and holds in
+// memory alone: set_session_titles puts them on the transcripts, and takes them off again. `?titles=on` starts with it on.
+const sessionTitles: Record<string, Pick<SessionTranscript, 'title' | 'titleSource'>> = {
+  '9c9d9117-4e2a-4b8c-9d1e-2f3a4b5c6d7e': { title: 'Move the billing worker onto queues', titleSource: 'custom' },
+  'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f6a7': { title: 'Fix the login redirect loop', titleSource: 'ai' },
+  '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b': { title: 'Rate limiter for the proxy', titleSource: 'codex' },
+  '6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c': { title: 'Add a token bucket to the proxy', titleSource: 'ai' },
+  '0199a05d-91c2-7b4a-8e6f-2d3e4f5a6b7c': { title: 'Draft the 0.3 release notes', titleSource: 'codex' },
+};
+export const setMockSessionTitles = (enabled: boolean) => {
+  for (const [id, transcript] of Object.entries(sessionTranscripts)) {
+    const named = enabled ? sessionTitles[id] : undefined;
+    transcript.title = named?.title ?? '';
+    transcript.titleSource = named?.titleSource ?? '';
+  }
+};
+
 for (const session of usageSessions) {
   const transcript = sessionTranscripts[session.id] ?? null;
   session.transcript = transcript;

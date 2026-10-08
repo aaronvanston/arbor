@@ -1,6 +1,6 @@
 import { invokeCommand } from '../native/commands';
 import type { MessageKey, MessageVariables } from '../i18n/resources';
-import { liveSessionName } from './liveSessions';
+import { untitledSessionName } from './liveSessions';
 import type { SystemNotification } from './notify';
 import { shortSessionId } from './usageSessions';
 import type { AgentKind, AttentionItem } from '../native/types';
@@ -33,9 +33,12 @@ const ALERT_TITLE: Record<AttentionKind, MessageKey> = {
   waiting: 'attention.alert.waiting',
 };
 
-/** A waiting session's name where there's only room for a few words. */
+/**
+ * A waiting session's name where there's only room for a few words. Never its title: alerts are kept in the alert
+ * history and sent to the phone, and titles are only ever held in memory.
+ */
 export function attentionName(item: AttentionItem, t: Translate) {
-  return item.session ? liveSessionName(item.session) : `${t(AGENT_NAME[item.agent])} ${shortSessionId(item.sessionId)}`;
+  return item.session ? untitledSessionName(item.session) : `${t(AGENT_NAME[item.agent])} ${shortSessionId(item.sessionId)}`;
 }
 
 /** Waits already alerted, by what identifies them, with when each began. */

@@ -55,6 +55,11 @@ export type AppPreferences = {
   fleetT3Threads: boolean;
   /** Read T3 Code's thread titles too, to name the threads on the live board. Needs `fleetT3Threads`. */
   fleetT3Titles: boolean;
+  /**
+   * Read Claude Code's and Codex's session titles, to name sessions. They're conversation text, so they're only held in
+   * the native side's memory, never stored, and dropped when this goes off.
+   */
+  sessionTitles: boolean;
   /** Hand pool runs to Orca. Off, a run asking for it goes to the command line when it allows that. */
   runsToOrca: boolean;
   /** Show accounts' email addresses with most of the name hidden, and the same part of any file name that repeats it. */
@@ -96,6 +101,7 @@ export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   quitGuard: true,
   fleetT3Threads: true,
   fleetT3Titles: false,
+  sessionTitles: false,
   runsToOrca: true,
   hideEmails: false,
 };

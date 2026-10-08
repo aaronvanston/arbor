@@ -5293,7 +5293,9 @@ mod tests {
         let page = load_test_sessions(&connection, UsageQuery::default());
         assert_eq!(page.items[0].root.compactions, 2, "compactions the requests didn't show still count");
         let json = serde_json::to_value(&page.items[0]).unwrap();
-        assert_eq!(json["transcript"]["title"], "Fix the login loop");
+        // A title an older Arbor stored is never read back: titles are only held in memory, while they're on.
+        assert_eq!(json["transcript"]["title"], "");
+        assert_eq!(json["transcript"]["titleSource"], "");
         assert_eq!(json["transcript"]["mainRepo"], "/Users/cam/src/arbor");
         assert_eq!(json["transcript"]["linesAdded"], 210);
         assert_eq!(json["transcript"]["compactions"][1]["trigger"], "manual");

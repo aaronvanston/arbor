@@ -35,8 +35,14 @@ const truncate = (text: string, max: number) => (text.length > max ? `${text.sli
 
 /** A session's name where there's only room for a few words: its title, else its project, client or short id. */
 export function liveSessionName(session: UsageSession) {
-  const title = session.transcript?.title?.trim();
-  if (title) return title;
+  return session.transcript?.title?.trim() || untitledSessionName(session);
+}
+
+/**
+ * A session's name without its title, for what's kept or sent on, like alerts (the alert history keeps them and the
+ * phone gets them): its project and branch, else its client or short id. Titles are only ever held in memory.
+ */
+export function untitledSessionName(session: UsageSession) {
   const place = sessionPlace(session.transcript);
   if (place) return place.branch && place.branch !== place.project ? `${place.project} · ${place.branch}` : place.project;
   return sessionClient(session.userAgent)?.name ?? shortSessionId(session.id);

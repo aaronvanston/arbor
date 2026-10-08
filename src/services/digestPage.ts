@@ -100,7 +100,10 @@ export function digestFileName(week: DigestWeek) {
   return `arbor-week-${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}.html`;
 }
 
-/** A session as the digest names it: its title or client, then where it ran. */
+/**
+ * A session as the digest names it: its client, then where it ran. Never its title: this page is saved to a file, and
+ * titles are only ever held in memory.
+ */
 function sessionText(session: UsageSession, t: Translate) {
   const client = sessionClient(session.userAgent);
   const name = client ? [client.name, client.version].filter(Boolean).join(' ') : t('usage.sessions.unknownClient');
@@ -110,7 +113,7 @@ function sessionText(session: UsageSession, t: Translate) {
     place?.branch && place.branch !== place.project ? place.branch : '',
     machineName(session.machine || session.transcript?.machine || ''),
   ].filter(Boolean).join(' · ');
-  return { title: session.transcript?.title || [name, client?.host].filter(Boolean).join(' · '), where };
+  return { title: [name, client?.host].filter(Boolean).join(' · '), where };
 }
 
 /**

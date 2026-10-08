@@ -1898,6 +1898,7 @@ fn main() {
             usage::machine_health::agent_releases::get_t3_compatibility,
             usage::machine_health::t3_threads::set_t3_threads_enabled,
             usage::machine_health::t3_threads::set_t3_thread_titles,
+            usage::machine_health::transcripts::set_session_titles,
             usage::machine_health::automations::commands::list_automations,
             usage::machine_health::automations::commands::scan_automations,
             usage::machine_health::automations::commands::get_automation,

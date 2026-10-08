@@ -72,6 +72,7 @@ export type MachineCommands = {
   keep_claude_sessions: { args: { machine: string; homes: string[] }; result: SettingsEdit[] };
   set_t3_threads_enabled: { args: { enabled: boolean }; result: void };
   set_t3_thread_titles: { args: { enabled: boolean }; result: void };
+  set_session_titles: { args: { enabled: boolean }; result: void };
 
   set_agent_reporter: { args: { machine: string; enabled: boolean; plan?: boolean | null }; result: ReporterSetup };
   get_agent_telemetry: { result: TelemetryStatus };

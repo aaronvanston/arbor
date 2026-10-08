@@ -45,6 +45,14 @@ export function HarnessesSettingsPage() {
             <SettingsBlock className="text-xs text-muted-foreground">{t('harnesses.apps.none')}</SettingsBlock>
           </SettingsSection>
         ) : apps.map((row) => <AppCard key={row.app} row={row} preferences={preferences} appsOff={list?.appsOff ?? []} />)}
+        <SettingsSection title={t('harnesses.sessionTitles.section')} description={t('harnesses.sessionTitles.sectionDescription')}>
+          <PreferenceRow
+            settingId="harnesses.session-titles"
+            preference="sessionTitles"
+            title={t('harnesses.sessionTitles.title')}
+            description={t('harnesses.sessionTitles.description')}
+          />
+        </SettingsSection>
         {homesError ? <Alert variant="error" icon={<AlertCircle />}><AlertDescription>{homesError}</AlertDescription></Alert> : null}
         {view ? <KnownHarnesses harnesses={view.harnesses} /> : homesError ? null : (
           <p className="flex items-center gap-2 px-4 text-sm text-muted-foreground" role="status"><Spinner />{t('agentHomes.loading')}</p>
@@ -103,7 +111,7 @@ function T3Rows({ preferences }: { preferences: AppPreferences }) {
   );
 }
 
-type SwitchPreference = 'fleetT3Threads' | 'fleetT3Titles' | 'runsToOrca';
+type SwitchPreference = 'fleetT3Threads' | 'fleetT3Titles' | 'sessionTitles' | 'runsToOrca';
 
 function PreferenceRow({ settingId, preference, title, description, held }: {
   settingId: string;

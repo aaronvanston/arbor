@@ -124,6 +124,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('harnesses', 'superset-automations', 'automations.source.superset', 'harnesses.automations.title', { description: 'harnesses.automations.description', keywords: 'harnesses.keywords.automations', fallback: 'harnesses.agents' }),
   row('harnesses', 'codex-app-automations', 'automations.source.codexApp', 'harnesses.automations.title', { description: 'harnesses.automations.description', keywords: 'harnesses.keywords.automations', fallback: 'harnesses.agents' }),
   row('harnesses', 'claude-automations', 'automations.source.claudeDesktop', 'harnesses.automations.title', { description: 'harnesses.automations.description', keywords: 'harnesses.keywords.automations', fallback: 'harnesses.agents' }),
+  row('harnesses', 'session-titles', 'harnesses.sessionTitles.section', 'harnesses.sessionTitles.title', { description: 'harnesses.sessionTitles.description', keywords: 'harnesses.keywords.sessionTitles' }),
   section('harnesses', 'agents', 'agentHomes.harnesses.title', { description: 'agentHomes.harnesses.description', keywords: 'agentHomes.harnesses.keywords' }),
   section('pools', 'list', 'pools.list.title', { description: 'pools.list.description', keywords: 'settingsSearch.keywords.pools' }),
 

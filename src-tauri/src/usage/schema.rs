@@ -43,6 +43,7 @@ const STEPS: &[Step] = &[
     Step { version: 20, name: "pool ssh names", apply: pool_ssh_names },
     Step { version: 21, name: "agent home roles", apply: agent_home_roles },
     Step { version: 22, name: "run repos", apply: run_repos },
+    Step { version: 23, name: "session titles", apply: session_titles_cleared },
 ];
 
 /// The version of a database that has had every step.
@@ -1265,6 +1266,26 @@ fn agent_home_roles(connection: &mut Connection, _: &Path) -> Result<(), String>
         .map_err(|error| format!("Failed to mark the standard agent homes: {error}"))
 }
 
+/// A session's title is conversation text, held only in memory and only while Settings › Harnesses' Session titles
+/// is on (machine_health/transcripts.rs), so the titles an older Arbor stored are cleared, with the space they took
+/// zeroed. The columns stay, as steps only add, and nothing reads or writes them.
+fn session_titles_cleared(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    let secure: i64 = connection
+        .pragma_query_value(None, "secure_delete", |row| row.get(0))
+        .map_err(|error| format!("Failed to read how deleted data is overwritten: {error}"))?;
+    connection
+        .pragma_update(None, "secure_delete", 1)
+        .map_err(|error| format!("Failed to have deleted data overwritten: {error}"))?;
+    let cleared = connection
+        .execute("UPDATE usage_session_transcripts SET title = '', title_source = '' WHERE title <> '' OR title_source <> ''", [])
+        .map(|_| ())
+        .map_err(|error| format!("Failed to clear stored session titles: {error}"));
+    let restored = connection
+        .pragma_update(None, "secure_delete", secure)
+        .map_err(|error| format!("Failed to put back how deleted data is overwritten: {error}"));
+    cleared.and(restored)
+}
+
 // ---------------------------------------------------------------------------
 // For tests
 // ---------------------------------------------------------------------------
@@ -1489,6 +1510,28 @@ mod tests {
             )
             .unwrap();
         assert_eq!(kept, ("open".into(), String::new(), 0, "/src/arbor".into(), None, String::new()));
+    }
+
+    #[test]
+    fn titles_an_older_arbor_stored_are_cleared() {
+        let mut connection = test_database();
+        connection
+            .execute(
+                "INSERT INTO usage_session_transcripts (session_id, machine, agent, cwd, title, title_source)
+                 VALUES ('s-1', 'mini', 'claude', '/src/arbor', 'Fix the login loop', 'ai')",
+                [],
+            )
+            .unwrap();
+        let step = STEPS.iter().find(|step| step.name == "session titles").unwrap();
+        connection.pragma_update(None, "user_version", step.version - 1).unwrap();
+        migrate(&mut connection, Path::new("")).unwrap();
+        let left = connection
+            .query_row("SELECT title, title_source, cwd FROM usage_session_transcripts", [], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            })
+            .unwrap();
+        assert_eq!(left, (String::new(), String::new(), "/src/arbor".to_string()), "the title goes and the rest stays");
+        assert_eq!(version(&connection), LATEST);
     }
 
     #[test]
