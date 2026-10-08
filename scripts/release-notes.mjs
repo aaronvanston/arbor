@@ -151,19 +151,22 @@ function releaseLocations(feed, version, arch) {
 /**
  * A release's manifest, in the exact shape the app's feed checks accept, plus recent releases' notes and the core the
  * release bundles, which tells the app whether installing it restarts the proxy. The local feed's is read as it is;
- * the GitHub one is signed (release-signing.mjs) and uploaded with the DMG.
+ * the GitHub one is signed (release-signing.mjs) and uploaded with the DMG, and names the commit it was built from,
+ * which is where a stable release that promotes it takes its commit (release-plan.mjs). The app ignores `commit`.
  */
-export function feedManifest({ feed = 'local', version, arch, sha256, sizeBytes, publishedAt, releases, coreVersion }) {
+export function feedManifest({ feed = 'local', version, arch, sha256, sizeBytes, publishedAt, releases, coreVersion, commit }) {
   validateAppVersion(version);
   if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error(`Invalid SHA-256: ${sha256}`);
   if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) throw new Error(`Invalid DMG size: ${sizeBytes}`);
   if (!/^\d+\.\d+\.\d+$/.test(coreVersion)) throw new Error(`Invalid core version: ${coreVersion}`);
+  if (commit !== undefined && !/^[0-9a-f]{40}$/.test(commit)) throw new Error(`Invalid commit: ${commit}`);
   const { releaseUrl, assetUrl } = releaseLocations(feed, version, arch);
   return {
     schemaVersion: 1,
     version,
     publishedAt,
     coreVersion,
+    ...(commit === undefined ? {} : { commit }),
     releaseUrl,
     assets: {
       [`darwin-${arch}`]: { url: assetUrl, sha256, sizeBytes },
@@ -267,6 +270,7 @@ async function main([command, ...argv]) {
         publishedAt: values['published-at'] ?? new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
         releases,
         coreVersion: required(values, 'core-version'),
+        commit: github ? required(values, 'commit') : undefined,
       });
       await writeAtomically(required(values, 'output'), `${JSON.stringify(manifest, null, 2)}\n`);
       return;

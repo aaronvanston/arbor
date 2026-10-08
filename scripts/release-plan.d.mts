@@ -21,3 +21,9 @@ export function planRelease(options: {
 }):
   | { skip: string }
   | { version: string; tag: string; prerelease: boolean; ref: string; promotes?: string; skip?: undefined };
+export const FEED_ASSET: string;
+export function signedNightlyCommit(options: {
+  nightly: { version: string; commit?: string };
+  feed: unknown;
+  publicKey: string;
+}): string;

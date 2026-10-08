@@ -150,7 +150,9 @@ describe('outputs', () => {
       publishedAt: '2026-09-29T00:00:00Z',
       releases: [release('0.3.180')],
       coreVersion: '8.0.3',
+      commit: 'c'.repeat(40),
     });
+    expect(manifest.commit).toBe('c'.repeat(40));
     expect(manifest.releaseUrl).toBe('https://github.com/aaronvanston/arbor/releases/tag/arbor-v0.3.180');
     expect(manifest.assets).toEqual({
       'darwin-aarch64': {
@@ -163,12 +165,13 @@ describe('outputs', () => {
       .toThrow('Unknown feed');
   });
 
-  test('a bad checksum, size or core version never reaches the feed', () => {
+  test('a bad checksum, size, core version or commit never reaches the feed', () => {
     const base = { version: '0.3.58', arch: 'aarch64', sha256, sizeBytes: 1, publishedAt: '2026-09-26T00:00:00Z', releases: [], coreVersion: '7.3.17' };
     expect(() => feedManifest({ ...base, sha256: 'nope' })).toThrow('Invalid SHA-256');
     expect(() => feedManifest({ ...base, sizeBytes: 0 })).toThrow('Invalid DMG size');
     expect(() => feedManifest({ ...base, version: '0.3' })).toThrow('Invalid app version');
     expect(() => feedManifest({ ...base, coreVersion: 'v7.3' })).toThrow('Invalid core version');
+    expect(() => feedManifest({ ...base, commit: 'main' })).toThrow('Invalid commit');
   });
 
   test('the GitHub body is the summary, any changes and the checksum, with no links', () => {

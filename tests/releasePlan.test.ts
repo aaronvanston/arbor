@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { compareSemver, NIGHTLY_GAP_MS, planRelease, stableVersion } from '../scripts/release-plan.mjs';
+import { generateKeyPairSync } from 'node:crypto';
+import { compareSemver, NIGHTLY_GAP_MS, planRelease, signedNightlyCommit, stableVersion } from '../scripts/release-plan.mjs';
+import { rawPublicKey, signFeed } from '../scripts/release-signing.mjs';
 
 const notes = [{ version: '1.0.0', summary: 'Arbor is open source.', changes: [] }];
 const now = Date.parse('2026-10-01T12:00:00Z');
@@ -95,6 +97,39 @@ describe('a stable release', () => {
     expect(() => stable({ releases: [...releases, { version: '1.0.1', commit: 'nightly' }] })).toThrow('no nightly has been built since');
     expect(() => stable({ pending: { summary: '' } })).toThrow();
     expect(() => stable({ notes: [{ version: '1.0.1', summary: 'Already written.', changes: [] }, ...notes] })).toThrow('already released');
+  });
+});
+
+describe("a stable release's commit", () => {
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const publicKey = rawPublicKey(privateKey);
+  const built = 'a'.repeat(40);
+  const nightly = { version: '1.0.1-nightly.20261001.6', commit: built };
+  const feed = (manifest: object, key = privateKey) => signFeed(JSON.stringify({ schemaVersion: 1, ...manifest }), key);
+
+  test("comes from the nightly's signed update list when its tag agrees", () => {
+    expect(signedNightlyCommit({ nightly, feed: feed({ version: nightly.version, commit: built }), publicKey })).toBe(built);
+  });
+
+  test('is refused when the tag was moved to another commit, even one on main', () => {
+    const old = 'b'.repeat(40);
+    expect(() => signedNightlyCommit({ nightly: { ...nightly, commit: old }, feed: feed({ version: nightly.version, commit: built }), publicKey }))
+      .toThrow(`points at ${old}, but its signed update list says it was built from ${built}`);
+  });
+
+  test("is refused when the list isn't signed with the release key, or is another version's", () => {
+    const other = generateKeyPairSync('ed25519').privateKey;
+    expect(() => signedNightlyCommit({ nightly, feed: feed({ version: nightly.version, commit: built }, other), publicKey })).toThrow("doesn't match");
+    const unsigned = { schemaVersion: 1, manifest: JSON.stringify({ version: nightly.version, commit: built }), signature: '' };
+    expect(() => signedNightlyCommit({ nightly, feed: unsigned, publicKey })).toThrow("doesn't match");
+    // An older nightly's genuine list, attached to a newer tag.
+    expect(() => signedNightlyCommit({ nightly, feed: feed({ version: '1.0.1-nightly.20260930.5', commit: built }), publicKey }))
+      .toThrow('carries the signed update list for Arbor 1.0.1-nightly.20260930.5');
+  });
+
+  test("is refused for a nightly published before its list named a commit", () => {
+    expect(() => signedNightlyCommit({ nightly, feed: feed({ version: nightly.version }), publicKey })).toThrow('Wait for the next nightly');
+    expect(() => signedNightlyCommit({ nightly, feed: feed({ version: nightly.version, commit: 'main' }), publicKey })).toThrow('Wait for the next nightly');
   });
 });
 

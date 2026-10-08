@@ -87,6 +87,7 @@ node scripts/release-notes.mjs github-manifest \
   --sha256 "$asset_sha" \
   --size "$(stat -f %z "$asset_path")" \
   --core-version "${core_version#v}" \
+  --commit "$recorded_commit" \
   --output "$work_dir/manifest.json"
 node scripts/release-signing.mjs sign --manifest "$work_dir/manifest.json" --output "$feed_file" \
   || fail "Couldn't sign the update list; apps won't take this release without it."

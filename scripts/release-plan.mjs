@@ -18,11 +18,16 @@
 //
 // reads the commit, run number, event and repository from GitHub's variables, the releases with gh (GH_TOKEN), and
 // writes version, tag, prerelease and ref, or skip, to $GITHUB_OUTPUT.
+//
+// A stable release's commit is built and published with the release signing key, so it comes from the nightly's signed
+// update list, never from its tag alone: whoever can publish releases can move a tag, and could otherwise have the key
+// sign an old, since-fixed commit as a new version.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isNightly, readReleaseNotes, releaseEntry, withRelease } from './release-notes.mjs';
+import { PUBLIC_KEY_FILE, verifyFeed } from './release-signing.mjs';
 import { parseCargoPackageVersion, validateAppVersion } from './version.mjs';
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -125,6 +130,27 @@ export function planRelease({ channel, bump, cargoVersion, notes, releases, comm
   return { version, tag: `arbor-v${version}`, prerelease: true, ref: commit };
 }
 
+/** The update list each release carries, signed with the release signing key (publish-workflow-release.sh). */
+export const FEED_ASSET = 'arbor-update-darwin.json';
+
+/**
+ * The commit `nightly` was built from, as its signed update list names it. Throws unless the list is signed with
+ * `publicKey` (raw, base64), is for that exact version, and names the commit its tag points at.
+ */
+export function signedNightlyCommit({ nightly, feed, publicKey }) {
+  const manifest = JSON.parse(verifyFeed(feed, publicKey));
+  if (manifest.version !== nightly.version) {
+    throw new Error(`arbor-v${nightly.version} carries the signed update list for Arbor ${manifest.version}.`);
+  }
+  if (typeof manifest.commit !== 'string' || !/^[0-9a-f]{40}$/.test(manifest.commit)) {
+    throw new Error(`Arbor ${nightly.version}'s signed update list doesn't name the commit it was built from. Wait for the next nightly.`);
+  }
+  if (manifest.commit !== nightly.commit) {
+    throw new Error(`arbor-v${nightly.version} points at ${nightly.commit}, but its signed update list says it was built from ${manifest.commit}.`);
+  }
+  return manifest.commit;
+}
+
 function gh(args) {
   const result = spawnSync('gh', ['api', ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   if (result.error) throw result.error;
@@ -149,6 +175,17 @@ function publishedReleases(repository) {
   return [...releases.values()];
 }
 
+/** A file attached to a release, as text. */
+function releaseAsset(repository, tag, name) {
+  const result = spawnSync('gh', ['release', 'download', tag, '--repo', repository, '--pattern', name, '--output', '-'], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Couldn't download ${name} from ${tag}: ${String(result.stderr).trim()}`);
+  return String(result.stdout);
+}
+
 /** The subjects of the commits `head` has past `base`, or null when it isn't ahead of it. */
 function commitsSince(repository, base, head) {
   const compare = JSON.parse(gh([`repos/${repository}/compare/${base}...${head}`, '--jq', '{status, subjects: [.commits[].commit.message | split("\n")[0]]}']));
@@ -169,6 +206,10 @@ function main() {
   const nightly = newest(releases.filter((item) => isNightly(item.version)));
   for (const release of [latest, nightly]) {
     if (release) release.commit = gh([`repos/${repository}/commits/arbor-v${release.version}`, '--jq', '.sha']);
+  }
+  if (channel === 'stable' && nightly) {
+    const feed = JSON.parse(releaseAsset(repository, `arbor-v${nightly.version}`, FEED_ASSET));
+    nightly.commit = signedNightlyCommit({ nightly, feed, publicKey: readFileSync(PUBLIC_KEY_FILE, 'utf8') });
   }
   // A scheduled nightly looks at what main has gained since whichever of the two was built last.
   const lastBuilt = [latest, nightly].filter(Boolean).sort((a, b) => Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? ''))[0];

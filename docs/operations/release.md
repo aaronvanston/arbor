@@ -25,7 +25,9 @@ so the DMG never becomes a GitHub artifact. The runner is new each time; rust-ca
   ```
 
   It checks the notes and starts the workflow, which promotes the newest nightly: the same commit, built as X.Y.Z, so
-  stable only ships what nightly users already run. X.Y.Z is the nightly's own patch version; `ARBOR_RELEASE_BUMP=minor`
+  stable only ships what nightly users already run. The commit is the one the nightly's signed update list names, and
+  the plan stops if its tag points anywhere else, so moving a tag can't get an old commit signed as a new release. A
+  nightly published before its list named a commit can't be promoted; wait for the next one. X.Y.Z is the nightly's own patch version; `ARBOR_RELEASE_BUMP=minor`
   or `major` makes it the next minor or major after the newest release instead, for a release that adds features or
   breaks something. Once it's published as the latest release, which every app reads, the workflow commits
   `Release Arbor X.Y.Z` (the version and notes) to main as github-actions.

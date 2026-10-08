@@ -25,11 +25,13 @@ export function feedManifest(options: {
   publishedAt: string;
   releases: Release[];
   coreVersion: string;
+  commit?: string;
 }): {
   schemaVersion: number;
   version: string;
   publishedAt: string;
   coreVersion: string;
+  commit?: string;
   releaseUrl: string;
   assets: Record<string, { url: string; sha256: string; sizeBytes: number }>;
   releases: Release[];
