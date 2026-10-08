@@ -967,3 +967,143 @@ fn a_helper_left_to_run_on_its_own_is_reaped_once_done() {
         thread::sleep(Duration::from_millis(20));
     }
 }
+
+/// Answers one request on a loopback port with `head` (the status line and headers) and then `body`, written in small
+/// pieces so a client that stops early is seen to stop. Write errors are ignored: the client may hang up.
+fn serve_core_archive_once(head: &'static str, body: Vec<u8>) -> u16 {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let Some(Ok(mut stream)) = listener.incoming().next() else {
+            return;
+        };
+        let mut request = Vec::new();
+        let mut buffer = [0; 1024];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            match stream.read(&mut buffer) {
+                Ok(0) | Err(_) => return,
+                Ok(read) => request.extend_from_slice(&buffer[..read]),
+            }
+        }
+        if stream.write_all(head.as_bytes()).is_err() {
+            return;
+        }
+        for piece in body.chunks(4096) {
+            if stream.write_all(piece).is_err() {
+                return;
+            }
+        }
+    });
+    port
+}
+
+fn download_core_archive_for_test(
+    url: &str,
+    archive_path: &Path,
+    expected_total: Option<u64>,
+    max_bytes: u64,
+) -> Result<DownloadedArchive, String> {
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let token = CancellationToken::new();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(download_core_archive(
+            &client,
+            url,
+            archive_path,
+            expected_total,
+            None,
+            max_bytes,
+            &token,
+            |_, _| {},
+        ))
+}
+
+#[test]
+fn core_archive_download_within_the_limit_is_kept_with_its_checksum() {
+    let root = agent_test_home("core-download-fits");
+    let archive_path = root.join("CLIProxyAPI_7.3.14_darwin_aarch64.tar.gz");
+    let body = vec![b'a'; 10_000];
+    let port = serve_core_archive_once(
+        "HTTP/1.1 200 OK\r\nContent-Length: 10000\r\nConnection: close\r\n\r\n",
+        body.clone(),
+    );
+
+    let downloaded =
+        download_core_archive_for_test(&format!("http://127.0.0.1:{port}/core"), &archive_path, None, 10_000)
+            .unwrap();
+
+    assert_eq!(downloaded.size, 10_000);
+    assert_eq!(downloaded.sha256, format!("{:x}", Sha256::digest(&body)));
+    assert_eq!(fs::read(&archive_path).unwrap(), body);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn core_archive_download_refuses_a_declared_length_over_the_limit_before_writing() {
+    let root = agent_test_home("core-download-declared");
+    let archive_path = root.join("CLIProxyAPI_7.3.14_darwin_aarch64.tar.gz");
+    // The header claims far more than the limit; the few bytes after it are never read.
+    let port = serve_core_archive_once(
+        "HTTP/1.1 200 OK\r\nContent-Length: 999999999\r\nConnection: close\r\n\r\n",
+        vec![b'a'; 64],
+    );
+
+    let error =
+        download_core_archive_for_test(&format!("http://127.0.0.1:{port}/core"), &archive_path, None, 10_000)
+            .unwrap_err();
+
+    assert!(error.contains("bigger than 10000 bytes"), "{error}");
+    assert!(!archive_path.exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn core_archive_download_stops_and_deletes_a_stream_that_runs_past_the_limit() {
+    let root = agent_test_home("core-download-streamed");
+    let archive_path = root.join("CLIProxyAPI_7.3.14_darwin_aarch64.tar.gz");
+    // No length at all: the body runs until the server closes, well past the limit.
+    let port = serve_core_archive_once("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n", vec![b'a'; 256 * 1024]);
+
+    let error =
+        download_core_archive_for_test(&format!("http://127.0.0.1:{port}/core"), &archive_path, None, 10_000)
+            .unwrap_err();
+
+    assert!(error.contains("bigger than 10000 bytes"), "{error}");
+    assert!(!archive_path.exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn core_archive_download_holds_a_listed_size_to_the_limit_too() {
+    let root = agent_test_home("core-download-listed");
+    let archive_path = root.join("CLIProxyAPI_7.3.14_darwin_aarch64.tar.gz");
+    // Nothing listens here, so only a refusal made before connecting can come back as "bigger than".
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+
+    let error = download_core_archive_for_test(
+        &format!("http://127.0.0.1:{closed}/core"),
+        &archive_path,
+        Some(20_000),
+        10_000,
+    )
+    .unwrap_err();
+    assert!(error.contains("bigger than 10000 bytes"), "{error}");
+    assert!(!archive_path.exists());
+
+    // A listed size under the limit becomes the limit: a server sending more than the release listed is cut off.
+    let port = serve_core_archive_once("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n", vec![b'a'; 8_000]);
+    let error = download_core_archive_for_test(
+        &format!("http://127.0.0.1:{port}/core"),
+        &archive_path,
+        Some(5_000),
+        10_000,
+    )
+    .unwrap_err();
+    assert!(error.contains("bigger than 5000 bytes"), "{error}");
+    assert!(!archive_path.exists());
+    fs::remove_dir_all(root).unwrap();
+}

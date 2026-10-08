@@ -850,6 +850,7 @@ struct CoreMetadata {
     installed_at_unix: u64,
 }
 
+#[derive(Debug)]
 struct DownloadedArchive {
     size: u64,
     sha256: String,

@@ -748,6 +748,12 @@ pub(crate) fn core_release_asset_name(version: &str, platform: &CorePlatform) ->
     )
 }
 
+/// The most a core archive download may be. CLIProxyAPI ships one Go program plus a few text files in each archive,
+/// which comes to tens of megabytes; this leaves several times that as headroom for the program growing, while a
+/// response that runs on (a wrong URL, a broken mirror or proxy, a hostile server) stops long before it fills the
+/// disk. The checksum is only checked once the whole file is in, so without this nothing else would stop it.
+pub(crate) const MAX_CORE_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
+
 /// Downloads the release archive from GitHub. Nothing half-written is left behind when it fails or is canceled.
 pub(crate) async fn download_asset(
     client: &reqwest::Client,
@@ -757,15 +763,41 @@ pub(crate) async fn download_asset(
     state: &CoreDownloadState,
     token: &CancellationToken,
 ) -> Result<DownloadedArchive, String> {
-    let result = download_asset_inner(
+    state.progress(window, "preparing-download", 0, asset.size, true);
+    download_core_archive(
         client,
         &asset.browser_download_url,
         archive_path,
         asset.size,
         asset.digest.as_deref(),
-        window,
-        state,
+        MAX_CORE_ARCHIVE_BYTES,
         token,
+        |downloaded, total| state.progress(window, "downloading", downloaded, total, true),
+    )
+    .await
+}
+
+/// Streams `url` into `archive_path`, never past `max_bytes`, and deletes the file when anything fails.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn download_core_archive(
+    client: &reqwest::Client,
+    url: &str,
+    archive_path: &Path,
+    expected_total: Option<u64>,
+    expected_digest: Option<&str>,
+    max_bytes: u64,
+    token: &CancellationToken,
+    on_progress: impl FnMut(u64, Option<u64>),
+) -> Result<DownloadedArchive, String> {
+    let result = stream_core_archive(
+        client,
+        url,
+        archive_path,
+        expected_total,
+        expected_digest,
+        max_bytes,
+        token,
+        on_progress,
     )
     .await;
     if result.is_err() {
@@ -774,19 +806,27 @@ pub(crate) async fn download_asset(
     result
 }
 
+fn core_archive_too_large(limit: u64) -> String {
+    format!("The core download is bigger than {limit} bytes, the most it can be, so it was stopped")
+}
+
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn download_asset_inner(
+async fn stream_core_archive(
     client: &reqwest::Client,
     url: &str,
     archive_path: &Path,
     expected_total: Option<u64>,
     expected_digest: Option<&str>,
-    window: &tauri::Window,
-    state: &CoreDownloadState,
+    max_bytes: u64,
     token: &CancellationToken,
+    mut on_progress: impl FnMut(u64, Option<u64>),
 ) -> Result<DownloadedArchive, String> {
-    state.progress(window, "preparing-download", 0, expected_total, true);
     ensure_not_canceled(token, Some(archive_path))?;
+    // A size the release lists is trusted to be exact, so nothing past it is worth taking either.
+    let limit = expected_total.map_or(max_bytes, |expected| expected.min(max_bytes));
+    if expected_total.is_some_and(|expected| expected > max_bytes) {
+        return Err(core_archive_too_large(max_bytes));
+    }
 
     let request = client
         .get(url)
@@ -798,6 +838,11 @@ pub(crate) async fn download_asset_inner(
     }
     .error_for_status()
     .map_err(|err| format!("Download URL returned an error status: {err}"))?;
+    // A declared length over the limit is refused before anything is written. The server can leave the length out or
+    // send more than it said, so the loop below counts the bytes too.
+    if response.content_length().is_some_and(|declared| declared > limit) {
+        return Err(core_archive_too_large(limit));
+    }
     let total = expected_total.or_else(|| response.content_length());
     let mut stream = response.bytes_stream();
     let mut file =
@@ -813,16 +858,19 @@ pub(crate) async fn download_asset_inner(
         ensure_not_canceled(token, Some(archive_path))?;
 
         let chunk = chunk.map_err(|err| format!("Failed to read download data: {err}"))?;
+        if downloaded.saturating_add(chunk.len() as u64) > limit {
+            return Err(core_archive_too_large(limit));
+        }
         file.write_all(&chunk)
             .map_err(|err| format!("Failed to save download data: {err}"))?;
         hasher.update(&chunk);
         downloaded += chunk.len() as u64;
         if progress.ready(Instant::now(), total == Some(downloaded)) {
-            state.progress(window, "downloading", downloaded, total, true);
+            on_progress(downloaded, total);
         }
     }
 
-    state.progress(window, "downloading", downloaded, total, true);
+    on_progress(downloaded, total);
     file.flush()
         .map_err(|err| format!("Failed to flush core archive: {err}"))?;
     ensure_not_canceled(token, Some(archive_path))?;
