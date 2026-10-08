@@ -1,0 +1,2 @@
+2f06c4e0786cb61f15484eaf22efa7b6324ec20679b9113cfa9b95ccf75a73f1  CLIProxyAPI_8.0.4_darwin_aarch64.tar.gz
+ab60f62cfd55098ed42ae12733151d177e598637746b880918c05040d9ddfc8b  CLIProxyAPI_8.0.4_darwin_amd64.tar.gz

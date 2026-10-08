@@ -3,7 +3,7 @@
 # loads it, even one that arrived after the core started, an extra model is listed, reaches a Claude account instead of "unknown provider", can't override a
 # built-in model, and follows config edits without a restart. A second copy serves Codex the way Arbor installs one per
 # provider, and each copy has to keep its own models. It uses the core release in core-version.txt (the archive in bundled-core/ if the release script left one,
-# otherwise a download checked against the release's checksums), fake Claude and Codex accounts, and a proxy on a closed local
+# otherwise a download checked against core-sha256.txt), fake Claude and Codex accounts, and a proxy on a closed local
 # port, so no request leaves the machine with a credential. It never touches the app's data folder.
 set -euo pipefail
 
@@ -42,11 +42,10 @@ else
   echo "Downloading core $core_version"
   release_url="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${core_version}"
   curl -fsSL --retry 3 -o "$work_dir/$core_asset" "$release_url/$core_asset"
-  curl -fsSL --retry 3 -o "$work_dir/checksums.txt" "$release_url/checksums.txt"
-  expected="$(awk -v name="$core_asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print tolower($1); exit } }' "$work_dir/checksums.txt")"
+  expected="$(awk -v name="$core_asset" '$2 == name { print $1; exit }' core-sha256.txt)"
   actual="$(shasum -a 256 "$work_dir/$core_asset" | awk '{ print tolower($1) }')"
   if [[ -z "$expected" || "$expected" != "$actual" ]]; then
-    echo "The core download doesn't match its checksum." >&2
+    echo "The core download doesn't match the SHA-256 pinned in core-sha256.txt." >&2
     exit 1
   fi
   tar -xzf "$work_dir/$core_asset" -C "$core_dir"

@@ -29,20 +29,20 @@ node scripts/version.mjs "$version" >/dev/null
 # Bundle the official core release pinned in core-version.txt. The app installs it on a Mac
 # with no core yet, or over an older core after an update, and every core start needs the
 # config.example.yaml the archive carries.
-# checksums.txt is verified here but not bundled: upstream's CI release build re-signed the core
-# binary inside the archive, so the upstream checksum wouldn't match a DMG built there.
+# The archive must match the SHA-256 pinned beside it in core-sha256.txt (scripts/pin-core.sh), not the checksums.txt
+# published with it: whoever could replace one upstream could replace both, and the core runs with every account.
 core_version="$(tr -d '[:space:]' < core-version.txt)"
 core_version="${core_version#v}"
 core_asset="CLIProxyAPI_${core_version}_darwin_${update_arch}.tar.gz"
 core_release_url="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${core_version}"
+core_expected="$(awk -v name="$core_asset" '$2 == name { print $1; exit }' core-sha256.txt)"
+if [[ -z "$core_expected" ]]; then
+  echo "core-sha256.txt doesn't pin $core_asset; run scripts/pin-core.sh $core_version." >&2
+  exit 1
+fi
 
 core_archive_verified() {
-  local archive="$1" checksums="$2" expected actual
-  [[ -f "$archive" && -f "$checksums" ]] || return 1
-  expected="$(awk -v name="$core_asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print tolower($1); exit } }' "$checksums")"
-  [[ -n "$expected" ]] || return 1
-  actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
-  [[ "$actual" == "$expected" ]]
+  [[ -f "$1" && "$(shasum -a 256 "$1" | awk '{print $1}')" == "$core_expected" ]]
 }
 
 # Earlier builds kept the download in cpa-core/; reuse it rather than downloading the core again.
@@ -50,19 +50,18 @@ if [[ -d cpa-core && ! -e bundled-core ]]; then
   mv cpa-core bundled-core
 fi
 mkdir -p bundled-core
-if core_archive_verified "bundled-core/$core_asset" bundled-core/checksums.txt; then
+rm -f bundled-core/checksums.txt
+if core_archive_verified "bundled-core/$core_asset"; then
   echo "Using cached core $core_asset"
 else
   core_download="$work_dir/core"
   mkdir -p "$core_download"
   curl -fsSL --retry 3 -o "$core_download/$core_asset" "$core_release_url/$core_asset"
-  curl -fsSL --retry 3 -o "$core_download/checksums.txt" "$core_release_url/checksums.txt"
-  if ! core_archive_verified "$core_download/$core_asset" "$core_download/checksums.txt"; then
-    echo "SHA-256 verification failed for $core_asset" >&2
+  if ! core_archive_verified "$core_download/$core_asset"; then
+    echo "$core_asset doesn't match the SHA-256 pinned in core-sha256.txt" >&2
     exit 1
   fi
   mv "$core_download/$core_asset" "bundled-core/$core_asset"
-  mv "$core_download/checksums.txt" bundled-core/checksums.txt
 fi
 
 core_entries="$(tar -tzf "bundled-core/$core_asset")"

@@ -7,7 +7,8 @@ and runs the same commands, so the window and the CLI never disagree.
 
 ## The core
 
-CLIProxyAPI ("the core") is a separate Go program Arbor downloads from GitHub (pinned in `core-version.txt`), starts
+CLIProxyAPI ("the core") is a separate Go program Arbor downloads from GitHub (pinned in `core-version.txt`, its
+archives' SHA-256 in `core-sha256.txt`; change both with `scripts/pin-core.sh`), starts
 and updates (`core_runtime.rs`). Arbor reads and changes its state through the core's management API
 (`management_api.rs`) and its `config.yaml` (`core_config/`).
 
