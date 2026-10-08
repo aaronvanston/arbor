@@ -19,8 +19,23 @@ static SCRIPT_PEAK: AtomicUsize = AtomicUsize::new(0);
 /// a scan waiting.
 static STREAM_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 
-/// How much of what a streaming script wrote to stderr is kept, to say why it failed.
-const STDERR_KEPT: usize = 4 << 10;
+/// How much of what a script wrote to stderr is kept, to say why it failed: the end of it, where that's said.
+const STDERR_KEPT: usize = 64 << 10;
+
+/// How much a script may print before it's stopped, so a machine that prints without end can't fill Arbor's memory.
+/// Far past what any script prints on a real machine. Streaming runs hand their output on as it comes instead.
+const OUTPUT_CAP: usize = 32 << 20;
+
+/// `OUTPUT_CAP` for the archive's listing, which grows with the machine: it has a line for every transcript and
+/// file-history file, and a heavy user's homes hold hundreds of thousands.
+const LISTING_OUTPUT_CAP: usize = 256 << 20;
+
+fn output_cap(op: MachineOp) -> usize {
+    match op {
+        MachineOp::ArchiveList => LISTING_OUTPUT_CAP,
+        _ => OUTPUT_CAP,
+    }
+}
 
 /// A machine scripts can run on.
 #[derive(Clone, Debug)]
@@ -218,7 +233,7 @@ pub(in crate::usage) async fn run_on_machine(
     #[cfg(test)]
     let _active = ScriptActiveGuard::new();
     let started = Instant::now();
-    let finished = run_script_within(command, script, timeout).await;
+    let finished = run_script_within(command, script, timeout, output_cap(op)).await;
     if let Some(machine) = machine {
         diagnostics::record(diagnostics::machine_call(&machine, op, started.elapsed(), finished.as_ref()));
     }
@@ -237,7 +252,7 @@ pub(in crate::usage) async fn run_in_slot(
     #[cfg(test)]
     let _active = ScriptActiveGuard::new();
     let started = Instant::now();
-    let finished = run_script_within(command, "", timeout).await;
+    let finished = run_script_within(command, "", timeout, output_cap(op)).await;
     diagnostics::record(diagnostics::machine_call(machine, op, started.elapsed(), finished.as_ref()));
     finished.unwrap_or_else(|| Err(timed_out(timeout)))
 }
@@ -273,7 +288,8 @@ pub(in crate::usage) async fn run_checked(
     if !output.status.success() {
         return Err(failure_detail(&output));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    // Not copied when it's valid UTF-8, as it nearly always is: a listing can run to hundreds of MB.
+    Ok(String::from_utf8(output.stdout).unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned()))
 }
 
 fn timed_out(timeout: Duration) -> String {
@@ -335,20 +351,7 @@ async fn stream_script(
         drop(stdin);
         sent
     });
-    let errors = tokio::spawn(async move {
-        let mut kept = Vec::new();
-        let mut buf = [0u8; 4096];
-        while let Ok(read) = stderr.read(&mut buf).await {
-            if read == 0 {
-                break;
-            }
-            kept.extend_from_slice(&buf[..read]);
-            if kept.len() > STDERR_KEPT {
-                kept.drain(..kept.len() - STDERR_KEPT);
-            }
-        }
-        kept
-    });
+    let errors = tokio::spawn(async move { read_tail(&mut stderr).await });
     let mut buf = vec![0u8; 256 << 10];
     loop {
         match tokio::time::timeout(idle, stdout.read(&mut buf)).await {
@@ -384,16 +387,18 @@ pub(in crate::usage) async fn run_script(
     script: &str,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
-    run_script_within(command, script, timeout)
+    run_script_within(command, script, timeout, OUTPUT_CAP)
         .await
         .unwrap_or_else(|| Err(timed_out(timeout)))
 }
 
-/// `run_script`, with None when the script ran out of time.
+/// `run_script`, with None when the script ran out of time. Past `cap` bytes on stdout the script is stopped, as the
+/// machine at the other end decides how much it prints; only the end of stderr is kept.
 async fn run_script_within(
     mut command: tokio::process::Command,
     script: &str,
     timeout: Duration,
+    cap: usize,
 ) -> Option<Result<std::process::Output, String>> {
     let program = command.as_std().get_program().to_string_lossy().into_owned();
     // Marked again: waiting for a slot, Arbor may have opened files since the command was made.
@@ -404,19 +409,84 @@ async fn run_script_within(
         Err(error) => return Some(Err(format!("Could not start {program}: {error}"))),
     };
     let run = async {
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(script.as_bytes())
-                .await
-                .map_err(|error| format!("Could not send the script: {error}"))?;
+        // The script goes in while its output comes out, as in `stream_script`: a long script can print more than a
+        // pipe holds before it has all been read.
+        let stdin = child.stdin.take();
+        let script = script.to_owned();
+        let sending = tokio::spawn(async move {
+            let Some(mut stdin) = stdin else { return Ok(()) };
+            let sent = stdin.write_all(script.as_bytes()).await;
             drop(stdin);
+            sent
+        });
+        let stderr = child.stderr.take();
+        let errors = tokio::spawn(async move {
+            match stderr {
+                Some(mut stderr) => read_tail(&mut stderr).await,
+                None => Vec::new(),
+            }
+        });
+        let stdout = match child.stdout.take() {
+            Some(mut stdout) => read_capped(&mut stdout, cap).await,
+            None => Ok(Vec::new()),
+        };
+        let stdout = match stdout {
+            Ok(stdout) => stdout,
+            Err(error) => {
+                let _ = child.kill().await;
+                sending.abort();
+                errors.abort();
+                return Err(error);
+            }
+        };
+        let status = child.wait().await.map_err(|error| format!("The script failed: {error}"))?;
+        if let Ok(Err(error)) = sending.await {
+            if !status.success() {
+                return Err(format!("Could not send the script: {error}"));
+            }
         }
-        child
-            .wait_with_output()
-            .await
-            .map_err(|error| format!("The script failed: {error}"))
+        let stderr = errors.await.unwrap_or_default();
+        Ok(std::process::Output { status, stdout, stderr })
     };
     tokio::time::timeout(timeout, run).await.ok()
+}
+
+/// Everything `stdout` gives, or why it was stopped once it passed `cap` bytes.
+async fn read_capped(stdout: &mut (impl tokio::io::AsyncRead + Unpin), cap: usize) -> Result<Vec<u8>, String> {
+    use tokio::io::AsyncReadExt;
+    let mut kept = Vec::new();
+    let mut buf = vec![0u8; 64 << 10];
+    loop {
+        let read = stdout.read(&mut buf).await.map_err(|error| format!("Couldn't read what the script printed: {error}"))?;
+        if read == 0 {
+            return Ok(kept);
+        }
+        if kept.len() + read > cap {
+            return Err(format!("The script printed more than {} MB, so Arbor stopped it", cap >> 20));
+        }
+        kept.extend_from_slice(&buf[..read]);
+    }
+}
+
+/// The last STDERR_KEPT bytes of `stderr`, read to its end.
+async fn read_tail(stderr: &mut (impl tokio::io::AsyncRead + Unpin)) -> Vec<u8> {
+    use tokio::io::AsyncReadExt;
+    let mut kept = Vec::new();
+    let mut buf = [0u8; 4096];
+    while let Ok(read) = stderr.read(&mut buf).await {
+        if read == 0 {
+            break;
+        }
+        kept.extend_from_slice(&buf[..read]);
+        // Trimmed once it's twice what's kept, not on every read, so a flood isn't copied over and over.
+        if kept.len() > 2 * STDERR_KEPT {
+            kept.drain(..kept.len() - STDERR_KEPT);
+        }
+    }
+    if kept.len() > STDERR_KEPT {
+        kept.drain(..kept.len() - STDERR_KEPT);
+    }
+    kept
 }
 
 /// `value` as one word in a script, whatever it holds.
@@ -501,6 +571,40 @@ mod tests {
         // A reporting script's output is read whatever its exit status.
         let output = runtime.block_on(run_on_machine(&here, MachineOp::PluginApply, "echo 'R\t0\tok'\nexit 1\n", Duration::from_secs(10))).unwrap();
         assert_eq!((output.status.code(), String::from_utf8_lossy(&output.stdout).as_ref()), (Some(1), "R\t0\tok\n"));
+    }
+
+    #[test]
+    fn a_script_that_prints_too_much_is_stopped_and_only_the_end_of_what_it_said_went_wrong_is_kept() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let here = Machine::this_mac("shell-test");
+        let run = |script: &str, cap: usize| {
+            let command = MachineCommand::from(&here).command;
+            runtime.block_on(run_script_within(command, script, Duration::from_secs(20), cap)).expect("finished in time")
+        };
+        // One that never stops printing is stopped once it's past the cap, not left to run until it times out.
+        let started = Instant::now();
+        assert_eq!(run("while :; do echo more; done\n", 1 << 20).unwrap_err(), "The script printed more than 1 MB, so Arbor stopped it");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        // Up to the cap, all of it comes back.
+        assert_eq!(run("head -c 1048576 /dev/zero\n", 1 << 20).unwrap().stdout.len(), 1 << 20);
+        // A flood on stderr keeps only its end, which is where the reason is.
+        let output = run("yes noise | head -c 3000000 >&2\nprintf '\\nthe real reason\\n' >&2\nexit 5\n", 1 << 20).unwrap();
+        assert!(output.stderr.len() <= STDERR_KEPT);
+        assert_eq!((output.status.code(), failure_detail(&output)), (Some(5), "the real reason".to_string()));
+        // A script longer than a pipe holds that prints more than one holds before it has all been read: sent and
+        // read at once, neither side waits on the other.
+        let long = format!("head -c 3000000 /dev/zero\n{}", ": padding line for a long script\n".repeat(4_000));
+        assert_eq!(run(&long, 1 << 30).unwrap().stdout.len(), 3_000_000);
+    }
+
+    #[test]
+    fn the_archive_listing_may_print_more_than_any_other_script() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let here = Machine::this_mac("shell-test");
+        let script = format!("head -c {} /dev/zero\n", OUTPUT_CAP + 1);
+        let run = |op: MachineOp| runtime.block_on(run_checked(&here, op, &script, Duration::from_secs(30)));
+        assert_eq!(run(MachineOp::SetupScan).unwrap_err(), format!("The script printed more than {} MB, so Arbor stopped it", OUTPUT_CAP >> 20));
+        assert_eq!(run(MachineOp::ArchiveList).unwrap().len(), OUTPUT_CAP + 1);
     }
 
     #[test]
