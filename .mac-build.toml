@@ -1,0 +1,24 @@
+# macOS builds of Arbor for agents on a Linux box, where src-tauri's macOS-only code doesn't compile. The mac-build
+# skill runs one of these on the Mac in a throwaway worktree: AGENTS.md › macOS builds says when.
+# tauri's generate_context! needs the web UI's folder to exist, so the cargo modes give it an empty stand-in; only
+# bundle builds the real web UI.
+
+[check]
+dir = "src-tauri"
+run = "mkdir -p ../dist && touch ../dist/index.html && cargo check --all-targets --locked"
+
+[test]
+dir = "src-tauri"
+run = "mkdir -p ../dist && touch ../dist/index.html && cargo test --locked"
+
+[build]
+dir = "src-tauri"
+run = "mkdir -p ../dist && touch ../dist/index.html && cargo build --locked"
+
+# The app alone, unsigned and with no bundled core: enough to open it on the Mac, never a release (scripts/build-release.sh).
+[bundle]
+bun_install = true
+link = ".env"
+run = "bun tauri build --bundles app"
+qos = "background"     # a release build is long; keep it to the efficiency cores
+artifact = "$CARGO_TARGET_DIR/release/bundle/macos/Arbor.app"
