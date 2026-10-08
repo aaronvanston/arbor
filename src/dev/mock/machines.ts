@@ -937,15 +937,17 @@ export const machinesAnswers: CommandAnswers<MachineCommands> = {
       throw 'Arbor only listens on this Mac, so another machine can’t send to it. Set Custom Listen IP to 0.0.0.0 in Settings › Network first.';
     }
     const endpoint = `http://${entry.local ? '127.0.0.1' : '192.168.1.151'}:${telemetryState.port}/v1/metrics`;
+    // Like the app, a machine whose agents reach the proxy over HTTPS isn't given the receiver's plain HTTP address.
+    const overHttps = enabled && !entry.local && telemetryScenario === 'https';
     const files = entry.homes.filter((home) => home.agent === 'claude').map((home): SettingsEdit => ({
       home: home.path,
       path: `${home.path}/settings.json`,
-      change: !enabled && !on ? 'none' : enabled && !on && home.path.includes('claude-other') ? 'create' : 'edit',
+      change: overHttps || (!enabled && !on) ? 'none' : enabled && !on && home.path.includes('claude-other') ? 'create' : 'edit',
       written: false,
-      error: null,
+      error: overHttps ? 'Its agents reach Arbor over HTTPS, and Arbor’s receiver only takes HTTP, so Arbor left it alone' : null,
       backup: null,
     }));
-    const plan: TelemetrySetup = { endpoints: enabled ? [endpoint] : [], files };
+    const plan: TelemetrySetup = { endpoints: enabled && !overHttps ? [endpoint] : [], files };
     if (planOnly) return plan;
     return later(900, (): TelemetrySetup => {
       const failing = telemetryScenario === 'fail';

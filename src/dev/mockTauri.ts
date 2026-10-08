@@ -282,7 +282,8 @@
  * for machines set up that sent nothing in any period (cedar-02 last sent two days ago), `local` for a proxy that
  * only listens on this Mac (setting up another machine is refused), `busy` for a receiver whose port is taken,
  * `cumulative` for cedar-02 sending running totals, `stale` for cedar-02 set up for a port Arbor no longer
- * listens on, or `fail` to have setting a machine up fail to write its first file.
+ * listens on, `https` for another machine's agents reaching the proxy over HTTPS (setting it up leaves every file
+ * alone), or `fail` to have setting a machine up fail to write its first file.
  * `?fileremove=fail` to have taking a rule, subagent or command off every machine fail on changes not committed;
  * `?skillremove=fail` to have taking a skill off every machine in the repo fail on changes not committed;
  * `?catalog=fail` for every marketplace's plugin list failing to come from GitHub (Sync › Library › Directory);

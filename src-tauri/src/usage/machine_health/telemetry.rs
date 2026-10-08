@@ -920,6 +920,10 @@ fn url_host(url: &str) -> Option<(String, Option<u16>)> {
     (!host.is_empty()).then(|| (host.to_string(), port))
 }
 
+fn is_https(url: &str) -> bool {
+    url.trim().get(..8).is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"))
+}
+
 fn is_loopback(host: &str) -> bool {
     host.eq_ignore_ascii_case("localhost") || host.starts_with("127.") || host == "[::1]"
 }
@@ -986,7 +990,16 @@ fn telemetry_settings(content: Option<&str>, export: Option<&Export>, endpoints:
         if elsewhere && !ours {
             return Err("Its Claude Code already sends its metrics somewhere else, so Arbor left it alone".into());
         }
-        let base = env_value(env, "ANTHROPIC_BASE_URL").and_then(url_host);
+        let base_url = env_value(env, "ANTHROPIC_BASE_URL");
+        let base = base_url.and_then(url_host);
+        // The receiver takes plain HTTP. A machine whose agents reach the proxy over HTTPS was set up to keep that path
+        // private, so its token and what its sessions spend don't go back across it in the clear. This Mac's own
+        // agents send to this Mac, so nothing crosses a network.
+        let proxy_over_https = base_url.is_some_and(is_https)
+            && base.as_ref().is_some_and(|(_, port)| export.core_port.is_some() && *port == export.core_port);
+        if proxy_over_https && !export.local {
+            return Err("Its agents reach Arbor over HTTPS, and Arbor's receiver only takes HTTP, so Arbor left it alone".into());
+        }
         let host = base
             .filter(|(host, port)| (export.local || !is_loopback(host)) && export.core_port.is_some() && *port == export.core_port)
             .map(|(host, _)| host)
@@ -1440,6 +1453,18 @@ mod tests {
         let gateway = "{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://gateway.example.com/v1\"}}";
         assert_eq!(apply(Some(gateway), Some(&export(false, Some("192.168.1.20")))).1, ["http://192.168.1.20:8319/v1/metrics"]);
         assert!(apply(None, Some(&export(false, None))).0.unwrap_err().contains("reaches this Mac"));
+    }
+
+    #[test]
+    fn a_machine_that_reaches_the_proxy_over_https_is_not_given_a_plain_http_endpoint() {
+        let secured = "{\"env\":{\"ANTHROPIC_BASE_URL\":\"HTTPS://cam-mbp.tail1234.ts.net:8317\"}}";
+        let (result, endpoints) = apply(Some(secured), Some(&export(false, Some("192.168.1.20"))));
+        assert!(result.unwrap_err().contains("HTTPS"));
+        assert!(endpoints.is_empty());
+        // This Mac's own agents send over loopback.
+        assert!(apply(Some(secured), Some(&export(true, Some("127.0.0.1")))).0.unwrap().is_some());
+        // Taking it away still works.
+        assert!(apply(Some(secured), None).0.is_ok());
     }
 
     #[test]
