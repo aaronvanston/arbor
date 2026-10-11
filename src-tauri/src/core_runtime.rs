@@ -1085,6 +1085,12 @@ impl CoreStartAttemptFailure {
         self.failure.was_killed_by_sigkill()
     }
 
+    /// Only macOS kills a core whose files it rejects, the case a start retries after repairing them.
+    #[cfg(not(target_os = "macos"))]
+    fn was_killed_by_sigkill(&self) -> bool {
+        false
+    }
+
     fn message(&self, log_path: &Path) -> String {
         self.message_with_detail(log_path, None)
     }
@@ -1272,6 +1278,10 @@ pub(crate) fn keep_open_files_from_helpers() {
         files[..listed].iter().map(|file| file.proc_fd).filter(|&fd| fd > 2).for_each(close_on_exec);
     }
 }
+
+/// Elsewhere there's nothing to mark: Rust opens every file close-on-exec, and no system framework leaves one open.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn keep_open_files_from_helpers() {}
 
 pub(crate) fn stop_core_process_inner(process_state: &CoreProcessState) -> Result<(), String> {
     let mut stopped_any = false;
@@ -1971,6 +1981,12 @@ pub(crate) fn find_candidate_core_process_ids() -> Vec<u32> {
         .unwrap_or_default()
 }
 
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn process_executable_path(process_id: u32) -> Option<PathBuf> {
+    fs::read_link(format!("/proc/{process_id}/exe")).ok()
+}
+
+#[cfg(target_os = "macos")]
 pub(crate) fn process_executable_path(process_id: u32) -> Option<PathBuf> {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};
 

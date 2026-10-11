@@ -119,8 +119,9 @@ guessing. Gate details, the mock's internals and the benchmark: [Development](do
 
 ### macOS builds from a Linux box
 
-On the Linux dev boxes `src-tauri` doesn't compile, because its macOS-only code isn't gated. When a change touches
-`src-tauri`, run `mac-build` once before you finish, and it compiles the commit on the Mac Mini:
+On a Linux dev box `src-tauri` compiles and `bun run verify:rust` runs, but the macOS-only code (the tray, the
+updater, AppKit and the system calls only macOS has) sits behind `#[cfg(target_os = "macos")]` and isn't built there.
+When a change touches `src-tauri`, run `mac-build` once before you finish, and it compiles the commit on the Mac Mini:
 
 ```sh
 mac-build          # cargo check in src-tauri, for HEAD as committed

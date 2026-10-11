@@ -88,22 +88,29 @@ fn running_core_process_discovery_ignores_the_same_binary_name_in_another_direct
         "tests::core_runtime::core_process_discovery_sleep_helper",
         "--nocapture",
     ];
-    let mut first = Command::new(&first_binary)
-        .args(&arguments)
-        .env("EASYCLIPROXYAPI_PROCESS_DISCOVERY_TEST_HELPER", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let mut second = Command::new(&second_binary)
-        .args(&arguments)
-        .env("EASYCLIPROXYAPI_PROCESS_DISCOVERY_TEST_HELPER", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+    // On Linux a fresh copy can't start while a child forked by another test still holds it open ("Text file busy");
+    // that child execs within moments.
+    let spawn = |binary: &Path| {
+        let mut attempts = 0;
+        loop {
+            match Command::new(binary)
+                .args(arguments)
+                .env("EASYCLIPROXYAPI_PROCESS_DISCOVERY_TEST_HELPER", "1")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < 50 => {
+                    attempts += 1;
+                    thread::sleep(Duration::from_millis(20));
+                }
+                result => break result.unwrap(),
+            }
+        }
+    };
+    let mut first = spawn(&first_binary);
+    let mut second = spawn(&second_binary);
     thread::sleep(Duration::from_millis(200));
 
     let first_running = first.try_wait().unwrap().is_none();

@@ -68,7 +68,8 @@ def main(op, a):
             data['projectId'] = a[1]
         if isinstance(data.get('modelSelection'), dict):
             data['modelSelection']['model'] = a[2]
-        return json.dumps(data)
+        # Compact, like JSON.stringify, so every reader sends the same body.
+        return json.dumps(data, separators=(',', ':'))
     return ''
 print(main(sys.argv[1], sys.argv[2:]))
 "##;

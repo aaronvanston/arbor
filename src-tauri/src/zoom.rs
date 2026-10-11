@@ -280,7 +280,8 @@ mod tests {
     fn the_zoom_keys_are_accelerators_tauri_can_read_and_plus_is_not() {
         use muda::accelerator::{Accelerator, Code, Modifiers};
         let read = |accelerator: &str| accelerator.parse::<Accelerator>();
-        let command = Modifiers::SUPER;
+        // CmdOrCtrl: ⌘ on a Mac, Control elsewhere.
+        let command = if cfg!(target_os = "macos") { Modifiers::SUPER } else { Modifiers::CONTROL };
         for (accelerator, key) in [
             (ACTUAL_SIZE_ACCELERATOR, Code::Digit0),
             (ZOOM_IN_ACCELERATOR, Code::Equal),
