@@ -72,6 +72,13 @@ fn hour_cycle(pattern: &str) -> &'static str {
     "h12"
 }
 
+/// Only macOS is read; elsewhere the webview's own locale stands.
+#[cfg(not(target_os = "macos"))]
+fn read_system_locale() -> Option<SystemLocale> {
+    None
+}
+
+#[cfg(target_os = "macos")]
 fn read_system_locale() -> Option<SystemLocale> {
     use objc2_foundation::{NSDateFormatter, NSLocale, NSString};
 
@@ -132,6 +139,7 @@ mod tests {
         assert_eq!(hour_cycle(""), "h12");
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn reads_a_tag_on_this_mac() {
         let locale = read_system_locale().expect("macOS always has a current locale");

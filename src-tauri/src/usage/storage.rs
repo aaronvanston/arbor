@@ -391,7 +391,8 @@ fn available_disk_bytes(path: &Path) -> Option<u64> {
     }
     // SAFETY: statfs returned 0, so `stats` is initialized.
     let stats = unsafe { stats.assume_init() };
-    Some(stats.f_bavail.saturating_mul(u64::from(stats.f_bsize)))
+    // f_bsize is unsigned on macOS and signed on Linux.
+    Some(stats.f_bavail.saturating_mul(u64::try_from(stats.f_bsize).ok()?))
 }
 
 fn usage_page_counts(connection: &Connection) -> Result<UsagePageCounts, String> {

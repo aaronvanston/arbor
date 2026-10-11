@@ -390,6 +390,12 @@ pub(crate) fn refresh_tray_status(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn show_tray_status(_app: &tauri::AppHandle, _indicator: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 fn show_tray_status(app: &tauri::AppHandle, indicator: &str) -> Result<(), String> {
     let Some(tray) = app.tray_by_id(MACOS_TRAY_ID) else {
         return Ok(());
@@ -589,7 +595,7 @@ fn with_status_dot(rgba: &[u8], width: u32, height: u32, color: [u8; 3]) -> Vec<
     pixels
 }
 
-#[cfg(target_os = "macos")]
+// Only macOS builds the tray, so elsewhere no tray has this id and the tray commands do nothing.
 const MACOS_TRAY_ID: &str = "macos-tray";
 
 #[cfg(target_os = "macos")]

@@ -1,3 +1,7 @@
+// The app is a Mac app: on Linux it builds only so its checks and tests run there, and the code only macOS reaches
+// would otherwise warn as unused, item by item.
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
+
 mod agents;
 mod app_icon;
 mod app_menu;

@@ -357,48 +357,71 @@ pub(crate) async fn download_and_stage_portable_app_update(
             task.phase = AppUpdatePhase::Staging;
         });
 
-        let staged_app = work_dir
-            .join("staging")
-            .join("Arbor.app");
-        stage_macos_application_from_dmg(&archive_path, &work_dir, &staged_app)?;
-        validate_macos_staged_application(&staged_app, pending)?;
-        let current_exe =
-            env::current_exe().map_err(|error| format!("Failed to read current executable path: {error}"))?;
-        let current_app = macos_application_bundle_from_executable(&current_exe)?;
-        preflight_macos_update_directory(&current_app)?;
-        let executable_relative_path = current_exe
-            .strip_prefix(&current_app)
-            .map_err(|_| "Invalid macOS application path".to_string())?
-            .to_path_buf();
-        let backup_app = current_app
-            .parent()
-            .ok_or_else(|| "The macOS application path has no parent directory".to_string())?
-            .join(".Arbor.app.update-backup");
-        let descriptor = MacosUpdateDescriptor {
-            parent_pid: std::process::id(),
-            current_app,
-            staged_app,
-            backup_app,
-            executable_relative_path,
-            ack_path: work_dir.join("update-started.ack"),
-            work_dir: work_dir.clone(),
-            target_version: pending.version.clone(),
-        };
-        // Keep the updater inside its signed application bundle. Copying the Mach-O
-        // executable into a temporary directory strips the bundle context Gatekeeper
-        // uses to validate it and can cause macOS to terminate it before it starts.
-        let helper_path = macos_update_helper_path(&current_exe);
-        launch_portable_update_helper(app, &helper_path, &work_dir, &descriptor).await
+        stage_and_launch_portable_update(app, pending, &archive_path, &work_dir).await
     }
     .await;
     if result.is_err() {
         // An image still busy stays mounted here, and removing the folder would reach into it.
+        #[cfg(target_os = "macos")]
         cleanup_macos_update_dmg(&work_dir);
         if !work_dir.join("mount").exists() {
             let _ = fs::remove_dir_all(&work_dir);
         }
     }
     result
+}
+
+/// Swaps the downloaded app in for this one, through a helper that outlives Arbor.
+#[cfg(target_os = "macos")]
+async fn stage_and_launch_portable_update(
+    app: &tauri::AppHandle,
+    pending: &PendingAppUpdate,
+    archive_path: &Path,
+    work_dir: &Path,
+) -> Result<(), String> {
+    let staged_app = work_dir
+        .join("staging")
+        .join("Arbor.app");
+    stage_macos_application_from_dmg(archive_path, work_dir, &staged_app)?;
+    validate_macos_staged_application(&staged_app, pending)?;
+    let current_exe =
+        env::current_exe().map_err(|error| format!("Failed to read current executable path: {error}"))?;
+    let current_app = macos_application_bundle_from_executable(&current_exe)?;
+    preflight_macos_update_directory(&current_app)?;
+    let executable_relative_path = current_exe
+        .strip_prefix(&current_app)
+        .map_err(|_| "Invalid macOS application path".to_string())?
+        .to_path_buf();
+    let backup_app = current_app
+        .parent()
+        .ok_or_else(|| "The macOS application path has no parent directory".to_string())?
+        .join(".Arbor.app.update-backup");
+    let descriptor = MacosUpdateDescriptor {
+        parent_pid: std::process::id(),
+        current_app,
+        staged_app,
+        backup_app,
+        executable_relative_path,
+        ack_path: work_dir.join("update-started.ack"),
+        work_dir: work_dir.to_path_buf(),
+        target_version: pending.version.clone(),
+    };
+    // Keep the updater inside its signed application bundle. Copying the Mach-O
+    // executable into a temporary directory strips the bundle context Gatekeeper
+    // uses to validate it and can cause macOS to terminate it before it starts.
+    let helper_path = macos_update_helper_path(&current_exe);
+    launch_portable_update_helper(app, &helper_path, work_dir, &descriptor).await
+}
+
+/// Arbor only installs its own updates on macOS; no other platform is offered one.
+#[cfg(not(target_os = "macos"))]
+async fn stage_and_launch_portable_update(
+    _app: &tauri::AppHandle,
+    _pending: &PendingAppUpdate,
+    _archive_path: &Path,
+    _work_dir: &Path,
+) -> Result<(), String> {
+    Err("Arbor installs its own updates only on macOS".to_string())
 }
 
 fn portable_update_work_dir(version: &str) -> PathBuf {
@@ -1038,6 +1061,12 @@ fn cleanup_macos_update_payload(descriptor_path: &Path, descriptor: &MacosUpdate
     let _ = fs::remove_file(descriptor_path);
 }
 
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn run_portable_update_helper(_descriptor_path: &Path) -> Result<(), String> {
+    Err("Arbor installs its own updates only on macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
 pub(crate) fn run_portable_update_helper(descriptor_path: &Path) -> Result<(), String> {
     let descriptor = serde_json::from_slice::<MacosUpdateDescriptor>(
         &fs::read(descriptor_path).map_err(|error| format!("Failed to read application update descriptor: {error}"))?,

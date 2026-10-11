@@ -637,7 +637,8 @@ mod tests {
 
     #[test]
     fn concurrent_script_peak_stays_at_the_shared_limit() {
-        SCRIPT_ACTIVE.store(0, Ordering::SeqCst);
+        // Only the peak starts over: other tests' scripts may still be running, and zeroing the count under them
+        // would wrap it when they finish.
         SCRIPT_PEAK.store(0, Ordering::SeqCst);
         let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build().unwrap();
         let target = Machine::this_mac("shell-test");
