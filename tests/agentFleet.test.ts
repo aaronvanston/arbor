@@ -50,6 +50,9 @@ describe('updating Claude Code or Codex everywhere', () => {
     expect(rolloutStanding(rollout([machine('a', '2.1.282'), machine('b', '2.1.281')]))).toBe('trial');
     const unread = agentRollout('claude', [machine('a', '2.1.282'), machine('b', '2.1.281')], null);
     expect(unread && rolloutStanding(unread)).toBe('mixed');
+    // A machine behind that doesn't answer can't be brought up, so it doesn't keep the trial going.
+    expect(rolloutStanding(rollout([machine('a', '2.1.282'), machine('b', '2.1.281', 'unreachable')]))).toBe('mixed');
+    expect(rolloutStanding(rollout([machine('a', '2.1.282'), machine('b', '2.1.281'), machine('c', '2.1.281', 'unreachable')]))).toBe('trial');
     expect(rolloutStanding(rollout([machine('a', null)]))).toBe('unknown');
   });
 });

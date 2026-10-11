@@ -263,7 +263,8 @@ export function RolloutCard({ rollout, machines, run, onUpdateAll, onTry, onOpen
         </>
       )}
     >
-      {comparison && newest ? <TrialPanel rollout={rollout} /> : null}
+      {/* Once the trial is over, its numbers matter only while they say the new version fails more. */}
+      {comparison && newest && (standing === 'trial' || comparison.verdict === 'worse') ? <TrialPanel rollout={rollout} /> : null}
       <AgentMachinesTable agent={agent} rows={machines} busy={busy} onOpen={onOpen} />
       {rollout.uses.length ? <VersionHistory uses={rollout.uses} target={target} /> : null}
     </AgentCard>

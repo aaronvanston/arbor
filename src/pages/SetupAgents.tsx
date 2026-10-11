@@ -14,7 +14,7 @@ import { machinesView, type AppView } from '../navigation';
 import { errorWords, plainError } from '../services/plainError';
 import { useLatestAgentVersions } from '../services/agentReleases';
 import { agentRollout, getClientVersions, ROLLOUT_DAYS, type AgentRollout } from '../services/agentRollout';
-import { fleetUpdates, harnessGroups, rolloutTarget, rolloutTargets, untried, type FleetUpdate } from '../services/agentFleet';
+import { fleetUpdates, harnessGroups, rolloutStanding, rolloutTarget, rolloutTargets, untried, type FleetUpdate } from '../services/agentFleet';
 import { compareVersions, runningAgents } from '../services/agentVersions';
 import { harnessHomeRows, harnessUpdateOutcome, updateMachineHarness } from '../services/harnessHomes';
 import { AGENT_KINDS, fetchMachineHealth, updateMachineAgent } from '../services/machineHealth';
@@ -35,7 +35,8 @@ const reachable = (item: MachineHealth) => item.status !== 'unreachable' && item
 
 /** Each machine's row under Claude Code's or Codex's card, the ones without it too, against the version to be at. */
 function machineRows(rollout: AgentRollout, machines: MachineHealth[], busy: boolean, onUpdate: (machine: string) => void): AgentMachineRow[] {
-  const { agent, comparison, newest } = rollout;
+  const { agent, newest } = rollout;
+  const trial = rolloutStanding(rollout) === 'trial';
   const target = rolloutTarget(rollout);
   const due = new Set(rolloutTargets(rollout).map((entry) => entry.machine));
   return machines.filter((item) => item.status !== 'unconfigured').map((item): AgentMachineRow => {
@@ -46,7 +47,7 @@ function machineRows(rollout: AgentRollout, machines: MachineHealth[], busy: boo
     const state: AgentMachineRow['state'] =
       !reachable(item) ? 'away'
       : version === null ? 'unknown'
-      : comparison && version === newest && target === newest ? 'trying'
+      : trial && version === newest && target === newest ? 'trying'
       : target !== null && compareVersions(version, target) < 0 ? 'behind'
       : 'current';
     return { machine: item.machine, version, state, running, onUpdate: due.has(item.machine) && !busy ? () => onUpdate(item.machine) : undefined };

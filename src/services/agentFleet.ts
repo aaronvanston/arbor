@@ -11,13 +11,16 @@ import type { AgentKind, Harness } from '../native/types';
 
 /** Where an agent stands across the fleet, as its card's header says it. */
 export type AgentStanding =
-  /** Some machines run a newer version than the rest, and its requests are being compared. */
+  /** Some machines that answer run an older version than the rest, and the newer one's requests are being compared. */
   | 'trial'
   /** Every machine on one version, and it's the latest release. */
   | 'current'
   /** Every machine on one version, and a newer release is out. */
   | 'releaseOut'
-  /** Machines on different versions, with nothing comparing them. */
+  /**
+   * Machines on different versions, with nothing comparing them, or the only ones behind don't answer: an offline machine
+   * can't be updated, so it mustn't hold the trial open.
+   */
   | 'mixed'
   /** One version everywhere, with no release known to compare it with. */
   | 'even'
@@ -26,7 +29,7 @@ export type AgentStanding =
 
 export function rolloutStanding(rollout: AgentRollout): AgentStanding {
   if (!rollout.newest) return 'unknown';
-  if (rollout.behind.length) return rollout.comparison ? 'trial' : 'mixed';
+  if (rollout.behind.length) return rollout.comparison && rollout.behind.some((entry) => entry.reachable) ? 'trial' : 'mixed';
   if (atLatest(rollout)) return 'current';
   return rollout.latest && compareVersions(rollout.latest, rollout.newest) > 0 ? 'releaseOut' : 'even';
 }
