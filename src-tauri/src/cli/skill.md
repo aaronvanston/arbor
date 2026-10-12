@@ -31,6 +31,7 @@ any other machine, say so instead of trying.
 | Usage and cost | `arbor usage today`, `arbor usage 7d`, `arbor usage 30d` |
 | Accounts and limits | `arbor accounts`, or `arbor accounts refresh` to read the limits again |
 | ChatGPT's own token counts for each Codex account, as its profile page shows them (lifetime tokens, busiest day, streaks, tokens a day), with a total that counts an account signed in twice once. It's every Codex use the account had, where Usage › All time only counts transcripts the archive keeps | `arbor call accounts.codexProfile --json` (`account=<id>` for one) |
+| An account limit's readings over the last four weeks, every account of one provider, as the forecast on Accounts › Limits reads them (the window is the label `arbor accounts` shows, such as `7-day Fable window` or `Weekly limit`) | `arbor call get_limit_trend provider=claude window='7-day Fable window' sinceMs=0` |
 | Automatic account order | `arbor routing` |
 | The models one sign-in keeps from its account, or an Antigravity sign-in's project id (by its file name in Accounts › Sign-ins; the file itself is never shown) | `arbor call get_auth_file_excluded_models name=<file>.json`, `arbor call get_auth_file_project_id name=<file>.json` |
 | Alerts | `arbor alerts` |

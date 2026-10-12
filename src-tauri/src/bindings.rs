@@ -103,6 +103,7 @@ mod tests {
         types.visit::<crate::usage::capacity::LimitCycle>();
         types.visit::<crate::usage::limit_history::LimitReading>();
         types.visit::<crate::usage::limit_history::LimitAccountRename>();
+        types.visit::<crate::usage::limit_trend::LimitTrendAccount>();
         types.visit::<crate::usage::fleet::FleetSources>();
         types.visit::<crate::usage::fleet::FleetTrayCounts>();
         types.visit::<crate::usage::antiburn::AntiburnStatus>();

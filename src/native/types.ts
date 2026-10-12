@@ -2691,6 +2691,16 @@ export type LimitReading = {
 };
 
 /**
+ * One account's readings of one limit window, oldest first: when it was read,
+ * the percent left, and when the window resets.
+ */
+export type LimitTrendAccount = {
+  account: string,
+  authIndex: string,
+  readings: Array<[number, number, number | null]>,
+};
+
+/**
  * A running session's main conversation.
  */
 export type LiveContext = {

@@ -453,6 +453,7 @@ fn page_reads(root: &Path, connection: &Connection, now_ms: i64) {
     time("cache misses, 7 days", || digest::load_cache_misses(&open()?, &week));
     let capacity_week: capacity::CapacityQuery = serde_json::from_value(serde_json::json!({ "start": week.start })).unwrap();
     time("capacity, 7 days", || capacity::load_capacity_report(&open()?, &capacity_week, now_ms));
+    time_count("limit trend, 28 days", || limit_trend::load_limit_trend(&open()?, "claude", "7-day limit", now_ms - 28 * DAY, now_ms));
     time("machine assignments", || machines::load_assignments(&open()?, &config));
     #[cfg(unix)]
     if let Some(bytes) = peak_rss_bytes() {

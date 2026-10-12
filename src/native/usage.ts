@@ -8,6 +8,7 @@ import type {
   FleetTrayCounts,
   LimitAccountRename,
   LimitCycle,
+  LimitTrendAccount,
   LimitReading,
   LiveSessionsReport,
   MachineAssignment,
@@ -63,6 +64,8 @@ export type UsageCommands = {
 
   get_capacity_report: { args: { query: CapacityQuery }; result: CapacityReport };
   get_limit_cycles: { args: { account: string; window: string }; result: LimitCycle[] };
+  /** Reads at most four weeks back, whatever `sinceMs` asks for, about one reading an hour. */
+  get_limit_trend: { args: { provider: string; window: string; sinceMs: number }; result: LimitTrendAccount[] };
   /** Returns how many readings were worth keeping and stored. */
   record_limit_samples: { args: { samples: LimitReading[] }; result: number };
   /** Returns how many readings moved to the new names. */

@@ -37,6 +37,16 @@ and updates (`core_runtime.rs`). Arbor reads and changes its state through the c
 - Every screen that lists sessions reads through `usage/session_read.rs` (`select_sessions`, then
   `complete_sessions`), so the numbers agree everywhere.
 
+## Limit forecast
+
+The headline's pace color and the forecast on Accounts › Limits both play a provider's pool forward through
+`services/poolSimulation.ts`, so the color can't say a pool lasts while the chart shows it running dry. A pool counts as
+dry only when every account in use is, since the proxy moves on when one empties.
+
+Spend is read from the limit history as drops between readings of one cycle. An account sitting at 0% shows no drop, so
+hours a pool spent dry read as no demand, and a pool that keeps running dry is forecast a little short. Advice only ever
+suggests a reset. Claims stay behind the confirmation on Accounts, and nothing in the forecast spends one.
+
 ## Processes
 
 macOS hands a child process every file that isn't close-on-exec, and a long-lived child such as the core would hold

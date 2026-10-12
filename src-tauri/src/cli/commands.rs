@@ -590,6 +590,16 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_limit_trend",
+        access: Access::Read,
+        summary: "Every account's readings of one provider's limit window since `since_ms` (at most four weeks back), about one an hour.",
+        args: &[
+            ArgSpec { name: "provider", ts_type: "string", optional: false },
+            ArgSpec { name: "window", ts_type: "string", optional: false },
+            ArgSpec { name: "sinceMs", ts_type: "number", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "record_limit_samples",
         access: Access::Write,
         summary: "Record limit samples",
@@ -2322,6 +2332,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "save_usage_machine_assignments" => async { done(Box::pin(crate::usage::machines::save_usage_machine_assignments(arg(&args, "assignments")?)).await) }.await,
         "get_capacity_report" => async { done(Box::pin(crate::usage::capacity::get_capacity_report(arg(&args, "query")?)).await) }.await,
         "get_limit_cycles" => async { done(Box::pin(crate::usage::capacity::get_limit_cycles(arg(&args, "account")?, arg(&args, "window")?)).await) }.await,
+        "get_limit_trend" => async { done(Box::pin(crate::usage::limit_trend::get_limit_trend(arg(&args, "provider")?, arg(&args, "window")?, arg(&args, "sinceMs")?)).await) }.await,
         "record_limit_samples" => async { done(Box::pin(crate::usage::limit_history::record_limit_samples(arg(&args, "samples")?)).await) }.await,
         "rename_limit_history_accounts" => async { done(Box::pin(crate::usage::limit_history::rename_limit_history_accounts(arg(&args, "renames")?)).await) }.await,
         "get_machine_health" => async { done(Box::pin(crate::usage::machine_health::get_machine_health(app.state(), arg(&args, "since")?, arg(&args, "windowMs")?, arg(&args, "passive")?, arg(&args, "machine")?)).await) }.await,

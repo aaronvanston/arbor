@@ -10,6 +10,7 @@ pub(crate) mod diagnostics;
 pub(crate) mod digest;
 pub(crate) mod fleet;
 pub(crate) mod limit_history;
+pub(crate) mod limit_trend;
 pub(crate) mod live;
 pub(crate) mod machines;
 pub(crate) mod machine_health;

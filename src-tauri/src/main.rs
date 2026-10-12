@@ -1865,6 +1865,7 @@ fn main() {
             usage::machines::save_usage_machine_assignments,
             usage::capacity::get_capacity_report,
             usage::capacity::get_limit_cycles,
+            usage::limit_trend::get_limit_trend,
             usage::limit_history::record_limit_samples,
             usage::limit_history::rename_limit_history_accounts,
             usage::machine_health::get_machine_health,
