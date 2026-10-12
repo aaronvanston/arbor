@@ -153,15 +153,15 @@ for _ in $(seq 1 60); do
   curl -s -o /dev/null -m 1 "http://127.0.0.1:$port/" && break
   sleep 0.5
 done
-check "with plugins off, the model isn't there" "$([[ "$(has_model claude-sonnet-5-5)" == "no" ]] && echo yes || echo no)"
+check "with plugins off, the model isn't there" "$([[ "$(has_model claude-arbor-check)" == "no" ]] && echo yes || echo no)"
 check "the plugin's library isn't named by a path on this Mac" "$([[ "$install_name" == @rpath/* ]] && echo yes || echo no)"
 
 # Copies, not links: the core skips links, and a link would be the same library.
 cp "$plugin_lib" "$core_dir/plugins/arbor-models.dylib"
 cp "$plugin_lib" "$core_dir/plugins/arbor-models-codex.dylib"
 
-write_config "        - id: claude-sonnet-5-5
-          display-name: Claude Sonnet 5.5
+write_config "        - id: claude-arbor-check
+          display-name: Claude Arbor Check
           context-length: 1000000
           thinking:
             levels: [low, medium, high]
@@ -172,29 +172,29 @@ write_config "        - id: claude-sonnet-5-5
           context-length: 272000
           thinking:
             levels: [low, medium, high, xhigh]"
-wait_for_model claude-sonnet-5-5 yes
+wait_for_model claude-arbor-check yes
 wait_for_model gpt-arbor-check yes
 check "the plugin loads when plugins are turned on" "$(grep -q 'plugin registered plugin_id=arbor-models' "$work_dir/core.log" && echo yes || echo no)"
 check "the management API lists the plugin" "$(curl -s -m 10 -H "Authorization: Bearer $management_key" "http://127.0.0.1:$port/v0/management/plugins" | grep -q '"arbor-models"' && echo yes || echo no)"
-check "an extra model is listed" "$(has_model claude-sonnet-5-5)"
-check "an extra model reaches the Claude account" "$(message_error claude-sonnet-5-5 | grep -q 'unknown provider' && echo no || echo yes)"
+check "an extra model is listed" "$(has_model claude-arbor-check)"
+check "an extra model reaches the Claude account" "$(message_error claude-arbor-check | grep -q 'unknown provider' && echo no || echo yes)"
 check "an unlisted model is still unknown" "$(message_error claude-sonnet-9-9 | grep -q 'unknown provider' && echo yes || echo no)"
 check "a built-in model keeps its own details" "$([[ "$(display_name claude-sonnet-5)" != "Arbor check override" ]] && echo yes || echo no)"
 check "the Codex copy loads as its own plugin" "$(grep -q 'plugin registered plugin_id=arbor-models-codex' "$work_dir/core.log" && echo yes || echo no)"
 check "a Codex extra model is listed as OpenAI's" "$([[ "$(owned_by gpt-arbor-check)" == "openai" ]] && echo yes || echo no)"
-check "a Claude extra model is still Anthropic's" "$([[ "$(owned_by claude-sonnet-5-5)" == "anthropic" ]] && echo yes || echo no)"
-check "each copy keeps its own models: Claude's account" "$([[ "$(account_has_model claude-check.json claude-sonnet-5-5)" == "yes" && "$(account_has_model claude-check.json gpt-arbor-check)" == "no" ]] && echo yes || echo no)"
-check "each copy keeps its own models: Codex's account" "$([[ "$(account_has_model codex-check.json gpt-arbor-check)" == "yes" && "$(account_has_model codex-check.json claude-sonnet-5-5)" == "no" ]] && echo yes || echo no)"
+check "a Claude extra model is still Anthropic's" "$([[ "$(owned_by claude-arbor-check)" == "anthropic" ]] && echo yes || echo no)"
+check "each copy keeps its own models: Claude's account" "$([[ "$(account_has_model claude-check.json claude-arbor-check)" == "yes" && "$(account_has_model claude-check.json gpt-arbor-check)" == "no" ]] && echo yes || echo no)"
+check "each copy keeps its own models: Codex's account" "$([[ "$(account_has_model codex-check.json gpt-arbor-check)" == "yes" && "$(account_has_model codex-check.json claude-arbor-check)" == "no" ]] && echo yes || echo no)"
 check "a Codex extra model reaches the Codex account" "$(chat_error gpt-arbor-check | grep -q 'unknown provider' && echo no || echo yes)"
 check "an unlisted Codex model is still unknown" "$(chat_error gpt-arbor-unlisted | grep -q 'unknown provider' && echo yes || echo no)"
 
-write_config "        - id: claude-opus-6
-          display-name: Claude Opus 6" "        - id: gpt-arbor-check-2"
-wait_for_model claude-opus-6 yes
+write_config "        - id: claude-arbor-check-2
+          display-name: Claude Arbor Check 2" "        - id: gpt-arbor-check-2"
+wait_for_model claude-arbor-check-2 yes
 wait_for_model gpt-arbor-check-2 yes
-check "an added model appears without a restart" "$(has_model claude-opus-6)"
-wait_for_model claude-sonnet-5-5 no
-check "a removed model goes away without a restart" "$([[ "$(has_model claude-sonnet-5-5)" == "no" ]] && echo yes || echo no)"
+check "an added model appears without a restart" "$(has_model claude-arbor-check-2)"
+wait_for_model claude-arbor-check no
+check "a removed model goes away without a restart" "$([[ "$(has_model claude-arbor-check)" == "no" ]] && echo yes || echo no)"
 check "built-in models stay" "$(has_model claude-sonnet-5)"
 wait_for_model gpt-arbor-check no
 check "each copy follows its own edits" "$([[ "$(has_model gpt-arbor-check-2)" == "yes" && "$(has_model gpt-arbor-check)" == "no" ]] && echo yes || echo no)"
