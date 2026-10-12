@@ -83,6 +83,7 @@ const CATEGORY: Record<AlertKind, AlertCategory | null> = {
   limitRecovered: 'limits',
   resetReady: 'limits',
   expiring: 'limits',
+  limitForecast: 'limits',
   accountPaused: 'limits',
   accountResumed: 'limits',
   heavySession: 'sessions',

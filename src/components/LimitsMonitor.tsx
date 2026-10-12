@@ -10,6 +10,7 @@ import { useAccountOrder } from '../services/accountOrder';
 import { ensureAccountsLoaded, getAccountsSnapshot, loadAccountFiles, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
 import { expiringCapacity, nextExpiringNotifications, type ExpiringCapacity } from '../services/expiringCapacity';
 import { recordLimitSample } from '../services/limitsHistory';
+import type { ForecastAlert } from '../services/limitForecast';
 import { notify } from '../services/notify';
 import { nextOutageNotifications, outageNotification } from '../services/outageAlerts';
 import { formatResetCountdown, providerLabel, providerLimits, type ProviderLimit } from '../services/providerLimits';
@@ -38,6 +39,9 @@ import { nextResetNotifications, type ResetReady } from '../services/resetReadin
 const NOTIFIED_KEY = 'arbor.limits-notified.v1';
 const RESET_NOTIFIED_KEY = 'arbor.reset-notified.v1';
 const EXPIRING_NOTIFIED_KEY = 'arbor.expiring-notified.v1';
+const FORECAST_NOTIFIED_KEY = 'arbor.forecast-notified.v1';
+/** How far ahead the alert's forecast looks: past the day it warns about, so a reset just after shows. */
+const FORECAST_ALERT_HORIZON_DAYS = 2;
 const OUTAGE_NOTIFIED_KEY = 'arbor.outage-notified.v1';
 /** More at once would be noise; the banner names them all. */
 const MAX_OUTAGE_NOTIFICATIONS = 3;
@@ -138,6 +142,9 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   const resetNotifiedRef = useRef<Record<string, true>>(typeof localStorage === 'undefined' ? {} : readStored<true>(RESET_NOTIFIED_KEY));
   const expiringNotifiedRef = useRef<Record<string, number>>(typeof localStorage === 'undefined' ? {} : readStored<number>(EXPIRING_NOTIFIED_KEY));
   const outageNotifiedRef = useRef<Record<string, number>>(typeof localStorage === 'undefined' ? {} : readStored<number>(OUTAGE_NOTIFIED_KEY));
+  const forecastNotifiedRef = useRef<Record<string, number>>(typeof localStorage === 'undefined' ? {} : readStored<number>(FORECAST_NOTIFIED_KEY));
+  // Each provider's latest refresh the alert's forecast was worked out for, so it reads the history once a refresh.
+  const forecastReadRef = useRef<Record<string, number>>({});
 
   const limits = useMemo(() => providerLimits(files, quotas, profiles, prefs, now, order), [files, quotas, profiles, prefs, now, order]);
   // What alerts and routing act on: limits held over from before a failed check read as unknown.
@@ -148,7 +155,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   // automatic routing and account caps, which use the limits without the window; otherwise it pauses and
   // catches up when the window is shown.
   const pollWhileHidden = preferences.trayLimits || preferences.limitNotifications || preferences.resetNotifications
-    || preferences.expiringNotifications || Object.values(routingAuto).some(Boolean) || Object.keys(reserves.caps).length > 0;
+    || preferences.expiringNotifications || preferences.forecastAlerts || Object.values(routingAuto).some(Boolean) || Object.keys(reserves.caps).length > 0;
   useEffect(() => {
     const intervalMs = preferences.refreshIntervalMinutes * 60_000;
     if (!coreReady || intervalMs <= 0) return;
@@ -393,6 +400,55 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       return { title, body: t('notifications.expiring.bodyMany', { accounts, window }), kind: 'expiring', subject: { accounts: items.map((item) => item.key) } };
     }));
   }, [freshLimits, now, preferences.expiringNotifications, t]);
+
+  // Native notifications when a provider's whole pool is forecast to run dry within a day, once for each refill it
+  // waits on. Off unless asked for, since it reads weeks of limit history after every refresh; the forecast's code
+  // loads only then.
+  const { forecastModel, forecastLookbackDays, forecastRatePerHour, forecastResets } = preferences;
+  useEffect(() => {
+    if (!preferences.forecastAlerts || freshLimits.some((limit) => limit.loading)) return;
+    let current = true;
+    void (async () => {
+      const [{ buildForecast, forecastAccounts, forecastAlert, nextForecastAlerts }, { forecastSettingsFrom, loadLimitTrend }] = await Promise.all([
+        import('../services/limitForecast'),
+        import('../services/limitForecastView'),
+      ]);
+      const settings = forecastSettingsFrom({ forecastModel, forecastLookbackDays, forecastRatePerHour, forecastResets });
+      const alerts: Array<ForecastAlert & { provider: QuotaProvider; claim?: string }> = [];
+      for (const limit of freshLimits) {
+        const label = limit.headline.label;
+        const version = Math.max(0, ...limit.accounts.map((account) => account.quota.fetchedAt ?? 0));
+        if (!label || !version || forecastReadRef.current[limit.provider] === version) continue;
+        forecastReadRef.current[limit.provider] = version;
+        const accounts = forecastAccounts(limit.headline, (account) => ('key' in account && typeof account.key === 'string' ? account.key : account.name));
+        if (!accounts.length) continue;
+        const readings = await loadLimitTrend(limit.provider, label).catch(() => []);
+        const nowMs = Date.now();
+        const forecast = buildForecast({ accounts, readings, settings, horizonDays: FORECAST_ALERT_HORIZON_DAYS, historyMs: 0, nowMs });
+        const alert = forecastAlert(limit.provider, forecast, nowMs);
+        const claim = forecast.advice.find((item) => item.kind === 'claim');
+        if (alert) alerts.push({ ...alert, provider: limit.provider, claim: claim?.kind === 'claim' ? claim.name : undefined });
+      }
+      if (!current) return;
+      const { notified, fresh, changed } = nextForecastAlerts(forecastNotifiedRef.current, alerts, Date.now());
+      if (!changed) return;
+      forecastNotifiedRef.current = notified;
+      writeStored(FORECAST_NOTIFIED_KEY, notified);
+      void notify(fresh.flatMap((alert) => {
+        const item = alerts.find((candidate) => candidate.key === alert.key);
+        if (!item) return [];
+        const provider = providerLabel[item.provider];
+        const body = t('notifications.forecast.body', { provider, time: formatDateTime(item.dryAtMs) });
+        return [{
+          title: t('notifications.forecast.title', { provider }),
+          body: item.claim ? `${body} ${t('notifications.forecast.claim', { name: item.claim })}` : body,
+          kind: 'limitForecast' as const,
+          subject: { provider: item.provider },
+        }];
+      }));
+    })();
+    return () => { current = false; };
+  }, [freshLimits, preferences.forecastAlerts, forecastModel, forecastLookbackDays, forecastRatePerHour, forecastResets, t]);
 
   // Native notifications for each new incident on a status page, once. Statuses too old to trust are left out.
   useEffect(() => {

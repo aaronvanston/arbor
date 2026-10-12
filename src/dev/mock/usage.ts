@@ -13,6 +13,8 @@ import type {
   GithubStatus,
   LimitCoverage,
   LimitCycle,
+  LimitReading,
+  LimitTrendAccount,
   LiveContext,
   LiveSessionsReport,
   MachineAssignment,
@@ -549,6 +551,48 @@ function limitCyclesFor(account: string, window: string): LimitCycle[] {
       .sort((a, b) => b.resetAtMs - a.resetAtMs);
   }
   return [[-2, 0], [-9, 34], [-27, 61]].map(([hours, left]) => cycle(current + hours! * 3_600_000, current + (hours! - 4.5) * 3_600_000, 100, left!));
+}
+
+// The limit history behind the forecast on Accounts › Limits. The mock keeps the latest reading the window records for
+// each account and window, and makes up four weeks before it: busy weekdays, quiet nights and weekends, each cycle
+// ending at the reset the reading names. `?forecast=dry` spends every past week to nothing well before its reset, so
+// the pool runs dry; `?forecast=short` has only two days of it, and `?forecast=none` none at all.
+const forecastScenario = params.get('forecast') ?? '';
+const latestLimitReadings = new Map<string, LimitReading>();
+
+const busyness = (ms: number) => {
+  const date = new Date(ms);
+  const hour = date.getHours();
+  const weekend = date.getDay() === 0 || date.getDay() === 6;
+  if (weekend) return hour >= 10 && hour < 18 ? 0.3 : 0.04;
+  return hour >= 9 && hour < 18 ? 1 : hour >= 18 && hour < 23 ? 0.4 : 0.02;
+};
+
+function limitTrendFor(provider: string, window: string, sinceMs: number): LimitTrendAccount[] {
+  const now = Date.now();
+  const from = Math.max(sinceMs, now - (forecastScenario === 'short' ? 2 : 28) * DAY_MS);
+  const windowMs = /5-hour/i.test(window) ? 5 * 3_600_000 : 7 * DAY_MS;
+  const hour = 3_600_000;
+  const accounts: LimitTrendAccount[] = [];
+  [...latestLimitReadings.values()].filter((reading) => reading.provider === provider && reading.window === window).forEach((latest, index) => {
+    const resetAtMs = latest.resetAtMs ?? now + windowMs / 2;
+    const readings: LimitTrendAccount['readings'] = [];
+    // Each cycle, newest first: when it began and ended, and how much of it was spent by its last reading.
+    for (let end = resetAtMs, cycle = 0; end - windowMs > from - windowMs; end -= windowMs, cycle += 1) {
+      const start = end - windowMs;
+      const last = Math.min(end, now);
+      const spent = cycle === 0 ? 100 - (latest.remainingPercent ?? 100) : forecastScenario === 'dry' ? 160 : 55 + ((index * 17 + cycle * 23) % 40);
+      let total = 0;
+      for (let t = start; t < last; t += hour) total += busyness(t);
+      let used = 0;
+      for (let t = start; t <= last; t += hour) {
+        if (t >= from && t < now) readings.push([t, Math.max(0, 100 - (total ? (spent * used) / total : 0)), end]);
+        used += busyness(t);
+      }
+    }
+    accounts.push({ account: latest.account, authIndex: latest.authIndex, readings: readings.sort((a, b) => a[0] - b[0]) });
+  });
+  return accounts.sort((a, b) => a.account.localeCompare(b.account));
 }
 
 // Usage history storage for Settings › Data. Records are spread evenly from the
@@ -1520,7 +1564,19 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     });
     return null;
   },
-  record_limit_samples: (args) => { mockLog('limit_history', args.samples); return args.samples.length; },
+  record_limit_samples: (args) => {
+    mockLog('limit_history', args.samples);
+    args.samples.forEach((sample) => { if (!sample.extra) latestLimitReadings.set(`${sample.account}\u0000${sample.window}`, sample); });
+    return args.samples.length;
+  },
+  // The window records each refresh just as the forecast asks for its history, so the first ask waits for a reading.
+  get_limit_trend: async ({ provider, window, sinceMs }) => {
+    if (forecastScenario === 'none' || freshInstall) return [];
+    for (let tries = 0; tries < 20 && ![...latestLimitReadings.values()].some((reading) => reading.provider === provider && reading.window === window); tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return limitTrendFor(provider, window, sinceMs);
+  },
   rename_limit_history_accounts: (args) => { mockLog('limit_history_rename', args.renames); return 0; },
   get_limit_cycles: (args) => limitCyclesFor(args.account, args.window),
   get_capacity_report: (args) => capacityReportFor(args.query),

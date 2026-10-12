@@ -58,6 +58,9 @@
  * or `?quota=error` to have one Claude and one Codex account fail to read their limits;
  * `?caps=new` to have Claude report caps Arbor has no fixed label for (a 7-day Omelette window, a Haiku weekly limit);
  * `?pace=ahead` to have the Claude Fable and Codex weekly limits spent well ahead of an even pace;
+ * `?forecast=dry` for limit history that spent every past week to nothing early, so the forecast on Accounts › Limits
+ * has the pools running dry and suggests banked resets; `?forecast=short` for two days of it (the weekly pattern falls
+ * back to the recent average), `?forecast=none` for none (each window's average so far);
  * `?reserves=eased` for caps on two accounts: codex-backup up to 50% easing toward each reset (its bars' ticks sit
  * further along than half) and codex-cam up to 80% held flat; `?reserves=paused` also caps claude-max at 50% easing,
  * which Arbor pauses as the page loads (its Sonnet week is past the 71% the cap has eased to), back in under three days

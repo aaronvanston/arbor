@@ -8,7 +8,7 @@ import { QuotaActionFeedback } from '../components/QuotaActionFeedback';
 import { ProviderStatusBanner } from '../components/ProviderStatusBanner';
 import { canResetQuota, resetClaudeQuotaWithConfirmation, resetCodexQuotaWithConfirmation, resetUnconfirmed } from '../services/quotaActions';
 import { formatQuotaReset, useQuotaClock } from '../services/quotaTime';
-import { codexResetEarlyUse } from '../services/resetReadiness';
+import { codexResetEarlyUse, resetReadyFor } from '../services/resetReadiness';
 import { plainError } from '../services/plainError';
 import { reorderAnnouncements } from '../services/reorderAnnouncements';
 import { formatRelative, formatWhen } from '../lib/format';
@@ -33,6 +33,7 @@ import { AccountAvatar } from '../components/AccountAvatar';
 import { ProviderMark } from '../components/identity/Identity';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { LimitSparkline } from '../components/LimitSparkline';
+import { LimitForecastPanel } from '../components/LimitForecastPanel';
 import { useLimitsHistory } from '../services/limitsHistory';
 import { formatResetCountdown } from '../services/providerLimits';
 import { capForRow, capOf, useAccountReserves, useReserveFailures, type AccountCap, type PausedAccount, type ReserveState } from '../services/accountReserves';
@@ -46,7 +47,7 @@ import { LimitUsageDialog, type LimitUsageTarget } from '../components/LimitUsag
 import { limitScope, type LimitScope } from '../services/limitUsage';
 import { evenPace } from '../services/limitPace';
 import { normalizeAuthIndex, readBoolean } from '../services/managementApi';
-import { clearFocusRequest, useFocusRequest } from '../focusRequests';
+import { clearFocusRequest, requestFocus, useFocusRequest } from '../focusRequests';
 import { useI18n } from '../i18n';
 import { accountsView, isAccountsTab, sessionsView, type AccountsParams, type AccountsTabId, type AppView } from '../navigation';
 import { addAccount } from '../services/addAccount';
@@ -504,6 +505,23 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                     count={accounts.length + headline.off}
                     loading={accounts.some((account) => account.quota.status === 'loading')}
                     onJump={jumpTo}
+                  />
+                ) : null}
+                {accounts.length ? (
+                  <LimitForecastPanel
+                    provider={provider}
+                    providerName={providerMeta[provider].label}
+                    headline={headline}
+                    resettable={new Set(accounts.filter((account) => resetReadyFor(account.file, account.quota)).map((account) => account.key))}
+                    onReset={provider === 'codex' || provider === 'claude' ? (key) => {
+                      const account = accounts.find((item) => item.key === key);
+                      if (!account) return;
+                      void (provider === 'codex' ? resetCodexQuota(account.file, account.quota) : resetClaudeQuota(account.file, account.quota));
+                    } : undefined}
+                    onOpenSettings={onNavigate ? () => {
+                      requestFocus('setting', 'appearance.forecast-model');
+                      onNavigate({ kind: 'settings', page: 'appearance' });
+                    } : undefined}
                   />
                 ) : null}
                 <DndContext

@@ -103,6 +103,20 @@ export function NotificationsSettingsPage() {
               />
             }
           />
+          <SettingsRow
+            settingId="notifications.forecast"
+            held={held}
+            reset={preferenceReset(preferences, 'forecastAlerts', onOff)}
+            title={t('interface.forecastAlerts.title')}
+            description={t('interface.forecastAlerts.description')}
+            control={
+              <Switch
+                checked={preferences.forecastAlerts}
+                aria-label={t('interface.forecastAlerts.title')}
+                onCheckedChange={(checked) => setAppPreference('forecastAlerts', checked)}
+              />
+            }
+          />
         </SettingsSection>
         <SettingsSection title={t('interface.sessions.title')} description={t('interface.sessions.description')}>
           <SettingsRow

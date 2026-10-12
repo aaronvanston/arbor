@@ -122,7 +122,7 @@ describe('reading Claude banked resets', () => {
     expect(claudeBankedResetFor(status({ eligible: false, ineligible_reason: 'surface' }), NOW)).toEqual({
       resetCredits: 2,
       resetCreditsEarliestExpiry: '2030-01-20T00:00:00Z',
-      bankedReset: { blockedReason: 'Claude isn’t offering these to Arbor (surface)' },
+      bankedReset: { blockedReason: 'Claude isn’t offering these to Arbor (surface)', blockedHere: true },
     });
     expect(claudeBankedResetFor(status({ eligible: false, ineligible_reason: 'surface' }, []), NOW)).toEqual({});
   });

@@ -21,6 +21,7 @@ import {
   type ZoomFailure,
 } from '../services/zoom';
 import { AppIconRow } from '../components/AppIconPicker';
+import { ForecastSettingsSection } from './ForecastSettings';
 import { MachinePicker, ProviderPicker } from '../components/GlancePicks';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { Button } from '../components/ui/button';
@@ -287,6 +288,7 @@ export function AppearanceSettingsPage({ theme, onThemeChange }: { theme: ThemeP
             }
           />
         </SettingsSection>
+        <ForecastSettingsSection />
       </PageBody>
     </Page>
   );

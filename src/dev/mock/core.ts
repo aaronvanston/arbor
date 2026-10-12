@@ -128,6 +128,8 @@ function mockProxyChecks(): ProxyChecks {
   };
 }
 const paceAhead = params.get('pace') === 'ahead';
+// The forecast's pools running dry: little left of each week with days to go.
+const forecastDry = params.get('forecast') === 'dry';
 const coreProcessUp = coreScenario === 'running' || coreScenario === 'unready' || coreScenario === 'stops';
 
 export let coreStatus: CoreStatus = {
@@ -459,7 +461,7 @@ function apiCall(body: Json): Json {
           limit_window_seconds: 18_000,
           reset_after_seconds: 2_400,
         },
-        secondary_window: { used_percent: paceAhead ? 80 : Math.min(95, 50 + drift * 2), limit_window_seconds: 604_800, reset_after_seconds: limitScenario === 'unused' ? 20 * 3_600 : 3 * 86_400 },
+        secondary_window: { used_percent: forecastDry ? 88 : paceAhead ? 80 : Math.min(95, 50 + drift * 2), limit_window_seconds: 604_800, reset_after_seconds: limitScenario === 'unused' ? 20 * 3_600 : 3 * 86_400 },
       },
       additional_rate_limits: [
         { limit_name: 'GPT-5.3 Spark', rate_limit: { primary_window: { used_percent: 5, limit_window_seconds: 18_000, reset_after_seconds: 9_000 }, secondary_window: { used_percent: 18, limit_window_seconds: 604_800, reset_after_seconds: 5 * 86_400 } } },
@@ -493,7 +495,7 @@ function apiCall(body: Json): Json {
     seven_day_opus: { utilization: 12, resets_at: iso(weeklyResetMs) },
     seven_day_sonnet: { utilization: 91, resets_at: iso(weeklyResetMs) },
     limits: [
-      { kind: 'weekly_scoped', is_active: true, percent: paceAhead ? 70 : 12, resets_at: iso(weeklyResetMs), scope: { model: { display_name: 'Fable' } } },
+      { kind: 'weekly_scoped', is_active: true, percent: forecastDry ? (authIndex === 'claude-1' ? 84 : 90) : paceAhead ? 70 : 12, resets_at: iso(weeklyResetMs), scope: { model: { display_name: 'Fable' } } },
       ...(newCapsScenario ? [{ kind: 'weekly_scoped', is_active: true, percent: 47, resets_at: iso(weeklyResetMs), scope: { model: { display_name: 'Haiku 5' } } }] : []),
     ],
     ...(newCapsScenario ? { seven_day_omelette: { utilization: 84, resets_at: iso(2 * 86_400_000) } } : {}),

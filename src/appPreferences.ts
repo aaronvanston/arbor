@@ -1,5 +1,6 @@
 import { savedStore, sharedStore, storedRecord } from './services/savedStore';
 import { DEFAULT_APP_COLOR, type AppColor } from './services/appColor';
+import type { ForecastModel } from './services/limitForecast';
 import { DEFAULT_SIDEBAR_ART, DEFAULT_SIDEBAR_ART_MOTION, type SidebarArt, type SidebarArtMotion } from './services/sidebarArt';
 
 export type AppPreferences = {
@@ -24,6 +25,16 @@ export type AppPreferences = {
   resetNotifications: boolean;
   /** Notify when an account is about to reset with a good share of its headline limit unused. */
   expiringNotifications: boolean;
+  /** Notify when a provider's pool of accounts is forecast to run dry within a day. */
+  forecastAlerts: boolean;
+  /** How the limit forecast measures spend: each hour of the week as it's gone before, or the recent average. */
+  forecastModel: ForecastModel;
+  /** Days the forecast's recent average looks back. */
+  forecastLookbackDays: number;
+  /** A spend rate (percent of one account an hour) the forecast uses instead of measuring one; 0 measures it. */
+  forecastRatePerHour: number;
+  /** Spend banked and manual resets in the forecast, where it suggests them. */
+  forecastResets: boolean;
   /** Check the providers' public status pages for incidents. */
   providerStatus: boolean;
   /** Notify when a status page reports a new incident. Needs `providerStatus`. */
@@ -87,6 +98,11 @@ export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   limitNotifications: true,
   resetNotifications: true,
   expiringNotifications: true,
+  forecastAlerts: false,
+  forecastModel: 'weekly',
+  forecastLookbackDays: 7,
+  forecastRatePerHour: 0,
+  forecastResets: false,
   providerStatus: true,
   outageNotifications: true,
   machineNotifications: true,

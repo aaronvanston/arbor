@@ -46,6 +46,8 @@ export type ClaudeBankedReset = {
   grantId?: string;
   /** Why none of the resets left can be used now. */
   blockedReason?: string;
+  /** Claude won't take these resets from Arbor at all (it decides by the client asking), as against not yet. */
+  blockedHere?: true;
   /** The limits the reset refills. */
   refills?: string;
   /** Set when using the reset now spends it before the account reaches a limit. */
@@ -483,7 +485,7 @@ export const claudeBankedResetFor = (
     // Claude also decides by the client asking. When that is why resets the
     // account has can't be used here, say so instead of hiding them.
     return live.length && ['surface', 'cli_version'].includes(ineligibleReason)
-      ? { ...counted, bankedReset: { blockedReason: quotaText('quota.bankedReset.blocked.client', { reason: ineligibleReason }) } }
+      ? { ...counted, bankedReset: { blockedReason: quotaText('quota.bankedReset.blocked.client', { reason: ineligibleReason }), blockedHere: true } }
       : {};
   }
   const bankedReset: ClaudeBankedReset = { weeklyResetsAt: readString(block, 'weekly_resets_at') || undefined };

@@ -159,12 +159,17 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('appearance', 'glance-machines', 'appearance.sidebarTray.title', 'interface.glanceMachines.title', { description: 'interface.glanceMachines.description', keywords: 'settingsSearch.keywords.tray' }),
   row('appearance', 'hide-emails', 'appearance.privacy.title', 'appearance.hideEmails.title', { description: 'appearance.hideEmails.description', keywords: 'settingsSearch.keywords.hideEmails' }),
   row('appearance', 'refresh-interval', 'appearance.limits.title', 'interface.refreshInterval.title', { description: 'interface.refreshInterval.description', keywords: 'settingsSearch.keywords.refresh' }),
+  row('appearance', 'forecast-model', 'appearance.forecast.title', 'appearance.forecastModel.title', { description: 'appearance.forecastModel.description', keywords: 'settingsSearch.keywords.forecast' }),
+  row('appearance', 'forecast-lookback', 'appearance.forecast.title', 'appearance.forecastLookback.title', { description: 'appearance.forecastLookback.description', keywords: 'settingsSearch.keywords.forecast' }),
+  row('appearance', 'forecast-rate', 'appearance.forecast.title', 'appearance.forecastRate.title', { description: 'appearance.forecastRate.description', keywords: 'settingsSearch.keywords.forecast' }),
+  row('appearance', 'forecast-resets', 'appearance.forecast.title', 'appearance.forecastResets.title', { description: 'appearance.forecastResets.description', keywords: 'settingsSearch.keywords.forecast' }),
 
   ...([
     ['limit-pace', 'interface.limits.title', 'interface.limitNotifications.title', 'interface.limitNotifications.description'],
     ['reset-ready', 'interface.limits.title', 'interface.resetNotifications.title', 'interface.resetNotifications.description'],
     ['reserve', 'interface.limits.title', 'interface.reserveAlerts.title', 'interface.reserveAlerts.description'],
     ['expiring', 'interface.limits.title', 'interface.expiringNotifications.title', 'interface.expiringNotifications.description'],
+    ['forecast', 'interface.limits.title', 'interface.forecastAlerts.title', 'interface.forecastAlerts.description'],
     ['heavy-sessions', 'interface.sessions.title', 'interface.heavySessions.title', 'interface.heavySessions.description'],
     ['archive-alerts', 'interface.sessions.title', 'interface.archiveAlerts.title', 'interface.archiveAlerts.description'],
     ['provider-status', 'interface.status.title', 'interface.providerStatus.title', 'interface.providerStatus.description'],
