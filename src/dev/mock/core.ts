@@ -31,6 +31,8 @@ const quotaScenario = params.get('quota');
 // With `?limit=unused`, the weekly limits reset in 20 hours with plenty left, so capacity is about to go unused.
 const weeklyResetMs = limitScenario === 'unused' ? 20 * 3_600_000 : 4 * 86_400_000;
 const quotaErrorScenario = quotaScenario === 'error';
+// With `?plan=free`, claude-2 and codex-3 had their billing paused, so their providers have them on the free plan.
+const freePlanAccounts = params.get('plan') === 'free' ? new Set(['claude-2', 'codex-3']) : new Set<string>();
 const newCapsScenario = params.get('caps') === 'new';
 // With `?proxy=usage-off,network` and the like, the proxy checks find those problems; Turn on clears usage-off.
 const proxyScenario = new Set((params.get('proxy') ?? '').split(',').filter(Boolean));
@@ -411,6 +413,10 @@ function apiCall(body: Json): Json {
   if (quotaErrorScenario && ['claude-2', 'codex-3'].includes(authIndex) && /oauth\/usage|wham\/usage/.test(url)) {
     return { status_code: 503, body: JSON.stringify({ error: { message: 'upstream unavailable' } }) };
   }
+  if (freePlanAccounts.has(authIndex) && url.includes('api.anthropic.com/api/oauth/usage')) {
+    // What Claude answers a lapsed account's limits read.
+    return { status_code: 429, body: JSON.stringify({ type: 'error', error: { type: 'rate_limit_error', message: 'Rate limited. Please try again later.' } }) };
+  }
   if (url.includes('chatgpt.com/backend-api/wham/profiles/me')) {
     // ChatGPT's own counts for the account: a made-up month of days, its total the lifetime.
     const seed = [...authIndex].reduce((sum, char) => sum + char.charCodeAt(0), 0);
@@ -454,7 +460,7 @@ function apiCall(body: Json): Json {
       });
     }
     return ok({
-      plan_type: 'pro',
+      plan_type: freePlanAccounts.has(authIndex) ? 'free' : 'pro',
       rate_limit: {
         primary_window: {
           used_percent: codexRefilled.has(authIndex) ? drift / 3 : limitScenario === 'codex' ? 100 : 34 + drift,
@@ -539,6 +545,9 @@ function apiCall(body: Json): Json {
     return ok(atLimit ? { ...claudeUsage, five_hour: { utilization: 100, resets_at: iso(2 * 3_600_000) } } : claudeUsage);
   }
   if (url.includes('api.anthropic.com/api/oauth/profile')) {
+    if (freePlanAccounts.has(authIndex)) {
+      return ok({ account: { has_claude_max: false, has_claude_pro: false }, organization: { uuid: '0b6d4f8a-7c11-4c3a-9e21-5f0c1a2e8d7b', organization_type: 'claude_free', rate_limit_tier: 'default_claude_ai' } });
+    }
     return ok({ account: { has_claude_max: true, has_claude_pro: false }, organization: { uuid: '5f0c1a2e-8d7b-4c3a-9e21-0b6d4f8a7c11', organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_20x' } });
   }
   if (/api\.anthropic\.com\/api\/oauth\/organizations\/[^/]+\/prepaid\/credits$/.test(url)) {

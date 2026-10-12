@@ -57,7 +57,8 @@ export const mergeQuotaResult = (previous: QuotaState | undefined, result: Quota
   return {
     ...result,
     rows,
-    plan: previous.plan,
+    // A plan read beside the failed limits is newer than the last good check's.
+    plan: result.plan ?? previous.plan,
     fetchedAt: previous.fetchedAt,
     serverTimeOffsetMs: previous.serverTimeOffsetMs,
     staleSinceMs: previous.staleSinceMs ?? nowMs,

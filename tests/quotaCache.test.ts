@@ -76,6 +76,12 @@ describe('limits kept after a failed check', () => {
       .toMatchObject({ rows, error: 'timeout', fetchedAt: 1_000, staleSinceMs: 5_000 });
   });
 
+  // A subscription that lapsed since the last good check: its profile now says free while its limits read fails.
+  it('takes the plan read with the failed check over the last good one', () => {
+    expect(mergeQuotaResult({ ...good, status: 'loading' }, { ...failed, plan: 'Free' }, 5_000))
+      .toMatchObject({ rows, plan: 'Free', staleSinceMs: 5_000 });
+  });
+
   it('drops the stale mark once a check succeeds', () => {
     const stale = mergeQuotaResult(good, failed, 5_000);
     const next: QuotaState = { status: 'success', rows: [{ ...rows[0]!, remainingPercent: 40 }], fetchedAt: 8_000 };

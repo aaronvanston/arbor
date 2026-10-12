@@ -16,6 +16,7 @@ import {
   fileName,
   formatQuotaTimestamp,
   idleQuota,
+  onFreePlan,
   providerForFile,
   quotaKey,
   type AuthFile,
@@ -35,7 +36,7 @@ import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { LimitSparkline } from '../components/LimitSparkline';
 import { LimitForecastPanel } from '../components/LimitForecastPanel';
 import { useLimitsHistory } from '../services/limitsHistory';
-import { formatResetCountdown } from '../services/providerLimits';
+import { formatResetCountdown, providerLabel } from '../services/providerLimits';
 import { capForRow, capOf, useAccountReserves, useReserveFailures, type AccountCap, type PausedAccount, type ReserveState } from '../services/accountReserves';
 import { resumeAccount } from '../services/accountPause';
 import { useShortcut } from '../hooks/useShortcuts';
@@ -732,7 +733,7 @@ function OffBlock({ items, columns, availabilityOf, commands, flash, onEdit }: {
                   </MenuPopup>
                 </Menu>
               </div>
-              <OffWindows quota={item.quota} columns={columns} cap={null} now={now} />
+              <OffWindows quota={item.quota} columns={columns} cap={null} now={now} freePlan={onFreePlan(providerForFile(item.file), item.quota.plan)} />
             </li>
           );
         })}
@@ -1102,8 +1103,11 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
           : resetUnconfirmed(quota)
             ? t('quota.resetCheckFirst')
             : quota.bankedReset?.blockedReason ?? t('quota.resetRefreshFirst');
+  const freePlan = onFreePlan(providerForFile(account.file), quota.plan);
   // A fresh reading says nothing here: when it was taken is in the refresh button's tooltip.
-  const status = quota.status === 'error'
+  const status = quota.status === 'error' && freePlan
+    ? t('accounts.status.noPaidPlan')
+    : quota.status === 'error'
     ? stale && checkedAt ? t('accounts.status.stale', { time: checkedAt }) : t('accounts.status.error')
     : loading
       ? t(quota.pendingAction === 'reset' ? 'quota.resetting' : refreshingWithData ? 'accounts.status.updating' : 'quota.querying')
@@ -1121,7 +1125,7 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
         {!reordering ? <ResetCreditsChip quota={quota} claude={claude} blocked={resetBlocked} onReset={onReset} /> : null}
         {!reordering && cap !== undefined ? <ReserveChip accountKey={account.key} name={name} provider={providerForFile(account.file)} /> : null}
         {!reordering && status ? (
-          <span className={cn('min-w-0 truncate', quota.status !== 'error' ? 'text-muted-foreground' : stale ? 'text-warning-foreground' : 'text-error-foreground')} title={stale ? quota.error : undefined}>
+          <span className={cn('min-w-0 truncate', quota.status !== 'error' ? 'text-muted-foreground' : stale || freePlan ? 'text-warning-foreground' : 'text-error-foreground')} title={stale || freePlan ? quota.error : undefined}>
             {status}
           </span>
         ) : null}
@@ -1236,7 +1240,8 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
         {quota.status === 'success' && quota.rows.length === 0 && !quota.resetCredits ? (
           <span className="text-xs text-muted-foreground">{t('quota.service.xaiPaidQuotaUnavailable')}</span>
         ) : null}
-        {quota.status === 'error' && !stale && quota.error ? (
+        {freePlan ? <FreePlanNotice file={account.file} commands={commands} /> : null}
+        {quota.status === 'error' && !stale && !freePlan && quota.error ? (
           <p className="flex min-w-0 items-start gap-1.5 text-xs text-error-foreground">
             <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 break-words">{quota.error}</span>
@@ -1253,12 +1258,38 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
   );
 }
 
+/**
+ * An account the provider has on its free plan, most likely because its billing was paused, deferred or canceled.
+ * The proxy would keep failing requests on it, so this offers to turn it off; the toast that follows has Undo.
+ */
+function FreePlanNotice({ file, commands }: { file: AuthFile; commands: AuthFileCommands }) {
+  const { t } = useI18n();
+  const provider = providerForFile(file);
+  const canTurnOff = isOAuthCredentialFile(file) && !readBoolean(file, 'disabled');
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-warning-foreground" data-free-plan>
+      <span className="flex min-w-0 flex-1 items-start gap-1.5">
+        <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 break-words">{t('accounts.freePlan.notice', { provider: provider ? providerLabel[provider] : '' })}</span>
+      </span>
+      {canTurnOff ? (
+        <Button variant="outline" size="xs" onClick={() => void commands.toggle(file)} disabled={commands.busy} focusableWhenDisabled>
+          <PowerOff />
+          {t('accounts.freePlan.turnOff')}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** A turned-off account's limits under its name, grayed out and lined up with the accounts in use. */
-function OffWindows({ quota, columns, cap, now }: { quota: QuotaState; columns: string[]; cap: AccountCap | null; now: number }) {
+function OffWindows({ quota, columns, cap, now, freePlan = false }: {
+  quota: QuotaState; columns: string[]; cap: AccountCap | null; now: number; freePlan?: boolean;
+}) {
   const { t } = useI18n();
   const rows = displayRows(quota).filter((row) => columns.includes(row.label));
   if (quota.status === 'error' && !rows.length) {
-    return <span className="text-xs text-muted-foreground" title={quota.error}>{t('accounts.status.error')}</span>;
+    return <span className="text-xs text-muted-foreground" title={quota.error}>{t(freePlan ? 'accounts.status.noPaidPlan' : 'accounts.status.error')}</span>;
   }
   if (!rows.length) return null;
   const grid = windowGridStyle(columns);

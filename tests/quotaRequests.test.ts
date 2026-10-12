@@ -3,7 +3,7 @@ import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import { CommandFailure } from '../src/services/commandError';
 import { managementApi } from '../src/services/managementApi';
-import { consumeCodexResetCredit, loadQuota } from '../src/services/quotaService';
+import { consumeCodexResetCredit, loadQuota, onFreePlan } from '../src/services/quotaService';
 import { itemAt } from './support/items';
 
 const success = (body: unknown) => ({ status_code: 200, body });
@@ -89,6 +89,35 @@ describe('quota API compatibility', () => {
       status: 'error',
       error: 'The server had a problem on its end. It said “upstream unavailable”. Try again in a moment.',
     });
+  });
+
+  // A Claude account whose billing was paused: its limits read is refused, but its profile still says the plan.
+  it('keeps a Claude account’s free plan when its limits read is refused', async () => {
+    handler = (request) => request.url.endsWith('/api/oauth/profile')
+      ? success({ account: { has_claude_max: false, has_claude_pro: false }, organization: { uuid: 'org-1' } })
+      : request.url.includes('/prepaid/credits')
+        ? success({ amount: 0 })
+        : { status_code: 429, body: JSON.stringify({ error: { type: 'rate_limit_error', message: 'Rate limited. Please try again later.' } }) };
+    const result = await loadQuota({ name: 'claude.json', provider: 'claude', auth_index: 'c' });
+    expect(result).toMatchObject({ status: 'error', plan: 'Free' });
+    expect(result.error).toContain('Rate limited');
+  });
+
+  it('leaves the plan out when a Claude account’s profile can’t be read either', async () => {
+    handler = () => ({ status_code: 503, body: '{}' });
+    const result = await loadQuota({ name: 'claude.json', provider: 'claude', auth_index: 'c' });
+    expect(result.status).toBe('error');
+    expect(result.plan).toBeUndefined();
+  });
+
+  it('counts only Claude and Codex accounts on the free plan as having no paid plan', () => {
+    expect(onFreePlan('claude', 'Free')).toBe(true);
+    expect(onFreePlan('codex', 'free')).toBe(true);
+    expect(onFreePlan('claude', 'Max 20x')).toBe(false);
+    expect(onFreePlan('codex', 'plus')).toBe(false);
+    expect(onFreePlan('claude', undefined)).toBe(false);
+    // xAI's and Kimi's free tiers are how those accounts are meant to be used.
+    expect(onFreePlan('xai', 'free')).toBe(false);
   });
 
   it('Codex 详情返回坏数据时报告非致命错误而不是吞掉失败', async () => {

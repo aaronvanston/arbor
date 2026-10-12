@@ -981,6 +981,13 @@ const resolveClaudePlan = (payload: unknown): string | undefined => {
   return undefined;
 };
 
+/**
+ * The provider says the account has no paid plan: a Claude or ChatGPT subscription that was canceled, paused or left
+ * to lapse falls back to the free plan, and its limits read fails or comes back near nothing.
+ */
+export const onFreePlan = (provider: QuotaProvider | null | undefined, plan: string | undefined): boolean =>
+  (provider === 'claude' || provider === 'codex') && plan?.trim().toLowerCase() === 'free';
+
 const loadClaudeAccount = async (file: AuthFile): Promise<{ plan?: string; usageCredits?: UsageCredits }> => {
   const authIndex = normalizeAuthIndex(file.auth_index ?? file.authIndex);
   if (!authIndex) return {};
@@ -1136,6 +1143,8 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
       error: quotaText('quota.service.error.unsupportedProvider'),
     };
   }
+  // Read beside the limits, and kept when they fail: an account whose plan lapsed still answers for its profile.
+  const claudeAccountPromise = provider === 'claude' ? loadClaudeAccount(file).catch(() => null) : Promise.resolve(null);
   try {
     // A turned-off account is read too: the core keeps its sign-in fresh, and Accounts shows its limits grayed out.
     const codexMetadata = provider === 'codex' ? codexMetadataFor(file) : undefined;
@@ -1144,7 +1153,6 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
     const payloadPromise = provider === 'xai'
       ? callXaiQuota(file)
       : callUpstreamQuota(file, provider, codexAccountId, responseClock);
-    const claudeAccountPromise = provider === 'claude' ? loadClaudeAccount(file) : Promise.resolve(null);
     const planPromise = provider === 'antigravity' ? loadAntigravityPlan(file) : Promise.resolve(undefined);
     let resetCreditsError: string | undefined;
     const resetCreditsPromise = provider === 'codex'
@@ -1174,6 +1182,7 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
         status: 'error',
         rows: [],
         error: quotaText('quota.service.error.unrecognized'),
+        plan: detectedPlan,
       };
     }
     if (provider === 'claude') {
@@ -1211,6 +1220,7 @@ async function loadQuotaSnapshot(file: AuthFile): Promise<QuotaState> {
       status: 'error',
       rows: [],
       error: quotaFailure(error),
+      plan: (await claudeAccountPromise)?.plan,
     };
   }
 }

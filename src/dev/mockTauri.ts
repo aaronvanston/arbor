@@ -56,6 +56,8 @@
  * `?limit=claude` or `?limit=codex` to put accounts at a limit a reset can refill;
  * `?quota=fail-after-first` to have each account's first limit check work and every later one fail to reach the provider,
  * or `?quota=error` to have one Claude and one Codex account fail to read their limits;
+ * `?plan=free` for one Claude and one Codex account whose billing was paused, so their providers have them on the free
+ * plan: Claude refuses the limits read, and Accounts says neither has a paid plan and offers to turn them off;
  * `?caps=new` to have Claude report caps Arbor has no fixed label for (a 7-day Omelette window, a Haiku weekly limit);
  * `?pace=ahead` to have the Claude Fable and Codex weekly limits spent well ahead of an even pace;
  * `?forecast=dry` for limit history that spent every past week to nothing early, so the forecast on Accounts › Limits
