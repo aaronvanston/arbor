@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs the latest stable Arbor into /Applications (or ARBOR_INSTALL_DIR), for people who run
-#   curl -fsSL https://raw.githubusercontent.com/aaronvanston/arbor/main/scripts/install.sh | sh
+#   curl -fsSL https://arbor.onl/install.sh | sh
 # Builds aren't notarized, and macOS blocks a quarantined DMG and the app copied out of it until the user finds Open
 # Anyway. A browser marks its downloads quarantined; curl doesn't, so a DMG fetched here opens without either prompt.
 # The DMG is checked against the SHA-256 in the release's update list before anything is mounted.

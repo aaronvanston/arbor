@@ -45,7 +45,7 @@ It's for your own accounts on your own machines. It isn't built for sharing acco
 Arbor runs on Macs with Apple silicon. Install it from Terminal:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/aaronvanston/arbor/main/scripts/install.sh | sh
+curl -fsSL https://arbor.onl/install.sh | sh
 ```
 
 It downloads the [latest release](https://github.com/aaronvanston/arbor/releases/latest), checks it against the
