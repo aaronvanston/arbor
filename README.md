@@ -42,14 +42,22 @@ It's for your own accounts on your own machines. It isn't built for sharing acco
 
 ## Download
 
-Download the DMG from the [latest release](https://github.com/aaronvanston/arbor/releases/latest). Arbor runs on Macs
-with Apple silicon.
-
-Arbor isn't notarized by Apple yet, so macOS stops its first launch with "Apple could not verify Arbor". Drag Arbor to
-Applications, open it once, then open it from System Settings › Privacy & Security › Open Anyway. Or, from Terminal:
+Arbor runs on Macs with Apple silicon. Install it from Terminal:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/Arbor.app
+curl -fsSL https://raw.githubusercontent.com/aaronvanston/arbor/main/scripts/install.sh | sh
+```
+
+It downloads the [latest release](https://github.com/aaronvanston/arbor/releases/latest), checks it against the
+release's SHA-256, and copies Arbor into Applications. Arbor isn't notarized by Apple yet, and a download made this way
+opens without macOS's "Apple could not verify" prompt.
+
+If you download the DMG in a browser instead, macOS stops it twice: when you open the DMG ("Not Opened"; the file isn't
+corrupted), and again when you first open Arbor. Each time, click Done, then open System Settings › Privacy & Security
+and click Open Anyway. To skip both, clear the browser's quarantine mark before opening the DMG:
+
+```sh
+xattr -d com.apple.quarantine ~/Downloads/Arbor-*.dmg
 ```
 
 You only do this once: updates download inside Arbor and install without the prompt. To build it yourself instead, see

@@ -109,5 +109,7 @@ feed DMGs GitHub also holds. The release script runs it when free space is low, 
 ## Signing
 
 Builds are ad-hoc signed (`codesign --sign -` in `scripts/build-release.sh`), not notarized, so a downloaded DMG needs
-Open Anyway on its first launch (the README says how). Updates are protected separately: the app installs only what an
+Open Anyway twice, for the DMG and for the app, when it comes from a browser. `scripts/install.sh` avoids both: curl
+doesn't set the quarantine mark, and the script finds the DMG and its SHA-256 through the latest stable release's update
+list, so it needs no change when a release ships and breaks if that file's name or shape changes. Updates are protected separately: the app installs only what an
 Ed25519-signed update list names (`src-tauri/release-signing.pub`, `scripts/release-signing.mjs`).
