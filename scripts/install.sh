@@ -52,6 +52,7 @@ main() {
   [ -d "$mount_dir/Arbor.app" ] || fail "The DMG has no Arbor.app."
 
   # Copy beside the old app, then swap, so a failed copy leaves the installed Arbor as it was.
+  mkdir -p "$install_dir" 2>/dev/null || true
   sudo_cmd=""
   if [ ! -w "$install_dir" ]; then
     echo "$install_dir needs an administrator password."
@@ -64,7 +65,12 @@ main() {
   $sudo_cmd rm -rf "$install_dir/Arbor.app"
   $sudo_cmd mv "$staged" "$install_dir/Arbor.app"
 
-  echo "Installed Arbor $version in $install_dir. Open it from there; it updates itself from now on."
+  # The app's updater swaps Arbor.app inside its folder as the user, so it can't update a folder that needed sudo.
+  if [ -n "$sudo_cmd" ]; then
+    echo "Installed Arbor $version in $install_dir. Arbor can't update itself there, because the folder needs an administrator password. Run this again to update it, or install into a folder you own with ARBOR_INSTALL_DIR=\"\$HOME/Applications\"."
+  else
+    echo "Installed Arbor $version in $install_dir. Open it from there; it updates itself from now on."
+  fi
 }
 
 main "$@"
