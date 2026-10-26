@@ -8,12 +8,13 @@ import { signFeed } from '../scripts/release-signing.mjs';
 
 // Runs scripts/install.sh the way people do, `curl … | sh`, against an update list built by the release scripts'
 // own code. Only the network and the macOS-only tools are faked. On a Mac, `sh` is bash 3.2 and plutil is real, so
-// this also covers the locale trap and the update list's shape; on Linux a stand-in plutil reads the same keypaths.
+// this also covers the locale trap and the update list's shape; elsewhere a stand-in plutil reads the same keypaths,
+// even where some other plutil is installed, since only macOS's has `-extract … raw`.
 
 const VERSION = '1.4.2';
 const DMG_BYTES = 'not really a disk image';
 const script = readFileSync('scripts/install.sh');
-const hasPlutil = Bun.spawnSync(['sh', '-c', 'command -v plutil']).exitCode === 0;
+const isMac = process.platform === 'darwin';
 const isRoot = process.getuid?.() === 0;
 
 let root = '';
@@ -43,11 +44,18 @@ function updateList(sha256: string) {
   return JSON.stringify(signFeed(`${JSON.stringify(manifest, null, 2)}\n`, privateKey));
 }
 
-function install(installDir: string, { sha256 = createHash('sha256').update(DMG_BYTES).digest('hex'), running = false } = {}) {
+// ARBOR_INSTALL_DIR is always set, so a run that loses track of it lands in `installDir`, never the real /Applications.
+// `command` runs the script as a shell line that reads it from stdin, in place of plain `sh`.
+function install(
+  installDir: string,
+  { sha256 = createHash('sha256').update(DMG_BYTES).digest('hex'), running = false, command = '' } = {},
+) {
   writeFileSync(join(root, 'feed.json'), updateList(sha256));
   if (running) tool('pgrep', 'exit 0');
-  const result = Bun.spawnSync(['sh'], {
+  rmSync(log, { force: true });
+  const result = Bun.spawnSync(command ? ['sh', '-c', command] : ['sh'], {
     stdin: script,
+    cwd: root,
     env: {
       PATH: `${bin}:${process.env.PATH ?? ''}`,
       HOME: root,
@@ -100,7 +108,7 @@ fi`,
   tool('xattr', 'exit 0');
   // An administrator's password lets the copy write to the folder.
   tool('sudo', 'echo "sudo $1" >> "$FAKE_LOG"; chmod u+w "$ARBOR_INSTALL_DIR"; exec "$@"');
-  if (!hasPlutil) {
+  if (!isMac) {
     writeFileSync(
       join(bin, 'plutil.mjs'),
       `const [, , , keypath, , , , file] = process.argv;
@@ -153,8 +161,31 @@ describe('the installer', () => {
     expect(result.exitCode).toBe(0);
     expect(result.calls).toContain('sudo ditto');
     expect(installedApp(installDir)).toBe(`Arbor ${VERSION}\n`);
+    expect(result.stdout).toContain('Open it from there.');
     expect(result.stdout).toContain("Arbor can't update itself there");
     expect(result.stdout).not.toContain('it updates itself from now on');
+  });
+
+  test.skipIf(isRoot)('suggests a command that, pasted as it is, installs where Arbor can update itself', () => {
+    const lockedDir = join(root, 'Shared Applications');
+    mkdirSync(lockedDir);
+    chmodSync(lockedDir, 0o555);
+    const readmeCommand = readFileSync('README.md', 'utf8').match(/^curl \S.*\/install\.sh \| sh$/m)?.[0] ?? '';
+    const pipe = `${readmeCommand.slice(0, -' sh'.length)} `;
+
+    const suggested = install(lockedDir).stdout.split('\n').find((line) => line.trim().startsWith('curl '))?.trim() ?? '';
+    // The README's own command with the variable added after the pipe, where it reaches the script.
+    expect(readmeCommand).not.toBe('');
+    expect(suggested.startsWith(pipe)).toBe(true);
+    // The decoy is what the shell already has; the pasted line has to replace it.
+    const decoy = join(root, 'Decoy');
+    const result = install(decoy, { command: suggested.slice(pipe.length) });
+
+    expect(result.exitCode).toBe(0);
+    expect(installedApp(join(root, 'Applications'))).toBe(`Arbor ${VERSION}\n`);
+    expect(existsSync(join(decoy, 'Arbor.app'))).toBe(false);
+    expect(result.calls.filter((call) => call.startsWith('sudo'))).toEqual([]);
+    expect(result.stdout).toContain('it updates itself from now on');
   });
 
   test("keeps the installed Arbor when the download doesn't match the update list's SHA-256", () => {

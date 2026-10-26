@@ -67,7 +67,10 @@ main() {
 
   # The app's updater swaps Arbor.app inside its folder as the user, so it can't update a folder that needed sudo.
   if [ -n "$sudo_cmd" ]; then
-    echo "Installed Arbor $version in $install_dir. Arbor can't update itself there, because the folder needs an administrator password. Run this again to update it, or install into a folder you own with ARBOR_INSTALL_DIR=\"\$HOME/Applications\"."
+    # The variable goes after the pipe: before curl, it would reach curl and not this script.
+    echo "Installed Arbor $version in $install_dir. Open it from there."
+    echo "Arbor can't update itself there, because the folder needs an administrator password. Run this again to update it, or install it into a folder you own:"
+    echo "  curl -fsSL https://arbor.onl/install.sh | ARBOR_INSTALL_DIR=\"\$HOME/Applications\" sh"
   else
     echo "Installed Arbor $version in $install_dir. Open it from there; it updates itself from now on."
   fi
