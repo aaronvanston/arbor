@@ -41,7 +41,7 @@ main() {
   dmg_url="$(json_string "$work_dir/manifest.json" assets.darwin-aarch64.url)" || fail "The update list names no DMG."
   expected_sha="$(json_string "$work_dir/manifest.json" assets.darwin-aarch64.sha256)" || fail "The update list has no SHA-256."
 
-  echo "Downloading Arbor $version…"
+  echo "Downloading Arbor ${version}…"
   dmg_path="$work_dir/Arbor.dmg"
   curl -fL --retry 3 --progress-bar "$dmg_url" -o "$dmg_path" || fail "Couldn't download $dmg_url."
   actual_sha="$(shasum -a 256 "$dmg_path" | awk '{print $1}')"
