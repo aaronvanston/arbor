@@ -51,12 +51,18 @@ main() {
   hdiutil attach -quiet -nobrowse -readonly -noautoopen -mountpoint "$mount_dir" "$dmg_path" || fail "Couldn't open the DMG."
   [ -d "$mount_dir/Arbor.app" ] || fail "The DMG has no Arbor.app."
 
+  # The variable goes after the pipe: before curl, it would reach curl and not this script.
+  own_folder_install="  curl -fsSL https://arbor.onl/install.sh | ARBOR_INSTALL_DIR=\"\$HOME/Applications\" sh"
+
   # Copy beside the old app, then swap, so a failed copy leaves the installed Arbor as it was.
   mkdir -p "$install_dir" 2>/dev/null || true
   sudo_cmd=""
   if [ ! -w "$install_dir" ]; then
     echo "$install_dir needs an administrator password."
     sudo_cmd="sudo"
+    # Standard users can't use sudo, and they're the ones who end up here, so say where they can install instead.
+    sudo true || fail "Couldn't get an administrator's permission for $install_dir. Install Arbor into a folder you own instead:
+$own_folder_install"
   fi
   staged="$install_dir/.Arbor.app.installing"
   $sudo_cmd rm -rf "$staged"
@@ -67,10 +73,9 @@ main() {
 
   # The app's updater swaps Arbor.app inside its folder as the user, so it can't update a folder that needed sudo.
   if [ -n "$sudo_cmd" ]; then
-    # The variable goes after the pipe: before curl, it would reach curl and not this script.
     echo "Installed Arbor $version in $install_dir. Open it from there."
     echo "Arbor can't update itself there, because the folder needs an administrator password. Run this again to update it, or install it into a folder you own:"
-    echo "  curl -fsSL https://arbor.onl/install.sh | ARBOR_INSTALL_DIR=\"\$HOME/Applications\" sh"
+    echo "$own_folder_install"
   else
     echo "Installed Arbor $version in $install_dir. Open it from there; it updates itself from now on."
   fi

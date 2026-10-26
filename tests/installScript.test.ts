@@ -188,6 +188,22 @@ describe('the installer', () => {
     expect(result.stdout).toContain('it updates itself from now on');
   });
 
+  test.skipIf(isRoot)("tells someone who can't use sudo where they can install instead", () => {
+    const installDir = join(root, 'Applications');
+    mkdirSync(installDir);
+    chmodSync(installDir, 0o555);
+    tool('sudo', 'echo "sudo $1" >> "$FAKE_LOG"; echo "cam is not in the sudoers file." >&2; exit 1');
+
+    const result = install(installDir);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Couldn't get an administrator's permission");
+    expect(result.stderr).toContain('curl -fsSL https://arbor.onl/install.sh | ARBOR_INSTALL_DIR="$HOME/Applications" sh');
+    expect(result.calls.filter((call) => call.startsWith('sudo'))).toEqual(['sudo true']);
+    expect(readdirSync(installDir)).toEqual([]);
+    expect(readdirSync(tmp)).toEqual([]);
+  });
+
   test("keeps the installed Arbor when the download doesn't match the update list's SHA-256", () => {
     const installDir = join(root, 'Applications');
     mkdirSync(join(installDir, 'Arbor.app', 'Contents', 'MacOS'), { recursive: true });
