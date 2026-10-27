@@ -49,8 +49,18 @@ curl -fsSL https://arbor.onl/install.sh | sh
 ```
 
 It downloads the [latest release](https://github.com/aaronvanston/arbor/releases/latest), checks it against the
-release's SHA-256, and copies Arbor into Applications. Arbor isn't notarized by Apple yet, and a download made this way
-opens without macOS's "Apple could not verify" prompt.
+release's SHA-256, and copies Arbor into /Applications, or into ~/Applications if your account can't write to
+/Applications. Running it again updates Arbor where it is, if you can write there. To choose the folder, add `--dir`:
+
+```sh
+curl -fsSL https://arbor.onl/install.sh | sh -s -- --dir ~/Applications
+```
+
+Arbor updates itself only in a folder you can write to. Running the installer again finds Arbor only in the two
+Applications folders, so to update a copy in a folder you named, or one that needs an administrator's password, run the
+same command with the same `--dir`.
+
+Arbor isn't notarized by Apple yet, and a download made this way opens without macOS's "Apple could not verify" prompt.
 
 If you download the DMG in a browser instead, macOS stops it twice: when you open the DMG ("Not Opened"; the file isn't
 corrupted), and again when you first open Arbor. Each time, click Done, then open System Settings › Privacy & Security

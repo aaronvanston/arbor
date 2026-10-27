@@ -111,7 +111,9 @@ feed DMGs GitHub also holds. The release script runs it when free space is low, 
 Builds are ad-hoc signed (`codesign --sign -` in `scripts/build-release.sh`), not notarized, so a downloaded DMG needs
 Open Anyway twice, for the DMG and for the app, when it comes from a browser. `scripts/install.sh` avoids both: curl
 doesn't set the quarantine mark, and the script finds the DMG and its SHA-256 through the latest stable release's update
-list, so it needs no change when a release ships and breaks if that file's name or shape changes. arbor.onl/install.sh serves
+list, so it needs no change when a release ships and breaks if that file's name or shape changes. It installs only into a
+folder the user can write to unless they name one, because the updater swaps `Arbor.app` inside its folder as the user
+and can't update a copy that needed sudo. arbor.onl/install.sh serves
 it from main through a rewrite in the website's `vercel.json` (`aaronvanston/arbor-www`), so moving or renaming the
 script breaks that URL. Updates are protected separately: the app installs only what an
 Ed25519-signed update list names (`src-tauri/release-signing.pub`, `scripts/release-signing.mjs`).
