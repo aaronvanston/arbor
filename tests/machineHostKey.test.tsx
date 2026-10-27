@@ -34,7 +34,8 @@ describe('trusting a machine’s host key, shown', () => {
 
 describe('the mock’s ?health=newhost', () => {
   const globals = globalThis as { window?: unknown };
-  const before = globals.window;
+  // A descriptor, not the value: assigning back `undefined` would leave a `window` that later files see as a page.
+  const before = Object.getOwnPropertyDescriptor(globalThis, 'window');
   let answers: CommandAnswers<MachineCommands>;
 
   beforeAll(async () => {
@@ -52,7 +53,8 @@ describe('the mock’s ?health=newhost', () => {
     answers = (await import('../src/dev/mock/machines')).machinesAnswers;
   });
   afterAll(() => {
-    globals.window = before;
+    if (before) Object.defineProperty(globalThis, 'window', before);
+    else Reflect.deleteProperty(globalThis, 'window');
   });
 
   const ci01 = async () => {
