@@ -5,7 +5,7 @@ import { useAppPreferences } from '../appPreferences';
 import { recordLimitReadings, unrecordedLimitReadings } from '../services/accountLimitHistory';
 import { freshQuotas, partialHeadline, useAccountLimitPrefs, type PaceTone } from '../services/accountLimits';
 import { useAccountReserves } from '../services/accountReserves';
-import { heldAccounts, providersWithNewAccounts, useHoldModes, useModelAccess } from '../services/extraModelHold';
+import { providersWithNewAccounts, useModelAccess, useReservePolicies } from '../services/extraModelHold';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { useAccountOrder } from '../services/accountOrder';
 import { ensureAccountsLoaded, getAccountsSnapshot, loadAccountFiles, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
@@ -138,7 +138,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   const routingAuto = useRoutingAuto();
   const reserves = useAccountReserves();
   const modelAccess = useModelAccess();
-  const holdModes = useHoldModes();
+  const reservePolicies = useReservePolicies();
   const now = useQuotaClock();
   const lastRefreshRef = useRef(0);
   const notifiedRef = useRef<Record<string, PaceTone>>(typeof localStorage === 'undefined' ? {} : readStored<PaceTone>(NOTIFIED_KEY));
@@ -158,7 +158,9 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   // automatic routing and account caps, which use the limits without the window; otherwise it pauses and
   // catches up when the window is shown.
   const pollWhileHidden = preferences.trayLimits || preferences.limitNotifications || preferences.resetNotifications
-    || preferences.expiringNotifications || preferences.forecastAlerts || Object.values(routingAuto).some(Boolean) || Object.keys(reserves.caps).length > 0;
+    || preferences.expiringNotifications || preferences.forecastAlerts || Object.values(routingAuto).some(Boolean) || Object.keys(reserves.caps).length > 0
+    // An extra model only some accounts have: their reserves for it are kept by the limits.
+    || Object.values(modelAccess.access).some((models) => Object.values(models).includes('no'));
   useEffect(() => {
     const intervalMs = preferences.refreshIntervalMinutes * 60_000;
     if (!coreReady || intervalMs <= 0) return;
@@ -365,8 +367,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       const round = Math.max(0, ...providerFiles.map((file) => freshCache[quotaKey(file)]?.fetchedAt ?? 0));
       if (!round || routedRoundRef.current[limit.provider] === round) return [];
       routedRoundRef.current[limit.provider] = round;
-      const held = heldAccounts(modelAccess, holdModes, limit.provider, providerFiles.map(fileName));
-      return routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now(), held)?.changes ?? [];
+      return routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now())?.changes ?? [];
     });
     if (!due.length) return;
     routingRef.current = true;
@@ -376,11 +377,11 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         routingRef.current = false;
         void loadAccountFiles();
       });
-  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, profiles, routingAuto, modelAccess, holdModes]);
+  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, profiles, routingAuto]);
 
   // Extra models on only some accounts: when an account is added, removed or signed out, ask the provider's accounts
-  // again which models each has, so a model stays off the accounts without it. Otherwise keep its recent use fresh,
-  // which decides whether its accounts are held back in the order above.
+  // again which models each has, so a model stays off the accounts without it. Otherwise keep its use fresh, which
+  // sizes the reserve its accounts keep for it.
   const accessRunRef = useRef(false);
   useEffect(() => {
     if (!coreReady || !loaded || accountsError || accessRunRef.current) return;
@@ -390,7 +391,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
     if (!due) return;
     accessRunRef.current = true;
     const run = import('../services/extraModelAccess').then(async ({ keepRecentUseFresh, runModelAccessCheck }) => {
-      if (changed.length === 0) return keepRecentUseFresh(files);
+      if (changed.length === 0) return keepRecentUseFresh(files, freshCache);
       const [view, codexVersion] = await Promise.all([
         invokeCommand('get_extra_models'),
         changed.includes('codex') ? invokeCommand('get_agent_latest_versions').then((latest) => latest.codex ?? undefined, () => undefined) : undefined,
@@ -405,7 +406,35 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       .finally(() => {
         accessRunRef.current = false;
       });
-  }, [coreReady, loaded, accountsError, files, modelAccess, t]);
+  }, [coreReady, loaded, accountsError, files, freshCache, modelAccess, t]);
+
+  // Reserves for extra models: an account at its reserve serves only those models, and opens again once it lends
+  // its reserve (every other account is out) or its limit resets. Each set of fences is tried once per refresh round,
+  // so one that fails waits for the next round rather than retrying straight away.
+  const fenceRef = useRef<{ running: boolean; tried: string }>({ running: false, tried: '' });
+  useEffect(() => {
+    if (!coreReady || !loaded || accountsError || fenceRef.current.running || freshLimits.some((limit) => limit.loading)) return;
+    const providers = Object.keys(modelAccess.providers);
+    if (providers.length === 0 && Object.keys(modelAccess.fenced).length === 0) return;
+    const round = Math.max(0, ...files.map((file) => freshCache[quotaKey(file)]?.fetchedAt ?? 0));
+    fenceRef.current = { ...fenceRef.current, running: true };
+    void import('../services/extraModelAccess')
+      .then(async ({ applyFences, fencesNow, sameFences }) => {
+        const fenced = fencesNow(files, freshCache, modelAccess, reservePolicies, Date.now());
+        const tried = `${round}:${JSON.stringify(fenced)}`;
+        if (sameFences(fenced, modelAccess.fenced) || fenceRef.current.tried === tried) return;
+        fenceRef.current.tried = tried;
+        const view = await invokeCommand('get_extra_models');
+        if (!view.coreRunning) return;
+        const { changes, error } = await applyFences(view, fenced);
+        if (error) console.warn('Failed to keep reserves for extra models', error);
+        if (changes.length > 0) void loadAccountFiles({ quiet: true });
+      })
+      .catch((error) => console.warn('Failed to keep reserves for extra models', error))
+      .finally(() => {
+        fenceRef.current = { ...fenceRef.current, running: false };
+      });
+  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, modelAccess, reservePolicies]);
 
   // Native notifications when an account is about to reset with much of its headline limit unused, once per reset.
   useEffect(() => {

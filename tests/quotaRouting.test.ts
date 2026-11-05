@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { accountOrderGap, applyRoutingPlan, providerRoutingPlans, routingPlan, type RoutingCandidate } from '../src/services/quotaRouting';
+import { reserveAccounts } from '../src/services/modelReserves';
 
 // money-22: Account order says why it has nothing to show rather than vanishing.
 describe('accountOrderGap', () => {
@@ -36,28 +37,37 @@ const account = (name: string, quota: QuotaState | undefined, extra: Record<stri
 });
 
 describe('quota-aware routing', () => {
-  it('keeps accounts held for an extra model after the rest, but before nearly empty ones', () => {
-    const held = new Map([['preview.json', { model: 'gpt-daybreak-blue-latest', why: 'used' as const }]]);
+  it('ranks an account keeping a reserve like any other, and says so beside it', () => {
+    const reserve = { models: ['gpt-daybreak-blue-latest'], percent: 4, remaining: 70, state: 'open' as const, floor: 1, smart: true };
     const plan = routingPlan([
       account('preview', weekly(70, 2 * HOUR)),
       account('later', weekly(80, 3 * DAY)),
       account('empty', weekly(5, DAY)),
-      account('soon', weekly(45, 20 * HOUR)),
-    ], WEEKLY, now, held);
+    ], WEEKLY, now, new Map([['preview.json', reserve]]));
+    // Above its reserve its limit is everyday capacity, and it resets soonest.
     expect(plan?.items.map((item) => [item.name, item.suggested, item.reason.kind])).toEqual([
-      ['soon', 3, 'soonest'],
-      ['later', 2, 'soonest'],
-      ['preview', 1, 'held'],
+      ['preview', 2, 'soonest'],
+      ['later', 1, 'soonest'],
       ['empty', 0, 'low'],
     ]);
-    const preview = plan?.items.find((item) => item.name === 'preview');
-    expect(preview?.reason).toEqual({ kind: 'held', percent: 70, resetAtMs: now + 2 * HOUR, model: 'gpt-daybreak-blue-latest', why: 'used' });
+    expect(plan?.items[0]?.reserve).toEqual(reserve);
+    expect(plan?.items[1]?.reserve).toBeUndefined();
   });
 
-  it('lets a nearly empty held account go last like any other', () => {
-    const held = new Map([['preview.json', { model: 'gpt-daybreak-blue-latest', why: 'always' as const }]]);
-    const plan = routingPlan([account('preview', weekly(4, 2 * HOUR)), account('soon', weekly(45, 20 * HOUR))], WEEKLY, now, held);
-    expect(plan?.items.map((item) => [item.name, item.reason.kind])).toEqual([['soon', 'soonest'], ['preview', 'low']]);
+  it('reads an account for reserves from its longest window, and counts it out at a limit', () => {
+    const files = [
+      { name: 'a.json', provider: 'claude', auth_index: 'a' },
+      { name: 'b.json', provider: 'claude', auth_index: 'b', disabled: true },
+      { name: 'c.json', provider: 'claude', auth_index: 'c' },
+    ];
+    const quotas = {
+      [quotaKey(files[0]!)]: weekly(70, 2 * DAY),
+      [quotaKey(files[2]!)]: { status: 'success' as const, rows: [{ label: '5-hour window', remainingPercent: 0, resetAtMs: now + HOUR }, { label: WEEKLY, remainingPercent: 40, resetAtMs: now + DAY }] },
+    };
+    expect(reserveAccounts(files, quotas, now)).toEqual([
+      { name: 'a.json', remaining: 70, resetAtMs: now + 2 * DAY, windowMs: 7 * DAY, out: false },
+      { name: 'c.json', remaining: 40, resetAtMs: now + DAY, windowMs: 7 * DAY, out: true },
+    ]);
   });
 
   it('puts the soonest reset first, nearly empty accounts last, and leaves the rest alone', () => {

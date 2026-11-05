@@ -8,16 +8,19 @@ import { getAlertHistory, isUnreadAlert, markAlertsSeen, unreadAlerts } from './
 import { booleanArg, textArg, type CliArgs, type CliHandlers } from './cliBridge';
 import { shownIdentity } from './emailPrivacy';
 import {
-  HOLD_MODES,
+  LEND_MODES,
+  RESERVE_MODES,
   accessSummary,
-  getHoldModes,
   getModelAccess,
-  heldAccounts,
-  holdModeFor,
+  getReservePolicies,
   recentUse,
-  setHoldMode,
-  type HoldMode,
+  reservePolicyFor,
+  setReservePolicy,
+  type LendMode,
+  type ReserveMode,
+  type ReservePolicy,
 } from './extraModelHold';
+import { freshQuotas } from './accountLimits';
 import { fetchSetupInventory } from './setupInventory';
 import { fileName, providerForFile, quotaKey, type AuthFile } from './quotaService';
 import { getQuotaCacheSnapshot } from './quotaCache';
@@ -207,12 +210,14 @@ export const cliHandlers: CliHandlers = {
   },
   'extraModels.access': {
     access: 'read',
-    summary: 'Which accounts have each extra model, as Settings › Extra models last checked, how its accounts are kept for it, its requests this week, and the accounts held back in the order for it',
+    summary: 'Which accounts have each extra model, as Settings › Extra models last checked, the reserve of their limit its accounts keep for it, its requests this week, and each account at or above its reserve',
     args: [],
     run: async () => {
       const all = await accounts();
       const state = getModelAccess();
-      const modes = getHoldModes();
+      const policies = getReservePolicies();
+      const quotas = freshQuotas(getQuotaCacheSnapshot());
+      const { providerReserves } = await import('./modelReserves');
       const byFile = new Map(all.map((account) => [fileName(account.file), account]));
       const describe = (names: string[]) => names.flatMap((name) => {
         const account = byFile.get(name);
@@ -220,7 +225,7 @@ export const cliHandlers: CliHandlers = {
       });
       return {
         providers: Object.entries(state.providers).map(([provider, { models, accounts: checked, checkedAtMs }]) => {
-          const held = heldAccounts(state, modes, provider, checked);
+          const reserves = providerReserves(all.map((account) => account.file), quotas, state, policies, provider, Date.now());
           return {
             provider,
             checkedAt: checkedAtMs ? new Date(checkedAtMs).toISOString() : null,
@@ -231,9 +236,15 @@ export const cliHandlers: CliHandlers = {
                 have: describe(summary.have),
                 lack: describe(summary.lack),
                 unknown: describe(summary.unknown),
-                mode: holdModeFor(modes, provider, model),
+                ...reservePolicyFor(policies, provider, model),
                 requestsThisWeek: recentUse(state, provider, model),
-                held: describe([...held].filter(([, reason]) => reason.model === model).map(([name]) => name)),
+                reserves: [...reserves].filter(([, reserve]) => reserve.models.includes(model)).flatMap(([name, reserve]) => describe([name]).map((account) => ({
+                  ...account,
+                  state: reserve.state,
+                  reservePercent: reserve.percent,
+                  remainingPercent: reserve.remaining,
+                  lendsDownTo: reserve.floor,
+                }))),
               };
             }),
           };
@@ -241,26 +252,38 @@ export const cliHandlers: CliHandlers = {
       };
     },
   },
-  'extraModels.hold': {
+  'extraModels.reserve': {
     access: 'write',
-    summary: 'Sets how the accounts with an extra model are kept for it: auto (held back in the order while used this week), always, never, or only (they serve nothing else)',
-    args: [arg('provider', 'string'), arg('model', 'string'), arg('mode', 'string')],
+    summary: 'Sets the reserve the accounts with an extra model keep for it: mode auto (smart, sized from this week\'s use), fixed (with percent), never or only (they serve nothing else); lend floor, all or hold for what happens once every other account is out',
+    args: [arg('provider', 'string'), arg('model', 'string'), arg('mode', 'string', true), arg('percent', 'number', true), arg('lend', 'string', true)],
     run: async (args) => {
       const provider = textArg(args, 'provider').toLowerCase();
       const model = textArg(args, 'model').toLowerCase();
-      const mode = textArg(args, 'mode').toLowerCase() as HoldMode;
-      if (!HOLD_MODES.includes(mode)) throw new Error(`mode is one of ${HOLD_MODES.join(', ')}`);
+      const change: Partial<ReservePolicy> = {};
+      if (args.mode !== undefined && args.mode !== null) {
+        const mode = textArg(args, 'mode').toLowerCase() as ReserveMode;
+        if (!RESERVE_MODES.includes(mode)) throw new Error(`mode is one of ${RESERVE_MODES.join(', ')}`);
+        change.mode = mode;
+      }
+      if (args.lend !== undefined && args.lend !== null) {
+        const lend = textArg(args, 'lend').toLowerCase() as LendMode;
+        if (!LEND_MODES.includes(lend)) throw new Error(`lend is one of ${LEND_MODES.join(', ')}`);
+        change.lend = lend;
+      }
+      if (typeof args.percent === 'number') change.percent = args.percent;
+      if (Object.keys(change).length === 0) throw new Error('Give a mode, percent or lend to change.');
       const known = getModelAccess().providers[provider]?.models ?? [];
       if (!known.includes(model)) {
         throw new Error(`${model} isn't an extra model Arbor has checked for ${provider}. Open Settings › Extra models, or see arbor call extraModels.access.`);
       }
-      const before = holdModeFor(getHoldModes(), provider, model);
-      setHoldMode(provider, model, mode);
-      // Only "only" changes which models accounts serve; the rest change the account order.
+      const before = reservePolicyFor(getReservePolicies(), provider, model);
+      setReservePolicy(provider, model, change);
+      const after = reservePolicyFor(getReservePolicies(), provider, model);
+      // Only "only" is applied here; the limits monitor keeps reserves, and picks the change up itself.
       const { reapplyExclusions } = await import('./extraModelAccess');
-      const changes = mode === 'only' || before === 'only' ? (await reapplyExclusions(await invokeCommand('get_extra_models'))).changes : [];
+      const changes = after.mode === 'only' || before.mode === 'only' ? (await reapplyExclusions(await invokeCommand('get_extra_models'))).changes : [];
       if (changes.length > 0) void loadAccountFiles({ quiet: true });
-      return { provider, model, mode, accountsChanged: changes.length };
+      return { provider, model, ...after, accountsChanged: changes.length };
     },
   },
   'alerts.list': {

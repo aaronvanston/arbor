@@ -425,8 +425,9 @@
  * in, `notLoaded` for the proxy not having loaded Arbor's model plugin, `checkFails` for Anthropic turning the check
  * down, `codexFails` for ChatGPT doing the same, or `saveFails` for the proxy not loading the plugin after an add (the
  * change is taken back out). `partial` adds Codex's gpt-daybreak-blue-latest, which only the team Codex account has
- * and used this week, so it's kept from the other Codex accounts and the team account is held back in Settings ›
- * Routing; `partialIdle` is the same unused this week, so nothing is held back. With `?core=stopped` the list is only saved, and there's nothing to check with.
+ * and used this week, so it's kept from the other Codex accounts and the team account keeps a smart reserve for it;
+ * `partialIdle` is the same unused this week, so it keeps none; `partialFenced` has the team account at its reserve, so
+ * it serves only that model; `partialLending` has every other Codex account out too, so it lends its reserve. With `?core=stopped` the list is only saved, and there's nothing to check with.
  * For Settings › App's Command line: the arbor command is linked by default (not on a fresh install);
  * `?cli=missing` for not linked yet, `elsewhere` for linked to an Arbor that has since moved, `taken` for something
  * else at ~/.local/bin/arbor, `dev` for a development build that can't be linked, `off` for command line control off and

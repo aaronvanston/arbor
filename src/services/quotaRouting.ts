@@ -2,7 +2,7 @@ import { freshRows, windowDurationMs } from './accountLimits';
 import { sortByOrder, type AccountOrder } from './accountOrder';
 import { resolveAccountProfile, type AccountProfile } from './accountProfiles';
 import { authFileAvailability, isOAuthCredentialFile, parseAuthFilePriority, type AuthFileRecord } from './authFiles';
-import type { HoldReason } from './extraModelHold';
+import type { AccountReserve } from './modelReserves';
 import { managementApi } from './managementApi';
 import { providerLimits } from './providerLimits';
 import { savedStore, storedRecord } from './savedStore';
@@ -18,8 +18,6 @@ const SAME_RESET_MS = HOUR;
 /**
  * Why an account sits where it does in the suggested order.
  * - `soonest`: ranked by when its headline window resets.
- * - `held`: ranked the same way, but after every `soonest` account: it has an extra model the others lack, which is
- *   in use (or set to be held), so everyday requests spend the others first.
  * - `low`: nearly out of the window, so it goes last.
  * - `unknown`: no limit reading yet.
  * - `fixed`: a runtime-only credential or an API key, whose priority the core can't change.
@@ -28,7 +26,6 @@ const SAME_RESET_MS = HOUR;
  */
 export type RoutingReason =
   | { kind: 'soonest'; percent: number; resetAtMs: number }
-  | { kind: 'held'; percent: number; resetAtMs: number; model: string; why: HoldReason['why'] }
   | { kind: 'low'; percent: number }
   | { kind: 'unknown' }
   | { kind: 'fixed' }
@@ -43,6 +40,8 @@ export type RoutingItem = {
   /** The priority to set, or null to leave the account as it is. */
   suggested: number | null;
   reason: RoutingReason;
+  /** The share of its limit it keeps for extra models only it and some others have, and where that stands. */
+  reserve?: AccountReserve;
 };
 
 export type RoutingPlan = { items: RoutingItem[]; changes: RoutingItem[] };
@@ -87,34 +86,33 @@ const rankBySoonestReset = <T extends { key: string; reason: { percent: number; 
  * nearly out of the window get priority 0 and go last. Accounts without a
  * reading, or that the core can't use or re-prioritize, keep their priority.
  *
- * Accounts in `held` (by credential file name) go after the rest of the ranked
- * ones but before those nearly out: they have an extra model other accounts
- * lack, so they're kept for it while the others have room.
+ * An account keeping a reserve for an extra model is ranked like any other:
+ * above its reserve its limit is everyday capacity, and at it the account's
+ * excluded models, not its place here, keep everyday requests off it.
+ * `reserves` (by credential file name) only says so beside it.
  *
  * Returns null when there is nothing to order: a headline window shorter
  * than a day (it resets too often to plan around), or fewer than two
  * accounts with a reading.
  */
-export function routingPlan(candidates: RoutingCandidate[], window: string | null, nowMs: number, held: ReadonlyMap<string, HoldReason> = new Map()): RoutingPlan | null {
+export function routingPlan(candidates: RoutingCandidate[], window: string | null, nowMs: number, reserves: ReadonlyMap<string, AccountReserve> = new Map()): RoutingPlan | null {
   if (!window) return null;
   const durationMs = windowDurationMs(window);
   if (durationMs === null || durationMs < DAY) return null;
-  const entries = candidates.map((candidate) => ({
-    key: quotaKey(candidate.file),
-    name: candidate.name,
-    fileName: fileName(candidate.file),
-    current: parseAuthFilePriority(candidate.file.priority) ?? 0,
-    reason: reasonFor(candidate, window, nowMs),
-  }));
+  const entries = candidates.map((candidate) => {
+    const reserve = reserves.get(fileName(candidate.file));
+    return {
+      key: quotaKey(candidate.file),
+      name: candidate.name,
+      fileName: fileName(candidate.file),
+      current: parseAuthFilePriority(candidate.file.priority) ?? 0,
+      reason: reasonFor(candidate, window, nowMs),
+      ...(reserve ? { reserve } : {}),
+    };
+  });
   type Soonest = (typeof entries)[number] & { reason: Extract<RoutingReason, { kind: 'soonest' }> };
   const soonest = entries.filter((entry): entry is Soonest => entry.reason.kind === 'soonest');
-  const ranked = [
-    ...rankBySoonestReset(soonest.filter((entry) => !held.has(entry.fileName))),
-    ...rankBySoonestReset(soonest.flatMap((entry) => {
-      const hold = held.get(entry.fileName);
-      return hold ? [{ ...entry, reason: { ...entry.reason, kind: 'held' as const, model: hold.model, why: hold.why } }] : [];
-    })),
-  ];
+  const ranked = rankBySoonestReset(soonest);
   const low = entries.filter((entry) => entry.reason.kind === 'low').sort((a, b) => a.key.localeCompare(b.key));
   if (ranked.length + low.length < 2) return null;
   const items: RoutingItem[] = [
@@ -149,12 +147,12 @@ export function providerRoutingPlans(
   prefs: { hidden: Record<string, string[]>; headline: Record<string, string> },
   nowMs: number,
   order: AccountOrder = {},
-  held: (provider: QuotaProvider, files: AuthFile[]) => ReadonlyMap<string, HoldReason> = () => new Map(),
+  reserves: (provider: QuotaProvider, files: AuthFile[]) => ReadonlyMap<string, AccountReserve> = () => new Map(),
 ): ProviderRouting[] {
   return providerLimits(files, quotas, profiles, prefs, nowMs, order).flatMap(({ provider, headline }) => {
     const window = headline.label;
     const providerFiles = sortByOrder(files.filter((file) => providerForFile(file) === provider), order[provider], quotaKey);
-    const plan = routingPlan(routingCandidates(providerFiles, quotas, profiles), window, nowMs, held(provider, providerFiles));
+    const plan = routingPlan(routingCandidates(providerFiles, quotas, profiles), window, nowMs, reserves(provider, providerFiles));
     return plan && window ? [{ provider, window, plan }] : [];
   });
 }
@@ -213,3 +211,4 @@ export const getRoutingAuto = auto.get;
 export function setRoutingAuto(provider: string, enabled: boolean) {
   auto.set({ ...auto.get(), [provider]: enabled });
 }
+

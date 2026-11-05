@@ -275,28 +275,38 @@ describe('Settings › Extra models', () => {
     expect(render(<ExtraModelRows view={view([claude(), codex()])} busy="" onRemove={noop} />)).toContain('No extra models');
   });
 
-  it('says which accounts have a model on only some, how they’re kept for it, and how to turn that on', () => {
+  it('says which accounts have a model on only some, and the reserve they keep for it', () => {
     const current = view([codex({ models: [model('gpt-preview-latest', { displayName: 'Preview' })] })], { served: ['gpt-preview-latest'] });
     const row: ModelAccessRow = {
       summary: { have: ['team.json'], lack: ['home.json'], unknown: [] },
       names: { 'team.json': 'Team', 'home.json': 'Home' },
-      mode: 'auto',
+      policy: { mode: 'auto', percent: 10, lend: 'floor' },
       recent: 40,
       declined: [],
-      routingOff: true,
+      reserves: [['team.json', { models: ['gpt-preview-latest'], percent: 3.5, remaining: 60, state: 'open', floor: 1, smart: true }]],
     };
     const html = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => row} />);
     expect(html).toContain('Preview · Only on Team');
-    expect(html).toContain('Kept for it: 40 requests this week · Turn on automatic order for Codex in Settings › Routing to keep it so.');
-    expect(html).toContain('Keep for it while in use');
+    expect(html).toContain('Keeps 3.5% of the limit for it, sized from 40 requests this week');
+    expect(html).toContain('Smart reserve');
+    expect(html).toContain('Lend it, keep a little');
 
-    const shared = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, recent: 0, declined: ['home.json'] })} />);
-    expect(shared).toContain('Shared: not used this week');
-    expect(shared).not.toContain('Turn on automatic order');
+    const fenced = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, reserves: [['team.json', { ...row.reserves[0]![1], remaining: 3, state: 'fenced' }]] })} />);
+    expect(fenced).toContain('Team is down to its 3.5% reserve, so it serves only this model');
+
+    const fixed = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, policy: { ...row.policy, mode: 'fixed' } })} />);
+    expect(fixed).toContain('Keeps 3.5% of the limit for it Fixed reserve %');
+
+    const dedicated = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, policy: { ...row.policy, mode: 'only' } })} />);
+    expect(dedicated).toContain('Serving only this model');
+    expect(dedicated).not.toContain('Lend it, keep a little');
+
+    const shared = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, recent: 0, reserves: [], declined: ['home.json'] })} />);
+    expect(shared).toContain('No reserve while it isn’t used: none this week');
     expect(shared).toContain('Also sent to accounts without it Send only to accounts with it');
 
     const everywhere = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, summary: { have: ['team.json', 'home.json'], lack: [], unknown: [] } })} />);
     expect(everywhere).toContain('Preview · On every Codex account');
-    expect(everywhere).not.toContain('Keep for it while in use');
+    expect(everywhere).not.toContain('Smart reserve');
   });
 });

@@ -1591,11 +1591,12 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     const overview = usageOverviewFor(timelineBetween(args.query.start, args.query.end), fiveMinutesBetween(args.query.start, args.query.end), args.query);
     return args.query.include_analysis ? { ...overview, analysis: narrowAnalysis(usageAnalysis, narrowedShare(args.query, totals.requests)) } : overview;
   },
-  // With `?extraModels=partial`, the preview model only the team Codex account has was used this week.
+  // With `?extraModels=partial` (and its fenced and lending kin), the preview model only the team Codex account has
+  // was used this week.
   get_usage_analysis: ({ query }) => query.model === PARTIAL_MODEL
     ? {
       models: [], providers: [], sources: [], apiKeys: [],
-      accounts: params.get('extraModels') === 'partial'
+      accounts: ['partial', 'partialFenced', 'partialLending'].includes(params.get('extraModels') ?? '')
         ? [{ authIndex: PARTIAL_ACCOUNT_INDEX, label: 'team@example.com', requests: 42, failures: 2, tokens: 1_200_000 }]
         : [],
     }

@@ -6,16 +6,20 @@ import {
   desiredExclusions,
   emptyAccessState,
   exclusionChanges,
-  heldAccounts,
-  holdLine,
+  fencesFrom,
+  forecastUse,
+  modelReserves,
   parseAccessState,
   providersWithNewAccounts,
   reconcileExclusions,
   refreshRecentUse,
+  reserveLine,
+  smartReserve,
   undoExclusionChanges,
   USAGE_READ_EVERY_MS,
   type AccessDeps,
   type ModelAccessState,
+  type ReserveAccount,
 } from '../src/services/extraModelAccess';
 import type { ExtraModel, ExtraModelsView, UsageAnalysis, UsageQuery } from '../src/native/types';
 
@@ -55,11 +59,12 @@ const partial = state({
 const accounts = files.map((file) => file.name);
 
 const noUsage = async (): Promise<UsageAnalysis> => ({ models: [], providers: [], sources: [], accounts: [], apiKeys: [] });
-const usageOn = (byIndex: Record<string, [number, number]>) => async (query: UsageQuery): Promise<UsageAnalysis> => ({
+/** Usage with `byIndex` requests and failures for the preview model, a thousand tokens each, and `all` tokens in all. */
+const usageOn = (byIndex: Record<string, [number, number]>, all: Record<string, number> = {}) => async (query: UsageQuery): Promise<UsageAnalysis> => ({
   models: [], providers: [], sources: [], apiKeys: [],
   accounts: query.model === PREVIEW
-    ? Object.entries(byIndex).map(([authIndex, [requests, failures]]) => ({ authIndex, label: authIndex, requests, failures, tokens: 0 }))
-    : [],
+    ? Object.entries(byIndex).map(([authIndex, [requests, failures]]) => ({ authIndex, label: authIndex, requests, failures, tokens: requests * 1000 }))
+    : Object.entries(all).map(([authIndex, tokens]) => ({ authIndex, label: authIndex, requests: 1, failures: 0, tokens })),
 });
 
 /** A proxy whose accounts each list the models given, answering `/api-call` by auth index. */
@@ -116,7 +121,7 @@ describe('which accounts have an extra model', () => {
     }));
     expect(checked.access['cam-home.json']).toEqual({ [PREVIEW]: 'yes' });
     expect(checked.access['cam-spare.json']).toEqual({ [PREVIEW]: 'no' });
-    expect(checked.usage[`codex/${PREVIEW}`]).toEqual({ readAtMs: now, byAccount: { 'cam-home.json': 4 } });
+    expect(checked.usage[`codex/${PREVIEW}`]).toEqual({ readAtMs: now, byAccount: { 'cam-home.json': 4 }, tokens: { 'cam-home.json': 5000 } });
   });
 
   it('forgets accounts that have gone', async () => {
@@ -141,43 +146,109 @@ describe('which accounts have an extra model', () => {
     const parsed = parseAccessState(JSON.stringify({ access: { 'a.json': { x: 'yes', y: 'maybe' } }, added: { 'a.json': ['x', 3] }, usage: { 'codex/x': { readAtMs: 5, byAccount: { 'a.json': 2, 'b.json': -1 } } } }));
     expect(parsed.access).toEqual({ 'a.json': { x: 'yes' } });
     expect(parsed.added).toEqual({ 'a.json': ['x'] });
-    expect(parsed.usage).toEqual({ 'codex/x': { readAtMs: 5, byAccount: { 'a.json': 2 } } });
+    expect(parsed.usage).toEqual({ 'codex/x': { readAtMs: 5, byAccount: { 'a.json': 2 }, tokens: {} } });
+    expect(parsed.windows).toEqual({});
+    expect(parsed.fenced).toEqual({});
   });
 });
 
-describe('holding accounts back for an extra model', () => {
-  const used = state({ ...partial, usage: { [`codex/${PREVIEW}`]: { readAtMs: now, byAccount: { 'cam-team.json': 40 } } } });
+describe('reserves for an extra model', () => {
+  const HOUR = 3_600_000;
+  const DAY = 24 * HOUR;
+  const WEEK = 7 * DAY;
+  const reset = now + 3 * DAY;
+  // This week the team account served 100k tokens of the preview, and 1M in all since its window began 4 days ago,
+  // which cost 40% of its limit: the preview at the week's pace uses 4% × 3/7 before the reset.
+  const used = state({
+    ...partial,
+    usage: { [`codex/${PREVIEW}`]: { readAtMs: now, byAccount: { 'cam-team.json': 40 }, tokens: { 'cam-team.json': 100_000 } } },
+    windows: { 'cam-team.json': { sinceMs: reset - WEEK, tokens: 1_000_000, readAtMs: now } },
+  });
+  const account = (name: string, remaining: number | null, more: Partial<ReserveAccount> = {}): ReserveAccount =>
+    ({ name, remaining, resetAtMs: reset, windowMs: WEEK, out: false, ...more });
+  const roomy = [account('cam-team.json', 60), account('cam-home.json', 50), account('cam-spare.json', 30)];
+  const policy = (more: Record<string, unknown>) => ({ [`codex/${PREVIEW}`]: { mode: 'auto' as const, percent: 10, lend: 'floor' as const, ...more } });
+  const forecast = 0.1 * 40 * (3 / 7);
 
-  it('holds the accounts with it while it’s in use, unless told otherwise', () => {
-    expect([...heldAccounts(used, {}, 'codex', accounts)]).toEqual([['cam-team.json', { model: PREVIEW, why: 'used' }]]);
-    expect(heldAccounts(partial, {}, 'codex', accounts).size).toBe(0);
-    expect([...heldAccounts(partial, { [`codex/${PREVIEW}`]: 'always' }, 'codex', accounts)]).toEqual([['cam-team.json', { model: PREVIEW, why: 'always' }]]);
-    expect(heldAccounts(used, { [`codex/${PREVIEW}`]: 'never' }, 'codex', accounts).size).toBe(0);
+  it('forecasts the model’s use until the reset from the week, priced by the account’s window so far', () => {
+    expect(forecastUse(used, 'codex', PREVIEW, roomy[0]!, now)).toBeCloseTo(forecast);
+    expect(forecastUse(partial, 'codex', PREVIEW, roomy[0]!, now)).toBe(0);
+    // Tokens read for an earlier window price this one wrongly.
+    const stale = { ...used, windows: { 'cam-team.json': { sinceMs: reset - 2 * WEEK, tokens: 1_000_000, readAtMs: now } } };
+    expect(forecastUse(stale, 'codex', PREVIEW, roomy[0]!, now)).toBeNull();
   });
 
-  it('holds nothing when every account has it, or none is known to lack it', () => {
-    const everywhere = state({ ...used, access: Object.fromEntries(accounts.map((name) => [name, { [PREVIEW]: 'yes' as const }])) });
-    expect(heldAccounts(everywhere, { [`codex/${PREVIEW}`]: 'always' }, 'codex', accounts).size).toBe(0);
-    expect(heldAccounts(used, {}, 'codex', ['cam-team.json']).size).toBe(0);
+  it('keeps twice the forecast, at least 2% until the last day, and at most a quarter', () => {
+    expect(smartReserve(forecast, { resetAtMs: reset }, now)).toBe(3.5);
+    expect(smartReserve(0.2, { resetAtMs: reset }, now)).toBe(2);
+    expect(smartReserve(0.2, { resetAtMs: now + 6 * HOUR }, now)).toBe(0.5);
+    expect(smartReserve(40, { resetAtMs: reset }, now)).toBe(25);
   });
 
-  it('says how the accounts are kept', () => {
-    expect(holdLine('auto', 40)).toEqual({ key: 'extraModels.hold.state.used', values: { count: 40 } });
-    expect(holdLine('auto', 0).key).toBe('extraModels.hold.state.idle');
-    expect(holdLine('only', 0).key).toBe('extraModels.hold.state.only');
+  it('shares an account above its reserve like any other', () => {
+    expect([...modelReserves(used, {}, 'codex', roomy, now)]).toEqual([
+      ['cam-team.json', { models: [PREVIEW], percent: 3.5, remaining: 60, state: 'open', floor: 1, smart: true }],
+    ]);
   });
 
-  it('reads recent use again only when it’s an hour old and matters', async () => {
+  it('keeps nothing for a model unused this week, unless set to, and nothing when told not to', () => {
+    expect(modelReserves(partial, {}, 'codex', roomy, now).size).toBe(0);
+    expect(modelReserves(partial, policy({ mode: 'fixed', percent: 15 }), 'codex', roomy, now).get('cam-team.json')?.percent).toBe(15);
+    expect(modelReserves(used, policy({ mode: 'never' }), 'codex', roomy, now).size).toBe(0);
+    // Serving only the model is its excluded models' doing, whatever the limits say.
+    expect(modelReserves(used, policy({ mode: 'only' }), 'codex', roomy, now).size).toBe(0);
+  });
+
+  it('fences an account at its reserve, so it serves only the model', () => {
+    const atReserve = [account('cam-team.json', 3), ...roomy.slice(1)];
+    const reserves = modelReserves(used, {}, 'codex', atReserve, now);
+    expect(reserves.get('cam-team.json')?.state).toBe('fenced');
+    expect(fencesFrom(reserves)).toEqual({ 'cam-team.json': [PREVIEW] });
+  });
+
+  it('lends the reserve once every other account is out, down to its floor, as the policy says', () => {
+    const othersOut = (left: number) => [account('cam-team.json', left), account('cam-home.json', 0.5), account('cam-spare.json', 40, { out: true })];
+    expect(modelReserves(used, {}, 'codex', othersOut(3), now).get('cam-team.json')).toMatchObject({ state: 'lending', floor: 1 });
+    expect(modelReserves(used, {}, 'codex', othersOut(1), now).get('cam-team.json')?.state).toBe('fenced');
+    expect(modelReserves(used, policy({ lend: 'all' }), 'codex', othersOut(0.5), now).get('cam-team.json')?.state).toBe('lending');
+    expect(modelReserves(used, policy({ lend: 'hold' }), 'codex', othersOut(3), now).get('cam-team.json')?.state).toBe('fenced');
+    // An account with no reading could still take requests, so nothing is lent yet.
+    const unread = [account('cam-team.json', 3), account('cam-home.json', null), account('cam-spare.json', 0.2, { out: true })];
+    expect(modelReserves(used, {}, 'codex', unread, now).get('cam-team.json')?.state).toBe('fenced');
+  });
+
+  it('splits the forecast between the accounts with the model', () => {
+    const both = { ...used, access: { ...used.access, 'cam-home.json': { [PREVIEW]: 'yes' as const } } };
+    const reserves = modelReserves(both, policy({ mode: 'fixed', percent: 8 }), 'codex', roomy, now);
+    expect([...reserves.keys()].sort()).toEqual(['cam-home.json', 'cam-team.json']);
+  });
+
+  it('says where the reserve stands in a row', () => {
+    const names = { 'cam-team.json': 'Team' };
+    const open = [...modelReserves(used, {}, 'codex', roomy, now)];
+    expect(reserveLine('auto', 40, open, names)).toEqual({ key: 'extraModels.reserve.state.smart', values: { percent: '3.5', count: 40 } });
+    const fenced = [...modelReserves(used, {}, 'codex', [account('cam-team.json', 2), ...roomy.slice(1)], now)];
+    expect(reserveLine('auto', 40, fenced, names)).toEqual({ key: 'extraModels.reserve.state.fenced', values: { name: 'Team', percent: '8.5' } });
+    expect(reserveLine('auto', 0, [], names).key).toBe('extraModels.reserve.state.idle');
+    expect(reserveLine('fixed', 0, [], names).key).toBe('extraModels.reserve.state.unread');
+    expect(reserveLine('only', 0, [], names).key).toBe('extraModels.reserve.state.only');
+  });
+
+  it('reads use again only when it’s an hour old and sizes a smart reserve, and an account’s window when it began again', async () => {
     let reads = 0;
     const counting = async (query: UsageQuery) => {
       reads += 1;
-      return usageOn({ 'codex-1': [7, 0] })(query);
+      return usageOn({ 'codex-1': [7, 0] }, { 'codex-1': 2_000_000 })(query);
     };
-    expect(await refreshRecentUse(used, {}, files, { usage: counting, nowMs: now + 60_000 })).toBeNull();
-    expect(await refreshRecentUse(used, { [`codex/${PREVIEW}`]: 'always' }, files, { usage: counting, nowMs: now + USAGE_READ_EVERY_MS })).toBeNull();
-    const fresh = await refreshRecentUse(used, {}, files, { usage: counting, nowMs: now + USAGE_READ_EVERY_MS });
-    expect(fresh?.usage[`codex/${PREVIEW}`]).toEqual({ readAtMs: now + USAGE_READ_EVERY_MS, byAccount: { 'cam-team.json': 7 } });
-    expect(reads).toBe(1);
+    const starts = { 'cam-team.json': reset - WEEK };
+    expect(await refreshRecentUse(used, {}, files, { usage: counting, nowMs: now + 60_000 }, starts)).toBeNull();
+    expect(await refreshRecentUse(used, policy({ mode: 'fixed' }), files, { usage: counting, nowMs: now + USAGE_READ_EVERY_MS }, starts)).toBeNull();
+    const began = await refreshRecentUse(used, {}, files, { usage: counting, nowMs: now + 60_000 }, { 'cam-team.json': reset }, );
+    expect(began?.windows['cam-team.json']).toEqual({ sinceMs: reset, tokens: 2_000_000, readAtMs: now + 60_000 });
+    expect(began?.usage).toEqual(used.usage);
+    const fresh = await refreshRecentUse(used, {}, files, { usage: counting, nowMs: now + USAGE_READ_EVERY_MS }, starts);
+    expect(fresh?.usage[`codex/${PREVIEW}`]).toEqual({ readAtMs: now + USAGE_READ_EVERY_MS, byAccount: { 'cam-team.json': 7 }, tokens: { 'cam-team.json': 7000 } });
+    expect(reads).toBe(3);
   });
 
   it('checks a provider again when its usable accounts change', () => {
@@ -188,7 +259,7 @@ describe('holding accounts back for an extra model', () => {
 });
 
 describe('keeping an extra model from accounts without it', () => {
-  const base = { state: partial, modes: {}, provider: 'codex', models: [PREVIEW], everyModel: ['gpt-6-sol', 'gpt-6-luna', PREVIEW], accounts, usable: accounts };
+  const base = { state: partial, policies: {}, provider: 'codex', models: [PREVIEW], everyModel: ['gpt-6-sol', 'gpt-6-luna', PREVIEW], accounts, usable: accounts };
 
   it('keeps it from the accounts that lack it, unless someone undid that', () => {
     expect(desiredExclusions(base)).toEqual({ 'cam-team.json': [], 'cam-home.json': [PREVIEW], 'cam-spare.json': [PREVIEW] });
@@ -197,10 +268,16 @@ describe('keeping an extra model from accounts without it', () => {
   });
 
   it('keeps every other model from accounts set to serve only it, but never from all of them', () => {
-    const only = { [`codex/${PREVIEW}`]: 'only' as const };
-    expect(desiredExclusions({ ...base, modes: only })['cam-team.json']).toEqual(['gpt-6-luna', 'gpt-6-sol']);
+    const only = { [`codex/${PREVIEW}`]: { mode: 'only' as const, percent: 10, lend: 'floor' as const } };
+    expect(desiredExclusions({ ...base, policies: only })['cam-team.json']).toEqual(['gpt-6-luna', 'gpt-6-sol']);
     const everywhere = state({ access: Object.fromEntries(accounts.map((name) => [name, { [PREVIEW]: 'yes' as const }])) });
-    expect(desiredExclusions({ ...base, state: everywhere, modes: only })['cam-team.json']).toEqual([]);
+    expect(desiredExclusions({ ...base, state: everywhere, policies: only })['cam-team.json']).toEqual([]);
+  });
+
+  it('keeps every other model from an account at its reserve', () => {
+    expect(desiredExclusions({ ...base, state: { ...partial, fenced: { 'cam-team.json': [PREVIEW] } } })['cam-team.json']).toEqual(['gpt-6-luna', 'gpt-6-sol']);
+    // A fence for a model that has gone fences nothing.
+    expect(desiredExclusions({ ...base, state: { ...partial, fenced: { 'cam-team.json': ['gpt-old'] } } })['cam-team.json']).toEqual([]);
   });
 
   it('leaves rules someone added alone, and takes back only Arbor’s', () => {
@@ -238,6 +315,18 @@ describe('keeping an extra model from accounts without it', () => {
     // The next check leaves them be.
     const again = await reconcileExclusions(view, files, undone, {}, { api: proxy({}, patched), excludedModels: async () => ({ kind: 'rules', rules: [] }) });
     expect(again.changes).toEqual([]);
+  });
+
+  it('fences an account at its reserve and opens it again, taking back only the rules it added', async () => {
+    const patched: { name: string; excluded_models: string[] }[] = [];
+    const rules: Record<string, string[]> = { 'cam-home.json': [PREVIEW], 'cam-spare.json': [PREVIEW], 'cam-team.json': ['codex-mini-latest'] };
+    const fencedState = { ...partial, added: { 'cam-home.json': [PREVIEW], 'cam-spare.json': [PREVIEW] }, fenced: { 'cam-team.json': [PREVIEW] } };
+    const excludedModels = async (name: string) => ({ kind: 'rules' as const, rules: rules[name] ?? [] });
+    const fenced = await reconcileExclusions(view, files, fencedState, {}, { api: proxy({}, patched), excludedModels });
+    expect(patched).toEqual([{ name: 'cam-team.json', excluded_models: ['codex-mini-latest', 'gpt-6-luna', 'gpt-6-sol'] }]);
+    rules['cam-team.json'] = ['codex-mini-latest', 'gpt-6-luna', 'gpt-6-sol'];
+    await reconcileExclusions(view, files, { ...fenced.state, fenced: {} }, {}, { api: proxy({}, patched), excludedModels });
+    expect(patched[1]).toEqual({ name: 'cam-team.json', excluded_models: ['codex-mini-latest'] });
   });
 
   it('stops at a failed change and says why, keeping the ones made to undo', async () => {

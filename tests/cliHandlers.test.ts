@@ -5,7 +5,7 @@ import { getAccountReserves, setAccountReserve } from '../src/services/accountRe
 import { resetAccountsStore } from '../src/services/accountsStore';
 import { answerCliRequest } from '../src/services/cliBridge';
 import { accountId, cliHandlers } from '../src/services/cliHandlers';
-import { emptyAccessState, getHoldModes, setHoldMode, setModelAccess } from '../src/services/extraModelAccess';
+import { DEFAULT_RESERVE, emptyAccessState, getReservePolicies, setModelAccess, setReservePolicy } from '../src/services/extraModelAccess';
 import { getRoutingAuto } from '../src/services/quotaRouting';
 import { quotaKey, type AuthFile } from '../src/services/quotaService';
 
@@ -112,16 +112,16 @@ describe('extra models on only some accounts, for arbor', () => {
       ...emptyAccessState(),
       providers: { codex: { models: [model], accounts: ['cam-side@example.com.json', 'cam-work@example.com.json'], checkedAtMs: 1 } },
       access: { 'cam-work@example.com.json': { [model]: 'yes' }, 'cam-side@example.com.json': { [model]: 'no' } },
-      usage: { [`codex/${model}`]: { readAtMs: 1, byAccount: { 'cam-work@example.com.json': 12 } } },
+      usage: { [`codex/${model}`]: { readAtMs: 1, byAccount: { 'cam-work@example.com.json': 12 }, tokens: { 'cam-work@example.com.json': 12_000 } } },
     });
   });
 
   afterEach(() => {
     setModelAccess(emptyAccessState());
-    setHoldMode('codex', model, 'auto');
+    setReservePolicy('codex', model, DEFAULT_RESERVE);
   });
 
-  it('list which accounts have each, by id, and the ones held back for it', async () => {
+  it('list which accounts have each, by id, and the reserve kept for it', async () => {
     if (!work) throw new Error('no account');
     const { result, error } = await ask('extraModels.access');
     expect(error).toBeNull();
@@ -132,17 +132,23 @@ describe('extra models on only some accounts, for arbor', () => {
       have: [{ id: accountId(quotaKey(work)) }],
       lack: [{ id: accountId(quotaKey(side)) }],
       mode: 'auto',
+      percent: 10,
+      lend: 'floor',
       requestsThisWeek: 12,
-      held: [{ id: accountId(quotaKey(work)) }],
+      // No limit reading yet, so no reserve to size.
+      reserves: [],
     });
   });
 
-  it('set how the accounts are kept, only for a model Arbor has checked', async () => {
-    expect((await ask('extraModels.hold', { provider: 'codex', model, mode: 'sometimes' })).error?.message).toContain('auto, always, never, only');
-    expect((await ask('extraModels.hold', { provider: 'codex', model: 'gpt-nope', mode: 'never' })).error?.message).toContain('extraModels.access');
-    const { result, error } = await ask('extraModels.hold', { provider: 'codex', model, mode: 'never' });
+  it('set the reserve, only for a model Arbor has checked', async () => {
+    expect((await ask('extraModels.reserve', { provider: 'codex', model, mode: 'sometimes' })).error?.message).toContain('auto, fixed, never, only');
+    expect((await ask('extraModels.reserve', { provider: 'codex', model, lend: 'maybe' })).error?.message).toContain('floor, all, hold');
+    expect((await ask('extraModels.reserve', { provider: 'codex', model })).error?.message).toContain('Give a mode');
+    expect((await ask('extraModels.reserve', { provider: 'codex', model: 'gpt-nope', mode: 'never' })).error?.message).toContain('extraModels.access');
+    const { result, error } = await ask('extraModels.reserve', { provider: 'codex', model, mode: 'fixed', percent: 80, lend: 'hold' });
     expect(error).toBeNull();
-    expect(result).toEqual({ provider: 'codex', model, mode: 'never', accountsChanged: 0 });
-    expect(getHoldModes()).toEqual({ [`codex/${model}`]: 'never' });
+    // A fixed share is held to what the page allows.
+    expect(result).toEqual({ provider: 'codex', model, mode: 'fixed', percent: 50, lend: 'hold', accountsChanged: 0 });
+    expect(getReservePolicies()).toEqual({ [`codex/${model}`]: { mode: 'fixed', percent: 50, lend: 'hold' } });
   });
 });

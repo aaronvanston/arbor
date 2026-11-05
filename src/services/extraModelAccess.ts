@@ -6,38 +6,45 @@ import {
   RECENT_USE_MS,
   USAGE_READ_EVERY_MS,
   accessSummary,
-  getHoldModes,
   getModelAccess,
-  holdModeFor,
+  getReservePolicies,
   isPartial,
   lower,
   modelKey,
+  reservePolicyFor,
   setModelAccess,
   type AccessSummary,
-  type HoldMode,
   type ModelAccessState,
+  type ReserveMode,
+  type ReservePolicy,
 } from './extraModelHold';
 import { invokeCommand } from '../native/commands';
 import { managementApi, normalizeAuthIndex, readString, responseList } from './managementApi';
 import { normalizeOAuthExcludedRules } from './oauthModels';
 
+import { fencesFrom, percentText, providerReserves, reserveAccounts, windowStart, type AccountReserve } from './modelReserves';
+import type { AuthFile, QuotaState } from './quotaService';
+
 export * from './extraModelHold';
+export * from './modelReserves';
 
 /**
  * An extra model can be on only some of a provider's accounts (a preview one account was let into, say), while the
- * proxy offers it on all of them. Arbor asks each account which models it has, keeps the model from the accounts
- * without it so requests for it never land there, and holds the accounts with it back in the account order while it's
- * in use, so everyday requests spend the other accounts first.
+ * proxy offers it on all of them. Arbor asks each account which models it has, and keeps the model from the accounts
+ * without it so requests for it never land there. The accounts with it keep a reserve of their limit for it: above
+ * the reserve they're shared like any account, and at it they serve only the model, until every other account is out
+ * and they lend it to everyday requests rather than turn them away.
  */
 
 /**
  * The models Arbor should keep from each of a provider's accounts: the extra models it lacks, unless someone undid
- * that, and on an account set to serve only some models, every other model. `usable` decides whether a model is only
- * on some accounts; "only" never applies when every account has the model, as nothing would serve the rest.
+ * that, and on an account set to serve only some models, or at its reserve for them (`state.fenced`), every other
+ * model. `usable` decides whether a model is only on some accounts; "only" never applies when every account has the
+ * model, as nothing would serve the rest.
  */
-export function desiredExclusions({ state, modes, provider, models, everyModel, accounts, usable }: {
+export function desiredExclusions({ state, policies, provider, models, everyModel, accounts, usable }: {
   state: ModelAccessState;
-  modes: Record<string, HoldMode>;
+  policies: Record<string, ReservePolicy>;
   provider: string;
   /** The provider's extra models the proxy's catalog doesn't have. */
   models: string[];
@@ -48,12 +55,14 @@ export function desiredExclusions({ state, modes, provider, models, everyModel, 
   /** Those of them requests can go to. */
   usable: string[];
 }): Record<string, string[]> {
-  const only = models.filter((model) => holdModeFor(modes, provider, model) === 'only' && isPartial(accessSummary(state, model, usable)));
+  const only = models.filter((model) => reservePolicyFor(policies, provider, model).mode === 'only' && isPartial(accessSummary(state, model, usable)));
+  const extras = new Set(models.map(lower));
   return Object.fromEntries(accounts.map((account) => {
     const access = state.access[account] ?? {};
     const declined = state.declined[account] ?? [];
     const keep = new Set(models.map(lower).filter((model) => access[model] === 'no' && !declined.includes(model)));
-    const own = only.map(lower).filter((model) => access[model] === 'yes');
+    const fenced = (state.fenced[account] ?? []).filter((model) => extras.has(model));
+    const own = [...new Set([...only.map(lower), ...fenced])].filter((model) => access[model] === 'yes');
     if (own.length > 0) everyModel.map(lower).forEach((model) => { if (!own.includes(model)) keep.add(model); });
     return [account, [...keep].sort()];
   }));
@@ -103,8 +112,10 @@ type Files = Record<string, unknown>[];
 const failureOf = (answer: AccountModelsResult | undefined): LiveModelsResult =>
   !answer || answer.ok ? { ok: false, reason: 'extraModels.suggestions.noAccount' } : answer;
 
-/** Requests for `model` that worked in the last week, by credential file name, or null when they couldn't be read. */
-async function readRecentUse(deps: Pick<AccessDeps, 'usage' | 'nowMs'>, files: Files, provider: string, model: string): Promise<Record<string, number> | null> {
+type RecentUse = { byAccount: Record<string, number>; tokens: Record<string, number> };
+
+/** Requests for `model` that worked in the last week and their tokens, by credential file name, or null when unread. */
+async function readRecentUse(deps: Pick<AccessDeps, 'usage' | 'nowMs'>, files: Files, provider: string, model: string): Promise<RecentUse | null> {
   const analysis = await deps.usage({ start: new Date(deps.nowMs - RECENT_USE_MS).toISOString(), model }).catch(() => null);
   if (!analysis) return null;
   // Only the provider's own accounts: another provider's model of the same name isn't this one.
@@ -112,12 +123,34 @@ async function readRecentUse(deps: Pick<AccessDeps, 'usage' | 'nowMs'>, files: F
     .filter((file) => canonicalProvider(readString(file, 'provider', 'type')) === provider)
     .map((file) => [normalizeAuthIndex(file.auth_index ?? file.authIndex), nameOf(file)]));
   const byAccount: Record<string, number> = {};
+  const tokens: Record<string, number> = {};
   analysis.accounts.forEach((account) => {
     const name = byIndex.get(account.authIndex);
     const worked = account.requests - account.failures;
-    if (name && worked > 0) byAccount[name] = (byAccount[name] ?? 0) + worked;
+    if (!name || worked <= 0) return;
+    byAccount[name] = (byAccount[name] ?? 0) + worked;
+    tokens[name] = (tokens[name] ?? 0) + account.tokens;
   });
-  return byAccount;
+  return { byAccount, tokens };
+}
+
+/**
+ * Every token each account served since its limit window began (`starts`, by credential file name), or null for the
+ * ones that couldn't be read. Accounts whose windows began together are read in one go.
+ */
+async function readWindowTokens(deps: Pick<AccessDeps, 'usage'>, files: Files, starts: Record<string, number>): Promise<Record<string, number | null>> {
+  const indexOf = new Map(files.map((file) => [nameOf(file), normalizeAuthIndex(file.auth_index ?? file.authIndex)]));
+  const byStart = new Map<number, string[]>();
+  Object.entries(starts).forEach(([name, sinceMs]) => byStart.set(sinceMs, [...(byStart.get(sinceMs) ?? []), name]));
+  const read: Record<string, number | null> = {};
+  await Promise.all([...byStart].map(async ([sinceMs, names]) => {
+    const analysis = await deps.usage({ start: new Date(sinceMs).toISOString() }).catch(() => null);
+    names.forEach((name) => {
+      const index = indexOf.get(name);
+      read[name] = analysis && index ? analysis.accounts.filter((account) => account.authIndex === index).reduce((sum, account) => sum + account.tokens, 0) : null;
+    });
+  }));
+  return read;
 }
 const nameOf = (file: Record<string, unknown>) => readString(file, 'name');
 const extrasOf = (provider: ExtraModelsView['providers'][number]) =>
@@ -143,11 +176,14 @@ export async function checkModelAccess(view: ExtraModelsView, files: Files, prev
   live: Record<string, LiveModelsResult>;
 }> {
   const state: ModelAccessState = {
+    ...previous,
     providers: { ...previous.providers },
     access: { ...previous.access },
     added: { ...previous.added },
     declined: { ...previous.declined },
     usage: { ...previous.usage },
+    windows: { ...previous.windows },
+    fenced: { ...previous.fenced },
   };
   const live: Record<string, LiveModelsResult> = {};
   await Promise.all(view.providers.filter((entry) => !only || only.includes(entry.provider)).map(async (entry) => {
@@ -165,8 +201,8 @@ export async function checkModelAccess(view: ExtraModelsView, files: Files, prev
         : worked.length > 0 ? { ok: true, models: mergeLists(worked) } : failureOf(answers[0]);
     }
     await Promise.all(models.map(async (model) => {
-      const byAccount = await readRecentUse(deps, files, provider, model.id);
-      if (byAccount) state.usage[modelKey(provider, model.id)] = { readAtMs: deps.nowMs, byAccount };
+      const recent = await readRecentUse(deps, files, provider, model.id);
+      if (recent) state.usage[modelKey(provider, model.id)] = { readAtMs: deps.nowMs, ...recent };
     }));
     const lists = answers.map((answer) => (answer.ok ? answer.ids.map(lower) : null));
     // A model can work before a provider lists it (one added by ID for a limited preview), so a list leaving it out
@@ -192,7 +228,7 @@ export async function checkModelAccess(view: ExtraModelsView, files: Files, prev
   }));
   // Forget accounts that have gone, and providers left with nothing to check.
   const listed = new Set(files.map(nameOf));
-  for (const map of [state.access, state.added, state.declined]) {
+  for (const map of [state.access, state.added, state.declined, state.windows, state.fenced]) {
     Object.keys(map).forEach((name) => { if (!listed.has(name)) delete map[name]; });
   }
   Object.keys(state.providers).forEach((provider) => {
@@ -202,23 +238,40 @@ export async function checkModelAccess(view: ExtraModelsView, files: Files, prev
 }
 
 /**
- * Reads recent use of each provider's extra models that are only on some accounts and held while used, for automatic
- * routing between visits to Extra models. Nothing is read for a model whose use was read within the hour.
+ * Reads this week's use of each provider's extra models that are only on some accounts and keep a smart reserve, and
+ * the tokens their accounts served since their windows began (`starts`, by credential file name), which price that use
+ * in percent: what a smart reserve is sized from between visits to Extra models. Nothing is read within the hour of
+ * the last read, unless an account's window has begun again since.
  */
-export async function refreshRecentUse(state: ModelAccessState, modes: Record<string, HoldMode>, files: Files, deps: Pick<AccessDeps, 'usage' | 'nowMs'>): Promise<ModelAccessState | null> {
-  const due = Object.entries(state.providers).flatMap(([provider, { models, accounts }]) => models
-    .filter((model) => holdModeFor(modes, provider, model) === 'auto' && isPartial(accessSummary(state, model, accounts)))
-    .filter((model) => deps.nowMs - (state.usage[modelKey(provider, model)]?.readAtMs ?? 0) >= USAGE_READ_EVERY_MS)
-    .map((model) => ({ provider, model })));
-  if (due.length === 0) return null;
-  const usage = { ...state.usage };
-  await Promise.all(due.map(async ({ provider, model }) => {
-    const key = modelKey(provider, model);
-    // A failed read waits the hour too, keeping what was read before, rather than ask again every refresh.
-    const byAccount = await readRecentUse(deps, files, provider, model) ?? usage[key]?.byAccount ?? {};
-    usage[key] = { readAtMs: deps.nowMs, byAccount };
+export async function refreshRecentUse(state: ModelAccessState, policies: Record<string, ReservePolicy>, files: Files, deps: Pick<AccessDeps, 'usage' | 'nowMs'>, starts: Record<string, number> = {}): Promise<ModelAccessState | null> {
+  const smart = Object.entries(state.providers).flatMap(([provider, { models, accounts }]) => models
+    .filter((model) => reservePolicyFor(policies, provider, model).mode === 'auto')
+    .map((model) => ({ provider, model, summary: accessSummary(state, model, accounts) }))
+    .filter(({ summary }) => isPartial(summary)));
+  const due = smart.filter(({ provider, model }) => deps.nowMs - (state.usage[modelKey(provider, model)]?.readAtMs ?? 0) >= USAGE_READ_EVERY_MS);
+  const holders = new Set(smart.flatMap(({ summary }) => summary.have));
+  const windowsDue = Object.fromEntries(Object.entries(starts).filter(([name, sinceMs]) => {
+    const known = state.windows[name];
+    return holders.has(name) && (!known || Math.abs(known.sinceMs - sinceMs) > 60_000 || deps.nowMs - known.readAtMs >= USAGE_READ_EVERY_MS);
   }));
-  return { ...state, usage };
+  if (due.length === 0 && Object.keys(windowsDue).length === 0) return null;
+  const usage = { ...state.usage };
+  const windows = { ...state.windows };
+  await Promise.all([
+    ...due.map(async ({ provider, model }) => {
+      const key = modelKey(provider, model);
+      // A failed read waits the hour too, keeping what was read before, rather than ask again every refresh.
+      const recent = await readRecentUse(deps, files, provider, model) ?? { byAccount: usage[key]?.byAccount ?? {}, tokens: usage[key]?.tokens ?? {} };
+      usage[key] = { readAtMs: deps.nowMs, ...recent };
+    }),
+    readWindowTokens(deps, files, windowsDue).then((read) => Object.entries(read).forEach(([name, tokens]) => {
+      const sinceMs = windowsDue[name] ?? 0;
+      windows[name] = tokens === null
+        ? { ...(windows[name] ?? { sinceMs, tokens: 0 }), readAtMs: deps.nowMs }
+        : { sinceMs, tokens, readAtMs: deps.nowMs };
+    })),
+  ]);
+  return { ...state, usage, windows };
 }
 
 /**
@@ -226,7 +279,7 @@ export async function refreshRecentUse(state: ModelAccessState, modes: Record<st
  * and everything else on one set to serve only some. Returns the changes made, with the state that records which
  * rules are Arbor's.
  */
-export async function reconcileExclusions(view: ExtraModelsView, files: Files, state: ModelAccessState, modes: Record<string, HoldMode>, deps: Pick<AccessDeps, 'api' | 'excludedModels'>, only?: string[]): Promise<{
+export async function reconcileExclusions(view: ExtraModelsView, files: Files, state: ModelAccessState, policies: Record<string, ReservePolicy>, deps: Pick<AccessDeps, 'api' | 'excludedModels'>, only?: string[]): Promise<{
   changes: ExclusionChange[];
   state: ModelAccessState;
   /** Why it stopped partway; the changes made before then are still listed, to undo. */
@@ -240,7 +293,7 @@ export async function reconcileExclusions(view: ExtraModelsView, files: Files, s
       .map(nameOf);
     Object.assign(desired, desiredExclusions({
       state,
-      modes,
+      policies,
       provider: entry.provider,
       models: extrasOf(entry).map((model) => model.id),
       everyModel: [...entry.catalog, ...entry.models].map((model) => model.id),
@@ -322,18 +375,32 @@ export async function runModelAccessCheck(view: ExtraModelsView, { codexVersion,
     const files = responseList(await managementApi.get('/auth-files'), 'files');
     const checked = await checkModelAccess(view, files, getModelAccess(), deps, only);
     setModelAccess(checked.state);
-    const reconciled = await reconcileExclusions(view, files, checked.state, getHoldModes(), deps, only);
+    const reconciled = await reconcileExclusions(view, files, checked.state, getReservePolicies(), deps, only);
     setModelAccess(reconciled.state);
     return { live: checked.live, changes: reconciled.changes, error: reconciled.error };
   });
 }
 
-/** Keeps each model from the accounts without it again, after a hold mode changed, without asking the accounts again. */
+/** Keeps each model from the accounts without it again, after a reserve changed, without asking the accounts again. */
 export function reapplyExclusions(view: ExtraModelsView): Promise<{ changes: ExclusionChange[]; error?: string }> {
   return oneAtATime(async () => {
     const files = responseList(await managementApi.get('/auth-files'), 'files');
-    const reconciled = await reconcileExclusions(view, files, getModelAccess(), getHoldModes(), appDeps());
+    const reconciled = await reconcileExclusions(view, files, getModelAccess(), getReservePolicies(), appDeps());
     setModelAccess(reconciled.state);
+    return { changes: reconciled.changes, error: reconciled.error };
+  });
+}
+
+/**
+ * Fences the accounts at their reserve, so they serve only the models they keep it for, and opens the rest again. If
+ * a change fails, the fences that were in place are saved back, so the next limit refresh tries again.
+ */
+export function applyFences(view: ExtraModelsView, fenced: Record<string, string[]>): Promise<{ changes: ExclusionChange[]; error?: string }> {
+  return oneAtATime(async () => {
+    const before = getModelAccess().fenced;
+    const files = responseList(await managementApi.get('/auth-files'), 'files');
+    const reconciled = await reconcileExclusions(view, files, { ...getModelAccess(), fenced }, getReservePolicies(), appDeps());
+    setModelAccess(reconciled.error ? { ...reconciled.state, fenced: before } : reconciled.state);
     return { changes: reconciled.changes, error: reconciled.error };
   });
 }
@@ -358,10 +425,34 @@ export function clearDeclined(model: string, accounts: string[]) {
   setModelAccess({ ...state, declined });
 }
 
-/** Reads recent use again where it's due and saves it; for automatic routing. */
-export async function keepRecentUseFresh(files: Files) {
-  const next = await refreshRecentUse(getModelAccess(), getHoldModes(), files, { usage: appDeps().usage, nowMs: Date.now() });
-  if (next) setModelAccess({ ...getModelAccess(), usage: next.usage });
+/**
+ * Reads use again where it's due and saves it, for smart reserves, with each account's window start from its limits.
+ * `files` are the accounts in use.
+ */
+export async function keepRecentUseFresh(files: AuthFile[], quotas: Record<string, QuotaState>) {
+  const state = getModelAccess();
+  const nowMs = Date.now();
+  const starts = Object.fromEntries(reserveAccounts(files, quotas, nowMs).flatMap((account) => {
+    const start = windowStart(account);
+    return start === null ? [] : [[account.name, start]];
+  }));
+  const next = await refreshRecentUse(state, getReservePolicies(), files, { usage: appDeps().usage, nowMs }, starts);
+  if (next) setModelAccess({ ...getModelAccess(), usage: next.usage, windows: next.windows });
+}
+
+/**
+ * The models each account at its reserve should serve, alone, across providers. An account without a fresh limit
+ * reading (Arbor just started, or its check failed) keeps the fence it had, rather than open and close again.
+ */
+export function fencesNow(files: AuthFile[], quotas: Record<string, QuotaState>, state: ModelAccessState, policies: Record<string, ReservePolicy>, nowMs: number): Record<string, string[]> {
+  const providers = Object.keys(state.providers);
+  const fenced: Record<string, string[]> = Object.assign({}, ...providers.map((provider) => fencesFrom(providerReserves(files, quotas, state, policies, provider, nowMs))));
+  const read = new Set(reserveAccounts(files, quotas, nowMs).filter((account) => account.remaining !== null).map((account) => account.name));
+  const listed = new Set(files.map((file) => readString(file, 'name')));
+  Object.entries(state.fenced).forEach(([name, models]) => {
+    if (!read.has(name) && listed.has(name) && !(name in fenced)) fenced[name] = models;
+  });
+  return fenced;
 }
 
 
@@ -381,8 +472,17 @@ export function accessLine(summary: AccessSummary, provider: string, names: Reco
   return { key: 'extraModels.access.unknown', values: { provider } };
 }
 
-/** What an extra model's row says about how its accounts are kept for it. */
-export function holdLine(mode: HoldMode, recent: number): { key: MessageKey; values: Record<string, string | number> } {
-  if (mode === 'auto') return recent > 0 ? { key: 'extraModels.hold.state.used', values: { count: recent } } : { key: 'extraModels.hold.state.idle', values: {} };
-  return { key: `extraModels.hold.state.${mode}`, values: {} };
+/**
+ * What an extra model's row says about the reserve its accounts keep for it: how much, and whether an account is at it
+ * (`reserves` by credential file name, for the accounts with the model; `names` their names).
+ */
+export function reserveLine(mode: ReserveMode, recent: number, reserves: [string, AccountReserve][], names: Record<string, string>): { key: MessageKey; values: Record<string, string | number> } {
+  if (mode === 'never' || mode === 'only') return { key: `extraModels.reserve.state.${mode}`, values: {} };
+  const lending = reserves.find(([, reserve]) => reserve.state === 'lending');
+  if (lending) return { key: 'extraModels.reserve.state.lending', values: { name: names[lending[0]] ?? lending[0], percent: percentText(lending[1].remaining) } };
+  const fenced = reserves.find(([, reserve]) => reserve.state === 'fenced');
+  if (fenced) return { key: 'extraModels.reserve.state.fenced', values: { name: names[fenced[0]] ?? fenced[0], percent: percentText(fenced[1].percent) } };
+  const [first] = reserves;
+  if (first) return { key: mode === 'auto' ? 'extraModels.reserve.state.smart' : 'extraModels.reserve.state.fixed', values: { percent: percentText(first[1].percent), count: recent } };
+  return mode === 'auto' && recent === 0 ? { key: 'extraModels.reserve.state.idle', values: {} } : { key: 'extraModels.reserve.state.unread', values: {} };
 }

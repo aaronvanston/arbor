@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { Input } from '../components/ui/input';
+import { NumberField } from '../components/ui/number-field';
 import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
@@ -22,26 +23,35 @@ import { announceAccessChanges } from '../components/extraModelAccessToast';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { loadAccountFiles, useAccountsStore } from '../services/accountsStore';
 import {
-  HOLD_MODES,
+  FIXED_RESERVE_MAX,
+  FIXED_RESERVE_MIN,
+  LEND_MODES,
+  RESERVE_MODES,
   accessLine,
   accessSummary,
   clearDeclined,
-  getHoldModes,
-  holdLine,
-  holdModeFor,
+  getReservePolicies,
   isPartial,
+  lower,
   reapplyExclusions,
   recentUse,
+  reserveLine,
+  reservePolicyFor,
   runModelAccessCheck,
-  setHoldMode,
+  providerReserves,
+  setReservePolicy,
   undoAccessChanges,
-  useHoldModes,
   useModelAccess,
+  useReservePolicies,
   type AccessSummary,
+  type AccountReserve,
   type ExclusionChange,
-  type HoldMode,
+  type LendMode,
+  type ReserveMode,
+  type ReservePolicy,
 } from '../services/extraModelAccess';
-import { useRoutingAuto } from '../services/quotaRouting';
+import { freshQuotas } from '../services/accountLimits';
+import { useQuotaCache } from '../services/quotaCache';
 import { fileName as fileNameOf, quotaKey } from '../services/quotaService';
 import {
   EXTRA_MODEL_STATUS_LABEL,
@@ -81,27 +91,37 @@ export type ModelAccessRow = {
   summary: AccessSummary;
   /** The accounts' names, by credential file name. */
   names: Record<string, string>;
-  mode: HoldMode;
+  policy: ReservePolicy;
   /** Requests for it that worked this week. */
   recent: number;
   /** Someone undid keeping it from accounts without it, so it still goes to them. */
   declined: string[];
-  /** Whether automatic account order is off for the provider, so holding accounts back waits on Apply. */
-  routingOff: boolean;
+  /** The reserves the accounts with it keep, by credential file name. */
+  reserves: [string, AccountReserve][];
 };
 
-const HOLD_LABEL: Record<HoldMode, 'extraModels.hold.auto' | 'extraModels.hold.always' | 'extraModels.hold.never' | 'extraModels.hold.only'> = {
-  auto: 'extraModels.hold.auto',
-  always: 'extraModels.hold.always',
-  never: 'extraModels.hold.never',
-  only: 'extraModels.hold.only',
-};
-const HOLD_HINT: Record<HoldMode, 'extraModels.hold.autoHint' | 'extraModels.hold.alwaysHint' | 'extraModels.hold.neverHint' | 'extraModels.hold.onlyHint'> = {
-  auto: 'extraModels.hold.autoHint',
-  always: 'extraModels.hold.alwaysHint',
-  never: 'extraModels.hold.neverHint',
-  only: 'extraModels.hold.onlyHint',
-};
+const RESERVE_LABEL = {
+  auto: 'extraModels.reserve.auto',
+  fixed: 'extraModels.reserve.fixed',
+  never: 'extraModels.reserve.never',
+  only: 'extraModels.reserve.only',
+} as const satisfies Record<ReserveMode, string>;
+const RESERVE_HINT = {
+  auto: 'extraModels.reserve.autoHint',
+  fixed: 'extraModels.reserve.fixedHint',
+  never: 'extraModels.reserve.neverHint',
+  only: 'extraModels.reserve.onlyHint',
+} as const satisfies Record<ReserveMode, string>;
+const LEND_LABEL = {
+  floor: 'extraModels.reserve.lend.floor',
+  all: 'extraModels.reserve.lend.all',
+  hold: 'extraModels.reserve.lend.hold',
+} as const satisfies Record<LendMode, string>;
+const LEND_HINT = {
+  floor: 'extraModels.reserve.lend.floorHint',
+  all: 'extraModels.reserve.lend.allHint',
+  hold: 'extraModels.reserve.lend.holdHint',
+} as const satisfies Record<LendMode, string>;
 
 export function ExtraModelsPage() {
   const { t } = useI18n();
@@ -118,9 +138,9 @@ export function ExtraModelsPage() {
   const codexVersion = useRef<string | null | undefined>(undefined);
   useUnsavedChanges(newId.trim() !== '');
 
-  const accessModes = useHoldModes();
+  const policies = useReservePolicies();
   const access = useModelAccess();
-  const routingAuto = useRoutingAuto();
+  const quotas = useQuotaCache();
   const profiles = useAccountProfiles();
   const { files } = useAccountsStore();
 
@@ -257,20 +277,24 @@ export function ExtraModelsPage() {
     }
   };
 
-  const changeMode = async (provider: ExtraModelsProvider, model: ExtraModel, mode: HoldMode) => {
+  // A reserve at or below the account's limit is fenced by the limits monitor, which picks a change up at once; only
+  // "Serve only this model" is applied here, as it doesn't wait on the limits.
+  const changePolicy = async (provider: ExtraModelsProvider, model: ExtraModel, change: Partial<ReservePolicy>) => {
     if (!view) return;
-    const before = holdModeFor(getHoldModes(), provider.provider, model.id);
-    if (before === mode) return;
-    setHoldMode(provider.provider, model.id, mode);
-    // Only "Serve only this model" changes what accounts serve; the rest only change the account order.
-    const changes = mode === 'only' || before === 'only' ? await reapply(view) : [];
+    const before = reservePolicyFor(getReservePolicies(), provider.provider, model.id);
+    const next = { ...before, ...change };
+    if (next.mode === before.mode && next.percent === before.percent && next.lend === before.lend) return;
+    setReservePolicy(provider.provider, model.id, change);
+    const changes = next.mode === 'only' || before.mode === 'only' ? await reapply(view) : [];
+    // A share typed in is saved as it's typed, so it gets no toast of its own.
+    if (change.percent !== undefined && change.mode === undefined && change.lend === undefined) return;
     toast({
       kind: 'success',
-      title: t('extraModels.hold.saved', { model: model.id, mode: t(HOLD_LABEL[mode]) }),
+      title: t('extraModels.reserve.saved', { model: model.id, mode: t(change.lend ? LEND_LABEL[change.lend] : RESERVE_LABEL[next.mode]) }),
       action: {
         label: t('common.undo'),
         onClick: () => {
-          setHoldMode(provider.provider, model.id, before);
+          setReservePolicy(provider.provider, model.id, before);
           if (changes.length > 0) void undoAccessChanges(changes, false).finally(() => void loadAccountFiles());
         },
       },
@@ -283,6 +307,11 @@ export function ExtraModelsPage() {
     announceAccessChanges(await reapply(view), t);
   };
 
+  const reservesBy = useMemo(() => {
+    const fresh = freshQuotas(quotas);
+    return new Map(Object.keys(access.providers).map((provider) => [provider, providerReserves(files, fresh, access, policies, provider, Date.now())]));
+  }, [files, quotas, access, policies]);
+
   const rowAccess = (provider: ExtraModelsProvider, model: ExtraModel): ModelAccessRow | null => {
     const usable = usableAccounts(files, provider.provider);
     if (usable.length === 0) return null;
@@ -290,14 +319,14 @@ export function ExtraModelsPage() {
       const name = fileNameOf(file);
       return [name, resolveAccountProfile(quotaKey(file), name, profiles[quotaKey(file)]).name];
     }));
-    const id = model.id.toLowerCase();
+    const id = lower(model.id);
     return {
       summary: accessSummary(access, model.id, Object.keys(names)),
       names,
-      mode: holdModeFor(accessModes, provider.provider, model.id),
+      policy: reservePolicyFor(policies, provider.provider, model.id),
       recent: recentUse(access, provider.provider, model.id),
       declined: Object.keys(names).filter((name) => (access.declined[name] ?? []).includes(id)),
-      routingOff: !routingAuto[provider.provider],
+      reserves: [...(reservesBy.get(provider.provider) ?? new Map<string, AccountReserve>())].filter(([, reserve]) => reserve.models.includes(id)),
     };
   };
 
@@ -374,7 +403,7 @@ export function ExtraModelsPage() {
             busy={busy}
             onRemove={(provider, model) => void remove(provider, model)}
             accessFor={rowAccess}
-            onMode={(provider, model, mode) => void changeMode(provider, model, mode)}
+            onPolicy={(provider, model, change) => void changePolicy(provider, model, change)}
             onSendOnly={(model, accounts) => void sendOnly(model, accounts)}
           />
         </SettingsSection>
@@ -552,13 +581,13 @@ export function SuggestionRows({ provider, check, suggestions, busy, onAdd }: {
 }
 
 /** Every provider's extra models, each with its provider, where it stands and Remove; skeletons while `view` is loading. */
-export function ExtraModelRows({ view, busy, onRemove, accessFor = () => null, onMode = () => {}, onSendOnly = () => {} }: {
+export function ExtraModelRows({ view, busy, onRemove, accessFor = () => null, onPolicy = () => {}, onSendOnly = () => {} }: {
   view: ExtraModelsView | null;
   busy: string;
   onRemove: (provider: ExtraModelsProvider, model: ExtraModel) => void;
   /** Where the model stands across its provider's accounts, or null when that isn't known. */
   accessFor?: (provider: ExtraModelsProvider, model: ExtraModel) => ModelAccessRow | null;
-  onMode?: (provider: ExtraModelsProvider, model: ExtraModel, mode: HoldMode) => void;
+  onPolicy?: (provider: ExtraModelsProvider, model: ExtraModel, change: Partial<ReservePolicy>) => void;
   onSendOnly?: (model: ExtraModel, accounts: string[]) => void;
 }) {
   const { t } = useI18n();
@@ -588,8 +617,8 @@ export function ExtraModelRows({ view, busy, onRemove, accessFor = () => null, o
         const row = status === 'builtIn' ? null : accessFor(provider, model);
         const where = row ? accessLine(row.summary, extraModelProviderLabel(provider.provider), row.names) : null;
         const partial = row ? isPartial(row.summary) : false;
-        const hold = row && partial ? holdLine(row.mode, row.recent) : null;
-        const kept = row !== null && partial && hold !== null && hold.key !== 'extraModels.hold.state.idle' && hold.key !== 'extraModels.hold.state.never';
+        const reserve = row && partial ? reserveLine(row.policy.mode, row.recent, row.reserves, row.names) : null;
+        const reserving = row !== null && (row.policy.mode === 'auto' || row.policy.mode === 'fixed');
         return (
           <SettingsBlock key={key} className="flex min-h-12 items-center gap-3 py-2">
             <RowMark provider={provider.provider} />
@@ -602,13 +631,7 @@ export function ExtraModelRows({ view, busy, onRemove, accessFor = () => null, o
                   {[model.displayName, where ? t(where.key, where.values) : null].filter(Boolean).join(' · ')}
                 </div>
               ) : null}
-              {hold ? (
-                <div className="truncate text-xs text-muted-foreground">
-                  {t(hold.key, hold.values)}
-                  {/* Serving only this model needs no account order: the other accounts can't take its requests. */}
-                  {kept && row.mode !== 'only' && row.routingOff ? ` · ${t('extraModels.hold.routingOff', { provider: extraModelProviderLabel(provider.provider) })}` : ''}
-                </div>
-              ) : null}
+              {reserve ? <div className="truncate text-xs text-muted-foreground">{t(reserve.key, reserve.values)}</div> : null}
               {row && row.declined.length > 0 ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="truncate">{t('extraModels.access.sentEverywhere')}</span>
@@ -619,21 +642,53 @@ export function ExtraModelRows({ view, busy, onRemove, accessFor = () => null, o
               ) : null}
             </div>
             {row && partial ? (
-              <Select value={row.mode} onValueChange={(value) => { if (value) onMode(provider, model, value as HoldMode); }} disabled={Boolean(busy)}>
-                <SelectTrigger size="sm" className="w-52 shrink-0" aria-label={t('extraModels.hold.aria', { model: model.id })}>
-                  <SelectValue>{t(HOLD_LABEL[row.mode])}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end">
-                  {HOLD_MODES.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      <span className="flex flex-col">
-                        <span>{t(HOLD_LABEL[mode])}</span>
-                        <span className="text-xs text-muted-foreground">{t(HOLD_HINT[mode])}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                <Select value={row.policy.mode} onValueChange={(value) => { if (value) onPolicy(provider, model, { mode: value as ReserveMode }); }} disabled={Boolean(busy)}>
+                  <SelectTrigger size="sm" className="w-44" aria-label={t('extraModels.reserve.aria', { model: model.id })}>
+                    <SelectValue>{t(RESERVE_LABEL[row.policy.mode])}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end">
+                    {RESERVE_MODES.map((mode) => (
+                      <SelectItem key={mode} value={mode}>
+                        <span className="flex flex-col">
+                          <span>{t(RESERVE_LABEL[mode])}</span>
+                          <span className="text-xs text-muted-foreground">{t(RESERVE_HINT[mode])}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+                {row.policy.mode === 'fixed' ? (
+                  <NumberField
+                    wrapperClassName="w-20"
+                    min={FIXED_RESERVE_MIN}
+                    max={FIXED_RESERVE_MAX}
+                    step={1}
+                    value={row.policy.percent}
+                    onValueChange={(next) => { if (next !== null && Number.isFinite(next)) onPolicy(provider, model, { percent: next }); }}
+                    unit="%"
+                    disabled={Boolean(busy)}
+                    aria-label={t('extraModels.reserve.percentAria', { model: model.id })}
+                  />
+                ) : null}
+                {reserving ? (
+                  <Select value={row.policy.lend} onValueChange={(value) => { if (value) onPolicy(provider, model, { lend: value as LendMode }); }} disabled={Boolean(busy)}>
+                    <SelectTrigger size="sm" className="w-44" aria-label={t('extraModels.reserve.lendAria', { model: model.id })}>
+                      <SelectValue>{t(LEND_LABEL[row.policy.lend])}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end">
+                      {LEND_MODES.map((lend) => (
+                        <SelectItem key={lend} value={lend}>
+                          <span className="flex flex-col">
+                            <span>{t(LEND_LABEL[lend])}</span>
+                            <span className="text-xs text-muted-foreground">{t(LEND_HINT[lend])}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                ) : null}
+              </div>
             ) : null}
             <Badge variant={STATUS_BADGE[status]} className="shrink-0">{t(EXTRA_MODEL_STATUS_LABEL[status])}</Badge>
             <Tooltip>

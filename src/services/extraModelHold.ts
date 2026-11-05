@@ -3,30 +3,58 @@ import { normalizeAuthIndex, readString } from './managementApi';
 import { savedStore, storedRecord } from './savedStore';
 
 /*
- * What Arbor knows about which accounts have each extra model, and how their accounts are kept for it: the part the
- * account order needs at every limit refresh. Asking the accounts and changing their excluded models is in
+ * What Arbor knows about which accounts have each extra model, and the reserve of their limit those accounts keep for
+ * it: the part every limit refresh needs. Asking the accounts and changing their excluded models is in
  * extraModelAccess.ts, loaded when that runs.
  */
 
 const QUOTA_PROVIDERS = ['claude', 'codex', 'kimi', 'xai', 'antigravity'];
 
 const HOUR = 3_600_000;
-/** Requests this recent show a model is in use, which is what holds its accounts back. */
-export const RECENT_USE_MS = 7 * 24 * HOUR;
-/** Recent use is read again after this, for automatic routing between visits to Extra models. */
+const DAY = 24 * HOUR;
+/** The stretch of use a reserve is forecast from, and that shows a model is in use at all. */
+export const RECENT_USE_MS = 7 * DAY;
+/** Use is read again after this, for reserves between visits to Extra models. */
 export const USAGE_READ_EVERY_MS = HOUR;
 
 export type ModelAccess = 'yes' | 'no';
 
 /**
- * How an extra model on only some accounts holds them back in the account order.
- * - `auto`: while it has been used in the last week.
- * - `always`: whether it's used or not.
- * - `never`: they take everyday requests like any other account.
- * - `only`: they serve nothing else, so it's all theirs.
+ * How the accounts with an extra model some others lack keep part of their limit for it.
+ * - `auto`: a smart reserve, twice what the model looks set to use before the account resets, from this week's use;
+ *   none while it hasn't been used this week.
+ * - `fixed`: a set share of the limit, used or not.
+ * - `never`: no reserve; they take everyday requests like any other account.
+ * - `only`: they serve nothing else, so their whole limit is the model's.
  */
-export type HoldMode = 'auto' | 'always' | 'never' | 'only';
-export const HOLD_MODES: HoldMode[] = ['auto', 'always', 'never', 'only'];
+export type ReserveMode = 'auto' | 'fixed' | 'never' | 'only';
+export const RESERVE_MODES: ReserveMode[] = ['auto', 'fixed', 'never', 'only'];
+
+/**
+ * What an account at its reserve does once every other account is out, so a request is never turned away while some
+ * account could take it.
+ * - `floor`: takes everyday requests down to a sliver of the reserve, `LEND_FLOOR_PERCENT` or half of it.
+ * - `all`: takes them until the account is out too.
+ * - `hold`: keeps the whole reserve for the model.
+ */
+export type LendMode = 'floor' | 'all' | 'hold';
+export const LEND_MODES: LendMode[] = ['floor', 'all', 'hold'];
+
+export type ReservePolicy = { mode: ReserveMode; /** For `fixed`: the share of the limit kept. */ percent: number; lend: LendMode };
+export const DEFAULT_RESERVE: ReservePolicy = { mode: 'auto', percent: 10, lend: 'floor' };
+export const FIXED_RESERVE_MIN = 1;
+export const FIXED_RESERVE_MAX = 50;
+
+/** A smart reserve is this many times the forecast, so a busier week than the last still fits. */
+export const RESERVE_SAFETY = 2;
+/** The least a smart reserve keeps while a day or more is left before the reset, for use the week didn't show. */
+export const RESERVE_MIN_PERCENT = 2;
+/** The most a smart reserve keeps: past this the account would hardly be shared at all. */
+export const RESERVE_MAX_PERCENT = 25;
+/** What an account lending its reserve keeps back, unless the reserve is smaller than twice this. */
+export const LEND_FLOOR_PERCENT = 1;
+/** An account with less than this share of its limit left can't take everyday requests. */
+export const OUT_PERCENT = 1;
 
 export type ModelAccessState = {
   /** By provider: its extra models when last checked, and the usable accounts (credential file names) it covered. */
@@ -37,11 +65,21 @@ export type ModelAccessState = {
   added: Record<string, string[]>;
   /** By credential file name: models someone undid keeping from it, left alone until the account turns out to have them. */
   declined: Record<string, string[]>;
-  /** By `provider/model`: requests that worked in the last week, by credential file name, and when they were read. */
-  usage: Record<string, { readAtMs: number; byAccount: Record<string, number> }>;
+  /**
+   * By `provider/model`: requests that worked in the last week and their tokens, by credential file name, and when
+   * they were read.
+   */
+  usage: Record<string, { readAtMs: number; byAccount: Record<string, number>; tokens: Record<string, number> }>;
+  /**
+   * By credential file name: every token it served since its limit window began at `sinceMs`, which prices a token
+   * in its limit's percent.
+   */
+  windows: Record<string, { sinceMs: number; tokens: number; readAtMs: number }>;
+  /** By credential file name: the models an account at its reserve serves, and nothing else, as last applied. */
+  fenced: Record<string, string[]>;
 };
 
-export const emptyAccessState = (): ModelAccessState => ({ providers: {}, access: {}, added: {}, declined: {}, usage: {} });
+export const emptyAccessState = (): ModelAccessState => ({ providers: {}, access: {}, added: {}, declined: {}, usage: {}, windows: {}, fenced: {} });
 
 export const modelKey = (provider: string, model: string) => `${provider}/${model.trim().toLowerCase()}`;
 export const lower = (id: string) => id.trim().toLowerCase();
@@ -56,6 +94,7 @@ export const recordOf = <T,>(value: unknown, item: (value: unknown) => T | null)
   }));
 };
 const isRecordValue = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const count = (value: unknown) => (typeof value === 'number' && value >= 0 ? value : null);
 
 export function parseAccessState(raw: string | null): ModelAccessState {
   const stored = storedRecord(raw);
@@ -67,8 +106,12 @@ export function parseAccessState(raw: string | null): ModelAccessState {
     added: recordOf(stored.added, stringList),
     declined: recordOf(stored.declined, stringList),
     usage: recordOf(stored.usage, (entry) => isRecordValue(entry)
-      ? { readAtMs: Number(entry.readAtMs) || 0, byAccount: recordOf(entry.byAccount, (value) => (typeof value === 'number' && value >= 0 ? value : null)) }
+      ? { readAtMs: Number(entry.readAtMs) || 0, byAccount: recordOf(entry.byAccount, count), tokens: recordOf(entry.tokens, count) }
       : null),
+    windows: recordOf(stored.windows, (entry) => isRecordValue(entry) && count(entry.tokens) !== null
+      ? { sinceMs: Number(entry.sinceMs) || 0, tokens: Number(entry.tokens), readAtMs: Number(entry.readAtMs) || 0 }
+      : null),
+    fenced: recordOf(stored.fenced, stringList),
   };
 }
 
@@ -77,18 +120,37 @@ export const useModelAccess = accessStore.useValue;
 export const getModelAccess = accessStore.get;
 export const setModelAccess = accessStore.set;
 
-const parseModes = (raw: string | null): Record<string, HoldMode> =>
-  recordOf(storedRecord(raw), (value) => (HOLD_MODES.includes(value as HoldMode) ? value as HoldMode : null));
-const modesStore = savedStore<Record<string, HoldMode>>({ key: 'arbor.extra-model-hold.v1', parse: parseModes, fallback: {} });
-export const useHoldModes = modesStore.useValue;
-export const getHoldModes = modesStore.get;
-export function setHoldMode(provider: string, model: string, mode: HoldMode) {
-  const { [modelKey(provider, model)]: _previous, ...rest } = modesStore.get();
-  // Auto is the default, so it isn't kept.
-  modesStore.set(mode === 'auto' ? rest : { ...rest, [modelKey(provider, model)]: mode });
+export const clampFixedReserve = (percent: number) =>
+  Number.isFinite(percent) ? Math.min(FIXED_RESERVE_MAX, Math.max(FIXED_RESERVE_MIN, Math.round(percent))) : DEFAULT_RESERVE.percent;
+
+const parsePolicy = (value: unknown): ReservePolicy | null => {
+  // The first version kept only a mode, and "always" held the accounts back whether the model was used or not.
+  if (typeof value === 'string') {
+    if (value === 'always') return { ...DEFAULT_RESERVE, mode: 'fixed' };
+    return RESERVE_MODES.includes(value as ReserveMode) ? { ...DEFAULT_RESERVE, mode: value as ReserveMode } : null;
+  }
+  if (!isRecordValue(value)) return null;
+  return {
+    mode: RESERVE_MODES.includes(value.mode as ReserveMode) ? value.mode as ReserveMode : DEFAULT_RESERVE.mode,
+    percent: clampFixedReserve(Number(value.percent)),
+    lend: LEND_MODES.includes(value.lend as LendMode) ? value.lend as LendMode : DEFAULT_RESERVE.lend,
+  };
+};
+const parsePolicies = (raw: string | null): Record<string, ReservePolicy> => recordOf(storedRecord(raw), parsePolicy);
+const policiesStore = savedStore<Record<string, ReservePolicy>>({ key: 'arbor.extra-model-hold.v1', parse: parsePolicies, fallback: {} });
+export const useReservePolicies = policiesStore.useValue;
+export const getReservePolicies = policiesStore.get;
+export const reservePolicyFor = (policies: Record<string, ReservePolicy>, provider: string, model: string): ReservePolicy =>
+  policies[modelKey(provider, model)] ?? DEFAULT_RESERVE;
+export function setReservePolicy(provider: string, model: string, change: Partial<ReservePolicy>) {
+  const key = modelKey(provider, model);
+  const { [key]: previous, ...rest } = policiesStore.get();
+  const next = { ...(previous ?? DEFAULT_RESERVE), ...change };
+  next.percent = clampFixedReserve(next.percent);
+  // The default isn't kept.
+  const isDefault = next.mode === DEFAULT_RESERVE.mode && next.percent === DEFAULT_RESERVE.percent && next.lend === DEFAULT_RESERVE.lend;
+  policiesStore.set(isDefault ? rest : { ...rest, [key]: next });
 }
-export const holdModeFor = (modes: Record<string, HoldMode>, provider: string, model: string): HoldMode =>
-  modes[modelKey(provider, model)] ?? 'auto';
 
 /** Which of these accounts (credential file names) have a model, which don't, and which haven't been asked. */
 export type AccessSummary = { have: string[]; lack: string[]; unknown: string[] };
@@ -108,29 +170,7 @@ export const isPartial = (summary: AccessSummary) => summary.have.length > 0 && 
 
 /** Requests for a model that worked in the last week, across its accounts, as last read. */
 export const recentUse = (state: ModelAccessState, provider: string, model: string): number =>
-  Object.values(state.usage[modelKey(provider, model)]?.byAccount ?? {}).reduce((sum, count) => sum + count, 0);
-
-/** Why an account is held back: for this model, because it's in use, or because it was set to be. */
-export type HoldReason = { model: string; why: 'used' | 'always' | 'only' };
-
-/**
- * The accounts (credential file names) to hold back in a provider's account order, of the usable `accounts`: each
- * account that has an extra model some of the others lack, while that model is in use or set to always be held.
- */
-export function heldAccounts(state: ModelAccessState, modes: Record<string, HoldMode>, provider: string, accounts: string[]): Map<string, HoldReason> {
-  const held = new Map<string, HoldReason>();
-  for (const model of state.providers[provider]?.models ?? []) {
-    const summary = accessSummary(state, model, accounts);
-    if (!isPartial(summary)) continue;
-    const mode = holdModeFor(modes, provider, model);
-    if (mode === 'never' || (mode === 'auto' && recentUse(state, provider, model) === 0)) continue;
-    const why = mode === 'auto' ? 'used' : mode;
-    summary.have.forEach((account) => {
-      if (!held.has(account)) held.set(account, { model, why });
-    });
-  }
-  return held;
-}
+  Object.values(state.usage[modelKey(provider, model)]?.byAccount ?? {}).reduce((sum, value) => sum + value, 0);
 
 /** The credentials of `provider`'s that can be asked for their live list: turned on, on disk and still signed in. */
 export function usableAccounts(files: Record<string, unknown>[], provider: string): Record<string, unknown>[] {
