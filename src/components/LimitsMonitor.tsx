@@ -28,7 +28,7 @@ import {
 } from '../services/providerStatus';
 import { statusSummary } from '../services/providerStatusText';
 import { useQuotaCache } from '../services/quotaCache';
-import { applyRoutingPlan, routingCandidates, routingPlan, useRoutingAuto } from '../services/quotaRouting';
+import { applyRoutingPlan, routingCandidates, routingPlan, useRoutingAuto, type RoutingItem } from '../services/quotaRouting';
 import { fileName, providerForFile, quotaKey, type QuotaProvider } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
 import { formatDateTime, formatWhen } from '../lib/format';
@@ -357,7 +357,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   const routingRef = useRef(false);
   useEffect(() => {
     if (!coreReady || !loaded || accountsError || routingRef.current || freshLimits.some((limit) => limit.loading)) return;
-    const due = freshLimits.flatMap((limit) => {
+    const due = freshLimits.flatMap((limit): { provider: QuotaProvider; changes: RoutingItem[] }[] => {
       if (!routingAuto[limit.provider]) {
         // Switching it back on applies straight away rather than at the next refresh.
         delete routedRoundRef.current[limit.provider];
@@ -367,11 +367,19 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       const round = Math.max(0, ...providerFiles.map((file) => freshCache[quotaKey(file)]?.fetchedAt ?? 0));
       if (!round || routedRoundRef.current[limit.provider] === round) return [];
       routedRoundRef.current[limit.provider] = round;
-      return routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now())?.changes ?? [];
+      const changes = routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now())?.changes ?? [];
+      return changes.length ? [{ provider: limit.provider, changes }] : [];
     });
     if (!due.length) return;
     routingRef.current = true;
-    void applyRoutingPlan(due)
+    void applyRoutingPlan(due.flatMap((entry) => entry.changes))
+      // Accounts › Routing lists what automatic order changed, to put back.
+      .then(() => import('../services/routingLog'))
+      .then(({ recordRoutingDecisions }) => recordRoutingDecisions(due.map(({ provider, changes }) => ({
+        kind: 'order',
+        provider,
+        changes: changes.flatMap((change) => (change.suggested === null ? [] : [{ fileName: change.fileName, from: change.current, to: change.suggested }])),
+      }))))
       .catch((error) => console.warn('Failed to apply the suggested routing priorities', error))
       .finally(() => {
         routingRef.current = false;
@@ -418,16 +426,26 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
     if (providers.length === 0 && Object.keys(modelAccess.fenced).length === 0) return;
     const round = Math.max(0, ...files.map((file) => freshCache[quotaKey(file)]?.fetchedAt ?? 0));
     fenceRef.current = { ...fenceRef.current, running: true };
-    void import('../services/extraModelAccess')
-      .then(async ({ applyFences, fencesNow, sameFences }) => {
-        const fenced = fencesNow(files, freshCache, modelAccess, reservePolicies, Date.now());
+    void Promise.all([import('../services/extraModelAccess'), import('../services/routingLog')])
+      .then(async ([{ applyFences, getModelAccess, reserveRound, sameFences, setModelAccess }, { fenceDecisions, recordRoutingDecisions }]) => {
+        const { fenced, reserves, learned } = reserveRound(files, freshCache, modelAccess, reservePolicies, Date.now());
+        // How each reserve fared this window, which tunes the next one's size at the reset.
+        if (JSON.stringify(learned) !== JSON.stringify({ tuning: modelAccess.tuning, watch: modelAccess.watch })) {
+          setModelAccess({ ...getModelAccess(), ...learned });
+        }
         const tried = `${round}:${JSON.stringify(fenced)}`;
         if (sameFences(fenced, modelAccess.fenced) || fenceRef.current.tried === tried) return;
         fenceRef.current.tried = tried;
         const view = await invokeCommand('get_extra_models');
         if (!view.coreRunning) return;
+        const before = getModelAccess().fenced;
         const { changes, error } = await applyFences(view, fenced);
         if (error) console.warn('Failed to keep reserves for extra models', error);
+        else {
+          const providerOf = (name: string) => providerForFile(files.find((file) => fileName(file) === name) ?? {}) ?? null;
+          const lending = new Set([...reserves].filter(([, reserve]) => reserve.state === 'lending').map(([name]) => name));
+          recordRoutingDecisions(fenceDecisions(before, fenced, providerOf, lending, (name) => reserves.get(name)?.percent ?? 0));
+        }
         if (changes.length > 0) void loadAccountFiles({ quiet: true });
       })
       .catch((error) => console.warn('Failed to keep reserves for extra models', error))

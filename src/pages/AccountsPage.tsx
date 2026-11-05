@@ -97,6 +97,8 @@ import { cn } from '../lib/utils';
  * Value, which was Usage's Capacity: the Usage page's range and capacity report, so it loads with that page's module
  * the first time it's opened.
  */
+/** Routing: where each account stands for routing, loaded the first time it's opened. */
+const AccountsRoutingPage = lazy(() => import('./AccountsRoutingPage').then((module) => ({ default: module.AccountsRoutingPage })));
 const UsageRecordsPage = lazy(() => import('./UsageRecordsPage').then((module) => ({ default: module.UsageRecordsPage })));
 
 /** The view Accounts was last left on, for opening it without naming one. */
@@ -132,6 +134,7 @@ export function AccountsPage({ params, onNavigate, onViewChange }: {
   }, [params?.tab, tab]);
   if (tab === 'value') return <UsageRecordsPage key="value" variant="value" onNavigate={onNavigate} />;
   if (tab === 'sign-ins') return <AccountSignInsPage onNavigate={onNavigate} />;
+  if (tab === 'routing') return <AccountsRoutingPage onNavigate={onNavigate} />;
   return <AccountLimitsPage onNavigate={onNavigate} />;
 }
 

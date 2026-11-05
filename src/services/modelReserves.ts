@@ -7,6 +7,8 @@ import {
   RESERVE_MAX_PERCENT,
   RESERVE_MIN_PERCENT,
   RESERVE_SAFETY,
+  RESERVE_SAFETY_MAX,
+  RESERVE_SAFETY_MIN,
   accessSummary,
   isPartial,
   lower,
@@ -16,6 +18,7 @@ import {
   type LendMode,
   type ModelAccessState,
   type ReservePolicy,
+  type ReserveWatch,
 } from './extraModelHold';
 import { fileName, providerForFile, quotaKey, type AuthFile, type QuotaState } from './quotaService';
 
@@ -78,15 +81,67 @@ export function forecastUse(state: ModelAccessState, provider: string, model: st
   return tokens * perToken * (Math.max(0, account.resetAtMs - nowMs) / RECENT_USE_MS);
 }
 
-/** A smart reserve for a forecast, easing off over the last day, when capacity kept would only reset unused. */
-export function smartReserve(forecast: number, account: Pick<ReserveAccount, 'resetAtMs'>, nowMs: number): number {
+/**
+ * A smart reserve for a forecast, `safety` times it, easing off over the last day, when capacity kept would only reset
+ * unused.
+ */
+export function smartReserve(forecast: number, account: Pick<ReserveAccount, 'resetAtMs'>, nowMs: number, safety = RESERVE_SAFETY): number {
   const ease = account.resetAtMs === undefined ? 1 : Math.min(1, Math.max(0, (account.resetAtMs - nowMs) / DAY));
-  const percent = Math.min(RESERVE_MAX_PERCENT, Math.max(RESERVE_MIN_PERCENT * ease, RESERVE_SAFETY * forecast));
+  const percent = Math.min(RESERVE_MAX_PERCENT, Math.max(RESERVE_MIN_PERCENT * ease, safety * forecast));
   // Half a percent steps keep it from twitching between refreshes.
   return Math.ceil(percent * 2) / 2;
 }
 
 const STRICTER: Record<LendMode, number> = { all: 0, floor: 1, hold: 2 };
+
+/** The safety factor a model's smart reserve has learned, or the starting one. */
+export const safetyFor = (state: ModelAccessState, provider: string, model: string) =>
+  state.tuning[modelKey(provider, model)]?.safety ?? RESERVE_SAFETY;
+
+/** What one extra model asks of the accounts that have it: its policy, its forecast and each account's share kept. */
+export type ModelClaim = {
+  model: string;
+  policy: ReservePolicy;
+  /** What it looks set to use before the reset, in percent, summed over its accounts; null where it can't be priced. */
+  forecast: number | null;
+  safety: number;
+  /** The accounts with a reading that keep a reserve for it, by credential file name, with the share each keeps. */
+  holders: { name: string; percent: number }[];
+};
+
+/**
+ * The claims a provider's extra models make on the accounts that have them, for each model only some accounts have
+ * and that keeps a reserve: used this week for a smart one, always for a fixed one.
+ */
+export function modelClaims(state: ModelAccessState, policies: Record<string, ReservePolicy>, provider: string, accounts: ReserveAccount[], nowMs: number): ModelClaim[] {
+  const byName = new Map(accounts.map((account) => [account.name, account]));
+  return (state.providers[provider]?.models ?? []).flatMap((model) => {
+    const summary = accessSummary(state, model, accounts.map((account) => account.name));
+    if (!isPartial(summary)) return [];
+    const policy = reservePolicyFor(policies, provider, model);
+    // Serving only the model fences the account outright, in its excluded models.
+    if (policy.mode === 'never' || policy.mode === 'only') return [];
+    if (policy.mode === 'auto' && recentUse(state, provider, model) === 0) return [];
+    const holders = summary.have.flatMap((name) => {
+      const account = byName.get(name);
+      return account && account.remaining !== null ? [account] : [];
+    });
+    if (holders.length === 0) return [];
+    const forecasts = holders.map((account) => forecastUse(state, provider, model, account, nowMs));
+    const total = forecasts.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    const safety = safetyFor(state, provider, model);
+    return [{
+      model: lower(model),
+      policy,
+      forecast: forecasts.every((value) => value === null) ? null : total,
+      safety,
+      holders: holders.map((account) => ({
+        name: account.name,
+        percent: policy.mode === 'fixed' ? policy.percent : smartReserve(total / holders.length, account, nowMs, safety),
+      })),
+    }];
+  });
+}
 
 /**
  * The reserves a provider's `accounts` keep for extra models some of the others lack, and where each stands. A model
@@ -96,27 +151,12 @@ const STRICTER: Record<LendMode, number> = { all: 0, floor: 1, hold: 2 };
 export function modelReserves(state: ModelAccessState, policies: Record<string, ReservePolicy>, provider: string, accounts: ReserveAccount[], nowMs: number): Map<string, AccountReserve> {
   const byName = new Map(accounts.map((account) => [account.name, account]));
   const claims = new Map<string, { models: string[]; percent: number; lend: LendMode; smart: boolean }>();
-  for (const model of state.providers[provider]?.models ?? []) {
-    const summary = accessSummary(state, model, accounts.map((account) => account.name));
-    if (!isPartial(summary)) continue;
-    const policy = reservePolicyFor(policies, provider, model);
-    // Serving only the model fences the account outright, in its excluded models.
-    if (policy.mode === 'never' || policy.mode === 'only') continue;
-    if (policy.mode === 'auto' && recentUse(state, provider, model) === 0) continue;
-    const holders = summary.have.flatMap((name) => {
-      const account = byName.get(name);
-      return account && account.remaining !== null ? [account] : [];
-    });
-    if (holders.length === 0) continue;
-    const share = holders.reduce((sum, account) => sum + (forecastUse(state, provider, model, account, nowMs) ?? 0), 0) / holders.length;
-    holders.forEach((account) => {
-      const percent = policy.mode === 'fixed' ? policy.percent : smartReserve(share, account, nowMs);
-      const claim = claims.get(account.name);
-      claims.set(account.name, claim
-        ? { models: [...claim.models, lower(model)], percent: claim.percent + percent, lend: STRICTER[policy.lend] > STRICTER[claim.lend] ? policy.lend : claim.lend, smart: claim.smart || policy.mode === 'auto' }
-        : { models: [lower(model)], percent, lend: policy.lend, smart: policy.mode === 'auto' });
-    });
-  }
+  modelClaims(state, policies, provider, accounts, nowMs).forEach(({ model, policy, holders }) => holders.forEach(({ name, percent }) => {
+    const claim = claims.get(name);
+    claims.set(name, claim
+      ? { models: [...claim.models, model], percent: claim.percent + percent, lend: STRICTER[policy.lend] > STRICTER[claim.lend] ? policy.lend : claim.lend, smart: claim.smart || policy.mode === 'auto' }
+      : { models: [model], percent, lend: policy.lend, smart: policy.mode === 'auto' });
+  }));
   const atReserve = (account: ReserveAccount) => {
     const claim = claims.get(account.name);
     return claim !== undefined && account.remaining !== null && account.remaining <= claim.percent;
@@ -185,3 +225,75 @@ export const providerReserves = (
 ): Map<string, AccountReserve> => (state.providers[provider]?.models.length
   ? modelReserves(state, policies, provider, reserveAccounts(files.filter((file) => providerForFile(file) === provider), quotas, nowMs), nowMs)
   : new Map());
+
+/**
+ * Tunes each smart reserve from how it fared: at an account's reset, a reserve that ran out while fenced raises its
+ * models' safety factor, and one with over half left unused lowers it. A window that lent its reserve says nothing
+ * about the model's needs, so it teaches nothing. Returns the new tuning and watch, for the accounts given.
+ */
+export function learnReserves(state: ModelAccessState, provider: string, accounts: ReserveAccount[], reserves: ReadonlyMap<string, AccountReserve>): Pick<ModelAccessState, 'tuning' | 'watch'> {
+  const tuning = { ...state.tuning };
+  const watch = { ...state.watch };
+  accounts.forEach((account) => {
+    const start = windowStart(account);
+    if (start === null) return;
+    const seen = watch[account.name];
+    if (seen && Math.abs(seen.sinceMs - start) > HOUR) {
+      if (seen.fenced && !seen.lent) {
+        seen.models.forEach((model) => {
+          const key = modelKey(provider, model);
+          const current = tuning[key]?.safety ?? RESERVE_SAFETY;
+          const next = seen.ranOut ? current + 0.5 : seen.lowest > seen.percent / 2 ? current - 0.25 : current;
+          tuning[key] = { safety: Math.min(RESERVE_SAFETY_MAX, Math.max(RESERVE_SAFETY_MIN, next)), resets: (tuning[key]?.resets ?? 0) + 1 };
+        });
+      }
+      delete watch[account.name];
+    }
+    const reserve = reserves.get(account.name);
+    if (!reserve?.smart) return;
+    const before = watch[account.name];
+    const next: ReserveWatch = {
+      sinceMs: start,
+      models: reserve.models,
+      percent: Math.max(before?.percent ?? 0, reserve.percent),
+      fenced: Boolean(before?.fenced) || reserve.state === 'fenced',
+      lent: Boolean(before?.lent) || reserve.state === 'lending',
+      ranOut: Boolean(before?.ranOut) || (reserve.state === 'fenced' && (account.out || reserve.remaining < OUT_PERCENT)),
+      lowest: Math.min(before?.lowest ?? 100, reserve.remaining),
+    };
+    watch[account.name] = next;
+  });
+  return { tuning, watch };
+}
+
+/** One limit refresh's reserves across providers: what to fence, who's lending, and what was learned. */
+export type ReserveRound = {
+  fenced: Record<string, string[]>;
+  reserves: Map<string, AccountReserve>;
+  learned: Pick<ModelAccessState, 'tuning' | 'watch'>;
+};
+
+/**
+ * Works out a limit refresh's reserves for every provider with extra models. An account without a fresh limit
+ * reading (Arbor just started, or its check failed) keeps the fence it had, rather than open and close again.
+ * `files` are the accounts in use.
+ */
+export function reserveRound(files: AuthFile[], quotas: Record<string, QuotaState>, state: ModelAccessState, policies: Record<string, ReservePolicy>, nowMs: number): ReserveRound {
+  const fenced: Record<string, string[]> = {};
+  const reserves = new Map<string, AccountReserve>();
+  let learned: Pick<ModelAccessState, 'tuning' | 'watch'> = { tuning: state.tuning, watch: state.watch };
+  const read = new Set<string>();
+  Object.keys(state.providers).forEach((provider) => {
+    const accounts = reserveAccounts(files.filter((file) => providerForFile(file) === provider), quotas, nowMs);
+    accounts.forEach((account) => { if (account.remaining !== null) read.add(account.name); });
+    const found = modelReserves(state, policies, provider, accounts, nowMs);
+    found.forEach((reserve, name) => reserves.set(name, reserve));
+    Object.assign(fenced, fencesFrom(found));
+    learned = learnReserves({ ...state, ...learned }, provider, accounts, found);
+  });
+  const listed = new Set(files.map(fileName));
+  Object.entries(state.fenced).forEach(([name, models]) => {
+    if (!read.has(name) && listed.has(name) && !(name in fenced)) fenced[name] = models;
+  });
+  return { fenced, reserves, learned };
+}

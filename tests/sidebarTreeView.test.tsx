@@ -57,18 +57,20 @@ describe('the sidebar tree', () => {
     const html = render(accountsView({ tab: 'value' }), false);
     const accounts = button(html, /data-tree-page="accounts"/);
     expect(accounts).toContain('aria-disabled="true"');
-    // Value reads only Arbor's own records, so Accounts still opens to it; Limits and Sign-ins say why they won't open.
+    // Value reads only Arbor's own records, so Accounts still opens to it; Limits, Sign-ins and Routing say why they won't open.
     expect(accounts).toContain('data-tree-expandable="true"');
     expect(button(html, /aria-current="page"/)).toContain('data-tree-parent="accounts"');
     const leaves = html.match(/<button(?=[^>]*data-tree-parent="accounts")[^>]*>/g) ?? [];
-    expect(leaves).toHaveLength(3);
+    expect(leaves).toHaveLength(4);
     expect(itemAt(leaves, 0)).toContain('aria-disabled="true"');
     expect(itemAt(leaves, 0)).toContain('aria-describedby=');
     expect(itemAt(leaves, 1)).toContain('aria-disabled="true"');
-    expect(itemAt(leaves, 2)).not.toContain('aria-disabled');
+    // Routing reads the running core's priorities and limits.
+    expect(itemAt(leaves, 2)).toContain('aria-disabled="true"');
+    expect(itemAt(leaves, 3)).not.toContain('aria-disabled');
   });
 
-  it('lists Accounts’ Limits, Sign-ins and Value while the core is up, none of them locked', () => {
+  it('lists Accounts’ Limits, Sign-ins, Routing and Value while the core is up, none of them locked', () => {
     const html = render(accountsView({ tab: 'limits' }));
     expect(html).toMatch(/<ul id="tree-accounts"/);
     expect(html).not.toMatch(/data-tree-parent="accounts"[^>]*aria-disabled|aria-disabled[^>]*data-tree-parent="accounts"/);

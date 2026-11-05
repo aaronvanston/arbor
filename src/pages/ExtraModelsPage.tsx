@@ -631,7 +631,8 @@ export function ExtraModelRows({ view, busy, onRemove, accessFor = () => null, o
                   {[model.displayName, where ? t(where.key, where.values) : null].filter(Boolean).join(' · ')}
                 </div>
               ) : null}
-              {reserve ? <div className="truncate text-xs text-muted-foreground">{t(reserve.key, reserve.values)}</div> : null}
+              {/* Wrapped, not cut: it says why the account serves what it does. */}
+              {reserve ? <div className="text-xs text-muted-foreground">{t(reserve.key, reserve.values)}</div> : null}
               {row && row.declined.length > 0 ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="truncate">{t('extraModels.access.sentEverywhere')}</span>

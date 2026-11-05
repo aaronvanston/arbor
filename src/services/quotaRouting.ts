@@ -192,7 +192,7 @@ export function accountOrderGap({ coreReady, loaded, accounts, mostForOneProvide
 
 /** Sets the suggested priorities through the core. It picks each one up straight away. */
 export async function applyRoutingPlan(
-  changes: RoutingItem[],
+  changes: Pick<RoutingItem, 'fileName' | 'suggested'>[],
   api: { patch: (path: string, body: Record<string, unknown>) => Promise<unknown> } = managementApi,
 ) {
   // Callers read the shared account list again after, which a run that failed partway may still have changed.

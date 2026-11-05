@@ -208,6 +208,32 @@ export const cliHandlers: CliHandlers = {
       return { auto: getRoutingAuto() };
     },
   },
+  'routing.log': {
+    access: 'read',
+    summary: 'What Arbor changed about routing by itself, newest first: account order it applied, and accounts it fenced to their reserve for an extra model or opened again',
+    args: [arg('limit', 'number', true)],
+    run: async (args) => {
+      const { getRoutingLog } = await import('./routingLog');
+      const all = await accounts();
+      const byFile = new Map(all.map((account) => [fileName(account.file), account]));
+      const named = (file: string) => {
+        const account = byFile.get(file);
+        return account ? { id: accountId(account.key), name: accountName(account) } : { id: null, name: file };
+      };
+      const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
+      return {
+        entries: getRoutingLog().slice(0, limit).map((entry) => ({
+          at: new Date(entry.atMs).toISOString(),
+          kind: entry.kind,
+          provider: entry.provider,
+          ...(entry.kind === 'order'
+            ? { changes: entry.changes.map((change) => ({ account: named(change.fileName), from: change.from, to: change.to })) }
+            : { account: named(entry.account), models: entry.models, ...(entry.kind === 'fenced' ? { reservePercent: entry.percent } : { why: entry.why }) }),
+          acted: entry.acted ?? false,
+        })),
+      };
+    },
+  },
   'extraModels.access': {
     access: 'read',
     summary: 'Which accounts have each extra model, as Settings › Extra models last checked, the reserve of their limit its accounts keep for it, its requests this week, and each account at or above its reserve',

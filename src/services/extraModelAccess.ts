@@ -22,7 +22,7 @@ import { invokeCommand } from '../native/commands';
 import { managementApi, normalizeAuthIndex, readString, responseList } from './managementApi';
 import { normalizeOAuthExcludedRules } from './oauthModels';
 
-import { fencesFrom, percentText, providerReserves, reserveAccounts, windowStart, type AccountReserve } from './modelReserves';
+import { percentText, reserveAccounts, windowStart, type AccountReserve } from './modelReserves';
 import type { AuthFile, QuotaState } from './quotaService';
 
 export * from './extraModelHold';
@@ -184,6 +184,7 @@ export async function checkModelAccess(view: ExtraModelsView, files: Files, prev
     usage: { ...previous.usage },
     windows: { ...previous.windows },
     fenced: { ...previous.fenced },
+    watch: { ...previous.watch },
   };
   const live: Record<string, LiveModelsResult> = {};
   await Promise.all(view.providers.filter((entry) => !only || only.includes(entry.provider)).map(async (entry) => {
@@ -228,7 +229,7 @@ export async function checkModelAccess(view: ExtraModelsView, files: Files, prev
   }));
   // Forget accounts that have gone, and providers left with nothing to check.
   const listed = new Set(files.map(nameOf));
-  for (const map of [state.access, state.added, state.declined, state.windows, state.fenced]) {
+  for (const map of [state.access, state.added, state.declined, state.windows, state.fenced, state.watch]) {
     Object.keys(map).forEach((name) => { if (!listed.has(name)) delete map[name]; });
   }
   Object.keys(state.providers).forEach((provider) => {
@@ -440,20 +441,6 @@ export async function keepRecentUseFresh(files: AuthFile[], quotas: Record<strin
   if (next) setModelAccess({ ...getModelAccess(), usage: next.usage, windows: next.windows });
 }
 
-/**
- * The models each account at its reserve should serve, alone, across providers. An account without a fresh limit
- * reading (Arbor just started, or its check failed) keeps the fence it had, rather than open and close again.
- */
-export function fencesNow(files: AuthFile[], quotas: Record<string, QuotaState>, state: ModelAccessState, policies: Record<string, ReservePolicy>, nowMs: number): Record<string, string[]> {
-  const providers = Object.keys(state.providers);
-  const fenced: Record<string, string[]> = Object.assign({}, ...providers.map((provider) => fencesFrom(providerReserves(files, quotas, state, policies, provider, nowMs))));
-  const read = new Set(reserveAccounts(files, quotas, nowMs).filter((account) => account.remaining !== null).map((account) => account.name));
-  const listed = new Set(files.map((file) => readString(file, 'name')));
-  Object.entries(state.fenced).forEach(([name, models]) => {
-    if (!read.has(name) && listed.has(name) && !(name in fenced)) fenced[name] = models;
-  });
-  return fenced;
-}
 
 
 /** What an extra model's row says about which accounts have it, given the usable accounts' names by file name. */

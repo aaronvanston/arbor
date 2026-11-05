@@ -56,10 +56,11 @@ export type LibraryKind = 'plugins' | 'mcps' | 'skills' | 'hooks' | 'instruction
  */
 export type SetupLens = 'machines' | 'cost' | 'directory' | 'changes';
 /**
- * The Accounts page's views: each account's limits, every sign-in the core has with what each takes, and what each
- * subscription is worth against what it costs.
+ * The Accounts page's views: each account's limits, every sign-in the core has with what each takes, where each
+ * stands for routing (its place in the order, the reserve it keeps for an extra model, what Arbor changed), and what
+ * each subscription is worth against what it costs.
  */
-export type AccountsTabId = 'limits' | 'sign-ins' | 'value';
+export type AccountsTabId = 'limits' | 'sign-ins' | 'routing' | 'value';
 
 /**
  * What the Usage page shows: a view, the machine or session (with its subagents) its requests are narrowed to, and how
@@ -197,7 +198,7 @@ export function keepMachineScope(current: AppView, next: AppView): AppView {
 const usageTabIds: readonly string[] = ['overview', 'digest', 'lifetime', 'events', 'prices'] satisfies UsageTabId[];
 const sessionsTabIds: readonly string[] = ['live', 'sessions', 'projects'] satisfies SessionsTabId[];
 const setupTabIds: readonly string[] = ['overview', 'library', 'projects', 'software', 'repo'] satisfies SetupTabId[];
-const accountsTabIds: readonly string[] = ['limits', 'sign-ins', 'value'] satisfies AccountsTabId[];
+const accountsTabIds: readonly string[] = ['limits', 'sign-ins', 'routing', 'value'] satisfies AccountsTabId[];
 export const isUsageTab = (tab: string | undefined | null): tab is UsageTabId => usageTabIds.includes(tab ?? '');
 export const isSessionsTab = (tab: string | undefined | null): tab is SessionsTabId => sessionsTabIds.includes(tab ?? '');
 export const isSetupTab = (tab: string | undefined | null): tab is SetupTabId => setupTabIds.includes(tab ?? '');

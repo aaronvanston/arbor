@@ -45,8 +45,13 @@ export const DEFAULT_RESERVE: ReservePolicy = { mode: 'auto', percent: 10, lend:
 export const FIXED_RESERVE_MIN = 1;
 export const FIXED_RESERVE_MAX = 50;
 
-/** A smart reserve is this many times the forecast, so a busier week than the last still fits. */
+/**
+ * A smart reserve starts at this many times the forecast, so a busier week than the last still fits. Each reset
+ * after an account was fenced moves it: up when the reserve ran out, down when over half of it went unused.
+ */
 export const RESERVE_SAFETY = 2;
+export const RESERVE_SAFETY_MIN = 1.25;
+export const RESERVE_SAFETY_MAX = 4;
 /** The least a smart reserve keeps while a day or more is left before the reset, for use the week didn't show. */
 export const RESERVE_MIN_PERCENT = 2;
 /** The most a smart reserve keeps: past this the account would hardly be shared at all. */
@@ -77,9 +82,18 @@ export type ModelAccessState = {
   windows: Record<string, { sinceMs: number; tokens: number; readAtMs: number }>;
   /** By credential file name: the models an account at its reserve serves, and nothing else, as last applied. */
   fenced: Record<string, string[]>;
+  /** By `provider/model`: the safety factor its smart reserve has learned, and from how many resets. */
+  tuning: Record<string, { safety: number; resets: number }>;
+  /**
+   * By credential file name: how its reserve fared this window, read at the next reset to tune the safety factor:
+   * whether it was fenced, lent or ran out, and the least it had left.
+   */
+  watch: Record<string, ReserveWatch>;
 };
 
-export const emptyAccessState = (): ModelAccessState => ({ providers: {}, access: {}, added: {}, declined: {}, usage: {}, windows: {}, fenced: {} });
+export type ReserveWatch = { sinceMs: number; models: string[]; percent: number; fenced: boolean; lent: boolean; ranOut: boolean; lowest: number };
+
+export const emptyAccessState = (): ModelAccessState => ({ providers: {}, access: {}, added: {}, declined: {}, usage: {}, windows: {}, fenced: {}, tuning: {}, watch: {} });
 
 export const modelKey = (provider: string, model: string) => `${provider}/${model.trim().toLowerCase()}`;
 export const lower = (id: string) => id.trim().toLowerCase();
@@ -112,6 +126,20 @@ export function parseAccessState(raw: string | null): ModelAccessState {
       ? { sinceMs: Number(entry.sinceMs) || 0, tokens: Number(entry.tokens), readAtMs: Number(entry.readAtMs) || 0 }
       : null),
     fenced: recordOf(stored.fenced, stringList),
+    tuning: recordOf(stored.tuning, (entry) => isRecordValue(entry) && typeof entry.safety === 'number'
+      ? { safety: Math.min(RESERVE_SAFETY_MAX, Math.max(RESERVE_SAFETY_MIN, entry.safety)), resets: Number(entry.resets) || 0 }
+      : null),
+    watch: recordOf(stored.watch, (entry) => isRecordValue(entry)
+      ? {
+        sinceMs: Number(entry.sinceMs) || 0,
+        models: stringList(entry.models),
+        percent: Number(entry.percent) || 0,
+        fenced: entry.fenced === true,
+        lent: entry.lent === true,
+        ranOut: entry.ranOut === true,
+        lowest: Number.isFinite(Number(entry.lowest)) ? Number(entry.lowest) : 100,
+      }
+      : null),
   };
 }
 

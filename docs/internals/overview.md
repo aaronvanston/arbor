@@ -47,6 +47,16 @@ Spend is read from the limit history as drops between readings of one cycle. An 
 hours a pool spent dry read as no demand, and a pool that keeps running dry is forecast a little short. Advice only ever
 suggests a reset. Claims stay behind the confirmation on Accounts, and nothing in the forecast spends one.
 
+## Routing
+
+The core picks a request's account itself: the highest priority with a usable credential that serves the model. Arbor
+never sees a request before it's routed, so everything it decides about routing it sets as the core's own settings
+after each limit refresh: priorities (automatic order), turning an account off (caps), and per-account
+`excluded_models`. A reserve for an extra model only some accounts have is the last of these: at its reserve an
+account gets every other model excluded (fenced), and the exclusions come off when it lends the reserve or resets.
+Arbor only ever takes back the rules it added (`added` in the access store). Client keys are plain strings in the core,
+not tied to accounts, so no routing can be set per machine. Each automatic change goes on Accounts › Routing's log.
+
 ## Processes
 
 macOS hands a child process every file that isn't close-on-exec, and a long-lived child such as the core would hold

@@ -29,7 +29,8 @@
  * `&tab=` with it starts on one of the page's views, by the id the view keeps: `?page=setup&tab=skills` (Sync's
  * `overview` is its Checks and `history` Arbor's changes; also `projects`, `agents`, `repo`, `plugins`, `toolchain` and `cost`), `?page=sessions&tab=projects&lens=checkouts` for Projects' Checkouts (without `lens`, its Activity),
  * `?page=accounts&tab=limits` or `value` (Value opens with `?core=stopped` too, its Limits locked beside it in the
- * sidebar), `?page=usage&tab=events` or `?page=sessions&tab=live` (a view a page doesn't have opens it on the view it
+ * sidebar), `?page=accounts&tab=routing` for Accounts › Routing (its reserves and its log of what Arbor changed fill
+ * in with `&extraModels=partialFenced` or `partialLending`), `?page=usage&tab=events` or `?page=sessions&tab=live` (a view a page doesn't have opens it on the view it
  * last had, and one that moved opens where it is now: `?page=usage&tab=capacity` opens Accounts › Value, `analysis`
  * Usage's Overview, whose Breakdown it was, `failures` Usage's Requests with Failed on, which lists the failed
  * requests with their statuses and what went wrong, and `telemetry` Sync › Library › Cost); `?page=machine:ci-01` starts on
@@ -460,7 +461,7 @@ import { archiveAnswers } from './mock/archive';
 import { automationsAnswers } from './mock/automations';
 import { cleanupAnswers } from './mock/cleanup';
 import { cliAnswers } from './mock/cli';
-import { coreAnswers, coreScenario, stopCoreLater } from './mock/core';
+import { PARTIAL_MODEL, coreAnswers, coreScenario, stopCoreLater } from './mock/core';
 import { machinesAnswers } from './mock/machines';
 import { freshInstall, iso, mockLog, now, params, type Json } from './mock/scenario';
 import { MOCK_REPO, setupAnswers } from './mock/setup';
@@ -733,6 +734,20 @@ export function installTauriMock() {
   else if (sidebarScenario === 'narrow') previewSidebarLayout({ width: SIDEBAR_MIN_WIDTH });
   else if (sidebarScenario === 'over') previewSidebarLayout({ hidden: false, revealed: true });
   if (params.get('alerts') === 'sample' && !getAlertHistory().entries.length) seedAlerts();
+  // The reserve scenarios start where a visit to Extra models would leave them: the team Codex account known to have
+  // the preview model and the backup one not, with this week's use of it read, so the limits decide its reserve.
+  if (['partial', 'partialFenced', 'partialLending'].includes(params.get('extraModels') ?? '')) {
+    const nowMs = Date.now();
+    const model = PARTIAL_MODEL;
+    seedForThisLoad('arbor.extra-model-access.v1', JSON.stringify({
+      providers: { codex: { models: [model], accounts: ['codex-backup.json', 'codex-team.json'], checkedAtMs: nowMs } },
+      access: { 'codex-team.json': { [model]: 'yes' }, 'codex-backup.json': { [model]: 'no' } },
+      usage: { [`codex/${model}`]: { readAtMs: nowMs, byAccount: { 'codex-team.json': 40 }, tokens: { 'codex-team.json': 1_200_000 } } },
+      windows: { 'codex-team.json': { sinceMs: nowMs - 4 * 86_400_000, tokens: 40_000_000, readAtMs: nowMs } },
+    }));
+    // Something automatic order did earlier, to put back.
+    seedForThisLoad('arbor.routing-log.v1', JSON.stringify({ entries: [{ id: 'mock-order', atMs: nowMs - 3 * 3_600_000, kind: 'order', provider: 'codex', changes: [{ fileName: 'codex-backup.json', from: 1, to: 0 }] }] }));
+  }
   const windowScenario = params.get('window');
   if (windowScenario === 'focused' || windowScenario === 'unfocused') document.hasFocus = () => windowScenario === 'focused';
   (window as Window & { __mockWindow?: (state: MockWindowState) => void }).__mockWindow = setMockWindow;

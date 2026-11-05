@@ -39,7 +39,7 @@ describe('the sidebar tree', () => {
     expect(leaves('sessions')).toEqual(['live', 'sessions', 'projects']);
     expect(leaves('setup')).toEqual(['overview', 'library', 'projects', 'software', 'repo']);
     expect(TREE_PAGES.find((page) => page.id === 'setup')?.leaves.map((leaf) => leaf.labelKey).slice(0, 1)).toEqual(['setup.tab.overview']);
-    expect(leaves('accounts')).toEqual(['limits', 'sign-ins', 'value']);
+    expect(leaves('accounts')).toEqual(['limits', 'sign-ins', 'routing', 'value']);
     // Machines lists the machines themselves.
     expect(leaves('machines')).toEqual([]);
     expect(TREE_PAGES.find((page) => page.id === 'machines')?.machines).toBe(true);

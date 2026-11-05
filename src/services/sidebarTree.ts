@@ -101,6 +101,7 @@ export const SIDEBAR_TREE: readonly TreeSection[] = [
           { page: 'accounts', tab: 'limits', labelKey: 'tree.accounts.limits', keywords: 'tree.accounts.limitsKeywords' },
           // Settings' Auth files once, which the palette still finds it by.
           { page: 'accounts', tab: 'sign-ins', labelKey: 'tree.accounts.signIns', keywords: 'tree.accounts.signInsKeywords' },
+          { page: 'accounts', tab: 'routing', labelKey: 'tree.accounts.routing', keywords: 'tree.accounts.routingKeywords' },
           // Usage's Capacity once, which the palette still finds it by.
           { page: 'accounts', tab: 'value', labelKey: 'tree.accounts.value', keywords: 'tree.accounts.valueKeywords' },
         ],
