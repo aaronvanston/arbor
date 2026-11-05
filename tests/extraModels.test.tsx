@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../src/i18n';
-import { ExtraModelRows, SuggestionRows, type Check } from '../src/pages/ExtraModelsPage';
+import { ExtraModelRows, SuggestionRows, type Check, type ModelAccessRow } from '../src/pages/ExtraModelsPage';
 import {
   ANTHROPIC_MODELS_URL,
   CODEX_MODELS_URL,
@@ -248,9 +248,9 @@ describe('Settings › Extra models', () => {
     const html = render(<SuggestionRows provider={claude()} check={check} suggestions={[{ id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5', details: null }]} busy="" onAdd={noop} />);
     expect(html).toBe('claude-sonnet-5-5 Claude Sonnet 5.5 · Details from claude-sonnet-5 Add');
     expect(render(<SuggestionRows provider={claude()} check={check} suggestions={[]} busy="" onAdd={noop} />))
-      .toBe('Nothing new. The proxy knows every model Anthropic offers your Claude account.');
+      .toBe('Nothing new. The proxy knows every model Anthropic offers your Claude accounts.');
     expect(render(<SuggestionRows provider={codex()} check={check} suggestions={[]} busy="" onAdd={noop} />))
-      .toBe('Nothing new. The proxy knows every model OpenAI offers your Codex account.');
+      .toBe('Nothing new. The proxy knows every model OpenAI offers your Codex accounts.');
   });
 
   it('says why there are no suggestions when the check couldn’t be made', () => {
@@ -273,5 +273,30 @@ describe('Settings › Extra models', () => {
     expect(html).toContain('gpt-6-nova GPT-6-Nova Active');
     expect(renderToStaticMarkup(<I18nProvider><ExtraModelRows view={current} busy="" onRemove={noop} /></I18nProvider>)).toContain('alt="Codex"');
     expect(render(<ExtraModelRows view={view([claude(), codex()])} busy="" onRemove={noop} />)).toContain('No extra models');
+  });
+
+  it('says which accounts have a model on only some, how they’re kept for it, and how to turn that on', () => {
+    const current = view([codex({ models: [model('gpt-preview-latest', { displayName: 'Preview' })] })], { served: ['gpt-preview-latest'] });
+    const row: ModelAccessRow = {
+      summary: { have: ['team.json'], lack: ['home.json'], unknown: [] },
+      names: { 'team.json': 'Team', 'home.json': 'Home' },
+      mode: 'auto',
+      recent: 40,
+      declined: [],
+      routingOff: true,
+    };
+    const html = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => row} />);
+    expect(html).toContain('Preview · Only on Team');
+    expect(html).toContain('Kept for it: 40 requests this week · Turn on automatic order for Codex in Settings › Routing to keep it so.');
+    expect(html).toContain('Keep for it while in use');
+
+    const shared = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, recent: 0, declined: ['home.json'] })} />);
+    expect(shared).toContain('Shared: not used this week');
+    expect(shared).not.toContain('Turn on automatic order');
+    expect(shared).toContain('Also sent to accounts without it Send only to accounts with it');
+
+    const everywhere = render(<ExtraModelRows view={current} busy="" onRemove={noop} accessFor={() => ({ ...row, summary: { have: ['team.json', 'home.json'], lack: [], unknown: [] } })} />);
+    expect(everywhere).toContain('Preview · On every Codex account');
+    expect(everywhere).not.toContain('Keep for it while in use');
   });
 });

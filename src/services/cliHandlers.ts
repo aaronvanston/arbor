@@ -7,6 +7,17 @@ import { getAccountsSnapshot, loadAccountFiles, refreshAccountQuotas } from './a
 import { getAlertHistory, isUnreadAlert, markAlertsSeen, unreadAlerts } from './alertHistory';
 import { booleanArg, textArg, type CliArgs, type CliHandlers } from './cliBridge';
 import { shownIdentity } from './emailPrivacy';
+import {
+  HOLD_MODES,
+  accessSummary,
+  getHoldModes,
+  getModelAccess,
+  heldAccounts,
+  holdModeFor,
+  recentUse,
+  setHoldMode,
+  type HoldMode,
+} from './extraModelHold';
 import { fetchSetupInventory } from './setupInventory';
 import { fileName, providerForFile, quotaKey, type AuthFile } from './quotaService';
 import { getQuotaCacheSnapshot } from './quotaCache';
@@ -192,6 +203,64 @@ export const cliHandlers: CliHandlers = {
       if (!known.includes(provider)) throw new Error(`No account is signed in for ${provider}. Providers with accounts: ${known.join(', ') || 'none yet'}.`);
       setRoutingAuto(provider, booleanArg(args, 'on', true));
       return { auto: getRoutingAuto() };
+    },
+  },
+  'extraModels.access': {
+    access: 'read',
+    summary: 'Which accounts have each extra model, as Settings › Extra models last checked, how its accounts are kept for it, its requests this week, and the accounts held back in the order for it',
+    args: [],
+    run: async () => {
+      const all = await accounts();
+      const state = getModelAccess();
+      const modes = getHoldModes();
+      const byFile = new Map(all.map((account) => [fileName(account.file), account]));
+      const describe = (names: string[]) => names.flatMap((name) => {
+        const account = byFile.get(name);
+        return account ? [{ id: accountId(account.key), name: accountName(account) }] : [];
+      });
+      return {
+        providers: Object.entries(state.providers).map(([provider, { models, accounts: checked, checkedAtMs }]) => {
+          const held = heldAccounts(state, modes, provider, checked);
+          return {
+            provider,
+            checkedAt: checkedAtMs ? new Date(checkedAtMs).toISOString() : null,
+            models: models.map((model) => {
+              const summary = accessSummary(state, model, checked);
+              return {
+                model,
+                have: describe(summary.have),
+                lack: describe(summary.lack),
+                unknown: describe(summary.unknown),
+                mode: holdModeFor(modes, provider, model),
+                requestsThisWeek: recentUse(state, provider, model),
+                held: describe([...held].filter(([, reason]) => reason.model === model).map(([name]) => name)),
+              };
+            }),
+          };
+        }),
+      };
+    },
+  },
+  'extraModels.hold': {
+    access: 'write',
+    summary: 'Sets how the accounts with an extra model are kept for it: auto (held back in the order while used this week), always, never, or only (they serve nothing else)',
+    args: [arg('provider', 'string'), arg('model', 'string'), arg('mode', 'string')],
+    run: async (args) => {
+      const provider = textArg(args, 'provider').toLowerCase();
+      const model = textArg(args, 'model').toLowerCase();
+      const mode = textArg(args, 'mode').toLowerCase() as HoldMode;
+      if (!HOLD_MODES.includes(mode)) throw new Error(`mode is one of ${HOLD_MODES.join(', ')}`);
+      const known = getModelAccess().providers[provider]?.models ?? [];
+      if (!known.includes(model)) {
+        throw new Error(`${model} isn't an extra model Arbor has checked for ${provider}. Open Settings › Extra models, or see arbor call extraModels.access.`);
+      }
+      const before = holdModeFor(getHoldModes(), provider, model);
+      setHoldMode(provider, model, mode);
+      // Only "only" changes which models accounts serve; the rest change the account order.
+      const { reapplyExclusions } = await import('./extraModelAccess');
+      const changes = mode === 'only' || before === 'only' ? (await reapplyExclusions(await invokeCommand('get_extra_models'))).changes : [];
+      if (changes.length > 0) void loadAccountFiles({ quiet: true });
+      return { provider, model, mode, accountsChanged: changes.length };
     },
   },
   'alerts.list': {

@@ -48,6 +48,7 @@ import type { CommandAnswers } from './answers';
 import bundledPriceCatalog from '../../../src-tauri/resources/model_prices.json';
 import { coreStatus, heavyScenario } from './core';
 import { freshInstall, iso, later, mockLog, now, params, realSize } from './scenario';
+import { PARTIAL_ACCOUNT_INDEX, PARTIAL_MODEL } from './core';
 
 // With `?prices=none`, no model has a price, so no request, session or machine has a known cost.
 const noPrices = params.get('prices') === 'none';
@@ -1590,7 +1591,15 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
     const overview = usageOverviewFor(timelineBetween(args.query.start, args.query.end), fiveMinutesBetween(args.query.start, args.query.end), args.query);
     return args.query.include_analysis ? { ...overview, analysis: narrowAnalysis(usageAnalysis, narrowedShare(args.query, totals.requests)) } : overview;
   },
-  get_usage_analysis: () => usageAnalysis,
+  // With `?extraModels=partial`, the preview model only the team Codex account has was used this week.
+  get_usage_analysis: ({ query }) => query.model === PARTIAL_MODEL
+    ? {
+      models: [], providers: [], sources: [], apiKeys: [],
+      accounts: params.get('extraModels') === 'partial'
+        ? [{ authIndex: PARTIAL_ACCOUNT_INDEX, label: 'team@example.com', requests: 42, failures: 2, tokens: 1_200_000 }]
+        : [],
+    }
+    : usageAnalysis,
   get_usage_sessions: ({ query }) => {
     const sortKey = ({ cost: 'estimatedCost', tokens: 'totalTokens', requests: 'requests' } as const satisfies Record<string, SessionSort>)[query.sort ?? ''] ?? 'lastActiveAtMs';
     // "What used this limit?" narrows to one account (and a model family). The mock doesn't time sessions by

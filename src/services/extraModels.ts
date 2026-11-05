@@ -1,6 +1,9 @@
 import type { MessageKey } from '../i18n/resources';
 import type { ExtraModel, ExtraModelsProvider, ExtraModelsView } from '../native/types';
-import { authFileAvailability, canonicalProvider } from './authFiles';
+import { authFileAvailability } from './authFiles';
+import { usableAccounts } from './extraModelHold';
+
+export { usableAccounts };
 import { apiCallErrorMessage, isRecord, managementApi, normalizeAuthIndex, readString, responseList } from './managementApi';
 import { codexMetadataFor } from './quotaMetadata';
 
@@ -85,15 +88,15 @@ export function parseAnthropicModels(payload: unknown): LiveModel[] {
 
 /**
  * The models in ChatGPT's Codex list, each once, with the context window, reasoning levels and inputs it gives. Ones
- * it hides from Codex's own picker aren't offered either.
+ * it hides from Codex's own picker aren't offered either, unless `includeHidden`: the account can still use them.
  */
-export function parseCodexModels(payload: unknown): LiveModel[] {
+export function parseCodexModels(payload: unknown, includeHidden = false): LiveModel[] {
   const data = isRecord(payload) && Array.isArray(payload.models) ? payload.models : [];
   const models: LiveModel[] = [];
   for (const entry of data) {
     if (!isRecord(entry)) continue;
     const id = readString(entry, 'slug', 'id').trim();
-    if (!id || readString(entry, 'visibility') === 'hide' || models.some((model) => sameId(model.id, id))) continue;
+    if (!id || (!includeHidden && readString(entry, 'visibility') === 'hide') || models.some((model) => sameId(model.id, id))) continue;
     const levels = (Array.isArray(entry.supported_reasoning_levels) ? entry.supported_reasoning_levels : [])
       .map((level) => readString(level, 'effort').trim())
       .filter(Boolean);
@@ -196,31 +199,64 @@ export function extraModelIdProblem(id: string, provider: Pick<ExtraModelsProvid
   return null;
 }
 
+
 /**
  * The credential of `provider`'s to ask its live list with: one that's turned on and whose sign-in still works,
  * preferring one that's ready. Nothing when there's none.
  */
 export function accountFor(files: Record<string, unknown>[], provider: string): Record<string, unknown> | null {
-  const usable = files
-    .filter((file) => canonicalProvider(readString(file, 'provider', 'type')) === provider)
-    .filter((file) => normalizeAuthIndex(file.auth_index ?? file.authIndex))
-    .map((file) => ({ file, availability: authFileAvailability(file) }))
-    .filter(({ availability }) => availability.kind !== 'disabled' && availability.kind !== 'signin');
-  return (usable.find(({ availability }) => availability.kind === 'ready') ?? usable[0])?.file ?? null;
+  const usable = usableAccounts(files, provider);
+  return usable.find((file) => authFileAvailability(file).kind === 'ready') ?? usable[0] ?? null;
 }
 
-async function askLiveList(
-  api: Api,
+/** One account's live list: the models it offers, and every id it can use, the ones hidden from pickers included. */
+export type AccountModelsResult =
+  | { ok: true; models: LiveModel[]; ids: string[] }
+  | { ok: false; reason: MessageKey }
+  | { ok: false; message: string };
+
+type LiveSource = {
+  request: (account: Record<string, unknown>, codexVersion: string) => { url: string; header: Record<string, string> };
+  parse: (payload: unknown, includeHidden: boolean) => LiveModel[];
+};
+
+const LIVE_SOURCES: Record<string, LiveSource> = {
+  claude: { request: () => ({ url: ANTHROPIC_MODELS_URL, header: ANTHROPIC_HEADERS }), parse: (payload) => parseAnthropicModels(payload) },
+  codex: {
+    request: (account, clientVersion) => {
+      const header: Record<string, string> = {
+        Authorization: 'Bearer $TOKEN$',
+        Accept: 'application/json',
+        Originator: 'codex_cli_rs',
+        'User-Agent': `codex_cli_rs/${clientVersion} (Mac OS 26.5.2; arm64)`,
+      };
+      const accountId = codexMetadataFor(account).accountId;
+      if (accountId) header['Chatgpt-Account-Id'] = accountId;
+      return { url: `${CODEX_MODELS_URL}?client_version=${encodeURIComponent(clientVersion)}`, header };
+    },
+    parse: parseCodexModels,
+  },
+};
+
+/** Whether Arbor knows how to ask `provider` which models an account has. */
+export const hasLiveList = (provider: string) => provider in LIVE_SOURCES;
+
+/**
+ * Asks the provider which models one account has. The proxy makes the request with the account's own credential, so
+ * the token never reaches the webview.
+ */
+export async function askAccountModels(
+  api: Pick<Api, 'post'>,
   provider: string,
-  request: (account: Record<string, unknown>) => { url: string; header: Record<string, string> },
-  parse: (payload: unknown) => LiveModel[],
-): Promise<LiveModelsResult> {
-  const account = accountFor(responseList(await api.get('/auth-files'), 'files'), provider);
-  if (!account) return { ok: false, reason: 'extraModels.suggestions.noAccount' };
+  account: Record<string, unknown>,
+  codexVersion: string = CODEX_CLIENT_VERSION,
+): Promise<AccountModelsResult> {
+  const source = LIVE_SOURCES[provider];
+  if (!source) return { ok: false, reason: 'extraModels.suggestions.noAccount' };
   const response = await api.post<Record<string, unknown>>('/api-call', {
     authIndex: normalizeAuthIndex(account.auth_index ?? account.authIndex),
     method: 'GET',
-    ...request(account),
+    ...source.request(account, codexVersion),
   }, { timeoutMs: 15_000 });
   const status = Number(response.status_code ?? response.statusCode ?? 0);
   if (status < 200 || status >= 300) return { ok: false, message: apiCallErrorMessage(response) };
@@ -233,37 +269,22 @@ async function askLiveList(
       return { ok: false, reason: 'extraModels.suggestions.unreadable' };
     }
   }
-  return { ok: true, models: parse(payload) };
+  return { ok: true, models: source.parse(payload, false), ids: source.parse(payload, true).map((model) => model.id) };
 }
 
-/**
- * Anthropic's model list for one of the Claude accounts. The proxy makes the request with the account's own
- * credential, so the token never reaches the webview.
- */
+async function askLiveList(api: Api, provider: string, codexVersion?: string): Promise<LiveModelsResult> {
+  const account = accountFor(responseList(await api.get('/auth-files'), 'files'), provider);
+  if (!account) return { ok: false, reason: 'extraModels.suggestions.noAccount' };
+  const result = await askAccountModels(api, provider, account, codexVersion);
+  return result.ok ? { ok: true, models: result.models } : result;
+}
+
+/** Anthropic's model list for one of the Claude accounts. */
 export function fetchAnthropicModels(api: Api = managementApi): Promise<LiveModelsResult> {
-  return askLiveList(api, 'claude', () => ({ url: ANTHROPIC_MODELS_URL, header: ANTHROPIC_HEADERS }), parseAnthropicModels);
+  return askLiveList(api, 'claude');
 }
 
-/**
- * ChatGPT's list of Codex models for one of the Codex accounts, asked as Codex `clientVersion` asks it, through the
- * proxy the same way.
- */
+/** ChatGPT's list of Codex models for one of the Codex accounts, asked as Codex `clientVersion` asks it. */
 export function fetchCodexModels(api: Api = managementApi, clientVersion = CODEX_CLIENT_VERSION): Promise<LiveModelsResult> {
-  return askLiveList(api, 'codex', (account) => {
-    const header: Record<string, string> = {
-      Authorization: 'Bearer $TOKEN$',
-      Accept: 'application/json',
-      Originator: 'codex_cli_rs',
-      'User-Agent': `codex_cli_rs/${clientVersion} (Mac OS 26.5.2; arm64)`,
-    };
-    const accountId = codexMetadataFor(account).accountId;
-    if (accountId) header['Chatgpt-Account-Id'] = accountId;
-    return { url: `${CODEX_MODELS_URL}?client_version=${encodeURIComponent(clientVersion)}`, header };
-  }, parseCodexModels);
+  return askLiveList(api, 'codex', clientVersion);
 }
-
-/** How to ask each provider that has one for its live list. The rest take models by ID only. */
-export const LIVE_MODEL_SOURCES: Record<string, (api: Api, codexVersion?: string) => Promise<LiveModelsResult>> = {
-  claude: (api) => fetchAnthropicModels(api),
-  codex: (api, codexVersion) => fetchCodexModels(api, codexVersion),
-};

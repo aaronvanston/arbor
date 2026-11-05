@@ -5,6 +5,7 @@ import { useAppPreferences } from '../appPreferences';
 import { recordLimitReadings, unrecordedLimitReadings } from '../services/accountLimitHistory';
 import { freshQuotas, partialHeadline, useAccountLimitPrefs, type PaceTone } from '../services/accountLimits';
 import { useAccountReserves } from '../services/accountReserves';
+import { heldAccounts, providersWithNewAccounts, useHoldModes, useModelAccess } from '../services/extraModelHold';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { useAccountOrder } from '../services/accountOrder';
 import { ensureAccountsLoaded, getAccountsSnapshot, loadAccountFiles, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
@@ -136,6 +137,8 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   const statuses = useProviderStatuses();
   const routingAuto = useRoutingAuto();
   const reserves = useAccountReserves();
+  const modelAccess = useModelAccess();
+  const holdModes = useHoldModes();
   const now = useQuotaClock();
   const lastRefreshRef = useRef(0);
   const notifiedRef = useRef<Record<string, PaceTone>>(typeof localStorage === 'undefined' ? {} : readStored<PaceTone>(NOTIFIED_KEY));
@@ -362,7 +365,8 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       const round = Math.max(0, ...providerFiles.map((file) => freshCache[quotaKey(file)]?.fetchedAt ?? 0));
       if (!round || routedRoundRef.current[limit.provider] === round) return [];
       routedRoundRef.current[limit.provider] = round;
-      return routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now())?.changes ?? [];
+      const held = heldAccounts(modelAccess, holdModes, limit.provider, providerFiles.map(fileName));
+      return routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now(), held)?.changes ?? [];
     });
     if (!due.length) return;
     routingRef.current = true;
@@ -372,7 +376,36 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         routingRef.current = false;
         void loadAccountFiles();
       });
-  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, profiles, routingAuto]);
+  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, profiles, routingAuto, modelAccess, holdModes]);
+
+  // Extra models on only some accounts: when an account is added, removed or signed out, ask the provider's accounts
+  // again which models each has, so a model stays off the accounts without it. Otherwise keep its recent use fresh,
+  // which decides whether its accounts are held back in the order above.
+  const accessRunRef = useRef(false);
+  useEffect(() => {
+    if (!coreReady || !loaded || accountsError || accessRunRef.current) return;
+    const changed = providersWithNewAccounts(modelAccess, files);
+    // Nothing to read until a model is only on some accounts, so most installs never load the code that checks.
+    const due = changed.length > 0 || Object.values(modelAccess.providers).some((entry) => entry.models.length > 0);
+    if (!due) return;
+    accessRunRef.current = true;
+    const run = import('../services/extraModelAccess').then(async ({ keepRecentUseFresh, runModelAccessCheck }) => {
+      if (changed.length === 0) return keepRecentUseFresh(files);
+      const [view, codexVersion] = await Promise.all([
+        invokeCommand('get_extra_models'),
+        changed.includes('codex') ? invokeCommand('get_agent_latest_versions').then((latest) => latest.codex ?? undefined, () => undefined) : undefined,
+      ]);
+      if (!view.coreRunning) return;
+      const { changes } = await runModelAccessCheck(view, { codexVersion, only: changed });
+      const { announceAccessChanges } = await import('./extraModelAccessToast');
+      announceAccessChanges(changes, t);
+    });
+    void run
+      .catch((error) => console.warn('Failed to check which accounts have each extra model', error))
+      .finally(() => {
+        accessRunRef.current = false;
+      });
+  }, [coreReady, loaded, accountsError, files, modelAccess, t]);
 
   // Native notifications when an account is about to reset with much of its headline limit unused, once per reset.
   useEffect(() => {

@@ -86,6 +86,13 @@ const codexLiveModels = [
   ...codexCatalog.map(({ id, displayName }) => ({ slug: id, display_name: displayName, visibility: 'list' })),
 ];
 const catalogs: Record<string, ExtraModel[]> = { claude: claudeCatalog, codex: codexCatalog };
+/** `?extraModels=partial`: a preview model only the team Codex account has, listed for it alone and hidden from pickers. */
+const partialAccess = extraModelsScenario === 'partial' || extraModelsScenario === 'partialIdle';
+export const PARTIAL_MODEL = 'gpt-daybreak-blue-latest';
+export const PARTIAL_ACCOUNT_INDEX = 'codex-2';
+const codexLiveModelsFor = (authIndex: string) => partialAccess && authIndex === PARTIAL_ACCOUNT_INDEX
+  ? [...codexLiveModels, { slug: PARTIAL_MODEL, display_name: 'Daybreak Blue', context_window: 272_000, visibility: 'hide' }]
+  : codexLiveModels;
 const extraModels: Record<string, ExtraModel[]> = {
   claude: extraModelsScenario === 'empty'
     ? []
@@ -93,7 +100,7 @@ const extraModels: Record<string, ExtraModel[]> = {
       catalogModel('claude-haiku-5', 'Claude Haiku 5', { contextLength: 200_000, maxCompletionTokens: 64_000 }),
       ...(extraModelsScenario === 'builtIn' ? [catalogModel('claude-opus-5-5', 'Claude Opus 5.5')] : []),
     ],
-  codex: [],
+  codex: partialAccess ? [codexModel(PARTIAL_MODEL, 'Daybreak Blue')] : [],
 };
 
 function extraModelsView(): ExtraModelsView {
@@ -402,7 +409,7 @@ function apiCall(body: Json): Json {
     if (extraModelsScenario === 'codexFails') {
       return { status_code: 401, body: JSON.stringify({ error: { message: 'Your authentication token has expired. Please try signing in again.' } }) };
     }
-    return ok({ models: codexLiveModels });
+    return ok({ models: codexLiveModelsFor(authIndex) });
   }
   if (quotaScenario === 'fail-after-first' && /\/wham\/usage$|\/api\/oauth\/usage$/.test(url)) {
     const checked = `${authIndex} ${url}`;

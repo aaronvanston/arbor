@@ -5,6 +5,7 @@ import { getAccountReserves, setAccountReserve } from '../src/services/accountRe
 import { resetAccountsStore } from '../src/services/accountsStore';
 import { answerCliRequest } from '../src/services/cliBridge';
 import { accountId, cliHandlers } from '../src/services/cliHandlers';
+import { emptyAccessState, getHoldModes, setHoldMode, setModelAccess } from '../src/services/extraModelAccess';
 import { getRoutingAuto } from '../src/services/quotaRouting';
 import { quotaKey, type AuthFile } from '../src/services/quotaService';
 
@@ -92,5 +93,56 @@ describe('ChatGPT’s counts for Codex accounts, for arbor', () => {
     expect(lifetimeTokens).toBe(1_000);
     expect(accounts.filter((row) => row.error !== null)).toHaveLength(1);
     expect(JSON.stringify(result)).not.toContain('acct-1');
+  });
+});
+
+describe('extra models on only some accounts, for arbor', () => {
+  const work = listing[1];
+  const side = account('cam-side@example.com', 'codex');
+  const model = 'gpt-preview-latest';
+
+  beforeEach(() => {
+    mockCommands({
+      management_request: ({ request }) => {
+        if (request.path === '/auth-files') return coreReply({ files: [...listing, side] });
+        throw 'offline';
+      },
+    });
+    setModelAccess({
+      ...emptyAccessState(),
+      providers: { codex: { models: [model], accounts: ['cam-side@example.com.json', 'cam-work@example.com.json'], checkedAtMs: 1 } },
+      access: { 'cam-work@example.com.json': { [model]: 'yes' }, 'cam-side@example.com.json': { [model]: 'no' } },
+      usage: { [`codex/${model}`]: { readAtMs: 1, byAccount: { 'cam-work@example.com.json': 12 } } },
+    });
+  });
+
+  afterEach(() => {
+    setModelAccess(emptyAccessState());
+    setHoldMode('codex', model, 'auto');
+  });
+
+  it('list which accounts have each, by id, and the ones held back for it', async () => {
+    if (!work) throw new Error('no account');
+    const { result, error } = await ask('extraModels.access');
+    expect(error).toBeNull();
+    const [codex] = (result as { providers: Array<{ provider: string; models: Array<Record<string, unknown>> }> }).providers;
+    expect(codex?.provider).toBe('codex');
+    expect(codex?.models[0]).toMatchObject({
+      model,
+      have: [{ id: accountId(quotaKey(work)) }],
+      lack: [{ id: accountId(quotaKey(side)) }],
+      mode: 'auto',
+      requestsThisWeek: 12,
+      held: [{ id: accountId(quotaKey(work)) }],
+    });
+  });
+
+  it('set how the accounts are kept, only for a model Arbor has checked', async () => {
+    expect((await ask('extraModels.hold', { provider: 'codex', model, mode: 'sometimes' })).error?.message).toContain('auto, always, never, only');
+    expect((await ask('extraModels.hold', { provider: 'codex', model: 'gpt-nope', mode: 'never' })).error?.message).toContain('extraModels.access');
+    const { result, error } = await ask('extraModels.hold', { provider: 'codex', model, mode: 'never' });
+    expect(error).toBeNull();
+    expect(result).toEqual({ provider: 'codex', model, mode: 'never', accountsChanged: 0 });
+    expect(getHoldModes()).toEqual({ [`codex/${model}`]: 'never' });
   });
 });

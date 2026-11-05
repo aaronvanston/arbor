@@ -16,6 +16,7 @@ import { useAccountLimitPrefs } from '../services/accountLimits';
 import { useAccountOrder } from '../services/accountOrder';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { accountFilesFromListing, loadAccountFiles, refreshAccountQuotas, useAccountsStore } from '../services/accountsStore';
+import { heldAccounts, useHoldModes, useModelAccess } from '../services/extraModelHold';
 import { formatResetCountdown, providerLabel } from '../services/providerLimits';
 import { getQuotaCacheSnapshot, useQuotaCache } from '../services/quotaCache';
 import { runCoreProcess } from '../services/coreProcess';
@@ -30,7 +31,7 @@ import {
   type ProviderRouting,
   type RoutingItem,
 } from '../services/quotaRouting';
-import { quotaKey, type AuthFile } from '../services/quotaService';
+import { fileName, quotaKey, type AuthFile } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
 import { ProviderMark } from '../components/identity/Identity';
 
@@ -77,10 +78,13 @@ export function AccountRouting({ files, loaded = true, onError, coreReady = true
   const profiles = useAccountProfiles();
   const prefs = useAccountLimitPrefs();
   const order = useAccountOrder();
+  const access = useModelAccess();
+  const holdModes = useHoldModes();
   const inUse = useMemo(() => accountFilesFromListing(files), [files]);
   const routings = useMemo(
-    () => providerRoutingPlans(inUse, quotas, profiles, prefs, Date.now(), order),
-    [inUse, quotas, profiles, prefs, order],
+    () => providerRoutingPlans(inUse, quotas, profiles, prefs, Date.now(), order,
+      (provider, providerFiles) => heldAccounts(access, holdModes, provider, providerFiles.map(fileName))),
+    [inUse, quotas, profiles, prefs, order, access, holdModes],
   );
   const gap = accountOrderGap({
     coreReady,
@@ -163,6 +167,7 @@ function ProviderRoutingBlock({ routing: { provider, window, plan }, onError, co
   const reasonText = (item: RoutingItem) => {
     const { reason } = item;
     if (reason.kind === 'soonest') return t('accounts.routing.reason.soonest', { percent: Math.round(reason.percent), time: formatResetCountdown(reason.resetAtMs, now) || '—' });
+    if (reason.kind === 'held') return t('accounts.routing.reason.held', { percent: Math.round(reason.percent), model: reason.model });
     if (reason.kind === 'low') return t('accounts.routing.reason.low', { percent: Math.round(reason.percent) });
     return t(`accounts.routing.reason.${reason.kind}`);
   };

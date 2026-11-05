@@ -17,17 +17,42 @@ import { Spinner } from '../components/ui/spinner';
 import { toast } from '../components/ui/toast';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
 import { useI18n } from '../i18n';
-import { managementApi } from '../services/managementApi';
 import { useUnsavedChanges } from '../services/unsavedChanges';
+import { announceAccessChanges } from '../components/extraModelAccessToast';
+import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
+import { loadAccountFiles, useAccountsStore } from '../services/accountsStore';
+import {
+  HOLD_MODES,
+  accessLine,
+  accessSummary,
+  clearDeclined,
+  getHoldModes,
+  holdLine,
+  holdModeFor,
+  isPartial,
+  reapplyExclusions,
+  recentUse,
+  runModelAccessCheck,
+  setHoldMode,
+  undoAccessChanges,
+  useHoldModes,
+  useModelAccess,
+  type AccessSummary,
+  type ExclusionChange,
+  type HoldMode,
+} from '../services/extraModelAccess';
+import { useRoutingAuto } from '../services/quotaRouting';
+import { fileName as fileNameOf, quotaKey } from '../services/quotaService';
 import {
   EXTRA_MODEL_STATUS_LABEL,
   LIVE_LIST_SOURCE,
-  LIVE_MODEL_SOURCES,
   extraModelFrom,
   extraModelIdProblem,
   extraModelProviderLabel,
   extraModelStatus,
+  hasLiveList,
   suggestExtraModels,
+  usableAccounts,
   templateFor,
   type ExtraModelStatus,
   type LiveModel,
@@ -49,7 +74,34 @@ const busyKey = (provider: string, model: string) => `${provider}/${model}`;
 
 /** The providers on the page that Arbor can ask for a live list. */
 const checkable = (view: ExtraModelsView | null) =>
-  (view?.providers ?? []).filter((entry) => LIVE_MODEL_SOURCES[entry.provider]);
+  (view?.providers ?? []).filter((entry) => hasLiveList(entry.provider));
+
+/** Where an extra model stands across its provider's accounts, for its row. */
+export type ModelAccessRow = {
+  summary: AccessSummary;
+  /** The accounts' names, by credential file name. */
+  names: Record<string, string>;
+  mode: HoldMode;
+  /** Requests for it that worked this week. */
+  recent: number;
+  /** Someone undid keeping it from accounts without it, so it still goes to them. */
+  declined: string[];
+  /** Whether automatic account order is off for the provider, so holding accounts back waits on Apply. */
+  routingOff: boolean;
+};
+
+const HOLD_LABEL: Record<HoldMode, 'extraModels.hold.auto' | 'extraModels.hold.always' | 'extraModels.hold.never' | 'extraModels.hold.only'> = {
+  auto: 'extraModels.hold.auto',
+  always: 'extraModels.hold.always',
+  never: 'extraModels.hold.never',
+  only: 'extraModels.hold.only',
+};
+const HOLD_HINT: Record<HoldMode, 'extraModels.hold.autoHint' | 'extraModels.hold.alwaysHint' | 'extraModels.hold.neverHint' | 'extraModels.hold.onlyHint'> = {
+  auto: 'extraModels.hold.autoHint',
+  always: 'extraModels.hold.alwaysHint',
+  never: 'extraModels.hold.neverHint',
+  only: 'extraModels.hold.onlyHint',
+};
 
 export function ExtraModelsPage() {
   const { t } = useI18n();
@@ -66,31 +118,49 @@ export function ExtraModelsPage() {
   const codexVersion = useRef<string | null | undefined>(undefined);
   useUnsavedChanges(newId.trim() !== '');
 
-  const checkLive = useCallback(async (providers: string[]) => {
-    setChecks((current) => ({ ...current, ...Object.fromEntries(providers.map((provider) => [provider, { state: 'checking' }])) }));
-    if (providers.includes('codex') && codexVersion.current === undefined) {
+  const accessModes = useHoldModes();
+  const access = useModelAccess();
+  const routingAuto = useRoutingAuto();
+  const profiles = useAccountProfiles();
+  const { files } = useAccountsStore();
+
+  // Asks every account of each provider which models it has: new models for suggestions, and which accounts each extra
+  // model is on, which keeps it from the rest.
+  const checkLive = useCallback(async (current: ExtraModelsView, providers?: string[]) => {
+    const asked = providers ?? current.providers.map((entry) => entry.provider);
+    const shown = checkable(current).map((entry) => entry.provider).filter((provider) => asked.includes(provider));
+    setChecks((before) => ({ ...before, ...Object.fromEntries(shown.map((provider) => [provider, { state: 'checking' }])) }));
+    if (asked.includes('codex') && codexVersion.current === undefined) {
       codexVersion.current = await invokeCommand('get_agent_latest_versions').then((latest) => latest.codex, () => null);
     }
-    await Promise.all(providers.map(async (provider) => {
-      const source = LIVE_MODEL_SOURCES[provider];
-      if (!source) return;
-      let result: LiveModelsResult;
-      try {
-        result = await source(managementApi, codexVersion.current ?? undefined);
-      } catch (requestError) {
-        result = { ok: false, message: String(requestError) };
-      }
-      setChecks((current) => ({ ...current, [provider]: { state: 'done', result } }));
+    let result: Awaited<ReturnType<typeof runModelAccessCheck>> | null = null;
+    try {
+      result = await runModelAccessCheck(current, { codexVersion: codexVersion.current ?? undefined, only: providers });
+    } catch (requestError) {
+      const failed: LiveModelsResult = { ok: false, message: String(requestError) };
+      setChecks((before) => ({ ...before, ...Object.fromEntries(shown.map((provider) => [provider, { state: 'done', result: failed }])) }));
+      return;
+    }
+    const { live, changes, error: changeError } = result;
+    setChecks((before) => ({
+      ...before,
+      ...Object.fromEntries(shown.map((provider): [string, Check] => [
+        provider,
+        { state: 'done', result: live[provider] ?? { ok: false, reason: 'extraModels.suggestions.noAccount' } },
+      ])),
     }));
-  }, []);
+    if (changeError) setError(t('extraModels.access.failed', { error: changeError }));
+    announceAccessChanges(changes, t);
+  }, [t]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    void loadAccountFiles();
     try {
       const next = await invokeCommand('get_extra_models');
       setView(next);
-      if (next.coreRunning) void checkLive(checkable(next).map((entry) => entry.provider));
+      if (next.coreRunning) void checkLive(next);
     } catch (requestError) {
       setError(String(requestError));
     } finally {
@@ -118,6 +188,8 @@ export function ExtraModelsPage() {
     try {
       const next = await invokeCommand('set_extra_models', { provider: provider.provider, expected: provider.models, models });
       setView(next);
+      // A new model is checked on each account; one taken out has Arbor's rules for it taken back.
+      if (next.coreRunning) void checkLive(next, [provider.provider]);
       return next;
     } catch (requestError) {
       setError(String(requestError));
@@ -173,6 +245,62 @@ export function ExtraModelsPage() {
     }
   };
 
+  const reapply = async (current: ExtraModelsView): Promise<ExclusionChange[]> => {
+    try {
+      const { changes, error: changeError } = await reapplyExclusions(current);
+      if (changeError) setError(t('extraModels.access.failed', { error: changeError }));
+      if (changes.length > 0) void loadAccountFiles();
+      return changes;
+    } catch (requestError) {
+      setError(t('extraModels.access.failed', { error: String(requestError) }));
+      return [];
+    }
+  };
+
+  const changeMode = async (provider: ExtraModelsProvider, model: ExtraModel, mode: HoldMode) => {
+    if (!view) return;
+    const before = holdModeFor(getHoldModes(), provider.provider, model.id);
+    if (before === mode) return;
+    setHoldMode(provider.provider, model.id, mode);
+    // Only "Serve only this model" changes what accounts serve; the rest only change the account order.
+    const changes = mode === 'only' || before === 'only' ? await reapply(view) : [];
+    toast({
+      kind: 'success',
+      title: t('extraModels.hold.saved', { model: model.id, mode: t(HOLD_LABEL[mode]) }),
+      action: {
+        label: t('common.undo'),
+        onClick: () => {
+          setHoldMode(provider.provider, model.id, before);
+          if (changes.length > 0) void undoAccessChanges(changes, false).finally(() => void loadAccountFiles());
+        },
+      },
+    });
+  };
+
+  const sendOnly = async (model: ExtraModel, accounts: string[]) => {
+    if (!view) return;
+    clearDeclined(model.id, accounts);
+    announceAccessChanges(await reapply(view), t);
+  };
+
+  const rowAccess = (provider: ExtraModelsProvider, model: ExtraModel): ModelAccessRow | null => {
+    const usable = usableAccounts(files, provider.provider);
+    if (usable.length === 0) return null;
+    const names = Object.fromEntries(usable.map((file) => {
+      const name = fileNameOf(file);
+      return [name, resolveAccountProfile(quotaKey(file), name, profiles[quotaKey(file)]).name];
+    }));
+    const id = model.id.toLowerCase();
+    return {
+      summary: accessSummary(access, model.id, Object.keys(names)),
+      names,
+      mode: holdModeFor(accessModes, provider.provider, model.id),
+      recent: recentUse(access, provider.provider, model.id),
+      declined: Object.keys(names).filter((name) => (access.declined[name] ?? []).includes(id)),
+      routingOff: !routingAuto[provider.provider],
+    };
+  };
+
   const unserved = view?.coreRunning ? providers.filter((entry) => entry.models.length > 0 && !entry.pluginLoaded) : [];
   const unservedLabels = unserved.map((entry) => extraModelProviderLabel(entry.provider)).join(', ');
   const modelCount = providers.reduce((count, entry) => count + entry.models.length, 0);
@@ -205,7 +333,7 @@ export function ExtraModelsPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void checkLive(live.map((entry) => entry.provider))}
+              onClick={() => { if (view) void checkLive(view); }}
               disabled={loading || checking || !view?.coreRunning || live.length === 0}
               disabledReason={view && !view.coreRunning ? t('extraModels.suggestions.coreStopped') : undefined}
             >
@@ -241,7 +369,14 @@ export function ExtraModelsPage() {
           description={t('extraModels.list.description')}
           headerAction={<Badge variant="muted">{modelCount}</Badge>}
         >
-          <ExtraModelRows view={loading ? null : view} busy={busy} onRemove={(provider, model) => void remove(provider, model)} />
+          <ExtraModelRows
+            view={loading ? null : view}
+            busy={busy}
+            onRemove={(provider, model) => void remove(provider, model)}
+            accessFor={rowAccess}
+            onMode={(provider, model, mode) => void changeMode(provider, model, mode)}
+            onSendOnly={(model, accounts) => void sendOnly(model, accounts)}
+          />
         </SettingsSection>
 
         <SettingsSection settingId="extra-models.add" title={t('extraModels.add.title')} description={t('extraModels.add.description')}>
@@ -417,10 +552,14 @@ export function SuggestionRows({ provider, check, suggestions, busy, onAdd }: {
 }
 
 /** Every provider's extra models, each with its provider, where it stands and Remove; skeletons while `view` is loading. */
-export function ExtraModelRows({ view, busy, onRemove }: {
+export function ExtraModelRows({ view, busy, onRemove, accessFor = () => null, onMode = () => {}, onSendOnly = () => {} }: {
   view: ExtraModelsView | null;
   busy: string;
   onRemove: (provider: ExtraModelsProvider, model: ExtraModel) => void;
+  /** Where the model stands across its provider's accounts, or null when that isn't known. */
+  accessFor?: (provider: ExtraModelsProvider, model: ExtraModel) => ModelAccessRow | null;
+  onMode?: (provider: ExtraModelsProvider, model: ExtraModel, mode: HoldMode) => void;
+  onSendOnly?: (model: ExtraModel, accounts: string[]) => void;
 }) {
   const { t } = useI18n();
   if (!view) {
@@ -446,6 +585,11 @@ export function ExtraModelRows({ view, busy, onRemove }: {
       {rows.map(({ provider, model }) => {
         const status = extraModelStatus(model, provider, view);
         const key = busyKey(provider.provider, model.id);
+        const row = status === 'builtIn' ? null : accessFor(provider, model);
+        const where = row ? accessLine(row.summary, extraModelProviderLabel(provider.provider), row.names) : null;
+        const partial = row ? isPartial(row.summary) : false;
+        const hold = row && partial ? holdLine(row.mode, row.recent) : null;
+        const kept = row !== null && partial && hold !== null && hold.key !== 'extraModels.hold.state.idle' && hold.key !== 'extraModels.hold.state.never';
         return (
           <SettingsBlock key={key} className="flex min-h-12 items-center gap-3 py-2">
             <RowMark provider={provider.provider} />
@@ -453,10 +597,44 @@ export function ExtraModelRows({ view, busy, onRemove }: {
               <div className="truncate font-mono text-sm text-foreground" title={model.id}>{model.id}</div>
               {status === 'builtIn' ? (
                 <div className="truncate text-xs text-muted-foreground">{t('extraModels.builtInHint')}</div>
-              ) : model.displayName ? (
-                <div className="truncate text-xs text-muted-foreground">{model.displayName}</div>
+              ) : model.displayName || where ? (
+                <div className="truncate text-xs text-muted-foreground">
+                  {[model.displayName, where ? t(where.key, where.values) : null].filter(Boolean).join(' · ')}
+                </div>
+              ) : null}
+              {hold ? (
+                <div className="truncate text-xs text-muted-foreground">
+                  {t(hold.key, hold.values)}
+                  {/* Serving only this model needs no account order: the other accounts can't take its requests. */}
+                  {kept && row.mode !== 'only' && row.routingOff ? ` · ${t('extraModels.hold.routingOff', { provider: extraModelProviderLabel(provider.provider) })}` : ''}
+                </div>
+              ) : null}
+              {row && row.declined.length > 0 ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="truncate">{t('extraModels.access.sentEverywhere')}</span>
+                  <Button variant="link" size="xs" className="h-auto p-0 text-xs" onClick={() => onSendOnly(model, row.declined)} disabled={Boolean(busy)}>
+                    {t('extraModels.access.sendOnly')}
+                  </Button>
+                </div>
               ) : null}
             </div>
+            {row && partial ? (
+              <Select value={row.mode} onValueChange={(value) => { if (value) onMode(provider, model, value as HoldMode); }} disabled={Boolean(busy)}>
+                <SelectTrigger size="sm" className="w-52 shrink-0" aria-label={t('extraModels.hold.aria', { model: model.id })}>
+                  <SelectValue>{t(HOLD_LABEL[row.mode])}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end">
+                  {HOLD_MODES.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      <span className="flex flex-col">
+                        <span>{t(HOLD_LABEL[mode])}</span>
+                        <span className="text-xs text-muted-foreground">{t(HOLD_HINT[mode])}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            ) : null}
             <Badge variant={STATUS_BADGE[status]} className="shrink-0">{t(EXTRA_MODEL_STATUS_LABEL[status])}</Badge>
             <Tooltip>
               <TooltipTrigger

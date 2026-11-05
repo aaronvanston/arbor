@@ -2,6 +2,7 @@ import { freshRows, windowDurationMs } from './accountLimits';
 import { sortByOrder, type AccountOrder } from './accountOrder';
 import { resolveAccountProfile, type AccountProfile } from './accountProfiles';
 import { authFileAvailability, isOAuthCredentialFile, parseAuthFilePriority, type AuthFileRecord } from './authFiles';
+import type { HoldReason } from './extraModelHold';
 import { managementApi } from './managementApi';
 import { providerLimits } from './providerLimits';
 import { savedStore, storedRecord } from './savedStore';
@@ -17,6 +18,8 @@ const SAME_RESET_MS = HOUR;
 /**
  * Why an account sits where it does in the suggested order.
  * - `soonest`: ranked by when its headline window resets.
+ * - `held`: ranked the same way, but after every `soonest` account: it has an extra model the others lack, which is
+ *   in use (or set to be held), so everyday requests spend the others first.
  * - `low`: nearly out of the window, so it goes last.
  * - `unknown`: no limit reading yet.
  * - `fixed`: a runtime-only credential or an API key, whose priority the core can't change.
@@ -25,6 +28,7 @@ const SAME_RESET_MS = HOUR;
  */
 export type RoutingReason =
   | { kind: 'soonest'; percent: number; resetAtMs: number }
+  | { kind: 'held'; percent: number; resetAtMs: number; model: string; why: HoldReason['why'] }
   | { kind: 'low'; percent: number }
   | { kind: 'unknown' }
   | { kind: 'fixed' }
@@ -63,7 +67,7 @@ const reasonFor = ({ file, quota }: RoutingCandidate, window: string, nowMs: num
  * order of the first reset in each group. Inside a group the account with
  * more left goes first.
  */
-const rankBySoonestReset = <T extends { key: string; reason: Extract<RoutingReason, { kind: 'soonest' }> }>(items: T[]): T[] => {
+const rankBySoonestReset = <T extends { key: string; reason: { percent: number; resetAtMs: number } }>(items: T[]): T[] => {
   const byReset = [...items].sort((a, b) => a.reason.resetAtMs - b.reason.resetAtMs || a.key.localeCompare(b.key));
   const groups: T[][] = [];
   byReset.forEach((item) => {
@@ -83,11 +87,15 @@ const rankBySoonestReset = <T extends { key: string; reason: Extract<RoutingReas
  * nearly out of the window get priority 0 and go last. Accounts without a
  * reading, or that the core can't use or re-prioritize, keep their priority.
  *
+ * Accounts in `held` (by credential file name) go after the rest of the ranked
+ * ones but before those nearly out: they have an extra model other accounts
+ * lack, so they're kept for it while the others have room.
+ *
  * Returns null when there is nothing to order: a headline window shorter
  * than a day (it resets too often to plan around), or fewer than two
  * accounts with a reading.
  */
-export function routingPlan(candidates: RoutingCandidate[], window: string | null, nowMs: number): RoutingPlan | null {
+export function routingPlan(candidates: RoutingCandidate[], window: string | null, nowMs: number, held: ReadonlyMap<string, HoldReason> = new Map()): RoutingPlan | null {
   if (!window) return null;
   const durationMs = windowDurationMs(window);
   if (durationMs === null || durationMs < DAY) return null;
@@ -99,7 +107,14 @@ export function routingPlan(candidates: RoutingCandidate[], window: string | nul
     reason: reasonFor(candidate, window, nowMs),
   }));
   type Soonest = (typeof entries)[number] & { reason: Extract<RoutingReason, { kind: 'soonest' }> };
-  const ranked = rankBySoonestReset(entries.filter((entry): entry is Soonest => entry.reason.kind === 'soonest'));
+  const soonest = entries.filter((entry): entry is Soonest => entry.reason.kind === 'soonest');
+  const ranked = [
+    ...rankBySoonestReset(soonest.filter((entry) => !held.has(entry.fileName))),
+    ...rankBySoonestReset(soonest.flatMap((entry) => {
+      const hold = held.get(entry.fileName);
+      return hold ? [{ ...entry, reason: { ...entry.reason, kind: 'held' as const, model: hold.model, why: hold.why } }] : [];
+    })),
+  ];
   const low = entries.filter((entry) => entry.reason.kind === 'low').sort((a, b) => a.key.localeCompare(b.key));
   if (ranked.length + low.length < 2) return null;
   const items: RoutingItem[] = [
@@ -134,11 +149,12 @@ export function providerRoutingPlans(
   prefs: { hidden: Record<string, string[]>; headline: Record<string, string> },
   nowMs: number,
   order: AccountOrder = {},
+  held: (provider: QuotaProvider, files: AuthFile[]) => ReadonlyMap<string, HoldReason> = () => new Map(),
 ): ProviderRouting[] {
   return providerLimits(files, quotas, profiles, prefs, nowMs, order).flatMap(({ provider, headline }) => {
     const window = headline.label;
     const providerFiles = sortByOrder(files.filter((file) => providerForFile(file) === provider), order[provider], quotaKey);
-    const plan = routingPlan(routingCandidates(providerFiles, quotas, profiles), window, nowMs);
+    const plan = routingPlan(routingCandidates(providerFiles, quotas, profiles), window, nowMs, held(provider, providerFiles));
     return plan && window ? [{ provider, window, plan }] : [];
   });
 }

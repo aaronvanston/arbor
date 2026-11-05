@@ -36,6 +36,30 @@ const account = (name: string, quota: QuotaState | undefined, extra: Record<stri
 });
 
 describe('quota-aware routing', () => {
+  it('keeps accounts held for an extra model after the rest, but before nearly empty ones', () => {
+    const held = new Map([['preview.json', { model: 'gpt-daybreak-blue-latest', why: 'used' as const }]]);
+    const plan = routingPlan([
+      account('preview', weekly(70, 2 * HOUR)),
+      account('later', weekly(80, 3 * DAY)),
+      account('empty', weekly(5, DAY)),
+      account('soon', weekly(45, 20 * HOUR)),
+    ], WEEKLY, now, held);
+    expect(plan?.items.map((item) => [item.name, item.suggested, item.reason.kind])).toEqual([
+      ['soon', 3, 'soonest'],
+      ['later', 2, 'soonest'],
+      ['preview', 1, 'held'],
+      ['empty', 0, 'low'],
+    ]);
+    const preview = plan?.items.find((item) => item.name === 'preview');
+    expect(preview?.reason).toEqual({ kind: 'held', percent: 70, resetAtMs: now + 2 * HOUR, model: 'gpt-daybreak-blue-latest', why: 'used' });
+  });
+
+  it('lets a nearly empty held account go last like any other', () => {
+    const held = new Map([['preview.json', { model: 'gpt-daybreak-blue-latest', why: 'always' as const }]]);
+    const plan = routingPlan([account('preview', weekly(4, 2 * HOUR)), account('soon', weekly(45, 20 * HOUR))], WEEKLY, now, held);
+    expect(plan?.items.map((item) => [item.name, item.reason.kind])).toEqual([['soon', 'soonest'], ['preview', 'low']]);
+  });
+
   it('puts the soonest reset first, nearly empty accounts last, and leaves the rest alone', () => {
     const plan = routingPlan([
       account('later', weekly(80, 3 * DAY)),
