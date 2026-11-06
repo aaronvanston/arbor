@@ -75,8 +75,8 @@ export function SidebarGlance({ limits, machines, onCustomize }: { limits: React
  * score, and how many of its agents are working now at the far end. Its name, readings and the sessions waiting on you
  * are in a card on hover, so the chips stay short. Each opens the machine's page.
  *
- * A column's least width fits a three-digit score and agent count; `auto-fit` then spreads the chips over the
- * sidebar's width instead of leaving empty columns, and `min(100%, …)` keeps one column inside the narrowest sidebar.
+ * A column's least width fits a three-digit score and agent count, and `min(100%, …)` keeps one column inside the
+ * narrowest sidebar. `auto-fill` keeps empty columns, so a short row's chips stay the width of a full row's.
  */
 export function SidebarMachines({ onOpen }: { onOpen: (machine: string) => void }) {
   const { t } = useI18n();
@@ -90,7 +90,7 @@ export function SidebarMachines({ onOpen }: { onOpen: (machine: string) => void 
   const chips = isWindowHidden() ? heldRef.current : currentChips;
   if (!chips.length) return null;
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,6rem),1fr))] gap-1" data-slot="sidebar-machines">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,6rem),1fr))] gap-1" data-slot="sidebar-machines">
       {chips.map((chip) => <MachineChip key={chip.machine} chip={chip} onOpen={onOpen} />)}
     </div>
   );
