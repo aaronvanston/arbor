@@ -2,7 +2,8 @@
 # Pins the core release Arbor bundles: writes the version to core-version.txt and the SHA-256 of each macOS archive to
 # core-sha256.txt, which the release build checks the download against (scripts/build-release.sh). The digests are
 # taken from the archives themselves and must also match the release's checksums.txt, so a pin records what was
-# reviewed, and a release whose files change after it fails the build instead of shipping. Commit both files together.
+# reviewed, and a release whose files change after it fails the build instead of shipping. Commit both files together,
+# then run `mac-build plugin-check`: a new core can change how the arbor-models plugin loads.
 #
 #   ./scripts/pin-core.sh 8.0.4
 set -euo pipefail

@@ -15,6 +15,11 @@ run = "mkdir -p ../dist && touch ../dist/index.html && cargo test --locked"
 dir = "src-tauri"
 run = "mkdir -p ../dist && touch ../dist/index.html && cargo build --locked"
 
+# The arbor-models plugin against the pinned core, with fake accounts and nothing leaving the Mac. Run it after a core
+# pin: a new core can change how plugins load.
+[plugin-check]
+run = "./scripts/check-extra-models-plugin.sh"
+
 # The app alone, unsigned and with no bundled core: enough to open it on the Mac, never a release (scripts/build-release.sh).
 [bundle]
 bun_install = true

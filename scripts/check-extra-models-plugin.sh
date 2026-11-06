@@ -28,7 +28,9 @@ core_version="${core_version#v}"
 core_asset="CLIProxyAPI_${core_version}_darwin_${arch}.tar.gz"
 
 echo "Building the plugin"
-cargo build --quiet --release --locked --manifest-path core-plugins/arbor-models/Cargo.toml
+# Its own target folder, so a CARGO_TARGET_DIR set elsewhere (mac-build sets one) doesn't move the library.
+cargo build --quiet --release --locked --manifest-path core-plugins/arbor-models/Cargo.toml \
+  --target-dir core-plugins/arbor-models/target
 plugin_lib="core-plugins/arbor-models/target/release/libarbor_models.dylib"
 # A library named by an absolute path would put the build machine's folders in the release, and could make the loader
 # treat the per-provider copies as one.
