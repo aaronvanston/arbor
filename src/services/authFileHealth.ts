@@ -37,6 +37,7 @@ const reasonKeys: Record<string, MessageKey> = {
   not_found: 'authFiles.health.reason.notFound',
   model_not_supported: 'authFiles.health.reason.modelUnsupported',
   transient_error: 'authFiles.health.reason.upstream',
+  transient_rate_limit: 'authFiles.health.reason.transientRateLimit',
   token_expired: 'authFiles.health.reason.tokenExpired',
 };
 

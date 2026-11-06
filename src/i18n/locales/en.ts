@@ -6257,6 +6257,7 @@ export const en = {
   'authFiles.health.reason.notFound': 'Not found',
   'authFiles.health.reason.modelUnsupported': 'Model not supported',
   'authFiles.health.reason.upstream': 'Upstream error',
+  'authFiles.health.reason.transientRateLimit': 'Briefly rate limited',
   'authFiles.health.reason.tokenExpired': 'Token expired',
   'authFiles.health.reason.unknown': 'Unknown reason',
   'authFiles.refreshNow': 'Refresh now',

@@ -361,6 +361,14 @@ describe('authFileAvailability', () => {
         .toEqual({ kind: 'retrying', message: '', reason: 'cloudflare_challenge', retryAtMs: at(300) });
     });
 
+    it('shows a short rate limit as retrying, not as the account running out, though it comes as a 429', () => {
+      expect(authFileAvailability({
+        unavailable: true,
+        status_message: 'transient_rate_limit',
+        cooldowns: [rest('credential', 'transient_rate_limit', 30, { http_status: 429 })],
+      }, listedAt)).toEqual({ kind: 'retrying', message: 'transient_rate_limit', reason: 'transient_rate_limit', retryAtMs: at(30) });
+    });
+
     it('treats an unavailable credential with no reason as between attempts', () => {
       // The core only lists rests that are still running, so an unavailable
       // credential with none and no message is about to be retried.

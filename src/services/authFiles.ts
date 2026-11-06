@@ -204,6 +204,9 @@ const REASON_TROUBLE: Record<string, Trouble> = {
   payment_required: 'access',
   not_found: 'access',
   transient_error: 'retrying',
+  // Core 8.0.45+: a short capacity limit (Codex's turn_rate_limit_exceeded), not the account's usage limit, though it
+  // arrives as a 429.
+  transient_rate_limit: 'retrying',
   cloudflare_challenge: 'retrying',
   token_expired: 'retrying',
 };
