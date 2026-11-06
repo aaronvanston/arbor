@@ -74,6 +74,9 @@ export function SidebarGlance({ limits, machines, onCustomize }: { limits: React
  * A chip per picked machine, laid out in even columns: its icon in its color inside a ring of that color, its health
  * score, and how many of its agents are working now at the far end. Its name, readings and the sessions waiting on you
  * are in a card on hover, so the chips stay short. Each opens the machine's page.
+ *
+ * A column's least width fits a three-digit score and agent count; `auto-fit` then spreads the chips over the
+ * sidebar's width instead of leaving empty columns, and `min(100%, …)` keeps one column inside the narrowest sidebar.
  */
 export function SidebarMachines({ onOpen }: { onOpen: (machine: string) => void }) {
   const { t } = useI18n();
@@ -87,7 +90,7 @@ export function SidebarMachines({ onOpen }: { onOpen: (machine: string) => void 
   const chips = isWindowHidden() ? heldRef.current : currentChips;
   if (!chips.length) return null;
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-1" data-slot="sidebar-machines">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,6rem),1fr))] gap-1" data-slot="sidebar-machines">
       {chips.map((chip) => <MachineChip key={chip.machine} chip={chip} onOpen={onOpen} />)}
     </div>
   );
@@ -126,7 +129,7 @@ const MachineChip = memo(function MachineChip({ chip, onOpen }: { chip: ChipFact
             type="button"
             className={cn(
               CHIP_CLASS,
-              'min-w-0 gap-1 border-[color-mix(in_srgb,var(--machine-color)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--machine-color)_12%,transparent)]',
+              'min-w-0 gap-1 whitespace-nowrap border-[color-mix(in_srgb,var(--machine-color)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--machine-color)_12%,transparent)]',
             )}
             style={style}
             // The reason is a sentence of its own, with its own full stop, which the label's "{status}." would double.
