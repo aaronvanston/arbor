@@ -9,6 +9,7 @@ import {
   backgroundRunnerCheck,
   choiceSummary,
   loadAutomations,
+  runsThroughProxy,
   scheduleChoice,
   scheduleRule,
   scheduleWords,
@@ -17,11 +18,13 @@ import {
   type ScheduleChoice,
 } from '../../services/automations';
 import { durationWords } from '../../services/durationWords';
+import { effortChoices, effortLabelKey, findModelChoice, useModelChoices } from '../../services/modelPicker';
 import { usePools } from '../../services/pools';
 import { PoolName } from '../PoolName';
 import { useFleetMachines } from '../../services/fleetHealth';
 import { getProjects, tilde } from '../../services/setupProjects';
 import { HarnessName } from '../identity/Harness';
+import { ModelPicker } from '../ModelPicker';
 import { MachinePill } from '../identity/Identity';
 import { Button } from '../ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '../ui/dialog';
@@ -55,7 +58,7 @@ type Form = {
   precheck: string;
   precheckTimeoutSecs: number;
   enabled: boolean;
-  /** The model and effort it's set to. The form doesn't change them, but a save writes every field, so they're kept. */
+  /** The model and effort it's set to; null leaves each to the agent. */
   model: string | null;
   effort: string | null;
 };
@@ -341,7 +344,14 @@ export function AutomationDialog({ open, onOpenChange, editing, copyOf, machine 
                   ) : null}
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden border-t p-6 md:border-t-0 md:border-s">
-                  <AgentField value={form.agent} onChange={(agent) => update({ agent })} />
+                  {/* An agent outside the proxy names its models its own way, so a model picked for one side doesn't carry to the other. */}
+                  <AgentField value={form.agent} onChange={(agent) => update(runsThroughProxy(agent) === runsThroughProxy(form.agent) ? { agent } : { agent, model: null, effort: null })} />
+                  <ModelField
+                    agent={form.agent}
+                    model={form.model}
+                    effort={form.effort}
+                    onChange={(model, effort) => update({ model, effort })}
+                  />
                   {/* Saving still works without the key; say here, while the agent is picked, that runs won't start. */}
                   {automationHold(list, form.agent) === 'noKey' ? (
                     <p className="-mt-3 flex items-start gap-1.5 text-xs text-warning-foreground" role="note">
@@ -488,6 +498,91 @@ function AgentField({ value, onChange }: { value: Harness; onChange: (agent: Har
           {agents.map((agent) => (
             <SelectItem key={agent} value={agent}><HarnessName harness={agent} /></SelectItem>
           ))}
+        </SelectPopup>
+      </Select>
+    </Field>
+  );
+}
+
+/**
+ * The model a run asks for and how hard it thinks, each left to the agent unless picked. Claude Code and Codex run
+ * through the proxy, so theirs is picked from its models; another agent's is named as that agent spells it.
+ */
+function ModelField({ agent, model, effort, onChange }: {
+  agent: Harness;
+  model: string | null;
+  effort: string | null;
+  onChange: (model: string | null, effort: string | null) => void;
+}) {
+  const { t } = useI18n();
+  return runsThroughProxy(agent)
+    ? <ProxyModelField model={model} effort={effort} onChange={onChange} />
+    : (
+      <>
+        <Field label={t('automations.fact.model')} htmlFor="automation-model" hint={t('automations.form.modelOwnHint')}>
+          <Input
+            id="automation-model"
+            font="mono"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={t('automations.form.modelDefault')}
+            value={model ?? ''}
+            onChange={(event) => onChange(event.target.value.trim() || null, effort)}
+          />
+        </Field>
+        <EffortField efforts={effortChoices(null, effort ?? '')} value={effort} onChange={(next) => onChange(model, next)} />
+      </>
+    );
+}
+
+/** Kept apart so the proxy's models are only read for an agent that runs through it. */
+function ProxyModelField({ model, effort, onChange }: {
+  model: string | null;
+  effort: string | null;
+  onChange: (model: string | null, effort: string | null) => void;
+}) {
+  const { t } = useI18n();
+  const models = useModelChoices(t);
+  const efforts = effortChoices(model ? findModelChoice(models.choices, model) : null, effort ?? '');
+  return (
+    <>
+      <Field label={t('automations.fact.model')} hint={t('automations.form.modelHint')}>
+        <ModelPicker
+          aria-label={t('automations.fact.model')}
+          value={model ?? ''}
+          models={models}
+          onRetry={models.reload}
+          defaultLabel={t('automations.form.modelDefault')}
+          defaultHint={t('automations.form.modelDefaultHint')}
+          onChange={(next) => {
+            // An effort the new model doesn't take goes back to the agent's own, rather than to one nobody picked.
+            const levels = effortChoices(next ? findModelChoice(models.choices, next) : null, effort ?? '');
+            onChange(next || null, effort && levels.includes(effort) ? effort : null);
+          }}
+        />
+      </Field>
+      <EffortField efforts={efforts} value={effort} onChange={(next) => onChange(model, next)} />
+    </>
+  );
+}
+
+/** A run's reasoning effort: the agent's own, or one of those the model takes. Hidden for a model that takes none. */
+function EffortField({ efforts, value, onChange }: { efforts: string[]; value: string | null; onChange: (effort: string | null) => void }) {
+  const { t } = useI18n();
+  if (!efforts.length && !value) return null;
+  const words = (effort: string) => {
+    const key = effortLabelKey(effort);
+    return key ? t(key) : effort;
+  };
+  // One it was saved with stays listed, so a model that no longer takes it doesn't lose it unseen.
+  const listed = value && !efforts.includes(value) ? [...efforts, value] : efforts;
+  return (
+    <Field label={t('automations.form.effort')}>
+      <Select value={value ?? ''} onValueChange={(next) => onChange(String(next ?? '') || null)}>
+        <SelectTrigger aria-label={t('automations.form.effort')}><SelectValue>{value ? words(value) : t('automations.form.effortDefault')}</SelectValue></SelectTrigger>
+        <SelectPopup>
+          <SelectItem value="">{t('automations.form.effortDefault')}</SelectItem>
+          {listed.map((effort) => <SelectItem key={effort} value={effort}>{words(effort)}</SelectItem>)}
         </SelectPopup>
       </Select>
     </Field>

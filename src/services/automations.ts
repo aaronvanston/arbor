@@ -571,6 +571,9 @@ export type AutomationHold = 'off' | 'noKey';
 /** Agents an automation starts through the proxy (`proxy::routes`), which need the Automations key to run. */
 const THROUGH_PROXY: ReadonlySet<Harness> = new Set<Harness>(['claude', 'codex']);
 
+/** Whether an agent's runs reach the proxy, so the models it can be set to are the proxy's; others keep their own. */
+export const runsThroughProxy = (agent: Harness): boolean => THROUGH_PROXY.has(agent);
+
 /**
  * What would stop an automation with this agent from starting, so its page, the list and the form can say so before a
  * run fails: Settings' switch for all of Arbor's automations, then the Automations key that Claude and Codex runs

@@ -14,14 +14,17 @@ const ITEM_CLASS = 'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.
 /**
  * Picks one of the models the proxy serves: a button naming the model, which opens a search over the list. A name
  * the list doesn't have can be used as typed, so an alias works, and so does any model while the proxy can't be asked
- * for its list.
+ * for its list. With `defaultLabel` it can also be left unset, which is the list's first choice and an empty value.
  */
-export function ModelPicker({ value, models, onChange, onRetry, disabled, className, 'aria-label': ariaLabel }: {
+export function ModelPicker({ value, models, onChange, onRetry, defaultLabel, defaultHint, disabled, className, 'aria-label': ariaLabel }: {
   value: string;
   models: ModelChoicesState;
   onChange: (model: string) => void;
   /** Reads the list again after it failed. */
   onRetry: () => void;
+  /** What no model reads as, such as the agent's own; without it a model is always set. */
+  defaultLabel?: string;
+  defaultHint?: string;
   disabled?: boolean;
   className?: string;
   'aria-label': string;
@@ -32,14 +35,16 @@ export function ModelPicker({ value, models, onChange, onRetry, disabled, classN
   const typed = typedModel(choices, query);
   const rows = useMemo(() => {
     const names = searchModelChoices(choices, query).map((choice) => choice.model);
-    return typed ? [...names, typed] : names;
-  }, [choices, query, typed]);
+    // Leaving it unset is offered above the whole list, not among a search's matches.
+    const listed = defaultLabel !== undefined && !query.trim() ? ['', ...names] : names;
+    return typed ? [...listed, typed] : listed;
+  }, [choices, query, typed, defaultLabel]);
 
   return (
     <Combobox.Root
       items={rows}
       filteredItems={rows}
-      value={value || null}
+      value={defaultLabel !== undefined ? value : value || null}
       inputValue={query}
       onInputValueChange={setQuery}
       // Each opening starts from the whole list, not from what was last searched for.
@@ -51,7 +56,7 @@ export function ModelPicker({ value, models, onChange, onRetry, disabled, classN
       <Combobox.Trigger aria-label={ariaLabel} className={cn(selectTriggerVariants(), 'min-w-0', className)} data-slot="model-picker-trigger">
         {value
           ? <ModelName model={value} exact className="flex-1 font-normal" />
-          : <span className="flex-1 truncate text-placeholder">{t('modelPicker.pick')}</span>}
+          : <span className={cn('flex-1 truncate', defaultLabel === undefined && 'text-placeholder')}>{defaultLabel ?? t('modelPicker.pick')}</span>}
         <ChevronDown className="-me-1 size-3.5 opacity-60" />
       </Combobox.Trigger>
       <Combobox.Portal>
@@ -90,11 +95,12 @@ export function ModelPicker({ value, models, onChange, onRetry, disabled, classN
                 return (
                   <Combobox.Item key={model} value={model} className={ITEM_CLASS}>
                     <span className="min-w-0 flex-1">
-                      {choice ? <ModelName model={model} exact className="flex" /> : <span className="block truncate font-medium">{t('modelPicker.useTyped', { model })}</span>}
-                      <span className="block truncate text-xs text-muted-foreground">
+                      {choice ? <ModelName model={model} exact className="flex" />
+                        : <span className="block truncate font-medium">{model ? t('modelPicker.useTyped', { model }) : defaultLabel}</span>}
+                      <span className="block truncate text-xs text-muted-foreground empty:hidden">
                         {choice
                           ? [choice.displayName !== model ? choice.displayName : null, ...choice.providers].filter(Boolean).join(' · ')
-                          : t('modelPicker.typedHint')}
+                          : model ? t('modelPicker.typedHint') : defaultHint}
                       </span>
                     </span>
                     <Combobox.ItemIndicator className="flex shrink-0 items-center text-primary">
