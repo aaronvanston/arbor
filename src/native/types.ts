@@ -164,6 +164,42 @@ export type AgentUpdate = {
   output: string,
 };
 
+/**
+ * What a query over the analytics tables found.
+ */
+export type AnalyticsAnswer = {
+  columns: Array<AnalyticsColumn>,
+  /**
+   * Each row's values, in the columns' order.
+   */
+  rows: Array<Array<unknown>>,
+  /**
+   * More rows matched than are here: the limit or the answer's size cut them off.
+   */
+  truncated: boolean,
+  /**
+   * Text cells were cut short. Asking with `full` gives them whole.
+   */
+  cutCells: number,
+  elapsedMs: number,
+};
+
+/**
+ * A column of an analytics table, or of a query's answer.
+ */
+export type AnalyticsColumn = {
+  name: string,
+  kind: string,
+};
+
+/**
+ * An analytics table and its columns.
+ */
+export type AnalyticsTable = {
+  name: string,
+  columns: Array<AnalyticsColumn>,
+};
+
 export type AntiburnStatus = {
   /**
    * Antiburn is in /Applications or ~/Applications.

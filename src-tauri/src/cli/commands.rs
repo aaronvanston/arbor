@@ -1246,6 +1246,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "read_session_analytics",
+        access: Access::Read,
+        summary: "Runs one SELECT over the archive's analytics tables and answers with its rows: at most `limit` (200 unless said, 10,000 at most), with long text cut short unless `full`. Only a SELECT is ever run. The tables: read_session_analytics_tables.  The answer can hold what was said in a session, so only the command line asks; the window never does.",
+        args: &[
+            ArgSpec { name: "sql", ts_type: "string", optional: false },
+            ArgSpec { name: "limit", ts_type: "number | null", optional: true },
+            ArgSpec { name: "full", ts_type: "boolean | null", optional: true },
+        ],
+    },
+    CommandSpec {
+        name: "read_session_analytics_tables",
+        access: Access::Read,
+        summary: "Every analytics table a query can name, with its columns and what each holds.",
+        args: &[],
+    },
+    CommandSpec {
         name: "set_session_archive_machine",
         access: Access::Write,
         summary: "Gives one machine its own value, keeping its sessions (true) or not (false) whatever All machines says, or with `None` puts it back on All machines' value.",
@@ -2429,6 +2445,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "save_session_archive_settings" => async { done(Box::pin(crate::usage::machine_health::archive::save_session_archive_settings(app.clone(), arg(&args, "gentle")?, arg(&args, "otherMachines")?)).await) }.await,
         "set_session_archive_analytics" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_analytics(app.clone(), arg(&args, "enabled")?, arg(&args, "detail")?)).await) }.await,
         "clear_session_archive_analytics" => done(Box::pin(crate::usage::machine_health::archive::clear_session_archive_analytics(app.clone())).await),
+        "read_session_analytics" => async { done(Box::pin(crate::usage::machine_health::archive::read_session_analytics(arg(&args, "sql")?, arg(&args, "limit")?, arg(&args, "full")?)).await) }.await,
+        "read_session_analytics_tables" => blocking(move || plain(crate::usage::machine_health::archive::read_session_analytics_tables())).await,
         "set_session_archive_machine" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_machine(app.clone(), arg(&args, "machine")?, arg(&args, "keep")?)).await) }.await,
         "set_session_archive_project" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_project(app.clone(), arg(&args, "project")?, arg(&args, "machine")?, arg(&args, "keep")?)).await) }.await,
         "reveal_session_archive" => done(Box::pin(crate::usage::machine_health::archive::reveal_session_archive(app.clone())).await),

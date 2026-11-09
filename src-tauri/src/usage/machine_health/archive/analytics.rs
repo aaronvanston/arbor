@@ -187,6 +187,12 @@ fn put_engine(archive: &[u8], sha256: &str, size: u64, dir: &Path) -> Result<(),
 /// DuckDB, started the way every helper is: with none of Arbor's open files.
 pub(crate) struct Duck(session_tables::store::Program);
 
+impl Duck {
+    pub(crate) fn program(&self) -> &session_tables::store::Program {
+        &self.0
+    }
+}
+
 impl Engine for Duck {
     fn run(&self, sql: &str) -> Result<String, String> {
         crate::keep_open_files_from_helpers();

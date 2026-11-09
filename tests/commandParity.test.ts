@@ -168,6 +168,8 @@ function listedCommands() {
 /** Commands only `arbor` reaches, each with why the window has no use for it yet. */
 const CLI_ONLY: Record<string, string> = {
   export_session_archive: 'exporting sessions is asked for on the command line; the window has no export yet',
+  read_session_analytics: 'its rows can hold what was said in a session, which never reaches the window',
+  read_session_analytics_tables: 'it lists the tables for whoever writes a query, and only the command line runs one',
 };
 
 describe('the commands between the webview and the native side', () => {

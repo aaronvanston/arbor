@@ -145,6 +145,38 @@ pub(crate) fn pool_start(words: &[&str]) -> Result<PoolStart, String> {
     }
 }
 
+/// What `arbor query` was given.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct Query {
+    pub(crate) sql: String,
+    pub(crate) tables: bool,
+    pub(crate) limit: Option<u32>,
+    pub(crate) full: bool,
+}
+
+/// Reads `arbor query`'s words: its flags, and everything else as the query, so it works quoted or not.
+pub(crate) fn query(words: &[&str]) -> Result<Query, String> {
+    let mut query = Query::default();
+    let mut sql: Vec<&str> = Vec::new();
+    let mut rest = words.iter();
+    while let Some(word) = rest.next() {
+        match *word {
+            "--tables" => query.tables = true,
+            "--full" => query.full = true,
+            "--limit" => {
+                let value = rest.next().ok_or("--limit needs a number of rows")?;
+                query.limit = Some(value.parse().map_err(|_| format!("--limit takes a number of rows, not {value}"))?);
+            }
+            other => sql.push(other),
+        }
+    }
+    query.sql = sql.join(" ");
+    if query.tables == !query.sql.trim().is_empty() {
+        return Err("Give arbor query one SELECT to run, or --tables to list what it can read. Run arbor help query to see how.".into());
+    }
+    Ok(query)
+}
+
 /// What `arbor archive export` was given.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ArchiveExport {
@@ -283,4 +315,18 @@ mod tests {
         assert_eq!(method_name("limits.read"), "limits.read");
         assert_eq!(camel_case("api_key_hash"), "apiKeyHash");
     }
+
+    #[test]
+    fn a_query_is_every_word_that_is_not_one_of_its_flags() {
+        assert_eq!(query(&["SELECT count(*) FROM requests", "--limit", "20"]), Ok(Query { sql: "SELECT count(*) FROM requests".into(), limit: Some(20), ..Query::default() }));
+        // Unquoted, the shell hands it over a word at a time.
+        assert_eq!(query(&["--full", "SELECT", "1"]), Ok(Query { sql: "SELECT 1".into(), full: true, ..Query::default() }));
+        assert_eq!(query(&["--tables"]), Ok(Query { tables: true, ..Query::default() }));
+        // One or the other, and a limit that is a number.
+        assert!(query(&[]).unwrap_err().contains("one SELECT"));
+        assert!(query(&["--tables", "SELECT 1"]).unwrap_err().contains("one SELECT"));
+        assert_eq!(query(&["SELECT 1", "--limit"]), Err("--limit needs a number of rows".into()));
+        assert_eq!(query(&["SELECT 1", "--limit", "many"]), Err("--limit takes a number of rows, not many".into()));
+    }
+
 }

@@ -32,6 +32,38 @@ fn looks_like_key(text: &str) -> bool {
         .any(|prefix| text.starts_with(prefix) && text.len() >= prefix.len() + 12)
 }
 
+/// The prefixes a key starts with, wherever in a text it sits.
+const KEY_STARTS: [&str; 7] = ["sk-", "sk_", "xai-", "AIza", "ghp_", "gho_", "github_pat_"];
+
+/// Text with anything that looks like a key inside it replaced by [`HIDDEN`]: a command an agent ran, or a file it
+/// read, can hold one in the middle of a line. Only a prefix followed by a dozen or more of a key's own characters
+/// goes, so words that merely start the same way stay.
+pub(crate) fn masked(text: &str) -> String {
+    let of_key = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while !rest.is_empty() {
+        // A key starts a word: `task-` holds `sk-` and is no key.
+        let starts_word = out.chars().next_back().is_none_or(|before| !of_key(before));
+        let found = KEY_STARTS.iter().find(|start| starts_word && rest.starts_with(**start)).and_then(|start| {
+            let run = rest[start.len()..].chars().take_while(|c| of_key(*c)).count();
+            (run >= 12).then_some(start.len() + run)
+        });
+        match found {
+            Some(length) => {
+                out.push_str(HIDDEN);
+                rest = &rest[length..];
+            }
+            None => {
+                let next = rest.chars().next().map_or(1, char::len_utf8);
+                out.push_str(&rest[..next]);
+                rest = &rest[next..];
+            }
+        }
+    }
+    out
+}
+
 fn hide_text(value: &mut Value) {
     match value {
         Value::String(text) if !text.is_empty() => *text = HIDDEN.into(),
@@ -92,6 +124,17 @@ mod tests {
                 "message": "sk-",
             })
         );
+    }
+
+    #[test]
+    fn a_key_in_the_middle_of_text_is_hidden_and_the_words_around_it_stay() {
+        assert_eq!(masked("export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstu && run"), "export OPENAI_API_KEY=[hidden] && run");
+        assert_eq!(masked("curl -H 'Authorization: Bearer ghp_abcdefghijklmnop1234' https://x"), "curl -H 'Authorization: Bearer [hidden]' https://x");
+        assert_eq!(masked("two: xai-abcdefghijklmnop, AIzaSyA1234567890abcdef."), "two: [hidden], [hidden].");
+        // Words that only start the same way, a prefix inside a word, and a prefix with too little after it.
+        for plain in ["a task-list-with-many-parts here", "sk-short", "the disk-usage-report-2026-10", "héllo sk- wörld", ""] {
+            assert_eq!(masked(plain), plain);
+        }
     }
 
     #[test]

@@ -218,6 +218,8 @@ mod tests {
         types.visit::<crate::usage::machine_health::archive::tokens::LifetimeTokens>();
         types.visit::<crate::usage::machine_health::archive::export::ArchiveExportRequest>();
         types.visit::<crate::usage::machine_health::archive::export::ArchiveExport>();
+        types.visit::<crate::usage::machine_health::archive::query::AnalyticsAnswer>();
+        types.visit::<crate::usage::machine_health::archive::query::AnalyticsTable>();
     }
 
     struct Collected {

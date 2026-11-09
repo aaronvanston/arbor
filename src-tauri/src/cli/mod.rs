@@ -20,7 +20,7 @@ mod help;
 pub(crate) mod dispatch;
 mod mcp;
 mod protocol;
-mod redact;
+pub(crate) mod redact;
 mod render;
 pub(crate) mod server;
 pub(crate) mod settings;

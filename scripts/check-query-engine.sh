@@ -59,8 +59,8 @@ echo "It runs: $answer"
 
 cd "$repo_dir"
 SESSION_TABLES_DUCKDB="$engine" cargo test --locked --manifest-path crates/session-tables/Cargo.toml store
-# The archive's own test with the engine. Tauri needs the web UI's folder to exist, so it gets an empty stand-in.
+# The archive's own tests with the engine: filling the tables, and what a query can and can't do. Tauri needs the web UI's folder to exist, so it gets an empty stand-in.
 mkdir -p dist
 [[ -f dist/index.html ]] || touch dist/index.html
-SESSION_TABLES_DUCKDB="$engine" cargo test --locked --manifest-path src-tauri/Cargo.toml archive::analytics
+SESSION_TABLES_DUCKDB="$engine" cargo test --locked --manifest-path src-tauri/Cargo.toml -- archive::analytics archive::query
 echo "DuckDB $version writes and reads the tables on $target"

@@ -41,6 +41,16 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
   - **The engine is a program, not a library.** Parquet is written by DuckDB's command-line program, which Arbor
     fetches when analytics is turned on and checks against the SHA-256 pinned in the crate. What DuckDB says when it
     fails can quote a row, so only the kind of error it names is kept.
+  - **Queries.** `arbor query` (`archive/query.rs`) runs one `SELECT` over the tables, and its answer can hold what
+    was said, so the command is the command line's alone and has no entry in `src/native/`.
+    - DuckDB's own parser decides what a `SELECT` is: the query is handed to `json_serialize_sql` as a string, and
+      what runs is the parsed statement that comes back, through `json_execute_serialized_sql`. Typed text is never
+      read as SQL twice, or as a line of DuckDB's shell, so there is no second parser to disagree with the first.
+    - The settings that confine the process to `analytics/v1/` are defense in depth, as DuckDB's own guide says, not
+      a sandbox. The vetting is what keeps a query from writing; the settings keep a `SELECT` from reading other
+      files. The process also starts with an empty environment.
+    - The socket's redaction only hides a value that is a key from its first character. A command or a file an agent
+      read can hold one mid-line, so a query's text cells are masked inside as well (`redact::masked`).
   - **Only a pass touches the folder.** Rebuild and Delete tables set a flag, and the next pass removes the folder
     before it reads anything, so a removal never races the pass that writes there. The status reads what the last
     pass noted in `archive.db` (rows, bytes, files left, an error's kind), never the drive.

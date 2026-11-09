@@ -23,6 +23,7 @@ pub(crate) mod ingest;
 pub(crate) mod journal;
 pub(crate) mod layouts;
 pub(crate) mod lister;
+pub(crate) mod query;
 pub(crate) mod recovered;
 pub(crate) mod remote;
 pub(crate) mod sha;
@@ -864,6 +865,35 @@ pub(crate) async fn set_session_archive_analytics(app: tauri::AppHandle, enabled
         app.state::<ArchiveState>().wake.notify_one();
     }
     Ok(status)
+}
+
+/// Runs one SELECT over the archive's analytics tables and answers with its rows: at most `limit` (200 unless said, 10,000 at most), with long text cut short unless `full`. Only a SELECT is ever run. The tables: read_session_analytics_tables.
+///
+/// The answer can hold what was said in a session, so only the command line asks; the window never does.
+#[tauri::command]
+pub(crate) async fn read_session_analytics(sql: String, limit: Option<u32>, full: Option<bool>) -> Result<query::AnalyticsAnswer, String> {
+    blocking(move || {
+        let dir = index_dir()?;
+        let db = open_index(&dir)?;
+        let settings = settings(&db)?;
+        let away = match (&settings.root, index::get_meta(&db, "archiveId")?) {
+            (Some(_), Some(id)) => open_main_check(&settings, &id, device(&dir)).map(|_| "The archive's drive isn't connected, so its analytics tables can't be read"),
+            _ => Some("There's no session archive yet, so there are no analytics tables. Settings › Session Archive sets one up"),
+        };
+        if let Some(away) = away {
+            return Err(away.to_string());
+        }
+        let engine = analytics::engine().ok_or("The query engine isn't on this Mac. Turning analytics on in Settings › Session Archive downloads it")?;
+        let root = PathBuf::from(settings.root.unwrap_or_default()).join(analytics::FOLDER);
+        query::ask(&root, engine.program(), &sql, limit, full.unwrap_or(false))
+    })
+    .await
+}
+
+/// Every analytics table a query can name, with its columns and what each holds.
+#[tauri::command]
+pub(crate) fn read_session_analytics_tables() -> Vec<query::AnalyticsTable> {
+    query::tables()
 }
 
 /// Removes the analytics tables on the next pass. With analytics on they're then made again from the kept

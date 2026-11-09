@@ -214,6 +214,9 @@ Usage: arbor [command] [flags]
   archive                      The session archive
   archive export --out <folder> [--project name] [--since 30d] [--machine name]
                                Put kept sessions back together, one folder per session
+  query <select> [--limit n] [--full]
+                               One SELECT over the archive's analytics tables
+  query --tables               The tables and their columns
   settings [get|set|unset] [name] [value]
                                Arbor's saved settings
   commands [filter]            Everything arbor can call
@@ -560,6 +563,7 @@ fn run_command(options: &args::Options) -> Result<(), Failure> {
             Ok(())
         }
         ["archive", "export", rest @ ..] => archive_export(options, rest),
+        ["query", rest @ ..] => query(options, rest),
         ["settings", rest @ ..] => saved_settings(options, rest),
         ["commands", filter @ ..] => {
             let client = connect(options)?;
@@ -752,6 +756,20 @@ fn archive_summary(status: &Value) -> String {
         out.push(format!("  Problem   {error}"));
     }
     out.join("\n")
+}
+
+/// `arbor query`: one SELECT over the archive's analytics tables, or with `--tables` the tables themselves.
+fn query(options: &args::Options, rest: &[&str]) -> Result<(), Failure> {
+    let query = args::query(rest).map_err(usage_error)?;
+    let mut client = connect(options)?;
+    if query.tables {
+        let tables = client.read("read_session_analytics_tables", Value::Null)?;
+        show(options, &tables, render::analytics_tables);
+        return Ok(());
+    }
+    let answer = client.read("read_session_analytics", json!({ "sql": query.sql, "limit": query.limit, "full": query.full }))?;
+    show(options, &answer, render::analytics_answer);
+    Ok(())
 }
 
 /// `arbor archive export`: the kept sessions it picks, put back together in a new or empty folder by the app.

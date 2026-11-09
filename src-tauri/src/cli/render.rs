@@ -526,6 +526,39 @@ pub(crate) fn skill_install(answer: &Value) -> String {
 }
 
 /// What `arbor archive export` wrote, and the sessions it couldn't put back together.
+/// A query's rows as a table, with a line under it when rows or text were left out.
+pub(crate) fn analytics_answer(answer: &Value) -> String {
+    let headers: Vec<&str> = items(answer, "columns").iter().map(|column| column.get("name").and_then(Value::as_str).unwrap_or_default()).collect();
+    // A cell on one line: a table can't hold a line break.
+    let cell = |value: &Value| match value {
+        Value::Null => String::new(),
+        other => text(other).replace(['\n', '\r', '\t'], " "),
+    };
+    let rows: Vec<Vec<String>> = items(answer, "rows").iter().map(|row| row.as_array().map(|cells| cells.iter().map(cell).collect()).unwrap_or_default()).collect();
+    let mut out = vec![table(&headers, &rows)];
+    let mut notes = vec![format!("{} {}", rows.len(), if rows.len() == 1 { "row" } else { "rows" })];
+    if answer.get("truncated").and_then(Value::as_bool) == Some(true) {
+        notes.push("more matched: add a LIMIT, or raise --limit".into());
+    }
+    if answer.get("cutCells").and_then(Value::as_u64).is_some_and(|cut| cut > 0) {
+        notes.push("long text was cut: --full gives it whole".into());
+    }
+    out.push(format!("({})", notes.join("; ")));
+    out.join("\n")
+}
+
+/// Each analytics table with its columns, for writing a query.
+pub(crate) fn analytics_tables(tables: &Value) -> String {
+    let list = tables.as_array().map(Vec::as_slice).unwrap_or_default();
+    list.iter()
+        .map(|found| {
+            let columns: Vec<String> = items(found, "columns").iter().map(|column| format!("  {:<22} {}", field(column, "name"), field(column, "kind"))).collect();
+            format!("{}\n{}", field(found, "name"), columns.join("\n"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 pub(crate) fn archive_export(report: &Value) -> String {
     let megabytes = report.get("bytes").and_then(Value::as_f64).map_or("–".into(), |bytes| format!("{:.1} MB", bytes / 1e6));
     let sessions = report.get("sessions").and_then(Value::as_u64).unwrap_or(0);
@@ -677,4 +710,23 @@ mod tests {
         let shown = plan(&json!({ "summary": "Restart core process", "args": {} }));
         assert_eq!(shown, "This would: Restart core process\nNothing has changed. Run it again with --yes to go ahead.");
     }
+
+    #[test]
+    fn a_querys_rows_are_a_table_that_says_what_it_left_out() {
+        let answer = json!({
+            "columns": [{ "name": "tool", "kind": "VARCHAR" }, { "name": "calls", "kind": "BIGINT" }, { "name": "note", "kind": "VARCHAR" }],
+            "rows": [["Bash", 17209, "two\nlines"], ["Read", 822, null]],
+            "truncated": true,
+            "cutCells": 1,
+        });
+        assert_eq!(
+            analytics_answer(&answer),
+            "tool  calls  note\nBash  17209  two lines\nRead  822\n(2 rows; more matched: add a LIMIT, or raise --limit; long text was cut: --full gives it whole)"
+        );
+        let one = json!({ "columns": [{ "name": "n", "kind": "BIGINT" }], "rows": [[5]], "truncated": false, "cutCells": 0 });
+        assert_eq!(analytics_answer(&one), "n\n5\n(1 row)");
+        let tables = json!([{ "name": "requests", "columns": [{ "name": "day", "kind": "day" }, { "name": "output", "kind": "number" }] }, { "name": "hooks", "columns": [] }]);
+        assert_eq!(analytics_tables(&tables), "requests\n  day                    day\n  output                 number\n\nhooks\n");
+    }
+
 }

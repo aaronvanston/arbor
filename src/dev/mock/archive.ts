@@ -1,6 +1,8 @@
 /** The browser mock's answers for the session archive: its store and copies, the machines and old backups it keeps, and its token counts. */
 import type { ArchiveCommands } from '../../native/archive';
 import type {
+  AnalyticsAnswer,
+  AnalyticsTable,
   ArchiveAnalyticsStatus,
   ArchiveCondition,
   ArchiveExport,
@@ -417,6 +419,16 @@ export const archiveAnswers: CommandAnswers<ArchiveCommands> = {
     }, 2_500);
     return archiveStatus;
   },
+  // Only the command line queries; the mock answers every query with the same few counts, and none of what was said.
+  read_session_analytics: (args): AnalyticsAnswer => {
+    if (!archiveStatus.analytics.engineReady) throw 'The query engine isn’t on this Mac. Turning analytics on in Settings › Session Archive downloads it';
+    const rows = [['Bash', 17_209], ['Read', 822], ['Edit', 366]].slice(0, args.limit ?? 200);
+    return { columns: [{ name: 'tool', kind: 'VARCHAR' }, { name: 'calls', kind: 'BIGINT' }], rows, truncated: false, cutCells: 0, elapsedMs: 42 };
+  },
+  read_session_analytics_tables: (): AnalyticsTable[] => [
+    { name: 'requests', columns: [{ name: 'day', kind: 'day' }, { name: 'model', kind: 'text' }, { name: 'output', kind: 'number' }] },
+    { name: 'tool_calls', columns: [{ name: 'day', kind: 'day' }, { name: 'tool', kind: 'text' }] },
+  ],
   // Only the command line exports; the mock answers as an export of the request would.
   export_session_archive: (args): ArchiveExport => {
     mockLog('export_session_archive', args);
