@@ -1,8 +1,8 @@
 //! Coding agents' session transcripts as rows.
 //!
 //! A transcript is a file of JSON lines. [`Parser::line`] takes one line and adds what it holds to [`Rows`]: a list
-//! per table, a struct per row. Nothing here opens files or writes tables, so the same parser serves an archive, a
-//! folder on disk or a test.
+//! per table, a struct per row. The parser opens no files, so it serves an archive, a folder on disk or a test alike.
+//! [`tables`] lists each table's columns, and [`store`] keeps rows as Parquet files in a folder.
 //!
 //! Lines are read in order and never again. Whatever a later line needs from an earlier one is in [`State`], which
 //! can be saved between runs to carry on from where a growing file was last read.
@@ -16,6 +16,8 @@ mod codex;
 mod json;
 mod rows;
 mod shell;
+pub mod store;
+pub mod tables;
 
 pub use rows::*;
 use serde::{Deserialize, Serialize};
@@ -26,6 +28,16 @@ use serde_json::Value;
 pub enum Agent {
     Claude,
     Codex,
+}
+
+impl Agent {
+    /// The agent as rows name it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Agent::Claude => "claude",
+            Agent::Codex => "codex",
+        }
+    }
 }
 
 /// How much of a session's text the rows hold.

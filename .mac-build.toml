@@ -27,3 +27,8 @@ link = ".env"
 run = "bun tauri build --bundles app"
 qos = "background"     # a release build is long; keep it to the efficiency cores
 artifact = "$CARGO_TARGET_DIR/release/bundle/macos/Arbor.app"
+
+# The DuckDB release crates/session-tables is pinned to, on a Mac: the download, its signature, and the tables written
+# and read with it. Run it after pinning a new release.
+[engine-check]
+run = "./scripts/check-query-engine.sh"

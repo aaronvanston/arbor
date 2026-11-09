@@ -13,7 +13,9 @@ Each is a `package.json` script.
 - `test`: `bun test`.
 - `verify`: the five above in order, stopping at the first failure.
 - `verify:rust`: `cargo test` in `src-tauri`, `core-plugins/arbor-models` and `crates/session-tables`. Its bindings
-  test fails when `src/native/types.ts` no longer matches the Rust types.
+  test fails when `src/native/types.ts` no longer matches the Rust types. The `session-tables` tests that write
+  Parquet need DuckDB's program and check nothing without one, since a test never fetches anything:
+  `scripts/check-query-engine.sh` fetches the pinned release and runs them (`mac-build engine-check` on the Mac).
 - `bindings`: that test with `ARBOR_WRITE_BINDINGS=1`, which rewrites the file.
 - `build`: `tsc && vite build` into the gitignored `dist/`. `verify` doesn't run it, and it's the only gate that
   compiles `src/styles.css`, so a bad Tailwind utility passes `verify` and fails here. A release only reaches it at the
