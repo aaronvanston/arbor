@@ -153,6 +153,7 @@ over a socket and runs the same commands, so the window and the CLI agree. Detai
   `usage/`), the CLI (`cli/`), updates (`app_update.rs`). Machines, automations and pools:
   [Machines](docs/internals/machines.md). The archive: [Session archive](docs/internals/session-archive.md). The CLI:
   [Command line](docs/internals/cli.md).
+- `crates/session-tables/`: agents' transcripts as rows, a crate of its own with no Tauri in it.
 - `scripts/`: releases, notes, notices and dev tooling; each says what it does at the top.
 
 ## Taste

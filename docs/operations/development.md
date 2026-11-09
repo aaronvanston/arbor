@@ -12,8 +12,8 @@ Each is a `package.json` script.
 - `knip`: unused files, exports and dependencies, configured in `knip.json`.
 - `test`: `bun test`.
 - `verify`: the five above in order, stopping at the first failure.
-- `verify:rust`: `cargo test` in `src-tauri` and `core-plugins/arbor-models`. Its bindings test fails when
-  `src/native/types.ts` no longer matches the Rust types.
+- `verify:rust`: `cargo test` in `src-tauri`, `core-plugins/arbor-models` and `crates/session-tables`. Its bindings
+  test fails when `src/native/types.ts` no longer matches the Rust types.
 - `bindings`: that test with `ARBOR_WRITE_BINDINGS=1`, which rewrites the file.
 - `build`: `tsc && vite build` into the gitignored `dist/`. `verify` doesn't run it, and it's the only gate that
   compiles `src/styles.css`, so a bad Tailwind utility passes `verify` and fails here. A release only reaches it at the
