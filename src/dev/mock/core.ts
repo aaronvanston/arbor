@@ -344,8 +344,16 @@ const aliasSources: MockAliasSource[] = [
 ];
 
 // The source a form names, or the first one when the id is unknown.
-const aliasSourcesWhere = (keep: (source: MockAliasSource) => boolean): ThinkingAliasSource[] =>
-  aliasSources.filter(keep).map(({ supportsReasoning: _reasoning, supportsFast: _fast, ...source }) => source);
+const modelsScenario = params.get('models');
+// `?models=plain` adds a model that takes no reasoning effort, which the drafting model's effort control says.
+if (modelsScenario === 'plain') {
+  aliasSources.push({ id: 'openai-compatible:plain-chat', model: 'plain-chat', displayName: 'Plain Chat', provider: 'Example router', kind: 'openai-compatible', protocol: 'openai', reasoningLevels: [], supportsReasoning: false, supportsFast: false });
+}
+const aliasSourcesWhere = (keep: (source: MockAliasSource) => boolean): ThinkingAliasSource[] => {
+  if (modelsScenario === 'fail') throw coreFailure(502, 'the core didn’t list its models');
+  if (modelsScenario === 'none') return [];
+  return aliasSources.filter(keep).map(({ supportsReasoning: _reasoning, supportsFast: _fast, ...source }) => source);
+};
 function aliasSourceFor(sourceId: unknown) {
   const source = aliasSources.find((entry) => entry.id === sourceId) ?? aliasSources[0];
   if (!source) throw new Error('No alias sources');

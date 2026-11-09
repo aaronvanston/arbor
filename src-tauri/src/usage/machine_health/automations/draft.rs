@@ -78,14 +78,18 @@ fn user_text(input: &AutomationDraftInput) -> String {
 }
 
 pub(super) fn request_body(model: &str, effort: &str, input: &AutomationDraftInput, agents: &[Harness]) -> serde_json::Value {
-    json!({
+    let mut body = json!({
         "model": model,
         "instructions": INSTRUCTIONS,
         "input": user_text(input),
-        "reasoning": { "effort": effort },
         "store": false,
         "text": { "format": { "type": "json_schema", "name": "automation_draft", "strict": true, "schema": schema(agents) } },
-    })
+    });
+    // Settings saves no effort for a model that takes none, and such a model is asked without one.
+    if !effort.trim().is_empty() {
+        body["reasoning"] = json!({ "effort": effort.trim() });
+    }
+    body
 }
 
 #[derive(Deserialize)]
@@ -220,6 +224,12 @@ mod tests {
         // Only the harnesses some machine has, that Arbor can start, and Codex, the default.
         let agents = &body["text"]["format"]["schema"]["properties"]["agent"]["enum"];
         assert_eq!(agents, &json!(["claude", "droid", "codex"]));
+    }
+
+    #[test]
+    fn a_model_with_no_effort_is_asked_without_one() {
+        assert_eq!(request_body("gpt-6-luna", "low", &input(), &[])["reasoning"]["effort"], "low");
+        assert!(request_body("plain-model", "", &input(), &[]).get("reasoning").is_none());
     }
 
     #[test]

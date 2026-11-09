@@ -10,7 +10,9 @@ import {
   showAutomations,
   useAutomations,
 } from '../../services/automations';
+import { effortChoices, effortForModel, effortLabelKey, findModelChoice, useModelChoices } from '../../services/modelPicker';
 import { useConfirmation } from '../ConfirmationDialog';
+import { ModelPicker } from '../ModelPicker';
 import { MachinePill } from '../identity/Identity';
 import { SettingsRow, SettingsSection } from '../layout/settings';
 import { Button } from '../ui/button';
@@ -22,23 +24,18 @@ import { Switch } from '../ui/switch';
 import { toast } from '../ui/toast';
 import { plainError } from '../../services/plainError';
 
-const EFFORTS = ['low', 'medium', 'high'] as const;
-
 /** Settings › Machines › Automations: whether Arbor runs its own, and the model that drafts them. */
 export function AutomationSettings() {
   const { t } = useI18n();
   const { list } = useAutomations();
   const { askConfirmation } = useConfirmation();
-  const [model, setModel] = useState('');
+  const models = useModelChoices(t);
   const [address, setAddress] = useState(() => list?.proxyAddress ?? '');
   const [addressError, setAddressError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<{ machine: string; error: string } | null>(null);
-  const savedModel = list?.draftModel;
-  // Follows what's saved, as Settings or the command line changes it.
-  useEffect(() => { if (savedModel !== undefined) setModel(savedModel); }, [savedModel]);
   const savedAddress = list?.proxyAddress;
   useEffect(() => { if (savedAddress !== undefined) setAddress(savedAddress); }, [savedAddress]);
   if (!list) return null;
@@ -54,10 +51,17 @@ export function AutomationSettings() {
       setSaving(false);
     }
   };
-  const saveModel = (nextModel: string, effort: string) => run(async () => {
-    showAutomations(await invokeCommand('set_automation_draft_model', { model: nextModel.trim(), effort }));
+  const saveModel = (model: string, effort: string) => run(async () => {
+    showAutomations(await invokeCommand('set_automation_draft_model', { model, effort }));
     toast({ title: t('automations.settings.modelSaved') });
   });
+  // The drafting model as the proxy lists it; null for a name it doesn't have, or while its list isn't read.
+  const draftChoice = findModelChoice(models.choices, list.draftModel);
+  const efforts = effortChoices(draftChoice, list.draftEffort);
+  const effortName = (effort: string) => {
+    const key = effortLabelKey(effort);
+    return key ? t(key) : effort;
+  };
 
   const addKey = async () => {
     if (!(await askConfirmation({
@@ -199,21 +203,27 @@ export function AutomationSettings() {
         description={error ?? t('automations.settings.modelHint')}
         control={
           <div className="flex items-center gap-2">
-            <Input
-              font="mono"
-              className="w-40"
+            <ModelPicker
+              className="w-52"
               aria-label={t('automations.settings.model')}
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Enter' && model.trim()) void saveModel(model, list.draftEffort); }}
+              value={list.draftModel}
+              models={models}
+              onRetry={models.reload}
+              disabled={saving}
+              // A model that doesn't take the effort in use starts on one it does.
+              onChange={(model) => void saveModel(model, effortForModel(findModelChoice(models.choices, model), list.draftEffort))}
             />
-            <Select value={list.draftEffort} onValueChange={(effort) => void saveModel(model || list.draftModel, String(effort))}>
-              <SelectTrigger aria-label={t('automations.settings.effort')} className="w-28"><SelectValue>{t(`automations.effort.${list.draftEffort === 'medium' || list.draftEffort === 'high' ? list.draftEffort : 'low'}`)}</SelectValue></SelectTrigger>
-              <SelectPopup>{EFFORTS.map((effort) => <SelectItem key={effort} value={effort}>{t(`automations.effort.${effort}`)}</SelectItem>)}</SelectPopup>
-            </Select>
-            {model.trim() && model.trim() !== list.draftModel ? (
-              <Button size="sm" disabled={saving} onClick={() => void saveModel(model, list.draftEffort)}>{t('common.save')}</Button>
-            ) : null}
+            {efforts.length ? (
+              <Select value={list.draftEffort} disabled={saving} onValueChange={(effort) => void saveModel(list.draftModel, String(effort))}>
+                <SelectTrigger aria-label={t('automations.settings.effort')} className="w-28"><SelectValue>{list.draftEffort ? effortName(list.draftEffort) : t('modelPicker.effort.pick')}</SelectValue></SelectTrigger>
+                <SelectPopup>{efforts.map((effort) => <SelectItem key={effort} value={effort}>{effortName(effort)}</SelectItem>)}</SelectPopup>
+              </Select>
+            ) : (
+              // A model with no say over its reasoning: the control stays, so the row doesn't jump, and says why.
+              <Select value="" disabled>
+                <SelectTrigger aria-label={t('automations.settings.effort')} className="w-28" title={t('modelPicker.effort.unsupportedHint')}><SelectValue>{t('modelPicker.effort.unsupported')}</SelectValue></SelectTrigger>
+              </Select>
+            )}
           </div>
         }
       />

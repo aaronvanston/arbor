@@ -34,6 +34,15 @@ describe('automation settings', () => {
     expect(ready).toContain(translate('automations.proxy.keyReady'));
   });
 
+  it('names the drafting model and its effort on their pickers', () => {
+    const html = render(list({ draftModel: 'gpt-6-luna', draftEffort: 'medium' }));
+    expect(html).toContain('data-slot="model-picker-trigger"');
+    expect(html).toContain('title="gpt-6-luna"');
+    expect(html).toContain(`>${translate('modelPicker.effort.medium')}<`);
+    // An effort Arbor has no word for shows as the core spells it.
+    expect(render(list({ draftEffort: 'turbo' }))).toContain('>turbo<');
+  });
+
   it('shows the address machines try first, as saved', () => {
     expect(render(list({ proxyAddress: 'https://proxy.example.net:8443' }))).toContain('value="https://proxy.example.net:8443"');
   });
