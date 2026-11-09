@@ -134,6 +134,10 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('session-archive', 'gentle', 'sessionArchive.title', 'sessionArchive.gentle.title', { description: 'sessionArchive.gentle.description', fallback: 'session-archive.folder' }),
   row('session-archive', 'other-machines', 'sessionArchive.title', 'sessionArchive.otherMachines.title', { description: 'sessionArchive.otherMachines.description', fallback: 'session-archive.folder' }),
   section('session-archive', 'kept', 'sessionArchive.kept.title', { description: 'sessionArchive.kept.description', fallback: 'session-archive.folder' }),
+  section('session-archive', 'analytics', 'sessionArchive.analytics.title', { description: 'sessionArchive.analytics.description', keywords: 'sessionArchive.analytics.keywords', fallback: 'session-archive.folder' }),
+  row('session-archive', 'analytics-on', 'sessionArchive.analytics.title', 'sessionArchive.analytics.on.title', { description: 'sessionArchive.analytics.on.description', fallback: 'session-archive.folder' }),
+  row('session-archive', 'analytics-detail', 'sessionArchive.analytics.title', 'sessionArchive.analytics.detail.title', { description: 'sessionArchive.analytics.detail.description', fallback: 'session-archive.folder' }),
+  row('session-archive', 'analytics-tables', 'sessionArchive.analytics.title', 'sessionArchive.analytics.tables.title', { fallback: 'session-archive.folder' }),
   section('session-archive', 'imports', 'sessionArchive.imports.title', { description: 'sessionArchive.imports.description', fallback: 'session-archive.folder' }),
 
   row('data', 'collector', 'usage.collector.title', 'usage.collector.status', { description: 'usage.collector.description' }),

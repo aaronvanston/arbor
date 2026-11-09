@@ -41,6 +41,9 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
   - **The engine is a program, not a library.** Parquet is written by DuckDB's command-line program, which Arbor
     fetches when analytics is turned on and checks against the SHA-256 pinned in the crate. What DuckDB says when it
     fails can quote a row, so only the kind of error it names is kept.
+  - **Only a pass touches the folder.** Rebuild and Delete tables set a flag, and the next pass removes the folder
+    before it reads anything, so a removal never races the pass that writes there. The status reads what the last
+    pass noted in `archive.db` (rows, bytes, files left, an error's kind), never the drive.
 
 Stored frames and compressed transcripts are only ever decompressed through `archive/codec.rs`, which stops at a
 ceiling: a store or a backup can come from someone else, and a few kilobytes of zstd can claim gigabytes.

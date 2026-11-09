@@ -24,6 +24,7 @@ import { formatAgo, formatNumber } from '../lib/format';
 import { formatBytes } from '../services/machineHealth';
 import { useQuotaClock } from '../services/quotaTime';
 import { errorWords, plainError } from '../services/plainError';
+import { ArchiveAnalytics } from './SessionArchiveAnalytics';
 import { ArchiveImports } from './SessionArchiveImports';
 import {
   adoptSessionArchive,
@@ -500,6 +501,8 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
         </SettingsSection>
         );
       })}
+
+      <ArchiveAnalytics status={status} act={act} />
 
       <ArchiveImports status={status} onStatus={onStatus} />
     </>

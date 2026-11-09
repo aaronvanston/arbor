@@ -1,4 +1,4 @@
-import type { ArchiveExport, ArchiveExportRequest, ArchiveStatus, FolderCheck, ImportPreview, LifetimeTokens } from './types';
+import type { ArchiveAnalyticsDetail, ArchiveExport, ArchiveExportRequest, ArchiveStatus, FolderCheck, ImportPreview, LifetimeTokens } from './types';
 
 /** The session archive: its store, collecting into it, old backups brought in, exporting sessions out of it, and the all-time token count it keeps. */
 export type ArchiveCommands = {
@@ -12,6 +12,8 @@ export type ArchiveCommands = {
   set_session_archive_machine: { args: { machine: string; keep: boolean | null }; result: ArchiveStatus };
   set_session_archive_project: { args: { project: string; machine: string | null; keep: boolean | null }; result: ArchiveStatus };
   reveal_session_archive: { result: void };
+  set_session_archive_analytics: { args: { enabled: boolean; detail: ArchiveAnalyticsDetail }; result: ArchiveStatus };
+  clear_session_archive_analytics: { result: ArchiveStatus };
 
   preview_session_import: { args: { path: string }; result: ImportPreview };
   add_session_import: { args: { path: string; machine: string }; result: ArchiveStatus };

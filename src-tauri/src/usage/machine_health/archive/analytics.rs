@@ -16,11 +16,11 @@ use super::codec;
 use super::ingest::Throttle;
 use super::tokens::{pieces, read_piece, Piece};
 use rusqlite::{params, Connection, OptionalExtension};
-use session_tables::store::{Batch, Engine, Origin, Store as Tables};
+use session_tables::store::{Batch, Engine, Origin, Store as Tables, DUCKDB_ARCHIVES, DUCKDB_VERSION};
 use session_tables::{Agent, At, Detail, Line, Parser, Rows, State};
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// The folder in a store.
@@ -80,12 +80,108 @@ pub(crate) struct ExtractReport {
     pub(crate) rows: u64,
     pub(crate) failures: u64,
     pub(crate) first_failure: Option<String>,
+    /// Kept transcripts with something still to read, once the pass ended.
+    pub(crate) versions_left: u64,
+    /// What the tables hold, once the pass ended.
+    pub(crate) table_rows: u64,
+    pub(crate) table_bytes: u64,
+}
+
+/// Where the engine is kept: beside Arbor's own data, never in a store.
+fn engine_dir() -> Result<PathBuf, String> {
+    Ok(crate::core_base_dir()?.join("query-engine"))
+}
+
+fn engine_folder() -> String {
+    format!("duckdb-{DUCKDB_VERSION}")
 }
 
 /// DuckDB's program, which Arbor fetches when analytics is first turned on, if it's there.
 pub(crate) fn engine() -> Option<Duck> {
-    let path = crate::core_base_dir().ok()?.join("query-engine").join(format!("duckdb-{}", session_tables::store::DUCKDB_VERSION)).join("duckdb");
+    let path = engine_dir().ok()?.join(engine_folder()).join("duckdb");
     path.is_file().then_some(Duck(session_tables::store::Program { path }))
+}
+
+/// The pinned release's archive for this kind of machine: its name, SHA-256 and size.
+fn pinned() -> Option<(&'static str, &'static str, u64)> {
+    let system = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
+    DUCKDB_ARCHIVES.iter().find(|(target, ..)| *target == system).map(|(_, name, sha256, size)| (*name, *sha256, *size))
+}
+
+/// How much turning analytics on downloads, or nothing when there's no program for this kind of machine.
+pub(crate) fn engine_download_bytes() -> Option<u64> {
+    pinned().map(|(_, _, size)| size)
+}
+
+const WRONG_DOWNLOAD: &str = "The query engine download isn't the release Arbor expects, so it wasn't kept";
+/// The most the program itself may unpack to. It is about 66 MB.
+const ENGINE_MAX_BYTES: u64 = 512 << 20;
+
+/// Fetches the pinned DuckDB program from its GitHub release, unless it's here already. Only the archive whose size
+/// and SHA-256 are the pinned ones is unpacked, so nothing else is ever run.
+pub(crate) async fn install_engine(client: &reqwest::Client) -> Result<(), String> {
+    use futures_util::StreamExt;
+    if engine().is_some() {
+        return Ok(());
+    }
+    let (name, sha256, size) = pinned().ok_or("The query engine has no program for this kind of machine")?;
+    let url = format!("https://github.com/duckdb/duckdb/releases/download/v{DUCKDB_VERSION}/{name}");
+    let failed = |error: reqwest::Error| format!("Couldn't download the query engine: {error}");
+    let response = client.get(&url).header(reqwest::header::USER_AGENT, crate::USER_AGENT).send().await.map_err(failed)?.error_for_status().map_err(failed)?;
+    let mut archive: Vec<u8> = Vec::with_capacity(size as usize);
+    let mut stream = response.bytes_stream();
+    while let Some(piece) = stream.next().await {
+        archive.extend_from_slice(&piece.map_err(failed)?);
+        // A download that runs past the pinned size isn't the pinned archive, however it ends.
+        if archive.len() as u64 > size {
+            return Err(WRONG_DOWNLOAD.to_string());
+        }
+    }
+    let dir = engine_dir()?;
+    tauri::async_runtime::spawn_blocking(move || put_engine(&archive, sha256, size, &dir)).await.map_err(|error| error.to_string())?
+}
+
+/// Checks a downloaded archive against its pin and puts the program in it into place, then drops other releases'.
+fn put_engine(archive: &[u8], sha256: &str, size: u64, dir: &Path) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let found: String = Sha256::digest(archive).iter().map(|byte| format!("{byte:02x}")).collect();
+    if archive.len() as u64 != size || found != sha256 {
+        return Err(WRONG_DOWNLOAD.to_string());
+    }
+    let folder = dir.join(engine_folder());
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&folder).map_err(|error| format!("Couldn't make {}: {error}", folder.display()))?;
+    let unpacked = |error: std::io::Error| format!("Couldn't unpack the query engine: {error}");
+    let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(archive));
+    let part = folder.join("duckdb.part");
+    let mut placed = false;
+    for entry in tar.entries().map_err(unpacked)? {
+        let mut entry = entry.map_err(unpacked)?;
+        // Only the program is taken, and only as a plain file: nothing in the archive chooses where it's written.
+        if !entry.header().entry_type().is_file() || entry.path().map_err(unpacked)?.as_ref() != Path::new("duckdb") {
+            continue;
+        }
+        let _ = std::fs::remove_file(&part);
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o700).open(&part).map_err(unpacked)?;
+        let copied = std::io::copy(&mut (&mut entry).take(ENGINE_MAX_BYTES + 1), &mut file).map_err(unpacked)?;
+        if copied > ENGINE_MAX_BYTES {
+            let _ = std::fs::remove_file(&part);
+            return Err(WRONG_DOWNLOAD.to_string());
+        }
+        file.sync_all().map_err(unpacked)?;
+        std::fs::rename(&part, folder.join("duckdb")).map_err(unpacked)?;
+        placed = true;
+        break;
+    }
+    if !placed {
+        return Err("The query engine download has no program in it".to_string());
+    }
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if entry.path() != folder && entry.file_name().to_string_lossy().starts_with("duckdb-") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+    Ok(())
 }
 
 /// DuckDB, started the way every helper is: with none of Arbor's open files.
@@ -98,13 +194,51 @@ impl Engine for Duck {
     }
 }
 
-/// Notes why the last pass couldn't make the tables, or that it could.
-pub(crate) fn note_failure(db: &Connection, error: Option<&str>) -> Result<(), String> {
+/// What the last pass left the tables as, for the status to read without reaching for the store: counts, sizes and
+/// an error with no row in it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct Standing {
+    pub(crate) rows: u64,
+    pub(crate) bytes: u64,
+    /// Kept transcripts with something still to read.
+    pub(crate) versions_left: u64,
+    pub(crate) error: Option<String>,
+}
+
+/// Notes how a pass over the tables went. One that failed outright keeps the last counts, with its error.
+pub(crate) fn note(db: &Connection, outcome: &Result<ExtractReport, String>) -> Result<(), String> {
+    let standing = match outcome {
+        Ok(report) => Standing { rows: report.table_rows, bytes: report.table_bytes, versions_left: report.versions_left, error: report.first_failure.clone() },
+        Err(error) => Standing { error: Some(error.clone()), ..standing(db)?.unwrap_or_default() },
+    };
     let _writes = super::index::lock_writes();
-    match error {
-        Some(error) => super::index::set_meta(db, "analyticsError", error),
-        None => db.execute("DELETE FROM meta WHERE key = 'analyticsError'", []).map(|_| ()).map_err(index_error),
+    super::index::set_meta(db, "analytics", &serde_json::to_string(&standing).map_err(|error| error.to_string())?)
+}
+
+/// What the last pass noted, or nothing when no pass has made tables.
+pub(crate) fn standing(db: &Connection) -> Result<Option<Standing>, String> {
+    Ok(super::index::get_meta(db, "analytics")?.and_then(|text| serde_json::from_str(&text).ok()))
+}
+
+/// Asks the next pass to remove the tables. A pass is what writes them, so a pass removes them: nothing else
+/// touches the folder while one runs.
+pub(crate) fn ask_reset(db: &Connection) -> Result<(), String> {
+    let _writes = super::index::lock_writes();
+    super::index::set_meta(db, "analyticsReset", "1")
+}
+
+/// Removes the tables if that was asked for. With analytics on, the pass then makes them again from the start.
+pub(crate) fn reset_if_asked(db: &Connection, root: &Path) -> Result<(), String> {
+    if super::index::get_meta(db, "analyticsReset")?.is_none() {
+        return Ok(());
     }
+    // A folder of the store's own, never a link to somewhere else.
+    if std::fs::symlink_metadata(root).is_ok_and(|meta| meta.is_dir()) {
+        std::fs::remove_dir_all(root).map_err(|error| format!("Couldn't remove {}: {error}", root.display()))?;
+    }
+    let _writes = super::index::lock_writes();
+    db.execute("DELETE FROM meta WHERE key IN ('analyticsReset', 'analytics')", []).map(|_| ()).map_err(index_error)
 }
 
 fn state_error(error: rusqlite::Error) -> String {
@@ -243,13 +377,13 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
     let (tables, state) = open(root, options.detail)?;
     settle(&state, &tables)?;
     tables.sweep()?;
-    let todo = todo(db, &state)?;
+    let waiting = todo(db, &state)?;
     let batch = tables.batch()?;
     let mut writer = Writer { tables, state, engine, batch, steps: Vec::new(), rows: 0 };
     let mut report = ExtractReport { complete: true, ..ExtractReport::default() };
     let mut throttle = Throttle::new(options.bytes_per_second);
     let out_of_time = |read: u64| stop() || read >= options.max_bytes || started.elapsed() >= options.max_time;
-    for item in todo {
+    for item in waiting {
         if out_of_time(report.bytes_read) {
             report.complete = false;
             break;
@@ -313,6 +447,8 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
     // The sweep takes the batch left open with nothing in it.
     writer.tables.sweep()?;
     report.rows = writer.rows;
+    report.versions_left = todo(db, &writer.state)?.len() as u64;
+    (report.table_rows, report.table_bytes) = writer.tables.size();
     Ok(report)
 }
 
@@ -536,7 +672,6 @@ mod tests {
     use session_tables::store::Program;
     use std::cell::Cell;
     use std::fs;
-    use std::path::PathBuf;
 
     /// Stands in for DuckDB where a test only needs rows to land: each table's file is "written" as the JSON lines
     /// the engine was told to read, so a test reads rows back without one. It can't merge.
@@ -590,6 +725,17 @@ mod tests {
         fn drop_pending(&self, vk: &str, keep: Option<i64>) {
             self.inner.drop_pending(vk, keep);
         }
+    }
+
+    /// What a write says when the engine fails, by way of a store of its own.
+    fn session_tables_failure() -> String {
+        let root = super::super::store::tests::temp_dir("analytics-failure");
+        let mut tables = Tables::open(&root).unwrap();
+        let mut batch = tables.batch().unwrap();
+        batch.add(&Origin { agent: Agent::Claude, machine: "mac", source: "1" }, &Rows { lines: vec![Line::default()], ..Rows::default() }).unwrap();
+        let error = tables.write(batch, &Broken).unwrap_err();
+        let _ = fs::remove_dir_all(&root);
+        error
     }
 
     fn everything() -> ExtractOptions {
@@ -809,6 +955,14 @@ mod tests {
             assert!(!holds(&fs::read(&path).unwrap()), "{}", path.display());
         }
 
+        // What the status says of the tables is counts, and a failure's kind with nothing of what the engine said.
+        note(&fixture.db, &extract_pass(&fixture.db, &fixture.places, &analytics, &Copier, &everything(), &|| false)).unwrap();
+        let settings = super::super::Settings { analytics: true, ..Default::default() };
+        let said = |fixture: &Fixture| serde_json::to_string(&super::super::analytics_status(&fixture.db, &settings).unwrap()).unwrap();
+        assert!(said(&fixture).contains("\"rows\":11,") && !said(&fixture).contains("SECRET"), "{}", said(&fixture));
+        note(&fixture.db, &Err(session_tables_failure())).unwrap();
+        assert!(said(&fixture).contains("\"lastError\":\"The query engine stopped while writing tables (IO Error)\"") && !said(&fixture).contains("SECRET"), "{}", said(&fixture));
+
         // Numbers only makes the tables again, with the same rows and none of the text.
         let lines = rows(&fixture, "lines").len();
         let report = extract(&fixture, &ExtractOptions { detail: Detail::Numbers, ..everything() });
@@ -845,6 +999,89 @@ mod tests {
         let mut found: Vec<u64> = Vec::new();
         again.feed(b"abc\nde\nxyz\nf\ngh\n", &mut |number, _| found.push(number));
         assert_eq!(found, [3, 4]);
+    }
+
+    #[test]
+    fn only_the_pinned_download_is_unpacked_and_only_its_program() {
+        use sha2::{Digest, Sha256};
+        use std::os::unix::fs::PermissionsExt;
+        let pack = |entries: &[(&str, &[u8])]| -> Vec<u8> {
+            let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
+            for (name, bytes) in entries {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(bytes.len() as u64);
+                header.set_mode(0o755);
+                header.set_cksum();
+                builder.append_data(&mut header, name, *bytes).unwrap();
+            }
+            builder.into_inner().unwrap().finish().unwrap()
+        };
+        let sha = |bytes: &[u8]| -> String { Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect() };
+        let base = super::super::store::tests::temp_dir("analytics-engine-put");
+        let dir = base.join("query-engine");
+        let good = pack(&[("README", b"read me"), ("duckdb", b"#!/bin/sh\necho duck\n")]);
+
+        // Another hash, or another size, is refused before anything is written.
+        assert_eq!(put_engine(&good, &sha(b"something else"), good.len() as u64, &dir).unwrap_err(), WRONG_DOWNLOAD);
+        assert_eq!(put_engine(&good, &sha(&good), good.len() as u64 + 1, &dir).unwrap_err(), WRONG_DOWNLOAD);
+        assert!(!dir.exists());
+
+        // An older release's folder goes once the pinned one is in.
+        fs::create_dir_all(dir.join("duckdb-0.0.1")).unwrap();
+        put_engine(&good, &sha(&good), good.len() as u64, &dir).unwrap();
+        let program = dir.join(engine_folder()).join("duckdb");
+        assert_eq!(fs::read(&program).unwrap(), b"#!/bin/sh\necho duck\n");
+        assert_eq!(fs::metadata(&program).unwrap().permissions().mode() & 0o777, 0o700);
+        let mut kept: Vec<String> = walk(&dir).iter().map(|path| path.strip_prefix(&dir).unwrap().to_string_lossy().into_owned()).collect();
+        kept.sort();
+        assert_eq!(kept, [format!("{}/duckdb", engine_folder())]);
+        assert!(!dir.join("duckdb-0.0.1").exists());
+
+        // An archive with no program in it, or with one tucked in a folder, isn't one.
+        let empty = pack(&[("bin/duckdb", b"x"), ("README", b"read me")]);
+        assert_eq!(put_engine(&empty, &sha(&empty), empty.len() as u64, &base.join("other")).unwrap_err(), "The query engine download has no program in it");
+        // Every pin is a release archive's name, a SHA-256 and a size.
+        assert!(DUCKDB_ARCHIVES.iter().all(|(_, name, sha256, size)| name.ends_with(".tar.gz") && sha256.len() == 64 && *size > 1 << 20));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_reset_that_was_asked_for_removes_the_tables_once_and_the_next_pass_makes_them_again() {
+        let fixture = Fixture::new("analytics-reset");
+        fixture.write(MAIN, &claude_session(&[("msg_1", 5), ("msg_2", 20)]));
+        assert!(fixture.pass().complete);
+        let outcome = Ok(extract(&fixture, &everything()));
+        note(&fixture.db, &outcome).unwrap();
+        let noted = standing(&fixture.db).unwrap().unwrap();
+        assert_eq!((noted.rows, noted.versions_left, noted.error.as_deref()), (outcome.as_ref().unwrap().rows, 0, None));
+        assert!(noted.bytes > 0);
+        // A pass that fails keeps the counts and says why, with nothing of what was said.
+        note(&fixture.db, &extract_pass(&fixture.db, &fixture.places, &root(&fixture), &Broken, &ExtractOptions { detail: Detail::Numbers, ..everything() }, &|| false)).unwrap();
+        let failed = standing(&fixture.db).unwrap().unwrap();
+        assert_eq!((failed.rows, failed.error.as_deref()), (noted.rows, Some("The query engine stopped while writing tables (IO Error)")));
+
+        // Nothing asked: nothing removed.
+        reset_if_asked(&fixture.db, &root(&fixture)).unwrap();
+        assert!(root(&fixture).join("state.db").exists());
+        ask_reset(&fixture.db).unwrap();
+        reset_if_asked(&fixture.db, &root(&fixture)).unwrap();
+        assert!(!root(&fixture).exists());
+        assert_eq!(standing(&fixture.db).unwrap(), None);
+        // Chunks are untouched, so the tables come back whole.
+        assert_eq!(extract(&fixture, &everything()).rows, noted.rows);
+        reset_if_asked(&fixture.db, &root(&fixture)).unwrap();
+        assert!(root(&fixture).exists());
+
+        // A link where the folder should be is left alone, and so is what it points at.
+        fs::remove_dir_all(root(&fixture)).unwrap();
+        let elsewhere = fixture.base.join("elsewhere");
+        fs::create_dir_all(&elsewhere).unwrap();
+        fs::write(elsewhere.join("keep"), "x").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, root(&fixture)).unwrap();
+        ask_reset(&fixture.db).unwrap();
+        reset_if_asked(&fixture.db, &root(&fixture)).unwrap();
+        assert!(elsewhere.join("keep").exists());
+        let _ = fs::remove_dir_all(&fixture.base);
     }
 
     /// With DuckDB itself, when `SESSION_TABLES_DUCKDB` names its program (`scripts/check-query-engine.sh`).

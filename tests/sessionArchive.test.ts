@@ -5,6 +5,7 @@ import {
   archiveMachines,
   archiveKeepsMachine,
   archiveNotification,
+  analyticsStanding,
   archiveSwitchSaver,
   archiveTrouble,
   compression,
@@ -44,6 +45,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   machineOverrides: {},
   projectOverrides: {},
   warnings: [],
+  analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, resetting: false, lastError: null },
   ...fields,
 });
 
@@ -215,4 +217,19 @@ describe('saving the archive switches', () => {
     await save({ gentle: false, otherMachines: true }, { otherMachines: false });
     expect(saved).toEqual([{ gentle: false, otherMachines: false }]);
   });
+
+  it('says the first thing that is true of the analytics tables', () => {
+    const analytics = status().analytics;
+    const on = { ...analytics, enabled: true, engineReady: true, versionsLeft: 0 };
+    expect(analyticsStanding(analytics).key).toBe('sessionArchive.analytics.standing.off');
+    expect(analyticsStanding(on)).toEqual({ key: 'sessionArchive.analytics.standing.ready', failed: false });
+    expect(analyticsStanding({ ...on, versionsLeft: 12 }).key).toBe('sessionArchive.analytics.standing.reading');
+    expect(analyticsStanding({ ...on, versionsLeft: null }).key).toBe('sessionArchive.analytics.standing.waiting');
+    // On without its engine (the program was removed): that's what's wrong, before anything about progress.
+    expect(analyticsStanding({ ...on, engineReady: false })).toEqual({ key: 'sessionArchive.analytics.standing.noEngine', failed: true });
+    // A failure outranks progress, and a removal that's been asked for outranks both.
+    expect(analyticsStanding({ ...on, versionsLeft: 12, lastError: 'x' })).toEqual({ key: 'sessionArchive.analytics.standing.failed', failed: true });
+    expect(analyticsStanding({ ...on, lastError: 'x', resetting: true }).key).toBe('sessionArchive.analytics.standing.resetting');
+  });
+
 });

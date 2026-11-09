@@ -255,6 +255,38 @@ export type ArborSession = {
 };
 
 /**
+ * How much of what was said the analytics tables hold.
+ */
+export type ArchiveAnalyticsDetail = "everything" | "numbers";
+
+/**
+ * The analytics tables: whether they're kept up, and what the last pass left them as. Counts and sizes only.
+ */
+export type ArchiveAnalyticsStatus = {
+  enabled: boolean,
+  detail: ArchiveAnalyticsDetail,
+  /**
+   * The query engine is on this Mac. Turning analytics on fetches it.
+   */
+  engineReady: boolean,
+  /**
+   * How much that download is, or nothing when there's no engine for this kind of machine.
+   */
+  engineBytes: number | null,
+  rows: number,
+  bytes: number,
+  /**
+   * Kept transcripts with something still to read, or nothing before the first pass has said.
+   */
+  versionsLeft: number | null,
+  /**
+   * The tables are waiting for a pass to remove them.
+   */
+  resetting: boolean,
+  lastError: string | null,
+};
+
+/**
  * Why none of a home's sessions count as archived.
  */
 export type ArchiveBlock = "off" | "paused" | "mainMissing" | "foreign" | "notKept" | "unreadable";
@@ -427,6 +459,7 @@ export type ArchiveStatus = {
    * doesn't outlive the disk it backs up.
    */
   warnings: Array<"noowners" | "own-disk">,
+  analytics: ArchiveAnalyticsStatus,
 };
 
 export type ArchiveStore = {

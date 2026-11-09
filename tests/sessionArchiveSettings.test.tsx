@@ -29,6 +29,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   machineOverrides: {},
   projectOverrides: {},
   warnings: [],
+  analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, resetting: false, lastError: null },
   ...fields,
 });
 const overview = (fields: Partial<ArchiveStatus> = {}) => text(renderToStaticMarkup(<I18nProvider><ArchiveOverview status={status(fields)} onStatus={() => undefined} /></I18nProvider>));
@@ -150,4 +151,29 @@ describe('Settings › Session archive', () => {
     expect(failing).toContain('Couldn’t list the agent homes');
     expect(banner({ state: 'foreign' })).toContain('The archive’s folder has held something else since');
   });
+
+  it('says what the analytics tables hold and offers the one thing that can be done with them', () => {
+    const base = status().analytics;
+    // Off, with the engine still to fetch: the download's size is said up front, and there are no tables to act on.
+    const off = overview();
+    expect(off).toContain('Turning it on downloads the DuckDB query engine (18.3 MB).');
+    expect(off).not.toContain('Rebuild');
+    expect(off).not.toContain('Delete tables');
+    // On and caught up.
+    const on = overview({ analytics: { ...base, enabled: true, engineReady: true, rows: 4_218_930, bytes: 312_000_000, versionsLeft: 0 } });
+    expect(on).toContain('4,218,930 rows');
+    expect(on).toContain('Up to date.');
+    expect(on).toContain('Rebuild');
+    expect(on).not.toContain('downloads the DuckDB');
+    // Catching up, and failing.
+    expect(overview({ analytics: { ...base, enabled: true, engineReady: true, rows: 10, bytes: 10, versionsLeft: 1840 } })).toContain('1840 session files still to read.');
+    expect(overview({ analytics: { ...base, enabled: true, engineReady: true, versionsLeft: 0, lastError: 'The query engine stopped while writing tables (IO Error)' } })).toContain('The last check couldn’t update them: The query engine stopped while writing tables (IO Error)');
+    // Off with tables left behind: they can be deleted, and say they're not kept up.
+    const kept = overview({ analytics: { ...base, engineReady: true, rows: 10, bytes: 10, versionsLeft: 0 } });
+    expect(kept).toContain('Delete tables');
+    expect(kept).toContain('Not kept up while analytics is off.');
+    // No engine for this Mac.
+    expect(overview({ analytics: { ...base, engineBytes: null } })).toContain('no version for this kind of Mac');
+  });
+
 });

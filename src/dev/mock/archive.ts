@@ -1,6 +1,7 @@
 /** The browser mock's answers for the session archive: its store and copies, the machines and old backups it keeps, and its token counts. */
 import type { ArchiveCommands } from '../../native/archive';
 import type {
+  ArchiveAnalyticsStatus,
   ArchiveCondition,
   ArchiveExport,
   ArchiveImport,
@@ -66,6 +67,7 @@ const archiveTotals = (share: number): ArchiveTotals => ({
 });
 
 // Old backups taken into the archive, by `?imports=` (listed at the top).
+const analyticsScenario = params.get('analytics') ?? 'off';
 const importsScenario = params.get('imports') ?? (freshInstall ? 'none' : 'some');
 
 const importPreviewScenario = params.get('importPreview') ?? 'found';
@@ -128,6 +130,7 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
     return {
       state: 'off', archiveId: null, main: null, sources: [], machines: [], imports: [], totals: archiveTotals(0),
       running: false, lastPassAt: null, nextPassAt: null, lastError: null, failingSince: null, paused: false, gentle: false, otherMachines: true, machineOverrides: {}, projectOverrides: {}, warnings: [],
+      analytics: mockArchiveAnalytics('off'),
     };
   }
   // A missing drive was last reached yesterday, so its alert and banner show; another folder in its place, 3 hours ago.
@@ -161,7 +164,27 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
       ? { 'cam/billing': { all: false, machines: {} }, 'cam/arbor': { all: null, machines: { ci01: false } } }
       : {},
     warnings: scenario === 'noowners' ? ['noowners'] : scenario === 'own-disk' ? ['own-disk'] : [],
+    analytics: mockArchiveAnalytics(analyticsScenario),
   };
+}
+
+const ANALYTICS_ROWS = 4_218_930;
+const ANALYTICS_BYTES = 312_000_000;
+
+/** `?analytics=`: see the list at the top of mockTauri.ts. */
+function mockArchiveAnalytics(scenario: string): ArchiveAnalyticsStatus {
+  const off: ArchiveAnalyticsStatus = { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, resetting: false, lastError: null };
+  const on: ArchiveAnalyticsStatus = { ...off, enabled: true, engineReady: true, rows: ANALYTICS_ROWS, bytes: ANALYTICS_BYTES, versionsLeft: 0 };
+  switch (scenario) {
+    case 'on': return on;
+    case 'numbers': return { ...on, detail: 'numbers', bytes: 41_000_000 };
+    case 'reading': return { ...on, rows: 1_204_500, bytes: 96_000_000, versionsLeft: 1_840 };
+    case 'new': return { ...on, rows: 0, bytes: 0, versionsLeft: null };
+    case 'error': return { ...on, lastError: 'The query engine stopped while writing tables (IO Error)' };
+    case 'kept': return { ...on, enabled: false };
+    case 'unavailable': return { ...off, engineBytes: null };
+    default: return off;
+  }
 }
 
 function mockFolderCheck(path: string): FolderCheck {
@@ -345,6 +368,34 @@ export const archiveAnswers: CommandAnswers<ArchiveCommands> = {
     return archiveStatus;
   },
   reveal_session_archive: () => { mockLog('reveal_session_archive', {}); return null; },
+  // Turning it on "downloads" the engine for a second and a half; `?analytics=download-fail` fails that instead.
+  set_session_archive_analytics: (args) => {
+    const before = archiveStatus.analytics;
+    return later(args.enabled && !before.engineReady ? 1_500 : 150, () => {
+      if (args.enabled && !before.engineReady && analyticsScenario === 'download-fail') throw 'Couldn’t download the query engine: error sending request';
+      const remade = args.detail !== before.detail && before.rows > 0;
+      archiveStatus = {
+        ...archiveStatus,
+        analytics: {
+          ...before,
+          enabled: args.enabled,
+          detail: args.detail,
+          engineReady: before.engineReady || args.enabled,
+          ...(remade ? { rows: 0, bytes: 0, versionsLeft: null } : {}),
+          ...(args.enabled && before.versionsLeft === null ? { versionsLeft: null } : {}),
+        },
+      };
+      return archiveStatus;
+    });
+  },
+  clear_session_archive_analytics: () => {
+    archiveStatus = { ...archiveStatus, analytics: { ...archiveStatus.analytics, resetting: true } };
+    window.setTimeout(() => {
+      const { analytics } = archiveStatus;
+      archiveStatus = { ...archiveStatus, analytics: { ...analytics, resetting: false, rows: 0, bytes: 0, lastError: null, versionsLeft: analytics.enabled ? 2_310 : null } };
+    }, 2_000);
+    return archiveStatus;
+  },
   preview_session_import: (args) => {
     return later(importPreviewScenario === 'slow' ? 4_000 : 700, () => {
       if (importPreviewScenario === 'fail') throw 'That folder isn’t there.';

@@ -1231,6 +1231,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "set_session_archive_analytics",
+        access: Access::Write,
+        summary: "Turns the analytics tables on or off and says how much of what was said they hold. On fetches the query engine first, if it isn't here, through the proxy set in Settings when there is one. Off stops the tables being kept up and leaves them where they are; a new detail makes them again.",
+        args: &[
+            ArgSpec { name: "enabled", ts_type: "boolean", optional: false },
+            ArgSpec { name: "detail", ts_type: "ArchiveAnalyticsDetail", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "clear_session_archive_analytics",
+        access: Access::Write,
+        summary: "Removes the analytics tables on the next pass. With analytics on they're then made again from the kept transcripts; with it off they're gone until it's turned on. The kept transcripts are untouched either way.",
+        args: &[],
+    },
+    CommandSpec {
         name: "set_session_archive_machine",
         access: Access::Write,
         summary: "Gives one machine its own value, keeping its sessions (true) or not (false) whatever All machines says, or with `None` puts it back on All machines' value.",
@@ -2412,6 +2427,8 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "run_session_archive_now" => done(Box::pin(crate::usage::machine_health::archive::run_session_archive_now(app.clone())).await),
         "set_session_archive_paused" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_paused(app.clone(), arg(&args, "paused")?)).await) }.await,
         "save_session_archive_settings" => async { done(Box::pin(crate::usage::machine_health::archive::save_session_archive_settings(app.clone(), arg(&args, "gentle")?, arg(&args, "otherMachines")?)).await) }.await,
+        "set_session_archive_analytics" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_analytics(app.clone(), arg(&args, "enabled")?, arg(&args, "detail")?)).await) }.await,
+        "clear_session_archive_analytics" => done(Box::pin(crate::usage::machine_health::archive::clear_session_archive_analytics(app.clone())).await),
         "set_session_archive_machine" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_machine(app.clone(), arg(&args, "machine")?, arg(&args, "keep")?)).await) }.await,
         "set_session_archive_project" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_project(app.clone(), arg(&args, "project")?, arg(&args, "machine")?, arg(&args, "keep")?)).await) }.await,
         "reveal_session_archive" => done(Box::pin(crate::usage::machine_health::archive::reveal_session_archive(app.clone())).await),

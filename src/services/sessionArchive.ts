@@ -5,6 +5,8 @@ import { machineLookKey } from './machineLook';
 import { plainError } from './plainError';
 import type { SystemNotification } from './notify';
 import type {
+  ArchiveAnalyticsDetail,
+  ArchiveAnalyticsStatus,
   ArchiveCondition,
   ArchiveImport,
   ArchiveMachineRun,
@@ -45,6 +47,26 @@ export const setSessionArchiveMachine = (machine: string, keep: boolean | null) 
  */
 export const setSessionArchiveProject = (project: string, machine: string | null, keep: boolean | null) =>
   invokeCommand('set_session_archive_project', { project, machine, keep });
+/**
+ * Keeps the archive's analytics tables up (or stops), holding everything that was said or numbers only. Turning them on
+ * fetches the query engine first when it isn't on this Mac; a new detail makes the tables again.
+ */
+export const setSessionArchiveAnalytics = (enabled: boolean, detail: ArchiveAnalyticsDetail) =>
+  invokeCommand('set_session_archive_analytics', { enabled, detail });
+/** Removes the analytics tables at the next check; with analytics on they're then made again from the kept sessions. */
+export const clearSessionArchiveAnalytics = () => invokeCommand('clear_session_archive_analytics');
+
+/** What the tables are doing, as the words under their size: the first that applies. */
+export function analyticsStanding(analytics: ArchiveAnalyticsStatus): { key: MessageKey; failed: boolean } {
+  if (analytics.resetting) return { key: 'sessionArchive.analytics.standing.resetting', failed: false };
+  if (analytics.lastError !== null) return { key: 'sessionArchive.analytics.standing.failed', failed: true };
+  if (!analytics.enabled) return { key: 'sessionArchive.analytics.standing.off', failed: false };
+  if (!analytics.engineReady) return { key: 'sessionArchive.analytics.standing.noEngine', failed: true };
+  if (analytics.versionsLeft === null) return { key: 'sessionArchive.analytics.standing.waiting', failed: false };
+  if (analytics.versionsLeft > 0) return { key: 'sessionArchive.analytics.standing.reading', failed: false };
+  return { key: 'sessionArchive.analytics.standing.ready', failed: false };
+}
+
 export type ArchiveSwitches = { gentle: boolean; otherMachines: boolean };
 export const saveSessionArchiveSettings = (settings: ArchiveSwitches) =>
   invokeCommand('save_session_archive_settings', settings);

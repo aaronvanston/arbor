@@ -84,7 +84,7 @@ struct Settings {
 }
 
 /// How much of what was said the analytics tables hold.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum ArchiveAnalyticsDetail {
     /// Prompts, replies, thinking, commands and tool output, with everything counted from them.
@@ -359,6 +359,25 @@ pub(crate) enum ArchiveCondition {
     Error,
 }
 
+/// The analytics tables: whether they're kept up, and what the last pass left them as. Counts and sizes only.
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ArchiveAnalyticsStatus {
+    enabled: bool,
+    detail: ArchiveAnalyticsDetail,
+    /// The query engine is on this Mac. Turning analytics on fetches it.
+    engine_ready: bool,
+    /// How much that download is, or nothing when there's no engine for this kind of machine.
+    engine_bytes: Option<u64>,
+    rows: u64,
+    bytes: u64,
+    /// Kept transcripts with something still to read, or nothing before the first pass has said.
+    versions_left: Option<u64>,
+    /// The tables are waiting for a pass to remove them.
+    resetting: bool,
+    last_error: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ArchiveStatus {
@@ -389,6 +408,7 @@ pub(crate) struct ArchiveStatus {
     /// doesn't outlive the disk it backs up.
     #[ts(type = "Array<\"noowners\" | \"own-disk\">")]
     warnings: Vec<&'static str>,
+    analytics: ArchiveAnalyticsStatus,
 }
 
 fn count(db: &Connection, sql: &str) -> Result<u64, String> {
@@ -522,6 +542,22 @@ fn status_from(db: &Connection, runtime: &Runtime, index_dev: Option<u64>) -> Re
         machine_overrides: settings.machines.clone(),
         project_overrides: settings.projects.clone(),
         warnings,
+        analytics: analytics_status(db, &settings)?,
+    })
+}
+
+fn analytics_status(db: &Connection, settings: &Settings) -> Result<ArchiveAnalyticsStatus, String> {
+    let standing = analytics::standing(db)?;
+    Ok(ArchiveAnalyticsStatus {
+        enabled: settings.analytics,
+        detail: settings.analytics_detail,
+        engine_ready: analytics::engine().is_some(),
+        engine_bytes: analytics::engine_download_bytes(),
+        rows: standing.as_ref().map_or(0, |standing| standing.rows),
+        bytes: standing.as_ref().map_or(0, |standing| standing.bytes),
+        versions_left: standing.as_ref().map(|standing| standing.versions_left),
+        resetting: index::get_meta(db, "analyticsReset")?.is_some(),
+        last_error: standing.and_then(|standing| standing.error),
     })
 }
 
@@ -810,6 +846,35 @@ pub(crate) async fn save_session_archive_settings(app: tauri::AppHandle, gentle:
     Ok(status)
 }
 
+/// Turns the analytics tables on or off and says how much of what was said they hold. On fetches the query engine
+/// first, if it isn't here, through the proxy set in Settings when there is one. Off stops the tables being kept up
+/// and leaves them where they are; a new detail makes them again.
+#[tauri::command]
+pub(crate) async fn set_session_archive_analytics(app: tauri::AppHandle, enabled: bool, detail: ArchiveAnalyticsDetail) -> Result<ArchiveStatus, String> {
+    if enabled {
+        let proxy_url = app.state::<crate::GuiConfigState>().snapshot()?.proxy_url;
+        analytics::install_engine(&crate::http_client(&proxy_url)?).await?;
+    }
+    let status = change_settings(&app, move |settings| {
+        settings.analytics = enabled;
+        settings.analytics_detail = detail;
+    })
+    .await?;
+    if enabled {
+        app.state::<ArchiveState>().wake.notify_one();
+    }
+    Ok(status)
+}
+
+/// Removes the analytics tables on the next pass. With analytics on they're then made again from the kept
+/// transcripts; with it off they're gone until it's turned on. The kept transcripts are untouched either way.
+#[tauri::command]
+pub(crate) async fn clear_session_archive_analytics(app: tauri::AppHandle) -> Result<ArchiveStatus, String> {
+    blocking(|| analytics::ask_reset(&open_index(&index_dir()?)?)).await?;
+    app.state::<ArchiveState>().wake.notify_one();
+    current_status(&app).await
+}
+
 /// Gives one machine its own value, keeping its sessions (true) or not (false) whatever All
 /// machines says, or with `None` puts it back on All machines' value.
 #[tauri::command]
@@ -1028,6 +1093,10 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
         report.counting_left = counted.is_ok_and(|count| !count.complete);
         // The tables come last and from the store alone, so they never hold the archive up. Without the engine
         // there's nothing to make them with: turning analytics on fetches it.
+        let tables = places.store.root().join(analytics::FOLDER);
+        if let Err(error) = analytics::reset_if_asked(&db, &tables) {
+            report.first_failure.get_or_insert(error);
+        }
         if let Some(engine) = Some(()).filter(|()| settings.analytics).and_then(|()| analytics::engine()) {
             let extract_options = analytics::ExtractOptions {
                 detail: settings.analytics_detail.detail(),
@@ -1036,12 +1105,8 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
                 max_time: ANALYTICS_MAX_TIME,
                 merge_at: analytics::MERGE_AT,
             };
-            let extracted = analytics::extract_pass(&db, &places, &places.store.root().join(analytics::FOLDER), &engine, &extract_options, &|| token.is_cancelled());
-            let failure = match &extracted {
-                Ok(extract) => extract.first_failure.clone(),
-                Err(error) => Some(error.clone()),
-            };
-            let _ = analytics::note_failure(&db, failure.as_deref());
+            let extracted = analytics::extract_pass(&db, &places, &tables, &engine, &extract_options, &|| token.is_cancelled());
+            let _ = analytics::note(&db, &extracted);
             report.analytics_left = extracted.is_ok_and(|extract| !extract.complete);
         }
     }

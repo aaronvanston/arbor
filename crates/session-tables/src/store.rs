@@ -236,6 +236,11 @@ impl Store {
         self.manifest.next
     }
 
+    /// How many rows the tables hold, and how many bytes their files take.
+    pub fn size(&self) -> (u64, u64) {
+        self.manifest.tables.values().flatten().fold((0, 0), |(rows, bytes), part| (rows + part.rows, bytes + part.bytes))
+    }
+
     /// The files a table is made of.
     pub fn parts(&self, table: &str) -> &[Part] {
         self.manifest.tables.get(table).map_or(&[], Vec::as_slice)
@@ -759,7 +764,8 @@ mod tests {
         let mut first = store.batch().unwrap();
         first.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source: "one" }, &claude).unwrap();
         let written = store.write(first, &engine).unwrap();
-        assert_eq!(written, store.manifest.tables.values().flatten().map(|part| part.rows).sum::<u64>());
+        assert_eq!(written, store.size().0);
+        assert!(store.size().1 > 0);
         let mut second = store.batch().unwrap();
         second.add(&Origin { agent: Agent::Codex, machine: "it's a box", source: "two" }, &codex).unwrap();
         second.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source: "three" }, &claude).unwrap();
