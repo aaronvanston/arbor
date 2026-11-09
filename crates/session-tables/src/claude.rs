@@ -299,7 +299,8 @@ fn tool_result(parser: &Parser, at: &At, block: &mut Fields, ran: Option<&mut Fi
             text
         }),
     };
-    let mut row = ToolResult { at: at.clone(), tool_use_id: tool_use_id.clone(), is_error: json::boolean(block, "is_error"), output_chars: output.as_deref().map_or(0, json::chars), ..ToolResult::default() };
+    // A result says `is_error` only when it failed, so one that doesn't say worked.
+    let mut row = ToolResult { at: at.clone(), tool_use_id: tool_use_id.clone(), is_error: json::boolean(block, "is_error").or(Some(false)), output_chars: output.as_deref().map_or(0, json::chars), ..ToolResult::default() };
     if let Some(ran) = ran {
         row.interrupted = json::boolean(ran, "interrupted");
         row.user_modified = json::boolean(ran, "userModified");
@@ -459,7 +460,7 @@ pub(crate) mod tests {
         assert_eq!((failed.tool_use_id.as_deref(), failed.is_error, failed.interrupted), (Some("toolu_1"), Some(true), Some(false)));
         assert_eq!((failed.output_chars, failed.stdout_chars, failed.stderr_chars), (9 + SECRET.len() as u64, Some(9 + SECRET.len() as u64), Some(0)));
         let edited = &rows.tool_results[1];
-        assert_eq!((edited.lines_added, edited.lines_removed, edited.user_modified, edited.output_chars), (Some(2), Some(1), Some(false), 7));
+        assert_eq!((edited.lines_added, edited.lines_removed, edited.user_modified, edited.output_chars, edited.is_error), (Some(2), Some(1), Some(false), 7, Some(false)));
 
         let io: Vec<_> = rows.tool_io.iter().map(|io| (io.tool_use_id.as_deref().unwrap(), io.part.as_str())).collect();
         assert_eq!(io, [("toolu_1", "input"), ("toolu_1", "output"), ("toolu_2", "input"), ("toolu_2", "output"), ("toolu_3", "input")]);
