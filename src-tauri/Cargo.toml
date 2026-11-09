@@ -25,6 +25,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_norway = "0.9"
 serde_yaml = "0.9"
+session-tables = { path = "../crates/session-tables" }
 sha1 = "0.10"
 sha2 = { version = "0.10", features = ["compress"] }
 tar = "0.4"

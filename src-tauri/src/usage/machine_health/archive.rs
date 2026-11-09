@@ -11,6 +11,7 @@
 //! kept everything, it takes in old backups the user chose (see `imports`)
 //! and counts the tokens in what's new (see `tokens`).
 
+pub(crate) mod analytics;
 pub(crate) mod chunker;
 pub(crate) mod classify;
 pub(crate) mod codec;
@@ -52,6 +53,9 @@ const IMPORT_MAX_TIME: Duration = Duration::from_secs(3 * 60);
 /// Counting tokens reads back from the store, in shares of its own.
 const COUNT_MAX_BYTES: u64 = 2 << 30;
 const COUNT_MAX_TIME: Duration = Duration::from_secs(2 * 60);
+/// So does reading them into the analytics tables.
+const ANALYTICS_MAX_BYTES: u64 = 2 << 30;
+const ANALYTICS_MAX_TIME: Duration = Duration::from_secs(2 * 60);
 const READ_RATE: u64 = 100_000_000;
 const GENTLE_READ_RATE: u64 = 30_000_000;
 const LIST_TIMEOUT: Duration = Duration::from_secs(120);
@@ -74,6 +78,29 @@ struct Settings {
     machines: BTreeMap<String, bool>,
     /// Projects kept or skipped whatever their machine says, by lowercase `owner/name`.
     projects: BTreeMap<String, ArchiveProjectKeep>,
+    /// The kept transcripts are also read into tables in the store, for `arbor query`.
+    analytics: bool,
+    analytics_detail: ArchiveAnalyticsDetail,
+}
+
+/// How much of what was said the analytics tables hold.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ArchiveAnalyticsDetail {
+    /// Prompts, replies, thinking, commands and tool output, with everything counted from them.
+    #[default]
+    Everything,
+    /// Names, ids, counts, sizes and times only.
+    Numbers,
+}
+
+impl ArchiveAnalyticsDetail {
+    fn detail(self) -> session_tables::Detail {
+        match self {
+            ArchiveAnalyticsDetail::Everything => session_tables::Detail::Everything,
+            ArchiveAnalyticsDetail::Numbers => session_tables::Detail::Numbers,
+        }
+    }
 }
 
 /// A project's own values: on every machine, and on one machine (by normalized name), which wins.
@@ -999,6 +1026,24 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
         };
         let _ = tokens::note_failure(&db, failure.as_deref());
         report.counting_left = counted.is_ok_and(|count| !count.complete);
+        // The tables come last and from the store alone, so they never hold the archive up. Without the engine
+        // there's nothing to make them with: turning analytics on fetches it.
+        if let Some(engine) = Some(()).filter(|()| settings.analytics).and_then(|()| analytics::engine()) {
+            let extract_options = analytics::ExtractOptions {
+                detail: settings.analytics_detail.detail(),
+                bytes_per_second: options.bytes_per_second,
+                max_bytes: ANALYTICS_MAX_BYTES,
+                max_time: ANALYTICS_MAX_TIME,
+                merge_at: analytics::MERGE_AT,
+            };
+            let extracted = analytics::extract_pass(&db, &places, &places.store.root().join(analytics::FOLDER), &engine, &extract_options, &|| token.is_cancelled());
+            let failure = match &extracted {
+                Ok(extract) => extract.first_failure.clone(),
+                Err(error) => Some(error.clone()),
+            };
+            let _ = analytics::note_failure(&db, failure.as_deref());
+            report.analytics_left = extracted.is_ok_and(|extract| !extract.complete);
+        }
     }
     let flushed = journal::flush(&db, &places.store);
     {
@@ -1102,7 +1147,7 @@ fn record_outcome(runtime: &mut Runtime, outcome: Result<Option<PassReport>, Str
             runtime.last_pass_at = Some(now);
             runtime.last_complete = report.complete;
             runtime.last_error = report.first_failure;
-            !report.complete || report.counting_left || report.imports_left || report.fleet_left
+            !report.complete || report.counting_left || report.analytics_left || report.imports_left || report.fleet_left
         }
         Ok(None) => {
             runtime.last_error = None;
@@ -1334,6 +1379,8 @@ mod tests {
         // Tokens still to count bring the next pass forward, without looking like trouble.
         assert!(record_outcome(&mut runtime, Ok(Some(PassReport { complete: true, counting_left: true, ..PassReport::default() })), 5_500));
         assert_eq!((runtime.last_complete, runtime.failing_since), (true, None));
+        // So do transcripts still to read into the analytics tables.
+        assert!(record_outcome(&mut runtime, Ok(Some(PassReport { complete: true, analytics_left: true, ..PassReport::default() })), 5_600));
         // Paused or not set up: nothing's failing.
         record_outcome(&mut runtime, Err("x".into()), 6_000);
         record_outcome(&mut runtime, Ok(None), 7_000);

@@ -173,6 +173,12 @@ impl Batch {
         self.bytes
     }
 
+    /// Drops the rows waiting, for a batch that won't be written.
+    pub fn discard(self) {
+        drop(self.files);
+        remove(&self.dir);
+    }
+
     fn put<T: Serialize>(&mut self, table: &'static str, place: Option<&[u8]>, rows: &[T]) -> Result<(), String> {
         if rows.is_empty() {
             return Ok(());
@@ -215,6 +221,19 @@ impl Store {
             return Err(format!("{} holds tables in another format ({} {})", root.display(), manifest.format, manifest.schema));
         }
         Ok(Store { root: root.to_path_buf(), manifest })
+    }
+
+    /// Removes every table in a folder, to start them again. Whatever else the folder holds stays.
+    pub fn clear(root: &Path) {
+        for name in [MANIFEST, version_dir(), "tmp"] {
+            remove(&root.join(name));
+        }
+    }
+
+    /// The number the next write or merge takes. It only goes up, and only once what was written is part of the
+    /// tables, so whoever notes it before a write can tell afterwards whether that write landed.
+    pub fn next(&self) -> u64 {
+        self.manifest.next
     }
 
     /// The files a table is made of.
@@ -888,6 +907,10 @@ mod tests {
         batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source: "one" }, &parse(Agent::Claude, Detail::Everything, &claude::tests::session())).unwrap();
         assert_eq!(store.write(batch, &Broken).err().unwrap(), "The query engine stopped while writing tables (IO Error)");
         assert!(store.manifest.tables.is_empty());
+        assert_eq!(store.next(), 0);
+        // A batch with nothing in it writes nothing, and one dropped leaves nothing.
+        assert_eq!(store.write(store.batch().unwrap(), &Broken), Ok(0));
+        store.batch().unwrap().discard();
         assert_eq!(fs::read_dir(root.join("tmp")).unwrap().count(), 0);
         // What a stopped run leaves: a batch never written, and a file no table names.
         fs::create_dir(root.join("tmp/batch-9")).unwrap();
@@ -895,6 +918,10 @@ mod tests {
         fs::write(root.join("v1/lines/fresh/0000000009.parquet"), SECRET).unwrap();
         store.sweep().unwrap();
         assert_eq!(files(&root), Vec::<String>::new());
+        fs::write(root.join("state.db"), "kept").unwrap();
+        fs::write(root.join(MANIFEST), "{}").unwrap();
+        Store::clear(&root);
+        assert_eq!(files(&root), ["state.db"]);
         fs::remove_dir_all(root).unwrap();
     }
 }

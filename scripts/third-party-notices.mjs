@@ -248,7 +248,7 @@ function cargoMetadata(manifest) {
 }
 
 // The crates compiled into the app and its core plugin: the root crates' normal dependencies, followed all the way
-// down. Dev and build dependencies aren't followed; the workspace's own crates are left out.
+// down. Dev and build dependencies aren't followed; this repo's own crates are left out.
 function rustCrates() {
   const crates = new Map();
   for (const manifest of CARGO_MANIFESTS) {
@@ -265,8 +265,10 @@ function rustCrates() {
       for (const dep of nodes.get(id)?.deps ?? []) {
         if (dep.dep_kinds.some((kind) => kind.kind === null)) queue.push(dep.pkg);
       }
-      if (own.has(id)) continue;
       const pkg = packages.get(id);
+      // A crate of this repo's own that a root crate takes by path (crates/session-tables) is Arbor's, not a third
+      // party's: cargo gives it no source.
+      if (own.has(id) || (pkg.source === null && pkg.manifest_path.startsWith(`${root}/`))) continue;
       const dir = dirname(pkg.manifest_path);
       const item = {
         name: pkg.name,

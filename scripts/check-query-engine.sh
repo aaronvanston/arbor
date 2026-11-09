@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Checks the DuckDB release that crates/session-tables is pinned to, on this machine: downloads its command-line
 # program for this system from DuckDB's GitHub releases, holds it to the SHA-256 and size in src/store.rs, runs it,
-# then runs the crate's tests that write and read Parquet with it (they check nothing without a program, since a
-# test never fetches one). On a Mac it also says whether macOS would stop the program: it has to be signed, and a
+# then runs the tests that write and read Parquet with it, the crate's and the archive's (they check nothing without
+# a program, since a test never fetches one). On a Mac it also says whether macOS would stop the program: it has to be signed, and a
 # file fetched this way, as Arbor fetches it, must carry no quarantine mark. Run it after changing the pinned release
 # (`mac-build engine-check` runs it on the Mac). Everything stays in a scratch folder that is removed at the end.
 set -euo pipefail
@@ -59,4 +59,8 @@ echo "It runs: $answer"
 
 cd "$repo_dir"
 SESSION_TABLES_DUCKDB="$engine" cargo test --locked --manifest-path crates/session-tables/Cargo.toml store
+# The archive's own test with the engine. Tauri needs the web UI's folder to exist, so it gets an empty stand-in.
+mkdir -p dist
+[[ -f dist/index.html ]] || touch dist/index.html
+SESSION_TABLES_DUCKDB="$engine" cargo test --locked --manifest-path src-tauri/Cargo.toml archive::analytics
 echo "DuckDB $version writes and reads the tables on $target"

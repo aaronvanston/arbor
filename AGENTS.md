@@ -45,6 +45,7 @@ that only ever come down (`docs/perf/PROCESS.md`).
 - **Sync** keeps machines' agent setup in step with a **setup repo**. It's still `setup` in ids.
 - **guarded write** is the only way Arbor changes a file on a machine.
 - **the archive** is the session archive: raw transcript copies in a **store** on a drive the user picks.
+- **analytics** is the archive's optional tables of sessions, made from those copies and kept beside them.
 - **view** is a page plus its params; there's no URL routing.
 - **the mock** is the browser stand-in for the whole Rust side.
 
@@ -69,7 +70,10 @@ that only ever come down (`docs/perf/PROCESS.md`).
 5. **Breaking the archive's edges.** Raw bytes live only in a store's `chunks/` and, for a file still growing,
    `pending/`, until the user exports sessions into a folder they name (`arbor archive export`). `archive.db`, `journal/`, listings, logs and every archive command hold ids, paths, sizes, hashes and
    times; token counting keeps a hash of each call's id with its day, model and token numbers, and Claude Code's own
-   totals keep each machine's days with model names, token and session counts. Nothing more. Nothing in `chunks/` is
+   totals keep each machine's days with model names, token and session counts. Nothing more. The one other place for
+   what was said is the store's `analytics/`, off by default: rows that `crates/session-tables` alone reads from
+   `chunks/`, with the text itself only at the Everything detail, and nothing of them in `archive.db`, the journal,
+   logs or errors. Nothing in `chunks/` is
    ever deleted or rewritten, apart from swapping a proven-corrupt file for a verified copy with the same hash. Every
    new archive command gets a SECRET test, and archive tests use temp stores and temp HOMEs, with the lister run under
    `sh` and `dash`.

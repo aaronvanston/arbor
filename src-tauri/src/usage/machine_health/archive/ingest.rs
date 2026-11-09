@@ -245,6 +245,8 @@ pub(crate) struct PassReport {
     pub(crate) first_failure: Option<String>,
     /// Token counting stopped at its share, with kept transcripts still to count.
     pub(crate) counting_left: bool,
+    /// Reading transcripts into the analytics tables stopped at its share, with more to read.
+    pub(crate) analytics_left: bool,
     /// An old backup's import stopped at its share, with more of it to keep.
     pub(crate) imports_left: bool,
     /// Another machine's pass stopped at its share, with more of that machine to keep.

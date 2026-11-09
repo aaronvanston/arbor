@@ -93,6 +93,7 @@ dependencies = [
  "serde_json",
  "serde_norway",
  "serde_yaml",
+ "session-tables",
  "sha1",
  "sha2",
  "tar",
@@ -3659,6 +3660,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "session-tables"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
