@@ -27,8 +27,8 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
   since chunks never change and a growing version whose tail moves on is read again, and it writes nothing to the
   index or the journal. Its answer holds the same ids, paths and counts as every archive command. A session's
   project and branch come from usage.db by session id, so a session Arbor hasn't read a transcript of has none.
-- **Analytics.** With analytics on (off by default), `archive/analytics.rs` reads the kept Claude Code and Codex
-  transcripts into tables in the store's `analytics/`, after everything else in a pass. The tables are made from
+- **Analytics.** With analytics on (off by default), `archive/analytics.rs` reads the kept Claude Code, Codex, Pi
+  and OpenClaw transcripts into tables in the store's `analytics/`, after everything else in a pass. The tables are made from
   `chunks/` and can always be made again, so they are never the only copy of anything and removing the folder only
   costs the time to rebuild.
   - **Who reads a line.** `crates/session-tables` alone turns a transcript line into rows; the archive hands it

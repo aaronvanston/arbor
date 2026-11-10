@@ -183,8 +183,8 @@ arbor query --saved [<name>]
 arbor query --tables
 
 One SELECT over the session archive's analytics tables: every message, model call, tool call, tool result, shell
-command, hook run and file touched in the kept Claude Code and Codex sessions. The tables are there once analytics is
-on in Settings › Session Archive, and fill in at each check. The SQL is DuckDB's.
+command, hook run and file touched in the kept Claude Code, Codex, Pi and OpenClaw sessions. The tables are there once
+analytics is on in Settings › Session Archive, and fill in at each check. The SQL is DuckDB's.
 
 --saved lists questions that come ready to ask (speed and cost by model, tool error rates, how agents use the shell),
 and --saved with a name runs one. With --json the list has each one's SQL, to change and run yourself.

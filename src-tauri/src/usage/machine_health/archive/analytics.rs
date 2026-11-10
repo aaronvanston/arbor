@@ -46,7 +46,7 @@ const HELD_BYTES: u64 = 64 << 20;
 /// A longer line isn't read into rows: it's noted with its size.
 const LONG_LINE: usize = 256 << 20;
 
-/// The versions that are Claude Code's or Codex's transcripts, newest first so the latest months fill in first.
+/// The versions that are an agent's transcripts, newest first so the latest months fill in first.
 /// The members are the ones token counting reads (`tokens::UNCOUNTED`).
 const TRANSCRIPTS: &str = "SELECT v.version_id, s.agent, v.size, v.state,
        (SELECT o_s.machine FROM observations o JOIN files f USING (file_id) JOIN sources o_s USING (source_id)
@@ -54,7 +54,8 @@ const TRANSCRIPTS: &str = "SELECT v.version_id, s.agent, v.size, v.state,
      FROM versions v JOIN members m USING (member_id) JOIN sessions s USING (session_pk)
      WHERE v.encoding IN ('plain', 'zstd')
        AND ((s.agent = 'claude' AND (m.member = 'main' OR m.member LIKE 'main~%' OR (m.member LIKE 'subagents/%' AND m.member LIKE '%.jsonl')))
-         OR (s.agent = 'codex' AND (m.member = 'rollout' OR m.member LIKE 'rollout/%' OR m.member LIKE 'original/%')))
+         OR (s.agent = 'codex' AND (m.member = 'rollout' OR m.member LIKE 'rollout/%' OR m.member LIKE 'original/%'))
+         OR (s.agent IN ('openclaw', 'pi') AND m.member = 'main'))
      ORDER BY COALESCE(v.grew_at, v.created_at) DESC, v.version_id DESC";
 
 const STATE_SCHEMA: &str = "
@@ -475,7 +476,7 @@ impl Writer<'_> {
     }
 }
 
-/// Reads what's new in every kept Claude Code and Codex transcript into the tables in `root`. `stop` is asked
+/// Reads what's new in every kept transcript into the tables in `root`. `stop` is asked
 /// between pieces.
 pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engine: &dyn Engine, options: &ExtractOptions, stop: &dyn Fn() -> bool) -> Result<ExtractReport, String> {
     let started = Instant::now();
@@ -649,7 +650,9 @@ fn todo(db: &Connection, state: &Connection, now: u64) -> Result<(Vec<Todo>, u64
                 Some((_, tries, _)) => *tries,
                 None => 0,
             };
-            todo.push(Todo { version_id, agent: if agent == "codex" { Agent::Codex } else { Agent::Claude }, machine, size, tries });
+            // The query above names every agent it takes.
+            let Some(agent) = Agent::named(&agent) else { continue };
+            todo.push(Todo { version_id, agent, machine, size, tries });
         }
     }
     Ok((todo, set_aside))
@@ -847,7 +850,7 @@ impl Lines {
 mod tests {
     use super::super::store::{ChunkMeta, NewChunk};
     use super::super::ingest::tests::{walk, Fixture, SECRET_TEXT, SID, THREAD};
-    use super::super::tokens::tests::{claude_line, codex_record, codex_turn, codex_usage};
+    use super::super::tokens::tests::{claude_line, codex_record, codex_turn, codex_usage, openclaw_line};
     use super::*;
     use serde_json::Value;
     use session_tables::store::Program;
@@ -1167,6 +1170,35 @@ mod tests {
         // What a failed request answered with, and the account's name, are nowhere in the tables.
         let all = serde_json::to_string(&copied).unwrap();
         assert!(!all.contains(SECRET_TEXT) && !all.contains("cam@example.com"));
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn a_pi_or_openclaw_session_is_read_the_way_its_own_agent_writes_one() {
+        let fixture = Fixture::new("analytics-pi");
+        let at = "2026-09-20T02:00:02.000Z";
+        let session = [
+            format!("{{\"type\":\"session\",\"version\":3,\"id\":\"{SID}\",\"timestamp\":\"2026-09-20T02:00:00.000Z\",\"cwd\":\"/srv/app\"}}\n"),
+            format!("{{\"type\":\"message\",\"id\":\"e0\",\"parentId\":null,\"timestamp\":\"2026-09-20T02:00:01.000Z\",\"message\":{{\"role\":\"user\",\"content\":\"{SECRET_TEXT}\"}}}}\n"),
+            openclaw_line("e1", Some("resp_1"), false, at, (10, 0, 900, 50), "a"),
+            // A turn another harness ran, whose own transcript has it.
+            openclaw_line("e2", None, true, at, (1_000, 0, 9_000, 100), "b"),
+        ]
+        .concat();
+        fixture.write(MAIN, &session);
+        assert!(fixture.pass().complete);
+        // The fixture's homes are Claude Code's and Codex's, so the index is told whose this one is.
+        for agent in ["pi", "openclaw"] {
+            fixture.db.execute("UPDATE sessions SET agent = ?1", [agent]).unwrap();
+            ask_reset(&fixture.db).unwrap();
+            reset_if_asked(&fixture.db, &root(&fixture)).unwrap();
+            let report = extract(&fixture, &everything());
+            assert!(report.complete && report.failures == 0 && report.versions == 1, "{report:?}");
+            let lines = rows(&fixture, "lines");
+            assert_eq!(lines.iter().map(|line| (line["agent"].as_str().unwrap(), line["kind"].as_str().unwrap(), line["session_id"].as_str().unwrap())).collect::<Vec<_>>(), [(agent, "session", SID), (agent, "message", SID), (agent, "message", SID), (agent, "message", SID)]);
+            let requests: Vec<_> = rows(&fixture, "requests").iter().map(|row| (row["model"].as_str().unwrap().to_string(), row["input"].as_u64().unwrap(), row["cache_read"].as_u64().unwrap(), row["output"].as_u64().unwrap(), row["repeat"].as_bool().unwrap())).collect();
+            assert_eq!(requests, [("gpt-5.5".to_string(), 10, 900, 50, false), ("gpt-5.5".to_string(), 1_000, 9_000, 100, true)]);
+        }
         let _ = fs::remove_dir_all(&fixture.base);
     }
 

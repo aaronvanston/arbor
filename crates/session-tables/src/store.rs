@@ -741,7 +741,7 @@ fn remove(path: &Path) {
 mod tests {
     use super::*;
     use crate::tests::{parse, SECRET};
-    use crate::{claude, codex, Detail};
+    use crate::{claude, codex, pi, Detail};
     use serde_json::Value;
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -990,7 +990,7 @@ mod tests {
         for filled in [false, true] {
             if filled {
                 let mut batch = store.batch().unwrap();
-                for (agent, lines) in [(Agent::Claude, [claude::tests::session(), claude::tests::commands()].concat()), (Agent::Codex, codex::tests::session())] {
+                for (agent, lines) in [(Agent::Claude, [claude::tests::session(), claude::tests::commands()].concat()), (Agent::Codex, codex::tests::session()), (Agent::Pi, pi::tests::session())] {
                     batch.add(&Origin { agent, machine: "cam-mbp", source: agent.name() }, &parse(agent, Detail::Everything, &lines)).unwrap();
                 }
                 batch.add_proxy(&[proxy(1, false), proxy(2, true)]).unwrap();

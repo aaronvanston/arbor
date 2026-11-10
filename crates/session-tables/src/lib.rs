@@ -20,6 +20,7 @@ mod claude;
 mod codex;
 pub mod cookbook;
 mod json;
+mod pi;
 mod rows;
 mod shell;
 pub mod store;
@@ -34,6 +35,8 @@ use serde_json::Value;
 pub enum Agent {
     Claude,
     Codex,
+    Pi,
+    OpenClaw,
 }
 
 impl Agent {
@@ -42,7 +45,14 @@ impl Agent {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
+            Agent::Pi => "pi",
+            Agent::OpenClaw => "openclaw",
         }
+    }
+
+    /// The agent rows name this way.
+    pub fn named(name: &str) -> Option<Self> {
+        [Agent::Claude, Agent::Codex, Agent::Pi, Agent::OpenClaw].into_iter().find(|agent| agent.name() == name)
     }
 }
 
@@ -101,8 +111,8 @@ impl Parser {
 
     /// The same, for whoever reads more than one file: `seen` is asked whether a line with this key was read from
     /// another file before, and the rows of one that was are marked as repeats. A Claude line is known by its own
-    /// id, and by its session and bytes when it has none; a Codex line has no id, and is known by its bytes, which
-    /// hold its time to the millisecond.
+    /// id, and by its session and bytes when it has none. Any other agent's line is known by its bytes, which hold
+    /// its time to the millisecond: Codex's has no id, and Pi's is too short to be one of a kind.
     pub fn line_once(&mut self, number: u64, line: &[u8], seen: &mut dyn FnMut(LineKey) -> bool, rows: &mut Rows) {
         let bytes = line.len() as u64;
         let agent = self.agent.name().as_bytes();
@@ -116,13 +126,14 @@ impl Parser {
         };
         let text = |key: &str| fields.get(key).and_then(Value::as_str).unwrap_or_default().as_bytes();
         self.repeat = seen(match (self.agent, text("uuid")) {
-            (Agent::Codex, _) => json::key(&[agent, line]),
             (Agent::Claude, []) => json::key(&[agent, text("sessionId"), line]),
             (Agent::Claude, id) => json::key(&[agent, b"id", id]),
+            _ => json::key(&[agent, line]),
         });
         match self.agent {
             Agent::Claude => claude::line(self, number, bytes, fields, rows),
             Agent::Codex => codex::line(self, number, bytes, fields, rows),
+            Agent::Pi | Agent::OpenClaw => pi::line(self, number, bytes, fields, rows),
         }
     }
 
@@ -183,7 +194,7 @@ mod tests {
 
     #[test]
     fn reading_can_stop_between_any_two_lines_and_carry_on_from_its_state() {
-        for (agent, lines) in [(Agent::Claude, claude::tests::session()), (Agent::Codex, codex::tests::session())] {
+        for (agent, lines) in [(Agent::Claude, claude::tests::session()), (Agent::Codex, codex::tests::session()), (Agent::Pi, pi::tests::session())] {
             let whole = parse(agent, Detail::Everything, &lines);
             for cut in 0..=lines.len() {
                 let mut rows = Rows::default();
@@ -217,7 +228,7 @@ mod tests {
 
     #[test]
     fn a_line_read_before_from_another_file_marks_every_row_it_gives_as_a_repeat() {
-        for (agent, lines) in [(Agent::Claude, claude::tests::session()), (Agent::Codex, codex::tests::session())] {
+        for (agent, lines) in [(Agent::Claude, claude::tests::session()), (Agent::Codex, codex::tests::session()), (Agent::Pi, pi::tests::session())] {
             // Who reads the files says which file had a line first.
             let mut first: std::collections::HashMap<LineKey, u32> = std::collections::HashMap::new();
             let mut read = |file: u32, lines: &[String]| {
@@ -241,7 +252,7 @@ mod tests {
             longer.push(lines[1].replace("\"type\"", "\"extra\":1,\"type\""));
             let copy = read(2, &longer);
             let (rows, marked): (usize, usize) = repeats(&copy).iter().fold((0, 0), |(rows, marked), (count, repeats)| (rows + count, marked + repeats));
-            assert!(marked > 10 && (marked < rows) == (agent == Agent::Codex), "{agent:?}: {marked} of {rows}");
+            assert!(marked > 10 && (marked < rows) == (agent != Agent::Claude), "{agent:?}: {marked} of {rows}");
             let new: Vec<u64> = copy["lines"].as_array().unwrap().iter().filter(|line| line["repeat"] == false).map(|line| line["line"].as_u64().unwrap()).collect();
             // A Claude line is known by its id, so the changed copy of line 1 is still line 1.
             assert_eq!(new, if agent == Agent::Claude { vec![] } else { vec![lines.len() as u64] }, "{agent:?}");
@@ -250,7 +261,7 @@ mod tests {
 
     #[test]
     fn numbers_detail_holds_no_text_and_everything_holds_it() {
-        for (agent, lines) in [(Agent::Claude, claude::tests::session()), (Agent::Codex, codex::tests::session())] {
+        for (agent, lines) in [(Agent::Claude, claude::tests::session()), (Agent::Codex, codex::tests::session()), (Agent::Pi, pi::tests::session())] {
             assert!(lines.iter().filter(|line| line.contains(SECRET)).count() > 5);
             let numbers = serde_json::to_string(&parse(agent, Detail::Numbers, &lines)).unwrap();
             assert!(!numbers.contains("SECRET"), "{agent:?}: {numbers}");
