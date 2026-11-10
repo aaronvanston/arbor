@@ -170,11 +170,15 @@ pub(crate) const VIEWS: [View; 4] = [
               LEFT JOIN (SELECT agent, session_id, count(*) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors FROM \"tools\" GROUP BY agent, session_id) t ON t.agent = l.agent AND t.session_id = l.session_id \
               LEFT JOIN (SELECT coalesce(i.session_id, q.parent_session_id) AS session_id, count(*) AS proxy_requests, sum(q.cost) AS cost FROM \"proxy_requests\" q LEFT JOIN (SELECT DISTINCT session_id FROM \"lines\" WHERE session_id IS NOT NULL) i ON i.session_id = q.session_id WHERE coalesce(i.session_id, q.parent_session_id) IS NOT NULL GROUP BY ALL) p ON p.session_id = l.session_id",
     },
-    // A prompt with what it led to: every request and tool call in its session from when it was sent until the
-    // next prompt, a subagent's among them. Each is placed by its time, since a session can be in several files,
-    // and prompts sent at the same instant are one turn. `elapsed_ms` runs to the last request or tool result, so
-    // it counts a wait for the person's leave. A window is used and not an ASOF join: DuckDB 2.0.0 never returns
-    // from a LIMIT over that join.
+    // A prompt with what it led to: every request, tool call and result in its session from when it was sent
+    // until the next prompt, a subagent's among them. Each is placed by its time, since a session can be in several
+    // files, and prompts sent at the same instant are one turn. `elapsed_ms` runs to the last of them, so it counts
+    // a wait for the person's leave.
+    //
+    // Its shape is what DuckDB 2.0.0 runs every time, found on 500,000 made-up turns. An ASOF join, or a CTE read
+    // twice, never returns under a bare LIMIT, so the prompts are read twice. The window sorts narrow rows, a hash
+    // in place of the session's id. And calls and results are read as they are, not through `tools`: the grouping
+    // there, run beside this window on four threads, now and then wrote gigabytes to the scratch folder and failed.
     View {
         name: "turns",
         columns: &[
@@ -195,7 +199,7 @@ pub(crate) const VIEWS: [View; 4] = [
             ("ended", Time),
             ("elapsed_ms", Count),
         ],
-        sql: "WITH e AS (SELECT agent, session_id, ts, 0 AS what, machine, day, chars, NULL AS model, 0 AS input, 0 AS output, 0 AS cache_read, 0 AS cache_write, false AS is_error, ts AS ended FROM \"messages\" WHERE kind = 'prompt' AND meta IS NOT TRUE AND ts IS NOT NULL AND session_id IS NOT NULL UNION ALL SELECT agent, session_id, ts, 1, NULL, NULL, 0, model, input, output, cache_read, cache_write, false, ts FROM \"requests\" WHERE ts IS NOT NULL AND session_id IS NOT NULL UNION ALL SELECT agent, session_id, ts, 2, NULL, NULL, 0, NULL, 0, 0, 0, 0, is_error IS TRUE, coalesce(ended, ts) FROM \"tools\" WHERE ts IS NOT NULL AND session_id IS NOT NULL), n AS (SELECT *, max(CASE WHEN what = 0 THEN ts END) OVER (PARTITION BY agent, session_id ORDER BY ts, what ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS turn FROM e) SELECT agent, session_id, any_value(machine) AS machine, turn AS ts, any_value(day) AS day, CAST(sum(chars) AS BIGINT) AS prompt_chars, mode(model) AS model, count(*) FILTER (WHERE what = 1) AS requests, CAST(sum(input) AS BIGINT) AS input, CAST(sum(output) AS BIGINT) AS output, CAST(sum(cache_read) AS BIGINT) AS cache_read, CAST(sum(cache_write) AS BIGINT) AS cache_write, count(*) FILTER (WHERE what = 2) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors, max(ended) AS ended, date_diff('millisecond', turn, max(ended)) AS elapsed_ms FROM n WHERE turn IS NOT NULL GROUP BY agent, session_id, turn",
+        sql: "WITH p AS NOT MATERIALIZED (SELECT agent, session_id, ts, hash(agent, session_id) AS h, any_value(machine) AS machine, any_value(day) AS day, CAST(sum(chars) AS BIGINT) AS prompt_chars FROM \"messages\" WHERE kind = 'prompt' AND meta IS NOT TRUE AND ts IS NOT NULL AND session_id IS NOT NULL GROUP BY agent, session_id, ts), e AS (SELECT h, ts, CAST(0 AS TINYINT) AS what, CAST(NULL AS VARCHAR) AS model, CAST(0 AS BIGINT) AS input, CAST(0 AS BIGINT) AS output, CAST(0 AS BIGINT) AS cache_read, CAST(0 AS BIGINT) AS cache_write, false AS is_error FROM p UNION ALL SELECT hash(agent, session_id), ts, 1, model, input, output, cache_read, cache_write, false FROM \"requests\" WHERE ts IS NOT NULL AND session_id IS NOT NULL UNION ALL SELECT hash(agent, session_id), ts, 2, NULL, 0, 0, 0, 0, false FROM \"tool_calls\" WHERE ts IS NOT NULL AND session_id IS NOT NULL UNION ALL SELECT hash(agent, session_id), ts, 3, NULL, 0, 0, 0, 0, is_error IS TRUE FROM \"tool_results\" WHERE ts IS NOT NULL AND session_id IS NOT NULL), n AS (SELECT *, max(CASE WHEN what = 0 THEN ts END) OVER (PARTITION BY h ORDER BY ts, what ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS turn FROM e), a AS (SELECT h, turn, mode(model) AS model, count(*) FILTER (WHERE what = 1) AS requests, CAST(sum(input) AS BIGINT) AS input, CAST(sum(output) AS BIGINT) AS output, CAST(sum(cache_read) AS BIGINT) AS cache_read, CAST(sum(cache_write) AS BIGINT) AS cache_write, count(*) FILTER (WHERE what = 2) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors, max(ts) AS ended FROM n WHERE turn IS NOT NULL GROUP BY h, turn) SELECT p.agent, p.session_id, p.machine, p.ts, p.day, p.prompt_chars, a.model, a.requests, a.input, a.output, a.cache_read, a.cache_write, a.tool_calls, a.tool_errors, a.ended, date_diff('millisecond', p.ts, a.ended) AS elapsed_ms FROM p JOIN a ON a.h = p.h AND a.turn = p.ts",
     },
     // How fast each model wrote: a request's output tokens over the time from its first token to its last. A reply
     // written in under half a second is left out: one that wasn't streamed has its first token and its last at
