@@ -71,3 +71,14 @@ the normal run and only means something in release, where SQLite is compiled opt
 ```sh
 cd src-tauri && cargo test --release usage::bench -- --ignored --nocapture   # ARBOR_BENCH_DIR=<dir> keeps the database
 ```
+
+`crates/session-tables/src/bench.rs` does the same for the archive's analytics tables: it makes up sessions, reads
+them into tables through the real parsers and DuckDB, checks every row landed once, and times each saved query. It
+needs the engine `scripts/check-query-engine.sh` fetches:
+
+```sh
+cd crates/session-tables && SESSION_TABLES_DUCKDB=<duckdb> cargo test --release bench -- --ignored --nocapture
+```
+
+`SESSION_TABLES_BENCH_TURNS` sizes it (100,000 by default, about 5 million rows; 500,000 is 29 million rows from
+15 GB of transcripts) and `SESSION_TABLES_BENCH_DIR` keeps the tables between runs.

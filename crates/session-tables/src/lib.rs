@@ -16,6 +16,8 @@
 //! so a field this crate doesn't know is kept. Four things are left out for their size: thinking signatures, and,
 //! with their size and hash in their place, encrypted thinking, images, and a file's contents from before an edit.
 
+#[cfg(test)]
+mod bench;
 mod claude;
 mod codex;
 pub mod cookbook;
