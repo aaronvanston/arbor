@@ -17,6 +17,7 @@ pub(crate) mod machine_health;
 pub(crate) mod machine_sessions;
 mod pricing;
 pub(crate) mod projects;
+pub(crate) mod proxy_rows;
 pub(crate) mod pull_requests;
 mod schema;
 mod session_filters;

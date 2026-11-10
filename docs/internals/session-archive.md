@@ -48,6 +48,12 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
     4 GB the archive reads, say) is left for a quarter of an hour, then four times as long each time it fails again,
     up to a week, and tried at once if it grows. Token counting does the same. Trying every pass cost a 4 GB read
     each time and kept "still to read" from ever reaching zero.
+  - **The proxy's requests are a table too.** `proxy_requests` is copied from usage.db after the transcripts, in the
+    order the proxy numbered them, with a cursor in `state.db` staged around each write. It holds ids, names and
+    numbers only: what a failed request answered with, the client's address and its key stay in usage.db, and the
+    account is the core's index for it, never its name, since the store can sit on a drive that leaves the Mac.
+    Cost is worked out when a row is copied, by the code the Usage pages use, so a query never has to redo tiers and
+    long-context rates; it is the price on the day of the copy.
   - **The engine is a program, not a library.** Parquet is written by DuckDB's command-line program, which Arbor
     fetches when analytics is turned on and checks against the SHA-256 pinned in the crate. What DuckDB says when it
     fails can quote a row, so only the kind of error it names is kept.

@@ -14,8 +14,8 @@
 //!
 //! One writer at a time: whoever calls [`Store::write`], [`Store::merge`] or [`Store::sweep`] holds the folder.
 
-use crate::tables::{Kind, Table, EXIT_CODE, REPEAT, RESULTS, TABLES, VIEWS};
-use crate::{Agent, Rows};
+use crate::tables::{Kind, Shape, Table, EXIT_CODE, REPEAT, RESULTS, TABLES, VIEWS};
+use crate::{Agent, ProxyRequest, Rows};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
@@ -177,6 +177,11 @@ impl Batch {
         self.put("prompts", None, &prompts)?;
         let tool_defs: Vec<_> = rows.tool_defs.iter().filter(|tool| self.seen.insert(format!("t{}", tool.hash))).collect();
         self.put("tool_defs", None, &tool_defs)
+    }
+
+    /// Adds requests a proxy saw.
+    pub fn add_proxy(&mut self, requests: &[ProxyRequest]) -> Result<(), String> {
+        self.put("proxy_requests", None, requests)
     }
 
     /// How much is waiting, in bytes of JSON.
@@ -352,10 +357,10 @@ impl Store {
         let names = names(table);
         let mut made: Vec<Part> = Vec::new();
         let mut replaced: Vec<Part> = fresh.to_vec();
-        let old: Vec<Part> = if table.placed { Vec::new() } else { self.parts(table.name).iter().filter(|part| part.month.is_some()).cloned().collect() };
+        let old: Vec<Part> = if table.shape != Shape::Things { Vec::new() } else { self.parts(table.name).iter().filter(|part| part.month.is_some()).cloned().collect() };
         let longest = fresh.iter().chain(&old).map(|part| part.longest).max().unwrap_or(0);
         let done = (|| {
-            if table.placed {
+            if table.shape != Shape::Things {
                 // One pass over the fresh files, written as a folder per month: `month=2026-10/…parquet`.
                 let sql = format!(
                     "{}COPY (SELECT {names}, coalesce(strftime(day, '%Y-%m'), '{UNDATED}') AS month FROM read_parquet({}, union_by_name = true)) TO {} ({PARQUET}, PARTITION_BY (month), WRITE_PARTITION_COLUMNS false);\n",
@@ -453,16 +458,16 @@ impl Store {
         for table in &TABLES {
             let parts = self.parts(table.name);
             let columns = table.columns();
-            let name = if table.placed { format!("{}_all", table.name) } else { table.name.to_string() };
+            let name = if table.placed() { format!("{}_all", table.name) } else { table.name.to_string() };
             if parts.is_empty() {
                 let empty: Vec<String> = columns.iter().map(|(name, kind)| format!("CAST(NULL AS {}) AS \"{name}\"", stored(*kind))).collect();
                 sql.push_str(&format!("CREATE VIEW \"{name}\" AS SELECT {} WHERE false;\n", empty.join(", ")));
             } else {
                 // A thing can be in a fresh file and the merged one at once, until the next merge.
-                let distinct = if table.placed { "" } else { "DISTINCT ON (hash) " };
+                let distinct = if table.shape == Shape::Things { "DISTINCT ON (hash) " } else { "" };
                 sql.push_str(&format!("CREATE VIEW \"{name}\" AS SELECT {distinct}{} FROM read_parquet({}, union_by_name = true);\n", names(table), self.list(parts.iter())));
             }
-            if !table.placed {
+            if !table.placed() {
                 continue;
             }
             let once: Vec<String> = columns.iter().filter(|(column, _)| *column != REPEAT).map(|(column, _)| format!("\"{column}\"")).collect();
@@ -603,6 +608,7 @@ fn stored(kind: Kind) -> &'static str {
         Kind::Texts => "VARCHAR[]",
         Kind::Time => "TIMESTAMPTZ",
         Kind::Day => "DATE",
+        Kind::Real => "DOUBLE",
     }
 }
 
@@ -622,7 +628,7 @@ fn read_json(table: &Table, file: &Path, longest: u64) -> String {
             format!("\"{name}\": '{read}'")
         })
         .collect();
-    if table.placed {
+    if table.placed() {
         read.push(format!("\"{NEAR}\": 'VARCHAR'"));
     }
     let select: Vec<String> = columns
@@ -630,7 +636,8 @@ fn read_json(table: &Table, file: &Path, longest: u64) -> String {
         .map(|(name, kind)| match kind {
             Kind::Count => format!("try_cast(\"{name}\" AS BIGINT) AS \"{name}\""),
             Kind::Time => format!("try_cast(\"{name}\" AS TIMESTAMPTZ) AS \"{name}\""),
-            Kind::Day => format!("CAST(try_cast(coalesce(ts, \"{NEAR}\") AS TIMESTAMPTZ) AT TIME ZONE 'UTC' AS DATE) AS \"{name}\""),
+            // A line with no time falls on the day of the nearest line before it that had one.
+            Kind::Day => format!("CAST(try_cast({} AS TIMESTAMPTZ) AT TIME ZONE 'UTC' AS DATE) AS \"{name}\"", if table.placed() { format!("coalesce(ts, \"{NEAR}\")") } else { "ts".to_string() }),
             _ => format!("\"{name}\""),
         })
         .collect();
@@ -711,6 +718,11 @@ mod tests {
         Some(Program { path: PathBuf::from(path) })
     }
 
+    /// A request a proxy saw, in the session the made-up Claude transcript is.
+    fn proxy(id: u64, failed: bool) -> ProxyRequest {
+        ProxyRequest { id, ts: Some("2026-10-01T10:00:05.000Z".into()), session_id: Some("s-1".into()), model: Some("claude-test-1".into()), failed, latency_ms: Some(3000), ttft_ms: Some(1000), output: if failed { 0 } else { 500 }, cost: (!failed).then_some(0.25), ..ProxyRequest::default() }
+    }
+
     fn ask(engine: &Program, store: &Store, query: &str) -> Vec<Value> {
         let answer = engine.run(&format!("{}{}{query};", store.settings(), store.views())).unwrap();
         serde_json::from_str(answer.trim()).unwrap()
@@ -740,6 +752,7 @@ mod tests {
         for (agent, lines) in [(Agent::Claude, claude::tests::session()), (Agent::Codex, codex::tests::session())] {
             batch.add(&Origin { agent, machine: "cam-mbp", source: "one" }, &parse(agent, Detail::Everything, &lines)).unwrap();
         }
+        batch.add_proxy(&[proxy(1, false)]).unwrap();
         let Batch { dir, files, .. } = batch;
         assert_eq!(files.keys().copied().collect::<Vec<_>>(), { let mut names: Vec<_> = TABLES.iter().map(|table| table.name).collect(); names.sort_unstable(); names });
         for (name, Waiting { file, rows, .. }) in files {
@@ -747,7 +760,7 @@ mod tests {
             let text = fs::read_to_string(dir.join(format!("{name}.jsonl"))).unwrap();
             assert_eq!(text.lines().count() as u64, rows);
             let mut listed: Vec<&str> = table(name).columns().into_iter().filter(|(_, kind)| *kind != Kind::Day).map(|(column, _)| column).collect();
-            listed.extend(table(name).placed.then_some(NEAR));
+            listed.extend(table(name).placed().then_some(NEAR));
             listed.sort_unstable();
             for line in text.lines() {
                 let Value::Object(row) = serde_json::from_str::<Value>(line).unwrap() else { panic!("{name}: a row isn't an object") };
@@ -896,12 +909,16 @@ mod tests {
             parser.finish(&mut rows);
             batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source }, &rows).unwrap();
         }
+        batch.add_proxy(&[proxy(1, false), proxy(2, true)]).unwrap();
         store.write(batch, &engine).unwrap();
         for merged in [false, true] {
             if merged {
                 store.merge(&engine, 1).unwrap();
             }
             let count = lines.len() as u64;
+            // What the proxy saw of the session: its cost, and how fast the reply that worked was written.
+            assert_eq!(ask(&engine, &store, "SELECT proxy_requests, cost FROM sessions")[0], serde_json::json!({ "proxy_requests": 2, "cost": 0.25 }));
+            assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, model, generation_ms, tokens_per_second FROM speed"), [serde_json::json!({ "day": "2026-10-01", "model": "claude-test-1", "generation_ms": 2000, "tokens_per_second": 250.0 })]);
             assert_eq!(ask(&engine, &store, "SELECT (SELECT count(*) FROM lines) AS once, (SELECT count(*) FROM lines_all) AS every, (SELECT count(*) FROM lines_all WHERE repeat) AS repeats")[0], serde_json::json!({ "once": count, "every": 2 * count, "repeats": count }));
             // The command's row was written before it ended: its exit code is its result's.
             assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code, output_chars FROM commands ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_1", "exit_code": null, "output_chars": 9 + SECRET.len() }), serde_json::json!({ "tool_use_id": "toolu_8", "exit_code": 2, "output_chars": 37 }), serde_json::json!({ "tool_use_id": "toolu_9", "exit_code": 0, "output_chars": 4 }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0, "output_chars": 2 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null, "output_chars": 7 })]);
@@ -979,7 +996,7 @@ mod tests {
         let Some(engine) = engine() else { return };
         let root = temp_dir("empty");
         let store = Store::open(&root).unwrap();
-        let all = TABLES.iter().filter(|table| table.placed).map(|table| (format!("{}_all", table.name), table.columns()));
+        let all = TABLES.iter().filter(|table| table.placed()).map(|table| (format!("{}_all", table.name), table.columns()));
         for (name, columns) in crate::tables::shown().into_iter().map(|shown| (shown.name.to_string(), shown.columns)).chain(all) {
             let described = ask(&engine, &store, &format!("DESCRIBE \"{name}\""));
             let found: Vec<(String, String)> = described.iter().map(|row| (row["column_name"].as_str().unwrap().to_string(), row["column_type"].as_str().unwrap().to_string())).collect();

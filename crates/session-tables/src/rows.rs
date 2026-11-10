@@ -219,6 +219,41 @@ pub struct FileTouched {
     pub lines_removed: Option<u64>,
 }
 
+/// A request as a proxy in front of the agents saw it: who served it, how long it took and what it cost. It comes
+/// from the proxy's own records and not from a transcript, so there are none unless whoever fills the tables has one.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ProxyRequest {
+    /// The proxy's own number for the request, which only goes up.
+    pub id: u64,
+    pub ts: Option<String>,
+    pub session_id: Option<String>,
+    pub parent_session_id: Option<String>,
+    pub request_id: Option<String>,
+    pub provider: Option<String>,
+    pub account: Option<String>,
+    pub model: Option<String>,
+    pub response_model: Option<String>,
+    pub alias: Option<String>,
+    pub effort: Option<String>,
+    pub service_tier: Option<String>,
+    pub endpoint: Option<String>,
+    pub kind: Option<String>,
+    pub failed: bool,
+    pub canceled: bool,
+    pub status: Option<i64>,
+    pub fork: Option<bool>,
+    pub compaction: Option<bool>,
+    pub latency_ms: Option<u64>,
+    pub ttft_ms: Option<u64>,
+    pub input: u64,
+    pub output: u64,
+    pub thinking: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    /// In US dollars, or nothing when the model has no price.
+    pub cost: Option<f64>,
+}
+
 /// What a run of lines became, a list per table.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Rows {

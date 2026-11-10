@@ -71,7 +71,7 @@ pub(crate) struct AnalyticsTable {
 pub(crate) fn tables() -> Vec<AnalyticsTable> {
     let kind = |kind: Kind| match kind {
         Kind::Text => "text",
-        Kind::Count | Kind::Number => "number",
+        Kind::Count | Kind::Number | Kind::Real => "number",
         Kind::Flag => "true or false",
         Kind::Texts => "list of text",
         Kind::Time => "time",

@@ -192,9 +192,14 @@ A session kept more than once (an earlier copy in a backup, or one that carried 
 table leaves out the lines that were read before from another file. The same table with _all after its name
 (lines_all, requests_all) has them too, with a repeat column that marks them.
 
-Three names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
-tool calls and errors. tools is one row a tool call with how it ended: is_error, exit_code, duration_ms where the
-agent wrote it down, and elapsed_ms from the call to its result. commands has each shell command with its exit code.
+proxy_requests is what Arbor's proxy saw of each request, from its own records: provider, account (the proxy's index
+for it), model, latency_ms, ttft_ms, tokens, whether it failed, and its cost in dollars at today's prices. It joins
+the tables above on session_id.
+
+Four names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
+tool calls, errors and cost. tools is one row a tool call with how it ended: is_error, exit_code, duration_ms where
+the agent wrote it down, and elapsed_ms from the call to its result. commands has each shell command with its exit
+code. speed is tokens_per_second for each request that streamed a reply, from its first token to its last.
 
 Only a SELECT is ever run; the tables can't be changed from here. An answer holds 200 rows unless --limit says
 otherwise (10,000 at most), and text longer than 2,000 characters is cut unless --full. With Everything kept, an
@@ -204,7 +209,8 @@ answer that selects text holds what was said in those sessions: prompts, replies
   arbor query \"SELECT model, count(*) AS calls, sum(output) AS output FROM requests WHERE day >= '2026-10-01' GROUP BY ALL ORDER BY calls DESC\"
   arbor query \"SELECT program, count(*) AS runs FROM commands GROUP BY ALL ORDER BY runs DESC\" --limit 20
   arbor query \"SELECT tool, count(*) AS calls, avg(is_error::INT) AS failed, median(elapsed_ms) AS ms FROM tools GROUP BY ALL ORDER BY calls DESC\" --json
-  arbor query \"SELECT agent, day, count(*) AS sessions, sum(output) AS output FROM sessions WHERE day >= '2026-10-01' GROUP BY ALL ORDER BY day\"
+  arbor query \"SELECT agent, day, count(*) AS sessions, sum(output) AS output, sum(cost) AS cost FROM sessions WHERE day >= '2026-10-01' GROUP BY ALL ORDER BY day\"
+  arbor query \"SELECT model, count(*) AS replies, median(tokens_per_second) AS tokens_per_second FROM speed WHERE day >= '2026-10-01' GROUP BY ALL ORDER BY replies DESC\"
 ",
     ),
     (

@@ -1143,7 +1143,25 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
                 merge_at: analytics::MERGE_AT,
                 now,
             };
-            let extracted = analytics::extract_pass(&db, &places, &tables, &engine, &extract_options, &|| token.is_cancelled());
+            let mut extracted = analytics::extract_pass(&db, &places, &tables, &engine, &extract_options, &|| token.is_cancelled());
+            // The proxy's own requests follow, from usage.db: ids, names and numbers.
+            if let Ok(report) = &mut extracted {
+                let started = std::time::Instant::now();
+                let copied = crate::usage::open_usage_database().and_then(|usage| {
+                    let mut pricer = crate::usage::proxy_rows::Pricer::load(&usage)?;
+                    let mut next = |after: u64, limit: u32| crate::usage::proxy_rows::proxy_requests(&usage, &mut pricer, after, limit);
+                    analytics::proxy_pass(&tables, &engine, extract_options.detail, analytics::MERGE_AT, &mut next, &|| token.is_cancelled() || started.elapsed() >= ANALYTICS_MAX_TIME)
+                });
+                match copied {
+                    Ok(proxy) => {
+                        (report.table_rows, report.table_bytes) = (proxy.table_rows, proxy.table_bytes);
+                        report.complete &= proxy.complete;
+                    }
+                    Err(error) => {
+                        report.first_failure.get_or_insert(error);
+                    }
+                }
+            }
             let _ = analytics::note(&db, &extracted);
             report.analytics_left = extracted.is_ok_and(|extract| !extract.complete);
         }

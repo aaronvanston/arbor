@@ -15,6 +15,9 @@
 //! on from another and copied its lines. `state.db` holds a short key for every line read and the version it was
 //! first read from, and the same line met in another version is marked as a repeat. The keys are staged with the
 //! progress, since a key says its line's rows are in the tables.
+//!
+//! The proxy's own requests are a table too, copied from usage.db in the order the proxy numbered them. How far
+//! that has got is a cursor in `state.db`, staged around each write as the progress is.
 
 use super::classify::{load_version, Blobs, Version};
 use super::codec;
@@ -22,7 +25,7 @@ use super::ingest::Throttle;
 use super::tokens::{pieces, read_piece, retry_wait, Piece};
 use rusqlite::{params, Connection, OptionalExtension};
 use session_tables::store::{Batch, Engine, Origin, Store as Tables, DUCKDB_ARCHIVES, DUCKDB_VERSION};
-use session_tables::{Agent, At, Detail, Line, LineKey, Parser, Rows, State};
+use session_tables::{Agent, At, Detail, Line, LineKey, Parser, ProxyRequest, Rows, State};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -68,6 +71,9 @@ CREATE TABLE IF NOT EXISTS staged(
 -- A key for every line read, with the version it was first read from. Keys wait in seen_staged, as progress does.
 CREATE TABLE IF NOT EXISTS seen(key BLOB PRIMARY KEY, version_id INTEGER NOT NULL) WITHOUT ROWID, STRICT;
 CREATE TABLE IF NOT EXISTS seen_staged(key BLOB PRIMARY KEY, version_id INTEGER NOT NULL, batch INTEGER NOT NULL) WITHOUT ROWID, STRICT;
+-- How far a table that isn't read from transcripts has been copied. It waits in cursor_staged, as progress does.
+CREATE TABLE IF NOT EXISTS cursor(name TEXT PRIMARY KEY, value INTEGER NOT NULL) STRICT;
+CREATE TABLE IF NOT EXISTS cursor_staged(name TEXT PRIMARY KEY, value INTEGER NOT NULL, batch INTEGER NOT NULL) STRICT;
 -- A version that couldn't be read: at what size, how many times running, and when it's tried again
 -- (`tokens::retry_wait`).
 CREATE TABLE IF NOT EXISTS failed(
@@ -374,7 +380,7 @@ fn open(root: &Path, detail: Detail) -> Result<(Tables, Connection), String> {
         return Ok((tables, state));
     }
     // Progress goes first: tables without progress are read into again, and never the other way round.
-    state.execute_batch("DELETE FROM progress; DELETE FROM staged; DELETE FROM seen; DELETE FROM seen_staged; DELETE FROM failed; DELETE FROM meta WHERE key = 'madeBy';").map_err(state_error)?;
+    state.execute_batch("DELETE FROM progress; DELETE FROM staged; DELETE FROM seen; DELETE FROM seen_staged; DELETE FROM failed; DELETE FROM cursor; DELETE FROM cursor_staged; DELETE FROM meta WHERE key = 'madeBy';").map_err(state_error)?;
     drop(tables);
     Tables::clear(root);
     let tables = Tables::open(root)?;
@@ -395,6 +401,8 @@ fn settle(state: &Connection, tables: &Tables) -> Result<(), String> {
     transaction.execute("DELETE FROM staged", []).map_err(state_error)?;
     transaction.execute("INSERT OR IGNORE INTO seen(key, version_id) SELECT key, version_id FROM seen_staged WHERE batch < ?1", [tables.next() as i64]).map_err(state_error)?;
     transaction.execute("DELETE FROM seen_staged", []).map_err(state_error)?;
+    transaction.execute("INSERT OR REPLACE INTO cursor(name, value) SELECT name, value FROM cursor_staged WHERE batch < ?1", [tables.next() as i64]).map_err(state_error)?;
+    transaction.execute("DELETE FROM cursor_staged", []).map_err(state_error)?;
     transaction.commit().map_err(state_error)
 }
 
@@ -568,6 +576,44 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
     let (left, set_aside) = todo(db, &state, options.now)?;
     (report.versions_left, report.set_aside) = (left.len() as u64, set_aside);
     (report.table_rows, report.table_bytes) = writer.tables.size();
+    Ok(report)
+}
+
+/// How many of the proxy's requests go into one write.
+const PROXY_ROWS: u32 = 50_000;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ProxyReport {
+    pub(crate) copied: u64,
+    /// It reached the newest request.
+    pub(crate) complete: bool,
+    /// What the tables hold, once the copy ended.
+    pub(crate) table_rows: u64,
+    pub(crate) table_bytes: u64,
+}
+
+/// Copies the proxy's requests that aren't in the tables yet, lowest number first. `next` gives the requests
+/// numbered above a given one, up to as many as it's asked for; `stop` is asked between writes.
+pub(crate) fn proxy_pass(root: &Path, engine: &dyn Engine, detail: Detail, merge_at: usize, next: &mut dyn FnMut(u64, u32) -> Result<Vec<ProxyRequest>, String>, stop: &dyn Fn() -> bool) -> Result<ProxyReport, String> {
+    let (mut tables, state) = open(root, detail)?;
+    settle(&state, &tables)?;
+    let mut report = ProxyReport::default();
+    while !stop() {
+        let after = state.query_row("SELECT value FROM cursor WHERE name = 'proxy_requests'", [], |row| row.get::<_, i64>(0)).optional().map_err(state_error)?.unwrap_or(0).max(0) as u64;
+        let rows = next(after, PROXY_ROWS)?;
+        let Some(last) = rows.last().map(|row| row.id) else {
+            report.complete = true;
+            break;
+        };
+        let mut batch = tables.batch()?;
+        batch.add_proxy(&rows)?;
+        state.execute("INSERT OR REPLACE INTO cursor_staged(name, value, batch) VALUES('proxy_requests', ?1, ?2)", params![last as i64, tables.next() as i64]).map_err(state_error)?;
+        report.copied += tables.write(batch, engine)?;
+        settle(&state, &tables)?;
+    }
+    tables.merge(engine, merge_at)?;
+    tables.sweep()?;
+    (report.table_rows, report.table_bytes) = tables.size();
     Ok(report)
 }
 
@@ -1076,6 +1122,51 @@ mod tests {
         assert_eq!(rows(&fixture, "lines").len(), 3 + 3);
         let state = open_state(&root(&fixture)).unwrap();
         assert_eq!(state.query_row("SELECT count(*) FROM failed", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn the_proxys_requests_are_copied_once_each_however_a_pass_ends() {
+        use crate::usage::proxy_rows::{proxy_requests, Pricer};
+        let fixture = Fixture::new("analytics-proxy");
+        let usage = crate::usage::schema::test_database();
+        let add = |number: i64| {
+            crate::usage::schema::insert_request(
+                &usage,
+                "timestamp_ms, latency_ms, ttft_ms, model, provider, auth_index, session_id, input_tokens, output_tokens, failure_body, source",
+                params![1_790_000_000_000_i64 + number, 3000, 1000, "claude-opus-5-5", "claude", "a1", SID, 1000, 50 * number, SECRET_TEXT, "cam@example.com"],
+            );
+        };
+        (1..=5).for_each(add);
+        let mut pricer = Pricer::load(&usage).unwrap();
+        let mut asked: Vec<u64> = Vec::new();
+        let mut copy = |engine: &dyn Engine, asked: &mut Vec<u64>| {
+            proxy_pass(&root(&fixture), engine, Detail::Everything, usize::MAX, &mut |after, limit| {
+                asked.push(after);
+                proxy_requests(&usage, &mut pricer, after, limit.min(2))
+            }, &|| false)
+        };
+        // A write that fails leaves the cursor where it was, so the next pass copies the same requests, once.
+        assert_eq!(copy(&Broken, &mut asked).unwrap_err(), "The query engine stopped while writing tables (IO Error)");
+        let report = copy(&Copier, &mut asked).unwrap();
+        assert_eq!((report.copied, report.complete, report.table_rows), (5, true, 5));
+        assert_eq!(asked, [0, 0, 2, 4, 5]);
+        let ids = |fixture: &Fixture| -> Vec<u64> {
+            let mut ids: Vec<u64> = rows(fixture, "proxy_requests").iter().map(|row| row["id"].as_u64().unwrap()).collect();
+            ids.sort_unstable();
+            ids
+        };
+        assert_eq!(ids(&fixture), [1, 2, 3, 4, 5]);
+        // Nothing new: nothing's written. One more request: it alone is copied.
+        assert_eq!(copy(&Copier, &mut asked).unwrap().copied, 0);
+        add(6);
+        assert_eq!(copy(&Copier, &mut asked).unwrap().copied, 1);
+        assert_eq!(ids(&fixture), [1, 2, 3, 4, 5, 6]);
+        let copied = rows(&fixture, "proxy_requests");
+        assert!(copied.iter().all(|row| row["session_id"] == SID && row["account"] == "a1" && row["cost"].as_f64().is_some_and(|cost| cost > 0.0)));
+        // What a failed request answered with, and the account's name, are nowhere in the tables.
+        let all = serde_json::to_string(&copied).unwrap();
+        assert!(!all.contains(SECRET_TEXT) && !all.contains("cam@example.com"));
         let _ = fs::remove_dir_all(&fixture.base);
     }
 
