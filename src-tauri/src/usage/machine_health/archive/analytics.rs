@@ -353,6 +353,18 @@ fn meta(state: &Connection, key: &str) -> Result<Option<String>, String> {
     state.query_row("SELECT value FROM meta WHERE key = ?1", [key], |row| row.get(0)).optional().map_err(state_error)
 }
 
+/// Whether the tables in `root` are the ones this rule and detail make. Tables from before a change to either wait
+/// for a pass to make them again, and until then lack what a query is told they have. Tables whose maker can't be
+/// read are taken for current: the query then says what it finds.
+pub(crate) fn current(root: &Path, detail: Detail) -> bool {
+    let read = || -> rusqlite::Result<Option<String>> {
+        let state = Connection::open_with_flags(root.join("state.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        state.busy_timeout(Duration::from_secs(2))?;
+        state.query_row("SELECT value FROM meta WHERE key = 'madeBy'", [], |row| row.get(0)).optional()
+    };
+    read().map_or(true, |made_by| made_by.as_deref() == Some(format!("{RULE} {}", detail_name(detail)).as_str()))
+}
+
 /// Opens the tables as this rule and detail make them, starting them again when another rule or detail made them.
 fn open(root: &Path, detail: Detail) -> Result<(Tables, Connection), String> {
     let tables = Tables::open(root)?;
@@ -1089,6 +1101,8 @@ mod tests {
         let state = open_state(&root(&fixture)).unwrap();
         let count = |table: &str| state.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get::<_, i64>(0)).unwrap();
         assert_eq!((count("seen"), count("seen_staged")), (4, 0));
+        // These are the tables this detail makes, and not the ones another would.
+        assert!(current(&root(&fixture), Detail::Everything) && !current(&root(&fixture), Detail::Numbers));
 
         // A key counts once the write that holds its line has landed, and not before.
         let tables = Tables::open(&root(&fixture)).unwrap();

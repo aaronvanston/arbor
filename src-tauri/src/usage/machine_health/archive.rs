@@ -888,6 +888,9 @@ pub(crate) async fn read_session_analytics(sql: String, limit: Option<u32>, full
         }
         let engine = analytics::engine().ok_or("The query engine isn't on this Mac. Turning analytics on in Settings › Session Archive downloads it")?;
         let root = PathBuf::from(settings.root.unwrap_or_default()).join(analytics::FOLDER);
+        if root.join("manifest.json").is_file() && !analytics::current(&root, settings.analytics_detail.detail()) {
+            return Err("The analytics tables are from before a change to what they hold. They're made again at the archive's next check, with analytics on".into());
+        }
         query::ask(&root, engine.program(), &sql, limit, full.unwrap_or(false))
     })
     .await
