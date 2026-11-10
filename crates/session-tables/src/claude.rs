@@ -474,7 +474,7 @@ pub(crate) mod tests {
 
     /// A command that failed and one that worked, after the lines of `session`, and a line with no time.
     pub(crate) fn commands() -> Vec<String> {
-        let call = |at: &str, id: &str| reply(at, &format!("msg_{at}"), 9, Some("tool_use"), json!({ "type": "tool_use", "id": id, "name": "Bash", "input": { "command": "ls missing" } }));
+        let call = |at: &str, id: &str| reply(at, &format!("msg_{at}"), 9, Some("tool_use"), json!({ "type": "tool_use", "id": id, "name": "Bash", "input": { "command": "ls missing", "run_in_background": id == "toolu_11" } }));
         let result = |at: &str, id: &str, ran: Value, failed: bool, said: &str| base("user", at, json!({ "toolUseResult": ran, "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": id, "is_error": failed, "content": said }] } }));
         vec![
             call("20", "toolu_8"),
@@ -482,6 +482,11 @@ pub(crate) mod tests {
             json!({ "type": "mode", "mode": "default", "sessionId": "s-1" }).to_string(),
             call("23", "toolu_9"),
             result("24", "toolu_9", json!({ "stdout": "a.rs", "stderr": "", "interrupted": false }), false, "a.rs"),
+            // As a subagent's file has them: the result alone. One worked, and one was sent to the background.
+            call("25", "toolu_10"),
+            result("26", "toolu_10", Value::Null, false, "ok"),
+            call("27", "toolu_11"),
+            result("28", "toolu_11", Value::Null, false, "Started"),
         ]
     }
 
@@ -490,7 +495,7 @@ pub(crate) mod tests {
         let rows = parse(Agent::Claude, Detail::Everything, &[session(), commands()].concat());
         let ended: Vec<_> = rows.tool_results.iter().map(|result| (result.tool_use_id.as_deref().unwrap(), result.is_error, result.exit_code)).collect();
         // The first failed without saying how, and an edit has no exit code.
-        assert_eq!(ended, [("toolu_1", Some(true), None), ("toolu_2", Some(false), None), ("toolu_8", Some(true), Some(2)), ("toolu_9", Some(false), Some(0))]);
+        assert_eq!(ended, [("toolu_1", Some(true), None), ("toolu_2", Some(false), None), ("toolu_8", Some(true), Some(2)), ("toolu_9", Some(false), Some(0)), ("toolu_10", Some(false), None), ("toolu_11", Some(false), None)]);
     }
 
     #[test]

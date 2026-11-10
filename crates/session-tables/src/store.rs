@@ -14,7 +14,7 @@
 //!
 //! One writer at a time: whoever calls [`Store::write`], [`Store::merge`] or [`Store::sweep`] holds the folder.
 
-use crate::tables::{Kind, Table, REPEAT, RESULTS, TABLES, VIEWS};
+use crate::tables::{Kind, Table, EXIT_CODE, REPEAT, RESULTS, TABLES, VIEWS};
 use crate::{Agent, Rows};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -468,14 +468,27 @@ impl Store {
             let once: Vec<String> = columns.iter().filter(|(column, _)| *column != REPEAT).map(|(column, _)| format!("\"{column}\"")).collect();
             if table.name == "commands" {
                 let ended = ["exit_code", "duration_ms", "output_chars"];
-                let taken: Vec<String> = columns.iter().filter(|(column, _)| *column != REPEAT).map(|(column, _)| if ended.contains(column) { format!("coalesce(c.\"{column}\", r.\"{column}\") AS \"{column}\"") } else { format!("c.\"{column}\"") }).collect();
-                sql.push_str(&format!("CREATE VIEW \"commands\" AS SELECT {} FROM \"{name}\" c LEFT JOIN {RESULTS} r ON r.agent = c.agent AND r.tool_use_id = c.tool_use_id WHERE c.\"{REPEAT}\" IS NOT TRUE;\n", taken.join(", ")));
+                // Every Claude command is a Bash call; `k` is the calls that asked to run in the background.
+                let exit_code = EXIT_CODE.replace("{bash}", "true").replace("{asked}", "k.background");
+                let taken: Vec<String> = columns
+                    .iter()
+                    .filter(|(column, _)| *column != REPEAT)
+                    .map(|(column, _)| match *column {
+                        "exit_code" => format!("coalesce(c.exit_code, {exit_code}) AS exit_code"),
+                        column if ended.contains(&column) => format!("coalesce(c.\"{column}\", r.\"{column}\") AS \"{column}\""),
+                        column => format!("c.\"{column}\""),
+                    })
+                    .collect();
+                sql.push_str(&format!(
+                    "CREATE VIEW \"commands\" AS SELECT {} FROM \"{name}\" c LEFT JOIN {RESULTS} r ON r.agent = c.agent AND r.tool_use_id = c.tool_use_id LEFT JOIN (SELECT agent, tool_use_id, true AS background FROM \"tool_calls\" WHERE background GROUP BY agent, tool_use_id) k ON k.agent = c.agent AND k.tool_use_id = c.tool_use_id WHERE c.\"{REPEAT}\" IS NOT TRUE;\n",
+                    taken.join(", ")
+                ));
             } else {
                 sql.push_str(&format!("CREATE VIEW \"{}\" AS SELECT {} FROM \"{name}\" WHERE \"{REPEAT}\" IS NOT TRUE;\n", table.name, once.join(", ")));
             }
         }
         for view in &VIEWS {
-            sql.push_str(&format!("CREATE VIEW \"{}\" AS {};\n", view.name, view.sql.replace("{results}", RESULTS)));
+            sql.push_str(&format!("CREATE VIEW \"{}\" AS {};\n", view.name, view.sql.replace("{results}", RESULTS).replace("{exit_code}", &EXIT_CODE.replace("{bash}", "c.tool = 'Bash'").replace("{asked}", "c.background"))));
         }
         sql
     }
@@ -891,12 +904,13 @@ mod tests {
             let count = lines.len() as u64;
             assert_eq!(ask(&engine, &store, "SELECT (SELECT count(*) FROM lines) AS once, (SELECT count(*) FROM lines_all) AS every, (SELECT count(*) FROM lines_all WHERE repeat) AS repeats")[0], serde_json::json!({ "once": count, "every": 2 * count, "repeats": count }));
             // The command's row was written before it ended: its exit code is its result's.
-            assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code, output_chars FROM commands ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_1", "exit_code": null, "output_chars": 9 + SECRET.len() }), serde_json::json!({ "tool_use_id": "toolu_8", "exit_code": 2, "output_chars": 37 }), serde_json::json!({ "tool_use_id": "toolu_9", "exit_code": 0, "output_chars": 4 })]);
+            assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code, output_chars FROM commands ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_1", "exit_code": null, "output_chars": 9 + SECRET.len() }), serde_json::json!({ "tool_use_id": "toolu_8", "exit_code": 2, "output_chars": 37 }), serde_json::json!({ "tool_use_id": "toolu_9", "exit_code": 0, "output_chars": 4 }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0, "output_chars": 2 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null, "output_chars": 7 })]);
+            assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code FROM tools WHERE tool_use_id IN ('toolu_2', 'toolu_10', 'toolu_11') ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_2", "exit_code": null }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null })]);
             assert_eq!(ask(&engine, &store, "SELECT tool, is_error, exit_code, elapsed_ms FROM tools WHERE tool_use_id = 'toolu_8'")[0], serde_json::json!({ "tool": "Bash", "is_error": true, "exit_code": 2, "elapsed_ms": 2000 }));
             // The line with no time falls on the day of the line before it.
             assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, ts FROM lines WHERE kind = 'mode'")[0], serde_json::json!({ "day": "2026-10-01", "ts": null }));
             let session = &ask(&engine, &store, "SELECT session_id, machine, lines, prompts, requests, output, tool_calls, tool_errors, cwd, model FROM sessions")[0];
-            assert_eq!(*session, serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "lines": count, "prompts": 1, "requests": 6, "output": 60 + 30 + 12 + 4 + 9 + 9, "tool_calls": 5, "tool_errors": 2, "cwd": "/srv/app", "model": "claude-test-1" }));
+            assert_eq!(*session, serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "lines": count, "prompts": 1, "requests": 8, "output": 60 + 30 + 12 + 4 + 4 * 9, "tool_calls": 7, "tool_errors": 2, "cwd": "/srv/app", "model": "claude-test-1" }));
         }
         fs::remove_dir_all(root).unwrap();
     }

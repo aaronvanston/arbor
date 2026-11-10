@@ -77,7 +77,13 @@ pub(crate) struct View {
 }
 
 /// How each tool call ended, once per call: the earliest result with its id.
-pub(crate) const RESULTS: &str = "(SELECT agent, tool_use_id, min(ts) AS ts, bool_or(is_error) AS is_error, max(exit_code) AS exit_code, bool_or(interrupted) AS interrupted, bool_or(timed_out) AS timed_out, max(duration_ms) AS duration_ms, max(output_chars) AS output_chars FROM \"tool_results\" WHERE tool_use_id IS NOT NULL GROUP BY agent, tool_use_id)";
+pub(crate) const RESULTS: &str = "(SELECT agent, tool_use_id, min(ts) AS ts, bool_or(is_error) AS is_error, max(exit_code) AS exit_code, bool_or(interrupted) AS interrupted, bool_or(background) AS background, bool_or(timed_out) AS timed_out, max(duration_ms) AS duration_ms, max(output_chars) AS output_chars FROM \"tool_results\" WHERE tool_use_id IS NOT NULL GROUP BY agent, tool_use_id)";
+
+/// A call's exit code, from its result `r` and whether the call asked to run in the background, `{asked}`. A
+/// subagent's transcript holds a Claude command's result without the run's own account of itself, so nothing there
+/// says exit code 0. Claude Code marks a command that exited with anything else as an error, so one that isn't an
+/// error, wasn't interrupted and wasn't sent to the background exited with 0.
+pub(crate) const EXIT_CODE: &str = "coalesce(r.exit_code, CASE WHEN c.agent = 'claude' AND {bash} AND r.is_error = false AND r.interrupted IS NOT TRUE AND r.background IS NOT TRUE AND {asked} IS NOT TRUE THEN 0 END)";
 
 pub(crate) const VIEWS: [View; 2] = [
     // A tool call with how it ended. `elapsed_ms` is from the call's line to its result's, so it counts a wait for
@@ -109,7 +115,7 @@ pub(crate) const VIEWS: [View; 2] = [
             ("elapsed_ms", Count),
             ("output_chars", Count),
         ],
-        sql: "SELECT c.agent, c.machine, c.source, c.line, c.ts, c.day, c.session_id, c.tool_use_id, c.tool, c.namespace, c.mcp_server, c.mcp_tool, c.subagent_type, c.skill, c.input_chars, r.ts AS ended, r.is_error, r.exit_code, r.interrupted, r.timed_out, r.duration_ms, CASE WHEN r.ts >= c.ts THEN date_diff('millisecond', c.ts, r.ts) END AS elapsed_ms, r.output_chars FROM \"tool_calls\" c LEFT JOIN {results} r ON r.agent = c.agent AND r.tool_use_id = c.tool_use_id",
+        sql: "SELECT c.agent, c.machine, c.source, c.line, c.ts, c.day, c.session_id, c.tool_use_id, c.tool, c.namespace, c.mcp_server, c.mcp_tool, c.subagent_type, c.skill, c.input_chars, r.ts AS ended, r.is_error, {exit_code} AS exit_code, r.interrupted, r.timed_out, r.duration_ms, CASE WHEN r.ts >= c.ts THEN date_diff('millisecond', c.ts, r.ts) END AS elapsed_ms, r.output_chars FROM \"tool_calls\" c LEFT JOIN {results} r ON r.agent = c.agent AND r.tool_use_id = c.tool_use_id",
     },
     // A session, once, however many files it's in.
     View {
