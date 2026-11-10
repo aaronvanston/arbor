@@ -902,6 +902,13 @@ pub(crate) fn read_session_analytics_tables() -> Vec<query::AnalyticsTable> {
     query::tables()
 }
 
+/// Questions worth asking of the analytics tables, each with the SELECT that answers it: speed and cost by model,
+/// tool error rates, how agents use the shell, and more. Run one with read_session_analytics, as it is or changed.
+#[tauri::command]
+pub(crate) fn read_session_analytics_queries() -> Vec<query::AnalyticsQuery> {
+    query::saved()
+}
+
 /// Removes the analytics tables on the next pass. With analytics on they're then made again from the kept
 /// transcripts; with it off they're gone until it's turned on. The kept transcripts are untouched either way.
 #[tauri::command]

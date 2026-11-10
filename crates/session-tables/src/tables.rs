@@ -167,7 +167,9 @@ pub(crate) const VIEWS: [View; 3] = [
               LEFT JOIN (SELECT agent, session_id, count(*) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors FROM \"tools\" GROUP BY agent, session_id) t ON t.agent = l.agent AND t.session_id = l.session_id \
               LEFT JOIN (SELECT session_id, count(*) AS proxy_requests, sum(cost) AS cost FROM \"proxy_requests\" WHERE session_id IS NOT NULL GROUP BY session_id) p ON p.session_id = l.session_id",
     },
-    // How fast each model wrote: a request's output tokens over the time from its first token to its last.
+    // How fast each model wrote: a request's output tokens over the time from its first token to its last. A reply
+    // written in under half a second is left out: one that wasn't streamed has its first token and its last at
+    // the same moment, and reads as hundreds of thousands of tokens a second.
     View {
         name: "speed",
         columns: &[
@@ -185,7 +187,7 @@ pub(crate) const VIEWS: [View; 3] = [
             ("generation_ms", Count),
             ("tokens_per_second", Real),
         ],
-        sql: "SELECT ts, day, session_id, provider, account, model, alias, effort, service_tier, output, ttft_ms, latency_ms - ttft_ms AS generation_ms, output * 1000.0 / (latency_ms - ttft_ms) AS tokens_per_second FROM \"proxy_requests\" WHERE NOT failed AND NOT canceled AND output > 0 AND ttft_ms IS NOT NULL AND latency_ms > ttft_ms",
+        sql: "SELECT ts, day, session_id, provider, account, model, alias, effort, service_tier, output, ttft_ms, latency_ms - ttft_ms AS generation_ms, output * 1000.0 / (latency_ms - ttft_ms) AS tokens_per_second FROM \"proxy_requests\" WHERE NOT failed AND NOT canceled AND output > 0 AND ttft_ms IS NOT NULL AND latency_ms - ttft_ms >= 500",
     },
 ];
 

@@ -547,6 +547,13 @@ pub(crate) fn analytics_answer(answer: &Value) -> String {
     out.join("\n")
 }
 
+/// The saved queries: each one's name and what it answers.
+pub(crate) fn analytics_queries(saved: &Value) -> String {
+    let list = saved.as_array().map(Vec::as_slice).unwrap_or_default();
+    let width = list.iter().map(|saved| field(saved, "name").chars().count()).max().unwrap_or(0);
+    list.iter().map(|saved| format!("{:<width$}  {}", field(saved, "name"), field(saved, "about"))).collect::<Vec<_>>().join("\n")
+}
+
 /// Each analytics table with its columns, for writing a query.
 pub(crate) fn analytics_tables(tables: &Value) -> String {
     let list = tables.as_array().map(Vec::as_slice).unwrap_or_default();
@@ -727,6 +734,8 @@ mod tests {
         assert_eq!(analytics_answer(&one), "n\n5\n(1 row)");
         let tables = json!([{ "name": "requests", "columns": [{ "name": "day", "kind": "day" }, { "name": "output", "kind": "number" }] }, { "name": "hooks", "columns": [] }]);
         assert_eq!(analytics_tables(&tables), "requests\n  day                    day\n  output                 number\n\nhooks\n");
+        let saved = serde_json::json!([{ "name": "speed", "about": "How fast", "sql": "SELECT 1" }, { "name": "tool-errors", "about": "Which fail", "sql": "SELECT 2" }]);
+        assert_eq!(analytics_queries(&saved), "speed        How fast\ntool-errors  Which fail");
     }
 
 }

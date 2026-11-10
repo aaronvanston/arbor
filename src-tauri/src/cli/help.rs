@@ -179,11 +179,15 @@ A session's project is known once Arbor has read its transcript. --since takes 1
     (
         "query",
         "arbor query \"<select …>\" [--limit <rows>] [--full]
+arbor query --saved [<name>]
 arbor query --tables
 
 One SELECT over the session archive's analytics tables: every message, model call, tool call, tool result, shell
 command, hook run and file touched in the kept Claude Code and Codex sessions. The tables are there once analytics is
 on in Settings › Session Archive, and fill in at each check. The SQL is DuckDB's.
+
+--saved lists questions that come ready to ask (speed and cost by model, tool error rates, how agents use the shell),
+and --saved with a name runs one. With --json the list has each one's SQL, to change and run yourself.
 
 --tables lists each table with its columns. Every row says where it came from: agent, machine, source (the kept file),
 line, ts, day and session_id. day is the UTC date, and narrowing by it keeps a query fast.
@@ -206,6 +210,8 @@ otherwise (10,000 at most), and text longer than 2,000 characters is cut unless 
 answer that selects text holds what was said in those sessions: prompts, replies, commands and their output.
 
   arbor query --tables
+  arbor query --saved
+  arbor query --saved shell-habits
   arbor query \"SELECT model, count(*) AS calls, sum(output) AS output FROM requests WHERE day >= '2026-10-01' GROUP BY ALL ORDER BY calls DESC\"
   arbor query \"SELECT program, count(*) AS runs FROM commands GROUP BY ALL ORDER BY runs DESC\" --limit 20
   arbor query \"SELECT tool, count(*) AS calls, avg(is_error::INT) AS failed, median(elapsed_ms) AS ms FROM tools GROUP BY ALL ORDER BY calls DESC\" --json

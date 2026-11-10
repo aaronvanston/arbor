@@ -220,6 +220,7 @@ mod tests {
         types.visit::<crate::usage::machine_health::archive::export::ArchiveExport>();
         types.visit::<crate::usage::machine_health::archive::query::AnalyticsAnswer>();
         types.visit::<crate::usage::machine_health::archive::query::AnalyticsTable>();
+        types.visit::<crate::usage::machine_health::archive::query::AnalyticsQuery>();
     }
 
     struct Collected {

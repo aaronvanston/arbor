@@ -2,7 +2,8 @@
 //!
 //! A transcript is a file of JSON lines. [`Parser::line`] takes one line and adds what it holds to [`Rows`]: a list
 //! per table, a struct per row. The parser opens no files, so it serves an archive, a folder on disk or a test alike.
-//! [`tables`] lists each table's columns, and [`store`] keeps rows as Parquet files in a folder.
+//! [`tables`] lists each table's columns, [`store`] keeps rows as Parquet files in a folder, and [`cookbook`] has
+//! questions worth asking of them.
 //!
 //! A session can be kept in more than one file. [`Parser::line_once`] gives each line a short key and asks its caller
 //! whether another file had that line first; the rows of one that did are marked `repeat`, and a table is read
@@ -17,6 +18,7 @@
 
 mod claude;
 mod codex;
+pub mod cookbook;
 mod json;
 mod rows;
 mod shell;

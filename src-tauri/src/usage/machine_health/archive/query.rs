@@ -67,6 +67,20 @@ pub(crate) struct AnalyticsTable {
     columns: Vec<AnalyticsColumn>,
 }
 
+/// A question worth asking of the tables, with the query that answers it.
+#[derive(Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AnalyticsQuery {
+    name: &'static str,
+    about: &'static str,
+    sql: &'static str,
+}
+
+/// The saved queries, to run as they are or to start from.
+pub(crate) fn saved() -> Vec<AnalyticsQuery> {
+    session_tables::cookbook::SAVED.iter().map(|saved| AnalyticsQuery { name: saved.name, about: saved.about, sql: saved.sql }).collect()
+}
+
 /// Everything a query can name, with its columns: each table as it's read, and the views worked out from them.
 pub(crate) fn tables() -> Vec<AnalyticsTable> {
     let kind = |kind: Kind| match kind {

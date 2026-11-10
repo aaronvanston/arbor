@@ -933,6 +933,39 @@ mod tests {
     }
 
     #[test]
+    fn every_saved_query_runs_and_none_shares_a_name() {
+        use crate::cookbook::{saved, SAVED};
+        let names: HashSet<&str> = SAVED.iter().map(|saved| saved.name).collect();
+        assert_eq!(names.len(), SAVED.len());
+        for query in &SAVED {
+            assert!(query.name.chars().all(|c| c.is_ascii_lowercase() || c == '-') && !query.about.is_empty(), "{}", query.name);
+            assert!(query.sql.starts_with("SELECT ") || query.sql.starts_with("WITH "), "{}", query.name);
+            assert_eq!(saved(query.name).map(|found| found.sql), Some(query.sql));
+        }
+        let Some(engine) = engine() else { return };
+        let root = temp_dir("saved");
+        let mut store = Store::open(&root).unwrap();
+        // With no tables at all, and then with rows in them.
+        for filled in [false, true] {
+            if filled {
+                let mut batch = store.batch().unwrap();
+                for (agent, lines) in [(Agent::Claude, [claude::tests::session(), claude::tests::commands()].concat()), (Agent::Codex, codex::tests::session())] {
+                    batch.add(&Origin { agent, machine: "cam-mbp", source: agent.name() }, &parse(agent, Detail::Everything, &lines)).unwrap();
+                }
+                batch.add_proxy(&[proxy(1, false), proxy(2, true)]).unwrap();
+                store.write(batch, &engine).unwrap();
+            }
+            for query in &SAVED {
+                let answer = engine.run(&format!("{}{}{};", store.settings(), store.views(), query.sql));
+                assert!(answer.is_ok(), "{}: {answer:?}", query.name);
+            }
+        }
+        let linked = ask(&engine, &store, saved("pull-requests").unwrap().sql);
+        assert_eq!(linked, [serde_json::json!({ "repository": "example/app", "number": 12, "sessions": 1, "requests": 8, "tool_calls": 7, "output": 60 + 30 + 12 + 4 + 4 * 9, "cost": 0.25 })]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn row_groups_stay_small_however_much_text_rows_hold() {
         let Some(engine) = engine() else { return };
         let root = temp_dir("groups");

@@ -150,6 +150,8 @@ pub(crate) fn pool_start(words: &[&str]) -> Result<PoolStart, String> {
 pub(crate) struct Query {
     pub(crate) sql: String,
     pub(crate) tables: bool,
+    /// A saved query to run, by name, or an empty name to list them.
+    pub(crate) saved: Option<String>,
     pub(crate) limit: Option<u32>,
     pub(crate) full: bool,
 }
@@ -158,10 +160,12 @@ pub(crate) struct Query {
 pub(crate) fn query(words: &[&str]) -> Result<Query, String> {
     let mut query = Query::default();
     let mut sql: Vec<&str> = Vec::new();
-    let mut rest = words.iter();
+    let mut rest = words.iter().peekable();
     while let Some(word) = rest.next() {
         match *word {
             "--tables" => query.tables = true,
+            // The name is the next word, when there is one that isn't a flag.
+            "--saved" => query.saved = Some(rest.next_if(|next| !next.starts_with("--")).map(|name| name.to_string()).unwrap_or_default()),
             "--full" => query.full = true,
             "--limit" => {
                 let value = rest.next().ok_or("--limit needs a number of rows")?;
@@ -171,8 +175,9 @@ pub(crate) fn query(words: &[&str]) -> Result<Query, String> {
         }
     }
     query.sql = sql.join(" ");
-    if query.tables == !query.sql.trim().is_empty() {
-        return Err("Give arbor query one SELECT to run, or --tables to list what it can read. Run arbor help query to see how.".into());
+    let asked = [!query.sql.trim().is_empty(), query.tables, query.saved.is_some()].iter().filter(|asked| **asked).count();
+    if asked != 1 {
+        return Err("Give arbor query one SELECT to run, --saved with a saved query's name, or --tables to list what it can read. Run arbor help query to see how.".into());
     }
     Ok(query)
 }
@@ -322,6 +327,10 @@ mod tests {
         // Unquoted, the shell hands it over a word at a time.
         assert_eq!(query(&["--full", "SELECT", "1"]), Ok(Query { sql: "SELECT 1".into(), full: true, ..Query::default() }));
         assert_eq!(query(&["--tables"]), Ok(Query { tables: true, ..Query::default() }));
+        assert_eq!(query(&["--saved"]), Ok(Query { saved: Some(String::new()), ..Query::default() }));
+        assert_eq!(query(&["--saved", "tool-errors", "--limit", "5"]), Ok(Query { saved: Some("tool-errors".into()), limit: Some(5), ..Query::default() }));
+        assert_eq!(query(&["--saved", "--full"]).map(|query| (query.saved, query.full)), Ok((Some(String::new()), true)));
+        assert!(query(&["--saved", "tool-errors", "SELECT 1"]).unwrap_err().contains("one SELECT"));
         // One or the other, and a limit that is a number.
         assert!(query(&[]).unwrap_err().contains("one SELECT"));
         assert!(query(&["--tables", "SELECT 1"]).unwrap_err().contains("one SELECT"));

@@ -2,6 +2,7 @@
 import type { ArchiveCommands } from '../../native/archive';
 import type {
   AnalyticsAnswer,
+  AnalyticsQuery,
   AnalyticsTable,
   ArchiveAnalyticsStatus,
   ArchiveCondition,
@@ -426,6 +427,9 @@ export const archiveAnswers: CommandAnswers<ArchiveCommands> = {
     const rows = [['Bash', 17_209], ['Read', 822], ['Edit', 366]].slice(0, args.limit ?? 200);
     return { columns: [{ name: 'tool', kind: 'VARCHAR' }, { name: 'calls', kind: 'BIGINT' }], rows, truncated: false, cutCells: 0, elapsedMs: 42 };
   },
+  read_session_analytics_queries: (): AnalyticsQuery[] => [
+    { name: 'tool-errors', about: 'Each tool’s calls and error rate', sql: 'SELECT tool, count(*) AS calls FROM tools GROUP BY tool' },
+  ],
   read_session_analytics_tables: (): AnalyticsTable[] => [
     { name: 'requests', columns: [{ name: 'day', kind: 'day' }, { name: 'model', kind: 'text' }, { name: 'output', kind: 'number' }] },
     { name: 'tool_calls', columns: [{ name: 'day', kind: 'day' }, { name: 'tool', kind: 'text' }] },

@@ -214,7 +214,7 @@ Usage: arbor [command] [flags]
   archive                      The session archive
   archive export --out <folder> [--project name] [--since 30d] [--machine name]
                                Put kept sessions back together, one folder per session
-  query <select> [--limit n] [--full]
+  query <select> | --saved [name] | --tables  [--limit n] [--full]
                                One SELECT over the archive's analytics tables
   query --tables               The tables and their columns
   settings [get|set|unset] [name] [value]
@@ -767,7 +767,19 @@ fn query(options: &args::Options, rest: &[&str]) -> Result<(), Failure> {
         show(options, &tables, render::analytics_tables);
         return Ok(());
     }
-    let answer = client.read("read_session_analytics", json!({ "sql": query.sql, "limit": query.limit, "full": query.full }))?;
+    let sql = match query.saved.as_deref() {
+        None => query.sql,
+        Some(name) => {
+            let saved = client.read("read_session_analytics_queries", Value::Null)?;
+            if name.is_empty() {
+                show(options, &saved, render::analytics_queries);
+                return Ok(());
+            }
+            let found = saved.as_array().into_iter().flatten().find(|saved| saved.get("name").and_then(Value::as_str) == Some(name));
+            found.and_then(|saved| saved.get("sql")?.as_str()).map(str::to_string).ok_or_else(|| Failure::new(exit::USAGE, format!("There's no saved query called {name}. arbor query --saved lists them.")))?
+        }
+    };
+    let answer = client.read("read_session_analytics", json!({ "sql": sql, "limit": query.limit, "full": query.full }))?;
     show(options, &answer, render::analytics_answer);
     Ok(())
 }

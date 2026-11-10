@@ -193,6 +193,15 @@ export type AnalyticsColumn = {
 };
 
 /**
+ * A question worth asking of the tables, with the query that answers it.
+ */
+export type AnalyticsQuery = {
+  name: string,
+  about: string,
+  sql: string,
+};
+
+/**
  * An analytics table and its columns.
  */
 export type AnalyticsTable = {

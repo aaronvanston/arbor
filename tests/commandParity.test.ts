@@ -170,6 +170,7 @@ const CLI_ONLY: Record<string, string> = {
   export_session_archive: 'exporting sessions is asked for on the command line; the window has no export yet',
   read_session_analytics: 'its rows can hold what was said in a session, which never reaches the window',
   read_session_analytics_tables: 'it lists the tables for whoever writes a query, and only the command line runs one',
+  read_session_analytics_queries: 'it lists queries for the command line to run, and the window runs none',
 };
 
 describe('the commands between the webview and the native side', () => {

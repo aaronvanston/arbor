@@ -1262,6 +1262,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         args: &[],
     },
     CommandSpec {
+        name: "read_session_analytics_queries",
+        access: Access::Read,
+        summary: "Questions worth asking of the analytics tables, each with the SELECT that answers it: speed and cost by model, tool error rates, how agents use the shell, and more. Run one with read_session_analytics, as it is or changed.",
+        args: &[],
+    },
+    CommandSpec {
         name: "set_session_archive_machine",
         access: Access::Write,
         summary: "Gives one machine its own value, keeping its sessions (true) or not (false) whatever All machines says, or with `None` puts it back on All machines' value.",
@@ -2447,6 +2453,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "clear_session_archive_analytics" => done(Box::pin(crate::usage::machine_health::archive::clear_session_archive_analytics(app.clone())).await),
         "read_session_analytics" => async { done(Box::pin(crate::usage::machine_health::archive::read_session_analytics(arg(&args, "sql")?, arg(&args, "limit")?, arg(&args, "full")?)).await) }.await,
         "read_session_analytics_tables" => blocking(move || plain(crate::usage::machine_health::archive::read_session_analytics_tables())).await,
+        "read_session_analytics_queries" => blocking(move || plain(crate::usage::machine_health::archive::read_session_analytics_queries())).await,
         "set_session_archive_machine" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_machine(app.clone(), arg(&args, "machine")?, arg(&args, "keep")?)).await) }.await,
         "set_session_archive_project" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_project(app.clone(), arg(&args, "project")?, arg(&args, "machine")?, arg(&args, "keep")?)).await) }.await,
         "reveal_session_archive" => done(Box::pin(crate::usage::machine_health::archive::reveal_session_archive(app.clone())).await),

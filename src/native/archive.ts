@@ -1,4 +1,4 @@
-import type { AnalyticsAnswer, AnalyticsTable, ArchiveAnalyticsDetail, ArchiveExport, ArchiveExportRequest, ArchiveStatus, FolderCheck, ImportPreview, LifetimeTokens } from './types';
+import type { AnalyticsAnswer, AnalyticsQuery, AnalyticsTable, ArchiveAnalyticsDetail, ArchiveExport, ArchiveExportRequest, ArchiveStatus, FolderCheck, ImportPreview, LifetimeTokens } from './types';
 
 /** The session archive: its store, collecting into it, old backups brought in, exporting sessions out of it, and the all-time token count it keeps. */
 export type ArchiveCommands = {
@@ -16,6 +16,7 @@ export type ArchiveCommands = {
   clear_session_archive_analytics: { result: ArchiveStatus };
   read_session_analytics: { args: { sql: string; limit?: number | null; full?: boolean | null }; result: AnalyticsAnswer };
   read_session_analytics_tables: { result: AnalyticsTable[] };
+  read_session_analytics_queries: { result: AnalyticsQuery[] };
 
   preview_session_import: { args: { path: string }; result: ImportPreview };
   add_session_import: { args: { path: string; machine: string }; result: ArchiveStatus };

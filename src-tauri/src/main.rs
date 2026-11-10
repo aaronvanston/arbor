@@ -1957,6 +1957,7 @@ fn main() {
             usage::machine_health::archive::clear_session_archive_analytics,
             usage::machine_health::archive::read_session_analytics,
             usage::machine_health::archive::read_session_analytics_tables,
+            usage::machine_health::archive::read_session_analytics_queries,
             usage::machine_health::archive::set_session_archive_machine,
             usage::machine_health::archive::set_session_archive_project,
             usage::machine_health::archive::reveal_session_archive,
