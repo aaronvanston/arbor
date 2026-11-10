@@ -51,7 +51,15 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
     by its bytes a Codex call was counted about six times on a real archive. An item is known by its id or its
     call's, a count of tokens by the thread's running total after it (the key token counting uses), and a Pi reply
     by its response's id. Only a line with none of these is known by its bytes. Before changing what a key is made
-    of, compare `requests` by agent with the calls `get_lifetime_tokens` counts: they should agree.
+    of, compare `requests` by agent with the calls `get_lifetime_tokens` counts, leaving out requests with no
+    tokens at all (a failed call, which token counting doesn't count): on a real archive of 2.5 million calls each
+    agent's two numbers were within a hundredth of a percent, the gap being sessions still running.
+  - **A prompt is what the person sent, as the agent itself says.** Far more reaches the model under the user's
+    name than anyone typed: on a real archive nearly half of Codex's user messages were the folder's instructions,
+    the environment, plugins on offer and subagents' reports, and a quarter of Claude Code's prompts on one machine
+    were notices from its own background tasks. Those rows are `meta`. Codex's prompt is its `user_message` event
+    or, in later versions, its `UserMessage` item (a rollout has one or the other); Claude Code's is a user line
+    that isn't `isMeta` and whose `promptSource` isn't `system`. Never tell them apart by how the text opens.
   - **A file that can't be read is set aside.** A kept version that fails to read (one that decompresses past the
     4 GB the archive reads, say) is left for a quarter of an hour, then four times as long each time it fails again,
     up to a week, and tried at once if it grows. Token counting does the same. Trying every pass cost a 4 GB read

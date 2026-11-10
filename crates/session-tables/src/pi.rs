@@ -265,15 +265,18 @@ fn reply(parser: &mut Parser, at: &At, id: Option<&String>, message: &mut Fields
     model
 }
 
+/// The tool that runs a shell command: Pi's, and OpenClaw's.
+const SHELLS: [&str; 2] = ["bash", "exec"];
+
 fn tool_call(parser: &Parser, at: &At, block: &mut Fields, (message_id, request_id): (Option<&String>, &Option<String>), rows: &mut Rows) {
     let tool_use_id = json::string(block, "id");
     let tool = json::string(block, "name").unwrap_or_default();
     let input = block.remove("arguments").unwrap_or(Value::Null);
     let input_text = serde_json::to_string(&input).unwrap_or_default();
     let field = |key: &str| input.get(key).and_then(Value::as_str).map(str::to_string);
-    if tool == "bash" {
+    if SHELLS.contains(&tool.as_str()) {
         if let Some(command) = field("command") {
-            rows.commands.push(command_row(parser, at, tool_use_id.clone(), parser.state.cwd.clone(), command));
+            rows.commands.push(command_row(parser, at, tool_use_id.clone(), field("workdir").or_else(|| parser.state.cwd.clone()), command));
         }
     }
     let op = match tool.as_str() {
@@ -298,8 +301,8 @@ fn tool_call(parser: &Parser, at: &At, block: &mut Fields, (message_id, request_
         subagent_type: None,
         skill: None,
         background: None,
-        // Pi's shell takes its limit in seconds.
-        timeout_ms: input.get("timeout").and_then(Value::as_u64).filter(|_| tool == "bash").map(|seconds| seconds.saturating_mul(1000)),
+        // The shell takes its limit in seconds.
+        timeout_ms: input.get("timeout").and_then(Value::as_u64).filter(|_| SHELLS.contains(&tool.as_str())).map(|seconds| seconds.saturating_mul(1000)),
         input_chars: json::chars(&input_text),
         tool,
     });
@@ -310,7 +313,7 @@ fn tool_call(parser: &Parser, at: &At, block: &mut Fields, (message_id, request_
 
 fn tool_result(parser: &Parser, at: &At, message: &mut Fields, rows: &mut Rows) {
     let tool_use_id = json::string(message, "toolCallId");
-    let shell = message.get("toolName").and_then(Value::as_str) == Some("bash");
+    let shell = message.get("toolName").and_then(Value::as_str).is_some_and(|tool| SHELLS.contains(&tool));
     let said: Vec<String> = content(message).into_iter().map(|(_, said)| said).collect();
     let output = (!said.is_empty()).then(|| said.join("\n"));
     let mut row = ToolResult { at: at.clone(), tool_use_id: tool_use_id.clone(), is_error: json::boolean(message, "isError"), output_chars: output.as_deref().map_or(0, json::chars), ..ToolResult::default() };
@@ -322,12 +325,21 @@ fn tool_result(parser: &Parser, at: &At, message: &mut Fields, rows: &mut Rows) 
             (row.lines_added, row.lines_removed) = (Some(changed('+')), Some(changed('-')));
         }
         row.duration_ms = json::number(&mut details, "durationMs");
+        // OpenClaw says how a call ended beside its result, and marks neither a failed call nor a command that
+        // exited with an error as one. A command still running when its call came back went on behind it.
+        row.exit_code = json::signed(&mut details, "exitCode");
+        match details.get("status").and_then(Value::as_str) {
+            Some("running") => row.background = Some(true),
+            Some("error" | "failed") => row.is_error = Some(true),
+            _ if row.exit_code.is_some_and(|code| code != 0) => row.is_error = Some(true),
+            _ => {}
+        }
         json::put_back(message, "details", details);
     }
     if shell {
         // A command that failed ends its output with how: `Command exited with code 2`. One that worked says nothing.
         let ended = output.as_deref().and_then(|text| text.rsplit_once("exited with code ")).and_then(|(_, code)| code.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok());
-        row.exit_code = ended.or((row.is_error == Some(false)).then_some(0));
+        row.exit_code = row.exit_code.or(ended).or((row.is_error == Some(false) && row.background.is_none()).then_some(0));
     }
     rows.tool_results.push(row);
     if let Some(text) = output.and_then(|text| parser.text(text)) {
@@ -424,6 +436,28 @@ pub(crate) mod tests {
         // With numbers only, a name is text like any other.
         let numbers = parse(Agent::Pi, Detail::Numbers, &session());
         assert_eq!(numbers.lines[13].rest, None);
+    }
+
+    #[test]
+    fn openclaws_shell_is_exec_and_its_result_says_how_the_command_ended() {
+        let call = |id: &str, tool: &str, arguments: Value| json!({ "type": "toolCall", "id": id, "name": tool, "arguments": arguments });
+        let result = |at: u64, id: &str, tool: &str, details: Value| message(at, json!({ "role": "toolResult", "toolCallId": id, "toolName": tool, "content": [{ "type": "text", "text": format!("out {SECRET}") }], "details": details, "isError": false, "timestamp": 1 }));
+        let lines = [
+            json!({ "type": "session", "version": 3, "id": "c-1", "timestamp": "2026-10-03T08:00:00.000Z", "cwd": "/srv/app" }).to_string(),
+            message(1, json!({ "role": "assistant", "content": [call("call_1", "exec", json!({ "command": format!("cargo test # {SECRET}"), "workdir": "/srv/other", "timeout": 30, "yieldMs": 10000 })), call("call_2", "exec", json!({ "command": "sleep 600" })), call("call_3", "web_fetch", json!({ "url": "https://example.test" }))], "model": "pi-test-1", "responseId": "resp_1", "stopReason": "toolUse", "timestamp": 1 })),
+            result(2, "call_1", "exec", json!({ "status": "completed", "exitCode": 2, "durationMs": 1200, "aggregated": format!("out {SECRET}"), "cwd": "/srv/other" })),
+            result(3, "call_2", "exec", json!({ "status": "running", "pid": 4242, "sessionId": "proc-1", "tail": format!("out {SECRET}") })),
+            result(4, "call_3", "web_fetch", json!({ "status": "error", "tool": "web_fetch", "error": format!("refused {SECRET}") })),
+        ];
+        let rows = parse(Agent::OpenClaw, Detail::Numbers, &lines);
+        let commands: Vec<_> = rows.commands.iter().map(|command| (command.program.as_deref(), command.cwd.as_deref(), command.tool_use_id.as_deref())).collect();
+        assert_eq!(commands, [(Some("cargo"), Some("/srv/other"), Some("call_1")), (Some("sleep"), Some("/srv/app"), Some("call_2"))]);
+        assert_eq!(rows.tool_calls.iter().map(|call| call.timeout_ms).collect::<Vec<_>>(), [Some(30_000), None, None]);
+        // A command that exited with an error and a call that failed are errors, though neither is marked one; a
+        // command still running has no exit code, and isn't taken to have exited with 0.
+        let results: Vec<_> = rows.tool_results.iter().map(|result| (result.is_error, result.exit_code, result.duration_ms, result.background)).collect();
+        assert_eq!(results, [(Some(true), Some(2), Some(1200), None), (Some(false), None, None, Some(true)), (Some(true), None, None, None)]);
+        assert!(!serde_json::to_string(&rows).unwrap().contains(SECRET));
     }
 
     #[test]

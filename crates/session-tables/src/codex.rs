@@ -51,6 +51,11 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
         }
         ("event_msg", Some("token_count")) => token_count(parser, &at, &mut payload, rows),
         ("event_msg", Some("item_completed")) => item(parser, &at, &mut payload, rows),
+        ("event_msg", Some("user_message")) => {
+            if let Some(text) = json::string(&mut payload, "message") {
+                rows.messages.push(sent(parser, &at, None, text));
+            }
+        }
         ("response_item", Some("message")) => message(parser, &at, &mut payload, rows),
         ("response_item", Some("reasoning")) => reasoning(parser, &at, &mut payload, rows),
         ("response_item", Some("function_call" | "custom_tool_call" | "local_shell_call")) => tool_call(parser, &at, subkind.as_deref().unwrap_or_default(), &mut payload, rows),
@@ -156,6 +161,14 @@ fn token_count(parser: &mut Parser, at: &At, payload: &mut Fields, rows: &mut Ro
     json::put_back(payload, "info", info);
 }
 
+/// What the person sent, as Codex notes it: a `user_message` event, or in later versions a `UserMessage` item. A
+/// rollout has one or the other. The model is given far more under the user's name (the folder's instructions, the
+/// environment, plugins on offer, a subagent's report), so a user's `response_item` is marked `meta` and these are
+/// the prompts.
+fn sent(parser: &Parser, at: &At, message_id: Option<String>, text: String) -> Message {
+    Message { at: at.clone(), role: "user".into(), kind: "prompt".into(), block: 0, message_id, request_id: None, model: None, meta: None, chars: json::chars(&text), text: parser.text(text) }
+}
+
 fn message(parser: &Parser, at: &At, payload: &mut Fields, rows: &mut Rows) {
     let role = json::string(payload, "role").unwrap_or_default();
     let mut content = json::array(payload, "content").unwrap_or_default();
@@ -175,7 +188,7 @@ fn message(parser: &Parser, at: &At, payload: &mut Fields, rows: &mut Rows) {
         message_id: json::string(payload, "id"),
         request_id: None,
         model: if role == "assistant" { parser.state.model.clone() } else { None },
-        meta: None,
+        meta: (role == "user").then_some(true),
         chars: json::chars(&text),
         text: parser.text(text),
         role,
@@ -378,6 +391,15 @@ fn item(parser: &Parser, at: &At, payload: &mut Fields, rows: &mut Rows) {
     let Some(mut item) = json::object(payload, "item") else {
         return;
     };
+    if item.get("type").and_then(Value::as_str) == Some("UserMessage") {
+        let mut content = json::array(&mut item, "content").unwrap_or_default();
+        if let Some(text) = json::texts(&mut content) {
+            rows.messages.push(sent(parser, at, item.get("id").and_then(Value::as_str).map(str::to_string), text));
+        }
+        if !content.is_empty() {
+            item.insert("content".into(), Value::Array(content));
+        }
+    }
     if item.get("type").and_then(Value::as_str) == Some("CommandExecution") {
         if let Some(command) = item.remove("command").as_ref().and_then(shell_command) {
             let id = json::string(&mut item, "id");
@@ -443,6 +465,7 @@ pub(crate) mod tests {
             line(11, "event_msg", json!({ "type": "token_count", "info": { "total_token_usage": usage(1000, 700, 50), "last_token_usage": usage(1000, 700, 50), "model_context_window": 272000 }, "rate_limits": { "primary": { "used_percent": 12.5 } } })),
             line(12, "response_item", json!({ "type": "message", "id": "m_2", "role": "assistant", "content": [{ "type": "output_text", "text": format!("Fixed. {SECRET}") }], "phase": "final" })),
             line(13, "event_msg", json!({ "type": "task_complete", "turn_id": "turn-1", "duration_ms": 9000, "time_to_first_token_ms": 400, "last_agent_message": format!("Fixed. {SECRET}") })),
+            line(14, "event_msg", json!({ "type": "user_message", "message": format!("Thanks. {SECRET}"), "images": [], "local_images": ["/srv/app/shot.png"] })),
         ]
     }
 
@@ -463,7 +486,15 @@ pub(crate) mod tests {
     fn prompts_replies_and_thinking_are_messages() {
         let rows = parse(Agent::Codex, Detail::Everything, &session());
         let messages: Vec<_> = rows.messages.iter().map(|message| (message.at.line, message.role.as_str(), message.kind.as_str(), message.model.as_deref())).collect();
-        assert_eq!(messages, [(3, "user", "prompt", None), (4, "assistant", "thinking", Some("gpt-test-1")), (12, "assistant", "text", Some("gpt-test-1"))]);
+        assert_eq!(messages, [(3, "user", "prompt", None), (4, "assistant", "thinking", Some("gpt-test-1")), (12, "assistant", "text", Some("gpt-test-1")), (14, "user", "prompt", None)]);
+        // What the model was given under the user's name is meta; what Codex notes the person sent is the prompt.
+        assert_eq!((rows.messages[0].meta, rows.messages[3].meta, rows.messages[3].text.as_deref()), (Some(true), None, Some(format!("Thanks. {SECRET}").as_str())));
+        assert_eq!(serde_json::from_str::<Value>(rows.lines[14].rest.as_deref().unwrap()).unwrap(), json!({ "payload": { "images": [], "local_images": ["/srv/app/shot.png"] } }));
+        // Later versions note it as an item instead, with what isn't text left where it was.
+        let item = line(1, "event_msg", json!({ "type": "item_completed", "turn_id": "turn-1", "item": { "type": "UserMessage", "id": "item_9", "content": [{ "type": "text", "text": format!("Fix it. {SECRET}") }, { "type": "local_image", "path": "/srv/app/shot.png" }] } }));
+        let later = parse(Agent::Codex, Detail::Numbers, &[line(0, "session_meta", json!({ "id": "t-1" })), item]);
+        let sent: Vec<_> = later.messages.iter().map(|message| (message.kind.as_str(), message.meta, message.message_id.as_deref(), message.chars, message.text.as_deref())).collect();
+        assert_eq!(sent, [("prompt", None, Some("item_9"), 8 + SECRET.len() as u64, None)]);
         assert_eq!(rows.messages[2].text.as_deref(), Some(format!("Fixed. {SECRET}").as_str()));
         let all = serde_json::to_string(&rows).unwrap();
         assert!(!all.contains("ZW5jcnlwdGVk"), "encrypted thinking");

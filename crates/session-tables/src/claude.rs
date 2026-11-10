@@ -244,7 +244,10 @@ fn user(parser: &Parser, at: &At, fields: &mut Fields, rows: &mut Rows) {
         return;
     };
     json::string(&mut message, "role");
-    let meta = json::boolean(fields, "isMeta");
+    // Claude Code says where a prompt came from. One the system made (a background task's notice) starts a turn
+    // of work, but isn't something the person sent.
+    let system = fields.get("promptSource").and_then(Value::as_str) == Some("system");
+    let meta = json::boolean(fields, "isMeta").or(system.then_some(true));
     let summary = json::boolean(fields, "isCompactSummary") == Some(true);
     let prompt = |block: u32, text: String| Message {
         at: at.clone(),
@@ -453,6 +456,11 @@ pub(crate) mod tests {
         assert_eq!(messages, [(1, "user", "prompt"), (2, "assistant", "thinking"), (8, "assistant", "text")]);
         assert_eq!(rows.messages[0].text.as_deref(), Some(format!("Fix the build. {SECRET}").as_str()));
         assert_eq!(rows.messages[1].message_id.as_deref(), Some("msg_1"));
+        // A prompt the system made isn't the person's, and where it came from stays on its line.
+        let sent = |source: &str| base("user", "20", json!({ "promptSource": source, "origin": { "kind": "task-notification" }, "message": { "role": "user", "content": "A task ended." } }));
+        let rows = parse(Agent::Claude, Detail::Everything, &[sent("system"), sent("typed")]);
+        assert_eq!(rows.messages.iter().map(|message| (message.kind.as_str(), message.meta)).collect::<Vec<_>>(), [("prompt", Some(true)), ("prompt", None)]);
+        assert_eq!(serde_json::from_str::<Value>(rows.lines[0].rest.as_deref().unwrap()).unwrap(), json!({ "promptSource": "system", "origin": { "kind": "task-notification" } }));
     }
 
     #[test]

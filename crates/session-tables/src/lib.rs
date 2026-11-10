@@ -35,7 +35,7 @@ use serde_json::Value;
 
 /// What a row is. Whoever keeps tables notes it beside them, and makes them again when it changes: raise it with
 /// any change to the rows a line gives.
-pub const RULE: &str = "tables-v3";
+pub const RULE: &str = "tables-v4";
 
 /// Whose transcript a file is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

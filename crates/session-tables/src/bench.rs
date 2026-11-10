@@ -269,7 +269,10 @@ fn codex_turn(session: &mut Session, rng: &mut Rng, total: &mut (u64, u64, u64))
     let turn = rng.id();
     codex_line("turn_context", json!({ "turn_id": turn, "cwd": session.cwd, "model": session.model, "effort": "high", "approval_policy": "never" }), session, rng);
     let prompt = rng.between(40, 700);
-    codex_line("response_item", json!({ "type": "message", "role": "user", "content": [{ "type": "input_text", "text": rng.text(prompt) }] }), session, rng);
+    // The prompt as the model was given it, then as Codex notes what its user sent.
+    let said = rng.text(prompt);
+    codex_line("response_item", json!({ "type": "message", "role": "user", "content": [{ "type": "input_text", "text": said }] }), session, rng);
+    codex_line("event_msg", json!({ "type": "user_message", "message": said, "images": [] }), session, rng);
     for _ in 0..rng.between(2, 7) {
         let summary = rng.between(60, 500);
         codex_line("response_item", json!({ "type": "reasoning", "summary": [{ "type": "summary_text", "text": rng.text(summary) }], "encrypted_content": "ZW5jcnlwdGVk" }), session, rng);

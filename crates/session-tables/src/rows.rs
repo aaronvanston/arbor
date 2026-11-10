@@ -54,6 +54,8 @@ pub struct Message {
     pub message_id: Option<String>,
     pub request_id: Option<String>,
     pub model: Option<String>,
+    /// A prompt the person didn't send: one the agent made for the model (a caveat, a task's notice, the
+    /// context Codex puts under the user's name). A count of prompts leaves these out.
     pub meta: Option<bool>,
     pub chars: u64,
     pub text: Option<String>,
