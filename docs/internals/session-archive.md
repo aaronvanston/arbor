@@ -40,10 +40,16 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
     at any moment neither loses rows nor adds them twice.
   - **A line counts once.** The same session can be kept in more than one file: an earlier copy in a backup beside
     the finished one, or a session that carried on from another and copied its lines. `state.db` holds a 12-byte
-    key for every line read with the version it was first read from, and a line met again in another version is
-    written with `repeat` set. A table is read without its repeats; `lines_all` and the like include them. Keys are
-    staged with the progress, since a key says its line's rows are in the tables. Dropping the rows instead would
-    lose the only copy of a line whenever the first file read turned out to be the one later deleted.
+    key for every line read with the version it was first read from, and a line met again is written with `repeat`
+    set. A table is read without its repeats; `lines_all` and the like include them. Keys are staged with the
+    progress, since a key says its line's rows are in the tables. Dropping the rows instead would lose the only
+    copy of a line whenever the first file read turned out to be the one later deleted.
+  - **A line's key is what it is, not its bytes, where it says.** Codex writes a session's items again with new
+    times when it carries the session on, and one rollout holds the counts of every thread that reports into it, so
+    by its bytes a Codex call was counted about six times on a real archive. An item is known by its id or its
+    call's, a count of tokens by the thread's running total after it (the key token counting uses), and a Pi reply
+    by its response's id. Only a line with none of these is known by its bytes. Before changing what a key is made
+    of, compare `requests` by agent with the calls `get_lifetime_tokens` counts: they should agree.
   - **A file that can't be read is set aside.** A kept version that fails to read (one that decompresses past the
     4 GB the archive reads, say) is left for a quarter of an hour, then four times as long each time it fails again,
     up to a week, and tried at once if it grows. Token counting does the same. Trying every pass cost a 4 GB read

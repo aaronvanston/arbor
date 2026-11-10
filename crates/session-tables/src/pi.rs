@@ -7,6 +7,13 @@ use crate::json::{self, Fields};
 use crate::{At, Command, ContextUse, Line, Message, Parser, Request, Rows, ToolCall, ToolIo, ToolResult};
 use serde_json::Value;
 
+/// What a line is known by, where it's more than its bytes: a reply by its response's id, which stays the same when
+/// a session is copied into another and its entries are given new ids.
+pub(crate) fn key(agent: &[u8], fields: &Fields) -> Option<crate::LineKey> {
+    let id = fields.get("message")?.get("responseId")?.as_str().filter(|id| !id.is_empty())?;
+    Some(json::key(&[agent, b"response", id.as_bytes()]))
+}
+
 pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fields, rows: &mut Rows) {
     let kind = json::string(&mut fields, "type").unwrap_or_default();
     let mut row = Line { bytes, ..Line::default() };
@@ -426,5 +433,13 @@ pub(crate) mod tests {
         let rows = parse(Agent::OpenClaw, Detail::Everything, &[copied, own]);
         assert_eq!(rows.requests.iter().map(|request| request.at.repeat).collect::<Vec<_>>(), [true, false]);
         assert_eq!(rows.lines.iter().map(|line| line.at.repeat).collect::<Vec<_>>(), [true, false]);
+    }
+
+    #[test]
+    fn a_reply_carried_into_another_session_under_a_new_entry_is_a_repeat() {
+        let reply = |at: u64, response: &str| message(at, json!({ "role": "assistant", "content": [{ "type": "text", "text": "Done." }], "model": "pi-test-1", "responseId": response, "usage": usage(3, 9), "stopReason": "stop" }));
+        let files = crate::tests::parse_files(Agent::OpenClaw, &[vec![reply(1, "resp_1")], vec![reply(7, "resp_1"), reply(8, "resp_2")]]);
+        assert_eq!(files[0].requests.iter().map(|request| request.at.repeat).collect::<Vec<_>>(), [false]);
+        assert_eq!(files[1].requests.iter().map(|request| request.at.repeat).collect::<Vec<_>>(), [true, false]);
     }
 }

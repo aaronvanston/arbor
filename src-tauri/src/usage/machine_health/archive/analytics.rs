@@ -25,7 +25,7 @@ use super::ingest::Throttle;
 use super::tokens::{pieces, read_piece, retry_wait, Piece};
 use rusqlite::{params, Connection, OptionalExtension};
 use session_tables::store::{Batch, Engine, Origin, Store as Tables, DUCKDB_ARCHIVES, DUCKDB_VERSION};
-use session_tables::{Agent, At, Detail, Line, LineKey, Parser, ProxyRequest, Rows, State};
+use session_tables::{Agent, At, Detail, Line, LineKey, Parser, ProxyRequest, Rows, Seen, State};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -37,7 +37,7 @@ pub(crate) const FOLDER: &str = "analytics";
 /// A table's fresh files are folded into months once there are this many.
 pub(crate) const MERGE_AT: usize = 8;
 /// What a row is. Changing it makes the tables again.
-const RULE: &str = "tables-v2";
+const RULE: &str = "tables-v3";
 /// A write is made once this much is waiting.
 const BATCH_BYTES: u64 = 64 << 20;
 /// A version's rows wait in memory until it's read to its end, unless it has this much to read: then what's
@@ -320,24 +320,25 @@ struct Keys {
 }
 
 impl Keys {
-    /// Whether a line was read before from another version. One met for the first time is remembered.
-    fn repeat(&mut self, state: &Connection, version_id: i64, key: LineKey) -> bool {
+    /// Whether a line was read before, and from which version. One met for the first time is remembered.
+    fn seen(&mut self, state: &Connection, version_id: i64, key: LineKey) -> Seen {
+        let from = |first: i64| if first == version_id { Seen::Here } else { Seen::Elsewhere };
         if self.reading.contains(&key) {
-            return false;
+            return Seen::Here;
         }
         if let Some(first) = self.waiting.get(&key) {
-            return *first != version_id;
+            return from(*first);
         }
         let found = state.prepare_cached("SELECT version_id FROM seen WHERE key = ?1").and_then(|mut statement| statement.query_row([&key[..]], |row| row.get::<_, i64>(0)).optional());
         match found {
-            Ok(Some(first)) => first != version_id,
+            Ok(Some(first)) => from(first),
             Ok(None) => {
                 self.reading.insert(key);
-                false
+                Seen::New
             }
             Err(error) => {
                 self.error.get_or_insert(state_error(error));
-                false
+                Seen::New
             }
         }
     }
@@ -504,7 +505,7 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
         let mut spilled = false;
         let source = item.version_id.to_string();
         let from = state_of(&state, item.version_id)?;
-        let mut seen = |key: LineKey| keys.borrow_mut().repeat(&state, item.version_id, key);
+        let mut seen = |key: LineKey| keys.borrow_mut().seen(&state, item.version_id, key);
         let result = match &item.machine {
             None => Err("A kept version has no file it was seen in".to_string()),
             Some(machine) => {
@@ -681,7 +682,7 @@ fn read_version(
     detail: Detail,
     throttle: &mut Throttle,
     enough: &mut dyn FnMut(u64) -> bool,
-    seen: &mut dyn FnMut(LineKey) -> bool,
+    seen: &mut dyn FnMut(LineKey) -> Seen,
     rows: &mut Rows,
     spill: &mut dyn FnMut(&mut Rows) -> Result<(), String>,
 ) -> Result<(Step, bool), String> {
@@ -764,7 +765,7 @@ enum Found<'a> {
     TooLong(u64),
 }
 
-fn row(parser: &mut Parser, seen: &mut dyn FnMut(LineKey) -> bool, rows: &mut Rows, number: u64, line: Found<'_>) {
+fn row(parser: &mut Parser, seen: &mut dyn FnMut(LineKey) -> Seen, rows: &mut Rows, number: u64, line: Found<'_>) {
     match line {
         Found::Whole(line) => parser.line_once(number, line, seen, rows),
         Found::TooLong(bytes) => rows.lines.push(Line { at: At { line: number, ..At::default() }, kind: "too-long".into(), bytes, ..Line::default() }),
@@ -1066,7 +1067,7 @@ mod tests {
                 let (mut tables, state) = open(&root(&fixture), Detail::Everything).unwrap();
                 let item = todo(&fixture.db, &state, 0).unwrap().0.remove(0);
                 let mut found = Rows::default();
-                let (step, _) = read_version(&fixture.db, &fixture.places, &item, &Step::default(), Detail::Everything, &mut Throttle::new(1 << 40), &mut |_| false, &mut |_| false, &mut found, &mut |_| Ok(())).unwrap();
+                let (step, _) = read_version(&fixture.db, &fixture.places, &item, &Step::default(), Detail::Everything, &mut Throttle::new(1 << 40), &mut |_| false, &mut |_| Seen::New, &mut found, &mut |_| Ok(())).unwrap();
                 let mut batch = tables.batch().unwrap();
                 batch.add(&Origin { agent: item.agent, machine: "mac", source: &item.version_id.to_string() }, &found).unwrap();
                 save(&state, &[step], &HashMap::new(), Some(tables.next())).unwrap();
@@ -1199,6 +1200,24 @@ mod tests {
             let requests: Vec<_> = rows(&fixture, "requests").iter().map(|row| (row["model"].as_str().unwrap().to_string(), row["input"].as_u64().unwrap(), row["cache_read"].as_u64().unwrap(), row["output"].as_u64().unwrap(), row["repeat"].as_bool().unwrap())).collect();
             assert_eq!(requests, [("gpt-5.5".to_string(), 10, 900, 50, false), ("gpt-5.5".to_string(), 1_000, 9_000, 100, true)]);
         }
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn a_call_codex_wrote_again_into_a_rollout_that_grew_is_a_repeat() {
+        let fixture = Fixture::new("analytics-again");
+        let first = codex_session(&["resp_1", "resp_2"]);
+        fixture.write(ROLLOUT, &first);
+        assert!(fixture.pass().complete);
+        extract(&fixture, &everything());
+        // The session is carried on: the first call written again with the time of the rewrite, then a new one.
+        let usage = codex_usage(2_000, 1_500, 100, 40);
+        let more = [codex_record("2026-09-22T05:00:00.000Z", "resp_1", &usage, &usage), codex_record("2026-09-22T05:00:01.000Z", "resp_3", &usage, &usage)].concat();
+        fixture.write(ROLLOUT, &(first + &more));
+        assert!(fixture.pass().complete);
+        extract(&fixture, &everything());
+        let requests: Vec<(String, bool)> = rows(&fixture, "requests").iter().map(|row| (row["request_id"].as_str().unwrap().to_string(), row["repeat"].as_bool().unwrap())).collect();
+        assert_eq!(requests, [("resp_1".to_string(), false), ("resp_2".to_string(), false), ("resp_1".to_string(), true), ("resp_3".to_string(), false)]);
         let _ = fs::remove_dir_all(&fixture.base);
     }
 

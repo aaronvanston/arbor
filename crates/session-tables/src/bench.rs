@@ -13,7 +13,7 @@
 //! memory is sized for; and one session in twenty carried on in a second file that repeats the first.
 
 use crate::store::{Engine, Origin, Program, Store};
-use crate::{Agent, Detail, LineKey, Parser, ProxyRequest, Rows, State};
+use crate::{Agent, Detail, LineKey, Parser, ProxyRequest, Rows, Seen, State};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -345,8 +345,11 @@ fn fill(store: &mut Store, engine: &Program, turns: u64) -> Made {
             let mut mine: Vec<LineKey> = Vec::with_capacity(session.lines.len());
             for (number, line) in session.lines.iter().enumerate() {
                 let mut seen = |key: LineKey| {
+                    if earlier.contains(&key) {
+                        return Seen::Elsewhere;
+                    }
                     mine.push(key);
-                    earlier.contains(&key)
+                    Seen::New
                 };
                 parser.line_once(number as u64, line.as_bytes(), &mut seen, &mut rows);
                 made.bytes += line.len() as u64 + 1;

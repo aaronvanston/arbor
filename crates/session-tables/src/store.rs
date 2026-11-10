@@ -945,7 +945,7 @@ mod tests {
             let mut parser = crate::Parser::new(Agent::Claude, Detail::Everything, crate::State::default());
             let mut rows = Rows::default();
             for (number, line) in lines.iter().enumerate() {
-                parser.line_once(number as u64, line.as_bytes(), &mut |_| repeat, &mut rows);
+                parser.line_once(number as u64, line.as_bytes(), &mut |_| if repeat { crate::Seen::Elsewhere } else { crate::Seen::New }, &mut rows);
             }
             parser.finish(&mut rows);
             batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source }, &rows).unwrap();

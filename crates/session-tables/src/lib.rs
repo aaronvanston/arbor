@@ -5,9 +5,9 @@
 //! [`tables`] lists each table's columns, [`store`] keeps rows as Parquet files in a folder, and [`cookbook`] has
 //! questions worth asking of them.
 //!
-//! A session can be kept in more than one file. [`Parser::line_once`] gives each line a short key and asks its caller
-//! whether another file had that line first; the rows of one that did are marked `repeat`, and a table is read
-//! without them.
+//! A session can be kept in more than one file, and an agent that carries a session on writes what came before
+//! again. [`Parser::line_once`] gives each line a short key and asks its caller whether a line with that key was
+//! read before; the rows of one that was are marked `repeat`, and a table is read without them.
 //!
 //! Lines are read in order and never again. Whatever a later line needs from an earlier one is in [`State`], which
 //! can be saved between runs to carry on from where a growing file was last read.
@@ -72,6 +72,17 @@ pub enum Detail {
 /// same line give the same key.
 pub type LineKey = [u8; 12];
 
+/// What whoever reads the files knows of a line's key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Seen {
+    /// No line read before had it.
+    New,
+    /// An earlier line of this file had it.
+    Here,
+    /// A line of another file had it first.
+    Elsewhere,
+}
+
 /// What reading a file so far leaves for its next line.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -108,30 +119,41 @@ impl Parser {
     /// Adds one line's rows. `number` is the line's place in its file, from 0. A line that isn't a JSON object is
     /// still a `lines` row, of kind `unreadable`.
     pub fn line(&mut self, number: u64, line: &[u8], rows: &mut Rows) {
-        self.line_once(number, line, &mut |_| false, rows);
+        self.line_once(number, line, &mut |_| Seen::New, rows);
     }
 
-    /// The same, for whoever reads more than one file: `seen` is asked whether a line with this key was read from
-    /// another file before, and the rows of one that was are marked as repeats. A Claude line is known by its own
-    /// id, and by its session and bytes when it has none. Any other agent's line is known by its bytes, which hold
-    /// its time to the millisecond: Codex's has no id, and Pi's is too short to be one of a kind.
-    pub fn line_once(&mut self, number: u64, line: &[u8], seen: &mut dyn FnMut(LineKey) -> bool, rows: &mut Rows) {
+    /// The same, for whoever reads more than one file: `seen` is asked whether a line with this key was read
+    /// before, and the rows of one that was are marked as repeats.
+    ///
+    /// A line is known by what it is, where it says: a Claude line by its own id, a Codex item by its id or its
+    /// call's, a Codex count of tokens by the thread's running total, a Pi reply by its response's id. Codex writes
+    /// a session's items again, with new times, when it carries the session on, and those ids are what stays the
+    /// same. Any other line is known by its bytes, which hold its time to the millisecond.
+    ///
+    /// The one line that can be in a file twice over and mean it is a Claude line with no id and no time, such as a
+    /// change of mode, so that one is a repeat only when another file had it first.
+    pub fn line_once(&mut self, number: u64, line: &[u8], seen: &mut dyn FnMut(LineKey) -> Seen, rows: &mut Rows) {
         let bytes = line.len() as u64;
         let agent = self.agent.name().as_bytes();
         let Ok(Value::Object(fields)) = serde_json::from_slice::<Value>(line) else {
             if !line.iter().all(u8::is_ascii_whitespace) {
-                self.repeat = seen(json::key(&[agent, line]));
+                self.repeat = seen(json::key(&[agent, line])) != Seen::New;
                 let at = self.at(number, None, None);
                 rows.lines.push(Line { at, kind: "unreadable".into(), bytes, ..Line::default() });
             }
             return;
         };
         let text = |key: &str| fields.get(key).and_then(Value::as_str).unwrap_or_default().as_bytes();
-        self.repeat = seen(match (self.agent, text("uuid")) {
-            (Agent::Claude, []) => json::key(&[agent, text("sessionId"), line]),
-            (Agent::Claude, id) => json::key(&[agent, b"id", id]),
-            _ => json::key(&[agent, line]),
-        });
+        let own = match self.agent {
+            Agent::Claude => Some(text("uuid")).filter(|id| !id.is_empty()).map(|id| json::key(&[agent, b"id", id])),
+            Agent::Codex => codex::key(&fields),
+            Agent::Pi | Agent::OpenClaw => pi::key(agent, &fields),
+        };
+        self.repeat = match own {
+            Some(key) => seen(key) != Seen::New,
+            None if self.agent == Agent::Claude => seen(json::key(&[agent, text("sessionId"), line])) == Seen::Elsewhere,
+            None => seen(json::key(&[agent, line])) != Seen::New,
+        };
         match self.agent {
             Agent::Claude => claude::line(self, number, bytes, fields, rows),
             Agent::Codex => codex::line(self, number, bytes, fields, rows),
@@ -188,6 +210,30 @@ mod tests {
         rows
     }
 
+    /// Reads files one after another, the way whoever keeps every line's key does.
+    pub(crate) fn parse_files(agent: Agent, files: &[Vec<String>]) -> Vec<Rows> {
+        let mut first: std::collections::HashMap<LineKey, usize> = std::collections::HashMap::new();
+        let mut read = Vec::new();
+        for (file, lines) in files.iter().enumerate() {
+            let mut parser = Parser::new(agent, Detail::Everything, State::default());
+            let mut rows = Rows::default();
+            for (number, line) in lines.iter().enumerate() {
+                let mut seen = |key| match first.get(&key) {
+                    None => {
+                        first.insert(key, file);
+                        Seen::New
+                    }
+                    Some(had) if *had == file => Seen::Here,
+                    Some(_) => Seen::Elsewhere,
+                };
+                parser.line_once(number as u64, line.as_bytes(), &mut seen, &mut rows);
+            }
+            parser.finish(&mut rows);
+            read.push(rows);
+        }
+        read
+    }
+
     #[test]
     fn a_line_that_is_not_json_is_kept_as_unreadable_and_a_blank_one_is_nothing() {
         let rows = parse(Agent::Claude, Detail::Everything, &["{\"type\":".to_string(), "  ".to_string(), "[1]".to_string()]);
@@ -237,23 +283,32 @@ mod tests {
                 let mut parser = Parser::new(agent, Detail::Everything, State::default());
                 let mut rows = Rows::default();
                 for (number, line) in lines.iter().enumerate() {
-                    parser.line_once(number as u64, line.as_bytes(), &mut |key| *first.entry(key).or_insert(file) != file, &mut rows);
+                    let mut seen = |key| match first.get(&key) {
+                        None => {
+                            first.insert(key, file);
+                            Seen::New
+                        }
+                        Some(had) if *had == file => Seen::Here,
+                        Some(_) => Seen::Elsewhere,
+                    };
+                    parser.line_once(number as u64, line.as_bytes(), &mut seen, &mut rows);
                 }
                 parser.finish(&mut rows);
                 serde_json::to_value(&rows).unwrap()
             };
-            let repeats = |rows: &Value| -> Vec<(usize, usize)> {
+            let repeats = |rows: &Value| -> (usize, usize) {
                 let placed = rows.as_object().unwrap().iter().filter(|(table, _)| !matches!(table.as_str(), "prompts" | "tool_defs"));
-                placed.map(|(_, rows)| (rows.as_array().unwrap().len(), rows.as_array().unwrap().iter().filter(|row| row["repeat"] == true).count())).collect()
+                placed.fold((0, 0), |(count, marked), (_, rows)| (count + rows.as_array().unwrap().len(), marked + rows.as_array().unwrap().iter().filter(|row| row["repeat"] == true).count()))
             };
-            // The same file twice over is two of each line, and none is a repeat.
-            let doubled = read(1, &[lines.clone(), lines.clone()].concat());
-            assert!(repeats(&doubled).iter().all(|(_, repeats)| *repeats == 0), "{agent:?}");
+            // A file that holds its lines twice over, as one an agent wrote its session into again: the second of
+            // each is a repeat. All but the Claude line with no id of its own, which a file can hold twice and mean.
+            let (rows, marked) = repeats(&read(1, &[lines.clone(), lines.clone()].concat()));
+            assert_eq!(rows - marked * 2, if agent == Agent::Claude { 2 } else { 0 }, "{agent:?}");
             // A second file with the first's lines and one more: every row but that line's is a repeat.
             let mut longer = lines.clone();
             longer.push(lines[1].replace("\"type\"", "\"extra\":1,\"type\""));
             let copy = read(2, &longer);
-            let (rows, marked): (usize, usize) = repeats(&copy).iter().fold((0, 0), |(rows, marked), (count, repeats)| (rows + count, marked + repeats));
+            let (rows, marked) = repeats(&copy);
             assert!(marked > 10 && (marked < rows) == (agent != Agent::Claude), "{agent:?}: {marked} of {rows}");
             let new: Vec<u64> = copy["lines"].as_array().unwrap().iter().filter(|line| line["repeat"] == false).map(|line| line["line"].as_u64().unwrap()).collect();
             // A Claude line is known by its id, so the changed copy of line 1 is still line 1.

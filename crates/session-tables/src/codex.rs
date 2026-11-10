@@ -6,6 +6,27 @@ use crate::json::{self, Fields};
 use crate::{At, ContextUse, Line, Message, Parser, Request, Rows, ToolCall, ToolIo, ToolResult};
 use serde_json::Value;
 
+/// What a line is known by, where it's more than its bytes: an item by its call's id or its own, a call's tokens by
+/// the response's id, and a count of tokens by the thread's running total after it. Codex writes all of these again
+/// when it carries a session on or forks one, each with the time of the rewrite.
+pub(crate) fn key(fields: &Fields) -> Option<crate::LineKey> {
+    let payload = fields.get("payload")?.as_object()?;
+    let text = |key: &str| payload.get(key).and_then(Value::as_str).filter(|text| !text.is_empty());
+    let subkind = text("type").unwrap_or_default();
+    let known = |by: &str, id: &str| json::key(&[b"codex", by.as_bytes(), subkind.as_bytes(), id.as_bytes()]);
+    match fields.get("type")?.as_str()? {
+        "response_item" => text("call_id").map(|id| known("call", id)).or_else(|| text("id").map(|id| known("item", id))),
+        "token_usage_record" => text("response_id").map(|id| known("response", id)),
+        "event_msg" if subkind == "token_count" => {
+            let total = payload.get("info")?.get("total_token_usage")?;
+            let count = |key: &str| total.get(key).and_then(Value::as_u64).unwrap_or(0);
+            let total = format!("{} {} {} {} {}", count("input_tokens"), count("cached_input_tokens"), count("cache_write_input_tokens"), count("output_tokens"), count("reasoning_output_tokens"));
+            Some(known("total", &total))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fields, rows: &mut Rows) {
     let kind = json::string(&mut fields, "type").unwrap_or_default();
     let ts = json::string(&mut fields, "timestamp");
@@ -393,7 +414,7 @@ fn tool_defs(parser: &Parser, tools: Vec<Value>, hashes: &mut Vec<String>, rows:
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::tests::{parse, SECRET};
+    use crate::tests::{parse, parse_files, SECRET};
     use crate::{Agent, Detail};
     use serde_json::{json, Value};
 
@@ -460,6 +481,29 @@ pub(crate) mod tests {
         assert_eq!(command.command.as_deref(), Some(format!("rg -n TODO src | head -3 # {SECRET}").as_str()));
         let result = &rows.tool_results[0];
         assert_eq!((result.tool_use_id.as_deref(), result.exit_code, result.duration_ms, result.is_error, result.output_chars), (Some("call_1"), Some(1), Some(250), Some(true), 11 + SECRET.len() as u64));
+    }
+
+    #[test]
+    fn a_session_written_again_with_new_times_counts_once() {
+        let thought = |at| line(at, "response_item", json!({ "type": "reasoning", "id": "rs_9", "summary": [], "encrypted_content": "ZW5j" }));
+        let call = |at| line(at, "response_item", json!({ "type": "function_call", "id": "fc_9", "name": "exec_command", "call_id": "call_9", "arguments": "{\"cmd\":\"ls\"}" }));
+        let output = |at| line(at, "response_item", json!({ "type": "function_call_output", "call_id": "call_9", "output": "Exit code: 0\nOutput:\nok" }));
+        let count = |at, total: u64| line(at, "event_msg", json!({ "type": "token_count", "info": { "total_token_usage": usage(total, 0, 50), "last_token_usage": usage(100, 0, 50) } }));
+        // Two threads' counts come in turn, so a total comes round again in the first file. The second file is the
+        // session carried on: what came before, each line with a new time, and then one call more.
+        let first = vec![thought(1), call(2), output(3), count(4, 1000), count(5, 2000), count(6, 1000)];
+        let second = vec![thought(11), call(12), output(13), count(14, 1000), count(15, 2000), count(16, 3000)];
+        let files = parse_files(Agent::Codex, &[first, second]);
+        let repeats = |file: usize| {
+            let rows = &files[file];
+            let marks = |at: Vec<&crate::At>| at.iter().map(|at| at.repeat).collect::<Vec<_>>();
+            (marks(rows.messages.iter().map(|row| &row.at).collect()), marks(rows.tool_calls.iter().map(|row| &row.at).collect()), marks(rows.tool_results.iter().map(|row| &row.at).collect()), marks(rows.requests.iter().map(|row| &row.at).collect()))
+        };
+        assert_eq!(repeats(0), (vec![false], vec![false], vec![false], vec![false, false, true]));
+        assert_eq!(repeats(1), (vec![true], vec![true], vec![true], vec![true, true, false]));
+        // A file read by itself has no one to ask, and counts what it holds.
+        let alone = parse(Agent::Codex, Detail::Everything, &[count(4, 1000), count(5, 1000), count(6, 2000)]);
+        assert_eq!(alone.requests.iter().map(|request| request.at.repeat).collect::<Vec<_>>(), [false, false]);
     }
 
     #[test]
