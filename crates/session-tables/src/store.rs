@@ -47,6 +47,12 @@ pub const FILES_A_MONTH: usize = 8;
 /// The engine reads JSON lines into buffers as long as the longest line it's told to expect, so it's told the
 /// longest one a batch really has, and never less than this.
 const SHORTEST_BUFFER: u64 = 1 << 20;
+/// How every file is written. A row group is cut by its bytes and not its rows: the engine holds a whole group in
+/// memory to write it and again to read it, and a group of rows by the hundred thousand, each with a tool's output
+/// in it, is gigabytes. The engine only cuts by bytes with `preserve_insertion_order` off, which the settings do.
+const PARQUET: &str = "FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE_BYTES '32MB'";
+/// The least memory the engine is given, in MiB.
+const LEAST_MEMORY: u64 = 2048;
 
 /// Something that runs SQL and gives back what it printed, as JSON.
 pub trait Engine {
@@ -108,6 +114,9 @@ pub struct Part {
     pub bytes: u64,
     /// The month it holds (`2026-10`, `undated`, or `all`), or nothing for a batch not merged yet.
     pub month: Option<String>,
+    /// The longest row it can hold, in bytes, which is what the engine's memory is sized by when it's merged.
+    #[serde(default)]
+    pub longest: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -290,8 +299,8 @@ impl Store {
             let folder = Path::new(version_dir()).join(name).join("fresh");
             make_dirs(&self.root, &folder)?;
             let path = folder.join(format!("{number:010}.parquet"));
-            sql.push_str(&format!("COPY ({}) TO {} (FORMAT parquet, COMPRESSION zstd);\n", read_json(table, &dir.join(format!("{name}.jsonl")), longest), quoted(&self.root.join(&path))));
-            added.push((name, Part { path: path.to_string_lossy().into_owned(), rows, bytes: 0, month: None }));
+            sql.push_str(&format!("COPY ({}) TO {} ({PARQUET});\n", read_json(table, &dir.join(format!("{name}.jsonl")), longest), quoted(&self.root.join(&path))));
+            added.push((name, Part { path: path.to_string_lossy().into_owned(), rows, bytes: 0, month: None, longest }));
         }
         let total = added.iter().map(|(_, part)| part.rows).sum();
         if !added.is_empty() {
@@ -341,12 +350,14 @@ impl Store {
         let names = names(table);
         let mut made: Vec<Part> = Vec::new();
         let mut replaced: Vec<Part> = fresh.to_vec();
+        let old: Vec<Part> = if table.placed { Vec::new() } else { self.parts(table.name).iter().filter(|part| part.month.is_some()).cloned().collect() };
+        let longest = fresh.iter().chain(&old).map(|part| part.longest).max().unwrap_or(0);
         let done = (|| {
             if table.placed {
                 // One pass over the fresh files, written as a folder per month: `month=2026-10/…parquet`.
                 let sql = format!(
-                    "{}COPY (SELECT {names}, coalesce(strftime(day, '%Y-%m'), '{UNDATED}') AS month FROM read_parquet({}, union_by_name = true)) TO {} (FORMAT parquet, COMPRESSION zstd, PARTITION_BY (month), WRITE_PARTITION_COLUMNS false);\n",
-                    self.settings(),
+                    "{}COPY (SELECT {names}, coalesce(strftime(day, '%Y-%m'), '{UNDATED}') AS month FROM read_parquet({}, union_by_name = true)) TO {} ({PARQUET}, PARTITION_BY (month), WRITE_PARTITION_COLUMNS false);\n",
+                    self.settings_for(longest),
                     self.list(fresh.iter()),
                     quoted(work)
                 );
@@ -355,20 +366,19 @@ impl Store {
                     for (index, file) in files.iter().enumerate() {
                         let path = folder.join(format!("{month}.{number}.{index}.parquet"));
                         fs::rename(file, self.root.join(&path)).map_err(|error| format!("Couldn't put {} in place: {error}", path.display()))?;
-                        made.push(Part { path: path.to_string_lossy().into_owned(), rows: 0, bytes: 0, month: Some(month.clone()) });
+                        made.push(Part { path: path.to_string_lossy().into_owned(), rows: 0, bytes: 0, month: Some(month.clone()), longest });
                     }
                 }
             } else {
-                let old: Vec<Part> = self.parts(table.name).iter().filter(|part| part.month.is_some()).cloned().collect();
                 let path = folder.join(format!("{WHOLE}.{number}.parquet"));
                 let sql = format!(
-                    "{}COPY (SELECT DISTINCT ON (hash) {names} FROM read_parquet({}, union_by_name = true)) TO {} (FORMAT parquet, COMPRESSION zstd);\n",
-                    self.settings(),
+                    "{}COPY (SELECT DISTINCT ON (hash) {names} FROM read_parquet({}, union_by_name = true)) TO {} ({PARQUET});\n",
+                    self.settings_for(longest),
                     self.list(old.iter().chain(fresh)),
                     quoted(&self.root.join(&path))
                 );
-                made.push(Part { path: path.to_string_lossy().into_owned(), rows: 0, bytes: 0, month: Some(WHOLE.to_string()) });
-                replaced.extend(old);
+                made.push(Part { path: path.to_string_lossy().into_owned(), rows: 0, bytes: 0, month: Some(WHOLE.to_string()), longest });
+                replaced.extend(old.iter().cloned());
                 engine.run(&sql).map_err(|error| failed("merging", &error))?;
             }
             self.count(&mut made, engine)?;
@@ -390,8 +400,9 @@ impl Store {
                 continue;
             }
             let path = Path::new(version_dir()).join(table.name).join(format!("{month}.{}.parquet", self.manifest.next));
-            let sql = format!("{}COPY (SELECT {} FROM read_parquet({}, union_by_name = true)) TO {} (FORMAT parquet, COMPRESSION zstd);\n", self.settings(), names(table), self.list(parts.iter()), quoted(&self.root.join(&path)));
-            let mut made = vec![Part { path: path.to_string_lossy().into_owned(), rows: parts.iter().map(|part| part.rows).sum(), bytes: 0, month: Some(month) }];
+            let longest = parts.iter().map(|part| part.longest).max().unwrap_or(0);
+            let sql = format!("{}COPY (SELECT {} FROM read_parquet({}, union_by_name = true)) TO {} ({PARQUET});\n", self.settings_for(longest), names(table), self.list(parts.iter()), quoted(&self.root.join(&path)));
+            let mut made = vec![Part { path: path.to_string_lossy().into_owned(), rows: parts.iter().map(|part| part.rows).sum(), bytes: 0, month: Some(month), longest }];
             let done = engine.run(&sql).map_err(|error| failed("merging", &error)).and_then(|_| self.settle(&mut made.iter_mut().collect::<Vec<_>>()));
             self.swap(table, done, parts, made)?;
         }
@@ -450,6 +461,9 @@ impl Store {
 
     /// What every run of the engine starts with. Times with no zone of their own are read as UTC, whatever the
     /// machine's zone; nothing is fetched or loaded; and what doesn't fit in memory spills into the store's `tmp/`.
+    /// Rows are written in no promised order, which is what lets a file's groups be cut by their bytes, and a month
+    /// being written takes what it has every few hundred rows: the engine otherwise holds half a million rows of
+    /// each month before it writes any.
     fn settings(&self) -> String {
         self.settings_for(0)
     }
@@ -457,9 +471,9 @@ impl Store {
     /// The same, for reading rows as long as `longest` bytes. The engine holds a row a few times over while it
     /// reads one, so its memory grows with the longest: measured, a 300 MB row needs more than 1 GB and fits in 2.
     fn settings_for(&self, longest: u64) -> String {
-        let memory = (longest.saturating_mul(6) >> 20).max(1024);
+        let memory = (longest.saturating_mul(6) >> 20).max(LEAST_MEMORY);
         format!(
-            "SET autoinstall_known_extensions = false;\nSET autoload_known_extensions = false;\nSET TimeZone = 'UTC';\nSET temp_directory = {};\nSET memory_limit = '{memory}MiB';\nSET threads = 2;\n",
+            "SET autoinstall_known_extensions = false;\nSET autoload_known_extensions = false;\nSET TimeZone = 'UTC';\nSET temp_directory = {};\nSET memory_limit = '{memory}MiB';\nSET threads = 2;\nSET preserve_insertion_order = false;\nSET partitioned_write_flush_threshold = 256;\n",
             quoted(&self.root.join("tmp"))
         )
     }
@@ -825,6 +839,35 @@ mod tests {
             }
             assert_eq!(fs::metadata(root.join("v1/lines")).unwrap().permissions().mode() & 0o777, 0o700);
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn row_groups_stay_small_however_much_text_rows_hold() {
+        let Some(engine) = engine() else { return };
+        let root = temp_dir("groups");
+        let mut store = Store::open(&root).unwrap();
+        // 120 MB of tool output in 3,000 rows: by row count that's one group, which the engine holds whole.
+        let mut rows = parse(Agent::Codex, Detail::Everything, &codex::tests::session());
+        let io = rows.tool_io.first().cloned().expect("the sample session has tool output");
+        rows.tool_io = (0..3000).map(|n| crate::rows::ToolIo { text: format!("{n:08}").repeat(5000), ..io.clone() }).collect();
+        let groups = |store: &Store| {
+            let files: Vec<String> = store.parts("tool_io").iter().map(|part| quoted(&root.join(&part.path))).collect();
+            let answer = engine.run(&format!("SELECT count(DISTINCT (file_name, row_group_id)) AS groups, max(row_group_bytes) AS most FROM parquet_metadata([{}]);", files.join(", "))).unwrap();
+            let answer: Vec<Value> = serde_json::from_str(answer.trim()).unwrap();
+            (answer[0]["groups"].as_u64().unwrap(), answer[0]["most"].as_u64().unwrap())
+        };
+        for round in 0..2 {
+            let mut batch = store.batch().unwrap();
+            batch.add(&Origin { agent: Agent::Codex, machine: "cam-mbp", source: &format!("file-{round}") }, &rows).unwrap();
+            store.write(batch, &engine).unwrap();
+            let (count, most) = groups(&store);
+            assert!(count > 2 && most < 64 << 20, "fresh: {count} groups, the biggest {most} bytes");
+        }
+        store.merge(&engine, 1).unwrap();
+        let (count, most) = groups(&store);
+        assert!(count > 4 && most < 64 << 20, "merged: {count} groups, the biggest {most} bytes");
+        assert_eq!(ask(&engine, &store, "SELECT count(*) AS n, min(length(text)) AS chars FROM tool_io")[0], serde_json::json!({ "n": 6000, "chars": 40000 }));
         fs::remove_dir_all(root).unwrap();
     }
 
