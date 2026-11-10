@@ -36,6 +36,7 @@ import type { TrayDot, TrayRow } from '../native/types';
 import { publishTrayRows } from '../services/trayMenu';
 import { pushToTray } from '../services/bootMode';
 import { nextResetNotifications, type ResetReady } from '../services/resetReadiness';
+import { resetKindName } from '../services/resetKinds';
 
 const NOTIFIED_KEY = 'arbor.limits-notified.v1';
 const RESET_NOTIFIED_KEY = 'arbor.reset-notified.v1';
@@ -342,9 +343,12 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       const limit = item!.limit ? lowerFirst(item!.limit) : '';
       return {
         title: t('notifications.resetReady.title', { provider: providerLabel[provider] }),
-        body: provider === 'codex'
+        body: item!.provider === 'codex'
           ? t('notifications.resetReady.manual', { account, limit })
-          : limit ? t('notifications.resetReady.bankedLimit', { account, limit }) : t('notifications.resetReady.banked', { account }),
+          // A Fable reset at the weekly limit doesn't refill it, so the alert doesn't say it does.
+          : item!.givesBackOnly ? t('notifications.resetReady.givesBack', { account })
+            : limit ? t('notifications.resetReady.bankedLimit', { account, limit, reset: resetKindName(t, item!.reset) })
+              : t('notifications.resetReady.banked', { account, reset: resetKindName(t, item!.reset) }),
         kind: 'resetReady',
         subject: { account: item!.key },
       };

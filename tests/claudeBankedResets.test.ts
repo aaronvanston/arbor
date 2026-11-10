@@ -3,7 +3,7 @@ import { managementApi } from '../src/services/managementApi';
 import { canResetClaudeQuota, resetClaudeQuotaWithConfirmation } from '../src/services/quotaActions';
 import { getQuotaCacheSnapshot, updateQuotaCache } from '../src/services/quotaCache';
 import {
-  claimClaudeBankedReset, claudeBankedResetFor, loadQuota, quotaKey, quotaRowsFor, type AuthFile,
+  claimClaudeBankedReset, claudeBankedResetFor, loadQuota, quotaKey, quotaRowsFor, usableClaudeReset, type AuthFile,
 } from '../src/services/quotaService';
 import { itemAt, present } from './support/items';
 
@@ -35,16 +35,114 @@ describe('reading Claude banked resets', () => {
       resetCredits: 2,
       resetCreditsEarliestExpiry: '2030-01-20T00:00:00Z',
       bankedReset: {
-        grantId: 'launch_week',
-        refills: '5-hour window and 7-day window',
+        kinds: [{
+          kind: 'full', count: 2, expiresAt: '2030-01-20T00:00:00Z', windows: ['5-hour window', '7-day window'],
+          refills: '5-hour window and 7-day window', grantId: 'launch_week', useBy: '2030-01-20T00:00:00Z',
+        }],
         weeklyResetsAt: '2030-01-14T00:00:00Z',
       },
     });
   });
 
+  // What claude.ai shows as "Fable reset · 3" beside "Weekly reset": two kinds, counted and offered apart.
+  const fableGrant = (overrides: Record<string, unknown> = {}) => grant({
+    id: 'fable_launch', resets_left: 3, ends_at: '2030-05-01T00:00:00Z', clears: ['seven_day_overage_included'],
+    gives_back_weekly: true, use_requires_limit: false, percent_used: { seven_day_overage_included: 30 }, ...overrides,
+  });
+  const weeklyGrant = (overrides: Record<string, unknown> = {}) => grant({
+    id: 'weekly_thanks', resets_left: 1, ends_at: '2030-01-15T00:00:00Z', type: 'weekly',
+    clears: ['seven_day', 'seven_day_overage_included', 'seven_day_opus'], use_requires_limit: false,
+    percent_used: { seven_day: 58, seven_day_overage_included: 30 }, ...overrides,
+  });
+  const kindsOf = (overrides: Record<string, unknown>, grants: unknown[]) =>
+    present(claudeBankedResetFor(status(overrides, grants), NOW).bankedReset).kinds;
+
+  it('tells a Fable reset from a weekly one: its own count, use-by date and what it gives back', () => {
+    const result = claudeBankedResetFor(status({ exhausted: [], next_grant_id: 'fable_launch' }, [fableGrant(), weeklyGrant()]), NOW);
+    expect(result.resetCredits).toBe(4);
+    expect(result.resetCreditsEarliestExpiry).toBe('2030-01-15T00:00:00Z');
+    // Before any limit, the narrower one leads.
+    expect(result.bankedReset?.kinds).toEqual([
+      {
+        kind: 'weekly', count: 1, expiresAt: '2030-01-15T00:00:00Z', useBy: '2030-01-15T00:00:00Z', grantId: 'weekly_thanks',
+        windows: ['7-day window', '7-day Opus window', '7-day Fable window'], refills: '7-day window and 7-day Opus window',
+        earlyUse: { percentLeft: 42, limit: '7-day window' },
+      },
+      {
+        kind: 'fable', count: 3, expiresAt: '2030-05-01T00:00:00Z', useBy: '2030-05-01T00:00:00Z', grantId: 'fable_launch',
+        windows: ['7-day Fable window'], refills: '7-day Fable window', givesBackTo: '7-day window',
+        earlyUse: { percentLeft: 70, limit: '7-day Fable window' },
+      },
+    ]);
+    expect(result.bankedReset?.blockedReason).toBeUndefined();
+  });
+
+  it('works out the kind as Claude Code does: what it gives back, then Claude’s type, then what it refills', () => {
+    const kind = (overrides: Record<string, unknown>) => itemAt(kindsOf({}, [grant(overrides)]), 0).kind;
+    expect(kind({ clears: ['five_hour'] })).toBe('session');
+    expect(kind({ clears: ['seven_day', 'seven_day_opus'] })).toBe('weekly');
+    expect(kind({ clears: ['five_hour', 'seven_day'] })).toBe('full');
+    expect(kind({ clears: ['five_hour', 'seven_day'], type: 'weekly' })).toBe('weekly');
+    expect(kind({ clears: ['five_hour'], type: 'something new' })).toBe('session');
+    expect(kind({ type: 'full', gives_back_weekly: true })).toBe('fable');
+    // Grants of one kind are one line: counted together, the first to lapse as its date.
+    expect(kindsOf({}, [grant({ id: 'a', resets_left: 1, ends_at: '2030-02-01T00:00:00Z' }), grant({ id: 'b', resets_left: 2, usable_now: false })]))
+      .toMatchObject([{ kind: 'full', count: 3, expiresAt: '2030-01-20T00:00:00Z', grantId: 'a', useBy: '2030-02-01T00:00:00Z' }]);
+    // Claude's next grant is the one claimed when it's one of them.
+    expect(itemAt(kindsOf({ next_grant_id: 'b' }, [grant({ id: 'a' }), grant({ id: 'b' })]), 0).grantId).toBe('b');
+  });
+
+  it('leads with the reset made for the limit the account is at', () => {
+    const session = grant({ id: 'five', clears: ['five_hour'], type: 'session' });
+    const order = (exhausted: string[], grants: unknown[]) => kindsOf({ exhausted, at_limit: true }, grants).map((offer) => offer.kind);
+    // Out of Fable: the Fable reset, keeping the weekly one for the week.
+    const outOfFable = { percent_used: { seven_day_overage_included: 100 } };
+    expect(order(['seven_day_overage_included'], [weeklyGrant(), fableGrant(outOfFable)])).toEqual(['fable', 'weekly']);
+    // At the 5-hour limit: the 5-hour reset before the one that refills everything.
+    expect(order(['five_hour'], [grant(), session])).toEqual(['session', 'full']);
+    // At the weekly limit: the weekly reset, and the Fable one last, since it frees up only what Fable used.
+    const atWeek = kindsOf({ exhausted: ['seven_day'], at_limit: true }, [fableGrant(), weeklyGrant(), grant()]);
+    expect(atWeek.map((offer) => [offer.kind, offer.givesBackOnly, offer.earlyUse])).toEqual([
+      ['weekly', undefined, undefined], ['full', undefined, undefined], ['fable', true, undefined],
+    ]);
+    // One that would be spent early comes after one that refills the limit, and one that can't be used last.
+    const mixed = kindsOf({ exhausted: ['five_hour'], at_limit: true }, [
+      weeklyGrant({ usable_now: false, use_requires_limit: true }), fableGrant(), grant(),
+    ]);
+    expect(mixed.map((offer) => [offer.kind, Boolean(offer.grantId), offer.earlyUse !== undefined])).toEqual([
+      ['full', true, false], ['fable', true, true], ['weekly', false, false],
+    ]);
+    expect(present(usableClaudeReset({ status: 'success', rows: [], bankedReset: { kinds: mixed } })).kind).toBe('full');
+    expect(usableClaudeReset({ status: 'success', rows: [], bankedReset: { kinds: mixed } }, 'weekly')).toBeUndefined();
+  });
+
+  it('says why one kind can’t be used while another can', () => {
+    const reason = (overrides: Record<string, unknown>, block: Record<string, unknown> = {}) => present(
+      kindsOf({ exhausted: ['seven_day'], at_limit: true, ...block }, [weeklyGrant(), fableGrant({ usable_now: false, ...overrides })])
+        .find((offer) => offer.kind === 'fable'),
+    ).blockedReason;
+    // Claude's own reason, when it gives one.
+    expect(reason({ unavailable_reason: 'blocked_seven_day' })).toBe('Fable hasn’t used anything this week to give back');
+    expect(reason({ unavailable_reason: 'cannot_clear' })).toBe('It doesn’t refill the limit this account has reached');
+    expect(reason({ unavailable_reason: 'blocked_other' })).toBe('It can’t be used while this account is at another limit it doesn’t refill');
+    expect(reason({ unavailable_reason: 'blocked_five_hour' })).toBe('It doesn’t refill the 5-hour window, so it can’t be used until that resets');
+    expect(reason({ unavailable_reason: 'cooldown' })).toContain('Another reset just ran');
+    expect(reason({ unavailable_reason: 'needs_limit' })).toBe('Saved for when this account reaches a usage limit');
+    expect(reason({ unavailable_reason: 'something new', blocking: ['seven_day'] })).toBe('Fable hasn’t used anything this week to give back');
+    // Without one, what the reply implies: at a limit the reset does nothing for.
+    expect(reason({}, { exhausted: ['five_hour'] })).toBe('It doesn’t refill the limit this account has reached');
+    // The account's own reason is kept for when nothing can be used.
+    const both = present(claudeBankedResetFor(status({ exhausted: ['five_hour'], at_limit: true }, [
+      weeklyGrant({ usable_now: false }), fableGrant({ usable_now: false }),
+    ]), NOW).bankedReset);
+    expect(both.blockedReason).toBe('It doesn’t refill the limit this account has reached');
+    expect(present(claudeBankedResetFor(status({ exhausted: ['seven_day'] }, [weeklyGrant(), fableGrant({ usable_now: false })]), NOW).bankedReset).blockedReason)
+      .toBeUndefined();
+  });
+
   it('names every cap it refills the way its row on the Accounts page does', () => {
     const refills = (clears: unknown[]) =>
-      claudeBankedResetFor(status({}, [grant({ clears })]), NOW).bankedReset?.refills;
+      claudeBankedResetFor(status({}, [grant({ clears })]), NOW).bankedReset?.kinds[0]?.refills;
     expect(refills(['seven_day_cowork', 'seven_day_omelette', 'seven_day_oauth_apps']))
       .toBe('7-day Cowork window, 7-day Omelette window and 7-day OAuth apps window');
     // A cap Claude Code doesn't know yet, and the 7-day limit under its other name, said once.
@@ -64,7 +162,7 @@ describe('reading Claude banked resets', () => {
 
   it('warns before spending a reset that works without a limit early', () => {
     const anytime = (overrides: Record<string, unknown>) =>
-      claudeBankedResetFor(status({ exhausted: [] }, [grant({ use_requires_limit: false, ...overrides })]), NOW).bankedReset?.earlyUse;
+      claudeBankedResetFor(status({ exhausted: [] }, [grant({ use_requires_limit: false, ...overrides })]), NOW).bankedReset?.kinds[0]?.earlyUse;
     expect(anytime({ percent_used: { five_hour: 22, seven_day: 58 } })).toEqual({ percentLeft: 42, limit: '7-day window' });
     expect(anytime({ percent_used: {} })).toEqual({});
     expect(anytime({ percent_used: { seven_day_cowork: 90 } })).toEqual({});
@@ -75,7 +173,7 @@ describe('reading Claude banked resets', () => {
     expect(anytime({ clears: ['seven_day_deep_research', 'seven_day'], percent_used: { seven_day_deep_research: 58, seven_day: 58 } }))
       .toEqual({ percentLeft: 42, limit: '7-day window' });
     // At a limit the reset refills, it is not early.
-    expect(claudeBankedResetFor(status({}, [grant({ use_requires_limit: false })]), NOW).bankedReset?.earlyUse).toBeUndefined();
+    expect(claudeBankedResetFor(status({}, [grant({ use_requires_limit: false })]), NOW).bankedReset?.kinds[0]?.earlyUse).toBeUndefined();
   });
 
   it('explains why resets left cannot be used now', () => {
@@ -92,9 +190,9 @@ describe('reading Claude banked resets', () => {
     expect(reason({}, { cooldown_until: '2030-01-10T00:01:00Z' })?.blockedReason).toContain('Another reset just ran');
     expect(reason({})?.blockedReason).toBe('Saved for when this account reaches a usage limit');
     expect(reason({ use_requires_limit: false })?.blockedReason).toBe('It can’t be used right now. Try again later');
-    expect(reason({})?.grantId).toBeUndefined();
+    expect(reason({})?.kinds[0]?.grantId).toBeUndefined();
     // A paused next grant is not offered even if marked usable.
-    expect(claudeBankedResetFor(status({}, [grant({ paused: true })]), NOW).bankedReset?.grantId).toBeUndefined();
+    expect(claudeBankedResetFor(status({}, [grant({ paused: true })]), NOW).bankedReset?.kinds[0]?.grantId).toBeUndefined();
   });
 
   it('counts only live grants, drops malformed ones and never offers a grant it could not read', () => {
@@ -110,10 +208,11 @@ describe('reading Claude banked resets', () => {
     ]), NOW);
     expect(result.resetCredits).toBe(4);
     expect(result.resetCreditsEarliestExpiry).toBe('2030-01-15T00:00:00Z');
-    expect(result.bankedReset?.grantId).toBeUndefined();
+    expect(result.bankedReset?.kinds).toMatchObject([{ kind: 'full', count: 4 }]);
+    expect(result.bankedReset?.kinds[0]?.grantId).toBeUndefined();
     expect(result.bankedReset?.blockedReason).toBe('Saved for when this account reaches a usage limit');
     // An eligible account with nothing left shows zero, not nothing.
-    expect(claudeBankedResetFor(status({}, []), NOW)).toMatchObject({ resetCredits: 0, bankedReset: {} });
+    expect(claudeBankedResetFor(status({}, []), NOW)).toMatchObject({ resetCredits: 0, bankedReset: { kinds: [] } });
   });
 
   it('treats an unavailable service as a failed check and names a client refusal', () => {
@@ -122,7 +221,11 @@ describe('reading Claude banked resets', () => {
     expect(claudeBankedResetFor(status({ eligible: false, ineligible_reason: 'surface' }), NOW)).toEqual({
       resetCredits: 2,
       resetCreditsEarliestExpiry: '2030-01-20T00:00:00Z',
-      bankedReset: { blockedReason: 'Claude isn’t offering these to Arbor (surface)', blockedHere: true },
+      bankedReset: {
+        // What's held is still listed, with nothing to claim.
+        kinds: [{ kind: 'full', count: 2, expiresAt: '2030-01-20T00:00:00Z', windows: ['5-hour window', '7-day window'], refills: '5-hour window and 7-day window' }],
+        blockedReason: 'Claude isn’t offering these to Arbor (surface)', blockedHere: true,
+      },
     });
     expect(claudeBankedResetFor(status({ eligible: false, ineligible_reason: 'surface' }, []), NOW)).toEqual({});
   });
@@ -174,7 +277,7 @@ describe('checking Claude banked resets with the quota', () => {
     const result = await loadQuota(claudeFile());
     expect(result).toMatchObject({
       status: 'success', plan: 'Max', resetCredits: 2,
-      bankedReset: { grantId: 'launch_week', refills: '5-hour window and 7-day window' },
+      bankedReset: { kinds: [{ kind: 'full', grantId: 'launch_week', refills: '5-hour window and 7-day window' }] },
     });
     expect(result.resetCreditsApplicable).toBeUndefined();
     expect(calls.map((request) => request.url).sort()).toEqual([BANKED_URL, PREPAID_URL, PROFILE_URL, USAGE_URL].sort());
@@ -236,6 +339,16 @@ describe('claiming a Claude banked reset', () => {
     const claimAt = calls.indexOf(claim);
     expect(calls.slice(0, claimAt).map((request) => request.url).sort()).toEqual([BANKED_URL, PROFILE_URL].sort());
     expect(calls.slice(claimAt + 1).map((request) => request.url).sort()).toEqual([BANKED_URL, PREPAID_URL, PROFILE_URL, USAGE_URL].sort());
+  });
+
+  it('claims the kind that was confirmed and says what a Fable reset gave back', async () => {
+    bankedStatus = () => success(liveStatus({ exhausted: [] }, [
+      grant({ ends_at: future(86_400_000), use_requires_limit: false }),
+      grant({ id: 'fable_launch', ends_at: future(86_400_000), clears: ['seven_day_overage_included'], gives_back_weekly: true, use_requires_limit: false }),
+    ]));
+    const result = await claimClaudeBankedReset(claudeFile(), { grantId: 'fable_launch', earlyUse: true });
+    expect(JSON.parse(itemAt(claims(), 0).data!).grant_id).toBe('fable_launch');
+    expect(result.actionResult?.message).toStartWith('Fable reset used and quota refreshed. What Fable used is back in the weekly limit, which still resets ');
   });
 
   it('claims nothing when the reset or the limits changed since the confirmation', async () => {
@@ -340,7 +453,7 @@ describe('the Claude reset action', () => {
       ...current,
       [quotaKey(file)]: {
         status: 'success', rows: [{ label: '5-hour window', remainingPercent: 0 }], resetCredits: 2,
-        bankedReset: { grantId: 'launch_week' },
+        bankedReset: { kinds: [{ kind: 'full', count: 2, windows: [], grantId: 'launch_week' }] },
       },
     }));
   };
@@ -356,6 +469,30 @@ describe('the Claude reset action', () => {
     expect(getQuotaCacheSnapshot()[quotaKey(file)]).toMatchObject({
       status: 'success', resetCredits: 2, actionResult: { status: 'success', message: expect.stringContaining('Limits reset') },
     });
+  });
+
+  it('uses the kind asked for, and nothing when that kind can’t be used', async () => {
+    const file = claudeFile();
+    bankedStatus = () => success(liveStatus({}, [
+      grant({ ends_at: future(86_400_000) }),
+      grant({ id: 'fable_launch', ends_at: future(86_400_000), clears: ['seven_day_overage_included'], gives_back_weekly: true }),
+    ]));
+    updateQuotaCache((current) => ({
+      ...current,
+      [quotaKey(file)]: {
+        status: 'success', rows: [], resetCredits: 3,
+        bankedReset: { kinds: [
+          { kind: 'full', count: 2, windows: [], grantId: 'launch_week' },
+          { kind: 'fable', count: 1, windows: [], grantId: 'fable_launch' },
+          { kind: 'weekly', count: 1, windows: [], blockedReason: 'Saved for when this account reaches a usage limit' },
+        ] },
+      },
+    }));
+    let asked = 0;
+    expect(await resetClaudeQuotaWithConfirmation(file, async () => { asked++; return true; }, 'weekly')).toBe('canceled');
+    expect(asked).toBe(0);
+    expect(await resetClaudeQuotaWithConfirmation(file, async () => { asked++; return true; }, 'fable')).toBe('success');
+    expect(claims().map((request) => JSON.parse(request.data!).grant_id)).toEqual(['fable_launch']);
   });
 
   it('lets a declined reset be tried again but not an unconfirmed one', async () => {
@@ -384,12 +521,17 @@ describe('the Claude reset action', () => {
     const file = claudeFile();
     updateQuotaCache((current) => ({
       ...current,
-      [quotaKey(file)]: { status: 'success', rows: [], resetCredits: 1, bankedReset: { blockedReason: 'Saved for when this account reaches a usage limit' } },
+      [quotaKey(file)]: {
+        status: 'success', rows: [], resetCredits: 1,
+        bankedReset: { kinds: [{ kind: 'full', count: 1, windows: [] }], blockedReason: 'Saved for when this account reaches a usage limit' },
+      },
     }));
     let asked = false;
     expect(await resetClaudeQuotaWithConfirmation(file, async () => { asked = true; return true; })).toBe('canceled');
     expect(asked).toBe(false);
-    expect(canResetClaudeQuota({ ...file, disabled: true }, { status: 'success', rows: [], bankedReset: { grantId: 'launch_week' } })).toBe(false);
+    expect(canResetClaudeQuota({ ...file, disabled: true }, {
+      status: 'success', rows: [], bankedReset: { kinds: [{ kind: 'full', count: 1, windows: [], grantId: 'launch_week' }] },
+    })).toBe(false);
     expect(calls).toHaveLength(0);
   });
 });

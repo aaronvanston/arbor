@@ -9,7 +9,7 @@
 import type { LimitTrendAccount } from '../native/types';
 import { rowWindowMs, windowDurationMs, type Headline } from './accountLimits';
 import { simulatePool, type PoolAccount, type PoolPoint, type PoolRun } from './poolSimulation';
-import type { QuotaState } from './quotaService';
+import type { ClaudeResetKind, QuotaState } from './quotaService';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -45,11 +45,25 @@ export type ForecastSettings = {
 export const FORECAST_LOOKBACK_OPTIONS = [1, 3, 7, 14] as const;
 export const FORECAST_HORIZON_OPTIONS = [1, 3, 7, 14] as const;
 
+/** Resets an account holds that lapse together: Codex's manual resets, or one kind of Claude banked reset. */
+export type CreditLot = {
+  /** Which Claude reset; unset for a Codex manual reset. */
+  reset?: ClaudeResetKind;
+  count: number;
+  /** When the first of them lapses, when known. */
+  expiresAtMs: number | null;
+  /** Whether it refills the forecast's window. One that doesn't is never planned. */
+  refills: boolean;
+  /** A Fable reset on the weekly window: it hands back only what Fable used, which can't be sized ahead of time. */
+  givesBack?: boolean;
+};
+
 export type ForecastAccount = PoolAccount & {
   name: string;
+  /** Resets that refill the forecast's window: the `lots` that do, added up. */
   credits: number;
-  /** When the account's earliest credit lapses, when known. */
-  creditsExpireAtMs: number | null;
+  /** What the account holds, the one to spend first leading. */
+  lots: CreditLot[];
 };
 
 /**
@@ -62,30 +76,52 @@ export function forecastAccounts(headline: Headline, keyOf: (account: Headline['
     if (segment.off || segment.percent === null) return [];
     const row = segment.row;
     const resetAtMs = row?.resetAtMs !== undefined && Number.isFinite(row.resetAtMs) ? row.resetAtMs : null;
-    const expiry = segment.account.quota.resetCreditsEarliestExpiry;
-    const expiresAtMs = expiry ? Date.parse(expiry) : Number.NaN;
+    const lots = creditLots(segment.account.quota, row?.label ?? headline.label);
     return [{
       key: keyOf(segment.account),
       name: segment.account.name,
       left: Math.max(0, Math.min(100, segment.percent)),
       resetAtMs,
       windowMs: row ? rowWindowMs(row) : labelMs,
-      credits: plannableCredits(segment.account.quota),
-      creditsExpireAtMs: Number.isFinite(expiresAtMs) ? expiresAtMs : null,
+      credits: lots.reduce((total, lot) => (lot.refills ? total + lot.count : total), 0),
+      lots,
     }];
   });
 }
 
+const expiryMs = (expiry: string | undefined) => {
+  const atMs = expiry ? Date.parse(expiry) : Number.NaN;
+  return Number.isFinite(atMs) ? atMs : null;
+};
+
 /**
- * Credits the forecast can plan to spend. Codex counts only those that apply to its main limits. Claude counts banked
- * resets unless Claude won't take them from Arbor at all; one in a cooldown, or waiting for a limit, can still be planned.
+ * The resets an account holds, for a forecast of one window. Codex counts only those that apply to its main limits.
+ * Claude counts each kind of banked reset by whether it refills that window, so a Fable reset isn't planned for the
+ * 5-hour window, unless Claude won't take them from Arbor at all; one in a cooldown, or waiting for a limit, can
+ * still be planned. The narrowest reset that refills the window leads, leaving a wider one for a limit only it lifts.
  */
-export function plannableCredits(quota: QuotaState): number {
+export function creditLots(quota: QuotaState, window: string | null): CreditLot[] {
   const count = quota.resetCredits ?? 0;
-  if (count <= 0 || quota.status !== 'success') return 0;
-  if (quota.resetCreditsApplicable !== undefined) return Math.min(count, quota.resetCreditsApplicable);
-  if (quota.bankedReset === undefined) return 0;
-  return quota.bankedReset.blockedHere ? 0 : count;
+  if (count <= 0 || quota.status !== 'success') return [];
+  if (quota.resetCreditsApplicable !== undefined) {
+    const applicable = Math.min(count, quota.resetCreditsApplicable);
+    return applicable > 0 ? [{ count: applicable, expiresAtMs: expiryMs(quota.resetCreditsEarliestExpiry), refills: true }] : [];
+  }
+  if (quota.bankedReset === undefined || quota.bankedReset.blockedHere) return [];
+  return quota.bankedReset.kinds
+    .filter((offer) => offer.count > 0)
+    .map((offer) => ({
+      width: offer.windows.length,
+      lot: {
+        reset: offer.kind,
+        count: offer.count,
+        expiresAtMs: expiryMs(offer.expiresAt),
+        refills: window !== null && offer.windows.includes(window),
+        ...(window !== null && offer.givesBackTo === window && !offer.windows.includes(window) ? { givesBack: true } : {}),
+      } satisfies CreditLot,
+    }))
+    .sort((a, b) => a.width - b.width || (a.lot.expiresAtMs ?? Number.POSITIVE_INFINITY) - (b.lot.expiresAtMs ?? Number.POSITIVE_INFINITY))
+    .map((item) => item.lot);
 }
 
 /** The accounts' readings, by account, in time order, with the live limits' figure last. */
@@ -252,12 +288,17 @@ export function burnRate(spend: SpendHistory, accounts: ForecastAccount[], setti
 }
 
 export type Advice =
-  /** Claim a reset on an account when it runs out: the pool would otherwise run dry first. `gainMs` null: it then lasts. */
-  | { kind: 'claim'; key: string; name: string; atMs: number; gainMs: number | null }
+  /**
+   * Claim a reset on an account when it runs out: the pool would otherwise run dry first. `gainMs` null: it then
+   * lasts. `reset` is which Claude reset to use.
+   */
+  | { kind: 'claim'; key: string; name: string; atMs: number; gainMs: number | null; reset?: ClaudeResetKind }
   /** Even with every reset spent the pool runs dry: this pace would last. */
   | { kind: 'slow'; perHour: number }
   /** Credits that lapse before the forecast ever needs them. */
-  | { kind: 'expiring'; key: string; name: string; count: number; expiresAtMs: number }
+  | { kind: 'expiring'; key: string; name: string; count: number; expiresAtMs: number; reset?: ClaudeResetKind }
+  /** Fable resets on an account of a pool that runs dry: they hand some of this window back, but not a known amount. */
+  | { kind: 'givesBack'; key: string; name: string; count: number }
   /** Capacity that resets before it's spent, by `byMs`: room to spend more. */
   | { kind: 'unused'; percent: number; byMs: number }
   /** The pool lasts the whole horizon, with `credits` resets left over. */
@@ -278,32 +319,42 @@ export type Forecast = {
   horizonEndMs: number;
 };
 
-const claimed = (claims: { key: string }[], key: string) => claims.filter((claim) => claim.key === key).length;
+type PlannedClaim = { key: string; atMs: number; lot: CreditLot };
+
+/** The lot a claim at a time spends: the first that refills the window, has a reset left and hasn't lapsed. */
+const lotFor = (account: ForecastAccount, claims: PlannedClaim[], atMs: number) => account.lots.find((lot) =>
+  lot.refills
+  && lot.count - claims.filter((claim) => claim.lot === lot).length > 0
+  && (lot.expiresAtMs === null || lot.expiresAtMs > atMs));
 
 /**
  * Greedy plan for the credits: while the pool runs dry, spend the credit that buys the most time, on the account
  * that runs out before the pool does, at the moment it runs out (Claude and Codex only refill an account at a limit).
  */
 function planClaims(accounts: ForecastAccount[], run: (claims: { key: string; atMs: number }[]) => PoolRun) {
-  const claims: { key: string; atMs: number }[] = [];
-  const steps: { key: string; atMs: number; gainMs: number | null }[] = [];
+  const claims: PlannedClaim[] = [];
+  const steps: { key: string; atMs: number; gainMs: number | null; reset?: ClaudeResetKind }[] = [];
   let base = run(claims);
   while (base.dryAtMs !== null && steps.length < MOST_CLAIMS) {
     const dryAtMs = base.dryAtMs;
-    let best: { key: string; atMs: number; result: PoolRun; gain: number } | null = null;
+    let best: { key: string; atMs: number; lot: CreditLot; result: PoolRun; gain: number } | null = null;
     for (const account of accounts) {
       const emptyAtMs = base.emptyAtMs[account.key];
-      if (account.credits - claimed(claims, account.key) <= 0 || emptyAtMs === undefined || emptyAtMs > dryAtMs) continue;
-      if (account.creditsExpireAtMs !== null && account.creditsExpireAtMs <= emptyAtMs) continue;
+      if (emptyAtMs === undefined || emptyAtMs > dryAtMs) continue;
       // Claimed again after an earlier claim this run, it runs out later than first time.
       const atMs = Math.max(emptyAtMs, ...claims.filter((claim) => claim.key === account.key).map((claim) => claim.atMs + 1));
+      const lot = lotFor(account, claims, atMs);
+      if (!lot) continue;
       const result = run([...claims, { key: account.key, atMs }]);
       const gain = (result.dryAtMs ?? Number.POSITIVE_INFINITY) - dryAtMs;
-      if (gain > 0 && (!best || gain > best.gain)) best = { key: account.key, atMs, result, gain };
+      if (gain > 0 && (!best || gain > best.gain)) best = { key: account.key, atMs, lot, result, gain };
     }
     if (!best) break;
-    claims.push({ key: best.key, atMs: best.atMs });
-    steps.push({ key: best.key, atMs: best.atMs, gainMs: Number.isFinite(best.gain) ? best.gain : null });
+    claims.push({ key: best.key, atMs: best.atMs, lot: best.lot });
+    steps.push({
+      key: best.key, atMs: best.atMs, gainMs: Number.isFinite(best.gain) ? best.gain : null,
+      ...(best.lot.reset ? { reset: best.lot.reset } : {}),
+    });
     base = best.result;
   }
   return { claims, steps, final: base };
@@ -347,12 +398,23 @@ export function buildForecast(input: {
     }
     advice.push({ kind: 'slow', perHour: burn.perHour * low });
   }
-  accounts.forEach((account) => {
-    const expiresAtMs = account.creditsExpireAtMs;
-    if (expiresAtMs === null || expiresAtMs > horizonEndMs) return;
-    const unused = account.credits - plan.claims.filter((claim) => claim.key === account.key && claim.atMs < expiresAtMs).length;
-    if (unused > 0) advice.push({ kind: 'expiring', key: account.key, name: account.name, count: unused, expiresAtMs });
-  });
+  accounts.forEach((account) => account.lots.forEach((lot) => {
+    const expiresAtMs = lot.expiresAtMs;
+    if (!lot.refills || expiresAtMs === null || expiresAtMs > horizonEndMs) return;
+    const unused = lot.count - plan.claims.filter((claim) => claim.lot === lot).length;
+    if (unused > 0) {
+      advice.push({ kind: 'expiring', key: account.key, name: account.name, count: unused, expiresAtMs, ...(lot.reset ? { reset: lot.reset } : {}) });
+    }
+  }));
+  // A pool that still runs dry may get some of the window back from a Fable reset, which the plan can't count on.
+  const stillDryAtMs = withClaims.dryAtMs;
+  if (stillDryAtMs !== null) {
+    accounts.forEach((account) => {
+      const count = account.lots.reduce((total, lot) =>
+        (lot.givesBack && (lot.expiresAtMs === null || lot.expiresAtMs > stillDryAtMs) ? total + lot.count : total), 0);
+      if (count > 0) advice.push({ kind: 'givesBack', key: account.key, name: account.name, count });
+    });
+  }
   const handedBack = baseline.events.filter((event) => event.kind === 'reset' && event.before >= UNUSED_MIN_PERCENT
     && (baseline.dryAtMs === null || event.atMs < baseline.dryAtMs));
   const lastHandedBack = handedBack[handedBack.length - 1];

@@ -6,8 +6,8 @@ import {
 } from './quotaCache';
 import { readBoolean } from './managementApi';
 import {
-  claimClaudeBankedReset, consumeCodexResetCredit, idleQuota, providerForFile, quotaKey,
-  type AuthFile, type QuotaState,
+  claimClaudeBankedReset, consumeCodexResetCredit, idleQuota, providerForFile, quotaKey, usableClaudeReset,
+  type AuthFile, type ClaudeResetKind, type QuotaState,
 } from './quotaService';
 
 const pendingActions = new Set<string>();
@@ -27,11 +27,12 @@ export const canResetCodexQuota = (file: AuthFile, quota: QuotaState): boolean =
   && quota.resetCreditsApplicable !== 0
   && !resetUnconfirmed(quota);
 
-export const canResetClaudeQuota = (file: AuthFile, quota: QuotaState): boolean =>
+/** Whether a Claude banked reset can be used now: the kind given, or any. */
+export const canResetClaudeQuota = (file: AuthFile, quota: QuotaState, kind?: ClaudeResetKind): boolean =>
   providerForFile(file) === 'claude'
   && !readBoolean(file, 'disabled')
   && quota.status === 'success'
-  && Boolean(quota.bankedReset?.grantId)
+  && Boolean(usableClaudeReset(quota, kind))
   && !resetUnconfirmed(quota);
 
 export const canResetQuota = (file: AuthFile, quota: QuotaState): boolean =>
@@ -89,11 +90,16 @@ export function resetCodexQuotaWithConfirmation(file: AuthFile, confirmReset: ()
   return runConfirmedQuotaAction(file, 'reset', confirmReset, consumeCodexResetCredit);
 }
 
-/** Uses the Claude banked reset shown on the account, once confirmed. */
-export function resetClaudeQuotaWithConfirmation(file: AuthFile, confirmReset: () => Promise<boolean>): Promise<QuotaActionOutcome> {
+/** Uses a Claude banked reset shown on the account, once confirmed: the kind given, or the one that leads. */
+export function resetClaudeQuotaWithConfirmation(
+  file: AuthFile,
+  confirmReset: () => Promise<boolean>,
+  kind?: ClaudeResetKind,
+): Promise<QuotaActionOutcome> {
   const quota = getQuotaCacheSnapshot()[quotaKey(file)] ?? idleQuota();
-  const grantId = quota.bankedReset?.grantId;
-  if (!grantId || !canResetClaudeQuota(file, quota)) return Promise.resolve('canceled');
-  const expected = { grantId, earlyUse: quota.bankedReset?.earlyUse !== undefined };
+  const offer = usableClaudeReset(quota, kind);
+  const grantId = offer?.grantId;
+  if (!grantId || !canResetClaudeQuota(file, quota, kind)) return Promise.resolve('canceled');
+  const expected = { grantId, earlyUse: offer.earlyUse !== undefined };
   return runConfirmedQuotaAction(file, 'reset', confirmReset, (target) => claimClaudeBankedReset(target, expected));
 }

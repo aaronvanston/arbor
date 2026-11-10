@@ -41,12 +41,32 @@ const codexUsage = (primaryUsed: number, reviewUsed = 10) => ({
 
 describe('when a reset is worth a notification', () => {
   it('counts a Claude account at a limit with a banked reset it can use now', () => {
-    expect(resetReadyFor(claudeFile, claudeQuota())).toEqual({ provider: 'claude', limit: '5-hour window and 7-day window' });
+    expect(resetReadyFor(claudeFile, claudeQuota())).toEqual({ provider: 'claude', reset: 'full', limit: '5-hour window and 7-day window' });
+  });
+
+  it('names the kind of Claude reset made for the limit, and says when one only gives back', () => {
+    const fable = { id: 'fable_launch', clears: ['seven_day_overage_included'], gives_back_weekly: true, use_requires_limit: false, percent_used: {} };
+    const weekly = { id: 'weekly_thanks', clears: ['seven_day', 'seven_day_overage_included'], type: 'weekly', use_requires_limit: false, percent_used: {} };
+    const quota = (exhausted: string[], grants: Record<string, unknown>[]): QuotaState => ({
+      status: 'success', rows: [],
+      ...claudeBankedResetFor({ cedar_ember: { eligible: true, exhausted, at_limit: exhausted.length > 0, grants: grants.map(grant) } }, NOW),
+    });
+    // Out of Fable with both: the Fable reset, not the weekly one.
+    expect(resetReadyFor(claudeFile, quota(['seven_day_overage_included'], [weekly, fable])))
+      .toEqual({ provider: 'claude', reset: 'fable', limit: '7-day Fable window' });
+    expect(resetReadyFor(claudeFile, quota(['seven_day_overage_included'], [weekly, fable]), 'weekly'))
+      .toEqual({ provider: 'claude', reset: 'weekly', limit: '7-day window' });
+    // At the weekly limit a Fable reset alone frees up only what Fable used.
+    expect(resetReadyFor(claudeFile, quota(['seven_day'], [fable])))
+      .toEqual({ provider: 'claude', reset: 'fable', limit: '7-day Fable window', givesBackOnly: true });
+    // Neither refills the 5-hour limit, so both would be spent early there.
+    expect(resetReadyFor(claudeFile, quota(['five_hour'], [weekly, fable]))).toBeNull();
+    expect(resetReadyFor(claudeFile, quota(['seven_day'], [weekly, fable]), 'session')).toBeNull();
   });
 
   it('skips a Claude reset that would be spent before the account reaches a limit', () => {
     const early = claudeQuota({ exhausted: [] }, { use_requires_limit: false, percent_used: { five_hour: 60, seven_day: 40 } });
-    expect(early.bankedReset?.earlyUse).toEqual({ percentLeft: 40, limit: '5-hour window' });
+    expect(early.bankedReset?.kinds[0]?.earlyUse).toEqual({ percentLeft: 40, limit: '5-hour window' });
     expect(resetReadyFor(claudeFile, early)).toBeNull();
   });
 

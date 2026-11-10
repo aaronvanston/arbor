@@ -57,7 +57,9 @@
  * `?usagedata=new` for a new install's first launch, so the usage data note shows (`off` for it turned off, `env` for
  * DO_NOT_TRACK set, `source` for a build from source, which never sends);
  * `?status=incident` or `?status=maintenance` for the provider status pages;
- * `?limit=claude` or `?limit=codex` to put accounts at a limit a reset can refill;
+ * `?limit=claude` or `?limit=codex` to put accounts at a limit a reset can refill; `?limit=fable` for Claude accounts
+ * out of Fable's allowance, which a Fable reset refills, and `?limit=week` for them at the weekly limit, where the
+ * weekly reset leads, a Fable reset only gives back what Fable used and claude-2's has nothing to give back;
  * `?quota=fail-after-first` to have each account's first limit check work and every later one fail to reach the provider,
  * or `?quota=error` to have one Claude and one Codex account fail to read their limits;
  * `?plan=free` for one Claude and one Codex account whose billing was paused, so their providers have them on the free

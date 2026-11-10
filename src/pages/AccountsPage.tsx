@@ -9,6 +9,7 @@ import { ProviderStatusBanner } from '../components/ProviderStatusBanner';
 import { canResetQuota, resetClaudeQuotaWithConfirmation, resetCodexQuotaWithConfirmation, resetUnconfirmed } from '../services/quotaActions';
 import { formatQuotaReset, useQuotaClock } from '../services/quotaTime';
 import { codexResetEarlyUse, resetReadyFor } from '../services/resetReadiness';
+import { resetKindCount, resetKindName } from '../services/resetKinds';
 import { plainError } from '../services/plainError';
 import { reorderAnnouncements } from '../services/reorderAnnouncements';
 import { formatRelative, formatWhen } from '../lib/format';
@@ -19,7 +20,9 @@ import {
   onFreePlan,
   providerForFile,
   quotaKey,
+  usableClaudeReset,
   type AuthFile,
+  type ClaudeResetKind,
   type QuotaProvider,
   type QuotaRow,
   type QuotaState,
@@ -219,31 +222,37 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
     }
   }, [askConfirmation, setError, t]);
 
-  const resetClaudeQuota = useCallback(async (file: AuthFile, quota: QuotaState) => {
+  // Uses one kind of banked reset, or with none given the one that leads: the reset made for the limit the account is at.
+  const resetClaudeQuota = useCallback(async (file: AuthFile, quota: QuotaState, kind?: ClaudeResetKind) => {
     setError('');
-    const reset = quota.bankedReset;
-    const early = reset?.earlyUse;
+    const offer = usableClaudeReset(quota, kind);
+    if (!offer) return;
+    const early = offer.earlyUse;
+    const reset = resetKindName(t, offer.kind);
     try {
       await resetClaudeQuotaWithConfirmation(file, () => askConfirmation({
-        title: t('quota.reset'),
-        message: reset?.refills
-          ? t('quota.bankedReset.confirm.messageRefills', { limits: reset.refills, name: fileName(file) })
-          : t('quota.bankedReset.confirm.message', { name: fileName(file) }),
+        title: t('quota.bankedReset.useKind', { reset }),
+        message: offer.refills
+          ? t('quota.bankedReset.confirm.messageRefills', { reset, limits: offer.refills, name: fileName(file) })
+          : t('quota.bankedReset.confirm.message', { reset, name: fileName(file) }),
         confirmText: t('quota.confirm.button'),
         details: [
-          { label: t('quota.bankedResets'), value: String(quota.resetCredits ?? '—') },
-          { label: t('quota.useBy'), value: formatQuotaTimestamp(quota.resetCreditsEarliestExpiry) },
-          ...(reset?.weeklyResetsAt
-            ? [{ label: t('quota.bankedReset.confirm.weekly'), value: formatQuotaTimestamp(reset.weeklyResetsAt) }]
+          { label: t('quota.bankedReset.confirm.left'), value: resetKindCount(t, offer.kind, offer.count) },
+          { label: t('quota.useBy'), value: formatQuotaTimestamp(offer.useBy ?? offer.expiresAt) },
+          ...(quota.bankedReset?.weeklyResetsAt
+            ? [{ label: t('quota.bankedReset.confirm.weekly'), value: formatQuotaTimestamp(quota.bankedReset.weeklyResetsAt) }]
             : []),
         ],
         warning: [
+          // A Fable reset reads like a weekly one, so what it leaves alone is said before it's spent.
+          offer.givesBackOnly ? t('quota.bankedReset.confirm.givesBackOnly')
+            : offer.givesBackTo ? t('quota.bankedReset.givesBack', { limit: offer.givesBackTo }) : null,
           !early ? null : early.limit && early.percentLeft !== undefined
             ? t('quota.bankedReset.confirm.early', { limit: early.limit, percent: early.percentLeft })
             : t('quota.bankedReset.confirm.earlyNoNumber'),
-          t('quota.bankedReset.confirm.warning'),
+          t('quota.bankedReset.confirm.warning', { reset }),
         ].filter(Boolean).join(' '),
-      }));
+      }), offer.kind);
     } catch (requestError) {
       setError(plainError(requestError, t));
     }
@@ -516,11 +525,14 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                     provider={provider}
                     providerName={providerMeta[provider].label}
                     headline={headline}
-                    resettable={new Set(accounts.filter((account) => resetReadyFor(account.file, account.quota)).map((account) => account.key))}
-                    onReset={provider === 'codex' || provider === 'claude' ? (key) => {
+                    resettable={(key, reset) => {
+                      const account = accounts.find((item) => item.key === key);
+                      return account !== undefined && resetReadyFor(account.file, account.quota, reset) !== null;
+                    }}
+                    onReset={provider === 'codex' || provider === 'claude' ? (key, reset) => {
                       const account = accounts.find((item) => item.key === key);
                       if (!account) return;
-                      void (provider === 'codex' ? resetCodexQuota(account.file, account.quota) : resetClaudeQuota(account.file, account.quota));
+                      void (provider === 'codex' ? resetCodexQuota(account.file, account.quota) : resetClaudeQuota(account.file, account.quota, reset));
                     } : undefined}
                     onOpenSettings={onNavigate ? () => {
                       requestFocus('setting', 'appearance.forecast-model');
@@ -564,7 +576,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                         })}
                         onReset={provider === 'codex'
                           ? () => void resetCodexQuota(account.file, account.quota)
-                          : provider === 'claude' ? () => void resetClaudeQuota(account.file, account.quota) : undefined}
+                          : provider === 'claude' ? (kind) => void resetClaudeQuota(account.file, account.quota, kind) : undefined}
                       />
                     ))}
                   </SortableContext>
@@ -987,14 +999,15 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
 
 /**
  * An account's banked resets (Claude) or manual resets (Codex) as a counter beside its name. Hovering or focusing it
- * opens the details, with Reset Quota; the counter takes the accent while a reset can be used now.
+ * opens the details, with Reset Quota; the counter takes the accent while a reset can be used now. Claude's come in
+ * kinds that refill different limits, so each kind has its own line and its own button.
  */
 function ResetCreditsChip({ quota, claude, blocked, onReset, note }: {
   quota: QuotaState;
   claude: boolean;
   /** Why a reset can't be used now, if it can't. */
   blocked?: string;
-  onReset?: () => void;
+  onReset?: (kind?: ClaudeResetKind) => void;
   /** Shown under the details while there are resets to use, for an account that can't use them from here. */
   note?: string;
 }) {
@@ -1008,11 +1021,16 @@ function ResetCreditsChip({ quota, claude, blocked, onReset, note }: {
       ? count === 1 ? 'accounts.resets.banked.one' : 'accounts.resets.banked.other'
       : count === 1 ? 'accounts.resets.manual.one' : 'accounts.resets.manual.other', { count });
   const usable = Boolean(onReset) && (count ?? 0) > 0 && !blocked;
+  const kinds = quota.bankedReset?.kinds ?? [];
   const facts: Array<[string, string]> = [];
-  if (quota.resetCreditsEarliestExpiry) facts.push([t(claude ? 'quota.useBy' : 'quota.earliestExpiry'), formatQuotaTimestamp(quota.resetCreditsEarliestExpiry)]);
+  if (!kinds.length && quota.resetCreditsEarliestExpiry) facts.push([t(claude ? 'quota.useBy' : 'quota.earliestExpiry'), formatQuotaTimestamp(quota.resetCreditsEarliestExpiry)]);
   if (quota.resetCreditsApplicable !== undefined) facts.push([t('accounts.resets.applicable'), String(quota.resetCreditsApplicable)]);
-  if (quota.bankedReset?.refills) facts.push([t('accounts.resets.refills'), quota.bankedReset.refills]);
   if (quota.subscriptionActiveUntil) facts.push([t('accounts.resets.subscription'), formatQuotaTimestamp(quota.subscriptionActiveUntil)]);
+  // A reason every kind shares is said once under the list, with whatever else stands in the way of them all.
+  const shared = kinds.length > 1 && kinds.every((offer) => offer.blockedReason === kinds[0]?.blockedReason) ? kinds[0]?.blockedReason : undefined;
+  const kindReason = (offer: (typeof kinds)[number]) => (shared ? undefined : offer.blockedReason);
+  const overall = [...new Set([shared, blocked, quota.bankedReset?.blockedReason])]
+    .filter((reason): reason is string => Boolean(reason) && !kinds.some((offer) => kindReason(offer) === reason));
   return (
     <Popover>
       <PopoverTrigger
@@ -1029,8 +1047,44 @@ function ResetCreditsChip({ quota, claude, blocked, onReset, note }: {
         {count === undefined ? <TriangleAlert /> : <RotateCcw />}
         {count ?? '?'}
       </PopoverTrigger>
-      <PopoverPopup width="sm" padding="compact" align="start">
+      {/* Each kind says what it refills, which takes more room than a count and a date. */}
+      <PopoverPopup width={kinds.length ? 'md' : 'sm'} padding="compact" align="start">
         <PopoverTitle className="text-sm font-medium">{title}</PopoverTitle>
+        {kinds.length ? (
+          <ul className="mt-2 flex flex-col gap-2.5">
+            {kinds.map((offer) => {
+              const ready = usable && offer.grantId !== undefined;
+              const reason = kindReason(offer);
+              return (
+                <li key={offer.kind} className="flex items-start gap-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground">{resetKindCount(t, offer.kind, offer.count)}</p>
+                    {offer.refills ? <p className="text-muted-foreground">{t('quota.bankedReset.refills', { limits: offer.refills })}</p> : null}
+                    {offer.givesBackTo ? <p className="text-muted-foreground">{t('quota.bankedReset.givesBack', { limit: offer.givesBackTo })}</p> : null}
+                    {offer.expiresAt ? <p className="text-muted-foreground tabular-nums">{t('quota.useBy')} {formatQuotaTimestamp(offer.expiresAt)}</p> : null}
+                    {reason ? <p className="text-muted-foreground">{reason}</p> : null}
+                  </div>
+                  {onReset && !quota.bankedReset?.blockedHere ? (
+                    <PopoverClose
+                      render={(
+                        <Button
+                          variant={ready ? 'default' : 'outline'}
+                          size="xs"
+                          disabled={!ready}
+                          aria-label={t('quota.bankedReset.useKind', { reset: resetKindName(t, offer.kind) })}
+                          onClick={() => onReset(offer.kind)}
+                        />
+                      )}
+                    >
+                      <RotateCcw />
+                      {t('quota.bankedReset.use')}
+                    </PopoverClose>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         {facts.length ? (
           <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
             {facts.map(([label, value]) => (
@@ -1041,13 +1095,13 @@ function ResetCreditsChip({ quota, claude, blocked, onReset, note }: {
             ))}
           </dl>
         ) : null}
-        {quota.bankedReset?.blockedReason ? <p className="mt-2 text-xs text-muted-foreground">{quota.bankedReset.blockedReason}</p> : null}
+        {kinds.length ? overall.map((reason) => <p key={reason} className="mt-2 text-xs text-muted-foreground">{reason}</p>) : null}
         {note && (count ?? 0) > 0 ? <p className="mt-2 text-xs text-muted-foreground">{note}</p> : null}
         {error ? <p className="mt-2 text-xs text-warning-foreground">{t(claude ? 'quota.bankedResetsWarning' : 'quota.resetCreditsWarning', { error })}</p> : null}
-        {onReset && (count ?? 0) > 0 ? (
+        {onReset && (count ?? 0) > 0 && !kinds.length ? (
           <div className="mt-3 flex items-center justify-end gap-2">
-            {blocked && blocked !== quota.bankedReset?.blockedReason ? <span className="min-w-0 flex-1 text-xs text-muted-foreground">{blocked}</span> : null}
-            <PopoverClose render={<Button variant={usable ? 'default' : 'outline'} size="xs" disabled={!usable} onClick={onReset} />}>
+            {blocked ? <span className="min-w-0 flex-1 text-xs text-muted-foreground">{blocked}</span> : null}
+            <PopoverClose render={<Button variant={usable ? 'default' : 'outline'} size="xs" disabled={!usable} onClick={() => onReset()} />}>
               <RotateCcw />
               {t('quota.reset')}
             </PopoverClose>
@@ -1075,7 +1129,7 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
   reordering: boolean;
   onRefresh: () => void;
   onEdit: () => void;
-  onReset?: () => void;
+  onReset?: (kind?: ClaudeResetKind) => void;
   onExplain?: (row: QuotaRow, scope: LimitScope) => void;
 }) {
   const { t } = useI18n();
@@ -1094,6 +1148,8 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
   const checkedAt = readAtMs ? formatWhen(readAtMs, { now }) : '';
   const claude = providerForFile(account.file) === 'claude';
   const resetOffered = Boolean(onReset) && (quota.resetCredits ?? 0) > 0;
+  // With more than one kind of Claude reset to use, the menu names each rather than picking for the person.
+  const usableKinds = (quota.bankedReset?.kinds ?? []).filter((offer) => offer.grantId !== undefined);
   // The first thing standing in the way of a reset, shown on the disabled button.
   const resetBlocked = canResetQuota(account.file, quota)
     ? undefined
@@ -1173,8 +1229,13 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
               <MoreHorizontal />
             </MenuTrigger>
             <MenuPopup className="w-64">
-              {resetOffered ? (
-                <MenuItem onClick={onReset} disabledReason={resetBlocked}>
+              {resetOffered && usableKinds.length > 1 && !resetBlocked ? usableKinds.map((offer) => (
+                <MenuItem key={offer.kind} onClick={() => onReset?.(offer.kind)}>
+                  <RotateCcw />
+                  {t('quota.bankedReset.useKind', { reset: resetKindName(t, offer.kind) })}
+                </MenuItem>
+              )) : resetOffered ? (
+                <MenuItem onClick={() => onReset?.()} disabledReason={resetBlocked}>
                   <RotateCcw />
                   {t('quota.reset')}
                 </MenuItem>

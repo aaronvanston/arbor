@@ -378,15 +378,30 @@ let installTask: CoreInstallTask = { running: false, cancelable: false, phase: '
 let quotaCalls = 0;
 // Usage endpoints each account has been asked once, for `?quota=fail-after-first`.
 const quotaChecked = new Set<string>();
-// Claude banked resets by auth index: one that can be used any time, and one
-// saved for when the account reaches a limit.
-const claudeBankedResets: Record<string, { left: number; anytime: boolean }> = {
-  'claude-1': { left: 2, anytime: true },
-  'claude-2': { left: 1, anytime: false },
-  'cc-p2': { left: 1, anytime: false },
-  'cc-p3': { left: 1, anytime: false },
-  'cc-w1': { left: 1, anytime: false },
-  'cc-x': { left: 1, anytime: false },
+// Claude banked resets by auth index, a grant for each kind held. claude-1 has Fable resets (they refill Fable's
+// allowance and hand back what Fable used on the week) and a weekly one, usable any time; the rest have one reset for
+// everything, saved for when the account reaches a limit. claude-2's Fable reset has nothing to give back.
+type MockClaudeGrant = {
+  id: string; label: string; kind: 'fable' | 'weekly' | 'full'; left: number; anytime: boolean; endsInDays: number;
+  /** Fable hasn't been used this week, so at the weekly limit the reset has nothing to hand back. */
+  idleFable?: true;
+};
+const fullReset = (): MockClaudeGrant => ({ id: 'launch_week', label: 'Launch week', kind: 'full', left: 1, anytime: false, endsInDays: 12 });
+const claudeBankedResets: Record<string, MockClaudeGrant[]> = {
+  'claude-1': [
+    { id: 'fable_launch', label: 'Fable launch', kind: 'fable', left: 3, anytime: true, endsInDays: 118 },
+    { id: 'weekly_thanks', label: 'Thank you', kind: 'weekly', left: 1, anytime: true, endsInDays: 30 },
+  ],
+  'claude-2': [fullReset(), { id: 'fable_launch', label: 'Fable launch', kind: 'fable', left: 2, anytime: true, endsInDays: 118, idleFable: true }],
+  'cc-p2': [fullReset()],
+  'cc-p3': [fullReset()],
+  'cc-w1': [fullReset()],
+  'cc-x': [fullReset()],
+};
+const CLAUDE_GRANT_CLEARS: Record<MockClaudeGrant['kind'], string[]> = {
+  fable: ['seven_day_overage_included'],
+  weekly: ['seven_day', 'seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet'],
+  full: ['five_hour', 'seven_day'],
 };
 const codexResetScenario = params.get('codexreset');
 // Credits for use past the plan's limits: Codex credits (one account unlimited) and Claude's prepaid usage
@@ -544,32 +559,59 @@ function apiCall(body: Json): Json {
     });
   }
   const bank = claudeBankedResets[authIndex];
-  // With `?limit=claude`, the account whose reset waits for a limit has reached its 5-hour one.
-  const atLimit = limitScenario === 'claude' && bank !== undefined && !bank.anytime;
+  // With `?limit=claude`, the accounts whose reset waits for a limit have reached their 5-hour one; with
+  // `?limit=week`, every account with resets is at its weekly limit; with `?limit=fable`, out of Fable's allowance.
+  const exhausted = !bank ? []
+    : limitScenario === 'claude' && bank.some((grant) => !grant.anytime) ? ['five_hour']
+      : limitScenario === 'week' ? ['seven_day']
+        : limitScenario === 'fable' ? ['seven_day_overage_included'] : [];
+  const atLimit = exhausted.length > 0;
+  const fableUsed = exhausted.includes('seven_day_overage_included') ? 100 : (claudeUsage.limits[0]?.percent ?? 0);
+  const limitedUsage = {
+    ...claudeUsage,
+    ...(exhausted.includes('five_hour') ? { five_hour: { utilization: 100, resets_at: iso(2 * 3_600_000) } } : {}),
+    ...(exhausted.includes('seven_day') ? { seven_day: { utilization: 100, resets_at: iso(weeklyResetMs) } } : {}),
+    ...(exhausted.includes('seven_day_overage_included')
+      ? { limits: claudeUsage.limits.map((limit, index) => (index === 0 ? { ...limit, percent: 100 } : limit)) }
+      : {}),
+  };
+  const percentUsed: Record<string, number> = {
+    five_hour: exhausted.includes('five_hour') ? 100 : 22,
+    seven_day: exhausted.includes('seven_day') ? 100 : 58,
+    seven_day_overage_included: fableUsed,
+  };
+  // A reset works at a limit it refills; a Fable one also at the weekly limit, when Fable used some of it.
+  const lifts = (grant: MockClaudeGrant) => exhausted.some((limit) =>
+    CLAUDE_GRANT_CLEARS[grant.kind].includes(limit) || (limit === 'seven_day' && grant.kind === 'fable' && !grant.idleFable));
+  const usable = (grant: MockClaudeGrant) => grant.left > 0 && (atLimit ? lifts(grant) : grant.anytime);
   if (url.includes('api.anthropic.com/api/oauth/usage') && url.includes('cedar_ember=1')) {
     return ok({
-      ...claudeUsage,
-      ...(atLimit ? { five_hour: { utilization: 100, resets_at: iso(2 * 3_600_000) } } : {}),
+      ...limitedUsage,
       cedar_ember: bank ? {
         eligible: true,
         at_limit: atLimit,
-        exhausted: atLimit ? ['five_hour'] : [],
-        next_grant_id: 'launch_week',
+        exhausted,
+        next_grant_id: bank.find(usable)?.id ?? bank[0]?.id ?? null,
         weekly_resets_at: iso(4 * 86_400_000),
         cooldown_until: null,
-        grants: [{
-          id: 'launch_week', label: 'Launch week', resets_total: 3, resets_left: bank.left,
-          starts_at: iso(-3 * 86_400_000), ends_at: iso(12 * 86_400_000),
-          clears: ['five_hour', 'seven_day'], paused: false,
-          usable_now: (bank.anytime || atLimit) && bank.left > 0, use_requires_limit: !bank.anytime,
-          percent_used: { five_hour: atLimit ? 100 : 22, seven_day: 58 }, blocking: [],
-        }],
+        grants: bank.map((grant) => {
+          const clears = CLAUDE_GRANT_CLEARS[grant.kind];
+          return {
+            id: grant.id, label: grant.label, resets_total: 3, resets_left: grant.left,
+            starts_at: iso(-3 * 86_400_000), ends_at: iso(grant.endsInDays * 86_400_000),
+            clears, paused: false, usable_now: usable(grant), use_requires_limit: !grant.anytime,
+            percent_used: Object.fromEntries(clears.flatMap((limit) => (percentUsed[limit] === undefined ? [] : [[limit, percentUsed[limit]]]))),
+            blocking: [],
+            // Only the newer grants say what they are; the first ones are told apart by what they refill.
+            ...(grant.kind === 'weekly' ? { type: 'weekly' } : {}),
+            ...(grant.kind === 'fable' ? { gives_back_weekly: true } : {}),
+            ...(grant.kind === 'fable' && grant.idleFable && exhausted.includes('seven_day') ? { unavailable_reason: 'blocked_seven_day' } : {}),
+          };
+        }),
       } : undefined,
     });
   }
-  if (url.includes('api.anthropic.com/api/oauth/usage')) {
-    return ok(atLimit ? { ...claudeUsage, five_hour: { utilization: 100, resets_at: iso(2 * 3_600_000) } } : claudeUsage);
-  }
+  if (url.includes('api.anthropic.com/api/oauth/usage')) return ok(limitedUsage);
   if (url.includes('api.anthropic.com/api/oauth/profile')) {
     if (freePlanAccounts.has(authIndex)) {
       return ok({ account: { has_claude_max: false, has_claude_pro: false }, organization: { uuid: '0b6d4f8a-7c11-4c3a-9e21-5f0c1a2e8d7b', organization_type: 'claude_free', rate_limit_tier: 'default_claude_ai' } });
@@ -582,10 +624,11 @@ function apiCall(body: Json): Json {
   if (/api\.anthropic\.com\/api\/organizations\/[^/]+\/reset_rate_limits$/.test(url)) {
     const claim = JSON.parse(String(body.data ?? '{}')) as Json;
     mockLog('claude_reset_claim', { authIndex: body.authIndex, url, ...claim });
-    if (!bank || claim.grant_id !== 'launch_week' || bank.left === 0) return ok({ result: 'ineligible', reason: 'unknown_grant' });
-    if (!bank.anytime && !atLimit) return ok({ result: 'not_limited', reason: 'not_limited' });
-    bank.left -= 1;
-    return ok({ result: 'reset', resets_left: bank.left, cleared: ['five_hour', 'seven_day'], weekly_resets_at: iso(4 * 86_400_000) });
+    const grant = bank?.find((item) => item.id === claim.grant_id);
+    if (!grant || grant.left === 0) return ok({ result: 'ineligible', reason: 'unknown_grant' });
+    if (!usable(grant)) return ok({ result: 'not_limited', reason: 'not_limited' });
+    grant.left -= 1;
+    return ok({ result: 'reset', resets_left: grant.left, cleared: CLAUDE_GRANT_CLEARS[grant.kind], weekly_resets_at: iso(4 * 86_400_000) });
   }
   if (url.includes('api.x.ai/v1/me')) return ok({ user_id: 'u_1', team_id: 't_1' });
   if (url.includes('api.x.ai/v1/chat/completions')) return ok({ id: 'chatcmpl', choices: [] });

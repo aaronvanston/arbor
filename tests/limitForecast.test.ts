@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { LimitTrendAccount } from '../src/native/types';
 import { buildHeadline } from '../src/services/accountLimits';
 import {
-  buildForecast, burnRate, forecastAccounts, forecastAlert, nextForecastAlerts, plannableCredits, poolHistory, spendByHour,
+  buildForecast, burnRate, creditLots, forecastAccounts, forecastAlert, nextForecastAlerts, poolHistory, spendByHour,
   type ForecastAccount, type ForecastSettings,
 } from '../src/services/limitForecast';
 import { simulatePool } from '../src/services/poolSimulation';
@@ -29,7 +29,8 @@ const trend = (readings: Reading[]): LimitTrendAccount[] => {
 };
 
 const account = (key: string, left: number, resetInHours: number | null, credits = 0, creditsExpireAtMs: number | null = null): ForecastAccount => ({
-  key, name: key, left, resetAtMs: resetInHours === null ? null : NOW + resetInHours * HOUR, windowMs: 7 * DAY, credits, creditsExpireAtMs,
+  key, name: key, left, resetAtMs: resetInHours === null ? null : NOW + resetInHours * HOUR, windowMs: 7 * DAY, credits,
+  lots: credits ? [{ count: credits, expiresAtMs: creditsExpireAtMs, refills: true }] : [],
 });
 
 const settings = (overrides: Partial<ForecastSettings> = {}): ForecastSettings =>
@@ -182,10 +183,71 @@ describe('forecast accounts', () => {
     expect(accounts.map((item) => [item.key, item.left, item.credits])).toEqual([['key-a', 40, 1], ['key-b', 60, 0]]);
   });
 
+  const offer = (kind: 'session' | 'weekly' | 'fable' | 'full', count: number, windows: string[], extra: Record<string, unknown> = {}) =>
+    ({ kind, count, windows, ...extra });
+  const banked = (kinds: ReturnType<typeof offer>[], extra: Record<string, unknown> = {}): QuotaState => ({
+    status: 'success', rows: [], resetCredits: kinds.reduce((total, item) => total + item.count, 0), bankedReset: { kinds, ...extra },
+  });
+
   test("counts Claude's banked resets unless Claude won't take them from here", () => {
-    expect(plannableCredits({ status: 'success', rows: [], resetCredits: 1, bankedReset: {} })).toBe(1);
-    expect(plannableCredits({ status: 'success', rows: [], resetCredits: 1, bankedReset: { blockedReason: 'cooldown' } })).toBe(1);
-    expect(plannableCredits({ status: 'success', rows: [], resetCredits: 1, bankedReset: { blockedReason: 'client', blockedHere: true } })).toBe(0);
-    expect(plannableCredits({ status: 'success', rows: [], resetCredits: 1 })).toBe(0);
+    const full = [offer('full', 1, ['5-hour window', '7-day window'])];
+    expect(creditLots(banked(full), '7-day window')).toEqual([{ reset: 'full', count: 1, expiresAtMs: null, refills: true }]);
+    // One in a cooldown, or waiting for a limit, can still be planned.
+    expect(creditLots(banked(full, { blockedReason: 'cooldown' }), '7-day window')).toMatchObject([{ refills: true }]);
+    expect(creditLots(banked(full, { blockedReason: 'client', blockedHere: true }), '7-day window')).toEqual([]);
+    expect(creditLots({ status: 'success', rows: [], resetCredits: 1 }, '7-day window')).toEqual([]);
+  });
+
+  // An account holding what claude.ai lists as "Fable reset · 3" and "Weekly reset".
+  const mixed = banked([
+    offer('weekly', 1, ['7-day window', '7-day Fable window'], { expiresAt: new Date(NOW + 2 * DAY).toISOString() }),
+    offer('fable', 3, ['7-day Fable window'], { givesBackTo: '7-day window', expiresAt: new Date(NOW + 90 * DAY).toISOString() }),
+    offer('full', 1, ['5-hour window', '7-day window', '7-day Fable window']),
+  ]);
+
+  test('plans only the resets that refill the window forecast, the narrowest first', () => {
+    const lots = (window: string) => creditLots(mixed, window).map((lot) => [lot.reset, lot.count, lot.refills, lot.givesBack ?? false]);
+    // Fable's allowance: the Fable reset, keeping the wider ones for limits only they lift.
+    expect(lots('7-day Fable window')).toEqual([['fable', 3, true, false], ['weekly', 1, true, false], ['full', 1, true, false]]);
+    // The week: a Fable reset doesn't refill it, it only hands some back.
+    expect(lots('7-day window')).toEqual([['fable', 3, false, true], ['weekly', 1, true, false], ['full', 1, true, false]]);
+    // The 5-hour limit: only the reset for everything.
+    expect(lots('5-hour window')).toEqual([['fable', 3, false, false], ['weekly', 1, false, false], ['full', 1, true, false]]);
+    const row = (label: string) => ({ ...mixed, rows: [{ label, remainingPercent: 40, resetAtMs: NOW + DAY }] });
+    const credits = (label: string) => forecastAccounts(buildHeadline([{ name: 'a', quota: row(label) }], label), (item) => item.name)[0]?.credits;
+    expect([credits('7-day Fable window'), credits('7-day window'), credits('5-hour window')]).toEqual([5, 2, 1]);
+  });
+
+  const pool = (window: string, rate: number, horizonDays = 3, others = [account('b', 20, 30)]) => {
+    const a: ForecastAccount = { ...account('a', 20, 100), lots: creditLots(mixed, window), credits: 0 };
+    a.credits = a.lots.reduce((total, lot) => (lot.refills ? total + lot.count : total), 0);
+    return buildForecast({ accounts: [a, ...others], readings: [], settings: settings({ ratePerHour: rate }), horizonDays, historyMs: DAY, nowMs: NOW });
+  };
+
+  test('names the kind of reset to use, and never a Fable reset for the week', () => {
+    // Out of Fable at 20h: a Fable reset does it.
+    expect(pool('7-day Fable window', 2).advice.find((item) => item.kind === 'claim')).toMatchObject({ key: 'a', atMs: NOW + 20 * HOUR, reset: 'fable' });
+    // Out of the week at 20h: the weekly reset, which is also the one about to lapse.
+    const week = pool('7-day window', 2);
+    expect(week.advice.filter((item) => item.kind === 'claim').map((item) => item.kind === 'claim' && item.reset)).toEqual(['weekly']);
+    expect(week.advice.some((item) => item.kind === 'expiring')).toBe(false);
+    expect(week.advice.some((item) => item.kind === 'givesBack')).toBe(false);
+  });
+
+  test('skips a reset that lapses before its account runs out, and says so', () => {
+    // Alone at this pace, a runs out at 50h, after the weekly reset lapsed at 48h: the full one is planned and the
+    // weekly one flagged.
+    const slow = pool('7-day window', 0.4, 4, []);
+    expect(slow.advice.filter((item) => item.kind === 'claim').map((item) => item.kind === 'claim' && item.reset)).toEqual(['full']);
+    expect(slow.advice.find((item) => item.kind === 'expiring')).toMatchObject({ key: 'a', count: 1, reset: 'weekly', expiresAtMs: NOW + 2 * DAY });
+  });
+
+  test('mentions Fable resets when the week still runs dry, without counting them', () => {
+    // Fast enough that the weekly and full resets aren't enough.
+    const fast = pool('7-day window', 12);
+    expect(fast.projection.dryAtMs).not.toBeNull();
+    expect(fast.advice.filter((item) => item.kind === 'claim').map((item) => item.kind === 'claim' && item.reset)).toEqual(['weekly', 'full']);
+    expect(fast.advice.find((item) => item.kind === 'givesBack')).toEqual({ kind: 'givesBack', key: 'a', name: 'a', count: 3 });
+    expect(pool('5-hour window', 12).advice.some((item) => item.kind === 'givesBack')).toBe(false);
   });
 });

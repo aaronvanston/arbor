@@ -1,18 +1,30 @@
 import { canResetClaudeQuota, canResetCodexQuota, resetUnconfirmed } from './quotaActions';
-import type { AuthFile, QuotaState } from './quotaService';
+import type { AuthFile, ClaudeResetKind, QuotaState } from './quotaService';
 
-/** An account at a limit that a reset can refill now, with what ran out when it is known. */
-export type ResetReady = { provider: 'claude'; limit?: string } | { provider: 'codex'; limit: string };
+/**
+ * An account at a limit that a reset can refill now, with what ran out when it is known. A Claude one names the kind
+ * of reset, and `givesBackOnly` when it frees up only what Fable used on the limit the account is at.
+ */
+export type ResetReady =
+  | { provider: 'claude'; reset: ClaudeResetKind; limit?: string; givesBackOnly?: true }
+  | { provider: 'codex'; limit: string };
 
 /**
  * Whether an account deserves a "reset ready" notification: it is at a limit
  * and a reset can refill it now. A Claude reset that would be spent early
  * doesn't count, and neither do Codex resets banked while the main limits still
- * have headroom.
+ * have headroom. With `kind`, only that kind of Claude reset counts.
  */
-export function resetReadyFor(file: AuthFile, quota: QuotaState): ResetReady | null {
+export function resetReadyFor(file: AuthFile, quota: QuotaState, kind?: ClaudeResetKind): ResetReady | null {
   if (canResetClaudeQuota(file, quota)) {
-    return quota.bankedReset?.earlyUse === undefined ? { provider: 'claude', limit: quota.bankedReset?.refills } : null;
+    // The kinds come best first, so this is the reset made for the limit the account is at.
+    const offer = quota.bankedReset?.kinds.find((item) =>
+      item.grantId !== undefined && item.earlyUse === undefined && (kind === undefined || item.kind === kind));
+    if (!offer) return null;
+    return {
+      provider: 'claude', reset: offer.kind, limit: offer.refills,
+      ...(offer.givesBackOnly ? { givesBackOnly: true as const } : {}),
+    };
   }
   if (canResetCodexQuota(file, quota)) {
     const spent = codexMainLimits(quota).find((row) => row.remainingPercent <= 0);

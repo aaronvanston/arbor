@@ -10,7 +10,9 @@ import {
 import {
   forecastHistoryMs, forecastSettingsFrom, setForecastFolded, setForecastView, useForecastView, useLimitTrend,
 } from '../services/limitForecastView';
+import type { ClaudeResetKind } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
+import { resetKindCount, resetKindName } from '../services/resetKinds';
 import { SettingsBlock } from './layout/settings';
 import { formatPoolPercent, LimitForecastChart, type ForecastTab } from './LimitForecastChart';
 import { Button } from './ui/button';
@@ -29,9 +31,9 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
   provider: string;
   providerName: string;
   headline: Headline;
-  /** Accounts that are at a limit with a reset they can use now. */
-  resettable: ReadonlySet<string>;
-  onReset?: (key: string) => void;
+  /** Whether an account is at a limit with a reset it can use now: the kind of Claude reset given, or any. */
+  resettable: (key: string, reset?: ClaudeResetKind) => boolean;
+  onReset?: (key: string, reset?: ClaudeResetKind) => void;
   onOpenSettings?: () => void;
 }) {
   const { t } = useI18n();
@@ -176,24 +178,41 @@ function BasisNote({ forecast, failed }: { forecast: Forecast; failed: boolean }
 function AdviceList({ advice, when, resettable, onReset }: {
   advice: Advice[];
   when: (ms: number) => string;
-  resettable: ReadonlySet<string>;
-  onReset?: (key: string) => void;
+  resettable: (key: string, reset?: ClaudeResetKind) => boolean;
+  onReset?: (key: string, reset?: ClaudeResetKind) => void;
 }) {
   const { t } = useI18n();
   if (!advice.length) return null;
   const claimed = advice.some((item) => item.kind === 'claim');
   const line = (item: Advice): ReactNode => {
     switch (item.kind) {
-      case 'claim':
+      case 'claim': {
+        // Claude's resets refill different limits, so the advice names the one that refills this window.
+        const reset = item.reset ? resetKindName(t, item.reset) : null;
+        if (reset) {
+          return item.gainMs === null
+            ? t('forecast.advice.claimKindLasts', { reset, name: item.name, time: when(item.atMs) })
+            : t('forecast.advice.claimKind', { reset, name: item.name, time: when(item.atMs), gain: formatDuration(item.gainMs) });
+        }
         return item.gainMs === null
           ? t('forecast.advice.claimLasts', { name: item.name, time: when(item.atMs) })
           : t('forecast.advice.claim', { name: item.name, time: when(item.atMs), gain: formatDuration(item.gainMs) });
+      }
       case 'slow':
         return t(claimed ? 'forecast.advice.slowAfterResets' : 'forecast.advice.slow', { rate: rate(item.perHour) });
       case 'expiring':
+        if (item.reset) {
+          return item.count === 1
+            ? t('forecast.advice.expiringKind.one', { reset: resetKindName(t, item.reset), name: item.name, time: when(item.expiresAtMs) })
+            : t('forecast.advice.expiringKind.other', { resets: resetKindCount(t, item.reset, item.count), name: item.name, time: when(item.expiresAtMs) });
+        }
         return item.count === 1
           ? t('forecast.advice.expiring.one', { name: item.name, time: when(item.expiresAtMs) })
           : t('forecast.advice.expiring.other', { count: item.count, name: item.name, time: when(item.expiresAtMs) });
+      case 'givesBack':
+        return item.count === 1
+          ? t('forecast.advice.givesBack.one', { name: item.name })
+          : t('forecast.advice.givesBack.other', { name: item.name, count: item.count });
       case 'unused':
         return t('forecast.advice.unused', { percent: formatPoolPercent(item.percent), time: when(item.byMs) });
       case 'lasts':
@@ -210,13 +229,13 @@ function AdviceList({ advice, when, resettable, onReset }: {
             <span
               className={cn(
                 'mt-1.5 size-1.5 shrink-0 rounded-full',
-                item.kind === 'claim' || item.kind === 'slow' ? 'bg-warning' : item.kind === 'expiring' ? 'bg-error' : 'bg-success',
+                item.kind === 'claim' || item.kind === 'slow' ? 'bg-warning' : item.kind === 'expiring' ? 'bg-error' : item.kind === 'givesBack' ? 'bg-muted-foreground' : 'bg-success',
               )}
               aria-hidden="true"
             />
             <span className="min-w-0 flex-1">{line(item)}</span>
-            {item.kind === 'claim' && onReset && resettable.has(item.key) ? (
-              <Button variant="outline" size="xs" onClick={() => onReset(item.key)}>
+            {item.kind === 'claim' && onReset && resettable(item.key, item.reset) ? (
+              <Button variant="outline" size="xs" onClick={() => onReset(item.key, item.reset)}>
                 <RotateCcw />
                 {t('forecast.advice.claimNow')}
               </Button>

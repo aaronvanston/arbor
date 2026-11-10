@@ -40,18 +40,40 @@ export type QuotaRow = {
   /** A Codex limit outside the main rate limit (code review or a per-feature limit), which a manual reset doesn't refill. */
   extra?: boolean;
 };
-/** How a Claude banked reset can be used. Its count and use-by date are `resetCredits` and `resetCreditsEarliestExpiry`. */
-export type ClaudeBankedReset = {
+/** What a Claude banked reset refills: the 5-hour limit, the week, Fable's allowance, or everything at once. */
+export type ClaudeResetKind = 'session' | 'weekly' | 'fable' | 'full';
+/** One kind of banked reset an account holds. */
+export type ClaudeResetOffer = {
+  kind: ClaudeResetKind;
+  /** Resets of this kind left. */
+  count: number;
+  /** When the first of them lapses. */
+  expiresAt?: string;
+  /** The windows it refills, by their rows' labels: what the forecast plans with. */
+  windows: string[];
+  /** The limits it refills, in words. */
+  refills?: string;
+  /** The window a Fable reset hands Fable's share back to, without refilling the rest of it. */
+  givesBackTo?: string;
   /** The reset a claim uses, set only while one can be used now. */
   grantId?: string;
+  /** When that reset must be used by. */
+  useBy?: string;
+  /** Set when using the reset now spends it before the account reaches a limit it refills. */
+  earlyUse?: { percentLeft?: number; limit?: string };
+  /** The account is at a limit this only hands Fable's share back to, so it may stay at it. */
+  givesBackOnly?: true;
+  /** Why none of this kind can be used now. */
+  blockedReason?: string;
+};
+/** How a Claude account's banked resets can be used. Their count and first use-by date are `resetCredits` and `resetCreditsEarliestExpiry`. */
+export type ClaudeBankedReset = {
+  /** The kinds held, the one to reach for first leading: usable at a limit, then the narrowest that refills it. */
+  kinds: ClaudeResetOffer[];
   /** Why none of the resets left can be used now. */
   blockedReason?: string;
   /** Claude won't take these resets from Arbor at all (it decides by the client asking), as against not yet. */
   blockedHere?: true;
-  /** The limits the reset refills. */
-  refills?: string;
-  /** Set when using the reset now spends it before the account reaches a limit. */
-  earlyUse?: { percentLeft?: number; limit?: string };
   /** When the weekly limit resets. Using a banked reset doesn't move it. */
   weeklyResetsAt?: string;
 };
@@ -390,7 +412,7 @@ const claudeFieldName = (suffix: string) => suffix.split('_').filter(Boolean)
 const claudeWindowLabel = (key: string): string | null => {
   switch (key) {
     case 'five_hour': return quotaText('quota.service.window.fiveHour');
-    // The overage-included variant is the 7-day limit itself, as banked resets name it.
+    // Claude Code names the overage-included limit as the weekly one, except on a Fable reset (`claudeGrantLabel`).
     case 'seven_day':
     case 'seven_day_overage_included': return quotaText('quota.service.window.sevenDay');
     case 'seven_day_oauth_apps': return quotaText('quota.service.window.sevenDayOAuth');
@@ -412,6 +434,16 @@ const claudeLimits = (value: unknown): string[] => (Array.isArray(value)
   ? value.filter((limit): limit is string => typeof limit === 'string' && isClaudeResetLimit(limit))
   : []);
 
+const CLAUDE_GRANT_TYPES = ['session', 'weekly', 'full'] as const;
+/** Narrowest first: the order Claude Code offers them in when no limit says otherwise. */
+const CLAUDE_RESET_KINDS: ClaudeResetKind[] = ['session', 'weekly', 'fable', 'full'];
+/** The reset made for each limit, which leads when the account is at that limit. */
+const CLAUDE_KIND_FOR_LIMIT: Record<string, ClaudeResetKind> = {
+  five_hour: 'session', seven_day: 'weekly', seven_day_overage_included: 'fable',
+};
+/** Fable's weekly allowance, as banked resets name it: the limit an account is at when Fable runs out. */
+const CLAUDE_FABLE_LIMIT = 'seven_day_overage_included';
+
 type ClaudeGrant = {
   id: string;
   resetsLeft: number;
@@ -422,6 +454,12 @@ type ClaudeGrant = {
   useRequiresLimit: boolean;
   percentUsed: Record<string, number>;
   blocking: string[];
+  /** What Claude says the grant is, when it says. */
+  type: 'session' | 'weekly' | 'full' | null;
+  /** A Fable reset: it also hands back what Fable used on the weekly limit. */
+  givesBackWeekly: boolean;
+  /** Claude's own reason the grant can't be used now, when it gives one. */
+  unavailableReason: string;
 };
 
 const claudeGrantFor = (value: unknown): ClaudeGrant | null => {
@@ -448,13 +486,57 @@ const claudeGrantFor = (value: unknown): ClaudeGrant | null => {
     useRequiresLimit: booleanValue(value.use_requires_limit) ?? true,
     percentUsed,
     blocking: claudeLimits(value.blocking),
+    type: CLAUDE_GRANT_TYPES.find((type) => type === value.type) ?? null,
+    givesBackWeekly: booleanValue(value.gives_back_weekly) ?? false,
+    unavailableReason: readString(value, 'unavailable_reason'),
   };
 };
 
+/** As Claude Code decides it: a Fable reset by what it gives back, then Claude's own type, then what it refills. */
+const claudeGrantKind = (grant: ClaudeGrant): ClaudeResetKind => {
+  if (grant.givesBackWeekly) return 'fable';
+  if (grant.type) return grant.type;
+  const fiveHour = grant.clears.includes('five_hour');
+  const other = grant.clears.some((limit) => limit !== 'five_hour');
+  return fiveHour && !other ? 'session' : other && !fiveHour ? 'weekly' : 'full';
+};
+
+/** Whether a grant lifts a limit: it refills it, or it's the weekly limit and the grant hands Fable's share back. */
+const claudeGrantLifts = (grant: ClaudeGrant, limit: string) =>
+  grant.clears.includes(limit) || (limit === 'seven_day' && grant.givesBackWeekly);
+
+/** A limit's label for a grant. Fable's allowance is the Fable row on a Fable reset; on any other, Claude Code calls it the weekly limit. */
+const claudeGrantLabel = (grant: ClaudeGrant, limit: string) => (limit === CLAUDE_FABLE_LIMIT && grant.givesBackWeekly
+  ? quotaText('quota.service.window.sevenDayFable')
+  : claudeWindowLabel(limit));
+
+const claudeGrantLabels = (grant: ClaudeGrant): string[] => [...new Set([
+  ...(grant.givesBackWeekly ? [quotaText('quota.service.window.sevenDayFable')] : []),
+  ...grant.clears.map((limit) => claudeGrantLabel(grant, limit)),
+].filter((label): label is string => label !== null))];
+
+/** The rows the forecast can plan a grant to refill. Any grant that clears Fable's allowance refills the Fable row. */
+const claudeGrantWindows = (grant: ClaudeGrant): string[] => [...new Set([
+  ...claudeGrantLabels(grant),
+  ...(grant.clears.includes(CLAUDE_FABLE_LIMIT) ? [quotaText('quota.service.window.sevenDayFable')] : []),
+])];
+
+const listText = (labels: string[]): string | undefined => {
+  const last = labels[labels.length - 1];
+  if (last === undefined) return undefined;
+  return labels.length === 1 ? last : quotaText('quota.service.list', { items: labels.slice(0, -1).join(', '), last });
+};
+
+const earliestGrantEnd = (grants: ClaudeGrant[]) => grants
+  .map((grant) => ({ endsAt: grant.endsAt, endsAtMs: quotaResetInstant(grant.endsAt) }))
+  .filter((grant): grant is { endsAt: string; endsAtMs: number } => grant.endsAtMs !== undefined)
+  .sort((left, right) => left.endsAtMs - right.endsAtMs)[0]?.endsAt;
+
 /**
  * Banked resets from the `cedar_ember` block of a Claude usage reply, read the
- * way Claude Code reads them. A missing block, or an account that isn't
- * eligible, means none are offered, which is not the same as none left.
+ * way Claude Code reads them: grouped by what they refill, one usable reset
+ * offered for each kind. A missing block, or an account that isn't eligible,
+ * means none are offered, which is not the same as none left.
  */
 export const claudeBankedResetFor = (
   payload: unknown,
@@ -473,62 +555,124 @@ export const claudeBankedResetFor = (
     const endsAtMs = quotaResetInstant(grant.endsAt);
     return grant.resetsLeft > 0 && (endsAtMs === undefined || endsAtMs > nowMs);
   });
-  const earliestEnd = (items: ClaudeGrant[]) => items
-    .map((grant) => ({ endsAt: grant.endsAt, endsAtMs: quotaResetInstant(grant.endsAt) }))
-    .filter((grant): grant is { endsAt: string; endsAtMs: number } => grant.endsAtMs !== undefined)
-    .sort((left, right) => left.endsAtMs - right.endsAtMs)[0]?.endsAt;
   const counted = {
     resetCredits: live.reduce((total, grant) => total + grant.resetsLeft, 0),
-    resetCreditsEarliestExpiry: earliestEnd(live),
+    resetCreditsEarliestExpiry: earliestGrantEnd(live),
+  };
+  const byKind = new Map<ClaudeResetKind, ClaudeGrant[]>();
+  live.forEach((grant) => byKind.set(claudeGrantKind(grant), [...(byKind.get(claudeGrantKind(grant)) ?? []), grant]));
+  const held = (kind: ClaudeResetKind, items: ClaudeGrant[], shown: ClaudeGrant): ClaudeResetOffer => {
+    const offer: ClaudeResetOffer = {
+      kind,
+      count: items.reduce((total, grant) => total + grant.resetsLeft, 0),
+      // Only what every reset of the kind refills, so the forecast never plans one that doesn't.
+      windows: claudeGrantWindows(shown).filter((label) => items.every((grant) => claudeGrantWindows(grant).includes(label))),
+    };
+    const expiresAt = earliestGrantEnd(items);
+    if (expiresAt) offer.expiresAt = expiresAt;
+    const refills = listText(claudeGrantLabels(shown));
+    if (refills) offer.refills = refills;
+    if (items.every((grant) => grant.givesBackWeekly)) offer.givesBackTo = quotaText('quota.service.window.sevenDay');
+    return offer;
   };
   if (eligible !== true) {
     // Claude also decides by the client asking. When that is why resets the
     // account has can't be used here, say so instead of hiding them.
     return live.length && ['surface', 'cli_version'].includes(ineligibleReason)
-      ? { ...counted, bankedReset: { blockedReason: quotaText('quota.bankedReset.blocked.client', { reason: ineligibleReason }), blockedHere: true } }
+      ? {
+        ...counted,
+        bankedReset: {
+          kinds: CLAUDE_RESET_KINDS.flatMap((kind) => {
+            const items = byKind.get(kind);
+            return items?.[0] ? [held(kind, items, items[0])] : [];
+          }),
+          blockedReason: quotaText('quota.bankedReset.blocked.client', { reason: ineligibleReason }),
+          blockedHere: true,
+        },
+      }
       : {};
   }
-  const bankedReset: ClaudeBankedReset = { weeklyResetsAt: readString(block, 'weekly_resets_at') || undefined };
-  const offer = live.find((grant) => grant.id === readString(block, 'next_grant_id') && grant.usableNow && !grant.paused);
-  if (offer) {
-    bankedReset.grantId = offer.id;
-    const labels = [...new Set(offer.clears.map(claudeWindowLabel).filter((label): label is string => label !== null))];
-    const last = labels[labels.length - 1];
-    if (last !== undefined) {
-      bankedReset.refills = labels.length === 1 ? last
-        : quotaText('quota.service.list', { items: labels.slice(0, -1).join(', '), last });
-    }
-    // A reset that doesn't need a limit can be spent before reaching any it refills.
-    const exhausted = claudeLimits(block.exhausted);
-    if (!offer.useRequiresLimit && !offer.clears.some((limit) => exhausted.includes(limit))) {
-      let most: { limit: string; used: number } | undefined;
-      // Claude Code's order breaks ties; caps it doesn't know come after.
-      for (const limit of [...CLAUDE_RESET_LIMITS, ...offer.clears.filter((item) => !CLAUDE_RESET_LIMITS.includes(item))]) {
-        const used = offer.percentUsed[limit] as number | undefined;
-        if (offer.clears.includes(limit) && used !== undefined && (!most || used > most.used)) most = { limit, used };
-      }
-      const label = most ? claudeWindowLabel(most.limit) : null;
-      bankedReset.earlyUse = most && label && most.used < 100 ? { percentLeft: 100 - most.used, limit: label } : {};
-    }
-  } else if (live.length) {
-    const blocking = live.flatMap((grant) => grant.blocking).map(claudeWindowLabel).find((label) => label !== null);
-    const cooldownUntil = quotaResetInstant(block.cooldown_until);
-    bankedReset.blockedReason = blocking
-      ? quotaText('quota.bankedReset.blocked.limit', { limit: blocking })
-      : live.every((grant) => grant.paused)
-        ? quotaText('quota.bankedReset.blocked.paused')
-        : cooldownUntil !== undefined && cooldownUntil > nowMs
-          ? quotaText('quota.bankedReset.blocked.cooldown')
-          : live.every((grant) => grant.useRequiresLimit)
-            ? quotaText('quota.bankedReset.blocked.needsLimit')
-            : quotaText('quota.bankedReset.blocked.later');
-  }
-  return {
-    ...counted,
-    ...(offer ? { resetCreditsEarliestExpiry: offer.endsAt || undefined } : {}),
-    bankedReset,
+  const exhausted = claudeLimits(block.exhausted);
+  const atLimit = booleanValue(block.at_limit) ?? false;
+  const cooldownUntil = quotaResetInstant(block.cooldown_until);
+  const coolingDown = cooldownUntil !== undefined && cooldownUntil > nowMs;
+  const nextGrantId = readString(block, 'next_grant_id');
+  const limitBlocked = (limit: string, givesBack: boolean) => {
+    if (limit === 'seven_day' && givesBack) return quotaText('quota.bankedReset.blocked.noFableUsage');
+    const label = claudeWindowLabel(limit);
+    return label ? quotaText('quota.bankedReset.blocked.limit', { limit: label }) : null;
   };
+  const blockedReason = (items: ClaudeGrant[]): string => {
+    const givesBack = items.every((grant) => grant.givesBackWeekly);
+    if (items.every((grant) => grant.paused)) return quotaText('quota.bankedReset.blocked.paused');
+    // Claude's own reason first, then what the rest of the reply implies.
+    switch (items.map((grant) => grant.unavailableReason).find(Boolean)) {
+      case 'cooldown': return quotaText('quota.bankedReset.blocked.cooldown');
+      case 'blocked_five_hour': return limitBlocked('five_hour', givesBack) ?? quotaText('quota.bankedReset.blocked.otherLimit');
+      case 'blocked_seven_day': return limitBlocked('seven_day', givesBack) ?? quotaText('quota.bankedReset.blocked.otherLimit');
+      case 'blocked_opus': return limitBlocked('seven_day_opus', givesBack) ?? quotaText('quota.bankedReset.blocked.otherLimit');
+      case 'blocked_sonnet': return limitBlocked('seven_day_sonnet', givesBack) ?? quotaText('quota.bankedReset.blocked.otherLimit');
+      case 'blocked_other': return quotaText('quota.bankedReset.blocked.otherLimit');
+      case 'cannot_clear': return quotaText('quota.bankedReset.blocked.cannotClear');
+      case 'needs_limit': return quotaText('quota.bankedReset.blocked.needsLimit');
+      case 'unavailable': return quotaText('quota.bankedReset.blocked.later');
+      default:
+    }
+    const blocking = items.flatMap((grant) => grant.blocking).map((limit) => limitBlocked(limit, givesBack)).find((reason) => reason !== null);
+    if (blocking) return blocking;
+    if (coolingDown) return quotaText('quota.bankedReset.blocked.cooldown');
+    if (atLimit && !items.some((grant) => exhausted.some((limit) => claudeGrantLifts(grant, limit)))) {
+      return quotaText('quota.bankedReset.blocked.cannotClear');
+    }
+    return items.every((grant) => grant.useRequiresLimit)
+      ? quotaText('quota.bankedReset.blocked.needsLimit')
+      : quotaText('quota.bankedReset.blocked.later');
+  };
+  const offers = CLAUDE_RESET_KINDS.flatMap((kind): { offer: ClaudeResetOffer; order: number }[] => {
+    const items = byKind.get(kind);
+    const first = items?.[0];
+    if (!items || !first) return [];
+    const usable = items.filter((grant) => grant.usableNow && !grant.paused);
+    // Claude's next grant when it is one of these, else the first that can be used, as Claude Code picks.
+    const target = usable.find((grant) => grant.id === nextGrantId) ?? usable[0];
+    const offer = held(kind, items, target ?? first);
+    if (!target) offer.blockedReason = blockedReason(items);
+    else {
+      offer.grantId = target.id;
+      if (target.endsAt) offer.useBy = target.endsAt;
+      if (!exhausted.some((limit) => claudeGrantLifts(target, limit))) {
+        // A reset that doesn't need a limit can be spent before reaching any it refills.
+        if (!target.useRequiresLimit) {
+          let most: { limit: string; used: number } | undefined;
+          // Claude Code's order breaks ties; caps it doesn't know come after.
+          for (const limit of [...CLAUDE_RESET_LIMITS, ...target.clears.filter((item) => !CLAUDE_RESET_LIMITS.includes(item))]) {
+            const used = target.percentUsed[limit] as number | undefined;
+            if (target.clears.includes(limit) && used !== undefined && (!most || used > most.used)) most = { limit, used };
+          }
+          const label = most ? claudeGrantLabel(target, most.limit) : null;
+          offer.earlyUse = most && label && most.used < 100 ? { percentLeft: 100 - most.used, limit: label } : {};
+        }
+      } else if (!exhausted.some((limit) => target.clears.includes(limit))) {
+        offer.givesBackOnly = true;
+      }
+    }
+    // One that refills the limit the account is at leads, then one spent early, then those that can't be used.
+    // Within each, the reset made for that limit comes first and a Fable reset at the weekly limit last: it frees
+    // up only what Fable used.
+    const tier = !offer.grantId ? 2 : offer.earlyUse ? 1 : 0;
+    const within = offer.givesBackOnly ? CLAUDE_RESET_KINDS.length
+      : exhausted.some((limit) => CLAUDE_KIND_FOR_LIMIT[limit] === kind) ? -1
+        : CLAUDE_RESET_KINDS.indexOf(kind);
+    return [{ offer, order: tier * 10 + within }];
+  }).sort((left, right) => left.order - right.order).map((item) => item.offer);
+  const bankedReset: ClaudeBankedReset = { kinds: offers, weeklyResetsAt: readString(block, 'weekly_resets_at') || undefined };
+  if (offers.length && !offers.some((offer) => offer.grantId)) bankedReset.blockedReason = offers[0]?.blockedReason;
+  return { ...counted, bankedReset };
 };
+
+/** The reset of a kind that can be used now, or with no kind the one to reach for first. */
+export const usableClaudeReset = (quota: QuotaState, kind?: ClaudeResetKind): ClaudeResetOffer | undefined =>
+  quota.bankedReset?.kinds.find((offer) => offer.grantId !== undefined && (kind === undefined || offer.kind === kind));
 
 /** "Opus" from "Claude Opus 5": a new model version keeps its window's label, and saved choices keyed by it. */
 const claudeModelFamily = (name: string) => {
@@ -1362,17 +1506,19 @@ async function claimClaudeBankedResetSnapshot(
   // match the confirmation: a reset spent before reaching a limit is gone.
   let organization: string;
   let weeklyResetsAt: string | undefined;
+  let fable = false;
   try {
     const [current, profile] = await Promise.all([
       callClaudeBankedReset(file),
       requestQuotaPayload(authIndex, CLAUDE_PROFILE_URL, headersByProvider.claude),
     ]);
     if (current.error) throw new Error(current.error);
-    const offered = current.bankedReset;
-    if (offered?.grantId !== expected.grantId || (offered.earlyUse !== undefined && !expected.earlyUse)) {
+    const offered = current.bankedReset?.kinds.find((offer) => offer.grantId === expected.grantId);
+    if (!offered || (offered.earlyUse !== undefined && !expected.earlyUse)) {
       return finish('not-used', quotaText('quota.bankedReset.result.changed'));
     }
-    weeklyResetsAt = offered.weeklyResetsAt;
+    weeklyResetsAt = current.bankedReset?.weeklyResetsAt;
+    fable = offered.kind === 'fable';
     organization = readString(isRecord(profile) ? profile.organization : null, 'uuid');
   } catch (error) {
     return finish('not-used', quotaText('quota.bankedReset.result.checkFailed', {
@@ -1424,9 +1570,10 @@ async function claimClaudeBankedResetSnapshot(
   switch (outcome) {
     case 'reset': {
       const weekly = readString(body, 'weekly_resets_at') || weeklyResetsAt;
+      // A Fable reset refills less than "limits reset" promises, so it says what came back.
       return finish('success', weekly
-        ? quotaText('quota.bankedReset.result.resetWeekly', { time: formatQuotaTimestamp(weekly) })
-        : quotaText('quota.bankedReset.result.reset'));
+        ? quotaText(fable ? 'quota.bankedReset.result.resetFableWeekly' : 'quota.bankedReset.result.resetWeekly', { time: formatQuotaTimestamp(weekly) })
+        : quotaText(fable ? 'quota.bankedReset.result.resetFable' : 'quota.bankedReset.result.reset'));
     }
     case 'already_used':
       return retry
