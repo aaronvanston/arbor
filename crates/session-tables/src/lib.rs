@@ -35,7 +35,7 @@ use serde_json::Value;
 
 /// What a row is. Whoever keeps tables notes it beside them, and makes them again when it changes: raise it with
 /// any change to the rows a line gives.
-pub const RULE: &str = "tables-v4";
+pub const RULE: &str = "tables-v5";
 
 /// Whose transcript a file is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +97,13 @@ pub struct State {
     effort: Option<String>,
     cwd: Option<String>,
     turn_id: Option<String>,
+    service_tier: Option<String>,
+    /// What Codex says started the turn being read, and whether another turn did.
+    trigger: Option<String>,
+    child: bool,
+    /// What kind of thread a Codex rollout is (`user`, `subagent`, `automation`) and how it was run (`exec`, `cli`).
+    thread: Option<String>,
+    run: Option<String>,
     /// A Codex file has `token_usage_record` lines, so its `token_count` events repeat them.
     records: bool,
     /// The thread's running total at the last `token_count` event counted, to tell a repeated event from a new call.

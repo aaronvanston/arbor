@@ -29,7 +29,7 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
     };
     match kind.as_str() {
         "assistant" => row.model = assistant(parser, &at, &mut fields, rows),
-        "user" => user(parser, &at, &mut fields, rows),
+        "user" => user(parser, &at, row.sidechain == Some(true), &mut fields, rows),
         "attachment" => row.subkind = attachment(parser, &at, &mut fields, rows),
         "system" => row.subkind = json::string(&mut fields, "subtype"),
         _ => {}
@@ -101,6 +101,8 @@ fn assistant(parser: &mut Parser, at: &At, fields: &mut Fields, rows: &mut Rows)
             request_id: request_id.clone(),
             model: model.clone(),
             meta: None,
+            origin: None,
+            trigger: None,
             chars: json::chars(&text),
             text: parser.text(text),
         };
@@ -239,16 +241,30 @@ pub(crate) fn file_touched(at: &At, tool_use_id: Option<String>, path: String, o
 }
 
 /// A line from the person, or one carrying tools' results back to the model.
-fn user(parser: &Parser, at: &At, fields: &mut Fields, rows: &mut Rows) {
+fn user(parser: &Parser, at: &At, sidechain: bool, fields: &mut Fields, rows: &mut Rows) {
     let Some(mut message) = json::object(fields, "message") else {
         return;
     };
     json::string(&mut message, "role");
-    // Claude Code says where a prompt came from. One the system made (a background task's notice) starts a turn
-    // of work, but isn't something the person sent.
-    let system = fields.get("promptSource").and_then(Value::as_str) == Some("system");
-    let meta = json::boolean(fields, "isMeta").or(system.then_some(true));
+    // Claude Code says where a prompt came from, in `promptSource` and, more exactly, `origin.kind`. One the system
+    // or another agent made (a background task's notice, a coordinator's word) starts a turn of work, but isn't
+    // something the person sent.
+    let source = fields.get("promptSource").and_then(Value::as_str);
+    let kind = fields.get("origin").and_then(|origin| origin.get("kind")).and_then(Value::as_str);
+    let made = source == Some("system") || kind.is_some_and(|kind| kind != "human");
+    let trigger = kind.or(source).map(str::to_string);
+    // A subagent's file holds the task it was handed as its prompt. Its lines are under its parent's session, so
+    // that task is no turn of its own: the work it leads to belongs to the prompt the person sent.
+    let origin = match (sidechain, kind, source) {
+        (true, ..) => Some("subagent"),
+        _ if made => Some("agent"),
+        (_, Some("human"), _) | (_, _, Some("typed" | "queued")) => Some("person"),
+        (_, _, Some("sdk")) => Some("program"),
+        _ => None,
+    };
+    let meta = json::boolean(fields, "isMeta").or((made || sidechain).then_some(true));
     let summary = json::boolean(fields, "isCompactSummary") == Some(true);
+    let origin = origin.filter(|_| !summary).map(str::to_string);
     let prompt = |block: u32, text: String| Message {
         at: at.clone(),
         role: "user".into(),
@@ -258,6 +274,8 @@ fn user(parser: &Parser, at: &At, fields: &mut Fields, rows: &mut Rows) {
         request_id: None,
         model: None,
         meta,
+        origin: origin.clone(),
+        trigger: trigger.clone(),
         chars: json::chars(&text),
         text: parser.text(text),
     };
@@ -457,9 +475,35 @@ pub(crate) mod tests {
         assert_eq!(rows.messages[0].text.as_deref(), Some(format!("Fix the build. {SECRET}").as_str()));
         assert_eq!(rows.messages[1].message_id.as_deref(), Some("msg_1"));
         // A prompt the system made isn't the person's, and where it came from stays on its line.
-        let sent = |source: &str| base("user", "20", json!({ "promptSource": source, "origin": { "kind": "task-notification" }, "message": { "role": "user", "content": "A task ended." } }));
-        let rows = parse(Agent::Claude, Detail::Everything, &[sent("system"), sent("typed")]);
-        assert_eq!(rows.messages.iter().map(|message| (message.kind.as_str(), message.meta)).collect::<Vec<_>>(), [("prompt", Some(true)), ("prompt", None)]);
+        let sent = |more: Value| base("user", "20", {
+            let mut line = json!({ "message": { "role": "user", "content": "A task ended." } });
+            line.as_object_mut().unwrap().extend(more.as_object().unwrap().clone());
+            line
+        });
+        let lines = [
+            sent(json!({ "promptSource": "system", "origin": { "kind": "task-notification" } })),
+            sent(json!({ "origin": { "kind": "coordinator" } })),
+            sent(json!({ "promptSource": "typed", "origin": { "kind": "human" } })),
+            sent(json!({ "promptSource": "queued" })),
+            sent(json!({ "promptSource": "sdk" })),
+            sent(json!({})),
+            // A subagent's task: its lines are its parent's session's, so it starts no turn there.
+            sent(json!({ "isSidechain": true, "promptSource": "sdk" })),
+        ];
+        let rows = parse(Agent::Claude, Detail::Everything, &lines);
+        let said: Vec<_> = rows.messages.iter().map(|message| (message.meta, message.origin.as_deref(), message.trigger.as_deref())).collect();
+        assert_eq!(
+            said,
+            [
+                (Some(true), Some("agent"), Some("task-notification")),
+                (Some(true), Some("agent"), Some("coordinator")),
+                (None, Some("person"), Some("human")),
+                (None, Some("person"), Some("queued")),
+                (None, Some("program"), Some("sdk")),
+                (None, None, None),
+                (Some(true), Some("subagent"), Some("sdk")),
+            ]
+        );
         assert_eq!(serde_json::from_str::<Value>(rows.lines[0].rest.as_deref().unwrap()).unwrap(), json!({ "promptSource": "system", "origin": { "kind": "task-notification" } }));
     }
 

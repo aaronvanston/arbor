@@ -50,6 +50,9 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
             }
         }
         ("event_msg", Some("token_count")) => token_count(parser, &at, &mut payload, rows),
+        ("event_msg", Some("task_started")) => task_started(parser, &payload),
+        // The tier holds until the settings are applied again; one that names none is the default.
+        ("event_msg", Some("thread_settings_applied")) => parser.state.service_tier = payload.get("thread_settings").and_then(|settings| settings.get("service_tier")).and_then(Value::as_str).map(str::to_string),
         ("event_msg", Some("item_completed")) => item(parser, &at, &mut payload, rows),
         ("event_msg", Some("user_message")) => {
             if let Some(text) = json::string(&mut payload, "message") {
@@ -85,6 +88,11 @@ fn session_meta(parser: &mut Parser, payload: &mut Fields, row: &mut Line) {
     row.entrypoint = json::string(payload, "originator");
     row.cwd = json::string(payload, "cwd");
     parser.state.cwd = row.cwd.clone();
+    // `source` is how the thread was run, or for a subagent an account of who spawned it.
+    let source = payload.get("source");
+    let spawned = source.is_some_and(|source| source.get("subagent").is_some());
+    parser.state.run = source.and_then(Value::as_str).map(str::to_string);
+    parser.state.thread = payload.get("thread_source").and_then(Value::as_str).map(str::to_string).or(spawned.then(|| "subagent".to_string()));
     if let Some(mut git) = json::object(payload, "git") {
         row.branch = json::string(&mut git, "branch");
         json::put_back(payload, "git", git);
@@ -117,6 +125,36 @@ fn turn_context(parser: &mut Parser, payload: &mut Fields, row: &mut Line) {
     (row.model, row.cwd) = (state.model.clone(), state.cwd.clone());
 }
 
+/// A turn's start, which newer rollouts open with what set it off.
+fn task_started(parser: &mut Parser, payload: &Fields) {
+    let said = payload.get("turn_attribution");
+    let word = |key: &str| said.and_then(|said| said.get(key)).and_then(Value::as_str).map(str::to_string);
+    parser.state.trigger = word("turn_trigger");
+    parser.state.child = word("parent_turn_id").is_some();
+}
+
+/// Who a prompt came from, in the words `Message::origin` lists, and Codex's own word for it. A subagent's thread
+/// says so in its first line. Otherwise the turn's trigger says, and where it says nothing, how the thread was run.
+fn origin(state: &crate::State) -> (Option<String>, Option<String>) {
+    let thread = state.thread.as_deref();
+    let origin = match (thread, state.trigger.as_deref()) {
+        (Some("subagent" | "guardian_review" | "security_scan"), _) => Some("subagent"),
+        (_, Some("composer" | "user" | "queue" | "remote_ios" | "send_user_message_async_question")) => Some("person"),
+        (_, Some("exec")) => Some("program"),
+        (_, Some(trigger)) if trigger.starts_with("automation_") => Some("schedule"),
+        (_, Some("goal" | "capacity_retry_automatic" | "capacity_retry_manual")) => Some("agent"),
+        _ if state.child => Some("subagent"),
+        (Some("automation"), _) => Some("schedule"),
+        (_, None) => match state.run.as_deref() {
+            Some("exec") => Some("program"),
+            Some("cli" | "vscode") if thread == Some("user") => Some("person"),
+            _ => None,
+        },
+        _ => None,
+    };
+    (origin.map(str::to_string), state.trigger.clone().or_else(|| state.thread.clone()))
+}
+
 /// A call's tokens. Codex's input counts what was read from and written to the cache, so those come off it.
 fn request(parser: &Parser, at: &At, mut usage: Fields, (request_id, turn_id): (Option<String>, Option<String>), from: &mut Fields) -> Request {
     let cache_read = json::number(&mut usage, "cached_input_tokens").unwrap_or(0);
@@ -127,6 +165,7 @@ fn request(parser: &Parser, at: &At, mut usage: Fields, (request_id, turn_id): (
         turn_id: turn_id.or_else(|| parser.state.turn_id.clone()),
         model: parser.state.model.clone(),
         effort: parser.state.effort.clone(),
+        service_tier: parser.state.service_tier.clone(),
         input: json::number(&mut usage, "input_tokens").unwrap_or(0).saturating_sub(cache_read).saturating_sub(cache_write),
         output: json::number(&mut usage, "output_tokens").unwrap_or(0),
         thinking: json::number(&mut usage, "reasoning_output_tokens"),
@@ -166,7 +205,8 @@ fn token_count(parser: &mut Parser, at: &At, payload: &mut Fields, rows: &mut Ro
 /// environment, plugins on offer, a subagent's report), so a user's `response_item` is marked `meta` and these are
 /// the prompts.
 fn sent(parser: &Parser, at: &At, message_id: Option<String>, text: String) -> Message {
-    Message { at: at.clone(), role: "user".into(), kind: "prompt".into(), block: 0, message_id, request_id: None, model: None, meta: None, chars: json::chars(&text), text: parser.text(text) }
+    let (origin, trigger) = origin(&parser.state);
+    Message { at: at.clone(), role: "user".into(), kind: "prompt".into(), block: 0, message_id, request_id: None, model: None, meta: None, origin, trigger, chars: json::chars(&text), text: parser.text(text) }
 }
 
 fn message(parser: &Parser, at: &At, payload: &mut Fields, rows: &mut Rows) {
@@ -189,6 +229,8 @@ fn message(parser: &Parser, at: &At, payload: &mut Fields, rows: &mut Rows) {
         request_id: None,
         model: if role == "assistant" { parser.state.model.clone() } else { None },
         meta: (role == "user").then_some(true),
+        origin: None,
+        trigger: None,
         chars: json::chars(&text),
         text: parser.text(text),
         role,
@@ -216,6 +258,8 @@ fn reasoning(parser: &Parser, at: &At, payload: &mut Fields, rows: &mut Rows) {
         request_id: None,
         model: parser.state.model.clone(),
         meta: None,
+        origin: None,
+        trigger: None,
         chars: json::chars(&text),
         text: parser.text(text),
     });
@@ -480,6 +524,59 @@ pub(crate) mod tests {
         assert_eq!((rows.prompts.len(), rows.context_use[0].prompt_hash.as_deref()), (1, Some(rows.prompts[0].hash.as_str())));
         assert_eq!(rows.tool_defs.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>(), ["spawn_agent"]);
         assert_eq!(rows.context_use[1].tool_hashes, [rows.tool_defs[0].hash.clone()]);
+    }
+
+    #[test]
+    fn a_prompt_says_who_sent_it_and_a_request_the_tier_in_force() {
+        let said = |ordinal: u64, text: &str| line(ordinal, "event_msg", json!({ "type": "item_completed", "item": { "type": "UserMessage", "id": format!("item_{ordinal}"), "content": [{ "type": "text", "text": text }] } }));
+        let started = |ordinal: u64, attribution: Value| line(ordinal, "event_msg", json!({ "type": "task_started", "turn_id": "turn-1", "turn_attribution": attribution }));
+        let origins = |lines: &[String]| -> Vec<(Option<String>, Option<String>)> { parse(Agent::Codex, Detail::Numbers, lines).messages.into_iter().map(|message| (message.origin, message.trigger)).collect() };
+        let pair = |origin: Option<&str>, trigger: Option<&str>| (origin.map(str::to_string), trigger.map(str::to_string));
+
+        // The turn's start says what set it off, and holds for every prompt until the next start.
+        let own = [
+            line(0, "session_meta", json!({ "id": "t-1", "source": "vscode", "thread_source": "user" })),
+            said(1, "Before any start."),
+            started(2, json!({ "turn_trigger": "composer" })),
+            said(3, "Typed."),
+            said(4, "Steered."),
+            started(5, json!({ "turn_trigger": "automation_cron_scheduled" })),
+            said(6, "On the hour."),
+            started(7, json!({ "turn_trigger": "exec" })),
+            said(8, "A one-off run."),
+            started(9, json!({ "turn_trigger": "capacity_retry_automatic" })),
+            said(10, "Again."),
+            started(11, json!({ "parent_turn_id": "turn-0" })),
+            said(12, "For a child turn."),
+            started(13, json!({ "turn_trigger": "a_word_not_seen_yet" })),
+            said(14, "Who knows."),
+        ];
+        assert_eq!(
+            origins(&own),
+            [
+                pair(Some("person"), Some("user")),
+                pair(Some("person"), Some("composer")),
+                pair(Some("person"), Some("composer")),
+                pair(Some("schedule"), Some("automation_cron_scheduled")),
+                pair(Some("program"), Some("exec")),
+                pair(Some("agent"), Some("capacity_retry_automatic")),
+                pair(Some("subagent"), Some("user")),
+                pair(None, Some("a_word_not_seen_yet")),
+            ]
+        );
+        // A subagent's thread says so in its first line, whatever its turns say; an older rollout says only how it ran.
+        let spawned = [line(0, "session_meta", json!({ "id": "t-2", "source": { "subagent": { "thread_spawn": { "parent_thread_id": "t-1" } } } })), started(1, json!({ "turn_trigger": "composer" })), said(2, "A task.")];
+        assert_eq!(origins(&spawned), [pair(Some("subagent"), Some("composer"))]);
+        assert_eq!(origins(&[line(0, "session_meta", json!({ "id": "t-3", "source": "exec" })), said(1, "Run this.")]), [pair(Some("program"), None)]);
+        assert_eq!(origins(&[line(0, "session_meta", json!({ "id": "t-4", "source": "vscode" })), said(1, "From an app that doesn't say.")]), [pair(None, None)]);
+
+        // The tier is in the thread's settings, and one applied without a tier is the default.
+        let settings = |ordinal: u64, tier: Option<&str>| line(ordinal, "event_msg", json!({ "type": "thread_settings_applied", "thread_id": "t-1", "thread_settings": { "model": "gpt-test-1", "service_tier": tier } }));
+        let record = |ordinal: u64| line(ordinal, "token_usage_record", json!({ "response_id": format!("resp_{ordinal}"), "usage": usage(10, 0, 1) }));
+        let rows = parse(Agent::Codex, Detail::Numbers, &[line(0, "session_meta", json!({ "id": "t-1" })), record(1), settings(2, Some("priority")), record(3), settings(4, None), record(5)]);
+        assert_eq!(rows.requests.iter().map(|request| request.service_tier.as_deref()).collect::<Vec<_>>(), [None, Some("priority"), None]);
+        // Both lines keep what they said.
+        assert!(parse(Agent::Codex, Detail::Everything, &own).lines[2].rest.as_deref().unwrap().contains("composer"));
     }
 
     #[test]

@@ -12,7 +12,7 @@ pub fn saved(name: &str) -> Option<&'static Saved> {
     SAVED.iter().find(|saved| saved.name == name)
 }
 
-pub const SAVED: [Saved; 16] = [
+pub const SAVED: [Saved; 17] = [
     Saved {
         name: "speed-by-model",
         about: "How fast each model writes: median tokens a second and time to the first token, as the proxy saw them",
@@ -22,6 +22,11 @@ pub const SAVED: [Saved; 16] = [
         name: "turn-time",
         about: "How long a prompt takes to answer and what it takes, by agent and model (waits for approval included)",
         sql: "SELECT agent, model, count(*) AS turns, round(median(elapsed_ms) / 1000, 1) AS median_seconds, round(quantile_cont(elapsed_ms, 0.9) / 1000, 1) AS p90_seconds, round(avg(requests), 1) AS requests, round(avg(tool_calls), 1) AS tool_calls, CAST(round(avg(output)) AS BIGINT) AS output FROM turns WHERE requests > 0 GROUP BY agent, model HAVING count(*) >= 20 ORDER BY turns DESC",
+    },
+    Saved {
+        name: "who-asked",
+        about: "Whose prompts the work went on: a person's, a program's, a schedule's or another agent's, with the requests and output each led to",
+        sql: "SELECT agent, coalesce(origin, 'not said') AS origin, count(*) AS turns, CAST(sum(requests) AS BIGINT) AS requests, CAST(sum(output) AS BIGINT) AS output, round(100.0 * sum(output) / sum(sum(output)) OVER (PARTITION BY agent), 1) AS output_pct FROM turns GROUP BY agent, origin ORDER BY agent, output DESC",
     },
     Saved {
         name: "requests-per-prompt",

@@ -54,9 +54,17 @@ pub struct Message {
     pub message_id: Option<String>,
     pub request_id: Option<String>,
     pub model: Option<String>,
-    /// A prompt the person didn't send: one the agent made for the model (a caveat, a task's notice, the
-    /// context Codex puts under the user's name). A count of prompts leaves these out.
+    /// A prompt that starts no turn of its session: one the agent made for the model (a caveat, a task's notice,
+    /// the context Codex puts under the user's name), or the task a Claude Code subagent was handed, whose lines
+    /// are under its parent's session. A count of prompts leaves these out.
     pub meta: Option<bool>,
+    /// For a prompt, who it came from, where the transcript says: `person` (typed or queued by someone), `program`
+    /// (sent through an SDK or a one-off run, for whoever started that), `subagent` (a task another agent handed
+    /// down), `schedule` (an automation) or `agent` (the agent's own doing: a task's notice, a retry, a goal).
+    pub origin: Option<String>,
+    /// The agent's own word for what started it: Claude Code's `typed`, `sdk` or `task-notification`, Codex's
+    /// `composer`, `exec` or `automation_cron_scheduled`.
+    pub trigger: Option<String>,
     pub chars: u64,
     pub text: Option<String>,
 }

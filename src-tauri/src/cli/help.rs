@@ -196,9 +196,11 @@ A session kept more than once (an earlier copy in a backup, or one that carried 
 table leaves out the lines that were read before from another file. The same table with _all after its name
 (lines_all, requests_all) has them too, with a repeat column that marks them.
 
-In messages, kind = 'prompt' is what went to the model under the user's name. meta marks the ones the person didn't
-send (an agent's own caveats and notices, the context Codex adds), so `kind = 'prompt' AND meta IS NOT TRUE` is what
-the person sent; sessions and turns count those.
+In messages, kind = 'prompt' is what went to the model under the user's name. meta marks the ones that start no turn
+(an agent's own caveats and notices, the context Codex adds, the task a Claude Code subagent was handed), so
+`kind = 'prompt' AND meta IS NOT TRUE` is the prompts a session was sent; sessions and turns count those. origin says
+who sent one, where the transcript does: person, program (an SDK or a one-off run), subagent (a Codex subagent's
+thread), schedule or agent. trigger is the agent's own word for it. `origin = 'person'` is what someone typed.
 
 proxy_requests is what Arbor's proxy saw of each request, from its own records: provider, account (the proxy's index
 for it), model, latency_ms, ttft_ms, tokens, whether it failed, and its cost in dollars at today's prices. It joins
@@ -206,7 +208,7 @@ the tables above on session_id; a Claude Code subagent's request has an id of it
 parent_session_id. sessions counts those in its cost.
 
 Five names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
-tool calls, errors and cost. turns is one row a prompt the person sent, with what it led to before the next one:
+tool calls, errors and cost. turns is one row a prompt, with its origin and what it led to before the next one:
 requests, tokens, tool calls and elapsed_ms. tools is one row a tool call with how it ended: is_error, exit_code, duration_ms where
 the agent wrote it down, and elapsed_ms from the call to its result. commands has each shell command with its exit
 code. speed is tokens_per_second for each request that streamed a reply, from its first token to its last.

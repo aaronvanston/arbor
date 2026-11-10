@@ -27,7 +27,8 @@ the tables in it.
 ## What's in the tables
 
 - `lines`: one row per transcript line, with every field no other column holds kept in `rest`.
-- `messages`: what was said, by role and kind: prompts, replies, thinking, summaries.
+- `messages`: what was said, by role and kind: prompts, replies, thinking, summaries. A prompt says who sent it
+  (`origin`: a person, a program, a schedule, another agent) where the agent wrote that down.
 - `requests`: one row per model call, with its model, token counts, and how it ended.
 - `tool_calls`, `tool_results`, `tool_io`: each tool call, how it ended and how long it took, and its input and output.
 - `commands`: each program a shell call ran, split out of the command line.

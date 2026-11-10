@@ -955,6 +955,11 @@ mod tests {
             parser.finish(&mut rows);
             batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source }, &rows).unwrap();
         }
+        // The session's prompt, noted a second time in another file: a line of its own, sent at the same moment.
+        let again = claude::tests::base("user", "02", serde_json::json!({ "uuid": "u-again", "promptSource": "typed", "message": { "role": "user", "content": "Fix the build." } }));
+        let mut rows = Rows::default();
+        crate::Parser::new(Agent::Claude, Detail::Everything, crate::State::default()).line(0, again.as_bytes(), &mut rows);
+        batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source: "three" }, &rows).unwrap();
         // A subagent's request, under an id no transcript has, and one from a session that was never kept.
         let other = |id: u64, session: &str, parent: Option<&str>| ProxyRequest { session_id: Some(session.into()), parent_session_id: parent.map(str::to_string), ..proxy(id, false) };
         batch.add_proxy(&[proxy(1, false), proxy(2, true), other(3, "sub-1", Some("s-1")), other(4, "s-9", None)]).unwrap();
@@ -963,11 +968,11 @@ mod tests {
             if merged {
                 store.merge(&engine, 1).unwrap();
             }
-            let count = lines.len() as u64;
+            let count = lines.len() as u64 + 1;
             // What the proxy saw of the session: its cost, and how fast the reply that worked was written.
             assert_eq!(ask(&engine, &store, "SELECT proxy_requests, cost FROM sessions")[0], serde_json::json!({ "proxy_requests": 3, "cost": 0.5 }));
             assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, model, generation_ms, tokens_per_second FROM speed WHERE session_id = 's-1'"), [serde_json::json!({ "day": "2026-10-01", "model": "claude-test-1", "generation_ms": 2000, "tokens_per_second": 250.0 })]);
-            assert_eq!(ask(&engine, &store, "SELECT (SELECT count(*) FROM lines) AS once, (SELECT count(*) FROM lines_all) AS every, (SELECT count(*) FROM lines_all WHERE repeat) AS repeats")[0], serde_json::json!({ "once": count, "every": 2 * count, "repeats": count }));
+            assert_eq!(ask(&engine, &store, "SELECT (SELECT count(*) FROM lines) AS once, (SELECT count(*) FROM lines_all) AS every, (SELECT count(*) FROM lines_all WHERE repeat) AS repeats")[0], serde_json::json!({ "once": count, "every": 2 * count - 1, "repeats": count - 1 }));
             // The command's row was written before it ended: its exit code is its result's.
             assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code, output_chars FROM commands ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_1", "exit_code": null, "output_chars": 9 + SECRET.len() }), serde_json::json!({ "tool_use_id": "toolu_8", "exit_code": 2, "output_chars": 37 }), serde_json::json!({ "tool_use_id": "toolu_9", "exit_code": 0, "output_chars": 4 }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0, "output_chars": 2 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null, "output_chars": 7 })]);
             assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code FROM tools WHERE tool_use_id IN ('toolu_2', 'toolu_10', 'toolu_11') ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_2", "exit_code": null }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null })]);
@@ -976,9 +981,9 @@ mod tests {
             assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, ts FROM lines WHERE kind = 'mode'")[0], serde_json::json!({ "day": "2026-10-01", "ts": null }));
             let session = &ask(&engine, &store, "SELECT session_id, machine, lines, prompts, requests, output, tool_calls, tool_errors, cwd, model FROM sessions")[0];
             assert_eq!(*session, serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "lines": count, "prompts": 1, "requests": 8, "output": 60 + 30 + 12 + 4 + 4 * 9, "tool_calls": 7, "tool_errors": 2, "cwd": "/srv/app", "model": "claude-test-1" }));
-            // The one prompt led to all of it, and a bare LIMIT over the turns comes back.
-            let turns = ask(&engine, &store, "SELECT session_id, machine, CAST(day AS VARCHAR) AS day, requests, output, tool_calls, tool_errors, model, elapsed_ms > 0 AS took FROM turns LIMIT 5");
-            assert_eq!(turns, [serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "day": "2026-10-01", "requests": 8, "output": 60 + 30 + 12 + 4 + 4 * 9, "tool_calls": 7, "tool_errors": 2, "model": "claude-test-1", "took": true })]);
+            // The one prompt led to all of it, noted twice or not, and a bare LIMIT over the turns comes back.
+            let turns = ask(&engine, &store, "SELECT session_id, machine, CAST(day AS VARCHAR) AS day, origin, requests, output, tool_calls, tool_errors, model, elapsed_ms > 0 AS took FROM turns LIMIT 5");
+            assert_eq!(turns, [serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "day": "2026-10-01", "origin": "person", "requests": 8, "output": 60 + 30 + 12 + 4 + 4 * 9, "tool_calls": 7, "tool_errors": 2, "model": "claude-test-1", "took": true })]);
         }
         fs::remove_dir_all(root).unwrap();
     }

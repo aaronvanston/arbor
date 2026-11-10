@@ -88,7 +88,7 @@ fn header(parser: &mut Parser, fields: &mut Fields, row: &mut Line) {
 }
 
 fn text(parser: &Parser, at: &At, (role, kind): (&str, &str), block: u32, message_id: Option<&String>, model: Option<&String>, said: String) -> Message {
-    Message { at: at.clone(), role: role.into(), kind: kind.into(), block, message_id: message_id.cloned(), request_id: None, model: model.cloned(), meta: None, chars: json::chars(&said), text: parser.text(said) }
+    Message { at: at.clone(), role: role.into(), kind: kind.into(), block, message_id: message_id.cloned(), request_id: None, model: model.cloned(), meta: None, origin: None, trigger: None, chars: json::chars(&said), text: parser.text(said) }
 }
 
 /// What a message's `content` says, as each text's place in it and the text. Content is a string or a list of

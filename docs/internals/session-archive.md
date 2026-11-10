@@ -54,12 +54,21 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
     of, compare `requests` by agent with the calls `get_lifetime_tokens` counts, leaving out requests with no
     tokens at all (a failed call, which token counting doesn't count): on a real archive of 2.5 million calls each
     agent's two numbers were within a hundredth of a percent, the gap being sessions still running.
-  - **A prompt is what the person sent, as the agent itself says.** Far more reaches the model under the user's
+  - **A prompt is what a session was sent, as the agent itself says.** Far more reaches the model under the user's
     name than anyone typed: on a real archive nearly half of Codex's user messages were the folder's instructions,
     the environment, plugins on offer and subagents' reports, and a quarter of Claude Code's prompts on one machine
     were notices from its own background tasks. Those rows are `meta`. Codex's prompt is its `user_message` event
-    or, in later versions, its `UserMessage` item (a rollout has one or the other); Claude Code's is a user line
-    that isn't `isMeta` and whose `promptSource` isn't `system`. Never tell them apart by how the text opens.
+    or, in later versions, its `UserMessage` item (a rollout has one or the other; a session carried on can have
+    both for one prompt, in two files, so prompts are counted by when they were sent). Claude Code's is a user line
+    that isn't `isMeta`, whose `promptSource` isn't `system` and whose `origin.kind`, if it has one, is `human`.
+    Never tell them apart by how the text opens.
+  - **A Claude Code subagent's task is no turn.** Its lines are under its parent's session, so its task is `meta`
+    and its work counts for the prompt that led to it; counted as prompts, those tasks were two in five of Claude
+    Code's on a real archive and cut the person's turns short. A Codex subagent is a thread of its own, so its
+    task is a turn there. `origin` on a prompt says who sent it (`person`, `program`, `subagent`, `schedule`,
+    `agent`) from what the agent wrote down: Claude Code's `promptSource` and `origin.kind`, Codex's
+    `turn_attribution` on the turn's start and `thread_source` on the rollout's first line. Where neither says, it
+    is empty, never guessed.
   - **A file that can't be read is set aside.** A kept version that fails to read (one that decompresses past the
     4 GB the archive reads, say) is left for a quarter of an hour, then four times as long each time it fails again,
     up to a week, and tried at once if it grows. Token counting does the same. Trying every pass cost a 4 GB read
