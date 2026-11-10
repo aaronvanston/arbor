@@ -54,10 +54,15 @@ describe('forecast settings', () => {
       .toEqual({ model: 'recent', lookbackDays: 3, ratePerHour: 2.5, countResets: true });
   });
 
-  it('draws a quarter of the horizon behind now, a day to a week', () => {
-    expect(forecastHistoryMs(1)).toBe(DAY);
-    expect(forecastHistoryMs(7)).toBe(1.75 * DAY);
-    expect(forecastHistoryMs(14)).toBe(3.5 * DAY);
+  it('draws as far behind now as ahead, or as far as the readings go', () => {
+    const NOW = 100 * DAY;
+    const since = (days: number) => [{ account: 'a', authIndex: '0', readings: [[NOW - days * DAY, 50, null] as [number, number, number | null]] }];
+    expect(forecastHistoryMs(7)).toBe(7 * DAY);
+    expect(forecastHistoryMs(7, since(20), NOW)).toBe(7 * DAY);
+    expect(forecastHistoryMs(14, since(5), NOW)).toBe(5 * DAY);
+    // A new install still draws a quarter of the horizon, and a day at least.
+    expect(forecastHistoryMs(14, since(1), NOW)).toBe(3.5 * DAY);
+    expect(forecastHistoryMs(1, [], NOW)).toBe(DAY);
   });
 });
 

@@ -47,7 +47,7 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
   // Read again after each refresh, which the latest reading time marks.
   const version = Math.max(0, ...headline.segments.map((segment) => segment.account.quota.fetchedAt ?? 0));
   const trend = useLimitTrend(provider, headline.label, version);
-  const historyMs = forecastHistoryMs(view.horizonDays);
+  const historyMs = forecastHistoryMs(view.horizonDays, trend.readings, nowMs);
   const forecast = useMemo(() => (trend.readings === null ? null : buildForecast({
     accounts, readings: trend.readings, settings, horizonDays: view.horizonDays, historyMs, nowMs,
   })),

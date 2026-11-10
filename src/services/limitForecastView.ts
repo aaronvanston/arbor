@@ -42,8 +42,17 @@ export function forecastSettingsFrom(preferences: Pick<AppPreferences, 'forecast
   return { model, lookbackDays: lookback, ratePerHour: Number.isFinite(rate) && rate > 0 ? rate : null, countResets: preferences.forecastResets === true };
 }
 
-/** How far back the chart draws for a horizon: a quarter of it, a day to a week. */
-export const forecastHistoryMs = (horizonDays: number) => Math.min(7 * DAY, Math.max(DAY, (horizonDays * DAY) / 4));
+/**
+ * How far back the chart draws for a horizon: as far as it looks ahead, so now sits in the middle. With readings that
+ * don't go back that far it draws what there is, and never less than a quarter of the horizon (a day at least), so
+ * a new install isn't half an empty chart.
+ */
+export function forecastHistoryMs(horizonDays: number, readings: LimitTrendAccount[] | null = null, nowMs = Date.now()) {
+  const ahead = horizonDays * DAY;
+  if (readings === null) return ahead;
+  const oldest = Math.min(nowMs, ...readings.map((account) => account.readings[0]?.[0] ?? nowMs));
+  return Math.min(ahead, Math.max(DAY, ahead / 4, nowMs - oldest));
+}
 
 export const loadLimitTrend = (provider: string, window: string, nowMs = Date.now()) =>
   invokeCommand('get_limit_trend', { provider, window, sinceMs: nowMs - FORECAST_HISTORY_MS });
