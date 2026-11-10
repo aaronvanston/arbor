@@ -16,7 +16,7 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
     if kind == "session_meta" {
         session_meta(parser, &mut payload, &mut row);
     }
-    let at = At { line: number, ts, session_id: parser.state.session_id.clone() };
+    let at = parser.at(number, ts, parser.state.session_id.clone());
     match (kind.as_str(), subkind.as_deref()) {
         ("session_meta", _) => instructions(parser, &at, &mut payload, rows),
         ("turn_context", _) => turn_context(parser, &mut payload, &mut row),
@@ -310,12 +310,45 @@ fn tool_output(parser: &Parser, at: &At, payload: &mut Fields, rows: &mut Rows) 
         }
         None => None,
     };
-    row.is_error = row.is_error.or(row.exit_code.map(|code| code != 0));
+    let said = output.as_deref().map(ended).unwrap_or_default();
+    row.exit_code = row.exit_code.or(said.exit_code);
+    row.duration_ms = row.duration_ms.or(said.duration_ms);
+    row.is_error = row.is_error.or(said.failed).or(row.exit_code.map(|code| code != 0));
     row.output_chars = output.as_deref().map_or(0, json::chars);
     rows.tool_results.push(row);
     if let Some(text) = output.and_then(|text| parser.text(text)) {
         rows.tool_io.push(ToolIo { at: at.clone(), tool_use_id, part: "output".into(), text });
     }
+}
+
+/// How a tool's run ended, as its output's first lines say it.
+#[derive(Default)]
+struct Ended {
+    exit_code: Option<i64>,
+    duration_ms: Option<u64>,
+    failed: Option<bool>,
+}
+
+/// Newer rollouts open a tool's output with a few lines about its run, then `Output:`. A shell command says
+/// `Exit code: 1` or `Process exited with code 1`, a script `Script completed` or `Script failed`, and both how
+/// long it took as `Wall time: 0.5 seconds`. An output that opens any other way says nothing.
+fn ended(output: &str) -> Ended {
+    let mut ended = Ended::default();
+    for line in output.lines().take(6) {
+        let number = |rest: &str| rest.trim_start_matches(':').split_whitespace().next().map(str::to_string);
+        if line == "Output:" {
+            break;
+        } else if let Some(rest) = line.strip_prefix("Exit code").or_else(|| line.strip_prefix("Process exited with code")) {
+            ended.exit_code = number(rest).and_then(|code| code.parse().ok());
+        } else if let Some(rest) = line.strip_prefix("Wall time") {
+            ended.duration_ms = number(rest).and_then(|seconds| seconds.parse::<f64>().ok()).filter(|seconds| seconds.is_finite() && *seconds >= 0.0).map(|seconds| (seconds * 1000.0).round() as u64);
+        } else if line == "Script completed" {
+            ended.failed = Some(false);
+        } else if matches!(line, "Script failed" | "Script terminated") {
+            ended.failed = Some(true);
+        }
+    }
+    ended
 }
 
 /// Something a turn finished. A command it ran is a row, with how it ended; the others repeat what `response_item`
@@ -427,6 +460,22 @@ pub(crate) mod tests {
         assert_eq!(command.command.as_deref(), Some(format!("rg -n TODO src | head -3 # {SECRET}").as_str()));
         let result = &rows.tool_results[0];
         assert_eq!((result.tool_use_id.as_deref(), result.exit_code, result.duration_ms, result.is_error, result.output_chars), (Some("call_1"), Some(1), Some(250), Some(true), 11 + SECRET.len() as u64));
+    }
+
+    #[test]
+    fn an_outputs_first_lines_say_how_the_run_ended() {
+        let said = |output: Value| {
+            let lines = [line(0, "session_meta", json!({ "id": "t-1" })), line(1, "response_item", json!({ "type": "function_call_output", "call_id": "call_1", "output": output }))];
+            let result = parse(Agent::Codex, Detail::Everything, &lines).tool_results.remove(0);
+            (result.exit_code, result.duration_ms, result.is_error)
+        };
+        assert_eq!(said(json!("Chunk ID: ab12\nWall time: 0.25 seconds\nProcess exited with code 3\nOriginal token count: 4\nOutput:\nboom")), (Some(3), Some(250), Some(true)));
+        assert_eq!(said(json!("Exit code: 0\nWall time: 1.5 seconds\nOutput:\nok")), (Some(0), Some(1500), Some(false)));
+        assert_eq!(said(json!([{ "type": "input_text", "text": "Script failed\nWall time 2 seconds\nOutput:\n" }, { "type": "input_text", "text": "Error: boom" }])), (None, Some(2000), Some(true)));
+        // What comes after `Output:` is the tool's own, whatever it looks like.
+        assert_eq!(said(json!("Script completed\nWall time 0.1 seconds\nOutput:\nExit code: 7")), (None, Some(100), Some(false)));
+        assert_eq!(said(json!("Chunk ID: ab12\nWall time: 10 seconds\nProcess running with session ID 4\nOutput:\n")), (None, Some(10000), None));
+        assert_eq!(said(json!(format!("All good. {SECRET}"))), (None, None, None));
     }
 
     #[test]

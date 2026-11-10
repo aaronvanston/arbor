@@ -9,7 +9,13 @@ pub struct At {
     /// The line's number in its file, from 0.
     pub line: u64,
     pub ts: Option<String>,
+    /// For a line with no time of its own, the time of the nearest line before it that had one. It isn't a column:
+    /// the row's `day` is worked out from it, so a line an agent wrote with no time still falls on a day.
+    pub near: Option<String>,
     pub session_id: Option<String>,
+    /// Whether this line was read before, from another file: a session kept more than once, or one that carried on
+    /// from another and copied its lines.
+    pub repeat: bool,
 }
 
 /// Every line of a transcript, once. `rest` is whatever the line held that no column took, as JSON, so a field this

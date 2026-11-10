@@ -38,6 +38,16 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
   - **Rows are only added.** A version is read from where it was last read to. Progress is staged in `state.db`
     with the number the next write takes, and counts once the tables hold a write of that number, so a pass stopped
     at any moment neither loses rows nor adds them twice.
+  - **A line counts once.** The same session can be kept in more than one file: an earlier copy in a backup beside
+    the finished one, or a session that carried on from another and copied its lines. `state.db` holds a 12-byte
+    key for every line read with the version it was first read from, and a line met again in another version is
+    written with `repeat` set. A table is read without its repeats; `lines_all` and the like include them. Keys are
+    staged with the progress, since a key says its line's rows are in the tables. Dropping the rows instead would
+    lose the only copy of a line whenever the first file read turned out to be the one later deleted.
+  - **A file that can't be read is set aside.** A kept version that fails to read (one that decompresses past the
+    4 GB the archive reads, say) is left for a quarter of an hour, then four times as long each time it fails again,
+    up to a week, and tried at once if it grows. Token counting does the same. Trying every pass cost a 4 GB read
+    each time and kept "still to read" from ever reaching zero.
   - **The engine is a program, not a library.** Parquet is written by DuckDB's command-line program, which Arbor
     fetches when analytics is turned on and checks against the SHA-256 pinned in the crate. What DuckDB says when it
     fails can quote a row, so only the kind of error it names is kept.

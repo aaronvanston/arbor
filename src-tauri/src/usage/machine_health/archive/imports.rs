@@ -866,7 +866,7 @@ mod tests {
         let never = [fixture.places.store.root().to_path_buf()];
         add(&fixture.db, &plan(&fixture.db, &drive, &never, "mac").unwrap(), "mini").unwrap();
         while run_imports(&fixture, 1 << 40) {}
-        let options = CountOptions { bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: std::time::Duration::from_secs(600) };
+        let options = CountOptions { bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: std::time::Duration::from_secs(600), now: 1_800_000_000 };
         let report = count_pass(&fixture.db, &fixture.places, &options, &|| false).unwrap();
         assert!(report.complete && report.failures == 0, "{report:?}");
         let lifetime = serde_json::to_value(lifetime(&fixture.db, None).unwrap()).unwrap();

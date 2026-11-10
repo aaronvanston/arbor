@@ -107,6 +107,9 @@ CREATE TABLE IF NOT EXISTS token_calls(key INTEGER PRIMARY KEY, bucket INTEGER N
 CREATE TABLE IF NOT EXISTS token_progress(
   version_id INTEGER PRIMARY KEY REFERENCES versions(version_id), counted_len INTEGER NOT NULL, seen_len INTEGER NOT NULL,
   model TEXT, records INTEGER NOT NULL DEFAULT 0) STRICT;
+-- A transcript that couldn't be counted: at what size, how many times running, and when it's tried again.
+CREATE TABLE IF NOT EXISTS token_failed(
+  version_id INTEGER PRIMARY KEY, size INTEGER NOT NULL, tries INTEGER NOT NULL, retry_at INTEGER NOT NULL) STRICT;
 -- Claude Code's own daily totals, from the stats-cache.json its homes keep: for each machine and
 -- day, the most any kept copy gives for each model and for the sessions. Numbers and model names only.
 CREATE TABLE IF NOT EXISTS recovered_tokens(

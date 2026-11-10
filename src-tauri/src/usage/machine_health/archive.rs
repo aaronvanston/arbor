@@ -374,6 +374,8 @@ pub(crate) struct ArchiveAnalyticsStatus {
     bytes: u64,
     /// Kept transcripts with something still to read, or nothing before the first pass has said.
     versions_left: Option<u64>,
+    /// Kept transcripts that couldn't be read and are left out for now. They're tried again, less and less often.
+    set_aside: u64,
     /// The tables are waiting for a pass to remove them.
     resetting: bool,
     last_error: Option<String>,
@@ -557,6 +559,7 @@ fn analytics_status(db: &Connection, settings: &Settings) -> Result<ArchiveAnaly
         rows: standing.as_ref().map_or(0, |standing| standing.rows),
         bytes: standing.as_ref().map_or(0, |standing| standing.bytes),
         versions_left: standing.as_ref().map(|standing| standing.versions_left),
+        set_aside: standing.as_ref().map_or(0, |standing| standing.set_aside),
         resetting: index::get_meta(db, "analyticsReset")?.is_some(),
         last_error: standing.and_then(|standing| standing.error),
     })
@@ -1111,8 +1114,9 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
                 report.first_failure.get_or_insert(error);
             }
         }
-        let count_options = tokens::CountOptions { bytes_per_second: options.bytes_per_second, max_bytes: COUNT_MAX_BYTES, max_time: COUNT_MAX_TIME };
-        // A version that couldn't be counted is tried again next pass; it doesn't make the archive
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs());
+        let count_options = tokens::CountOptions { bytes_per_second: options.bytes_per_second, max_bytes: COUNT_MAX_BYTES, max_time: COUNT_MAX_TIME, now };
+        // A version that couldn't be counted is tried again later; it doesn't make the archive
         // itself look like it's failing.
         let counted = tokens::count_pass(&db, &places, &count_options, &|| token.is_cancelled());
         let failure = match &counted {
@@ -1134,6 +1138,7 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
                 max_bytes: ANALYTICS_MAX_BYTES,
                 max_time: ANALYTICS_MAX_TIME,
                 merge_at: analytics::MERGE_AT,
+                now,
             };
             let extracted = analytics::extract_pass(&db, &places, &tables, &engine, &extract_options, &|| token.is_cancelled());
             let _ = analytics::note(&db, &extracted);

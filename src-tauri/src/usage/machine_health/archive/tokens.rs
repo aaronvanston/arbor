@@ -41,9 +41,11 @@ const RULE: &str = "tokens-v1";
 /// A line this long is a tool's output or a file, never a call's usage, so it's passed over.
 const LONG_LINE: usize = 64 << 20;
 
-/// The versions whose bytes are transcripts and have grown since they were last counted.
+/// The versions whose bytes are transcripts and have grown since they were last counted. `f` is there for one that
+/// couldn't be read at the size it is now.
 const UNCOUNTED: &str = "FROM versions v JOIN members m USING (member_id) JOIN sessions s USING (session_pk)
        LEFT JOIN token_progress p USING (version_id)
+       LEFT JOIN token_failed f ON f.version_id = v.version_id AND f.size = v.size
      WHERE v.encoding IN ('plain', 'zstd') AND COALESCE(p.seen_len, 0) < v.size
        AND ((s.agent = 'claude' AND (m.member = 'main' OR m.member LIKE 'main~%' OR (m.member LIKE 'subagents/%' AND m.member LIKE '%.jsonl')))
          OR (s.agent = 'codex' AND (m.member = 'rollout' OR m.member LIKE 'rollout/%' OR m.member LIKE 'original/%'))
@@ -507,6 +509,18 @@ pub(crate) struct CountOptions {
     /// Counting stops once it has read this much, or run this long, and carries on next pass.
     pub(crate) max_bytes: u64,
     pub(crate) max_time: Duration,
+    /// The time, in seconds since 1970.
+    pub(crate) now: u64,
+}
+
+/// How long a version that couldn't be read is left before it's tried again: a quarter of an hour, then four times
+/// as long each time it fails again, up to a week. One that can never be read (a file past the size the archive
+/// reads) then costs a read a week, and one that failed for a passing reason is read soon after. A version that
+/// grows is tried at once.
+pub(super) fn retry_wait(tries: u32) -> u64 {
+    const FIRST: u64 = 15 * 60;
+    const AT_MOST: u64 = 7 * 24 * 60 * 60;
+    FIRST.saturating_mul(4u64.saturating_pow(tries)).min(AT_MOST)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -531,7 +545,7 @@ fn check_rule(db: &Connection) -> Result<(), String> {
     }
     let _writes = lock_writes();
     let transaction = db.unchecked_transaction().map_err(db_error)?;
-    transaction.execute_batch("DELETE FROM token_calls; DELETE FROM token_days; DELETE FROM token_progress;").map_err(db_error)?;
+    transaction.execute_batch("DELETE FROM token_calls; DELETE FROM token_days; DELETE FROM token_progress; DELETE FROM token_failed;").map_err(db_error)?;
     set_meta(&transaction, "tokenRule", RULE)?;
     transaction.commit().map_err(db_error)
 }
@@ -541,6 +555,9 @@ struct Progress {
     agent: Agent,
     counted_len: u64,
     carry: Carry,
+    size: u64,
+    /// How many times running it couldn't be read.
+    tries: u32,
 }
 
 /// Counts what's new in every kept transcript. `stop` is asked between pieces.
@@ -557,15 +574,20 @@ pub(crate) fn count_pass(db: &Connection, blobs: &dyn Blobs, options: &CountOpti
     }
     let todo: Vec<Progress> = {
         let mut statement = db
-            .prepare(&format!("SELECT v.version_id, s.agent, COALESCE(p.counted_len, 0), p.model, COALESCE(p.records, 0) {UNCOUNTED} ORDER BY v.version_id"))
+            .prepare(&format!(
+                "SELECT v.version_id, s.agent, COALESCE(p.counted_len, 0), p.model, COALESCE(p.records, 0), v.size, COALESCE(f.tries, 0) {UNCOUNTED}
+                 AND COALESCE(f.retry_at, 0) <= ?1 ORDER BY v.version_id"
+            ))
             .map_err(db_error)?;
         let rows = statement
-            .query_map([], |row| {
+            .query_map([options.now as i64], |row| {
                 Ok(Progress {
                     version_id: row.get(0)?,
                     agent: Agent::from_name(&row.get::<_, String>(1)?),
                     counted_len: row.get::<_, i64>(2)?.max(0) as u64,
                     carry: Carry { model: row.get(3)?, records: row.get::<_, i64>(4)? != 0 },
+                    size: row.get::<_, i64>(5)?.max(0) as u64,
+                    tries: row.get(6)?,
                 })
             })
             .map_err(db_error)?;
@@ -586,8 +608,13 @@ pub(crate) fn count_pass(db: &Connection, blobs: &dyn Blobs, options: &CountOpti
             report.bytes_read += read;
             out_of_time(&report)
         };
+        let (version_id, size, tries) = (progress.version_id, progress.size, progress.tries);
         match count_version(db, blobs, progress, &mut throttle, &mut enough) {
             Ok((calls, finished)) => {
+                if tries > 0 {
+                    let _writes = lock_writes();
+                    db.execute("DELETE FROM token_failed WHERE version_id = ?1", [version_id]).map_err(db_error)?;
+                }
                 report.versions += 1;
                 report.calls += calls;
                 if !finished {
@@ -595,8 +622,16 @@ pub(crate) fn count_pass(db: &Connection, blobs: &dyn Blobs, options: &CountOpti
                     break;
                 }
             }
-            // Counted again next pass.
+            // Counted again later: soon the first time, then less and less often.
             Err(error) => {
+                {
+                    let _writes = lock_writes();
+                    db.execute(
+                        "INSERT OR REPLACE INTO token_failed(version_id, size, tries, retry_at) VALUES(?1, ?2, ?3, ?4)",
+                        params![version_id, size as i64, tries + 1, options.now.saturating_add(retry_wait(tries)) as i64],
+                    )
+                    .map_err(db_error)?;
+                }
                 report.failures += 1;
                 report.first_failure.get_or_insert(error);
             }
@@ -771,10 +806,13 @@ fn save(db: &Connection, version_id: i64, source_id: i64, agent: &str, (counted_
     Ok(new_calls)
 }
 
+/// Notes what a pass couldn't count, or that it counted everything. A pass that left a version alone because it
+/// couldn't be read before says nothing new of it, so the last word on it stands.
 pub(crate) fn note_failure(db: &Connection, error: Option<&str>) -> Result<(), String> {
     let _writes = lock_writes();
     match error {
         Some(error) => set_meta(db, "tokenError", error),
+        None if db.query_row(&format!("SELECT EXISTS(SELECT 1 {UNCOUNTED} AND f.version_id IS NOT NULL)"), [], |row| row.get::<_, bool>(0)).map_err(db_error)? => Ok(()),
         None => db.execute("DELETE FROM meta WHERE key = 'tokenError'", []).map(|_| ()).map_err(db_error),
     }
 }
@@ -834,7 +872,7 @@ pub(crate) struct LifetimeTokens {
     /// It counts more than the transcripts hold, so these are in none of the rows above.
     recovered: Vec<RecoveredDay>,
     recovered_overlap: RecoveredOverlap,
-    /// Kept transcripts not yet counted to their end.
+    /// Kept transcripts not yet counted to their end, leaving out the ones that couldn't be read.
     versions_left: u64,
     bytes_left: u64,
     last_error: Option<String>,
@@ -899,7 +937,7 @@ pub(crate) fn lifetime(db: &Connection, machine: Option<&str>) -> Result<Lifetim
         rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?
     };
     let (versions_left, bytes_left): (i64, Option<i64>) =
-        db.query_row(&format!("SELECT COUNT(*), SUM(v.size - COALESCE(p.counted_len, 0)) {UNCOUNTED}"), [], |row| Ok((row.get(0)?, row.get(1)?))).map_err(db_error)?;
+        db.query_row(&format!("SELECT COUNT(*), SUM(v.size - COALESCE(p.counted_len, 0)) {UNCOUNTED} AND f.version_id IS NULL"), [], |row| Ok((row.get(0)?, row.get(1)?))).map_err(db_error)?;
     let (recovered, recovered_overlap) = recovered::days(db, machine)?;
     Ok(LifetimeTokens {
         archived: get_meta(db, "archiveId")?.is_some(),
@@ -1096,7 +1134,7 @@ pub(crate) mod tests {
     const FORK: &str = "019a1b2c-3d4e-7f00-8111-999988887777";
 
     fn everything() -> CountOptions {
-        CountOptions { bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600) }
+        CountOptions { bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), now: 1_800_000_000 }
     }
 
     fn count(fixture: &Fixture, options: &CountOptions) -> CountReport {
@@ -1245,6 +1283,18 @@ pub(crate) mod tests {
         assert_eq!(report.failures, 1);
         assert!(report.first_failure.as_deref().is_some_and(|error| error.contains("MB decompressed")), "{:?}", report.first_failure);
         assert_eq!(totals(&fixture), (0, 0));
+        // It isn't read again each pass: it's left for a quarter of an hour, then an hour, and isn't waiting meanwhile.
+        note_failure(&fixture.db, report.first_failure.as_deref()).unwrap();
+        let later = |seconds: u64| CountOptions { now: everything().now + seconds, ..everything() };
+        let again = count(&fixture, &later(retry_wait(0) - 1));
+        assert_eq!((again.failures, again.bytes_read), (0, 0));
+        assert_eq!(lifetime(&fixture.db, None).unwrap().versions_left, 0);
+        // The pass that left it alone doesn't take back what the last one said of it.
+        note_failure(&fixture.db, again.first_failure.as_deref()).unwrap();
+        assert!(lifetime(&fixture.db, None).unwrap().last_error.is_some_and(|error| error.contains("MB decompressed")));
+        assert_eq!(count(&fixture, &later(retry_wait(0))).failures, 1);
+        assert_eq!(count(&fixture, &later(retry_wait(0) + retry_wait(1) - 1)).failures, 0);
+        assert_eq!(count(&fixture, &later(retry_wait(0) + retry_wait(1))).failures, 1);
         let _ = fs::remove_dir_all(&fixture.base);
     }
 

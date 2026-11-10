@@ -45,7 +45,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   machineOverrides: {},
   projectOverrides: {},
   warnings: [],
-  analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, resetting: false, lastError: null },
+  analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, setAside: 0, resetting: false, lastError: null },
   ...fields,
 });
 

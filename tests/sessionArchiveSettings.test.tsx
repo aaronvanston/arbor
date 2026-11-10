@@ -29,7 +29,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   machineOverrides: {},
   projectOverrides: {},
   warnings: [],
-  analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, resetting: false, lastError: null },
+  analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, setAside: 0, resetting: false, lastError: null },
   ...fields,
 });
 const overview = (fields: Partial<ArchiveStatus> = {}) => text(renderToStaticMarkup(<I18nProvider><ArchiveOverview status={status(fields)} onStatus={() => undefined} /></I18nProvider>));
@@ -168,6 +168,11 @@ describe('Settings › Session archive', () => {
     // Catching up, and failing.
     expect(overview({ analytics: { ...base, enabled: true, engineReady: true, rows: 10, bytes: 10, versionsLeft: 1840 } })).toContain('1840 session files still to read.');
     expect(overview({ analytics: { ...base, enabled: true, engineReady: true, versionsLeft: 0, lastError: 'The query engine stopped while writing tables (IO Error)' } })).toContain('The last check couldn’t update them: The query engine stopped while writing tables (IO Error)');
+    // A file that couldn't be read is said beside an otherwise good state.
+    const aside = overview({ analytics: { ...base, enabled: true, engineReady: true, rows: 10, bytes: 10, versionsLeft: 0, setAside: 1 } });
+    expect(aside).toContain('Up to date.');
+    expect(aside).toContain('1 session file couldn’t be read and is left out.');
+    expect(on).not.toContain('left out');
     // Off with tables left behind: they can be deleted, and say they're not kept up.
     const kept = overview({ analytics: { ...base, engineReady: true, rows: 10, bytes: 10, versionsLeft: 0 } });
     expect(kept).toContain('Delete tables');

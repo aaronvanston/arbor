@@ -175,7 +175,7 @@ const ANALYTICS_BYTES = 312_000_000;
 
 /** `?analytics=`: see the list at the top of mockTauri.ts. */
 function mockArchiveAnalytics(scenario: string): ArchiveAnalyticsStatus {
-  const off: ArchiveAnalyticsStatus = { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, resetting: false, lastError: null };
+  const off: ArchiveAnalyticsStatus = { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, setAside: 0, resetting: false, lastError: null };
   const on: ArchiveAnalyticsStatus = { ...off, enabled: true, engineReady: true, rows: ANALYTICS_ROWS, bytes: ANALYTICS_BYTES, versionsLeft: 0 };
   switch (scenario) {
     case 'on': return on;
@@ -183,6 +183,7 @@ function mockArchiveAnalytics(scenario: string): ArchiveAnalyticsStatus {
     case 'reading': return { ...on, rows: 1_204_500, bytes: 96_000_000, versionsLeft: 1_840 };
     case 'new': return { ...on, rows: 0, bytes: 0, versionsLeft: null };
     case 'error': return { ...on, lastError: 'The query engine stopped while writing tables (IO Error)' };
+    case 'unreadable': return { ...on, setAside: 2 };
     case 'kept': return { ...on, enabled: false };
     case 'unavailable': return { ...off, engineBytes: null };
     default: return off;

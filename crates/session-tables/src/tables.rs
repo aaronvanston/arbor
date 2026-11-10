@@ -27,8 +27,19 @@ pub struct Table {
 }
 
 /// The columns every placed row starts with. `source` is the file a row was read from, as whoever read it names it.
-const PLACE: [(&str, Kind); 7] =
-    [("agent", Kind::Text), ("machine", Kind::Text), ("source", Kind::Text), ("line", Kind::Count), ("ts", Kind::Time), ("day", Kind::Day), ("session_id", Kind::Text)];
+/// `day` is the day of `ts`, or for a line with no time, of the nearest line before it that had one. `repeat` is
+/// whether the row's line was read before, from another file.
+const PLACE: [(&str, Kind); 8] = [
+    ("agent", Kind::Text),
+    ("machine", Kind::Text),
+    ("source", Kind::Text),
+    ("line", Kind::Count),
+    ("ts", Kind::Time),
+    ("day", Kind::Day),
+    ("session_id", Kind::Text),
+    (REPEAT, Kind::Flag),
+];
+pub(crate) const REPEAT: &str = "repeat";
 
 impl Table {
     /// Every column, in the order the table has them.
@@ -42,7 +53,96 @@ pub fn table(name: &str) -> Option<&'static Table> {
     TABLES.iter().find(|table| table.name == name)
 }
 
-use Kind::{Count, Flag, Number, Text, Texts};
+/// Something a query can name: a table as it's read, or a view worked out from tables.
+pub struct Shown {
+    pub name: &'static str,
+    pub columns: Vec<(&'static str, Kind)>,
+}
+
+/// Everything a query can name, with its columns. A table is read without its repeats, so it has no `repeat`
+/// column; the same name with `_all` after it (`lines_all`) has the repeats too, and the column that marks them.
+pub fn shown() -> Vec<Shown> {
+    let tables = TABLES.iter().map(|table| Shown { name: table.name, columns: table.columns().into_iter().filter(|(name, _)| *name != REPEAT).collect() });
+    tables.chain(VIEWS.iter().map(|view| Shown { name: view.name, columns: view.columns.to_vec() })).collect()
+}
+
+use Kind::{Count, Day, Flag, Number, Text, Texts, Time};
+
+/// Rows worked out from the tables when they're asked for, and kept nowhere.
+pub(crate) struct View {
+    pub(crate) name: &'static str,
+    pub(crate) columns: &'static [(&'static str, Kind)],
+    /// What it selects, over the tables as they're read.
+    pub(crate) sql: &'static str,
+}
+
+/// How each tool call ended, once per call: the earliest result with its id.
+pub(crate) const RESULTS: &str = "(SELECT agent, tool_use_id, min(ts) AS ts, bool_or(is_error) AS is_error, max(exit_code) AS exit_code, bool_or(interrupted) AS interrupted, bool_or(timed_out) AS timed_out, max(duration_ms) AS duration_ms, max(output_chars) AS output_chars FROM \"tool_results\" WHERE tool_use_id IS NOT NULL GROUP BY agent, tool_use_id)";
+
+pub(crate) const VIEWS: [View; 2] = [
+    // A tool call with how it ended. `elapsed_ms` is from the call's line to its result's, so it counts a wait for
+    // the person's leave as well as the run; `duration_ms` is the run alone, where the agent wrote it down.
+    View {
+        name: "tools",
+        columns: &[
+            ("agent", Text),
+            ("machine", Text),
+            ("source", Text),
+            ("line", Count),
+            ("ts", Time),
+            ("day", Day),
+            ("session_id", Text),
+            ("tool_use_id", Text),
+            ("tool", Text),
+            ("namespace", Text),
+            ("mcp_server", Text),
+            ("mcp_tool", Text),
+            ("subagent_type", Text),
+            ("skill", Text),
+            ("input_chars", Count),
+            ("ended", Time),
+            ("is_error", Flag),
+            ("exit_code", Number),
+            ("interrupted", Flag),
+            ("timed_out", Flag),
+            ("duration_ms", Count),
+            ("elapsed_ms", Count),
+            ("output_chars", Count),
+        ],
+        sql: "SELECT c.agent, c.machine, c.source, c.line, c.ts, c.day, c.session_id, c.tool_use_id, c.tool, c.namespace, c.mcp_server, c.mcp_tool, c.subagent_type, c.skill, c.input_chars, r.ts AS ended, r.is_error, r.exit_code, r.interrupted, r.timed_out, r.duration_ms, CASE WHEN r.ts >= c.ts THEN date_diff('millisecond', c.ts, r.ts) END AS elapsed_ms, r.output_chars FROM \"tool_calls\" c LEFT JOIN {results} r ON r.agent = c.agent AND r.tool_use_id = c.tool_use_id",
+    },
+    // A session, once, however many files it's in.
+    View {
+        name: "sessions",
+        columns: &[
+            ("agent", Text),
+            ("session_id", Text),
+            ("machine", Text),
+            ("started", Time),
+            ("ended", Time),
+            ("day", Day),
+            ("cwd", Text),
+            ("branch", Text),
+            ("parent_session_id", Text),
+            ("agent_version", Text),
+            ("model", Text),
+            ("lines", Count),
+            ("prompts", Count),
+            ("requests", Count),
+            ("input", Count),
+            ("output", Count),
+            ("cache_read", Count),
+            ("cache_write", Count),
+            ("tool_calls", Count),
+            ("tool_errors", Count),
+        ],
+        sql: "SELECT l.agent, l.session_id, l.machine, l.started, l.ended, CAST(l.started AT TIME ZONE 'UTC' AS DATE) AS day, l.cwd, l.branch, l.parent_session_id, l.agent_version, r.model, l.lines, coalesce(m.prompts, 0) AS prompts, coalesce(r.requests, 0) AS requests, coalesce(r.input, 0) AS input, coalesce(r.output, 0) AS output, coalesce(r.cache_read, 0) AS cache_read, coalesce(r.cache_write, 0) AS cache_write, coalesce(t.tool_calls, 0) AS tool_calls, coalesce(t.tool_errors, 0) AS tool_errors \
+              FROM (SELECT agent, session_id, any_value(machine) AS machine, min(ts) AS started, max(ts) AS ended, arg_min(cwd, line) AS cwd, arg_max(branch, line) AS branch, any_value(parent_session_id) AS parent_session_id, arg_max(agent_version, line) AS agent_version, count(*) AS lines FROM \"lines\" WHERE session_id IS NOT NULL GROUP BY agent, session_id) l \
+              LEFT JOIN (SELECT agent, session_id, mode(model) AS model, count(*) AS requests, CAST(sum(input) AS BIGINT) AS input, CAST(sum(output) AS BIGINT) AS output, CAST(sum(cache_read) AS BIGINT) AS cache_read, CAST(sum(cache_write) AS BIGINT) AS cache_write FROM \"requests\" GROUP BY agent, session_id) r ON r.agent = l.agent AND r.session_id = l.session_id \
+              LEFT JOIN (SELECT agent, session_id, count(*) AS prompts FROM \"messages\" WHERE kind = 'prompt' AND meta IS NOT TRUE GROUP BY agent, session_id) m ON m.agent = l.agent AND m.session_id = l.session_id \
+              LEFT JOIN (SELECT agent, session_id, count(*) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors FROM \"tools\" GROUP BY agent, session_id) t ON t.agent = l.agent AND t.session_id = l.session_id",
+    },
+];
 
 pub const TABLES: [Table; 12] = [
     Table {

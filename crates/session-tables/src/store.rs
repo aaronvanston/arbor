@@ -14,7 +14,7 @@
 //!
 //! One writer at a time: whoever calls [`Store::write`], [`Store::merge`] or [`Store::sweep`] holds the folder.
 
-use crate::tables::{Kind, Table, TABLES};
+use crate::tables::{Kind, Table, REPEAT, RESULTS, TABLES, VIEWS};
 use crate::{Agent, Rows};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -47,6 +47,8 @@ pub const FILES_A_MONTH: usize = 8;
 /// The engine reads JSON lines into buffers as long as the longest line it's told to expect, so it's told the
 /// longest one a batch really has, and never less than this.
 const SHORTEST_BUFFER: u64 = 1 << 20;
+/// A row's field that isn't a column: the time its day is worked out from when it has none of its own.
+const NEAR: &str = "near";
 /// How every file is written. A row group is cut by its bytes and not its rows: the engine holds a whole group in
 /// memory to write it and again to read it, and a group of rows by the hundred thousand, each with a tool's output
 /// in it, is gigabytes. The engine only cuts by bytes with `preserve_insertion_order` off, which the settings do.
@@ -440,21 +442,40 @@ impl Store {
         Ok(())
     }
 
-    /// SQL that makes a view of each table over the files it has now. A table with no files is a view with no rows
-    /// and every column, so a query that names it still runs.
+    /// SQL that makes a view of each table over the files it has now, and the views worked out from them. A table
+    /// with no files is a view with no rows and every column, so a query that names it still runs.
+    ///
+    /// A table that says where its rows came from is two views: `lines_all` is every row, and `lines` is the rows
+    /// that aren't repeats, without the column that marks them, so a count over it counts each line once. A command
+    /// is written before it ends, so `commands` takes how it ended from its result.
     pub fn views(&self) -> String {
         let mut sql = String::new();
         for table in &TABLES {
             let parts = self.parts(table.name);
             let columns = table.columns();
+            let name = if table.placed { format!("{}_all", table.name) } else { table.name.to_string() };
             if parts.is_empty() {
                 let empty: Vec<String> = columns.iter().map(|(name, kind)| format!("CAST(NULL AS {}) AS \"{name}\"", stored(*kind))).collect();
-                sql.push_str(&format!("CREATE VIEW \"{}\" AS SELECT {} WHERE false;\n", table.name, empty.join(", ")));
+                sql.push_str(&format!("CREATE VIEW \"{name}\" AS SELECT {} WHERE false;\n", empty.join(", ")));
             } else {
                 // A thing can be in a fresh file and the merged one at once, until the next merge.
                 let distinct = if table.placed { "" } else { "DISTINCT ON (hash) " };
-                sql.push_str(&format!("CREATE VIEW \"{}\" AS SELECT {distinct}{} FROM read_parquet({}, union_by_name = true);\n", table.name, names(table), self.list(parts.iter())));
+                sql.push_str(&format!("CREATE VIEW \"{name}\" AS SELECT {distinct}{} FROM read_parquet({}, union_by_name = true);\n", names(table), self.list(parts.iter())));
             }
+            if !table.placed {
+                continue;
+            }
+            let once: Vec<String> = columns.iter().filter(|(column, _)| *column != REPEAT).map(|(column, _)| format!("\"{column}\"")).collect();
+            if table.name == "commands" {
+                let ended = ["exit_code", "duration_ms", "output_chars"];
+                let taken: Vec<String> = columns.iter().filter(|(column, _)| *column != REPEAT).map(|(column, _)| if ended.contains(column) { format!("coalesce(c.\"{column}\", r.\"{column}\") AS \"{column}\"") } else { format!("c.\"{column}\"") }).collect();
+                sql.push_str(&format!("CREATE VIEW \"commands\" AS SELECT {} FROM \"{name}\" c LEFT JOIN {RESULTS} r ON r.agent = c.agent AND r.tool_use_id = c.tool_use_id WHERE c.\"{REPEAT}\" IS NOT TRUE;\n", taken.join(", ")));
+            } else {
+                sql.push_str(&format!("CREATE VIEW \"{}\" AS SELECT {} FROM \"{name}\" WHERE \"{REPEAT}\" IS NOT TRUE;\n", table.name, once.join(", ")));
+            }
+        }
+        for view in &VIEWS {
+            sql.push_str(&format!("CREATE VIEW \"{}\" AS {};\n", view.name, view.sql.replace("{results}", RESULTS)));
         }
         sql
     }
@@ -576,7 +597,7 @@ fn stored(kind: Kind) -> &'static str {
 /// that isn't one, or a count too large for the column, is read as nothing.
 fn read_json(table: &Table, file: &Path, longest: u64) -> String {
     let columns = table.columns();
-    let read: Vec<String> = columns
+    let mut read: Vec<String> = columns
         .iter()
         .filter(|(_, kind)| *kind != Kind::Day)
         .map(|(name, kind)| {
@@ -588,12 +609,15 @@ fn read_json(table: &Table, file: &Path, longest: u64) -> String {
             format!("\"{name}\": '{read}'")
         })
         .collect();
+    if table.placed {
+        read.push(format!("\"{NEAR}\": 'VARCHAR'"));
+    }
     let select: Vec<String> = columns
         .iter()
         .map(|(name, kind)| match kind {
             Kind::Count => format!("try_cast(\"{name}\" AS BIGINT) AS \"{name}\""),
             Kind::Time => format!("try_cast(\"{name}\" AS TIMESTAMPTZ) AS \"{name}\""),
-            Kind::Day => format!("CAST(try_cast(ts AS TIMESTAMPTZ) AT TIME ZONE 'UTC' AS DATE) AS \"{name}\""),
+            Kind::Day => format!("CAST(try_cast(coalesce(ts, \"{NEAR}\") AS TIMESTAMPTZ) AT TIME ZONE 'UTC' AS DATE) AS \"{name}\""),
             _ => format!("\"{name}\""),
         })
         .collect();
@@ -710,6 +734,7 @@ mod tests {
             let text = fs::read_to_string(dir.join(format!("{name}.jsonl"))).unwrap();
             assert_eq!(text.lines().count() as u64, rows);
             let mut listed: Vec<&str> = table(name).columns().into_iter().filter(|(_, kind)| *kind != Kind::Day).map(|(column, _)| column).collect();
+            listed.extend(table(name).placed.then_some(NEAR));
             listed.sort_unstable();
             for line in text.lines() {
                 let Value::Object(row) = serde_json::from_str::<Value>(line).unwrap() else { panic!("{name}: a row isn't an object") };
@@ -843,6 +868,40 @@ mod tests {
     }
 
     #[test]
+    fn a_table_is_read_without_its_repeats_and_a_command_takes_how_it_ended_from_its_result() {
+        let Some(engine) = engine() else { return };
+        let root = temp_dir("once");
+        let mut store = Store::open(&root).unwrap();
+        let lines = [claude::tests::session(), claude::tests::commands()].concat();
+        let mut batch = store.batch().unwrap();
+        for (source, repeat) in [("one", false), ("two", true)] {
+            let mut parser = crate::Parser::new(Agent::Claude, Detail::Everything, crate::State::default());
+            let mut rows = Rows::default();
+            for (number, line) in lines.iter().enumerate() {
+                parser.line_once(number as u64, line.as_bytes(), &mut |_| repeat, &mut rows);
+            }
+            parser.finish(&mut rows);
+            batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source }, &rows).unwrap();
+        }
+        store.write(batch, &engine).unwrap();
+        for merged in [false, true] {
+            if merged {
+                store.merge(&engine, 1).unwrap();
+            }
+            let count = lines.len() as u64;
+            assert_eq!(ask(&engine, &store, "SELECT (SELECT count(*) FROM lines) AS once, (SELECT count(*) FROM lines_all) AS every, (SELECT count(*) FROM lines_all WHERE repeat) AS repeats")[0], serde_json::json!({ "once": count, "every": 2 * count, "repeats": count }));
+            // The command's row was written before it ended: its exit code is its result's.
+            assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code, output_chars FROM commands ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_1", "exit_code": null, "output_chars": 9 + SECRET.len() }), serde_json::json!({ "tool_use_id": "toolu_8", "exit_code": 2, "output_chars": 37 }), serde_json::json!({ "tool_use_id": "toolu_9", "exit_code": 0, "output_chars": 4 })]);
+            assert_eq!(ask(&engine, &store, "SELECT tool, is_error, exit_code, elapsed_ms FROM tools WHERE tool_use_id = 'toolu_8'")[0], serde_json::json!({ "tool": "Bash", "is_error": true, "exit_code": 2, "elapsed_ms": 2000 }));
+            // The line with no time falls on the day of the line before it.
+            assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, ts FROM lines WHERE kind = 'mode'")[0], serde_json::json!({ "day": "2026-10-01", "ts": null }));
+            let session = &ask(&engine, &store, "SELECT session_id, machine, lines, prompts, requests, output, tool_calls, tool_errors, cwd, model FROM sessions")[0];
+            assert_eq!(*session, serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "lines": count, "prompts": 1, "requests": 6, "output": 60 + 30 + 12 + 4 + 9 + 9, "tool_calls": 5, "tool_errors": 2, "cwd": "/srv/app", "model": "claude-test-1" }));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn row_groups_stay_small_however_much_text_rows_hold() {
         let Some(engine) = engine() else { return };
         let root = temp_dir("groups");
@@ -906,11 +965,12 @@ mod tests {
         let Some(engine) = engine() else { return };
         let root = temp_dir("empty");
         let store = Store::open(&root).unwrap();
-        for table in &TABLES {
-            let described = ask(&engine, &store, &format!("DESCRIBE \"{}\"", table.name));
+        let all = TABLES.iter().filter(|table| table.placed).map(|table| (format!("{}_all", table.name), table.columns()));
+        for (name, columns) in crate::tables::shown().into_iter().map(|shown| (shown.name.to_string(), shown.columns)).chain(all) {
+            let described = ask(&engine, &store, &format!("DESCRIBE \"{name}\""));
             let found: Vec<(String, String)> = described.iter().map(|row| (row["column_name"].as_str().unwrap().to_string(), row["column_type"].as_str().unwrap().to_string())).collect();
-            let listed: Vec<(String, String)> = table.columns().into_iter().map(|(name, kind)| (name.to_string(), stored(kind).replace("TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"))).collect();
-            assert_eq!(found, listed, "{}", table.name);
+            let listed: Vec<(String, String)> = columns.into_iter().map(|(name, kind)| (name.to_string(), stored(kind).replace("TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"))).collect();
+            assert_eq!(found, listed, "{name}");
         }
         fs::remove_dir_all(root).unwrap();
     }
@@ -922,8 +982,8 @@ mod tests {
         let mut store = Store::open(&root).unwrap();
         let long = "x".repeat(20 << 20);
         let mut rows = Rows::default();
-        rows.lines.push(crate::Line { at: crate::At { line: u64::MAX, ts: Some("not a time".into()), session_id: Some("it's \"quoted\"\n\u{0}".into()) }, kind: "odd".into(), bytes: u64::MAX, rest: Some(long.clone()), ..Default::default() });
-        rows.lines.push(crate::Line { at: crate::At { line: 1, ts: Some("2026-10-31T23:59:59.5-02:00".into()), session_id: None }, kind: "zoned".into(), ..Default::default() });
+        rows.lines.push(crate::Line { at: crate::At { line: u64::MAX, ts: Some("not a time".into()), session_id: Some("it's \"quoted\"\n\u{0}".into()), ..Default::default() }, kind: "odd".into(), bytes: u64::MAX, rest: Some(long.clone()), ..Default::default() });
+        rows.lines.push(crate::Line { at: crate::At { line: 1, ts: Some("2026-10-31T23:59:59.5-02:00".into()), ..Default::default() }, kind: "zoned".into(), ..Default::default() });
         let mut batch = store.batch().unwrap();
         batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source: "one" }, &rows).unwrap();
         assert_eq!(store.write(batch, &engine).unwrap(), 2);

@@ -10,15 +10,21 @@
 //! `state.db` in two steps around each write, so a pass stopped at any moment neither loses rows nor adds them twice:
 //! what the write will have read is staged with the number the write takes, and becomes the progress once the tables
 //! hold a write of that number.
+//!
+//! A session can be kept more than once: an earlier copy in a backup beside the finished one, or one that carried
+//! on from another and copied its lines. `state.db` holds a short key for every line read and the version it was
+//! first read from, and the same line met in another version is marked as a repeat. The keys are staged with the
+//! progress, since a key says its line's rows are in the tables.
 
 use super::classify::{load_version, Blobs, Version};
 use super::codec;
 use super::ingest::Throttle;
-use super::tokens::{pieces, read_piece, Piece};
+use super::tokens::{pieces, read_piece, retry_wait, Piece};
 use rusqlite::{params, Connection, OptionalExtension};
 use session_tables::store::{Batch, Engine, Origin, Store as Tables, DUCKDB_ARCHIVES, DUCKDB_VERSION};
-use session_tables::{Agent, At, Detail, Line, Parser, Rows, State};
-use std::collections::HashMap;
+use session_tables::{Agent, At, Detail, Line, LineKey, Parser, Rows, State};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -28,7 +34,7 @@ pub(crate) const FOLDER: &str = "analytics";
 /// A table's fresh files are folded into months once there are this many.
 pub(crate) const MERGE_AT: usize = 8;
 /// What a row is. Changing it makes the tables again.
-const RULE: &str = "tables-v1";
+const RULE: &str = "tables-v2";
 /// A write is made once this much is waiting.
 const BATCH_BYTES: u64 = 64 << 20;
 /// A version's rows wait in memory until it's read to its end, unless it has this much to read: then what's
@@ -59,7 +65,15 @@ CREATE TABLE IF NOT EXISTS progress(
 CREATE TABLE IF NOT EXISTS staged(
   version_id INTEGER PRIMARY KEY, batch INTEGER NOT NULL, read_len INTEGER NOT NULL, seen_len INTEGER NOT NULL,
   lines INTEGER NOT NULL, done INTEGER NOT NULL, state TEXT NOT NULL) STRICT;
+-- A key for every line read, with the version it was first read from. Keys wait in seen_staged, as progress does.
+CREATE TABLE IF NOT EXISTS seen(key BLOB PRIMARY KEY, version_id INTEGER NOT NULL) WITHOUT ROWID, STRICT;
+CREATE TABLE IF NOT EXISTS seen_staged(key BLOB PRIMARY KEY, version_id INTEGER NOT NULL, batch INTEGER NOT NULL) WITHOUT ROWID, STRICT;
+-- A version that couldn't be read: at what size, how many times running, and when it's tried again
+-- (`tokens::retry_wait`).
+CREATE TABLE IF NOT EXISTS failed(
+  version_id INTEGER PRIMARY KEY, size INTEGER NOT NULL, tries INTEGER NOT NULL, retry_at INTEGER NOT NULL) STRICT;
 ";
+
 
 pub(crate) struct ExtractOptions {
     pub(crate) detail: Detail,
@@ -69,6 +83,8 @@ pub(crate) struct ExtractOptions {
     pub(crate) max_time: Duration,
     /// A table's fresh files are folded into months once there are this many.
     pub(crate) merge_at: usize,
+    /// The time, in seconds since 1970.
+    pub(crate) now: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -82,6 +98,8 @@ pub(crate) struct ExtractReport {
     pub(crate) first_failure: Option<String>,
     /// Kept transcripts with something still to read, once the pass ended.
     pub(crate) versions_left: u64,
+    /// Kept transcripts that couldn't be read and aren't being tried for now.
+    pub(crate) set_aside: u64,
     /// What the tables hold, once the pass ended.
     pub(crate) table_rows: u64,
     pub(crate) table_bytes: u64,
@@ -209,13 +227,15 @@ pub(crate) struct Standing {
     pub(crate) bytes: u64,
     /// Kept transcripts with something still to read.
     pub(crate) versions_left: u64,
+    /// Kept transcripts that couldn't be read and aren't being tried for now.
+    pub(crate) set_aside: u64,
     pub(crate) error: Option<String>,
 }
 
 /// Notes how a pass over the tables went. One that failed outright keeps the last counts, with its error.
 pub(crate) fn note(db: &Connection, outcome: &Result<ExtractReport, String>) -> Result<(), String> {
     let standing = match outcome {
-        Ok(report) => Standing { rows: report.table_rows, bytes: report.table_bytes, versions_left: report.versions_left, error: report.first_failure.clone() },
+        Ok(report) => Standing { rows: report.table_rows, bytes: report.table_bytes, versions_left: report.versions_left, set_aside: report.set_aside, error: report.first_failure.clone() },
         Err(error) => Standing { error: Some(error.clone()), ..standing(db)?.unwrap_or_default() },
     };
     let _writes = super::index::lock_writes();
@@ -277,6 +297,43 @@ struct Todo {
     version_id: i64,
     agent: Agent,
     machine: Option<String>,
+    size: u64,
+    /// How many times running it couldn't be read.
+    tries: u32,
+}
+
+/// The lines first read in rows that aren't in the tables yet.
+#[derive(Default)]
+struct Keys {
+    /// From versions whose rows are waiting to be written, by version.
+    waiting: HashMap<LineKey, i64>,
+    /// From the version being read.
+    reading: HashSet<LineKey>,
+    error: Option<String>,
+}
+
+impl Keys {
+    /// Whether a line was read before from another version. One met for the first time is remembered.
+    fn repeat(&mut self, state: &Connection, version_id: i64, key: LineKey) -> bool {
+        if self.reading.contains(&key) {
+            return false;
+        }
+        if let Some(first) = self.waiting.get(&key) {
+            return *first != version_id;
+        }
+        let found = state.prepare_cached("SELECT version_id FROM seen WHERE key = ?1").and_then(|mut statement| statement.query_row([&key[..]], |row| row.get::<_, i64>(0)).optional());
+        match found {
+            Ok(Some(first)) => first != version_id,
+            Ok(None) => {
+                self.reading.insert(key);
+                false
+            }
+            Err(error) => {
+                self.error.get_or_insert(state_error(error));
+                false
+            }
+        }
+    }
 }
 
 fn open_state(root: &Path) -> Result<Connection, String> {
@@ -286,6 +343,8 @@ fn open_state(root: &Path) -> Result<Connection, String> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(root.join("state.db"), std::fs::Permissions::from_mode(0o600));
     }
+    // Every line read is looked up among the keys, so more of them stay in memory than SQLite keeps by itself.
+    state.execute_batch("PRAGMA cache_size = -65536;").map_err(state_error)?;
     state.execute_batch(STATE_SCHEMA).map_err(state_error)?;
     Ok(state)
 }
@@ -303,7 +362,7 @@ fn open(root: &Path, detail: Detail) -> Result<(Tables, Connection), String> {
         return Ok((tables, state));
     }
     // Progress goes first: tables without progress are read into again, and never the other way round.
-    state.execute_batch("DELETE FROM progress; DELETE FROM staged; DELETE FROM meta WHERE key = 'madeBy';").map_err(state_error)?;
+    state.execute_batch("DELETE FROM progress; DELETE FROM staged; DELETE FROM seen; DELETE FROM seen_staged; DELETE FROM failed; DELETE FROM meta WHERE key = 'madeBy';").map_err(state_error)?;
     drop(tables);
     Tables::clear(root);
     let tables = Tables::open(root)?;
@@ -322,11 +381,28 @@ fn settle(state: &Connection, tables: &Tables) -> Result<(), String> {
         )
         .map_err(state_error)?;
     transaction.execute("DELETE FROM staged", []).map_err(state_error)?;
+    transaction.execute("INSERT OR IGNORE INTO seen(key, version_id) SELECT key, version_id FROM seen_staged WHERE batch < ?1", [tables.next() as i64]).map_err(state_error)?;
+    transaction.execute("DELETE FROM seen_staged", []).map_err(state_error)?;
     transaction.commit().map_err(state_error)
 }
 
-fn save(state: &Connection, steps: &[Step], batch: Option<u64>) -> Result<(), String> {
+fn save(state: &Connection, steps: &[Step], keys: &HashMap<LineKey, i64>, batch: Option<u64>) -> Result<(), String> {
     let transaction = state.unchecked_transaction().map_err(state_error)?;
+    {
+        let mut add = transaction
+            .prepare(match batch {
+                Some(_) => "INSERT OR REPLACE INTO seen_staged(key, version_id, batch) VALUES(?1, ?2, ?3)",
+                None => "INSERT OR IGNORE INTO seen(key, version_id) VALUES(?1, ?2)",
+            })
+            .map_err(state_error)?;
+        for (key, version_id) in keys {
+            match batch {
+                Some(batch) => add.execute(params![&key[..], version_id, batch as i64]),
+                None => add.execute(params![&key[..], version_id]),
+            }
+            .map_err(state_error)?;
+        }
+    }
     for step in steps {
         let parser = serde_json::to_string(&step.state).map_err(|error| error.to_string())?;
         let (read_len, seen_len, lines) = (step.read_len as i64, step.seen_len as i64, step.lines as i64);
@@ -348,7 +424,8 @@ fn save(state: &Connection, steps: &[Step], batch: Option<u64>) -> Result<(), St
 /// The rows waiting to be written, and how far each version will be read once they are.
 struct Writer<'a> {
     tables: Tables,
-    state: Connection,
+    state: &'a Connection,
+    keys: &'a RefCell<Keys>,
     engine: &'a dyn Engine,
     batch: Batch,
     steps: Vec<Step>,
@@ -359,13 +436,15 @@ impl Writer<'_> {
     fn write(&mut self) -> Result<(), String> {
         let batch = std::mem::replace(&mut self.batch, self.tables.batch()?);
         let steps = std::mem::take(&mut self.steps);
+        // The version being read keeps its keys: its rows aren't in this write.
+        let keys = std::mem::take(&mut self.keys.borrow_mut().waiting);
         if batch.bytes() == 0 {
             batch.discard();
-            return save(&self.state, &steps, None);
+            return save(self.state, &steps, &keys, None);
         }
-        save(&self.state, &steps, Some(self.tables.next()))?;
+        save(self.state, &steps, &keys, Some(self.tables.next()))?;
         self.rows += self.tables.write(batch, self.engine)?;
-        settle(&self.state, &self.tables)
+        settle(self.state, &self.tables)
     }
 
     /// Drops what's waiting. The versions in it are read again from where they were.
@@ -383,9 +462,10 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
     let (tables, state) = open(root, options.detail)?;
     settle(&state, &tables)?;
     tables.sweep()?;
-    let waiting = todo(db, &state)?;
+    let (waiting, _) = todo(db, &state, options.now)?;
     let batch = tables.batch()?;
-    let mut writer = Writer { tables, state, engine, batch, steps: Vec::new(), rows: 0 };
+    let keys = RefCell::new(Keys::default());
+    let mut writer = Writer { tables, state: &state, keys: &keys, engine, batch, steps: Vec::new(), rows: 0 };
     let mut report = ExtractReport { complete: true, ..ExtractReport::default() };
     let mut throttle = Throttle::new(options.bytes_per_second);
     let out_of_time = |read: u64| stop() || read >= options.max_bytes || started.elapsed() >= options.max_time;
@@ -402,7 +482,8 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
         let mut rows = Rows::default();
         let mut spilled = false;
         let source = item.version_id.to_string();
-        let from = state_of(&writer.state, item.version_id)?;
+        let from = state_of(&state, item.version_id)?;
+        let mut seen = |key: LineKey| keys.borrow_mut().repeat(&state, item.version_id, key);
         let result = match &item.machine {
             None => Err("A kept version has no file it was seen in".to_string()),
             Some(machine) => {
@@ -419,15 +500,27 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
                     *rows = Rows::default();
                     Ok(())
                 };
-                read_version(db, blobs, &item, &from, options.detail, &mut throttle, &mut enough, &mut rows, &mut spill).and_then(|done| {
+                read_version(db, blobs, &item, &from, options.detail, &mut throttle, &mut enough, &mut seen, &mut rows, &mut spill).and_then(|done| {
                     writer.batch.add(&origin, &rows)?;
                     Ok(done)
                 })
             }
         };
         report.bytes_read = read;
+        // Without the keys nothing says which lines are repeats, so the pass stops with what it has written.
+        if let Some(error) = keys.borrow_mut().error.take() {
+            return Err(error);
+        }
         match result {
             Ok((step, finished)) => {
+                {
+                    let mut keys = keys.borrow_mut();
+                    let read: Vec<LineKey> = keys.reading.drain().collect();
+                    keys.waiting.extend(read.into_iter().map(|key| (key, item.version_id)));
+                }
+                if item.tries > 0 {
+                    state.execute("DELETE FROM failed WHERE version_id = ?1", [item.version_id]).map_err(state_error)?;
+                }
                 writer.steps.push(step);
                 report.versions += 1;
                 if writer.batch.bytes() >= BATCH_BYTES || !finished {
@@ -438,11 +531,18 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
                     break;
                 }
             }
-            // Read again next pass.
+            // Read again later: soon the first time, then less and less often.
             Err(error) => {
+                keys.borrow_mut().reading.clear();
                 if spilled {
                     writer.forget()?;
                 }
+                state
+                    .execute(
+                        "INSERT OR REPLACE INTO failed(version_id, size, tries, retry_at) VALUES(?1, ?2, ?3, ?4)",
+                        params![item.version_id, item.size as i64, item.tries + 1, options.now.saturating_add(retry_wait(item.tries)) as i64],
+                    )
+                    .map_err(state_error)?;
                 report.failures += 1;
                 report.first_failure.get_or_insert(error);
             }
@@ -453,14 +553,22 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
     // The sweep takes the batch left open with nothing in it.
     writer.tables.sweep()?;
     report.rows = writer.rows;
-    report.versions_left = todo(db, &writer.state)?.len() as u64;
+    let (left, set_aside) = todo(db, &state, options.now)?;
+    (report.versions_left, report.set_aside) = (left.len() as u64, set_aside);
     (report.table_rows, report.table_bytes) = writer.tables.size();
     Ok(report)
 }
 
 /// The versions with something left to read: ones that grew, and ones that have stopped growing since their last
-/// row was held back for a line that never came.
-fn todo(db: &Connection, state: &Connection) -> Result<Vec<Todo>, String> {
+/// row was held back for a line that never came. One that couldn't be read is left out until it's time to try it
+/// again, or it has grown; how many those are comes back beside the list.
+fn todo(db: &Connection, state: &Connection, now: u64) -> Result<(Vec<Todo>, u64), String> {
+    let failed: HashMap<i64, (u64, u32, u64)> = {
+        let mut statement = state.prepare("SELECT version_id, size, tries, retry_at FROM failed").map_err(state_error)?;
+        let rows = statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, (row.get::<_, i64>(1)?.max(0) as u64, row.get::<_, u32>(2)?, row.get::<_, i64>(3)?.max(0) as u64)))).map_err(state_error)?;
+        rows.collect::<Result<_, _>>().map_err(state_error)?
+    };
+    let mut set_aside = 0;
     let read: HashMap<i64, (u64, bool)> = {
         let mut statement = state.prepare("SELECT version_id, seen_len, done FROM progress").map_err(state_error)?;
         let rows = statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, (row.get::<_, i64>(1)?.max(0) as u64, row.get::<_, bool>(2)?)))).map_err(state_error)?;
@@ -475,10 +583,18 @@ fn todo(db: &Connection, state: &Connection) -> Result<Vec<Todo>, String> {
         let (version_id, agent, size, version_state, machine) = row.map_err(index_error)?;
         let (seen_len, done) = read.get(&version_id).copied().unwrap_or((0, false));
         if seen_len < size || (!done && version_state != "growing") {
-            todo.push(Todo { version_id, agent: if agent == "codex" { Agent::Codex } else { Agent::Claude }, machine });
+            let tries = match failed.get(&version_id) {
+                Some((at_size, _, retry_at)) if *at_size == size && *retry_at > now => {
+                    set_aside += 1;
+                    continue;
+                }
+                Some((_, tries, _)) => *tries,
+                None => 0,
+            };
+            todo.push(Todo { version_id, agent: if agent == "codex" { Agent::Codex } else { Agent::Claude }, machine, size, tries });
         }
     }
-    Ok(todo)
+    Ok((todo, set_aside))
 }
 
 fn state_of(state: &Connection, version_id: i64) -> Result<Step, String> {
@@ -504,6 +620,7 @@ fn read_version(
     detail: Detail,
     throttle: &mut Throttle,
     enough: &mut dyn FnMut(u64) -> bool,
+    seen: &mut dyn FnMut(LineKey) -> bool,
     rows: &mut Rows,
     spill: &mut dyn FnMut(&mut Rows) -> Result<(), String>,
 ) -> Result<(Step, bool), String> {
@@ -530,7 +647,7 @@ fn read_version(
             if read == 0 {
                 break;
             }
-            lines.feed(&buffer[..read], &mut |number, line| row(&mut parser, rows, number, line));
+            lines.feed(&buffer[..read], &mut |number, line| row(&mut parser, seen, rows, number, line));
             held += read as u64;
             if held >= HELD_BYTES {
                 spill(rows)?;
@@ -547,7 +664,7 @@ fn read_version(
                 Piece::Chunk(_, off) | Piece::Pending(off) => *off,
             };
             let skip = from.read_len.saturating_sub(start) as usize;
-            lines.feed(bytes.get(skip..).unwrap_or_default(), &mut |number, line| row(&mut parser, rows, number, line));
+            lines.feed(bytes.get(skip..).unwrap_or_default(), &mut |number, line| row(&mut parser, seen, rows, number, line));
             held += bytes.len() as u64;
             // Stopping saves where the last whole line ended, so it waits until one has.
             if enough(bytes.len() as u64) && index + 1 < count && lines.end > from.read_len {
@@ -564,7 +681,7 @@ fn read_version(
     // holding for a line after it.
     let done = finished && settled;
     if done {
-        lines.finish(&mut |number, line| row(&mut parser, rows, number, line));
+        lines.finish(&mut |number, line| row(&mut parser, seen, rows, number, line));
         parser.finish(rows);
     }
     let compressed = version.encoding == "zstd";
@@ -586,9 +703,9 @@ enum Found<'a> {
     TooLong(u64),
 }
 
-fn row(parser: &mut Parser, rows: &mut Rows, number: u64, line: Found<'_>) {
+fn row(parser: &mut Parser, seen: &mut dyn FnMut(LineKey) -> bool, rows: &mut Rows, number: u64, line: Found<'_>) {
     match line {
-        Found::Whole(line) => parser.line(number, line, rows),
+        Found::Whole(line) => parser.line_once(number, line, seen, rows),
         Found::TooLong(bytes) => rows.lines.push(Line { at: At { line: number, ..At::default() }, kind: "too-long".into(), bytes, ..Line::default() }),
     }
 }
@@ -745,7 +862,7 @@ mod tests {
     }
 
     fn everything() -> ExtractOptions {
-        ExtractOptions { detail: Detail::Everything, bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), merge_at: usize::MAX }
+        ExtractOptions { detail: Detail::Everything, bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), merge_at: usize::MAX, now: 1_800_000_000 }
     }
 
     fn root(fixture: &Fixture) -> PathBuf {
@@ -783,6 +900,7 @@ mod tests {
     }
 
     const MAIN: &str = ".claude/projects/-Users-me-app/0f8b5c2e-1111-4222-8333-444455556666.jsonl";
+    const CARRIED_ON: &str = ".claude/projects/-Users-me-app/7c1d9e4a-5555-4666-8777-888899990000.jsonl";
     const ROLLOUT: &str = ".codex/sessions/2026/09/21/rollout-2026-09-21T01-00-00-019a1b2c-3d4e-7f00-8111-222233334444.jsonl";
 
     fn holds(bytes: &[u8]) -> bool {
@@ -823,6 +941,8 @@ mod tests {
         let lines = rows(&fixture, "lines");
         let claude: Vec<u64> = lines.iter().filter(|line| line["agent"] == "claude").map(|line| line["line"].as_u64().unwrap()).collect();
         assert_eq!(claude, [0, 1, 2, 3, 4]);
+        // A file read again from where it was is the same file: none of its lines is a repeat.
+        assert!(lines.iter().all(|line| line["repeat"] == false));
         assert_eq!(requests(&fixture), [("msg_1".to_string(), 5), ("msg_2".to_string(), 300)]);
 
         // Once it has stopped growing, the request held back comes out, once.
@@ -883,12 +1003,12 @@ mod tests {
             // What a pass does up to its write, and then no further.
             {
                 let (mut tables, state) = open(&root(&fixture), Detail::Everything).unwrap();
-                let item = todo(&fixture.db, &state).unwrap().remove(0);
+                let item = todo(&fixture.db, &state, 0).unwrap().0.remove(0);
                 let mut found = Rows::default();
-                let (step, _) = read_version(&fixture.db, &fixture.places, &item, &Step::default(), Detail::Everything, &mut Throttle::new(1 << 40), &mut |_| false, &mut found, &mut |_| Ok(())).unwrap();
+                let (step, _) = read_version(&fixture.db, &fixture.places, &item, &Step::default(), Detail::Everything, &mut Throttle::new(1 << 40), &mut |_| false, &mut |_| false, &mut found, &mut |_| Ok(())).unwrap();
                 let mut batch = tables.batch().unwrap();
                 batch.add(&Origin { agent: item.agent, machine: "mac", source: &item.version_id.to_string() }, &found).unwrap();
-                save(&state, &[step], Some(tables.next())).unwrap();
+                save(&state, &[step], &HashMap::new(), Some(tables.next())).unwrap();
                 if landed {
                     tables.write(batch, &Copier).unwrap();
                 }
@@ -912,7 +1032,7 @@ mod tests {
     }
 
     #[test]
-    fn a_version_that_cannot_be_read_is_left_for_the_next_pass_and_the_rest_are_read() {
+    fn a_version_that_cannot_be_read_is_set_aside_for_longer_each_time_and_the_rest_are_read() {
         let fixture = Fixture::new("analytics-flaky");
         fixture.write(MAIN, &claude_session(&[("msg_1", 5), ("msg_2", 20)]));
         fixture.write(ROLLOUT, &codex_session(&["resp_1"]));
@@ -927,10 +1047,65 @@ mod tests {
             agents
         };
         assert_eq!(agents(&fixture).len(), 1);
+        // It isn't waiting to be read: it's set aside, and a pass straight after leaves it alone.
+        assert_eq!((report.versions_left, report.set_aside), (0, 1));
         let report = extract(&fixture, &everything());
-        assert_eq!((report.failures, report.versions), (0, 1));
+        assert_eq!((report.failures, report.versions, report.bytes_read, report.set_aside), (0, 0, 0, 1));
+        // A quarter of an hour on it's tried, fails again, and is left for an hour.
+        let at = |seconds: u64| ExtractOptions { now: everything().now + seconds, ..everything() };
+        let flaky = Flaky { inner: &fixture.places, fails: Cell::new(1) };
+        let report = extract_pass(&fixture.db, &flaky, &root(&fixture), &Copier, &at(retry_wait(0)), &|| false).unwrap();
+        assert_eq!((report.failures, report.set_aside), (1, 1));
+        assert_eq!(extract(&fixture, &at(retry_wait(0) + retry_wait(1) - 1)).versions, 0);
+        // Then it can be read, and nothing is set aside.
+        let report = extract(&fixture, &at(retry_wait(0) + retry_wait(1)));
+        assert_eq!((report.failures, report.versions, report.set_aside, report.versions_left), (0, 1, 0, 0));
         assert_eq!(agents(&fixture).len(), 2);
         assert_eq!(rows(&fixture, "lines").len(), 3 + 3);
+        let state = open_state(&root(&fixture)).unwrap();
+        assert_eq!(state.query_row("SELECT count(*) FROM failed", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn a_line_kept_in_two_files_is_a_repeat_in_the_second() {
+        let fixture = Fixture::new("analytics-repeat");
+        let first = claude_session(&[("msg_1", 5), ("msg_2", 20)]);
+        fixture.write(MAIN, &first);
+        assert!(fixture.pass().complete);
+        extract(&fixture, &everything());
+        // The session carried on in another file, which opens with the first one's lines.
+        fixture.write(CARRIED_ON, &(first + &claude_line("msg_3", "claude-opus-5-5", "2026-09-20T03:00:00.000Z", (10, 100, 1_000, 9), SECRET_TEXT)));
+        assert!(fixture.pass().complete);
+        fixture.db.execute("UPDATE versions SET state = 'settled'", []).unwrap();
+        let report = extract(&fixture, &everything());
+        assert_eq!(report.versions, 2);
+        let lines = rows(&fixture, "lines");
+        let repeats: Vec<bool> = lines.iter().map(|line| line["repeat"].as_bool().unwrap()).collect();
+        assert_eq!(repeats, [false, false, false, true, true, true, false]);
+        // Each reply is counted once: the first two from the first file, the third from the second.
+        let requests: Vec<(String, bool)> = rows(&fixture, "requests").iter().map(|row| (row["message_id"].as_str().unwrap().to_string(), row["repeat"].as_bool().unwrap())).collect();
+        assert_eq!(requests, [("msg_1".to_string(), false), ("msg_2".to_string(), false), ("msg_1".to_string(), true), ("msg_2".to_string(), true), ("msg_3".to_string(), false)]);
+        let state = open_state(&root(&fixture)).unwrap();
+        let count = |table: &str| state.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get::<_, i64>(0)).unwrap();
+        assert_eq!((count("seen"), count("seen_staged")), (4, 0));
+
+        // A key counts once the write that holds its line has landed, and not before.
+        let tables = Tables::open(&root(&fixture)).unwrap();
+        let key: LineKey = [7; 12];
+        save(&state, &[], &HashMap::from([(key, 1)]), Some(tables.next())).unwrap();
+        settle(&state, &tables).unwrap();
+        assert_eq!((count("seen"), count("seen_staged")), (4, 0));
+        save(&state, &[], &HashMap::from([(key, 1)]), Some(tables.next() - 1)).unwrap();
+        settle(&state, &tables).unwrap();
+        assert_eq!(count("seen"), 5);
+
+        // Making the tables again forgets every line.
+        drop(state);
+        extract(&fixture, &ExtractOptions { detail: Detail::Numbers, ..everything() });
+        let state = open_state(&root(&fixture)).unwrap();
+        assert_eq!(state.query_row("SELECT count(*) FROM seen", [], |row| row.get::<_, i64>(0)).unwrap(), 4);
+        assert_eq!(rows(&fixture, "lines").iter().filter(|line| line["repeat"] == true).count(), 3);
         let _ = fs::remove_dir_all(&fixture.base);
     }
 

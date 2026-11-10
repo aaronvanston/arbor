@@ -316,6 +316,10 @@ export type ArchiveAnalyticsStatus = {
    */
   versionsLeft: number | null,
   /**
+   * Kept transcripts that couldn't be read and are left out for now. They're tried again, less and less often.
+   */
+  setAside: number,
+  /**
    * The tables are waiting for a pass to remove them.
    */
   resetting: boolean,
@@ -2693,7 +2697,7 @@ export type LifetimeTokens = {
   recovered: Array<RecoveredDay>,
   recoveredOverlap: RecoveredOverlap,
   /**
-   * Kept transcripts not yet counted to their end.
+   * Kept transcripts not yet counted to their end, leaving out the ones that couldn't be read.
    */
   versionsLeft: number,
   bytesLeft: number,

@@ -186,8 +186,15 @@ command, hook run and file touched in the kept Claude Code and Codex sessions. T
 on in Settings › Session Archive, and fill in at each check. The SQL is DuckDB's.
 
 --tables lists each table with its columns. Every row says where it came from: agent, machine, source (the kept file),
-line, ts, day and session_id, so tables join on source or session_id, and a tool call joins its result on tool_use_id.
-day is the UTC date, and narrowing by it keeps a query fast.
+line, ts, day and session_id. day is the UTC date, and narrowing by it keeps a query fast.
+
+A session kept more than once (an earlier copy in a backup, or one that carried on from another) is counted once: a
+table leaves out the lines that were read before from another file. The same table with _all after its name
+(lines_all, requests_all) has them too, with a repeat column that marks them.
+
+Three names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
+tool calls and errors. tools is one row a tool call with how it ended: is_error, exit_code, duration_ms where the
+agent wrote it down, and elapsed_ms from the call to its result. commands has each shell command with its exit code.
 
 Only a SELECT is ever run; the tables can't be changed from here. An answer holds 200 rows unless --limit says
 otherwise (10,000 at most), and text longer than 2,000 characters is cut unless --full. With Everything kept, an
@@ -196,7 +203,8 @@ answer that selects text holds what was said in those sessions: prompts, replies
   arbor query --tables
   arbor query \"SELECT model, count(*) AS calls, sum(output) AS output FROM requests WHERE day >= '2026-10-01' GROUP BY ALL ORDER BY calls DESC\"
   arbor query \"SELECT program, count(*) AS runs FROM commands GROUP BY ALL ORDER BY runs DESC\" --limit 20
-  arbor query \"SELECT c.tool, count(*) AS calls, avg(r.is_error::INT) AS failed FROM tool_calls c JOIN tool_results r USING (source, tool_use_id) GROUP BY ALL ORDER BY calls DESC\" --json
+  arbor query \"SELECT tool, count(*) AS calls, avg(is_error::INT) AS failed, median(elapsed_ms) AS ms FROM tools GROUP BY ALL ORDER BY calls DESC\" --json
+  arbor query \"SELECT agent, day, count(*) AS sessions, sum(output) AS output FROM sessions WHERE day >= '2026-10-01' GROUP BY ALL ORDER BY day\"
 ",
     ),
     (

@@ -17,7 +17,7 @@ use crate::cli::redact;
 use serde::Serialize;
 use serde_json::Value;
 use session_tables::store::{Program, Store as Tables};
-use session_tables::tables::{Kind, TABLES};
+use session_tables::tables::{shown, Kind};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Stdio;
@@ -67,7 +67,7 @@ pub(crate) struct AnalyticsTable {
     columns: Vec<AnalyticsColumn>,
 }
 
-/// Every table a query can name, with its columns.
+/// Everything a query can name, with its columns: each table as it's read, and the views worked out from them.
 pub(crate) fn tables() -> Vec<AnalyticsTable> {
     let kind = |kind: Kind| match kind {
         Kind::Text => "text",
@@ -77,7 +77,7 @@ pub(crate) fn tables() -> Vec<AnalyticsTable> {
         Kind::Time => "time",
         Kind::Day => "day",
     };
-    TABLES.iter().map(|table| AnalyticsTable { name: table.name, columns: table.columns().into_iter().map(|(name, column)| AnalyticsColumn { name: name.to_string(), kind: kind(column).to_string() }).collect() }).collect()
+    shown().into_iter().map(|table| AnalyticsTable { name: table.name, columns: table.columns.into_iter().map(|(name, column)| AnalyticsColumn { name: name.to_string(), kind: kind(column).to_string() }).collect() }).collect()
 }
 
 /// A string as a SQL literal.
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn every_table_says_its_columns() {
         let tables = tables();
-        assert_eq!(tables.len(), TABLES.len());
+        assert_eq!(tables.len(), shown().len());
         let requests = tables.iter().find(|table| table.name == "requests").unwrap();
         assert!(requests.columns.contains(&AnalyticsColumn { name: "day".into(), kind: "day".into() }));
         assert!(requests.columns.contains(&AnalyticsColumn { name: "output".into(), kind: "number".into() }));
@@ -345,7 +345,7 @@ mod tests {
         fixture.write(&format!(".claude/projects/-Users-me-app/{SID}.jsonl"), &session);
         assert!(fixture.pass().complete);
         fixture.db.execute("UPDATE versions SET state = 'settled'", []).unwrap();
-        let options = ExtractOptions { detail: Detail::Everything, bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), merge_at: 1 };
+        let options = ExtractOptions { detail: Detail::Everything, bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), merge_at: 1, now: 1_800_000_000 };
         extract_pass(&fixture.db, &fixture.places, &root, &program, &options, &|| false).unwrap();
 
         // Numbers come back as rows in the columns' order, with their types.

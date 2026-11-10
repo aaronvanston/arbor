@@ -12,7 +12,7 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
         Some(other) => session_id.or(Some(other)),
         None => session_id,
     };
-    let at = At { line: number, ts: json::string(&mut fields, "timestamp"), session_id };
+    let at = parser.at(number, json::string(&mut fields, "timestamp"), session_id);
     let mut row = Line {
         at: at.clone(),
         id: json::string(&mut fields, "uuid"),
@@ -289,6 +289,8 @@ fn user(parser: &Parser, at: &At, fields: &mut Fields, rows: &mut Rows) {
 
 fn tool_result(parser: &Parser, at: &At, block: &mut Fields, ran: Option<&mut Fields>, rows: &mut Rows) {
     let tool_use_id = json::string(block, "tool_use_id");
+    // Only a shell command's result has an output of its own beside the result.
+    let shell = ran.as_ref().is_some_and(|ran| ran.contains_key("stdout"));
     let output = match json::string(block, "content") {
         Some(text) => Some(text),
         None => json::array(block, "content").and_then(|mut items| {
@@ -324,6 +326,10 @@ fn tool_result(parser: &Parser, at: &At, block: &mut Fields, ran: Option<&mut Fi
             ran.insert("originalFile_size".into(), json::sized(&before));
         }
     }
+    // A command that failed says how in its result's first words, `Exit code 2`; one that worked says nothing.
+    let said = output.as_deref().and_then(|text| text.strip_prefix("Exit code ")).and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok());
+    let worked = shell && row.is_error == Some(false) && row.interrupted != Some(true) && row.background.is_none();
+    row.exit_code = row.exit_code.or(said).or(worked.then_some(0));
     rows.tool_results.push(row);
     if let Some(text) = output.and_then(|text| parser.text(text)) {
         rows.tool_io.push(ToolIo { at: at.clone(), tool_use_id, part: "output".into(), text });
@@ -401,13 +407,13 @@ pub(crate) mod tests {
     use crate::{Agent, Detail};
     use serde_json::{json, Value};
 
-    fn base(kind: &str, at: &str, more: Value) -> String {
+    pub(crate) fn base(kind: &str, at: &str, more: Value) -> String {
         let mut line = json!({ "type": kind, "uuid": format!("u-{at}"), "parentUuid": null, "isSidechain": false, "timestamp": format!("2026-10-01T10:00:{at}.000Z"), "sessionId": "s-1", "cwd": "/srv/app", "gitBranch": "main", "version": "9.1.0", "entrypoint": "cli", "userType": "external" });
         line.as_object_mut().unwrap().extend(more.as_object().unwrap().clone());
         line.to_string()
     }
 
-    fn reply(at: &str, id: &str, output: u64, stop: Option<&str>, block: Value) -> String {
+    pub(crate) fn reply(at: &str, id: &str, output: u64, stop: Option<&str>, block: Value) -> String {
         let usage = json!({ "input_tokens": 3, "output_tokens": output, "cache_read_input_tokens": 900, "cache_creation_input_tokens": 40, "cache_creation": { "ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 40 }, "service_tier": "standard", "speed": "standard", "output_tokens_details": { "thinking_tokens": 7 }, "server_tool_use": { "web_search_requests": 0, "web_fetch_requests": 1 }, "inference_geo": "us" });
         base("assistant", at, json!({ "requestId": format!("req-{id}"), "effort": "high", "message": { "id": id, "type": "message", "role": "assistant", "model": "claude-test-1", "stop_reason": stop, "usage": usage, "content": [block] } }))
     }
@@ -464,6 +470,27 @@ pub(crate) mod tests {
 
         let io: Vec<_> = rows.tool_io.iter().map(|io| (io.tool_use_id.as_deref().unwrap(), io.part.as_str())).collect();
         assert_eq!(io, [("toolu_1", "input"), ("toolu_1", "output"), ("toolu_2", "input"), ("toolu_2", "output"), ("toolu_3", "input")]);
+    }
+
+    /// A command that failed and one that worked, after the lines of `session`, and a line with no time.
+    pub(crate) fn commands() -> Vec<String> {
+        let call = |at: &str, id: &str| reply(at, &format!("msg_{at}"), 9, Some("tool_use"), json!({ "type": "tool_use", "id": id, "name": "Bash", "input": { "command": "ls missing" } }));
+        let result = |at: &str, id: &str, ran: Value, failed: bool, said: &str| base("user", at, json!({ "toolUseResult": ran, "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": id, "is_error": failed, "content": said }] } }));
+        vec![
+            call("20", "toolu_8"),
+            result("22", "toolu_8", json!("Error: Exit code 2"), true, "Exit code 2\nls: missing: No such file"),
+            json!({ "type": "mode", "mode": "default", "sessionId": "s-1" }).to_string(),
+            call("23", "toolu_9"),
+            result("24", "toolu_9", json!({ "stdout": "a.rs", "stderr": "", "interrupted": false }), false, "a.rs"),
+        ]
+    }
+
+    #[test]
+    fn a_shell_result_says_its_exit_code_in_its_first_words_and_one_that_worked_is_zero() {
+        let rows = parse(Agent::Claude, Detail::Everything, &[session(), commands()].concat());
+        let ended: Vec<_> = rows.tool_results.iter().map(|result| (result.tool_use_id.as_deref().unwrap(), result.is_error, result.exit_code)).collect();
+        // The first failed without saying how, and an edit has no exit code.
+        assert_eq!(ended, [("toolu_1", Some(true), None), ("toolu_2", Some(false), None), ("toolu_8", Some(true), Some(2)), ("toolu_9", Some(false), Some(0))]);
     }
 
     #[test]

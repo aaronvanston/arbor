@@ -76,6 +76,17 @@ pub(crate) fn hash(parts: &[&str]) -> String {
     hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// What tells one line from another, as the start of a hash of `parts`.
+pub(crate) fn key(parts: &[&[u8]]) -> crate::LineKey {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update((part.len() as u64).to_le_bytes());
+        hasher.update(part);
+    }
+    let hash = hasher.finalize();
+    std::array::from_fn(|index| hash[index])
+}
+
 /// The text of a list of content items: each item's `text`, joined. Items without text stay in the list.
 pub(crate) fn texts(items: &mut Vec<Value>) -> Option<String> {
     let mut found: Vec<String> = Vec::new();

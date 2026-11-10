@@ -207,7 +207,8 @@
  * `paused`; `missing`, `foreign` and `error` show the Sessions page's archive banner and, two minutes in, its alert, and say on Usage › All time that its counts stop there;
  * its Analytics section is off by default, with the query engine still to download (`?analytics=download-fail` fails
  * that download), or `?analytics=on` (tables up to date), `reading` (catching up), `new` (just turned on), `numbers`
- * (numbers only), `error` (the last check couldn't write them), `kept` (off, with tables still there to delete) or
+ * (numbers only), `error` (the last check couldn't write them), `unreadable` (two session files it couldn't read),
+ * `kept` (off, with tables still there to delete) or
  * `unavailable` (no engine for this Mac);
  * its Old backups section has one backup imported and one partway, or `?imports=none` for none, `starting` for the
  * second not listed yet, `away` for its drive unplugged, or `failed` for the first finished with 3 files it couldn't

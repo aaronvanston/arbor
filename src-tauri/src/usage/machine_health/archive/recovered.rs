@@ -215,7 +215,7 @@ mod tests {
     use std::time::Duration;
 
     fn everything() -> CountOptions {
-        CountOptions { bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600) }
+        CountOptions { bytes_per_second: 1 << 40, max_bytes: 1 << 40, max_time: Duration::from_secs(600), now: 1_800_000_000 }
     }
 
     /// Claude Code's stats for `days` of (date, [(model, tokens)], sessions), with the fields beside them it also keeps.
