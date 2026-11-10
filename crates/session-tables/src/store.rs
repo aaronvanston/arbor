@@ -686,7 +686,7 @@ fn read_json(table: &Table, file: &Path, longest: u64) -> String {
 
 /// Makes one folder, the owner's alone. One that's there already has to be a folder and not a link: a store can sit
 /// on a drive others write to, and a link would send writes, and the clearing of `tmp/`, somewhere outside it.
-fn make_dir(path: &Path) -> Result<(), String> {
+pub(crate) fn make_dir(path: &Path) -> Result<(), String> {
     let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {
@@ -713,15 +713,20 @@ fn make_dirs(root: &Path, relative: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn new_file(path: &Path) -> Result<File, String> {
+/// Options for a file only its owner reads, when the file is made.
+pub(crate) fn private() -> fs::OpenOptions {
     let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
+    options.write(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options.open(path).map_err(|error| format!("Couldn't write {}: {error}", path.display()))
+    options
+}
+
+fn new_file(path: &Path) -> Result<File, String> {
+    private().create_new(true).open(path).map_err(|error| format!("Couldn't write {}: {error}", path.display()))
 }
 
 /// Removes a file, or a folder and what's in it. A link is removed, never followed.

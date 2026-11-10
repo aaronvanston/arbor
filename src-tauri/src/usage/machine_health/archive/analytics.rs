@@ -25,7 +25,7 @@ use super::ingest::Throttle;
 use super::tokens::{pieces, read_piece, retry_wait, Piece};
 use rusqlite::{params, Connection, OptionalExtension};
 use session_tables::store::{Batch, Engine, Origin, Store as Tables, DUCKDB_ARCHIVES, DUCKDB_VERSION};
-use session_tables::{Agent, At, Detail, Line, LineKey, Parser, ProxyRequest, Rows, Seen, State};
+use session_tables::{Agent, At, Detail, Line, LineKey, Parser, ProxyRequest, Rows, Seen, State, RULE};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -36,8 +36,6 @@ use std::time::{Duration, Instant};
 pub(crate) const FOLDER: &str = "analytics";
 /// A table's fresh files are folded into months once there are this many.
 pub(crate) const MERGE_AT: usize = 8;
-/// What a row is. Changing it makes the tables again.
-const RULE: &str = "tables-v3";
 /// A write is made once this much is waiting.
 const BATCH_BYTES: u64 = 64 << 20;
 /// A version's rows wait in memory until it's read to its end, unless it has this much to read: then what's

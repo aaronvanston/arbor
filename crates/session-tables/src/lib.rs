@@ -22,6 +22,7 @@ mod claude;
 mod codex;
 pub mod cookbook;
 mod json;
+pub mod local;
 mod pi;
 mod rows;
 mod shell;
@@ -31,6 +32,10 @@ pub mod tables;
 pub use rows::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// What a row is. Whoever keeps tables notes it beside them, and makes them again when it changes: raise it with
+/// any change to the rows a line gives.
+pub const RULE: &str = "tables-v3";
 
 /// Whose transcript a file is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -33,6 +33,8 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
   costs the time to rebuild.
   - **Who reads a line.** `crates/session-tables` alone turns a transcript line into rows; the archive hands it
     bytes. That keeps the one place that reads what was said small, apart from Tauri, and usable on its own.
+    The crate's `session-tables` command (`local.rs`) is that use on its own: it reads agent homes straight into a
+    folder, for someone with no Arbor. Arbor never runs it or calls `local`; what Arbor reads comes from `chunks/`.
   - **Self-contained.** The Parquet files, their manifest and `state.db` (how far each version is read) are all in
     `analytics/`. Nothing of the tables is in `archive.db` or the journal, so those hold what they always held.
   - **Rows are only added.** A version is read from where it was last read to. Progress is staged in `state.db`

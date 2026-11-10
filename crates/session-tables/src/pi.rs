@@ -51,7 +51,7 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
         "compaction" | "branch_summary" => {
             let summary = json::string(&mut fields, "summary").unwrap_or_default();
             let kind = if kind == "compaction" { "compact_summary" } else { "branch_summary" };
-            rows.messages.push(text(parser, &at, "user", kind, 0, row.id.as_ref(), None, summary));
+            rows.messages.push(text(parser, &at, ("user", kind), 0, row.id.as_ref(), None, summary));
             usage(&at, &mut fields, (row.id.clone(), None, parser.state.model.clone(), None), rows);
             if let Some(mut system) = json::object(&mut fields, "systemMessage") {
                 context(parser, &at, &mut system, rows);
@@ -61,7 +61,7 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
         "custom_message" => {
             row.subkind = json::string(&mut fields, "customType");
             for (block, said) in content(&mut fields) {
-                rows.messages.push(text(parser, &at, "custom", "custom", block, row.id.as_ref(), None, said));
+                rows.messages.push(text(parser, &at, ("custom", "custom"), block, row.id.as_ref(), None, said));
             }
         }
         "custom" => row.subkind = json::string(&mut fields, "customType"),
@@ -87,7 +87,7 @@ fn header(parser: &mut Parser, fields: &mut Fields, row: &mut Line) {
     });
 }
 
-fn text(parser: &Parser, at: &At, role: &str, kind: &str, block: u32, message_id: Option<&String>, model: Option<&String>, said: String) -> Message {
+fn text(parser: &Parser, at: &At, (role, kind): (&str, &str), block: u32, message_id: Option<&String>, model: Option<&String>, said: String) -> Message {
     Message { at: at.clone(), role: role.into(), kind: kind.into(), block, message_id: message_id.cloned(), request_id: None, model: model.cloned(), meta: None, chars: json::chars(&said), text: parser.text(said) }
 }
 
@@ -156,12 +156,12 @@ fn said(parser: &mut Parser, at: &At, role: &str, id: Option<&String>, message: 
         }
         "branchSummary" | "compactionSummary" => {
             let summary = json::string(message, "summary").unwrap_or_default();
-            rows.messages.push(text(parser, at, role, "summary", 0, id, None, summary));
+            rows.messages.push(text(parser, at, (role, "summary"), 0, id, None, summary));
         }
         _ => {
             let kind = if role == "user" { "prompt" } else { "custom" };
             for (block, said) in content(message) {
-                rows.messages.push(text(parser, at, role, kind, block, id, None, said));
+                rows.messages.push(text(parser, at, (role, kind), block, id, None, said));
             }
         }
     }
@@ -232,7 +232,7 @@ fn reply(parser: &mut Parser, at: &At, id: Option<&String>, message: &mut Fields
             left.push(block);
             continue;
         };
-        let part = |kind: &str, said: String| Message { request_id: request_id.clone(), ..text(parser, at, "assistant", kind, index as u32, id, model.as_ref(), said) };
+        let part = |kind: &str, said: String| Message { request_id: request_id.clone(), ..text(parser, at, ("assistant", kind), index as u32, id, model.as_ref(), said) };
         match block.get("type").and_then(Value::as_str) {
             Some("text") => {
                 rows.messages.push(part("text", json::string(&mut block, "text").unwrap_or_default()));
