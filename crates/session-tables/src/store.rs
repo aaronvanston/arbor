@@ -955,7 +955,9 @@ mod tests {
             parser.finish(&mut rows);
             batch.add(&Origin { agent: Agent::Claude, machine: "cam-mbp", source }, &rows).unwrap();
         }
-        batch.add_proxy(&[proxy(1, false), proxy(2, true)]).unwrap();
+        // A subagent's request, under an id no transcript has, and one from a session that was never kept.
+        let other = |id: u64, session: &str, parent: Option<&str>| ProxyRequest { session_id: Some(session.into()), parent_session_id: parent.map(str::to_string), ..proxy(id, false) };
+        batch.add_proxy(&[proxy(1, false), proxy(2, true), other(3, "sub-1", Some("s-1")), other(4, "s-9", None)]).unwrap();
         store.write(batch, &engine).unwrap();
         for merged in [false, true] {
             if merged {
@@ -963,8 +965,8 @@ mod tests {
             }
             let count = lines.len() as u64;
             // What the proxy saw of the session: its cost, and how fast the reply that worked was written.
-            assert_eq!(ask(&engine, &store, "SELECT proxy_requests, cost FROM sessions")[0], serde_json::json!({ "proxy_requests": 2, "cost": 0.25 }));
-            assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, model, generation_ms, tokens_per_second FROM speed"), [serde_json::json!({ "day": "2026-10-01", "model": "claude-test-1", "generation_ms": 2000, "tokens_per_second": 250.0 })]);
+            assert_eq!(ask(&engine, &store, "SELECT proxy_requests, cost FROM sessions")[0], serde_json::json!({ "proxy_requests": 3, "cost": 0.5 }));
+            assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, model, generation_ms, tokens_per_second FROM speed WHERE session_id = 's-1'"), [serde_json::json!({ "day": "2026-10-01", "model": "claude-test-1", "generation_ms": 2000, "tokens_per_second": 250.0 })]);
             assert_eq!(ask(&engine, &store, "SELECT (SELECT count(*) FROM lines) AS once, (SELECT count(*) FROM lines_all) AS every, (SELECT count(*) FROM lines_all WHERE repeat) AS repeats")[0], serde_json::json!({ "once": count, "every": 2 * count, "repeats": count }));
             // The command's row was written before it ended: its exit code is its result's.
             assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code, output_chars FROM commands ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_1", "exit_code": null, "output_chars": 9 + SECRET.len() }), serde_json::json!({ "tool_use_id": "toolu_8", "exit_code": 2, "output_chars": 37 }), serde_json::json!({ "tool_use_id": "toolu_9", "exit_code": 0, "output_chars": 4 }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0, "output_chars": 2 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null, "output_chars": 7 })]);

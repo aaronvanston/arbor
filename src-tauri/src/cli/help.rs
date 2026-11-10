@@ -198,7 +198,8 @@ table leaves out the lines that were read before from another file. The same tab
 
 proxy_requests is what Arbor's proxy saw of each request, from its own records: provider, account (the proxy's index
 for it), model, latency_ms, ttft_ms, tokens, whether it failed, and its cost in dollars at today's prices. It joins
-the tables above on session_id.
+the tables above on session_id; a Claude Code subagent's request has an id of its own there, and its session's in
+parent_session_id. sessions counts those in its cost.
 
 Five names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
 tool calls, errors and cost. turns is one row a prompt with what it led to before the next one: requests, tokens,

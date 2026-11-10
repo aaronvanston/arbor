@@ -134,6 +134,9 @@ pub(crate) const VIEWS: [View; 4] = [
         sql: "SELECT c.agent, c.machine, c.source, c.line, c.ts, c.day, c.session_id, c.tool_use_id, c.tool, c.namespace, c.mcp_server, c.mcp_tool, c.subagent_type, c.skill, c.input_chars, r.ts AS ended, r.is_error, {exit_code} AS exit_code, r.interrupted, r.timed_out, r.duration_ms, CASE WHEN r.ts >= c.ts THEN date_diff('millisecond', c.ts, r.ts) END AS elapsed_ms, r.output_chars FROM \"tool_calls\" c LEFT JOIN {results} r ON r.agent = c.agent AND r.tool_use_id = c.tool_use_id",
     },
     // A session, once, however many files it's in.
+    // The proxy gives a subagent a session id of its own, with its parent's beside it. Claude Code writes a
+    // subagent's lines under the parent's id, so that id is in no transcript: a request whose session has no lines
+    // counts for its parent, and the session's cost has its subagents' in it.
     View {
         name: "sessions",
         columns: &[
@@ -165,7 +168,7 @@ pub(crate) const VIEWS: [View; 4] = [
               LEFT JOIN (SELECT agent, session_id, mode(model) AS model, count(*) AS requests, CAST(sum(input) AS BIGINT) AS input, CAST(sum(output) AS BIGINT) AS output, CAST(sum(cache_read) AS BIGINT) AS cache_read, CAST(sum(cache_write) AS BIGINT) AS cache_write FROM \"requests\" GROUP BY agent, session_id) r ON r.agent = l.agent AND r.session_id = l.session_id \
               LEFT JOIN (SELECT agent, session_id, count(*) AS prompts FROM \"messages\" WHERE kind = 'prompt' AND meta IS NOT TRUE GROUP BY agent, session_id) m ON m.agent = l.agent AND m.session_id = l.session_id \
               LEFT JOIN (SELECT agent, session_id, count(*) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors FROM \"tools\" GROUP BY agent, session_id) t ON t.agent = l.agent AND t.session_id = l.session_id \
-              LEFT JOIN (SELECT session_id, count(*) AS proxy_requests, sum(cost) AS cost FROM \"proxy_requests\" WHERE session_id IS NOT NULL GROUP BY session_id) p ON p.session_id = l.session_id",
+              LEFT JOIN (SELECT coalesce(i.session_id, q.parent_session_id) AS session_id, count(*) AS proxy_requests, sum(q.cost) AS cost FROM \"proxy_requests\" q LEFT JOIN (SELECT DISTINCT session_id FROM \"lines\" WHERE session_id IS NOT NULL) i ON i.session_id = q.session_id WHERE coalesce(i.session_id, q.parent_session_id) IS NOT NULL GROUP BY ALL) p ON p.session_id = l.session_id",
     },
     // A prompt with what it led to: every request and tool call in its session from when it was sent until the
     // next prompt, a subagent's among them. Each is placed by its time, since a session can be in several files,
