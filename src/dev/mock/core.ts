@@ -260,7 +260,9 @@ const fleetAccounts = params.get('accounts') === 'fleet';
 /** Each fleet account's used percent: Claude's 5-hour, 7-day and Fable windows, Codex's 5-hour and weekly. */
 const fleetUsage: Record<string, { fiveHour: number; week: number; fable?: number; fiveHourResetH: number; weekResetH: number }> = {
   'cc-p1': { fiveHour: 8, week: 93, fable: 0, fiveHourResetH: 3.2, weekResetH: 16.4 },
-  'cc-p2': { fiveHour: 2, week: 0, fable: 0, fiveHourResetH: 2.7, weekResetH: 150 },
+  // With `?resets=lapsing`, it has used most of its Fable allowance, so going first gets it to that limit before its
+  // reset lapses.
+  'cc-p2': { fiveHour: 2, week: 0, fable: params.get('resets') === 'lapsing' ? 90 : 0, fiveHourResetH: 2.7, weekResetH: 150 },
   'cc-p3': { fiveHour: 2, week: 3, fable: 0, fiveHourResetH: 3.1, weekResetH: 110 },
   'cc-w1': { fiveHour: 7, week: 2, fable: 0, fiveHourResetH: 0.35, weekResetH: 161 },
   'cc-x': { fiveHour: 16, week: 48, fable: 0, fiveHourResetH: 1.9, weekResetH: 46 },
@@ -386,14 +388,19 @@ type MockClaudeGrant = {
   /** Fable hasn't been used this week, so at the weekly limit the reset has nothing to hand back. */
   idleFable?: true;
 };
-const fullReset = (): MockClaudeGrant => ({ id: 'launch_week', label: 'Launch week', kind: 'full', left: 1, anytime: false, endsInDays: 12 });
+// With `?resets=lapsing`, the resets with the least time left lapse within two days: claude-1's weekly one, which
+// Claude takes early, and the others' reset for everything, which waits for a limit. claude-1 has used most of its
+// Fable allowance, so going first gets it to that limit before the reset lapses, and waiting its turn wouldn't; with
+// `?accounts=fleet` too, the same goes for cc-p2, whose weekly reset waits for a limit, which the account order shows.
+const lapsingResets = params.get('resets') === 'lapsing';
+const fullReset = (): MockClaudeGrant => ({ id: 'launch_week', label: 'Launch week', kind: 'full', left: 1, anytime: false, endsInDays: lapsingResets ? 2 : 12 });
 const claudeBankedResets: Record<string, MockClaudeGrant[]> = {
   'claude-1': [
     { id: 'fable_launch', label: 'Fable launch', kind: 'fable', left: 3, anytime: true, endsInDays: 118 },
-    { id: 'weekly_thanks', label: 'Thank you', kind: 'weekly', left: 1, anytime: true, endsInDays: 30 },
+    { id: 'weekly_thanks', label: 'Thank you', kind: 'weekly', left: 1, anytime: true, endsInDays: lapsingResets ? 1.5 : 30 },
   ],
   'claude-2': [fullReset(), { id: 'fable_launch', label: 'Fable launch', kind: 'fable', left: 2, anytime: true, endsInDays: 118, idleFable: true }],
-  'cc-p2': [fullReset()],
+  'cc-p2': lapsingResets ? [{ id: 'weekly_thanks', label: 'Thank you', kind: 'weekly', left: 1, anytime: false, endsInDays: 1.25 }] : [fullReset()],
   'cc-p3': [fullReset()],
   'cc-w1': [fullReset()],
   'cc-x': [fullReset()],
@@ -542,7 +549,7 @@ function apiCall(body: Json): Json {
     seven_day_opus: { utilization: 12, resets_at: iso(weeklyResetMs) },
     seven_day_sonnet: { utilization: 91, resets_at: iso(weeklyResetMs) },
     limits: [
-      { kind: 'weekly_scoped', is_active: true, percent: forecastDry ? (authIndex === 'claude-1' ? 84 : 90) : paceAhead ? 70 : 12, resets_at: iso(weeklyResetMs), scope: { model: { display_name: 'Fable' } } },
+      { kind: 'weekly_scoped', is_active: true, percent: forecastDry ? (authIndex === 'claude-1' ? 84 : 90) : paceAhead ? 70 : lapsingResets && authIndex === 'claude-1' ? 80 : 12, resets_at: iso(weeklyResetMs), scope: { model: { display_name: 'Fable' } } },
       ...(newCapsScenario ? [{ kind: 'weekly_scoped', is_active: true, percent: 47, resets_at: iso(weeklyResetMs), scope: { model: { display_name: 'Haiku 5' } } }] : []),
     ],
     ...(newCapsScenario ? { seven_day_omelette: { utilization: 84, resets_at: iso(2 * 86_400_000) } } : {}),

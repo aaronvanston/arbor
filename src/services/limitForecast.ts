@@ -9,7 +9,8 @@
 import type { LimitTrendAccount } from '../native/types';
 import { rowWindowMs, windowDurationMs, type Headline } from './accountLimits';
 import { simulatePool, type PoolAccount, type PoolPoint, type PoolRun } from './poolSimulation';
-import type { ClaudeResetKind, QuotaState } from './quotaService';
+import type { ClaudeResetKind } from './quotaService';
+import { creditLots, type CreditLot } from './resetLots';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -31,6 +32,16 @@ const MOST_CLAIMS = 3;
 const MAX_HISTORY_POINTS = 240;
 /** Resets this close together read as one. */
 const SAME_MOMENT_MS = 5 * 60_000;
+/** Two resets that buy within this of each other are as good as each other, so the one lapsing sooner is spent. */
+const SAME_GAIN_MS = HOUR;
+/** A reset lapsing this soon after it could be used goes before a narrower one that keeps: it's lost otherwise. */
+const LAPSING_SOON_MS = 3 * DAY;
+/** How long before a reset lapses the plan spends one Claude takes early. */
+const EARLY_MARGIN_MS = HOUR;
+/** A reset spent early is worth a mention when it refills at least this much. */
+const EARLY_MIN_PERCENT = 10;
+/** A claim lands this long after the account's last one at least, so rounding can't read one run-out as two. */
+const CLAIM_GAP_MS = 1000;
 
 export type ForecastModel = 'weekly' | 'recent';
 export type ForecastSettings = {
@@ -44,19 +55,6 @@ export type ForecastSettings = {
 };
 export const FORECAST_LOOKBACK_OPTIONS = [1, 3, 7, 14] as const;
 export const FORECAST_HORIZON_OPTIONS = [1, 3, 7, 14] as const;
-
-/** Resets an account holds that lapse together: Codex's manual resets, or one kind of Claude banked reset. */
-export type CreditLot = {
-  /** Which Claude reset; unset for a Codex manual reset. */
-  reset?: ClaudeResetKind;
-  count: number;
-  /** When the first of them lapses, when known. */
-  expiresAtMs: number | null;
-  /** Whether it refills the forecast's window. One that doesn't is never planned. */
-  refills: boolean;
-  /** A Fable reset on the weekly window: it hands back only what Fable used, which can't be sized ahead of time. */
-  givesBack?: boolean;
-};
 
 export type ForecastAccount = PoolAccount & {
   name: string;
@@ -87,41 +85,6 @@ export function forecastAccounts(headline: Headline, keyOf: (account: Headline['
       lots,
     }];
   });
-}
-
-const expiryMs = (expiry: string | undefined) => {
-  const atMs = expiry ? Date.parse(expiry) : Number.NaN;
-  return Number.isFinite(atMs) ? atMs : null;
-};
-
-/**
- * The resets an account holds, for a forecast of one window. Codex counts only those that apply to its main limits.
- * Claude counts each kind of banked reset by whether it refills that window, so a Fable reset isn't planned for the
- * 5-hour window, unless Claude won't take them from Arbor at all; one in a cooldown, or waiting for a limit, can
- * still be planned. The narrowest reset that refills the window leads, leaving a wider one for a limit only it lifts.
- */
-export function creditLots(quota: QuotaState, window: string | null): CreditLot[] {
-  const count = quota.resetCredits ?? 0;
-  if (count <= 0 || quota.status !== 'success') return [];
-  if (quota.resetCreditsApplicable !== undefined) {
-    const applicable = Math.min(count, quota.resetCreditsApplicable);
-    return applicable > 0 ? [{ count: applicable, expiresAtMs: expiryMs(quota.resetCreditsEarliestExpiry), refills: true }] : [];
-  }
-  if (quota.bankedReset === undefined || quota.bankedReset.blockedHere) return [];
-  return quota.bankedReset.kinds
-    .filter((offer) => offer.count > 0)
-    .map((offer) => ({
-      width: offer.windows.length,
-      lot: {
-        reset: offer.kind,
-        count: offer.count,
-        expiresAtMs: expiryMs(offer.expiresAt),
-        refills: window !== null && offer.windows.includes(window),
-        ...(window !== null && offer.givesBackTo === window && !offer.windows.includes(window) ? { givesBack: true } : {}),
-      } satisfies CreditLot,
-    }))
-    .sort((a, b) => a.width - b.width || (a.lot.expiresAtMs ?? Number.POSITIVE_INFINITY) - (b.lot.expiresAtMs ?? Number.POSITIVE_INFINITY))
-    .map((item) => item.lot);
 }
 
 /** The accounts' readings, by account, in time order, with the live limits' figure last. */
@@ -287,21 +250,42 @@ export function burnRate(spend: SpendHistory, accounts: ForecastAccount[], setti
   return { basis: 'weekly', fellBack: false, perHour: nextDay / 24, rateAt: (atMs) => perHourAt(atMs) / HOUR };
 }
 
+/** The regular reset a planned reset carries the pool to: when, and whose. */
+export type Bridge = { atMs: number; names: string[] };
+
+/** What to do with a reset that lapses within the forecast and isn't in the plan. */
+export type LapsingUse =
+  /** Its account runs out before it lapses: use it then. `first`: only if work goes to that account ahead of its turn. */
+  | { how: 'atLimit'; atMs: number; first?: true }
+  /** Claude takes it early: spent just before it lapses it refills this much of the account. */
+  | { how: 'early'; percent: number }
+  /** Its account can't run out in time at this pace. */
+  | { how: 'none' };
+
 export type Advice =
   /**
-   * Claim a reset on an account when it runs out: the pool would otherwise run dry first. `gainMs` null: it then
-   * lasts. `reset` is which Claude reset to use.
+   * Use a reset on an account: the pool would otherwise run dry first. `gainMs` null: it then lasts. `reset` is which
+   * Claude reset to use.
    */
-  | { kind: 'claim'; key: string; name: string; atMs: number; gainMs: number | null; reset?: ClaudeResetKind }
+  | {
+    kind: 'claim'; key: string; name: string; atMs: number; gainMs: number | null; reset?: ClaudeResetKind;
+    /** When it lapses, when that's within the forecast: why it's the one to spend. */
+    lapsesAtMs?: number;
+    /** Spent before the account runs out, since it lapses first: the percent still left on the account then. */
+    early?: number;
+    /** The account only runs out in time if work goes to it ahead of its turn. */
+    first?: true;
+    bridge?: Bridge;
+  }
   /** Even with every reset spent the pool runs dry: this pace would last. */
   | { kind: 'slow'; perHour: number }
-  /** Credits that lapse before the forecast ever needs them. */
-  | { kind: 'expiring'; key: string; name: string; count: number; expiresAtMs: number; reset?: ClaudeResetKind }
+  /** Resets that lapse within the forecast with no place in the plan. */
+  | { kind: 'expiring'; key: string; name: string; count: number; expiresAtMs: number; reset?: ClaudeResetKind; use: LapsingUse }
   /** Fable resets on an account of a pool that runs dry: they hand some of this window back, but not a known amount. */
   | { kind: 'givesBack'; key: string; name: string; count: number }
   /** Capacity that resets before it's spent, by `byMs`: room to spend more. */
   | { kind: 'unused'; percent: number; byMs: number }
-  /** The pool lasts the whole horizon, with `credits` resets left over. */
+  /** The pool lasts the whole horizon, with `credits` resets left over that outlive it. */
   | { kind: 'lasts'; untilMs: number; credits: number };
 
 export type Forecast = {
@@ -320,40 +304,128 @@ export type Forecast = {
 };
 
 type PlannedClaim = { key: string; atMs: number; lot: CreditLot };
+type ClaimStep = Omit<Extract<Advice, { kind: 'claim' }>, 'kind' | 'name' | 'bridge'> & { bridge?: { atMs: number; keys: string[] } };
+type Simulate = (claims: { key: string; atMs: number }[]) => PoolRun;
 
-/** The lot a claim at a time spends: the first that refills the window, has a reset left and hasn't lapsed. */
-const lotFor = (account: ForecastAccount, claims: PlannedClaim[], atMs: number) => account.lots.find((lot) =>
-  lot.refills
-  && lot.count - claims.filter((claim) => claim.lot === lot).length > 0
-  && (lot.expiresAtMs === null || lot.expiresAtMs > atMs));
+const usedOf = (claims: PlannedClaim[], lot: CreditLot) => claims.filter((claim) => claim.lot === lot).length;
+const lastClaimMs = (claims: PlannedClaim[], key: string) =>
+  claims.reduce((last, claim) => (claim.key === key ? Math.max(last, claim.atMs) : last), Number.NEGATIVE_INFINITY);
+/** When an account next runs out after the resets already planned for it. */
+const nextEmptyMs = (run: PoolRun, claims: PlannedClaim[], key: string) => {
+  const after = lastClaimMs(claims, key) + CLAIM_GAP_MS;
+  return run.emptied[key]?.find((atMs) => atMs > after);
+};
+const lapsesWithin = (lot: CreditLot, fromMs: number, toMs: number): lot is CreditLot & { expiresAtMs: number } =>
+  lot.expiresAtMs !== null && lot.expiresAtMs > fromMs && lot.expiresAtMs <= toMs;
 
 /**
- * Greedy plan for the credits: while the pool runs dry, spend the credit that buys the most time, on the account
- * that runs out before the pool does, at the moment it runs out (Claude and Codex only refill an account at a limit).
+ * The lot a claim at a time spends, of those that refill the window, have a reset left and haven't lapsed: one about
+ * to lapse first, the soonest leading, since it's lost otherwise; then the account's own order, narrowest first. A
+ * wider reset with weeks left stays behind the narrower one, for the limits only it lifts.
  */
-function planClaims(accounts: ForecastAccount[], run: (claims: { key: string; atMs: number }[]) => PoolRun) {
+const lotFor = (account: ForecastAccount, claims: PlannedClaim[], atMs: number) => {
+  const alive = account.lots.filter((lot) => lot.refills && lot.count - usedOf(claims, lot) > 0 && (lot.expiresAtMs === null || lot.expiresAtMs > atMs));
+  const lapsing = alive.filter((lot) => lapsesWithin(lot, atMs, atMs + LAPSING_SOON_MS)).sort((a, b) => (a.expiresAtMs ?? 0) - (b.expiresAtMs ?? 0));
+  return lapsing[0] ?? alive[0];
+};
+
+/** A reset Claude takes early that lapses before its account next runs out, and when the plan would spend it. */
+const earlyClaim = (account: ForecastAccount, claims: PlannedClaim[], emptyAtMs: number | undefined, nowMs: number) => {
+  const lot = account.lots
+    .filter((item) => item.anytime && item.refills && item.count - usedOf(claims, item) > 0 && lapsesWithin(item, nowMs, emptyAtMs ?? Number.POSITIVE_INFINITY))
+    .sort((a, b) => (a.expiresAtMs ?? 0) - (b.expiresAtMs ?? 0))[0];
+  if (!lot || lot.expiresAtMs === null) return null;
+  const atMs = Math.max(nowMs, lot.expiresAtMs - EARLY_MARGIN_MS);
+  return atMs > lastClaimMs(claims, account.key) + CLAIM_GAP_MS ? { atMs, lot } : null;
+};
+
+/** How much an account had left when a planned reset refilled it. */
+const leftAtClaim = (run: PoolRun, key: string, atMs: number) =>
+  run.events.find((event) => event.kind === 'credit' && event.key === key && Math.abs(event.atMs - atMs) < CLAIM_GAP_MS)?.before;
+
+/** The first regular reset that hands something back after the pool would have run dry, when the pool now reaches it. */
+const bridgeAfter = (run: PoolRun, dryAtMs: number) => {
+  const first = run.events.find((event) => event.kind === 'reset' && event.before < 100 && event.atMs >= dryAtMs);
+  if (!first || (run.dryAtMs !== null && run.dryAtMs < first.atMs)) return undefined;
+  const keys = run.events
+    .filter((event) => event.kind === 'reset' && event.before < 100 && Math.abs(event.atMs - first.atMs) <= SAME_MOMENT_MS)
+    .map((event) => event.key);
+  return { atMs: first.atMs, keys: [...new Set(keys)] };
+};
+
+/**
+ * The accounts as the plan spends them: one holding a reset that lapses within the forecast goes ahead of its turn
+ * when that, and only that, has it run out in time to use the reset. The account order does the same.
+ */
+function spendFirst(accounts: ForecastAccount[], simulate: (pool: ForecastAccount[]) => PoolRun, nowMs: number, horizonEndMs: number): ForecastAccount[] {
+  const lapsing = accounts.flatMap((account) => {
+    const useBy = account.lots
+      .flatMap((lot) => (lot.refills && lapsesWithin(lot, nowMs, horizonEndMs) ? Array.from({ length: lot.count }, () => lot.expiresAtMs) : []))
+      .sort((a, b) => a - b);
+    const firstMs = useBy[0];
+    return firstMs === undefined ? [] : [{ key: account.key, useBy, firstMs }];
+  }).sort((a, b) => a.firstMs - b.firstMs);
+  let pool = accounts;
+  for (const item of lapsing) {
+    const inTime = (run: PoolRun) => (run.emptied[item.key]?.[0] ?? Number.POSITIVE_INFINITY) <= item.firstMs;
+    if (inTime(simulate(pool))) continue;
+    const trial = pool.map((account) => (account.key === item.key ? { ...account, useBy: item.useBy } : account));
+    if (inTime(simulate(trial))) pool = trial;
+  }
+  return pool;
+}
+
+/**
+ * Greedy plan for the resets: while the pool runs dry, spend the one that buys the most time, on an account that runs
+ * out before the pool does, at the moment it runs out (the most a reset can refill). Each account's own reset is in
+ * the simulation, so a reset just before one buys little and loses to another account's. Between resets that buy
+ * about the same, the one lapsing sooner goes. A reset Claude takes early that would lapse first is spent just
+ * before it does.
+ */
+function planClaims(accounts: ForecastAccount[], run: Simulate, nowMs: number, horizonEndMs: number, unaided: PoolRun) {
+  type Candidate = { key: string; atMs: number; lot: CreditLot; early: boolean; result: PoolRun; gain: number };
   const claims: PlannedClaim[] = [];
-  const steps: { key: string; atMs: number; gainMs: number | null; reset?: ClaudeResetKind }[] = [];
+  const steps: ClaimStep[] = [];
+  const lapse = (candidate: Candidate) => candidate.lot.expiresAtMs ?? Number.POSITIVE_INFINITY;
+  const beats = (a: Candidate, b: Candidate) => {
+    const same = a.gain === b.gain || Math.abs(a.gain - b.gain) <= SAME_GAIN_MS;
+    if (!same) return a.gain > b.gain;
+    return lapse(a) === lapse(b) ? a.gain > b.gain : lapse(a) < lapse(b);
+  };
   let base = run(claims);
   while (base.dryAtMs !== null && steps.length < MOST_CLAIMS) {
     const dryAtMs = base.dryAtMs;
-    let best: { key: string; atMs: number; lot: CreditLot; result: PoolRun; gain: number } | null = null;
+    let best: Candidate | null = null;
     for (const account of accounts) {
-      const emptyAtMs = base.emptyAtMs[account.key];
-      if (emptyAtMs === undefined || emptyAtMs > dryAtMs) continue;
-      // Claimed again after an earlier claim this run, it runs out later than first time.
-      const atMs = Math.max(emptyAtMs, ...claims.filter((claim) => claim.key === account.key).map((claim) => claim.atMs + 1));
-      const lot = lotFor(account, claims, atMs);
-      if (!lot) continue;
-      const result = run([...claims, { key: account.key, atMs }]);
-      const gain = (result.dryAtMs ?? Number.POSITIVE_INFINITY) - dryAtMs;
-      if (gain > 0 && (!best || gain > best.gain)) best = { key: account.key, atMs, lot, result, gain };
+      const emptyAtMs = nextEmptyMs(base, claims, account.key);
+      const atLimit = emptyAtMs !== undefined && emptyAtMs <= dryAtMs ? lotFor(account, claims, emptyAtMs) : undefined;
+      const early = earlyClaim(account, claims, emptyAtMs, nowMs);
+      const tries = [
+        ...(atLimit && emptyAtMs !== undefined ? [{ atMs: emptyAtMs, lot: atLimit, early: false }] : []),
+        ...(early ? [{ ...early, early: true }] : []),
+      ];
+      for (const item of tries) {
+        const result = run([...claims, { key: account.key, atMs: item.atMs }]);
+        const candidate = { key: account.key, ...item, result, gain: (result.dryAtMs ?? Number.POSITIVE_INFINITY) - dryAtMs };
+        if (candidate.gain > 0 && (!best || beats(candidate, best))) best = candidate;
+      }
     }
     if (!best) break;
-    claims.push({ key: best.key, atMs: best.atMs, lot: best.lot });
+    const { key, atMs, lot } = best;
+    const lapsesAtMs = lapsesWithin(lot, nowMs, horizonEndMs) ? lot.expiresAtMs : undefined;
+    const left = best.early ? leftAtClaim(best.result, key, atMs) : undefined;
+    // Its first reset only: whether the account reaches its limit in time without going ahead of its turn.
+    const first = !best.early && lapsesAtMs !== undefined && !claims.some((claim) => claim.key === key)
+      && (unaided.emptied[key]?.[0] ?? Number.POSITIVE_INFINITY) > lapsesAtMs;
+    const bridge = bridgeAfter(best.result, dryAtMs);
+    claims.push({ key, atMs, lot });
     steps.push({
-      key: best.key, atMs: best.atMs, gainMs: Number.isFinite(best.gain) ? best.gain : null,
-      ...(best.lot.reset ? { reset: best.lot.reset } : {}),
+      key, atMs, gainMs: Number.isFinite(best.gain) ? best.gain : null,
+      ...(lot.reset ? { reset: lot.reset } : {}),
+      ...(lapsesAtMs !== undefined ? { lapsesAtMs } : {}),
+      ...(left !== undefined ? { early: left } : {}),
+      ...(first ? { first: true as const } : {}),
+      ...(bridge ? { bridge } : {}),
     });
     base = best.result;
   }
@@ -373,7 +445,7 @@ export function buildForecast(input: {
   const horizonEndMs = nowMs + horizonDays * DAY;
   const spend = spendByHour(readings, accounts, nowMs - FORECAST_HISTORY_MS, nowMs);
   const burn = burnRate(spend, accounts, settings, nowMs);
-  const run = (claims: { key: string; atMs: number }[], points = false, scale = 1) => simulatePool(accounts, {
+  const simulate = (pool: ForecastAccount[], claims: { key: string; atMs: number }[], points = false, scale = 1) => simulatePool(pool, {
     startMs: nowMs,
     endMs: horizonEndMs,
     rate: (atMs) => burn.rateAt(atMs) * scale,
@@ -381,11 +453,19 @@ export function buildForecast(input: {
     claimAt: claims,
     points,
   });
+  const ordered = spendFirst(accounts, (pool) => simulate(pool, []), nowMs, horizonEndMs);
+  const run = (claims: { key: string; atMs: number }[], points = false, scale = 1) => simulate(ordered, claims, points, scale);
   const baseline = run([], true);
-  const plan = planClaims(accounts, (claims) => run(claims));
+  const unaided = ordered === accounts ? baseline : simulate(accounts, []);
+  const plan = planClaims(ordered, (claims) => run(claims), nowMs, horizonEndMs, unaided);
   const projection = settings.countResets && plan.claims.length ? run(plan.claims, true) : baseline;
   const names = new Map(accounts.map((account) => [account.key, account.name]));
-  const advice: Advice[] = plan.steps.map((step) => ({ kind: 'claim', ...step, name: names.get(step.key) ?? step.key }));
+  const advice: Advice[] = plan.steps.map(({ bridge, ...step }) => ({
+    kind: 'claim',
+    ...step,
+    name: names.get(step.key) ?? step.key,
+    ...(bridge ? { bridge: { atMs: bridge.atMs, names: bridge.keys.map((key) => names.get(key) ?? key) } } : {}),
+  }));
   const withClaims = plan.final;
   if (withClaims.dryAtMs !== null && burn.perHour > 0) {
     // The pace that would just last the horizon, with the suggested resets spent.
@@ -398,13 +478,24 @@ export function buildForecast(input: {
     }
     advice.push({ kind: 'slow', perHour: burn.perHour * low });
   }
-  accounts.forEach((account) => account.lots.forEach((lot) => {
-    const expiresAtMs = lot.expiresAtMs;
-    if (!lot.refills || expiresAtMs === null || expiresAtMs > horizonEndMs) return;
-    const unused = lot.count - plan.claims.filter((claim) => claim.lot === lot).length;
-    if (unused > 0) {
-      advice.push({ kind: 'expiring', key: account.key, name: account.name, count: unused, expiresAtMs, ...(lot.reset ? { reset: lot.reset } : {}) });
+  // Resets that lapse within the forecast and aren't in the plan: when one could still be used, rather than lost.
+  ordered.forEach((account) => account.lots.forEach((lot) => {
+    if (!lot.refills || !lapsesWithin(lot, nowMs, horizonEndMs)) return;
+    const unused = lot.count - usedOf(plan.claims, lot);
+    if (unused <= 0) return;
+    const { expiresAtMs } = lot;
+    const emptyAtMs = nextEmptyMs(withClaims, plan.claims, account.key);
+    let use: LapsingUse = { how: 'none' };
+    if (emptyAtMs !== undefined && emptyAtMs < expiresAtMs) {
+      const first = !plan.claims.some((claim) => claim.key === account.key) && (unaided.emptied[account.key]?.[0] ?? Number.POSITIVE_INFINITY) > expiresAtMs;
+      use = { how: 'atLimit', atMs: emptyAtMs, ...(first ? { first: true as const } : {}) };
+    } else if (lot.anytime) {
+      const atMs = Math.max(nowMs, expiresAtMs - EARLY_MARGIN_MS);
+      const left = atMs > lastClaimMs(plan.claims, account.key) + CLAIM_GAP_MS
+        ? leftAtClaim(run([...plan.claims, { key: account.key, atMs }]), account.key, atMs) : undefined;
+      if (left !== undefined && 100 - left >= EARLY_MIN_PERCENT) use = { how: 'early', percent: 100 - left };
     }
+    advice.push({ kind: 'expiring', key: account.key, name: account.name, count: unused, expiresAtMs, ...(lot.reset ? { reset: lot.reset } : {}), use });
   }));
   // A pool that still runs dry may get some of the window back from a Fable reset, which the plan can't count on.
   const stillDryAtMs = withClaims.dryAtMs;
@@ -421,8 +512,10 @@ export function buildForecast(input: {
   const unused = handedBack.reduce((total, event) => total + event.before, 0);
   if (lastHandedBack && unused >= UNUSED_MIN_PERCENT) advice.push({ kind: 'unused', percent: unused, byMs: lastHandedBack.atMs });
   if (projection.dryAtMs === null) {
-    const spentCredits = settings.countResets ? plan.claims.length : 0;
-    advice.push({ kind: 'lasts', untilMs: horizonEndMs, credits: accounts.reduce((total, account) => total + account.credits, 0) - spentCredits });
+    // Those lapsing within the forecast aren't ones to keep: they have a line of their own.
+    const kept = accounts.reduce((total, account) => total + account.lots.reduce((sum, lot) =>
+      (lot.refills && !lapsesWithin(lot, nowMs, horizonEndMs) ? sum + lot.count - (settings.countResets ? usedOf(plan.claims, lot) : 0) : sum), 0), 0);
+    advice.push({ kind: 'lasts', untilMs: horizonEndMs, credits: kept });
   }
   // Accounts that reset together are one step on the chart, so the next reset counts them all.
   const refill = projection.events.find((event) => event.before < 100);

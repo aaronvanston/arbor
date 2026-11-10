@@ -66,12 +66,12 @@ describe('reading Claude banked resets', () => {
       {
         kind: 'weekly', count: 1, expiresAt: '2030-01-15T00:00:00Z', useBy: '2030-01-15T00:00:00Z', grantId: 'weekly_thanks',
         windows: ['7-day window', '7-day Opus window', '7-day Fable window'], refills: '7-day window and 7-day Opus window',
-        earlyUse: { percentLeft: 42, limit: '7-day window' },
+        earlyUse: { percentLeft: 42, limit: '7-day window' }, anytime: true,
       },
       {
         kind: 'fable', count: 3, expiresAt: '2030-05-01T00:00:00Z', useBy: '2030-05-01T00:00:00Z', grantId: 'fable_launch',
         windows: ['7-day Fable window'], refills: '7-day Fable window', givesBackTo: '7-day window',
-        earlyUse: { percentLeft: 70, limit: '7-day Fable window' },
+        earlyUse: { percentLeft: 70, limit: '7-day Fable window' }, anytime: true,
       },
     ]);
     expect(result.bankedReset?.blockedReason).toBeUndefined();

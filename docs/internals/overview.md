@@ -43,6 +43,12 @@ The headline's pace color and the forecast on Accounts › Limits both play a pr
 `services/poolSimulation.ts`, so the color can't say a pool lasts while the chart shows it running dry. A pool counts as
 dry only when every account in use is, since the proxy moves on when one empties.
 
+Both spend the account whose window resets soonest first, as the account order on Accounts › Routing does. The one
+exception is shared too: an account holding a reset that lapses before its window resets goes ahead of its turn when
+only that gets it to its limit in time to use the reset (`useBy` in the simulation, `aheadOfLapse` in
+`services/quotaRouting.ts`). The forecast's "send work to it first" advice is only followable while the account order
+makes the same call, so change them together.
+
 Spend is read from the limit history as drops between readings of one cycle. An account sitting at 0% shows no drop, so
 hours a pool spent dry read as no demand, and a pool that keeps running dry is forecast a little short. Advice only ever
 suggests a reset. Claims stay behind the confirmation on Accounts, and nothing in the forecast spends one.

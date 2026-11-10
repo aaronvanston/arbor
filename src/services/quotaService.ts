@@ -61,6 +61,8 @@ export type ClaudeResetOffer = {
   useBy?: string;
   /** Set when using the reset now spends it before the account reaches a limit it refills. */
   earlyUse?: { percentLeft?: number; limit?: string };
+  /** Claude takes every reset of the kind before the account reaches a limit, whatever else holds it back now. */
+  anytime?: true;
   /** The account is at a limit this only hands Fable's share back to, so it may stay at it. */
   givesBackOnly?: true;
   /** Why none of this kind can be used now. */
@@ -573,6 +575,7 @@ export const claudeBankedResetFor = (
     const refills = listText(claudeGrantLabels(shown));
     if (refills) offer.refills = refills;
     if (items.every((grant) => grant.givesBackWeekly)) offer.givesBackTo = quotaText('quota.service.window.sevenDay');
+    if (items.every((grant) => !grant.useRequiresLimit)) offer.anytime = true;
     return offer;
   };
   if (eligible !== true) {

@@ -1,4 +1,4 @@
-import { freshRows, windowDurationMs } from './accountLimits';
+import { freshRows, rowWindowMs, windowDurationMs } from './accountLimits';
 import { sortByOrder, type AccountOrder } from './accountOrder';
 import { resolveAccountProfile, type AccountProfile } from './accountProfiles';
 import { authFileAvailability, isOAuthCredentialFile, parseAuthFilePriority, type AuthFileRecord } from './authFiles';
@@ -7,6 +7,7 @@ import { managementApi } from './managementApi';
 import { providerLimits } from './providerLimits';
 import { savedStore, storedRecord } from './savedStore';
 import { fileName, providerForFile, quotaKey, type AuthFile, type QuotaProvider, type QuotaState } from './quotaService';
+import { creditLots, firstLapseMs } from './resetLots';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -17,7 +18,7 @@ const SAME_RESET_MS = HOUR;
 
 /**
  * Why an account sits where it does in the suggested order.
- * - `soonest`: ranked by when its headline window resets.
+ * - `soonest`: ranked by when its headline window resets, or with `lapsesAtMs` by when a reset it holds lapses.
  * - `low`: nearly out of the window, so it goes last.
  * - `unknown`: no limit reading yet.
  * - `fixed`: a runtime-only credential or an API key, whose priority the core can't change.
@@ -25,7 +26,7 @@ const SAME_RESET_MS = HOUR;
  * The last three keep their priority.
  */
 export type RoutingReason =
-  | { kind: 'soonest'; percent: number; resetAtMs: number }
+  | { kind: 'soonest'; percent: number; resetAtMs: number; lapsesAtMs?: number }
   | { kind: 'low'; percent: number }
   | { kind: 'unknown' }
   | { kind: 'fixed' }
@@ -66,12 +67,13 @@ const reasonFor = ({ file, quota }: RoutingCandidate, window: string, nowMs: num
  * order of the first reset in each group. Inside a group the account with
  * more left goes first.
  */
-const rankBySoonestReset = <T extends { key: string; reason: { percent: number; resetAtMs: number } }>(items: T[]): T[] => {
-  const byReset = [...items].sort((a, b) => a.reason.resetAtMs - b.reason.resetAtMs || a.key.localeCompare(b.key));
+const rankBySoonestReset = <T extends { key: string; reason: { percent: number; resetAtMs: number; lapsesAtMs?: number } }>(items: T[]): T[] => {
+  const due = (item: T) => item.reason.lapsesAtMs ?? item.reason.resetAtMs;
+  const byReset = [...items].sort((a, b) => due(a) - due(b) || a.key.localeCompare(b.key));
   const groups: T[][] = [];
   byReset.forEach((item) => {
     const group = groups[groups.length - 1];
-    if (group && item.reason.resetAtMs - group[0]!.reason.resetAtMs <= SAME_RESET_MS) group.push(item);
+    if (group && due(item) - due(group[0]!) <= SAME_RESET_MS) group.push(item);
     else groups.push([item]);
   });
   return groups.flatMap((group) => group.sort((a, b) => b.reason.percent - a.reason.percent || a.key.localeCompare(b.key)));
@@ -85,6 +87,11 @@ const rankBySoonestReset = <T extends { key: string; reason: { percent: number; 
  * on; when an account hits a limit the core moves on to the next. Accounts
  * nearly out of the window get priority 0 and go last. Accounts without a
  * reading, or that the core can't use or re-prioritize, keep their priority.
+ *
+ * A reset an account holds is capacity that expires too, and most can only be used at a limit. So an account whose
+ * reset for this window lapses before the window resets is ranked by the lapse instead, nearly out or not, when
+ * that gets it to its limit in time and its usual place wouldn't. "In time" goes by the pace so far: each account's
+ * average spend since its window began, added up, against what's left on it and what the accounts ahead of it take.
  *
  * An account keeping a reserve for an extra model is ranked like any other:
  * above its reserve its limit is everyday capacity, and at it the account's
@@ -111,6 +118,7 @@ export function routingPlan(candidates: RoutingCandidate[], window: string | nul
     };
   });
   type Soonest = (typeof entries)[number] & { reason: Extract<RoutingReason, { kind: 'soonest' }> };
+  aheadOfLapse(entries, candidates, window, durationMs, nowMs);
   const soonest = entries.filter((entry): entry is Soonest => entry.reason.kind === 'soonest');
   const ranked = rankBySoonestReset(soonest);
   const low = entries.filter((entry) => entry.reason.kind === 'low').sort((a, b) => a.key.localeCompare(b.key));
@@ -121,6 +129,57 @@ export function routingPlan(candidates: RoutingCandidate[], window: string | nul
     ...entries.filter((entry) => entry.reason.kind !== 'soonest' && entry.reason.kind !== 'low').map((entry) => ({ ...entry, suggested: null })),
   ];
   return { items, changes: items.filter((item) => item.suggested !== null && item.suggested !== item.current) };
+}
+
+const MIN_ELAPSED = 0.05;
+
+/**
+ * Marks the accounts to rank by a lapsing reset rather than their window: see `routingPlan`. The soonest lapse is
+ * settled first, since an account moved ahead pushes back the ones behind it.
+ */
+function aheadOfLapse(
+  entries: { key: string; reason: RoutingReason }[],
+  candidates: RoutingCandidate[],
+  window: string,
+  durationMs: number,
+  nowMs: number,
+) {
+  const readings = entries.flatMap((entry, index) => {
+    const quota = candidates[index]?.quota;
+    if ((entry.reason.kind !== 'soonest' && entry.reason.kind !== 'low') || quota?.status !== 'success') return [];
+    const row = freshRows(quota).find((item) => item.label === window);
+    if (!row || row.remainingPercent === null || row.resetAtMs === undefined) return [];
+    const windowMs = rowWindowMs(row) ?? durationMs;
+    const elapsedMs = Math.max(MIN_ELAPSED * windowMs, Math.min(windowMs, windowMs - (row.resetAtMs - nowMs)));
+    return [{
+      entry,
+      percent: row.remainingPercent,
+      resetAtMs: row.resetAtMs,
+      perMs: (100 - row.remainingPercent) / elapsedMs,
+      lapseMs: firstLapseMs(creditLots(quota, window), nowMs),
+    }];
+  });
+  const perMs = readings.reduce((total, item) => total + item.perMs, 0);
+  if (perMs <= 0) return;
+  // When an account runs out, ranked by `dueMs`: each account ahead of it takes the work until it's out or its
+  // window resets, which sends it to the back, and then it's this one's turn.
+  const outAtMs = (item: (typeof readings)[number], dueMs: number) => {
+    const ahead = readings.flatMap((other) => {
+      const reason = other.entry.reason;
+      const otherDue = reason.kind === 'soonest' ? reason.lapsesAtMs ?? reason.resetAtMs : Number.POSITIVE_INFINITY;
+      return other !== item && otherDue < dueMs ? [{ percent: other.percent, dueMs: otherDue }] : [];
+    }).sort((a, b) => a.dueMs - b.dueMs);
+    const turnMs = ahead.reduce((atMs, other) => Math.min(atMs + other.percent / perMs, Math.max(atMs, other.dueMs)), nowMs);
+    return turnMs + item.percent / perMs;
+  };
+  readings
+    .flatMap((item) => (item.lapseMs !== null && item.lapseMs < item.resetAtMs ? [{ item, lapseMs: item.lapseMs }] : []))
+    .sort((a, b) => a.lapseMs - b.lapseMs || a.item.entry.key.localeCompare(b.item.entry.key))
+    .forEach(({ item, lapseMs }) => {
+      const usualDue = item.entry.reason.kind === 'soonest' ? item.resetAtMs : Number.POSITIVE_INFINITY;
+      if (outAtMs(item, usualDue) <= lapseMs || outAtMs(item, lapseMs) > lapseMs) return;
+      item.entry.reason = { kind: 'soonest', percent: item.percent, resetAtMs: item.resetAtMs, lapsesAtMs: lapseMs };
+    });
 }
 
 /** Accounts as the plan sees them: the credential, its latest limits and the name it goes by. */

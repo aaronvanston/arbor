@@ -510,7 +510,8 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         const nowMs = Date.now();
         const forecast = buildForecast({ accounts, readings, settings, horizonDays: FORECAST_ALERT_HORIZON_DAYS, historyMs: 0, nowMs });
         const alert = forecastAlert(limit.provider, forecast, nowMs);
-        const claim = forecast.advice.find((item) => item.kind === 'claim');
+        // The alert's line says "when it runs out", which a reset spent early or after a change of order isn't.
+        const claim = forecast.advice.find((item) => item.kind === 'claim' && item.early === undefined && !item.first);
         if (alert) alerts.push({ ...alert, provider: limit.provider, claim: claim?.kind === 'claim' ? claim.name : undefined });
       }
       if (!current) return;

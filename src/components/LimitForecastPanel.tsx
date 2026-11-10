@@ -184,31 +184,47 @@ function AdviceList({ advice, when, resettable, onReset }: {
   const { t } = useI18n();
   if (!advice.length) return null;
   const claimed = advice.some((item) => item.kind === 'claim');
+  const claimLine = (item: Extract<Advice, { kind: 'claim' }>) => {
+    // Claude's resets refill different limits, so the advice names the one that refills this window.
+    const reset = item.reset ? resetKindName(t, item.reset) : null;
+    const { name, bridge } = item;
+    const time = when(item.atMs);
+    const early = item.early !== undefined && reset && item.lapsesAtMs !== undefined;
+    const action = early ? t('forecast.advice.claimEarlyKind', { reset, name, time: when(item.lapsesAtMs ?? item.atMs), percent: formatPoolPercent(Math.round(item.early ?? 0)) })
+      : item.first ? (reset ? t('forecast.advice.claimFirstKind', { reset, name, time }) : t('forecast.advice.claimFirst', { name, time }))
+        : reset ? t('forecast.advice.claimKind', { reset, name, time }) : t('forecast.advice.claim', { name, time });
+    const why = item.lapsesAtMs !== undefined && !early ? t('forecast.advice.why.lapses', { time: when(item.lapsesAtMs) }) : null;
+    // What it's for: the regular reset it carries the pool to, or how much longer the pool goes.
+    const lasts = item.gainMs === null;
+    const account = bridge?.names[0];
+    const then = bridge && account !== undefined
+      ? bridge.names.length === 1
+        ? t(lasts ? 'forecast.advice.then.bridgeLasts.one' : 'forecast.advice.then.bridge.one', { time: when(bridge.atMs), account })
+        : t(lasts ? 'forecast.advice.then.bridgeLasts.other' : 'forecast.advice.then.bridge.other', { time: when(bridge.atMs), count: bridge.names.length })
+      : item.gainMs === null ? t('forecast.advice.then.lasts') : t('forecast.advice.then.gain', { gain: formatDuration(item.gainMs) });
+    return [action, why, then].filter(Boolean).join(' ');
+  };
+  const lapsingLine = (item: Extract<Advice, { kind: 'expiring' }>) => {
+    const { name, use } = item;
+    const time = when(item.expiresAtMs);
+    const what = item.reset
+      ? item.count === 1
+        ? t('forecast.advice.expiringKind.one', { reset: resetKindName(t, item.reset), name, time })
+        : t('forecast.advice.expiringKind.other', { resets: resetKindCount(t, item.reset, item.count), name, time })
+      : item.count === 1 ? t('forecast.advice.expiring.one', { name, time }) : t('forecast.advice.expiring.other', { count: item.count, name, time });
+    const how = use.how === 'atLimit' ? t(use.first ? 'forecast.advice.expiring.first' : 'forecast.advice.expiring.atLimit', { name, time: when(use.atMs) })
+      : use.how === 'early' ? t('forecast.advice.expiring.early', { name, percent: formatPoolPercent(Math.round(use.percent)) })
+        : t('forecast.advice.expiring.none', { name });
+    return `${what} ${how}`;
+  };
   const line = (item: Advice): ReactNode => {
     switch (item.kind) {
-      case 'claim': {
-        // Claude's resets refill different limits, so the advice names the one that refills this window.
-        const reset = item.reset ? resetKindName(t, item.reset) : null;
-        if (reset) {
-          return item.gainMs === null
-            ? t('forecast.advice.claimKindLasts', { reset, name: item.name, time: when(item.atMs) })
-            : t('forecast.advice.claimKind', { reset, name: item.name, time: when(item.atMs), gain: formatDuration(item.gainMs) });
-        }
-        return item.gainMs === null
-          ? t('forecast.advice.claimLasts', { name: item.name, time: when(item.atMs) })
-          : t('forecast.advice.claim', { name: item.name, time: when(item.atMs), gain: formatDuration(item.gainMs) });
-      }
+      case 'claim':
+        return claimLine(item);
       case 'slow':
         return t(claimed ? 'forecast.advice.slowAfterResets' : 'forecast.advice.slow', { rate: rate(item.perHour) });
       case 'expiring':
-        if (item.reset) {
-          return item.count === 1
-            ? t('forecast.advice.expiringKind.one', { reset: resetKindName(t, item.reset), name: item.name, time: when(item.expiresAtMs) })
-            : t('forecast.advice.expiringKind.other', { resets: resetKindCount(t, item.reset, item.count), name: item.name, time: when(item.expiresAtMs) });
-        }
-        return item.count === 1
-          ? t('forecast.advice.expiring.one', { name: item.name, time: when(item.expiresAtMs) })
-          : t('forecast.advice.expiring.other', { count: item.count, name: item.name, time: when(item.expiresAtMs) });
+        return lapsingLine(item);
       case 'givesBack':
         return item.count === 1
           ? t('forecast.advice.givesBack.one', { name: item.name })
@@ -229,7 +245,7 @@ function AdviceList({ advice, when, resettable, onReset }: {
             <span
               className={cn(
                 'mt-1.5 size-1.5 shrink-0 rounded-full',
-                item.kind === 'claim' || item.kind === 'slow' ? 'bg-warning' : item.kind === 'expiring' ? 'bg-error' : item.kind === 'givesBack' ? 'bg-muted-foreground' : 'bg-success',
+                item.kind === 'claim' || item.kind === 'slow' || (item.kind === 'expiring' && item.use.how !== 'none') ? 'bg-warning' : item.kind === 'expiring' ? 'bg-error' : item.kind === 'givesBack' ? 'bg-muted-foreground' : 'bg-success',
               )}
               aria-hidden="true"
             />

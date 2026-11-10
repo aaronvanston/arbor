@@ -4,7 +4,8 @@
  *
  * The proxy moves to another account when one empties, so spending takes the account that resets soonest first, as
  * soonest-reset-first routing does. Each account refills to 100% at its reset and every window after. Accounts with no
- * known reset are spent last and never refill.
+ * known reset are spent last and never refill. An account holding a reset that lapses before its window resets can be
+ * spent ahead of its turn (`useBy`), which the account order does too, so it reaches a limit in time to use it.
  */
 
 export type PoolAccount = {
@@ -15,6 +16,11 @@ export type PoolAccount = {
   windowMs: number | null;
   /** Resets the account can claim when it runs out (banked or manual), when `claimCredits` is on. */
   credits?: number;
+  /**
+   * When each reset it holds lapses, soonest first, for the ones worth reaching a limit for. Until the first of them
+   * the account is spent as if its window reset then, as the account order puts it, and each claim spends one.
+   */
+  useBy?: number[];
 };
 
 export type PoolPoint = { t: number; left: number };
@@ -30,6 +36,8 @@ export type PoolRun = {
   events: PoolEvent[];
   /** When each account first runs out. */
   emptyAtMs: Record<string, number>;
+  /** Every time each account runs out: again after each refill. */
+  emptied: Record<string, number[]>;
 };
 
 export type PoolOptions = {
@@ -49,15 +57,33 @@ export type PoolOptions = {
   stopWhenDry?: boolean;
 };
 
+/** Demand this small going unmet in a step isn't the pool running dry. */
+const UNMET_MIN_PERCENT = 1e-6;
+
 const sum = (accounts: { left: number }[]) => accounts.reduce((total, account) => total + account.left, 0);
 
 export function simulatePool(start: PoolAccount[], options: PoolOptions): PoolRun {
   const { startMs, endMs, rate, stepMs = Number.POSITIVE_INFINITY } = options;
-  const pool = start.map((account) => ({ ...account, left: Math.max(0, Math.min(100, account.left)), credits: account.credits ?? 0 }));
+  const pool = start.map((account) => ({
+    ...account, left: Math.max(0, Math.min(100, account.left)), credits: account.credits ?? 0, useBy: [...(account.useBy ?? [])].sort((a, b) => a - b),
+  }));
   const claims = [...(options.claimAt ?? [])].sort((a, b) => a.atMs - b.atMs);
   const canClaim = (key: string) =>
     options.claimCredits === true || (options.claimCredits instanceof Set && options.claimCredits.has(key));
-  const run: PoolRun = { points: [], dryAtMs: null, dryMs: 0, events: [], emptyAtMs: {} };
+  const run: PoolRun = { points: [], dryAtMs: null, dryMs: 0, events: [], emptyAtMs: {}, emptied: {} };
+  const ranOut = (key: string, atMs: number) => {
+    run.emptyAtMs[key] ??= atMs;
+    (run.emptied[key] ??= []).push(atMs);
+  };
+  /** The reset a claim spends is the one lapsing soonest that hasn't yet. */
+  const spendReset = (account: (typeof pool)[number], atMs: number) => {
+    account.credits -= 1;
+    while ((account.useBy[0] ?? Number.POSITIVE_INFINITY) <= atMs) account.useBy.shift();
+    account.useBy.shift();
+  };
+  /** What an account is spent ahead of: its window's reset, or a reset it holds lapsing before that. */
+  const dueMs = (account: (typeof pool)[number], atMs: number) =>
+    Math.min(account.resetAtMs ?? Number.POSITIVE_INFINITY, account.useBy.find((lapse) => lapse > atMs) ?? Number.POSITIVE_INFINITY);
   // A refill records the pool just before and just after it, so it draws as a step rather than a slope.
   const record = (t: number) => {
     if (!options.points) return;
@@ -71,7 +97,7 @@ export function simulatePool(start: PoolAccount[], options: PoolOptions): PoolRu
     account.left = 100;
     record(atMs);
   };
-  pool.forEach((account) => { if (account.left <= 0) run.emptyAtMs[account.key] = startMs; });
+  pool.forEach((account) => { if (account.left <= 0) ranOut(account.key, startMs); });
   record(startMs);
   let time = startMs;
   while (time < endMs) {
@@ -86,19 +112,21 @@ export function simulatePool(start: PoolAccount[], options: PoolOptions): PoolRu
       claims.shift();
       const account = pool.find((item) => item.key === claim.key);
       if (account && account.credits > 0) {
-        account.credits -= 1;
+        spendReset(account, claim.atMs);
         refill(account, claim.atMs, 'credit');
       }
     }
     record(time);
     const nextReset = Math.min(...pool.map((account) => (account.resetAtMs !== null && account.windowMs ? account.resetAtMs : Number.POSITIVE_INFINITY)));
     const nextStep = Number.isFinite(stepMs) ? (Math.floor(time / stepMs) + 1) * stepMs : Number.POSITIVE_INFINITY;
-    const until = Math.min(endMs, nextReset, nextStep, claims[0]?.atMs ?? Number.POSITIVE_INFINITY);
+    // A lapse changes the order, so a step ends there too.
+    const nextLapse = Math.min(...pool.map((account) => account.useBy.find((lapse) => lapse > time) ?? Number.POSITIVE_INFINITY));
+    const until = Math.min(endMs, nextReset, nextStep, nextLapse, claims[0]?.atMs ?? Number.POSITIVE_INFINITY);
     const perMs = Math.max(0, rate(time));
     let need = perMs * (until - time);
     let spent = 0;
     if (need > 0) {
-      const order = [...pool].sort((a, b) => (a.resetAtMs ?? Number.POSITIVE_INFINITY) - (b.resetAtMs ?? Number.POSITIVE_INFINITY));
+      const order = [...pool].sort((a, b) => dueMs(a, time) - dueMs(b, time));
       for (let index = 0; index < order.length && need > 0; index += 1) {
         const account = order[index];
         if (!account) break;
@@ -106,17 +134,17 @@ export function simulatePool(start: PoolAccount[], options: PoolOptions): PoolRu
         account.left -= take;
         need -= take;
         spent += take;
-        if (account.left <= 0 && take > 0 && run.emptyAtMs[account.key] === undefined) {
-          run.emptyAtMs[account.key] = time + spent / perMs;
-        }
+        if (account.left <= 0 && take > 0) ranOut(account.key, time + spent / perMs);
         if (account.left <= 0 && need > 0 && account.credits > 0 && canClaim(account.key)) {
-          account.credits -= 1;
+          spendReset(account, time + spent / perMs);
           refill(account, time + spent / perMs, 'credit');
           index -= 1;
         }
       }
     }
-    if (need > 0) {
+    // Rounding can leave a sliver unmet when the last account runs out exactly as a step ends: a reset planned for
+    // that moment would read as a moment too late.
+    if (need > UNMET_MIN_PERCENT) {
       const dryFrom = time + spent / perMs;
       run.dryAtMs ??= dryFrom;
       run.dryMs += until - dryFrom;

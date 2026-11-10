@@ -60,6 +60,9 @@
  * `?limit=claude` or `?limit=codex` to put accounts at a limit a reset can refill; `?limit=fable` for Claude accounts
  * out of Fable's allowance, which a Fable reset refills, and `?limit=week` for them at the weekly limit, where the
  * weekly reset leads, a Fable reset only gives back what Fable used and claude-2's has nothing to give back;
+ * `?resets=lapsing` for Claude resets that lapse within two days, so the forecast spends those first and says how one
+ * it has no use for could still be used (with `?forecast=dry`, which one gets the pool through); with `?accounts=fleet`
+ * too, the account order on Settings › Routing puts an account holding one ahead of its turn;
  * `?quota=fail-after-first` to have each account's first limit check work and every later one fail to reach the provider,
  * or `?quota=error` to have one Claude and one Codex account fail to read their limits;
  * `?plan=free` for one Claude and one Codex account whose billing was paused, so their providers have them on the free

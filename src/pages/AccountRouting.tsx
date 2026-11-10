@@ -168,7 +168,9 @@ function ProviderRoutingBlock({ routing: { provider, window, plan }, onError, co
   const reasonText = (item: RoutingItem) => {
     const { reason, reserve } = item;
     const text = reason.kind === 'soonest'
-      ? t('accounts.routing.reason.soonest', { percent: Math.round(reason.percent), time: formatResetCountdown(reason.resetAtMs, now) || '—' })
+      ? reason.lapsesAtMs !== undefined
+        ? t('accounts.routing.reason.lapsing', { percent: Math.round(reason.percent), time: formatResetCountdown(reason.lapsesAtMs, now) || '—' })
+        : t('accounts.routing.reason.soonest', { percent: Math.round(reason.percent), time: formatResetCountdown(reason.resetAtMs, now) || '—' })
       : reason.kind === 'low' ? t('accounts.routing.reason.low', { percent: Math.round(reason.percent) })
         : t(`accounts.routing.reason.${reason.kind}`);
     return reserve

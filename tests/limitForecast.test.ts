@@ -2,11 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import type { LimitTrendAccount } from '../src/native/types';
 import { buildHeadline } from '../src/services/accountLimits';
 import {
-  buildForecast, burnRate, creditLots, forecastAccounts, forecastAlert, nextForecastAlerts, poolHistory, spendByHour,
-  type ForecastAccount, type ForecastSettings,
+  buildForecast, burnRate, forecastAccounts, forecastAlert, nextForecastAlerts, poolHistory, spendByHour,
+  type Advice, type ForecastAccount, type ForecastSettings,
 } from '../src/services/limitForecast';
 import { simulatePool } from '../src/services/poolSimulation';
 import type { QuotaState } from '../src/services/quotaService';
+import { creditLots, type CreditLot } from '../src/services/resetLots';
 import { itemAt, lastItem, present } from './support/items';
 
 const HOUR = 3_600_000;
@@ -56,6 +57,27 @@ describe('pool simulation', () => {
     const run = simulatePool([account('a', 10, 100, 1)], { startMs: NOW, endMs: NOW + 50 * HOUR, rate: () => 1 / HOUR, claimCredits: true });
     expect(itemAt(run.events, 0)).toMatchObject({ kind: 'credit', atMs: NOW + 10 * HOUR });
     expect(run.dryAtMs).toBeNull();
+  });
+});
+
+describe('pool simulation with resets that lapse', () => {
+  test('spends an account ahead of its turn until the reset it holds lapses', () => {
+    // b resets sooner, but a holds a reset that lapses at 8h: a goes first until then.
+    const pool = [{ ...account('a', 50, 100), useBy: [NOW + 8 * HOUR] }, account('b', 50, 30)];
+    const run = simulatePool(pool, { startMs: NOW, endMs: NOW + 20 * HOUR, rate: () => 5 / HOUR, stepMs: HOUR });
+    expect(Math.round((present(run.emptyAtMs.b) - NOW) / HOUR)).toBe(18);
+    expect(Math.round((present(run.emptyAtMs.a) - NOW) / HOUR)).toBe(20);
+    // In time, a runs out first and the claim spends the reset, so it's back in its usual place.
+    const claimed = simulatePool([{ ...account('a', 20, 100, 1), useBy: [NOW + 8 * HOUR] }, account('b', 50, 30)], {
+      startMs: NOW, endMs: NOW + 20 * HOUR, rate: () => 5 / HOUR, stepMs: HOUR, claimAt: [{ key: 'a', atMs: NOW + 4 * HOUR }],
+    });
+    expect(claimed.events.map((event) => [event.key, event.kind, Math.round((event.atMs - NOW) / HOUR), Math.round(event.before)])).toEqual([['a', 'credit', 4, 0]]);
+    expect(Math.round((present(claimed.emptyAtMs.b) - NOW) / HOUR)).toBe(14);
+  });
+
+  test('records every time an account runs out', () => {
+    const run = simulatePool([account('a', 10, 100, 2)], { startMs: NOW, endMs: NOW + 3 * DAY, rate: () => 5 / HOUR, stepMs: HOUR, claimCredits: true });
+    expect(present(run.emptied.a).map((atMs) => Math.round((atMs - NOW) / HOUR))).toEqual([2, 22, 42]);
   });
 });
 
@@ -152,7 +174,8 @@ describe('forecast', () => {
   test('flags credits that lapse unused and capacity that resets unspent', () => {
     const accounts = [account('a', 90, 5, 2, NOW + 2 * DAY), account('b', 100, 100)];
     const forecast = buildForecast({ accounts, readings: [], settings: settings({ ratePerHour: 0.5 }), horizonDays: 3, historyMs: DAY, nowMs: NOW });
-    expect(forecast.advice.find((item) => item.kind === 'expiring')).toMatchObject({ key: 'a', count: 2 });
+    // a resets long before it could run out, so its resets can't be used before they lapse.
+    expect(forecast.advice.find((item) => item.kind === 'expiring')).toMatchObject({ key: 'a', count: 2, use: { how: 'none' } });
     expect(forecast.advice.find((item) => item.kind === 'unused')).toMatchObject({ byMs: NOW + 5 * HOUR });
     expect(forecast.nextRefill).toMatchObject({ atMs: NOW + 5 * HOUR });
   });
@@ -163,6 +186,86 @@ describe('forecast', () => {
     const first = nextForecastAlerts({}, [alert], NOW);
     expect(first.fresh).toHaveLength(1);
     expect(nextForecastAlerts(first.notified, [alert], NOW + HOUR).fresh).toHaveLength(0);
+  });
+});
+
+describe('which reset the forecast spends, and where', () => {
+  type Claim = Extract<Advice, { kind: 'claim' }>;
+  const hours = (atMs: number | undefined) => (atMs === undefined ? undefined : Math.round(((atMs - NOW) / HOUR) * 10) / 10);
+  const claims = (accounts: ForecastAccount[], rate: number, horizonDays = 3) =>
+    buildForecast({ accounts, readings: [], settings: settings({ ratePerHour: rate }), horizonDays, historyMs: DAY, nowMs: NOW })
+      .advice.filter((item): item is Claim => item.kind === 'claim');
+  const holding = (base: ForecastAccount, lot: Partial<CreditLot>): ForecastAccount =>
+    ({ ...base, credits: lot.count ?? 1, lots: [{ count: 1, expiresAtMs: null, refills: true, ...lot }] });
+
+  test('spends each reset an account holds as it runs out again', () => {
+    // Alone, a runs out at 10h and every 50h after a reset: two of its three carry it past the forecast.
+    const plan = claims([account('a', 20, 100, 3)], 2);
+    expect(plan.map((item) => [hours(item.atMs), item.gainMs === null])).toEqual([[10, false], [60, true]]);
+  });
+
+  test('plans a reset on the last account out, at the moment the pool runs dry', () => {
+    // At paces that don't divide evenly, rounding mustn't read that moment as already dry.
+    [0.7, 1.3, 2.2, 3.1].forEach((rate) => {
+      const plan = claims([account('a', 20, 100, 1), account('b', 17, 90)], rate);
+      expect(plan.map((item) => [item.key, hours(item.atMs)])).toEqual([['a', Math.round((37 / rate) * 10) / 10]]);
+    });
+  });
+
+  test('between resets that buy the same, spends the one that lapses sooner', () => {
+    // Either reset carries the pool the same 50h; b's lapses at 60h and a's never does.
+    const plan = claims([account('a', 20, 100, 1), account('b', 20, 101, 1, NOW + 60 * HOUR)], 2);
+    expect(plan.map((item) => [item.key, hours(item.atMs), hours(item.lapsesAtMs)])).toEqual([['b', 20, 60], ['a', 10, undefined]]);
+  });
+
+  test("leaves an account about to reset on its own, and says which reset the pool is carried to", () => {
+    // a resets by itself at 12h, so a reset there buys seven hours; b's own reset isn't until 100h.
+    const own = claims([account('a', 10, 12, 1), account('b', 10, 100, 1)], 2);
+    expect(own.map((item) => [item.key, hours(item.atMs), item.gainMs])).toEqual([['b', 10, null]]);
+    expect(itemAt(own, 0).bridge).toEqual({ atMs: NOW + 12 * HOUR, names: ['a'] });
+    // The pool would sit dry from 20h until b resets at 30h: a's reset gets it there, and it then lasts.
+    const bridged = claims([account('a', 20, 100, 1), account('b', 20, 30)], 2);
+    expect(bridged).toMatchObject([{ key: 'a', gainMs: null, bridge: { atMs: NOW + 30 * HOUR, names: ['b'] } }]);
+  });
+
+  test('spends a reset Claude takes early just before it lapses, when its account would run out too late', () => {
+    // a runs out at 60h, long after its reset lapses at 20h. An hour before that it still has 41% left.
+    const early = claims([holding(account('a', 60, 100), { reset: 'weekly', expiresAtMs: NOW + 20 * HOUR, anytime: true })], 1);
+    expect(early).toMatchObject([{ key: 'a', reset: 'weekly', lapsesAtMs: NOW + 20 * HOUR, gainMs: null }]);
+    expect([hours(itemAt(early, 0).atMs), Math.round(itemAt(early, 0).early ?? -1)]).toEqual([19, 41]);
+    // One that waits for a limit can't be: nothing to plan.
+    expect(claims([holding(account('a', 60, 100), { reset: 'weekly', expiresAtMs: NOW + 20 * HOUR })], 1)).toEqual([]);
+  });
+
+  test('sends work to an account first when that gets it to its limit before its reset lapses', () => {
+    // b resets sooner, so a would wait its turn and run out at 20h, after its reset lapsed at 10h. First, it's out at 7.5h.
+    const plan = claims([holding(account('a', 30, 100), { expiresAtMs: NOW + 10 * HOUR }), account('b', 50, 40)], 4);
+    expect(plan).toMatchObject([{ key: 'a', first: true, lapsesAtMs: NOW + 10 * HOUR, bridge: { atMs: NOW + 40 * HOUR, names: ['b'] } }]);
+    expect(hours(itemAt(plan, 0).atMs)).toBe(7.5);
+    // Too much left to get there in time: it keeps its turn, and the reset is flagged instead.
+    const late = buildForecast({
+      accounts: [holding(account('a', 90, 100), { expiresAtMs: NOW + 10 * HOUR }), account('b', 50, 40)],
+      readings: [], settings: settings({ ratePerHour: 4 }), horizonDays: 3, historyMs: DAY, nowMs: NOW,
+    });
+    expect(late.advice.some((item) => item.kind === 'claim')).toBe(false);
+    expect(late.advice.find((item) => item.kind === 'expiring')).toMatchObject({ key: 'a', use: { how: 'none' } });
+  });
+
+  test('says how a reset that lapses unplanned could still be used', () => {
+    const lapsing = (accounts: ForecastAccount[]) => {
+      const forecast = buildForecast({ accounts, readings: [], settings: settings({ ratePerHour: 1 }), horizonDays: 2, historyMs: DAY, nowMs: NOW });
+      const item = present(forecast.advice.find((advice) => advice.kind === 'expiring'));
+      return { use: item.kind === 'expiring' ? item.use : null, lasts: forecast.advice.find((advice) => advice.kind === 'lasts') };
+    };
+    // The pool lasts, but a runs out at 10h with a reset that lapses at 40h: spare capacity then, not one to keep.
+    const atLimit = lapsing([account('a', 10, 60, 1, NOW + 40 * HOUR), account('b', 100, 100)]);
+    expect(atLimit.use).toMatchObject({ how: 'atLimit' });
+    expect(hours(atLimit.use?.how === 'atLimit' ? atLimit.use.atMs : undefined)).toBe(10);
+    expect(atLimit.lasts).toMatchObject({ credits: 0 });
+    // Claude takes this one early: an hour before it lapses a has 31% left, so it refills 69%.
+    const early = lapsing([holding(account('a', 50, 100), { reset: 'weekly', expiresAtMs: NOW + 20 * HOUR, anytime: true }), account('b', 100, 120)]);
+    expect(early.use).toMatchObject({ how: 'early' });
+    expect(Math.round(early.use?.how === 'early' ? early.use.percent : 0)).toBe(69);
   });
 });
 
@@ -225,8 +328,17 @@ describe('forecast accounts', () => {
   };
 
   test('names the kind of reset to use, and never a Fable reset for the week', () => {
-    // Out of Fable at 20h: a Fable reset does it.
-    expect(pool('7-day Fable window', 2).advice.find((item) => item.kind === 'claim')).toMatchObject({ key: 'a', atMs: NOW + 20 * HOUR, reset: 'fable' });
+    // Out of Fable at 20h. The weekly reset refills Fable too and lapses a day later, so it goes before a Fable
+    // reset with months left.
+    expect(pool('7-day Fable window', 2).advice.find((item) => item.kind === 'claim')).toMatchObject({ key: 'a', atMs: NOW + 20 * HOUR, reset: 'weekly' });
+    // With weeks left on the weekly reset, a Fable reset does it and the wider one is kept.
+    const keeps = banked([
+      offer('weekly', 1, ['7-day window', '7-day Fable window'], { expiresAt: new Date(NOW + 30 * DAY).toISOString() }),
+      offer('fable', 3, ['7-day Fable window'], { givesBackTo: '7-day window', expiresAt: new Date(NOW + 90 * DAY).toISOString() }),
+    ]);
+    const a: ForecastAccount = { ...account('a', 20, 100, 4), lots: creditLots(keeps, '7-day Fable window') };
+    const fable = buildForecast({ accounts: [a, account('b', 20, 30)], readings: [], settings: settings({ ratePerHour: 2 }), horizonDays: 3, historyMs: DAY, nowMs: NOW });
+    expect(fable.advice.find((item) => item.kind === 'claim')).toMatchObject({ key: 'a', atMs: NOW + 20 * HOUR, reset: 'fable' });
     // Out of the week at 20h: the weekly reset, which is also the one about to lapse.
     const week = pool('7-day window', 2);
     expect(week.advice.filter((item) => item.kind === 'claim').map((item) => item.kind === 'claim' && item.reset)).toEqual(['weekly']);

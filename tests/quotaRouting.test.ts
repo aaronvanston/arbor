@@ -92,6 +92,25 @@ describe('quota-aware routing', () => {
     expect(plan?.changes.map((item) => `${item.fileName}:${item.current}->${item.suggested}`)).toEqual(['soon.json:0->2', 'later.json:0->1', 'empty.json:5->0']);
   });
 
+  it('puts an account ahead when that gets it to its limit before a reset it holds lapses', () => {
+    const holding = (left: number, resetIn: number, lapsesIn: number): QuotaState =>
+      ({ ...weekly(left, resetIn), resetCredits: 1, resetCreditsApplicable: 1, resetCreditsEarliestExpiry: new Date(now + lapsesIn).toISOString() });
+    const order = (candidates: RoutingCandidate[]) => routingPlan(candidates, WEEKLY, now)?.items
+      .map((item) => [item.name, item.suggested, item.reason.kind === 'soonest' ? item.reason.lapsesAtMs : undefined]);
+    // The pool spends about 1.4% an hour. In its turn `holder` runs out in 58h, after its reset lapsed; first, in 22h.
+    expect(order([account('soon', weekly(50, 2 * DAY)), account('holder', holding(30, 4 * DAY, DAY))]))
+      .toEqual([['holder', 2, now + DAY], ['soon', 1, undefined]]);
+    // With 80% left it can't get there by then, so it keeps its turn.
+    expect(order([account('soon', weekly(50, 2 * DAY)), account('holder', holding(80, 4 * DAY, DAY))]))
+      .toEqual([['soon', 2, undefined], ['holder', 1, undefined]]);
+    // A reset that lapses in three days is reached in its turn anyway.
+    expect(order([account('soon', weekly(50, 2 * DAY)), account('holder', holding(30, 4 * DAY, 3 * DAY))]))
+      .toEqual([['soon', 2, undefined], ['holder', 1, undefined]]);
+    // Nearly out, it would go last and never reach its limit: finishing it off first uses the reset.
+    expect(order([account('soon', weekly(50, 2 * DAY)), account('later', weekly(60, 3 * DAY)), account('low', holding(5, 4 * DAY, DAY))]))
+      .toEqual([['low', 3, now + DAY], ['soon', 2, undefined], ['later', 1, undefined]]);
+  });
+
   it('leaves an account showing limits from before a failed check where it is', () => {
     const stale: QuotaState = { ...weekly(5, 20 * HOUR), status: 'error', error: 'timeout', staleSinceMs: now - HOUR };
     const plan = routingPlan([
