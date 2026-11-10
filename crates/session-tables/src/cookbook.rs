@@ -12,11 +12,16 @@ pub fn saved(name: &str) -> Option<&'static Saved> {
     SAVED.iter().find(|saved| saved.name == name)
 }
 
-pub const SAVED: [Saved; 15] = [
+pub const SAVED: [Saved; 16] = [
     Saved {
         name: "speed-by-model",
         about: "How fast each model writes: median tokens a second and time to the first token, as the proxy saw them",
         sql: "SELECT model, count(*) AS replies, round(median(tokens_per_second), 1) AS tokens_per_second, round(median(ttft_ms)) AS first_token_ms FROM speed GROUP BY model HAVING count(*) >= 20 ORDER BY replies DESC",
+    },
+    Saved {
+        name: "turn-time",
+        about: "How long a prompt takes to answer and what it takes, by agent and model (waits for approval included)",
+        sql: "SELECT agent, model, count(*) AS turns, round(median(elapsed_ms) / 1000, 1) AS median_seconds, round(quantile_cont(elapsed_ms, 0.9) / 1000, 1) AS p90_seconds, round(avg(requests), 1) AS requests, round(avg(tool_calls), 1) AS tool_calls, CAST(round(avg(output)) AS BIGINT) AS output FROM turns WHERE requests > 0 GROUP BY agent, model HAVING count(*) >= 20 ORDER BY turns DESC",
     },
     Saved {
         name: "requests-per-prompt",

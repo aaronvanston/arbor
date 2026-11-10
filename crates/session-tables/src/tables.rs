@@ -101,7 +101,7 @@ pub(crate) const RESULTS: &str = "(SELECT agent, tool_use_id, min(ts) AS ts, boo
 /// error, wasn't interrupted and wasn't sent to the background exited with 0.
 pub(crate) const EXIT_CODE: &str = "coalesce(r.exit_code, CASE WHEN c.agent = 'claude' AND {bash} AND r.is_error = false AND r.interrupted IS NOT TRUE AND r.background IS NOT TRUE AND {asked} IS NOT TRUE THEN 0 END)";
 
-pub(crate) const VIEWS: [View; 3] = [
+pub(crate) const VIEWS: [View; 4] = [
     // A tool call with how it ended. `elapsed_ms` is from the call's line to its result's, so it counts a wait for
     // the person's leave as well as the run; `duration_ms` is the run alone, where the agent wrote it down.
     View {
@@ -166,6 +166,33 @@ pub(crate) const VIEWS: [View; 3] = [
               LEFT JOIN (SELECT agent, session_id, count(*) AS prompts FROM \"messages\" WHERE kind = 'prompt' AND meta IS NOT TRUE GROUP BY agent, session_id) m ON m.agent = l.agent AND m.session_id = l.session_id \
               LEFT JOIN (SELECT agent, session_id, count(*) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors FROM \"tools\" GROUP BY agent, session_id) t ON t.agent = l.agent AND t.session_id = l.session_id \
               LEFT JOIN (SELECT session_id, count(*) AS proxy_requests, sum(cost) AS cost FROM \"proxy_requests\" WHERE session_id IS NOT NULL GROUP BY session_id) p ON p.session_id = l.session_id",
+    },
+    // A prompt with what it led to: every request and tool call in its session from when it was sent until the
+    // next prompt, a subagent's among them. Each is placed by its time, since a session can be in several files,
+    // and prompts sent at the same instant are one turn. `elapsed_ms` runs to the last request or tool result, so
+    // it counts a wait for the person's leave. A window is used and not an ASOF join: DuckDB 2.0.0 never returns
+    // from a LIMIT over that join.
+    View {
+        name: "turns",
+        columns: &[
+            ("agent", Text),
+            ("session_id", Text),
+            ("machine", Text),
+            ("ts", Time),
+            ("day", Day),
+            ("prompt_chars", Count),
+            ("model", Text),
+            ("requests", Count),
+            ("input", Count),
+            ("output", Count),
+            ("cache_read", Count),
+            ("cache_write", Count),
+            ("tool_calls", Count),
+            ("tool_errors", Count),
+            ("ended", Time),
+            ("elapsed_ms", Count),
+        ],
+        sql: "WITH e AS (SELECT agent, session_id, ts, 0 AS what, machine, day, chars, NULL AS model, 0 AS input, 0 AS output, 0 AS cache_read, 0 AS cache_write, false AS is_error, ts AS ended FROM \"messages\" WHERE kind = 'prompt' AND meta IS NOT TRUE AND ts IS NOT NULL AND session_id IS NOT NULL UNION ALL SELECT agent, session_id, ts, 1, NULL, NULL, 0, model, input, output, cache_read, cache_write, false, ts FROM \"requests\" WHERE ts IS NOT NULL AND session_id IS NOT NULL UNION ALL SELECT agent, session_id, ts, 2, NULL, NULL, 0, NULL, 0, 0, 0, 0, is_error IS TRUE, coalesce(ended, ts) FROM \"tools\" WHERE ts IS NOT NULL AND session_id IS NOT NULL), n AS (SELECT *, max(CASE WHEN what = 0 THEN ts END) OVER (PARTITION BY agent, session_id ORDER BY ts, what ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS turn FROM e) SELECT agent, session_id, any_value(machine) AS machine, turn AS ts, any_value(day) AS day, CAST(sum(chars) AS BIGINT) AS prompt_chars, mode(model) AS model, count(*) FILTER (WHERE what = 1) AS requests, CAST(sum(input) AS BIGINT) AS input, CAST(sum(output) AS BIGINT) AS output, CAST(sum(cache_read) AS BIGINT) AS cache_read, CAST(sum(cache_write) AS BIGINT) AS cache_write, count(*) FILTER (WHERE what = 2) AS tool_calls, count(*) FILTER (WHERE is_error) AS tool_errors, max(ended) AS ended, date_diff('millisecond', turn, max(ended)) AS elapsed_ms FROM n WHERE turn IS NOT NULL GROUP BY agent, session_id, turn",
     },
     // How fast each model wrote: a request's output tokens over the time from its first token to its last. A reply
     // written in under half a second is left out: one that wasn't streamed has its first token and its last at

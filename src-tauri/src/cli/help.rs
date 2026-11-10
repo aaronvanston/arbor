@@ -200,8 +200,9 @@ proxy_requests is what Arbor's proxy saw of each request, from its own records: 
 for it), model, latency_ms, ttft_ms, tokens, whether it failed, and its cost in dollars at today's prices. It joins
 the tables above on session_id.
 
-Four names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
-tool calls, errors and cost. tools is one row a tool call with how it ended: is_error, exit_code, duration_ms where
+Five names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
+tool calls, errors and cost. turns is one row a prompt with what it led to before the next one: requests, tokens,
+tool calls and elapsed_ms. tools is one row a tool call with how it ended: is_error, exit_code, duration_ms where
 the agent wrote it down, and elapsed_ms from the call to its result. commands has each shell command with its exit
 code. speed is tokens_per_second for each request that streamed a reply, from its first token to its last.
 

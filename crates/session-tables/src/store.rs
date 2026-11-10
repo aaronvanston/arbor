@@ -974,6 +974,9 @@ mod tests {
             assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, ts FROM lines WHERE kind = 'mode'")[0], serde_json::json!({ "day": "2026-10-01", "ts": null }));
             let session = &ask(&engine, &store, "SELECT session_id, machine, lines, prompts, requests, output, tool_calls, tool_errors, cwd, model FROM sessions")[0];
             assert_eq!(*session, serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "lines": count, "prompts": 1, "requests": 8, "output": 60 + 30 + 12 + 4 + 4 * 9, "tool_calls": 7, "tool_errors": 2, "cwd": "/srv/app", "model": "claude-test-1" }));
+            // The one prompt led to all of it, and a bare LIMIT over the turns comes back.
+            let turns = ask(&engine, &store, "SELECT session_id, machine, CAST(day AS VARCHAR) AS day, requests, output, tool_calls, tool_errors, model, elapsed_ms > 0 AS took FROM turns LIMIT 5");
+            assert_eq!(turns, [serde_json::json!({ "session_id": "s-1", "machine": "cam-mbp", "day": "2026-10-01", "requests": 8, "output": 60 + 30 + 12 + 4 + 4 * 9, "tool_calls": 7, "tool_errors": 2, "model": "claude-test-1", "took": true })]);
         }
         fs::remove_dir_all(root).unwrap();
     }

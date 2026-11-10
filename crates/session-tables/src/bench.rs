@@ -442,12 +442,14 @@ fn tables_at_volume() {
         println!("  {:<16} {rows:>11} rows {:>8.1} MB in {} files", table.name, bytes as f64 / f64::from(1 << 20), parts.len());
     }
 
-    let own: [(&str, &str); 6] = [
+    let own: [(&str, &str); 8] = [
         ("count of lines", "SELECT count(*) AS n FROM lines"),
         ("one day of tool calls", "SELECT tool, count(*) AS calls FROM tool_calls WHERE day = DATE '2026-10-15' GROUP BY tool"),
         ("one session's lines", "SELECT kind, count(*) AS n FROM lines WHERE session_id = (SELECT min(session_id) FROM requests WHERE day = DATE '2026-10-15') GROUP BY kind"),
         ("text search of tool output", "SELECT count(*) AS n FROM tool_io WHERE part = 'output' AND text LIKE '%sorting by month 4242%'"),
         ("every session", "SELECT agent, count(*) AS sessions, sum(requests) AS requests, round(sum(cost), 2) AS cost FROM sessions GROUP BY agent"),
+        ("every turn", "SELECT agent, count(*) AS turns, sum(requests) AS requests, sum(tool_calls) AS tool_calls FROM turns GROUP BY agent"),
+        ("a few turns", "SELECT * FROM turns LIMIT 5"),
         ("commands with how they ended", "SELECT program, count(*) AS runs, count(*) FILTER (WHERE exit_code <> 0) AS failed FROM commands GROUP BY program ORDER BY runs DESC LIMIT 10"),
     ];
     let saved = crate::cookbook::SAVED.iter().map(|saved| (saved.name, saved.sql));

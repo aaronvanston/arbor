@@ -33,7 +33,8 @@ the tables in it.
 - `commands`: each program a shell call ran, split out of the command line.
 - `files_touched`, `hooks`, `prompts`, `tool_defs`, `context_use`: the files a session read and wrote, hook runs,
   system prompts, tool definitions, and how full the context was.
-- `sessions`, `tools`: views with one row per session, and per tool call with how it ended.
+- `sessions`, `turns`, `tools`: views with one row per session, per prompt with what it led to, and per tool call
+  with how it ended.
 - `proxy_requests`, `speed`: a proxy's own record of each request. Arbor fills these; `build` leaves them empty.
 
 A session is often kept in more than one file: a resumed or forked session writes what came before again, and Codex
