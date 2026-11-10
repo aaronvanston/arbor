@@ -12,6 +12,9 @@
 //! no engine. Rows are only added. A file is written whole under a name the manifest doesn't hold yet, and the
 //! manifest is replaced last, so stopping at any moment leaves the tables as they were.
 //!
+//! Whoever reads the tables lists their files from the manifest and then opens them, with no lock between the two.
+//! So a file a merge replaced stays on disk for [`KEPT_AFTER_REPLACING`], which is longer than a query runs.
+//!
 //! One writer at a time: whoever calls [`Store::write`], [`Store::merge`] or [`Store::sweep`] holds the folder.
 
 use crate::tables::{Kind, Shape, Table, EXIT_CODE, REPEAT, RESULTS, TABLES, VIEWS};
@@ -21,6 +24,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// The DuckDB release this crate's SQL was written against and tested with.
 pub const DUCKDB_VERSION: &str = "2.0.0";
@@ -55,6 +59,8 @@ const NEAR: &str = "near";
 const PARQUET: &str = "FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE_BYTES '32MB'";
 /// The least memory the engine is given, in MiB.
 const LEAST_MEMORY: u64 = 2048;
+/// How long a file a merge replaced is kept before it's removed.
+pub const KEPT_AFTER_REPLACING: Duration = Duration::from_secs(600);
 
 /// Something that runs SQL and gives back what it printed, as JSON.
 pub trait Engine {
@@ -121,6 +127,13 @@ pub struct Part {
     pub longest: u64,
 }
 
+/// A file a merge put others in the place of, and when, in seconds since 1970.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct Replaced {
+    path: String,
+    at: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Manifest {
     format: String,
@@ -129,17 +142,21 @@ struct Manifest {
     /// The number the next file written takes, so no two files ever share a name.
     next: u64,
     tables: BTreeMap<String, Vec<Part>>,
+    /// Files no table holds any more, kept for whoever listed them just before.
+    #[serde(default)]
+    replaced: Vec<Replaced>,
 }
 
 impl Default for Manifest {
     fn default() -> Self {
-        Self { format: FORMAT.into(), schema: SCHEMA, engine: format!("duckdb {DUCKDB_VERSION}"), next: 0, tables: BTreeMap::new() }
+        Self { format: FORMAT.into(), schema: SCHEMA, engine: format!("duckdb {DUCKDB_VERSION}"), next: 0, tables: BTreeMap::new(), replaced: Vec::new() }
     }
 }
 
 pub struct Store {
     root: PathBuf,
     manifest: Manifest,
+    keep: Duration,
 }
 
 /// Rows waiting to be written, as a file of JSON lines per table in the store's `tmp/`.
@@ -236,7 +253,7 @@ impl Store {
         if manifest.format != FORMAT || manifest.schema != SCHEMA {
             return Err(format!("{} holds tables in another format ({} {})", root.display(), manifest.format, manifest.schema));
         }
-        Ok(Store { root: root.to_path_buf(), manifest })
+        Ok(Store { root: root.to_path_buf(), manifest, keep: KEPT_AFTER_REPLACING })
     }
 
     /// Removes every table in a folder, to start them again. Whatever else the folder holds stays.
@@ -244,6 +261,11 @@ impl Store {
         for name in [MANIFEST, version_dir(), "tmp"] {
             remove(&root.join(name));
         }
+    }
+
+    /// Sets how long a file a merge replaced is kept, for whoever knows nothing else reads the tables.
+    pub fn keep_replaced_for(&mut self, keep: Duration) {
+        self.keep = keep;
     }
 
     /// The number the next write or merge takes. It only goes up, and only once what was written is part of the
@@ -269,7 +291,8 @@ impl Store {
         for entry in fs::read_dir(&tmp).map_err(|error| format!("Couldn't read {}: {error}", tmp.display()))?.flatten() {
             remove(&entry.path());
         }
-        let held: HashSet<PathBuf> = self.manifest.tables.values().flatten().map(|part| self.root.join(&part.path)).collect();
+        let replaced = self.manifest.replaced.iter().map(|file| self.root.join(&file.path));
+        let held: HashSet<PathBuf> = self.manifest.tables.values().flatten().map(|part| self.root.join(&part.path)).chain(replaced).collect();
         let mut dirs = vec![self.root.join(version_dir())];
         while let Some(dir) = dirs.pop() {
             for entry in fs::read_dir(&dir).map_err(|error| format!("Couldn't read {}: {error}", dir.display()))?.flatten() {
@@ -334,6 +357,7 @@ impl Store {
     /// that has gathered more than [`FILES_A_MONTH`] is rewritten as one. A table of distinct things becomes one
     /// file, each thing in it once.
     pub fn merge(&mut self, engine: &dyn Engine, at_least: usize) -> Result<usize, String> {
+        self.reap()?;
         let mut merged = 0;
         for table in &TABLES {
             let fresh: Vec<Part> = self.parts(table.name).iter().filter(|part| part.month.is_none()).cloned().collect();
@@ -428,9 +452,21 @@ impl Store {
         parts.retain(|part| !replaced.contains(part));
         parts.extend(made);
         parts.sort_by(|a, b| a.month.cmp(&b.month).then(a.path.cmp(&b.path)));
+        let at = now();
+        manifest.replaced.extend(replaced.into_iter().map(|part| Replaced { path: part.path, at }));
         self.save(manifest)?;
-        replaced.iter().for_each(|part| remove(&self.root.join(&part.path)));
-        Ok(())
+        self.reap()
+    }
+
+    /// Removes the files merges replaced long enough ago that nothing is still reading them.
+    fn reap(&mut self) -> Result<(), String> {
+        let now = now();
+        let (gone, kept): (Vec<Replaced>, Vec<Replaced>) = self.manifest.replaced.iter().cloned().partition(|file| now.saturating_sub(file.at) >= self.keep.as_secs());
+        if gone.is_empty() {
+            return Ok(());
+        }
+        gone.iter().for_each(|file| remove(&self.root.join(&file.path)));
+        self.save(Manifest { replaced: kept, ..self.manifest.clone() })
     }
 
     /// Fills in how many rows each file holds, from the files themselves.
@@ -557,6 +593,10 @@ impl Store {
         self.manifest = manifest;
         Ok(())
     }
+}
+
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs())
 }
 
 fn version_dir() -> &'static str {
@@ -822,6 +862,7 @@ mod tests {
         let Some(engine) = engine() else { return };
         let root = temp_dir("store");
         let mut store = Store::open(&root).unwrap();
+        store.keep_replaced_for(Duration::ZERO);
         let claude = parse(Agent::Claude, Detail::Everything, &claude::tests::session());
         let codex = parse(Agent::Codex, Detail::Everything, &codex::tests::session());
 
@@ -1001,10 +1042,14 @@ mod tests {
         let mut store = Store::open(&root).unwrap();
         let rows = parse(Agent::Codex, Detail::Everything, &codex::tests::session());
         let mut most = 0;
+        let mut listed = String::new();
         for round in 0..=FILES_A_MONTH {
             let mut batch = store.batch().unwrap();
             batch.add(&Origin { agent: Agent::Codex, machine: "cam-mbp", source: &format!("file-{round}") }, &rows).unwrap();
             store.write(batch, &engine).unwrap();
+            if round == 0 {
+                listed = store.views();
+            }
             store.merge(&engine, 1).unwrap();
             most = most.max(store.parts("lines").len());
         }
@@ -1020,6 +1065,13 @@ mod tests {
         let mut named: Vec<String> = store.manifest.tables.values().flatten().map(|part| part.path.clone()).collect();
         named.push(MANIFEST.to_string());
         named.sort();
+        // A query that listed the files before the first merge still finds them, every merge since replaced or not.
+        let answer = engine.run(&format!("{}{listed}SELECT count(*) AS n FROM lines;", store.settings())).unwrap();
+        assert_eq!(serde_json::from_str::<Vec<Value>>(answer.trim()).unwrap()[0]["n"], rows.lines.len());
+        assert!(files(&root).len() > named.len());
+        // Once they've been kept long enough, the next merge takes them.
+        store.keep_replaced_for(Duration::ZERO);
+        store.merge(&engine, 1).unwrap();
         assert_eq!(files(&root), named);
         fs::remove_dir_all(root).unwrap();
     }
