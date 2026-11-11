@@ -1,7 +1,7 @@
 //! Claude Code's transcripts: `projects/<folder>/<session>.jsonl` and the subagents' files beside them.
 
 use crate::json::{self, Fields};
-use crate::{shell, At, Command, ContextUse, FileTouched, Hook, Line, Message, Parser, Prompt, Request, Rows, ToolCall, ToolDef, ToolIo, ToolResult};
+use crate::{shell, At, Command, ContextUse, FileTouched, Hook, Line, Message, Parser, Prompt, PullRequestLink, Request, Rows, ToolCall, ToolDef, ToolIo, ToolResult};
 use serde_json::Value;
 
 pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fields, rows: &mut Rows) {
@@ -32,6 +32,13 @@ pub(crate) fn line(parser: &mut Parser, number: u64, bytes: u64, mut fields: Fie
         "user" => user(parser, &at, row.sidechain == Some(true), &mut fields, rows),
         "attachment" => row.subkind = attachment(parser, &at, &mut fields, rows),
         "system" => row.subkind = json::string(&mut fields, "subtype"),
+        // Its fields stay in `rest` as well, where they were before this was a table.
+        "pr-link" => rows.pull_request_links.push(PullRequestLink {
+            at: at.clone(),
+            repository: fields.get("prRepository").and_then(Value::as_str).map(str::to_string),
+            number: fields.get("prNumber").and_then(Value::as_u64),
+            url: fields.get("prUrl").and_then(Value::as_str).map(str::to_string),
+        }),
         _ => {}
     }
     row.kind = kind;
@@ -585,6 +592,8 @@ pub(crate) mod tests {
         assert_eq!(rest(1), json!({ "promptId": "p-1", "permissionMode": "default" }));
         assert_eq!(rest(9), json!({ "durationMs": 8000, "messageCount": 9, "isMeta": true }));
         assert_eq!(rest(10), json!({ "prNumber": 12, "prUrl": "https://git.example/app/pull/12", "prRepository": "example/app" }));
+        let link = &rows.pull_request_links[0];
+        assert_eq!((link.at.line, link.repository.as_deref(), link.number, link.url.as_deref()), (10, Some("example/app"), Some(12), Some("https://git.example/app/pull/12")));
         // A reply's line keeps the usage fields no column holds.
         assert_eq!(rest(2), json!({ "message": { "usage": { "inference_geo": "us" } } }));
     }

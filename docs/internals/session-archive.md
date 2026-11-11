@@ -79,6 +79,13 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
     account is the core's index for it, never its name, since the store can sit on a drive that leaves the Mac.
     Cost is worked out when a row is copied, by the code the Usage pages use, so a query never has to redo tiers and
     long-context rates; it is the price on the day of the copy.
+  - **Pull requests are linked by what the agent wrote, and their state is a history.** `pull_request_links` comes
+    from Claude Code's `pr-link` lines alone; a URL in a command's output is never read as one. Each link is noted
+    in `state.db` as a cursor of its own, and after the transcripts the pass copies what usage.db holds of those
+    pull requests into `pull_request_checks`, a row each time GitHub was asked, since rows are only ever added;
+    the `pull_requests` view takes the newest. The pass also asks GitHub about the linked ones that are due, the
+    way the Projects view does: a repository and a number each, a hundred at a time, so a long archive fills in
+    over many passes. A title goes in only at the Everything detail.
   - **The engine is a program, not a library.** Parquet is written by DuckDB's command-line program, which Arbor
     fetches when analytics is turned on and checks against the SHA-256 pinned in the crate. What DuckDB says when it
     fails can quote a row, so only the kind of error it names is kept.

@@ -36,7 +36,11 @@ the tables in it.
   system prompts, tool definitions, and how full the context was.
 - `sessions`, `turns`, `tools`: views with one row per session, per prompt with what it led to, and per tool call
   with how it ended.
+- `pull_request_links`: each pull request a session said it worked on, where the agent writes that down (Claude
+  Code does).
 - `proxy_requests`, `speed`: a proxy's own record of each request. Arbor fills these; `build` leaves them empty.
+- `pull_request_checks`, `pull_requests`: how each linked pull request stood each time its host was asked, and the
+  newest of those beside its links. Arbor fills the checks from GitHub; `build` leaves them empty, so `state` is too.
 
 A session is often kept in more than one file: a resumed or forked session writes what came before again, and Codex
 writes a call again each time it carries a session on. Each line gets a key from what it is (its id, a call's id, a

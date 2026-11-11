@@ -229,6 +229,46 @@ pub struct FileTouched {
     pub lines_removed: Option<u64>,
 }
 
+/// A pull request a session said it worked on, where the agent writes that down: Claude Code does, each time it
+/// opens or pushes to one.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct PullRequestLink {
+    #[serde(flatten)]
+    pub at: At,
+    /// `owner/name`, as the agent wrote it.
+    pub repository: Option<String>,
+    pub number: Option<u64>,
+    pub url: Option<String>,
+}
+
+/// How a pull request stood when its host was asked. It comes from whoever fills the tables and not from a
+/// transcript, and a pull request has a row for each time it was asked about: the newest says how it stands.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct PullRequestCheck {
+    /// When the host was asked.
+    pub ts: Option<String>,
+    pub repository: String,
+    pub number: u64,
+    /// `open`, `merged` or `closed`.
+    pub state: Option<String>,
+    pub draft: Option<bool>,
+    pub title: Option<String>,
+    pub head_branch: Option<String>,
+    pub base_branch: Option<String>,
+    pub merged: Option<String>,
+    pub closed: Option<String>,
+    /// `mergeable` or `conflicting`.
+    pub mergeable: Option<String>,
+    /// `approved`, `changesRequested` or `reviewRequired`.
+    pub review: Option<String>,
+    /// How its checks stood as one word, in the host's own.
+    pub checks: Option<String>,
+    pub checks_passed: Option<u64>,
+    pub checks_failed: Option<u64>,
+    pub checks_pending: Option<u64>,
+    pub checks_total: Option<u64>,
+}
+
 /// A request as a proxy in front of the agents saw it: who served it, how long it took and what it cost. It comes
 /// from the proxy's own records and not from a transcript, so there are none unless whoever fills the tables has one.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -279,4 +319,5 @@ pub struct Rows {
     pub tool_defs: Vec<ToolDef>,
     pub context_use: Vec<ContextUse>,
     pub files_touched: Vec<FileTouched>,
+    pub pull_request_links: Vec<PullRequestLink>,
 }

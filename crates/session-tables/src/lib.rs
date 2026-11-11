@@ -35,7 +35,7 @@ use serde_json::Value;
 
 /// What a row is. Whoever keeps tables notes it beside them, and makes them again when it changes: raise it with
 /// any change to the rows a line gives.
-pub const RULE: &str = "tables-v5";
+pub const RULE: &str = "tables-v6";
 
 /// Whose transcript a file is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -313,9 +313,10 @@ mod tests {
                 placed.fold((0, 0), |(count, marked), (_, rows)| (count + rows.as_array().unwrap().len(), marked + rows.as_array().unwrap().iter().filter(|row| row["repeat"] == true).count()))
             };
             // A file that holds its lines twice over, as one an agent wrote its session into again: the second of
-            // each is a repeat. All but the Claude line with no id of its own, which a file can hold twice and mean.
+            // each is a repeat. All but the Claude line with no id of its own, a pull request's link, which a file can hold twice
+            // and mean: the line's row and the link's.
             let (rows, marked) = repeats(&read(1, &[lines.clone(), lines.clone()].concat()));
-            assert_eq!(rows - marked * 2, if agent == Agent::Claude { 2 } else { 0 }, "{agent:?}");
+            assert_eq!(rows - marked * 2, if agent == Agent::Claude { 4 } else { 0 }, "{agent:?}");
             // A second file with the first's lines and one more: every row but that line's is a repeat.
             let mut longer = lines.clone();
             longer.push(lines[1].replace("\"type\"", "\"extra\":1,\"type\""));

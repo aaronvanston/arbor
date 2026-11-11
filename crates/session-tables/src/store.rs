@@ -18,7 +18,7 @@
 //! One writer at a time: whoever calls [`Store::write`], [`Store::merge`] or [`Store::sweep`] holds the folder.
 
 use crate::tables::{Kind, Shape, Table, EXIT_CODE, REPEAT, RESULTS, TABLES, VIEWS};
-use crate::{Agent, ProxyRequest, Rows};
+use crate::{Agent, ProxyRequest, PullRequestCheck, Rows};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
@@ -190,6 +190,7 @@ impl Batch {
         self.put("hooks", place, &rows.hooks)?;
         self.put("context_use", place, &rows.context_use)?;
         self.put("files_touched", place, &rows.files_touched)?;
+        self.put("pull_request_links", place, &rows.pull_request_links)?;
         let prompts: Vec<_> = rows.prompts.iter().filter(|prompt| self.seen.insert(format!("p{}", prompt.hash))).collect();
         self.put("prompts", None, &prompts)?;
         let tool_defs: Vec<_> = rows.tool_defs.iter().filter(|tool| self.seen.insert(format!("t{}", tool.hash))).collect();
@@ -199,6 +200,11 @@ impl Batch {
     /// Adds requests a proxy saw.
     pub fn add_proxy(&mut self, requests: &[ProxyRequest]) -> Result<(), String> {
         self.put("proxy_requests", None, requests)
+    }
+
+    /// Adds what a host said of pull requests.
+    pub fn add_pull_request_checks(&mut self, checks: &[PullRequestCheck]) -> Result<(), String> {
+        self.put("pull_request_checks", None, checks)
     }
 
     /// How much is waiting, in bytes of JSON.
@@ -798,6 +804,7 @@ mod tests {
             batch.add(&Origin { agent, machine: "cam-mbp", source: "one" }, &parse(agent, Detail::Everything, &lines)).unwrap();
         }
         batch.add_proxy(&[proxy(1, false)]).unwrap();
+        batch.add_pull_request_checks(&[crate::PullRequestCheck::default()]).unwrap();
         let Batch { dir, files, .. } = batch;
         assert_eq!(files.keys().copied().collect::<Vec<_>>(), { let mut names: Vec<_> = TABLES.iter().map(|table| table.name).collect(); names.sort_unstable(); names });
         for (name, Waiting { file, rows, .. }) in files {
@@ -963,6 +970,9 @@ mod tests {
         // A subagent's request, under an id no transcript has, and one from a session that was never kept.
         let other = |id: u64, session: &str, parent: Option<&str>| ProxyRequest { session_id: Some(session.into()), parent_session_id: parent.map(str::to_string), ..proxy(id, false) };
         batch.add_proxy(&[proxy(1, false), proxy(2, true), other(3, "sub-1", Some("s-1")), other(4, "s-9", None)]).unwrap();
+        // The session's pull request, asked about twice, and one no session linked.
+        let check = |ts: &str, repository: &str, number: u64, state: &str| crate::PullRequestCheck { ts: Some(ts.into()), repository: repository.into(), number, state: Some(state.into()), merged: (state == "merged").then(|| "2026-10-02T09:00:00.000Z".to_string()), ..crate::PullRequestCheck::default() };
+        batch.add_pull_request_checks(&[check("2026-10-01T11:00:00.000Z", "example/app", 12, "open"), check("2026-10-02T10:00:00.000Z", "Example/App", 12, "merged"), check("2026-10-02T10:00:00.000Z", "example/app", 13, "open")]).unwrap();
         store.write(batch, &engine).unwrap();
         for merged in [false, true] {
             if merged {
@@ -973,6 +983,8 @@ mod tests {
             assert_eq!(ask(&engine, &store, "SELECT proxy_requests, cost FROM sessions")[0], serde_json::json!({ "proxy_requests": 3, "cost": 0.5 }));
             assert_eq!(ask(&engine, &store, "SELECT CAST(day AS VARCHAR) AS day, model, generation_ms, tokens_per_second FROM speed WHERE session_id = 's-1'"), [serde_json::json!({ "day": "2026-10-01", "model": "claude-test-1", "generation_ms": 2000, "tokens_per_second": 250.0 })]);
             assert_eq!(ask(&engine, &store, "SELECT (SELECT count(*) FROM lines) AS once, (SELECT count(*) FROM lines_all) AS every, (SELECT count(*) FROM lines_all WHERE repeat) AS repeats")[0], serde_json::json!({ "once": count, "every": 2 * count - 1, "repeats": count - 1 }));
+            // The pull request once, as it stood when last asked, whatever the case of its repository's name.
+            assert_eq!(ask(&engine, &store, "SELECT repository, number, sessions, state, merged IS NOT NULL AS merged, CAST(checked AT TIME ZONE 'UTC' AS DATE)::VARCHAR AS checked FROM pull_requests"), [serde_json::json!({ "repository": "example/app", "number": 12, "sessions": 1, "state": "merged", "merged": true, "checked": "2026-10-02" })]);
             // The command's row was written before it ended: its exit code is its result's.
             assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code, output_chars FROM commands ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_1", "exit_code": null, "output_chars": 9 + SECRET.len() }), serde_json::json!({ "tool_use_id": "toolu_8", "exit_code": 2, "output_chars": 37 }), serde_json::json!({ "tool_use_id": "toolu_9", "exit_code": 0, "output_chars": 4 }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0, "output_chars": 2 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null, "output_chars": 7 })]);
             assert_eq!(ask(&engine, &store, "SELECT tool_use_id, exit_code FROM tools WHERE tool_use_id IN ('toolu_2', 'toolu_10', 'toolu_11') ORDER BY line"), [serde_json::json!({ "tool_use_id": "toolu_2", "exit_code": null }), serde_json::json!({ "tool_use_id": "toolu_10", "exit_code": 0 }), serde_json::json!({ "tool_use_id": "toolu_11", "exit_code": null })]);
@@ -1017,7 +1029,7 @@ mod tests {
             }
         }
         let linked = ask(&engine, &store, saved("pull-requests").unwrap().sql);
-        assert_eq!(linked, [serde_json::json!({ "repository": "example/app", "number": 12, "sessions": 1, "requests": 8, "tool_calls": 7, "output": 60 + 30 + 12 + 4 + 4 * 9, "cost": 0.25 })]);
+        assert_eq!(linked, [serde_json::json!({ "repository": "example/app", "number": 12, "state": null, "review": null, "checks": null, "first_linked": "2026-10-01", "sessions": 1, "requests": 8, "output": 60 + 30 + 12 + 4 + 4 * 9, "cost": 0.25 })]);
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -6,6 +6,7 @@
 //! open one every so often.
 
 use super::machine_health::transcripts::PullRequestLink;
+use session_tables::PullRequestCheck;
 use ts_rs::TS;
 use super::*;
 use std::process::Stdio;
@@ -215,6 +216,59 @@ fn store_states(connection: &mut Connection, states: &[(PullRequestRef, PullRequ
     transaction
         .commit()
         .map_err(|error| format!("Failed to store pull requests: {error}"))
+}
+
+/// What's on record of pull requests as rows for the archive's analytics tables, each with when it was asked. One
+/// GitHub couldn't find says nothing, so it has no row. A title is someone's words: `titles` is whether the tables
+/// keep those.
+pub(crate) fn check_rows(connection: &Connection, titles: bool) -> Result<Vec<(i64, PullRequestCheck)>, String> {
+    let time = |at_ms: i64| chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at_ms).map(|at| at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+    let some = |text: String| Some(text).filter(|text| !text.is_empty());
+    let rows = load_states(connection)?.into_iter().filter(|(_, state)| !state.state.is_empty()).map(|((repository, number), state)| {
+        let checks = state.checks.unwrap_or_default();
+        let known = !checks.rollup.is_empty() || checks.total > 0;
+        let count = |count: u32| known.then_some(u64::from(count));
+        let row = PullRequestCheck {
+            ts: time(state.checked_at_ms),
+            repository,
+            number,
+            state: some(state.state),
+            draft: Some(state.draft),
+            title: some(state.title).filter(|_| titles),
+            head_branch: some(state.head_branch),
+            base_branch: some(state.base_branch),
+            merged: state.merged_at_ms.and_then(time),
+            closed: state.closed_at_ms.and_then(time),
+            mergeable: some(state.mergeable),
+            review: some(state.review),
+            checks: some(checks.rollup),
+            checks_passed: count(checks.passed),
+            checks_failed: count(checks.failed),
+            checks_pending: count(checks.pending),
+            checks_total: count(checks.total),
+        };
+        (state.checked_at_ms, row)
+    });
+    Ok(rows.collect())
+}
+
+/// Asks GitHub, in the background, about the pull requests the archive's sessions link to that are due, the ones
+/// asked about longest ago first. A check takes so many at once, so a long list is worked through over several.
+pub(crate) fn check_linked(connection: &Connection, linked: &[(String, u64)], now_ms: i64) -> Result<(), String> {
+    let states = load_states(connection)?;
+    let mut due: Vec<(i64, PullRequestRef)> = linked
+        .iter()
+        .filter_map(|(repository, number)| {
+            let state = states.get(&state_key(repository, *number));
+            is_due(state, now_ms).then(|| (state.map_or(0, |state| state.checked_at_ms), PullRequestRef { repository: repository.clone(), number: *number }))
+        })
+        .collect();
+    due.sort_by(|a, b| (a.0, &a.1.repository, a.1.number).cmp(&(b.0, &b.1.repository, b.1.number)));
+    // Tests never reach GitHub.
+    if !cfg!(test) {
+        start_check(due.into_iter().map(|(_, pull_request)| pull_request).take(CHECK_LIMIT).collect(), false, now_ms);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,6 +1123,23 @@ mod tests {
         assert_eq!(json["checks"], serde_json::json!({ "rollup": "failure", "passed": 5, "failed": 2, "pending": 1, "total": 10 }));
         assert_eq!((&json["review"], &json["mergeable"], &json["baseBranch"]), (&serde_json::json!("changesRequested"), &serde_json::json!("conflicting"), &serde_json::json!("main")));
         assert_eq!(serde_json::to_value(&unchecked).unwrap()["checks"], Value::Null);
+    }
+
+    #[test]
+    fn what_is_on_record_becomes_rows_for_the_tables_with_a_title_only_when_asked() {
+        let mut connection = crate::usage::schema::test_database();
+        let merged = PullRequestState { title: "Fix the login loop".into(), checks: checks("success", 3, 0, 0, 3), ..test_merged_state("fix/login-loop", "main", NOW) };
+        store_test_states(&mut connection, &[("Acme/Arbor", 412, merged), ("acme/arbor", 9, test_state("", "", "", NOW))]);
+        let rows = check_rows(&connection, true).unwrap();
+        // One GitHub couldn't find has no row.
+        assert_eq!(rows.len(), 1);
+        let (at, row) = &rows[0];
+        assert_eq!((*at, row.repository.as_str(), row.number, row.state.as_deref(), row.title.as_deref()), (NOW, "acme/arbor", 412, Some("merged"), Some("Fix the login loop")));
+        assert_eq!((row.ts.as_deref(), row.merged.as_deref(), row.closed.as_deref()), (Some("2026-09-21T14:13:20.000Z"), Some("2026-09-21T14:13:20.000Z"), None));
+        assert_eq!((row.checks.as_deref(), row.checks_passed, row.checks_total, row.review.as_deref()), (Some("success"), Some(3), Some(3), None));
+        assert_eq!(check_rows(&connection, false).unwrap()[0].1.title, None);
+        // Asking about the linked ones never fails for one that isn't on record.
+        check_linked(&connection, &[("acme/arbor".into(), 412), ("acme/proxy".into(), 57)], NOW).unwrap();
     }
 
     #[test]

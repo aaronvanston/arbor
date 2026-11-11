@@ -25,7 +25,7 @@ use super::ingest::Throttle;
 use super::tokens::{pieces, read_piece, retry_wait, Piece};
 use rusqlite::{params, Connection, OptionalExtension};
 use session_tables::store::{Batch, Engine, Origin, Store as Tables, DUCKDB_ARCHIVES, DUCKDB_VERSION};
-use session_tables::{Agent, At, Detail, Line, LineKey, Parser, ProxyRequest, Rows, Seen, State, RULE};
+use session_tables::{Agent, At, Detail, Line, LineKey, Parser, ProxyRequest, PullRequestCheck, Rows, Seen, State, RULE};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -450,9 +450,33 @@ struct Writer<'a> {
     batch: Batch,
     steps: Vec<Step>,
     rows: u64,
+    /// The pull requests this pass has noted already.
+    linked: HashSet<String>,
+}
+
+/// The cursor a linked pull request is kept under: 0 until what its host said has been copied, then when that
+/// was asked. GitHub doesn't mind the case of a repository's name, so the name here is in lower case.
+const LINK: &str = "pull_request:";
+
+fn link_name(repository: &str, number: u64) -> String {
+    format!("{LINK}{}#{number}", repository.to_ascii_lowercase())
 }
 
 impl Writer<'_> {
+    /// Puts a version's rows with what's waiting, and notes the pull requests they link to: `pull_request_pass`
+    /// copies in what a host said of those. A note for rows that are never written only asks about one more.
+    fn add(&mut self, origin: &Origin, rows: &Rows) -> Result<(), String> {
+        for link in &rows.pull_request_links {
+            let (Some(repository), Some(number)) = (&link.repository, link.number) else { continue };
+            let name = link_name(repository, number);
+            if !self.linked.contains(&name) {
+                self.state.execute("INSERT OR IGNORE INTO cursor(name, value) VALUES(?1, 0)", [&name]).map_err(state_error)?;
+                self.linked.insert(name);
+            }
+        }
+        self.batch.add(origin, rows)
+    }
+
     fn write(&mut self) -> Result<(), String> {
         let batch = std::mem::replace(&mut self.batch, self.tables.batch()?);
         let steps = std::mem::take(&mut self.steps);
@@ -485,7 +509,7 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
     let (waiting, _) = todo(db, &state, options.now)?;
     let batch = tables.batch()?;
     let keys = RefCell::new(Keys::default());
-    let mut writer = Writer { tables, state: &state, keys: &keys, engine, batch, steps: Vec::new(), rows: 0 };
+    let mut writer = Writer { tables, state: &state, keys: &keys, engine, batch, steps: Vec::new(), rows: 0, linked: HashSet::new() };
     let mut report = ExtractReport { complete: true, ..ExtractReport::default() };
     let mut throttle = Throttle::new(options.bytes_per_second);
     let out_of_time = |read: u64| stop() || read >= options.max_bytes || started.elapsed() >= options.max_time;
@@ -516,12 +540,12 @@ pub(crate) fn extract_pass(db: &Connection, blobs: &dyn Blobs, root: &Path, engi
                         spilled = true;
                     }
                     // They wait there for the version's end: mid-version, nothing says how far it's read.
-                    writer.batch.add(&origin, rows)?;
+                    writer.add(&origin, rows)?;
                     *rows = Rows::default();
                     Ok(())
                 };
                 read_version(db, blobs, &item, &from, options.detail, &mut throttle, &mut enough, &mut seen, &mut rows, &mut spill).and_then(|done| {
-                    writer.batch.add(&origin, &rows)?;
+                    writer.add(&origin, &rows)?;
                     Ok(done)
                 })
             }
@@ -615,6 +639,47 @@ pub(crate) fn proxy_pass(root: &Path, engine: &dyn Engine, detail: Detail, merge
     tables.sweep()?;
     (report.table_rows, report.table_bytes) = tables.size();
     Ok(report)
+}
+
+/// The pull requests the tables' sessions link to, as `owner/name` in lower case and a number.
+pub(crate) fn linked_pull_requests(root: &Path) -> Result<Vec<(String, u64)>, String> {
+    Ok(links(&open_state(root)?)?.into_keys().filter_map(|name| name[LINK.len()..].rsplit_once('#').and_then(|(repository, number)| Some((repository.to_string(), number.parse().ok()?)))).collect())
+}
+
+/// Each linked pull request's cursor.
+fn links(state: &Connection) -> Result<HashMap<String, i64>, String> {
+    let mut statement = state.prepare("SELECT name, value FROM cursor WHERE name GLOB ?1").map_err(state_error)?;
+    let rows = statement.query_map([format!("{LINK}*")], |row| Ok((row.get(0)?, row.get(1)?))).map_err(state_error)?;
+    rows.collect::<Result<_, _>>().map_err(state_error)
+}
+
+/// Writes what a host said of the linked pull requests it has been asked about since their last row. `checks`
+/// has each with when it was asked, in milliseconds. Gives what the tables hold afterwards: rows and bytes.
+pub(crate) fn pull_request_pass(root: &Path, engine: &dyn Engine, detail: Detail, merge_at: usize, checks: &[(i64, PullRequestCheck)]) -> Result<(u64, u64), String> {
+    let (mut tables, state) = open(root, detail)?;
+    settle(&state, &tables)?;
+    let copied = links(&state)?;
+    let fresh: Vec<(String, i64, PullRequestCheck)> = checks
+        .iter()
+        .filter_map(|(at, check)| {
+            let name = link_name(&check.repository, check.number);
+            copied.get(&name).is_some_and(|copied| copied < at).then(|| (name, *at, check.clone()))
+        })
+        .collect();
+    if !fresh.is_empty() {
+        let mut batch = tables.batch()?;
+        batch.add_pull_request_checks(&fresh.iter().map(|(.., check)| check.clone()).collect::<Vec<_>>())?;
+        let staged = state.unchecked_transaction().map_err(state_error)?;
+        for (name, at, _) in &fresh {
+            staged.execute("INSERT OR REPLACE INTO cursor_staged(name, value, batch) VALUES(?1, ?2, ?3)", params![name, at, tables.next() as i64]).map_err(state_error)?;
+        }
+        staged.commit().map_err(state_error)?;
+        tables.write(batch, engine)?;
+        settle(&state, &tables)?;
+    }
+    tables.merge(engine, merge_at)?;
+    tables.sweep()?;
+    Ok(tables.size())
 }
 
 /// The versions with something left to read: ones that grew, and ones that have stopped growing since their last
@@ -977,7 +1042,7 @@ mod tests {
         assert!(report.complete && report.failures == 0 && report.versions == 2, "{report:?}");
         let lines = rows(&fixture, "lines");
         assert_eq!(lines.len(), 3 + 4);
-        assert_eq!(report.rows, ["lines", "messages", "requests", "tool_calls", "tool_results", "tool_io", "commands", "hooks", "prompts", "tool_defs", "context_use", "files_touched"].iter().map(|table| rows(&fixture, table).len() as u64).sum::<u64>());
+        assert_eq!(report.rows, ["lines", "messages", "requests", "tool_calls", "tool_results", "tool_io", "commands", "hooks", "prompts", "tool_defs", "context_use", "files_touched", "pull_request_links"].iter().map(|table| rows(&fixture, table).len() as u64).sum::<u64>());
         assert!(lines.iter().all(|line| line["machine"] == "mac"));
         let agents: Vec<&str> = lines.iter().map(|line| line["agent"].as_str().unwrap()).collect();
         assert_eq!(agents.iter().filter(|agent| **agent == "claude").count(), 3);
@@ -1124,6 +1189,36 @@ mod tests {
         assert_eq!(rows(&fixture, "lines").len(), 3 + 3);
         let state = open_state(&root(&fixture)).unwrap();
         assert_eq!(state.query_row("SELECT count(*) FROM failed", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn what_github_said_of_a_linked_pull_request_is_copied_once_each_time_it_was_asked() {
+        let fixture = Fixture::new("analytics-pull-requests");
+        let link = |number: u64| format!("{{\"type\":\"pr-link\",\"sessionId\":\"{SID}\",\"timestamp\":\"2026-09-20T02:00:0{number}.000Z\",\"prNumber\":{number},\"prUrl\":\"https://git.example/app/pull/{number}\",\"prRepository\":\"Example/App\"}}\n");
+        fixture.write(MAIN, &(link(1) + &link(2) + &link(1)));
+        assert!(fixture.pass().complete);
+        assert!(extract(&fixture, &everything()).complete);
+        assert_eq!(rows(&fixture, "pull_request_links").len(), 3);
+        let mut linked = linked_pull_requests(&root(&fixture)).unwrap();
+        linked.sort();
+        assert_eq!(linked, [("example/app".to_string(), 1), ("example/app".to_string(), 2)]);
+        let check = |at: i64, number: u64, state: &str| (at, PullRequestCheck { repository: "example/app".into(), number, state: Some(state.into()), title: Some(SECRET_TEXT.into()), ..PullRequestCheck::default() });
+        let copy = |engine: &dyn Engine, checks: &[(i64, PullRequestCheck)]| pull_request_pass(&root(&fixture), engine, Detail::Everything, usize::MAX, checks);
+        let states = |fixture: &Fixture| -> Vec<(u64, String)> {
+            let mut states: Vec<_> = rows(fixture, "pull_request_checks").iter().map(|row| (row["number"].as_u64().unwrap(), row["state"].as_str().unwrap().to_string())).collect();
+            states.sort();
+            states
+        };
+        // One no session linked is left out. A write that fails leaves the next pass to copy the same ones, once.
+        let first = [check(10, 1, "open"), check(10, 7, "open")];
+        assert_eq!(copy(&Broken, &first).unwrap_err(), "The query engine stopped while writing tables (IO Error)");
+        copy(&Copier, &first).unwrap();
+        copy(&Copier, &first).unwrap();
+        assert_eq!(states(&fixture), [(1, "open".to_string())]);
+        // Asked again, it has a second row; one asked about for the first time has its first.
+        copy(&Copier, &[check(20, 1, "merged"), check(20, 2, "closed")]).unwrap();
+        assert_eq!(states(&fixture), [(1, "merged".to_string()), (1, "open".to_string()), (2, "closed".to_string())]);
         let _ = fs::remove_dir_all(&fixture.base);
     }
 

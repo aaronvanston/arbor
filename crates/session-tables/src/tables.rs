@@ -101,7 +101,7 @@ pub(crate) const RESULTS: &str = "(SELECT agent, tool_use_id, min(ts) AS ts, boo
 /// error, wasn't interrupted and wasn't sent to the background exited with 0.
 pub(crate) const EXIT_CODE: &str = "coalesce(r.exit_code, CASE WHEN c.agent = 'claude' AND {bash} AND r.is_error = false AND r.interrupted IS NOT TRUE AND r.background IS NOT TRUE AND {asked} IS NOT TRUE THEN 0 END)";
 
-pub(crate) const VIEWS: [View; 4] = [
+pub(crate) const VIEWS: [View; 5] = [
     // A tool call with how it ended. `elapsed_ms` is from the call's line to its result's, so it counts a wait for
     // the person's leave as well as the run; `duration_ms` is the run alone, where the agent wrote it down.
     View {
@@ -226,9 +226,35 @@ pub(crate) const VIEWS: [View; 4] = [
         ],
         sql: "SELECT ts, day, session_id, provider, account, model, alias, effort, service_tier, output, ttft_ms, latency_ms - ttft_ms AS generation_ms, output * 1000.0 / (latency_ms - ttft_ms) AS tokens_per_second FROM \"proxy_requests\" WHERE NOT failed AND NOT canceled AND output > 0 AND ttft_ms IS NOT NULL AND latency_ms - ttft_ms >= 500",
     },
+    // A pull request sessions linked to, once, with how it last stood. GitHub doesn't mind the case of a
+    // repository's name, so neither does the join. `state` is empty until its host has been asked.
+    View {
+        name: "pull_requests",
+        columns: &[
+            ("repository", Text),
+            ("number", Count),
+            ("url", Text),
+            ("sessions", Count),
+            ("first_linked", Time),
+            ("state", Text),
+            ("draft", Flag),
+            ("title", Text),
+            ("head_branch", Text),
+            ("base_branch", Text),
+            ("merged", Time),
+            ("closed", Time),
+            ("mergeable", Text),
+            ("review", Text),
+            ("checks", Text),
+            ("checked", Time),
+        ],
+        sql: "SELECT l.repository, l.number, l.url, l.sessions, l.first_linked, c.state, c.draft, c.title, c.head_branch, c.base_branch, c.merged, c.closed, c.mergeable, c.review, c.checks, c.ts AS checked \
+              FROM (SELECT min(repository) AS repository, number, min(url) AS url, count(DISTINCT session_id) AS sessions, min(ts) AS first_linked FROM \"pull_request_links\" WHERE repository IS NOT NULL AND number IS NOT NULL GROUP BY lower(repository), number) l \
+              LEFT JOIN (SELECT * FROM \"pull_request_checks\" QUALIFY row_number() OVER (PARTITION BY lower(repository), number ORDER BY ts DESC) = 1) c ON lower(c.repository) = lower(l.repository) AND c.number = l.number",
+    },
 ];
 
-pub const TABLES: [Table; 13] = [
+pub const TABLES: [Table; 15] = [
     Table {
         name: "lines",
         shape: Shape::Lines,
@@ -384,6 +410,34 @@ pub const TABLES: [Table; 13] = [
             ("op", Text),
             ("lines_added", Count),
             ("lines_removed", Count),
+        ],
+    },
+    // A pull request a session said it worked on. Claude Code writes one each time it opens or pushes to one, so a
+    // session has many rows for the same pull request.
+    Table { name: "pull_request_links", shape: Shape::Lines, own: &[("repository", Text), ("number", Count), ("url", Text)] },
+    // How a pull request stood each time its host was asked, at `ts`. `pull_requests` has the newest of each.
+    Table {
+        name: "pull_request_checks",
+        shape: Shape::Dated,
+        own: &[
+            ("ts", Time),
+            ("day", Day),
+            ("repository", Text),
+            ("number", Count),
+            ("state", Text),
+            ("draft", Flag),
+            ("title", Text),
+            ("head_branch", Text),
+            ("base_branch", Text),
+            ("merged", Time),
+            ("closed", Time),
+            ("mergeable", Text),
+            ("review", Text),
+            ("checks", Text),
+            ("checks_passed", Count),
+            ("checks_failed", Count),
+            ("checks_pending", Count),
+            ("checks_total", Count),
         ],
     },
     // A request as a proxy in front of the agents saw it. `input` leaves out what was read from and written to the

@@ -207,7 +207,13 @@ for it), model, latency_ms, ttft_ms, tokens, whether it failed, and its cost in 
 the tables above on session_id; a Claude Code subagent's request has an id of its own there, and its session's in
 parent_session_id. sessions counts those in its cost.
 
-Five names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
+pull_request_links is each pull request a session said it worked on (Claude Code writes that down; the others
+don't), and pull_request_checks is what GitHub said of one each time Arbor asked. pull_requests has each linked
+pull request once with how it last stood: state (open, merged, closed, or nothing until GitHub has been asked),
+merged, review, checks and how many sessions linked to it. It joins pull_request_links on lower(repository) and
+number.
+
+Five more names are worked out from the tables. sessions is one row a session: when it ran, where, its model, tokens,
 tool calls, errors and cost. turns is one row a prompt, with its origin and what it led to before the next one:
 requests, tokens, tool calls and elapsed_ms. tools is one row a tool call with how it ended: is_error, exit_code, duration_ms where
 the agent wrote it down, and elapsed_ms from the call to its result. commands has each shell command with its exit

@@ -12,7 +12,7 @@ pub fn saved(name: &str) -> Option<&'static Saved> {
     SAVED.iter().find(|saved| saved.name == name)
 }
 
-pub const SAVED: [Saved; 17] = [
+pub const SAVED: [Saved; 18] = [
     Saved {
         name: "speed-by-model",
         about: "How fast each model writes: median tokens a second and time to the first token, as the proxy saw them",
@@ -95,7 +95,12 @@ pub const SAVED: [Saved; 17] = [
     },
     Saved {
         name: "pull-requests",
-        about: "Sessions, requests, tool calls and cost behind each pull request Claude Code linked (needs the Everything detail)",
-        sql: "WITH links AS (SELECT DISTINCT session_id, json_extract_string(rest, '$.prRepository') AS repository, TRY_CAST(json_extract_string(rest, '$.prNumber') AS BIGINT) AS number FROM lines WHERE kind = 'pr-link') SELECT repository, number, count(*) AS sessions, CAST(sum(s.requests) AS BIGINT) AS requests, CAST(sum(s.tool_calls) AS BIGINT) AS tool_calls, CAST(sum(s.output) AS BIGINT) AS output, round(sum(s.cost), 2) AS cost FROM links JOIN sessions s USING (session_id) WHERE repository IS NOT NULL GROUP BY repository, number ORDER BY cost DESC NULLS LAST LIMIT 50",
+        about: "Each pull request sessions linked to, newest first: how it stands, and the sessions, requests, output and cost behind it. A session that linked several counts toward each",
+        sql: "WITH links AS (SELECT DISTINCT lower(repository) AS repository, number, session_id FROM pull_request_links WHERE repository IS NOT NULL) SELECT p.repository, p.number, p.state, p.review, p.checks, CAST(p.first_linked AT TIME ZONE 'UTC' AS DATE) AS first_linked, p.sessions, CAST(sum(s.requests) AS BIGINT) AS requests, CAST(sum(s.output) AS BIGINT) AS output, round(sum(s.cost), 2) AS cost FROM pull_requests p JOIN links l ON l.repository = lower(p.repository) AND l.number = p.number LEFT JOIN sessions s USING (session_id) GROUP BY ALL ORDER BY first_linked DESC, p.number DESC LIMIT 50",
+    },
+    Saved {
+        name: "pull-request-outcomes",
+        about: "Linked pull requests by how they ended up: how many, the sessions and output behind them, and the usual hours from first link to merge. A session that linked several counts toward each",
+        sql: "WITH links AS (SELECT DISTINCT lower(repository) AS repository, number, session_id FROM pull_request_links WHERE repository IS NOT NULL), work AS (SELECT l.repository, l.number, sum(s.requests) AS requests, sum(s.output) AS output, sum(s.cost) AS cost FROM links l LEFT JOIN sessions s USING (session_id) GROUP BY ALL) SELECT coalesce(nullif(p.state, ''), 'not checked') AS state, count(*) AS pull_requests, CAST(sum(p.sessions) AS BIGINT) AS sessions, CAST(sum(w.requests) AS BIGINT) AS requests, CAST(sum(w.output) AS BIGINT) AS output, CAST(round(median(w.output)) AS BIGINT) AS output_each, round(sum(w.cost), 2) AS cost, round(median(date_diff('minute', p.first_linked, p.merged)) / 60.0, 1) AS hours_to_merge FROM pull_requests p JOIN work w ON w.repository = lower(p.repository) AND w.number = p.number GROUP BY ALL ORDER BY pull_requests DESC",
     },
 ];

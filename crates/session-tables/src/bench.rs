@@ -361,7 +361,7 @@ fn fill(store: &mut Store, engine: &Program, turns: u64) -> Made {
             earlier.extend(mine);
             made.lines += rows.lines.len() as u64;
             made.repeats += rows.lines.iter().filter(|line| line.at.repeat).count() as u64;
-            made.rows += [rows.lines.len(), rows.messages.len(), rows.requests.len(), rows.tool_calls.len(), rows.tool_results.len(), rows.tool_io.len(), rows.commands.len(), rows.hooks.len(), rows.context_use.len(), rows.files_touched.len()].iter().sum::<usize>() as u64;
+            made.rows += [rows.lines.len(), rows.messages.len(), rows.requests.len(), rows.tool_calls.len(), rows.tool_results.len(), rows.tool_io.len(), rows.commands.len(), rows.hooks.len(), rows.context_use.len(), rows.files_touched.len(), rows.pull_request_links.len()].iter().sum::<usize>() as u64;
             made.files += 1;
             batch.add(&Origin { agent, machine, source: &format!("{}-{file}", session.id) }, &rows).unwrap();
             made.parsing += started.elapsed();
@@ -427,7 +427,7 @@ fn tables_at_volume() {
         println!("  writing fresh files      {:>7.1}s   {:>6.0} MB/s", made.writing.as_secs_f64(), megabytes / made.writing.as_secs_f64());
         println!("  merging into months      {:>7.1}s", made.merging.as_secs_f64());
         // Every row made is in a table, once, and a repeated line is out of sight.
-        let placed: u64 = ["lines", "messages", "requests", "tool_calls", "tool_results", "tool_io", "commands", "hooks", "context_use", "files_touched"].iter().map(|table| store.parts(table).iter().map(|part| part.rows).sum::<u64>()).sum();
+        let placed: u64 = ["lines", "messages", "requests", "tool_calls", "tool_results", "tool_io", "commands", "hooks", "context_use", "files_touched", "pull_request_links"].iter().map(|table| store.parts(table).iter().map(|part| part.rows).sum::<u64>()).sum();
         assert_eq!(placed, made.rows);
         assert_eq!(number(&engine, &store, "SELECT count(*) AS n FROM lines_all"), made.lines);
         assert_eq!(number(&engine, &store, "SELECT count(*) AS n FROM lines"), made.lines - made.repeats);

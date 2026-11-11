@@ -1157,7 +1157,17 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
                 let copied = crate::usage::open_usage_database().and_then(|usage| {
                     let mut pricer = crate::usage::proxy_rows::Pricer::load(&usage)?;
                     let mut next = |after: u64, limit: u32| crate::usage::proxy_rows::proxy_requests(&usage, &mut pricer, after, limit);
-                    analytics::proxy_pass(&tables, &engine, extract_options.detail, analytics::MERGE_AT, &mut next, &|| token.is_cancelled() || started.elapsed() >= ANALYTICS_MAX_TIME)
+                    let mut proxy = analytics::proxy_pass(&tables, &engine, extract_options.detail, analytics::MERGE_AT, &mut next, &|| token.is_cancelled() || started.elapsed() >= ANALYTICS_MAX_TIME)?;
+                    // Then how the pull requests the sessions link to stand, from what GitHub has said of them,
+                    // and a question to GitHub about the ones it hasn't been asked about lately: a repository and
+                    // a number each, as the Projects view asks.
+                    let linked = analytics::linked_pull_requests(&tables)?;
+                    if !linked.is_empty() && !token.is_cancelled() {
+                        let checks = crate::usage::pull_requests::check_rows(&usage, extract_options.detail == session_tables::Detail::Everything)?;
+                        (proxy.table_rows, proxy.table_bytes) = analytics::pull_request_pass(&tables, &engine, extract_options.detail, analytics::MERGE_AT, &checks)?;
+                        crate::usage::pull_requests::check_linked(&usage, &linked, index::now_ms())?;
+                    }
+                    Ok(proxy)
                 });
                 match copied {
                     Ok(proxy) => {
