@@ -355,7 +355,8 @@ const bridgeAfter = (run: PoolRun, dryAtMs: number) => {
 
 /**
  * The accounts as the plan spends them: one holding a reset that lapses within the forecast goes ahead of its turn
- * when that, and only that, has it run out in time to use the reset. The account order does the same.
+ * when that, and only that, has it run out in time to use the reset. The account order makes the same call, and
+ * moves the account only when the user has asked it to.
  */
 function spendFirst(accounts: ForecastAccount[], simulate: (pool: ForecastAccount[]) => PoolRun, nowMs: number, horizonEndMs: number): ForecastAccount[] {
   const lapsing = accounts.flatMap((account) => {
@@ -453,11 +454,13 @@ export function buildForecast(input: {
     claimAt: claims,
     points,
   });
-  const ordered = spendFirst(accounts, (pool) => simulate(pool, []), nowMs, horizonEndMs);
-  const run = (claims: { key: string; atMs: number }[], points = false, scale = 1) => simulate(ordered, claims, points, scale);
-  const baseline = run([], true);
-  const unaided = ordered === accounts ? baseline : simulate(accounts, []);
-  const plan = planClaims(ordered, (claims) => run(claims), nowMs, horizonEndMs, unaided);
+  // What's drawn without the suggestions keeps every account in its turn: going first is only ever suggested.
+  const baseline = simulate(accounts, [], true);
+  const moved = spendFirst(accounts, (pool) => simulate(pool, []), nowMs, horizonEndMs);
+  // A pool that lasts needs no plan, so no account is moved to make one.
+  const planned = baseline.dryAtMs === null ? accounts : moved;
+  const run = (claims: { key: string; atMs: number }[], points = false, scale = 1) => simulate(planned, claims, points, scale);
+  const plan = planClaims(planned, (claims) => run(claims), nowMs, horizonEndMs, baseline);
   const projection = settings.countResets && plan.claims.length ? run(plan.claims, true) : baseline;
   const names = new Map(accounts.map((account) => [account.key, account.name]));
   const advice: Advice[] = plan.steps.map(({ bridge, ...step }) => ({
@@ -479,23 +482,31 @@ export function buildForecast(input: {
     advice.push({ kind: 'slow', perHour: burn.perHour * low });
   }
   // Resets that lapse within the forecast and aren't in the plan: when one could still be used, rather than lost.
-  ordered.forEach((account) => account.lots.forEach((lot) => {
+  // How the accounts run out with those worth it going first, for a reset its account wouldn't otherwise reach.
+  const reach = planned === moved ? withClaims : simulate(moved, plan.claims);
+  const noWorse = (trial: PoolRun) => trial.dryAtMs === null || (withClaims.dryAtMs !== null && trial.dryAtMs >= withClaims.dryAtMs);
+  moved.forEach((account) => account.lots.forEach((lot) => {
     if (!lot.refills || !lapsesWithin(lot, nowMs, horizonEndMs)) return;
     const unused = lot.count - usedOf(plan.claims, lot);
     if (unused <= 0) return;
+    const { key } = account;
     const { expiresAtMs } = lot;
-    const emptyAtMs = nextEmptyMs(withClaims, plan.claims, account.key);
+    const inTurnMs = nextEmptyMs(withClaims, plan.claims, key);
+    const firstMs = nextEmptyMs(reach, plan.claims, key);
     let use: LapsingUse = { how: 'none' };
-    if (emptyAtMs !== undefined && emptyAtMs < expiresAtMs) {
-      const first = !plan.claims.some((claim) => claim.key === account.key) && (unaided.emptied[account.key]?.[0] ?? Number.POSITIVE_INFINITY) > expiresAtMs;
-      use = { how: 'atLimit', atMs: emptyAtMs, ...(first ? { first: true as const } : {}) };
+    if (inTurnMs !== undefined && inTurnMs < expiresAtMs) {
+      // The plan may already have it going first.
+      const first = !plan.claims.some((claim) => claim.key === key) && (baseline.emptied[key]?.[0] ?? Number.POSITIVE_INFINITY) > expiresAtMs;
+      use = { how: 'atLimit', atMs: inTurnMs, ...(first ? { first: true as const } : {}) };
+    } else if (firstMs !== undefined && firstMs < expiresAtMs && noWorse(simulate(moved, [...plan.claims, { key, atMs: firstMs }]))) {
+      use = { how: 'atLimit', atMs: firstMs, first: true };
     } else if (lot.anytime) {
       const atMs = Math.max(nowMs, expiresAtMs - EARLY_MARGIN_MS);
-      const left = atMs > lastClaimMs(plan.claims, account.key) + CLAIM_GAP_MS
-        ? leftAtClaim(run([...plan.claims, { key: account.key, atMs }]), account.key, atMs) : undefined;
+      const left = atMs > lastClaimMs(plan.claims, key) + CLAIM_GAP_MS
+        ? leftAtClaim(run([...plan.claims, { key, atMs }]), key, atMs) : undefined;
       if (left !== undefined && 100 - left >= EARLY_MIN_PERCENT) use = { how: 'early', percent: 100 - left };
     }
-    advice.push({ kind: 'expiring', key: account.key, name: account.name, count: unused, expiresAtMs, ...(lot.reset ? { reset: lot.reset } : {}), use });
+    advice.push({ kind: 'expiring', key, name: account.name, count: unused, expiresAtMs, ...(lot.reset ? { reset: lot.reset } : {}), use });
   }));
   // A pool that still runs dry may get some of the window back from a Fable reset, which the plan can't count on.
   const stillDryAtMs = withClaims.dryAtMs;

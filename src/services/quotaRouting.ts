@@ -43,6 +43,8 @@ export type RoutingItem = {
   reason: RoutingReason;
   /** The share of its limit it keeps for extra models only it and some others have, and where that stands. */
   reserve?: AccountReserve;
+  /** It holds a reset lapsing then that it would only reach its limit for by going first, which it isn't set to. */
+  resetLapsesAtMs?: number;
 };
 
 export type RoutingPlan = { items: RoutingItem[]; changes: RoutingItem[] };
@@ -88,10 +90,12 @@ const rankBySoonestReset = <T extends { key: string; reason: { percent: number; 
  * nearly out of the window get priority 0 and go last. Accounts without a
  * reading, or that the core can't use or re-prioritize, keep their priority.
  *
- * A reset an account holds is capacity that expires too, and most can only be used at a limit. So an account whose
- * reset for this window lapses before the window resets is ranked by the lapse instead, nearly out or not, when
- * that gets it to its limit in time and its usual place wouldn't. "In time" goes by the pace so far: each account's
- * average spend since its window began, added up, against what's left on it and what the accounts ahead of it take.
+ * A reset an account holds is capacity that expires too, and most can only be used at a limit. An account whose reset
+ * for this window lapses before the window resets, and that would reach its limit in time only by going ahead of its
+ * turn, is pointed out (`resetLapsesAtMs`). Its place changes only with `lapsingFirst`, which the user turns on:
+ * going first spends the account sooner on the strength of a reset only they can use, so it's theirs to ask for.
+ * Then it's ranked by the lapse instead, nearly out or not. "In time" goes by the pace so far: each account's average
+ * spend since its window began, added up, against what's left on it and what the accounts ahead of it take.
  *
  * An account keeping a reserve for an extra model is ranked like any other:
  * above its reserve its limit is everyday capacity, and at it the account's
@@ -102,7 +106,13 @@ const rankBySoonestReset = <T extends { key: string; reason: { percent: number; 
  * than a day (it resets too often to plan around), or fewer than two
  * accounts with a reading.
  */
-export function routingPlan(candidates: RoutingCandidate[], window: string | null, nowMs: number, reserves: ReadonlyMap<string, AccountReserve> = new Map()): RoutingPlan | null {
+export function routingPlan(
+  candidates: RoutingCandidate[],
+  window: string | null,
+  nowMs: number,
+  reserves: ReadonlyMap<string, AccountReserve> = new Map(),
+  lapsingFirst = false,
+): RoutingPlan | null {
   if (!window) return null;
   const durationMs = windowDurationMs(window);
   if (durationMs === null || durationMs < DAY) return null;
@@ -118,7 +128,14 @@ export function routingPlan(candidates: RoutingCandidate[], window: string | nul
     };
   });
   type Soonest = (typeof entries)[number] & { reason: Extract<RoutingReason, { kind: 'soonest' }> };
-  aheadOfLapse(entries, candidates, window, durationMs, nowMs);
+  const holders = aheadOfLapse(entries, candidates, window, durationMs, nowMs);
+  const hints = new Map<string, number>();
+  entries.forEach((entry) => {
+    const holder = holders.get(entry.key);
+    if (!holder) return;
+    if (lapsingFirst) entry.reason = { kind: 'soonest', ...holder };
+    else hints.set(entry.key, holder.lapsesAtMs);
+  });
   const soonest = entries.filter((entry): entry is Soonest => entry.reason.kind === 'soonest');
   const ranked = rankBySoonestReset(soonest);
   const low = entries.filter((entry) => entry.reason.kind === 'low').sort((a, b) => a.key.localeCompare(b.key));
@@ -128,14 +145,20 @@ export function routingPlan(candidates: RoutingCandidate[], window: string | nul
     ...low.map((entry) => ({ ...entry, suggested: 0 })),
     ...entries.filter((entry) => entry.reason.kind !== 'soonest' && entry.reason.kind !== 'low').map((entry) => ({ ...entry, suggested: null })),
   ];
+  hints.forEach((resetLapsesAtMs, key) => {
+    const item = items.find((entry) => entry.key === key);
+    if (item) item.resetLapsesAtMs = resetLapsesAtMs;
+  });
   return { items, changes: items.filter((item) => item.suggested !== null && item.suggested !== item.current) };
 }
 
 const MIN_ELAPSED = 0.05;
 
+type LapsingHolder = { percent: number; resetAtMs: number; lapsesAtMs: number };
+
 /**
- * Marks the accounts to rank by a lapsing reset rather than their window: see `routingPlan`. The soonest lapse is
- * settled first, since an account moved ahead pushes back the ones behind it.
+ * The accounts that would only reach their limit before a reset they hold lapses by going ahead of their turn: see
+ * `routingPlan`. The soonest lapse is settled first, since an account moved ahead pushes back the ones behind it.
  */
 function aheadOfLapse(
   entries: { key: string; reason: RoutingReason }[],
@@ -143,7 +166,8 @@ function aheadOfLapse(
   window: string,
   durationMs: number,
   nowMs: number,
-) {
+): Map<string, LapsingHolder> {
+  const ahead = new Map<string, LapsingHolder>();
   const readings = entries.flatMap((entry, index) => {
     const quota = candidates[index]?.quota;
     if ((entry.reason.kind !== 'soonest' && entry.reason.kind !== 'low') || quota?.status !== 'success') return [];
@@ -152,34 +176,35 @@ function aheadOfLapse(
     const windowMs = rowWindowMs(row) ?? durationMs;
     const elapsedMs = Math.max(MIN_ELAPSED * windowMs, Math.min(windowMs, windowMs - (row.resetAtMs - nowMs)));
     return [{
-      entry,
+      key: entry.key,
       percent: row.remainingPercent,
       resetAtMs: row.resetAtMs,
+      // Nearly out, it goes last in its usual place.
+      usualDueMs: entry.reason.kind === 'soonest' ? row.resetAtMs : Number.POSITIVE_INFINITY,
       perMs: (100 - row.remainingPercent) / elapsedMs,
       lapseMs: firstLapseMs(creditLots(quota, window), nowMs),
     }];
   });
   const perMs = readings.reduce((total, item) => total + item.perMs, 0);
-  if (perMs <= 0) return;
+  if (perMs <= 0) return ahead;
   // When an account runs out, ranked by `dueMs`: each account ahead of it takes the work until it's out or its
   // window resets, which sends it to the back, and then it's this one's turn.
   const outAtMs = (item: (typeof readings)[number], dueMs: number) => {
-    const ahead = readings.flatMap((other) => {
-      const reason = other.entry.reason;
-      const otherDue = reason.kind === 'soonest' ? reason.lapsesAtMs ?? reason.resetAtMs : Number.POSITIVE_INFINITY;
+    const before = readings.flatMap((other) => {
+      const otherDue = ahead.get(other.key)?.lapsesAtMs ?? other.usualDueMs;
       return other !== item && otherDue < dueMs ? [{ percent: other.percent, dueMs: otherDue }] : [];
     }).sort((a, b) => a.dueMs - b.dueMs);
-    const turnMs = ahead.reduce((atMs, other) => Math.min(atMs + other.percent / perMs, Math.max(atMs, other.dueMs)), nowMs);
+    const turnMs = before.reduce((atMs, other) => Math.min(atMs + other.percent / perMs, Math.max(atMs, other.dueMs)), nowMs);
     return turnMs + item.percent / perMs;
   };
   readings
     .flatMap((item) => (item.lapseMs !== null && item.lapseMs < item.resetAtMs ? [{ item, lapseMs: item.lapseMs }] : []))
-    .sort((a, b) => a.lapseMs - b.lapseMs || a.item.entry.key.localeCompare(b.item.entry.key))
+    .sort((a, b) => a.lapseMs - b.lapseMs || a.item.key.localeCompare(b.item.key))
     .forEach(({ item, lapseMs }) => {
-      const usualDue = item.entry.reason.kind === 'soonest' ? item.resetAtMs : Number.POSITIVE_INFINITY;
-      if (outAtMs(item, usualDue) <= lapseMs || outAtMs(item, lapseMs) > lapseMs) return;
-      item.entry.reason = { kind: 'soonest', percent: item.percent, resetAtMs: item.resetAtMs, lapsesAtMs: lapseMs };
+      if (outAtMs(item, item.usualDueMs) <= lapseMs || outAtMs(item, lapseMs) > lapseMs) return;
+      ahead.set(item.key, { percent: item.percent, resetAtMs: item.resetAtMs, lapsesAtMs: lapseMs });
     });
+  return ahead;
 }
 
 /** Accounts as the plan sees them: the credential, its latest limits and the name it goes by. */
@@ -207,11 +232,12 @@ export function providerRoutingPlans(
   nowMs: number,
   order: AccountOrder = {},
   reserves: (provider: QuotaProvider, files: AuthFile[]) => ReadonlyMap<string, AccountReserve> = () => new Map(),
+  lapsingFirst = false,
 ): ProviderRouting[] {
   return providerLimits(files, quotas, profiles, prefs, nowMs, order).flatMap(({ provider, headline }) => {
     const window = headline.label;
     const providerFiles = sortByOrder(files.filter((file) => providerForFile(file) === provider), order[provider], quotaKey);
-    const plan = routingPlan(routingCandidates(providerFiles, quotas, profiles), window, nowMs, reserves(provider, providerFiles));
+    const plan = routingPlan(routingCandidates(providerFiles, quotas, profiles), window, nowMs, reserves(provider, providerFiles), lapsingFirst);
     return plan && window ? [{ provider, window, plan }] : [];
   });
 }

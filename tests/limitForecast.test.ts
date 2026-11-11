@@ -242,6 +242,12 @@ describe('which reset the forecast spends, and where', () => {
     const plan = claims([holding(account('a', 30, 100), { expiresAtMs: NOW + 10 * HOUR }), account('b', 50, 40)], 4);
     expect(plan).toMatchObject([{ key: 'a', first: true, lapsesAtMs: NOW + 10 * HOUR, bridge: { atMs: NOW + 40 * HOUR, names: ['b'] } }]);
     expect(hours(itemAt(plan, 0).atMs)).toBe(7.5);
+    // It's a suggestion: what's drawn without the resets keeps a in its turn, running out at 20h.
+    const drawn = buildForecast({
+      accounts: [holding(account('a', 30, 100), { expiresAtMs: NOW + 10 * HOUR }), account('b', 50, 40)],
+      readings: [], settings: settings({ ratePerHour: 4 }), horizonDays: 3, historyMs: DAY, nowMs: NOW,
+    }).projection;
+    expect([hours(drawn.emptyAtMs.b), hours(drawn.emptyAtMs.a)]).toEqual([12.5, 20]);
     // Too much left to get there in time: it keeps its turn, and the reset is flagged instead.
     const late = buildForecast({
       accounts: [holding(account('a', 90, 100), { expiresAtMs: NOW + 10 * HOUR }), account('b', 50, 40)],
@@ -249,6 +255,18 @@ describe('which reset the forecast spends, and where', () => {
     });
     expect(late.advice.some((item) => item.kind === 'claim')).toBe(false);
     expect(late.advice.find((item) => item.kind === 'expiring')).toMatchObject({ key: 'a', use: { how: 'none' } });
+  });
+
+  test('in a pool that lasts, only points out an account that could go first for its reset', () => {
+    // At 1% an hour the pool lasts. b resets sooner, so a (30% left) waits past its reset's lapse at 40h; first, it's out at 30h.
+    const accounts = [holding(account('a', 30, 150), { expiresAtMs: NOW + 40 * HOUR }), account('b', 60, 70)];
+    const forecast = buildForecast({ accounts, readings: [], settings: settings({ ratePerHour: 1 }), horizonDays: 3, historyMs: DAY, nowMs: NOW });
+    expect(forecast.advice.some((item) => item.kind === 'claim')).toBe(false);
+    expect(forecast.projection.dryAtMs).toBeNull();
+    expect(hours(forecast.projection.emptyAtMs.b)).toBe(60);
+    const lapsing = present(forecast.advice.find((item) => item.kind === 'expiring'));
+    expect(lapsing.kind === 'expiring' && lapsing.use).toMatchObject({ how: 'atLimit', first: true });
+    expect(hours(lapsing.kind === 'expiring' && lapsing.use.how === 'atLimit' ? lapsing.use.atMs : undefined)).toBe(30);
   });
 
   test('says how a reset that lapses unplanned could still be used', () => {

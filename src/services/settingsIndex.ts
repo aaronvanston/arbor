@@ -89,6 +89,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('routing', 'session-ttl', 'config.network.routingSection', 'config.network.sessionTtl', { description: 'config.network.sessionTtlHint' }),
   row('routing', 'strategy', 'config.routing.title', 'config.routing.rowTitle', { description: 'config.routing.description', keywords: 'settingsSearch.keywords.strategy' }),
   section('routing', 'accounts', 'accounts.routing.title', { description: 'accounts.routing.description', keywords: 'settingsSearch.keywords.accountOrder' }),
+  row('routing', 'lapsing-resets', 'accounts.routing.title', 'accounts.routing.lapsing.title', { description: 'accounts.routing.lapsing.description', keywords: 'settingsSearch.keywords.accountOrder' }),
 
   section('overrides', 'quick', 'overrides.quick.title', { description: 'overrides.quick.description', fallback: 'overrides.create' }),
   section('overrides', 'create', 'overrides.create.title', { description: 'overrides.create.description' }),

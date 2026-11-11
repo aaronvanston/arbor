@@ -62,7 +62,8 @@
  * weekly reset leads, a Fable reset only gives back what Fable used and claude-2's has nothing to give back;
  * `?resets=lapsing` for Claude resets that lapse within two days, so the forecast spends those first and says how one
  * it has no use for could still be used (with `?forecast=dry`, which one gets the pool through); with `?accounts=fleet`
- * too, the account order on Settings › Routing puts an account holding one ahead of its turn;
+ * too, the account order on Settings › Routing points out an account that would only reach its limit for one by going
+ * first, and `&order=lapsing` turns on the setting that moves it there;
  * `?quota=fail-after-first` to have each account's first limit check work and every later one fail to reach the provider,
  * or `?quota=error` to have one Claude and one Codex account fail to read their limits;
  * `?plan=free` for one Claude and one Codex account whose billing was paused, so their providers have them on the free
@@ -726,6 +727,7 @@ export function installTauriMock() {
   const colorScenario = params.get('color');
   if (isAppColor(colorScenario)) previewAppPreference('appColor', colorScenario);
   if (params.get('titles') === 'on') previewAppPreference('sessionTitles', true);
+  if (params.get('resets') === 'lapsing' && params.get('order') === 'lapsing') previewAppPreference('routingLapsingResets', true);
   // Full screen changes end with a resize, the way macOS reports them.
   (window as Window & { __mockFullscreen?: (fullscreen: boolean) => void }).__mockFullscreen = (fullscreen) => {
     windowFullscreen = fullscreen;

@@ -358,6 +358,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   // Suggested routing priorities, for the providers set to apply them automatically. Each provider is
   // looked at once per refresh round (the newest limit reading), so a failing update waits for the next round.
   const routedRoundRef = useRef<Record<string, number>>({});
+  const { routingLapsingResets } = preferences;
   const routingRef = useRef(false);
   useEffect(() => {
     if (!coreReady || !loaded || accountsError || routingRef.current || freshLimits.some((limit) => limit.loading)) return;
@@ -371,7 +372,8 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       const round = Math.max(0, ...providerFiles.map((file) => freshCache[quotaKey(file)]?.fetchedAt ?? 0));
       if (!round || routedRoundRef.current[limit.provider] === round) return [];
       routedRoundRef.current[limit.provider] = round;
-      const changes = routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now())?.changes ?? [];
+      // An account goes ahead of its turn for a reset about to lapse only when that's been asked for.
+      const changes = routingPlan(routingCandidates(providerFiles, freshCache, profiles), limit.headline.label, Date.now(), undefined, routingLapsingResets)?.changes ?? [];
       return changes.length ? [{ provider: limit.provider, changes }] : [];
     });
     if (!due.length) return;
@@ -389,7 +391,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         routingRef.current = false;
         void loadAccountFiles();
       });
-  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, profiles, routingAuto]);
+  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, profiles, routingAuto, routingLapsingResets]);
 
   // Extra models on only some accounts: when an account is added, removed or signed out, ask the provider's accounts
   // again which models each has, so a model stays off the accounts without it. Otherwise keep its use fresh, which

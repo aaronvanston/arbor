@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Check, Play, ServerCog, Users } from '../components/ui/icons';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { AccountAvatar } from '../components/AccountAvatar';
-import { SettingsBlock, SettingsSection } from '../components/layout/settings';
+import { SettingsBlock, SettingsRow, SettingsSection } from '../components/layout/settings';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Spinner } from '../components/ui/spinner';
 import { Switch } from '../components/ui/switch';
 import { toast } from '../components/ui/toast';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../components/ui/tooltip';
+import { setAppPreference, useAppPreferences } from '../appPreferences';
 import { useCoreRuntime } from '../coreRuntime';
 import { useI18n } from '../i18n';
 import { cn } from '../lib/utils';
@@ -22,6 +23,7 @@ import { formatResetCountdown, providerLabel } from '../services/providerLimits'
 import { getQuotaCacheSnapshot, useQuotaCache } from '../services/quotaCache';
 import { runCoreProcess } from '../services/coreProcess';
 import { plainError } from '../services/plainError';
+import { onOffLabel, preferenceReset } from '../services/settingDefaults';
 import {
   accountOrderGap,
   applyRoutingPlan,
@@ -81,11 +83,13 @@ export function AccountRouting({ files, loaded = true, onError, coreReady = true
   const order = useAccountOrder();
   const access = useModelAccess();
   const policies = useReservePolicies();
+  const preferences = useAppPreferences();
+  const lapsingFirst = preferences.routingLapsingResets;
   const inUse = useMemo(() => accountFilesFromListing(files), [files]);
   const routings = useMemo(
     () => providerRoutingPlans(inUse, quotas, profiles, prefs, Date.now(), order,
-      (provider, providerFiles) => providerReserves(providerFiles, quotas, access, policies, provider, Date.now())),
-    [inUse, quotas, profiles, prefs, order, access, policies],
+      (provider, providerFiles) => providerReserves(providerFiles, quotas, access, policies, provider, Date.now()), lapsingFirst),
+    [inUse, quotas, profiles, prefs, order, access, policies, lapsingFirst],
   );
   const gap = accountOrderGap({
     coreReady,
@@ -111,6 +115,19 @@ export function AccountRouting({ files, loaded = true, onError, coreReady = true
           {t('accounts.routing.loading')}
         </SettingsBlock>
       ) : routings.map((routing) => <ProviderRoutingBlock key={routing.provider} routing={routing} onError={onError} coreReady={coreReady} />)}
+      <SettingsRow
+        settingId="routing.lapsing-resets"
+        reset={preferenceReset(preferences, 'routingLapsingResets', onOffLabel(t))}
+        title={t('accounts.routing.lapsing.title')}
+        description={t('accounts.routing.lapsing.description')}
+        control={
+          <Switch
+            checked={lapsingFirst}
+            aria-label={t('accounts.routing.lapsing.title')}
+            onCheckedChange={(checked) => setAppPreference('routingLapsingResets', checked)}
+          />
+        }
+      />
     </SettingsSection>
   );
 }
@@ -173,9 +190,11 @@ function ProviderRoutingBlock({ routing: { provider, window, plan }, onError, co
         : t('accounts.routing.reason.soonest', { percent: Math.round(reason.percent), time: formatResetCountdown(reason.resetAtMs, now) || '—' })
       : reason.kind === 'low' ? t('accounts.routing.reason.low', { percent: Math.round(reason.percent) })
         : t(`accounts.routing.reason.${reason.kind}`);
-    return reserve
-      ? `${text} · ${t(`accounts.routing.reserve.${reserve.state}`, { percent: percentText(reserve.percent), model: reserve.models.join(', ') })}`
-      : text;
+    // Not set to go first for it, so it's only pointed out.
+    const hint = item.resetLapsesAtMs === undefined ? null
+      : t('accounts.routing.reason.couldUse', { time: formatResetCountdown(item.resetLapsesAtMs, now) || '—' });
+    return [text, hint, reserve ? t(`accounts.routing.reserve.${reserve.state}`, { percent: percentText(reserve.percent), model: reserve.models.join(', ') }) : null]
+      .filter(Boolean).join(' · ');
   };
   return (
     <SettingsBlock className="flex flex-col gap-3 py-3">
