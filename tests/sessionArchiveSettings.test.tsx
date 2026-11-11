@@ -166,7 +166,7 @@ describe('Settings › Session archive', () => {
     expect(on).toContain('Rebuild');
     expect(on).not.toContain('downloads the DuckDB');
     // Catching up, and failing.
-    expect(overview({ analytics: { ...base, enabled: true, engineReady: true, rows: 10, bytes: 10, versionsLeft: 1840 } })).toContain('1840 session files still to read.');
+    expect(overview({ analytics: { ...base, enabled: true, engineReady: true, rows: 10, bytes: 10, versionsLeft: 1840 } })).toContain('1,840 session files still to read.');
     expect(overview({ analytics: { ...base, enabled: true, engineReady: true, versionsLeft: 0, lastError: 'The query engine stopped while writing tables (IO Error)' } })).toContain('The last check couldn’t update them: The query engine stopped while writing tables (IO Error)');
     // A file that couldn't be read is said beside an otherwise good state.
     const aside = overview({ analytics: { ...base, enabled: true, engineReady: true, rows: 10, bytes: 10, versionsLeft: 0, setAside: 1 } });

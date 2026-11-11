@@ -81,7 +81,7 @@ export function ArchiveAnalytics({ status, act }: { status: ArchiveStatus; act: 
               <span className={standing.failed ? 'text-error-foreground' : undefined}>
                 {standing.key === 'sessionArchive.analytics.standing.failed'
                   ? t(standing.key, { error: plainError(analytics.lastError ?? '', t) })
-                  : t(standing.key, { count: analytics.versionsLeft ?? 0 })}
+                  : t(standing.key, { count: formatNumber(analytics.versionsLeft ?? 0) })}
               </span>
               {analytics.setAside > 0 ? <> {t(analytics.setAside === 1 ? 'sessionArchive.analytics.setAside.one' : 'sessionArchive.analytics.setAside.other', { count: formatNumber(analytics.setAside) })}</> : null}
             </>
