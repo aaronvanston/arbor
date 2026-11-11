@@ -1264,7 +1264,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "read_session_analytics_queries",
         access: Access::Read,
-        summary: "Questions worth asking of the analytics tables, each with the SELECT that answers it: speed and cost by model, tool error rates, how agents use the shell, and more. Run one with read_session_analytics, as it is or changed.",
+        summary: "Questions worth asking of the analytics tables, each with the SELECT that answers it: speed and cost by model, tool error rates, how agents use the shell, who started the work, how linked pull requests ended up, and more. Run one with read_session_analytics, as it is or changed.",
         args: &[],
     },
     CommandSpec {

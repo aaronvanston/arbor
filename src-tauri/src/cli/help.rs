@@ -186,7 +186,8 @@ One SELECT over the session archive's analytics tables: every message, model cal
 command, hook run and file touched in the kept Claude Code, Codex, Pi and OpenClaw sessions. The tables are there once
 analytics is on in Settings › Session Archive, and fill in at each check. The SQL is DuckDB's.
 
---saved lists questions that come ready to ask (speed and cost by model, tool error rates, how agents use the shell),
+--saved lists questions that come ready to ask (speed and cost by model, tool error rates, how agents use the shell, who
+started the work, how linked pull requests ended up),
 and --saved with a name runs one. With --json the list has each one's SQL, to change and run yourself.
 
 --tables lists each table with its columns. Every row says where it came from: agent, machine, source (the kept file),

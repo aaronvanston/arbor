@@ -903,7 +903,8 @@ pub(crate) fn read_session_analytics_tables() -> Vec<query::AnalyticsTable> {
 }
 
 /// Questions worth asking of the analytics tables, each with the SELECT that answers it: speed and cost by model,
-/// tool error rates, how agents use the shell, and more. Run one with read_session_analytics, as it is or changed.
+/// tool error rates, how agents use the shell, who started the work, how linked pull requests ended up, and more.
+/// Run one with read_session_analytics, as it is or changed.
 #[tauri::command]
 pub(crate) fn read_session_analytics_queries() -> Vec<query::AnalyticsQuery> {
     query::saved()

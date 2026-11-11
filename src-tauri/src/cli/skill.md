@@ -1,6 +1,6 @@
 ---
 name: arbor
-description: Read and manage Arbor, the app that shares this person's agent accounts through a local proxy, from the command line. Use when asked about the proxy, account limits, caps or routing, machine health, live or recent agent sessions, usage and cost, alerts, keeping machines in line with the setup repo (Sync), the session archive, or Arbor's settings.
+description: Read and manage Arbor, the app that shares this person's agent accounts through a local proxy, from the command line. Use when asked about the proxy, account limits, caps or routing, machine health, live or recent agent sessions, usage and cost, alerts, keeping machines in line with the setup repo (Sync), the session archive, or Arbor's settings, and for questions about what agents did across past sessions (tools and commands run, errors, tokens and cost, who started the work, how pull requests ended up), which `arbor query` answers in SQL.
 ---
 
 # Arbor from the command line
@@ -14,6 +14,7 @@ any other machine, say so instead of trying.
 - `arbor doctor` checks that Arbor is reachable. Exit 69 means Arbor isn't running or isn't answering.
 - `arbor status` gives the proxy, machines, live sessions, unread alerts and accounts that are off or nearly out.
 - `arbor help` lists every command; `arbor help <command>` explains one with examples.
+- `arbor query` answers questions about what agents did in past sessions, in SQL: see "Asking about past sessions".
 - Add `--json` to any command to get Arbor's answer as JSON. Use it whenever you need to read values rather than
   show them.
 
@@ -50,6 +51,40 @@ any other machine, say so instead of trying.
 Machines can be named by their name or their SSH host, in any case (`cedar-dev-01` finds "Cedar dev 01"). Accounts
 are named by the short id in the first column of `arbor accounts` (like `a6bd830`), since their names are partly
 hidden.
+
+## Asking about past sessions
+
+With analytics on (Settings › Session Archive), every kept Claude Code, Codex, Pi and OpenClaw session is rows you
+can query. Reach for it when the question is about what agents did, not how Arbor stands: which tools fail, what
+agents run in the shell, what a model costs or how fast it writes, who started the work, whether the pull requests
+sessions worked on merged.
+
+1. `arbor query --saved` lists ready-made questions; `arbor query --saved <name>` runs one. Start there:
+
+   | Question | Saved name |
+   | --- | --- |
+   | Which tools or programs fail most | `tool-errors`, `programs` |
+   | How agents use the shell | `shell-habits`, `inline-scripts` |
+   | Speed, cost and cache use by model | `speed-by-model`, `cost-by-model`, `cost-by-day`, `cache-hits` |
+   | What one prompt leads to, and how long it takes | `requests-per-prompt`, `turn-time` |
+   | Who the work was for: a person, a program, a schedule, another agent | `who-asked` |
+   | How linked pull requests ended up, and what was spent on them | `pull-request-outcomes`, `pull-requests` |
+
+2. For anything else, `arbor query --saved --json` gives each one's SQL to adapt, `arbor query --tables` lists every
+   table and column, and `arbor help query` explains them. Then `arbor query "SELECT …" --json`.
+
+Getting a right answer:
+
+- Narrow by `day` (a UTC date) whenever you can. A query that reads `rest` or `text` across every day is slow enough
+  to be cut off.
+- Count prompts with `kind = 'prompt' AND meta IS NOT TRUE`; the rest are ones an agent made for itself.
+- Start from `sessions` (one row a session), `turns` (one row a prompt), `tools` (one row a tool call) and
+  `pull_requests` (one row a pull request) before the raw tables.
+- Join raw tables on `source` and `line`, not on `session_id` alone.
+- `cost` is at list prices as the proxy saw the request, not what a subscription charged.
+- Pull requests are linked only where the agent wrote the link down, which Claude Code does and the others don't.
+- `text`, `command`, `stdout` and `rest` hold what was said. Select them only when the question needs them, and
+  don't paste them anywhere the person didn't ask for.
 
 ## Changing things
 
