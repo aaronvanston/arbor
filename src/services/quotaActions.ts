@@ -4,6 +4,7 @@ import {
   getQuotaCacheSnapshot,
   updateQuotaCache,
 } from './quotaCache';
+import { noteResetUsed, type ResetUse } from './accountLimitHistory';
 import { readBoolean } from './managementApi';
 import {
   claimClaudeBankedReset, consumeCodexResetCredit, idleQuota, providerForFile, quotaKey, usableClaudeReset,
@@ -43,6 +44,8 @@ async function runConfirmedQuotaAction(
   action: 'reset',
   confirmAction: () => Promise<boolean>,
   execute: (file: AuthFile) => Promise<QuotaState>,
+  /** The reset this spends, for the limit history. */
+  use: ResetUse,
 ): Promise<QuotaActionOutcome> {
   const key = quotaKey(file);
   const original = getQuotaCacheSnapshot()[key];
@@ -61,9 +64,12 @@ async function runConfirmedQuotaAction(
       || getQuotaCacheSnapshot()[key] !== original) return 'canceled';
     pending = { ...previous, status: 'loading', pendingAction: action, actionResult: undefined };
     updateQuotaCache((current) => ({ ...current, [key]: pending! }));
+    const startedAtMs = Date.now();
     const result = await execute(file);
     // A provider that reports its own outcome sets it on the result.
     const reported = result.actionResult;
+    // Only a reset known to have gone through is put in the limit history, even when the refresh after it failed.
+    if (reported ? reported.status === 'success' : result.status !== 'error') noteResetUsed(key, use, startedAtMs);
     if (result.status === 'error') {
       // The refresh afterward failed, so keep the last quota shown. Only an
       // outcome that spent nothing stands; anything else needs a refresh first.
@@ -87,7 +93,7 @@ async function runConfirmedQuotaAction(
 
 export function resetCodexQuotaWithConfirmation(file: AuthFile, confirmReset: () => Promise<boolean>): Promise<QuotaActionOutcome> {
   if (!canResetCodexQuota(file, getQuotaCacheSnapshot()[quotaKey(file)] ?? idleQuota())) return Promise.resolve('canceled');
-  return runConfirmedQuotaAction(file, 'reset', confirmReset, consumeCodexResetCredit);
+  return runConfirmedQuotaAction(file, 'reset', confirmReset, consumeCodexResetCredit, { reset: 'manual', windows: null });
 }
 
 /** Uses a Claude banked reset shown on the account, once confirmed: the kind given, or the one that leads. */
@@ -101,5 +107,7 @@ export function resetClaudeQuotaWithConfirmation(
   const grantId = offer?.grantId;
   if (!grantId || !canResetClaudeQuota(file, quota, kind)) return Promise.resolve('canceled');
   const expected = { grantId, earlyUse: offer.earlyUse !== undefined };
-  return runConfirmedQuotaAction(file, 'reset', confirmReset, (target) => claimClaudeBankedReset(target, expected));
+  // A Fable reset hands some of the week back too, so the week's history names it as well.
+  const windows = [...offer.windows, ...(offer.givesBackTo ? [offer.givesBackTo] : [])];
+  return runConfirmedQuotaAction(file, 'reset', confirmReset, (target) => claimClaudeBankedReset(target, expected), { reset: offer.kind, windows });
 }

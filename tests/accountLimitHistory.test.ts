@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { limitReadings, unrecordedLimitReadings } from '../src/services/accountLimitHistory';
+import { limitReadings, noteResetUsed, unrecordedLimitReadings } from '../src/services/accountLimitHistory';
 import { quotaKey, type QuotaState } from '../src/services/quotaService';
 
 const HOUR = 3_600_000;
@@ -39,6 +39,35 @@ describe('account limit history', () => {
     expect(limitReadings(claude, { ...quota, fetchedAt: undefined })).toEqual([]);
     expect(limitReadings(claude, undefined)).toEqual([]);
     expect(limitReadings({ name: 'mystery.json', provider: 'someone-else' }, quota)).toEqual([]);
+  });
+
+  it('names a reset on the rows it refills', () => {
+    const fable = limitReadings(claude, claudeQuota(1_000), { reset: 'fable', windows: ['7-day window'] });
+    expect(fable.map((reading) => [reading.window, reading.resetUsed])).toEqual([['5-hour window', undefined], ['7-day window', 'fable']]);
+    // Codex's reset refills every main limit, and none of the ones beside them.
+    const quota: QuotaState = { status: 'success', fetchedAt: 5, rows: [
+      { label: '5-hour limit', remainingPercent: 100 }, { label: 'Weekly limit', remainingPercent: 100 },
+      { label: 'Code review 5-hour limit', remainingPercent: 40, extra: true },
+    ] };
+    expect(limitReadings(codex, quota, { reset: 'manual', windows: null }).map((reading) => reading.resetUsed)).toEqual(['manual', 'manual', undefined]);
+  });
+
+  it('puts a reset Arbor used on the first refresh after it, and only that one', () => {
+    const file = { name: 'claude-reset.json', provider: 'claude', auth_index: 'reset-1' };
+    const key = quotaKey(file);
+    const tags = (fetchedAt: number, recorded: Record<string, number> = {}) =>
+      unrecordedLimitReadings([file], { [key]: claudeQuota(fetchedAt) }, recorded).readings.map((reading) => reading.resetUsed);
+    noteResetUsed(key, { reset: 'weekly', windows: ['7-day window'] }, 5_000);
+    // A refresh from before the reset can't show it, and another account's says nothing about it.
+    expect(tags(4_000)).toEqual([undefined, undefined]);
+    expect(unrecordedLimitReadings([claude], { [quotaKey(claude)]: claudeQuota(6_000) }, {}).readings.every((reading) => !reading.resetUsed)).toBe(true);
+    // The refresh after the reset failed, so the next good one carries it.
+    expect(tags(5_000 + 20 * 60_000)).toEqual([undefined, 'weekly']);
+    expect(tags(5_000 + 30 * 60_000)).toEqual([undefined, undefined]);
+    // Hours on, a refill can't be put down to it.
+    noteResetUsed(key, { reset: 'full', windows: ['5-hour window', '7-day window'] }, 10 * HOUR);
+    expect(tags(12 * HOUR)).toEqual([undefined, undefined]);
+    expect(tags(12 * HOUR + 1)).toEqual([undefined, undefined]);
   });
 
   it('sends each refresh once and picks up the next one', () => {

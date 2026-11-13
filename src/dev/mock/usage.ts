@@ -557,9 +557,12 @@ function limitCyclesFor(account: string, window: string): LimitCycle[] {
 // The limit history behind the forecast on Accounts › Limits. The mock keeps the latest reading the window records for
 // each account and window, and makes up four weeks before it: busy weekdays, quiet nights and weekends, each cycle
 // ending at the reset the reading names. `?forecast=dry` spends every past week to nothing well before its reset, so
-// the pool runs dry; `?forecast=short` has only two days of it, and `?forecast=none` none at all.
+// the pool runs dry; `?forecast=short` has only two days of it, and `?forecast=none` none at all. `?forecast=resets`
+// refills each pool's first two accounts partway through their current cycle: the first by a reset on record, the
+// second with none. A reset the window says it used is kept and given back too, though the mock's limits don't refill.
 const forecastScenario = params.get('forecast') ?? '';
 const latestLimitReadings = new Map<string, LimitReading>();
+const usedResets = new Map<string, NonNullable<LimitTrendAccount['resetsUsed']>>();
 
 const busyness = (ms: number) => {
   const date = new Date(ms);
@@ -578,20 +581,35 @@ function limitTrendFor(provider: string, window: string, sinceMs: number): Limit
   [...latestLimitReadings.values()].filter((reading) => reading.provider === provider && reading.window === window).forEach((latest, index) => {
     const resetAtMs = latest.resetAtMs ?? now + windowMs / 2;
     const readings: LimitTrendAccount['readings'] = [];
+    const resetsUsed = [...(usedResets.get(`${latest.account}\u0000${window}`) ?? [])].filter(([atMs]) => atMs >= from);
     // Each cycle, newest first: when it began and ended, and how much of it was spent by its last reading.
     for (let end = resetAtMs, cycle = 0; end - windowMs > from - windowMs; end -= windowMs, cycle += 1) {
       const start = end - windowMs;
       const last = Math.min(end, now);
       const spent = cycle === 0 ? 100 - (latest.remainingPercent ?? 100) : forecastScenario === 'dry' ? 160 : 55 + ((index * 17 + cycle * 23) % 40);
-      let total = 0;
-      for (let t = start; t < last; t += hour) total += busyness(t);
-      let used = 0;
-      for (let t = start; t <= last; t += hour) {
-        if (t >= from && t < now) readings.push([t, Math.max(0, 100 - (total ? (spent * used) / total : 0)), end]);
-        used += busyness(t);
+      // The stretches the cycle was spent over: one, or two either side of a refill.
+      const refilled = forecastScenario === 'resets' && cycle === 0 && index < 2;
+      const refillAt = start + Math.round(((index ? 0.35 : 0.6) * (last - start)) / hour) * hour;
+      const stretches = refilled && refillAt > start && refillAt < last
+        ? [{ start, end: refillAt, spent: index ? 70 : 88 }, { start: refillAt, end: last, spent }]
+        : [{ start, end: last, spent }];
+      stretches.forEach((stretch, part) => {
+        let total = 0;
+        for (let t = stretch.start; t < stretch.end; t += hour) total += busyness(t);
+        let used = 0;
+        for (let t = stretch.start; part + 1 < stretches.length ? t < stretch.end : t <= stretch.end; t += hour) {
+          if (t >= from && t < now) readings.push([t, Math.max(0, 100 - (total ? (stretch.spent * used) / total : 0)), end]);
+          used += busyness(t);
+        }
+      });
+      if (stretches.length > 1 && index === 0 && refillAt >= from) {
+        resetsUsed.push([refillAt, provider !== 'claude' ? 'manual' : /fable/i.test(window) ? 'fable' : /5-hour/i.test(window) ? 'session' : 'weekly']);
       }
     }
-    accounts.push({ account: latest.account, authIndex: latest.authIndex, readings: readings.sort((a, b) => a[0] - b[0]) });
+    accounts.push({
+      account: latest.account, authIndex: latest.authIndex, readings: readings.sort((a, b) => a[0] - b[0]),
+      ...(resetsUsed.length ? { resetsUsed: resetsUsed.sort((a, b) => a[0] - b[0]) } : {}),
+    });
   });
   return accounts.sort((a, b) => a.account.localeCompare(b.account));
 }
@@ -1567,7 +1585,11 @@ export const usageAnswers: CommandAnswers<UsageCommands> = {
   },
   record_limit_samples: (args) => {
     mockLog('limit_history', args.samples);
-    args.samples.forEach((sample) => { if (!sample.extra) latestLimitReadings.set(`${sample.account}\u0000${sample.window}`, sample); });
+    args.samples.forEach((sample) => {
+      const key = `${sample.account}\u0000${sample.window}`;
+      if (!sample.extra) latestLimitReadings.set(key, sample);
+      if (sample.resetUsed) usedResets.set(key, [...(usedResets.get(key) ?? []), [sample.sampledAtMs, sample.resetUsed]]);
+    });
     return args.samples.length;
   },
   // The window records each refresh just as the forecast asks for its history, so the first ask waits for a reading.

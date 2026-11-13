@@ -3,9 +3,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { LimitForecastPanel } from '../src/components/LimitForecastPanel';
 import { I18nProvider } from '../src/i18n';
 import { buildHeadline } from '../src/services/accountLimits';
-import { dayTicks, dryStretches, groupHours, heldValueAt, lineValueAt, stepLine } from '../src/services/forecastChart';
+import { translate } from '../src/i18n';
+import {
+  dayTicks, diamondPath, dryStretches, groupHours, heldValueAt, keyStep, lineValueAfter, lineValueAt, markSpots, spotNear, stepLine,
+} from '../src/services/forecastChart';
+import type { ResetMark } from '../src/services/limitForecast';
 import { forecastHistoryMs, forecastSettingsFrom } from '../src/services/limitForecastView';
 import type { QuotaState } from '../src/services/quotaService';
+import { resetMarkLine } from '../src/services/resetKinds';
 import { itemAt, lastItem } from './support/items';
 
 const HOUR = 3_600_000;
@@ -43,6 +48,57 @@ describe('forecast chart geometry', () => {
     const bars = groupHours([1, 3, 5, 7, 9], 0, 2);
     expect(bars).toHaveLength(2);
     expect(itemAt(bars, 0)).toEqual({ t: 0, spanMs: 3 * HOUR, value: 3 });
+  });
+});
+
+describe('forecast chart marks', () => {
+  const mark = (atMs: number, how: ResetMark['how'], extra: Partial<ResetMark> = {}): ResetMark => ({ atMs, key: 'a', name: 'cam-work', how, gain: 80, ...extra });
+  const place = (item: ResetMark) => ({ x: item.atMs, y: 20 });
+
+  it('draws marks that crowd as one, the reset on record leading, and never joins the past to the plan', () => {
+    const early = mark(100, 'early');
+    const used = mark(104, 'used', { reset: 'weekly' });
+    const later = mark(130, 'early');
+    const planned = mark(134, 'planned');
+    const spots = markSpots([planned, later, used, early], place, 10);
+    expect(spots.map((spot) => [spot.x, spot.lead.how, spot.marks.length])).toEqual([[104, 'used', 2], [130, 'early', 1], [134, 'planned', 1]]);
+    expect(itemAt(spots, 0).marks).toEqual([early, used]);
+    // A mark with nowhere to go on the line is left out.
+    expect(markSpots([early, used], (item) => (item === early ? null : place(item)), 10).map((spot) => spot.marks)).toEqual([[used]]);
+  });
+
+  it('reads the mark nearest the pointer, within reach', () => {
+    const spots = markSpots([mark(100, 'used'), mark(130, 'early')], place, 10);
+    expect(spotNear(spots, 108, 8)?.x).toBe(100);
+    expect(spotNear(spots, 121, 8)).toBeNull();
+    expect(spotNear(spots, 124, 8)?.x).toBe(130);
+  });
+
+  it('stops the arrow keys at a mark on their way', () => {
+    expect(keyStep(0.5, 0.1, [0.53, 0.58, 0.7])).toBe(0.53);
+    expect(keyStep(0.53, 0.1, [0.53, 0.58, 0.7])).toBe(0.58);
+    expect(keyStep(0.5, -0.1, [0.42, 0.47, 0.6])).toBe(0.47);
+    expect(keyStep(0.5, 0.1, [0.7])).toBeCloseTo(0.6, 9);
+    expect(keyStep(0.95, 0.1, [])).toBe(1);
+    expect(keyStep(0.02, -0.1, [])).toBe(0);
+  });
+
+  it('draws a diamond, and reads a projection just after a refill', () => {
+    expect(diamondPath(10, 20, 5)).toBe('M10,15l5,5l-5,5l-5,-5z');
+    const points = [{ t: 0, left: 50 }, { t: 10, left: 0 }, { t: 10, left: 100 }, { t: 20, left: 80 }];
+    expect(lineValueAt(points, 10)).toBe(0);
+    expect(lineValueAfter(points, 10)).toBe(100);
+    expect(lineValueAfter(points, 15)).toBe(90);
+    expect(lineValueAfter(points, 30)).toBeNull();
+  });
+
+  it('says what a mark is, with what it added back when the readings show it', () => {
+    expect(resetMarkLine(translate, mark(0, 'used', { reset: 'weekly' }), '80%')).toBe('Used a weekly reset on cam-work ·\u00a0+80%');
+    expect(resetMarkLine(translate, mark(0, 'used', { reset: 'fable' }), null)).toBe('Used a Fable reset on cam-work');
+    expect(resetMarkLine(translate, mark(0, 'used'), '100%')).toBe('Used a reset on cam-work ·\u00a0+100%');
+    expect(resetMarkLine(translate, mark(0, 'early'), '75%')).toBe('cam-work refilled early, with no reset on record ·\u00a0+75%');
+    expect(resetMarkLine(translate, mark(0, 'planned', { reset: 'session' }), '100%')).toBe('Suggested 5-hour reset on cam-work ·\u00a0+100%');
+    expect(resetMarkLine(translate, mark(0, 'planned'), '100%')).toBe('Suggested reset on cam-work ·\u00a0+100%');
   });
 });
 

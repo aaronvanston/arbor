@@ -8,6 +8,7 @@ import {
   readString,
 } from './managementApi';
 import { invokeCommand } from '../native/commands';
+import type { ResetKind } from '../native/types';
 import { authFileName, canonicalProvider } from './authFiles';
 import { readCommandError } from './commandError';
 import { plainErrorParts, plainErrorReason } from './plainError';
@@ -41,7 +42,7 @@ export type QuotaRow = {
   extra?: boolean;
 };
 /** What a Claude banked reset refills: the 5-hour limit, the week, Fable's allowance, or everything at once. */
-export type ClaudeResetKind = 'session' | 'weekly' | 'fable' | 'full';
+export type ClaudeResetKind = Exclude<ResetKind, 'manual'>;
 /** One kind of banked reset an account holds. */
 export type ClaudeResetOffer = {
   kind: ClaudeResetKind;

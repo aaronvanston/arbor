@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { mockCommands } from '../src/dev/mock/answers';
 import type { JsonValue } from '../src/native/types';
+import { recordLimitReadings, unrecordedLimitReadings } from '../src/services/accountLimitHistory';
 import { canResetCodexQuota, resetCodexQuotaWithConfirmation } from '../src/services/quotaActions';
 import { settleCodexRedeem } from '../src/services/codexResetRedeem';
 import { getQuotaCacheSnapshot, pruneQuotaCache, updateQuotaCache } from '../src/services/quotaCache';
@@ -138,6 +139,49 @@ describe('quota action confirmation with fully mocked IPC', () => {
     expect(canResetCodexQuota(file, present(getQuotaCacheSnapshot()[key], 'the cached quota'))).toBe(false);
     expect(await resetCodexQuotaWithConfirmation(file, async () => true)).toBe('canceled');
     expect(upstreamCalls.filter((request) => request.url.endsWith('/consume'))).toHaveLength(1);
+  });
+
+  it('puts a reset that went through in the limit history, and no other', async () => {
+    // What the limit history is sent for a refresh: which reset each reading says was used.
+    const sent = (quota: QuotaState | undefined) =>
+      unrecordedLimitReadings([file], quota ? { [key]: quota } : {}, {}).readings.map((reading) => reading.resetUsed);
+    const later = (): QuotaState => ({ ...previous, fetchedAt: Date.now() + 60_000 });
+    // Any reset an earlier test left waiting.
+    sent(later());
+    consumeError = true;
+    expect(await resetCodexQuotaWithConfirmation(file, async () => true)).toBe('error');
+    expect(sent(later())).toEqual([undefined]);
+
+    updateQuotaCache({ [key]: previous });
+    settleCodexRedeem(`confirm-test:${key}`);
+    consumeError = false;
+    expect(await resetCodexQuotaWithConfirmation(file, async () => true)).toBe('success');
+    expect(sent(getQuotaCacheSnapshot()[key])).toEqual(['manual']);
+    expect(sent(later())).toEqual([undefined]);
+
+    // The reset went through but the refresh after it failed: the next good refresh says so.
+    updateQuotaCache({ [key]: previous });
+    refreshError = true;
+    expect(await resetCodexQuotaWithConfirmation(file, async () => true)).toBe('refresh-error');
+    expect(sent(getQuotaCacheSnapshot()[key])).toEqual([]);
+    expect(sent(later())).toEqual(['manual']);
+  });
+
+  it('still says which reset was used when recording it fails', async () => {
+    const lost = { name: 'confirm-lost.json', provider: 'codex', auth_index: 'confirm-lost' };
+    const account = quotaKey(lost);
+    mockCommands({ record_limit_samples: () => { throw new Error('database is locked'); } });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await recordLimitReadings([
+        { account, authIndex: 'confirm-lost', provider: 'codex', plan: '', window: '5h', remainingPercent: 100, resetAtMs: null, extra: false, sampledAtMs: 1_000, resetUsed: 'manual' },
+      ]);
+    } finally {
+      console.warn = warn;
+    }
+    const next = unrecordedLimitReadings([lost], { [account]: { ...previous, fetchedAt: 2_000 } }, {});
+    expect(next.readings.map((reading) => [reading.window, reading.resetUsed])).toEqual([['5h', 'manual']]);
   });
 
   it('distinguishes an accepted reset from a failed refresh and prevents a second consume', async () => {

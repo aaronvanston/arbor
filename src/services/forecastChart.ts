@@ -2,6 +2,7 @@
  * Geometry for the forecast chart: where its days fall, and its lines as SVG paths. Kept apart from the component so
  * it can be tested without a DOM.
  */
+import type { ResetMark } from './limitForecast';
 import type { PoolPoint } from './poolSimulation';
 
 const HOUR = 3_600_000;
@@ -71,6 +72,68 @@ export function lineValueAt(points: PoolPoint[], t: number): number | null {
     return before.left + ((after.left - before.left) * (t - before.t)) / (after.t - before.t);
   }
   return null;
+}
+
+/** The value just after `t` along a projection: past the step a refill draws there, which has two points at `t`. */
+export function lineValueAfter(points: PoolPoint[], t: number): number | null {
+  let after: number | null = null;
+  for (const point of points) {
+    if (point.t > t) break;
+    if (point.t === t) after = point.left;
+  }
+  return after ?? lineValueAt(points, t);
+}
+
+/** Marks drawn as one: where on the chart, the mark drawn there, and all of them, oldest first. */
+export type MarkSpot = { x: number; y: number; lead: ResetMark; marks: ResetMark[] };
+
+/**
+ * Where the marks go. Those closer than `gap` pixels are one spot, drawn as the one that says most: a reset on
+ * record before a rise with none. Marks behind now and ahead of it never share a spot. `place` gives a mark's point,
+ * or null to leave it out.
+ */
+export function markSpots(marks: ResetMark[], place: (mark: ResetMark) => { x: number; y: number } | null, gap: number): MarkSpot[] {
+  const spots: MarkSpot[] = [];
+  let group: Array<{ mark: ResetMark; x: number; y: number }> = [];
+  const close = () => {
+    const lead = group.find((item) => item.mark.how !== 'early') ?? group[0];
+    if (lead) spots.push({ x: lead.x, y: lead.y, lead: lead.mark, marks: group.map((item) => item.mark) });
+    group = [];
+  };
+  [...marks].sort((a, b) => a.atMs - b.atMs).forEach((mark) => {
+    const at = place(mark);
+    if (!at) return;
+    const first = group[0];
+    if (first && (at.x - first.x >= gap || (first.mark.how === 'planned') !== (mark.how === 'planned'))) close();
+    group.push({ mark, ...at });
+  });
+  close();
+  return spots;
+}
+
+/** The spot nearest `x`, within `reach` pixels of it. */
+export function spotNear(spots: MarkSpot[], x: number, reach: number): MarkSpot | null {
+  let nearest: MarkSpot | null = null;
+  for (const spot of spots) {
+    if (Math.abs(spot.x - x) <= reach && (!nearest || Math.abs(spot.x - x) < Math.abs(nearest.x - x))) nearest = spot;
+  }
+  return nearest;
+}
+
+/** A diamond around a point, `size` from its middle to each tip. */
+export function diamondPath(x: number, y: number, size: number): string {
+  return `M${round(x)},${round(y - size)}l${size},${size}l${-size},${size}l${-size},${-size}z`;
+}
+
+/**
+ * Where an arrow key lands: one step along, or on the first of `stops` on the way, so a mark between two steps can
+ * still be read. All in shares of the chart's width.
+ */
+export function keyStep(from: number, step: number, stops: number[]): number {
+  const to = Math.max(0, Math.min(1, from + step));
+  const between = stops.filter((stop) => (step > 0 ? stop > from && stop < to : stop < from && stop > to));
+  if (!between.length) return to;
+  return step > 0 ? Math.min(...between) : Math.max(...between);
 }
 
 /** Stretches where a projection sits at zero, as start and end times. */

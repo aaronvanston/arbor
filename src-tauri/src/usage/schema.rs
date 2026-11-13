@@ -44,6 +44,7 @@ const STEPS: &[Step] = &[
     Step { version: 21, name: "agent home roles", apply: agent_home_roles },
     Step { version: 22, name: "run repos", apply: run_repos },
     Step { version: 23, name: "session titles", apply: session_titles_cleared },
+    Step { version: 24, name: "limit history resets", apply: limit_history_resets },
 ];
 
 /// The version of a database that has had every step.
@@ -1284,6 +1285,12 @@ fn session_titles_cleared(connection: &mut Connection, _: &Path) -> Result<(), S
         .pragma_update(None, "secure_delete", secure)
         .map_err(|error| format!("Failed to put back how deleted data is overwritten: {error}"));
     cleared.and(restored)
+}
+
+/// Which reset Arbor used, on the first reading after it (`limit_history::ResetKind`, as its word), so the forecast
+/// can say what a refill was. Empty on every other reading, and on all of those from before this.
+fn limit_history_resets(connection: &mut Connection, _: &Path) -> Result<(), String> {
+    add_missing_columns(connection, "usage_limit_samples", &[("reset_used", "TEXT")])
 }
 
 // ---------------------------------------------------------------------------

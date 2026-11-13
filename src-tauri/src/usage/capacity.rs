@@ -347,6 +347,7 @@ mod tests {
             reset_at_ms: reset,
             extra: false,
             sampled_at_ms: at,
+            reset_used: None,
         }
     }
 

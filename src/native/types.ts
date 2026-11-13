@@ -2770,6 +2770,11 @@ export type LimitReading = {
   resetAtMs: number | null,
   extra: boolean,
   sampledAtMs: number,
+  /**
+   * Set on the first reading after Arbor used a reset that refills this
+   * window, so the forecast can say which reset a refill was.
+   */
+  resetUsed?: ResetKind,
 };
 
 /**
@@ -2780,6 +2785,12 @@ export type LimitTrendAccount = {
   account: string,
   authIndex: string,
   readings: Array<[number, number, number | null]>,
+  /**
+   * The resets Arbor used that refill this window, oldest first: when the
+   * first reading after each was taken, and which reset it was. Left out
+   * when there are none, as for nearly every account.
+   */
+  resetsUsed?: Array<[number, ResetKind]>,
 };
 
 /**
@@ -4781,6 +4792,12 @@ export type ReporterStatus = {
    */
   homes: Array<ReporterHome>,
 };
+
+/**
+ * Which reset was used on an account: one of Claude's banked resets, by what
+ * it refills, or Codex's manual reset.
+ */
+export type ResetKind = "session" | "weekly" | "fable" | "full" | "manual";
 
 export type RestoreFailure = {
   path: string,

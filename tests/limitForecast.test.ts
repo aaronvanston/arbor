@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { LimitTrendAccount } from '../src/native/types';
 import { buildHeadline } from '../src/services/accountLimits';
 import {
-  buildForecast, burnRate, forecastAccounts, forecastAlert, nextForecastAlerts, poolHistory, spendByHour,
+  buildForecast, burnRate, forecastAccounts, forecastAlert, historyMarks, nextForecastAlerts, poolHistory, spendByHour,
   type Advice, type ForecastAccount, type ForecastSettings,
 } from '../src/services/limitForecast';
 import { simulatePool } from '../src/services/poolSimulation';
@@ -101,6 +101,93 @@ describe('limit history', () => {
     // 20 within the old cycle, 10 since the reset, 10 more to the live 80%.
     expect(total).toBeCloseTo(40, 6);
     expect(spend.watchedFromMs).toBe(NOW - 8 * HOUR);
+  });
+});
+
+describe('resets on the chart', () => {
+  const RESET = NOW + 3 * DAY;
+
+  test("marks a rise the window's own reset doesn't explain, from five percent up", () => {
+    const accounts = [account('a', 90, 72), account('b', 60, 72), account('c', 100, 7 * 24 - 29)];
+    const marks = historyMarks(trend([
+      // The week's reset time hasn't moved, as after a Claude reset: a refill with none on record.
+      reading('a', 30, 20), reading('a', 20, 95),
+      // A provider's rounding, not a refill.
+      reading('a', 10, 93), reading('a', 9, 95.5),
+      // The window reset on schedule: the step alone says so.
+      reading('b', 30, 10, NOW - 25 * HOUR), reading('b', 24, 97, RESET),
+      // A new window started before the old one was due, as after a Codex reset.
+      reading('c', 30, 20, NOW + DAY), reading('c', 29, 100, NOW + 7 * DAY - 29 * HOUR),
+    ]), accounts, NOW - 2 * DAY, NOW);
+    expect(marks).toEqual([
+      { atMs: NOW - 29 * HOUR, key: 'c', name: 'c', how: 'early', gain: 80 },
+      { atMs: NOW - 20 * HOUR, key: 'a', name: 'a', how: 'early', gain: 75 },
+    ]);
+    // Before the chart begins there's nothing to mark, and the live figure counts as a reading.
+    expect(historyMarks(trend([reading('a', 30, 20), reading('a', 20, 95)]), accounts, NOW - 10 * HOUR, NOW)).toEqual([]);
+    expect(historyMarks(trend([reading('a', 3, 20)]), accounts, NOW - DAY, NOW)).toMatchObject([{ atMs: NOW, how: 'early', gain: 70 }]);
+  });
+
+  test('names a reset Arbor used where the account rose, or when it was used with nothing to show for it', () => {
+    const accounts = [account('a', 80, 72), account('b', 99, 7 * 24 - 2)];
+    const readings = trend([
+      reading('a', 30, 20), reading('a', 20, 95), reading('a', 6, 81), reading('a', 5, 81),
+      // Used minutes before the window was due anyway: the reset is what refilled it.
+      reading('b', 4, 0, NOW - 3 * HOUR), reading('b', 2, 100, NOW + 7 * DAY - 2 * HOUR),
+    ]).map((item) => ({
+      ...item,
+      resetsUsed: item.account === 'a'
+        // The rise was read a little after the reset was, and a Fable reset handed nothing back to this window.
+        ? [[NOW - 20 * HOUR - 5 * 60_000, 'weekly'], [NOW - 5 * HOUR, 'fable']] satisfies LimitTrendAccount['resetsUsed']
+        : [[NOW - 2 * HOUR, 'manual']] satisfies LimitTrendAccount['resetsUsed'],
+    }));
+    expect(historyMarks(readings, accounts, NOW - 2 * DAY, NOW)).toEqual([
+      { atMs: NOW - 20 * HOUR, key: 'a', name: 'a', how: 'used', reset: 'weekly', gain: 75 },
+      { atMs: NOW - 5 * HOUR, key: 'a', name: 'a', how: 'used', reset: 'fable', gain: 0 },
+      // Codex has one kind of reset, so it goes unnamed.
+      { atMs: NOW - 2 * HOUR, key: 'b', name: 'b', how: 'used', gain: 100 },
+    ]);
+    // An account that's turned off is in neither the line nor its marks.
+    expect(historyMarks(readings, [account('b', 99, 7 * 24 - 2)], NOW - 2 * DAY, NOW).map((mark) => mark.key)).toEqual(['b']);
+  });
+
+  test('gives each reset the rise read nearest it', () => {
+    // A Fable reset that handed nothing back, then a weekly reset 50 minutes on: the rise is the weekly one's.
+    const readings = trend([reading('a', 10, 20), reading('a', 9, 20), reading('a', 9 - 50 / 60, 100)])
+      .map((item) => ({ ...item, resetsUsed: [[NOW - 9 * HOUR, 'fable'], [NOW - 9 * HOUR + 50 * 60_000, 'weekly']] satisfies LimitTrendAccount['resetsUsed'] }));
+    expect(historyMarks(readings, [account('a', 100, 72)], NOW - DAY, NOW)).toEqual([
+      { atMs: NOW - 9 * HOUR, key: 'a', name: 'a', how: 'used', reset: 'fable', gain: 0 },
+      { atMs: NOW - 9 * HOUR + 50 * 60_000, key: 'a', name: 'a', how: 'used', reset: 'weekly', gain: 80 },
+    ]);
+  });
+
+  test('marks the resets the projection spends, named as the advice names them', () => {
+    const a: ForecastAccount = { ...account('a', 20, 100, 1), lots: [{ count: 1, expiresAtMs: null, refills: true, reset: 'weekly' }] };
+    const forecast = (countResets: boolean) => buildForecast({
+      accounts: [a, account('b', 20, 30)], readings: [], settings: settings({ ratePerHour: 2, countResets }), horizonDays: 1, historyMs: DAY, nowMs: NOW,
+    });
+    expect(forecast(true).marks).toEqual([{ atMs: NOW + 20 * HOUR, key: 'a', name: 'a', how: 'planned', reset: 'weekly', gain: 100 }]);
+    // Drawn without the suggestions, the projection spends none.
+    expect(forecast(false).marks).toEqual([]);
+  });
+
+  test('keeps a mark on its step when the history is thinned', () => {
+    // Three days of readings ten minutes apart, far more than the line draws, with a refill in the middle of them.
+    const refillAt = 200;
+    const readings: Reading[] = Array.from({ length: 433 }, (_, step) => ({
+      account: 'a', reading: [NOW - (432 - step) * 10 * 60_000, step < refillAt ? 100 - step * 0.4 : 100 - (step - refillAt) * 0.1, RESET],
+    }));
+    const live = 100 - (432 - refillAt) * 0.1;
+    const forecast = buildForecast({ accounts: [account('a', live, 72)], readings: trend(readings), settings: settings(), horizonDays: 3, historyMs: 3 * DAY, nowMs: NOW });
+    expect(forecast.history.length).toBeLessThan(300);
+    const mark = itemAt(forecast.marks, 0);
+    expect(mark).toMatchObject({ how: 'early', atMs: NOW - (432 - refillAt) * 10 * 60_000 });
+    expect(mark.gain).toBeCloseTo(100 - (100 - 199 * 0.4), 6);
+    const at = forecast.history.findIndex((point) => point.t === mark.atMs);
+    // The point at the refill, and the low just before it, both survive.
+    expect(itemAt(forecast.history, at).left).toBe(100);
+    expect(itemAt(forecast.history, at - 1)).toMatchObject({ t: mark.atMs - 10 * 60_000 });
+    expect(itemAt(forecast.history, at - 1).left).toBeCloseTo(100 - 199 * 0.4, 6);
   });
 });
 

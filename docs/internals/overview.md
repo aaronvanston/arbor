@@ -54,6 +54,10 @@ Spend is read from the limit history as drops between readings of one cycle. An 
 hours a pool spent dry read as no demand, and a pool that keeps running dry is forecast a little short. Advice only ever
 suggests a reset. Claims stay behind the confirmation on Accounts, and nothing in the forecast spends one.
 
+The chart names a reset only when Arbor used it: the first limit reading after it carries its kind (`reset_used`), put
+there by the window. Anything else that raises an account before its window resets, a reset used in another app
+included, is drawn as an early refill, because the readings can't tell those apart.
+
 ## Routing
 
 The core picks a request's account itself: the highest priority with a usable credential that serves the model. Arbor

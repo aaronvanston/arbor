@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AppPreferences } from '../appPreferences';
 import { invokeCommand } from '../native/commands';
 import type { LimitTrendAccount } from '../native/types';
+import { useResetUsesRecorded } from './accountLimitHistory';
 import {
   FORECAST_HISTORY_MS, FORECAST_HORIZON_OPTIONS, FORECAST_LOOKBACK_OPTIONS, type ForecastModel, type ForecastSettings,
 } from './limitForecast';
@@ -59,9 +60,11 @@ export const loadLimitTrend = (provider: string, window: string, nowMs = Date.no
 
 /**
  * A provider window's readings over the last four weeks, read again whenever `version` changes (the accounts' latest
- * refresh), so the chart follows the limits without polling. Null until the first read lands.
+ * refresh), so the chart follows the limits without polling. Null until the first read lands. Read once more when a
+ * reset Arbor used lands in the history: that write races the read its refresh sets off, and names the reset.
  */
 export function useLimitTrend(provider: string, window: string | null, version: number) {
+  const resetsRecorded = useResetUsesRecorded();
   const [state, setState] = useState<{ key: string; readings: LimitTrendAccount[] | null; failed: boolean }>({ key: '', readings: null, failed: false });
   const key = `${provider}\u0000${window ?? ''}`;
   useEffect(() => {
@@ -74,6 +77,6 @@ export function useLimitTrend(provider: string, window: string | null, version: 
         if (current) setState((previous) => ({ key, readings: previous.key === key ? previous.readings : [], failed: true }));
       });
     return () => { current = false; };
-  }, [key, provider, window, version]);
+  }, [key, provider, window, version, resetsRecorded]);
   return state.key === key ? state : { key, readings: null, failed: false };
 }

@@ -4,8 +4,9 @@ import { useI18n } from '../i18n';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { cn } from '../lib/utils';
 import type { Headline } from '../services/accountLimits';
+import { diamondPath } from '../services/forecastChart';
 import {
-  buildForecast, forecastAccounts, FORECAST_HORIZON_OPTIONS, type Advice, type Forecast,
+  buildForecast, forecastAccounts, FORECAST_HORIZON_OPTIONS, type Advice, type Forecast, type ResetMark,
 } from '../services/limitForecast';
 import {
   forecastHistoryMs, forecastSettingsFrom, setForecastFolded, setForecastView, useForecastView, useLimitTrend,
@@ -124,7 +125,7 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
               <Toggle value="remaining">{t('forecast.tabs.remaining')}</Toggle>
               <Toggle value="drain">{t('forecast.tabs.drain')}</Toggle>
             </ToggleGroup>
-            <Legend tab={view.tab} />
+            <Legend tab={view.tab} marks={forecast.marks} />
           </div>
           <LimitForecastChart forecast={forecast} provider={providerName} tab={view.tab} nowMs={nowMs} startMs={nowMs - historyMs} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -149,10 +150,21 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
 const horizonLabel = (t: ReturnType<typeof useI18n>['t'], days: number) =>
   days === 1 ? t('forecast.horizon.one') : t('forecast.horizon.option', { days });
 
-function Legend({ tab }: { tab: ForecastTab }) {
-  const { t } = useI18n();
+/** A mark's diamond as the legend shows it: filled for a reset on record, hollow for a refill with none, fainter for one suggested. */
+function MarkSwatch({ hollow = false, faint = false }: { hollow?: boolean; faint?: boolean }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+    <svg className={cn('size-3 text-primary', faint && 'opacity-60')} viewBox="0 0 12 12">
+      <path d={diamondPath(6, 6, 4.5)} fill={hollow ? 'none' : 'currentColor'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** What the chart draws. The marks are named only while the chart has one of them. */
+function Legend({ tab, marks }: { tab: ForecastTab; marks: ResetMark[] }) {
+  const { t } = useI18n();
+  const shown = tab === 'remaining' ? marks : [];
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-hidden="true">
       <span className="inline-flex items-center gap-1.5">
         <span className={cn('bg-primary', tab === 'remaining' ? 'h-0.5 w-3 rounded-full' : 'size-2 rounded-[2px]')} />
         {t(tab === 'remaining' ? 'forecast.series.remaining' : 'forecast.series.spent')}
@@ -161,6 +173,15 @@ function Legend({ tab }: { tab: ForecastTab }) {
         <span className="w-3 border-t-2 border-dashed border-primary" />
         {t(tab === 'remaining' ? 'forecast.series.projected' : 'forecast.series.rate')}
       </span>
+      {shown.some((mark) => mark.how === 'used') ? (
+        <span className="inline-flex items-center gap-1.5"><MarkSwatch />{t('forecast.series.resetUsed')}</span>
+      ) : null}
+      {shown.some((mark) => mark.how === 'early') ? (
+        <span className="inline-flex items-center gap-1.5"><MarkSwatch hollow />{t('forecast.series.refilledEarly')}</span>
+      ) : null}
+      {shown.some((mark) => mark.how === 'planned') ? (
+        <span className="inline-flex items-center gap-1.5"><MarkSwatch faint />{t('forecast.series.resetSuggested')}</span>
+      ) : null}
     </div>
   );
 }

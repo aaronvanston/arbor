@@ -4,7 +4,8 @@
  *
  * Everything is in summed percent: each account is worth 100%, so six accounts are 600% and a reset adds back what
  * the account had used. Spend is read from the limit history (`get_limit_trend`): a drop between two readings of the
- * same window cycle. A reset or a claimed credit raises the figure but isn't spend.
+ * same window cycle. A reset or a claimed credit raises the figure but isn't spend. A reset that was used is marked
+ * where the pool rose: named when Arbor used it, since the limit history then says which it was.
  */
 import type { LimitTrendAccount } from '../native/types';
 import { rowWindowMs, windowDurationMs, type Headline } from './accountLimits';
@@ -42,6 +43,11 @@ const EARLY_MARGIN_MS = HOUR;
 const EARLY_MIN_PERCENT = 10;
 /** A claim lands this long after the account's last one at least, so rounding can't read one run-out as two. */
 const CLAIM_GAP_MS = 1000;
+/** A rise before the window's reset with no reset on record is marked from this size; less is a provider's rounding. */
+export const EARLY_REFILL_MIN_PERCENT = 5;
+/** A reset Arbor used is put down to a rise from this size, read within `USED_MATCH_MS` of it. */
+const USED_RISE_MIN_PERCENT = 1;
+const USED_MATCH_MS = HOUR;
 
 export type ForecastModel = 'weekly' | 'recent';
 export type ForecastSettings = {
@@ -87,10 +93,17 @@ export function forecastAccounts(headline: Headline, keyOf: (account: Headline['
   });
 }
 
+type Reading = { t: number; left: number; resetAtMs: number | null };
+
+/** Whether two readings are of one window cycle: their reset times agree, or neither has one. */
+const sameCycle = (before: Reading, after: Reading) => (before.resetAtMs === null || after.resetAtMs === null
+  ? before.resetAtMs === after.resetAtMs
+  : Math.abs(before.resetAtMs - after.resetAtMs) <= SAME_RESET_MS);
+
 /** The accounts' readings, by account, in time order, with the live limits' figure last. */
 function byAccount(trend: LimitTrendAccount[], accounts: ForecastAccount[], nowMs: number) {
   const keys = new Set(accounts.map((account) => account.key));
-  const grouped = new Map<string, { t: number; left: number; resetAtMs: number | null }[]>();
+  const grouped = new Map<string, Reading[]>();
   trend.forEach(({ account, readings }) => {
     if (!keys.has(account)) return;
     const list = grouped.get(account) ?? [];
@@ -109,9 +122,10 @@ function byAccount(trend: LimitTrendAccount[], accounts: ForecastAccount[], nowM
 
 /**
  * The pool's summed figure over time. Each account holds its last reading until the next; before its first, its first
- * stands in, so an account added lately doesn't read as an empty one. Thinned to a few hundred points.
+ * stands in, so an account added lately doesn't read as an empty one. Thinned to a few hundred points, with those at
+ * the `marked` times kept, and the one before each, so a mark sits on the step it's about.
  */
-export function poolHistory(readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number): PoolPoint[] {
+export function poolHistory(readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number, marked: number[] = []): PoolPoint[] {
   const grouped = [...byAccount(readings, accounts, nowMs).values()];
   const times = [...new Set(grouped.flatMap((list) => list.map((item) => item.t)).filter((t) => t >= sinceMs))].sort((a, b) => a - b);
   if (!times.length) return [];
@@ -129,12 +143,80 @@ export function poolHistory(readings: LimitTrendAccount[], accounts: ForecastAcc
   if (points.length <= MAX_HISTORY_POINTS) return points;
   // Keep the last point of each slice, plus the first, so steps and the live figure stay where they are.
   const slice = (nowMs - (points[0]?.t ?? nowMs)) / MAX_HISTORY_POINTS;
+  const keep = new Set(marked);
   const thinned: PoolPoint[] = [];
   points.forEach((point, index) => {
     const next = points[index + 1];
-    if (index === 0 || !next || Math.floor((next.t - sinceMs) / slice) !== Math.floor((point.t - sinceMs) / slice)) thinned.push(point);
+    if (index === 0 || !next || keep.has(point.t) || keep.has(next.t)
+      || Math.floor((next.t - sinceMs) / slice) !== Math.floor((point.t - sinceMs) / slice)) thinned.push(point);
   });
   return thinned;
+}
+
+/** A reset that was used, or one the projection spends, as a point on the chart. */
+export type ResetMark = {
+  atMs: number;
+  key: string;
+  name: string;
+  /**
+   * `used`: a reset Arbor used. `early`: the account rose before its window's reset with no reset on record, as one
+   * used elsewhere reads. `planned`: a reset the projection spends.
+   */
+  how: 'used' | 'early' | 'planned';
+  /** Which Claude reset. Unset for Codex's reset, and for a rise with none on record. */
+  reset?: ClaudeResetKind;
+  /** Percent of one account it added back; 0 when the readings show no rise for it. */
+  gain: number;
+};
+
+/**
+ * The resets used since `sinceMs`, from the limit history. A reset Arbor used is on record with its kind, and is put
+ * where the account rose around then; with no rise to show for it (a Fable reset may hand back nothing) it's marked
+ * when it was used. Any other rise that the window's own reset doesn't explain is marked as an early refill.
+ */
+export function historyMarks(readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number): ResetMark[] {
+  const names = new Map(accounts.map((account) => [account.key, account.name]));
+  const marks: ResetMark[] = [];
+  byAccount(readings, accounts, nowMs).forEach((list, key) => {
+    const name = names.get(key) ?? key;
+    const rises = list.flatMap((after, index) => {
+      const before = list[index - 1];
+      if (!before || after.t < sinceMs || after.left <= before.left) return [];
+      const onSchedule = !sameCycle(before, after) && before.resetAtMs !== null && before.resetAtMs <= after.t;
+      return [{ atMs: after.t, gain: after.left - before.left, onSchedule }];
+    });
+    type Rise = (typeof rises)[number];
+    const used = readings
+      .flatMap((account) => (account.account === key ? account.resetsUsed ?? [] : []))
+      .filter(([atMs]) => atMs >= sinceMs && atMs <= nowMs)
+      .sort((a, b) => a[0] - b[0])
+      .map(([atMs, reset]) => ({ atMs, reset }));
+    // Each reset takes the rise read nearest it, the closest pairs first, so one with nothing to show for it can't
+    // take the rise of another used soon after. A reset used just as the window resets is what refilled it, so a
+    // rise on schedule can be its rise too.
+    const riseOf = new Map<(typeof used)[number], Rise>();
+    const taken = new Set<Rise>();
+    used
+      .flatMap((reset) => rises.flatMap((rise) => {
+        const apart = Math.abs(rise.atMs - reset.atMs);
+        return rise.gain >= USED_RISE_MIN_PERCENT && apart <= USED_MATCH_MS ? [{ reset, rise, apart }] : [];
+      }))
+      .sort((a, b) => a.apart - b.apart)
+      .forEach(({ reset, rise }) => {
+        if (riseOf.has(reset) || taken.has(rise)) return;
+        riseOf.set(reset, rise);
+        taken.add(rise);
+      });
+    used.forEach((item) => {
+      const rise = riseOf.get(item);
+      marks.push({ atMs: rise?.atMs ?? item.atMs, key, name, how: 'used', ...(item.reset === 'manual' ? {} : { reset: item.reset }), gain: rise?.gain ?? 0 });
+    });
+    rises.forEach((rise) => {
+      if (taken.has(rise) || rise.onSchedule || rise.gain < EARLY_REFILL_MIN_PERCENT) return;
+      marks.push({ atMs: rise.atMs, key, name, how: 'early', gain: rise.gain });
+    });
+  });
+  return marks.sort((a, b) => a.atMs - b.atMs);
 }
 
 export type SpendHistory = {
@@ -179,10 +261,7 @@ export function spendByHour(readings: LimitTrendAccount[], accounts: ForecastAcc
       const after = list[index];
       if (!before || !after || after.t < sinceMs) continue;
       const fromMs = Math.max(before.t, sinceMs);
-      const sameCycle = before.resetAtMs === null || after.resetAtMs === null
-        ? before.resetAtMs === after.resetAtMs
-        : Math.abs(before.resetAtMs - after.resetAtMs) <= SAME_RESET_MS;
-      if (sameCycle) {
+      if (sameCycle(before, after)) {
         spread(fromMs, after.t, before.left - after.left);
       } else if (before.resetAtMs !== null && before.resetAtMs <= after.t) {
         spread(Math.max(fromMs, before.resetAtMs), after.t, 100 - after.left);
@@ -297,6 +376,8 @@ export type Forecast = {
   spend: SpendHistory;
   /** The projection drawn: with the suggested resets spent when `countResets` is on. */
   projection: PoolRun;
+  /** The resets used over the chart's history, and those the projection spends, oldest first. */
+  marks: ResetMark[];
   /** The first reset that hands something back, and how much. */
   nextRefill: { atMs: number; gain: number } | null;
   advice: Advice[];
@@ -533,13 +614,21 @@ export function buildForecast(input: {
   const refillGain = refill ? projection.events
     .filter((event) => Math.abs(event.atMs - refill.atMs) <= SAME_MOMENT_MS)
     .reduce((total, event) => total + 100 - event.before, 0) : 0;
+  const used = historyMarks(readings, accounts, nowMs - historyMs, nowMs);
+  // The plan's own claims, named as the advice names them.
+  const spends = projection.events.flatMap((event): ResetMark[] => {
+    if (event.kind !== 'credit') return [];
+    const reset = plan.claims.find((claim) => claim.key === event.key && Math.abs(claim.atMs - event.atMs) < CLAIM_GAP_MS)?.lot.reset;
+    return [{ atMs: event.atMs, key: event.key, name: names.get(event.key) ?? event.key, how: 'planned', ...(reset ? { reset } : {}), gain: 100 - event.before }];
+  });
   return {
     capacity: accounts.length * 100,
     left: accounts.reduce((total, account) => total + account.left, 0),
     burn,
-    history: poolHistory(readings, accounts, nowMs - historyMs, nowMs),
+    history: poolHistory(readings, accounts, nowMs - historyMs, nowMs, used.map((mark) => mark.atMs)),
     spend,
     projection,
+    marks: [...used, ...spends],
     nextRefill: refill ? { atMs: refill.atMs, gain: refillGain } : null,
     advice,
     horizonEndMs,

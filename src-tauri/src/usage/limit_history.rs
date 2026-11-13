@@ -21,6 +21,41 @@ const RESET_DRIFT_MS: i64 = 5 * 60_000;
 const PRUNE_EVERY_MS: i64 = 86_400_000;
 static LAST_PRUNED_AT: AtomicI64 = AtomicI64::new(0);
 
+/// Which reset was used on an account: one of Claude's banked resets, by what
+/// it refills, or Codex's manual reset.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ResetKind {
+    Session,
+    Weekly,
+    Fable,
+    Full,
+    Manual,
+}
+
+impl ResetKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Session => "session",
+            Self::Weekly => "weekly",
+            Self::Fable => "fable",
+            Self::Full => "full",
+            Self::Manual => "manual",
+        }
+    }
+
+    pub(super) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "session" => Some(Self::Session),
+            "weekly" => Some(Self::Weekly),
+            "fable" => Some(Self::Fable),
+            "full" => Some(Self::Full),
+            "manual" => Some(Self::Manual),
+            _ => None,
+        }
+    }
+}
+
 /// One limit window of one account at one refresh, as the webview reports it.
 /// These are kept for months, unlike the 24-hour pooled history behind the
 /// sparklines, so the capacity report can show how much of each account's
@@ -41,6 +76,11 @@ pub(crate) struct LimitReading {
     #[serde(default)]
     pub extra: bool,
     pub sampled_at_ms: i64,
+    /// Set on the first reading after Arbor used a reset that refills this
+    /// window, so the forecast can say which reset a refill was.
+    #[serde(default)]
+    #[ts(optional)]
+    pub reset_used: Option<ResetKind>,
 }
 
 #[derive(Clone, Debug, Deserialize, TS)]
@@ -77,15 +117,20 @@ fn sanitize(sample: &LimitReading, now_ms: i64) -> Option<LimitReading> {
         reset_at_ms: sample.reset_at_ms.filter(|value| *value > 0),
         extra: sample.extra,
         sampled_at_ms: sample.sampled_at_ms,
+        reset_used: sample.reset_used,
     })
 }
 
 /// Whether a reading adds anything over the latest one stored for the same
-/// account and window.
+/// account and window. One that says a reset was used always does: it's the
+/// only record of which reset it was.
 fn worth_storing(previous: (i64, Option<f64>, Option<i64>), sample: &LimitReading) -> bool {
     let (previous_at, previous_remaining, previous_reset) = previous;
     if sample.sampled_at_ms <= previous_at {
         return false;
+    }
+    if sample.reset_used.is_some() {
+        return true;
     }
     let remaining_changed = match (previous_remaining, sample.remaining_percent) {
         (Some(before), Some(after)) => (before - after).abs() >= PERCENT_EPSILON,
@@ -116,8 +161,8 @@ pub(super) fn record_samples(connection: &mut Connection, samples: &[LimitReadin
         let mut insert = transaction
             .prepare(
                 "INSERT INTO usage_limit_samples
-                 (sampled_at_ms, provider, account, auth_index, plan, window_label, remaining_percent, reset_at_ms, extra)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 (sampled_at_ms, provider, account, auth_index, plan, window_label, remaining_percent, reset_at_ms, extra, reset_used)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )
             .map_err(|error| format!("Failed to prepare limit history write: {error}"))?;
         for sample in samples.iter().filter_map(|sample| sanitize(sample, now_ms)) {
@@ -141,6 +186,7 @@ pub(super) fn record_samples(connection: &mut Connection, samples: &[LimitReadin
                     sample.remaining_percent,
                     sample.reset_at_ms,
                     sample.extra,
+                    sample.reset_used.map(ResetKind::as_str),
                 ])
                 .map_err(|error| format!("Failed to store limit history: {error}"))?;
             stored += 1;
@@ -228,6 +274,7 @@ mod tests {
             reset_at_ms: reset,
             extra: false,
             sampled_at_ms: at,
+            reset_used: None,
         }
     }
 
@@ -264,6 +311,35 @@ mod tests {
         assert_eq!(record_samples(&mut connection, &batch, now).unwrap(), 4);
         let stored: Vec<i64> = rows(&connection).into_iter().map(|row| row.0).collect();
         assert_eq!(stored, vec![minute, 10 * minute, 40 * minute, 41 * minute]);
+    }
+
+    #[test]
+    fn a_reading_that_names_a_reset_is_always_kept_with_its_kind() {
+        let mut connection = crate::usage::schema::test_database();
+        let minute = 60_000;
+        let reset = 10 * 86_400_000;
+        let used = |at: i64, kind: ResetKind| LimitReading { reset_used: Some(kind), ..sample(at, Some(100.0), Some(reset)) };
+        let batch = [
+            sample(minute, Some(100.0), Some(reset)),
+            // Nothing moved since the last reading, but it's the only record of the reset.
+            used(2 * minute, ResetKind::Weekly),
+            // The same reading sent again says nothing new.
+            used(2 * minute, ResetKind::Weekly),
+            sample(3 * minute, Some(100.0), Some(reset)),
+        ];
+        assert_eq!(record_samples(&mut connection, &batch, reset).unwrap(), 2);
+        let kinds: Vec<(i64, Option<String>)> = connection
+            .prepare("SELECT sampled_at_ms, reset_used FROM usage_limit_samples ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(kinds, vec![(minute, None), (2 * minute, Some("weekly".to_string()))]);
+        for kind in [ResetKind::Session, ResetKind::Weekly, ResetKind::Fable, ResetKind::Full, ResetKind::Manual] {
+            assert_eq!(ResetKind::parse(kind.as_str()), Some(kind));
+        }
+        assert_eq!(ResetKind::parse("later"), None);
     }
 
     #[test]
