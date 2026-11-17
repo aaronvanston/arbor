@@ -229,7 +229,10 @@ pub(crate) enum ComputeLoad {
     NotReadYet,
     /// Monitoring is turned off for it at the provider.
     MonitoringOff,
-    /// No reading to give: the key can't read load, the provider doesn't give it, or the sandbox isn't running.
+    /// The provider won't give load to this key, so only another key shows it.
+    KeyCantRead,
+    /// No reading to give: the provider doesn't give one, the sandbox's agent has no current sample, or it isn't
+    /// running.
     Unavailable,
 }
 
@@ -781,7 +784,11 @@ fn apply_read(live: &mut Live, read: ProviderRead, now_ms: i64) {
             Err(ComputeFailure::MonitoringOff) => {
                 live.loads.insert(id, ComputeLoad::MonitoringOff);
             }
-            Err(ComputeFailure::Refused | ComputeFailure::Forbidden | ComputeFailure::Unsupported) => {
+            // Told apart from a sandbox with no sample to give, so the window can say the key is what to change.
+            Err(ComputeFailure::Forbidden) => {
+                live.loads.insert(id, ComputeLoad::KeyCantRead);
+            }
+            Err(ComputeFailure::Refused | ComputeFailure::Unsupported) => {
                 live.loads.insert(id, ComputeLoad::Unavailable);
             }
             // A passing failure keeps the last reading.

@@ -50,9 +50,10 @@
  * the badge, the expiry and the week-ahead alert show) and `writekey` one whose key can also write; `trouble` Boat
  * asking Arbor to slow down, with one sandbox in error, one stopping and one kept alive past twice its auto-stop;
  * `paid` plan hours used up, so sandboxes cost dollars (the This month column) and extra spend shows; and
- * `big` a hundred sandboxes (teammates', unlinked ones, monitoring off, a key that can't read load, an unknown machine
+ * `big` a hundred sandboxes (teammates', unlinked ones, monitoring off, one with no reading to give, an unknown machine
  * and a session Arbor hasn't seen among them, so the table pages); `partial` the typical afternoon with a list that stopped
- * at Arbor's page cap, so some sandboxes may be missing. Each seeds the saved hint that a provider is connected, for that load only, which also
+ * at Arbor's page cap, so some sandboxes may be missing; `noload` the typical afternoon with a key that can't read CPU
+ * and memory, so Settings says which key can. Each seeds the saved hint that a provider is connected, for that load only, which also
  * shows Home's Compute card and, on cam-mbp, cedar-02 and ci-01's pages, the sandboxes started there. Connect in
  * Settings › Compute takes any key and switches to `typical` (`?computeconnect=refused` or `unreachable` has it fail
  * that way); Disconnect goes back to none; a sandbox's history is a two-hour ring with a gap 70 to 60 minutes ago;

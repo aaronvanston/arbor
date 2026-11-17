@@ -1642,7 +1642,7 @@ export type ComputeLinkedBy = "link" | "label";
 /**
  * A sandbox's latest CPU and memory, or why there's none. Fractions are 0–1.
  */
-export type ComputeLoad = { "kind": "read", cpu: number, memory: number, atMs: number, } | { "kind": "notReadYet" } | { "kind": "monitoringOff" } | { "kind": "unavailable" };
+export type ComputeLoad = { "kind": "read", cpu: number, memory: number, atMs: number, } | { "kind": "notReadYet" } | { "kind": "monitoringOff" } | { "kind": "keyCantRead" } | { "kind": "unavailable" };
 
 /**
  * One CPU and memory reading. Fractions are 0–1.

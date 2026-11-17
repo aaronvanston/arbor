@@ -187,7 +187,10 @@ describe('Fleet › Compute', () => {
     const html = overview('big');
     expect(rows(html)).toBe(50);
     expect(html).toContain('Monitoring off');
-    expect(html).toContain('Key can’t read load');
+    // A running sandbox with no sample to give says so without blaming the key; only a refused key does.
+    expect(html).toContain('No reading right now');
+    expect(html).not.toContain('Key can’t read load');
+    expect(overview('noload')).toContain('Key can’t read load');
     expect(html).toContain('Linked to a machine Arbor doesn’t know');
     expect(html).toContain('Arbor hasn’t seen this session');
     expect(html).toContain('A teammate’s');

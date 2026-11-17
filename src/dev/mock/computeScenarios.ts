@@ -11,8 +11,8 @@ import type { ComputeLimit, ComputePoint, ComputeProviderSnapshot, ComputeSandbo
  * Like Boat, every scenario's provider says neither what the key can do nor when it expires, except `readonlykey` and
  * `writekey`, a provider that does.
  */
-export type ComputeScenario = 'none' | 'typical' | 'near' | 'blocked' | 'unreachable' | 'unlinked' | 'empty' | 'refused' | 'limits' | 'readonlykey' | 'writekey' | 'trouble' | 'paid' | 'big' | 'partial';
-export const COMPUTE_SCENARIOS: readonly ComputeScenario[] = ['none', 'typical', 'near', 'blocked', 'unreachable', 'unlinked', 'empty', 'refused', 'limits', 'readonlykey', 'writekey', 'trouble', 'paid', 'big', 'partial'];
+export type ComputeScenario = 'none' | 'typical' | 'near' | 'blocked' | 'unreachable' | 'unlinked' | 'empty' | 'refused' | 'limits' | 'readonlykey' | 'writekey' | 'trouble' | 'paid' | 'big' | 'partial' | 'noload';
+export const COMPUTE_SCENARIOS: readonly ComputeScenario[] = ['none', 'typical', 'near', 'blocked', 'unreachable', 'unlinked', 'empty', 'refused', 'limits', 'readonlykey', 'writekey', 'trouble', 'paid', 'big', 'partial', 'noload'];
 
 export const isComputeScenario = (value: string | null): value is ComputeScenario => COMPUTE_SCENARIOS.includes(value as ComputeScenario);
 
@@ -215,7 +215,7 @@ function bigSandboxes(now: number): ComputeSandbox[] {
 }
 
 /**
- * The states a long list also has to draw: a sandbox with monitoring off, one the key can't read, one linked to a
+ * The states a long list also has to draw: a sandbox with monitoring off, one with no reading, one linked to a
  * machine Arbor doesn't know, and one whose session Arbor hasn't seen.
  */
 function readingEdges(entry: ComputeSandbox, index: number): ComputeSandbox {
@@ -276,6 +276,11 @@ export function computeScenarioSnapshot(scenario: ComputeScenario, now: number):
     }
     // More sandboxes listed than Arbor reads pages of, so the list stopped short.
     case 'partial': return { providers: [provider(now, typical(), { listPartial: true })] };
+    // A key that can list sandboxes but that the provider won't give their load to, as Boat's read-only key is.
+    case 'noload': {
+      const sandboxes = typical().map((entry): ComputeSandbox => (entry.state === 'running' ? { ...entry, load: { kind: 'keyCantRead' }, points: [] } : entry));
+      return { providers: [provider(now, sandboxes)] };
+    }
     case 'big': {
       const sandboxes = bigSandboxes(now);
       return { providers: [provider(now, sandboxes, { hours: { used: 2_180, max: 5_000 }, starts: [6, 48, 160] })] };

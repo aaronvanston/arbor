@@ -22,6 +22,10 @@ its own: it's handed a `ComputeGet`, which only sends a GET, only for a path on 
 a provider means adding its path to that allowlist; anything not on it fails before a request is made. The one action
 in the window, "Open in …", opens a fixed dashboard address with the sandbox's id through `open_with_system`.
 
+A key that can only read doesn't get everything, though. Boat answers the process list, the only place a sandbox's CPU
+and memory are, only to a key with `exec`, so Settings offers both keys and says what the stronger one is for. What
+Arbor can send doesn't change with the key: the allowlist is what keeps it to reads, not the key's scope.
+
 ## What never crosses
 
 A provider's answers hold things Arbor must not keep. Boat's process list carries every process's full command line,

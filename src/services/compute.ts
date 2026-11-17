@@ -199,8 +199,8 @@ export const sandboxCpu = (sandbox: Pick<ComputeSandbox, 'load'>) => (sandbox.lo
 export const sandboxMemory = (sandbox: Pick<ComputeSandbox, 'load'>) => (sandbox.load.kind === 'read' ? sandbox.load.memory : null);
 
 /**
- * Why a sandbox has no reading, or null with nothing to say. Rust gives a sandbox stopping or in error `unavailable`
- * whatever the key can do, so only a running one's says the key can't read it.
+ * Why a sandbox has no reading, or null with nothing to say. Rust gives a sandbox stopping or in error `unavailable`,
+ * which goes without saying there; a running one's says so, and `keyCantRead` says the key is why.
  */
 export function loadUnreadLabel(sandbox: Pick<ComputeSandbox, 'load' | 'state'>): MessageKey | null {
   if (sandbox.load.kind === 'read') return null;

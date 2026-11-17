@@ -33,6 +33,15 @@ import { COMPUTE_PROVIDER_IDS, COMPUTE_PROVIDERS } from '../services/computeHint
 export const linkCommand = (provider: ComputeProviderId) =>
   `arbor call link-compute-sandbox provider=${provider} sandboxId=<sandbox id> machine=<machine name> session=<session id>`;
 
+/**
+ * The command for a key that can also read CPU and memory, where the provider won't give those to a key that can only
+ * read; null where the read-only key is enough. Here rather than in the provider record, which every launch loads.
+ */
+export const LOAD_KEY_COMMANDS: Readonly<Record<ComputeProviderId, string | null>> = {
+  // Boat answers its process list, the only place a sandbox's load is, only to a key that may `exec`.
+  boat: 'boat api-key create arbor --actions sandbox.read,account.read,exec --ttl 365d',
+};
+
 /** The command that drops a link made with `linkCommand`; labels at the provider are the provider's to change. */
 export const unlinkCommand = (provider: ComputeProviderId) =>
   `arbor call unlink-compute-sandbox provider=${provider} sandboxId=<sandbox id>`;
@@ -116,6 +125,7 @@ export function ComputeSettingsPage(_props: { onNavigate: (view: AppView) => voi
 function ConnectProvider({ provider }: { provider: ComputeProviderId }) {
   const { t } = useI18n();
   const info = COMPUTE_PROVIDERS[provider];
+  const loadKeyCommand = LOAD_KEY_COMMANDS[provider];
   return (
     <>
       <SettingsRow title={info.name} description={t('compute.settings.provider.about')} />
@@ -126,9 +136,16 @@ function ConnectProvider({ provider }: { provider: ComputeProviderId }) {
         done={t('compute.settings.connectedToast', { provider: info.name })}
       />
       <CommandRow caption={t('compute.settings.key.makeReadOnly', { provider: info.name })} command={info.readOnlyKeyCommand} />
+      {loadKeyCommand === null ? null : (
+        <CommandRow caption={t('compute.settings.key.makeLoad', { provider: info.name })} command={loadKeyCommand} />
+      )}
     </>
   );
 }
+
+/** True when the provider won't give a running sandbox's load to the saved key, which only another key changes. */
+export const loadHeldBack = (provider: ComputeProviderSnapshot): boolean =>
+  provider.sandboxes.some((sandbox) => sandbox.state === 'running' && sandbox.load.kind === 'keyCantRead');
 
 /**
  * The key field. Uncontrolled on purpose: what's typed stays in the input element until Connect, which empties it, so
@@ -241,6 +258,7 @@ function ConnectedProvider({ provider }: { provider: ComputeProviderSnapshot }) 
   const { t } = useI18n();
   const { askConfirmation } = useConfirmation();
   const info = COMPUTE_PROVIDERS[provider.id];
+  const loadKeyCommand = LOAD_KEY_COMMANDS[provider.id];
   const refused = provider.status === 'refused';
   const [replacing, setReplacing] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -305,6 +323,9 @@ function ConnectedProvider({ provider }: { provider: ComputeProviderSnapshot }) 
           control={<Button variant="outline" size="sm" onClick={() => setReplacing(true)}>{t('compute.settings.key.replace')}</Button>}
         />
       )}
+      {loadKeyCommand !== null && loadHeldBack(provider) ? (
+        <CommandRow caption={t('compute.settings.key.loadHeldBack', { provider: info.name })} command={loadKeyCommand} />
+      ) : null}
       <SettingsRow
         settingId="compute.check"
         title={t('compute.settings.check.title')}

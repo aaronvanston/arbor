@@ -5,12 +5,13 @@ import { mockCommands } from '../src/dev/mock/answers';
 import { computeScenarioSnapshot, type ComputeScenario } from '../src/dev/mock/computeScenarios';
 import { I18nProvider } from '../src/i18n';
 import type { CommandError } from '../src/native/types';
-import { ComputeSettingsPage, LINK_LABELS, linkCommand, linkedCount, submitComputeKey, unlinkCommand } from '../src/pages/ComputeSettings';
+import { ComputeSettingsPage, LINK_LABELS, LOAD_KEY_COMMANDS, linkCommand, linkedCount, loadHeldBack, submitComputeKey, unlinkCommand } from '../src/pages/ComputeSettings';
 import { currentCompute, resetComputeStore, takeComputeSnapshot } from '../src/services/compute';
 import { COMPUTE_HINT_KEY, COMPUTE_PROVIDERS } from '../src/services/computeHint';
 import { translate } from '../src/i18n';
 import { indexSettings, SETTINGS_INDEX, searchSettings } from '../src/services/settingsIndex';
 import { readFileSync } from 'node:fs';
+import { present } from './support/items';
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const render = () => renderToStaticMarkup(<I18nProvider><ComputeSettingsPage onNavigate={() => undefined} /></I18nProvider>);
@@ -49,6 +50,10 @@ describe('Settings › Compute', () => {
     // The command comes from the provider record.
     expect(COMPUTE_PROVIDERS.boat.readOnlyKeyCommand).toBe('boat api-key create arbor --actions sandbox.read,account.read --ttl 365d');
     expect(unescape(html)).toContain(COMPUTE_PROVIDERS.boat.readOnlyKeyCommand);
+    // Boat gives CPU and memory only to a key that may run commands, so the key that can read them is offered too.
+    expect(LOAD_KEY_COMMANDS.boat).toBe('boat api-key create arbor --actions sandbox.read,account.read,exec --ttl 365d');
+    expect(unescape(html)).toContain(LOAD_KEY_COMMANDS.boat ?? 'missing');
+    expect(words).toContain('Arbor never runs any');
     expect(words).toContain('Tell Arbor when an agent creates one');
     expect(unescape(html)).toContain(linkCommand('boat'));
     expect(unescape(html)).toContain(LINK_LABELS);
@@ -101,6 +106,20 @@ describe('Settings › Compute', () => {
     expect(words).toContain('5 sandboxes running now are linked to a machine.');
     expect(html).not.toContain('type="password"');
     for (const id of ['compute.key', 'compute.check', 'compute.disconnect']) expect(html).toContain(`data-setting-id="${id}"`);
+  });
+
+  it('names the key that can read CPU and memory only while the saved one can’t', () => {
+    const command = LOAD_KEY_COMMANDS.boat ?? 'missing';
+    expect(unescape(show('typical'))).not.toContain(command);
+    const html = show('noload');
+    expect(text(html)).toContain('The saved key can’t read CPU and memory.');
+    expect(unescape(html)).toContain(command);
+    // A stopped sandbox has no load to read, and a running one with no sample is not the key's doing: neither asks
+    // for another key.
+    expect(loadHeldBack(present(computeScenarioSnapshot('empty', Date.now()).providers[0]))).toBe(false);
+    const big = present(computeScenarioSnapshot('big', Date.now()).providers[0]);
+    expect(big.sandboxes.some((sandbox) => sandbox.state === 'running' && sandbox.load.kind === 'unavailable')).toBe(true);
+    expect(loadHeldBack(big)).toBe(false);
   });
 
   it('says a refused key and opens the field for a new one', () => {

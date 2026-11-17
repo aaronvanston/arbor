@@ -320,7 +320,7 @@ fn monitoring_off_and_a_key_that_cant_read_load_say_so_without_failing_the_round
     assert_eq!(snapshot.status, ComputeProviderStatus::Ok);
     let load = |id: &str| snapshot.sandboxes.iter().find(|sandbox| sandbox.id == id).unwrap().load;
     assert_eq!(load(&a), ComputeLoad::MonitoringOff);
-    assert_eq!(load(&b), ComputeLoad::Unavailable);
+    assert_eq!(load(&b), ComputeLoad::KeyCantRead);
     // Another 409 is not monitoring being off.
     http.answer(&format!("/sandboxes/{a}/processes"), 409, r#"{"ok":false,"code":"something_else"}"#);
     let mut other = live();
