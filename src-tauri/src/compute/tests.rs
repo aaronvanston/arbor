@@ -711,6 +711,8 @@ fn a_link_needs_a_sandbox_id_a_machine_and_a_session_id_of_the_right_shape() {
     assert!(checked_link(boat(), "bx_23456789", "cam-mbp", Some("$(whoami)")).is_err());
     assert!(checked_link(boat(), "bx_23456789", "cam-mbp", Some(&"a".repeat(129))).is_err());
     assert!(unknown_machine("cedar-02").contains("cedar-02"));
+    let several = several_machines("lab-a", &["Lab A".to_string(), "Lab-A".to_string()]);
+    assert!(several.contains("“lab-a”") && several.contains("Lab A, Lab-A"));
 }
 
 #[test]

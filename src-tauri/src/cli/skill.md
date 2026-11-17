@@ -148,8 +148,9 @@ When you make a sandbox at a provider Arbor reads (Boat today), link it straight
 arbor call link-compute-sandbox provider=boat sandboxId=bx_23456789 machine=cam-mbp session=<your session id>
 ```
 
-- `machine` is the machine you're on, named exactly as `arbor machines` lists it. Arbor refuses a name it doesn't
-  know; it never guesses one from the sandbox's name.
+- `machine` is the machine you're on: its name as `arbor machines` lists it, or its SSH host, in any case (on the
+  machine itself `machine="$(hostname)"` usually does it). Arbor refuses one it doesn't know, or one that fits two
+  machines; it never guesses one from the sandbox's name.
 - `session` is your own agent session's id, as it is. Leave it out when you don't know it.
 - The sandbox needn't be listed yet: Arbor reads the provider once a minute. A link to a sandbox that's gone is
   dropped by itself.

@@ -47,8 +47,10 @@ Disconnecting forgets the key and the snapshot but keeps the links.
 Only by ids Arbor is given, never by reading a sandbox's name. An agent runs
 `arbor call link-compute-sandbox provider=… sandboxId=… machine=… session=…` right after it creates one (Settings ›
 Compute shows the command; `arbor call unlink-compute-sandbox provider=… sandboxId=…` drops it), or the provider
-carries `arbor.machine` and `arbor.session` labels; a link wins over a label, and only a link can be unlinked. The machine must be exactly a name on the Machines list, and the
-session is matched by exact id against the sessions usage.db records (`usage/compute_lookup.rs`), live by the same
+carries `arbor.machine` and `arbor.session` labels; a link wins over a label, and only a link can be unlinked. A link's
+machine is found the way `arbor` finds one, by its name or SSH host however typed, because an agent knows its hostname
+and not the name Arbor shows; one that fits two machines is refused, and the name on the list is what's kept. A label's
+machine must be exactly a name on the list. The session is matched by exact id against the sessions usage.db records (`usage/compute_lookup.rs`), live by the same
 rule as everywhere else. A session Arbor hasn't seen shows as such and never makes a sandbox look forgotten. Teammates'
 sandboxes are never linked and never forgotten. A link to a sandbox the list doesn't show yet is kept for a while,
 since a provider's list lags a create.

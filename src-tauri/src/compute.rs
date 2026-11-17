@@ -16,7 +16,7 @@ mod files;
 mod tests;
 
 use crate::command_error::CommandError;
-use crate::usage::compute_lookup::{self, ComputeLookup, SeenSession};
+use crate::usage::compute_lookup::{self, ComputeLookup, ListedMachine, SeenSession};
 use files::{ComputeClaim, ComputeKey};
 use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
@@ -1447,12 +1447,16 @@ fn checked_link(
 }
 
 fn unknown_machine(machine: &str) -> String {
-    format!("Arbor has no machine called “{machine}”. Use a name exactly as Arbor's Machines list shows it (`arbor machines` lists them).")
+    format!("Arbor has no machine called “{machine}”. Use its name or its SSH host from Arbor's Machines list (`arbor machines` lists them).")
+}
+
+fn several_machines(machine: &str, fits: &[String]) -> String {
+    format!("“{machine}” fits more than one machine ({}). Use the name exactly as Arbor's Machines list shows it.", fits.join(", "))
 }
 
 /// Records that a machine (and an agent session there) started a sandbox, so Compute shows it; an agent runs it
-/// right after making one. It wins over a provider's label. The machine must be on the Machines list; the sandbox
-/// needn't be listed yet. Not called a claim: `arbor` never offers a command by that name, which means spending a
+/// right after making one. It wins over a provider's label. The machine must be on the Machines list, by its name or
+/// its SSH host however typed; the sandbox needn't be listed yet. Not called a claim: `arbor` never offers a command by that name, which means spending a
 /// quota reset there.
 #[tauri::command]
 pub(crate) async fn link_compute_sandbox(
@@ -1464,9 +1468,11 @@ pub(crate) async fn link_compute_sandbox(
 ) -> Result<(), String> {
     let source = provider_by_id(provider).ok_or_else(unknown_provider)?;
     let (sandbox_id, machine, session) = checked_link(source, &sandbox_id, &machine, session.as_deref())?;
-    if !compute_lookup::machine_names().await?.contains(&machine) {
-        return Err(unknown_machine(&machine));
-    }
+    let machine = match compute_lookup::listed_machine(machine.clone()).await? {
+        ListedMachine::Found(listed) => listed,
+        ListedMachine::Several(fits) => return Err(several_machines(&machine, &fits)),
+        ListedMachine::Unknown => return Err(unknown_machine(&machine)),
+    };
     let claim = ComputeClaim { provider, sandbox_id, machine, session, linked_at_ms: now_ms() };
     blocking(move || {
         files::update_claims(&files::claims_path()?, |claims| {

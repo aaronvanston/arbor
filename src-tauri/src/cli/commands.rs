@@ -864,7 +864,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "link_compute_sandbox",
         access: Access::Write,
-        summary: "Records that a machine (and an agent session there) started a sandbox, so Compute shows it; an agent runs it right after making one. It wins over a provider's label. The machine must be on the Machines list; the sandbox needn't be listed yet. Not called a claim: `arbor` never offers a command by that name, which means spending a quota reset there.",
+        summary: "Records that a machine (and an agent session there) started a sandbox, so Compute shows it; an agent runs it right after making one. It wins over a provider's label. The machine must be on the Machines list, by its name or its SSH host however typed; the sandbox needn't be listed yet. Not called a claim: `arbor` never offers a command by that name, which means spending a quota reset there.",
         args: &[
             ArgSpec { name: "provider", ts_type: "ComputeProviderId", optional: false },
             ArgSpec { name: "sandboxId", ts_type: "string", optional: false },
