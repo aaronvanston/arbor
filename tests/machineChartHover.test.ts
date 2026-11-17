@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { nearestSample } from '../src/pages/MachineHealthPanel';
+import { nearestSample } from '../src/components/charts/TimeSeries';
 
 const cpu = [{ t: 0, v: 10 }, { t: 5_000, v: 20 }, { t: 10_000, v: null }, { t: 15_000, v: 40 }];
 const mem = [{ t: 0, v: 50 }, { t: 5_000, v: 55 }, { t: 10_000, v: 60 }, { t: 15_000, v: 65 }];
