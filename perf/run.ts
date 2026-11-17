@@ -74,8 +74,14 @@ const MONITOR_COMMANDS = ['report_working_sessions', 'set_tray_rows', 'set_tray_
 type Size = { id: 'default' | 'real'; query: string };
 const SIZES: Size[] = [{ id: 'default', query: '' }, { id: 'real', query: 'size=real' }];
 
-/** The main pages and Sync's views, opened in this order from Home the way the sidebar would. */
-const PAGES: { id: string; page: string; tab?: string; lens?: string }[] = [
+/**
+ * A page to measure. One hidden in the default mock names, for each size, the scenario that shows it, and is opened on
+ * a launch of its own with it, so the pages opened in turn, and every other count, stay on the default mock.
+ */
+type PageTarget = { id: string; page: string; tab?: string; lens?: string; query?: Record<Size['id'], string> };
+
+/** The main pages and Sync's views, opened in this order from Home the way the sidebar would, then the hidden ones. */
+const PAGES: PageTarget[] = [
   { id: 'machines', page: 'machines' },
   { id: 'machine', page: 'machine:ci-01' },
   { id: 'pools', page: 'pools' },
@@ -93,7 +99,12 @@ const PAGES: { id: string; page: string; tab?: string; lens?: string }[] = [
   { id: 'alerts', page: 'alerts' },
   { id: 'settings', page: 'settings:general' },
   { id: 'home', page: 'home' },
+  // Compute shows only once a provider is connected (?compute=), which also adds Home's Compute card.
+  { id: 'compute', page: 'compute', query: { default: 'compute=typical', real: 'compute=big' } },
 ];
+
+/** `url` with a page's own scenario added to its query. */
+const withQuery = (url: string, query: string | undefined) => (query ? `${url}${url.includes('?') ? '&' : '?'}${query}` : url);
 
 /** One journey's step, its counters with call sites mapped to source. */
 type Step = {
@@ -598,21 +609,34 @@ async function timingPass(browser: Browser, url: string): Promise<Timing> {
  */
 async function coldJs(browser: Browser, origin: string, sources: BuildSources) {
   const appBytes = (chunks: string[]) => sum(chunks.filter((chunk) => sources.mockShare(chunk) <= 0.5).map((chunk) => statSync(join(SITE, chunk)).size));
-  const coldStart = async (target?: { page: string; tab?: string; lens?: string }) => {
-    const query = new URLSearchParams();
+  const coldStart = async (target?: PageTarget, scenario?: string) => {
+    const query = new URLSearchParams(scenario);
     if (target) query.set('page', target.page);
     if (target?.tab) query.set('tab', target.tab);
     if (target?.lens) query.set('lens', target.lens);
-    const run = await launch(browser, `${origin}/${target ? `?${query}` : ''}`, COLD_START_MS);
+    const search = query.toString();
+    const run = await launch(browser, `${origin}/${search ? `?${search}` : ''}`, COLD_START_MS);
     const chunks = [...run.scripts];
     await run.context.close();
     return chunks;
   };
   const home = await coldStart();
+  // A hidden page's own JS is set against Home's in the same scenario, which may load more of its own.
+  const scenarioHomes = new Map<string, string[]>();
+  const homeIn = async (scenario: string | undefined) => {
+    if (!scenario) return home;
+    const known = scenarioHomes.get(scenario);
+    if (known) return known;
+    const chunks = await coldStart(undefined, scenario);
+    scenarioHomes.set(scenario, chunks);
+    return chunks;
+  };
   const pages: Record<string, number> = {};
   for (const target of PAGES) {
     if (target.page === 'home') continue;
-    pages[target.id] = appBytes((await coldStart(target)).filter((chunk) => !home.includes(chunk)));
+    const scenario = target.query?.default;
+    const before = await homeIn(scenario);
+    pages[target.id] = appBytes((await coldStart(target, scenario)).filter((chunk) => !before.includes(chunk)));
     process.stdout.write('.');
   }
   process.stdout.write('\n');
@@ -650,17 +674,24 @@ async function measureSize(browser: Browser, origin: string, size: Size, sources
   console.log(`[${size.id}] (${elapsed()}) opening each page…`);
   const navRun = await launch(browser, url);
   const pages: Record<string, Step> = {};
-  for (const target of PAGES) {
-    await reset(navRun.page);
-    const loadedBefore = navRun.scripts.length;
-    await openPage(navRun.page, target);
-    await quiet(navRun.page, navRun.network);
-    await advance(navRun.page, navRun.network, NAVIGATION_MS, STEP_MS);
-    pages[target.id] = summarize(sources, await snapshot(navRun.page), navRun.scripts.slice(loadedBefore), [...navRun.scripts]);
+  const openOn = async (run: Awaited<ReturnType<typeof launch>>, target: PageTarget) => {
+    await reset(run.page);
+    const loadedBefore = run.scripts.length;
+    await openPage(run.page, target);
+    await quiet(run.page, run.network);
+    await advance(run.page, run.network, NAVIGATION_MS, STEP_MS);
+    pages[target.id] = summarize(sources, await snapshot(run.page), run.scripts.slice(loadedBefore), [...run.scripts]);
     process.stdout.write('.');
+  };
+  for (const target of PAGES) if (!target.query) await openOn(navRun, target);
+  await navRun.context.close();
+  for (const target of PAGES) {
+    if (!target.query) continue;
+    const ownRun = await launch(browser, withQuery(url, target.query[size.id]));
+    await openOn(ownRun, target);
+    await ownRun.context.close();
   }
   process.stdout.write('\n');
-  await navRun.context.close();
 
   console.log(`[${size.id}] (${elapsed()}) ${HIDDEN_MINUTES} minutes closed to the tray on ${HIDDEN_PAGE.page}…`);
   const hidden = await hiddenJourney(browser, url, sources);

@@ -52,6 +52,7 @@ import { homeLabel, rememberSetupComparison, storedSetupReference } from './setu
 import { SetupProjects } from './SetupProjects';
 import { MachineCleanup } from './MachineCleanup';
 import { MachineAutomations } from '../components/automations/MachineAutomations';
+import { MachineComputeLine } from '../components/MachineComputeLine';
 import { setSyncMachine } from '../services/syncScope';
 import { MachineThroughput, throughputScale } from './UsageFleet';
 
@@ -180,6 +181,7 @@ export function MachinePage({ machine: name, overview, sessions, onNavigate, onO
           ) : snapshot || healthError ? null : (
             <Skeleton className="h-4 w-56" />
           )}
+          <MachineComputeLine machine={name} onNavigate={onNavigate} />
         </div>
         {item && !unconfigured ? <MachineScore item={item} windowMs={recentMs} /> : null}
       </div>

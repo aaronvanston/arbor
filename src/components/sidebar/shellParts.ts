@@ -1,6 +1,6 @@
 import { cn } from '../../lib/utils';
 import type { MainPageId } from '../../navigation';
-import { Bell, ChartNoAxesColumn, House, Layers, MessagesSquare, Monitor, Network, TimeSchedule, Users, type AppIcon } from '../ui/icons';
+import { Bell, ChartNoAxesColumn, Cloud, House, Layers, MessagesSquare, Monitor, Network, TimeSchedule, Users, type AppIcon } from '../ui/icons';
 
 /**
  * The shell's look, shared by the real shell (App.tsx and the sidebar's parts) and the static first screen that
@@ -13,6 +13,7 @@ export const PAGE_ICONS: Record<MainPageId, AppIcon> = {
   home: House,
   machines: Monitor,
   pools: Network,
+  compute: Cloud,
   sessions: MessagesSquare,
   automations: TimeSchedule,
   setup: Layers,

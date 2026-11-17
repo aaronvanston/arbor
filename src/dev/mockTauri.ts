@@ -37,6 +37,26 @@
  * ci-01's own page, as its leaf in the sidebar opens it (`machine:lab-box` for one with no host, only its checklist);
  * `?page=automation:arbor:sentry-watch` starts on one automation's page (any id the Automations list has);
  * `?page=pool:mock-builds` starts on one pool's page (with `?runs=failed`, its runs that went wrong);
+ * `?page=compute` starts on Compute, `?page=compute:boat` on one provider's sandboxes and
+ * `?page=compute:boat:bx_4k2m9xqa` on one sandbox's page (with a `?compute=` scenario that has a provider connected);
+ * `?compute=` for cloud sandboxes (Fleet › Compute, Settings › Compute): by default no provider is connected, so
+ * Compute is hidden and nothing about it is called. `typical` is the prototype's afternoon (Boat connected, six
+ * sandboxes from cam-mbp, cedar-02 and ci-01: one at its CPU limit, one degraded, one forgotten, one not linked, one
+ * starting; plan hours 343 of 555, running out before they reset), `near` near every limit, `blocked` starts blocked
+ * with the plan hours used up, `unreachable` Boat not answering for 14 minutes (the last figures stay), `unlinked`
+ * nothing linked to a machine or session, `empty` connected with nothing running and three stopped this month,
+ * `refused` the key turned down, `limits` a key that can't read the limits; like Boat, these say neither what the key
+ * can do nor when it expires, while `readonlykey` is a provider that does (a read-only key expiring in five days, so
+ * the badge, the expiry and the week-ahead alert show) and `writekey` one whose key can also write; `trouble` Boat
+ * asking Arbor to slow down, with one sandbox in error, one stopping and one kept alive past twice its auto-stop;
+ * `paid` plan hours used up, so sandboxes cost dollars (the This month column) and extra spend shows; and
+ * `big` a hundred sandboxes (teammates', unlinked ones, monitoring off, a key that can't read load, an unknown machine
+ * and a session Arbor hasn't seen among them, so the table pages); `partial` the typical afternoon with a list that stopped
+ * at Arbor's page cap, so some sandboxes may be missing. Each seeds the saved hint that a provider is connected, for that load only, which also
+ * shows Home's Compute card and, on cam-mbp, cedar-02 and ci-01's pages, the sandboxes started there. Connect in
+ * Settings › Compute takes any key and switches to `typical` (`?computeconnect=refused` or `unreachable` has it fail
+ * that way); Disconnect goes back to none; a sandbox's history is a two-hour ring with a gap 70 to 60 minutes ago;
+ * Unlink drops a sandbox's machine and session for the load;
  * `?automations=empty` for nothing scheduled anywhere, `?automations=failing` for runs that failed and ci-01's look failing,
  * `?automations=off` for Arbor's automations turned off in Settings, `?automations=nokey` for no Automations proxy key yet; `?orca=none` for no machine with Orca; `?superset=none` for none with Superset;
  * `?draft=fail` for drafting an automation failing (no client key), `?draft=slow` for a draft that takes four seconds;
@@ -469,7 +489,7 @@ import { isAppColor } from '../services/appColor';
 import { previewAppPreference } from '../appPreferences';
 import { goToView, resetViewHistory } from '../services/viewHistory';
 import { requestFocus } from '../focusRequests';
-import { automationView, failedRequestsView, machinesView, mainPageView, movedSettingsFocus, poolsView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
+import { automationView, computeSandboxView, computeView, failedRequestsView, machinesView, mainPageView, movedSettingsFocus, poolsView, sessionsView, settingsPageView, usageView, type AppView } from '../navigation';
 import type { Commands } from '../native/commands';
 import { mockCommands, type CommandAnswers, type CommandObserver } from './mock/answers';
 import { appAnswers, mockAppVersion, pressMockQuit, pressMockZoom, startMockZoom } from './mock/app';
@@ -477,6 +497,8 @@ import { archiveAnswers } from './mock/archive';
 import { automationsAnswers } from './mock/automations';
 import { cleanupAnswers } from './mock/cleanup';
 import { cliAnswers } from './mock/cli';
+import { computeAnswers, computeFlag } from './mock/compute';
+import { COMPUTE_HINT_KEY } from '../services/computeHint';
 import { PARTIAL_MODEL, coreAnswers, coreScenario, stopCoreLater } from './mock/core';
 import { machinesAnswers } from './mock/machines';
 import { freshInstall, iso, mockLog, now, params, type Json } from './mock/scenario';
@@ -527,6 +549,10 @@ function mockStartView(page: string | null, tab = params.get('tab'), lens = para
   if (page.startsWith('machine:')) return machinesView(page.slice('machine:'.length));
   if (page.startsWith('automation:')) return automationView(page.slice('automation:'.length));
   if (page.startsWith('pool:')) return poolsView(page.slice('pool:'.length));
+  if (page.startsWith('compute:')) {
+    const [provider, sandbox] = page.slice('compute:'.length).split(':');
+    if (provider === 'boat') return sandbox ? computeSandboxView(provider, sandbox) : computeView(provider);
+  }
   return mainPageView(page, tab, { lens });
 }
 
@@ -565,7 +591,7 @@ const pluginAnswers: Record<string, (args: Json) => unknown> = {
   'plugin:notification|notify': (args) => { mockLog('notification', args); return null; },
 };
 
-const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers, ...cliAnswers, ...automationsAnswers, ...cleanupAnswers };
+const answers: CommandAnswers<Commands> = { ...appAnswers, ...coreAnswers, ...usageAnswers, ...machinesAnswers, ...setupAnswers, ...archiveAnswers, ...cliAnswers, ...automationsAnswers, ...cleanupAnswers, ...computeAnswers };
 
 // Status page replies, shaped like status.claude.com (Statuspage) and status.openai.com (incident.io's own feed).
 const claudeStatusFeed = () => {
@@ -691,6 +717,8 @@ export function installTauriMock() {
   // A first launch has nothing saved in the window yet; the stores read it lazily, so this comes before any of them.
   if (freshInstall) window.localStorage.clear();
   dropFlagSeeds();
+  // A scenario with a provider connected starts as the app would: the hint saved, so launch reads Compute.
+  if (computeFlag && computeFlag !== 'none') seedForThisLoad(COMPUTE_HINT_KEY, JSON.stringify(['boat']));
   // The notification plugin falls back to the Web Notification API outside Tauri; capture it so tests can see it.
   Object.defineProperty(window, 'Notification', { value: MockNotification, configurable: true, writable: true });
   // Answer the status pages locally so the dev shell works offline and can show incidents on demand.

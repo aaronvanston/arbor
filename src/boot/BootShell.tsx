@@ -66,7 +66,8 @@ function BootFrame() {
             <div key={section.id} className={treeSectionClass(index)}>
               {section.labelKey ? <div className={TREE_SECTION_LABEL_CLASS}>{t(section.labelKey)}</div> : null}
               <ul className="flex flex-col gap-px">
-                {section.pages.map((page) => {
+                {/* Compute shows once a provider is connected, which the first screen can't know; React's frame adds it. */}
+                {section.pages.filter((page) => !page.compute).map((page) => {
                   const Icon = PAGE_ICONS[page.id];
                   // Home is where every launch opens. A page with views has its chevron; Machines and Pools get theirs
                   // once there's a machine or pool to list, as in React's first frame.

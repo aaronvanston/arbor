@@ -67,6 +67,7 @@ export const CirclePlay = icon(stroke.PlayCircleIcon);
 export const CircleX = icon(stroke.CircleXIcon);
 export const Clock = icon(stroke.ClockIcon);
 export const Clock3 = icon(stroke.Clock03Icon);
+export const Cloud = icon(stroke.CloudIcon, duotone.CloudIcon);
 export const CloudAlert = icon(stroke.CloudAlertIcon);
 export const Coins = icon(stroke.CoinsIcon);
 export const Columns2 = icon(stroke.LayoutTwoColumnIcon);

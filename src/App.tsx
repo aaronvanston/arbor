@@ -2,7 +2,7 @@ import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
 import { onAddMachineRequest } from './services/addMachine';
-import { Activity, Archive, BellRing, Bot, Database, FolderSearch, Info, Monitor, Network, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
+import { Activity, Archive, BellRing, Bot, Cloud, Database, FolderSearch, Info, Monitor, Network, PackageOpen, Palette, Route, Settings2, Shuffle, SlidersHorizontal, Sparkles, Tags, type AppIcon } from './components/ui/icons';
 import { useCoreRuntime } from './coreRuntime';
 import { useCoreUpdate } from './coreUpdate';
 import { HomePage } from './pages/HomePage';
@@ -36,6 +36,7 @@ import { requestFocus } from './focusRequests';
 import { focusReturnTarget } from './services/focusReturn';
 import { trackPageView, usageDataNoticeDue } from './services/productAnalytics';
 import { invokeCommand } from './native/commands';
+import { COMPUTE_PROVIDER_IDS, computeProviderName, useConnectedComputeProviders } from './services/computeHint';
 import { useSettingReveal } from './hooks/useSettingReveal';
 import { useAppPreferences } from './appPreferences';
 import { useScrollFade } from './hooks/useScrollFade';
@@ -43,7 +44,7 @@ import { clearOfFade, scrollEdges, scrollPosition } from './lib/scrollFade';
 import { useI18n } from './i18n';
 import { AppUpdateDialog, useAppUpdate } from './appUpdate';
 import { appUpdateIndicatorState } from './appUpdateModel';
-import { accountLimitsView, canOpenView, machinesView, mainView, samePage, viewPageId, type AppView, type MainPageId, type SettingsPageId } from './navigation';
+import { accountLimitsView, canOpenView, computeView, machinesView, mainView, samePage, viewPageId, type AppView, type MainPageId, type SettingsPageId } from './navigation';
 import { canArrive, changePageView, currentView, goBack, goForward, goToView, lockedInPlace, stepTarget, useViewHistory, type ViewArrival, type ViewChange, type ViewHistory } from './services/viewHistory';
 import { bootedInBackground } from './services/bootMode';
 import { arriveWhenLoaded, cancelPendingArrival, lazyPage, prefetchAttribute, prefetchView, watchPrefetchIntent } from './pageModules';
@@ -82,6 +83,7 @@ const settingsGroups: { id: string; labelKey: MessageKey; pages: { id: SettingsP
       { id: 'agent-homes', icon: FolderSearch },
       { id: 'harnesses', icon: Bot },
       { id: 'pools', icon: Network },
+      { id: 'compute', icon: Cloud },
       { id: 'session-archive', icon: Archive },
     ],
   },
@@ -111,6 +113,7 @@ const HOME_VIEW: AppView = { kind: 'main', page: 'home' };
 const AccountsPage = lazyPage('accounts', (module) => module.AccountsPage);
 const UsageRecordsPage = lazyPage('usage', (module) => module.UsageRecordsPage);
 const PoolsPage = lazyPage('machinePools', (module) => module.PoolsPage);
+const ComputePage = lazyPage('compute', (module) => module.ComputePage);
 const AutomationsPage = lazyPage('automations', (module) => module.AutomationsPage);
 const UsageDataSettingsPage = lazyPage('usageData', (module) => module.UsageDataSettingsPage);
 const SetupPage = lazyPage('setup', (module) => module.SetupPage);
@@ -122,6 +125,7 @@ const MachineAssignmentsSettingsPage = lazyPage('settings', (module) => module.M
 const AgentHomesSettingsPage = lazyPage('agentHomes', (module) => module.AgentHomesSettingsPage);
 const HarnessesSettingsPage = lazyPage('harnesses', (module) => module.HarnessesSettingsPage);
 const PoolsSettingsPage = lazyPage('pools', (module) => module.PoolsSettingsPage);
+const ComputeSettingsPage = lazyPage('computeSettings', (module) => module.ComputeSettingsPage);
 const AppearanceSettingsPage = lazyPage('appearance', (module) => module.AppearanceSettingsPage);
 const NotificationsSettingsPage = lazyPage('notifications', (module) => module.NotificationsSettingsPage);
 const SessionArchiveSettingsPage = lazyPage('sessionArchive', (module) => module.SessionArchiveSettingsPage);
@@ -155,6 +159,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
       case 'sessions': return <UsageRecordsPage key={`sessions-${visit}`} variant="sessions" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'machines': return <UsageRecordsPage key="machines" variant="machines" params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'pools': return <PoolsPage params={view.params} onNavigate={onNavigate} />;
+      case 'compute': return <ComputePage params={view.params} onNavigate={onNavigate} />;
       case 'automations': return <AutomationsPage params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'setup': return <SetupPage params={view.params} onNavigate={onNavigate} onViewChange={onViewChange} />;
       case 'alerts': return <AlertsPage coreReady={coreReady} onNavigate={onNavigate} />;
@@ -172,6 +177,7 @@ const ViewContent = memo(function ViewContent({ view, visit, coreReady, onNaviga
     case 'agent-homes': return <AgentHomesSettingsPage />;
     case 'harnesses': return <HarnessesSettingsPage />;
     case 'pools': return <PoolsSettingsPage onNavigate={onNavigate} />;
+    case 'compute': return <ComputeSettingsPage onNavigate={onNavigate} />;
     case 'data': return <UsageDataSettingsPage />;
     case 'session-archive': return <SessionArchiveSettingsPage />;
     case 'appearance': return <AppearanceSettingsPage theme={theme} onThemeChange={onThemeChange} />;
@@ -419,13 +425,25 @@ function AppContent({ navigateRef }: ShellProps) {
     () => settingsIndex.map((setting) => ({ setting, locked: !canOpenSettingsPage(setting.entry.page) })),
     [settingsIndex, canOpenSettingsPage],
   );
+  const computeProviders = useConnectedComputeProviders();
   // Every page, and each of its views under it as the sidebar tree has them, found by the page's name as well.
   const palettePages = useMemo<PalettePage[]>(() => {
     const page = (view: AppView, labelKey: MessageKey, icon: AppIcon, keywords?: MessageKey): PalettePage => ({
       view, label: t(labelKey), icon, locked: !canOpenView(view, coreReady), keywords: keywords ? t(keywords) : undefined,
     });
     return [
-      ...mainPages.map((item) => page(mainView(item.id), item.labelKey, PAGE_ICONS[item.id], item.keywords)),
+      // Compute, and each connected provider's sandboxes, only once one is connected.
+      ...mainPages.filter((item) => item.id !== 'compute' || computeProviders.length > 0)
+        .map((item) => {
+          const entry = page(mainView(item.id), item.labelKey, PAGE_ICONS[item.id], item.keywords);
+          // Compute is found by its providers' names too, from their records rather than a string.
+          return item.id === 'compute' ? { ...entry, keywords: [entry.keywords, ...COMPUTE_PROVIDER_IDS.map(computeProviderName)].filter(Boolean).join(' ') } : entry;
+        }),
+      ...computeProviders.map((provider): PalettePage => ({
+        ...page(computeView(provider), 'app.nav.compute', PAGE_ICONS.compute, 'tree.compute.keywords'),
+        label: computeProviderName(provider),
+        parent: t('app.nav.compute'),
+      })),
       ...TREE_PAGES.flatMap((item) => item.leaves.map((leaf): PalettePage => ({
         ...page(leafView(leaf), leaf.labelKey, PAGE_ICONS[item.id], leaf.keywords),
         parent: t(item.labelKey),
@@ -436,7 +454,7 @@ function AppContent({ navigateRef }: ShellProps) {
       })),
       ...settingsGroups.flatMap((group) => group.pages).map((item) => page({ kind: 'settings', page: item.id }, SETTINGS_PAGE_LABEL[item.id], item.icon)),
     ];
-  }, [coreReady, t]);
+  }, [coreReady, computeProviders, t]);
   // Settings, ⌘,, Back and Esc return to the page left on the other side, even one that needs the core and it has
   // stopped since.
   const openSettings = () => goTo({ kind: 'settings', page: lastSettingsPage.current }, 'return');

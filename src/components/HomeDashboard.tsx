@@ -1,13 +1,14 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useState } from 'react';
 import { invokeCommand } from '../native/commands';
 import { listen } from '@tauri-apps/api/event';
 import { ArrowUpRight, Monitor, Plus, TerminalSquare, TriangleAlert, Users } from './ui/icons';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n';
-import { accountLimitsView, failedRequestsView, machinesView, sessionsView, usageView, type AppView } from '../navigation';
+import { accountLimitsView, computeView, failedRequestsView, machinesView, sessionsView, usageView, type AppView } from '../navigation';
 import { prefetchAttribute } from '../pageModules';
 import { addAccount } from '../services/addAccount';
 import { accountsGap, ensureAccountsLoaded, useAccountsStore } from '../services/accountsStore';
+import { useConnectedComputeProviders } from '../services/computeHint';
 import { machinesFlow, todayRange } from '../services/homeOverview';
 import { replaceEqualDeep, useStableValue } from '../services/stableValue';
 import { formatCount, formatMoney } from '../lib/format';
@@ -21,6 +22,9 @@ import { ConnectAgentDialog } from './dialogsWhenOpened';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { TODAY_CARD_CLASS, TodaySkeleton } from './homeSkeletons';
+
+// Its own chunk: an install with no compute provider connected never loads it.
+const HomeCompute = lazy(() => import('./HomeCompute').then((module) => ({ default: module.HomeCompute })));
 
 type TodayOverview = {
   totalRequests: number;
@@ -36,9 +40,10 @@ type TodayOverview = {
 
 /**
  * Home is built around what Arbor does: a short list of what needs you, when something recent does; the accounts,
- * pooled by provider, and the machines using them; what they sent through the proxy today; and the proxy between them
- * last. Until the core is ready the accounts, machines and today wait, and the proxy card is where it's started. With
- * no account signed in yet, the two steps that set Arbor up take the accounts' place.
+ * pooled by provider, and the machines using them; what they sent through the proxy today; the proxy between them;
+ * and the cloud sandboxes when a compute provider is connected. Until the core is ready the accounts, machines and
+ * today wait, and the proxy card is where it's started. With no account signed in yet, the two steps that set Arbor up
+ * take the accounts' place.
  */
 export function HomeDashboard({ coreReady, coreChecking = false, onNavigate, onAddMachine }: {
   coreReady: boolean;
@@ -74,9 +79,26 @@ export function HomeDashboard({ coreReady, coreChecking = false, onNavigate, onA
         </>
       ) : null}
       <HomeProxy machines={machineFlow} onNavigate={onNavigate} />
+      {/* Last, so a card that comes in after the first paint, with its own chunk and first read, moves nothing above it.
+          Sandboxes don't go through the proxy, so it shows with the core down too. */}
+      <ComputeCard onNavigate={onNavigate} />
     </>
   );
 }
+
+/**
+ * Home's Compute card, only while a compute provider is connected (the saved hint says so). With none it's nothing at
+ * all: no chunk, no call, no listener.
+ */
+const ComputeCard = memo(function ComputeCard({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+  const connected = useConnectedComputeProviders();
+  if (!connected.length) return null;
+  return (
+    <div className="contents" {...prefetchAttribute(computeView())}>
+      <Suspense fallback={null}><HomeCompute onNavigate={onNavigate} /></Suspense>
+    </div>
+  );
+});
 
 /** The steps that set Arbor up, for a Home with no account yet: an account, the agents on this Mac, the other machines. */
 const GetStarted = memo(function GetStarted({ onNavigate, onAddMachine }: { onNavigate?: (view: AppView) => void; onAddMachine?: () => void }) {

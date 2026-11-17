@@ -21,10 +21,10 @@ import {
 
 
 describe('the sidebar tree', () => {
-  test('has Home alone at the top, then Fleet (Machines, Pools, Sessions, Automations, Sync) and Spend (Accounts, Usage); Alerts is the footer’s bell', () => {
+  test('has Home alone at the top, then Fleet (Machines, Pools, Compute, Sessions, Automations, Sync) and Spend (Accounts, Usage); Alerts is the footer’s bell', () => {
     expect(SIDEBAR_TREE.map((section) => [section.labelKey, section.pages.map((page) => page.id)])).toEqual([
       [null, ['home']],
-      ['tree.section.fleet', ['machines', 'pools', 'sessions', 'automations', 'setup']],
+      ['tree.section.fleet', ['machines', 'pools', 'compute', 'sessions', 'automations', 'setup']],
       ['tree.section.spend', ['accounts', 'usage']],
     ]);
   });

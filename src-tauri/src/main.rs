@@ -13,6 +13,7 @@ mod bindings;
 mod build_channel;
 mod cli;
 mod command_error;
+mod compute;
 mod configuration_watcher;
 mod core_config;
 mod core_runtime;
@@ -1572,6 +1573,7 @@ fn main() {
         .manage(usage::machine_health::MachineHealthState::default())
         .manage(usage::machine_health::archive::ArchiveState::default())
         .manage(usage::machine_health::telemetry::TelemetryState::default())
+        .manage(compute::ComputeState::default())
         .manage(GuiConfigState::new(gui_config))
         .manage(MainWindowSizeState::new(initial_window_size))
         .manage(LaunchShowState::default())
@@ -1666,6 +1668,7 @@ fn main() {
 
             product_analytics::start_flushing(app.handle().clone());
             cli::server::start(app.handle().clone());
+            compute::start(app.handle().clone());
 
             let usage_app = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
@@ -1899,6 +1902,14 @@ fn main() {
             usage::machine_health::runs::get_runs,
             usage::machine_health::runs::cancel_run,
             usage::machine_health::runs::open_run,
+            compute::get_compute,
+            compute::refresh_compute,
+            compute::get_compute_sandbox_history,
+            compute::connect_compute_provider,
+            compute::disconnect_compute_provider,
+            compute::open_compute_sandbox,
+            compute::link_compute_sandbox,
+            compute::unlink_compute_sandbox,
             usage::machine_health::agents::update_machine_agent,
             usage::machine_health::harness_update::update_machine_harness,
             usage::machine_health::fix_session::open_fix_session,
@@ -2086,6 +2097,7 @@ fn main() {
             product_analytics::flush_on_quit(app_handle);
             usage::stop_usage_collector(app_handle);
             usage::machine_health::stop_machine_health_sampler(app_handle);
+            compute::stop(app_handle);
             let gui_config_state = app_handle.state::<GuiConfigState>();
             let process_state = app_handle.state::<CoreProcessState>();
             shutdown_managed_core(process_state.inner(), gui_config_state.inner());

@@ -1,16 +1,22 @@
 # Navigation
 
 There's no URL routing. A view is state: it names its page and carries that page's params (`usageView`,
-`sessionsView`, `setupView`, `accountsView`, `machinesView`, `poolsView`), so Back returns to the same filters.
+`sessionsView`, `setupView`, `accountsView`, `machinesView`, `poolsView`, `computeView`, `computeSandboxView`), so Back
+returns to the same filters.
 `src/services/viewHistory.ts` keeps ⌘[ / ⌘] history and `src/services/shortcuts.ts` registers shortcuts.
 
 ## The sidebar tree
 
 `src/services/sidebarTree.ts` lays the tree out and `components/sidebar/SidebarTree.tsx` draws it: Home alone at the
-top, Fleet (Machines with one leaf per machine, Pools with one leaf per pool, Sessions, Automations, Sync) and Spend
-(Accounts, Usage). Alerts is the footer bell; everything else is the Settings area. Page ids are in
-`src/navigation.ts`, in the tree's order that ⌘1–⌘8 follow (Alerts is ⌘9), and `ViewContent` in `App.tsx` maps each view
-to its page. Sync is still `setup` in ids and storage keys.
+top, Fleet (Machines with one leaf per machine, Pools with one leaf per pool, Compute with one leaf per connected
+provider, Sessions, Automations, Sync) and Spend (Accounts, Usage). Alerts is the footer bell; everything else is the
+Settings area. Page ids are in `src/navigation.ts`, in the tree's order that ⌘1–⌘8 follow (Alerts is ⌘9), and
+`ViewContent` in `App.tsx` maps each view to its page. Sync is still `setup` in ids and storage keys.
+
+Compute is the one page that isn't always there. With no provider connected it has no row, leaves, ⌘K entry or
+Notifications switch, and nothing reads it; only Settings › Compute shows. The window knows without asking the app: a
+saved hint (`arbor.compute.connected.v1`, `services/computeHint.ts`) lists the connected providers, and `get_compute`
+corrects it. It has no ⌘ number either (`shortcuts.ts` leaves it out), so pages after it keep theirs and Alerts keeps ⌘9.
 
 Pages have no tabs: the tree picks the view and the breadcrumb reads "Page / View". Sync › Library is the exception: a
 bar over it picks the kind it lists (`kind`: plugins, MCP servers, skills, hooks, instructions) and how it's shown

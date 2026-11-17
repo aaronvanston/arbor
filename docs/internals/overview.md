@@ -139,3 +139,4 @@ Home, the sidebar and the monitors load with the app; everything else loads when
 - [Projects and machines in the setup repo](projects-and-machines.md): where each project goes on each machine, and the layers over the global setup.
 - [Session archive](session-archive.md): the one place transcript bytes are kept.
 - [Command line](cli.md): `arbor` and `arbor mcp`.
+- [Compute](compute.md): cloud sandboxes, read-only, hidden until a provider is connected.

@@ -4,6 +4,7 @@ mod bench;
 pub(crate) mod antiburn;
 pub(crate) mod capacity;
 mod collector;
+pub(crate) mod compute_lookup;
 mod cost_groups;
 mod database;
 pub(crate) mod diagnostics;

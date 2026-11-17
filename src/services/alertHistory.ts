@@ -22,6 +22,10 @@ export type AlertSubject = {
   automation?: string;
   /** The setup repo, by its folder. */
   repo?: string;
+  /** A compute provider (`boat`), for an alert about its limits or its key. */
+  compute?: string;
+  /** A cloud sandbox, as `provider/id` (`computeSandboxSubject`), since ids are only unique within a provider. */
+  sandbox?: string;
   /**
    * What opening it shows, beyond what it's about, so these don't count when telling a repeat from news: the provider
    * whose accounts an outage affects, the kinds of setup item a setup change touched (`hook`, `mcp`, `plugin`,
@@ -101,6 +105,10 @@ const CATEGORY: Record<AlertKind, AlertCategory | null> = {
   setupWaiting: 'machines',
   setupBehind: 'machines',
   setupScanFailing: 'machines',
+  // Cloud sandboxes aren't machines, but they're the fleet's, which is what the Machines filter gathers.
+  computeLimit: 'machines',
+  computeSandbox: 'machines',
+  computeKey: 'machines',
   outage: 'outages',
   // The proxy's own trouble: Home says what's wrong, with the fix.
   proxySettings: 'outages',
@@ -121,6 +129,7 @@ export type AlertDestination =
   | { kind: 'accounts'; account?: string; provider?: string }
   | { kind: 'machines'; machine?: string }
   | { kind: 'automation'; automation: string }
+  | { kind: 'compute'; provider?: string; sandbox?: string }
   | { kind: 'setup'; tab?: SetupChangeView | 'repo' | 'history' | 'overview'; machine?: string }
   | { kind: 'archive' }
   | { kind: 'session'; session: string }
@@ -169,6 +178,18 @@ export function alertDestination({ kind, subject }: Pick<AlertRecord, 'kind' | '
   }
   if (kind === 'setupWaiting' || kind === 'setupBehind') return { kind: 'setup', tab: 'overview' };
   if (kind === 'automationFailed' && subject?.automation) return { kind: 'automation', automation: subject.automation };
+  // A key is fixed on Settings › Compute; limits on the provider's sandboxes, a sandbox's trouble on its own page.
+  if (kind === 'computeKey') {
+    const setting = firstOf(subject?.setting);
+    return setting ? { kind: 'setting', setting } : { kind: 'compute' };
+  }
+  if (kind === 'computeLimit' || kind === 'computeSandbox') {
+    const sandbox = firstOf(subject?.sandbox);
+    const slash = sandbox ? sandbox.indexOf('/') : -1;
+    if (sandbox && slash > 0) return { kind: 'compute', provider: sandbox.slice(0, slash), sandbox: sandbox.slice(slash + 1) };
+    const provider = firstOf(subject?.compute);
+    return provider ? { kind: 'compute', provider } : { kind: 'compute' };
+  }
   // What's wrong with the archive, and what to do, is on its settings page.
   if (kind === 'archiveAway' || kind === 'archiveFailing') return { kind: 'archive' };
   // Fixed on its row in Settings › Proxy; a settings file the proxy didn't load is shown, with its line, on Home.
@@ -219,6 +240,8 @@ function aboutThings(subject: AlertSubject | undefined): string[] {
     ...ids(subject.provider).map((id) => `provider:${id}`),
     ...ids(subject.automation).map((id) => `automation:${id}`),
     ...ids(subject.repo).map((id) => `repo:${id}`),
+    ...ids(subject.compute).map((id) => `compute:${id}`),
+    ...ids(subject.sandbox).map((id) => `sandbox:${id}`),
   ];
 }
 

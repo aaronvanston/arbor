@@ -46,6 +46,8 @@ export const LEFT_OUT = {
   open_oauth_url: 'it opens any address on the Mac',
   install_core_version: 'it reports progress to the window; the command line asks the window to run it',
   set_phone_alert_secret: 'secrets only go in through the window',
+  connect_compute_provider: 'secrets only go in through the window',
+  open_compute_sandbox: 'it opens a page on the Mac',
   scan_machine_host_key: 'it holds a host key for the window’s Trust, where the person compares its fingerprint',
   trust_machine_host_key: 'trusting a host key is a security call made in the window, after comparing its fingerprint',
   saved_store_migrate: 'only the window has the values to move',
@@ -115,6 +117,7 @@ export const NEEDS_CONFIRMATION = new Set([
   'restore_set_aside',
   'delete_set_aside',
   'uninstall_cleanup_agent',
+  'disconnect_compute_provider',
 ]);
 
 /** Commands that only look: everything else changes something. */

@@ -1,7 +1,8 @@
 import { invokeCommand } from './native/commands';
 import { requestFocus, type FocusTarget } from './focusRequests';
-import { accountLimitsView, automationView, machinesView, movedSetupView, sessionsView, setupChecksView, setupView, usageView, type AppView } from './navigation';
+import { accountLimitsView, automationView, computeSandboxView, computeView, machinesView, movedSetupView, sessionsView, setupChecksView, setupView, usageView, type AppView } from './navigation';
 import type { AlertDestination } from './services/alertHistory';
+import { isComputeProviderId } from './services/computeHint';
 import { settingEntry } from './services/settingsIndex';
 import { setSyncMachine } from './services/syncScope';
 
@@ -11,6 +12,12 @@ export function alertDestinationView(destination: AlertDestination): AppView | n
     case 'accounts': return accountLimitsView();
     case 'machines': return machinesView(destination.machine);
     case 'automation': return automationView(destination.automation);
+    // A provider that's since been disconnected opens Compute, which shows what's connected now.
+    case 'compute': {
+      const provider = isComputeProviderId(destination.provider) ? destination.provider : undefined;
+      if (provider && destination.sandbox) return computeSandboxView(provider, destination.sandbox);
+      return computeView(provider);
+    }
     // A change of one kind opens that kind in the Library by machine, where each machine's homes are; others, Overview's
     // table of each machine's setup.
     case 'setup':

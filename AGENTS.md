@@ -158,7 +158,8 @@ over a socket and runs the same commands, so the window and the CLI agree. Detai
 - `src-tauri/src/`: the core (`core_runtime.rs`, `core_config/`, `management_api.rs`), usage and machines (`usage.rs`,
   `usage/`), the CLI (`cli/`), updates (`app_update.rs`). Machines, automations and pools:
   [Machines](docs/internals/machines.md). The archive: [Session archive](docs/internals/session-archive.md). The CLI:
-  [Command line](docs/internals/cli.md).
+  [Command line](docs/internals/cli.md). Cloud sandboxes (`compute.rs`, `compute/`):
+  [Compute](docs/internals/compute.md).
 - `crates/session-tables/`: agents' transcripts as rows, a crate of its own with no Tauri in it.
 - `scripts/`: releases, notes, notices and dev tooling; each says what it does at the top.
 

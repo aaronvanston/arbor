@@ -3,6 +3,7 @@ import { formatCount, formatTime } from '../lib/format';
 import { HEAVY_SESSION_TOKEN_OPTIONS, setAppPreference, useAppPreferences } from '../appPreferences';
 import { ATTENTION_ALERT_AFTER_MS } from '../services/agentAttention';
 import { EXPIRING_MIN_PERCENT } from '../services/expiringCapacity';
+import { useConnectedComputeProviders } from '../services/computeHint';
 import { MACHINE_DOWN_AFTER_MS } from '../services/machineAlerts';
 import { SETUP_WATCH_INTERVAL_MS } from '../services/setupChanges';
 import { DIGEST_SEND_HOUR, startWeeklyDigests } from '../services/weeklyDigest';
@@ -23,6 +24,7 @@ import { PhoneAlertsSettings } from './PhoneAlertsSettings';
 export function NotificationsSettingsPage() {
   const { t } = useI18n();
   const preferences = useAppPreferences();
+  const computeConnected = useConnectedComputeProviders().length > 0;
   const heavyLabel = (tokens: number) => (tokens === 0 ? t('interface.heavySessions.off') : t('interface.heavySessions.tokens', { tokens: formatCount(tokens) }));
   const digestTime = formatTime(new Date(2026, 0, 5, DIGEST_SEND_HOUR));
   const onOff = onOffLabel(t);
@@ -216,6 +218,23 @@ export function NotificationsSettingsPage() {
               />
             }
           />
+          {/* Only once a compute provider is connected; search lands on Machines until then. */}
+          {computeConnected ? (
+            <SettingsRow
+              settingId="notifications.compute-alerts"
+              held={held}
+              reset={preferenceReset(preferences, 'computeAlerts', onOff)}
+              title={t('interface.computeAlerts.title')}
+              description={t('interface.computeAlerts.description')}
+              control={
+                <Switch
+                  checked={preferences.computeAlerts}
+                  aria-label={t('interface.computeAlerts.title')}
+                  onCheckedChange={(checked) => setAppPreference('computeAlerts', checked)}
+                />
+              }
+            />
+          ) : null}
         </SettingsSection>
         <SettingsSection title={t('interface.attention.title')} description={t('interface.attention.description')}>
           <SettingsRow

@@ -1,5 +1,6 @@
 import type { MessageKey, MessageVariables } from '../i18n/resources';
 import { settingsPageIds, type SettingsPageId } from '../navigation';
+import { COMPUTE_PROVIDER_IDS, computeProviderName } from './computeHint';
 
 /** A group of advanced settings that starts folded, so search knows to open it. */
 export type SettingsFold = 'logging' | 'retry' | 'tls';
@@ -17,6 +18,8 @@ export type SettingEntry = {
   description?: MessageKey;
   /** Other words it can be found by, in the same language as the rest. */
   keywords?: MessageKey;
+  /** Names it can be found by too, never translated: a provider's own name comes from its record, not a string. */
+  names?: readonly string[];
   /** The folded group that holds it. */
   fold?: SettingsFold;
   /** Where search lands instead while the row isn't shown (TLS off, no phone service chosen, no T3 Code). */
@@ -34,6 +37,7 @@ export const SETTINGS_PAGE_LABEL: Record<SettingsPageId, MessageKey> = {
   'agent-homes': 'settings.nav.agentHomes',
   harnesses: 'settings.nav.harnesses',
   pools: 'settings.nav.pools',
+  compute: 'settings.nav.compute',
   'session-archive': 'settings.nav.sessionArchive',
   data: 'settings.nav.data',
   diagnostics: 'settings.nav.diagnostics',
@@ -55,6 +59,9 @@ const row = (
 /** A section indexed as a whole: a list or table rather than rows of settings. */
 const section = (page: SettingsPageId, name: string, title: MessageKey, more: Omit<SettingEntry, 'id' | 'page' | 'section' | 'title'> = {}) =>
   row(page, name, title, title, more);
+
+/** Compute's providers by name, from their records, so no string names one. */
+const COMPUTE_NAMES = COMPUTE_PROVIDER_IDS.map(computeProviderName);
 
 /** Every setting in Settings, page by page in sidebar order. */
 export const SETTINGS_INDEX: readonly SettingEntry[] = [
@@ -129,6 +136,13 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   section('harnesses', 'agents', 'agentHomes.harnesses.title', { description: 'agentHomes.harnesses.description', keywords: 'agentHomes.harnesses.keywords' }),
   section('pools', 'list', 'pools.list.title', { description: 'pools.list.description', keywords: 'settingsSearch.keywords.pools' }),
 
+  section('compute', 'providers', 'compute.settings.providers.title', { description: 'compute.settings.providers.description', keywords: 'settingsSearch.keywords.compute', names: COMPUTE_NAMES }),
+  // Shown once a provider is connected, so search lands on Providers, which is always there, until then.
+  row('compute', 'key', 'compute.settings.providers.title', 'compute.settings.key.title', { description: 'compute.settings.key.saved', keywords: 'settingsSearch.keywords.compute', names: COMPUTE_NAMES, fallback: 'compute.providers' }),
+  row('compute', 'check', 'compute.settings.providers.title', 'compute.settings.check.title', { description: 'compute.settings.check.description', keywords: 'settingsSearch.keywords.compute', names: COMPUTE_NAMES, fallback: 'compute.providers' }),
+  row('compute', 'disconnect', 'compute.settings.providers.title', 'compute.settings.disconnect.title', { description: 'compute.settings.disconnect.description', keywords: 'settingsSearch.keywords.compute', names: COMPUTE_NAMES, fallback: 'compute.providers' }),
+  section('compute', 'linking', 'compute.settings.linking.title', { description: 'compute.settings.linking.description', keywords: 'settingsSearch.keywords.compute', names: COMPUTE_NAMES }),
+
   row('session-archive', 'folder', 'sessionArchive.title', 'sessionArchive.folder.title', { description: 'sessionArchive.setup.folderDescription' }),
   row('session-archive', 'status', 'sessionArchive.title', 'sessionArchive.status.title', { fallback: 'session-archive.folder' }),
   row('session-archive', 'pause', 'sessionArchive.title', 'sessionArchive.pause.title', { description: 'sessionArchive.pause.description', fallback: 'session-archive.folder' }),
@@ -186,6 +200,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
     ['weekly-digest', 'interface.digest.title', 'interface.weeklyDigest.title', 'interface.weeklyDigest.description'],
   ] as const).map(([name, sectionTitle, title, description]) =>
     row('notifications', name, sectionTitle, title, { description, keywords: 'settingsSearch.keywords.alerts' })),
+  row('notifications', 'compute-alerts', 'interface.machines.title', 'interface.computeAlerts.title', { description: 'interface.computeAlerts.description', keywords: 'settingsSearch.keywords.alerts', fallback: 'notifications.machines' }),
   row('notifications', 'phone-service', 'phoneAlerts.title', 'phoneAlerts.service.title', { description: 'phoneAlerts.description', keywords: 'settingsSearch.keywords.phone' }),
   row('notifications', 'phone-test', 'phoneAlerts.title', 'phoneAlerts.test.title', { description: 'phoneAlerts.test.description', keywords: 'settingsSearch.keywords.phone', fallback: 'notifications.phone-service' }),
   section('notifications', 'phone-topics', 'phoneAlerts.topics.title', { description: 'phoneAlerts.topics.description', keywords: 'settingsSearch.keywords.phone', fallback: 'notifications.phone-service' }),
@@ -261,7 +276,7 @@ export function indexSettings(t: Translate, entries: readonly SettingEntry[] = S
     const section = t(entry.section);
     const page = t(SETTINGS_PAGE_LABEL[entry.page]);
     const description = entry.description ? readable(t(entry.description)) : '';
-    const aliases = entry.keywords ? t(entry.keywords) : '';
+    const aliases = [entry.keywords ? t(entry.keywords) : '', ...(entry.names ?? [])].filter(Boolean).join(' ');
     return { entry, title, section, page, aliases, words: [title, section, page, description, aliases].join(' ').toLowerCase() };
   });
 }

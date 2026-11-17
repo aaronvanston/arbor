@@ -4,14 +4,16 @@ import { ChevronRight, Lock } from '../ui/icons';
 import { useI18n } from '../../i18n';
 import type { MessageKey } from '../../i18n/resources';
 import { cn } from '../../lib/utils';
-import { canOpenView, keepMachineScope, machinesView, mainView, poolsView, type AppView, type MainPageId } from '../../navigation';
+import { canOpenView, computeView, keepMachineScope, machinesView, mainView, poolsView, type AppView, type MainPageId } from '../../navigation';
 import { requestFocus } from '../../focusRequests';
 import { prefetchAttribute } from '../../pageModules';
 import { useAccountReserves } from '../../services/accountReserves';
 import { ensureAccountsLoaded, useAccountsStore } from '../../services/accountsStore';
 import { useFleetHealthSelect } from '../../services/fleetHealth';
-import { accountsBadge, badgeDestination, machinesBadge, poolsBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
+import { accountsBadge, badgeDestination, computeBadge, machinesBadge, poolsBadge, setupBadge, type PageBadge } from '../../services/pageBadges';
 import { machinesBehind, useSyncStanding } from '../../services/syncStanding';
+import type { ComputeTreeRead } from '../../services/compute';
+import { COMPUTE_PROVIDERS, useConnectedComputeProviders } from '../../services/computeHint';
 import { POOL_STANDING_LABEL, poolStanding, usePoolsSelect, type PoolStanding } from '../../services/pools';
 import { useQuotaClock } from '../../services/quotaTime';
 import { setupChecks, type SetupCheck } from '../../services/setupChecks';
@@ -25,17 +27,19 @@ import {
   leafCount,
   leafView,
   openLeaf,
+  openComputeProvider,
   openMachine,
   openPool,
   SIDEBAR_TREE,
   treeKeyTarget,
+  treePageShown,
   wantedOpen,
   type HandOpened,
   type TreeLeaf,
   type TreePage,
 } from '../../services/sidebarTree';
 import { arriveAtPage, setGroupOpen, useOpenChoices } from '../../services/sidebarTreeChoices';
-import type { HealthStatus } from '../../native/types';
+import type { ComputeProviderId, HealthStatus } from '../../native/types';
 import { MachinePill } from '../identity/Identity';
 import { StatusDot, type StatusTone } from '../ui/status-dot';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '../ui/tooltip';
@@ -46,6 +50,8 @@ export { PAGE_ICONS } from './shellParts';
 
 type TreeMachine = { name: string; status: HealthStatus };
 type TreePool = { id: string; name: string; standing: PoolStanding; withRoom: number; pickable: number };
+
+type TreeCompute = { id: ComputeProviderId; name: string; running: number | null; tone: StatusTone };
 
 const POOL_TONE: Record<PoolStanding, StatusTone> = { room: 'success', full: 'warning', empty: 'muted', checking: 'muted' };
 
@@ -67,12 +73,41 @@ const MACHINE_STATUS: Record<HealthStatus, MessageKey> = {
   unconfigured: 'machines.health.status.unconfigured',
 };
 
+const NO_COMPUTE_READS: ComputeTreeRead[] = [];
+
+/**
+ * Each connected provider's running count and dot. The snapshot store and its figures load in their own chunk, only
+ * once a provider is connected, so an install without one keeps them out of launch.
+ */
+function useComputeTreeReads(connected: boolean): ComputeTreeRead[] {
+  const [reads, setReads] = useState(NO_COMPUTE_READS);
+  useEffect(() => {
+    if (!connected) {
+      setReads(NO_COMPUTE_READS);
+      return undefined;
+    }
+    let gone = false;
+    let unsubscribe: (() => void) | undefined;
+    void import('../../services/compute').then((compute) => {
+      if (gone) return;
+      const read = () => setReads((last) => replaceEqualDeep(last, compute.computeTreeReads(compute.currentCompute())));
+      unsubscribe = compute.subscribeCompute(read);
+      read();
+    });
+    return () => {
+      gone = true;
+      unsubscribe?.();
+    };
+  }, [connected]);
+  return reads;
+}
+
 /**
  * What asks for you on each page (accounts to sign in again or turned off with an error or at their cap, a machine
  * degraded or down, Sync's problems), and the machines themselves, Machines' leaves. The machines and Sync's checks
  * are read passively, after the rounds that change them.
  */
-function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId, PageBadge | null>>; machines: TreeMachine[]; pools: TreePool[] } {
+function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId, PageBadge | null>>; machines: TreeMachine[]; pools: TreePool[]; compute: TreeCompute[] } {
   const { files, disabled } = useAccountsStore();
   const { paused } = useAccountReserves();
   // Each signal is only what the tree draws from its store, so a sampling round's new readings, a minute passing or a
@@ -81,6 +116,14 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
   const machines = useFleetHealthSelect((health): TreeMachine[] => (health ?? []).map((machine) => ({ name: machine.machine, status: machine.status })));
   const pools = usePoolsSelect(({ pools: poolList, previews }): TreePool[] =>
     (poolList ?? []).map((pool) => ({ id: pool.id, name: pool.name, ...poolStanding(pool, previews.find((preview) => preview.pool === pool.id)) })));
+  // One leaf per connected provider, from the saved hint so they're there before the first read; with none, Compute
+  // isn't drawn and nothing is read.
+  const connected = useConnectedComputeProviders();
+  const computeRead = useComputeTreeReads(connected.length > 0);
+  const compute = useMemo(() => connected.map((id): TreeCompute => {
+    const read = computeRead.find((provider) => provider.id === id);
+    return { id, name: COMPUTE_PROVIDERS[id].name, running: read?.running ?? null, tone: read?.tone ?? 'muted' };
+  }), [connected, computeRead]);
   const [problemChecks, setProblemChecks] = useState<{ level: SetupCheck['level']; machine: string }[]>([]);
   const { standing } = useSyncStanding();
 
@@ -109,7 +152,8 @@ function useTreeSignals(coreReady: boolean): { badges: Partial<Record<MainPageId
   const poolsMark = useMemo(() => poolsBadge(pools.map((pool) => pool.standing)), [pools]);
   const behind = useMemo(() => machinesBehind(standing).map((machine) => machine.machine), [standing]);
   const setup = useMemo(() => setupBadge(problemChecks, behind), [problemChecks, behind]);
-  return { badges: { accounts, machines: machinesMark, pools: poolsMark, setup }, machines, pools };
+  const computeMark = useMemo(() => computeBadge(compute.map((provider) => provider.tone)), [compute]);
+  return { badges: { accounts, machines: machinesMark, pools: poolsMark, compute: computeMark, setup }, machines, pools, compute };
 }
 
 /** The room the tree has, in rem, so the open groups can be fitted to it. */
@@ -160,12 +204,13 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
 }) {
   const { t } = useI18n();
   const choices = useOpenChoices();
-  const { badges, machines, pools } = useTreeSignals(coreReady);
+  const { badges, machines, pools, compute } = useTreeSignals(coreReady);
   const current = view.kind === 'main' ? view.page : null;
   const lit = openLeaf(view);
   const machineOpen = openMachine(view, machines.map((machine) => machine.name));
   const poolOpen = openPool(view, pools.map((pool) => pool.id));
-  const counts = { machines: machines.length, pools: pools.length };
+  const computeOpen = openComputeProvider(view, compute.map((provider) => provider.id));
+  const counts = { machines: machines.length, pools: pools.length, compute: compute.length };
   // The group last opened by hand, which the fit leaves open while its page is current (keptOpen).
   const [opened, setOpened] = useState<HandOpened | null>(null);
   useEffect(() => {
@@ -188,7 +233,7 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
   const measured = Number.isFinite(availableRem);
   useLayoutEffect(() => {
     if (measured) onRowsMoved?.();
-  }, [measured, availableRem, machines.length, pools.length, onRowsMoved]);
+  }, [measured, availableRem, machines.length, pools.length, compute.length, onRowsMoved]);
 
   // The row the focus is on. A page changed by a shortcut or Back folds the old page's group away, taking a focused
   // view out from under the focus, which would drop it on the window; after that render it goes to the row that's
@@ -264,7 +309,7 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
             </div>
           ) : null}
           <ul className="flex flex-col gap-px" aria-labelledby={section.labelKey ? `tree-section-${section.id}` : undefined}>
-            {section.pages.map((page) => (
+            {section.pages.filter((page) => treePageShown(page, counts)).map((page) => (
               <TreePageRow
                 key={page.id}
                 page={page}
@@ -275,6 +320,8 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
                 machineOpen={machineOpen}
                 pools={page.pools ? pools : []}
                 poolOpen={poolOpen}
+                compute={page.compute ? compute : []}
+                computeOpen={computeOpen}
                 lit={lit?.page === page.id ? lit : undefined}
                 locked={!canOpenView(mainView(page.id), coreReady)}
                 leafLocked={(leaf) => !canOpenView(leafView(leaf), coreReady)}
@@ -293,7 +340,7 @@ export function SidebarTree({ view, coreReady, lockedHint, hint, onNavigate, nav
 }
 
 
-function TreePageRow({ page, current, open, badge, machines, machineOpen, pools, poolOpen, lit, locked, leafLocked, lockedHint, hint, onNavigate, onOpenGroup }: {
+function TreePageRow({ page, current, open, badge, machines, machineOpen, pools, poolOpen, compute, computeOpen, lit, locked, leafLocked, lockedHint, hint, onNavigate, onOpenGroup }: {
   page: TreePage;
   current: boolean;
   open: boolean;
@@ -302,6 +349,8 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
   machineOpen: string | null;
   pools: TreePool[];
   poolOpen: string | null;
+  compute: TreeCompute[];
+  computeOpen: string | null;
   /** The page's view on screen, when it's one of its leaves. */
   lit: TreeLeaf | undefined;
   locked: boolean;
@@ -314,12 +363,12 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
   onOpenGroup: (page: MainPageId, open: boolean) => void;
 }) {
   const { t } = useI18n();
-  const expandable = leafCount(page, { machines: machines.length, pools: pools.length }) > 0 && (!locked || page.leaves.some((leaf) => !leafLocked(leaf)));
+  const expandable = leafCount(page, { machines: machines.length, pools: pools.length, compute: compute.length }) > 0 && (!locked || page.leaves.some((leaf) => !leafLocked(leaf)));
   const shown = expandable && open;
   const label = t(page.labelKey);
   // The row carries the selection when nothing under it can: a page with no views, one whose views are folded away,
   // or one opened without naming a view yet. Machines' own row is the fleet overview, lit whenever that's open.
-  const underneath = page.machines ? machineOpen !== null : page.pools ? poolOpen !== null : lit !== undefined;
+  const underneath = page.machines ? machineOpen !== null : page.pools ? poolOpen !== null : page.compute ? computeOpen !== null : lit !== undefined;
   const active = current && (!shown || !underneath);
   const listId = `tree-${page.id}`;
   const Icon = PAGE_ICONS[page.id];
@@ -344,14 +393,15 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
               onNavigate(destination.view);
             },
           } : null}
-          shortcut={`go.${page.id}`}
+          // Compute has no number (shortcuts.ts), so Alerts keeps ⌘9.
+          shortcut={page.compute ? undefined : `go.${page.id}`}
           hint={hint}
           className={expandable ? 'pr-8' : undefined}
           rowProps={{ 'data-tree-row': 'page', 'data-tree-page': page.id, 'data-tree-expandable': String(expandable), 'data-tree-open': String(shown), ...prefetchAttribute(mainView(page.id)) }}
           onClick={() => {
             // Opened where it was left; Machines on its overview.
             arriveAtPage(page.id);
-            onNavigate(page.machines ? machinesView() : page.pools ? poolsView() : mainView(page.id));
+            onNavigate(page.machines ? machinesView() : page.pools ? poolsView() : page.compute ? computeView() : mainView(page.id));
           }}
         />
         {expandable ? (
@@ -359,7 +409,7 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
             type="button"
             aria-expanded={shown}
             aria-controls={shown ? listId : undefined}
-            aria-label={page.machines ? t('tree.group.machines') : page.pools ? t('tree.group.pools') : t('tree.group.views', { page: label })}
+            aria-label={page.machines ? t('tree.group.machines') : page.pools ? t('tree.group.pools') : page.compute ? t('tree.group.compute') : t('tree.group.views', { page: label })}
             className={TREE_CHEVRON_CLASS}
             data-tree-chevron={page.id}
             onClick={() => onOpenGroup(page.id, !shown)}
@@ -436,6 +486,31 @@ function TreePageRow({ page, current, open, badge, machines, machineOpen, pools,
                   ) : null}
                   <StatusDot tone={POOL_TONE[pool.standing]} className={cn('size-1.5', POOL_TONE[pool.standing] === 'muted' && 'bg-sidebar-muted-foreground')} />
                   <span className="sr-only">{t(POOL_STANDING_LABEL[pool.standing], { withRoom: pool.withRoom, pickable: pool.pickable })}</span>
+                </button>
+              </li>
+            );
+          })}
+          {compute.map((provider) => {
+            const active = computeOpen === provider.id;
+            return (
+              <li key={provider.id}>
+                {/* Its name, how many sandboxes are running, and a dot for whether anything there wants a look. */}
+                <button
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  data-active={active}
+                  data-tree-row="leaf"
+                  data-tree-parent={page.id}
+                  {...prefetchAttribute(mainView(page.id))}
+                  className={cn(LEAF_CLASS, 'pr-8')}
+                  onClick={() => onNavigate(computeView(provider.id))}
+                >
+                  <span className="min-w-0 flex-1 truncate">{provider.name}</span>
+                  {provider.running ? (
+                    <span className="text-xs tabular-nums text-sidebar-muted-foreground" aria-hidden="true">{provider.running}</span>
+                  ) : null}
+                  <StatusDot tone={provider.tone} className={cn('size-1.5', provider.tone === 'muted' && 'bg-sidebar-muted-foreground')} />
+                  <span className="sr-only">{t('tree.compute.running', { count: provider.running ?? 0 })}</span>
                 </button>
               </li>
             );

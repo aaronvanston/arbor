@@ -19,6 +19,7 @@ import { FleetMonitor } from './components/FleetMonitor';
 import { AlertCoordinator } from './components/AlertCoordinator';
 import { UpdateWhenIdleMonitor } from './components/UpdateWhenIdleMonitor';
 import { CliBridgeMonitor } from './components/CliBridgeMonitor';
+import { ComputeMonitor } from './components/ComputeMonitor';
 import { QuitGuard } from './components/QuitGuard';
 import { MonitorBoundary } from './components/ErrorBoundaries';
 import { AfterLaunch } from './components/AfterLaunch';
@@ -106,6 +107,8 @@ function AppMonitors({ shell, onNavigate }: { shell: boolean; onNavigate: (view:
         <MonitorBoundary name="AgentAttentionMonitor"><AgentAttentionMonitor /></MonitorBoundary>
         <MonitorBoundary name="UpdateWhenIdleMonitor"><UpdateWhenIdleMonitor /></MonitorBoundary>
         <MonitorBoundary name="CliBridgeMonitor"><CliBridgeMonitor /></MonitorBoundary>
+        {/* Only once a compute provider is connected; until then it renders nothing and calls nothing. */}
+        <MonitorBoundary name="ComputeMonitor"><ComputeMonitor /></MonitorBoundary>
       </AfterLaunch>
     </>
   );

@@ -182,6 +182,7 @@ describe('phone alerts', () => {
       reserveAlerts: true,
       heavySessionTokens: 0,
       archiveAlerts: true,
+      computeAlerts: true,
       providerStatus: false,
       outageNotifications: true,
       machineNotifications: true,

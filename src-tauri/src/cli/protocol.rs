@@ -100,6 +100,8 @@ impl From<CommandError> for WireError {
             (CommandErrorKind::Core, _) => ("core", error.reason),
             (CommandErrorKind::Changed, _) => ("changed", error.reason),
             (CommandErrorKind::Unarchived, _) => ("unarchived", error.reason),
+            // Only connecting a compute provider fails these ways, and the command line never does that.
+            (CommandErrorKind::Refused | CommandErrorKind::Unreachable, _) => ("failed", error.reason),
         };
         Self { kind: kind.into(), status: error.status, reason, message: error.message }
     }

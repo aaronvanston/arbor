@@ -4,7 +4,7 @@ import { authFileStatusMessage } from './authFileHealth';
 import type { HealthStatus } from '../native/types';
 import { quotaKey, type AuthFile } from './quotaService';
 import type { SetupCheck } from './setupChecks';
-import { accountsView, machinesView, poolsView, setupChecksView, setupView, type AppView, type MainPageId } from '../navigation';
+import { accountsView, computeView, machinesView, poolsView, setupChecksView, setupView, type AppView, type MainPageId } from '../navigation';
 import type { FocusTarget } from '../focusRequests';
 
 /**
@@ -38,6 +38,15 @@ export function machinesBadge(statuses: readonly HealthStatus[]): PageBadge | nu
 /** Pools: one with no machine that has room now, so a run started on it would wait, spill or not start. */
 export function poolsBadge(standings: readonly string[]): PageBadge | null {
   return standings.includes('full') ? { tone: 'warning', label: 'sidebar.badge.pools.full' } : null;
+}
+
+/**
+ * Compute: the worst of its providers' sidebar dots (services/compute.ts' providerTone), so a folded Compute still shows
+ * trouble. Red for a key turned down or starts blocked, amber while one isn't answering or a sandbox wants a look.
+ */
+export function computeBadge(tones: readonly string[]): PageBadge | null {
+  if (tones.includes('error')) return { tone: 'error', label: 'sidebar.badge.compute.error' };
+  return tones.includes('warning') ? { tone: 'warning', label: 'sidebar.badge.compute.warning' } : null;
 }
 
 /**
@@ -82,6 +91,8 @@ export function badgeDestination(page: MainPageId, badge: PageBadge): BadgeDesti
       return { view: machinesView(), place: 'sidebar.badge.place.machines' };
     case 'pools':
       return { view: poolsView(), place: 'sidebar.badge.place.pools' };
+    case 'compute':
+      return { view: computeView(), place: 'sidebar.badge.place.compute' };
     default:
       return null;
   }

@@ -833,6 +833,55 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "get_compute",
+        access: Access::Read,
+        summary: "Every connected provider's sandboxes, from memory; never reaches the network.",
+        args: &[],
+    },
+    CommandSpec {
+        name: "refresh_compute",
+        access: Access::Write,
+        summary: "Reads every connected provider now (unless a round ran in the last 10 seconds) and returns the result.",
+        args: &[],
+    },
+    CommandSpec {
+        name: "get_compute_sandbox_history",
+        access: Access::Read,
+        summary: "Every CPU and memory reading Arbor holds for a sandbox, about two hours, oldest first.",
+        args: &[
+            ArgSpec { name: "provider", ts_type: "ComputeProviderId", optional: false },
+            ArgSpec { name: "sandboxId", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "disconnect_compute_provider",
+        access: Access::Confirm,
+        summary: "Forgets a provider's key and everything read from it. Links are kept.",
+        args: &[
+            ArgSpec { name: "provider", ts_type: "ComputeProviderId", optional: false },
+        ],
+    },
+    CommandSpec {
+        name: "link_compute_sandbox",
+        access: Access::Write,
+        summary: "Records that a machine (and an agent session there) started a sandbox, so Compute shows it; an agent runs it right after making one. It wins over a provider's label. The machine must be on the Machines list; the sandbox needn't be listed yet. Not called a claim: `arbor` never offers a command by that name, which means spending a quota reset there.",
+        args: &[
+            ArgSpec { name: "provider", ts_type: "ComputeProviderId", optional: false },
+            ArgSpec { name: "sandboxId", ts_type: "string", optional: false },
+            ArgSpec { name: "machine", ts_type: "string", optional: false },
+            ArgSpec { name: "session", ts_type: "string | null", optional: true },
+        ],
+    },
+    CommandSpec {
+        name: "unlink_compute_sandbox",
+        access: Access::Write,
+        summary: "Drops the link Arbor recorded for a sandbox. A provider's label, if any, still counts.",
+        args: &[
+            ArgSpec { name: "provider", ts_type: "ComputeProviderId", optional: false },
+            ArgSpec { name: "sandboxId", ts_type: "string", optional: false },
+        ],
+    },
+    CommandSpec {
         name: "update_machine_agent",
         access: Access::Confirm,
         summary: "Updates the agent on the machine the way it was installed, then checks its agents again so the page shows the version it ended up on. How it was installed is read again first, so the update never goes by an older check; `command`, when given, is what its user was shown, and nothing runs if that has changed.",
@@ -2399,6 +2448,19 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "get_runs" => done(Box::pin(crate::usage::machine_health::runs::get_runs()).await),
         "cancel_run" => async { done(Box::pin(crate::usage::machine_health::runs::cancel_run(app.clone(), arg(&args, "id")?)).await) }.await,
         "open_run" => async { done(Box::pin(crate::usage::machine_health::runs::open_run(app.clone(), arg(&args, "id")?)).await) }.await,
+        "get_compute" => {
+            let app = app.clone();
+            blocking(move || done(crate::compute::get_compute(app.clone()))).await
+        }
+        "refresh_compute" => done(Box::pin(crate::compute::refresh_compute(app.clone())).await),
+        "get_compute_sandbox_history" => {
+            let app = app.clone();
+            let args = args.clone();
+            blocking(move || done(crate::compute::get_compute_sandbox_history(app.clone(), arg(&args, "provider")?, arg(&args, "sandboxId")?))).await
+        }
+        "disconnect_compute_provider" => async { done(Box::pin(crate::compute::disconnect_compute_provider(app.clone(), arg(&args, "provider")?)).await) }.await,
+        "link_compute_sandbox" => async { done(Box::pin(crate::compute::link_compute_sandbox(app.clone(), arg(&args, "provider")?, arg(&args, "sandboxId")?, arg(&args, "machine")?, arg(&args, "session")?)).await) }.await,
+        "unlink_compute_sandbox" => async { done(Box::pin(crate::compute::unlink_compute_sandbox(app.clone(), arg(&args, "provider")?, arg(&args, "sandboxId")?)).await) }.await,
         "update_machine_agent" => async { done(Box::pin(crate::usage::machine_health::agents::update_machine_agent(app.clone(), app.state(), arg(&args, "machine")?, arg(&args, "agent")?, arg(&args, "command")?)).await) }.await,
         "update_machine_harness" => async { done(Box::pin(crate::usage::machine_health::harness_update::update_machine_harness(app.state(), arg(&args, "machine")?, arg(&args, "harness")?, arg(&args, "command")?)).await) }.await,
         "get_agent_latest_versions" => done(Box::pin(crate::usage::machine_health::agent_releases::get_agent_latest_versions(app.state())).await),

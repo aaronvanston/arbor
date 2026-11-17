@@ -1,6 +1,6 @@
 ---
 name: arbor
-description: Read and manage Arbor, the app that shares this person's agent accounts through a local proxy, from the command line. Use when asked about the proxy, account limits, caps or routing, machine health, live or recent agent sessions, usage and cost, alerts, keeping machines in line with the setup repo (Sync), the session archive, or Arbor's settings, and for questions about what agents did across past sessions (tools and commands run, errors, tokens and cost, who started the work, how pull requests ended up), which `arbor query` answers in SQL.
+description: Read and manage Arbor, the app that shares this person's agent accounts through a local proxy, from the command line. Use when asked about the proxy, account limits, caps or routing, machine health, live or recent agent sessions, usage and cost, alerts, keeping machines in line with the setup repo (Sync), the session archive, cloud sandboxes (Compute, including linking a sandbox you just made), or Arbor's settings, and for questions about what agents did across past sessions (tools and commands run, errors, tokens and cost, who started the work, how pull requests ended up), which `arbor query` answers in SQL.
 ---
 
 # Arbor from the command line
@@ -46,6 +46,7 @@ any other machine, say so instead of trying.
 | The archive's analytics tables: on or off, what they hold, rows, size on the drive, how many session files are still to read and how many couldn't be read (`setAside`) | `arbor call get_session_archive_status --json` (`.analytics`) |
 | Scheduled automations, Arbor's, other apps' and schedules made in ultradian by hand (`ultradian:<machine>:<name>`) | `arbor call list_automations`, then `arbor call get_automation id=<id>` and `arbor call list_automation_runs id=<id>` (an ultradian schedule's runs are read from its machine) |
 | Saved settings | `arbor settings`, `arbor settings get <name>` |
+| Cloud sandboxes at a provider connected in Settings › Compute (Boat): each one's state, size, CPU and memory, plan hours this month, auto-stop, the machine and session that started it and whether it looks forgotten; the account's limits, and when its plan hours run out at the current rate | `arbor call get_compute --json` (from memory; `arbor call refresh_compute` reads the provider now). `arbor call get_compute_sandbox_history provider=boat sandboxId=<id>` gives one sandbox's CPU and memory over about two hours. Nothing about Compute is there until a provider is connected |
 | What could come off a machine: agent homes, agents and how each was installed, startup items whose program is gone, the agents' logs and caches, with sizes; how many of each home's session files the session archive holds (`archive`); and what's set aside there | `arbor call check_machine_cleanup machine=<name>` (looks again, read-only); `arbor call get_machine_cleanup machine=<name>` gives the last look without one |
 
 Machines can be named by their name or their SSH host, in any case (`cedar-dev-01` finds "Cedar dev 01"). Accounts
@@ -116,6 +117,8 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 | Install, remove or pick the default of Node's versions with a machine's version managers | `arbor call change_node_versions machine=<name> --args '{"changes":[{"manager":"nvm","version":"22","action":"install"}]}'` (needs `--yes`; `uninstall` and `setDefault` take a version the last scan found the manager keeping) |
 | Proxy core | `arbor core start`, `arbor core stop`, `arbor core restart`, `arbor core install [version]` |
 | Mark every alert seen | `arbor alerts seen` |
+| Link a cloud sandbox to the machine and session that made it, so Compute shows where it came from | `arbor call link-compute-sandbox provider=boat sandboxId=<sandbox id> machine=<machine name> session=<session id>` (see "Cloud sandboxes"); `arbor call unlink-compute-sandbox provider=boat sandboxId=<sandbox id>` drops the link |
+| Disconnect a Compute provider: Arbor forgets its key and stops reading it. It can't be undone; connecting again needs the key pasted in the window | `arbor call disconnect_compute_provider provider=boat` (needs `--yes`) |
 | Pause or resume an automation | `arbor call set_automation_enabled id=<id> enabled=false` (or `true`) |
 | Run an automation now, precheck first | `arbor call run_automation_now id=<id>` |
 | Copy another app's automation into Arbor, paused | `arbor call copy_automation_into_arbor id=<id> pauseOriginal=false` (`true` pauses the original too). One whose schedule Arbor can't read, as a Claude scheduled task's, is refused rather than given a made-up one: ask the person for a schedule and make it with `save_automation` |
@@ -136,6 +139,21 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 
 Stopping or restarting the proxy cuts off every agent using it for a moment, on every machine. Say so when you show
 the plan.
+
+## Cloud sandboxes
+
+When you make a sandbox at a provider Arbor reads (Boat today), link it straight after, in the same step:
+
+```sh
+arbor call link-compute-sandbox provider=boat sandboxId=bx_23456789 machine=cam-mbp session=<your session id>
+```
+
+- `machine` is the machine you're on, named exactly as `arbor machines` lists it. Arbor refuses a name it doesn't
+  know; it never guesses one from the sandbox's name.
+- `session` is your own agent session's id, as it is. Leave it out when you don't know it.
+- The sandbox needn't be listed yet: Arbor reads the provider once a minute. A link to a sandbox that's gone is
+  dropped by itself.
+- The provider's key goes in only through Arbor's window (Settings › Compute), and Arbor never shows it back.
 
 ## Cleaning up a machine
 
@@ -168,5 +186,5 @@ belongs to another user.
 
 ## What arbor never does
 
-It can't claim or spend resets, reach the proxy's raw management API, read an account's credential file, or show
-secrets: keys and tokens come back as `[hidden]`. Don't try to work around any of that.
+It can't claim or spend resets, reach the proxy's raw management API, read an account's credential file, set or show
+a Compute provider's key, or show secrets: keys and tokens come back as `[hidden]`. Don't try to work around any of that.

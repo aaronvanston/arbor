@@ -35,11 +35,18 @@ export type TreeLeaf =
 export type TreePageId = Exclude<MainPageId, 'alerts'>;
 /**
  * `machines`: the page lists the fleet's machines as its leaves, and its own row is a view, the overview. `pools`: the
- * same with the machine pools.
+ * same with the machine pools. `compute`: the same with the connected compute providers, and the page is only drawn
+ * while there's one.
  */
-export type TreePage = { id: TreePageId; labelKey: MessageKey; leaves: readonly TreeLeaf[]; machines?: true; pools?: true; keywords?: MessageKey };
-/** How many machines and pools there are to list under Machines and Pools. */
-export type TreeCounts = { machines?: number; pools?: number };
+export type TreePage = { id: TreePageId; labelKey: MessageKey; leaves: readonly TreeLeaf[]; machines?: true; pools?: true; compute?: true; keywords?: MessageKey };
+/**
+ * How many machines, pools and connected compute providers there are to list under Machines, Pools and Compute. No
+ * compute providers (or none given, as for the first screen) hides Compute.
+ */
+export type TreeCounts = { machines?: number; pools?: number; compute?: number };
+
+/** Whether a page is drawn: Compute only while a provider is connected; every other page always. */
+export const treePageShown = (page: Pick<TreePage, 'compute'>, counts: TreeCounts) => !page.compute || (counts.compute ?? 0) > 0;
 /** A section with no label (Home's) draws no head row. */
 export type TreeSection = { id: 'top' | 'fleet' | 'spend'; labelKey: MessageKey | null; pages: readonly TreePage[] };
 
@@ -59,6 +66,8 @@ export const SIDEBAR_TREE: readonly TreeSection[] = [
       { id: 'machines', labelKey: 'app.nav.machines', leaves: [], machines: true, keywords: 'tree.machines.keywords' },
       // Each pool's own page, with its health and runs; editing them stays in Settings › Pools.
       { id: 'pools', labelKey: 'app.nav.pools', leaves: [], pools: true, keywords: 'tree.pools.keywords' },
+      // Cloud sandboxes, one leaf per connected provider; hidden until one is connected in Settings › Compute.
+      { id: 'compute', labelKey: 'app.nav.compute', leaves: [], compute: true, keywords: 'tree.compute.keywords' },
       {
         id: 'sessions',
         labelKey: 'app.nav.sessions',
@@ -185,6 +194,12 @@ export function openPool(view: AppView, listed: readonly string[]): string | nul
   return pool !== null && listed.includes(pool) ? pool : null;
 }
 
+/** The provider Compute has narrowed to, for lighting its leaf (a sandbox's page lights its provider's). */
+export function openComputeProvider(view: AppView, listed: readonly string[]): string | null {
+  const provider = view.kind === 'main' && view.page === 'compute' ? view.params?.provider ?? null : null;
+  return provider !== null && listed.includes(provider) ? provider : null;
+}
+
 // ── Heights, in rem, for working out whether the open groups fit ─────────────────────────────────────────────────
 /** A labeled section's head row, and the gap above every section but the first. */
 export const SECTION_HEAD_REM = 1.75;
@@ -195,14 +210,15 @@ export const PAGE_ROW_REM = 2 + 1 / 16;
 export const LEAF_ROW_REM = 1.75 + 2 / 16;
 export const LEAF_LIST_PAD_REM = 0.5;
 
-/** How many rows a page opens to: its views, or for Machines and Pools the machines or pools. */
+/** How many rows a page opens to: its views, or for Machines, Pools and Compute the machines, pools or providers. */
 export const leafCount = (page: TreePage, counts: TreeCounts) =>
-  (page.machines ? counts.machines ?? 0 : page.pools ? counts.pools ?? 0 : page.leaves.length);
+  (page.machines ? counts.machines ?? 0 : page.pools ? counts.pools ?? 0 : page.compute ? counts.compute ?? 0 : page.leaves.length);
 
 /** How tall the tree is with these groups open, in rem, with `counts` rows under Machines and Pools when they're open. */
 export function treeHeightRem(open: ReadonlySet<MainPageId>, counts: TreeCounts = {}): number {
   return SIDEBAR_TREE.reduce((total, section, index) => {
     const pages = section.pages.reduce((sum, page) => {
+      if (!treePageShown(page, counts)) return sum;
       const leaves = leafCount(page, counts);
       if (!open.has(page.id) || !leaves) return sum + PAGE_ROW_REM;
       return sum + PAGE_ROW_REM + LEAF_LIST_PAD_REM + leaves * LEAF_ROW_REM;

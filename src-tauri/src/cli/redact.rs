@@ -27,13 +27,14 @@ fn secret_field(name: &str) -> bool {
 /// Text that is a key whatever field it's in: the core's client keys and the providers' own.
 fn looks_like_key(text: &str) -> bool {
     let text = text.trim();
-    ["sk-", "sk_", "xai-", "AIza", "ghp_", "gho_", "github_pat_", "Bearer "]
+    ["sk-", "sk_", "xai-", "AIza", "ghp_", "gho_", "github_pat_", "boat_", "Bearer "]
         .iter()
         .any(|prefix| text.starts_with(prefix) && text.len() >= prefix.len() + 12)
 }
 
-/// The prefixes a key starts with, wherever in a text it sits.
-const KEY_STARTS: [&str; 7] = ["sk-", "sk_", "xai-", "AIza", "ghp_", "gho_", "github_pat_"];
+/// The prefixes a key starts with, wherever in a text it sits. `boat_` is a Compute provider's key: Arbor never
+/// sends one, but an agent's command line can hold one.
+const KEY_STARTS: [&str; 8] = ["sk-", "sk_", "xai-", "AIza", "ghp_", "gho_", "github_pat_", "boat_"];
 
 /// Text with anything that looks like a key inside it replaced by [`HIDDEN`]: a command an agent ran, or a file it
 /// read, can hold one in the middle of a line. Only a prefix followed by a dozen or more of a key's own characters
@@ -131,6 +132,7 @@ mod tests {
         assert_eq!(masked("export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstu && run"), "export OPENAI_API_KEY=[hidden] && run");
         assert_eq!(masked("curl -H 'Authorization: Bearer ghp_abcdefghijklmnop1234' https://x"), "curl -H 'Authorization: Bearer [hidden]' https://x");
         assert_eq!(masked("two: xai-abcdefghijklmnop, AIzaSyA1234567890abcdef."), "two: [hidden], [hidden].");
+        assert_eq!(masked("BOAT_API_KEY=boat_abcdefghijklmnop1234 boat list"), "BOAT_API_KEY=[hidden] boat list");
         // Words that only start the same way, a prefix inside a word, and a prefix with too little after it.
         for plain in ["a task-list-with-many-parts here", "sk-short", "the disk-usage-report-2026-10", "héllo sk- wörld", ""] {
             assert_eq!(masked(plain), plain);

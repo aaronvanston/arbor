@@ -35,6 +35,9 @@ const TOAST_KIND: Record<AlertKind, ToastKind> = {
   automationFailed: 'warning',
   outage: 'warning',
   proxySettings: 'error',
+  computeLimit: 'warning',
+  computeSandbox: 'warning',
+  computeKey: 'error',
   digest: 'info',
   test: 'info',
 };

@@ -1574,7 +1574,7 @@ export type CommandError = {
   message: string,
 };
 
-export type CommandErrorKind = "failed" | "canceled" | "core" | "changed" | "unarchived";
+export type CommandErrorKind = "failed" | "canceled" | "core" | "changed" | "unarchived" | "refused" | "unreachable";
 
 /**
  * One of a plugin's skills, commands or agents: what its listing adds to every session, and what
@@ -1585,6 +1585,214 @@ export type ComponentCost = {
   alwaysOn: TokenEstimate | null,
   onInvoke: TokenEstimate | null,
 };
+
+/**
+ * What a provider can tell Arbor beyond its list.
+ */
+export type ComputeCapabilities = {
+  limits: boolean,
+  /**
+   * CPU and memory for a running sandbox.
+   */
+  load: boolean,
+  cost: boolean,
+  autoStop: boolean,
+};
+
+/**
+ * Why a running sandbox of one's own looks forgotten.
+ */
+export type ComputeForgotten = "sessionEnded" | "noAutoStop" | "keptAlive";
+
+/**
+ * What's wrong with a sandbox, from the provider's health reason or error reduced to a kind.
+ */
+export type ComputeIssue = "diskPressure" | "memoryPressure" | "crashed" | "setupFailed" | "other";
+
+/**
+ * What the key can do at the provider, where the provider says.
+ */
+export type ComputeKeyAccess = "readOnly" | "canWrite" | "unknown";
+
+/**
+ * A limit on the account, with how much of it is used.
+ */
+export type ComputeLimit = {
+  kind: ComputeLimitKind,
+  used: number,
+  /**
+   * Null when there's no cap.
+   */
+  max: number | null,
+  resetsAtMs: number | null,
+};
+
+export type ComputeLimitKind = "activeSandboxes" | "startsPerMinute" | "startsPerHour" | "startsPerDay" | "planHours" | "extraSpend";
+
+/**
+ * Why an own sandbox shows no machine.
+ */
+export type ComputeLinkProblem = "notLinked" | "unknownMachine";
+
+/**
+ * What named a sandbox's machine and session.
+ */
+export type ComputeLinkedBy = "link" | "label";
+
+/**
+ * A sandbox's latest CPU and memory, or why there's none. Fractions are 0–1.
+ */
+export type ComputeLoad = { "kind": "read", cpu: number, memory: number, atMs: number, } | { "kind": "notReadYet" } | { "kind": "monitoringOff" } | { "kind": "unavailable" };
+
+/**
+ * One CPU and memory reading. Fractions are 0–1.
+ */
+export type ComputePoint = {
+  atMs: number,
+  cpu: number,
+  memory: number,
+};
+
+/**
+ * A provider Arbor can read sandboxes from.
+ */
+export type ComputeProviderId = "boat";
+
+/**
+ * One provider in the snapshot. Times are unix ms.
+ */
+export type ComputeProviderSnapshot = {
+  id: ComputeProviderId,
+  status: ComputeProviderStatus,
+  keyAccess: ComputeKeyAccess,
+  keyExpiresAtMs: number | null,
+  /**
+   * The last round whose list succeeded; null before the first.
+   */
+  checkedAtMs: number | null,
+  capabilities: ComputeCapabilities,
+  limits: Array<ComputeLimit>,
+  /**
+   * Whether the provider would let a sandbox start now; null when it doesn't say.
+   */
+  canStart: boolean | null,
+  startBlock: ComputeStartBlock | null,
+  /**
+   * Plan hours used per hour at the current rate: the billing multipliers of the running sandboxes added up.
+   */
+  planHoursPerHour: number | null,
+  /**
+   * When the plan hours run out at the current rate.
+   */
+  runOutAtMs: number | null,
+  /**
+   * When the billing period ends and the plan hours reset.
+   */
+  periodEndMs: number | null,
+  /**
+   * The list stopped at Arbor's page cap, so it may be missing sandboxes (the oldest, as providers list newest
+   * first).
+   */
+  listPartial: boolean,
+  sandboxes: Array<ComputeSandbox>,
+};
+
+/**
+ * How the last round at a provider went.
+ */
+export type ComputeProviderStatus = "ok" | "refused" | "limitsNeedScope" | "unreachable" | "rateLimited";
+
+/**
+ * One sandbox. Its id, name and size name cross; nothing else of the provider's text does. Times are unix ms.
+ */
+export type ComputeSandbox = {
+  id: string,
+  name: string,
+  /**
+   * The provider's name for its size or type.
+   */
+  size: string,
+  vcpus: number,
+  memoryGb: number,
+  /**
+   * Plan hours each hour running costs; null when the provider doesn't say.
+   */
+  multiplier: number | null,
+  state: ComputeSandboxState,
+  issue: ComputeIssue | null,
+  /**
+   * When Arbor first saw the issue.
+   */
+  issueSinceMs: number | null,
+  createdAtMs: number,
+  /**
+   * When its current run began: a resume starts a new run of the same sandbox. A sandbox still restoring counts as
+   * just started.
+   */
+  startedAtMs: number,
+  /**
+   * When it stops on its own.
+   */
+  stopsAtMs: number | null,
+  autoStopSeconds: number | null,
+  /**
+   * Plan hours this month.
+   */
+  monthHours: number | null,
+  monthDollars: number | null,
+  /**
+   * Made by the key's own user rather than a teammate. A teammate's is never linked and never forgotten.
+   */
+  mine: boolean,
+  load: ComputeLoad,
+  /**
+   * The latest 30 readings, oldest first, for the row's sparkline.
+   */
+  points: Array<ComputePoint>,
+  /**
+   * The Arbor machine that started it, by a link Arbor recorded or the provider's label; only a name on the Machines list.
+   */
+  machine: string | null,
+  session: ComputeSession | null,
+  /**
+   * Where the machine and session came from; only a link can be unlinked. Null when nothing names either.
+   */
+  linkedBy: ComputeLinkedBy | null,
+  linkProblem: ComputeLinkProblem | null,
+  forgotten: ComputeForgotten | null,
+};
+
+export type ComputeSandboxState = "starting" | "running" | "stopping" | "stopped" | "error";
+
+/**
+ * The agent session that started a sandbox, by the id a link or label gave, matched exactly against the sessions
+ * Arbor records.
+ */
+export type ComputeSession = {
+  id: string,
+  /**
+   * Arbor has seen this session. When it hasn't, the rest are empty and it never makes a sandbox forgotten.
+   */
+  known: boolean,
+  /**
+   * Live by Arbor's own definition of a live session.
+   */
+  live: boolean,
+  endedAtMs: number | null,
+  harness: Harness | null,
+};
+
+/**
+ * Every connected provider's sandboxes and limits. A provider with no key saved isn't in it.
+ */
+export type ComputeSnapshot = {
+  providers: Array<ComputeProviderSnapshot>,
+};
+
+/**
+ * Why the provider would refuse to start a sandbox now, from its own reason reduced to a kind.
+ */
+export type ComputeStartBlock = "planHoursGone" | "walletEmpty" | "startRate" | "activeMax" | "other";
 
 /**
  * How a request relates to the conversation in its thread, worked out from

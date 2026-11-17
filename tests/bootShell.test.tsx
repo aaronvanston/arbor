@@ -29,12 +29,14 @@ function classesAt(html: string, marker: string): string[] {
 }
 
 describe("index.html's static first screen", () => {
-  it('lists the sidebar tree’s pages and sections in order, by their English names', () => {
+  it('lists the sidebar tree’s pages and sections in order, by their English names, leaving Compute to React', () => {
+    // Compute shows only once a provider is connected, which the first screen can't know.
     const labels = [...boot.matchAll(/data-boot-box="row-([a-z]+)"/g)].map((match) => match[1]);
-    expect(labels).toEqual(SIDEBAR_TREE.flatMap((section) => section.pages.map((page) => page.id)));
+    expect(labels).toEqual(SIDEBAR_TREE.flatMap((section) => section.pages.filter((page) => !page.compute).map((page) => page.id)));
+    expect(labels).not.toContain('compute');
     for (const section of SIDEBAR_TREE) {
       if (section.labelKey) expect(boot).toContain(`>${en[section.labelKey]}</div>`);
-      for (const page of section.pages) expect(boot).toContain(`>${en[page.labelKey]}</span>`);
+      for (const page of section.pages.filter((entry) => !entry.compute)) expect(boot).toContain(`>${en[page.labelKey]}</span>`);
     }
   });
 

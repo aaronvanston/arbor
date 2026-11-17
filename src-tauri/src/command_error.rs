@@ -21,6 +21,10 @@ pub(crate) enum CommandErrorKind {
     Changed,
     /// Sessions it would set aside aren't all archived, and nobody said to go ahead anyway.
     Unarchived,
+    /// A service refused the key it was given (a compute provider's, on connect).
+    Refused,
+    /// A service couldn't be reached, or asked Arbor to slow down.
+    Unreachable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
@@ -54,6 +58,14 @@ impl CommandError {
 
     pub(crate) fn unarchived(message: impl Into<String>) -> Self {
         Self { kind: CommandErrorKind::Unarchived, ..Self::failed(message) }
+    }
+
+    pub(crate) fn refused(message: impl Into<String>) -> Self {
+        Self { kind: CommandErrorKind::Refused, ..Self::failed(message) }
+    }
+
+    pub(crate) fn unreachable(message: impl Into<String>) -> Self {
+        Self { kind: CommandErrorKind::Unreachable, ..Self::failed(message) }
     }
 }
 

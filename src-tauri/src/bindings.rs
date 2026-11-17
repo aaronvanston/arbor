@@ -156,6 +156,10 @@ mod tests {
         types.visit::<crate::usage::machine_health::telemetry::TelemetryBreakdown>();
         types.visit::<crate::usage::diagnostics::CallDiagnostics>();
         types.visit::<crate::usage::diagnostics::ClearedCalls>();
+        // Compute
+        types.visit::<crate::compute::ComputeProviderId>();
+        types.visit::<crate::compute::ComputeSnapshot>();
+        types.visit::<crate::compute::ComputePoint>();
         // Setup
         types.visit::<crate::usage::machine_health::setup::SetupInventory>();
         types.visit::<crate::usage::machine_health::setup::SetupText>();

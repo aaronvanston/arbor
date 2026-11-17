@@ -54,6 +54,8 @@ export type AppPreferences = {
   heavySessionTokens: number;
   /** Notify when the session archive's drive has been away, or the archive failing, for an hour, and daily after. */
   archiveAlerts: boolean;
+  /** Notify about cloud sandboxes: plan hours, blocked starts, forgotten or degraded sandboxes, and the provider's key. */
+  computeAlerts: boolean;
   /** Send the week before's digest every Monday morning. */
   weeklyDigest: boolean;
   /** Notify when an agent has waited a while for permission or an answer. Needs Arbor's reporter on its machine. */
@@ -113,6 +115,7 @@ export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   autoLineUp: true,
   heavySessionTokens: 100_000_000,
   archiveAlerts: true,
+  computeAlerts: true,
   weeklyDigest: false,
   agentPermissionAlerts: true,
   agentWaitingAlerts: true,

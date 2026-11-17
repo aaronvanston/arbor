@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { en } from '../src/i18n/locales/en';
-import { accountsBadge, badgeDestination, machinesBadge, setupBadge } from '../src/services/pageBadges';
+import { accountsBadge, badgeDestination, computeBadge, machinesBadge, setupBadge } from '../src/services/pageBadges';
 import { present } from './support/items';
 
 const now = Date.parse('2026-09-26T09:00:00Z');
@@ -60,6 +60,22 @@ describe('the Sync link’s count', () => {
     expect(setupBadge([problem('ci-01'), warning('cam-mbp'), problem('ci-01')])).toEqual({ tone: 'warning', count: 1, label: 'sidebar.badge.setup.one' });
     expect(en['sidebar.badge.setup.one'].replace('{count}', '1')).toBe('1 machine with setup problems');
     expect(setupBadge([problem('ci-01'), problem('lab-box')], ['ci-01', 'cedar-02'])).toEqual({ tone: 'warning', count: 3, label: 'sidebar.badge.setup.both.other' });
+  });
+});
+
+describe('the Compute link’s dot', () => {
+  it('shows the worst of its providers’ dots, so a folded Compute still shows trouble', () => {
+    expect(computeBadge(['success', 'muted'])).toBeNull();
+    expect(computeBadge([])).toBeNull();
+    expect(computeBadge(['success', 'warning'])).toEqual({ tone: 'warning', label: 'sidebar.badge.compute.warning' });
+    expect(computeBadge(['warning', 'error'])).toEqual({ tone: 'error', label: 'sidebar.badge.compute.error' });
+  });
+
+  it('opens Compute', () => {
+    expect(badgeDestination('compute', present(computeBadge(['error'])))).toEqual({
+      view: { kind: 'main', page: 'compute', params: {} },
+      place: 'sidebar.badge.place.compute',
+    });
   });
 });
 

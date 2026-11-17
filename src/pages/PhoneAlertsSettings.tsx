@@ -16,6 +16,7 @@ import { cn } from '../lib/utils';
 import { NO_PHONE_ALERT_SECRETS, PHONE_ALERT_TOPICS, PHONE_SERVICES, phoneAlertSendRoute, preparePhoneAlerts, randomNtfyTopic, readPhoneAlertSecrets, recordPhoneAlertDelivery, savePhoneAlertSecret, sendPhoneAlert, setPhoneAlertSetting, topicRaisedHere, usePhoneAlertDelivery, usePhoneAlertSecrets, usePhoneAlertSecretsProblem, usePhoneAlertSettings, withPhoneTopic, type PhoneService } from '../services/phoneAlerts';
 import { useMachineOverrides, useProjectOverrides } from '../services/machineSettings';
 import { useQuotaClock } from '../services/quotaTime';
+import { useConnectedComputeProviders } from '../services/computeHint';
 import { formatAgo } from '../lib/format';
 import type { PhoneAlertSecret } from '../native/types';
 
@@ -29,6 +30,7 @@ export function PhoneAlertsSettings() {
   const { t } = useI18n();
   const settings = usePhoneAlertSettings();
   const preferences = useAppPreferences();
+  const computeConnected = useConnectedComputeProviders().length > 0;
   const overrides = useMachineOverrides();
   const projects = useProjectOverrides();
   const secrets = usePhoneAlertSecrets();
@@ -201,7 +203,8 @@ export function PhoneAlertsSettings() {
       </SettingsSection>
       {settings.service !== 'off' ? (
         <SettingsSection settingId="notifications.phone-topics" title={t('phoneAlerts.topics.title')} description={t('phoneAlerts.topics.description')}>
-          {PHONE_ALERT_TOPICS.map((topic) => (
+          {/* Compute's topic only once a provider is connected. */}
+          {PHONE_ALERT_TOPICS.filter((topic) => topic !== 'compute' || computeConnected).map((topic) => (
             <SettingsRow
               key={topic}
               title={t(`phoneAlerts.topic.${topic}.title`)}

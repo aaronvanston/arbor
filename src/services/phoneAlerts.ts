@@ -67,14 +67,17 @@ export type AlertKind =
   | 'accountResumed'
   | 'digest'
   | 'proxySettings'
+  | 'computeLimit'
+  | 'computeSandbox'
+  | 'computeKey'
   | 'test';
 
 /** An alert as the window sends it: the native side takes any kind, and the window only ever sends these. */
 export type PhoneAlert = Omit<NativePhoneAlert, 'kind'> & { kind: AlertKind };
 
 /** The kinds of alert, as the settings let each on or off the phone. */
-export type PhoneAlertTopic = 'limits' | 'resets' | 'capacity' | 'caps' | 'heavy' | 'archive' | 'incidents' | 'proxy' | 'machines' | 'setup' | 'needsYou' | 'digest';
-export const PHONE_ALERT_TOPICS: readonly PhoneAlertTopic[] = ['limits', 'resets', 'capacity', 'caps', 'heavy', 'archive', 'incidents', 'proxy', 'machines', 'setup', 'needsYou', 'digest'];
+export type PhoneAlertTopic = 'limits' | 'resets' | 'capacity' | 'caps' | 'heavy' | 'archive' | 'incidents' | 'proxy' | 'machines' | 'compute' | 'setup' | 'needsYou' | 'digest';
+export const PHONE_ALERT_TOPICS: readonly PhoneAlertTopic[] = ['limits', 'resets', 'capacity', 'caps', 'heavy', 'archive', 'incidents', 'proxy', 'machines', 'compute', 'setup', 'needsYou', 'digest'];
 const TOPIC: Record<AlertKind, PhoneAlertTopic | null> = {
   limitWarning: 'limits',
   limitCritical: 'limits',
@@ -99,6 +102,9 @@ const TOPIC: Record<AlertKind, PhoneAlertTopic | null> = {
   setupBehind: 'setup',
   setupScanFailing: 'machines',
   automationFailed: 'machines',
+  computeLimit: 'compute',
+  computeSandbox: 'compute',
+  computeKey: 'compute',
   agentPermission: 'needsYou',
   agentWaiting: 'needsYou',
   digest: 'digest',
@@ -135,6 +141,7 @@ export function topicRaisedHere(topic: PhoneAlertTopic, preferences: AppPreferen
     // Nothing turns these off on this Mac: without the proxy's settings right, the rest of Arbor goes quiet.
     case 'proxy': return true;
     case 'machines': return anywhere('machineNotifications');
+    case 'compute': return preferences.computeAlerts;
     case 'setup': return anywhere('setupChangeAlerts');
     case 'needsYou': return anywhere('agentPermissionAlerts') || anywhere('agentWaitingAlerts');
     case 'digest': return preferences.weeklyDigest;
