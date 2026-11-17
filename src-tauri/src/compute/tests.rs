@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const BASE: &str = "https://boat.dev/api/v1";
 const FAKE_KEY: &str = "boat_fake_key_for_tests_0123456789";
 const SECRET: &str = "boat_SECRET_TOKEN_in_a_command_line_42";
+/// The id Boat gives a command its exec started: only whether there is one is ever kept.
+const COMMAND_ID: &str = "cmd_COMMAND_ID_never_kept_7";
 const NOW: i64 = 1_800_000_000_000;
 
 fn boat() -> &'static dyn ComputeProvider {
@@ -87,11 +89,13 @@ fn id(n: usize) -> String {
 
 fn processes(cpu: f64, memory: f64) -> String {
     serde_json::json!({
-        "ok": true, "type": "process.list", "live": true, "sampledAt": "2027-01-15T08:30:00Z", "total": 2,
+        "ok": true, "type": "process.list", "live": true, "sampledAt": "2027-01-15T08:30:00Z", "total": 3,
         "processes": [
             {"pid": 41, "parentPid": 1, "user": "someone", "cpuPercent": cpu, "memoryMB": memory,
              "startedAt": "2027-01-15T08:00:00Z", "command": format!("agent --token {SECRET}"), "commandId": null},
-            {"pid": 42, "command": format!("curl -H 'Authorization: Bearer {SECRET}'"), "cpuPercent": 0, "memoryMB": 0}
+            {"pid": 42, "command": format!("curl -H 'Authorization: Bearer {SECRET}'"), "cpuPercent": 0, "memoryMB": 0},
+            {"pid": 43, "parentPid": 1, "user": "someone", "cpuPercent": 0, "memoryMB": 0,
+             "startedAt": "2027-01-15T08:10:00Z", "command": format!("bun dev --token {SECRET}"), "commandId": COMMAND_ID}
         ]
     })
     .to_string()
@@ -162,20 +166,24 @@ fn a_secret_in_a_command_line_crosses_nowhere() {
     // Every result of the round, failures included, as it came back from the provider.
     let returned = format!("{read:?}");
     assert!(returned.contains("Unexpected") && returned.contains("Unreachable") && returned.contains("RateLimited"), "{returned}");
-    for secret in [SECRET, "DESKTOP_SECRET", "203.0.113.10", "Someone Real", FAKE_KEY] {
+    for secret in [SECRET, COMMAND_ID, "DESKTOP_SECRET", "203.0.113.10", "Someone Real", FAKE_KEY] {
         assert!(!returned.contains(secret), "{secret} in {returned}");
     }
     apply_read(&mut state, read, NOW);
     let snapshot = serde_json::to_string(&provider_snapshot(boat(), &state, NOW)).unwrap();
     let history = serde_json::to_string(&state.rings.values().flatten().collect::<Vec<_>>()).unwrap();
     for text in [&snapshot, &history] {
-        for secret in [SECRET, "DESKTOP_SECRET", "203.0.113.10", "Someone Real", FAKE_KEY] {
+        for secret in [SECRET, COMMAND_ID, "DESKTOP_SECRET", "203.0.113.10", "Someone Real", FAKE_KEY] {
             assert!(!text.contains(secret), "{secret} in {text}");
         }
     }
-    assert!(!format!("{:?}{:?}", state.sandboxes, state.key).contains(SECRET));
+    let kept = format!("{:?}{:?}{:?}", state.sandboxes, state.key, state.loads);
+    assert!(!kept.contains(SECRET) && !kept.contains(COMMAND_ID), "{kept}");
     assert!(!format!("{:?}", state.key).contains(FAKE_KEY));
     assert!(snapshot.contains("\"kind\":\"read\""));
+    // What the process list does give: how many commands exec started, and when the newest began.
+    let started = chrono::DateTime::parse_from_rfc3339("2027-01-15T08:10:00Z").unwrap().timestamp_millis();
+    assert!(snapshot.contains(&format!("\"commands\":1,\"commandStartedMs\":{started}")), "{snapshot}");
 }
 
 #[test]
@@ -597,36 +605,100 @@ fn a_round_that_waited_behind_another_does_not_run_again() {
 fn each_forgotten_rule_and_teammates_are_exempt() {
     let ended = |ago: i64| ComputeSession { id: "s".into(), known: true, live: false, ended_at_ms: Some(NOW - ago), harness: None };
     let running = listed("bx_23456789", ComputeSandboxState::Running);
-    assert_eq!(forgotten(&running, Some(&ended(31 * 60_000)), NOW), Some(ComputeForgotten::SessionEnded));
-    assert_eq!(forgotten(&running, Some(&ended(29 * 60_000)), NOW), None);
+    assert_eq!(forgotten(&running, Some(&ended(31 * 60_000)), &[], NOW), Some(ComputeForgotten::SessionEnded));
+    assert_eq!(forgotten(&running, Some(&ended(29 * 60_000)), &[], NOW), None);
     let unknown = ComputeSession { id: "s".into(), known: false, live: false, ended_at_ms: Some(NOW - 3_600_000), harness: None };
-    assert_eq!(forgotten(&running, Some(&unknown), NOW), None, "a session Arbor hasn't seen never drives it");
+    assert_eq!(forgotten(&running, Some(&unknown), &[], NOW), None, "a session Arbor hasn't seen never drives it");
     // An ended session doesn't make it forgotten when it stops by itself soon; it still does when that's far off.
     let mut stops_soon = listed("bx_23456789", ComputeSandboxState::Running);
     stops_soon.stops_at_ms = Some(NOW + 20 * 60_000);
-    assert_eq!(forgotten(&stops_soon, Some(&ended(31 * 60_000)), NOW), None);
+    assert_eq!(forgotten(&stops_soon, Some(&ended(31 * 60_000)), &[], NOW), None);
     stops_soon.stops_at_ms = Some(NOW + 40 * 60_000);
-    assert_eq!(forgotten(&stops_soon, Some(&ended(31 * 60_000)), NOW), Some(ComputeForgotten::SessionEnded));
+    assert_eq!(forgotten(&stops_soon, Some(&ended(31 * 60_000)), &[], NOW), Some(ComputeForgotten::SessionEnded));
     let mut no_stop = listed("bx_23456789", ComputeSandboxState::Running);
     no_stop.auto_stop_seconds = None;
     no_stop.run_started_at_ms = Some(NOW - 3 * 3_600_000 - 1);
-    assert_eq!(forgotten(&no_stop, None, NOW), Some(ComputeForgotten::NoAutoStop));
+    assert_eq!(forgotten(&no_stop, None, &[], NOW), Some(ComputeForgotten::NoAutoStop));
     no_stop.run_started_at_ms = Some(NOW - 3 * 3_600_000 + 1);
-    assert_eq!(forgotten(&no_stop, None, NOW), None);
+    assert_eq!(forgotten(&no_stop, None, &[], NOW), None);
     let mut extended = listed("bx_23456789", ComputeSandboxState::Running);
     extended.auto_stop_seconds = Some(1800);
     extended.run_started_at_ms = Some(NOW - 3_600_001);
-    assert_eq!(forgotten(&extended, None, NOW), Some(ComputeForgotten::KeptAlive));
+    assert_eq!(forgotten(&extended, None, &[], NOW), Some(ComputeForgotten::KeptAlive));
     extended.run_started_at_ms = Some(NOW - 3_600_000);
-    assert_eq!(forgotten(&extended, None, NOW), None);
+    assert_eq!(forgotten(&extended, None, &[], NOW), None);
     let mut teammate = no_stop.clone();
     teammate.mine = false;
     teammate.run_started_at_ms = Some(NOW - 10 * 3_600_000);
-    assert_eq!(forgotten(&teammate, Some(&ended(3_600_000)), NOW), None);
+    assert_eq!(forgotten(&teammate, Some(&ended(3_600_000)), &[], NOW), None);
     let mut stopped = no_stop;
     stopped.state = ComputeSandboxState::Stopped;
     stopped.run_started_at_ms = Some(NOW - 10 * 3_600_000);
-    assert_eq!(forgotten(&stopped, None, NOW), None, "a stopped sandbox is never a problem");
+    assert_eq!(forgotten(&stopped, None, &[], NOW), None, "a stopped sandbox is never a problem");
+}
+
+fn reading(ago: i64, cpu: f64) -> ComputePoint {
+    ComputePoint { at_ms: NOW - ago, cpu, memory: 0.1 }
+}
+
+/// A reading a minute for the last `minutes`, oldest first.
+fn readings(minutes: i64, cpu: f64) -> Vec<ComputePoint> {
+    (0..minutes).rev().map(|minute| reading(minute * 60_000, cpu)).collect()
+}
+
+#[test]
+fn a_busy_sandbox_is_not_forgotten_whatever_its_session_did() {
+    let ended = ComputeSession { id: "s".into(), known: true, live: false, ended_at_ms: Some(NOW - 3_600_000), harness: None };
+    let running = listed("bx_23456789", ComputeSandboxState::Running);
+    // 17% of its vCPUs: a dev server still working after the agent stopped to wait for a review.
+    assert_eq!(forgotten(&running, Some(&ended), &readings(15, 0.17), NOW), None);
+    assert_eq!(forgotten(&running, Some(&ended), &readings(15, 0.01), NOW), Some(ComputeForgotten::SessionEnded), "a quiet one is");
+    assert_eq!(forgotten(&running, Some(&ended), &readings(2, 0.9), NOW), Some(ComputeForgotten::SessionEnded), "two readings can't tell");
+    assert_eq!(forgotten(&running, Some(&ended), &readings(3, 0.06), NOW), None, "three are enough");
+    // Busy over 20 minutes ago says nothing about now.
+    let old: Vec<ComputePoint> = (0..15).map(|minute| reading(21 * 60_000 + minute * 60_000, 0.9)).rev().collect();
+    assert_eq!(forgotten(&running, Some(&ended), &old, NOW), Some(ComputeForgotten::SessionEnded));
+    // Old busy readings beside recent quiet ones: only the recent count.
+    let mixed: Vec<ComputePoint> = old.iter().copied().chain(readings(5, 0.0)).collect();
+    assert_eq!(forgotten(&running, Some(&ended), &mixed, NOW), Some(ComputeForgotten::SessionEnded));
+    // Only the newest 15 in the window: a burst before them doesn't hold it back.
+    let burst_then_quiet: Vec<ComputePoint> = [reading(19 * 60_000, 1.0), reading(18 * 60_000, 1.0)].into_iter().chain(readings(15, 0.0)).collect();
+    assert_eq!(forgotten(&running, Some(&ended), &burst_then_quiet, NOW), Some(ComputeForgotten::SessionEnded));
+}
+
+#[test]
+fn no_auto_stop_and_kept_alive_are_held_back_while_busy_too() {
+    let mut no_stop = listed("bx_23456789", ComputeSandboxState::Running);
+    no_stop.auto_stop_seconds = None;
+    no_stop.run_started_at_ms = Some(NOW - 5 * 3_600_000);
+    assert_eq!(forgotten(&no_stop, None, &readings(10, 0.3), NOW), None);
+    assert_eq!(forgotten(&no_stop, None, &readings(10, 0.0), NOW), Some(ComputeForgotten::NoAutoStop));
+    let mut extended = listed("bx_23456789", ComputeSandboxState::Running);
+    extended.auto_stop_seconds = Some(1800);
+    extended.run_started_at_ms = Some(NOW - 5 * 3_600_000);
+    assert_eq!(forgotten(&extended, None, &readings(10, 0.3), NOW), None);
+    assert_eq!(forgotten(&extended, None, &readings(2, 0.3), NOW), Some(ComputeForgotten::KeptAlive));
+}
+
+#[test]
+fn the_snapshot_judges_busy_from_the_readings_it_kept() {
+    let mut state = live();
+    let mut sandbox = listed("bx_23456789", ComputeSandboxState::Running);
+    sandbox.auto_stop_seconds = None;
+    sandbox.run_started_at_ms = Some(NOW - 5 * 3_600_000);
+    state.sandboxes = vec![sandbox];
+    let quiet = provider_snapshot(boat(), &state, NOW);
+    assert_eq!(quiet.sandboxes[0].forgotten, Some(ComputeForgotten::NoAutoStop));
+    assert!(!quiet.sandboxes[0].forgotten_held, "nothing holds it back");
+    state.rings.insert("bx_23456789".into(), readings(10, 0.2).into_iter().collect());
+    let working = provider_snapshot(boat(), &state, NOW);
+    assert_eq!(working.sandboxes[0].forgotten, None);
+    assert!(working.sandboxes[0].forgotten_held, "busy is all that keeps it from looking forgotten");
+    // Looked after, not only busy: with an auto-stop it has no reason left, so nothing is held.
+    state.sandboxes[0].auto_stop_seconds = Some(24 * 3_600);
+    let looked_after = provider_snapshot(boat(), &state, NOW);
+    assert_eq!(looked_after.sandboxes[0].forgotten, None);
+    assert!(!looked_after.sandboxes[0].forgotten_held);
 }
 
 #[test]

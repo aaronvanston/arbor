@@ -31,35 +31,40 @@ afterEach(async () => {
 
 describe('Home’s Compute line', () => {
   it('puts the user’s oldest forgotten sandbox ahead of one degraded or at its CPU limit', () => {
-    const line = present(homeComputeLine(boat('typical')));
+    const line = present(homeComputeLine(boat('typical'), NOW));
     expect(line.kind).toBe('forgotten');
     expect(line.kind === 'forgotten' ? line.sandbox.name : null).toBe('ci-01-perf');
     expect(homeComputeLineUrgent(line)).toBe(false);
   });
 
   it('puts the provider’s own trouble first: a refused key, then blocked starts, then not answering', () => {
-    expect(homeComputeLine(boat('refused'))).toEqual({ kind: 'keyRefused' });
-    expect(homeComputeLine(boat('blocked'))).toEqual({ kind: 'startsBlocked', block: 'planHoursGone' });
-    expect(homeComputeLine(boat('unreachable'))).toEqual({ kind: 'unreachable' });
+    expect(homeComputeLine(boat('refused'), NOW)).toEqual({ kind: 'keyRefused' });
+    expect(homeComputeLine(boat('blocked'), NOW)).toEqual({ kind: 'startsBlocked', block: 'planHoursGone' });
+    expect(homeComputeLine(boat('unreachable'), NOW)).toEqual({ kind: 'unreachable' });
+    // Blocked starts are only said while the read that said so still counts: not from a provider that isn't
+    // answering, nor from one slowed for so long its list is an earlier read's.
+    expect(homeComputeLine({ ...boat('blocked'), status: 'unreachable' }, NOW)).toEqual({ kind: 'unreachable' });
+    expect(homeComputeLine({ ...boat('blocked'), status: 'rateLimited', checkedAtMs: NOW - 60_000 }, NOW)).toEqual({ kind: 'startsBlocked', block: 'planHoursGone' });
+    expect(present(homeComputeLine({ ...boat('blocked'), status: 'rateLimited', checkedAtMs: NOW - 10 * 60_000 }, NOW)).kind).not.toBe('startsBlocked');
     expect(homeComputeLineUrgent({ kind: 'keyRefused' })).toBe(true);
   });
 
   it('puts a sandbox in error ahead of being asked to slow down, which comes before the rest', () => {
     // 'trouble' is asked to slow down with cam-mbp-docs in error: the broken sandbox takes the line.
-    const failed = present(homeComputeLine(boat('trouble')));
+    const failed = present(homeComputeLine(boat('trouble'), NOW));
     expect(failed.kind).toBe('error');
     expect(failed.kind === 'error' ? failed.sandbox.name : null).toBe('cam-mbp-docs');
     // Without it, asked to slow down is its own line (not "couldn't reach"), ahead of a forgotten sandbox.
     const trouble = boat('trouble');
     const slowed = { ...trouble, sandboxes: trouble.sandboxes.map((sandbox) => (sandbox.state === 'error' ? { ...sandbox, state: 'running' as const } : sandbox)) };
-    expect(homeComputeLine(slowed)).toEqual({ kind: 'rateLimited' });
+    expect(homeComputeLine(slowed, NOW)).toEqual({ kind: 'rateLimited' });
   });
 
   it('has nothing to say with nothing running, and never names a teammate’s sandbox', () => {
-    expect(homeComputeLine(boat('empty'))).toBeNull();
+    expect(homeComputeLine(boat('empty'), NOW)).toBeNull();
     const typical = boat('typical');
     const theirs: ComputeProviderSnapshot = { ...typical, sandboxes: typical.sandboxes.map((sandbox) => ({ ...sandbox, mine: false })) };
-    expect(homeComputeLine(theirs)).toBeNull();
+    expect(homeComputeLine(theirs, NOW)).toBeNull();
   });
 
   it('counts the user’s running sandboxes linked to a machine, by its exact name', () => {

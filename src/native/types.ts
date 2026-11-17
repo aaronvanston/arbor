@@ -1642,7 +1642,7 @@ export type ComputeLinkedBy = "link" | "label";
 /**
  * A sandbox's latest CPU and memory, or why there's none. Fractions are 0–1.
  */
-export type ComputeLoad = { "kind": "read", cpu: number, memory: number, atMs: number, } | { "kind": "notReadYet" } | { "kind": "monitoringOff" } | { "kind": "keyCantRead" } | { "kind": "unavailable" };
+export type ComputeLoad = { "kind": "read", cpu: number, memory: number, atMs: number, commands: number | null, commandStartedMs: number | null, } | { "kind": "notReadYet" } | { "kind": "monitoringOff" } | { "kind": "keyCantRead" } | { "kind": "unavailable" };
 
 /**
  * One CPU and memory reading. Fractions are 0–1.
@@ -1760,6 +1760,11 @@ export type ComputeSandbox = {
   linkedBy: ComputeLinkedBy | null,
   linkProblem: ComputeLinkProblem | null,
   forgotten: ComputeForgotten | null,
+  /**
+   * It would look forgotten but for its busy CPU. An alert already sent for it isn't over while this holds, so one
+   * working in bursts doesn't alert again each time it goes quiet.
+   */
+  forgottenHeld: boolean,
 };
 
 export type ComputeSandboxState = "starting" | "running" | "stopping" | "stopped" | "error";

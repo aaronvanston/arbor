@@ -11,6 +11,7 @@ use super::{
     ListedSandboxes, LoadSample, ComputeReply,
 };
 use futures_util::future::BoxFuture;
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Deserializer};
 
 const API_BASE: &str = "https://boat.dev/api/v1";
@@ -427,14 +428,21 @@ struct WireProcesses {
     processes: Vec<WireProcess>,
 }
 
-/// Only the two numbers. A process's `command` holds its whole command line, secrets and all; `user` and `pid` say
-/// nothing Compute shows. Not one of them is bound.
+/// Counts and times only: its CPU and memory numbers, when it started, and whether Boat's exec started it. A process's
+/// `command` holds its whole command line, secrets and all, and is never read; `user`, `pid` and `parentPid` say
+/// nothing Compute shows. None of them is bound.
 #[derive(Deserialize)]
 struct WireProcess {
     #[serde(default, rename = "cpuPercent")]
     cpu_percent: Option<f64>,
     #[serde(default, rename = "memoryMB")]
     memory_mb: Option<f64>,
+    #[serde(default, rename = "startedAt", deserialize_with = "time")]
+    started_at: Option<i64>,
+    /// Present on a process Boat's exec started, null on its children and on the system's. Skipped as it's read, so
+    /// the id's text is never held.
+    #[serde(default, rename = "commandId")]
+    command_id: Option<IgnoredAny>,
 }
 
 /// Only the error's code, to tell monitoring being off from other refusals; its message is never read.
@@ -456,7 +464,27 @@ pub(crate) fn load_of(processes: &[(f64, f64)], vcpus: u32, memory_gb: f64) -> O
     let (cpu, memory) = processes.iter().fold((0.0, 0.0), |(cpu, memory), (c, m)| {
         (cpu + if c.is_finite() { c.max(0.0) } else { 0.0 }, memory + if m.is_finite() { m.max(0.0) } else { 0.0 })
     });
-    Some(LoadSample { cpu: fraction(cpu / (f64::from(vcpus) * 100.0)), memory: fraction(memory / (memory_gb * 1024.0)) })
+    Some(LoadSample {
+        cpu: fraction(cpu / (f64::from(vcpus) * 100.0)),
+        memory: fraction(memory / (memory_gb * 1024.0)),
+        commands: None,
+        command_started_ms: None,
+    })
+}
+
+/// How many processes Boat's exec started, and when the newest of them began.
+fn commands_of(processes: &[WireProcess]) -> (u32, Option<i64>) {
+    let started = processes.iter().filter(|process| process.command_id.is_some());
+    let count = started.clone().count();
+    (u32::try_from(count).unwrap_or(u32::MAX), started.filter_map(|process| process.started_at).max())
+}
+
+/// A live process list as a reading of the sandbox.
+fn sample_of(processes: &[WireProcess], vcpus: u32, memory_gb: f64) -> Option<LoadSample> {
+    let numbers: Vec<(f64, f64)> =
+        processes.iter().map(|process| (process.cpu_percent.unwrap_or(0.0), process.memory_mb.unwrap_or(0.0))).collect();
+    let (commands, command_started_ms) = commands_of(processes);
+    load_of(&numbers, vcpus, memory_gb).map(|sample| LoadSample { commands: Some(commands), command_started_ms, ..sample })
 }
 
 fn error_code(reply: &ComputeReply) -> Option<String> {
@@ -554,9 +582,7 @@ impl ComputeProvider for Boat {
             if !read.live {
                 return Err(ComputeFailure::NotLive);
             }
-            let numbers: Vec<(f64, f64)> =
-                read.processes.iter().map(|process| (process.cpu_percent.unwrap_or(0.0), process.memory_mb.unwrap_or(0.0))).collect();
-            load_of(&numbers, sandbox.vcpus, sandbox.memory_gb).ok_or(ComputeFailure::Unexpected)
+            sample_of(&read.processes, sandbox.vcpus, sandbox.memory_gb).ok_or(ComputeFailure::Unexpected)
         })
     }
 }
@@ -748,5 +774,38 @@ mod tests {
         assert_eq!(listed.label_machine.as_deref(), Some("cam-mbp"));
         assert!(!format!("{listed:?}").contains("SECRET"));
         assert!(!format!("{listed:?}").contains("someone"));
+    }
+
+    #[test]
+    fn a_process_list_gives_its_commands_count_and_newest_start_and_never_its_command_lines() {
+        let read: WireProcesses = serde_json::from_str(
+            r#"{"live":true,"processes":[
+                {"pid":1,"parentPid":0,"user":"root","command":"/sbin/init","cpuPercent":0,"memoryMB":10,
+                 "startedAt":"2026-11-17T08:00:00Z","commandId":null},
+                {"pid":40,"parentPid":1,"user":"cam","command":"bun dev --token SECRET_TOKEN","cpuPercent":100,
+                 "memoryMB":1024,"startedAt":"2026-11-17T09:00:00Z","commandId":"cmd_SECRET_ID"},
+                {"pid":41,"parentPid":40,"user":"cam","command":"node server.js SECRET_TOKEN","cpuPercent":50,
+                 "memoryMB":512,"startedAt":"2026-11-17T09:30:00Z","commandId":null},
+                {"pid":50,"parentPid":1,"user":"cam","command":"bun test SECRET_TOKEN","cpuPercent":10,
+                 "memoryMB":0,"startedAt":"2026-11-17T09:10:00Z","commandId":"cmd_SECRET_ID_2"},
+                {"pid":60,"parentPid":1,"command":"sleep 1","cpuPercent":0,"memoryMB":0,"commandId":"cmd_x"}
+            ]}"#,
+        )
+        .unwrap();
+        let sample = sample_of(&read.processes, 4, 8.0).unwrap();
+        // Children (null commandId) aren't counted, and a command with no start time doesn't move the newest.
+        assert_eq!(sample.commands, Some(3));
+        assert_eq!(sample.command_started_ms, parse_time("2026-11-17T09:10:00Z"));
+        assert_eq!(sample.cpu, 160.0 / 400.0);
+        let shown = format!("{sample:?}");
+        for secret in ["SECRET", "cmd_", "/sbin/init", "root", "cam"] {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
+        }
+        // No process from exec: none, and no start.
+        let quiet: WireProcesses =
+            serde_json::from_str(r#"{"live":true,"processes":[{"cpuPercent":1,"memoryMB":1,"startedAt":"2026-11-17T09:00:00Z"}]}"#)
+                .unwrap();
+        let quiet = sample_of(&quiet.processes, 4, 8.0).unwrap();
+        assert_eq!((quiet.commands, quiet.command_started_ms), (Some(0), None));
     }
 }

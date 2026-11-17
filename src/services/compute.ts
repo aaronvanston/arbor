@@ -194,6 +194,14 @@ export const RATE_LIMITED_STALE_MS = 150_000;
 export const rateLimitedListStale = (provider: Pick<ComputeProviderSnapshot, 'status' | 'checkedAtMs'>, nowMs: number) =>
   provider.status === 'rateLimited' && (provider.checkedAtMs === null || nowMs - provider.checkedAtMs > RATE_LIMITED_STALE_MS);
 
+/**
+ * Whether blocked starts are something to say now. A provider that isn't answering, one that turned the key down, or
+ * one slowed for so long its list is an earlier read's still carries the last answer it gave, and nowhere claims that
+ * one.
+ */
+export const startsBlockedNow = (provider: Pick<ComputeProviderSnapshot, 'canStart' | 'status' | 'checkedAtMs'>, nowMs: number) =>
+  provider.canStart === false && provider.status !== 'unreachable' && provider.status !== 'refused' && !rateLimitedListStale(provider, nowMs);
+
 /** A sandbox's CPU and memory as fractions, or null until it's been read. */
 export const sandboxCpu = (sandbox: Pick<ComputeSandbox, 'load'>) => (sandbox.load.kind === 'read' ? sandbox.load.cpu : null);
 export const sandboxMemory = (sandbox: Pick<ComputeSandbox, 'load'>) => (sandbox.load.kind === 'read' ? sandbox.load.memory : null);
@@ -226,6 +234,8 @@ export type ComputeTotals = {
   memoryGb: number;
   /** vCPUs in use now, Σ cpu × vCPUs over the sandboxes read. */
   busyVcpus: number;
+  /** The vCPUs of the sandboxes read: what `busyVcpus` is out of, since one with no reading isn't idle, it's unknown. */
+  readVcpus: number;
   /** How many have a reading. */
   read: number;
   /** How many are above the CPU warning line. */
@@ -234,7 +244,7 @@ export type ComputeTotals = {
 
 /** What the running sandboxes add up to. Stopped ones count for nothing. */
 export function computeTotals(sandboxes: readonly ComputeSandbox[]): ComputeTotals {
-  const totals: ComputeTotals = { running: 0, vcpus: 0, memoryGb: 0, busyVcpus: 0, read: 0, hot: 0 };
+  const totals: ComputeTotals = { running: 0, vcpus: 0, memoryGb: 0, busyVcpus: 0, readVcpus: 0, read: 0, hot: 0 };
   for (const sandbox of activeSandboxes(sandboxes)) {
     totals.running += 1;
     totals.vcpus += sandbox.vcpus;
@@ -243,6 +253,7 @@ export function computeTotals(sandboxes: readonly ComputeSandbox[]): ComputeTota
     if (cpu === null) continue;
     totals.read += 1;
     totals.busyVcpus += cpu * sandbox.vcpus;
+    totals.readVcpus += sandbox.vcpus;
     if (cpuTone(sandbox) !== 'primary') totals.hot += 1;
   }
   return totals;
@@ -507,19 +518,27 @@ export function sandboxTone(sandbox: ComputeSandbox): ComputeTone | 'changing' {
   return 'primary';
 }
 
+/** Flags that stop work in a sandbox now: red on its row, so red wherever it's counted. */
+const URGENT_FLAGS: ReadonlySet<SandboxFlag> = new Set<SandboxFlag>(['error', 'cpuAtLimit']);
+
 /**
- * A provider's leaf dot in the sidebar: error for a refused key or blocked starts, warning while it isn't answering or
- * a sandbox wants a look, success with something running, muted with nothing.
+ * A provider's leaf dot in the sidebar: error for a refused key, blocked starts or a sandbox of one's own in error or
+ * at its CPU limit, warning while it isn't answering or one wants a look, success with something running, muted with
+ * nothing. The same colors Home and the rows give the same things, and like them a teammate's sandbox never counts.
  */
-export function providerTone(provider: ComputeProviderSnapshot): 'success' | 'warning' | 'error' | 'muted' {
-  if (provider.status === 'refused' || provider.canStart === false) return 'error';
+export function providerTone(provider: ComputeProviderSnapshot, nowMs: number): 'success' | 'warning' | 'error' | 'muted' {
+  if (provider.status === 'refused' || startsBlockedNow(provider, nowMs)) return 'error';
+  const flags = provider.sandboxes.filter((sandbox) => sandbox.mine).flatMap(sandboxFlags).filter((flag) => !PASSING_FLAGS.has(flag));
+  if (provider.status === 'ok' || provider.status === 'limitsNeedScope') {
+    if (flags.some((flag) => URGENT_FLAGS.has(flag))) return 'error';
+  }
   if (provider.status !== 'ok' && provider.status !== 'limitsNeedScope') return 'warning';
-  if (provider.sandboxes.some((sandbox) => sandboxFlags(sandbox).some((flag) => !PASSING_FLAGS.has(flag)))) return 'warning';
+  if (flags.length) return 'warning';
   return runningCount(provider) ? 'success' : 'muted';
 }
 
 /** What the sidebar draws for each provider read: its running count and its dot. */
 export type ComputeTreeRead = { id: ComputeProviderId; running: number; tone: ReturnType<typeof providerTone> };
 
-export const computeTreeReads = (state: ComputeState): ComputeTreeRead[] =>
-  (state.snapshot?.providers ?? []).map((provider) => ({ id: provider.id, running: runningCount(provider), tone: providerTone(provider) }));
+export const computeTreeReads = (state: ComputeState, nowMs: number): ComputeTreeRead[] =>
+  (state.snapshot?.providers ?? []).map((provider) => ({ id: provider.id, running: runningCount(provider), tone: providerTone(provider, nowMs) }));

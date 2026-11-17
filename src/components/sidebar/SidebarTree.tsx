@@ -15,7 +15,7 @@ import { machinesBehind, useSyncStanding } from '../../services/syncStanding';
 import type { ComputeTreeRead } from '../../services/compute';
 import { COMPUTE_PROVIDERS, useConnectedComputeProviders } from '../../services/computeHint';
 import { POOL_STANDING_LABEL, poolStanding, usePoolsSelect, type PoolStanding } from '../../services/pools';
-import { useQuotaClock } from '../../services/quotaTime';
+import { subscribeQuotaClock, useQuotaClock } from '../../services/quotaTime';
 import { setupChecks, type SetupCheck } from '../../services/setupChecks';
 import { replaceEqualDeep } from '../../services/stableValue';
 import { fetchSetupInventory, SETUP_INVENTORY_UPDATED_EVENT } from '../../services/setupInventory';
@@ -90,8 +90,14 @@ function useComputeTreeReads(connected: boolean): ComputeTreeRead[] {
     let unsubscribe: (() => void) | undefined;
     void import('../../services/compute').then((compute) => {
       if (gone) return;
-      const read = () => setReads((last) => replaceEqualDeep(last, compute.computeTreeReads(compute.currentCompute())));
-      unsubscribe = compute.subscribeCompute(read);
+      const read = () => setReads((last) => replaceEqualDeep(last, compute.computeTreeReads(compute.currentCompute(), Date.now())));
+      const unsubscribeStore = compute.subscribeCompute(read);
+      // A slowed provider's list turns into an earlier read's by the clock alone, with no new snapshot to say so.
+      const unsubscribeClock = subscribeQuotaClock(read);
+      unsubscribe = () => {
+        unsubscribeStore();
+        unsubscribeClock();
+      };
       read();
     });
     return () => {

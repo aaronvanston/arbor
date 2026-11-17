@@ -14,6 +14,7 @@ import {
   planHoursTone,
   sandboxCpu,
   START_BLOCK_LABEL,
+  startsBlockedNow,
   useComputeSelect,
   type ComputeTone,
 } from '../services/compute';
@@ -21,7 +22,7 @@ import { computeProviderName } from '../services/computeHint';
 import { ISSUE_LABEL } from '../services/computeAlerts';
 import { homeComputeLine, homeComputeLineUrgent, type HomeComputeLine } from '../services/computeHome';
 import { useQuotaClock } from '../services/quotaTime';
-import { ProviderMark } from './compute/parts';
+import { ComputeProviderMark } from './compute/ComputeProviderMark';
 import { SettingsSection } from './layout/settings';
 import { Button } from './ui/button';
 import { ArrowUpRight, TriangleAlert } from './ui/icons';
@@ -68,7 +69,7 @@ const HomeComputeProvider = memo(function HomeComputeProvider({ provider, onNavi
   const totals = computeTotals(provider.sandboxes);
   const hours = planHours(provider);
   const hoursTone = hours ? planHoursTone(hours, now) : 'muted';
-  const line = homeComputeLine(provider);
+  const line = homeComputeLine(provider, now);
   const notAnswering = provider.status === 'unreachable';
   const rateLimited = provider.status === 'rateLimited';
   const caption = !hours ? null
@@ -85,14 +86,16 @@ const HomeComputeProvider = memo(function HomeComputeProvider({ provider, onNavi
         className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-3 px-4 py-3.5 text-left outline-none transition-colors hover:bg-accent/40 focus-visible:bg-accent disabled:cursor-default sm:grid-cols-[minmax(0,1fr)_minmax(9rem,16rem)_auto]"
       >
         <span className="flex min-w-0 items-center gap-3">
-          <ProviderMark provider={provider.id} className="size-9 rounded-lg text-sm" />
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background p-1.5 dark:bg-input/32">
+            <ComputeProviderMark provider={provider.id} className="size-full" />
+          </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium text-foreground">{name}</span>
             <span className="block truncate text-xs tabular-nums text-muted-foreground">
               {totals.running
                 ? t('compute.home.runningLine', { running: totals.running, vcpus: formatNumber(totals.vcpus), memory: formatNumber(totals.memoryGb) })
                 : t('compute.home.nothingRunning')}
-              {provider.canStart === false ? <span className="text-error-foreground">{' · '}{t('compute.home.startsBlocked')}</span> : null}
+              {startsBlockedNow(provider, now) ? <span className="text-error-foreground">{' · '}{t('compute.home.startsBlocked')}</span> : null}
               {notAnswering ? <span className="text-warning-foreground">{' · '}{t('compute.home.notAnswering')}</span> : null}
               {rateLimited ? <span className="text-warning-foreground">{' · '}{t('compute.home.rateLimited')}</span> : null}
             </span>

@@ -38,7 +38,8 @@ import { Meter } from '../ui/meter';
 import { StatusDot } from '../ui/status-dot';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Toggle, ToggleGroup } from '../ui/toggle-group';
-import { CpuSparkline, ProviderMark, SandboxDot, SandboxFlags, StartedByLine } from './parts';
+import { ComputeProviderMark } from './ComputeProviderMark';
+import { CpuSparkline, SandboxDot, SandboxFlags, StartedByLine } from './parts';
 
 type Open = (provider: ComputeProviderId, sandboxId: string) => void;
 
@@ -167,7 +168,7 @@ function GroupHeading({ group, columns }: {
   const name = (() => {
     switch (group.kind) {
       case 'provider':
-        return <span className="flex items-center gap-2"><ProviderMark provider={group.provider.id} />{computeProviderName(group.provider.id)}</span>;
+        return <span className="flex items-center gap-2"><ComputeProviderMark provider={group.provider.id} />{computeProviderName(group.provider.id)}</span>;
       case 'machine':
         return group.origin.kind === 'machine'
           ? <MachinePill name={group.origin.machine} size="sm" />

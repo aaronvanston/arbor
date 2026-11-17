@@ -15,7 +15,7 @@ import { SettingsSection } from '../layout/settings';
 import { Badge } from '../ui/badge';
 import { Check, TriangleAlert } from '../ui/icons';
 import { Meter } from '../ui/meter';
-import { ProviderMark } from './parts';
+import { ComputeProviderMark } from './ComputeProviderMark';
 
 /** A countdown under an hour away reads "Resets in 8m"; anything further off says when. */
 const SOON_MS = 3_600_000;
@@ -48,17 +48,18 @@ function LimitCell({ limit, nowMs }: { limit: ComputeLimit; nowMs: number }) {
 }
 
 /** One provider's limits: whether a sandbox can start now (and why not), the key it reads with, and each limit as a meter. */
-function ProviderLimits({ provider, nowMs }: { provider: ComputeProviderSnapshot; nowMs: number }) {
+function ProviderLimits({ provider, nowMs, stale }: { provider: ComputeProviderSnapshot; nowMs: number; stale: boolean }) {
   const { t } = useI18n();
   const name = computeProviderName(provider.id);
   const limits = [...METER_LIMITS, 'planHours' as const].map((kind) => findLimit(provider, kind)).filter((limit) => limit !== undefined);
   return (
     <div className="@container flex flex-col">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
-        <span className="flex items-center gap-2 text-sm font-medium"><ProviderMark provider={provider.id} />{name}</span>
+        <span className="flex items-center gap-2 text-sm font-medium"><ComputeProviderMark provider={provider.id} />{name}</span>
         <span className="ms-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {provider.canStart === true ? <Badge variant="success"><Check aria-hidden="true" />{t('compute.canStart')}</Badge> : null}
-          {provider.canStart === false ? (
+          {/* Whether a sandbox can start is only as good as the read: an earlier read's isn't said as if it were now's. */}
+          {provider.canStart === true && !stale ? <Badge variant="success"><Check aria-hidden="true" />{t('compute.canStart')}</Badge> : null}
+          {provider.canStart === false && !stale ? (
             <Badge variant="error"><TriangleAlert aria-hidden="true" />{t('compute.startsBlocked', { reason: t(START_BLOCK_LABEL[provider.startBlock ?? 'other']) })}</Badge>
           ) : null}
           {provider.keyAccess === 'readOnly' ? <Badge variant="muted">{t('compute.readOnlyKey')}</Badge> : null}
@@ -86,7 +87,7 @@ export function ComputeLimits({ providers, nowMs, stale }: { providers: readonly
   const { t } = useI18n();
   return (
     <SettingsSection title={t('compute.page.limits.title')} description={t('compute.page.limits.about')} contentClassName={cn(stale && 'opacity-60')}>
-      {providers.map((provider) => <ProviderLimits key={provider.id} provider={provider} nowMs={nowMs} />)}
+      {providers.map((provider) => <ProviderLimits key={provider.id} provider={provider} nowMs={nowMs} stale={stale} />)}
     </SettingsSection>
   );
 }

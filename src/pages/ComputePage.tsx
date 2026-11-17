@@ -24,15 +24,16 @@ import {
   dollarsShown,
   findProvider,
   findSandbox,
-  formatReadAgo,
   rateLimitedListStale,
+  startsBlockedNow,
   refreshCompute,
   shownProviders,
+  START_BLOCK_LABEL,
   useCompute,
   type ComputeGrouping,
 } from '../services/compute';
 import { COMPUTE_PROVIDERS, computeProviderName, useConnectedComputeProviders } from '../services/computeHint';
-import { agentsFigure } from '../services/computePage';
+import { agentsFigure, loadNeedsKey } from '../services/computePage';
 import { useQuotaClock } from '../services/quotaTime';
 
 type Navigate = (view: AppView) => void;
@@ -209,14 +210,25 @@ export function ComputeOverview({ providers, grouping, nowMs, onNavigate }: {
         onOpen={(provider, sandboxId) => onNavigate(computeSandboxView(provider, sandboxId))}
       />
       <ComputeLimits providers={providers} nowMs={nowMs} stale={stale} />
-      <ComputeMix sandboxes={sandboxes} />
+      <ComputeMix sandboxes={sandboxes} stale={stale} />
     </>
   );
 }
 
+/** Opens Settings › Compute at the key, where a key that can't read something is replaced. */
+function OpenKeySettings({ onNavigate }: { onNavigate: Navigate }) {
+  const { t } = useI18n();
+  const open = () => {
+    requestFocus('setting', 'compute.key');
+    onNavigate({ kind: 'settings', page: 'compute' });
+  };
+  return <Button variant="outline" size="sm" onClick={open}>{t('compute.page.openSettings')}</Button>;
+}
+
 /**
  * What's wrong with reading a provider, above its figures: not answering, asking Arbor to slow down, a refused key,
- * limits it can't read.
+ * new sandboxes blocked, limits or load its key can't read. One at a time, the worst first: while a provider isn't
+ * answering, what it last said about starts is an earlier read's.
  */
 function ProviderBanner({ provider, nowMs, onNavigate }: { provider: ComputeProviderSnapshot; nowMs: number; onNavigate: Navigate }) {
   const { t } = useI18n();
@@ -224,15 +236,7 @@ function ProviderBanner({ provider, nowMs, onNavigate }: { provider: ComputeProv
   if (provider.status === 'unreachable') {
     return (
       <Alert variant="warning" icon={<AlertCircle />} action={<TryAgain />}>
-        <AlertDescription>{t('compute.page.unreachable', { provider: name, ago: formatReadAgo(provider, nowMs) ?? t('compute.notReadYet') })}</AlertDescription>
-      </Alert>
-    );
-  }
-  // No Try again here: asking again is what the provider asked Arbor not to do, and Arbor already waits as told.
-  if (provider.status === 'rateLimited') {
-    return (
-      <Alert variant="warning" icon={<AlertCircle />}>
-        <AlertDescription>{t('compute.page.rateLimited', { provider: name })}</AlertDescription>
+        <AlertDescription>{t(provider.checkedAtMs === null ? 'compute.page.unreachableNotRead' : 'compute.page.unreachable', { provider: name })}</AlertDescription>
       </Alert>
     );
   }
@@ -241,17 +245,44 @@ function ProviderBanner({ provider, nowMs, onNavigate }: { provider: ComputeProv
       <Alert
         variant="error"
         icon={<AlertCircle />}
-        action={<Button variant="outline" size="sm" onClick={() => onNavigate({ kind: 'settings', page: 'compute' })}>{t('compute.page.openSettings')}</Button>}
+        action={<OpenKeySettings onNavigate={onNavigate} />}
       >
-        <AlertDescription>{t('compute.page.refused', { provider: name })}</AlertDescription>
+        <AlertDescription>{t(provider.checkedAtMs === null ? 'compute.page.refusedNotRead' : 'compute.page.refused', { provider: name })}</AlertDescription>
+      </Alert>
+    );
+  }
+  if (startsBlockedNow(provider, nowMs)) {
+    return (
+      <Alert variant="error" icon={<AlertCircle />}>
+        <AlertDescription>
+          {provider.startBlock === null || provider.startBlock === 'other'
+            ? t('compute.page.startsBlockedOther', { provider: name })
+            : t('compute.page.startsBlocked', { provider: name, reason: t(START_BLOCK_LABEL[provider.startBlock]) })}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  // No Try again here: asking again is what the provider asked Arbor not to do, and Arbor already waits as told.
+  // Below blocked starts: a list read a moment ago still says they're blocked, and that matters more.
+  if (provider.status === 'rateLimited') {
+    return (
+      <Alert variant="warning" icon={<AlertCircle />}>
+        <AlertDescription>{t(provider.checkedAtMs === null ? 'compute.page.rateLimitedNotRead' : 'compute.page.rateLimited', { provider: name })}</AlertDescription>
       </Alert>
     );
   }
   if (provider.status === 'limitsNeedScope') {
     const scope = COMPUTE_PROVIDERS[provider.id].limitsScope;
     return (
-      <Alert icon={<Info />}>
+      <Alert icon={<Info />} action={<OpenKeySettings onNavigate={onNavigate} />}>
         <AlertDescription>{scope ? t('compute.page.limitsNeedScopeNamed', { provider: name, scope }) : t('compute.page.limitsNeedScope', { provider: name })}</AlertDescription>
+      </Alert>
+    );
+  }
+  if (loadNeedsKey(provider)) {
+    return (
+      <Alert icon={<Info />} action={<OpenKeySettings onNavigate={onNavigate} />}>
+        <AlertDescription>{t('compute.page.loadNeedsKey', { provider: name })}</AlertDescription>
       </Alert>
     );
   }

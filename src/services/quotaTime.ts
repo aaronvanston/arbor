@@ -80,6 +80,8 @@ const subscribe = (listener: () => void) => {
   };
 };
 const getNow = () => now;
+/** The clock for what isn't a component: `listener` runs each minute, until the function this returns is called. */
+export const subscribeQuotaClock = subscribe;
 const itself = (value: number) => value;
 
 /**

@@ -102,7 +102,8 @@ export function LoadChart({ sandbox, points }: { sandbox: ComputeSandbox; points
         </div>
         <span />
         <div className="flex justify-between pt-1.5 text-2xs text-muted-foreground" aria-hidden="true">
-          <span>{t('compute.sandbox.load.ago', { span: formatDuration(windowMs) })}</span>
+          {/* The full window is a whole number of hours: "2h ago", not "2h 0m ago". */}
+          <span>{t('compute.sandbox.load.ago', { span: windowMs % 3_600_000 === 0 ? t('format.span.hours', { hours: windowMs / 3_600_000 }) : formatDuration(windowMs) })}</span>
           <span>{t('compute.sandbox.load.now')}</span>
         </div>
       </div>

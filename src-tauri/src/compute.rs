@@ -193,6 +193,9 @@ pub(crate) struct ComputeSandbox {
     pub(crate) linked_by: Option<ComputeLinkedBy>,
     pub(crate) link_problem: Option<ComputeLinkProblem>,
     pub(crate) forgotten: Option<ComputeForgotten>,
+    /// It would look forgotten but for its busy CPU. An alert already sent for it isn't over while this holds, so one
+    /// working in bursts doesn't alert again each time it goes quiet.
+    pub(crate) forgotten_held: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
@@ -225,6 +228,12 @@ pub(crate) enum ComputeLoad {
         memory: f64,
         #[ts(type = "number")]
         at_ms: i64,
+        // How many processes the provider's exec started that are still running; null when it doesn't say.
+        #[ts(type = "number | null")]
+        commands: Option<u32>,
+        // When the newest of them began; null when there's none or the provider doesn't say.
+        #[ts(type = "number | null")]
+        command_started_ms: Option<i64>,
     },
     NotReadYet,
     /// Monitoring is turned off for it at the provider.
@@ -388,11 +397,16 @@ pub(crate) struct ListedLimits {
     pub(crate) period_end_ms: Option<i64>,
 }
 
-/// One CPU and memory reading of a running sandbox, fractions 0–1.
+/// One CPU and memory reading of a running sandbox, fractions 0–1, with what its process list says of the commands
+/// started in it. None means the provider doesn't say.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LoadSample {
     pub(crate) cpu: f64,
     pub(crate) memory: f64,
+    /// How many running processes the provider's exec started.
+    pub(crate) commands: Option<u32>,
+    /// When the newest of those began, unix ms.
+    pub(crate) command_started_ms: Option<i64>,
 }
 
 /// What the key can do and when it expires, where the provider says.
@@ -562,6 +576,19 @@ const FORGOTTEN_NO_AUTO_STOP_MS: i64 = 3 * 60 * 60_000;
 const FORGOTTEN_KEPT_ALIVE_TIMES: i64 = 2;
 /// An ended session doesn't make it forgotten when its auto-stop is due within this: it's about to stop by itself.
 const FORGOTTEN_STOPS_SOON_MS: i64 = 30 * 60_000;
+// A sandbox that's plainly working is never forgotten, whatever its session did: an agent waiting on a person's
+// review counts as ended while its dev server or test run is still working. Busy is judged from recent readings only,
+// and with too few of them (monitoring off, a key that can't read load, just started) the rules above stand.
+/// Readings older than this say nothing about now.
+const BUSY_WINDOW_MS: i64 = 20 * 60_000;
+/// At most this many of the newest readings in that window are averaged.
+const BUSY_READINGS: usize = 15;
+/// Fewer readings than this can't tell busy from a passing spike.
+const BUSY_MIN_READINGS: usize = 3;
+/// Their mean CPU, as a fraction of the sandbox's vCPUs, at or above which it's busy.
+const BUSY_CPU: f64 = 0.05;
+// The snapshot judges busy from the row's sparkline points, so they must hold every reading it could average.
+const _: () = assert!(SPARK_POINTS >= BUSY_READINGS);
 
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -778,7 +805,14 @@ fn apply_read(live: &mut Live, read: ProviderRead, now_ms: i64) {
             }
             Ok(sample) => {
                 let (cpu, memory) = (sample.cpu.clamp(0.0, 1.0), sample.memory.clamp(0.0, 1.0));
-                live.loads.insert(id.clone(), ComputeLoad::Read { cpu, memory, at_ms: now_ms });
+                let reading = ComputeLoad::Read {
+                    cpu,
+                    memory,
+                    at_ms: now_ms,
+                    commands: sample.commands,
+                    command_started_ms: sample.command_started_ms,
+                };
+                live.loads.insert(id.clone(), reading);
                 push_point(live.rings.entry(id).or_default(), ComputePoint { at_ms: now_ms, cpu, memory });
             }
             Err(ComputeFailure::MonitoringOff) => {
@@ -903,8 +937,21 @@ fn resolve_links(wanted: &[Wanted], lookup: &ComputeLookup, now_ms: i64) -> Hash
         .collect()
 }
 
-fn forgotten(sandbox: &ListedSandbox, session: Option<&ComputeSession>, now_ms: i64) -> Option<ComputeForgotten> {
-    if !sandbox.mine || sandbox.state != ComputeSandboxState::Running {
+/// Whether recent readings, oldest first, show a sandbox working: the newest [`BUSY_READINGS`] from the last
+/// [`BUSY_WINDOW_MS`], at least [`BUSY_MIN_READINGS`] of them, averaging [`BUSY_CPU`] or more.
+fn busy(readings: &[ComputePoint], now_ms: i64) -> bool {
+    let (count, total) = readings
+        .iter()
+        .rev()
+        .filter(|point| now_ms - point.at_ms <= BUSY_WINDOW_MS)
+        .take(BUSY_READINGS)
+        .fold((0_usize, 0.0_f64), |(count, total), point| (count + 1, total + point.cpu));
+    count >= BUSY_MIN_READINGS && total / count as f64 >= BUSY_CPU
+}
+
+/// Why a sandbox looks forgotten, from its session and its recent readings (oldest first).
+fn forgotten(sandbox: &ListedSandbox, session: Option<&ComputeSession>, readings: &[ComputePoint], now_ms: i64) -> Option<ComputeForgotten> {
+    if !sandbox.mine || sandbox.state != ComputeSandboxState::Running || busy(readings, now_ms) {
         return None;
     }
     // A session Arbor hasn't seen has no end it could know, so it never counts here. One that's about to stop by
@@ -928,6 +975,11 @@ fn forgotten(sandbox: &ListedSandbox, session: Option<&ComputeSession>, now_ms: 
         Some(seconds) if age > FORGOTTEN_KEPT_ALIVE_TIMES * i64::from(seconds) * 1000 => Some(ComputeForgotten::KeptAlive),
         _ => None,
     }
+}
+
+/// Whether busy readings are all that keeps a sandbox from looking forgotten: with none, [`forgotten`] names a reason.
+fn forgotten_held(sandbox: &ListedSandbox, session: Option<&ComputeSession>, readings: &[ComputePoint], now_ms: i64) -> bool {
+    busy(readings, now_ms) && forgotten(sandbox, session, &[], now_ms).is_some()
 }
 
 /// Plan hours used per hour now (the running sandboxes' multipliers added up) and when the plan's hours run out at
@@ -981,11 +1033,13 @@ fn provider_snapshot(provider: &dyn ComputeProvider, live: &Live, now_ms: i64) -
             } else {
                 Link::default()
             };
-            let points = live
+            let points: Vec<ComputePoint> = live
                 .rings
                 .get(&sandbox.id)
                 .map(|ring| ring.iter().skip(ring.len().saturating_sub(SPARK_POINTS)).copied().collect())
                 .unwrap_or_default();
+            let looks_forgotten = forgotten(sandbox, link.session.as_ref(), &points, now_ms);
+            let held = forgotten_held(sandbox, link.session.as_ref(), &points, now_ms);
             ComputeSandbox {
                 id: sandbox.id.clone(),
                 name: sandbox.name.clone(),
@@ -1005,7 +1059,8 @@ fn provider_snapshot(provider: &dyn ComputeProvider, live: &Live, now_ms: i64) -
                 mine: sandbox.mine,
                 load: load_shown(capabilities, live, sandbox),
                 points,
-                forgotten: forgotten(sandbox, link.session.as_ref(), now_ms),
+                forgotten: looks_forgotten,
+                forgotten_held: held,
                 machine: link.machine,
                 session: link.session,
                 linked_by: link.by,

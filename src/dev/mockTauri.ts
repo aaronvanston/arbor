@@ -53,7 +53,8 @@
  * `big` a hundred sandboxes (teammates', unlinked ones, monitoring off, one with no reading to give, an unknown machine
  * and a session Arbor hasn't seen among them, so the table pages); `partial` the typical afternoon with a list that stopped
  * at Arbor's page cap, so some sandboxes may be missing; `noload` the typical afternoon with a key that can't read CPU
- * and memory, so Settings says which key can. Each seeds the saved hint that a provider is connected, for that load only, which also
+ * and memory, so Settings says which key can; `working` the typical afternoon with ci-01-perf's session ended but three
+ * commands still at work in it, so it isn't flagged and its page says what's running. Each seeds the saved hint that a provider is connected, for that load only, which also
  * shows Home's Compute card and, on cam-mbp, cedar-02 and ci-01's pages, the sandboxes started there. Connect in
  * Settings › Compute takes any key and switches to `typical` (`?computeconnect=refused` or `unreachable` has it fail
  * that way); Disconnect goes back to none; a sandbox's history is a two-hour ring with a gap 70 to 60 minutes ago;

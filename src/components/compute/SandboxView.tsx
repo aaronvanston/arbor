@@ -27,7 +27,7 @@ import {
 } from '../../services/compute';
 import { computeProviderName } from '../../services/computeHint';
 import { ISSUE_LABEL } from '../../services/computeAlerts';
-import { cpuAtLimitForMs, relinkComputeSandbox } from '../../services/computePage';
+import { cpuAtLimitForMs, relinkComputeSandbox, sandboxCommands, sessionEndedNoteAtMs } from '../../services/computePage';
 import { HarnessName } from '../identity/Harness';
 import { MachinePill } from '../identity/Identity';
 import { DetailRow, SettingsSection } from '../layout/settings';
@@ -35,10 +35,11 @@ import { StatBlock, StatsGrid } from '../layout/stats';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { AlertCircle, Check, ChevronRight, Copy, ExternalLink, TriangleAlert } from '../ui/icons';
+import { AlertCircle, Check, ChevronRight, Copy, ExternalLink, Info, TriangleAlert } from '../ui/icons';
 import { toast } from '../ui/toast';
 import { LoadChart, useSandboxHistory } from './LoadChart';
-import { ProviderMark, SandboxDot, SandboxFlags } from './parts';
+import { ComputeProviderMark } from './ComputeProviderMark';
+import { SandboxDot, SandboxFlags } from './parts';
 
 type Navigate = (view: AppView) => void;
 
@@ -94,6 +95,8 @@ function SandboxStats({ provider, sandbox, nowMs }: { provider: ComputeProviderI
   ));
   const stopsIn = formatStopsIn(sandbox, nowMs);
   const age = formatSandboxAge(sandbox, nowMs);
+  const commands = sandboxCommands(sandbox);
+  const providerName = computeProviderName(provider);
   return (
     <StatsGrid columns={4}>
       <StatBlock
@@ -106,45 +109,64 @@ function SandboxStats({ provider, sandbox, nowMs }: { provider: ComputeProviderI
         value={percent(memory, memoryTone(sandbox))}
         hint={memory === null ? unread : t('compute.sandbox.memoryUsed', { used: formatNumber(memory * sandbox.memoryGb, 1), total: formatNumber(sandbox.memoryGb) })}
       />
+      {/* What the page can say about "is anything still using it": the commands its provider started that haven't finished. */}
+      <StatBlock
+        label={t('compute.sandbox.commands')}
+        value={commands === null ? '—' : commands.count === 0 ? t('compute.sandbox.commandsNone') : formatNumber(commands.count)}
+        hint={commands === null
+          // Only a running sandbox that was read and still has no count is one its provider doesn't count for.
+          ? unread ?? (sandbox.load.kind === 'read' ? t('compute.sandbox.noHours', { provider: providerName }) : undefined)
+          : commands.count === 0
+            ? t('compute.sandbox.commandsNoneHint', { provider: providerName })
+            : commands.newestStartedAtMs === null ? undefined : t('compute.sandbox.commandsNewest', { ago: formatEndedAgo(commands.newestStartedAtMs, nowMs) })}
+      />
       <StatBlock
         label={t('compute.sandbox.stopsIn')}
         tone={stopsIn !== null && stopsSoon(sandbox, nowMs) ? 'warning' : 'default'}
         value={stopsIn ?? t('compute.noAutoStop')}
         hint={sandbox.stopsAtMs === null ? t('compute.sandbox.noAutoStop', { age }) : t('compute.sandbox.stopsAt', { when: formatWhen(sandbox.stopsAtMs, { now: nowMs }), age })}
       />
-      <StatBlock
-        label={t('compute.sandbox.monthHours')}
-        value={sandbox.monthHours === null ? '—' : t('compute.hours', { hours: formatHours(sandbox.monthHours) })}
-        hint={sandbox.multiplier === null
-          ? sandbox.monthHours === null ? t('compute.sandbox.noHours', { provider: computeProviderName(provider) }) : undefined
-          : t(sandbox.multiplier === 1 ? 'compute.sandbox.multiplier.one' : 'compute.sandbox.multiplier.other', { multiplier: formatNumber(sandbox.multiplier, 1) })}
-      />
     </StatsGrid>
   );
 }
 
-/** What wants a look, above the chart: in error, at its CPU limit for a while, looks forgotten, degraded. */
+/**
+ * What wants a look, above the chart: in error, at its CPU limit for a while, looks forgotten, degraded. A session
+ * that ended a while ago is said either way, with what's still running in it: as a warning when the sandbox looks
+ * forgotten, as a plain note when it's still working.
+ */
 function SandboxBanners({ provider, sandbox, points, nowMs }: { provider: ComputeProviderId; sandbox: ComputeSandbox; points: ComputePoint[]; nowMs: number }) {
   const { t } = useI18n();
   const flags = sandboxFlags(sandbox);
-  const banners: { key: string; variant: 'error' | 'warning'; text: string }[] = [];
+  const banners: { key: string; variant: 'error' | 'warning' | 'info'; text: string }[] = [];
+  const providerName = computeProviderName(provider);
   if (flags.includes('error')) banners.push({ key: 'error', variant: 'error', text: t('compute.sandbox.inError', { provider: computeProviderName(provider) }) });
   if (flags.includes('cpuAtLimit')) {
     const forMs = cpuAtLimitForMs(points);
     banners.push({ key: 'cpu', variant: 'warning', text: forMs ? t('compute.sandbox.cpuAtLimitFor', { duration: formatDuration(forMs) }) : t('compute.sandbox.cpuAtLimit') });
   }
-  if (flags.includes('forgotten') && sandbox.forgotten) {
-    const age = formatDuration(sandboxAgeMs(sandbox, nowMs));
-    const ended = sandbox.session?.endedAtMs;
-    banners.push({
-      key: 'forgotten',
-      variant: 'warning',
-      text: sandbox.forgotten !== 'sessionEnded' ? t(`compute.sandbox.forgotten.${sandbox.forgotten}`, { age })
-        // One with an auto-stop due stops by itself; it only uses plan hours until then.
+  const forgotten = flags.includes('forgotten') ? sandbox.forgotten : null;
+  if (forgotten && forgotten !== 'sessionEnded') {
+    banners.push({ key: 'forgotten', variant: 'warning', text: t(`compute.sandbox.forgotten.${forgotten}`, { age: formatDuration(sandboxAgeMs(sandbox, nowMs)), provider: providerName }) });
+  }
+  const endedAtMs = forgotten === 'sessionEnded' ? sandbox.session?.endedAtMs ?? null : sessionEndedNoteAtMs(sandbox, nowMs);
+  if (endedAtMs !== null) {
+    const commands = sandboxCommands(sandbox);
+    const text = [
+      t('compute.sandbox.sessionEnded', { ago: formatEndedAgo(endedAtMs, nowMs) }),
+      commands === null ? null
+        : commands.count === 0 ? t('compute.sandbox.nothingRunning', { provider: providerName })
+          : t(commands.count === 1 ? 'compute.sandbox.stillRunning.one' : 'compute.sandbox.stillRunning.other', { count: commands.count }),
+      commands?.count && commands.newestStartedAtMs !== null
+        ? t(commands.count === 1 ? 'compute.sandbox.commandStarted.one' : 'compute.sandbox.commandStarted.other', { ago: formatEndedAgo(commands.newestStartedAtMs, nowMs) })
+        : null,
+      // Only one that looks forgotten is told what it costs; one still working is using what it was started for.
+      forgotten !== 'sessionEnded' ? null
         : sandbox.stopsAtMs !== null
-          ? t('compute.sandbox.forgotten.sessionEndedStops', { ago: ended ? formatEndedAgo(ended, nowMs) : '—', when: formatWhen(sandbox.stopsAtMs, { now: nowMs }) })
-          : t('compute.sandbox.forgotten.sessionEnded', { ago: ended ? formatEndedAgo(ended, nowMs) : '—' }),
-    });
+          ? t('compute.sandbox.usesUntilStops', { when: formatWhen(sandbox.stopsAtMs, { now: nowMs }) })
+          : t('compute.sandbox.usesUntilStopped', { provider: providerName }),
+    ].filter(Boolean).join(' ');
+    banners.push({ key: 'session', variant: forgotten === 'sessionEnded' ? 'warning' : 'info', text });
   }
   if (flags.includes('degraded') && sandbox.issue) {
     banners.push({
@@ -156,7 +178,11 @@ function SandboxBanners({ provider, sandbox, points, nowMs }: { provider: Comput
   return (
     <>
       {banners.map((banner) => (
-        <Alert key={banner.key} variant={banner.variant} icon={banner.variant === 'error' ? <AlertCircle /> : <TriangleAlert />}>
+        <Alert
+          key={banner.key}
+          variant={banner.variant === 'info' ? undefined : banner.variant}
+          icon={banner.variant === 'error' ? <AlertCircle /> : banner.variant === 'info' ? <Info /> : <TriangleAlert />}
+        >
           <AlertDescription>{banner.text}</AlertDescription>
         </Alert>
       ))}
@@ -265,12 +291,13 @@ function SandboxDetails({ provider, sandbox, nowMs }: { provider: ComputeProvide
       : t('compute.sandbox.healthy');
   return (
     <SettingsSection title={t('compute.sandbox.details')}>
-      <DetailRow label={t('compute.sandbox.provider')} value={<span className="flex items-center justify-end gap-2"><ProviderMark provider={provider} />{computeProviderName(provider)}</span>} />
+      <DetailRow label={t('compute.sandbox.provider')} value={<span className="flex items-center justify-end gap-2"><ComputeProviderMark provider={provider} />{computeProviderName(provider)}</span>} />
       <DetailRow
         label={t('compute.sandbox.size')}
         value={<span>{sandbox.size} <span className="text-muted-foreground">{t('compute.sizeLine', { vcpus: sandbox.vcpus, memory: formatNumber(sandbox.memoryGb) })}</span></span>}
       />
       {sandbox.multiplier === null ? null : <DetailRow label={t('compute.sandbox.multiplierRow')} value={`${formatNumber(sandbox.multiplier, 1)}×`} />}
+      {sandbox.monthHours === null ? null : <DetailRow label={t('compute.sandbox.monthHours')} value={t('compute.hours', { hours: formatHours(sandbox.monthHours) })} />}
       <DetailRow label={t('compute.sandbox.health')} value={<span className={cn((sandbox.state === 'error' || sandbox.issue) && 'text-warning-foreground')}>{health}</span>} />
       <DetailRow label={t('compute.sandbox.id')} value={sandbox.id} mono />
     </SettingsSection>

@@ -18,8 +18,6 @@ export type ComputeProviderInfo = {
   id: ComputeProviderId;
   /** The provider's own name, never translated. */
   name: string;
-  /** The letter its mark shows, until it has an icon of its own. */
-  mark: string;
   /** What its API keys start with, for the key field's placeholder. */
   keyPlaceholder: string;
   /** The command that makes a key that can only read, where the user is signed in to the provider. */
@@ -32,7 +30,6 @@ export const COMPUTE_PROVIDERS: Readonly<Record<ComputeProviderId, ComputeProvid
   boat: {
     id: 'boat',
     name: 'Boat',
-    mark: 'B',
     keyPlaceholder: 'boat_…',
     readOnlyKeyCommand: 'boat api-key create arbor --actions sandbox.read,account.read --ttl 365d',
     limitsScope: 'account.read',

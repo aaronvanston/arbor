@@ -47,6 +47,36 @@ export function agentsFigure(sandboxes: readonly ComputeSandbox[]): AgentsFigure
   return figure;
 }
 
+/**
+ * The commands a sandbox's provider started in it that are still running, and when the newest began: what Arbor can
+ * say about whether anything is still using it. Null when there's no reading or the provider doesn't say. Counts and
+ * a time only; what the commands are is never read.
+ */
+export const sandboxCommands = (sandbox: Pick<ComputeSandbox, 'load'>): { count: number; newestStartedAtMs: number | null } | null =>
+  (sandbox.load.kind === 'read' && sandbox.load.commands !== null ? { count: sandbox.load.commands, newestStartedAtMs: sandbox.load.commandStartedMs } : null);
+
+/** As long as Arbor waits before an ended session can make a sandbox look forgotten, so the note and the flag keep step. */
+const SESSION_ENDED_NOTE_MS = 30 * 60_000;
+
+/**
+ * When the session behind a running sandbox of one's own ended, once that's a while ago; else null. Its page says so
+ * even when the sandbox doesn't look forgotten, because one that's still working is exactly the one to ask about.
+ */
+export function sessionEndedNoteAtMs(sandbox: Pick<ComputeSandbox, 'mine' | 'state' | 'session'>, nowMs: number): number | null {
+  const session = sandbox.session;
+  if (!sandbox.mine || sandbox.state !== 'running' || !session?.known || session.live || session.endedAtMs === null) return null;
+  return nowMs - session.endedAtMs >= SESSION_ENDED_NOTE_MS ? session.endedAtMs : null;
+}
+
+/**
+ * True when a provider's key is what keeps CPU and memory blank: a running sandbox it won't give load for, and none it
+ * will. Said once above the figures, with the way to the key, instead of only row by row.
+ */
+export function loadNeedsKey(provider: Pick<ComputeProviderSnapshot, 'sandboxes'>): boolean {
+  const running = provider.sandboxes.filter((sandbox) => sandbox.state === 'running');
+  return running.some((sandbox) => sandbox.load.kind === 'keyCantRead') && !running.some((sandbox) => sandbox.load.kind === 'read');
+}
+
 /** How many running sandboxes carry each flag the table's head counts. */
 export type FlagCounts = { cpuAtLimit: number; forgotten: number; degraded: number };
 

@@ -1,9 +1,9 @@
 import type { ComputeProviderSnapshot, ComputeSandbox, ComputeStartBlock } from '../native/types';
-import { isActiveSandbox, sandboxFlags } from './compute';
+import { isActiveSandbox, sandboxFlags, startsBlockedNow } from './compute';
 
 /**
  * The one line Home's Compute card puts under a provider, for the thing most worth a look: the provider's own trouble
- * first (its key turned down, starts blocked, not answering), then one of the user's own sandboxes in error, then a
+ * first (its key turned down, starts it says are blocked now, not answering), then one of the user's own sandboxes in error, then a
  * provider asking Arbor to slow down, then the user's other sandboxes' trouble. Teammates' sandboxes are
  * theirs to look after, so they never take the line. Null when nothing needs a look.
  */
@@ -17,9 +17,9 @@ export type HomeComputeLine =
 /** Sandbox flags in the order they take the line, most pressing first. */
 const SANDBOX_ORDER = ['error', 'forgotten', 'degraded', 'cpuAtLimit'] as const;
 
-export function homeComputeLine(provider: ComputeProviderSnapshot): HomeComputeLine | null {
+export function homeComputeLine(provider: ComputeProviderSnapshot, nowMs: number): HomeComputeLine | null {
   if (provider.status === 'refused') return { kind: 'keyRefused' };
-  if (provider.canStart === false) return { kind: 'startsBlocked', block: provider.startBlock };
+  if (startsBlockedNow(provider, nowMs)) return { kind: 'startsBlocked', block: provider.startBlock };
   if (provider.status === 'unreachable') return { kind: 'unreachable' };
   const own = provider.sandboxes
     .filter((sandbox) => sandbox.mine)

@@ -16,6 +16,7 @@ import {
   planHours,
   planHoursTone,
   providerTone,
+  startsBlockedNow,
   resetComputeStore,
   runningCount,
   sandboxFlags,
@@ -45,6 +46,8 @@ describe('Compute’s figures', () => {
     // The starting one has no reading yet.
     expect(totals.read).toBe(5);
     expect(totals.busyVcpus).toBeCloseTo(15.98, 5);
+    // What that's out of: the vCPUs read, since the starting one's 8 aren't idle, they're unknown.
+    expect(totals.readVcpus).toBe(30);
     // 99% and 78% are past the machines' 75% CPU line.
     expect(totals.hot).toBe(2);
   });
@@ -121,9 +124,25 @@ describe('Compute’s figures', () => {
     expect(sandboxFlags(byName(provider, 'cedar-02-e2e'))).toEqual(['starting']);
     expect(sandboxFlags({ ...byName(provider, 'ci-01-build'), state: 'stopped' })).toEqual([]);
     expect(sandboxFlags({ ...byName(provider, 'ci-01-perf'), mine: false })).toEqual([]);
-    expect(providerTone(provider)).toBe('warning');
-    expect(providerTone(present(computeScenarioSnapshot('blocked', NOW).providers[0]))).toBe('error');
-    expect(providerTone(present(computeScenarioSnapshot('empty', NOW).providers[0]))).toBe('muted');
+    // The sidebar's dot is as red as the row: cam-mbp-fix-login is at its CPU limit. Without it the rest only want a
+    // look, and a teammate's sandbox never colors the dot, as it never shows on Home or alerts.
+    expect(providerTone(provider, NOW)).toBe('error');
+    const calm = { ...provider, sandboxes: provider.sandboxes.filter((sandbox) => sandbox.name !== 'cam-mbp-fix-login') };
+    expect(providerTone(calm, NOW)).toBe('warning');
+    expect(providerTone({ ...provider, sandboxes: provider.sandboxes.map((sandbox) => ({ ...sandbox, mine: false })) }, NOW)).toBe('success');
+    expect(providerTone({ ...provider, status: 'unreachable' }, NOW)).toBe('warning');
+    // Blocked starts from a provider that isn't answering are an earlier read's: amber for not answering, not red.
+    const blocked = present(computeScenarioSnapshot('blocked', NOW).providers[0]);
+    expect(providerTone({ ...blocked, status: 'unreachable' }, NOW)).toBe('warning');
+    // Asked to slow down: red while the list that said so is a moment old, amber once it's an earlier read's too.
+    expect(providerTone({ ...blocked, status: 'rateLimited', checkedAtMs: NOW - 60_000 }, NOW)).toBe('error');
+    expect(providerTone({ ...blocked, status: 'rateLimited', checkedAtMs: NOW - 10 * 60_000 }, NOW)).toBe('warning');
+    // One rule says whether blocked starts are still claimed, and a key turned down leaves an earlier read's too.
+    expect(startsBlockedNow(blocked, NOW)).toBe(true);
+    expect(startsBlockedNow({ ...blocked, status: 'refused' }, NOW)).toBe(false);
+    expect(startsBlockedNow({ ...blocked, status: 'unreachable' }, NOW)).toBe(false);
+    expect(providerTone(present(computeScenarioSnapshot('blocked', NOW).providers[0]), NOW)).toBe('error');
+    expect(providerTone(present(computeScenarioSnapshot('empty', NOW).providers[0]), NOW)).toBe('muted');
   });
 
   it('shortens a session id: a UUID to its first block, a long other id to eight characters', () => {

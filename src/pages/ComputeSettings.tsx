@@ -24,6 +24,7 @@ import {
   refreshCompute,
   useCompute,
 } from '../services/compute';
+import { ComputeProviderMark } from '../components/compute/ComputeProviderMark';
 import { COMPUTE_PROVIDER_IDS, COMPUTE_PROVIDERS } from '../services/computeHint';
 
 /**
@@ -90,6 +91,7 @@ export function ComputeSettingsPage(_props: { onNavigate: (view: AppView) => voi
     void loadCompute();
   }, []);
   const linked = linkedCount(snapshot);
+  const anyConnected = Boolean(snapshot?.providers.length);
   return (
     <Page>
       <PageTopbar>
@@ -104,9 +106,14 @@ export function ComputeSettingsPage(_props: { onNavigate: (view: AppView) => voi
         </SettingsSection>
         <SettingsSection settingId="compute.linking" title={t('compute.settings.linking.title')}>
           <SettingsRow title={t('compute.settings.linking.tell')} description={t('compute.settings.linking.description')} />
-          {COMPUTE_PROVIDER_IDS.map((id) => <CommandRow key={id} caption={t('compute.settings.linking.command')} command={linkCommand(id)} />)}
-          {COMPUTE_PROVIDER_IDS.map((id) => <CommandRow key={id} caption={t('compute.settings.linking.unlink')} command={unlinkCommand(id)} />)}
-          <CommandRow caption={t('compute.settings.linking.labels')} command={LINK_LABELS} />
+          {/* The commands are no use before there's a provider to list sandboxes: until then, only what linking is for. */}
+          {anyConnected ? (
+            <>
+              {COMPUTE_PROVIDER_IDS.map((id) => <CommandRow key={id} caption={t('compute.settings.linking.command')} command={linkCommand(id)} />)}
+              {COMPUTE_PROVIDER_IDS.map((id) => <CommandRow key={id} caption={t('compute.settings.linking.unlink')} command={unlinkCommand(id)} />)}
+              <CommandRow caption={t('compute.settings.linking.labels')} command={LINK_LABELS} />
+            </>
+          ) : null}
           {linked === null ? null : (
             <SettingsRow
               title={t('compute.settings.linking.count.title')}
@@ -121,24 +128,30 @@ export function ComputeSettingsPage(_props: { onNavigate: (view: AppView) => voi
   );
 }
 
-/** A provider with no key yet: the key field, and how to make a key that can only read. */
+/** A provider's name with its own mark before it, as a settings row's title. */
+function ProviderTitle({ provider }: { provider: ComputeProviderId }) {
+  return <span className="inline-flex items-center gap-2"><ComputeProviderMark provider={provider} />{COMPUTE_PROVIDERS[provider].name}</span>;
+}
+
+/** A provider with no key yet, in the order it's done: make a key (one of two, and what each gives up), then paste it. */
 function ConnectProvider({ provider }: { provider: ComputeProviderId }) {
   const { t } = useI18n();
   const info = COMPUTE_PROVIDERS[provider];
   const loadKeyCommand = LOAD_KEY_COMMANDS[provider];
   return (
     <>
-      <SettingsRow title={info.name} description={t('compute.settings.provider.about')} />
-      <KeyField
-        provider={provider}
-        title={t('compute.settings.key.title')}
-        description={t('compute.settings.key.paste', { provider: info.name })}
-        done={t('compute.settings.connectedToast', { provider: info.name })}
-      />
+      <SettingsRow title={<ProviderTitle provider={provider} />} description={t('compute.settings.provider.about')} />
       <CommandRow caption={t('compute.settings.key.makeReadOnly', { provider: info.name })} command={info.readOnlyKeyCommand} />
       {loadKeyCommand === null ? null : (
         <CommandRow caption={t('compute.settings.key.makeLoad', { provider: info.name })} command={loadKeyCommand} />
       )}
+      <KeyField
+        provider={provider}
+        title={t('compute.settings.key.title')}
+        description={t('compute.settings.key.paste')}
+        done={t('compute.settings.connectedToast', { provider: info.name })}
+        submit={t('compute.settings.connect')}
+      />
     </>
   );
 }
@@ -156,12 +169,17 @@ function KeyField({
   title,
   description,
   done,
+  submit,
+  settingId,
   onCancel,
 }: {
   provider: ComputeProviderId;
   title: string;
   description: string;
   done: string;
+  /** What the button says: Connect for a first key, Replace for one that takes a saved key's place. */
+  submit: string;
+  settingId?: string;
   onCancel?: () => void;
 }) {
   const { t } = useI18n();
@@ -187,6 +205,7 @@ function KeyField({
         : t('compute.settings.connectFailed', { provider: info.name, error: problem.message });
   return (
     <SettingsRow
+      settingId={settingId}
       title={title}
       description={description}
       status={problemText ? <span className="text-error-foreground">{problemText}</span> : null}
@@ -202,7 +221,7 @@ function KeyField({
             ref={input}
             wrapperClassName="w-56"
             font="mono"
-            className="text-sm placeholder:font-sans"
+            className="text-sm"
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -226,7 +245,7 @@ function KeyField({
             disabledReason={busy ? t('compute.settings.connecting') : undefined}
           >
             {busy ? <Spinner /> : null}
-            {t('compute.settings.connect')}
+            {submit}
           </Button>
         </form>
       )}
@@ -238,7 +257,9 @@ function KeyField({
 function StatusLine({ provider }: { provider: ComputeProviderSnapshot }) {
   const { t } = useI18n();
   const ago = useAgo(provider.checkedAtMs);
-  if (provider.status === 'refused') return <span className="text-error-foreground">{t('compute.settings.connectedRefused')}</span>;
+  if (provider.status === 'refused') {
+    return <span className="text-error-foreground">{ago ? t('compute.settings.connectedRefused', { ago }) : t('compute.settings.connectedRefusedNotRead')}</span>;
+  }
   if (provider.status === 'unreachable') return <span className="text-warning-foreground">{t('compute.settings.connectedNotAnswering')}</span>;
   if (provider.status === 'rateLimited') return <span className="text-warning-foreground">{t('compute.settings.connectedRateLimited')}</span>;
   return <>{ago ? t('compute.settings.connected', { ago }) : t('compute.settings.connectedNotRead')}</>;
@@ -295,7 +316,7 @@ function ConnectedProvider({ provider }: { provider: ComputeProviderSnapshot }) 
   return (
     <>
       <SettingsRow
-        title={info.name}
+        title={<ProviderTitle provider={provider.id} />}
         description={<StatusLine provider={provider} />}
         status={provider.keyAccess === 'canWrite' ? (
           <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -310,8 +331,10 @@ function ConnectedProvider({ provider }: { provider: ComputeProviderSnapshot }) 
         <KeyField
           provider={provider.id}
           title={t('compute.settings.key.title')}
-          description={refused ? t('compute.settings.key.refused', { provider: info.name }) : t('compute.settings.key.paste', { provider: info.name })}
+          settingId="compute.key"
+          description={refused ? t('compute.settings.key.refused', { provider: info.name }) : t('compute.settings.key.pasteNew', { provider: info.name })}
           done={t('compute.settings.key.replaced', { provider: info.name })}
+          submit={t('compute.settings.key.replace')}
           onCancel={refused ? undefined : () => setReplacing(false)}
         />
       ) : (
@@ -331,7 +354,13 @@ function ConnectedProvider({ provider }: { provider: ComputeProviderSnapshot }) 
         title={t('compute.settings.check.title')}
         description={t('compute.settings.check.description')}
         control={(
-          <Button variant="outline" size="sm" onClick={() => void check()} disabledReason={checking ? t('compute.settings.check.busy') : undefined}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void check()}
+            // A check with a key the provider turned down can only be turned down again.
+            disabledReason={refused ? t('compute.settings.check.needsKey') : checking ? t('compute.settings.check.busy') : undefined}
+          >
             {checking ? <Spinner /> : null}
             {t('compute.checkNow')}
           </Button>

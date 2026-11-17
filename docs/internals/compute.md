@@ -29,8 +29,11 @@ Arbor can send doesn't change with the key: the allowlist is what keeps it to re
 ## What never crosses
 
 A provider's answers hold things Arbor must not keep. Boat's process list carries every process's full command line,
-secrets typed into it included, so the struct that reads a process binds only its CPU and memory numbers; serde skips
-the rest, and a SECRET test checks a token in `command` appears in no snapshot, history or failure a round returns. The same goes
+secrets typed into it included, so the struct that reads a process binds only counts and times: its CPU and memory
+numbers, when it started, and whether Boat's exec started it (`commandId` is bound as `IgnoredAny`, so the id itself
+is never held). From those a reading says how many commands are running and when the newest began. The command line,
+user and process ids are never bound; serde skips them, and a SECRET test checks a token in `command` and the
+`commandId` text appear in no snapshot, history or failure a round returns. The same goes
 for a sandbox's addresses, desktop URL, environment, who created it (reduced to `mine`) and its free-text reasons
 (each reduced to an enum with an `other` bucket). A failure is a `ComputeFailure` kind; a provider's error body is
 never read. The key stays in Rust: the window learns only whether a provider is connected, and what the key can do and
@@ -59,6 +62,13 @@ rule as everywhere else. A session Arbor hasn't seen shows as such and never mak
 sandboxes are never linked and never forgotten. A link to a sandbox the list doesn't show yet is kept for a while,
 since a provider's list lags a create.
 
+A running sandbox of one's own looks forgotten when its session ended over 30 minutes ago and it won't stop by itself
+soon, when it has no auto-stop and has run for hours, or when it has run far past its auto-stop. A busy one never
+does, for any of those reasons: an agent waiting on a person's review counts as ended while its dev server or tests
+still run. Busy means the newest 15 readings from the last 20 minutes, at least 3 of them, average 5% or more of its
+vCPUs. With fewer readings (monitoring off, a key that can't read load, just started) Arbor can't tell, and the rules
+apply as they are.
+
 ## Alerts are the window's, from Rust's round
 
 Rust reads the providers whether or not the window is open, and the window, which is the background service even when
@@ -70,7 +80,15 @@ them again. A provider whose round can't judge a problem keeps what was alerted 
 (Rust lists it `ok` with nothing in it until its first round), one not answering, or one whose asking Arbor to slow
 down has kept its list from being read for more than a couple of rounds. Otherwise the first real round after a
 restart or a blip would alert every lasting problem again. A slow-down over CPU and memory reads alone, with the list
-fresh, judges everything, since no alert depends on those reads.
+fresh, judges everything: only the busy exception leans on those reads, and it lapses by itself once they're twenty
+minutes old. Rust marks a sandbox that busy alone keeps from looking forgotten (`forgottenHeld`), and the window keeps
+what was alerted for it while that holds, so one whose CPU hovers at the busy line is said once and not each time it
+goes quiet. Anything else that clears the flag ends the alert.
+
+Blocked starts are the last answer the provider gave, and Rust keeps it while a later read fails. `startsBlockedNow`
+(`services/compute.ts`) is the one place that decides whether it's still said: not from a provider that isn't
+answering or turned the key down, nor from one slowed past `RATE_LIMITED_STALE_MS`. The page's banner, Home's line and the sidebar's dot all
+ask it, and the sidebar asks again each minute, since a list goes stale by the clock with no new snapshot.
 
 Home's Compute card shows one problem line per provider on purpose: it's a glance that says where to look, and the
 Compute page lists the rest.
@@ -91,6 +109,9 @@ connects nothing, stays flat. `bun run perf` measures the Compute page with `?co
 ## Adding a provider
 
 One Rust module in `compute/` implementing `ComputeProvider`, listed in `PROVIDERS`, with a `ComputeProviderId`
-variant; and one record in `COMPUTE_PROVIDERS` (`services/computeHint.ts`) for its name, mark, key placeholder and
-read-only key command. Shared copy takes the provider's name as a parameter, so no string changes. A provider that
+variant; one record in `COMPUTE_PROVIDERS` (`services/computeHint.ts`) for its name, key placeholder and read-only
+key command; and its own mark, drawn in `components/compute/ComputeProviderMark.tsx` and listed in its `MARKS`. The
+mark is an inline SVG with a fill for each theme, not an image: two `<img>`s would cost a DOM mutation apiece wherever
+it's drawn, and it stays out of `computeHint.ts` so launch doesn't load it. Shared copy takes the provider's name as a
+parameter, so no string changes. A provider that
 can't report something says so in its `capabilities`, and the screens leave that part out.

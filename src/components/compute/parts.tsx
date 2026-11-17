@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { useI18n } from '../../i18n';
 import { cn } from '../../lib/utils';
-import type { ComputePoint, ComputeProviderId, ComputeSandbox } from '../../native/types';
+import type { ComputePoint, ComputeSandbox } from '../../native/types';
 import {
   formatEndedAgo,
   sandboxFlags,
@@ -10,7 +10,6 @@ import {
   type ComputeTone,
   type SandboxFlag,
 } from '../../services/compute';
-import { COMPUTE_PROVIDERS } from '../../services/computeHint';
 import { ISSUE_LABEL } from '../../services/computeAlerts';
 import { HarnessName } from '../identity/Harness';
 import { MachinePill } from '../identity/Identity';
@@ -18,22 +17,7 @@ import { Badge } from '../ui/badge';
 import { TriangleAlert } from '../ui/icons';
 import { StatusDot, type StatusTone } from '../ui/status-dot';
 
-/** Pieces every Compute screen draws a sandbox with: its provider's mark, its dot, its flags, what started it. */
-
-/** A provider's mark: its letter in a small square, until it has an icon of its own. */
-export function ProviderMark({ provider, className }: { provider: ComputeProviderId; className?: string }) {
-  const { t } = useI18n();
-  const info = COMPUTE_PROVIDERS[provider];
-  return (
-    <span
-      role="img"
-      aria-label={t('compute.mark', { provider: info.name })}
-      className={cn('inline-flex size-4.5 shrink-0 items-center justify-center rounded-[5px] bg-foreground text-3xs font-semibold leading-none text-background', className)}
-    >
-      {info.mark}
-    </span>
-  );
-}
+/** Pieces every Compute screen draws a sandbox with: its dot, its flags, what started it. */
 
 const DOT_TONE: Record<ComputeTone, StatusTone> = { primary: 'success', warning: 'warning', error: 'error', muted: 'muted' };
 

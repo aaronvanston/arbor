@@ -7,11 +7,12 @@ import { computeScenarioSnapshot, mockHistory, type ComputeScenario } from '../s
 import { I18nProvider } from '../src/i18n';
 import type { ComputePoint, ComputeProviderSnapshot, ComputeSandbox, MachineHealth } from '../src/native/types';
 import { ComputeOverview, ComputePage } from '../src/pages/ComputePage';
-import { groupSandboxes, resetComputeStore, takeComputeSnapshot, type ComputeGrouping } from '../src/services/compute';
+import { groupSandboxes, resetComputeStore, sandboxFlags, takeComputeSnapshot, type ComputeGrouping } from '../src/services/compute';
 import { computeHint } from '../src/services/computeHint';
 import {
   agentsFigure,
   COMPUTE_PAGE_SIZE,
+  loadNeedsKey,
   cpuAtLimitForMs,
   flagCounts,
   groupRowCount,
@@ -20,6 +21,8 @@ import {
   mergeHistory,
   mostPressingPlanHours,
   pageOfGroups,
+  sandboxCommands,
+  sessionEndedNoteAtMs,
   tableGroups,
 } from '../src/services/computePage';
 import { present } from './support/items';
@@ -137,7 +140,7 @@ describe('Fleet › Compute', () => {
       'cam-mbp-fix-login', 'CPU at its limit', 'Looks forgotten', 'Degraded · disk pressure', 'Starting', 'Not linked', 'ended 41m ago',
       '1 at CPU limit', '1 forgotten', '1 degraded', 'Group by', 'No auto-stop', '2.4 h',
       'Running sandboxes', 'Starts this minute', '343 of 555 used', 'Counted from the list', 'New sandboxes can start',
-      'What’s running', 'By type', 'Started from', 'CPU in use now']) {
+      'What’s running', 'By size', 'Started from', 'CPU in use now']) {
       expect(html).toContain(text);
     }
     expect(rows(html)).toBe(6);
@@ -198,7 +201,13 @@ describe('Fleet › Compute', () => {
 
   it('dims an earlier read’s figures and says how old they are when the provider isn’t answering', () => {
     const html = overview('unreachable');
-    expect(html).toContain('Couldn’t reach Boat. These figures were read 14m ago.');
+    // The top bar carries the age; the banner doesn't give a second one.
+    expect(html).toContain('Couldn’t reach Boat. These are the last figures it gave.');
+    // Nothing an earlier read can't vouch for is said as if it were now's: no "can start", no run-out forecast.
+    expect(html).not.toContain('New sandboxes can start');
+    expect(html).not.toContain('at the current rate');
+    expect(overview('typical')).toContain('New sandboxes can start');
+    expect(overview('typical')).toContain('at the current rate');
     expect(html).toContain('Try again');
     expect(html).toContain('opacity-60');
     expect(overview('typical')).not.toContain('opacity-60');
@@ -234,12 +243,51 @@ describe('Fleet › Compute', () => {
     // The scope's name comes from the provider's record, not a shared string.
     expect(limits).toContain('This key can’t read Boat’s limits. A key with account.read can.');
     expect(limits).not.toContain('Starts this minute');
+    // Both lead to the key, and the plan hours tile blames the key, not the provider.
+    expect(limits).toContain('Open Settings');
+    expect(limits).toContain('This key can’t read them');
+    expect(limits).not.toContain('No connected provider reports plan hours');
+  });
+
+  it('says once, above the figures, that the key is why CPU and memory are blank, and counts nothing unread as idle', () => {
+    const html = overview('noload');
+    expect(html).toContain('This key can’t read CPU and memory from Boat. Settings › Compute shows the key that can.');
+    expect(html).toContain('Open Settings');
+    expect(loadNeedsKey(providerOf('noload'))).toBe(true);
+    // Unread vCPUs aren't idle ones: no "0 of 38" for the sandboxes.
+    expect(html).not.toContain('>0</span> of');
+    // Nor is one that's still starting: 16 busy of the 30 vCPUs read, not of all 38.
+    expect(overview('typical')).toContain('>16</span> of 30');
+    expect(overview('typical')).not.toContain('>16</span> of 38');
+    // One reading is enough to know the key can read, and a sandbox with no sample isn't the key's doing.
+    expect(loadNeedsKey(providerOf('typical'))).toBe(false);
+    expect(loadNeedsKey(providerOf('big'))).toBe(false);
+    expect(loadNeedsKey(providerOf('empty'))).toBe(false);
+    expect(overview('typical')).not.toContain('This key can’t read CPU and memory');
   });
 
   it('asks for links when nothing is linked, and says starts are blocked and why', () => {
     expect(overview('unlinked')).toContain('How to link');
     expect(overview('typical')).not.toContain('How to link');
-    expect(overview('blocked')).toContain('Starts blocked · Plan hours used up');
+    // Said at the top, where the eye lands, and still beside the limits.
+    const blocked = overview('blocked');
+    expect(blocked).toContain('Plan hours used up, so Boat isn’t letting new sandboxes start. Agents that need one will fail until that changes.');
+    expect(blocked).toContain('Starts blocked · Plan hours used up');
+    expect(blocked.indexOf('so Boat isn’t letting new sandboxes start')).toBeLessThan(blocked.indexOf('Plan hours left'));
+    // A reason Arbor has no words for isn't forced into the sentence.
+    expect(overviewOf({ ...providerOf('blocked'), startBlock: 'other' })).toContain('Boat isn’t letting new sandboxes start. Agents that need one will fail until that changes.');
+    expect(overview('typical')).not.toContain('isn’t letting new sandboxes start');
+    // A list read a moment ago while Boat asks Arbor to slow down still says starts are blocked; one that isn't
+    // answering doesn't, since that's an earlier read's.
+    const slowed = overviewOf({ ...providerOf('blocked'), status: 'rateLimited', checkedAtMs: NOW });
+    expect(slowed).toContain('so Boat isn’t letting new sandboxes start');
+    expect(overviewOf({ ...providerOf('blocked'), status: 'unreachable' })).not.toContain('so Boat isn’t letting new sandboxes start');
+    // Before anything was ever read there are no "last figures" to speak of.
+    expect(overviewOf({ ...providerOf('typical'), status: 'unreachable', checkedAtMs: null, sandboxes: [] })).toContain('Couldn’t reach Boat.</');
+    expect(overviewOf({ ...providerOf('typical'), status: 'refused', checkedAtMs: null, sandboxes: [] })).toContain('Boat turned down Arbor’s key. Replace the key in Settings › Compute.');
+    const slowedFirst = overviewOf({ ...providerOf('typical'), status: 'rateLimited', checkedAtMs: null, canStart: null, sandboxes: [] });
+    expect(slowedFirst).toContain('Boat asked Arbor to check less often before anything was read. Arbor tries again shortly.');
+    expect(slowedFirst).not.toContain('a few minutes old');
   });
 
   it('says nothing is running, with the stopped ones behind a disclosure', () => {
@@ -305,7 +353,7 @@ describe('a sandbox’s own page', () => {
   it('heads the page with its state and size, copy and open, then its stats, the chart and what started it', () => {
     const html = sandboxPage(typical, byName(typical, 'cam-mbp-fix-login'));
     for (const text of ['cam-mbp-fix-login', 'Running · 8 vCPU · 16 GB · 2× plan hours', 'Copy ID', 'Open in Boat',
-      '99', 'of 8 vCPU busy', 'About 9.8 of 16 GB', '2h 48m', 'Uses 2 plan hours for each hour it runs',
+      '99', 'of 8 vCPU busy', 'About 9.8 of 16 GB', '2h 48m', 'Commands running', 'Newest started 12m ago', 'Plan hours this month', '2.4 h',
       'at its limit', 'Load', 'Arbor keeps the last two hours', 'Show as a table', 'CPU and memory for cam-mbp-fix-login',
       'Started by', 'cam-mbp', '3f2a91c4', 'live', 'You', 'Unlink', 'Details', 'Healthy', 'bx_4k2m9xqa']) {
       expect(html).toContain(text);
@@ -319,12 +367,49 @@ describe('a sandbox’s own page', () => {
 
   it('says why it looks forgotten, and what’s wrong when it’s degraded', () => {
     const perf = byName(typical, 'ci-01-perf');
-    expect(sandboxPage(typical, perf)).toContain('The session that started this ended 41m ago, so it keeps using plan hours until someone stops it.');
+    // It says what Arbor can see of whether anything still uses it, and where it can be stopped.
+    // Only what the count can vouch for: a process left running outside the provider's own exec isn't counted.
+    expect(sandboxPage(typical, perf)).toContain('The session that started this ended 41m ago. Nothing started through Boat is still running in it. It uses plan hours until someone stops it in Boat.');
     // One whose auto-stop is set stops by itself; it never says someone has to stop it.
     const stops = sandboxPage(typical, { ...perf, stopsAtMs: NOW + 50 * MINUTE });
-    expect(stops).toContain('It keeps using plan hours until it stops by itself');
+    expect(stops).toContain('It uses plan hours until it stops at');
     expect(stops).not.toContain('until someone stops it');
+    // With no reading there's nothing to say about commands, and nothing is made up.
+    const unread = sandboxPage(typical, { ...perf, load: { kind: 'keyCantRead' }, points: [] });
+    expect(unread).toContain('The session that started this ended 41m ago. It uses plan hours until someone stops it in Boat.');
     expect(sandboxPage(typical, byName(typical, 'ci-01-build'))).toContain('Degraded · disk pressure for 7m');
+  });
+
+  it('says what’s still running in one whose session ended, as a note and not a warning while it’s at work', () => {
+    const working = providerOf('working');
+    const perf = byName(working, 'ci-01-perf');
+    // Rust holds the flag back while its CPU is busy, so nothing calls it forgotten.
+    expect(perf.forgotten).toBeNull();
+    expect(sandboxFlags(perf)).toEqual([]);
+    expect(sandboxCommands(perf)).toEqual({ count: 3, newestStartedAtMs: NOW - 52 * MINUTE });
+    expect(sessionEndedNoteAtMs(perf, NOW)).toBe(NOW - 41 * MINUTE);
+    const html = sandboxPage(working, perf);
+    expect(html).toContain('The session that started this ended 41m ago. 3 commands are still running in it. The newest started 52m ago.');
+    expect(html).not.toContain('Looks forgotten');
+    expect(html).not.toContain('It uses plan hours until');
+    for (const text of ['Commands running', 'Newest started 52m ago']) expect(html).toContain(text);
+    // One command reads as one.
+    const one = sandboxPage(working, { ...perf, load: { kind: 'read', cpu: 0.34, memory: 0.52, atMs: NOW, commands: 1, commandStartedMs: NOW - 5 * MINUTE } });
+    expect(one).toContain('1 command is still running in it. It started 5m ago.');
+
+    // The note waits as long as the flag does, and is only for a running sandbox of one's own whose session Arbor saw end.
+    const session = present(perf.session);
+    expect(sessionEndedNoteAtMs({ ...perf, session: { ...session, endedAtMs: NOW - 29 * MINUTE } }, NOW)).toBeNull();
+    expect(sessionEndedNoteAtMs({ ...perf, session: { ...session, live: true, endedAtMs: null } }, NOW)).toBeNull();
+    expect(sessionEndedNoteAtMs({ ...perf, session: { ...session, known: false } }, NOW)).toBeNull();
+    expect(sessionEndedNoteAtMs({ ...perf, mine: false }, NOW)).toBeNull();
+    expect(sessionEndedNoteAtMs({ ...perf, state: 'stopped' }, NOW)).toBeNull();
+    // A provider that doesn't say, or a sandbox with no reading, has no count to show.
+    expect(sandboxCommands({ load: { kind: 'read', cpu: 0, memory: 0, atMs: NOW, commands: null, commandStartedMs: null } })).toBeNull();
+    expect(sandboxCommands({ load: { kind: 'monitoringOff' } })).toBeNull();
+    expect(sandboxPage(working, byName(working, 'cedar-02-e2e'))).not.toContain('Newest started');
+    // One that isn't running has no count, and that isn't the provider's doing.
+    expect(sandboxPage(working, { ...perf, state: 'stopped', load: { kind: 'unavailable' }, points: [] })).not.toContain('doesn’t report this');
   });
 
   it('has no chart before the first reading, and says why when it can’t have one', () => {

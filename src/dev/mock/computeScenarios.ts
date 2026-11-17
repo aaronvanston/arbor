@@ -11,8 +11,8 @@ import type { ComputeLimit, ComputePoint, ComputeProviderSnapshot, ComputeSandbo
  * Like Boat, every scenario's provider says neither what the key can do nor when it expires, except `readonlykey` and
  * `writekey`, a provider that does.
  */
-export type ComputeScenario = 'none' | 'typical' | 'near' | 'blocked' | 'unreachable' | 'unlinked' | 'empty' | 'refused' | 'limits' | 'readonlykey' | 'writekey' | 'trouble' | 'paid' | 'big' | 'partial' | 'noload';
-export const COMPUTE_SCENARIOS: readonly ComputeScenario[] = ['none', 'typical', 'near', 'blocked', 'unreachable', 'unlinked', 'empty', 'refused', 'limits', 'readonlykey', 'writekey', 'trouble', 'paid', 'big', 'partial', 'noload'];
+export type ComputeScenario = 'none' | 'typical' | 'near' | 'blocked' | 'unreachable' | 'unlinked' | 'empty' | 'refused' | 'limits' | 'readonlykey' | 'writekey' | 'trouble' | 'paid' | 'big' | 'partial' | 'noload' | 'working';
+export const COMPUTE_SCENARIOS: readonly ComputeScenario[] = ['none', 'typical', 'near', 'blocked', 'unreachable', 'unlinked', 'empty', 'refused', 'limits', 'readonlykey', 'writekey', 'trouble', 'paid', 'big', 'partial', 'noload', 'working'];
 
 export const isComputeScenario = (value: string | null): value is ComputeScenario => COMPUTE_SCENARIOS.includes(value as ComputeScenario);
 
@@ -84,7 +84,13 @@ type SandboxSeed = {
   issue?: ComputeSandbox['issue'];
   issueMin?: number;
   forgotten?: ComputeSandbox['forgotten'];
+  /** Busy is all that keeps it from looking forgotten. */
+  forgottenHeld?: boolean;
   mine?: boolean;
+  /** Commands the provider started that are still running; without one, a busy sandbox has one and a quiet one none. */
+  commands?: number;
+  /** How long ago the newest of them started. */
+  commandMin?: number;
 };
 
 function sandbox(seed: SandboxSeed, now: number): ComputeSandbox {
@@ -94,6 +100,7 @@ function sandbox(seed: SandboxSeed, now: number): ComputeSandbox {
   // or in error has none to give.
   const read = seed.cpu !== null && seed.memory !== null && state === 'running';
   const mine = seed.mine ?? true;
+  const commands = seed.commands ?? ((seed.cpu ?? 0) >= 0.1 ? 1 : 0);
   return {
     id: seed.id,
     name: seed.name,
@@ -112,7 +119,7 @@ function sandbox(seed: SandboxSeed, now: number): ComputeSandbox {
     monthHours: seed.monthHours,
     monthDollars: seed.monthDollars ?? 0,
     mine,
-    load: read && seed.cpu !== null && seed.memory !== null ? { kind: 'read', cpu: seed.cpu, memory: seed.memory, atMs: now - 20_000 }
+    load: read && seed.cpu !== null && seed.memory !== null ? { kind: 'read', cpu: seed.cpu, memory: seed.memory, atMs: now - 20_000, commands, commandStartedMs: commands ? now - Math.min(seed.ageMin, seed.commandMin ?? 12) * MINUTE : null }
       : state === 'running' || state === 'starting' ? { kind: 'notReadYet' } : { kind: 'unavailable' },
     points: read && seed.cpu !== null && seed.memory !== null ? mockPoints(seed.id, seed.cpu, seed.memory, now, Math.min(30, seed.ageMin + 1)) : [],
     machine: mine ? seed.machine : null,
@@ -120,6 +127,7 @@ function sandbox(seed: SandboxSeed, now: number): ComputeSandbox {
     linkedBy: mine && (seed.machine || seed.session) ? 'link' : null,
     linkProblem: mine && !seed.machine ? 'notLinked' : null,
     forgotten: mine && state !== 'stopped' ? seed.forgotten ?? null : null,
+    forgottenHeld: mine && state === 'running' && (seed.forgottenHeld ?? false),
   };
 }
 
@@ -276,6 +284,13 @@ export function computeScenarioSnapshot(scenario: ComputeScenario, now: number):
     }
     // More sandboxes listed than Arbor reads pages of, so the list stopped short.
     case 'partial': return { providers: [provider(now, typical(), { listPartial: true })] };
+    case 'working': {
+      // ci-01-perf's session ended 41 minutes ago, but three commands it left are still at work, so it isn't forgotten.
+      const sandboxes = typicalSeeds(now).map((seed) => (seed.id === 'bx_t9v6h2rk'
+        ? { ...seed, cpu: 0.34, memory: 0.52, forgotten: null, forgottenHeld: true, commands: 3, commandMin: 52, stopsInMin: 153 }
+        : seed));
+      return { providers: [provider(now, sandboxes.map((seed) => sandbox(seed, now)))] };
+    }
     // A key that can list sandboxes but that the provider won't give their load to, as Boat's read-only key is.
     case 'noload': {
       const sandboxes = typical().map((entry): ComputeSandbox => (entry.state === 'running' ? { ...entry, load: { kind: 'keyCantRead' }, points: [] } : entry));

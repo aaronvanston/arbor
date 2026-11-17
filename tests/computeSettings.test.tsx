@@ -41,7 +41,14 @@ describe('Settings › Compute', () => {
     const html = render();
     const words = text(html);
     expect(words).toContain('Boat');
-    expect(words).toContain('Paste a key from Boat. Arbor only reads with it, once a minute.');
+    // In the order it's done: what each of the two keys shows, then where the key goes.
+    expect(words).toContain('This one can only read, and shows everything but CPU and memory:');
+    expect(words).toContain('Paste the key it prints. Arbor only reads with it, once a minute.');
+    expect(words.indexOf('This one can only read')).toBeLessThan(words.indexOf('Or this one, which also shows CPU and memory'));
+    expect(words.indexOf('Or this one, which also shows CPU and memory')).toBeLessThan(words.indexOf('Paste the key it prints'));
+    // Boat's own mark sits before its name: one drawing, in the blue Boat uses on each ground.
+    expect(html).toMatch(/<svg viewBox="0 0 498 462\.1" aria-hidden="true" class="[^"]*fill-\[#263FA9\] dark:fill-\[#8C9EF2\]/);
+    expect(html).not.toContain('<img');
     // A password field that starts empty, so a key is never drawn back into it.
     expect(html).toMatch(/<input[^>]*type="password"[^>]*aria-label="Boat API key"/);
     expect(html).toContain('placeholder="boat_…"');
@@ -54,9 +61,12 @@ describe('Settings › Compute', () => {
     expect(LOAD_KEY_COMMANDS.boat).toBe('boat api-key create arbor --actions sandbox.read,account.read,exec --ttl 365d');
     expect(unescape(html)).toContain(LOAD_KEY_COMMANDS.boat ?? 'missing');
     expect(words).toContain('Arbor never runs any');
+    // What linking is for is said from the start; its commands wait for a provider that lists sandboxes.
     expect(words).toContain('Tell Arbor when an agent creates one');
-    expect(unescape(html)).toContain(linkCommand('boat'));
-    expect(unescape(html)).toContain(LINK_LABELS);
+    expect(words).toContain('A linked sandbox shows the machine and session that started it');
+    expect(unescape(html)).not.toContain(linkCommand('boat'));
+    expect(unescape(html)).not.toContain(LINK_LABELS);
+    expect(html).toContain('data-setting-id="compute.linking"');
     // Nothing that needs a connected provider, and no provider that isn't built.
     expect(words).not.toContain('Disconnect');
     expect(words).not.toContain('Linked now');
@@ -79,8 +89,9 @@ describe('Settings › Compute', () => {
   });
 
   it('shows each command in a code block that scrolls rather than break a word or an =', () => {
-    const html = unescape(render());
+    const html = unescape(show('typical'));
     expect(html).toMatch(/<pre class="[^"]*overflow-x-auto[^"]*">arbor call link-compute-sandbox /);
+    expect(html).toContain(LINK_LABELS);
     expect(html).toContain(unlinkCommand('boat'));
     expect(html).not.toContain('break-all');
   });
@@ -124,9 +135,15 @@ describe('Settings › Compute', () => {
 
   it('says a refused key and opens the field for a new one', () => {
     const words = text(show('refused'));
-    expect(words).toContain('Connected · key refused');
-    expect(words).toContain('Boat turned the saved key down. Paste a new one to keep reading.');
+    // Not "Connected": the key is what's wrong. The button says what the banner and the alert say, and a check that
+    // could only be turned down again isn't offered.
+    expect(words).toMatch(/Key refused · last read \d+m ago/);
+    expect(words).not.toContain('Connected');
+    expect(words).toContain('Boat turned down the saved key. Paste a new one to replace it.');
+    expect(words).toContain('Replace');
+    expect(words).toContain('Paste a new key first');
     expect(show('refused')).toContain('type="password"');
+    expect(show('refused')).toContain('data-setting-id="compute.key"');
     // The field can't be put away until a new key is in.
     expect(words).not.toContain('Cancel');
   });

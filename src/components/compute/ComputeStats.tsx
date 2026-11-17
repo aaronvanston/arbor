@@ -4,7 +4,7 @@ import { formatDate, formatNumber, formatWhen } from '../../lib/format';
 import { cn } from '../../lib/utils';
 import type { ComputeProviderSnapshot } from '../../native/types';
 import { allSandboxes, computeTotals, findLimit, formatHours, planHoursTone, sizeMix } from '../../services/compute';
-import { agentsFigure, mostPressingPlanHours } from '../../services/computePage';
+import { agentsFigure, loadNeedsKey, mostPressingPlanHours } from '../../services/computePage';
 import { StatBlock, StatsGrid } from '../layout/stats';
 
 /** A figure and, quieter after it, what it's out of: "6 of 100", "4 live sessions". */
@@ -49,16 +49,19 @@ export function ComputeStats({ providers, nowMs, stale }: {
         ].filter(Boolean).join(' · ');
 
   const hoursHint = !hours
-    ? t('compute.page.stat.hoursNone')
+    ? t(providers.some((provider) => provider.status === 'limitsNeedScope') ? 'compute.page.stat.hoursNeedScope' : 'compute.page.stat.hoursNone')
     : hours.left <= 0
-      ? reset ? t('compute.page.stat.hoursGone', { when: reset }) : null
-      : hours.runOutAtMs !== null && hours.perHour
-        ? (
-            <span className={cn(hoursTone === 'error' ? 'text-destructive-foreground' : hoursTone === 'warning' && 'text-warning-foreground')}>
-              {t('compute.page.stat.runsOut', { when: formatWhen(hours.runOutAtMs, { now: nowMs }), rate: formatHours(hours.perHour) })}
-            </span>
-          )
-        : reset ? t('compute.page.stat.hoursIdle', { when: reset }) : null;
+      ? reset ? <span className={cn(hoursTone === 'error' && 'text-destructive-foreground')}>{t('compute.page.stat.hoursGone', { when: reset })}</span> : null
+      // A forecast from an earlier read's rate would claim more than Arbor knows.
+      : stale
+        ? reset ? t('compute.page.stat.hoursResets', { when: reset }) : null
+        : hours.runOutAtMs !== null && hours.perHour
+          ? (
+              <span className={cn(hoursTone === 'error' ? 'text-destructive-foreground' : hoursTone === 'warning' && 'text-warning-foreground')}>
+                {t('compute.page.stat.runsOut', { when: formatWhen(hours.runOutAtMs, { now: nowMs }), rate: formatHours(hours.perHour) })}
+              </span>
+            )
+          : reset ? t('compute.page.stat.hoursIdle', { when: reset }) : null;
 
   return (
     <StatsGrid columns={4} className={cn(stale && 'opacity-60')}>
@@ -76,8 +79,10 @@ export function ComputeStats({ providers, nowMs, stale }: {
       />
       <StatBlock
         label={t('compute.page.stat.busy')}
-        value={totals.read ? <Figure value={Math.round(totals.busyVcpus)} rest={t('compute.page.stat.of', { max: totals.vcpus })} /> : '—'}
-        hint={totals.hot ? t('compute.page.stat.busyHint', { count: totals.hot }) : undefined}
+        value={totals.read ? <Figure value={Math.round(totals.busyVcpus)} rest={t('compute.page.stat.of', { max: totals.readVcpus })} /> : '—'}
+        hint={totals.hot
+          ? t('compute.page.stat.busyHint', { count: totals.hot })
+          : !totals.read && providers.some(loadNeedsKey) ? t('compute.load.keyCantRead') : undefined}
       />
       <StatBlock
         label={t('compute.page.stat.hoursLeft')}

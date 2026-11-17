@@ -85,13 +85,44 @@ describe('Compute’s alert rules', () => {
     expect(second.alert).toEqual([]);
     expect(second.alerted.sort()).toEqual(first.alerted.sort());
 
-    const cleared = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: null }));
+    // Its session is live again: someone is looking after it, so the problem is over.
+    const cleared = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({
+      ...sandbox,
+      forgotten: null,
+      session: sandbox.session ? { ...sandbox.session, live: true, endedAtMs: null } : null,
+    }));
     const third = nextComputeAlerts(second.alerted, cleared, NOW + 2 * MINUTE);
     expect(third.alert).toEqual([]);
     expect(third.alerted).not.toContain('boat:forgotten:bx_t9v6h2rk');
 
     const back = nextComputeAlerts(third.alerted, scenario('typical'), NOW + 3 * MINUTE);
     expect(back.alert.map(computeProblemKey)).toEqual(['boat:forgotten:bx_t9v6h2rk']);
+  });
+
+  it('says a forgotten sandbox once, however often its CPU stirs and goes quiet again', () => {
+    const first = nextComputeAlerts([], scenario('typical'), NOW);
+    expect(first.alerted).toContain('boat:forgotten:bx_t9v6h2rk');
+    // Busy for a while: Rust holds the flag back and says that's why, so it's remembered.
+    const busy = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: null, forgottenHeld: true }));
+    const during = nextComputeAlerts(first.alerted, busy, NOW + MINUTE);
+    expect(during.alert).toEqual([]);
+    expect(during.alerted).toContain('boat:forgotten:bx_t9v6h2rk');
+    const quiet = nextComputeAlerts(during.alerted, scenario('typical'), NOW + 2 * MINUTE);
+    expect(quiet.alert).toEqual([]);
+    // Once it stops, it's over: the same sandbox resumed and forgotten again would say so anew.
+    const stopped = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, state: 'stopped' as const, forgotten: null }));
+    expect(nextComputeAlerts(quiet.alerted, stopped, NOW + 3 * MINUTE).alerted).not.toContain('boat:forgotten:bx_t9v6h2rk');
+  });
+
+  it('ends a forgotten alert when the flag clears for any reason but a busy CPU', () => {
+    const first = nextComputeAlerts([], scenario('typical'), NOW);
+    // Looked after without a live session (given an auto-stop, say): the flag is gone and nothing holds it.
+    const lookedAfter = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: null }));
+    const after = nextComputeAlerts(first.alerted, lookedAfter, NOW + MINUTE);
+    expect(after.alerted).not.toContain('boat:forgotten:bx_t9v6h2rk');
+    // So the next time it looks forgotten, for whatever reason, is news.
+    const again = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: 'keptAlive' as const }));
+    expect(nextComputeAlerts(after.alerted, again, NOW + 2 * MINUTE).alert.map(computeProblemKey)).toEqual(['boat:forgotten:bx_t9v6h2rk']);
   });
 
   it('keeps what it alerted while a provider isn’t answering, so nothing repeats when it’s back', () => {
@@ -193,7 +224,7 @@ describe('Compute’s alerts as they’re sent', () => {
     expect(parseComputeSandboxSubject('boat')).toBeNull();
 
     const degraded = sent(problem(scenario('typical'), 'boat:degraded:bx_n3c2x8ws'));
-    expect(degraded.body).toBe('It has reported disk pressure for 7m.');
+    expect(degraded.body).toBe('Health: disk pressure for 7m.');
   });
 
   it('puts the provider’s name in as a parameter, and the key alert is urgent and opens Settings › Compute', () => {

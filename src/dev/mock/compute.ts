@@ -43,7 +43,7 @@ function snapshot(): ComputeSnapshot {
   return {
     providers: read.providers.map((provider) => ({
       ...provider,
-      sandboxes: provider.sandboxes.map((sandbox) => (unlinked.has(sandbox.id) ? { ...sandbox, machine: null, session: null, linkedBy: null, linkProblem: 'notLinked', forgotten: null } : sandbox)),
+      sandboxes: provider.sandboxes.map((sandbox) => (unlinked.has(sandbox.id) ? { ...sandbox, machine: null, session: null, linkedBy: null, linkProblem: 'notLinked', forgotten: null, forgottenHeld: false } : sandbox)),
     })),
   };
 }

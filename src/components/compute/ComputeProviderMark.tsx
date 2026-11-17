@@ -1,0 +1,30 @@
+import type { ReactNode } from 'react';
+import { cn } from '../../lib/utils';
+import type { ComputeProviderId } from '../../native/types';
+
+/**
+ * Boat's sailboat, in the blue it uses on a light ground and the one it uses on a dark one: a brand's color for one
+ * rarely reads on the other, and inverting it would make it another color. Drawn in the page rather than loaded as an
+ * image, so one element serves both themes.
+ */
+function BoatMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 498 462.1" aria-hidden="true" className={cn('size-4 shrink-0 fill-[#263FA9] dark:fill-[#8C9EF2]', className)}>
+      <path d="M490.1 361.5C494.5 361.5 498 365 498 369.3V403.9C498 408.3 494.5 411.8 490.1 411.8H473.3C468.9 411.8 465.4 415.3 465.4 419.7V454.2C465.4 458.6 461.9 462.1 457.5 462.1H84.4C83.1 462.1 82 461.5 81.2 460.6C52.5 424.1 52 423.6 7.9 411.8C3.7 410.7 0 408.3 0 403.9V369.3C0 365 3.5 361.5 7.9 361.5H490.1ZM234.2 4.8C238.6 -2.6 249.7 -1.2 252.1 7.1L321.9 240.2L244.4 338.3H52C44.3 338.3 39.5 329.9 43.5 323.3L234.2 4.8ZM453.1 132.3C451.2 124.2 440.8 121.8 435.6 128.3L282.3 322.3C277.2 328.8 281.8 338.3 290.1 338.3H488.1C494.4 338.3 499.2 332.4 497.7 326.2L453.1 132.3Z" />
+    </svg>
+  );
+}
+
+/**
+ * Each provider's own mark, as it draws it. A new provider is a compile error here until it has one. Kept apart from
+ * the list of providers (services/computeHint.ts), which launch reads and which holds no drawing.
+ */
+const MARKS: Readonly<Record<ComputeProviderId, (props: { className?: string }) => ReactNode>> = {
+  boat: BoatMark,
+};
+
+/** A provider's mark beside its name. Decorative: wherever it's drawn, the name is written next to it. */
+export function ComputeProviderMark({ provider, className }: { provider: ComputeProviderId; className?: string }) {
+  const Mark = MARKS[provider];
+  return <Mark className={className} />;
+}

@@ -126,9 +126,20 @@ function planHoursQuiet(provider: ComputeProviderSnapshot, key: string): boolean
 }
 
 /**
+ * Whether a sandbox alerted as forgotten is only at work again, not looked after. Rust holds the flag back while its
+ * CPU is busy and says so, so one hovering at that line doesn't alert again each time it goes quiet. Anything else
+ * that clears the flag (it stopped, its session is live again, it was given an auto-stop) ends the alert, and the
+ * next time it looks forgotten is news.
+ */
+function forgottenHeldBack(provider: ComputeProviderSnapshot, key: string): boolean {
+  const id = key.split(':')[2];
+  return provider.sandboxes.some((sandbox) => sandbox.id === id && sandbox.forgottenHeld);
+}
+
+/**
  * The problems to alert about now, and the keys to remember: each alerts once when it appears and again only after
  * it was gone. What a round couldn't judge (a provider not read yet since launch or not answering, limits the key can't read, plan hours with
- * nothing running) keeps what was remembered for it, so a provider that drops out for a minute, or sandboxes that
+ * nothing running, a forgotten sandbox that's busy for a while) keeps what was remembered for it, so a provider that drops out for a minute, or sandboxes that
  * stop and start again, don't alert everything again. A provider no longer connected forgets its own.
  */
 export function nextComputeAlerts(alerted: readonly string[], snapshot: ComputeSnapshot, nowMs: number): { alert: ComputeProblem[]; alerted: string[] } {
@@ -137,7 +148,9 @@ export function nextComputeAlerts(alerted: readonly string[], snapshot: ComputeS
     const provider = snapshot.providers.find((entry) => entry.id === keyProvider(key));
     const kind = keyKind(key);
     if (provider === undefined || kind === undefined) return false;
-    return unjudged(provider, nowMs)(kind) || (kind === 'planHours' && planHoursQuiet(provider, key));
+    return unjudged(provider, nowMs)(kind)
+      || (kind === 'planHours' && planHoursQuiet(provider, key))
+      || (kind === 'forgotten' && forgottenHeldBack(provider, key));
   });
   const keys = problems.map(computeProblemKey);
   return {

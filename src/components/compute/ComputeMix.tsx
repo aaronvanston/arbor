@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useI18n } from '../../i18n';
 import { formatNumber } from '../../lib/format';
+import { cn } from '../../lib/utils';
 import type { ComputeSandbox } from '../../native/types';
 import { computeTotals, machineMix, originKey, sizeMix, type OriginShare } from '../../services/compute';
 import { machinesCpu } from '../../services/computePage';
@@ -75,7 +76,11 @@ function CpuRow({ label, busy, total }: { label: string; busy: number; total: nu
  * What's running, three ways: by size, by what started it, and how much CPU is in use now across the sandboxes and,
  * from the health Arbor already reads for its machines (no reads of its own), across the machines and both together.
  */
-export function ComputeMix({ sandboxes }: { sandboxes: readonly ComputeSandbox[] }) {
+export function ComputeMix({ sandboxes, stale }: {
+  sandboxes: readonly ComputeSandbox[];
+  /** The figures are an earlier read's, as the banner above says: they show dimmed. */
+  stale: boolean;
+}) {
   const { t } = useI18n();
   const machines = useFleetHealthSelect(machinesCpu);
   const totals = computeTotals(sandboxes);
@@ -93,7 +98,7 @@ export function ComputeMix({ sandboxes }: { sandboxes: readonly ComputeSandbox[]
   if (rest.length) sizeSegments.push({ key: 'other', count: rest.reduce((sum, share) => sum + share.count, 0), color: QUIET, label: t('compute.page.mix.other') });
 
   return (
-    <SettingsSection title={t('compute.page.mix.title')} contentClassName="@container">
+    <SettingsSection title={t('compute.page.mix.title')} contentClassName={cn('@container', stale && 'opacity-60')}>
       <div className="overflow-hidden">
         <div className="-mt-px -ml-px grid grid-cols-1 *:border-t *:border-l *:border-border/50 *:px-4 *:py-3 @min-[44rem]:grid-cols-3">
           <div className="flex flex-col gap-3">
@@ -107,13 +112,13 @@ export function ComputeMix({ sandboxes }: { sandboxes: readonly ComputeSandbox[]
           <div className="flex flex-col gap-3">
             <span className="text-xs text-muted-foreground">{t('compute.page.mix.cpu')}</span>
             <div className="flex flex-col gap-2.5">
-              <CpuRow label={t('compute.page.mix.sandboxes')} busy={totals.busyVcpus} total={totals.vcpus} />
-              {machines ? (
-                <>
-                  <CpuRow label={t('compute.page.mix.machines')} busy={machines.busy} total={machines.cores} />
-                  <CpuRow label={t('compute.page.mix.everything')} busy={totals.busyVcpus + machines.busy} total={totals.vcpus + machines.cores} />
-                </>
+              {/* A sandbox with no reading (a key that can't, monitoring off, still starting) isn't idle, it's unknown: left out. */}
+              {totals.read ? <CpuRow label={t('compute.page.mix.sandboxes')} busy={totals.busyVcpus} total={totals.readVcpus} /> : null}
+              {machines ? <CpuRow label={t('compute.page.mix.machines')} busy={machines.busy} total={machines.cores} /> : null}
+              {machines && totals.read ? (
+                <CpuRow label={t('compute.page.mix.everything')} busy={totals.busyVcpus + machines.busy} total={totals.readVcpus + machines.cores} />
               ) : null}
+              {!totals.read && !machines ? <span className="text-xs text-muted-foreground">{t('compute.load.unavailable')}</span> : null}
             </div>
           </div>
         </div>
