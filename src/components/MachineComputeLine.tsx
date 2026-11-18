@@ -22,7 +22,7 @@ function StartedHere({ machine, onNavigate }: { machine: string; onNavigate: (vi
   return (
     <button
       type="button"
-      onClick={() => onNavigate(computeByMachineView())}
+      onClick={() => onNavigate(computeByMachineView(machine))}
       title={t('compute.machineLine.open')}
       className="group flex w-fit cursor-pointer items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none ring-ring hover:text-foreground focus-visible:ring-2"
     >

@@ -11,6 +11,7 @@ import {
   formatSandboxAge,
   percentOf,
   planHours,
+  planHoursGoneLastSaid,
   planHoursTone,
   sandboxCpu,
   START_BLOCK_LABEL,
@@ -68,7 +69,7 @@ const HomeComputeProvider = memo(function HomeComputeProvider({ provider, onNavi
   const name = computeProviderName(provider.id);
   const totals = computeTotals(provider.sandboxes);
   const hours = planHours(provider);
-  const hoursTone = hours ? planHoursTone(hours, now) : 'muted';
+  const hoursTone = hours ? planHoursTone(hours, now, planHoursGoneLastSaid(provider)) : 'muted';
   const line = homeComputeLine(provider, now);
   const notAnswering = provider.status === 'unreachable';
   const rateLimited = provider.status === 'rateLimited';

@@ -90,6 +90,12 @@ Blocked starts are the last answer the provider gave, and Rust keeps it while a 
 answering or turned the key down, nor from one slowed past `RATE_LIMITED_STALE_MS`. The page's banner, Home's line and the sidebar's dot all
 ask it, and the sidebar asks again each minute, since a list goes stale by the clock with no new snapshot.
 
+Red is kept for what stops work: a sandbox in error, a key turned down, blocked starts, a limit used up. A sandbox at
+its CPU limit, degraded or forgotten is amber wherever it's drawn (its row, the sidebar's dot, Home's line), and so is
+a limit past 80%: red beside "New sandboxes can start" would say two things. Used-up plan hours ask `planHoursGone`,
+which is red when they're why starts are blocked and amber when sandboxes run on as extra spend. Only a reading's own
+number keeps the machines' colors (`READING_LIMITS`), so a busy sandbox reads like a busy machine.
+
 Home's Compute card shows one problem line per provider on purpose: it's a glance that says where to look, and the
 Compute page lists the rest.
 

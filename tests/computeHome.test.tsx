@@ -47,6 +47,10 @@ describe('Home’s Compute line', () => {
     expect(homeComputeLine({ ...boat('blocked'), status: 'rateLimited', checkedAtMs: NOW - 60_000 }, NOW)).toEqual({ kind: 'startsBlocked', block: 'planHoursGone' });
     expect(present(homeComputeLine({ ...boat('blocked'), status: 'rateLimited', checkedAtMs: NOW - 10 * 60_000 }, NOW)).kind).not.toBe('startsBlocked');
     expect(homeComputeLineUrgent({ kind: 'keyRefused' })).toBe(true);
+    // Red is for what stops work. A sandbox at its CPU limit is slow, not stopped.
+    const hot = present(boat('typical').sandboxes.find((sandbox) => sandbox.name === 'cam-mbp-fix-login'));
+    expect(homeComputeLineUrgent({ kind: 'cpuAtLimit', sandbox: hot })).toBe(false);
+    expect(homeComputeLineUrgent({ kind: 'error', sandbox: hot })).toBe(true);
   });
 
   it('puts a sandbox in error ahead of being asked to slow down, which comes before the rest', () => {
@@ -159,8 +163,8 @@ describe('A machine’s Compute line', () => {
     expect(machineLine('ci-01')).toBe('');
   });
 
-  it('opens Compute grouped by machine', () => {
-    expect(computeByMachineView()).toEqual({ kind: 'main', page: 'compute', params: { group: 'machine' } });
+  it('opens Compute at the sandboxes that machine started', () => {
+    expect(computeByMachineView('ci-01')).toEqual({ kind: 'main', page: 'compute', params: { group: 'machine', machine: 'ci-01' } });
   });
 });
 

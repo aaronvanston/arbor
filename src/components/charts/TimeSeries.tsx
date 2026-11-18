@@ -73,6 +73,7 @@ export function TimeSeries({
   labels,
   formatTime,
   bands = [],
+  marks = [],
 }: {
   series: Series[];
   windowMs: number;
@@ -90,6 +91,8 @@ export function TimeSeries({
   formatTime?: (t: number) => string;
   /** Stretches of time to shade and name, such as readings that were never taken; they scroll with the lines. */
   bands?: { from: number; to: number; label: string }[];
+  /** Moments to draw a line at and name, such as when a session ended; they scroll with the lines. */
+  marks?: { at: number; label: string }[];
 }) {
   const [anchor] = useState(() => Date.now());
   const scrollRef = useChartScroll(anchor, windowMs);
@@ -159,7 +162,17 @@ export function TimeSeries({
           <span className="truncate px-1">{band.label}</span>
         </div>
       ))}
+      {marks.map((mark) => (
+        // The name of the line the svg below draws: under a band's name, and on the side with room, which is left of
+        // the line once the line is near the right edge.
+        <div key={mark.at} className="absolute top-5" style={{ left: `${(x(mark.at) / CHART_W) * 100}%` }} data-slot="time-series-mark">
+          <span className={cn('absolute top-0 whitespace-nowrap text-2xs leading-4 text-muted-foreground', (anchor - mark.at) / windowMs < 0.3 ? 'right-1.5' : 'left-1.5')}>{mark.label}</span>
+        </div>
+      ))}
       <svg className="block h-full w-full overflow-visible" viewBox={`0 0 ${CHART_W} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+          {marks.map((mark) => (
+            <line key={mark.at} x1={x(mark.at)} x2={x(mark.at)} y1="0" y2={height} stroke="var(--foreground)" strokeOpacity="0.4" strokeDasharray="3,3" vectorEffect="non-scaling-stroke" />
+          ))}
           {paths.map((path, index) => (
             <g key={index} className={strokeClass[index]}>
               {fill ? (

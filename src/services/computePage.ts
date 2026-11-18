@@ -5,8 +5,10 @@ import {
   groupSandboxes,
   isActiveSandbox,
   planHours,
+  planHoursGoneLastSaid,
   planHoursTone,
   sandboxFlags,
+  sandboxOrigin,
   type ComputeGroup,
   type ComputeGrouping,
   type PlanHours,
@@ -101,7 +103,7 @@ export function mostPressingPlanHours(providers: readonly ComputeProviderSnapsho
   for (const provider of providers) {
     const hours = planHours(provider);
     if (!hours) continue;
-    const rank = TONE_RANK[planHoursTone(hours, nowMs)];
+    const rank = TONE_RANK[planHoursTone(hours, nowMs, planHoursGoneLastSaid(provider))];
     if (!best || rank < best.rank || (rank === best.rank && hours.left < best.hours.left)) best = { provider, hours, rank };
   }
   return best ? { provider: best.provider, hours: best.hours } : null;
@@ -110,6 +112,26 @@ export function mostPressingPlanHours(providers: readonly ComputeProviderSnapsho
 /** The stopped sandboxes the provider still lists this month, most recently started first. */
 export const stoppedSandboxes = (providers: readonly ComputeProviderSnapshot[]): ProvidedSandbox[] =>
   allSandboxes(providers).filter((sandbox) => !isActiveSandbox(sandbox)).sort((left, right) => right.createdAtMs - left.createdAtMs);
+
+/** What the table can be narrowed to: one of the flags its head counts, or the sandboxes one machine started. */
+export type TableFilter = { kind: 'flag'; flag: keyof FlagCounts } | { kind: 'machine'; machine: string };
+
+const filterMatches = (filter: TableFilter, sandbox: ComputeSandbox) => {
+  if (filter.kind === 'flag') return sandboxFlags(sandbox).includes(filter.flag);
+  const origin = sandboxOrigin(sandbox);
+  return origin.kind === 'machine' && origin.machine === filter.machine;
+};
+
+/**
+ * The providers with only the sandboxes a filter keeps, so the groups, their totals and the stopped count all follow
+ * it. A filter no running sandbox matches is dropped (null back with the providers as they were): the flag it named
+ * cleared, or the machine's sandboxes stopped, and a table left empty under it would read as nothing running at all.
+ */
+export function narrowProviders(providers: readonly ComputeProviderSnapshot[], filter: TableFilter | null): { providers: readonly ComputeProviderSnapshot[]; filter: TableFilter | null } {
+  if (!filter) return { providers, filter: null };
+  const narrowed = providers.map((provider) => ({ ...provider, sandboxes: provider.sandboxes.filter((sandbox) => filterMatches(filter, sandbox)) }));
+  return narrowed.some((provider) => provider.sandboxes.some(isActiveSandbox)) ? { providers: narrowed, filter } : { providers, filter: null };
+}
 
 /** The table's groups: the running ones as `by` groups them, then, when shown, the stopped ones as one more. */
 export type TableGroup = ComputeGroup | { kind: 'stopped'; key: string; sandboxes: ProvidedSandbox[]; vcpus: number; memoryGb: number };

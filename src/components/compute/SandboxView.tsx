@@ -317,7 +317,7 @@ export function SandboxView({ provider, sandbox, nowMs, onNavigate }: { provider
         title={t('compute.sandbox.load.title')}
         summary={t('compute.sandbox.load.about')}
       >
-        <LoadChart sandbox={sandbox} points={points} />
+        <LoadChart sandbox={sandbox} points={points} sessionEndedAtMs={sandbox.mine && sandbox.session?.known && !sandbox.session.live ? sandbox.session.endedAtMs : null} />
       </SettingsSection>
       <StartedBy provider={provider} sandbox={sandbox} nowMs={nowMs} onNavigate={onNavigate} />
       <SandboxDetails provider={provider} sandbox={sandbox} nowMs={nowMs} />

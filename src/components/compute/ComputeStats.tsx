@@ -3,7 +3,7 @@ import { useI18n } from '../../i18n';
 import { formatDate, formatNumber, formatWhen } from '../../lib/format';
 import { cn } from '../../lib/utils';
 import type { ComputeProviderSnapshot } from '../../native/types';
-import { allSandboxes, computeTotals, findLimit, formatHours, planHoursTone, sizeMix } from '../../services/compute';
+import { allSandboxes, computeTotals, findLimit, formatHours, planHoursGone, planHoursGoneLastSaid, planHoursTone, sizeMix } from '../../services/compute';
 import { agentsFigure, loadNeedsKey, mostPressingPlanHours } from '../../services/computePage';
 import { StatBlock, StatsGrid } from '../layout/stats';
 
@@ -36,7 +36,10 @@ export function ComputeStats({ providers, nowMs, stale }: {
   const sizes = sizeMix(sandboxes).map((share) => t('compute.page.stat.sizeCount', { count: share.count, size: share.size })).join(', ');
   const pressing = mostPressingPlanHours(providers, nowMs);
   const hours = pressing?.hours ?? null;
-  const hoursTone = hours ? planHoursTone(hours, nowMs) : 'muted';
+  // Used up means one of two things when the provider says which: nothing more starts, or it now costs. The words
+  // are only for a read that's current; the color keeps to the last answer.
+  const gone = pressing ? planHoursGone(pressing.provider, nowMs) : null;
+  const hoursTone = hours && pressing ? planHoursTone(hours, nowMs, planHoursGoneLastSaid(pressing.provider)) : 'muted';
   const reset = hours?.resetsAtMs ? formatDate(hours.resetsAtMs, { now: nowMs }) : null;
 
   const agentsHint = !agents.own
@@ -48,13 +51,18 @@ export function ComputeStats({ providers, nowMs, stale }: {
           agents.notLinked ? t('compute.page.stat.notLinked', { count: agents.notLinked }) : null,
         ].filter(Boolean).join(' · ');
 
+  const resets = reset ? t('compute.page.stat.hoursResets', { when: reset }) : null;
+  const hoursGone = gone
+    ? [t(gone === 'blocked' ? 'compute.page.stat.hoursGoneBlocked' : 'compute.page.stat.hoursGoneBilled'), resets].filter(Boolean).join(' ')
+    : reset ? t('compute.page.stat.hoursGone', { when: reset }) : null;
+
   const hoursHint = !hours
     ? t(providers.some((provider) => provider.status === 'limitsNeedScope') ? 'compute.page.stat.hoursNeedScope' : 'compute.page.stat.hoursNone')
     : hours.left <= 0
-      ? reset ? <span className={cn(hoursTone === 'error' && 'text-destructive-foreground')}>{t('compute.page.stat.hoursGone', { when: reset })}</span> : null
+      ? hoursGone ? <span className={cn(hoursTone === 'error' ? 'text-destructive-foreground' : hoursTone === 'warning' && 'text-warning-foreground')}>{hoursGone}</span> : null
       // A forecast from an earlier read's rate would claim more than Arbor knows.
       : stale
-        ? reset ? t('compute.page.stat.hoursResets', { when: reset }) : null
+        ? resets
         : hours.runOutAtMs !== null && hours.perHour
           ? (
               <span className={cn(hoursTone === 'error' ? 'text-destructive-foreground' : hoursTone === 'warning' && 'text-warning-foreground')}>

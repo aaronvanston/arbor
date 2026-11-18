@@ -48,7 +48,12 @@ export const ringFor = (ring: SandboxRing, key: string): ComputePoint[] => (ring
  * CPU and memory on one 0–100% axis, a minute apart, for as long as Arbor has read them. Gaps where nothing was read
  * are drawn as gaps and named, the pointer shows both readings at a time, and the readings are also a table.
  */
-export function LoadChart({ sandbox, points }: { sandbox: ComputeSandbox; points: ComputePoint[] }) {
+export function LoadChart({ sandbox, points, sessionEndedAtMs = null }: {
+  sandbox: ComputeSandbox;
+  points: ComputePoint[];
+  /** When the session that started it ended, to mark on the chart: what the lines do after it is what's still at work. */
+  sessionEndedAtMs?: number | null;
+}) {
   const { t } = useI18n();
   const [table, setTable] = useState(false);
   const { cpu, memory, gaps } = useMemo(() => loadSeries(points), [points]);
@@ -59,6 +64,12 @@ export function LoadChart({ sandbox, points }: { sandbox: ComputeSandbox; points
   const gapLabel = t('compute.sandbox.load.gap');
   const bands = useMemo(() => gaps.map((gap) => ({ ...gap, label: gapLabel })), [gaps, gapLabel]);
   const series = useMemo(() => [cpu, memory], [cpu, memory]);
+  const endedLabel = t('compute.sandbox.load.sessionEnded');
+  // Only inside the readings: a session that ended before the first one has nothing drawn before it to compare.
+  const marks = useMemo(
+    () => (sessionEndedAtMs !== null && first && last && sessionEndedAtMs > first.atMs && sessionEndedAtMs <= last.atMs ? [{ at: sessionEndedAtMs, label: endedLabel }] : []),
+    [sessionEndedAtMs, first, last, endedLabel],
+  );
 
   if (!last) {
     const unread = loadUnreadLabel(sandbox);
@@ -98,6 +109,7 @@ export function LoadChart({ sandbox, points }: { sandbox: ComputeSandbox; points
             formatTime={(at) => formatTime(at)}
             ariaLabel={t('compute.sandbox.load.chart', { name: sandbox.name })}
             bands={bands}
+            marks={marks}
           />
         </div>
         <span />

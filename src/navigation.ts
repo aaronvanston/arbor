@@ -96,7 +96,7 @@ export type PoolsParams = { pool?: string };
  * carries its provider too, since ids are only unique within one. `group` opens the list grouped that way, as a
  * machine's page asks for by machine; without it the list keeps the grouping it was left on.
  */
-export type ComputeParams = { provider?: ComputeProviderId; sandbox?: string; group?: ComputeGrouping };
+export type ComputeParams = { provider?: ComputeProviderId; sandbox?: string; group?: ComputeGrouping; machine?: string };
 
 /**
  * What's on screen. Views are state, not URLs. A page that can show more than one thing carries what it shows in
@@ -146,8 +146,8 @@ export const sessionsView = (params: SessionsParams = {}): AppView => ({ kind: '
 export const poolsView = (pool?: string): AppView => ({ kind: 'main', page: 'pools', params: pool ? { pool } : {} });
 /** Compute: every connected provider's sandboxes, or one provider's when it's given. */
 export const computeView = (provider?: ComputeProviderId): AppView => ({ kind: 'main', page: 'compute', params: provider ? { provider } : {} });
-/** Every provider's sandboxes grouped by the machine that started them, which a machine's page opens. */
-export const computeByMachineView = (): AppView => ({ kind: 'main', page: 'compute', params: { group: 'machine' } });
+/** The sandboxes `machine` started, at every provider, which that machine's page opens. */
+export const computeByMachineView = (machine: string): AppView => ({ kind: 'main', page: 'compute', params: { group: 'machine', machine } });
 /** One sandbox's own page, by its provider and its id there. */
 export const computeSandboxView = (provider: ComputeProviderId, sandbox: string): AppView =>
   ({ kind: 'main', page: 'compute', params: { provider, sandbox } });

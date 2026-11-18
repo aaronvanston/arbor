@@ -24,7 +24,7 @@ import {
   dollarsShown,
   findProvider,
   findSandbox,
-  rateLimitedListStale,
+  providerStale,
   startsBlockedNow,
   refreshCompute,
   shownProviders,
@@ -37,10 +37,6 @@ import { agentsFigure, loadNeedsKey } from '../services/computePage';
 import { useQuotaClock } from '../services/quotaTime';
 
 type Navigate = (view: AppView) => void;
-
-/** A provider whose figures are an earlier read's: not answering, its key turned down, or asked too often a while. */
-const isStale = (provider: ComputeProviderSnapshot, nowMs: number) =>
-  provider.status === 'unreachable' || provider.status === 'refused' || rateLimitedListStale(provider, nowMs);
 
 /** Opens Settings › Compute at its linking section. */
 const openLinking = (onNavigate: Navigate) => {
@@ -113,7 +109,7 @@ export function ComputePage({ params, onNavigate }: { params?: ComputeParams; on
             <Button variant="outline" size="sm" onClick={() => onNavigate(computeView())}>{t('compute.sandbox.back')}</Button>
           </Empty>
         ) : (
-          <ComputeOverview providers={providers} grouping={params?.group} nowMs={nowMs} onNavigate={onNavigate} />
+          <ComputeOverview providers={providers} grouping={params?.group} machine={params?.machine} nowMs={nowMs} onNavigate={onNavigate} />
         )}
       </PageBody>
     </Page>
@@ -171,17 +167,19 @@ function CheckNow({ providers }: { providers: readonly ComputeProviderSnapshot[]
 }
 
 /** Every provider shown, or one: what's wrong with reading them, the figures, the table, the limits and the mix. */
-export function ComputeOverview({ providers, grouping, nowMs, onNavigate }: {
+export function ComputeOverview({ providers, grouping, machine, nowMs, onNavigate }: {
   providers: ComputeProviderSnapshot[];
   /** The table's grouping the view asks for; without one it keeps the one it was left on. */
   grouping?: ComputeGrouping;
+  /** The machine whose sandboxes the view asks for: the table opens narrowed to the ones it started. */
+  machine?: string;
   nowMs: number;
   onNavigate: Navigate;
 }) {
   const { t } = useI18n();
   const sandboxes = allSandboxes(providers);
   const agents = agentsFigure(sandboxes);
-  const stale = providers.length > 0 && providers.every((provider) => isStale(provider, nowMs));
+  const stale = providers.length > 0 && providers.every((provider) => providerStale(provider, nowMs));
   return (
     <>
       {providers.map((provider) => (
@@ -200,10 +198,11 @@ export function ComputeOverview({ providers, grouping, nowMs, onNavigate }: {
       ) : null}
       <ComputeStats providers={providers} nowMs={nowMs} stale={stale} />
       <SandboxTable
-        // A view that asks for a grouping opens the table again that way.
-        key={grouping ?? 'kept'}
+        // A view that asks for a grouping or a machine opens the table again that way.
+        key={`${grouping ?? 'kept'}/${machine ?? ''}`}
         providers={providers}
         grouping={grouping}
+        machine={machine}
         nowMs={nowMs}
         dollars={dollarsShown(providers)}
         stale={stale}

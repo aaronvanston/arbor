@@ -14,12 +14,15 @@ import {
   loadCompute,
   machineMix,
   planHours,
+  planHoursGone,
+  planHoursGoneLastSaid,
   planHoursTone,
   providerTone,
   startsBlockedNow,
   resetComputeStore,
   runningCount,
   sandboxFlags,
+  sandboxTone,
   shortComputeSessionId,
   sizeMix,
   stopsSoon,
@@ -68,19 +71,25 @@ describe('Compute’s figures', () => {
       .toEqual([['cam-mbp', 1], ['cedar-02', 2], ['ci-01', 2], ['notLinked', 1], ['teammate', 1]]);
   });
 
-  it('groups by provider, machine and size, oldest first in each', () => {
+  it('groups by provider, machine and size, with the ones that want a look first and then oldest first', () => {
     const provider = typical();
     const byProvider = groupSandboxes([provider], 'provider');
     expect(byProvider.map((group) => [group.key, group.sandboxes.length, group.vcpus, group.memoryGb])).toEqual([['boat', 6, 38, 76]]);
-    expect(itemAt(byProvider, 0).sandboxes.map((sandbox) => sandbox.name).slice(0, 2)).toEqual(['ci-01-perf', 'cedar-02-ci-matrix']);
+    // Forgotten, degraded and at its CPU limit by age, then the rest by age.
+    expect(itemAt(byProvider, 0).sandboxes.map((sandbox) => sandbox.name)).toEqual(['ci-01-perf', 'ci-01-build', 'cam-mbp-fix-login', 'cedar-02-ci-matrix', 'cam-mbp-docs', 'cedar-02-e2e']);
+    // One in error comes before any that only want a look.
+    const failed = { ...provider, sandboxes: provider.sandboxes.map((sandbox): ComputeSandbox => (sandbox.name === 'cam-mbp-docs' ? { ...sandbox, state: 'error' } : sandbox)) };
+    expect(itemAt(itemAt(groupSandboxes([failed], 'provider'), 0).sandboxes, 0).name).toBe('cam-mbp-docs');
     expect(groupSandboxes([provider], 'machine').map((group) => group.key)).toEqual(['machine:cam-mbp', 'machine:cedar-02', 'machine:ci-01', 'notLinked']);
     expect(groupSandboxes([provider], 'size').map((group) => [group.key, group.sandboxes.length])).toEqual([['large', 4], ['default', 1], ['small', 1]]);
   });
 
-  it('tones limits at 80% and 95%, and a limit without a maximum as muted', () => {
+  it('tones limits as a warning from 80% and red only once used up, and a limit without a maximum as muted', () => {
     expect(limitTone({ used: 79, max: 100 })).toBe('primary');
     expect(limitTone({ used: 80, max: 100 })).toBe('warning');
-    expect(limitTone({ used: 95, max: 100 })).toBe('error');
+    // Nearly full still lets sandboxes start, so it isn't red beside "New sandboxes can start".
+    expect(limitTone({ used: 99, max: 100 })).toBe('warning');
+    expect(limitTone({ used: 100, max: 100 })).toBe('error');
     expect(limitTone({ used: 5, max: null })).toBe('muted');
   });
 
@@ -92,7 +101,23 @@ describe('Compute’s figures', () => {
     expect(hours.runOutAtMs).toBeCloseTo(NOW + (212 / 7.5) * 3_600_000, -2);
     expect(hours.runsOutFirst).toBe(true);
     expect(planHoursTone(hours, NOW)).toBe('warning');
-    expect(planHoursTone(present(planHours(present(computeScenarioSnapshot('blocked', NOW).providers[0]))), NOW)).toBe('error');
+    const blocked = present(computeScenarioSnapshot('blocked', NOW).providers[0]);
+    expect(planHoursTone(present(planHours(blocked)), NOW)).toBe('error');
+    // Used up means starts are blocked, or sandboxes run on as extra spend, when the provider says which.
+    expect(planHoursGone(blocked, NOW)).toBe('blocked');
+    expect(planHoursTone(present(planHours(blocked)), NOW, 'blocked')).toBe('error');
+    const paid = present(computeScenarioSnapshot('paid', NOW).providers[0]);
+    expect(planHoursGone(paid, NOW)).toBe('billed');
+    expect(planHoursTone(present(planHours(paid)), NOW, 'billed')).toBe('warning');
+    // Not while hours are left, not when starts are blocked for another reason, not with no extra spend counted, and
+    // not from an earlier read.
+    expect(planHoursGone(typical(), NOW)).toBeNull();
+    expect(planHoursGone({ ...blocked, startBlock: 'activeMax' }, NOW)).toBeNull();
+    expect(planHoursGone({ ...paid, limits: paid.limits.filter((limit) => limit.kind !== 'extraSpend') }, NOW)).toBeNull();
+    expect(planHoursGone({ ...paid, status: 'unreachable' }, NOW)).toBeNull();
+    expect(planHoursGone({ ...blocked, status: 'refused' }, NOW)).toBeNull();
+    // The color keeps to the last answer: hours that were only billed don't turn red because the provider went quiet.
+    expect(planHoursGoneLastSaid({ ...paid, status: 'unreachable' })).toBe('billed');
     const idle = present(planHours(present(computeScenarioSnapshot('empty', NOW).providers[0])));
     expect([idle.runOutAtMs, idle.runsOutFirst]).toEqual([null, false]);
     expect(planHoursTone(idle, NOW)).toBe('primary');
@@ -124,11 +149,13 @@ describe('Compute’s figures', () => {
     expect(sandboxFlags(byName(provider, 'cedar-02-e2e'))).toEqual(['starting']);
     expect(sandboxFlags({ ...byName(provider, 'ci-01-build'), state: 'stopped' })).toEqual([]);
     expect(sandboxFlags({ ...byName(provider, 'ci-01-perf'), mine: false })).toEqual([]);
-    // The sidebar's dot is as red as the row: cam-mbp-fix-login is at its CPU limit. Without it the rest only want a
-    // look, and a teammate's sandbox never colors the dot, as it never shows on Home or alerts.
-    expect(providerTone(provider, NOW)).toBe('error');
-    const calm = { ...provider, sandboxes: provider.sandboxes.filter((sandbox) => sandbox.name !== 'cam-mbp-fix-login') };
-    expect(providerTone(calm, NOW)).toBe('warning');
+    // The sidebar's dot is as amber as the rows: one at its CPU limit, one forgotten and one degraded all want a look,
+    // and none of them has stopped. One in error is red. A teammate's sandbox never colors the dot, as it never shows
+    // on Home or alerts.
+    expect(providerTone(provider, NOW)).toBe('warning');
+    expect(sandboxTone(byName(provider, 'cam-mbp-fix-login'))).toBe('warning');
+    const failed = { ...provider, sandboxes: provider.sandboxes.map((sandbox): ComputeSandbox => (sandbox.name === 'cam-mbp-docs' ? { ...sandbox, state: 'error' } : sandbox)) };
+    expect(providerTone(failed, NOW)).toBe('error');
     expect(providerTone({ ...provider, sandboxes: provider.sandboxes.map((sandbox) => ({ ...sandbox, mine: false })) }, NOW)).toBe('success');
     expect(providerTone({ ...provider, status: 'unreachable' }, NOW)).toBe('warning');
     // Blocked starts from a provider that isn't answering are an earlier read's: amber for not answering, not red.

@@ -194,13 +194,16 @@ export const RATE_LIMITED_STALE_MS = 150_000;
 export const rateLimitedListStale = (provider: Pick<ComputeProviderSnapshot, 'status' | 'checkedAtMs'>, nowMs: number) =>
   provider.status === 'rateLimited' && (provider.checkedAtMs === null || nowMs - provider.checkedAtMs > RATE_LIMITED_STALE_MS);
 
+/** A provider whose figures are an earlier read's: not answering, its key turned down, or asked too often a while. */
+export const providerStale = (provider: Pick<ComputeProviderSnapshot, 'status' | 'checkedAtMs'>, nowMs: number) =>
+  provider.status === 'unreachable' || provider.status === 'refused' || rateLimitedListStale(provider, nowMs);
+
 /**
- * Whether blocked starts are something to say now. A provider that isn't answering, one that turned the key down, or
- * one slowed for so long its list is an earlier read's still carries the last answer it gave, and nowhere claims that
- * one.
+ * Whether blocked starts are something to say now. A provider whose figures are an earlier read's still carries the
+ * last answer it gave, and nowhere claims that one.
  */
 export const startsBlockedNow = (provider: Pick<ComputeProviderSnapshot, 'canStart' | 'status' | 'checkedAtMs'>, nowMs: number) =>
-  provider.canStart === false && provider.status !== 'unreachable' && provider.status !== 'refused' && !rateLimitedListStale(provider, nowMs);
+  provider.canStart === false && !providerStale(provider, nowMs);
 
 /** A sandbox's CPU and memory as fractions, or null until it's been read. */
 export const sandboxCpu = (sandbox: Pick<ComputeSandbox, 'load'>) => (sandbox.load.kind === 'read' ? sandbox.load.cpu : null);
@@ -225,7 +228,10 @@ export type ComputeTone = 'primary' | 'warning' | 'error' | 'muted';
 export const cpuTone = (sandbox: Pick<ComputeSandbox, 'load'>): ComputeTone => readingTone('cpu', percentOf(sandboxCpu(sandbox)));
 export const memoryTone = (sandbox: Pick<ComputeSandbox, 'load'>): ComputeTone => readingTone('mem', percentOf(sandboxMemory(sandbox)));
 
-/** CPU this high is at its limit: what runs there waits on CPU. The machines' critical line. */
+/**
+ * CPU this high is at its limit: what runs there waits on CPU. The machines' critical line. The reading itself shows
+ * in the machines' red; the flag is a warning, since work there is slow, not stopped.
+ */
 export const cpuAtLimit = (sandbox: Pick<ComputeSandbox, 'load'>) => cpuTone(sandbox) === 'error';
 
 export type ComputeTotals = {
@@ -319,10 +325,14 @@ const sums = (sandboxes: readonly ComputeSandbox[]) => ({
 
 /**
  * The running sandboxes of the providers shown, in groups: by provider (one group each that has any), by what started
- * them (as `machineMix` orders them), or by size (as `sizeMix` does). Within a group, oldest first.
+ * them (as `machineMix` orders them), or by size (as `sizeMix` does). Within a group, one in error comes first, then
+ * the ones that want a look, then the rest, each oldest first: past a page of rows, the ones to act on aren't on the
+ * next page.
  */
 export function groupSandboxes(providers: readonly ComputeProviderSnapshot[], by: ComputeGrouping): ComputeGroup[] {
-  const oldestFirst = (list: ProvidedSandbox[]) => [...list].sort((left, right) => left.createdAtMs - right.createdAtMs || left.id.localeCompare(right.id));
+  const rank = (sandbox: ComputeSandbox) => { const tone = sandboxTone(sandbox); return tone === 'error' ? 0 : tone === 'warning' ? 1 : 2; };
+  const oldestFirst = (list: ProvidedSandbox[]) => [...list]
+    .sort((left, right) => rank(left) - rank(right) || left.createdAtMs - right.createdAtMs || left.id.localeCompare(right.id));
   const active = allSandboxes(providers).filter(isActiveSandbox);
   if (by === 'provider') {
     return providers.flatMap((provider) => {
@@ -349,9 +359,10 @@ export function groupSandboxes(providers: readonly ComputeProviderSnapshot[], by
 
 /**
  * Where a limit turns warning and critical, as a share of its maximum. 80% is also where the alerts start
- * (computeAlerts.ts), so a limit an alert names always shows in its warning color.
+ * (computeAlerts.ts), so a limit an alert names always shows in its warning color. Critical is used up, not nearly:
+ * that's when the provider starts refusing, and a red meter beside "New sandboxes can start" would say two things.
  */
-export const LIMIT_LEVELS = { warning: 0.8, critical: 0.95 } as const;
+export const LIMIT_LEVELS = { warning: 0.8, critical: 1 } as const;
 
 /** How much of a limit is used, 0–1, or null when it has no maximum. */
 export const limitShare = (limit: Pick<ComputeLimit, 'used' | 'max'>) =>
@@ -423,11 +434,34 @@ export function planHours(provider: ComputeProviderSnapshot): PlanHours | null {
 }
 
 /**
- * How plan hours read: critical once they're gone or run out within two hours, a warning when they'd run out within
- * two days or before the reset, or past 80% used.
+ * What used-up plan hours mean for the user, when the provider says: `blocked` when they're why new sandboxes can't
+ * start, `billed` when sandboxes still start and it counts extra spend. Null while hours are left or when the provider
+ * says neither.
  */
-export function planHoursTone(hours: PlanHours, nowMs: number): ComputeTone {
+export type PlanHoursGone = 'blocked' | 'billed';
+
+/**
+ * As the provider last said it, which is what colors the hours: a provider that stops answering has told Arbor
+ * nothing new, so hours that were only billed don't turn red for it.
+ */
+export function planHoursGoneLastSaid(provider: ComputeProviderSnapshot): PlanHoursGone | null {
+  const hours = planHours(provider);
+  if (!hours || hours.left > 0) return null;
+  if (provider.canStart === false) return provider.startBlock === 'planHoursGone' || provider.startBlock === 'walletEmpty' ? 'blocked' : null;
+  return provider.canStart === true && findLimit(provider, 'extraSpend') ? 'billed' : null;
+}
+
+/** As it stands now, which is what the page says in words: nothing is claimed from an earlier read. */
+export const planHoursGone = (provider: ComputeProviderSnapshot, nowMs: number): PlanHoursGone | null =>
+  (providerStale(provider, nowMs) ? null : planHoursGoneLastSaid(provider));
+
+/**
+ * How plan hours read: critical once they're gone or run out within two hours, a warning when they'd run out within
+ * two days or before the reset, or past 80% used. Gone but `billed` is a warning: nothing stops, it costs.
+ */
+export function planHoursTone(hours: PlanHours, nowMs: number, gone: PlanHoursGone | null = null): ComputeTone {
   const untilRunOut = hours.runOutAtMs === null ? null : hours.runOutAtMs - nowMs;
+  if (hours.left <= 0 && gone === 'billed') return 'warning';
   if (hours.left <= 0 || (untilRunOut !== null && untilRunOut < RUN_OUT_LEVELS_MS.critical)) return 'error';
   if (hours.runsOutFirst || (untilRunOut !== null && untilRunOut < RUN_OUT_LEVELS_MS.warning) || hours.share >= LIMIT_LEVELS.warning) return 'warning';
   return 'primary';
@@ -506,31 +540,31 @@ export function sandboxFlags(sandbox: ComputeSandbox): SandboxFlag[] {
 }
 
 /**
- * A sandbox's dot: error for one in error or at its CPU limit, warning for one degraded or forgotten, `changing` while
+ * A sandbox's dot: error for one in error, warning for one at its CPU limit, degraded or forgotten, `changing` while
  * it starts or stops.
  */
 export function sandboxTone(sandbox: ComputeSandbox): ComputeTone | 'changing' {
   const flags = sandboxFlags(sandbox);
   if (!isActiveSandbox(sandbox)) return 'muted';
-  if (flags.includes('error') || flags.includes('cpuAtLimit')) return 'error';
-  if (flags.includes('degraded') || flags.includes('forgotten')) return 'warning';
+  if (flags.includes('error')) return 'error';
+  if (flags.includes('cpuAtLimit') || flags.includes('degraded') || flags.includes('forgotten')) return 'warning';
   if (flags.includes('starting') || flags.includes('stopping')) return 'changing';
   return 'primary';
 }
 
-/** Flags that stop work in a sandbox now: red on its row, so red wherever it's counted. */
-const URGENT_FLAGS: ReadonlySet<SandboxFlag> = new Set<SandboxFlag>(['error', 'cpuAtLimit']);
+/** The flag that stops work in a sandbox now: red on its row, so red wherever it's counted. */
+const URGENT_FLAG: SandboxFlag = 'error';
 
 /**
- * A provider's leaf dot in the sidebar: error for a refused key, blocked starts or a sandbox of one's own in error or
- * at its CPU limit, warning while it isn't answering or one wants a look, success with something running, muted with
+ * A provider's leaf dot in the sidebar: error for a refused key, blocked starts or a sandbox of one's own in error,
+ * warning while it isn't answering or one wants a look, success with something running, muted with
  * nothing. The same colors Home and the rows give the same things, and like them a teammate's sandbox never counts.
  */
 export function providerTone(provider: ComputeProviderSnapshot, nowMs: number): 'success' | 'warning' | 'error' | 'muted' {
   if (provider.status === 'refused' || startsBlockedNow(provider, nowMs)) return 'error';
   const flags = provider.sandboxes.filter((sandbox) => sandbox.mine).flatMap(sandboxFlags).filter((flag) => !PASSING_FLAGS.has(flag));
   if (provider.status === 'ok' || provider.status === 'limitsNeedScope') {
-    if (flags.some((flag) => URGENT_FLAGS.has(flag))) return 'error';
+    if (flags.includes(URGENT_FLAG)) return 'error';
   }
   if (provider.status !== 'ok' && provider.status !== 'limitsNeedScope') return 'warning';
   if (flags.length) return 'warning';

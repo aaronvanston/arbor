@@ -8,7 +8,9 @@ import {
   limitShare,
   limitTone,
   METER_LIMITS,
+  planHoursGoneLastSaid,
   START_BLOCK_LABEL,
+  type ComputeTone,
 } from '../../services/compute';
 import { computeProviderName } from '../../services/computeHint';
 import { SettingsSection } from '../layout/settings';
@@ -20,9 +22,15 @@ import { ComputeProviderMark } from './ComputeProviderMark';
 /** A countdown under an hour away reads "Resets in 8m"; anything further off says when. */
 const SOON_MS = 3_600_000;
 
-function LimitCell({ limit, nowMs }: { limit: ComputeLimit; nowMs: number }) {
+function LimitCell({ limit, nowMs, billed }: {
+  limit: ComputeLimit;
+  nowMs: number;
+  /** Past this limit sandboxes still run, as extra spend: used up is a warning here, not a stop. */
+  billed: boolean;
+}) {
   const { t } = useI18n();
-  const tone = limitTone(limit);
+  const full = limitTone(limit);
+  const tone: ComputeTone = billed && full === 'error' ? 'warning' : full;
   const share = limitShare(limit);
   const money = limit.kind === 'extraSpend';
   const used = money ? formatMoney(limit.used) : formatNumber(limit.used);
@@ -52,6 +60,7 @@ function ProviderLimits({ provider, nowMs, stale }: { provider: ComputeProviderS
   const { t } = useI18n();
   const name = computeProviderName(provider.id);
   const limits = [...METER_LIMITS, 'planHours' as const].map((kind) => findLimit(provider, kind)).filter((limit) => limit !== undefined);
+  const hoursBilled = planHoursGoneLastSaid(provider) === 'billed';
   return (
     <div className="@container flex flex-col">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
@@ -70,7 +79,7 @@ function ProviderLimits({ provider, nowMs, stale }: { provider: ComputeProviderS
       {limits.length ? (
         <div className="overflow-hidden border-t border-border/50">
           <div className="-mt-px -ml-px grid grid-cols-1 *:border-t *:border-l *:border-border/50 @xs:grid-cols-2 @min-[44rem]:grid-cols-5">
-            {limits.map((limit) => <LimitCell key={limit.kind} limit={limit} nowMs={nowMs} />)}
+            {limits.map((limit) => <LimitCell key={limit.kind} limit={limit} nowMs={nowMs} billed={limit.kind === 'planHours' && hoursBilled} />)}
           </div>
         </div>
       ) : (

@@ -21,7 +21,7 @@ import { StatusDot, type StatusTone } from '../ui/status-dot';
 
 const DOT_TONE: Record<ComputeTone, StatusTone> = { primary: 'success', warning: 'warning', error: 'error', muted: 'muted' };
 
-/** A sandbox's state at a glance: green running, amber wanting a look, red in error or at its CPU limit, pulsing while it starts or stops. */
+/** A sandbox's state at a glance: green running, amber wanting a look, red in error, pulsing while it starts or stops. */
 export function SandboxDot({ sandbox }: { sandbox: ComputeSandbox }) {
   const tone = sandboxTone(sandbox);
   return tone === 'changing' ? <StatusDot tone="info" pulse /> : <StatusDot tone={DOT_TONE[tone]} />;
@@ -31,7 +31,7 @@ const FLAG_VARIANT: Record<SandboxFlag, 'muted' | 'warning' | 'error'> = {
   starting: 'muted',
   stopping: 'muted',
   error: 'error',
-  cpuAtLimit: 'error',
+  cpuAtLimit: 'warning',
   degraded: 'warning',
   forgotten: 'warning',
 };

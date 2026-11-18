@@ -38,7 +38,7 @@ export function homeComputeLine(provider: ComputeProviderSnapshot, nowMs: number
 
 /** Whether a line is the kind that stops agents' work now, which reads as an error rather than a warning. */
 export const homeComputeLineUrgent = (line: HomeComputeLine) =>
-  line.kind === 'keyRefused' || line.kind === 'startsBlocked' || line.kind === 'error' || line.kind === 'cpuAtLimit';
+  line.kind === 'keyRefused' || line.kind === 'startsBlocked' || line.kind === 'error';
 
 /** How many of the user's running sandboxes name `machine` as where they were started. */
 export const sandboxesStartedOn = (providers: readonly ComputeProviderSnapshot[], machine: string) =>

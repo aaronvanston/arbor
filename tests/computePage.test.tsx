@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ringFor } from '../src/components/compute/LoadChart';
+import { LoadChart, ringFor } from '../src/components/compute/LoadChart';
 import { openingGrouping, resetSandboxTableGrouping } from '../src/components/compute/SandboxTable';
 import { SandboxView } from '../src/components/compute/SandboxView';
 import { computeScenarioSnapshot, mockHistory, type ComputeScenario } from '../src/dev/mock/computeScenarios';
@@ -20,6 +20,7 @@ import {
   machinesCpu,
   mergeHistory,
   mostPressingPlanHours,
+  narrowProviders,
   pageOfGroups,
   sandboxCommands,
   sessionEndedNoteAtMs,
@@ -34,8 +35,8 @@ const byName = (provider: ComputeProviderSnapshot, name: string) => present(prov
 const point = (minutesAgo: number, cpu: number, memory = 0.5): ComputePoint => ({ atMs: NOW - minutesAgo * MINUTE, cpu, memory });
 const noop = () => undefined;
 
-const overviewOf = (provider: ComputeProviderSnapshot, grouping?: ComputeGrouping) => renderToStaticMarkup(
-  <I18nProvider><ComputeOverview providers={[provider]} grouping={grouping} nowMs={NOW} onNavigate={noop} /></I18nProvider>,
+const overviewOf = (provider: ComputeProviderSnapshot, grouping?: ComputeGrouping, machine?: string) => renderToStaticMarkup(
+  <I18nProvider><ComputeOverview providers={[provider]} grouping={grouping} machine={machine} nowMs={NOW} onNavigate={noop} /></I18nProvider>,
 );
 const overview = (scenario: ComputeScenario, grouping?: ComputeGrouping) => overviewOf(providerOf(scenario), grouping);
 const sandboxPage = (provider: ComputeProviderSnapshot, sandbox: ComputeSandbox) => renderToStaticMarkup(
@@ -74,6 +75,27 @@ describe('the Compute page’s figures', () => {
     const ids = [...first, ...second].flatMap((group) => group.sandboxes.map((sandbox) => sandbox.id));
     expect(new Set(ids).size).toBe(100);
     expect(pageOfGroups(groups, 3, COMPUTE_PAGE_SIZE)).toEqual([]);
+  });
+
+  it('narrows to a flag or to one machine’s sandboxes, and drops a filter nothing running matches', () => {
+    const typical = providerOf('typical');
+    const names = (providers: readonly ComputeProviderSnapshot[]) => providers.flatMap((provider) => provider.sandboxes.map((sandbox) => sandbox.name));
+    const forgotten = narrowProviders([typical], { kind: 'flag', flag: 'forgotten' });
+    expect(names(forgotten.providers)).toEqual(['ci-01-perf']);
+    // The groups and their totals follow the filter.
+    expect(tableGroups(forgotten.providers, 'provider', false).map((group) => [group.sandboxes.length, group.vcpus])).toEqual([[1, 8]]);
+    const machine = narrowProviders([typical], { kind: 'machine', machine: 'ci-01' });
+    expect(names(machine.providers).sort()).toEqual(['ci-01-build', 'ci-01-perf']);
+    expect(machine.filter).toEqual({ kind: 'machine', machine: 'ci-01' });
+    // A teammate's sandbox is nobody's machine's here, whatever it names.
+    const theirs = { ...typical, sandboxes: typical.sandboxes.map((sandbox) => ({ ...sandbox, mine: false })) };
+    expect(narrowProviders([theirs], { kind: 'machine', machine: 'ci-01' })).toEqual({ providers: [theirs], filter: null });
+    // The flag cleared, or the machine's sandboxes all stopped: every sandbox again, and no filter.
+    const calm = providerOf('working');
+    expect(narrowProviders([calm], { kind: 'flag', flag: 'forgotten' })).toEqual({ providers: [calm], filter: null });
+    const stopped = { ...typical, sandboxes: typical.sandboxes.map((sandbox): ComputeSandbox => (sandbox.machine === 'ci-01' ? { ...sandbox, state: 'stopped' } : sandbox)) };
+    expect(narrowProviders([stopped], { kind: 'machine', machine: 'ci-01' }).filter).toBeNull();
+    expect(narrowProviders([typical], null)).toEqual({ providers: [typical], filter: null });
   });
 
   it('adds the stopped sandboxes as their own group only when asked', () => {
@@ -184,6 +206,28 @@ describe('Fleet › Compute', () => {
     const html = overview('paid');
     expect(html).toContain('This month');
     expect(html).toContain('Extra spend');
+  });
+
+  it('says what used-up plan hours mean: starts blocked in red, or running on as extra spend in amber', () => {
+    const limitCell = (html: string) => html.slice(html.indexOf('data-limit="planHours"')).split('data-limit=')[1] ?? '';
+    const blocked = overview('blocked');
+    expect(blocked).toContain('Used up, so new sandboxes can’t start. Resets ');
+    expect(limitCell(blocked)).toContain('text-destructive-foreground');
+    const paid = overview('paid');
+    expect(paid).toContain('Used up. Sandboxes now run as extra spend. Resets ');
+    expect(paid).toContain('New sandboxes can start');
+    // Nothing red about plan hours beside "New sandboxes can start".
+    expect(limitCell(paid)).toContain('text-warning-foreground');
+    expect(limitCell(paid)).not.toContain('text-destructive-foreground');
+    // When the provider doesn't say which, only that they're gone.
+    const unsaid = overviewOf({ ...providerOf('paid'), canStart: null });
+    expect(unsaid).toContain('Used up. Resets ');
+    expect(unsaid).not.toContain('extra spend.');
+    // A limit that is nearly full is a warning; red waits for full.
+    const near = overview('near');
+    const limits = near.slice(near.indexOf('data-limit="activeSandboxes"'), near.indexOf('What’s running'));
+    expect(limits).toContain('text-warning-foreground');
+    expect(limits).not.toContain('text-destructive-foreground');
   });
 
   it('pages a hundred sandboxes, fifty to a page, and draws the readings it can’t take', () => {
@@ -316,6 +360,25 @@ describe('Fleet › Compute', () => {
     expect(html).not.toContain('Reading Compute…');
   });
 
+  it('lets the head’s counts narrow the table, and opens narrowed to a machine’s sandboxes from that machine’s page', () => {
+    const html = overview('typical');
+    // Each count is a button that isn't pressed until picked.
+    expect(html.match(/aria-pressed="false"[^>]*title="Show only these"/g)?.length).toBe(3);
+    expect(html).not.toContain('Started on');
+    const mine = overviewOf(providerOf('typical'), 'machine', 'ci-01');
+    expect(rows(mine)).toBe(2);
+    expect(mine).toContain('Started on ci-01');
+    expect(mine).toMatch(/aria-pressed="true"[^>]*title="Show every sandbox"/);
+    for (const name of ['ci-01-perf', 'ci-01-build']) expect(mine).toContain(name);
+    expect(mine).not.toContain('cedar-02-ci-matrix');
+    // The figures above the table are still every sandbox's.
+    expect(mine).toContain('1 not linked');
+    // A machine with nothing running any more opens the whole table rather than an empty one.
+    const none = overviewOf(providerOf('typical'), 'machine', 'oak-03');
+    expect(rows(none)).toBe(6);
+    expect(none).not.toContain('Started on');
+  });
+
   it('opens grouped the way the view asks, as a machine’s page asks for by machine, and keeps the grouping it was left on', () => {
     const byProvider = overview('typical');
     expect(byProvider).toMatch(/\d+ running · \d+ vCPU · \d+ GB/);
@@ -390,6 +453,15 @@ describe('a sandbox’s own page', () => {
     expect(sessionEndedNoteAtMs(perf, NOW)).toBe(NOW - 41 * MINUTE);
     const html = sandboxPage(working, perf);
     expect(html).toContain('The session that started this ended 41m ago. 3 commands are still running in it. The newest started 52m ago.');
+    // The chart marks where the session ended, so what the lines do after it is plain to see: once the readings
+    // reach back that far, and never for a session that ended before the first of them.
+    const chart = (endedAtMs: number | null) => renderToStaticMarkup(<I18nProvider><LoadChart sandbox={perf} points={mockHistory(perf, NOW)} sessionEndedAtMs={endedAtMs} /></I18nProvider>);
+    expect(chart(NOW - 41 * MINUTE)).toContain('data-slot="time-series-mark"');
+    expect(chart(NOW - 41 * MINUTE)).toContain('Session ended');
+    expect(chart(NOW - 300 * MINUTE)).not.toContain('time-series-mark');
+    expect(chart(null)).not.toContain('time-series-mark');
+    // The page hands the chart the end only of a session Arbor saw end; with half an hour of readings it isn't drawn yet.
+    expect(html).not.toContain('time-series-mark');
     expect(html).not.toContain('Looks forgotten');
     expect(html).not.toContain('It uses plan hours until');
     for (const text of ['Commands running', 'Newest started 52m ago']) expect(html).toContain(text);
