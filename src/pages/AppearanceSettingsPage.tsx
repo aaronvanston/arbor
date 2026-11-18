@@ -5,6 +5,7 @@ import { REFRESH_INTERVAL_OPTIONS, setAppPreference, useAppPreferences } from '.
 import { DEFAULT_THEME_PREFERENCE, isThemePreference, type ThemePreference } from '../theme';
 import type { MessageKey } from '../i18n/resources';
 import { onOffLabel, preferenceReset, resetOffer } from '../services/settingDefaults';
+import { useConnectedComputeProviders } from '../services/computeHint';
 import { errorWords, plainError } from '../services/plainError';
 import { APP_COLOR_LABEL, APP_COLORS, appColorChoice, appColorSwatch, isAppColor } from '../services/appColor';
 import { isSidebarArt, isSidebarArtMotion, SIDEBAR_ART_LABEL, SIDEBAR_ART_MOTION_LABEL, SIDEBAR_ART_MOTIONS, SIDEBAR_ARTS, sidebarArtChoice, sidebarArtMotionChoice } from '../services/sidebarArt';
@@ -78,6 +79,7 @@ function ZoomRow() {
 export function AppearanceSettingsPage({ theme, onThemeChange }: { theme: ThemePreference; onThemeChange: (theme: ThemePreference) => void }) {
   const { t } = useI18n();
   const preferences = useAppPreferences();
+  const computeConnected = useConnectedComputeProviders().length > 0;
   const onOff = onOffLabel(t);
   const appColor = appColorChoice(preferences.appColor);
   const sidebarArt = sidebarArtChoice(preferences.sidebarArt);
@@ -201,6 +203,22 @@ export function AppearanceSettingsPage({ theme, onThemeChange }: { theme: ThemeP
               />
             }
           />
+          {/* Only once a compute provider is connected; search lands on Show machines until then. */}
+          {computeConnected ? (
+            <SettingsRow
+              settingId="appearance.sidebar-compute"
+              reset={preferenceReset(preferences, 'sidebarCompute', onOff)}
+              title={t('interface.sidebarCompute.title')}
+              description={t('interface.sidebarCompute.description')}
+              control={
+                <Switch
+                  checked={preferences.sidebarCompute}
+                  aria-label={t('interface.sidebarCompute.title')}
+                  onCheckedChange={(checked) => setAppPreference('sidebarCompute', checked)}
+                />
+              }
+            />
+          ) : null}
           <SettingsRow
             settingId="appearance.tray-limits"
             reset={preferenceReset(preferences, 'trayLimits', onOff)}

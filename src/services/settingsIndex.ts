@@ -171,6 +171,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('appearance', 'zoom', 'appearance.window.title', 'appearance.zoom.title', { description: 'appearance.zoom.description', keywords: 'settingsSearch.keywords.zoom' }),
   row('appearance', 'sidebar-limits', 'appearance.sidebarTray.title', 'interface.sidebarLimits.title', { description: 'interface.sidebarLimits.description' }),
   row('appearance', 'sidebar-machines', 'appearance.sidebarTray.title', 'interface.sidebarMachines.title', { description: 'interface.sidebarMachines.description' }),
+  row('appearance', 'sidebar-compute', 'appearance.sidebarTray.title', 'interface.sidebarCompute.title', { description: 'interface.sidebarCompute.description', keywords: 'tree.compute.keywords', fallback: 'appearance.sidebar-machines' }),
   row('appearance', 'tray-limits', 'appearance.sidebarTray.title', 'interface.trayLimits.title', { description: 'interface.trayLimits.description', keywords: 'settingsSearch.keywords.tray' }),
   row('appearance', 'tray-machines', 'appearance.sidebarTray.title', 'interface.trayMachines.title', { description: 'interface.trayMachines.description', keywords: 'settingsSearch.keywords.tray' }),
   row('appearance', 'tray-sessions', 'appearance.sidebarTray.title', 'interface.traySessions.title', { description: 'interface.traySessions.description', keywords: 'settingsSearch.keywords.tray' }),

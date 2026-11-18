@@ -7,6 +7,8 @@ export type AppPreferences = {
   sidebarLimits: boolean;
   /** Show a tile per machine at the foot of the sidebar, with its health and how many of its agents are working. */
   sidebarMachines: boolean;
+  /** Show a line per connected compute provider at the foot of the sidebar, with how many sandboxes are running. */
+  sidebarCompute: boolean;
   /** Arbor's color: its buttons, highlights and sidebar artwork. Read it through appColorChoice, which turns anything unknown into green. */
   appColor: AppColor;
   /** The artwork behind the sidebar's title row. Read it through sidebarArtChoice, which turns anything unknown into the default. */
@@ -92,6 +94,7 @@ export const HEAVY_SESSION_TOKEN_OPTIONS = [0, 50_000_000, 100_000_000, 200_000_
 export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   sidebarLimits: true,
   sidebarMachines: true,
+  sidebarCompute: true,
   appColor: DEFAULT_APP_COLOR,
   sidebarArt: DEFAULT_SIDEBAR_ART,
   sidebarArtMotion: DEFAULT_SIDEBAR_ART_MOTION,

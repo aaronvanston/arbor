@@ -101,7 +101,7 @@ Compute page lists the rest.
 
 ## Hidden until connected
 
-With no provider connected, Compute is only Settings › Compute: no sidebar row, Home card, machine line, ⌘K entry,
+With no provider connected, Compute is only Settings › Compute: no row in the sidebar or line at its foot, Home card, machine line, ⌘K entry,
 alert or call at launch or idle, and none of its code loads beyond the gates. Opening Settings › Compute asks Rust once
 (`get_compute`) whatever the hint says, so a hint lost while a key is still saved is put back there. The window knows without asking Rust, from a saved hint
 (`arbor.compute.connected.v1`) listing the connected providers, written as a connect answers and read synchronously

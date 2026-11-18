@@ -1,4 +1,4 @@
-import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
 import { setSettingsProject, setSettingsScope } from './services/machineSettings';
 import { addAccount } from './services/addAccount';
 import { onAddMachineRequest } from './services/addMachine';
@@ -109,6 +109,9 @@ const settingsGroups: { id: string; labelKey: MessageKey; pages: { id: SettingsP
 ];
 
 const HOME_VIEW: AppView = { kind: 'main', page: 'home' };
+
+// Its own chunk with the rest of Compute: an install with no compute provider connected never loads it.
+const SidebarCompute = lazy(() => import('./components/sidebar/SidebarCompute').then((module) => ({ default: module.SidebarCompute })));
 
 const AccountsPage = lazyPage('accounts', (module) => module.AccountsPage);
 const UsageRecordsPage = lazyPage('usage', (module) => module.UsageRecordsPage);
@@ -627,6 +630,7 @@ function AppContent({ navigateRef }: ShellProps) {
               <SidebarGlance
                 limits={preferences.sidebarLimits && coreReady ? <SidebarLimits onOpen={() => navigate(accountLimitsView())} onAddAccount={() => addAccount(navigate)} /> : null}
                 machines={preferences.sidebarMachines ? <SidebarMachines onOpen={(machine) => navigate(machinesView(machine))} /> : null}
+                compute={preferences.sidebarCompute && computeProviders.length ? <Suspense fallback={null}><SidebarCompute onOpen={navigate} /></Suspense> : null}
                 onCustomize={() => {
                   const entry = settingEntry('appearance.sidebar-limits');
                   if (entry) openSetting(entry);

@@ -39,19 +39,21 @@ const HEALTH_TEXT: Record<HealthStatus, string> = {
 };
 
 /**
- * The sidebar's glance, above its footer buttons: the providers' limits and the machines, whichever are on. A
- * right-click anywhere on it ticks which providers and machines show, the same picks the menu bar menu follows.
+ * The sidebar's glance, above its footer buttons: the providers' limits, the machines and the cloud sandboxes running,
+ * whichever are on. A right-click anywhere on it ticks which providers and machines show, the same picks the menu bar
+ * menu follows.
  */
-export function SidebarGlance({ limits, machines, onCustomize }: { limits: ReactNode; machines: ReactNode; onCustomize: () => void }) {
+export function SidebarGlance({ limits, machines, compute, onCustomize }: { limits: ReactNode; machines: ReactNode; compute: ReactNode; onCustomize: () => void }) {
   const { t } = useI18n();
   const providers = useGlanceProviders();
   const machineNames = useGlanceMachineNames();
-  if (!limits && !machines) return null;
+  if (!limits && !machines && !compute) return null;
   return (
     <ContextMenu>
       <ContextMenuTrigger className="flex flex-col gap-1 px-1" data-slot="sidebar-glance">
         {limits}
         {machines}
+        {compute}
       </ContextMenuTrigger>
       <MenuPopup side="top" align="start" className="min-w-52">
         <MenuGroup>
