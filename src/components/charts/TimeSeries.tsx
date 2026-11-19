@@ -11,6 +11,12 @@ export type Series = { t: number; v: number | null }[];
 const CHART_W = 300;
 const CHART_PAD = 2;
 
+/**
+ * A reading's dot. The lines' svg is stretched to whatever width the chart gets, which would draw a circle in it as an
+ * ellipse, so dots are elements laid over it at the same point.
+ */
+const DOT = 'pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-card bg-current';
+
 /** How far a chart's lines are scrolled at `t`, as a share of its width: "now" sits at the right edge. */
 const scrollAt = (t: number, anchor: number, windowMs: number) => `translateX(${(1 - (t - anchor) / windowMs) * 100}%)`;
 
@@ -143,9 +149,13 @@ export function TimeSeries({
     return { line: line.trim(), area: area.trim() };
   }), [series, anchor, windowMs, max, height]);
   const last = series.map((points) => [...points].reverse().find((point) => point.v !== null) ?? null);
+  const dotAt = (t: number, v: number) => ({ left: `${(x(t) / CHART_W) * 100}%`, top: `${(y(v) / height) * 100}%` });
   return (
     <div className="relative h-full w-full" onPointerMove={onPointerMove} onPointerLeave={() => setHover(null)} data-slot="time-series">
-    <div className="absolute inset-0 overflow-hidden" role="img" aria-label={ariaLabel}>
+    {/* Clips what has scrolled off the left, and leaves a dot's width past the top, the foot and the right edge, where
+        the newest reading's dot sits when it has just come in. A plain box, so the scroll stays on the compositor. */}
+    <div className="absolute inset-y-0 left-0 -right-1 overflow-x-clip" role="img" aria-label={ariaLabel}>
+    <div className="absolute inset-y-0 left-0 right-1">
     <svg className="absolute inset-0 block h-full w-full" viewBox={`0 0 ${CHART_W} ${height}`} preserveAspectRatio="none" aria-hidden="true">
       {guides.map((value) => (
         <line key={value} x1="0" x2={CHART_W} y1={y(value)} y2={y(value)} stroke="var(--border)" strokeDasharray="2,3" vectorEffect="non-scaling-stroke" />
@@ -183,18 +193,17 @@ export function TimeSeries({
               ) : null}
               {fill && path.area ? <path d={path.area} fill={`url(#${id}-fill-${index})`} /> : null}
               {path.line ? <path d={path.line} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /> : null}
-              {last[index] ? <circle cx={x(last[index]!.t)} cy={y(last[index]!.v!)} r="2.5" fill="currentColor" stroke="var(--card)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /> : null}
             </g>
           ))}
-          {hover ? (
-            <g>
-              <line x1={x(hover.t)} x2={x(hover.t)} y1="0" y2={height} stroke="var(--foreground)" strokeOpacity="0.35" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" />
-              {hover.values.map((value, index) => (value === null ? null : (
-                <circle key={index} className={strokeClass[index]} cx={x(hover.t)} cy={y(value)} r="3" fill="currentColor" stroke="var(--card)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-              )))}
-            </g>
-          ) : null}
+          {hover ? <line x1={x(hover.t)} x2={x(hover.t)} y1="0" y2={height} stroke="var(--foreground)" strokeOpacity="0.35" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" /> : null}
       </svg>
+      {last.map((point, index) => (point && point.v !== null ? (
+        <span key={index} className={cn(DOT, 'size-[7px]', strokeClass[index])} style={dotAt(point.t, point.v)} data-slot="time-series-dot" aria-hidden="true" />
+      ) : null))}
+      {hover?.values.map((value, index) => (value === null ? null : (
+        <span key={index} className={cn(DOT, 'size-2', strokeClass[index])} style={dotAt(hover.t, value)} aria-hidden="true" />
+      )))}
+    </div>
     </div>
     </div>
     {hover ? (

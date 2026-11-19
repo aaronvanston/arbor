@@ -460,6 +460,10 @@ describe('a sandbox’s own page', () => {
     expect(chart(NOW - 41 * MINUTE)).toContain('Session ended');
     expect(chart(NOW - 300 * MINUTE)).not.toContain('time-series-mark');
     expect(chart(null)).not.toContain('time-series-mark');
+    // Each line's newest reading is a dot laid over the lines, never a circle in the svg: that one is stretched to the
+    // chart's width, which draws a circle as an ellipse.
+    expect(chart(null).split('data-slot="time-series-dot"')).toHaveLength(3);
+    expect(chart(null)).not.toContain('<circle');
     // The page hands the chart the end only of a session Arbor saw end; with half an hour of readings it isn't drawn yet.
     expect(html).not.toContain('time-series-mark');
     expect(html).not.toContain('Looks forgotten');
