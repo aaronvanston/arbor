@@ -27,6 +27,8 @@ import { freshInstall, iso, mockLog, params, type Json } from './scenario';
 export const heavyScenario = params.get('heavy') === '1';
 export const coreScenario = params.get('core') ?? 'running';
 const limitScenario = params.get('limit');
+// With `?unused=account`, codex-team is first in the order, ahead of the account that's being used instead.
+const unusedAccount = params.get('unused') === 'account';
 const quotaScenario = params.get('quota');
 // With `?limit=unused`, the weekly limits reset in 20 hours with plenty left, so capacity is about to go unused.
 const weeklyResetMs = limitScenario === 'unused' ? 20 * 3_600_000 : 4 * 86_400_000;
@@ -237,7 +239,7 @@ const authFiles: Json[] = [
   // Account-wide usage limit.
   ...(partialAccess
     ? [fileEntry('codex-team.json', { provider: 'codex', email: 'team@example.com', status: 'active', auth_index: 'codex-2', priority: 0, size: 2190, modtime: iso(-86_400_000) })]
-    : [fileEntry('codex-team.json', { provider: 'codex', email: 'team@example.com', status: 'error', status_message: 'quota exhausted', unavailable: true, next_retry_after: iso(3 * 86_400_000), cooldowns: [{ scope: 'credential', reason: 'credential_quota', retry_at: iso(3 * 86_400_000) }, { scope: 'model', model_key: 'gpt-6-astra', reason: 'quota', retry_at: iso(3 * 86_400_000), backoff_level: 1, http_status: 429 }], auth_index: 'codex-2', priority: 0, size: 2190, modtime: iso(-86_400_000) })]),
+    : [fileEntry('codex-team.json', { provider: 'codex', email: 'team@example.com', status: 'error', status_message: 'quota exhausted', unavailable: true, next_retry_after: iso(3 * 86_400_000), cooldowns: [{ scope: 'credential', reason: 'credential_quota', retry_at: iso(3 * 86_400_000) }, { scope: 'model', model_key: 'gpt-6-astra', reason: 'quota', retry_at: iso(3 * 86_400_000), backoff_level: 1, http_status: 429 }], auth_index: 'codex-2', priority: unusedAccount ? 3 : 0, size: 2190, modtime: iso(-86_400_000) })]),
   // Still routed, with two models resting; the short rest ends while the page is open.
   fileEntry('claude-max.json', { provider: 'claude', email: 'cam@example.com', account_uuid: 'uuid-cam', status: 'error', status_message: 'quota exhausted', unavailable: false, cooldowns: [{ scope: 'model', model_key: 'claude-opus-5-5', reason: 'quota', retry_at: iso(3 * 3_600_000), backoff_level: 0, http_status: 429 }, { scope: 'model', model_key: 'claude-fable-5-1', reason: 'transient_error', retry_at: iso(5 * 60_000), http_status: 503 }], auth_index: 'claude-1', priority: 5, size: 1672, modtime: iso(-7_200_000) }),
   // Every model resting after upstream errors: Retrying, with Refresh Now.

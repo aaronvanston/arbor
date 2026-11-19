@@ -47,6 +47,7 @@ export type AlertKind =
   | 'resetReady'
   | 'expiring'
   | 'limitForecast'
+  | 'accountPassedOver'
   | 'heavySession'
   | 'outage'
   | 'machineDown'
@@ -85,6 +86,7 @@ const TOPIC: Record<AlertKind, PhoneAlertTopic | null> = {
   resetReady: 'resets',
   expiring: 'capacity',
   limitForecast: 'limits',
+  accountPassedOver: 'limits',
   accountPaused: 'caps',
   accountResumed: 'caps',
   heavySession: 'heavy',
@@ -131,7 +133,7 @@ export function withPhoneTopic(muted: readonly PhoneAlertTopic[], topic: PhoneAl
 export function topicRaisedHere(topic: PhoneAlertTopic, preferences: AppPreferences, overrides: MachineOverrideMap = {}, projects: ProjectOverrideMap = {}) {
   const anywhere = (key: MachineScopedKey) => raisedAnywhere(preferences, overrides, key, projects);
   switch (topic) {
-    case 'limits': return preferences.limitNotifications || preferences.forecastAlerts;
+    case 'limits': return preferences.limitNotifications || preferences.forecastAlerts || preferences.passedOverNotifications;
     case 'resets': return preferences.resetNotifications;
     case 'capacity': return preferences.expiringNotifications;
     case 'caps': return preferences.reserveAlerts;

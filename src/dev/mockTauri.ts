@@ -107,8 +107,10 @@
  * `?codexreset=clear-fails` to have the core refuse to clear an account's cooldown after a reset;
  * `?rests=refilled` for claude-max and codex-team seen at a limit an hour ago and refilled since, while the core still
  * rests them: Arbor has it drop both rests once their limits are read, and Accounts › Routing's log says so (with
- * `?codexreset=clear-fails` the core refuses, so they stay resting; like `?reserves=`, it fills in the window's
- * storage for that load alone);
+ * `?codexreset=clear-fails` the core refuses, so they stay resting); `?unused=account` for codex-team first in the
+ * Codex order with limit left, its limits unmoved for thirty hours while codex-backup's ran down, so the alert that
+ * an account isn't being used goes out five minutes after load, naming the rest the core has it in (like `?reserves=`, `?rests=` fills in the
+ * window's storage for that load alone);
  * `?credits=none` to leave every Codex and Claude account without credits for use past its limits;
  * `?model=<id>` for cam-mbp reporting that model identifier and no product name: `Mac16,11` a Mac mini,
  * `Mac15,14` a Mac Studio, `iMac21,1`, `MacPro7,1`, `VirtualMac2,1`, or `Mac99,1` for one Arbor doesn't know (a Mac);

@@ -190,6 +190,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
     ['reserve', 'interface.limits.title', 'interface.reserveAlerts.title', 'interface.reserveAlerts.description'],
     ['expiring', 'interface.limits.title', 'interface.expiringNotifications.title', 'interface.expiringNotifications.description'],
     ['forecast', 'interface.limits.title', 'interface.forecastAlerts.title', 'interface.forecastAlerts.description'],
+    ['passed-over', 'interface.limits.title', 'interface.passedOverNotifications.title', 'interface.passedOverNotifications.description'],
     ['heavy-sessions', 'interface.sessions.title', 'interface.heavySessions.title', 'interface.heavySessions.description'],
     ['archive-alerts', 'interface.sessions.title', 'interface.archiveAlerts.title', 'interface.archiveAlerts.description'],
     ['provider-status', 'interface.status.title', 'interface.providerStatus.title', 'interface.providerStatus.description'],
