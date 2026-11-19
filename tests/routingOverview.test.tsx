@@ -104,6 +104,8 @@ describe('what Arbor changed', () => {
     expect(getRoutingLog()).toHaveLength(ROUTING_LOG_MAX);
     expect(parseRoutingLog(JSON.stringify({ entries: [{ id: 'a', atMs: 1, provider: 'codex', kind: 'nope' }, { id: 'b', atMs: 2, provider: 'codex', kind: 'fenced', account: 'x.json', models: [PREVIEW, 3], percent: 4 }] })))
       .toEqual([{ id: 'b', atMs: 2, provider: 'codex', kind: 'fenced', account: 'x.json', models: [PREVIEW], percent: 4 }]);
+    expect(parseRoutingLog(JSON.stringify({ entries: [{ id: 'c', atMs: 3, provider: 'claude', kind: 'rested', account: 'x.json', models: ['kept-out'] }] })))
+      .toEqual([{ id: 'c', atMs: 3, provider: 'claude', kind: 'rested', account: 'x.json' }]);
   });
 
   it('stops reserving for a fenced model, and Undo brings the reserve back', async () => {
@@ -130,6 +132,8 @@ describe('what Arbor changed', () => {
     expect(getRoutingAuto().codex).toBe(true);
     expect(logActionFor({ ...entry, changes: [] })).toBeNull();
     expect(logActionFor({ id: 'y', atMs: now, kind: 'opened', provider: 'codex', account: 'a', models: [], why: 'above' })).toBeNull();
+    // A rest that was dropped comes back by itself if the account is still at a limit.
+    expect(logActionFor({ id: 'z', atMs: now, kind: 'rested', provider: 'claude', account: 'a' })).toBeNull();
   });
 
   it('says what each one did', () => {
@@ -138,5 +142,7 @@ describe('what Arbor changed', () => {
       .toEqual({ key: 'accounts.routingView.log.fenced', values: { name: 'Team', percent: '3.5', model: PREVIEW } });
     expect(logText({ id: 'b', atMs: now, kind: 'order', provider: 'codex', changes: [{ fileName: 'cam-team.json', from: 1, to: 3 }] }, names))
       .toEqual({ key: 'accounts.routingView.log.orderOne', values: { provider: 'Codex', name: 'Team', from: 1, to: 3 } });
+    expect(logText({ id: 'c', atMs: now, kind: 'rested', provider: 'codex', account: 'cam-team.json' }, names))
+      .toEqual({ key: 'accounts.routingView.log.rested', values: { name: 'Team' } });
   });
 });

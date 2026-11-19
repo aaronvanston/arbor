@@ -12,6 +12,7 @@ import { ensureAccountsLoaded, getAccountsSnapshot, loadAccountFiles, refreshAcc
 import { expiringCapacity, nextExpiringNotifications, type ExpiringCapacity } from '../services/expiringCapacity';
 import { recordLimitSample } from '../services/limitsHistory';
 import type { ForecastAlert } from '../services/limitForecast';
+import { liftedRests } from '../services/liftedRests';
 import { notify } from '../services/notify';
 import { nextOutageNotifications, outageNotification } from '../services/outageAlerts';
 import { formatResetCountdown, providerLabel, providerLimits, type ProviderLimit } from '../services/providerLimits';
@@ -29,7 +30,7 @@ import {
 import { statusSummary } from '../services/providerStatusText';
 import { useQuotaCache } from '../services/quotaCache';
 import { applyRoutingPlan, routingCandidates, routingPlan, useRoutingAuto, type RoutingItem } from '../services/quotaRouting';
-import { fileName, providerForFile, quotaKey, type QuotaProvider } from '../services/quotaService';
+import { clearProxyRest, fileName, providerForFile, quotaKey, type QuotaProvider } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
 import { formatDateTime, formatWhen } from '../lib/format';
 import type { TrayDot, TrayRow } from '../native/types';
@@ -45,6 +46,8 @@ const FORECAST_NOTIFIED_KEY = 'arbor.forecast-notified.v1';
 /** How far ahead the alert's forecast looks: past the day it warns about, so a reset just after shows. */
 const FORECAST_ALERT_HORIZON_DAYS = 2;
 const OUTAGE_NOTIFIED_KEY = 'arbor.outage-notified.v1';
+/** When each account was last seen with a limit out: ids and times only. */
+const SEEN_OUT_KEY = 'arbor.limit-out-seen.v1';
 /** More at once would be noise; the banner names them all. */
 const MAX_OUTAGE_NOTIFICATIONS = 3;
 const TRAY_SUMMARY_MAX = 64;
@@ -123,14 +126,14 @@ export const staleHolds = (stale: ProviderLimit['stale'], nowMs: number, holdMs:
 /**
  * Headless companion to the sidebar: polls limits and the providers' status pages in the background,
  * mirrors both into the tray menu, records history for the sparklines and each account's limits, keeps
- * the suggested routing priorities applied where that is switched on, and raises native notifications on
- * pace changes, when a reset can get an account past a limit, when capacity is about to reset unused and
- * when a status page reports a new incident.
+ * the suggested routing priorities applied where that is switched on, has the proxy stop resting an account whose
+ * limit was refilled, and raises native notifications on pace changes, when a reset can get an account past a limit,
+ * when capacity is about to reset unused and when a status page reports a new incident.
  */
 export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   const { t } = useI18n();
   const preferences = useAppPreferences();
-  const { files, loaded, error: accountsError } = useAccountsStore();
+  const { files, loaded, error: accountsError, listedAt } = useAccountsStore();
   const quotas = useQuotaCache();
   const profiles = useAccountProfiles();
   const order = useAccountOrder();
@@ -392,6 +395,45 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         void loadAccountFiles();
       });
   }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, profiles, routingAuto, routingLapsingResets]);
+
+  // Rests the proxy took when an account hit a limit, which it keeps until the reset time it saw then. An account
+  // seen out whose limits all read some left again is one it's told to stop resting.
+  const seenOutRef = useRef<Record<string, number>>(typeof localStorage === 'undefined' ? {} : readStored<number>(SEEN_OUT_KEY));
+  const restsRef = useRef(false);
+  useEffect(() => {
+    if (!coreReady || !loaded || accountsError || restsRef.current || freshLimits.some((limit) => limit.loading)) return;
+    const accounts = files.map((file) => ({ key: quotaKey(file), file, quota: freshCache[quotaKey(file)] }));
+    const { lifted, seenOut } = liftedRests(accounts, listedAt, seenOutRef.current, Date.now());
+    const remember = (next: Record<string, number>) => {
+      if (JSON.stringify(next) === JSON.stringify(seenOutRef.current)) return;
+      seenOutRef.current = next;
+      writeStored(SEEN_OUT_KEY, next);
+    };
+    const before = seenOutRef.current;
+    remember(seenOut);
+    const due = lifted.flatMap(({ key, file }) => {
+      const authIndex = typeof file.auth_index === 'string' ? file.auth_index.trim() : '';
+      const provider = providerForFile(file);
+      return authIndex && provider ? [{ key, authIndex, provider, account: fileName(file) }] : [];
+    });
+    if (!due.length) return;
+    restsRef.current = true;
+    void Promise.all(due.map(async (item) => ({ item, told: await clearProxyRest(item.authIndex) })))
+      .then(async (results) => {
+        // One the proxy couldn't be told about is tried again at the next round.
+        const failed = results.filter((result) => !result.told).map(({ item }) => [item.key, before[item.key] ?? Date.now()] as const);
+        if (failed.length) remember({ ...seenOutRef.current, ...Object.fromEntries(failed) });
+        const dropped = results.filter((result) => result.told).map(({ item }) => item);
+        if (!dropped.length) return;
+        const { recordRoutingDecisions } = await import('../services/routingLog');
+        recordRoutingDecisions(dropped.map(({ provider, account }) => ({ kind: 'rested', provider, account })));
+      })
+      .catch((error) => console.warn('Failed to have the proxy stop resting refilled accounts', error))
+      .finally(() => {
+        restsRef.current = false;
+        void loadAccountFiles({ quiet: true });
+      });
+  }, [coreReady, loaded, accountsError, freshLimits, files, freshCache, listedAt]);
 
   // Extra models on only some accounts: when an account is added, removed or signed out, ask the provider's accounts
   // again which models each has, so a model stays off the accounts without it. Otherwise keep its use fresh, which

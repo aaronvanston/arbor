@@ -249,6 +249,9 @@ let fileCount = 0;
 let bankedStatus: () => unknown;
 let claimReply: (request: Request) => unknown;
 let prepaidReply: () => unknown;
+/** The accounts the core was told to stop resting, by auth index, and whether it takes that. */
+let rested: string[];
+let restReply: () => unknown;
 
 const claudeFile = (): AuthFile => ({ name: `claude-banked-${++fileCount}.json`, provider: 'claude', auth_index: `cb-${fileCount}` });
 const claims = () => calls.filter((request) => request.url === CLAIM_URL);
@@ -258,7 +261,13 @@ beforeEach(() => {
   bankedStatus = () => success(liveStatus());
   claimReply = () => success({ result: 'reset', resets_left: 1, cleared: ['five_hour'] });
   prepaidReply = () => success({ amount: 0, currency: 'USD', expiry_policy_months: 12 });
+  rested = [];
+  restReply = () => ({ status: 'ok' });
   post = spyOn(managementApi, 'post').mockImplementation(async (path, body) => {
+    if (path === '/reset-quota') {
+      rested.push(String((body as { auth_index?: unknown }).auth_index));
+      return restReply() as never;
+    }
     expect(path).toBe('/api-call');
     const request = body as unknown as Request;
     calls.push(request);
@@ -339,6 +348,23 @@ describe('claiming a Claude banked reset', () => {
     const claimAt = calls.indexOf(claim);
     expect(calls.slice(0, claimAt).map((request) => request.url).sort()).toEqual([BANKED_URL, PROFILE_URL].sort());
     expect(calls.slice(claimAt + 1).map((request) => request.url).sort()).toEqual([BANKED_URL, PREPAID_URL, PROFILE_URL, USAGE_URL].sort());
+  });
+
+  it('has the core stop resting the account, which it otherwise keeps up until the reset time it saw at the limit', async () => {
+    const file = claudeFile();
+    const result = await claimClaudeBankedReset(file, { grantId: 'launch_week', earlyUse: false });
+    expect(rested).toEqual([String(file.auth_index)]);
+    expect(result.actionResult?.warning).toBeUndefined();
+    // Nothing was refilled, so the rest is the core's to keep.
+    claimReply = () => success({ result: 'not_limited' });
+    await claimClaudeBankedReset(claudeFile(), { grantId: 'launch_week', earlyUse: false });
+    expect(rested).toHaveLength(1);
+  });
+
+  it('says so when the reset went through and the core couldn’t be told', async () => {
+    restReply = () => { throw new Error('core is restarting'); };
+    const result = await claimClaudeBankedReset(claudeFile(), { grantId: 'launch_week', earlyUse: false });
+    expect(result.actionResult).toMatchObject({ status: 'success', warning: 'Reset used, but Arbor couldn’t tell the proxy yet. It will route again when its cooldown ends.' });
   });
 
   it('claims the kind that was confirmed and says what a Fable reset gave back', async () => {

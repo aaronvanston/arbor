@@ -1464,10 +1464,7 @@ async function consumeCodexResetCreditSnapshot(file: AuthFile): Promise<QuotaSta
   if (outcome === 'no_credit') {
     return finish('not-used', quotaText(retry ? 'quota.codexReset.result.noCreditAfterRetry' : 'quota.codexReset.result.noCredit'));
   }
-  // The core keeps resting the account after the limit it hit. This clears that
-  // rest in the core alone (nothing goes to Codex), so it routes again now.
-  const proxyTold = await managementApi.post('/reset-quota', { auth_index: authIndex }, { timeoutMs: 10_000 })
-    .then(() => true, () => false);
+  const proxyTold = await clearProxyRest(authIndex);
   return finish(
     'success',
     quotaText(outcome === 'reset'
@@ -1476,6 +1473,14 @@ async function consumeCodexResetCreditSnapshot(file: AuthFile): Promise<QuotaSta
     proxyTold ? undefined : quotaText('quota.codexReset.result.proxyNotTold'),
   );
 }
+
+/**
+ * The core keeps resting an account until the reset time it saw when the account hit its limit, whatever refills it
+ * sooner. This clears that rest in the core alone (nothing goes to the provider), so it routes again now. False when
+ * the core couldn't be told.
+ */
+export const clearProxyRest = (authIndex: string): Promise<boolean> =>
+  managementApi.post('/reset-quota', { auth_index: authIndex }, { timeoutMs: 10_000 }).then(() => true, () => false);
 
 const CLAUDE_CLAIM_RESULTS = ['reset', 'already_used', 'not_limited', 'cooldown', 'ineligible', 'unavailable'];
 /** How long Claude Code keeps an unconfirmed claim's request id for a retry. */
@@ -1505,6 +1510,12 @@ async function claimClaudeBankedResetSnapshot(
     ...(refresh ? await loadQuotaSnapshot(file) : { status: 'error' as const, rows: [] }),
     actionResult: { action: 'reset', status, message },
   });
+  // A reset that went through refills limits the core is still resting the account for.
+  const refilled = async (message: string): Promise<QuotaState> => {
+    const proxyTold = await clearProxyRest(authIndex);
+    const state = await finish('success', message);
+    return proxyTold || !state.actionResult ? state : { ...state, actionResult: { ...state.actionResult, warning: quotaText('quota.codexReset.result.proxyNotTold') } };
+  };
 
   // Claim only the reset that was confirmed, and only while the limits still
   // match the confirmation: a reset spent before reaching a limit is gone.
@@ -1575,13 +1586,13 @@ async function claimClaudeBankedResetSnapshot(
     case 'reset': {
       const weekly = readString(body, 'weekly_resets_at') || weeklyResetsAt;
       // A Fable reset refills less than "limits reset" promises, so it says what came back.
-      return finish('success', weekly
+      return refilled(weekly
         ? quotaText(fable ? 'quota.bankedReset.result.resetFableWeekly' : 'quota.bankedReset.result.resetWeekly', { time: formatQuotaTimestamp(weekly) })
         : quotaText(fable ? 'quota.bankedReset.result.resetFable' : 'quota.bankedReset.result.reset'));
     }
     case 'already_used':
       return retry
-        ? finish('success', quotaText('quota.bankedReset.result.earlierReset'))
+        ? refilled(quotaText('quota.bankedReset.result.earlierReset'))
         : finish('not-used', quotaText('quota.bankedReset.result.alreadyUsed'));
     case 'cooldown':
       return finish('not-used', quotaText(retry ? 'quota.bankedReset.result.cooldownAfterRetry' : 'quota.bankedReset.result.cooldown'));

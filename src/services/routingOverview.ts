@@ -99,7 +99,8 @@ export function routingOverview({ files, quotas, profiles, state, policies, paus
 export type LogAction = 'stopReserving' | 'keepReserve' | 'putBack';
 
 export function logActionFor(entry: RoutingLogEntry): LogAction | null {
-  if (entry.acted) return null;
+  // A rest that was dropped comes back by itself if the account is still at a limit, so there's nothing to put back.
+  if (entry.acted || entry.kind === 'rested') return null;
   if (entry.kind === 'fenced') return 'stopReserving';
   if (entry.kind === 'opened') return entry.why === 'lending' ? 'keepReserve' : null;
   return entry.changes.length > 0 ? 'putBack' : null;
@@ -113,7 +114,7 @@ export function logActionFor(entry: RoutingLogEntry): LogAction | null {
  */
 export async function takeLogAction(entry: RoutingLogEntry, apply: typeof applyRoutingPlan = applyRoutingPlan): Promise<() => Promise<void>> {
   const action = logActionFor(entry);
-  if (!action) return async () => {};
+  if (!action || entry.kind === 'rested') return async () => {};
   if (entry.kind === 'order') {
     const wasAuto = getRoutingAuto()[entry.provider] ?? false;
     setRoutingAuto(entry.provider, false);

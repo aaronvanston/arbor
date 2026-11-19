@@ -1,8 +1,8 @@
 import { savedStore, storedRecord } from './savedStore';
 
 /*
- * What Arbor changed about routing by itself, newest first: the account order it applied, and the accounts it fenced to
- * their reserve or opened again. Accounts Routing lists them with what each one's action does.
+ * What Arbor changed about routing by itself, newest first: the account order it applied, the accounts it fenced to
+ * their reserve or opened again, and the accounts it had the proxy stop resting. Accounts Routing lists them with what each one's action does.
  */
 
 /** Enough to explain the last few days of changes; older ones only repeat the pattern. */
@@ -16,8 +16,10 @@ export type PriorityChange = { fileName: string; from: number; to: number };
  * - `opened`: an account was fenced and takes everyday requests again: `lending` because every other account is out,
  *   or `above` because it's above its reserve again (a reset, or a smaller reserve).
  * - `order`: automatic account order changed priorities.
+ * - `rested`: the proxy was resting an account for a limit that had since been refilled, and was told to stop.
  */
 export type RoutingDecision =
+  | { kind: 'rested'; provider: string; account: string }
   | { kind: 'fenced'; provider: string; account: string; models: string[]; percent: number }
   | { kind: 'opened'; provider: string; account: string; models: string[]; why: 'lending' | 'above' }
   | { kind: 'order'; provider: string; changes: PriorityChange[] };
@@ -36,6 +38,7 @@ const parseEntry = (value: unknown): RoutingLogEntry | null => {
     ...(entry.acted === true ? { acted: true } : {}),
   };
   if (!base.id || !base.provider) return null;
+  if (entry.kind === 'rested') return { ...base, kind: 'rested', account: String(entry.account ?? '') };
   if (entry.kind === 'fenced') return { ...base, kind: 'fenced', account: String(entry.account ?? ''), models: strings(entry.models), percent: Number(entry.percent) || 0 };
   if (entry.kind === 'opened') return { ...base, kind: 'opened', account: String(entry.account ?? ''), models: strings(entry.models), why: entry.why === 'lending' ? 'lending' : 'above' };
   if (entry.kind === 'order' && Array.isArray(entry.changes)) {
