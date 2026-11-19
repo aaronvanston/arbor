@@ -3,6 +3,7 @@ import { formatCount, formatTime } from '../lib/format';
 import { HEAVY_SESSION_TOKEN_OPTIONS, setAppPreference, useAppPreferences } from '../appPreferences';
 import { ATTENTION_ALERT_AFTER_MS } from '../services/agentAttention';
 import { EXPIRING_MIN_PERCENT } from '../services/expiringCapacity';
+import { PASSED_OVER_MIN_MS } from '../services/passedOver';
 import { useConnectedComputeProviders } from '../services/computeHint';
 import { MACHINE_DOWN_AFTER_MS } from '../services/machineAlerts';
 import { SETUP_WATCH_INTERVAL_MS } from '../services/setupChanges';
@@ -116,6 +117,20 @@ export function NotificationsSettingsPage() {
                 checked={preferences.forecastAlerts}
                 aria-label={t('interface.forecastAlerts.title')}
                 onCheckedChange={(checked) => setAppPreference('forecastAlerts', checked)}
+              />
+            }
+          />
+          <SettingsRow
+            settingId="notifications.passed-over"
+            held={held}
+            reset={preferenceReset(preferences, 'passedOverNotifications', onOff)}
+            title={t('interface.passedOverNotifications.title')}
+            description={t('interface.passedOverNotifications.description', { hours: PASSED_OVER_MIN_MS / 3_600_000 })}
+            control={
+              <Switch
+                checked={preferences.passedOverNotifications}
+                aria-label={t('interface.passedOverNotifications.title')}
+                onCheckedChange={(checked) => setAppPreference('passedOverNotifications', checked)}
               />
             }
           />

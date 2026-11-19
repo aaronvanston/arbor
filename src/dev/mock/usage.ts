@@ -561,6 +561,8 @@ function limitCyclesFor(account: string, window: string): LimitCycle[] {
 // refills each pool's first two accounts partway through their current cycle: the first by a reset on record, the
 // second with none. A reset the window says it used is kept and given back too, though the mock's limits don't refill.
 const forecastScenario = params.get('forecast') ?? '';
+// With `?unused=account`, codex-team's limits stood still for the last thirty hours while codex-backup's ran down.
+const unusedAccount = params.get('unused') === 'account';
 const latestLimitReadings = new Map<string, LimitReading>();
 const usedResets = new Map<string, NonNullable<LimitTrendAccount['resetsUsed']>>();
 
@@ -605,6 +607,14 @@ function limitTrendFor(provider: string, window: string, sinceMs: number): Limit
       if (stretches.length > 1 && index === 0 && refillAt >= from) {
         resetsUsed.push([refillAt, provider !== 'claude' ? 'manual' : /fable/i.test(window) ? 'fable' : /5-hour/i.test(window) ? 'session' : 'weekly']);
       }
+    }
+    if (unusedAccount && provider === 'codex') {
+      const stillMs = 30 * hour;
+      const left = latest.remainingPercent ?? 100;
+      const still = latest.account.startsWith('codex-team.json');
+      readings.forEach((reading) => {
+        if (reading[0] >= now - stillMs) reading[1] = still ? left : Math.min(100, left + (30 * (now - reading[0])) / stillMs);
+      });
     }
     accounts.push({
       account: latest.account, authIndex: latest.authIndex, readings: readings.sort((a, b) => a[0] - b[0]),

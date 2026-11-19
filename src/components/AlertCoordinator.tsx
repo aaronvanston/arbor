@@ -16,6 +16,7 @@ const TOAST_KIND: Record<AlertKind, ToastKind> = {
   resetReady: 'info',
   expiring: 'warning',
   limitForecast: 'warning',
+  accountPassedOver: 'warning',
   accountPaused: 'warning',
   accountResumed: 'success',
   heavySession: 'warning',

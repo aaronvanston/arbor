@@ -49,6 +49,7 @@ const KIND_LOOK: Record<AlertKind, { icon: AppIcon; tone: Tone }> = {
   resetReady: { icon: RotateCcw, tone: 'info' },
   expiring: { icon: Hourglass, tone: 'warning' },
   limitForecast: { icon: LineChart, tone: 'warning' },
+  accountPassedOver: { icon: LineChart, tone: 'warning' },
   accountPaused: { icon: CirclePause, tone: 'warning' },
   accountResumed: { icon: CirclePlay, tone: 'success' },
   heavySession: { icon: Flame, tone: 'warning' },

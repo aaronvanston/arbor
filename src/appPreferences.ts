@@ -29,6 +29,8 @@ export type AppPreferences = {
   expiringNotifications: boolean;
   /** Notify when a provider's pool of accounts is forecast to run dry within a day. */
   forecastAlerts: boolean;
+  /** Notify when an account ahead in the order with limit left goes unused for hours while others run down. */
+  passedOverNotifications: boolean;
   /** How the limit forecast measures spend: each hour of the week as it's gone before, or the recent average. */
   forecastModel: ForecastModel;
   /** Days the forecast's recent average looks back. */
@@ -106,6 +108,7 @@ export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   resetNotifications: true,
   expiringNotifications: true,
   forecastAlerts: false,
+  passedOverNotifications: true,
   forecastModel: 'weekly',
   forecastLookbackDays: 7,
   forecastRatePerHour: 0,

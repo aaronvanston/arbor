@@ -12,8 +12,10 @@ import { ensureAccountsLoaded, getAccountsSnapshot, loadAccountFiles, refreshAcc
 import { expiringCapacity, nextExpiringNotifications, type ExpiringCapacity } from '../services/expiringCapacity';
 import { recordLimitSample } from '../services/limitsHistory';
 import type { ForecastAlert } from '../services/limitForecast';
-import { liftedRests } from '../services/liftedRests';
+import { liftedRests, LIFTED_MIN_PERCENT } from '../services/liftedRests';
 import { notify } from '../services/notify';
+import { nextPassedOverAlerts, passedOverAccounts, PASSED_OVER_LOOKBACK_MS, PASSED_OVER_MIN_LEFT, type RankedAccount } from '../services/passedOver';
+import { authFileAvailability, limitRestsEndAt, parseAuthFilePriority } from '../services/authFiles';
 import { nextOutageNotifications, outageNotification } from '../services/outageAlerts';
 import { formatResetCountdown, providerLabel, providerLimits, type ProviderLimit } from '../services/providerLimits';
 import {
@@ -32,7 +34,7 @@ import { useQuotaCache } from '../services/quotaCache';
 import { applyRoutingPlan, routingCandidates, routingPlan, useRoutingAuto, type RoutingItem } from '../services/quotaRouting';
 import { clearProxyRest, fileName, providerForFile, quotaKey, type QuotaProvider } from '../services/quotaService';
 import { useQuotaClock } from '../services/quotaTime';
-import { formatDateTime, formatWhen } from '../lib/format';
+import { formatDateTime, formatDuration, formatWhen } from '../lib/format';
 import type { TrayDot, TrayRow } from '../native/types';
 import { publishTrayRows } from '../services/trayMenu';
 import { pushToTray } from '../services/bootMode';
@@ -46,8 +48,13 @@ const FORECAST_NOTIFIED_KEY = 'arbor.forecast-notified.v1';
 /** How far ahead the alert's forecast looks: past the day it warns about, so a reset just after shows. */
 const FORECAST_ALERT_HORIZON_DAYS = 2;
 const OUTAGE_NOTIFIED_KEY = 'arbor.outage-notified.v1';
+const PASSED_OVER_NOTIFIED_KEY = 'arbor.passed-over-notified.v1';
 /** When each account was last seen with a limit out: ids and times only. */
 const SEEN_OUT_KEY = 'arbor.limit-out-seen.v1';
+/** How often each provider's accounts are checked for one passed over: it reads two days of limit history. */
+const PASSED_OVER_CHECK_MS = 30 * 60_000;
+/** The first check waits this long after the window loads: nothing about a stretch of hours needs reading at launch. */
+const PASSED_OVER_FIRST_CHECK_MS = 5 * 60_000;
 /** More at once would be noise; the banner names them all. */
 const MAX_OUTAGE_NOTIFICATIONS = 3;
 const TRAY_SUMMARY_MAX = 64;
@@ -128,7 +135,7 @@ export const staleHolds = (stale: ProviderLimit['stale'], nowMs: number, holdMs:
  * mirrors both into the tray menu, records history for the sparklines and each account's limits, keeps
  * the suggested routing priorities applied where that is switched on, has the proxy stop resting an account whose
  * limit was refilled, and raises native notifications on pace changes, when a reset can get an account past a limit,
- * when capacity is about to reset unused and when a status page reports a new incident.
+ * when capacity is about to reset unused, when an account goes unused and when a status page reports a new incident.
  */
 export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   const { t } = useI18n();
@@ -162,7 +169,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   // automatic routing and account caps, which use the limits without the window; otherwise it pauses and
   // catches up when the window is shown.
   const pollWhileHidden = preferences.trayLimits || preferences.limitNotifications || preferences.resetNotifications
-    || preferences.expiringNotifications || preferences.forecastAlerts || Object.values(routingAuto).some(Boolean) || Object.keys(reserves.caps).length > 0
+    || preferences.expiringNotifications || preferences.forecastAlerts || preferences.passedOverNotifications || Object.values(routingAuto).some(Boolean) || Object.keys(reserves.caps).length > 0
     // An extra model only some accounts have: their reserves for it are kept by the limits.
     || Object.values(modelAccess.access).some((models) => Object.values(models).includes('no'));
   useEffect(() => {
@@ -578,6 +585,81 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
     })();
     return () => { current = false; };
   }, [freshLimits, preferences.forecastAlerts, forecastModel, forecastLookbackDays, forecastRatePerHour, forecastResets, t]);
+
+  // Native notifications when an account ahead in the order, with limit left, stands still for hours while the
+  // accounts behind it run down: the proxy is passing it over. Once for each such stretch.
+  const passedOverNotifiedRef = useRef<Record<string, number>>(typeof localStorage === 'undefined' ? {} : readStored<number>(PASSED_OVER_NOTIFIED_KEY));
+  const passedOverCheckedRef = useRef<Record<string, number>>({});
+  const passedOverRunRef = useRef(false);
+  const passedOverFromRef = useRef(Date.now());
+  useEffect(() => {
+    if (!preferences.passedOverNotifications || !loaded || accountsError || passedOverRunRef.current || freshLimits.some((limit) => limit.loading)) return;
+    if (Date.now() - passedOverFromRef.current < PASSED_OVER_FIRST_CHECK_MS) return;
+    passedOverRunRef.current = true;
+    void (async () => {
+      const nowMs = Date.now();
+      const fileOf = new Map(files.map((file) => [quotaKey(file), file]));
+      const found: Array<ReturnType<typeof passedOverAccounts>[number] & { provider: QuotaProvider; window: string; restsUntilMs?: number }> = [];
+      for (const limit of freshLimits) {
+        const window = limit.headline.label;
+        if (!window || nowMs - (passedOverCheckedRef.current[limit.provider] ?? 0) < PASSED_OVER_CHECK_MS) continue;
+        const ranked = limit.accounts.flatMap((account): RankedAccount[] => {
+          const file = fileOf.get(account.key);
+          if (!file) return [];
+          const rows = account.quota.status === 'success' ? account.quota.rows.filter((row) => !row.extra && row.remainingPercent !== null) : [];
+          const availability = authFileAvailability(file, nowMs).kind;
+          return [{
+            key: account.key,
+            name: account.name,
+            priority: parseAuthFilePriority(file.priority) ?? 0,
+            percent: rows.find((row) => row.label === window)?.remainingPercent ?? null,
+            usable: rows.length > 0 && rows.every((row) => (row.remainingPercent ?? 0) >= LIFTED_MIN_PERCENT)
+              && (availability === 'ready' || availability === 'limit' || availability === 'retrying')
+              // Fenced to its reserve, it serves only the extra models it keeps that for.
+              && !modelAccess.fenced[fileName(file)],
+          }];
+        });
+        // Nothing to read history for unless an account with limit left is ahead of another.
+        const lowest = Math.min(...ranked.map((account) => account.priority));
+        if (!ranked.some((account) => account.usable && (account.percent ?? 0) >= PASSED_OVER_MIN_LEFT && account.priority > lowest)) continue;
+        passedOverCheckedRef.current[limit.provider] = nowMs;
+        const readings = await invokeCommand('get_limit_trend', { provider: limit.provider, window, sinceMs: nowMs - PASSED_OVER_LOOKBACK_MS }).catch(() => []);
+        passedOverAccounts(ranked, readings, nowMs).forEach((item) => {
+          const file = fileOf.get(item.key);
+          const rests = file ? limitRestsEndAt(file, listedAt.receivedAtMs, listedAt.observedAt).filter((endsAtMs) => endsAtMs > nowMs) : [];
+          found.push({ ...item, provider: limit.provider, window, ...(rests.length ? { restsUntilMs: Math.max(...rests) } : {}) });
+        });
+      }
+      const { notified, fresh, changed } = nextPassedOverAlerts(passedOverNotifiedRef.current, found, files.map(quotaKey), Date.now());
+      if (!changed) return;
+      passedOverNotifiedRef.current = notified;
+      writeStored(PASSED_OVER_NOTIFIED_KEY, notified);
+      void notify(fresh.flatMap((alert) => {
+        const item = found.find((candidate) => candidate.key === alert.key);
+        if (!item) return [];
+        const body = t('notifications.passedOver.body', {
+          account: item.name,
+          provider: providerLabel[item.provider],
+          percent: Math.round(item.percent),
+          window: lowerFirst(item.window),
+          time: formatDuration(nowMs - item.sinceMs),
+          other: item.by,
+          used: Math.round(item.used),
+        });
+        const next = item.restsUntilMs ? t('notifications.passedOver.resting', { time: formatDateTime(item.restsUntilMs) }) : t('notifications.passedOver.check');
+        return [{
+          title: t('notifications.passedOver.title', { account: item.name }),
+          body: `${body} ${next}`,
+          kind: 'accountPassedOver' as const,
+          subject: { account: item.key },
+        }];
+      }));
+    })()
+      .catch((error) => console.warn('Failed to check for accounts going unused', error))
+      .finally(() => {
+        passedOverRunRef.current = false;
+      });
+  }, [freshLimits, files, loaded, accountsError, listedAt, modelAccess, preferences.passedOverNotifications, t]);
 
   // Native notifications for each new incident on a status page, once. Statuses too old to trust are left out.
   useEffect(() => {
