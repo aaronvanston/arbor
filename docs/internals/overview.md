@@ -68,6 +68,12 @@ account gets every other model excluded (fenced), and the exclusions come off wh
 Arbor only ever takes back the rules it added (`added` in the access store). Client keys are plain strings in the core,
 not tied to accounts, so no routing can be set per machine. Each automatic change goes on Accounts › Routing's log.
 
+When a provider says an account is at its limit, the core rests it until the reset time it saw then, and nothing
+refilling the limit sooner ends that rest. So Arbor tells the core to drop it (`/reset-quota`, which only clears the
+core's own state) after a reset it used itself, and when an account it saw with a limit out reads some left on every
+limit while the rest still runs. It never drops a rest on an account whose limits didn't read out: the provider then
+knows of a limit the readings don't show, and the core would only take the rest again.
+
 ## Processes
 
 macOS hands a child process every file that isn't close-on-exec, and a long-lived child such as the core would hold

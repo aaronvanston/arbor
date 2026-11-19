@@ -105,6 +105,10 @@
  * `?codexreset=already`, `nothing` or `none` to have Codex answer a reset as already redeemed, nothing to
  * reset or no credit left; `?codexreset=lost` to lose the first reset's reply after it went through;
  * `?codexreset=clear-fails` to have the core refuse to clear an account's cooldown after a reset;
+ * `?rests=refilled` for claude-max and codex-team seen at a limit an hour ago and refilled since, while the core still
+ * rests them: Arbor has it drop both rests once their limits are read, and Accounts › Routing's log says so (with
+ * `?codexreset=clear-fails` the core refuses, so they stay resting; like `?reserves=`, it fills in the window's
+ * storage for that load alone);
  * `?credits=none` to leave every Codex and Claude account without credits for use past its limits;
  * `?model=<id>` for cam-mbp reporting that model identifier and no product name: `Mac16,11` a Mac mini,
  * `Mac15,14` a Mac Studio, `iMac21,1`, `MacPro7,1`, `VirtualMac2,1`, or `Mac99,1` for one Arbor doesn't know (a Mac);
@@ -847,6 +851,11 @@ export function installTauriMock() {
       paused: {},
       skipUntil: {},
     }));
+  }
+  // Arbor saw these two run out an hour ago; their limits read some left now, and the core still rests them.
+  if (params.get('rests') === 'refilled') {
+    const outAtMs = Date.now() - 3_600_000;
+    seedForThisLoad('arbor.limit-out-seen.v1', JSON.stringify({ 'claude-max.json::claude-1': outAtMs, 'codex-team.json::codex-2': outAtMs }));
   }
   if (params.get('recent') === 'seed') {
     seedForThisLoad('arbor.palette.recent.v1', JSON.stringify(['page:settings:auth-files', 'action:pause-account', 'page:main:setup', 'action:theme-dark']));

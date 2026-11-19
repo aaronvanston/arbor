@@ -260,6 +260,13 @@ const activeCooldowns = (file: AuthFileRecord, listedAtMs: number, observedAt?: 
   return { rows, known: Boolean(snapshot?.records) };
 };
 
+/**
+ * When the core's rests for a limit on a credential end: the ones it took after the provider said a limit was
+ * reached, on the whole credential or on one model. Empty when it has none, or can't say.
+ */
+export const limitRestsEndAt = (file: AuthFileRecord, listedAtMs: number, observedAt?: string): number[] =>
+  activeCooldowns(file, listedAtMs, observedAt).rows.filter((row) => row.trouble === 'limit').map((row) => row.retryAtMs);
+
 const earliest = (rows: { retryAtMs: number }[]) =>
   rows.length ? Math.min(...rows.map((row) => row.retryAtMs)) : undefined;
 const latest = (rows: { retryAtMs: number }[]) =>

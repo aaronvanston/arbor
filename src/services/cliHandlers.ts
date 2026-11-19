@@ -228,7 +228,8 @@ export const cliHandlers: CliHandlers = {
           provider: entry.provider,
           ...(entry.kind === 'order'
             ? { changes: entry.changes.map((change) => ({ account: named(change.fileName), from: change.from, to: change.to })) }
-            : { account: named(entry.account), models: entry.models, ...(entry.kind === 'fenced' ? { reservePercent: entry.percent } : { why: entry.why }) }),
+            : entry.kind === 'rested' ? { account: named(entry.account) }
+              : { account: named(entry.account), models: entry.models, ...(entry.kind === 'fenced' ? { reservePercent: entry.percent } : { why: entry.why }) }),
           acted: entry.acted ?? false,
         })),
       };

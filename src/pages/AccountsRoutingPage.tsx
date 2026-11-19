@@ -194,6 +194,7 @@ const ACTION_LABEL = {
 export function logText(entry: RoutingLogEntry, names: Record<string, string>): { key: MessageKey; values: Record<string, string | number> } {
   const name = (file: string) => names[file] ?? file;
   const provider = providerLabel[entry.provider as keyof typeof providerLabel] ?? entry.provider;
+  if (entry.kind === 'rested') return { key: 'accounts.routingView.log.rested', values: { name: name(entry.account) } };
   if (entry.kind === 'fenced') return { key: 'accounts.routingView.log.fenced', values: { name: name(entry.account), percent: percentText(entry.percent), model: entry.models.join(', ') } };
   if (entry.kind === 'opened') return { key: entry.why === 'lending' ? 'accounts.routingView.log.lending' : 'accounts.routingView.log.opened', values: { name: name(entry.account), model: entry.models.join(', ') } };
   const [first] = entry.changes;
