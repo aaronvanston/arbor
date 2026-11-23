@@ -450,7 +450,7 @@ pub(super) fn read_layers(files: Vec<(String, LayerPath, Vec<u8>)>, project_skil
     for (rel, path, bytes) in files {
         match path {
             LayerPath::Machine { key, stem, archived } => {
-                // Two files for one machine (eden-dev-01.json and eden_dev_01.json): neither is the one.
+                // Two files for one machine (cedar-02.json and cedar_02.json): neither is the one.
                 if let Some(other) = seen_machines.insert(key.clone(), rel.clone()) {
                     layers.problems.push(LayerProblem { file: rel, problem: format!("is the same machine as {other}, so both are skipped") });
                     layers.machines.retain(|machine| machine.key != key);

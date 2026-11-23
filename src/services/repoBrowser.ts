@@ -58,7 +58,7 @@ export function projectOf(path: string): { project: string; machine: string | nu
   return null;
 }
 
-/** How a machine's own file is named in the repo: its name in lowercase, words joined by dashes ("Eden dev 01" is eden-dev-01). */
+/** How a machine's own file is named in the repo: its name in lowercase, words joined by dashes ("Cedar 02" is cedar-02). */
 export const machineFileStem = (machine: string) => machine.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 /** Where a project's own instructions go in the repo: for every machine, or for one. */

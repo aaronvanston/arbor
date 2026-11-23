@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://arbor.onl/schema/machine.schema.json",
   "title": "Arbor machine",
-  "description": "One machine in the setup repo: machines/<machine>.json. The file name is the machine, compared loosely with the names Arbor shows (eden-dev-01.json is \"Eden dev 01\"). Move the file to machines/_archive/ to keep it on record without syncing.",
+  "description": "One machine in the setup repo: machines/<machine>.json. The file name is the machine, compared loosely with the names Arbor shows (cedar-02.json is \"Cedar 02\"). Move the file to machines/_archive/ to keep it on record without syncing.",
   "type": "object",
   "properties": {
     "$schema": { "type": "string" },

@@ -28,7 +28,7 @@ schema/machine.schema.json, schema/project.schema.json, schema/tools.schema.json
   of Sync already uses. It mirrors the default checkout path, so two repos with the same name can't collide. GitHub
   owners can't start with `_`, so `_local` and `_archive` can never clash with a real owner.
 - **Machine file names.** A machine file is matched to Arbor's machine name the loose way
-  (`normalize_machine_name`), so `eden-dev-01.json` is "Eden dev 01".
+  (`normalize_machine_name`), so `cedar-02.json` is "Cedar 02".
 - **`.agents/projects/<owner>/<name>/`.** It held project instructions before. It's still read, and the new folder wins
   wherever both exist.
 - **`schema/`.** The schemas are Arbor's, embedded in the app. Arbor writes them into the repo when it creates the
@@ -38,11 +38,11 @@ schema/machine.schema.json, schema/project.schema.json, schema/tools.schema.json
 ## Files
 
 ```jsonc
-// machines/eden-dev-01.json
+// machines/cedar-02.json
 {
   "$schema": "../schema/machine.schema.json",
-  "name": "Eden dev 01",          // display name; the file name is the key
-  "host": "eden-dev-01",          // SSH host. Arbor offers to add it when it has no host by that name
+  "name": "Cedar 02",             // display name; the file name is the key
+  "host": "cedar-02",             // SSH host. Arbor offers to add it when it has no host by that name
   "role": "devbox",               // free label; projects can be assigned to "@devbox"
   "codeRoot": "~/code",           // where projects go on this machine (default ~/code)
   "skills":  { "pdf": "off" },    // this machine's own values: on | off | own | removed, as in .agents/*.json
@@ -51,15 +51,15 @@ schema/machine.schema.json, schema/project.schema.json, schema/tools.schema.json
   "tools":   { "node": "own" }       // latest | a version like 22 | own | removed, over .agents/tools.json
 }
 
-// projects/buildpass-au/ledger/project.json
+// projects/acme/web/project.json
 {
   "$schema": "../../../schema/project.schema.json",
-  "remote": "git@github.com:buildpass-au/ledger.git",   // cloned as written; identity is host/owner/name
-  "path": "~/code/buildpass-au/ledger",                 // optional; default <codeRoot>/<owner>/<name>
+  "remote": "git@github.com:acme/web.git",              // cloned as written; identity is host/owner/name
+  "path": "~/code/acme/web",                            // optional; default <codeRoot>/<owner>/<name>
   "branch": "main",                                     // optional; default origin/HEAD
   "machines": {                                         // or "all"
     "@devbox": {},
-    "mac-mini": { "path": "~/src/ledger", "skills": { "pdf": "off" } }
+    "mac-mini": { "path": "~/src/web", "skills": { "pdf": "off" } }
   },
   "skills":  { "grill-me": "off" },
   "mcp":     { "linear": "on" },
