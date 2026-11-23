@@ -253,6 +253,9 @@ pub(crate) struct PassReport {
     pub(crate) fleet_left: bool,
     /// The machine stopped answering partway, and the rest was left for another pass.
     pub(crate) lost: bool,
+    /// Each machine this pass tried, this Mac included, and why it failed when it couldn't be listed or stopped
+    /// answering, so one that failed is tried again less often and one that worked is let go.
+    pub(crate) machines: Vec<(String, Option<String>)>,
 }
 
 fn db_error(error: rusqlite::Error) -> String {

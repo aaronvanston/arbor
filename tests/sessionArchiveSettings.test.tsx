@@ -70,9 +70,9 @@ describe('Settings › Session archive', () => {
         { machine: 'macbook-air', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null },
       ],
       machines: [
-        { machine: 'cedar-01', at: Date.now(), complete: true, error: null, lastOkAt: Date.now() },
-        { machine: 'macbook-air', at: Date.now(), complete: false, error: 'ssh: connect to host macbook-air port 22: Operation timed out', lastOkAt: Date.now() - 20 * 60 * 60_000 },
-        { machine: 'cedar-02', at: Date.now(), complete: false, error: 'ssh: Could not resolve hostname cedar-02', lastOkAt: null },
+        { machine: 'cedar-01', at: Date.now(), complete: true, error: null, lastOkAt: Date.now(), retryAt: null },
+        { machine: 'macbook-air', at: Date.now(), complete: false, error: 'ssh: connect to host macbook-air port 22: Operation timed out', lastOkAt: Date.now() - 20 * 60 * 60_000, retryAt: Date.now() + 40 * 60_000 },
+        { machine: 'cedar-02', at: Date.now(), complete: false, error: 'ssh: Could not resolve hostname cedar-02', lastOkAt: null, retryAt: null },
       ],
     });
     expect(shown).toContain('Keep other machines’ sessions');
@@ -80,6 +80,8 @@ describe('Settings › Session archive', () => {
     expect(shown).toContain('3,480 of 3,480 files kept');
     // The page's clock ticks by the minute, so it may be a minute behind.
     expect(shown).toMatch(/The last check didn’t finish\. macbook-air didn’t answer over SSH\. Check that it’s on and connected\. Last kept (19|20)h ago\./);
+    // Failing pass after pass, it's tried less often, and says when next.
+    expect(shown).toMatch(/Last kept (19|20)h ago\. It’s failed several times in a row, so Arbor tries it less often: next at /);
     // One never reached has no homes yet, only why.
     expect(shown).toContain('Agent homes on cedar-02');
     expect(shown).toContain('The last check didn’t finish. Couldn’t find cedar-02 on the network. Check its name in your SSH config. Nothing kept from it yet.');
