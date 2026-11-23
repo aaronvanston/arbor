@@ -129,7 +129,7 @@ describe('the forecast panel', () => {
     const headline = buildHeadline([{ name: 'a', quota: quota(40) }, { name: 'b', quota: quota(75) }], '7-day window');
     const html = renderToStaticMarkup(
       <I18nProvider>
-        <LimitForecastPanel provider="claude" providerName="Claude" headline={headline} resettable={() => false} />
+        <LimitForecastPanel provider="claude" providerName="Claude" headline={headline} resting={{}} leftOut={[]} resettable={() => false} />
       </I18nProvider>,
     );
     expect(text(html)).toContain('115% / 200% left');
@@ -140,7 +140,7 @@ describe('the forecast panel', () => {
   it('stays away without a headline window', () => {
     const headline = buildHeadline([{ name: 'a', quota: quota(40) }], null);
     expect(renderToStaticMarkup(
-      <I18nProvider><LimitForecastPanel provider="claude" providerName="Claude" headline={headline} resettable={() => false} /></I18nProvider>,
+      <I18nProvider><LimitForecastPanel provider="claude" providerName="Claude" headline={headline} resting={{}} leftOut={[]} resettable={() => false} /></I18nProvider>,
     )).toBe('');
   });
 });

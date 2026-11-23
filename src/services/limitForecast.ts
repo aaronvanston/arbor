@@ -67,31 +67,45 @@ export const FORECAST_HORIZON_OPTIONS = [1, 3, 7, 14] as const;
 
 export type ForecastAccount = PoolAccount & {
   name: string;
+  /** When Arbor paused it at its cap: from then its reading is a reserve, not room to spend. */
+  restingSinceMs?: number;
   /** Resets that refill the forecast's window: the `lots` that do, added up. */
   credits: number;
   /** What the account holds, the one to spend first leading. */
   lots: CreditLot[];
 };
 
+/** An account Arbor paused at its cap: since when, and when it comes back by itself. */
+export type Resting = { pausedAtMs: number; resumeAtMs: number };
+
 /**
- * The accounts a headline's forecast plays forward: those in use with a reading. Turned-off ones can't be spent, so
- * they count toward neither what's left nor the capacity.
+ * The accounts a headline's forecast plays forward: those in use with a reading, and those `resting` (paused at
+ * their cap), which count from when they come back. An account turned off by hand can't be spent, so it counts
+ * toward neither what's left nor the capacity. A resting account's resets aren't planned: it's at its cap, not a
+ * limit, until it's back.
  */
-export function forecastAccounts(headline: Headline, keyOf: (account: Headline['segments'][number]['account']) => string): ForecastAccount[] {
+export function forecastAccounts(
+  headline: Headline,
+  keyOf: (account: Headline['segments'][number]['account']) => string,
+  resting: Readonly<Record<string, Resting>> = {},
+): ForecastAccount[] {
   const labelMs = headline.label ? windowDurationMs(headline.label) : null;
   return headline.segments.flatMap((segment) => {
-    if (segment.off || segment.percent === null) return [];
+    const key = keyOf(segment.account);
+    const rest = segment.off ? resting[key] : undefined;
+    if ((segment.off && !rest) || segment.percent === null) return [];
     const row = segment.row;
     const resetAtMs = row?.resetAtMs !== undefined && Number.isFinite(row.resetAtMs) ? row.resetAtMs : null;
-    const lots = creditLots(segment.account.quota, row?.label ?? headline.label);
+    const lots = rest ? [] : creditLots(segment.account.quota, row?.label ?? headline.label);
     return [{
-      key: keyOf(segment.account),
+      key,
       name: segment.account.name,
       left: Math.max(0, Math.min(100, segment.percent)),
       resetAtMs,
       windowMs: row ? rowWindowMs(row) : labelMs,
       credits: lots.reduce((total, lot) => (lot.refills ? total + lot.count : total), 0),
       lots,
+      ...(rest ? { availableFromMs: rest.resumeAtMs, restingSinceMs: rest.pausedAtMs } : {}),
     }];
   });
 }
@@ -103,12 +117,19 @@ const sameCycle = (before: Reading, after: Reading) => (before.resetAtMs === nul
   ? before.resetAtMs === after.resetAtMs
   : Math.abs(before.resetAtMs - after.resetAtMs) <= SAME_RESET_MS);
 
-/** The accounts' readings, by account, in time order, with the live limits' figure last. */
-function byAccount(trend: LimitTrendAccount[], accounts: ForecastAccount[], nowMs: number) {
-  const keys = new Set(accounts.map((account) => account.key));
+/** One account's readings, in time order. `current` is one in the forecast now, whose live figure ends them. */
+type Series = { key: string; current: boolean; list: Reading[]; restingSinceMs: number | null };
+
+/**
+ * Every account's readings, in time order, with the live limits' figure last for those in the forecast. History is
+ * what happened, so it holds every account that was in use, whatever it is now: one paused at its cap, or since
+ * removed, still spent what it spent. Only `leftOut` (turned off by hand) is dropped.
+ */
+function seriesOf(trend: LimitTrendAccount[], accounts: ForecastAccount[], nowMs: number, leftOut: ReadonlySet<string>): Series[] {
+  const current = new Map(accounts.map((account) => [account.key, account]));
   const grouped = new Map<string, Reading[]>();
   trend.forEach(({ account, readings }) => {
-    if (!keys.has(account)) return;
+    if (leftOut.has(account)) return;
     const list = grouped.get(account) ?? [];
     readings.forEach(([t, left, resetAtMs]) => { if (t <= nowMs) list.push({ t, left, resetAtMs }); });
     grouped.set(account, list);
@@ -120,29 +141,55 @@ function byAccount(trend: LimitTrendAccount[], accounts: ForecastAccount[], nowM
     if (!last || last.t < nowMs) list.push({ t: nowMs, left: account.left, resetAtMs: account.resetAtMs });
     grouped.set(account.key, list);
   });
-  return grouped;
+  return [...grouped].map(([key, list]) => ({
+    key, current: current.has(key), list: list.sort((a, b) => a.t - b.t), restingSinceMs: current.get(key)?.restingSinceMs ?? null,
+  }));
 }
 
 /**
- * The pool's summed figure over time. Each account holds its last reading until the next; before its first, its first
- * stands in, so an account added lately doesn't read as an empty one. Thinned to a few hundred points, with those at
- * the `marked` times kept, and the one before each, so a mark sits on the step it's about.
+ * Whether an account is in the pool at `t`: from its first reading, and to its last for one that's gone since. An
+ * account added lately raises the pool from when it came, as it did.
  */
-export function poolHistory(readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number, marked: number[] = []): PoolPoint[] {
-  const grouped = [...byAccount(readings, accounts, nowMs).values()];
-  const times = [...new Set(grouped.flatMap((list) => list.map((item) => item.t)).filter((t) => t >= sinceMs))].sort((a, b) => a - b);
-  if (!times.length) return [];
-  const cursors = grouped.map(() => 0);
-  const points = times.map((t) => {
-    let left = 0;
-    grouped.forEach((list, index) => {
+const counts = (series: Series, t: number) => {
+  const first = series.list[0];
+  const last = series.list[series.list.length - 1];
+  return first !== undefined && last !== undefined && first.t <= t && (series.current || t <= last.t);
+};
+
+/** How much of the pool could be spent at each of `times`, oldest first, and how many accounts were in it. */
+function poolTotals(series: Series[], times: number[]) {
+  const cursors = series.map(() => 0);
+  return times.map((t) => {
+    let usable = 0;
+    let members = 0;
+    series.forEach((item, index) => {
       let cursor = cursors[index] ?? 0;
-      while (cursor + 1 < list.length && (list[cursor + 1]?.t ?? Number.POSITIVE_INFINITY) <= t) cursor += 1;
+      while (cursor + 1 < item.list.length && (item.list[cursor + 1]?.t ?? Number.POSITIVE_INFINITY) <= t) cursor += 1;
       cursors[index] = cursor;
-      left += list[cursor]?.left ?? 0;
+      if (!counts(item, t)) return;
+      const value = item.list[cursor]?.left ?? 0;
+      members += 1;
+      // Paused at its cap, what an account has left is its reserve, not something to spend.
+      if (item.restingSinceMs === null || t < item.restingSinceMs) usable += value;
     });
-    return { t, left };
+    return { t, usable, members };
   });
+}
+
+/**
+ * The pool's summed figure over time, with its capacity: 100% for each account in it then. Thinned to a few hundred
+ * points, with those at the `marked` times kept, and the one before each, so a mark sits on the step it's about, and
+ * every change of capacity kept.
+ */
+export function poolHistory(
+  readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number, marked: number[] = [],
+  leftOut: ReadonlySet<string> = new Set(),
+): PoolPoint[] {
+  const series = seriesOf(readings, accounts, nowMs, leftOut);
+  const times = [...new Set(series.flatMap((item) => item.list.map((reading) => reading.t)).filter((t) => t >= sinceMs))].sort((a, b) => a - b);
+  if (!times.length) return [];
+  // What could be spent, so the line meets the projection at now: a resting account's reserve isn't.
+  const points: PoolPoint[] = poolTotals(series, times).map(({ t, usable, members }) => ({ t, left: usable, capacity: members * 100 }));
   if (points.length <= MAX_HISTORY_POINTS) return points;
   // Keep the last point of each slice, plus the first, so steps and the live figure stay where they are.
   const slice = (nowMs - (points[0]?.t ?? nowMs)) / MAX_HISTORY_POINTS;
@@ -150,7 +197,7 @@ export function poolHistory(readings: LimitTrendAccount[], accounts: ForecastAcc
   const thinned: PoolPoint[] = [];
   points.forEach((point, index) => {
     const next = points[index + 1];
-    if (index === 0 || !next || keep.has(point.t) || keep.has(next.t)
+    if (index === 0 || !next || keep.has(point.t) || keep.has(next.t) || next.capacity !== point.capacity
       || Math.floor((next.t - sinceMs) / slice) !== Math.floor((point.t - sinceMs) / slice)) thinned.push(point);
   });
   return thinned;
@@ -177,10 +224,12 @@ export type ResetMark = {
  * where the account rose around then; with no rise to show for it (a Fable reset may hand back nothing) it's marked
  * when it was used. Any other rise that the window's own reset doesn't explain is marked as an early refill.
  */
-export function historyMarks(readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number): ResetMark[] {
+export function historyMarks(
+  readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number, leftOut: ReadonlySet<string> = new Set(),
+): ResetMark[] {
   const names = new Map(accounts.map((account) => [account.key, account.name]));
   const marks: ResetMark[] = [];
-  byAccount(readings, accounts, nowMs).forEach((list, key) => {
+  seriesOf(readings, accounts, nowMs, leftOut).forEach(({ key, list }) => {
     const name = names.get(key) ?? key;
     const rises = list.flatMap((after, index) => {
       const before = list[index - 1];
@@ -225,6 +274,11 @@ export function historyMarks(readings: LimitTrendAccount[], accounts: ForecastAc
 export type SpendHistory = {
   /** Percent spent in each hour, oldest first, from `startMs`. */
   hours: number[];
+  /**
+   * The hours the pool spent mostly dry, by the same index: nothing was left to spend, so what was wanted then can't
+   * be read, and the pace leaves them out rather than count them as no demand.
+   */
+  dry: boolean[];
   startMs: number;
   /** The first reading of any account in the pool; nothing before it is known. */
   watchedFromMs: number | null;
@@ -233,11 +287,15 @@ export type SpendHistory = {
 /**
  * How much of the pool was spent each hour. A drop between two readings of one cycle is spread evenly between them,
  * so a gap while Arbor was closed still counts. Across a reset, what's gone since the reset is counted from 100%.
- * A refill that isn't a reset (a credit claimed) counts nothing.
+ * A refill that isn't a reset (a credit claimed) counts nothing. Every account that was in use counts, whatever it is
+ * now: demand that went to an account since paused or removed was still demand.
  */
-export function spendByHour(readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number): SpendHistory {
+export function spendByHour(
+  readings: LimitTrendAccount[], accounts: ForecastAccount[], sinceMs: number, nowMs: number, leftOut: ReadonlySet<string> = new Set(),
+): SpendHistory {
   const startMs = Math.floor(sinceMs / HOUR) * HOUR;
   const hours = Array.from({ length: Math.max(0, Math.ceil((nowMs - startMs) / HOUR)) }, () => 0);
+  const series = seriesOf(readings, accounts, nowMs, leftOut);
   let watchedFromMs: number | null = null;
   const spread = (fromMs: number, toMs: number, amount: number) => {
     if (amount <= 0) return;
@@ -254,7 +312,7 @@ export function spendByHour(readings: LimitTrendAccount[], accounts: ForecastAcc
       t = end;
     }
   };
-  byAccount(readings, accounts, nowMs).forEach((list) => {
+  series.forEach(({ list }) => {
     const watched = list.filter((item) => item.t >= sinceMs);
     const first = watched[0];
     // The live figure alone says nothing about the past.
@@ -271,7 +329,28 @@ export function spendByHour(readings: LimitTrendAccount[], accounts: ForecastAcc
       }
     }
   });
-  return { hours, startMs, watchedFromMs };
+  return { hours, dry: dryHours(series, startMs, hours.length, nowMs), startMs, watchedFromMs };
+}
+
+/** Under this much left to spend, summed across the pool, it's dry: a provider's rounding can leave a sliver. */
+const DRY_PERCENT = 1;
+
+/** The hours from `startMs` that the pool spent at least half of with nothing it could spend. */
+function dryHours(series: Series[], startMs: number, count: number, nowMs: number): boolean[] {
+  const dryMs = Array.from({ length: count }, () => 0);
+  const times = [...new Set(series.flatMap((item) => item.list.map((reading) => reading.t)).filter((t) => t >= startMs))].sort((a, b) => a - b);
+  const totals = poolTotals(series, times);
+  totals.forEach((total, index) => {
+    if (!total.members || total.usable > DRY_PERCENT) return;
+    const until = totals[index + 1]?.t ?? nowMs;
+    for (let t = total.t; t < until;) {
+      const hour = Math.floor((t - startMs) / HOUR);
+      const end = Math.min(until, startMs + (hour + 1) * HOUR);
+      if (hour >= 0 && hour < count) dryMs[hour] = (dryMs[hour] ?? 0) + end - t;
+      t = end;
+    }
+  });
+  return dryMs.map((ms) => ms >= HOUR / 2);
 }
 
 export type Burn = {
@@ -307,9 +386,14 @@ export function burnRate(spend: SpendHistory, accounts: ForecastAccount[], setti
     ({ basis, fellBack, perHour: Math.max(0, perHour), rateAt: () => Math.max(0, perHour) / HOUR });
   if (settings.ratePerHour !== null && settings.ratePerHour >= 0) return steady('manual', settings.ratePerHour);
   const total = (fromMs: number) => spend.hours.reduce((sum, value, index) => (spend.startMs + (index + 1) * HOUR > fromMs ? sum + value : sum), 0);
+  // Hours the pool sat dry say nothing about demand, so they're no part of the time averaged over.
+  const dryMs = (fromMs: number) => spend.dry.reduce((sum, dry, index) => {
+    const hourMs = spend.startMs + index * HOUR;
+    return dry ? sum + Math.max(0, Math.min(nowMs, hourMs + HOUR) - Math.max(fromMs, hourMs)) : sum;
+  }, 0);
   const watched = spend.watchedFromMs;
   const recentFrom = Math.max(nowMs - settings.lookbackDays * DAY, watched ?? nowMs);
-  const recentMs = nowMs - recentFrom;
+  const recentMs = nowMs - recentFrom - dryMs(recentFrom);
   const recent = recentMs >= MIN_WATCHED_MS ? (total(recentFrom) / recentMs) * HOUR : null;
   const wantsWeekly = settings.model === 'weekly';
   if (recent === null) return steady('window', windowRatePerHour(accounts, nowMs), wantsWeekly);
@@ -320,7 +404,7 @@ export function burnRate(spend: SpendHistory, accounts: ForecastAccount[], setti
   const seen = Array.from({ length: 168 }, () => 0);
   spend.hours.forEach((value, index) => {
     const t = spend.startMs + index * HOUR;
-    if (t < watched || t >= nowMs) return;
+    if (t < watched || t >= nowMs || spend.dry[index]) return;
     const slot = hourOfWeek(t);
     spent[slot] = (spent[slot] ?? 0) + value;
     seen[slot] = (seen[slot] ?? 0) + 1;
@@ -538,10 +622,13 @@ export function buildForecast(input: {
   /** How far back the chart starts. */
   historyMs: number;
   nowMs: number;
+  /** Accounts turned off by hand: left out of the history too, as if they'd never been in the pool. */
+  leftOut?: readonly string[];
 }): Forecast {
   const { accounts, readings, settings, horizonDays, historyMs, nowMs } = input;
+  const leftOut = new Set(input.leftOut ?? []);
   const horizonEndMs = nowMs + horizonDays * DAY;
-  const spend = spendByHour(readings, accounts, nowMs - FORECAST_HISTORY_MS, nowMs);
+  const spend = spendByHour(readings, accounts, nowMs - FORECAST_HISTORY_MS, nowMs, leftOut);
   const burn = burnRate(spend, accounts, settings, nowMs);
   const simulate = (pool: ForecastAccount[], claims: { key: string; atMs: number }[], points = false, scale = 1) => simulatePool(pool, {
     startMs: nowMs,
@@ -631,7 +718,7 @@ export function buildForecast(input: {
   const refillGain = refill ? projection.events
     .filter((event) => Math.abs(event.atMs - refill.atMs) <= SAME_MOMENT_MS)
     .reduce((total, event) => total + 100 - event.before, 0) : 0;
-  const used = historyMarks(readings, accounts, nowMs - historyMs, nowMs);
+  const used = historyMarks(readings, accounts, nowMs - historyMs, nowMs, leftOut);
   // The plan's own claims, named as the advice names them.
   const spends = (withResets?.events ?? []).flatMap((event): ResetMark[] => {
     if (event.kind !== 'credit') return [];
@@ -640,9 +727,10 @@ export function buildForecast(input: {
   });
   return {
     capacity: accounts.length * 100,
-    left: accounts.reduce((total, account) => total + account.left, 0),
+    // What can be spent now: a resting account's reading is its reserve until it's back.
+    left: accounts.reduce((total, account) => total + ((account.availableFromMs ?? nowMs) <= nowMs ? account.left : 0), 0),
     burn,
-    history: poolHistory(readings, accounts, nowMs - historyMs, nowMs, used.map((mark) => mark.atMs)),
+    history: poolHistory(readings, accounts, nowMs - historyMs, nowMs, used.map((mark) => mark.atMs), leftOut),
     spend,
     projection,
     withResets,

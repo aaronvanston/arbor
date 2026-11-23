@@ -3,7 +3,7 @@ import { useI18n } from '../i18n';
 import { formatDate, formatDateTime, formatNumber } from '../lib/format';
 import { cn } from '../lib/utils';
 import {
-  areaUnder, dayTicks, diamondPath, dryStretches, groupHours, heldValueAt, hourStarts, keyStep, lineValueAfter, lineValueAt, markSpots, spotNear,
+  areaUnder, capacityLine, dayTicks, diamondPath, dryStretches, groupHours, heldValueAt, hourStarts, keyStep, lineValueAfter, lineValueAt, markSpots, spotNear,
   stepLine, straightLine, type ChartScale,
 } from '../services/forecastChart';
 import type { Forecast } from '../services/limitForecast';
@@ -36,7 +36,8 @@ export type ForecastTab = 'remaining' | 'drain';
  * The forecast chart. Remaining: the pool's history as a solid stepped line, the projection (no resets spent) dashed,
  * dry stretches shaded, and a diamond where a reset was used: filled for one on record, hollow for a refill with
  * none. A suggested reset is a fainter diamond where the pool runs dry, with a dotted line from it for the pool with
- * it spent. Drain rate: what was spent each hour, with the rate the forecast expects ahead dashed.
+ * it spent. When the pool's capacity changed over the history (an account added, paused or removed), a faint stepped
+ * line at the top says so. Drain rate: what was spent each hour, with the rate the forecast expects ahead dashed.
  */
 export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: {
   forecast: Forecast;
@@ -69,7 +70,7 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
     if (!width) return null;
     const x = (time: number) => ((time - startMs) / Math.max(1, endMs - startMs)) * width;
     if (tab === 'remaining') {
-      const max = Math.max(100, forecast.capacity);
+      const max = Math.max(100, forecast.capacity, ...forecast.history.map((point) => point.capacity ?? 0));
       const ticks = [0, 0.25, 0.5, 0.75, 1].map((share) => share * max);
       const y = (value: number) => PAD_TOP + (1 - Math.max(0, Math.min(max, value)) / max) * (HEIGHT - PAD_TOP);
       const scale: ChartScale = { x, y };
@@ -89,6 +90,7 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
         kind: 'remaining' as const, ticks, y,
         historyLine, historyArea: areaUnder(historyLine, history, scale, HEIGHT),
         projectionLine, projectionArea: areaUnder(projectionLine, projection, scale, HEIGHT), planLine,
+        capacityLine: capacityLine(history, forecast.capacity, endMs, scale),
         dry: dryStretches(projection).map((stretch) => ({ left: x(stretch.from), right: x(stretch.to) })),
         spots,
         x,
@@ -227,6 +229,9 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
                   {chart.historyArea ? <path d={chart.historyArea} fill={`url(#${fillId})`} /> : null}
                   {chart.projectionLine ? (
                     <path d={chart.projectionLine} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="5,4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                  ) : null}
+                  {chart.capacityLine ? (
+                    <path d={chart.capacityLine} fill="none" stroke="var(--muted-foreground)" strokeOpacity="0.7" strokeWidth="1" strokeDasharray="1,3" vectorEffect="non-scaling-stroke" data-line="capacity" />
                   ) : null}
                   {chart.planLine ? (
                     <path d={chart.planLine} fill="none" stroke="currentColor" strokeOpacity="0.55" strokeWidth="1.25" strokeDasharray="1.5,3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" data-line="with-resets" />

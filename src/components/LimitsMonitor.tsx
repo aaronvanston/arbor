@@ -4,7 +4,7 @@ import { useI18n } from '../i18n';
 import { useAppPreferences } from '../appPreferences';
 import { recordLimitReadings, unrecordedLimitReadings } from '../services/accountLimitHistory';
 import { freshQuotas, partialHeadline, useAccountLimitPrefs, type PaceTone } from '../services/accountLimits';
-import { useAccountReserves } from '../services/accountReserves';
+import { getAccountReserves, useAccountReserves } from '../services/accountReserves';
 import { providersWithNewAccounts, useModelAccess, useReservePolicies } from '../services/extraModelHold';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { useAccountOrder } from '../services/accountOrder';
@@ -559,7 +559,11 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         if (!accounts.length) continue;
         const readings = await loadLimitTrend(limit.provider, label).catch(() => []);
         const nowMs = Date.now();
-        const forecast = buildForecast({ accounts, readings, settings, horizonDays: FORECAST_ALERT_HORIZON_DAYS, historyMs: 0, nowMs });
+        // Turned off by hand, an account is out of the history too; one paused at its cap still spent what it spent.
+        const { paused } = getAccountReserves();
+        const leftOut = getAccountsSnapshot().disabled
+          .filter((file) => providerForFile(file) === limit.provider && !paused[quotaKey(file)]).map(quotaKey);
+        const forecast = buildForecast({ accounts, readings, settings, horizonDays: FORECAST_ALERT_HORIZON_DAYS, historyMs: 0, nowMs, leftOut });
         const alert = forecastAlert(limit.provider, forecast, nowMs);
         // The alert's line says "when it runs out", which a reset spent early or after a change of order isn't.
         const claim = forecast.advice.find((item) => item.kind === 'claim' && item.early === undefined && !item.first);

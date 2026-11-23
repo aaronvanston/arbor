@@ -383,6 +383,7 @@ export const en = {
   'forecast.series.refilledEarly': 'Refilled early',
   'forecast.series.resetSuggested': 'Suggested reset',
   'forecast.series.withResets': 'With suggested resets',
+  'forecast.series.capacity': 'Accounts in the pool',
   'forecast.now': 'Now',
   'forecast.dryBand': 'Dry',
   'forecast.chart.aria': 'What is left of the {provider} pool over time, with the forecast ahead',

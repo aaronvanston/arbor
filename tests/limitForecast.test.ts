@@ -85,8 +85,31 @@ describe('limit history', () => {
   test('adds the accounts up, holding each reading until the next', () => {
     const accounts = [account('a', 60, 72), account('b', 100, 72)];
     const points = poolHistory(trend([reading('a', 10, 90), reading('b', 5, 100), reading('a', 2, 70)]), accounts, NOW - DAY, NOW);
-    // b's first reading stands in before it; the live figures end it.
-    expect(points.map((point) => point.left)).toEqual([190, 190, 170, 160]);
+    // b joins the pool at its first reading, raising its capacity; the live figures end it.
+    expect(points.map((point) => [point.left, point.capacity])).toEqual([[90, 100], [190, 200], [170, 200], [160, 200]]);
+  });
+
+  test('keeps an account that has left the pool in the history up to when it left, unless it was turned off by hand', () => {
+    // `gone` was paused or removed four hours ago: it's not in the forecast now, but it was spent until then.
+    const accounts = [account('a', 50, 72)];
+    const readings = trend([reading('a', 10, 80), reading('gone', 10, 90), reading('gone', 4, 30), reading('a', 4, 70)]);
+    const points = poolHistory(readings, accounts, NOW - DAY, NOW);
+    expect(points.map((point) => [Math.round((NOW - point.t) / HOUR), point.left, point.capacity])).toEqual([[10, 170, 200], [4, 100, 200], [0, 50, 100]]);
+    const spent = spendByHour(readings, accounts, NOW - DAY, NOW).hours.reduce((sum, value) => sum + value, 0);
+    // 60 spent on gone, 30 on a: the demand gone served is still demand.
+    expect(spent).toBeCloseTo(90, 6);
+    // Turned off by hand, it's as if it had never been in the pool.
+    expect(poolHistory(readings, accounts, NOW - DAY, NOW, [], new Set(['gone'])).map((point) => point.left)).toEqual([80, 70, 50]);
+    expect(spendByHour(readings, accounts, NOW - DAY, NOW, new Set(['gone'])).hours.reduce((sum, value) => sum + value, 0)).toBeCloseTo(30, 6);
+  });
+
+  test('leaves hours the pool sat dry out of the pace, rather than reading them as no demand', () => {
+    // 50 spent over 10 hours, then 10 hours at nothing.
+    const accounts = [account('a', 0, 72)];
+    const readings = trend([reading('a', 20, 50), reading('a', 10, 0)]);
+    const spend = spendByHour(readings, accounts, NOW - DAY, NOW);
+    expect(spend.dry.filter(Boolean)).toHaveLength(10);
+    expect(burnRate(spend, accounts, settings({ lookbackDays: 1 }), NOW).perHour).toBeCloseTo(5, 6);
   });
 
   test('counts drops within a cycle and what was used after a reset, never the refill', () => {
@@ -147,8 +170,8 @@ describe('resets on the chart', () => {
       // Codex has one kind of reset, so it goes unnamed.
       { atMs: NOW - 2 * HOUR, key: 'b', name: 'b', how: 'used', gain: 100 },
     ]);
-    // An account that's turned off is in neither the line nor its marks.
-    expect(historyMarks(readings, [account('b', 99, 7 * 24 - 2)], NOW - 2 * DAY, NOW).map((mark) => mark.key)).toEqual(['b']);
+    // An account turned off by hand is in neither the line nor its marks.
+    expect(historyMarks(readings, [account('b', 99, 7 * 24 - 2)], NOW - 2 * DAY, NOW, new Set(['a'])).map((mark) => mark.key)).toEqual(['b']);
   });
 
   test('gives each reset the rise read nearest it', () => {
@@ -396,6 +419,26 @@ describe('forecast accounts', () => {
     status: 'success',
     rows: [{ label: '7-day window', remainingPercent: remaining, resetAtMs: NOW + DAY }],
     ...extra,
+  });
+
+  test('counts an account paused at its cap from when it comes back, and plans none of its resets', () => {
+    const headline = buildHeadline([{ name: 'a', quota: quota(40) }], '7-day window', [{ name: 'c', quota: quota(30, { resetCredits: 1, resetCreditsApplicable: 1 }) }]);
+    const accounts = forecastAccounts(headline, (item) => item.name, { c: { pausedAtMs: NOW - HOUR, resumeAtMs: NOW + DAY } });
+    expect(accounts.map((item) => [item.key, item.left, item.credits, item.availableFromMs, item.restingSinceMs])).toEqual([
+      ['a', 40, 0, undefined, undefined], ['c', 30, 0, NOW + DAY, NOW - HOUR],
+    ]);
+    // a alone is spent until c is back: at 2% an hour the pool is dry from 20h until a day, when c resets and returns.
+    const forecast = buildForecast({ accounts, readings: [], settings: settings({ ratePerHour: 2 }), horizonDays: 2, historyMs: DAY, nowMs: NOW });
+    expect(forecast.projection.dryAtMs).toBe(NOW + 20 * HOUR);
+    expect(forecast.projection.dryMs).toBe(4 * HOUR);
+    // c's 30% is its reserve: neither what's left now nor in the line until it's back, when the line steps up.
+    expect(forecast.capacity).toBe(200);
+    expect(forecast.left).toBe(40);
+    const atReturn = forecast.projection.points.filter((point) => point.t === NOW + DAY).map((point) => point.left);
+    expect([atReturn[0], lastItem(atReturn)]).toEqual([0, 200]);
+    // In the history, its reading stops counting as room when it was paused.
+    const history = poolHistory(trend([reading('a', 2, 44), reading('c', 2, 30)]), accounts, NOW - DAY, NOW);
+    expect(history.map((point) => [Math.round((NOW - point.t) / HOUR), point.left, point.capacity])).toEqual([[2, 74, 200], [0, 40, 200]]);
   });
 
   test('leaves out turned-off accounts and counts only credits that can be planned', () => {

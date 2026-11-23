@@ -39,6 +39,16 @@ export function stepLine(points: PoolPoint[], scale: ChartScale): string {
   }).join('');
 }
 
+/**
+ * The pool's capacity over the history as a stepped line, carried on to `endMs` at `now`: drawn only when it changed,
+ * as when an account was added, paused or removed. Empty when it never did.
+ */
+export function capacityLine(points: PoolPoint[], now: number, endMs: number, scale: ChartScale): string {
+  const steps = points.flatMap((point) => (point.capacity === undefined ? [] : [{ t: point.t, left: point.capacity }]));
+  if (!steps.some((point) => point.left !== now)) return '';
+  return stepLine([...steps, { t: endMs, left: now }], scale);
+}
+
 /** The projection as a straight line through each step, with resets as the steps they are. */
 export function straightLine(points: PoolPoint[], scale: ChartScale): string {
   return points.map((point, index) => `${index ? 'L' : 'M'}${round(scale.x(point.t))},${round(scale.y(point.left))}`).join('');

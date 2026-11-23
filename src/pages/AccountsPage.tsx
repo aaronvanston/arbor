@@ -525,6 +525,8 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                     provider={provider}
                     providerName={providerMeta[provider].label}
                     headline={headline}
+                    resting={Object.fromEntries(paused.map((item) => [item.key, { pausedAtMs: item.paused.pausedAtMs, resumeAtMs: item.paused.resumeAtMs }]))}
+                    leftOut={off.map((item) => item.key)}
                     resettable={(key, reset) => {
                       const account = accounts.find((item) => item.key === key);
                       return account !== undefined && resetReadyFor(account.file, account.quota, reset) !== null;

@@ -50,8 +50,12 @@ only ever suggested: the forecast's advice says so and the account order points 
 forecast draws and what automatic order applies keep every account in its turn. The order moves it only with "Use up
 accounts with a reset about to lapse first" turned on. The two make the same call, so change them together.
 
-Spend is read from the limit history as drops between readings of one cycle. An account sitting at 0% shows no drop, so
-hours a pool spent dry read as no demand, and a pool that keeps running dry is forecast a little short. Advice only ever
+Spend is read from the limit history as drops between readings of one cycle. The history and the pace hold every
+account that was in use at the time, whatever it is now: demand that went to an account since paused at its cap or
+removed was still demand, and dropping it would rewrite the past and slow the pace each time one pauses. Only an account
+turned off by hand is left out of both. An account sitting at 0% shows no drop, so hours the pool spent dry are left out
+of the pace rather than read as no demand. An account paused at its cap is in the pool's capacity but not what's left:
+its reading is a reserve until Arbor turns it back on, and the projection counts it from then. Advice only ever
 suggests a reset. Claims stay behind the confirmation on Accounts, and nothing in the forecast spends one.
 
 A reset is suggested for the moment the whole pool runs dry, never for when one account does: until then the proxy

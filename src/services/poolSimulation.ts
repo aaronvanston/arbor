@@ -5,7 +5,8 @@
  * The proxy moves to another account when one empties, so spending takes the account that resets soonest first, as
  * soonest-reset-first routing does. Each account refills to 100% at its reset and every window after. Accounts with no
  * known reset are spent last and never refill. An account holding a reset that lapses before its window resets can be
- * spent ahead of its turn (`useBy`), which the account order does too, so it reaches a limit in time to use it.
+ * spent ahead of its turn (`useBy`), which the account order does too, so it reaches a limit in time to use it. An
+ * account paused at its cap can't be spent until it's back (`availableFromMs`), though it still resets.
  */
 
 export type PoolAccount = {
@@ -21,9 +22,12 @@ export type PoolAccount = {
    * the account is spent as if its window reset then, as the account order puts it, and each claim spends one.
    */
   useBy?: number[];
+  /** When it can be spent from: an account paused at its cap is out of the pool until Arbor turns it back on. */
+  availableFromMs?: number;
 };
 
-export type PoolPoint = { t: number; left: number };
+/** The pool's total at a moment, and in the history its capacity then: 100% for each account in it. */
+export type PoolPoint = { t: number; left: number; capacity?: number };
 export type PoolEvent = { atMs: number; key: string; kind: 'reset' | 'credit'; /** Percent left just before. */ before: number };
 
 export type PoolRun = {
@@ -84,10 +88,12 @@ export function simulatePool(start: PoolAccount[], options: PoolOptions): PoolRu
   /** What an account is spent ahead of: its window's reset, or a reset it holds lapsing before that. */
   const dueMs = (account: (typeof pool)[number], atMs: number) =>
     Math.min(account.resetAtMs ?? Number.POSITIVE_INFINITY, account.useBy.find((lapse) => lapse > atMs) ?? Number.POSITIVE_INFINITY);
-  // A refill records the pool just before and just after it, so it draws as a step rather than a slope.
-  const record = (t: number) => {
+  // A refill records the pool just before and just after it, so it draws as a step rather than a slope. The pool is
+  // what can be spent: an account paused at its cap joins it when it's back, as a step too (`before` is the moment
+  // just before that).
+  const record = (t: number, before = false) => {
     if (!options.points) return;
-    const left = sum(pool);
+    const left = sum(pool.filter((account) => (before ? (account.availableFromMs ?? t) < t : (account.availableFromMs ?? t) <= t)));
     const last = run.points[run.points.length - 1];
     if (!last || last.t !== t || last.left !== left) run.points.push({ t, left });
   };
@@ -101,6 +107,7 @@ export function simulatePool(start: PoolAccount[], options: PoolOptions): PoolRu
   record(startMs);
   let time = startMs;
   while (time < endMs) {
+    if (pool.some((account) => account.availableFromMs === time)) record(time, true);
     // Resets and set claims due now.
     pool.forEach((account) => {
       while (account.resetAtMs !== null && account.windowMs !== null && account.windowMs > 0 && account.resetAtMs <= time) {
@@ -121,12 +128,13 @@ export function simulatePool(start: PoolAccount[], options: PoolOptions): PoolRu
     const nextStep = Number.isFinite(stepMs) ? (Math.floor(time / stepMs) + 1) * stepMs : Number.POSITIVE_INFINITY;
     // A lapse changes the order, so a step ends there too.
     const nextLapse = Math.min(...pool.map((account) => account.useBy.find((lapse) => lapse > time) ?? Number.POSITIVE_INFINITY));
-    const until = Math.min(endMs, nextReset, nextStep, nextLapse, claims[0]?.atMs ?? Number.POSITIVE_INFINITY);
+    const nextBack = Math.min(...pool.map((account) => ((account.availableFromMs ?? time) > time ? account.availableFromMs ?? time : Number.POSITIVE_INFINITY)));
+    const until = Math.min(endMs, nextReset, nextStep, nextLapse, nextBack, claims[0]?.atMs ?? Number.POSITIVE_INFINITY);
     const perMs = Math.max(0, rate(time));
     let need = perMs * (until - time);
     let spent = 0;
     if (need > 0) {
-      const order = [...pool].sort((a, b) => dueMs(a, time) - dueMs(b, time));
+      const order = pool.filter((account) => (account.availableFromMs ?? time) <= time).sort((a, b) => dueMs(a, time) - dueMs(b, time));
       for (let index = 0; index < order.length && need > 0; index += 1) {
         const account = order[index];
         if (!account) break;

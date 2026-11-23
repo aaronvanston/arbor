@@ -6,7 +6,7 @@ import { cn } from '../lib/utils';
 import type { Headline } from '../services/accountLimits';
 import { diamondPath } from '../services/forecastChart';
 import {
-  buildForecast, forecastAccounts, FORECAST_HORIZON_OPTIONS, type Advice, type Forecast, type ResetMark,
+  buildForecast, forecastAccounts, FORECAST_HORIZON_OPTIONS, type Advice, type Forecast, type ResetMark, type Resting,
 } from '../services/limitForecast';
 import {
   forecastHistoryMs, forecastSettingsFrom, setForecastFolded, setForecastView, useForecastView, useLimitTrend,
@@ -31,10 +31,14 @@ const rate = (value: number) => `${value < 10 ? value.toFixed(1) : Math.round(va
  * The forecast under a provider's headline on Accounts › Limits: what's left of the pool, how fast it drains, when it
  * runs dry or that it lasts, and what to do about it. Folds to its first line.
  */
-export function LimitForecastPanel({ provider, providerName, headline, resettable, onReset, onOpenSettings }: {
+export function LimitForecastPanel({ provider, providerName, headline, resting, leftOut, resettable, onReset, onOpenSettings }: {
   provider: string;
   providerName: string;
   headline: Headline;
+  /** Accounts Arbor paused at their cap, by key: counted from when they come back. */
+  resting: Readonly<Record<string, Resting>>;
+  /** Accounts turned off by hand, by key: out of the history too. */
+  leftOut: readonly string[];
   /** Whether an account is at a limit with a reset it can use now: the kind of Claude reset given, or any. */
   resettable: (key: string, reset?: ClaudeResetKind) => boolean;
   onReset?: (key: string, reset?: ClaudeResetKind) => void;
@@ -47,17 +51,19 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
   const settings = forecastSettingsFrom(preferences);
   const folded = view.folded[provider] === true;
   const keyOf = (account: Headline['segments'][number]['account']) => ('key' in account && typeof account.key === 'string' ? account.key : account.name);
-  const accounts = useMemo(() => forecastAccounts(headline, keyOf), [headline]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `resting` is rebuilt each render; its entries are what matter.
+  const accounts = useMemo(() => forecastAccounts(headline, keyOf, resting), [headline, JSON.stringify(resting)]);
+  const leftOutKey = leftOut.join('\u0000');
   // Read again after each refresh, which the latest reading time marks.
   const version = Math.max(0, ...headline.segments.map((segment) => segment.account.quota.fetchedAt ?? 0));
   const trend = useLimitTrend(provider, headline.label, version);
   const historyMs = forecastHistoryMs(view.horizonDays, trend.readings, nowMs);
   const forecast = useMemo(() => (trend.readings === null ? null : buildForecast({
-    accounts, readings: trend.readings, settings, horizonDays: view.horizonDays, historyMs, nowMs,
+    accounts, readings: trend.readings, settings, horizonDays: view.horizonDays, historyMs, nowMs, leftOut,
   })),
   // Settings are rebuilt every render from the preferences; their fields are what matter.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [accounts, trend.readings, settings.model, settings.lookbackDays, settings.ratePerHour, view.horizonDays, historyMs, nowMs]);
+  [accounts, trend.readings, settings.model, settings.lookbackDays, settings.ratePerHour, view.horizonDays, historyMs, nowMs, leftOutKey]);
 
   if (!headline.label || !accounts.length) return null;
   const dryAtMs = forecast?.projection.dryAtMs ?? null;
@@ -128,7 +134,7 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
               <Toggle value="remaining">{t('forecast.tabs.remaining')}</Toggle>
               <Toggle value="drain">{t('forecast.tabs.drain')}</Toggle>
             </ToggleGroup>
-            <Legend tab={view.tab} marks={forecast.marks} />
+            <Legend tab={view.tab} marks={forecast.marks} capacityChanged={forecast.history.some((point) => point.capacity !== undefined && point.capacity !== forecast.capacity)} />
           </div>
           <LimitForecastChart forecast={forecast} provider={providerName} tab={view.tab} nowMs={nowMs} startMs={nowMs - historyMs} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -163,7 +169,7 @@ function MarkSwatch({ hollow = false, faint = false }: { hollow?: boolean; faint
 }
 
 /** What the chart draws. The marks are named only while the chart has one of them. */
-function Legend({ tab, marks }: { tab: ForecastTab; marks: ResetMark[] }) {
+function Legend({ tab, marks, capacityChanged }: { tab: ForecastTab; marks: ResetMark[]; capacityChanged: boolean }) {
   const { t } = useI18n();
   const shown = tab === 'remaining' ? marks : [];
   return (
@@ -176,6 +182,9 @@ function Legend({ tab, marks }: { tab: ForecastTab; marks: ResetMark[] }) {
         <span className="w-3 border-t-2 border-dashed border-primary" />
         {t(tab === 'remaining' ? 'forecast.series.projected' : 'forecast.series.rate')}
       </span>
+      {tab === 'remaining' && capacityChanged ? (
+        <span className="inline-flex items-center gap-1.5"><span className="w-3 border-t border-dotted border-muted-foreground" />{t('forecast.series.capacity')}</span>
+      ) : null}
       {shown.some((mark) => mark.how === 'used') ? (
         <span className="inline-flex items-center gap-1.5"><MarkSwatch />{t('forecast.series.resetUsed')}</span>
       ) : null}
