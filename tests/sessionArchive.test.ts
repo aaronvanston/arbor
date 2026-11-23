@@ -99,8 +99,8 @@ describe('the session archive', () => {
     const groups = sourcesByMachine([source({ machine: 'mini', label: 'a' }), source({ machine: 'air', label: 'b' }), source({ machine: 'mini', label: 'c' })]);
     expect(groups.map((group) => [group.machine, group.sources.map((item) => item.label)])).toEqual([['mini', ['a', 'c']], ['air', ['b']]]);
     // A machine tried but never reached still gets a group, to say why; each group has its machine's last pass.
-    const air = { machine: 'air', at: 2_000, complete: false, error: 'ssh: timed out', lastOkAt: 1_000 };
-    const cedar = { machine: 'cedar', at: 2_000, complete: false, error: 'ssh: no route', lastOkAt: null };
+    const air = { machine: 'air', at: 2_000, complete: false, error: 'ssh: timed out', lastOkAt: 1_000, retryAt: null };
+    const cedar = { machine: 'cedar', at: 2_000, complete: false, error: 'ssh: no route', lastOkAt: null, retryAt: null };
     const tried = sourcesByMachine([source({ machine: 'mini', label: 'a' }), source({ machine: 'air', label: 'b' })], [air, cedar]);
     expect(tried.map((group) => [group.machine, group.sources.length, group.run?.error ?? null])).toEqual([['mini', 1, null], ['air', 1, 'ssh: timed out'], ['cedar', 0, 'ssh: no route']]);
   });

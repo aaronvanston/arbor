@@ -12,7 +12,10 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
 - **Index.** `archive.db`, kept in the app's `session-archive/` folder, plus the store's `journal/`, hold ids, paths,
   sizes, hashes and times only.
 - **Collection.** This Mac's agent homes are read from disk; each other machine's over SSH by `archive/remote.rs`,
-  after this Mac's. `archive/imports.rs` takes in old backups of agent homes the user picks, and `archive/layouts.rs`
+  after this Mac's. Every machine is listed at once and each is kept as its listing comes in, so a machine that is slow
+  or fails holds up and fails only itself: it's noted in its own run and tried again less often (the pass interval,
+  doubling, up to an hour). This Mac failing to list still puts the archive in error, since nothing else watches it,
+  but the other machines go on. `archive/imports.rs` takes in old backups of agent homes the user picks, and `archive/layouts.rs`
   finds backups in other shapes (OpenClaw, Claude's desktop app).
 - **Links.** A live home's links are followed, since a rollout moved to another disk and linked back is still that
   home's. A backup's aren't: it can come from anywhere, so `imports::confine` keeps only files that resolve inside their

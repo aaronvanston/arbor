@@ -39,10 +39,11 @@ const fleetRuns = (share: number): ArchiveMachineRun[] => {
   if (archiveMachinesScenario === 'none' || share === 0) return [];
   // cam-mbp is this Mac, which the archive reads directly, so it never has an SSH pass of its own.
   return [
-    { machine: 'cedar-02', at: now - 3 * 60_000, complete: true, error: null, lastOkAt: now - 3 * 60_000 },
+    { machine: 'cedar-02', at: now - 3 * 60_000, complete: true, error: null, lastOkAt: now - 3 * 60_000, retryAt: null },
     archiveMachinesScenario === 'new'
-      ? { machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: Could not resolve hostname ci-01: nodename nor servname provided', lastOkAt: null }
-      : { machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: connect to host ci-01 port 22: Operation timed out', lastOkAt: now - 20 * 60 * 60_000 },
+      ? { machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: Could not resolve hostname ci-01: nodename nor servname provided', lastOkAt: null, retryAt: null }
+      // Timing out every pass since, so it's tried less often.
+      : { machine: 'ci-01', at: now - 3 * 60_000, complete: false, error: 'ssh: connect to host ci-01 port 22: Operation timed out', lastOkAt: now - 20 * 60 * 60_000, retryAt: now + 37 * 60_000 },
   ];
 };
 

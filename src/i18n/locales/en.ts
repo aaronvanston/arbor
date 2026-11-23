@@ -1323,6 +1323,7 @@ export const en = {
   'sessionArchive.homes.failed': 'The last check didn’t finish. {error}',
   'sessionArchive.homes.lastKept': 'Last kept {time}.',
   'sessionArchive.homes.neverKept': 'Nothing kept from it yet.',
+  'sessionArchive.homes.retryAt': 'It’s failed several times in a row, so Arbor tries it less often: next at {time}.',
   'sessionArchive.homes.leftOut': 'Left out, so Arbor no longer checks it. What it kept stays.',
   'sessionArchive.analytics.title': 'Analytics',
   'sessionArchive.analytics.description': 'Tables of the sessions kept here: every message, model call, tool call and command. Agents and scripts query them with arbor query. They sit in the archive folder and can always be made again from what’s kept.',

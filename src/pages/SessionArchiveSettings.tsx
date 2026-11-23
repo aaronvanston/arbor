@@ -20,7 +20,7 @@ import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Spinner } from '../components/ui/spinner';
 import { StatusPill } from '../components/ui/status-dot';
 import { Switch } from '../components/ui/switch';
-import { formatAgo, formatNumber } from '../lib/format';
+import { formatAgo, formatNumber, formatWhen } from '../lib/format';
 import { formatBytes } from '../services/machineHealth';
 import { useQuotaClock } from '../services/quotaTime';
 import { errorWords, plainError } from '../services/plainError';
@@ -472,6 +472,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
             <span className="text-error-foreground">
               {t('sessionArchive.homes.failed', { error: plainError(failed, t) })}{' '}
               {group.run.lastOkAt !== null ? t('sessionArchive.homes.lastKept', { time: formatAgo(group.run.lastOkAt, now) }) : t('sessionArchive.homes.neverKept')}
+              {group.run.retryAt !== null && group.run.retryAt > now ? ` ${t('sessionArchive.homes.retryAt', { time: formatWhen(group.run.retryAt, { now }) })}` : null}
             </span>
           ) : undefined}
         >

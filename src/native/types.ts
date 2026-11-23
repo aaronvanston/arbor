@@ -441,6 +441,10 @@ export type ArchiveMachineRun = {
    * The last time it went without an error.
    */
   lastOkAt: number | null,
+  /**
+   * When it's tried again, while it's waiting longer than the next pass after failing several times in a row.
+   */
+  retryAt: number | null,
 };
 
 /**

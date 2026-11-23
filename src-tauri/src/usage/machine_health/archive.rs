@@ -60,6 +60,11 @@ const ANALYTICS_MAX_TIME: Duration = Duration::from_secs(2 * 60);
 const READ_RATE: u64 = 100_000_000;
 const GENTLE_READ_RATE: u64 = 30_000_000;
 const LIST_TIMEOUT: Duration = Duration::from_secs(120);
+/// A machine that failed this many times in a row waits longest between tries: a pass's interval doubled each time
+/// after the first, up to this.
+const RETRY_AT_MOST: Duration = Duration::from_secs(60 * 60);
+/// A try due within this of a pass's start is made in that pass, so one due at the next pass isn't put off by a second.
+const RETRY_SLACK_MS: i64 = 60_000;
 const RUNS_KEPT_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -205,6 +210,34 @@ struct Runtime {
     last_error: Option<String>,
     /// When passes started failing, for as long as they keep failing. Not kept across restarts.
     failing_since: Option<i64>,
+    /// Machines whose last tries failed, by name: how many in a row, when the next is due, and the last error. Not
+    /// kept across restarts, so a restart tries every machine once.
+    retries: BTreeMap<String, Retry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Retry {
+    failures: u32,
+    at: i64,
+    error: String,
+}
+
+/// How long after its latest failure a machine is tried again: at the next pass after the first, then twice as long
+/// each time, up to [`RETRY_AT_MOST`].
+fn retry_after(failures: u32) -> i64 {
+    let every = PASS_EVERY.as_millis() as i64;
+    let most = RETRY_AT_MOST.as_millis() as i64;
+    match failures {
+        0 | 1 => 0,
+        n => every.saturating_mul(1_i64 << (n - 2).min(16)).min(most),
+    }
+}
+
+impl Runtime {
+    /// Whether a machine is waiting out its retry at `now`.
+    fn waiting(&self, machine: &str, now: i64) -> Option<&Retry> {
+        self.retries.get(machine).filter(|retry| retry.at > now + RETRY_SLACK_MS)
+    }
 }
 
 #[derive(Default)]
@@ -330,6 +363,8 @@ pub(crate) struct MachineRun {
     error: Option<String>,
     /// The last time it went without an error.
     last_ok_at: Option<i64>,
+    /// When it's tried again, while it's waiting longer than the next pass after failing several times in a row.
+    retry_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
@@ -467,7 +502,7 @@ fn machine_runs(db: &Connection) -> Result<Vec<MachineRun>, String> {
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([this], |row| Ok(MachineRun { machine: row.get(0)?, at: row.get(1)?, complete: row.get::<_, i64>(2)? != 0, error: row.get(3)?, last_ok_at: row.get(4)? }))
+        .query_map([this], |row| Ok(MachineRun { machine: row.get(0)?, at: row.get(1)?, complete: row.get::<_, i64>(2)? != 0, error: row.get(3)?, last_ok_at: row.get(4)?, retry_at: None }))
         .map_err(|error| error.to_string())?;
     rows.collect::<Result<_, _>>().map_err(|error| error.to_string())
 }
@@ -531,7 +566,10 @@ fn status_from(db: &Connection, runtime: &Runtime, index_dev: Option<u64>) -> Re
         archive_id,
         main,
         sources: sources(db)?,
-        machines: machine_runs(db)?,
+        machines: machine_runs(db)?
+            .into_iter()
+            .map(|run| MachineRun { retry_at: runtime.waiting(&run.machine, index::now_ms()).map(|retry| retry.at), ..run })
+            .collect(),
         imports: imports::statuses(db)?,
         totals: totals(db)?,
         running: runtime.running,
@@ -586,14 +624,14 @@ async fn blocking<T: Send + 'static>(task: impl FnOnce() -> Result<T, String> + 
 
 async fn current_status(app: &tauri::AppHandle) -> Result<ArchiveStatus, String> {
     let state = app.state::<ArchiveState>();
-    let (running, last_pass_at, next_pass_at, last_complete, last_error, failing_since) = {
+    let (running, last_pass_at, next_pass_at, last_complete, last_error, failing_since, retries) = {
         let runtime = state.runtime();
-        (runtime.running, runtime.last_pass_at, runtime.next_pass_at, runtime.last_complete, runtime.last_error.clone(), runtime.failing_since)
+        (runtime.running, runtime.last_pass_at, runtime.next_pass_at, runtime.last_complete, runtime.last_error.clone(), runtime.failing_since, runtime.retries.clone())
     };
     blocking(move || {
         let dir = index_dir()?;
         let db = open_index(&dir)?;
-        let runtime = Runtime { running, last_pass_at, next_pass_at, last_complete, last_error, failing_since };
+        let runtime = Runtime { running, last_pass_at, next_pass_at, last_complete, last_error, failing_since, retries };
         status_from(&db, &runtime, device(&dir))
     })
     .await
@@ -1015,15 +1053,32 @@ async fn list_import(machine: &str, roots: Vec<imports::ImportRoot>) -> Result<l
     .await
 }
 
+/// This Mac's homes as a pass finds them: listed, failed to list, or not tried this pass, waiting out a retry after
+/// failing, with the error that keeps the archive saying so.
+enum Local {
+    Listed(lister::Listing),
+    Failed(String),
+    Waiting(String),
+}
+
 /// What a pass has to work through: this Mac's listing, each other machine's (or why it
-/// couldn't be listed), and the old backups still being taken in.
+/// couldn't be listed) as each comes in, and the old backups still being taken in.
 struct PassInput {
     machine: String,
-    listing: lister::Listing,
-    fleet: Vec<(Machine, Result<lister::Listing, String>)>,
+    listing: Local,
+    fleet: tokio::sync::mpsc::UnboundedReceiver<(Machine, Result<lister::Listing, String>)>,
     imported: Vec<(imports::PendingImport, Result<lister::Listing, String>)>,
     /// Where the other machines' fetches run from the pass's thread.
     runtime: tokio::runtime::Handle,
+}
+
+/// Why a machine's pass failed: it couldn't be listed or read, or it stopped answering partway. None when it went.
+fn failure_of(result: &Result<PassReport, String>) -> Option<String> {
+    match result {
+        Err(error) => Some(error.clone()),
+        Ok(report) if report.lost => Some(report.first_failure.clone().unwrap_or_else(|| "It stopped answering partway".into())),
+        Ok(_) => None,
+    }
 }
 
 /// Notes how a machine's pass went, for the status and to say since when a machine has failed.
@@ -1040,14 +1095,16 @@ fn note_run(db: &Connection, machine: &str, started: i64, result: &Result<PassRe
     );
 }
 
-/// Keeps each other machine's sessions, one machine at a time, each in a share of its own. A
-/// machine that couldn't be listed or stopped answering is noted in its own run and doesn't
-/// hold up the rest, or make the archive look like it's failing. True when one has more to keep.
-fn fleet_pass(db: &Connection, places: &Places, fleet: Vec<(Machine, Result<lister::Listing, String>)>, options: &PassOptions, filter: &dyn Fn(&str) -> SessionFilter, runtime: &tokio::runtime::Handle, stop: &dyn Fn() -> bool) -> bool {
+/// Keeps each other machine's sessions, one machine at a time, each in a share of its own, in the order their
+/// listings come in, so a slow machine is kept last rather than holding up the rest. A machine that couldn't be listed
+/// or stopped answering is noted in its own run and doesn't make the archive look like it's failing. Returns whether
+/// one has more to keep, and how each went.
+fn fleet_pass(db: &Connection, places: &Places, fleet: impl IntoIterator<Item = (Machine, Result<lister::Listing, String>)>, options: &PassOptions, filter: &dyn Fn(&str) -> SessionFilter, runtime: &tokio::runtime::Handle, stop: &dyn Fn() -> bool) -> (bool, Vec<(String, Option<String>)>) {
     let mut left = false;
+    let mut tried = Vec::new();
     for (machine, listed) in fleet {
         if stop() {
-            return true;
+            return (true, tried);
         }
         let started = index::now_ms();
         let result = listed.and_then(|listing| {
@@ -1067,15 +1124,16 @@ fn fleet_pass(db: &Connection, places: &Places, fleet: Vec<(Machine, Result<list
         });
         // A machine that stopped answering is tried again at the next pass, not straight away.
         left |= result.as_ref().is_ok_and(|report| !report.complete && !report.lost);
+        tried.push((machine.name().to_string(), failure_of(&result)));
         note_run(db, machine.name(), started, &result);
     }
-    left
+    (left, tried)
 }
 
 /// Runs the pass on a thread of its own at utility priority, so it gives way to everything
 /// the user is doing.
 fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<PassReport>, String> {
-    let PassInput { machine, listing, fleet, imported, runtime } = input;
+    let PassInput { machine, listing, mut fleet, imported, runtime } = input;
     #[cfg(target_os = "macos")]
     unsafe {
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
@@ -1111,12 +1169,31 @@ fn run_pass_thread(input: PassInput, token: CancellationToken) -> Result<Option<
         sessions: filter(&machine),
     };
     let started = index::now_ms();
-    let mut result = ingest::run_pass(&db, &places, &listing, &options, &|| token.is_cancelled());
-    note_run(&db, &machine, started, &result);
+    // This Mac's homes failing to list, or waiting to be tried again, is this Mac's trouble, which the archive still
+    // says, but the other machines, backups and counting go on.
+    let mut result = match listing {
+        Local::Listed(listing) => {
+            let mut result = ingest::run_pass(&db, &places, &listing, &options, &|| token.is_cancelled());
+            note_run(&db, &machine, started, &result);
+            let failure = failure_of(&result);
+            if let Ok(report) = &mut result {
+                report.machines.push((machine.clone(), failure));
+            }
+            result
+        }
+        Local::Failed(error) => {
+            note_run(&db, &machine, started, &Err(error.clone()));
+            Ok(PassReport { complete: true, first_failure: Some(error.clone()), machines: vec![(machine.clone(), Some(error))], ..PassReport::default() })
+        }
+        Local::Waiting(error) => Ok(PassReport { complete: true, first_failure: Some(error), ..PassReport::default() }),
+    };
     // The other machines, backups and counting wait until everything listed here is kept, so a
     // catch-up pass goes to this Mac's homes first.
     if let Some(report) = result.as_mut().ok().filter(|report| report.complete) {
-        report.fleet_left = fleet_pass(&db, &places, fleet, &options, &filter, &runtime, &|| token.is_cancelled());
+        let listings = std::iter::from_fn(|| fleet.blocking_recv());
+        let (fleet_left, tried) = fleet_pass(&db, &places, listings, &options, &filter, &runtime, &|| token.is_cancelled());
+        report.fleet_left = fleet_left;
+        report.machines.extend(tried);
         // Old backups are taken in whole: their sessions aren't in usage.db to be told apart.
         let import_options = PassOptions { max_bytes: IMPORT_MAX_BYTES, max_time: IMPORT_MAX_TIME, sessions: SessionFilter::everything(), ..options };
         match imports::run(&db, &places, &imported, &import_options, &|| token.is_cancelled()) {
@@ -1213,9 +1290,24 @@ async fn run_once(app: &tauri::AppHandle, token: &CancellationToken) -> Result<O
     if !agent_homes::looked_at(&this_mac) {
         return Ok(None);
     }
-    let script = lister::list_script(&this_mac);
-    let listing = list_with(&machine, &script).await?;
-    let fleet = if settings.keeps_any() { other_machines_listed(app, &settings).await } else { Vec::new() };
+    let now = index::now_ms();
+    let (waiting_here, waiting): (Option<String>, HashSet<String>) = {
+        let runtime = app.state::<ArchiveState>();
+        let runtime = runtime.runtime();
+        let here = runtime.waiting(&machine, now).map(|retry| retry.error.clone());
+        let others = runtime.retries.keys().filter(|name| runtime.waiting(name, now).is_some()).cloned().collect();
+        (here, others)
+    };
+    // The other machines are listed all at once, each handed to the pass as it comes in, while this Mac is listed and
+    // kept; one that failed lately waits out its retry.
+    let fleet = if settings.keeps_any() { other_machines_listed(app, &settings, &waiting) } else { tokio::sync::mpsc::unbounded_channel().1 };
+    let listing = match waiting_here {
+        Some(error) => Local::Waiting(error),
+        None => match list_with(&machine, &lister::list_script(&this_mac)).await {
+            Ok(listing) => Local::Listed(listing),
+            Err(error) => Local::Failed(error.replacen("Couldn't list the agent homes", "Couldn't list this Mac's agent homes", 1)),
+        },
+    };
     // A backup whose drive is unplugged waits for it.
     let pending = blocking(|| imports::pending(&open_index(&index_dir()?)?)).await?;
     let mut imported = Vec::new();
@@ -1235,9 +1327,9 @@ async fn run_once(app: &tauri::AppHandle, token: &CancellationToken) -> Result<O
     receiver.await.map_err(|_| "The archive pass stopped unexpectedly".to_string())?
 }
 
-/// The machines on the Machines page other than this Mac that are kept, each listed with the
-/// same script as this Mac, all at once.
-async fn other_machines_listed(app: &tauri::AppHandle, settings: &Settings) -> Vec<(Machine, Result<lister::Listing, String>)> {
+/// The machines on the Machines page other than this Mac that are kept and aren't waiting out a retry, each listed
+/// with the same script as this Mac, all at once, and sent on as each listing comes in.
+fn other_machines_listed(app: &tauri::AppHandle, settings: &Settings, waiting: &HashSet<String>) -> tokio::sync::mpsc::UnboundedReceiver<(Machine, Result<lister::Listing, String>)> {
     let machines: Vec<Machine> = {
         let state = app.state::<MachineHealthState>();
         let inner = state.lock();
@@ -1245,15 +1337,20 @@ async fn other_machines_listed(app: &tauri::AppHandle, settings: &Settings) -> V
             .series
             .values()
             .filter(|series| !series.local && shell::runs_scripts(series) && settings.lists(&series.host.machine))
-            .filter(|series| agent_homes::looked_at(&series.host.machine))
+            .filter(|series| agent_homes::looked_at(&series.host.machine) && !waiting.contains(&series.host.machine))
             .map(Machine::listed)
             .collect()
     };
-    futures_util::future::join_all(machines.into_iter().map(|machine| async move {
-        let listing = list_on(&machine, &lister::list_script(machine.name())).await;
-        (machine, listing)
-    }))
-    .await
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    for machine in machines {
+        let sender = sender.clone();
+        tauri::async_runtime::spawn(async move {
+            let listing = list_on(&machine, &lister::list_script(machine.name())).await;
+            // A pass that stopped early has let go of its end; the listing goes unused.
+            let _ = sender.send((machine, listing));
+        });
+    }
+    receiver
 }
 
 /// Keeps the archive current: a pass a minute after the app starts, then every five minutes,
@@ -1283,6 +1380,14 @@ fn record_outcome(runtime: &mut Runtime, outcome: Result<Option<PassReport>, Str
     runtime.running = false;
     let catch_up = match outcome {
         Ok(Some(report)) => {
+            for (machine, failure) in &report.machines {
+                let Some(error) = failure else {
+                    runtime.retries.remove(machine);
+                    continue;
+                };
+                let failures = runtime.retries.get(machine).map_or(0, |retry| retry.failures) + 1;
+                runtime.retries.insert(machine.clone(), Retry { failures, at: now + retry_after(failures), error: error.clone() });
+            }
             runtime.last_pass_at = Some(now);
             runtime.last_complete = report.complete;
             runtime.last_error = report.first_failure;
@@ -1477,7 +1582,9 @@ mod tests {
         let runtime = remote::tests::runtime();
         // Both "machines" are this Mac's shell reading temp files; one couldn't be listed.
         let fleet = vec![(Machine::this_mac("air"), Err("ssh: connect to host air port 22: Operation timed out".to_string())), (Machine::this_mac("cedar"), Ok(listing))];
-        assert!(!fleet_pass(&fixture.db, &fixture.places, fleet, &options, &|_| SessionFilter::everything(), runtime.handle(), &|| false), "nothing left to keep");
+        let (left, tried) = fleet_pass(&fixture.db, &fixture.places, fleet, &options, &|_| SessionFilter::everything(), runtime.handle(), &|| false);
+        assert!(!left, "nothing left to keep");
+        assert_eq!(tried, [("air".to_string(), Some("ssh: connect to host air port 22: Operation timed out".to_string())), ("cedar".to_string(), None)]);
         journal::flush(&fixture.db, &fixture.places.store).unwrap();
 
         let status = status_from(&fixture.db, &Runtime::default(), None).unwrap();
@@ -1498,6 +1605,46 @@ mod tests {
             assert!(!contains(&fs::read(&path).unwrap()), "{}", path.display());
         }
         let _ = fs::remove_dir_all(&fixture.base);
+    }
+
+    #[test]
+    fn a_machine_that_keeps_failing_is_tried_less_and_less_often_and_on_its_own() {
+        const MINUTE: i64 = 60_000;
+        assert_eq!([1, 2, 3, 4, 5, 6, 40].map(retry_after), [0, 5 * MINUTE, 10 * MINUTE, 20 * MINUTE, 40 * MINUTE, 60 * MINUTE, 60 * MINUTE]);
+        let mut runtime = Runtime::default();
+        let timed_out = || Some("Couldn't list the agent homes: Timed out after 120s".to_string());
+        let pass = |machines: Vec<(&str, Option<String>)>| {
+            Ok(Some(PassReport { complete: true, machines: machines.into_iter().map(|(name, failure)| (name.to_string(), failure)).collect(), ..PassReport::default() }))
+        };
+        // ci-01 times out while cedar-02 is kept: the pass isn't failing, and ci-01 is tried at the next pass.
+        assert!(!record_outcome(&mut runtime, pass(vec![("ci-01", timed_out()), ("cedar-02", None)]), 0));
+        assert_eq!((runtime.last_error.as_deref(), runtime.failing_since), (None, None));
+        assert!(runtime.waiting("ci-01", 5 * MINUTE).is_none());
+        // A second failure in a row waits a pass more, a third twice that.
+        record_outcome(&mut runtime, pass(vec![("ci-01", timed_out())]), 5 * MINUTE);
+        assert!(runtime.waiting("ci-01", 10 * MINUTE - 2 * MINUTE).is_some());
+        assert!(runtime.waiting("ci-01", 10 * MINUTE).is_none());
+        record_outcome(&mut runtime, pass(vec![("ci-01", timed_out())]), 10 * MINUTE);
+        assert_eq!(runtime.waiting("ci-01", 15 * MINUTE).map(|retry| (retry.failures, retry.at)), Some((3, 20 * MINUTE)));
+        assert!(runtime.waiting("cedar-02", 15 * MINUTE).is_none());
+        // Once it's kept again, it's let go.
+        record_outcome(&mut runtime, pass(vec![("ci-01", None)]), 20 * MINUTE);
+        assert!(runtime.retries.is_empty());
+    }
+
+    #[test]
+    fn this_mac_failing_to_list_is_the_archives_trouble_but_not_a_pass_to_hurry() {
+        let mut runtime = Runtime::default();
+        let error = "Couldn't list this Mac's agent homes: Timed out after 120s".to_string();
+        let failed = Ok(Some(PassReport { complete: true, first_failure: Some(error.clone()), machines: vec![("mini".into(), Some(error.clone()))], ..PassReport::default() }));
+        assert!(!record_outcome(&mut runtime, failed, 1_000), "the next pass comes at its usual time");
+        assert_eq!((runtime.last_error.as_deref(), runtime.failing_since), (Some(error.as_str()), Some(1_000)));
+        assert_eq!(runtime.retries.get("mini").map(|retry| retry.error.as_str()), Some(error.as_str()));
+        // Waiting out its retry, the pass still says why.
+        let waiting = Ok(Some(PassReport { complete: true, first_failure: Some(error.clone()), ..PassReport::default() }));
+        record_outcome(&mut runtime, waiting, 2_000);
+        assert_eq!((runtime.last_error.as_deref(), runtime.failing_since), (Some(error.as_str()), Some(1_000)));
+        assert_eq!(runtime.retries.get("mini").map(|retry| retry.failures), Some(1), "a pass that didn't try isn't another failure");
     }
 
     #[test]
