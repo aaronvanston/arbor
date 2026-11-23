@@ -1964,6 +1964,7 @@ fn main() {
             usage::machine_health::archive::run_session_archive_now,
             usage::machine_health::archive::set_session_archive_paused,
             usage::machine_health::archive::save_session_archive_settings,
+            usage::machine_health::archive::set_session_archive_trim,
             usage::machine_health::archive::set_session_archive_analytics,
             usage::machine_health::archive::clear_session_archive_analytics,
             usage::machine_health::archive::read_session_analytics,

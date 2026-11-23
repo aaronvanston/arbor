@@ -34,6 +34,20 @@ const OWN_DISK_ROOT = '/Users/cam/Arbor Session Archive.noindex';
 // The other machines kept over SSH, by `?archiveMachines=` (listed at the top).
 const archiveMachinesScenario = params.get('archiveMachines') ?? (freshInstall ? 'none' : 'some');
 const archiveProjectsScenario = params.get('archiveProjects');
+// `?archiveTrim=on`: Claude Code's homes trimmed to 30 days once kept, with each standing a home can have.
+const archiveTrimScenario = params.get('archiveTrim');
+
+/** Where each Claude Code home stands under `?archiveTrim=on` with `days`, or as trimming being off leaves it. */
+function withTrim(sources: ArchiveSource[], days: number | null): ArchiveSource[] {
+  return sources.map((source) => {
+    if (source.agent !== 'claude') return source;
+    if (days === null) return { ...source, trim: null, retentionDays: source.retentionDays === 90 ? 90 : source.retentionDays === null ? null : 36_500 };
+    if (source.label === '~/Library/Application Support/AcmeCode/claude') return { ...source, retentionDays: 90, trim: { kind: 'byHand', days: 90 } };
+    if (source.label === '~/.agent-app/homes/claude-other') return { ...source, retentionDays: 36_500, trim: { kind: 'waiting', unkept: 3 } };
+    if (source.machine === 'cedar-02') return { ...source, retentionDays: 36_500, trim: { kind: 'unconfirmed' } };
+    return { ...source, retentionDays: days, trim: { kind: 'trimmed', days } };
+  });
+}
 
 const fleetRuns = (share: number): ArchiveMachineRun[] => {
   if (archiveMachinesScenario === 'none' || share === 0) return [];
@@ -48,20 +62,20 @@ const fleetRuns = (share: number): ArchiveMachineRun[] => {
 };
 
 const fleetHomes = (share: number): ArchiveSource[] => archiveMachinesScenario === 'none' || share === 0 ? [] : [
-  { machine: 'cedar-02', label: '~/.claude', agent: 'claude', files: 3480, kept: 3480, gone: 41, retentionDays: 36_500 },
-  { machine: 'cedar-02', label: '~/.codex', agent: 'codex', files: 925, kept: 925, gone: 0, retentionDays: null },
+  { machine: 'cedar-02', label: '~/.claude', agent: 'claude', files: 3480, kept: 3480, gone: 41, retentionDays: 36_500, trim: null },
+  { machine: 'cedar-02', label: '~/.codex', agent: 'codex', files: 925, kept: 925, gone: 0, retentionDays: null, trim: null },
   // ci-01 was never reached under `?archiveMachines=new`, so nothing of its is kept.
-  ...(archiveMachinesScenario === 'new' ? [] : [{ machine: 'ci-01', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null }]),
+  ...(archiveMachinesScenario === 'new' ? [] : [{ machine: 'ci-01', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null, trim: null }]),
 ];
 const DESKTOP = '~/Library/Application Support/Claude/local-agent-mode-sessions';
 const archiveHomes = (share: number): ArchiveSource[] => [
-  { machine: 'cam-mbp', label: '~/.claude', agent: 'claude', files: 5210, kept: Math.round(5210 * share), gone: share > 0 ? 214 : 0, retentionDays: 36_500 },
-  { machine: 'cam-mbp', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null },
-  { machine: 'cam-mbp', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null },
-  { machine: 'cam-mbp', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null },
+  { machine: 'cam-mbp', label: '~/.claude', agent: 'claude', files: 5210, kept: Math.round(5210 * share), gone: share > 0 ? 214 : 0, retentionDays: 36_500, trim: null },
+  { machine: 'cam-mbp', label: '~/.codex', agent: 'codex', files: 1810, kept: Math.round(1810 * share), gone: share > 0 ? 12 : 0, retentionDays: null, trim: null },
+  { machine: 'cam-mbp', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: Math.round(912 * share), gone: 0, retentionDays: null, trim: null },
+  { machine: 'cam-mbp', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: Math.round(12 * share), gone: 0, retentionDays: null, trim: null },
   // Claude's desktop app: an audit log for each local session, and each session's own Claude Code home.
-  { machine: 'cam-mbp', label: `${DESKTOP}/acct/org`, agent: 'claude-desktop', files: 96, kept: Math.round(96 * share), gone: 0, retentionDays: null },
-  ...Array.from({ length: 3 }, (_, n): ArchiveSource => ({ machine: 'cam-mbp', label: `${DESKTOP}/acct/org/local_${n}/.claude`, agent: 'claude', files: 12 + n, kept: Math.round((12 + n) * share), gone: 0, retentionDays: null })),
+  { machine: 'cam-mbp', label: `${DESKTOP}/acct/org`, agent: 'claude-desktop', files: 96, kept: Math.round(96 * share), gone: 0, retentionDays: null, trim: null },
+  ...Array.from({ length: 3 }, (_, n): ArchiveSource => ({ machine: 'cam-mbp', label: `${DESKTOP}/acct/org/local_${n}/.claude`, agent: 'claude', files: 12 + n, kept: Math.round((12 + n) * share), gone: 0, retentionDays: null, trim: null })),
   ...fleetHomes(share),
 ];
 
@@ -134,7 +148,7 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
     return {
       state: 'off', archiveId: null, main: null, sources: [], machines: [], imports: [], totals: archiveTotals(0),
       running: false, lastPassAt: null, nextPassAt: null, lastError: null, failingSince: null, paused: false, gentle: false, otherMachines: true, machineOverrides: {}, projectOverrides: {}, warnings: [],
-      analytics: mockArchiveAnalytics('off'),
+      analytics: mockArchiveAnalytics('off'), trimDays: null,
     };
   }
   // A missing drive was last reached yesterday, so its alert and banner show; another folder in its place, 3 hours ago.
@@ -149,7 +163,7 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
     main: scenario === 'own-disk'
       ? { root: OWN_DISK_ROOT, connected, mountPoint: '/', freeBytes: 212_000_000_000, noowners: false, lastSeenAt }
       : { root: archiveRoot, connected, mountPoint: connected ? '/Volumes/Backup' : null, freeBytes: connected ? 1_240_000_000_000 : null, noowners: scenario === 'noowners', lastSeenAt },
-    sources: archiveHomes(share),
+    sources: archiveTrimScenario === 'on' ? withTrim(archiveHomes(share), 30) : archiveHomes(share),
     machines: fleetRuns(share),
     imports: mockArchiveImports(scenario),
     totals: archiveTotals(share),
@@ -169,6 +183,7 @@ function mockArchiveStatus(scenario: string): ArchiveStatus {
       : {},
     warnings: scenario === 'noowners' ? ['noowners'] : scenario === 'own-disk' ? ['own-disk'] : [],
     analytics: mockArchiveAnalytics(analyticsScenario),
+    trimDays: archiveTrimScenario === 'on' ? 30 : null,
   };
 }
 
@@ -342,6 +357,11 @@ export const archiveAnswers: CommandAnswers<ArchiveCommands> = {
   set_session_archive_paused: (args) => {
     const { paused } = args;
     archiveStatus = { ...archiveStatus, paused, state: paused ? 'paused' : 'ok' };
+    return archiveStatus;
+  },
+  set_session_archive_trim: (args) => {
+    mockLog('set_session_archive_trim', args);
+    archiveStatus = { ...archiveStatus, trimDays: args.days, sources: withTrim(archiveStatus.sources, args.days) };
     return archiveStatus;
   },
   save_session_archive_settings: (args) => {

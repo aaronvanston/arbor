@@ -8,6 +8,7 @@ import type {
   ArchiveAnalyticsDetail,
   ArchiveAnalyticsStatus,
   ArchiveCondition,
+  ArchiveHomeTrim,
   ArchiveImport,
   ArchiveMachineRun,
   ArchiveSource,
@@ -38,6 +39,10 @@ export const createSessionArchive = (path: string) => invokeCommand('create_sess
 export const adoptSessionArchive = (path: string) => invokeCommand('use_session_archive', { path });
 export const runSessionArchiveNow = () => invokeCommand('run_session_archive_now');
 export const setSessionArchivePaused = (paused: boolean) => invokeCommand('set_session_archive_paused', { paused });
+/** Lets Claude Code delete each kept home's sessions after `days` once the archive holds them, or stops that (null). */
+export const setSessionArchiveTrim = (days: number | null) => invokeCommand('set_session_archive_trim', { days });
+/** What Trim local history offers: off, or a month, two or three. */
+export const TRIM_OPTIONS: readonly (number | null)[] = [null, 30, 60, 90];
 /** Keeps one machine's sessions or not whatever All machines says, or with null puts it back on All machines' value. */
 export const setSessionArchiveMachine = (machine: string, keep: boolean | null) =>
   invokeCommand('set_session_archive_machine', { machine, keep });
@@ -149,11 +154,25 @@ export function compression(totals: ArchiveTotals): number | null {
 /** What Claude Code keeps sessions for when a home doesn't say. */
 const CLAUDE_DEFAULT_RETENTION_DAYS = 30;
 
-/** Days until Claude Code deletes a home's untouched sessions, when that's soon enough to matter. */
+/**
+ * Days until Claude Code deletes a home's untouched sessions, when that's soon enough to matter. A home the archive's
+ * trimming set only deletes what's kept, so it isn't one.
+ */
 export function deletesAfterDays(source: ArchiveSource): number | null {
-  if (source.agent !== 'claude') return null;
+  if (source.agent !== 'claude' || source.trim?.kind === 'trimmed') return null;
   const days = source.retentionDays ?? CLAUDE_DEFAULT_RETENTION_DAYS;
   return days < LONG_RETENTION_DAYS ? days : null;
+}
+
+/** What a Claude Code home's row says about trimming, and in what tone; null while trimming is off. */
+export function trimLine(trim: ArchiveHomeTrim | null, t: (key: MessageKey, variables?: MessageVariables) => string): { text: string; tone: 'muted' | 'warning' } | null {
+  if (!trim) return null;
+  switch (trim.kind) {
+    case 'trimmed': return { text: t('sessionArchive.trim.home.trimmed', { days: trim.days }), tone: 'muted' };
+    case 'waiting': return { text: t(trim.unkept === 1 ? 'sessionArchive.trim.home.waiting.one' : 'sessionArchive.trim.home.waiting.other', { count: trim.unkept }), tone: 'muted' };
+    case 'unconfirmed': return { text: t('sessionArchive.trim.home.unconfirmed'), tone: 'warning' };
+    case 'byHand': return { text: t('sessionArchive.trim.home.byHand', { days: trim.days }), tone: 'muted' };
+  }
 }
 
 export type MachineGroup = { machine: string; sources: ArchiveSource[]; run: ArchiveMachineRun | null };
@@ -174,7 +193,7 @@ function foldDesktopSessions(sources: ArchiveSource[]): ArchiveSource[] {
     }
     let row = folded.get(folder);
     if (!row) {
-      row = { ...source, label: folder, agent: 'claude-desktop', files: 0, kept: 0, gone: 0, retentionDays: null };
+      row = { ...source, label: folder, agent: 'claude-desktop', files: 0, kept: 0, gone: 0, retentionDays: null, trim: null };
       folded.set(folder, row);
       rows.push(row);
     }

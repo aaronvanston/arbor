@@ -148,6 +148,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('session-archive', 'pause', 'sessionArchive.title', 'sessionArchive.pause.title', { description: 'sessionArchive.pause.description', fallback: 'session-archive.folder' }),
   row('session-archive', 'gentle', 'sessionArchive.title', 'sessionArchive.gentle.title', { description: 'sessionArchive.gentle.description', fallback: 'session-archive.folder' }),
   row('session-archive', 'other-machines', 'sessionArchive.title', 'sessionArchive.otherMachines.title', { description: 'sessionArchive.otherMachines.description', fallback: 'session-archive.folder' }),
+  row('session-archive', 'trim', 'sessionArchive.title', 'sessionArchive.trim.title', { description: 'sessionArchive.trim.description', keywords: 'sessionArchive.trim.keywords', fallback: 'session-archive.folder' }),
   section('session-archive', 'kept', 'sessionArchive.kept.title', { description: 'sessionArchive.kept.description', fallback: 'session-archive.folder' }),
   section('session-archive', 'analytics', 'sessionArchive.analytics.title', { description: 'sessionArchive.analytics.description', keywords: 'sessionArchive.analytics.keywords', fallback: 'session-archive.folder' }),
   row('session-archive', 'analytics-on', 'sessionArchive.analytics.title', 'sessionArchive.analytics.on.title', { description: 'sessionArchive.analytics.on.description', fallback: 'session-archive.folder' }),

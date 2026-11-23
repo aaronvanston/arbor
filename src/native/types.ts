@@ -392,6 +392,11 @@ export type ArchiveExportRequest = {
 };
 
 /**
+ * Where a Claude Code home stands with trimming on.
+ */
+export type ArchiveHomeTrim = { "kind": "trimmed", days: number, } | { "kind": "waiting", unkept: number, } | { "kind": "unconfirmed" } | { "kind": "byHand", days: number, };
+
+/**
  * An old backup taken in, or being taken in. Its homes are kept like a live home's, filed under
  * `machine`.
  */
@@ -469,6 +474,10 @@ export type ArchiveSource = {
    * Claude Code's cleanupPeriodDays for the home, when it sets one.
    */
   retentionDays: number | null,
+  /**
+   * Where a Claude Code home stands with trimming on; None when it's off.
+   */
+  trim: ArchiveHomeTrim | null,
 };
 
 export type ArchiveStatus = {
@@ -513,6 +522,10 @@ export type ArchiveStatus = {
    */
   warnings: Array<"noowners" | "own-disk">,
   analytics: ArchiveAnalyticsStatus,
+  /**
+   * The days Claude Code's homes are trimmed to once the archive holds their sessions; None when that's off.
+   */
+  trimDays: number | null,
 };
 
 export type ArchiveStore = {
@@ -1035,7 +1048,7 @@ export type Change = "update" | "editedHere" | "bothChanged" | "unknown";
 /**
  * What made a change, as its backup names it.
  */
-export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup" | "uninstall" | "probe" | "tools";
+export type ChangeKind = "sync" | "skills" | "reporter" | "keepSessions" | "telemetry" | "mcp" | "checkouts" | "plugins" | "hooks" | "automations" | "ssh" | "projects" | "cleanup" | "uninstall" | "probe" | "tools" | "trimSessions";
 
 /**
  * One of the instruction files in a checkout, with what Arbor's first line says it holds.

@@ -252,6 +252,8 @@
  * cedar-02's up to date and ci-01's last check failing since yesterday (this Mac's homes are read directly, never over SSH), or `?archiveMachines=none` for no
  * other machines, `new` for ci-01 tried but never reached, or `off` for keeping other machines turned off, or `own` for ci-01 left out on its own;
  * `?archiveProjects=sample` leaves cam/billing out everywhere and cam/arbor out on ci-01 (pick them with `?project=`);
+ * `?archiveTrim=on` trims Claude Code's homes to 30 days once kept: cam-mbp's ~/.claude trimmed, claude-other waiting on
+ * 3 files, AcmeCode's set to 90 days by hand, and cedar-02's not confirmed lately;
  * Import a backup… finds five homes in
  * `/Volumes/Backup/Mac backups`, or with `?importPreview=none` nothing, `kept` only homes kept already, `partial` stops
  * looking partway, `fail` has the folder gone, `slow` takes 4s, and `others` OpenClaw and Claude desktop sessions;

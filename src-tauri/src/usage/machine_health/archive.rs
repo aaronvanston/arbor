@@ -30,9 +30,10 @@ pub(crate) mod sha;
 pub(crate) mod standing;
 pub(crate) mod store;
 pub(crate) mod tokens;
+pub(crate) mod trim;
 
 use super::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use ts_rs::TS;
 use self::ingest::{PassOptions, PassReport, Places};
 use self::store::{check_folder, FolderCheck, FolderKind, Store};
@@ -87,6 +88,9 @@ struct Settings {
     /// The kept transcripts are also read into tables in the store, for `arbor query`.
     analytics: bool,
     analytics_detail: ArchiveAnalyticsDetail,
+    /// Claude Code's homes may delete sessions after this many days, once the archive holds them (`trim`). Off when
+    /// None.
+    trim_days: Option<u32>,
 }
 
 /// How much of what was said the analytics tables hold.
@@ -348,6 +352,8 @@ pub(crate) struct SourceStatus {
     gone: u64,
     /// Claude Code's cleanupPeriodDays for the home, when it sets one.
     retention_days: Option<u32>,
+    /// Where a Claude Code home stands with trimming on; None when it's off.
+    trim: Option<trim::HomeTrim>,
 }
 
 /// How keeping another machine's sessions went last time.
@@ -447,6 +453,8 @@ pub(crate) struct ArchiveStatus {
     #[ts(type = "Array<\"noowners\" | \"own-disk\">")]
     warnings: Vec<&'static str>,
     analytics: ArchiveAnalyticsStatus,
+    /// The days Claude Code's homes are trimmed to once the archive holds their sessions; None when that's off.
+    trim_days: Option<u32>,
 }
 
 fn count(db: &Connection, sql: &str) -> Result<u64, String> {
@@ -465,13 +473,15 @@ fn totals(db: &Connection) -> Result<Totals, String> {
     })
 }
 
-fn sources(db: &Connection) -> Result<Vec<SourceStatus>, String> {
+fn sources(db: &Connection, settings: &Settings) -> Result<Vec<SourceStatus>, String> {
+    let standings: HashMap<i64, trim::HomeTrim> =
+        trim_plans(db, settings, index::now_ms())?.into_iter().filter_map(|(home, standing, _)| Some((home.source_id, standing?))).collect();
     let mut statement = db
         .prepare(
             "SELECT s.machine, s.label, s.agent, s.retention_days,
                COUNT(f.file_id) FILTER (WHERE f.state IN ('live', 'unreachable')),
                COUNT(f.file_id) FILTER (WHERE f.state IN ('live', 'unreachable') AND f.version_id IS NOT NULL),
-               COUNT(f.file_id) FILTER (WHERE f.state = 'gone')
+               COUNT(f.file_id) FILTER (WHERE f.state = 'gone'), s.source_id
              FROM sources s LEFT JOIN files f USING (source_id) WHERE s.kind = 'home' GROUP BY s.source_id ORDER BY s.machine, s.label",
         )
         .map_err(|error| error.to_string())?;
@@ -485,6 +495,7 @@ fn sources(db: &Connection) -> Result<Vec<SourceStatus>, String> {
                 files: row.get::<_, i64>(4)? as u64,
                 kept: row.get::<_, i64>(5)? as u64,
                 gone: row.get::<_, i64>(6)? as u64,
+                trim: standings.get(&row.get::<_, i64>(7)?).cloned(),
             })
         })
         .map_err(|error| error.to_string())?;
@@ -565,7 +576,7 @@ fn status_from(db: &Connection, runtime: &Runtime, index_dev: Option<u64>) -> Re
         state,
         archive_id,
         main,
-        sources: sources(db)?,
+        sources: sources(db, &settings)?,
         machines: machine_runs(db)?
             .into_iter()
             .map(|run| MachineRun { retry_at: runtime.waiting(&run.machine, index::now_ms()).map(|retry| retry.at), ..run })
@@ -584,6 +595,7 @@ fn status_from(db: &Connection, runtime: &Runtime, index_dev: Option<u64>) -> Re
         project_overrides: settings.projects.clone(),
         warnings,
         analytics: analytics_status(db, &settings)?,
+        trim_days: settings.trim_days,
     })
 }
 
@@ -885,6 +897,21 @@ pub(crate) async fn save_session_archive_settings(app: tauri::AppHandle, gentle:
     if other_machines {
         app.state::<ArchiveState>().wake.notify_one();
     }
+    Ok(status)
+}
+
+/// Lets Claude Code delete each kept home's sessions after `days`, but only while the archive holds every one old
+/// enough to go, and keeps everything otherwise; leaving `days` out turns it off and puts back the homes Arbor trimmed. Arbor
+/// changes only each home's cleanupPeriodDays, backed up first and on Sync › Repo › History, and deletes nothing
+/// itself.
+#[tauri::command]
+pub(crate) async fn set_session_archive_trim(app: tauri::AppHandle, days: Option<u32>) -> Result<ArchiveStatus, String> {
+    if let Some(days) = days.filter(|days| !trim::TRIM_DAYS_RANGE.contains(days)) {
+        return Err(format!("Sessions can be trimmed to between {} and {} days, not {days}", trim::TRIM_DAYS_RANGE.start(), trim::TRIM_DAYS_RANGE.end()));
+    }
+    let status = change_settings(&app, move |settings| settings.trim_days = days).await?;
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move { apply_trim(&app).await });
     Ok(status)
 }
 
@@ -1353,6 +1380,135 @@ fn other_machines_listed(app: &tauri::AppHandle, settings: &Settings, waiting: &
     receiver
 }
 
+/// Each Claude Code home's standing with trimming, and what to write there (`trim::plan`).
+fn trim_plans(db: &Connection, settings: &Settings, now: i64) -> Result<Vec<(trim::Home, Option<trim::HomeTrim>, Option<trim::Want>)>, String> {
+    // With no archive there's nothing to vouch for a home, so trimming is off and Arbor's own are put back.
+    let days = settings.trim_days.filter(|_| settings.root.is_some());
+    let this = index::get_meta(db, "thisMachine")?.unwrap_or_default();
+    let mut machines: HashMap<String, trim::MachineKept> = HashMap::new();
+    let mut plans = Vec::new();
+    for home in trim::homes(db)? {
+        let kept = match machines.get(&home.machine) {
+            Some(kept) => *kept,
+            None => {
+                let keeps = !settings.paused && (home.machine == this || settings.keeps(&home.machine));
+                let kept = trim::machine_kept(db, &home.machine, keeps, now - trim::FRESH_RUN_MS)?;
+                machines.insert(home.machine.clone(), kept);
+                kept
+            }
+        };
+        let unkept = match days {
+            Some(days) if kept.confirmed && home.managed() => trim::unkept_before(db, home.source_id, trim::must_be_kept_before(days, now))?,
+            _ => 0,
+        };
+        let (standing, want) = trim::plan(&home, days, kept, unkept);
+        plans.push((home, standing, want));
+    }
+    Ok(plans)
+}
+
+/// A machine a trim write failed on isn't tried again until this long after.
+const TRIM_REST: Duration = Duration::from_secs(30 * 60);
+static TRIM_RESTING: Mutex<BTreeMap<String, i64>> = Mutex::new(BTreeMap::new());
+/// One trim at a time: after a pass, or straight after the setting changes.
+static TRIMMING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// The new settings.json for a home whose cleanupPeriodDays Arbor sets to `want`, or None to leave it. It's read
+/// again here, so a value set by hand since the listing is left alone: only one that's missing, keeps sessions for
+/// years, or is `trimmed` (the days Arbor set) is changed.
+fn trim_edit(content: Option<&str>, want: trim::Want, trimmed: Option<u32>) -> Result<Option<String>, String> {
+    super::attention::set_claude_setting(content, "cleanupPeriodDays", want.days().into(), |current| {
+        let days = current.and_then(serde_json::Value::as_u64);
+        let managed = current.is_none() || days.is_some_and(|days| days >= u64::from(trim::KEEP_AT_LEAST_DAYS) || Some(days) == trimmed.map(u64::from));
+        let done = match want {
+            trim::Want::Trim(target) => days == Some(u64::from(target)),
+            trim::Want::Keep => days.is_some_and(|days| days >= u64::from(trim::KEEP_AT_LEAST_DAYS)),
+        };
+        !managed || done
+    })
+}
+
+/// Brings each Claude Code home's cleanupPeriodDays in line with trimming: the setting's days where the archive holds
+/// everything old enough to go, keeping everything where it can't say, and keeping everything again where Arbor
+/// trimmed and trimming is off. Each write is a guarded one, backed up and on Sync › Repo › History. Failures are
+/// tried again after a rest.
+async fn apply_trim(app: &tauri::AppHandle) {
+    let _one = TRIMMING.lock().await;
+    let plans = blocking(|| {
+        let db = open_index(&index_dir()?)?;
+        let settings = settings(&db)?;
+        trim_plans(&db, &settings, index::now_ms())
+    })
+    .await;
+    let plans = match plans {
+        Ok(plans) => plans,
+        Err(error) => {
+            eprintln!("Couldn't work out which agent homes to trim: {error}");
+            return;
+        }
+    };
+    let mut by_machine: BTreeMap<String, Vec<(trim::Home, trim::Want)>> = BTreeMap::new();
+    for (home, _, want) in plans {
+        if let Some(want) = want {
+            by_machine.entry(home.machine.clone()).or_default().push((home, want));
+        }
+    }
+    let now = index::now_ms();
+    for (machine, wants) in by_machine {
+        if TRIM_RESTING.lock().unwrap_or_else(PoisonError::into_inner).get(&machine).is_some_and(|until| *until > now) {
+            continue;
+        }
+        // Only homes the setup scan knows as Claude Code's, where no managed policy sets the days.
+        let found = {
+            let state = app.state::<MachineHealthState>();
+            let inner = state.lock();
+            super::setup::covered_machine(&inner, &machine).ok().filter(|(_, setup)| setup.leave_to_policy(&machine, super::setup::ItemKind::Setting, &["cleanupPeriodDays"]).is_ok()).map(|(target, setup)| {
+                let known = setup.agent_homes();
+                let wants: Vec<(trim::Home, trim::Want)> =
+                    wants.into_iter().filter(|(home, _)| known.iter().any(|(agent, path)| *agent == super::setup::HomeAgent::Claude && *path == home.label)).collect();
+                (target, wants)
+            })
+        };
+        let Some((target, wants)) = found else { continue };
+        let mut groups: BTreeMap<(trim::Want, Option<u32>), Vec<trim::Home>> = BTreeMap::new();
+        for (home, want) in wants {
+            groups.entry((want, home.trimmed)).or_default().push(home);
+        }
+        let mut failed = false;
+        for ((want, trimmed), homes) in groups {
+            let labels: Vec<String> = homes.iter().map(|home| home.label.clone()).collect();
+            let edits = super::attention::edit_claude_settings(|| &target, &labels, super::guarded_writes::ChangeKind::TrimSessions, |content| trim_edit(content, want, trimmed), true).await;
+            let edits = match edits {
+                Ok(edits) => edits,
+                Err(error) => {
+                    eprintln!("Couldn't trim the agent homes on {machine}: {error}");
+                    failed = true;
+                    continue;
+                }
+            };
+            let noted = blocking(move || {
+                let db = open_index(&index_dir()?)?;
+                let mut failed = false;
+                for edit in edits {
+                    match (edit.error, homes.iter().find(|home| home.label == edit.home)) {
+                        (None, Some(home)) => trim::note_written(&db, home.source_id, want)?,
+                        _ => failed = true,
+                    }
+                }
+                Ok(failed)
+            })
+            .await;
+            failed |= noted.unwrap_or(true);
+        }
+        let mut resting = TRIM_RESTING.lock().unwrap_or_else(PoisonError::into_inner);
+        if failed {
+            resting.insert(machine, now + TRIM_REST.as_millis() as i64);
+        } else {
+            resting.remove(&machine);
+        }
+    }
+}
+
 /// Keeps the archive current: a pass a minute after the app starts, then every five minutes,
 /// sooner while catching up, and whenever the page asks.
 pub(crate) async fn run_loop(app: tauri::AppHandle, token: CancellationToken) {
@@ -1371,6 +1527,7 @@ pub(crate) async fn run_loop(app: tauri::AppHandle, token: CancellationToken) {
         let outcome = run_once(&app, &token).await;
         let state = app.state::<ArchiveState>();
         let catch_up = record_outcome(&mut state.runtime(), outcome, index::now_ms());
+        apply_trim(&app).await;
         delay = if catch_up && !token.is_cancelled() { CATCH_UP_AFTER } else { PASS_EVERY };
     }
 }

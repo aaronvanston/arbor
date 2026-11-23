@@ -1280,6 +1280,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        name: "set_session_archive_trim",
+        access: Access::Write,
+        summary: "Lets Claude Code delete each kept home's sessions after `days`, but only while the archive holds every one old enough to go, and keeps everything otherwise; leaving `days` out turns it off and puts back the homes Arbor trimmed. Arbor changes only each home's cleanupPeriodDays, backed up first and on Sync › Repo › History, and deletes nothing itself.",
+        args: &[
+            ArgSpec { name: "days", ts_type: "number | null", optional: true },
+        ],
+    },
+    CommandSpec {
         name: "set_session_archive_analytics",
         access: Access::Write,
         summary: "Turns the analytics tables on or off and says how much of what was said they hold. On fetches the query engine first, if it isn't here, through the proxy set in Settings when there is one. Off stops the tables being kept up and leaves them where they are; a new detail makes them again.",
@@ -2511,6 +2519,7 @@ pub(crate) async fn call(app: &tauri::AppHandle, name: &str, args: &Value) -> Op
         "run_session_archive_now" => done(Box::pin(crate::usage::machine_health::archive::run_session_archive_now(app.clone())).await),
         "set_session_archive_paused" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_paused(app.clone(), arg(&args, "paused")?)).await) }.await,
         "save_session_archive_settings" => async { done(Box::pin(crate::usage::machine_health::archive::save_session_archive_settings(app.clone(), arg(&args, "gentle")?, arg(&args, "otherMachines")?)).await) }.await,
+        "set_session_archive_trim" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_trim(app.clone(), arg(&args, "days")?)).await) }.await,
         "set_session_archive_analytics" => async { done(Box::pin(crate::usage::machine_health::archive::set_session_archive_analytics(app.clone(), arg(&args, "enabled")?, arg(&args, "detail")?)).await) }.await,
         "clear_session_archive_analytics" => done(Box::pin(crate::usage::machine_health::archive::clear_session_archive_analytics(app.clone())).await),
         "read_session_analytics" => async { done(Box::pin(crate::usage::machine_health::archive::read_session_analytics(arg(&args, "sql")?, arg(&args, "limit")?, arg(&args, "full")?)).await) }.await,

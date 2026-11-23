@@ -58,10 +58,12 @@ pub(crate) enum ChangeKind {
     Probe,
     /// Tools an installer updated or removed, which nothing can put back as they were.
     Tools,
+    /// How long Claude Code keeps a home's sessions, set by the session archive's trimming.
+    TrimSessions,
 }
 
 impl ChangeKind {
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 17] = [
         Self::Sync,
         Self::Skills,
         Self::Reporter,
@@ -78,6 +80,7 @@ impl ChangeKind {
         Self::Uninstall,
         Self::Probe,
         Self::Tools,
+        Self::TrimSessions,
     ];
 
     pub(super) fn name(self) -> &'static str {
@@ -98,6 +101,7 @@ impl ChangeKind {
             Self::Uninstall => "uninstall",
             Self::Probe => "probe",
             Self::Tools => "tools",
+            Self::TrimSessions => "trim-sessions",
         }
     }
 

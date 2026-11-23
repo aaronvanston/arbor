@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS sources(
   source_id INTEGER PRIMARY KEY, machine TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('home','import')),
   agent TEXT NOT NULL, root TEXT NOT NULL, label TEXT NOT NULL, retention_days INTEGER,
   first_seen_at INTEGER NOT NULL, last_seen_at INTEGER, complete_lists INTEGER NOT NULL DEFAULT 0,
+  trim_days INTEGER,
   UNIQUE(machine, root)) STRICT;
 CREATE TABLE IF NOT EXISTS sessions(
   session_pk INTEGER PRIMARY KEY, agent TEXT NOT NULL, session_id TEXT NOT NULL,
@@ -125,6 +126,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("import_roots", "machine", "TEXT"),
     ("import_roots", "store", "TEXT"),
     ("import_roots", "device", "TEXT"),
+    // The days Arbor last trimmed a Claude Code home to (`trim`).
+    ("sources", "trim_days", "INTEGER"),
 ];
 
 /// Writes to archive.db are made one at a time within the app.

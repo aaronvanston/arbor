@@ -24,6 +24,12 @@ Code lives in `src-tauri/src/usage/machine_health/archive.rs` and `archive/`. Se
 - **Tokens.** `archive/tokens.rs` counts tokens for Usage › All time, keeping each call's hashed id with its day, model
   name and token numbers. `archive/recovered.rs` reads Claude Code's own `stats-cache.json` daily totals (each
   machine's days with model names, token and session counts) for days whose transcripts are gone.
+- **Trimming.** Keeping sessions sets Claude Code's cleanupPeriodDays to a hundred years, so homes only grow.
+  Trimming (`archive/trim.rs`, off by default) lowers it, but the archive deletes nothing: Claude Code does, by its
+  own rule, so the only safe days are ones the archive has already caught up past. A home is trimmed only while its
+  machine's last pass finished within a day and every file older than the days less a week of margin is in a store;
+  otherwise it goes back to keeping everything. `sources.trim_days` remembers what Arbor set, so a home someone set
+  by hand is told apart and left alone.
 
 - **Export.** `archive/export.rs` puts sessions back together into a new or empty folder the user names, outside the
   archive's own folders: the one way raw bytes leave a store, and only when asked. It reads without the store's lock,
