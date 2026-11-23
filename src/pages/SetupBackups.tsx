@@ -78,6 +78,7 @@ export const CHANGE_KIND: Record<ChangeKind, MessageKey> = {
   uninstall: 'setup.history.what.uninstall',
   probe: 'setup.history.what.probe',
   tools: 'setup.history.what.tools',
+  trimSessions: 'setup.history.what.trimSessions',
 };
 
 /** Changes nothing can put back as they were: an uninstall, a probe update, and tools an installer changed. */

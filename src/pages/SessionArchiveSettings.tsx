@@ -20,6 +20,8 @@ import { RefreshIcon } from '../components/ui/refresh-icon';
 import { Spinner } from '../components/ui/spinner';
 import { StatusPill } from '../components/ui/status-dot';
 import { Switch } from '../components/ui/switch';
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
+import { toast } from '../components/ui/toast';
 import { formatAgo, formatNumber, formatWhen } from '../lib/format';
 import { formatBytes } from '../services/machineHealth';
 import { useQuotaClock } from '../services/quotaTime';
@@ -43,7 +45,10 @@ import {
   setSessionArchiveMachine,
   setSessionArchivePaused,
   setSessionArchiveProject,
+  setSessionArchiveTrim,
   sourcesByMachine,
+  TRIM_OPTIONS,
+  trimLine,
 } from '../services/sessionArchive';
 import type { ArchiveStatus, FolderCheck } from '../native/types';
 
@@ -434,6 +439,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
             />
           }
         />
+        <TrimRow status={status} onStatus={onStatus} onError={setError} />
       </SettingsSection>
 
       <SettingsSection settingId="session-archive.kept" title={t('sessionArchive.kept.title')} description={t('sessionArchive.kept.description')}>
@@ -478,6 +484,7 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
         >
           {group.sources.map((source) => {
             const days = deletesAfterDays(source);
+            const trim = trimLine(source.trim, t);
             return (
               <SettingsRow
                 key={`${source.machine}:${source.label}`}
@@ -487,7 +494,8 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
                   <span className="flex flex-wrap gap-x-3">
                     <span>{t('sessionArchive.homes.kept', { kept: formatNumber(source.kept), files: formatNumber(source.files) })}</span>
                     {source.gone > 0 ? <span>{t('sessionArchive.homes.gone', { count: source.gone })}</span> : null}
-                    {days !== null ? <span className="text-warning-foreground">{t('sessionArchive.homes.deletes', { days })}</span> : null}
+                    {trim ? <span className={trim.tone === 'warning' ? 'text-warning-foreground' : undefined}>{trim.text}</span> : null}
+                    {days !== null && source.trim?.kind !== 'byHand' ? <span className="text-warning-foreground">{t('sessionArchive.homes.deletes', { days })}</span> : null}
                   </span>
                 }
                 control={(
@@ -507,5 +515,64 @@ export function ArchiveOverview({ status, onStatus }: { status: ArchiveStatus; o
 
       <ArchiveImports status={status} onStatus={onStatus} />
     </>
+  );
+}
+
+/**
+ * Trim local history: how long Claude Code keeps each kept machine's sessions once the archive holds them. A change
+ * is made at once and can be undone from its toast; Arbor puts each home's days in line straight after.
+ */
+function TrimRow({ status, onStatus, onError }: { status: ArchiveStatus; onStatus: (status: ArchiveStatus) => void; onError: (error: string | null) => void }) {
+  const { t } = useI18n();
+  const [saving, setSaving] = useState(false);
+  const label = (days: number | null) => (days === null ? t('sessionArchive.trim.off') : t('sessionArchive.trim.days', { count: days }));
+  const choose = async (days: number | null, before: number | null, undo = false) => {
+    if (days === before) return;
+    setSaving(true);
+    onError(null);
+    try {
+      onStatus(await setSessionArchiveTrim(days));
+      if (!undo) {
+        toast({
+          kind: 'success',
+          title: days === null ? t('sessionArchive.trim.savedOff') : t('sessionArchive.trim.saved', { days }),
+          action: { label: t('common.undo'), onClick: () => void choose(before, days, true) },
+        });
+      }
+    } catch (reason) {
+      onError(String(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <SettingsRow
+      settingId="session-archive.trim"
+      title={t('sessionArchive.trim.title')}
+      description={t('sessionArchive.trim.description')}
+      control={
+        <>
+          {saving ? <Spinner className="text-muted-foreground" /> : null}
+          <Select
+            value={status.trimDays === null ? 'off' : String(status.trimDays)}
+            disabled={saving}
+            onValueChange={(value) => {
+              if (value !== null && value !== undefined) void choose(value === 'off' ? null : Number(value), status.trimDays);
+            }}
+          >
+            <SelectTrigger size="sm" className="w-auto min-w-36" aria-label={t('sessionArchive.trim.title')}>
+              <SelectValue>{label(status.trimDays)}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end">
+              {[...new Set([...TRIM_OPTIONS, status.trimDays])].map((days) => (
+                <SelectItem key={days ?? 'off'} value={days === null ? 'off' : String(days)}>
+                  {label(days)}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </>
+      }
+    />
   );
 }

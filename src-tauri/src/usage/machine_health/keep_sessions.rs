@@ -15,10 +15,10 @@ use super::guarded_writes::ChangeKind;
 use super::setup::{covered_machine, rescan, HomeAgent, ItemKind};
 use super::*;
 
-/// What a home is set to keep sessions for: about a hundred years.
-const KEEP_DAYS: u64 = 36_500;
+/// What a home is set to keep sessions for: about a hundred years. The archive's trimming puts homes back to it.
+const KEEP_DAYS: u64 = super::archive::trim::KEEP_DAYS as u64;
 /// A home set to at least this many days is left as it is. The Setup page's check uses the same line.
-const KEEP_AT_LEAST_DAYS: u64 = 3_650;
+const KEEP_AT_LEAST_DAYS: u64 = super::archive::trim::KEEP_AT_LEAST_DAYS as u64;
 
 fn keep_every_session(content: Option<&str>) -> Result<Option<String>, String> {
     set_claude_setting(content, "cleanupPeriodDays", KEEP_DAYS.into(), |current| {

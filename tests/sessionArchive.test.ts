@@ -10,6 +10,7 @@ import {
   archiveTrouble,
   compression,
   deletesAfterDays,
+  trimLine,
   folderVerdict,
   nextArchiveAlert,
   sourcesByMachine,
@@ -23,7 +24,7 @@ import type { MessageKey, MessageVariables } from '../src/i18n/resources';
 import type { ArchiveSource, ArchiveStatus, FolderCheck } from '../src/native/types';
 
 const check = (kind: FolderCheck['kind'], archiveId: string | null = null): FolderCheck => ({ kind, ownDisk: false, freeBytes: 1e12, mountPoint: '/Volumes/Backup', noowners: false, archiveId });
-const source = (fields: Partial<ArchiveSource>): ArchiveSource => ({ machine: 'mini', label: '~/.claude', agent: 'claude', files: 10, kept: 10, gone: 0, retentionDays: 36_500, ...fields });
+const source = (fields: Partial<ArchiveSource>): ArchiveSource => ({ machine: 'mini', label: '~/.claude', agent: 'claude', files: 10, kept: 10, gone: 0, retentionDays: 36_500, trim: null, ...fields });
 const t = (key: MessageKey, variables?: MessageVariables) => translate(key, variables);
 const HOUR = 60 * 60_000;
 const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
@@ -46,6 +47,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   projectOverrides: {},
   warnings: [],
   analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, setAside: 0, resetting: false, lastError: null },
+  trimDays: null,
   ...fields,
 });
 
@@ -88,11 +90,23 @@ describe('the session archive', () => {
   });
 
   it('warns about Claude Code homes that delete sessions, including ones that never said', () => {
-    expect(deletesAfterDays(source({ retentionDays: 36_500 }))).toBeNull();
+    expect(deletesAfterDays(source({ retentionDays: 36_500, trim: null }))).toBeNull();
     expect(deletesAfterDays(source({ retentionDays: 14 }))).toBe(14);
     // Claude Code keeps 30 days when a home doesn't say.
-    expect(deletesAfterDays(source({ retentionDays: null }))).toBe(30);
-    expect(deletesAfterDays(source({ agent: 'codex', retentionDays: null }))).toBeNull();
+    expect(deletesAfterDays(source({ retentionDays: null, trim: null }))).toBe(30);
+    expect(deletesAfterDays(source({ agent: 'codex', retentionDays: null, trim: null }))).toBeNull();
+  });
+
+  it('doesn’t warn about a home the archive’s trimming set, and says where each home stands', () => {
+    expect(deletesAfterDays(source({ retentionDays: 30, trim: { kind: 'trimmed', days: 30 } }))).toBeNull();
+    // Claude Code's own 30 days while it waits to be trimmed still deletes what isn't kept.
+    expect(deletesAfterDays(source({ retentionDays: null, trim: { kind: 'waiting', unkept: 2 } }))).toBe(30);
+    expect(trimLine(null, t)).toBeNull();
+    expect(trimLine({ kind: 'trimmed', days: 30 }, t)).toEqual({ text: 'Trimmed to 30 days: every older session is archived', tone: 'muted' });
+    expect(trimLine({ kind: 'waiting', unkept: 1 }, t)?.text).toBe('Keeps everything until 1 older file is archived');
+    expect(trimLine({ kind: 'waiting', unkept: 3 }, t)?.text).toBe('Keeps everything until 3 older files are archived');
+    expect(trimLine({ kind: 'unconfirmed' }, t)).toEqual({ text: 'Keeps everything: its sessions haven’t been archived lately', tone: 'warning' });
+    expect(trimLine({ kind: 'byHand', days: 90 }, t)?.text).toBe('Set to 90 days by hand, so Arbor leaves it');
   });
 
   it('groups homes by machine in the order they came', () => {
@@ -109,8 +123,8 @@ describe('the session archive', () => {
     const desktop = '~/Library/Application Support/Claude/local-agent-mode-sessions';
     const groups = sourcesByMachine([
       source({ machine: 'air', label: '~/.claude' }),
-      source({ machine: 'air', label: `${desktop}/acct/org`, agent: 'claude-desktop', files: 2, kept: 2, retentionDays: null }),
-      source({ machine: 'air', label: `${desktop}/acct/org/local_a/.claude`, files: 3, kept: 1, gone: 1, retentionDays: null }),
+      source({ machine: 'air', label: `${desktop}/acct/org`, agent: 'claude-desktop', files: 2, kept: 2, retentionDays: null, trim: null }),
+      source({ machine: 'air', label: `${desktop}/acct/org/local_a/.claude`, files: 3, kept: 1, gone: 1, retentionDays: null, trim: null }),
       source({ machine: 'air', label: '~/.codex', agent: 'codex' }),
       source({ machine: 'air', label: `${desktop}/acct/org/local_b/.claude`, files: 4, kept: 4 }),
     ]);

@@ -12,8 +12,8 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   archiveId: 'a1',
   main: { root: '/Volumes/Backup/arbor-session-archive.noindex', connected: true, mountPoint: '/Volumes/Backup', freeBytes: 1.24e12, noowners: false, lastSeenAt: Date.now() - 3 * 60_000 },
   sources: [
-    { machine: 'mini', label: '~/.claude', agent: 'claude', files: 5210, kept: 5210, gone: 214, retentionDays: 36_500 },
-    { machine: 'mini', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: null },
+    { machine: 'mini', label: '~/.claude', agent: 'claude', files: 5210, kept: 5210, gone: 214, retentionDays: 36_500, trim: null },
+    { machine: 'mini', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: null, trim: null },
   ],
   machines: [],
   imports: [],
@@ -30,6 +30,7 @@ const status = (fields: Partial<ArchiveStatus> = {}): ArchiveStatus => ({
   projectOverrides: {},
   warnings: [],
   analytics: { enabled: false, detail: 'everything', engineReady: false, engineBytes: 19_169_633, rows: 0, bytes: 0, versionsLeft: null, setAside: 0, resetting: false, lastError: null },
+  trimDays: null,
   ...fields,
 });
 const overview = (fields: Partial<ArchiveStatus> = {}) => text(renderToStaticMarkup(<I18nProvider><ArchiveOverview status={status(fields)} onStatus={() => undefined} /></I18nProvider>));
@@ -66,8 +67,8 @@ describe('Settings › Session archive', () => {
     const shown = overview({
       sources: [
         ...status().sources,
-        { machine: 'cedar-01', label: '~/.claude', agent: 'claude', files: 3480, kept: 3480, gone: 0, retentionDays: 36_500 },
-        { machine: 'macbook-air', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null },
+        { machine: 'cedar-01', label: '~/.claude', agent: 'claude', files: 3480, kept: 3480, gone: 0, retentionDays: 36_500, trim: null },
+        { machine: 'macbook-air', label: '~/.codex', agent: 'codex', files: 666, kept: 640, gone: 0, retentionDays: null, trim: null },
       ],
       machines: [
         { machine: 'cedar-01', at: Date.now(), complete: true, error: null, lastOkAt: Date.now(), retryAt: null },
@@ -86,6 +87,28 @@ describe('Settings › Session archive', () => {
     expect(shown).toContain('Agent homes on cedar-02');
     expect(shown).toContain('The last check didn’t finish. Couldn’t find cedar-02 on the network. Check its name in your SSH config. Nothing kept from it yet.');
     expect(shown.match(/The last check didn’t finish/g)?.length).toBe(2);
+  });
+
+  it('offers trimming local history, off by default, and says where each home stands once it’s on', () => {
+    const off = overview();
+    expect(off).toContain('Trim local history');
+    expect(off).toContain('only while the archive holds every one old enough to go');
+    expect(off).not.toContain('Trimmed to');
+    const on = overview({
+      trimDays: 30,
+      sources: [
+        { machine: 'mini', label: '~/.claude', agent: 'claude', files: 5210, kept: 5210, gone: 214, retentionDays: 30, trim: { kind: 'trimmed', days: 30 } },
+        { machine: 'mini', label: '~/.agent-app/homes/claude-other', agent: 'claude', files: 912, kept: 400, gone: 0, retentionDays: 36_500, trim: { kind: 'waiting', unkept: 3 } },
+        { machine: 'mini', label: '~/Library/Application Support/AcmeCode/claude', agent: 'claude', files: 12, kept: 12, gone: 0, retentionDays: 90, trim: { kind: 'byHand', days: 90 } },
+      ],
+    });
+    expect(on).toContain('30 days');
+    // Trimmed by Arbor, a home deleting after 30 days is no warning.
+    expect(on).toContain('5,210 of 5,210 files kept 214 deleted since, still kept Trimmed to 30 days: every older session is archived');
+    expect(on).not.toContain('Claude Code deletes sessions here after 30 days');
+    expect(on).toContain('Keeps everything until 3 older files are archived');
+    expect(on).toContain('Set to 90 days by hand, so Arbor leaves it');
+    expect(on).not.toContain('deletes sessions here after 90 days');
   });
 
   it('keeps or leaves out a project’s sessions, on every machine or on one', () => {

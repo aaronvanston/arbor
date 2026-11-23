@@ -9,6 +9,7 @@ export type ArchiveCommands = {
   run_session_archive_now: { result: void };
   set_session_archive_paused: { args: { paused: boolean }; result: ArchiveStatus };
   save_session_archive_settings: { args: { gentle: boolean; otherMachines: boolean }; result: ArchiveStatus };
+  set_session_archive_trim: { args: { days: number | null }; result: ArchiveStatus };
   set_session_archive_machine: { args: { machine: string; keep: boolean | null }; result: ArchiveStatus };
   set_session_archive_project: { args: { project: string; machine: string | null; keep: boolean | null }; result: ArchiveStatus };
   reveal_session_archive: { result: void };
