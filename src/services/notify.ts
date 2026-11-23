@@ -16,6 +16,11 @@ export type SystemNotification = {
   urgent?: boolean;
   /** What it's about, so the alert history can open it. */
   subject?: AlertSubject;
+  /**
+   * Which of the problems of its kind it is, when one subject can have several at once (a sandbox forgotten and
+   * degraded), so a repeat folds into the alert for the same problem and not another's.
+   */
+  topic?: string;
 };
 
 /** An alert as Arbor's window shows it, with the history entry it's kept in. */

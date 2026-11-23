@@ -98,8 +98,10 @@ pub(crate) struct AutoLineEvent {
 #[derive(Default)]
 struct Held {
     machines: BTreeMap<String, AutoMachine>,
-    /// What waited on each machine when the user was last told, so the same list isn't said every round.
-    told_waiting: BTreeMap<String, Vec<String>>,
+    /// Each machine's waiting changes the user was told about, with when each was last seen waiting, so the same
+    /// changes aren't said again: not every round, not after a restart, and not when one drops out of the list for a
+    /// round and comes back.
+    told_waiting: BTreeMap<String, BTreeMap<String, i64>>,
     /// Machines with a run under way: an apply on one of them now is the run's own.
     running: BTreeSet<String>,
     auto_stamps: Option<Vec<String>>,
@@ -231,6 +233,8 @@ struct Kept {
     behind_since: BTreeMap<String, i64>,
     #[serde(default)]
     told_behind: BTreeSet<String>,
+    #[serde(default)]
+    told_waiting: BTreeMap<String, BTreeMap<String, i64>>,
 }
 
 fn read_kept(path: &Path) -> Kept {
@@ -256,6 +260,7 @@ fn load(held: &mut Held) {
     held.auto_stamps = Some(kept.stamps);
     held.behind_since = kept.behind_since;
     held.told_behind = kept.told_behind;
+    held.told_waiting = kept.told_waiting;
 }
 
 fn stamps(held: &mut Held) -> &mut Vec<String> {
@@ -270,6 +275,7 @@ fn save(held: &Held) {
         stopped: held.machines.iter().filter_map(|(machine, entry)| Some((machine.clone(), entry.stopped.clone()?))).collect(),
         behind_since: held.behind_since.clone(),
         told_behind: held.told_behind.clone(),
+        told_waiting: held.told_waiting.clone(),
     };
     if let (Some(path), Ok(text)) = (auto_path(), serde_json::to_vec(&kept)) {
         if let Err(error) = super::archive::store::write_atomic(&path, &text) {
@@ -341,6 +347,26 @@ pub(crate) fn consider(app: &tauri::AppHandle, only: Option<String>) {
     });
 }
 
+/// A waiting change not seen waiting for this long is forgotten, so it's news if it comes back.
+const WAITING_FORGOTTEN_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Notes the changes waiting on a machine and says whether any is news: one the user wasn't told about, or not in the
+/// last [`WAITING_FORGOTTEN_MS`]. Fewer changes, or the same ones in another order, aren't news. True when what's
+/// noted changed, to keep it.
+fn waiting_news(told: &mut BTreeMap<String, i64>, waiting: &[String], now: i64) -> (bool, bool) {
+    let before = told.clone();
+    told.retain(|_, seen| now - *seen < WAITING_FORGOTTEN_MS);
+    let news = waiting.iter().any(|key| !told.contains_key(key));
+    for key in waiting {
+        told.insert(key.clone(), now);
+    }
+    // Times moving on by a round aren't worth a write each time; a change of keys or an hour's difference is, so a
+    // restart reads times close enough to forget nothing early.
+    const HOUR: i64 = 60 * 60 * 1000;
+    let changed = before.keys().ne(told.keys()) || told.iter().any(|(key, seen)| before.get(key).is_none_or(|was| seen - was >= HOUR));
+    (news, changed)
+}
+
 /// A machine behind the repo this long is said, once.
 const BEHIND_SAID_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -409,11 +435,9 @@ fn look(app: &tauri::AppHandle, repo: &str, standing: &SyncStanding, only: Optio
             let unstopped = machine.state() == MachineState::InStep && entry.stopped.take().is_some();
             let due = entry.last_run_ms.is_none_or(|at| now - at >= DEBOUNCE_MS);
             let go = !pause && !busy && entry.stopped.is_none() && due && !(selection.sync.is_empty() && selection.hooks.is_empty() && selection.mcp.is_empty());
-            if held.told_waiting.get(name) != Some(&waiting) {
-                tell_waiting = !waiting.is_empty() && !pause;
-                held.told_waiting.insert(name.to_string(), waiting.clone());
-            }
-            if unstopped {
+            let (news, noted) = waiting_news(held.told_waiting.entry(name.to_string()).or_default(), &waiting, now);
+            tell_waiting = news && !pause;
+            if unstopped || noted {
                 save(&held);
             }
             if go {
@@ -640,6 +664,32 @@ mod tests {
         assert!(behind_long(&mut held, &[("cam-mbp".to_string(), MachineState::InStep, 0)], 51 * HOUR).1);
         assert_eq!(behind_long(&mut held, &behind(1), 52 * HOUR).0, vec![]);
         assert_eq!(behind_long(&mut held, &behind(1), 76 * HOUR).0, vec![("cam-mbp".to_string(), 1)], "again after being in step");
+    }
+
+    #[test]
+    fn waiting_changes_are_said_once_and_again_only_when_theres_a_new_one_or_a_day_has_gone_by() {
+        const HOUR: i64 = 60 * 60 * 1000;
+        let keys = |list: &[&str]| list.iter().map(|key| key.to_string()).collect::<Vec<_>>();
+        let mut told = BTreeMap::new();
+        assert_eq!(waiting_news(&mut told, &keys(&["skill:pdf", "mcp:linear"]), 0), (true, true));
+        assert_eq!(waiting_news(&mut told, &keys(&["mcp:linear", "skill:pdf"]), HOUR / 2), (false, false), "the same changes in another order");
+        assert_eq!(waiting_news(&mut told, &keys(&["skill:pdf"]), 2 * HOUR).0, false, "one fewer");
+        assert_eq!(waiting_news(&mut told, &keys(&[]), 3 * HOUR).0, false);
+        assert_eq!(waiting_news(&mut told, &keys(&["skill:pdf", "mcp:linear"]), 4 * HOUR).0, false, "back after a round away");
+        assert!(waiting_news(&mut told, &keys(&["skill:pdf", "hook:repo:guard"]), 5 * HOUR).0, "a new one");
+        // Gone a day, it's news when it comes back.
+        assert_eq!(waiting_news(&mut told, &keys(&[]), 30 * HOUR), (false, true));
+        assert!(waiting_news(&mut told, &keys(&["mcp:linear"]), 31 * HOUR).0);
+    }
+
+    #[test]
+    fn what_was_said_about_waiting_changes_outlasts_a_restart() {
+        let kept = Kept { told_waiting: BTreeMap::from([("cam-mbp".to_string(), BTreeMap::from([("skill:pdf".to_string(), 5)]))]), ..Kept::default() };
+        let text = serde_json::to_string(&kept).unwrap();
+        assert_eq!(serde_json::from_str::<Kept>(&text).unwrap(), kept);
+        // A file from before it was kept reads as nothing told.
+        let older: Kept = serde_json::from_str(r#"{"stamps":[],"stopped":{}}"#).unwrap();
+        assert!(older.told_waiting.is_empty());
     }
 
     #[test]
