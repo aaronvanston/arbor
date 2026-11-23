@@ -46,6 +46,8 @@ export type AlertRecord = {
   body: string;
   urgent: boolean;
   subject?: AlertSubject;
+  /** Which of its kind's problems it is, when its subject can have several (`SystemNotification.topic`). */
+  topic?: string;
   /**
    * Whether this Mac showed it: `app` when it showed in Arbor's window because that was in front, `off` when Arbor
    * isn't allowed to notify. Missing until that's known.
@@ -73,9 +75,12 @@ export const ALERT_HISTORY_DAYS = 30;
 export const ALERT_HISTORY_LIMIT = 500;
 const DAY_MS = 24 * 3_600_000;
 /**
- * An alert that comes in again this soon after the last one updates that entry instead of adding one, and reaches
- * the Mac and phone at most once in this long, so a machine or limit that keeps tripping doesn't ping every time.
+ * An alert that comes in again within this long of the last one updates that entry, its count and its time, instead of
+ * adding one, so something that keeps tripping, or a check that keeps finding the same thing, is one entry. A day,
+ * so the archive's daily reminder is still an entry of its own.
  */
+export const ALERT_FOLD_WINDOW_MS = 24 * 60 * 60_000;
+/** A repeat that says something new reaches the Mac and phone at most once in this long. */
 export const ALERT_REPEAT_WINDOW_MS = 10 * 60_000;
 
 /** What the Alerts page can narrow the list to. */
@@ -276,12 +281,15 @@ export type AlertAdded = { history: AlertHistory; id: string; deliver: boolean }
 const UNFOLDED: ReadonlySet<AlertKind> = new Set<AlertKind>(['agentPermission', 'agentWaiting', 'setupChanged']);
 
 /**
- * Adds an alert, or folds it into the entry for the same kind of alert about the same one thing when that came in
- * within the repeat window. Only the newest alert about a thing counts: once something else was said about it (a
- * machine back up between two "down"s, even in an alert about several machines), the same alert is news again. A
- * repeat goes out again once the window since it last went out has passed, or straight away when it's more urgent
- * than before. Agents that need you and setup changes are never folded, and nor are alerts about nothing in particular or about several
- * things at once, since two of those with the same title can be about different things.
+ * Adds an alert, or folds it into the entry for the same alert about the same one thing (its kind, and its topic when
+ * it has one) when that came in within the fold window. Only the newest alert about a thing counts: once something else
+ * was said about it (a machine back up between two "down"s, even in an alert about several machines), the same alert
+ * is news again. A folded repeat that says nothing new (the same title, no more urgent) only updates the entry's
+ * count and time: it doesn't go out again, and one already seen stays seen. One with a new title (more changes
+ * waiting) goes out again once the repeat window since it last went out has passed, and one more urgent than before
+ * straight away; either is unread again. Agents that need you and setup changes are never folded, and nor are alerts
+ * about nothing in particular or about several things at once, since two of those with the same title can be about
+ * different things.
  */
 export function withAlert(history: AlertHistory, record: AlertRecord, nowMs: number): AlertAdded {
   const about = UNFOLDED.has(record.kind) ? null : aboutOne(record.subject);
@@ -290,12 +298,15 @@ export function withAlert(history: AlertHistory, record: AlertRecord, nowMs: num
   const last = about === null
     ? undefined
     : history.entries.find((entry) => !UNFOLDED.has(entry.kind) && aboutThings(entry.subject).includes(about));
-  if (!last || last.kind !== record.kind || aboutOne(last.subject) !== about || record.atMs - last.atMs > ALERT_REPEAT_WINDOW_MS) {
+  if (!last || last.kind !== record.kind || last.topic !== record.topic || aboutOne(last.subject) !== about || record.atMs - last.atMs >= ALERT_FOLD_WINDOW_MS) {
     return { history: withAlerts(history, [record], nowMs), id: record.id, deliver: true };
   }
   const notifiedAtMs = last.notifiedAtMs ?? last.atMs;
-  const deliver = (record.urgent && !last.urgent) || record.atMs - notifiedAtMs >= ALERT_REPEAT_WINDOW_MS;
-  // Sent again, how it got out is for that send, so the last one's outcome goes. Either way it's news, so unread.
+  const escalated = record.urgent && !last.urgent;
+  const news = escalated || record.title !== last.title;
+  const deliver = escalated || (news && record.atMs - notifiedAtMs >= ALERT_REPEAT_WINDOW_MS);
+  const seen = !news && (last.read === true || last.atMs <= history.seenAtMs);
+  // Sent again, how it got out is for that send, so the last one's outcome goes.
   const { mac: _mac, phone: _phone, read: _read, ...kept } = last;
   const merged: AlertRecord = {
     ...kept,
@@ -307,6 +318,7 @@ export function withAlert(history: AlertHistory, record: AlertRecord, nowMs: num
     count: (last.count ?? 1) + 1,
     notifiedAtMs: deliver ? record.atMs : notifiedAtMs,
     ...(record.subject ? { subject: record.subject } : {}),
+    ...(seen ? { read: true as const } : {}),
   };
   const rest = { ...history, entries: history.entries.filter((entry) => entry.id !== last.id) };
   return { history: withAlerts(rest, [merged], nowMs), id: last.id, deliver };
@@ -361,9 +373,10 @@ const isRecord = (value: unknown): value is AlertRecord => {
     && typeof entry.title === 'string' && typeof entry.body === 'string';
 };
 
-const readRecord = ({ count, notifiedAtMs, read, ...entry }: AlertRecord): AlertRecord => ({
+const readRecord = ({ count, notifiedAtMs, read, topic, ...entry }: AlertRecord): AlertRecord => ({
   ...entry,
   urgent: entry.urgent === true,
+  ...(typeof topic === 'string' && topic ? { topic } : {}),
   ...(read === true ? { read } : {}),
   ...(typeof count === 'number' && count > 1 ? { count } : {}),
   ...(typeof notifiedAtMs === 'number' ? { notifiedAtMs } : {}),
@@ -432,7 +445,7 @@ export type RecordedAlert = { id: string; deliver: boolean };
  */
 export function recordAlerts(messages: SystemNotification[], nowMs = Date.now()): RecordedAlert[] {
   if (!messages.length) return [];
-  const records = messages.map(({ title, body, kind, urgent, subject }): AlertRecord => ({
+  const records = messages.map(({ title, body, kind, urgent, subject, topic }): AlertRecord => ({
     id: `${nowMs.toString(36)}-${(sequence++).toString(36)}`,
     atMs: nowMs,
     kind,
@@ -440,6 +453,7 @@ export function recordAlerts(messages: SystemNotification[], nowMs = Date.now())
     body,
     urgent: urgent ?? false,
     ...(subject ? { subject } : {}),
+    ...(topic ? { topic } : {}),
   }));
   let next = store.get();
   // Each goes on top, so adding them last to first keeps those sent together in the order they were sent.

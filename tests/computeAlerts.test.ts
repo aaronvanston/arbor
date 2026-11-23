@@ -114,15 +114,26 @@ describe('Compute’s alert rules', () => {
     expect(nextComputeAlerts(quiet.alerted, stopped, NOW + 3 * MINUTE).alerted).not.toContain('boat:forgotten:bx_t9v6h2rk');
   });
 
-  it('ends a forgotten alert when the flag clears for any reason but a busy CPU', () => {
+  it('says a forgotten sandbox once while it runs, though its reason changes or the flag drops for a while', () => {
     const first = nextComputeAlerts([], scenario('typical'), NOW);
-    // Looked after without a live session (given an auto-stop, say): the flag is gone and nothing holds it.
-    const lookedAfter = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: null }));
-    const after = nextComputeAlerts(first.alerted, lookedAfter, NOW + MINUTE);
-    expect(after.alerted).not.toContain('boat:forgotten:bx_t9v6h2rk');
-    // So the next time it looks forgotten, for whatever reason, is news.
-    const again = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: 'keptAlive' as const }));
-    expect(nextComputeAlerts(after.alerted, again, NOW + 2 * MINUTE).alert.map(computeProblemKey)).toEqual(['boat:forgotten:bx_t9v6h2rk']);
+    // Its auto-stop is due soon, so Rust drops the flag: nobody has stopped it or gone back to it, so it's remembered.
+    const stopsSoon = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: null }));
+    const during = nextComputeAlerts(first.alerted, stopsSoon, NOW + MINUTE);
+    expect(during.alerted).toContain('boat:forgotten:bx_t9v6h2rk');
+    // Then something keeps it going past twice its auto-stop: the same sandbox left running, not news.
+    const keptAlive = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, forgotten: 'keptAlive' as const }));
+    expect(nextComputeAlerts(during.alerted, keptAlive, NOW + 2 * MINUTE).alert).toEqual([]);
+    // Stopped and started again, it's a new run, and looking forgotten again is news.
+    const stopped = withSandbox(scenario('typical'), 'ci-01-perf', (sandbox) => ({ ...sandbox, state: 'stopped' as const, forgotten: null }));
+    const over = nextComputeAlerts(during.alerted, stopped, NOW + 3 * MINUTE);
+    expect(over.alerted).not.toContain('boat:forgotten:bx_t9v6h2rk');
+    expect(nextComputeAlerts(over.alerted, keptAlive, NOW + 4 * MINUTE).alert.map(computeProblemKey)).toEqual(['boat:forgotten:bx_t9v6h2rk']);
+  });
+
+  it('gives each of a sandbox’s problems its own topic, so their repeats fold apart', () => {
+    const snapshot = scenario('typical');
+    const topics = computeProblems(snapshot, NOW).map((found) => computeAlertNotification(found, t, NOW).topic);
+    expect(topics.sort()).toEqual(['degraded', 'forgotten', 'planHours']);
   });
 
   it('keeps what it alerted while a provider isn’t answering, so nothing repeats when it’s back', () => {

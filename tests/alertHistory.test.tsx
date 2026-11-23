@@ -9,7 +9,7 @@ import { mockCommands } from '../src/dev/mock/answers';
 import {
   ALERT_HISTORY_DAYS,
   ALERT_HISTORY_LIMIT,
-  ALERT_REPEAT_WINDOW_MS,
+  ALERT_FOLD_WINDOW_MS,
   alertDestination,
   alertMachines,
   alertsByDay,
@@ -225,16 +225,40 @@ describe('repeated alerts', () => {
     expect(itemAt(history.entries, 0)).toMatchObject({ id: 'a', atMs: 6 * MINUTE, body: 'latest', count: 3, notifiedAtMs: 0 });
   });
 
-  it('sends a steady repeat again once a window has passed since it last went out', () => {
-    const { history, sent } = run(empty, [0, 4, 8, 12, 16, 20].map((minute) => waiting(`m${minute}`, minute * MINUTE)));
-    expect(sent).toEqual(['m0', 'm12']);
-    expect(itemAt(history.entries, 0)).toMatchObject({ id: 'm0', count: 6, notifiedAtMs: 12 * MINUTE });
+  it('doesn’t send a steady repeat again, however long it keeps coming within a day', () => {
+    const { history, sent } = run(empty, [0, 4, 8, 12, 16, 20, 120, 480].map((minute) => waiting(`m${minute}`, minute * MINUTE)));
+    expect(sent).toEqual(['m0']);
+    expect(itemAt(history.entries, 0)).toMatchObject({ id: 'm0', atMs: 480 * MINUTE, count: 8, notifiedAtMs: 0 });
   });
 
-  it('starts a new entry once a repeat comes in after the window', () => {
-    const { history, sent } = run(empty, [waiting('a', 0), waiting('b', ALERT_REPEAT_WINDOW_MS + 1)]);
+  it('sends a repeat that says something new, at most once a window', () => {
+    const changes = (id: string, atMs: number, count: number) =>
+      record(id, atMs, { kind: 'setupWaiting', title: `${count} changes wait for you on ci-01`, subject: { machine: 'ci-01' } });
+    const { history, sent } = run(empty, [changes('a', 0, 3), changes('b', 2 * MINUTE, 4), changes('c', 2 * 60 * MINUTE, 4), changes('d', 3 * 60 * MINUTE, 5)]);
+    // Four changes two minutes after three is news, but too soon to send; five later on goes out.
+    expect(sent).toEqual(['a', 'd']);
+    expect(history.entries).toHaveLength(1);
+    expect(itemAt(history.entries, 0)).toMatchObject({ id: 'a', title: '5 changes wait for you on ci-01', count: 4, notifiedAtMs: 3 * 60 * MINUTE });
+  });
+
+  it('starts a new entry once a repeat comes in a day or more after the last', () => {
+    const { history, sent } = run(empty, [waiting('a', 0), waiting('b', ALERT_FOLD_WINDOW_MS)]);
     expect(sent).toEqual(['a', 'b']);
     expect(history.entries.map((entry) => [entry.id, entry.count])).toEqual([['b', undefined], ['a', undefined]]);
+  });
+
+  it('folds a repeat only into the alert for the same problem, when a thing can have several', () => {
+    const sandbox = (id: string, atMs: number, topic: string, title: string) =>
+      record(id, atMs, { kind: 'computeSandbox', topic, title, subject: { sandbox: 'boat/bx_1', on: 'ci-01' } });
+    const forgotten = (id: string, atMs: number) => sandbox(id, atMs, 'forgotten', 'ci-01-perf looks forgotten');
+    const { history, sent } = run(empty, [
+      sandbox('d', 0, 'degraded', 'ci-01-perf is degraded'),
+      forgotten('f1', 60 * MINUTE),
+      forgotten('f2', 3 * 60 * MINUTE),
+      forgotten('f3', 4 * 60 * MINUTE),
+    ]);
+    expect(sent).toEqual(['d', 'f1']);
+    expect(history.entries.map((entry) => [entry.id, entry.count])).toEqual([['f1', 3], ['d', undefined]]);
   });
 
   it('sends a repeat straight away when it’s more urgent than before', () => {
@@ -275,14 +299,14 @@ describe('repeated alerts', () => {
     expect(together.sent).toEqual(['d1', 'u', 'd2']);
   });
 
-  it('moves a repeat to the top, unread again, with how it last got out dropped when it goes out again', () => {
+  it('moves a repeat to the top, still seen when it says nothing new, and unread with how it got out dropped when it goes out again', () => {
     resetAlertHistory({ seenAtMs: 2 * MINUTE, entries: [record('other', MINUTE), waiting('a', 0, { mac: 'shown', phone: null })] });
     const [quiet] = recordAlerts([{ title: 'Claude is running out early', body: 'again', kind: 'limitWarning', subject: { provider: 'claude' } }], 3 * MINUTE);
     expect(quiet).toEqual({ id: 'a', deliver: false });
     expect(getAlertHistory().entries.map((entry) => entry.id)).toEqual(['a', 'other']);
-    // Not sent again, so how it got out still stands.
-    expect(itemAt(getAlertHistory().entries, 0)).toMatchObject({ count: 2, mac: 'shown', phone: null });
-    expect(unreadAlerts(getAlertHistory())).toBe(1);
+    // Not sent again, so how it got out still stands, and nothing new came in to read.
+    expect(itemAt(getAlertHistory().entries, 0)).toMatchObject({ count: 2, mac: 'shown', phone: null, read: true });
+    expect(unreadAlerts(getAlertHistory())).toBe(0);
 
     const [again] = recordAlerts([{ title: 'Claude is running out early', body: 'again', kind: 'limitWarning', urgent: true, subject: { provider: 'claude' } }], 4 * MINUTE);
     expect(again).toEqual({ id: 'a', deliver: true });
@@ -290,6 +314,20 @@ describe('repeated alerts', () => {
     expect(entry.count).toBe(3);
     expect(entry).not.toHaveProperty('mac');
     expect(entry).not.toHaveProperty('phone');
+    expect(unreadAlerts(getAlertHistory())).toBe(1);
+  });
+
+  it('keeps an unread repeat unread', () => {
+    const { history } = run({ entries: [], seenAtMs: 0 }, [waiting('a', MINUTE), waiting('b', 2 * MINUTE)]);
+    expect(unreadAlerts(history)).toBe(1);
+    expect(itemAt(history.entries, 0)).not.toHaveProperty('read');
+  });
+
+  it('keeps a topic through storage', () => {
+    const stored = JSON.stringify({ seenAtMs: 0, entries: [waiting('a', 5, { topic: 'forgotten' }), waiting('b', 4, { topic: 7 as unknown as string })] });
+    const [first, second] = parseAlertHistory(stored).entries;
+    expect(first).toMatchObject({ topic: 'forgotten' });
+    expect(second).not.toHaveProperty('topic');
   });
 
   it('never folds agents that need you, as each is its own session waiting', () => {
@@ -400,7 +438,7 @@ describe('opening an alert from its toast', () => {
     expect(parseAlertHistory(JSON.stringify(getAlertHistory())).entries.find((entry) => entry.id === first.id)).toMatchObject({ read: true });
   });
 
-  it('leaves it off the Alerts page’s new ones, and a repeat makes it new again', () => {
+  it('leaves it off the Alerts page’s new ones, and only a repeat that says something new makes it new again', () => {
     const [first] = recordAlerts([down], 5_000);
     if (!first) throw new Error('expected an alert');
     markAlertRead(first.id);
@@ -408,6 +446,9 @@ describe('opening an alert from its toast', () => {
     const html = text(renderToStaticMarkup(<I18nProvider><AlertsPage coreReady onNavigate={() => undefined} /></I18nProvider>));
     expect(html).not.toContain('New');
     recordAlerts([down], 6_000);
+    expect(getAlertHistory().entries).toHaveLength(1);
+    expect(unreadAlerts(getAlertHistory())).toBe(0);
+    recordAlerts([{ ...down, title: 'ci-01 still isn’t answering' }], 7_000);
     expect(getAlertHistory().entries).toHaveLength(1);
     expect(itemAt(getAlertHistory().entries, 0)).not.toHaveProperty('read');
     expect(unreadAlerts(getAlertHistory())).toBe(1);

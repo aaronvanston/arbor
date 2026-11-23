@@ -126,20 +126,21 @@ function planHoursQuiet(provider: ComputeProviderSnapshot, key: string): boolean
 }
 
 /**
- * Whether a sandbox alerted as forgotten is only at work again, not looked after. Rust holds the flag back while its
- * CPU is busy and says so, so one hovering at that line doesn't alert again each time it goes quiet. Anything else
- * that clears the flag (it stopped, its session is live again, it was given an auto-stop) ends the alert, and the
- * next time it looks forgotten is news.
+ * Whether a sandbox alerted as forgotten hasn't been looked after since: it's still running and its session hasn't
+ * come back. Rust drops the flag while its CPU is busy, while its auto-stop is due within half an hour, and between its
+ * reasons (a session that ended, then a run past twice its auto-stop), so a sandbox left running would otherwise alert
+ * again each time one of those passes. Stopping it, or its session being live again, ends the alert, and the next
+ * time it looks forgotten is news.
  */
-function forgottenHeldBack(provider: ComputeProviderSnapshot, key: string): boolean {
+function forgottenStillOpen(provider: ComputeProviderSnapshot, key: string): boolean {
   const id = key.split(':')[2];
-  return provider.sandboxes.some((sandbox) => sandbox.id === id && sandbox.forgottenHeld);
+  return provider.sandboxes.some((sandbox) => sandbox.id === id && sandbox.mine && sandbox.state !== 'stopped' && sandbox.session?.live !== true);
 }
 
 /**
  * The problems to alert about now, and the keys to remember: each alerts once when it appears and again only after
  * it was gone. What a round couldn't judge (a provider not read yet since launch or not answering, limits the key can't read, plan hours with
- * nothing running, a forgotten sandbox that's busy for a while) keeps what was remembered for it, so a provider that drops out for a minute, or sandboxes that
+ * nothing running) keeps what was remembered for it, and so does a forgotten sandbox nobody has stopped or gone back to, so a provider that drops out for a minute, or sandboxes that
  * stop and start again, don't alert everything again. A provider no longer connected forgets its own.
  */
 export function nextComputeAlerts(alerted: readonly string[], snapshot: ComputeSnapshot, nowMs: number): { alert: ComputeProblem[]; alerted: string[] } {
@@ -150,7 +151,7 @@ export function nextComputeAlerts(alerted: readonly string[], snapshot: ComputeS
     if (provider === undefined || kind === undefined) return false;
     return unjudged(provider, nowMs)(kind)
       || (kind === 'planHours' && planHoursQuiet(provider, key))
-      || (kind === 'forgotten' && forgottenHeldBack(provider, key));
+      || (kind === 'forgotten' && forgottenStillOpen(provider, key));
   });
   const keys = problems.map(computeProblemKey);
   return {
@@ -198,6 +199,11 @@ function sandboxSubject(problem: { provider: ComputeProviderId; sandbox: Compute
  * never anything the provider wrote.
  */
 export function computeAlertNotification(problem: ComputeProblem, t: Translate, nowMs: number): SystemNotification {
+  // One sandbox or provider can have several problems at once, so each is its own alert to fold repeats into.
+  return { ...problemNotification(problem, t, nowMs), topic: problem.kind };
+}
+
+function problemNotification(problem: ComputeProblem, t: Translate, nowMs: number): SystemNotification {
   const provider = computeProviderName(problem.provider);
   const when = (ms: number) => formatWhen(ms, { now: nowMs });
   switch (problem.kind) {
