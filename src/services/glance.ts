@@ -3,7 +3,7 @@ import { formatTime } from '../lib/format';
 import type { AgentKind, HealthStatus, MachineHealth, TrayRow } from '../native/types';
 import { agentsBehind, runningAgents, type NewestAgents } from './agentVersions';
 import { healthReasonText, type HomeMachine } from './homeOverview';
-import { unreachableReason } from './machineAlerts';
+import { downStatusKey, unreachableReason } from './machineAlerts';
 import { AGENT_KINDS, formatBytes, formatLatency, KIB } from './machineHealth';
 import { machinePlace } from './machineIdentity';
 import { HEALTH_DOT, TRAY_SEPARATOR } from './trayMenu';
@@ -84,7 +84,7 @@ function machineCondition(health: MachineHealth | null, t: Translate): string | 
   const status = health?.status ?? 'pending';
   if (status === 'healthy') return null;
   if (status === 'pending' || status === 'unconfigured') return t('tray.machines.pending');
-  if (status === 'unreachable') return t('tray.machines.unreachable');
+  if (status === 'unreachable') return t(downStatusKey(health?.error ?? null, true));
   if (health?.reason && health.latest) {
     const { key, variables } = healthReasonText(health.reason, health.latest);
     return t(key, variables);

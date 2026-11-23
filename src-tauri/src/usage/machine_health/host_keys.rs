@@ -141,8 +141,16 @@ pub(super) fn is_host_key_cause(line: &str) -> bool {
 
 /// A failure that only says a host key didn't verify, as Grove gives it (it keeps ssh's last line), so Arbor asks ssh
 /// itself which it was.
-pub(super) fn is_bare_host_key_failure(error: &str) -> bool {
+fn is_bare_host_key_failure(error: &str) -> bool {
     error.trim() == HOST_KEY_FAILED
+}
+
+/// A failure from Grove that says nothing of why ssh gave up, so Arbor asks ssh itself: a host key that didn't verify
+/// (ssh's last line, the same for an unknown key and a changed one), or Grove finding the connection closed before
+/// anything came back, which is how a login ssh was refused reaches it.
+pub(super) fn hides_ssh_cause(error: &str) -> bool {
+    let error = error.trim();
+    is_bare_host_key_failure(error) || ["failed to fill whole buffer", "unexpected end of file", "early eof"].iter().any(|words| error.to_ascii_lowercase().contains(words))
 }
 
 fn says_key_changed(stderr: &str) -> bool {
@@ -616,6 +624,12 @@ mod tests {
     #[test]
     fn only_a_bare_host_key_failure_is_asked_about_again() {
         assert!(is_bare_host_key_failure("Host key verification failed."));
+        assert!(hides_ssh_cause("Host key verification failed."));
+        // Grove reading the probe's reply from an ssh that was refused and closed.
+        assert!(hides_ssh_cause("Failed to fill whole buffer"));
+        assert!(hides_ssh_cause("grove: unexpected end of file"));
+        assert!(!hides_ssh_cause("cam@cam-mbp: Permission denied (publickey)."));
+        assert!(!hides_ssh_cause("Timed out after 20s"));
         assert!(!is_bare_host_key_failure("No ED25519 host key is known for cam-mbp and you have requested strict checking."));
         assert!(is_host_key_cause("No ED25519 host key is known for cam-mbp and you have requested strict checking."));
         assert!(is_host_key_cause("Host key for cam-mbp has changed and you have requested strict checking."));

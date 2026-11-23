@@ -134,6 +134,16 @@ const REASONS: Record<Exclude<SshFailure, 'other'>, MessageKey> = {
  */
 export const sshFailureReason = (failure: SshFailure, t: Translate) => (failure === 'other' ? null : t(REASONS[failure]));
 
+/**
+ * What a machine whose checks fail is, in a word: one that turns down this Mac's login is answering, and needs its key
+ * fixed rather than waking or waiting for, so it isn't called unreachable.
+ */
+export const downStatusKey = (error: string | null, short = false): MessageKey => {
+  const auth = sshFailure(error) === 'auth';
+  if (short) return auth ? 'tray.machines.authFailed' : 'tray.machines.unreachable';
+  return auth ? 'machines.health.status.authFailed' : 'machines.health.status.unreachable';
+};
+
 /** What the Machines page says about a failing machine: the plain reason, or the error when there's none plainer. */
 export function unreachableReason(error: string | null, t: Translate) {
   if (!error) return null;
