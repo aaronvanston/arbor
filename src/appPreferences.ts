@@ -37,8 +37,6 @@ export type AppPreferences = {
   forecastLookbackDays: number;
   /** A spend rate (percent of one account an hour) the forecast uses instead of measuring one; 0 measures it. */
   forecastRatePerHour: number;
-  /** Spend banked and manual resets in the forecast, where it suggests them. */
-  forecastResets: boolean;
   /** Let the account order put an account ahead of its turn to reach its limit before a reset it holds lapses. */
   routingLapsingResets: boolean;
   /** Check the providers' public status pages for incidents. */
@@ -112,7 +110,6 @@ export const APP_PREFERENCE_DEFAULTS: Readonly<AppPreferences> = {
   forecastModel: 'weekly',
   forecastLookbackDays: 7,
   forecastRatePerHour: 0,
-  forecastResets: false,
   routingLapsingResets: false,
   providerStatus: true,
   outageNotifications: true,

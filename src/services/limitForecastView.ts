@@ -36,11 +36,11 @@ export function setForecastFolded(provider: string, folded: boolean) {
 }
 
 /** The forecast's settings from the app's preferences, with anything unknown (set by hand, or by the CLI) as its default. */
-export function forecastSettingsFrom(preferences: Pick<AppPreferences, 'forecastModel' | 'forecastLookbackDays' | 'forecastRatePerHour' | 'forecastResets'>): ForecastSettings {
+export function forecastSettingsFrom(preferences: Pick<AppPreferences, 'forecastModel' | 'forecastLookbackDays' | 'forecastRatePerHour'>): ForecastSettings {
   const model: ForecastModel = preferences.forecastModel === 'recent' ? 'recent' : 'weekly';
   const lookback = (FORECAST_LOOKBACK_OPTIONS as readonly number[]).includes(preferences.forecastLookbackDays) ? preferences.forecastLookbackDays : 7;
   const rate = Number(preferences.forecastRatePerHour);
-  return { model, lookbackDays: lookback, ratePerHour: Number.isFinite(rate) && rate > 0 ? rate : null, countResets: preferences.forecastResets === true };
+  return { model, lookbackDays: lookback, ratePerHour: Number.isFinite(rate) && rate > 0 ? rate : null };
 }
 
 /**

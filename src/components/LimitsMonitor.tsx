@@ -539,7 +539,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   // Native notifications when a provider's whole pool is forecast to run dry within a day, once for each refill it
   // waits on. Off unless asked for, since it reads weeks of limit history after every refresh; the forecast's code
   // loads only then.
-  const { forecastModel, forecastLookbackDays, forecastRatePerHour, forecastResets } = preferences;
+  const { forecastModel, forecastLookbackDays, forecastRatePerHour } = preferences;
   useEffect(() => {
     if (!preferences.forecastAlerts || freshLimits.some((limit) => limit.loading)) return;
     let current = true;
@@ -548,7 +548,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         import('../services/limitForecast'),
         import('../services/limitForecastView'),
       ]);
-      const settings = forecastSettingsFrom({ forecastModel, forecastLookbackDays, forecastRatePerHour, forecastResets });
+      const settings = forecastSettingsFrom({ forecastModel, forecastLookbackDays, forecastRatePerHour });
       const alerts: Array<ForecastAlert & { provider: QuotaProvider; claim?: string }> = [];
       for (const limit of freshLimits) {
         const label = limit.headline.label;
@@ -584,7 +584,7 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
       }));
     })();
     return () => { current = false; };
-  }, [freshLimits, preferences.forecastAlerts, forecastModel, forecastLookbackDays, forecastRatePerHour, forecastResets, t]);
+  }, [freshLimits, preferences.forecastAlerts, forecastModel, forecastLookbackDays, forecastRatePerHour, t]);
 
   // Native notifications when an account ahead in the order, with limit left, stands still for hours while the
   // accounts behind it run down: the proxy is passing it over. Once for each such stretch.

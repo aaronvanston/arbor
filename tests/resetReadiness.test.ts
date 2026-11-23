@@ -151,3 +151,22 @@ describe('notifying once per stretch at a limit', () => {
     expect(nextResetNotifications({ gone: true }, [claude(idle)], true)).toMatchObject({ notified: {}, changed: true });
   });
 });
+
+describe('waiting for the rest of the pool', () => {
+  const roomy: QuotaState = { status: 'success', rows: [{ label: '5-hour window', remainingPercent: 60 }] };
+  const spent: QuotaState = { status: 'success', rows: [{ label: '5-hour window', remainingPercent: 0 }] };
+  const other = (quota: QuotaState, provider: 'claude' | 'codex' = 'claude') =>
+    ({ key: `other-${provider}`, file: { name: `${provider}-2.json`, provider, auth_index: `${provider}-2` }, quota });
+  const ready = { key: 'claude', file: claudeFile, quota: claudeQuota() };
+
+  it('holds a reset while another account of the provider has room on that limit', () => {
+    const waiting = nextResetNotifications({}, [ready, other(roomy)], true);
+    expect(waiting).toMatchObject({ notified: {}, ready: [], changed: false });
+    // An account of another provider has no say.
+    expect(nextResetNotifications({}, [ready, other(roomy, 'codex')], true).ready).toHaveLength(1);
+  });
+
+  it('tells once the rest of the pool is out too', () => {
+    expect(nextResetNotifications({}, [ready, other(spent)], true).ready.map((item) => item.key)).toEqual(['claude']);
+  });
+});

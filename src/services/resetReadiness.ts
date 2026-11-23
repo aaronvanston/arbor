@@ -1,5 +1,5 @@
 import { canResetClaudeQuota, canResetCodexQuota, resetUnconfirmed } from './quotaActions';
-import type { AuthFile, ClaudeResetKind, QuotaState } from './quotaService';
+import { providerForFile, type AuthFile, type ClaudeResetKind, type QuotaState } from './quotaService';
 
 /**
  * An account at a limit that a reset can refill now, with what ran out when it is known. A Claude one names the kind
@@ -50,12 +50,29 @@ export function codexResetEarlyUse(quota: QuotaState): { limit: string; percentL
 
 export type ResetReadyAccount = { key: string; file: AuthFile; quota: QuotaState | undefined };
 
+/** The limits a ready account is out of, among those its reset refills: what another account needs room on. */
+function limitsOut(quota: QuotaState, readiness: ResetReady): string[] {
+  const refills = readiness.provider === 'codex' ? [readiness.limit]
+    : quota.bankedReset?.kinds.find((offer) => offer.kind === readiness.reset)?.windows ?? (readiness.limit ? [readiness.limit] : []);
+  const out = quota.rows.filter((row) => refills.includes(row.label) && row.remainingPercent !== null && row.remainingPercent <= 0).map((row) => row.label);
+  return out.length ? out : refills;
+}
+
+/** Whether an account can take work on every one of `limits`: the proxy moves there before a reset is needed. */
+const hasRoom = (quota: QuotaState | undefined, limits: string[]) => quota?.status === 'success' && limits.length > 0
+  && limits.every((label) => quota.rows.some((row) => row.label === label && (row.remainingPercent ?? 0) > 0));
+
 /**
  * Picks the accounts that just became ready. `notified` holds the accounts
  * already told about, so each stretch at a limit notifies once. An account
  * mid-refresh, or whose last reset is still unconfirmed, keeps its entry until
  * its limits are known again. With `prune`, entries for accounts no longer
  * listed are dropped; leave it off until the account list has loaded.
+ *
+ * `accounts` are the ones in use. One at a limit isn't ready while another of
+ * its provider still has room on that limit: the proxy moves there, and a reset
+ * used now would refill capacity the others would have covered. It's told
+ * about once the rest of the pool is out too.
  */
 export function nextResetNotifications(notified: Record<string, true>, accounts: ResetReadyAccount[], prune: boolean) {
   const next: Record<string, true> = {};
@@ -69,6 +86,9 @@ export function nextResetNotifications(notified: Record<string, true>, accounts:
     }
     const readiness = resetReadyFor(file, quota);
     if (!readiness) return;
+    const provider = providerForFile(file);
+    const limits = limitsOut(quota, readiness);
+    if (accounts.some((other) => other.key !== key && providerForFile(other.file) === provider && hasRoom(other.quota, limits))) return;
     next[key] = true;
     if (!notified[key]) ready.push({ ...readiness, key, file });
   });

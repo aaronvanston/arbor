@@ -22,6 +22,9 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from './u
 import { Spinner } from './ui/spinner';
 import { Toggle, ToggleGroup } from './ui/toggle-group';
 
+/** A suggested reset offers its button from this long before it's due: before then, using it would be spending it early. */
+const CLAIM_DUE_MS = 3_600_000;
+
 const rate = (value: number) => `${value < 10 ? value.toFixed(1) : Math.round(value)}%`;
 
 /**
@@ -54,7 +57,7 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
   })),
   // Settings are rebuilt every render from the preferences; their fields are what matter.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [accounts, trend.readings, settings.model, settings.lookbackDays, settings.ratePerHour, settings.countResets, view.horizonDays, historyMs, nowMs]);
+  [accounts, trend.readings, settings.model, settings.lookbackDays, settings.ratePerHour, view.horizonDays, historyMs, nowMs]);
 
   if (!headline.label || !accounts.length) return null;
   const dryAtMs = forecast?.projection.dryAtMs ?? null;
@@ -140,7 +143,7 @@ export function LimitForecastPanel({ provider, providerName, headline, resettabl
             ) : null}
           </div>
           <BasisNote forecast={forecast} failed={trend.failed} />
-          <AdviceList advice={forecast.advice} when={when} resettable={resettable} onReset={onReset} />
+          <AdviceList advice={forecast.advice} when={when} nowMs={nowMs} resettable={resettable} onReset={onReset} />
         </>
       )}
     </SettingsBlock>
@@ -180,7 +183,10 @@ function Legend({ tab, marks }: { tab: ForecastTab; marks: ResetMark[] }) {
         <span className="inline-flex items-center gap-1.5"><MarkSwatch hollow />{t('forecast.series.refilledEarly')}</span>
       ) : null}
       {shown.some((mark) => mark.how === 'planned') ? (
-        <span className="inline-flex items-center gap-1.5"><MarkSwatch faint />{t('forecast.series.resetSuggested')}</span>
+        <>
+          <span className="inline-flex items-center gap-1.5"><MarkSwatch faint />{t('forecast.series.resetSuggested')}</span>
+          <span className="inline-flex items-center gap-1.5"><span className="w-3 border-t-2 border-dotted border-primary/60" />{t('forecast.series.withResets')}</span>
+        </>
       ) : null}
     </div>
   );
@@ -196,9 +202,10 @@ function BasisNote({ forecast, failed }: { forecast: Forecast; failed: boolean }
   return note ? <p className="text-xs text-muted-foreground">{note}</p> : null;
 }
 
-function AdviceList({ advice, when, resettable, onReset }: {
+function AdviceList({ advice, when, nowMs, resettable, onReset }: {
   advice: Advice[];
   when: (ms: number) => string;
+  nowMs: number;
   resettable: (key: string, reset?: ClaudeResetKind) => boolean;
   onReset?: (key: string, reset?: ClaudeResetKind) => void;
 }) {
@@ -213,8 +220,9 @@ function AdviceList({ advice, when, resettable, onReset }: {
     const early = item.early !== undefined && reset && item.lapsesAtMs !== undefined;
     const action = early ? t('forecast.advice.claimEarlyKind', { reset, name, time: when(item.lapsesAtMs ?? item.atMs), percent: formatPoolPercent(Math.round(item.early ?? 0)) })
       : item.first ? (reset ? t('forecast.advice.claimFirstKind', { reset, name, time }) : t('forecast.advice.claimFirst', { name, time }))
+        : item.beforeLapse ? (reset ? t('forecast.advice.claimBeforeLapseKind', { reset, name, time }) : t('forecast.advice.claimBeforeLapse', { name, time }))
         : reset ? t('forecast.advice.claimKind', { reset, name, time }) : t('forecast.advice.claim', { name, time });
-    const why = item.lapsesAtMs !== undefined && !early ? t('forecast.advice.why.lapses', { time: when(item.lapsesAtMs) }) : null;
+    const why = item.lapsesAtMs !== undefined && !early && !item.beforeLapse ? t('forecast.advice.why.lapses', { time: when(item.lapsesAtMs) }) : null;
     // What it's for: the regular reset it carries the pool to, or how much longer the pool goes.
     const lasts = item.gainMs === null;
     const account = bridge?.names[0];
@@ -271,7 +279,7 @@ function AdviceList({ advice, when, resettable, onReset }: {
               aria-hidden="true"
             />
             <span className="min-w-0 flex-1">{line(item)}</span>
-            {item.kind === 'claim' && onReset && resettable(item.key, item.reset) ? (
+            {item.kind === 'claim' && onReset && item.atMs - nowMs <= CLAIM_DUE_MS && resettable(item.key, item.reset) ? (
               <Button variant="outline" size="xs" onClick={() => onReset(item.key, item.reset)}>
                 <RotateCcw />
                 {t('forecast.advice.claimNow')}

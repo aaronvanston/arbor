@@ -182,7 +182,6 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   row('appearance', 'forecast-model', 'appearance.forecast.title', 'appearance.forecastModel.title', { description: 'appearance.forecastModel.description', keywords: 'settingsSearch.keywords.forecast' }),
   row('appearance', 'forecast-lookback', 'appearance.forecast.title', 'appearance.forecastLookback.title', { description: 'appearance.forecastLookback.description', keywords: 'settingsSearch.keywords.forecast' }),
   row('appearance', 'forecast-rate', 'appearance.forecast.title', 'appearance.forecastRate.title', { description: 'appearance.forecastRate.description', keywords: 'settingsSearch.keywords.forecast' }),
-  row('appearance', 'forecast-resets', 'appearance.forecast.title', 'appearance.forecastResets.title', { description: 'appearance.forecastResets.description', keywords: 'settingsSearch.keywords.forecast' }),
 
   ...([
     ['limit-pace', 'interface.limits.title', 'interface.limitNotifications.title', 'interface.limitNotifications.description'],

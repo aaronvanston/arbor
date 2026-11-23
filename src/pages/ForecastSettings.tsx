@@ -2,10 +2,9 @@ import { setAppPreference, useAppPreferences } from '../appPreferences';
 import { SettingsRow, SettingsSection } from '../components/layout/settings';
 import { NumberField } from '../components/ui/number-field';
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Switch } from '../components/ui/switch';
 import { useI18n } from '../i18n';
 import { FORECAST_LOOKBACK_OPTIONS, type ForecastModel } from '../services/limitForecast';
-import { onOffLabel, preferenceReset } from '../services/settingDefaults';
+import { preferenceReset } from '../services/settingDefaults';
 
 const MODELS: ForecastModel[] = ['weekly', 'recent'];
 
@@ -13,7 +12,6 @@ const MODELS: ForecastModel[] = ['weekly', 'recent'];
 export function ForecastSettingsSection() {
   const { t } = useI18n();
   const preferences = useAppPreferences();
-  const onOff = onOffLabel(t);
   const modelLabel = (model: ForecastModel) => t(model === 'recent' ? 'appearance.forecastModel.recent' : 'appearance.forecastModel.weekly');
   const daysLabel = (days: number) => (days === 1 ? t('appearance.forecastLookback.days.one') : t('appearance.forecastLookback.days.other', { days }));
   const rateLabel = (rate: number) => (rate > 0 ? `${rate}%` : t('appearance.forecastRate.automatic'));
@@ -66,19 +64,6 @@ export function ForecastSettingsSection() {
             onValueChange={(next) => setAppPreference('forecastRatePerHour', next !== null && Number.isFinite(next) && next > 0 ? next : 0)}
             unit="%"
             aria-label={t('appearance.forecastRate.title')}
-          />
-        }
-      />
-      <SettingsRow
-        settingId="appearance.forecast-resets"
-        reset={preferenceReset(preferences, 'forecastResets', onOff)}
-        title={t('appearance.forecastResets.title')}
-        description={t('appearance.forecastResets.description')}
-        control={
-          <Switch
-            checked={preferences.forecastResets}
-            aria-label={t('appearance.forecastResets.title')}
-            onCheckedChange={(checked) => setAppPreference('forecastResets', checked)}
           />
         }
       />

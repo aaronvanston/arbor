@@ -104,10 +104,10 @@ describe('forecast chart marks', () => {
 
 describe('forecast settings', () => {
   it('turns anything unknown into its default', () => {
-    expect(forecastSettingsFrom({ forecastModel: 'bogus' as never, forecastLookbackDays: 5, forecastRatePerHour: Number.NaN, forecastResets: 'yes' as never }))
-      .toEqual({ model: 'weekly', lookbackDays: 7, ratePerHour: null, countResets: false });
-    expect(forecastSettingsFrom({ forecastModel: 'recent', forecastLookbackDays: 3, forecastRatePerHour: 2.5, forecastResets: true }))
-      .toEqual({ model: 'recent', lookbackDays: 3, ratePerHour: 2.5, countResets: true });
+    expect(forecastSettingsFrom({ forecastModel: 'bogus' as never, forecastLookbackDays: 5, forecastRatePerHour: Number.NaN }))
+      .toEqual({ model: 'weekly', lookbackDays: 7, ratePerHour: null });
+    expect(forecastSettingsFrom({ forecastModel: 'recent', forecastLookbackDays: 3, forecastRatePerHour: 2.5 }))
+      .toEqual({ model: 'recent', lookbackDays: 3, ratePerHour: 2.5 });
   });
 
   it('draws as far behind now as ahead, or as far as the readings go', () => {

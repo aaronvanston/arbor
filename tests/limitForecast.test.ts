@@ -35,7 +35,7 @@ const account = (key: string, left: number, resetInHours: number | null, credits
 });
 
 const settings = (overrides: Partial<ForecastSettings> = {}): ForecastSettings =>
-  ({ model: 'recent', lookbackDays: 7, ratePerHour: null, countResets: false, ...overrides });
+  ({ model: 'recent', lookbackDays: 7, ratePerHour: null, ...overrides });
 
 describe('pool simulation', () => {
   test('spends the soonest reset first and refills each account at its reset', () => {
@@ -161,14 +161,14 @@ describe('resets on the chart', () => {
     ]);
   });
 
-  test('marks the resets the projection spends, named as the advice names them', () => {
+  test('marks the resets the plan spends, named as the advice names them', () => {
     const a: ForecastAccount = { ...account('a', 20, 100, 1), lots: [{ count: 1, expiresAtMs: null, refills: true, reset: 'weekly' }] };
-    const forecast = (countResets: boolean) => buildForecast({
-      accounts: [a, account('b', 20, 30)], readings: [], settings: settings({ ratePerHour: 2, countResets }), horizonDays: 1, historyMs: DAY, nowMs: NOW,
+    const forecast = buildForecast({
+      accounts: [a, account('b', 20, 30)], readings: [], settings: settings({ ratePerHour: 2 }), horizonDays: 1, historyMs: DAY, nowMs: NOW,
     });
-    expect(forecast(true).marks).toEqual([{ atMs: NOW + 20 * HOUR, key: 'a', name: 'a', how: 'planned', reset: 'weekly', gain: 100 }]);
-    // Drawn without the suggestions, the projection spends none.
-    expect(forecast(false).marks).toEqual([]);
+    expect(forecast.marks).toEqual([{ atMs: NOW + 20 * HOUR, key: 'a', name: 'a', how: 'planned', reset: 'weekly', gain: 100 }]);
+    // The projection itself spends none.
+    expect(forecast.projection.events.some((event) => event.kind === 'credit')).toBe(false);
   });
 
   test('keeps a mark on its step when the history is thinned', () => {
@@ -245,11 +245,16 @@ describe('forecast', () => {
     expect(claim).toMatchObject({ key: 'a', atMs: NOW + 20 * HOUR });
   });
 
-  test('draws the claims in when asked to count them', () => {
+  test('draws the pool with the suggested resets apart from the projection, and never says to keep them banked', () => {
     const accounts = [account('a', 20, 100, 1), account('b', 20, 30)];
-    const forecast = buildForecast({ accounts, readings: [], settings: settings({ ratePerHour: 2, countResets: true }), horizonDays: 1, historyMs: DAY, nowMs: NOW });
-    expect(forecast.projection.dryAtMs).toBeNull();
-    expect(forecast.advice.find((item) => item.kind === 'lasts')).toMatchObject({ credits: 0 });
+    const forecast = buildForecast({ accounts, readings: [], settings: settings({ ratePerHour: 2 }), horizonDays: 1, historyMs: DAY, nowMs: NOW });
+    expect(forecast.projection.dryAtMs).toBe(NOW + 20 * HOUR);
+    expect(forecast.withResets?.dryAtMs).toBeNull();
+    expect(forecast.advice.some((item) => item.kind === 'lasts')).toBe(false);
+    // A pool that lasts suggests nothing, so there's nothing else to draw.
+    const lasting = buildForecast({ accounts: [account('a', 100, 100, 1)], readings: [], settings: settings({ ratePerHour: 1 }), horizonDays: 1, historyMs: DAY, nowMs: NOW });
+    expect(lasting.withResets).toBeNull();
+    expect(lasting.advice.find((item) => item.kind === 'lasts')).toMatchObject({ credits: 1 });
   });
 
   test('without resets, says what pace would last', () => {
@@ -300,9 +305,20 @@ describe('which reset the forecast spends, and where', () => {
   });
 
   test('between resets that buy the same, spends the one that lapses sooner', () => {
-    // Either reset carries the pool the same 50h; b's lapses at 60h and a's never does.
+    // Either reset carries the pool the same 50h; b's lapses at 60h and a's never does. a's is kept until the pool
+    // runs dry again, though a itself ran out at 10h.
     const plan = claims([account('a', 20, 100, 1), account('b', 20, 101, 1, NOW + 60 * HOUR)], 2);
-    expect(plan.map((item) => [item.key, hours(item.atMs), hours(item.lapsesAtMs)])).toEqual([['b', 20, 60], ['a', 10, undefined]]);
+    expect(plan.map((item) => [item.key, hours(item.atMs), hours(item.lapsesAtMs)])).toEqual([['b', 20, 60], ['a', 70, undefined]]);
+  });
+
+  test('never spends a reset while another account has room, however soon its own account runs out', () => {
+    // a is nearly out and next in line; b and c have plenty. The pool runs dry at 47.5h, so that's when a's reset goes.
+    const plan = claims([account('a', 5, 120, 1), account('b', 50, 130), account('c', 40, 140)], 2);
+    expect(plan.map((item) => [item.key, hours(item.atMs)])).toEqual([['a', 47.5]]);
+    const { dryAtMs } = buildForecast({
+      accounts: [account('a', 5, 120, 1), account('b', 50, 130), account('c', 40, 140)], readings: [], settings: settings({ ratePerHour: 2 }), horizonDays: 3, historyMs: DAY, nowMs: NOW,
+    }).projection;
+    expect(itemAt(plan, 0).atMs).toBe(present(dryAtMs));
   });
 
   test("leaves an account about to reset on its own, and says which reset the pool is carried to", () => {
@@ -328,7 +344,8 @@ describe('which reset the forecast spends, and where', () => {
     // b resets sooner, so a would wait its turn and run out at 20h, after its reset lapsed at 10h. First, it's out at 7.5h.
     const plan = claims([holding(account('a', 30, 100), { expiresAtMs: NOW + 10 * HOUR }), account('b', 50, 40)], 4);
     expect(plan).toMatchObject([{ key: 'a', first: true, lapsesAtMs: NOW + 10 * HOUR, bridge: { atMs: NOW + 40 * HOUR, names: ['b'] } }]);
-    expect(hours(itemAt(plan, 0).atMs)).toBe(7.5);
+    // It's out from 7.5h, and the reset is kept until an hour before it lapses.
+    expect(hours(itemAt(plan, 0).atMs)).toBe(9);
     // It's a suggestion: what's drawn without the resets keeps a in its turn, running out at 20h.
     const drawn = buildForecast({
       accounts: [holding(account('a', 30, 100), { expiresAtMs: NOW + 10 * HOUR }), account('b', 50, 40)],

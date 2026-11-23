@@ -54,6 +54,12 @@ Spend is read from the limit history as drops between readings of one cycle. An 
 hours a pool spent dry read as no demand, and a pool that keeps running dry is forecast a little short. Advice only ever
 suggests a reset. Claims stay behind the confirmation on Accounts, and nothing in the forecast spends one.
 
+A reset is suggested for the moment the whole pool runs dry, never for when one account does: until then the proxy
+has somewhere else to go, and a reset spent sooner refills capacity the other accounts would have covered, some of
+which then lapses unused at their own resets. Only a reset that lapses first is spent sooner, just before it lapses.
+The projection is always drawn with no reset spent, the plan as a fainter line beside it, and the "reset ready" alert
+waits for the same moment: the provider's other accounts out on that limit too.
+
 The chart names a reset only when Arbor used it: the first limit reading after it carries its kind (`reset_used`), put
 there by the window. Anything else that raises an account before its window resets, a reset used in another app
 included, is drawn as an early refill, because the readings can't tell those apart.

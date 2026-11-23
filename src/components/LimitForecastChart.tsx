@@ -3,7 +3,7 @@ import { useI18n } from '../i18n';
 import { formatDate, formatDateTime, formatNumber } from '../lib/format';
 import { cn } from '../lib/utils';
 import {
-  areaUnder, dayTicks, diamondPath, dryStretches, groupHours, heldValueAt, hourStarts, keyStep, lineValueAfter, markSpots, spotNear,
+  areaUnder, dayTicks, diamondPath, dryStretches, groupHours, heldValueAt, hourStarts, keyStep, lineValueAfter, lineValueAt, markSpots, spotNear,
   stepLine, straightLine, type ChartScale,
 } from '../services/forecastChart';
 import type { Forecast } from '../services/limitForecast';
@@ -33,9 +33,10 @@ const formatRatePercent = (value: number) => `${formatNumber(Math.max(0, value),
 export type ForecastTab = 'remaining' | 'drain';
 
 /**
- * The forecast chart. Remaining: the pool's history as a solid stepped line, the projection dashed, dry stretches
- * shaded, and a diamond where a reset was used: filled for one on record, hollow for a refill with none, fainter
- * for one the projection spends. Drain rate: what was spent each hour, with the rate the forecast expects ahead dashed.
+ * The forecast chart. Remaining: the pool's history as a solid stepped line, the projection (no resets spent) dashed,
+ * dry stretches shaded, and a diamond where a reset was used: filled for one on record, hollow for a refill with
+ * none. A suggested reset is a fainter diamond where the pool runs dry, with a dotted line from it for the pool with
+ * it spent. Drain rate: what was spent each hour, with the rate the forecast expects ahead dashed.
  */
 export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: {
   forecast: Forecast;
@@ -76,14 +77,18 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
       const historyLine = stepLine(history, scale);
       const projection = forecast.projection.points;
       const projectionLine = straightLine(projection, scale);
+      // The pool with the suggested resets is the projection until the first of them, so it's drawn from there.
+      const planned = forecast.withResets?.points ?? [];
+      const firstPlanned = Math.min(...forecast.marks.flatMap((mark) => (mark.how === 'planned' ? [mark.atMs] : [])));
+      const planLine = straightLine(planned.filter((point) => point.t >= firstPlanned), scale);
       const spots = markSpots(forecast.marks, (mark) => {
-        const value = mark.how === 'planned' ? lineValueAfter(projection, mark.atMs) : heldValueAt(history, mark.atMs);
+        const value = mark.how === 'planned' ? lineValueAt(planned, mark.atMs) : heldValueAt(history, mark.atMs);
         return value === null ? null : { x: x(mark.atMs), y: y(value) };
       }, MARK_GAP);
       return {
         kind: 'remaining' as const, ticks, y,
         historyLine, historyArea: areaUnder(historyLine, history, scale, HEIGHT),
-        projectionLine, projectionArea: areaUnder(projectionLine, projection, scale, HEIGHT),
+        projectionLine, projectionArea: areaUnder(projectionLine, projection, scale, HEIGHT), planLine,
         dry: dryStretches(projection).map((stretch) => ({ left: x(stretch.from), right: x(stretch.to) })),
         spots,
         x,
@@ -125,7 +130,8 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
       const spot = spotNear(chart.spots, chart.x(pointed), MARK_REACH);
       const time = spot ? spot.lead.atMs : pointed;
       const past = spot ? spot.lead.how !== 'planned' : time <= nowMs;
-      const value = past ? heldValueAt(forecast.history, time) : lineValueAfter(forecast.projection.points, time);
+      const value = past ? heldValueAt(forecast.history, time)
+        : spot ? lineValueAfter(forecast.withResets?.points ?? [], time) : lineValueAfter(forecast.projection.points, time);
       if (value === null) return null;
       const said = spot ? [spot.lead, ...spot.marks.filter((mark) => mark !== spot.lead)] : [];
       const more = said.length - MOST_MARK_LINES;
@@ -221,6 +227,9 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
                   {chart.historyArea ? <path d={chart.historyArea} fill={`url(#${fillId})`} /> : null}
                   {chart.projectionLine ? (
                     <path d={chart.projectionLine} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="5,4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                  ) : null}
+                  {chart.planLine ? (
+                    <path d={chart.planLine} fill="none" stroke="currentColor" strokeOpacity="0.55" strokeWidth="1.25" strokeDasharray="1.5,3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" data-line="with-resets" />
                   ) : null}
                   {chart.historyLine ? (
                     <path d={chart.historyLine} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
