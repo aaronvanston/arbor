@@ -25,7 +25,7 @@ import { useLatestAgentVersions } from '../services/agentReleases';
 import { newestAgents, type NewestAgents } from '../services/agentVersions';
 import { healthReasonText } from '../services/homeOverview';
 import { machineIdentity, osLabel } from '../services/machineIdentity';
-import { needsHostKey, unreachableReason } from '../services/machineAlerts';
+import { downStatusKey, needsHostKey, unreachableReason } from '../services/machineAlerts';
 import { ConnectMachineButton } from '../components/MachineHostKey';
 import { errorWords, plainError } from '../services/plainError';
 import { SettingsBlock, SettingsSection } from '../components/layout/settings';
@@ -177,7 +177,7 @@ export function machineHeadline(item: MachineHealth, t: Translate, now = Date.no
   if (item.status === 'unreachable') {
     // How long it's been down says whether it's a blip or something to look at.
     const since = item.lastOkAt !== null ? t('machines.health.lastAnswered', { ago: formatAgo(item.lastOkAt, now) }) : null;
-    return [t('machines.health.status.unreachable'), unreachableReason(item.error, t), since].filter(Boolean).join(' · ');
+    return [t(downStatusKey(item.error)), unreachableReason(item.error, t), since].filter(Boolean).join(' · ');
   }
   if (item.status === 'pending') return t('machines.health.status.pending');
   const latest = item.latest;

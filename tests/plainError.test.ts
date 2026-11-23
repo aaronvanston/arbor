@@ -35,7 +35,11 @@ describe('plainError', () => {
     expect(plainError('ssh: connect to host cam-mbp port 22: Operation timed out', t)).toBe('cam-mbp didn’t answer over SSH. Check that it’s on and connected.');
     expect(plainError('ssh: connect to host ci-01 port 22: Connection refused', t)).toBe('ci-01 refused the SSH connection. Check that its SSH server is running.');
     expect(plainError('ssh: Could not resolve hostname ci-01: nodename nor servname provided', t)).toBe('Couldn’t find ci-01 on the network. Check its name in your SSH config.');
-    expect(plainError('cam@cedar-02: Permission denied (publickey).', t)).toBe('cedar-02 didn’t accept Arbor’s SSH key.');
+    const advice = 'Add this Mac’s SSH key to its authorized_keys, or check the user name in your SSH config.';
+    expect(plainError('cam@cedar-02: Permission denied (publickey).', t)).toBe(`cedar-02 didn’t accept Arbor’s SSH key. ${advice}`);
+    // After what Arbor was doing, as the archive says it: still a refused login, not a file it can't open.
+    expect(plainError('Couldn\'t list the agent homes: cam@cedar-02.tailc0ffee.ts.net: Permission denied (publickey,password,keyboard-interactive).', t))
+      .toBe(`cedar-02.tailc0ffee.ts.net didn’t accept Arbor’s SSH key. ${advice}`);
   });
 
   it('says a renamed machine by the name it’s shown by', () => {

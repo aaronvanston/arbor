@@ -1426,8 +1426,10 @@ async fn read_machine(state: &MachineHealthState, machine: Machine, plan: Plan, 
         Ok(Sampled::Grove { reading, facts })
     };
     let sampled = match read.await {
-        // Grove keeps only ssh's last line, the same for an unknown host key and a changed one, so ssh is asked which.
-        Err(error) if !machine.is_local() && host_keys::is_bare_host_key_failure(&error) => {
+        // Grove keeps only ssh's last line, the same for an unknown host key and a changed one, and finds a refused login
+        // only as a connection that closed, so ssh is asked why: "Permission denied" is a login to fix, not a machine
+        // that's away.
+        Err(error) if !machine.is_local() && host_keys::hides_ssh_cause(&error) => {
             Err(run_checked(&machine, MachineOp::HealthCheck, "true\n", SAMPLE_TIMEOUT).await.err().unwrap_or(error))
         }
         sampled => sampled,

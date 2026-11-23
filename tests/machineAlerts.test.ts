@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { translate } from '../src/i18n';
 import {
+  downStatusKey,
   hostKeyCheckCommand,
   machineNotifications,
   needsHostKey,
@@ -259,6 +260,14 @@ describe('machine alerts', () => {
     expect(hostKeyCheckCommand(['$(boom) SHA256:abc'])).toBe('ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub');
   });
 
+  it('calls a machine that turns down this Mac’s login what it is, not unreachable', () => {
+    expect(downStatusKey('cam@cedar-02: Permission denied (publickey,password,keyboard-interactive).')).toBe('machines.health.status.authFailed');
+    expect(downStatusKey('cam@cedar-02: Permission denied (publickey).', true)).toBe('tray.machines.authFailed');
+    expect(downStatusKey('ssh: connect to host ci-01 port 22: Operation timed out')).toBe('machines.health.status.unreachable');
+    expect(downStatusKey('Failed to fill whole buffer', true)).toBe('tray.machines.unreachable');
+    expect(downStatusKey(null)).toBe('machines.health.status.unreachable');
+  });
+
   it('sends the phone the plain reason and never the error', () => {
     const now = 1_000 * MINUTE;
     const error = 'cam@ci-01.tailc0ffee.ts.net: Permission denied (publickey).';
@@ -266,7 +275,7 @@ describe('machine alerts', () => {
     const phone = phoneAlertFor(message!);
     expect(phone).toEqual({
       title: 'ci-01 needs fixing',
-      body: 'It won’t let this Mac log in over SSH. Checks will fail until that’s fixed.',
+      body: 'It answers but turns down this Mac’s SSH key. Add the key to its authorized_keys, or check the user name. Checks will fail until that’s fixed.',
       kind: 'machineDown',
       urgent: true,
     });

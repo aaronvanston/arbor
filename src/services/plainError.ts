@@ -43,13 +43,14 @@ function sshFailure(words: string, t: Translate): Plain | null {
   const changedKey = /Host key for (\S+) has changed/.exec(words)?.[1];
   if (changedKey) return plain(t('plainError.ssh.hostKeyChanged', { machine: changedKey }));
   const host = /ssh: (?:connect to host |Could not resolve hostname )([^\s:]+)/.exec(words)?.[1]
-    ?? /^(?:\S+@)?([^\s:@]+): Permission denied \(publickey/.exec(words)?.[1];
+    // ssh names the host before a refused login, after whatever Arbor said it was doing ("Couldn't list …: cam@ci-01: …").
+    ?? /(?:^|\s)(?:\S+@)?([^\s:@/~][^\s:@]*): (?:Permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi)|Too many authentication failures)/.exec(words)?.[1];
   if (!host) return null;
   const machine = { machine: host };
   if (/Could not resolve hostname/i.test(words)) return plain(t('plainError.ssh.unknownHost', machine), 'plainError.advice.sshConfig');
   if (/Connection refused/i.test(words)) return plain(t('plainError.ssh.refused', machine), 'plainError.advice.sshServer');
   if (/timed out/i.test(words)) return plain(t('plainError.ssh.timedOut', machine), 'plainError.advice.machineOn');
-  if (/Permission denied/i.test(words)) return plain(t('plainError.ssh.keyRefused', machine));
+  if (/Permission denied|Too many authentication failures/i.test(words)) return plain(t('plainError.ssh.keyRefused', machine), 'plainError.advice.sshKey');
   if (/No route to host|Network is unreachable|Host is down/i.test(words)) return plain(t('plainError.ssh.unreachable', machine), 'plainError.advice.machineOn');
   return plain(t('plainError.ssh.failed', machine));
 }

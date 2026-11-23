@@ -23,8 +23,10 @@ strict checking ssh writes to none of them.
 A machine whose key isn't known fails its checks with `unknownHostKey`, and its row and page offer Connect. That's the
 only way a key is enrolled: a scan connects once with a known-hosts file of its own, the window gets only the
 fingerprints, and Trust writes the held lines only if the window sends back the fingerprints the user compared.
-Grove keeps only ssh's last line, which is the same for an unknown key and a changed one, so the health round asks ssh
-itself which it was. Removing a machine drops its block from the file.
+Grove keeps only ssh's last line, which is the same for an unknown key and a changed one, and sees a refused login only
+as a connection that closed ("Failed to fill whole buffer"), so for those the health round asks ssh itself why. A
+refused login is then shown as "Can't log in", not unreachable: the machine is up and its key needs fixing. Removing a
+machine drops its block from the file.
 
 ## Health readings
 
