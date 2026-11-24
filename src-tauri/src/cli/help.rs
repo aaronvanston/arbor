@@ -85,7 +85,9 @@ arbor accounts pause|resume <account>
 arbor accounts cap <account> <percent|off>
 
 Signed-in accounts and their limits; refresh reads the limits again. An account is named by the short id in the first
-column (like a6bd830). Pausing asks first: it prints the plan and needs --yes. A cap pauses the account once it has
+column (like a6bd830). Its state is on, paused (at its cap, back by itself at the reset) or shelved (turned off on
+purpose, with the reason when Arbor knows it, like a free plan): a shelved account's limits aren't spare capacity.
+Pausing shelves an account, and asks first: it prints the plan and needs --yes. A cap pauses the account once it has
 used that percent of its limits and resumes it at the reset.
 
   arbor accounts

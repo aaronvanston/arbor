@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { useAppPreferences } from '../appPreferences';
+import type { OutOfPool } from '../services/accountShelf';
 import { useI18n } from '../i18n';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { cn } from '../lib/utils';
@@ -31,14 +32,14 @@ const rate = (value: number) => `${value < 10 ? value.toFixed(1) : Math.round(va
  * The forecast under a provider's headline on Accounts › Limits: what's left of the pool, how fast it drains, when it
  * runs dry or that it lasts, and what to do about it. Folds to its first line.
  */
-export function LimitForecastPanel({ provider, providerName, headline, resting, leftOut, resettable, onReset, onOpenSettings }: {
+export function LimitForecastPanel({ provider, providerName, headline, resting, out, resettable, onReset, onOpenSettings }: {
   provider: string;
   providerName: string;
   headline: Headline;
   /** Accounts Arbor paused at their cap, by key: counted from when they come back. */
   resting: Readonly<Record<string, Resting>>;
-  /** Accounts turned off by hand, by key: out of the history too. */
-  leftOut: readonly string[];
+  /** The stretches accounts spent shelved, by key: out of the history for those times too. */
+  out: OutOfPool;
   /** Whether an account is at a limit with a reset it can use now: the kind of Claude reset given, or any. */
   resettable: (key: string, reset?: ClaudeResetKind) => boolean;
   onReset?: (key: string, reset?: ClaudeResetKind) => void;
@@ -53,17 +54,17 @@ export function LimitForecastPanel({ provider, providerName, headline, resting, 
   const keyOf = (account: Headline['segments'][number]['account']) => ('key' in account && typeof account.key === 'string' ? account.key : account.name);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `resting` is rebuilt each render; its entries are what matter.
   const accounts = useMemo(() => forecastAccounts(headline, keyOf, resting), [headline, JSON.stringify(resting)]);
-  const leftOutKey = leftOut.join('\u0000');
+  const outKey = JSON.stringify(out);
   // Read again after each refresh, which the latest reading time marks.
   const version = Math.max(0, ...headline.segments.map((segment) => segment.account.quota.fetchedAt ?? 0));
   const trend = useLimitTrend(provider, headline.label, version);
   const historyMs = forecastHistoryMs(view.horizonDays, trend.readings, nowMs);
   const forecast = useMemo(() => (trend.readings === null ? null : buildForecast({
-    accounts, readings: trend.readings, settings, horizonDays: view.horizonDays, historyMs, nowMs, leftOut,
+    accounts, readings: trend.readings, settings, horizonDays: view.horizonDays, historyMs, nowMs, out,
   })),
   // Settings are rebuilt every render from the preferences; their fields are what matter.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [accounts, trend.readings, settings.model, settings.lookbackDays, settings.ratePerHour, view.horizonDays, historyMs, nowMs, leftOutKey]);
+  [accounts, trend.readings, settings.model, settings.lookbackDays, settings.ratePerHour, view.horizonDays, historyMs, nowMs, outKey]);
 
   if (!headline.label || !accounts.length) return null;
   const dryAtMs = forecast?.projection.dryAtMs ?? null;

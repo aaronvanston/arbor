@@ -12,7 +12,10 @@ any other machine, say so instead of trying.
 ## Start here
 
 - `arbor doctor` checks that Arbor is reachable. Exit 69 means Arbor isn't running or isn't answering.
-- `arbor status` gives the proxy, machines, live sessions, unread alerts and accounts that are off or nearly out.
+- `arbor status` gives the proxy, machines, live sessions, unread alerts and accounts paused at their cap, shelved or
+  nearly out. A paused account is back by itself at its reset. A shelved one was turned off on purpose (`arbor accounts`
+  gives the reason when Arbor knows it, like a free plan), so its limits aren't spare capacity: don't suggest turning it
+  back on to get more room unless the person asks.
 - `arbor help` lists every command; `arbor help <command>` explains one with examples.
 - `arbor query` answers questions about what agents did in past sessions, in SQL: see "Asking about past sessions".
 - Add `--json` to any command to get Arbor's answer as JSON. Use it whenever you need to read values rather than
@@ -100,7 +103,7 @@ Other changes (a cap, routing on or off, a saved setting) happen straight away; 
 
 | Change | Command |
 | --- | --- |
-| Pause or resume an account | `arbor accounts pause <id>`, `arbor accounts resume <id>` |
+| Shelve or resume an account | `arbor accounts pause <id>` shelves it, `arbor accounts resume <id>` turns it back on |
 | Cap an account at a percent of its limits, or clear it | `arbor accounts cap <id> 50`, `arbor accounts cap <id> off` |
 | Automatic account order for a provider | `arbor routing claude on`, `arbor routing codex off` |
 | The reserve the accounts with an extra model keep for it: `mode` `auto` (smart, twice this week's use until the reset), `fixed` with `percent`, `never` or `only` (they serve nothing else); `lend` `floor`, `all` or `hold` for once every other account is out | `arbor call extraModels.reserve provider=codex model=<id> mode=fixed percent=10 lend=floor` |

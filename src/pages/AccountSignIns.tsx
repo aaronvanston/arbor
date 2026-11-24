@@ -399,7 +399,7 @@ function SignInRow({ signIn, profile, email, cap, hidden, commands, onEdit, onOp
               <span className="text-xs text-muted-foreground">{back ? t('reserves.paused.back', { time: back }) : t('reserves.paused.backSoon')}</span>
             </>
           ) : off ? (
-            <StatusPill tone="muted">{t('accounts.turnedOff.title')}</StatusPill>
+            <StatusPill tone="muted">{t('accounts.shelved.pill')}</StatusPill>
           ) : availability.kind !== 'ready' || availability.models ? (
             <AuthFileStatus availability={availability} now={now} readyPill={false} />
           ) : null}

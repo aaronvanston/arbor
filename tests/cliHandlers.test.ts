@@ -56,6 +56,21 @@ describe('the window’s account and routing actions for arbor', () => {
     expect(getAccountReserves().caps[quotaKey(claude)]).toBe(40);
   });
 
+  it('say an account turned off by hand is shelved, apart from those paused at their cap', async () => {
+    const shelvedFile = { ...account('cam-free@example.com', 'claude'), disabled: true } as AuthFile;
+    mockCommands({
+      management_request: ({ request }) => {
+        if (request.path === '/auth-files') return coreReply({ files: [...listing, shelvedFile] });
+        throw 'offline';
+      },
+    });
+    const { result } = await ask('accounts.list');
+    const listed = (result as { accounts: Array<Record<string, unknown>> }).accounts;
+    expect(listed.find((row) => row.id === accountId(quotaKey(shelvedFile)))).toMatchObject({ state: 'shelved', backAtMs: null });
+    const summary = (await ask('status.summary')).result as Record<string, unknown>;
+    expect(summary).toMatchObject({ accountsPaused: [], accountsShelved: ['cam-free@example.com'] });
+  });
+
   it('keep routing to providers someone has signed in to', async () => {
     const { error } = await ask('routing.auto', { provider: 'nope', on: true });
     expect(error?.message).toContain('claude, codex');

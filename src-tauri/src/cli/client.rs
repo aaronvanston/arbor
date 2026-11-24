@@ -700,7 +700,7 @@ fn status(options: &args::Options) -> Result<(), Failure> {
     if let Some(window) = &window {
         let unread = window.get("unreadAlerts").and_then(Value::as_u64).unwrap_or(0);
         println!("Unread alerts: {unread}");
-        for (label, field) in [("off", "accountsOff"), ("nearly out", "accountsLow")] {
+        for (label, field) in [("paused at their cap", "accountsPaused"), ("shelved", "accountsShelved"), ("nearly out", "accountsLow")] {
             let names: Vec<String> = render::items(window, field).iter().map(render::text).collect();
             if !names.is_empty() {
                 println!("Accounts {label}: {}", names.join(", "));

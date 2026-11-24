@@ -52,8 +52,12 @@ accounts with a reset about to lapse first" turned on. The two make the same cal
 
 Spend is read from the limit history as drops between readings of one cycle. The history and the pace hold every
 account that was in use at the time, whatever it is now: demand that went to an account since paused at its cap or
-removed was still demand, and dropping it would rewrite the past and slow the pace each time one pauses. Only an account
-turned off by hand is left out of both. An account sitting at 0% shows no drop, so hours the pool spent dry are left out
+removed was still demand, and dropping it would rewrite the past and slow the pace each time one pauses. Only the
+stretches an account spent shelved (turned off by hand) are left out of both. `services/accountShelf.ts` reads those from
+the account list rather than from each way of turning an account off, so the command line, Sign-ins and the core's own
+files all count; an account already off before the shelf was kept counts as shelved for all of its history. A shelved
+account is out of the headline and the forecast, and the command line names it shelved with its reason, so an agent
+doesn't read its limits as spare room. An account sitting at 0% shows no drop, so hours the pool spent dry are left out
 of the pace rather than read as no demand. An account paused at its cap is in the pool's capacity but not what's left:
 its reading is a reserve until Arbor turns it back on, and the projection counts it from then. Advice only ever
 suggests a reset. Claims stay behind the confirmation on Accounts, and nothing in the forecast spends one.

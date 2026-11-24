@@ -5,6 +5,8 @@ import { useAppPreferences } from '../appPreferences';
 import { recordLimitReadings, unrecordedLimitReadings } from '../services/accountLimitHistory';
 import { freshQuotas, partialHeadline, useAccountLimitPrefs, type PaceTone } from '../services/accountLimits';
 import { getAccountReserves, useAccountReserves } from '../services/accountReserves';
+import { getShelf, nextShelf, outOfPool, setShelf } from '../services/accountShelf';
+import { afterLaunch } from '../services/launchSettle';
 import { providersWithNewAccounts, useModelAccess, useReservePolicies } from '../services/extraModelHold';
 import { resolveAccountProfile, useAccountProfiles } from '../services/accountProfiles';
 import { useAccountOrder } from '../services/accountOrder';
@@ -140,7 +142,7 @@ export const staleHolds = (stale: ProviderLimit['stale'], nowMs: number, holdMs:
 export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
   const { t } = useI18n();
   const preferences = useAppPreferences();
-  const { files, loaded, error: accountsError, listedAt } = useAccountsStore();
+  const { files, disabled, loaded, error: accountsError, listedAt } = useAccountsStore();
   const quotas = useQuotaCache();
   const profiles = useAccountProfiles();
   const order = useAccountOrder();
@@ -172,6 +174,21 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
     || preferences.expiringNotifications || preferences.forecastAlerts || preferences.passedOverNotifications || Object.values(routingAuto).some(Boolean) || Object.keys(reserves.caps).length > 0
     // An extra model only some accounts have: their reserves for it are kept by the limits.
     || Object.values(modelAccess.access).some((models) => Object.values(models).includes('no'));
+  // The shelf follows the account list: an account turned off by hand, however it was, goes on it, and comes off when
+  // it's back on. Only a listing that loaded says which are off. Nothing on screen waits on it, so it's saved after
+  // launch.
+  useEffect(() => {
+    if (!loaded || accountsError) return;
+    let current = true;
+    void afterLaunch().then(() => {
+      if (!current) return;
+      const shelf = getShelf();
+      const next = nextShelf(shelf, { on: files.map(quotaKey), off: disabled.map(quotaKey) }, reserves.paused, Date.now());
+      if (next !== shelf) setShelf(next);
+    });
+    return () => { current = false; };
+  }, [files, disabled, loaded, accountsError, reserves.paused]);
+
   useEffect(() => {
     const intervalMs = preferences.refreshIntervalMinutes * 60_000;
     if (!coreReady || intervalMs <= 0) return;
@@ -179,9 +196,9 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
     const refresh = () => {
       if (document.visibilityState !== 'visible' && !pollWhileHidden) return;
       lastRefreshRef.current = Date.now();
-      const { files: listed, disabled } = getAccountsSnapshot();
+      const { files: listed, disabled: off } = getAccountsSnapshot();
       // Turned-off accounts are only shown, never acted on, so they're read only while the window is.
-      void refreshAccountQuotas(document.visibilityState === 'visible' ? [...listed, ...disabled] : listed);
+      void refreshAccountQuotas(document.visibilityState === 'visible' ? [...listed, ...off] : listed);
     };
     const onVisible = () => {
       if (document.visibilityState === 'visible' && Date.now() - lastRefreshRef.current >= intervalMs) refresh();
@@ -559,11 +576,13 @@ export function LimitsMonitor({ coreReady }: { coreReady: boolean }) {
         if (!accounts.length) continue;
         const readings = await loadLimitTrend(limit.provider, label).catch(() => []);
         const nowMs = Date.now();
-        // Turned off by hand, an account is out of the history too; one paused at its cap still spent what it spent.
+        // Shelved, an account is out of the history for that time too; one paused at its cap still spent what it spent.
         const { paused } = getAccountReserves();
-        const leftOut = getAccountsSnapshot().disabled
+        const shelved = getAccountsSnapshot().disabled
           .filter((file) => providerForFile(file) === limit.provider && !paused[quotaKey(file)]).map(quotaKey);
-        const forecast = buildForecast({ accounts, readings, settings, horizonDays: FORECAST_ALERT_HORIZON_DAYS, historyMs: 0, nowMs, leftOut });
+        const forecast = buildForecast({
+          accounts, readings, settings, horizonDays: FORECAST_ALERT_HORIZON_DAYS, historyMs: 0, nowMs, out: outOfPool(getShelf(), shelved),
+        });
         const alert = forecastAlert(limit.provider, forecast, nowMs);
         // The alert's line says "when it runs out", which a reset spent early or after a change of order isn't.
         const claim = forecast.advice.find((item) => item.kind === 'claim' && item.early === undefined && !item.first);

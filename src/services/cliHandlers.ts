@@ -2,6 +2,7 @@ import { invokeCommand } from '../native/commands';
 import type { CliWindowArg } from '../native/types';
 import { pauseAccount, resumeAccount } from './accountPause';
 import { resolveAccountProfile, getAccountProfiles } from './accountProfiles';
+import { getShelf, shelfReason } from './accountShelf';
 import { getAccountReserves, setAccountReserve } from './accountReserves';
 import { getAccountsSnapshot, loadAccountFiles, refreshAccountQuotas } from './accountsStore';
 import { getAlertHistory, isUnreadAlert, markAlertsSeen, unreadAlerts } from './alertHistory';
@@ -82,11 +83,18 @@ function describeAccount(account: Account) {
   const quota = getQuotaCacheSnapshot()[account.key];
   const reserves = getAccountReserves();
   const paused = reserves.paused[account.key];
+  const provider = providerForFile(account.file);
+  // Off by hand is shelved: on purpose, so not spare capacity. Paused at its cap, it's back by itself at `backAtMs`.
+  const state = account.on ? 'on' : paused ? 'paused' : 'shelved';
+  const since = getShelf().since[account.key];
   return {
     id: accountId(account.key),
     name: accountName(account),
-    provider: providerForFile(account.file),
-    state: account.on ? 'on' : paused ? 'paused' : 'off',
+    provider,
+    state,
+    backAtMs: paused?.resumeAtMs ?? null,
+    shelvedSinceMs: state === 'shelved' && since ? since : null,
+    reason: state === 'shelved' && shelfReason(provider, quota?.plan) === 'freePlan' ? 'free plan' : null,
     cap: reserves.caps[account.key] ?? null,
     easing: reserves.easing[account.key] ?? false,
     limits: (quota?.rows ?? []).map((row) => ({ label: row.label, remainingPercent: row.remainingPercent, resetAtMs: row.resetAtMs ?? null })),
@@ -129,13 +137,15 @@ async function machinePlan(machine: string) {
 export const cliHandlers: CliHandlers = {
   'status.summary': {
     access: 'read',
-    summary: 'Unread alerts and accounts that are off or nearly out, from the window',
+    summary: 'Unread alerts, accounts paused at their cap or shelved, and those nearly out, from the window',
     run: async () => {
       const listed = (await accounts()).map(describeAccount);
       return {
         unreadAlerts: unreadAlerts(getAlertHistory()),
-        accountsOff: listed.filter((account) => account.state !== 'on').map((account) => account.name),
+        accountsPaused: listed.filter((account) => account.state === 'paused').map((account) => account.name),
+        accountsShelved: listed.filter((account) => account.state === 'shelved').map((account) => (account.reason ? `${account.name} (${account.reason})` : account.name)),
         accountsLow: listed
+          .filter((account) => account.state === 'on')
           .filter((account) => account.limits.some((limit) => limit.remainingPercent !== null && limit.remainingPercent <= LOW_PERCENT))
           .map((account) => account.name),
       };
@@ -143,7 +153,7 @@ export const cliHandlers: CliHandlers = {
   },
   'accounts.list': {
     access: 'read',
-    summary: 'Every signed-in account with its limits, cap and whether it is on. refresh=true reads the limits again first',
+    summary: 'Every signed-in account with its limits, cap and state: on, paused at its cap (back by itself at backAtMs) or shelved (turned off on purpose, with a reason when known, so not spare capacity). refresh=true reads the limits again first',
     args: [arg('refresh', 'boolean', true)],
     run: async (args) => {
       const all = await accounts();
@@ -164,7 +174,7 @@ export const cliHandlers: CliHandlers = {
   },
   'accounts.pause': {
     access: 'confirm',
-    summary: 'Turns an account off in the proxy, so no agent uses it until it is resumed',
+    summary: 'Shelves an account: turns it off in the proxy and out of the totals and forecast, until it is resumed',
     args: [arg('account', 'string')],
     run: async (args) => {
       const account = await findAccount(args);
@@ -174,7 +184,7 @@ export const cliHandlers: CliHandlers = {
   },
   'accounts.resume': {
     access: 'write',
-    summary: 'Turns an account that is off back on',
+    summary: 'Turns an account that is shelved or paused at its cap back on',
     args: [arg('account', 'string')],
     run: async (args) => {
       const account = await findAccount(args);

@@ -1,5 +1,5 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowUpDown, ArrowUpRight, Check, FolderOpen, GripVertical, History, Import, KeyRound, Layers, MoreHorizontal, PauseCircle, Pencil, Play, Plus, PowerOff, SlidersHorizontal, RotateCcw, TriangleAlert } from '../components/ui/icons';
+import { AlertCircle, ArrowUpDown, ArrowUpRight, Check, ChevronDown, ChevronRight, FolderOpen, GripVertical, History, Import, KeyRound, Layers, MoreHorizontal, PauseCircle, Pencil, Play, Plus, PowerOff, SlidersHorizontal, RotateCcw, TriangleAlert } from '../components/ui/icons';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type Modifier } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -38,6 +38,7 @@ import { ProviderMark } from '../components/identity/Identity';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { LimitSparkline } from '../components/LimitSparkline';
 import { LimitForecastPanel } from '../components/LimitForecastPanel';
+import { outOfPool, shelfReason, useShelf } from '../services/accountShelf';
 import { useLimitsHistory } from '../services/limitsHistory';
 import { formatResetCountdown, providerLabel } from '../services/providerLimits';
 import { capForRow, capOf, useAccountReserves, useReserveFailures, type AccountCap, type PausedAccount, type ReserveState } from '../services/accountReserves';
@@ -177,6 +178,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
   const profiles = useAccountProfiles();
   const order = useAccountOrder();
   const reserves = useAccountReserves();
+  const shelf = useShelf();
   const reserveFailures = useReserveFailures();
   const { hidden: hiddenWindows, headline: headlineWindows } = useAccountLimitPrefs();
   const sensors = useSensors(
@@ -289,9 +291,9 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
       const off = sortByOrder(offGroups.get(provider) ?? [], order[provider], (item) => item.key);
       if (!listed.length && !paused.length && !off.length) return [];
       const items = sortByOrder(listed, order[provider], (account) => account.key);
-      // Turned-off accounts keep their windows' columns, and count toward the headline grayed out.
-      const turnedOff = [...paused, ...off];
-      const labels = windowLabels([...items, ...turnedOff]);
+      // Accounts paused at their cap keep their windows' columns and count toward the headline grayed out: they're
+      // still part of the pool. Shelved ones are out of it, so they're in neither.
+      const labels = windowLabels([...items, ...paused]);
       const hidden = hiddenWindows[provider] ?? [];
       const headlineLabel = resolveHeadlineWindow(provider, labels.filter((label) => !hidden.includes(label)), headlineWindows[provider]);
       return [{
@@ -300,9 +302,9 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
         paused,
         off,
         labels,
-        metered: meteredWindowLabels([...items, ...turnedOff]),
+        metered: meteredWindowLabels([...items, ...paused]),
         hidden,
-        headline: buildHeadline(items, headlineLabel, turnedOff),
+        headline: buildHeadline(items, headlineLabel, paused),
         warnings: capWarnings(items, headlineLabel, hidden),
       }];
     });
@@ -526,7 +528,7 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                     providerName={providerMeta[provider].label}
                     headline={headline}
                     resting={Object.fromEntries(paused.map((item) => [item.key, { pausedAtMs: item.paused.pausedAtMs, resumeAtMs: item.paused.resumeAtMs }]))}
-                    leftOut={off.map((item) => item.key)}
+                    out={outOfPool(shelf, off.map((item) => item.key))}
                     resettable={(key, reset) => {
                       const account = accounts.find((item) => item.key === key);
                       return account !== undefined && resetReadyFor(account.file, account.quota, reset) !== null;
@@ -702,7 +704,11 @@ function PausedBlock({ items, columns, reserves, failures, flash, availabilityOf
   );
 }
 
-/** Accounts turned off by hand: Enable up front, and the rest of what each takes in its ⋯ menu. */
+/**
+ * Shelved accounts, turned off by hand: out of the proxy, the totals and the forecast, so folded to one line that says
+ * how many and why. Open, each has Enable up front and the rest of what it takes in its ⋯ menu. An account the
+ * palette asks for opens it.
+ */
 function OffBlock({ items, columns, availabilityOf, commands, flash, onEdit }: {
   items: Off[];
   /** The provider's windows being shown, so the grayed-out limits line up with the accounts in use. */
@@ -715,16 +721,27 @@ function OffBlock({ items, columns, availabilityOf, commands, flash, onEdit }: {
 }) {
   const { t } = useI18n();
   const now = useQuotaClock();
+  const [opened, setOpened] = useState(false);
+  const open = opened || items.some((item) => item.key === flash);
+  const free = items.filter((item) => shelfReason(providerForFile(item.file), item.quota.plan) === 'freePlan').length;
   return (
     <SettingsBlock className="flex flex-col gap-3 py-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
-          <PowerOff className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          {t('accounts.turnedOff.title')}
+      <button
+        type="button"
+        className="-mx-1 flex min-w-0 items-start gap-1.5 rounded-md px-1 text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={open}
+        onClick={() => setOpened(!open)}
+      >
+        {open ? <ChevronDown className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="inline-flex flex-wrap items-center gap-x-2 text-sm font-medium text-foreground">
+            {t(items.length === 1 ? 'accounts.shelved.title.one' : 'accounts.shelved.title.other', { count: items.length })}
+            {free ? <span className="text-xs font-normal text-muted-foreground">{t('accounts.shelved.freePlan', { count: free })}</span> : null}
+          </span>
+          <span className="text-xs text-muted-foreground">{t('accounts.shelved.description')}</span>
         </span>
-        <span className="text-xs text-muted-foreground">{t('accounts.turnedOff.description')}</span>
-      </div>
-      <ul className="flex flex-col gap-3">
+      </button>
+      {open ? <ul className="flex flex-col gap-3">
         {items.map((item) => {
           const availability = availabilityOf(item.file);
           return (
@@ -754,7 +771,7 @@ function OffBlock({ items, columns, availabilityOf, commands, flash, onEdit }: {
             </li>
           );
         })}
-      </ul>
+      </ul> : null}
     </SettingsBlock>
   );
 }
@@ -975,7 +992,7 @@ function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }:
                       <span className="font-medium">{t('accounts.segment.aria', { name: account.name, percent: Math.round(segment.percent ?? 0) })}</span>
                       {segmentReset ? <span className="text-muted-foreground">{t('accounts.nextReset', { time: segmentReset })}</span> : null}
                       {segment.off ? (
-                        <span className="text-muted-foreground">{t('paused' in account ? 'accounts.segment.paused' : 'accounts.segment.off')}</span>
+                        <span className="text-muted-foreground">{t('accounts.segment.paused')}</span>
                       ) : (
                         <span className={cn(paceText[segmentPace.tone])}>
                           {t(segmentPace.tone === 'error' ? 'accounts.pace.critical' : segmentPace.tone === 'warning' ? 'accounts.pace.ahead' : segmentPace.tone === 'success' ? 'accounts.pace.onTrack' : 'accounts.pace.unknown')}

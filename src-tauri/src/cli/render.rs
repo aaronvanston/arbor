@@ -301,14 +301,20 @@ pub(crate) fn accounts(answer: &Value) -> String {
                     format!("{} {left}", field(limit, "label"))
                 })
                 .collect();
+            // Shelved is off on purpose (a free plan, say): its limits aren't room anyone can use, so none are shown.
+            let shelved = field(account, "state") == "shelved";
+            let state = match account.get("reason").and_then(Value::as_str) {
+                Some(reason) if shelved => format!("shelved ({reason})"),
+                _ => field(account, "state"),
+            };
             let easing = account.get("easing") == Some(&Value::Bool(true));
             let cap = account.get("cap").and_then(Value::as_f64).map_or(String::new(), |cap| format!("{cap:.0}%{}", if easing { " easing" } else { "" }));
             vec![
                 field(account, "id"),
                 field(account, "name"),
                 field(account, "provider"),
-                field(account, "state"),
-                if limits.is_empty() { "–".into() } else { limits.join(" · ") },
+                state,
+                if shelved { "not counted".into() } else if limits.is_empty() { "–".into() } else { limits.join(" · ") },
                 cap,
                 ago(account.get("checkedAtMs").unwrap_or(&Value::Null), now),
             ]
@@ -591,6 +597,19 @@ pub(crate) fn archive_export(report: &Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_shelved_account_shows_why_and_no_limits_to_use() {
+        let answer = json!({ "accounts": [
+            { "id": "a1", "name": "cam-work", "provider": "claude", "state": "on", "limits": [{ "label": "Weekly", "remainingPercent": 40.0 }] },
+            { "id": "a2", "name": "cam-free", "provider": "claude", "state": "shelved", "reason": "free plan", "limits": [{ "label": "Weekly", "remainingPercent": 100.0 }] },
+        ] });
+        let shown = accounts(&answer);
+        assert!(shown.contains("Weekly 40%"));
+        assert!(shown.contains("shelved (free plan)"));
+        assert!(shown.contains("not counted"));
+        assert!(!shown.contains("Weekly 100%"));
+    }
 
     #[test]
     fn an_archive_export_says_where_it_went_and_what_it_missed() {

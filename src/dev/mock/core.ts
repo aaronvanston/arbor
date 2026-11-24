@@ -34,7 +34,7 @@ const quotaScenario = params.get('quota');
 const weeklyResetMs = limitScenario === 'unused' ? 20 * 3_600_000 : 4 * 86_400_000;
 const quotaErrorScenario = quotaScenario === 'error';
 // With `?plan=free`, claude-2 and codex-3 had their billing paused, so their providers have them on the free plan.
-const freePlanAccounts = params.get('plan') === 'free' ? new Set(['claude-2', 'codex-3']) : new Set<string>();
+const freePlanAccounts = params.get('plan') === 'free' || params.get('plan') === 'shelved' ? new Set(['claude-2', 'codex-3']) : new Set<string>();
 const newCapsScenario = params.get('caps') === 'new';
 // With `?proxy=usage-off,network` and the like, the proxy checks find those problems; Turn on clears usage-off.
 const proxyScenario = new Set((params.get('proxy') ?? '').split(',').filter(Boolean));
@@ -295,6 +295,10 @@ if (fleetAccounts) {
 if (params.get('accounts') === 'none' || (freshInstall && params.get('accounts') !== 'kept')) authFiles.length = 0;
 // With `?accounts=off`, every credential is turned off, as if by hand on Accounts.
 if (params.get('accounts') === 'off') authFiles.forEach((file) => Object.assign(file, { disabled: true, status: 'disabled' }));
+// The free-plan accounts already turned off, so they're shelved.
+if (params.get('plan') === 'shelved') {
+  authFiles.forEach((file) => { if (freePlanAccounts.has(String(file.auth_index))) Object.assign(file, { disabled: true, status: 'disabled' }); });
+}
 
 /** One listing entry the way the core reports it at `nowMs`. */
 const listingEntry = (file: Json, nowMs: number): Json => {

@@ -98,9 +98,25 @@ describe('limit history', () => {
     const spent = spendByHour(readings, accounts, NOW - DAY, NOW).hours.reduce((sum, value) => sum + value, 0);
     // 60 spent on gone, 30 on a: the demand gone served is still demand.
     expect(spent).toBeCloseTo(90, 6);
-    // Turned off by hand, it's as if it had never been in the pool.
-    expect(poolHistory(readings, accounts, NOW - DAY, NOW, [], new Set(['gone'])).map((point) => point.left)).toEqual([80, 70, 50]);
-    expect(spendByHour(readings, accounts, NOW - DAY, NOW, new Set(['gone'])).hours.reduce((sum, value) => sum + value, 0)).toBeCloseTo(30, 6);
+    // Shelved for as long as Arbor has known it, it's as if it had never been in the pool.
+    const always = { gone: [[0, null]] as const };
+    expect(poolHistory(readings, accounts, NOW - DAY, NOW, [], always).map((point) => point.left)).toEqual([80, 70, 50]);
+    expect(spendByHour(readings, accounts, NOW - DAY, NOW, always).hours.reduce((sum, value) => sum + value, 0)).toBeCloseTo(30, 6);
+  });
+
+  test('counts a shelved account only outside the stretches it spent on the shelf', () => {
+    // b was shelved from 8h to 3h ago. What it lost across that stretch wasn't spent from the pool.
+    const accounts = [account('a', 50, 72), account('b', 20, 72)];
+    const readings = trend([reading('a', 10, 60), reading('b', 10, 90), reading('b', 5, 100), reading('b', 2, 30), reading('a', 2, 55)]);
+    const out = { b: [[NOW - 8 * HOUR, NOW - 3 * HOUR]] as const };
+    const points = poolHistory(readings, accounts, NOW - DAY, NOW, [], out);
+    expect(points.map((point) => [Math.round((NOW - point.t) / HOUR), point.left, point.capacity])).toEqual([
+      // Back on, it holds what it read while shelved.
+      [10, 150, 200], [8, 60, 100], [5, 60, 100], [3, 160, 200], [2, 85, 200], [0, 70, 200],
+    ]);
+    const spent = spendByHour(readings, accounts, NOW - DAY, NOW, out).hours.reduce((sum, value) => sum + value, 0);
+    // a: 10. b: 10 after it came back, from 30 to the live 20. Nothing across the shelf.
+    expect(spent).toBeCloseTo(20, 6);
   });
 
   test('leaves hours the pool sat dry out of the pace, rather than reading them as no demand', () => {
@@ -171,7 +187,7 @@ describe('resets on the chart', () => {
       { atMs: NOW - 2 * HOUR, key: 'b', name: 'b', how: 'used', gain: 100 },
     ]);
     // An account turned off by hand is in neither the line nor its marks.
-    expect(historyMarks(readings, [account('b', 99, 7 * 24 - 2)], NOW - 2 * DAY, NOW, new Set(['a'])).map((mark) => mark.key)).toEqual(['b']);
+    expect(historyMarks(readings, [account('b', 99, 7 * 24 - 2)], NOW - 2 * DAY, NOW, { a: [[0, null]] }).map((mark) => mark.key)).toEqual(['b']);
   });
 
   test('gives each reset the rise read nearest it', () => {
