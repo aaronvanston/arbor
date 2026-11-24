@@ -10,30 +10,22 @@ import { savedStore, storedRecord } from './savedStore';
 
 const DAY = 86_400_000;
 
-/** How the forecast panel is laid out in this window: how far ahead it looks, which tab, and which are folded. */
-export type ForecastView = { horizonDays: number; tab: 'remaining' | 'drain'; folded: Record<string, true> };
-const DEFAULT_VIEW: ForecastView = { horizonDays: 7, tab: 'remaining', folded: {} };
+/** How the forecast panel is laid out in this window: how far ahead it looks, and which chart. */
+export type ForecastView = { horizonDays: number; tab: 'remaining' | 'drain' };
+const DEFAULT_VIEW: ForecastView = { horizonDays: 7, tab: 'remaining' };
 
 function parseView(raw: string | null): ForecastView {
   const record = storedRecord(raw);
   const horizon = Number(record.horizonDays);
-  const folded = typeof record.folded === 'object' && record.folded !== null && !Array.isArray(record.folded) ? record.folded as Record<string, unknown> : {};
   return {
     horizonDays: (FORECAST_HORIZON_OPTIONS as readonly number[]).includes(horizon) ? horizon : DEFAULT_VIEW.horizonDays,
     tab: record.tab === 'drain' ? 'drain' : 'remaining',
-    folded: Object.fromEntries(Object.keys(folded).filter((key) => folded[key] === true).map((key) => [key, true as const])),
   };
 }
 
 const view = savedStore<ForecastView>({ key: 'arbor.limit-forecast.v1', parse: parseView, fallback: DEFAULT_VIEW, place: 'window' });
 export const useForecastView = view.useValue;
 export const setForecastView = (change: Partial<ForecastView>) => view.set({ ...view.get(), ...change });
-export function setForecastFolded(provider: string, folded: boolean) {
-  const next = { ...view.get().folded };
-  if (folded) next[provider] = true;
-  else delete next[provider];
-  setForecastView({ folded: next });
-}
 
 /** The forecast's settings from the app's preferences, with anything unknown (set by hand, or by the CLI) as its default. */
 export function forecastSettingsFrom(preferences: Pick<AppPreferences, 'forecastModel' | 'forecastLookbackDays' | 'forecastRatePerHour'>): ForecastSettings {

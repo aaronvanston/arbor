@@ -125,22 +125,34 @@ describe('forecast settings', () => {
 describe('the forecast panel', () => {
   const quota = (left: number): QuotaState => ({ status: 'success', rows: [{ label: '7-day window', remainingPercent: left, resetAtMs: Date.now() + 2 * DAY }] });
 
-  it('sums the pool and reads its history before drawing', () => {
+  const windows = [{ label: '7-day window', warning: false }, { label: '5-hour window', warning: true }];
+
+  it('sums the pool in accounts and reads its history before drawing', () => {
     const headline = buildHeadline([{ name: 'a', quota: quota(40) }, { name: 'b', quota: quota(75) }], '7-day window');
     const html = renderToStaticMarkup(
       <I18nProvider>
-        <LimitForecastPanel provider="claude" providerName="Claude" headline={headline} resting={{}} out={{}} resettable={() => false} />
+        <LimitForecastPanel provider="claude" providerName="Claude" headline={headline} windows={windows} onWindow={() => {}} resting={{}} out={{}} resettable={() => false} />
       </I18nProvider>,
     );
-    expect(text(html)).toContain('115% / 200% left');
+    expect(text(html)).toContain('1.2 of 2 accounts left');
     expect(text(html)).toContain('Reading limit history…');
-    expect(html).toContain('aria-expanded="true"');
+    // The window it's measured by is picked here, and one that runs out first on some account says so.
+    expect(html).toContain('aria-label="Measure the Claude pool by"');
+    expect(html).toContain('aria-label="Runs out first on some accounts"');
   });
 
-  it('stays away without a headline window', () => {
+  it('keeps one account’s pool in percent', () => {
+    const headline = buildHeadline([{ name: 'a', quota: quota(40) }], '7-day window');
+    const html = renderToStaticMarkup(
+      <I18nProvider><LimitForecastPanel provider="claude" providerName="Claude" headline={headline} windows={windows.slice(0, 1)} resting={{}} out={{}} resettable={() => false} /></I18nProvider>,
+    );
+    expect(text(html)).toContain('40% left');
+  });
+
+  it('says there’s no window yet without a headline window', () => {
     const headline = buildHeadline([{ name: 'a', quota: quota(40) }], null);
-    expect(renderToStaticMarkup(
-      <I18nProvider><LimitForecastPanel provider="claude" providerName="Claude" headline={headline} resting={{}} out={{}} resettable={() => false} /></I18nProvider>,
-    )).toBe('');
+    expect(text(renderToStaticMarkup(
+      <I18nProvider><LimitForecastPanel provider="claude" providerName="Claude" headline={headline} windows={[]} resting={{}} out={{}} resettable={() => false} /></I18nProvider>,
+    ))).toContain('No headline window yet');
   });
 });

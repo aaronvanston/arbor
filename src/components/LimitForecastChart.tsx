@@ -28,6 +28,22 @@ const MOST_MARK_LINES = 3;
 
 const round = (value: number) => Math.round(value * 100) / 100;
 export const formatPoolPercent = (value: number) => `${formatNumber(Math.max(0, value))}%`;
+/**
+ * An amount of a pool, in accounts once it holds more than one: "1.4 accounts" reads at a glance where "140%" of a
+ * 300% pool doesn't. A single account's pool stays in percent.
+ */
+export function formatPoolAmount(t: ReturnType<typeof useI18n>['t'], value: number, capacity: number) {
+  if (capacity <= 100) return formatPoolPercent(value);
+  const accounts = Math.max(0, value) / 100;
+  const count = formatNumber(accounts, accounts < 10 ? 1 : 0);
+  return t(count === formatNumber(1) ? 'forecast.amount.one' : 'forecast.amount.other', { count });
+}
+/** The remaining chart's ticks: a pool of several accounts at whole accounts, so the axis reads in the headline's terms. */
+function remainingTicks(max: number) {
+  if (max <= 100) return [0, 25, 50, 75, 100];
+  const step = 100 * Math.ceil(max / 100 / 5);
+  return Array.from({ length: Math.floor(max / step) + 1 }, (_, index) => index * step);
+}
 const formatRatePercent = (value: number) => `${formatNumber(Math.max(0, value), value < 10 ? 1 : 0)}%`;
 
 export type ForecastTab = 'remaining' | 'drain';
@@ -71,7 +87,7 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
     const x = (time: number) => ((time - startMs) / Math.max(1, endMs - startMs)) * width;
     if (tab === 'remaining') {
       const max = Math.max(100, forecast.capacity, ...forecast.history.map((point) => point.capacity ?? 0));
-      const ticks = [0, 0.25, 0.5, 0.75, 1].map((share) => share * max);
+      const ticks = remainingTicks(max);
       const y = (value: number) => PAD_TOP + (1 - Math.max(0, Math.min(max, value)) / max) * (HEIGHT - PAD_TOP);
       const scale: ChartScale = { x, y };
       const history = forecast.history.filter((point) => point.t >= startMs);
@@ -93,6 +109,8 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
         capacityLine: capacityLine(history, forecast.capacity, endMs, scale),
         dry: dryStretches(projection).map((stretch) => ({ left: x(stretch.from), right: x(stretch.to) })),
         spots,
+        // The first suggested reset is named on the chart, so the advice and where it falls read as one.
+        callout: spots.find((spot) => spot.lead.how === 'planned') ?? null,
         x,
       };
     }
@@ -141,7 +159,7 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
         ...said.slice(0, MOST_MARK_LINES).map((mark) => resetMarkLine(t, mark, Math.round(mark.gain) >= 1 ? formatPoolPercent(Math.round(mark.gain)) : null)),
         ...(more > 0 ? [more === 1 ? t('forecast.mark.more.one') : t('forecast.mark.more.other', { count: more })] : []),
       ];
-      return { time, x: chart.x(time), y: chart.y(value), spot, lines, text: t(past ? 'forecast.chart.point' : 'forecast.chart.pointProjected', { time: formatDateTime(time, { now: nowMs, weekday: 'short' }), value: formatPoolPercent(value) }) };
+      return { time, x: chart.x(time), y: chart.y(value), spot, lines, text: t(past ? 'forecast.chart.point' : 'forecast.chart.pointProjected', { time: formatDateTime(time, { now: nowMs, weekday: 'short' }), value: formatPoolAmount(t, value, forecast.capacity) }) };
     }
     const time = pointed;
     const bar = chart.bars.find((item) => time >= item.t && time < item.t + item.spanMs);
@@ -191,7 +209,7 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
       <div className="relative w-10 shrink-0 text-2xs leading-4 tabular-nums text-muted-foreground" style={{ height: HEIGHT }} aria-hidden="true">
         {chart?.ticks.map((tick) => (
           <span key={tick} className="absolute end-0 -translate-y-1/2" style={{ top: chart.y(tick) }}>
-            {chart.kind === 'remaining' ? formatPoolPercent(tick) : formatRatePercent(tick)}
+            {chart.kind === 'remaining' ? (forecast.capacity > 100 ? formatNumber(tick / 100) : formatPoolPercent(tick)) : formatRatePercent(tick)}
           </span>
         ))}
       </div>
@@ -287,6 +305,18 @@ export function LimitForecastChart({ forecast, provider, tab, nowMs, startMs }: 
             aria-hidden="true"
           >
             {t('forecast.dryBand')}
+          </span>
+        ) : null}
+        {chart?.kind === 'remaining' && chart.callout ? (
+          <span
+            className="pointer-events-none absolute max-w-48 truncate rounded-sm bg-card/90 px-1 text-2xs font-medium leading-4 text-primary"
+            style={chart.callout.x > width / 2
+              ? { right: Math.max(0, width - chart.callout.x + 6), top: Math.max(0, chart.callout.y - 22) }
+              : { left: chart.callout.x + 6, top: Math.max(0, chart.callout.y - 22) }}
+            aria-hidden="true"
+            data-callout
+          >
+            {t('forecast.chart.callout', { name: chart.callout.lead.name })}
           </span>
         ) : null}
         <div className="relative mt-1 h-4 text-2xs leading-4 tabular-nums text-muted-foreground" aria-hidden="true">

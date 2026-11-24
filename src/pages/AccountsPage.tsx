@@ -1,5 +1,5 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowUpDown, ArrowUpRight, Check, ChevronDown, ChevronRight, FolderOpen, GripVertical, History, Import, KeyRound, Layers, MoreHorizontal, PauseCircle, Pencil, Play, Plus, PowerOff, SlidersHorizontal, RotateCcw, TriangleAlert } from '../components/ui/icons';
+import { AlertCircle, ArrowUpDown, ArrowUpRight, Check, ChevronDown, ChevronRight, FolderOpen, GripVertical, Import, KeyRound, Layers, MoreHorizontal, PauseCircle, Pencil, Play, Plus, PowerOff, SlidersHorizontal, RotateCcw, TriangleAlert } from '../components/ui/icons';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type Modifier } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -36,10 +36,8 @@ import { moveKey, setAccountOrder, sortByOrder, useAccountOrder } from '../servi
 import { AccountAvatar } from '../components/AccountAvatar';
 import { ProviderMark } from '../components/identity/Identity';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
-import { LimitSparkline } from '../components/LimitSparkline';
 import { LimitForecastPanel } from '../components/LimitForecastPanel';
 import { outOfPool, shelfReason, useShelf } from '../services/accountShelf';
-import { useLimitsHistory } from '../services/limitsHistory';
 import { formatResetCountdown, providerLabel } from '../services/providerLimits';
 import { capForRow, capOf, useAccountReserves, useReserveFailures, type AccountCap, type PausedAccount, type ReserveState } from '../services/accountReserves';
 import { resumeAccount } from '../services/accountPause';
@@ -61,25 +59,15 @@ import {
   buildHeadline,
   capWarnings,
   displayRows,
-  headlinePace,
   isStaleQuota,
-  partialHeadline,
-  pooledPercent,
   resolveHeadlineWindow,
-  rowWindowMs,
   setHeadlineWindow,
-  staleLimits,
-  staleNoteKey,
   toggleHiddenWindow,
-  usagePace,
   windowGridStyle,
   useAccountLimitPrefs,
-  windowDurationMs,
   meteredWindowLabels,
   windowLabels,
   type CapWarning,
-  type Headline,
-  type PaceTone,
 } from '../services/accountLimits';
 import { Page, PageBody, PageBreadcrumb, PageTopbar } from '../components/layout/page';
 import { AccountSignInsPage } from './AccountSignIns';
@@ -88,7 +76,7 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { AccountsEmpty } from '../components/AccountsEmpty';
-import { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from '../components/ui/menu';
+import { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '../components/ui/menu';
 import { Popover, PopoverClose, PopoverPopup, PopoverTitle, PopoverTrigger } from '../components/ui/popover';
 import { chipVariants } from '../components/ui/chip';
 import { RefreshIcon } from '../components/ui/refresh-icon';
@@ -161,14 +149,8 @@ const percentTone = (percent: number | null) =>
   percent === null ? 'bg-muted-foreground/30' : percent <= 10 ? 'bg-error' : percent <= 30 ? 'bg-warning' : 'bg-success';
 const percentText = (percent: number | null) =>
   percent === null ? 'text-muted-foreground' : percent <= 10 ? 'text-error-foreground' : percent <= 30 ? 'text-warning-foreground' : 'text-foreground';
-const paceBar: Record<PaceTone, string> = { success: 'bg-success', warning: 'bg-warning', error: 'bg-error', muted: 'bg-muted-foreground/30' };
-/** An account without a reading: hatched, so it reads as unknown rather than used. */
-const unknownBar = 'bg-[repeating-linear-gradient(-45deg,var(--color-muted-foreground)_0_1px,transparent_1px_5px)] opacity-45';
-/** A turned-off account's share: gray and densely hatched, so it reads as there but out of use. */
-const offBar = 'bg-muted-foreground/30 bg-[repeating-linear-gradient(-45deg,var(--color-muted-foreground)_0_1.5px,transparent_1.5px_4px)] opacity-70';
 /** Row actions stay hidden until the row is hovered or one of them has focus. */
 const hoverReveal = 'opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100';
-const paceText: Record<PaceTone, string> = { success: 'text-foreground', warning: 'text-warning-foreground', error: 'text-error-foreground', muted: 'text-muted-foreground' };
 
 function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
   const { t } = useI18n();
@@ -338,11 +320,6 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
     return () => window.clearTimeout(timer);
   }, [flash]);
 
-  const jumpTo = useCallback((key: string) => {
-    setFlash(key);
-    document.querySelector(`[data-account-key="${window.CSS.escape(key)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, []);
-
   const reorder = useCallback((provider: QuotaProvider, keys: string[], event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -480,16 +457,6 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                           {t('accounts.windows.button')}
                         </MenuTrigger>
                         <MenuPopup className="min-w-64">
-                          <MenuRadioGroup value={headline.label} onValueChange={(label: string) => setHeadlineWindow(provider, label)}>
-                            <MenuGroupLabel>{t('accounts.windows.headline')}</MenuGroupLabel>
-                            {metered.filter((label) => !hidden.includes(label)).map((label) => (
-                              <MenuRadioItem key={label} value={label}>
-                                <span className="min-w-0 flex-1 truncate">{label}</span>
-                                <span className="text-xs tabular-nums text-muted-foreground">{formatPooled(pooledPercent([...accounts, ...paused, ...off], label))}</span>
-                              </MenuRadioItem>
-                            ))}
-                          </MenuRadioGroup>
-                          <MenuSeparator />
                           <MenuGroup>
                             <MenuGroupLabel>{t('accounts.windows.visible')}</MenuGroupLabel>
                             {metered.map((label) => {
@@ -513,20 +480,13 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
                 }
               >
                 {accounts.length || headline.off ? (
-                  <HeadlineBlock
-                    provider={provider}
-                    headline={headline}
-                    warnings={warnings}
-                    count={accounts.length + headline.off}
-                    loading={accounts.some((account) => account.quota.status === 'loading')}
-                    onJump={jumpTo}
-                  />
-                ) : null}
-                {accounts.length ? (
                   <LimitForecastPanel
                     provider={provider}
                     providerName={providerMeta[provider].label}
                     headline={headline}
+                    windows={metered.filter((label) => !hidden.includes(label)).map((label) => ({ label, warning: warnings.some((warning) => warning.row.label === label) }))}
+                    loading={accounts.some((account) => account.quota.status === 'loading')}
+                    onWindow={(label) => setHeadlineWindow(provider, label)}
                     resting={Object.fromEntries(paused.map((item) => [item.key, { pausedAtMs: item.paused.pausedAtMs, resumeAtMs: item.paused.resumeAtMs }]))}
                     out={outOfPool(shelf, off.map((item) => item.key))}
                     resettable={(key, reset) => {
@@ -615,8 +575,6 @@ function AccountLimitsPage({ onNavigate }: { onNavigate?: (view: AppView) => voi
     </Page>
   );
 }
-
-const formatPooled = (percent: number | null) => (percent === null ? '—' : `${Math.round(percent)}%`);
 
 const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slice(1);
 
@@ -812,211 +770,6 @@ function OffDetails({ file, quota, now }: { file: AuthFile; quota: QuotaState; n
 }
 
 /**
- * Limits that will block requests before the headline one, as a chip in the headline row rather than a block that
- * pushes the accounts down. Its popover lists them; picking one goes to that account.
- */
-function CapWarningsChip({ warnings, onJump }: { warnings: CapWarning[]; onJump: (key: string) => void }) {
-  const { t } = useI18n();
-  const now = useQuotaClock();
-  return (
-    <Popover>
-      <PopoverTrigger openOnHover delay={150} render={<button type="button" className={chipVariants({ tone: 'warning' })} />}>
-        <TriangleAlert />
-        {t(warnings.length === 1 ? 'accounts.capWarnings.chip.one' : 'accounts.capWarnings.chip.other', { count: warnings.length })}
-      </PopoverTrigger>
-      <PopoverPopup width="md" padding="compact" align="start">
-        <PopoverTitle className="px-1.5 pt-1 text-xs font-medium text-muted-foreground">{t('accounts.capWarnings.title')}</PopoverTitle>
-        <ul className="mt-1.5 flex flex-col">
-          {warnings.map((warning) => {
-            const account = warning.account as Account;
-            const { quota } = account;
-            const readAtMs = isStaleQuota(quota) ? quota.fetchedAt ?? quota.staleSinceMs : undefined;
-            const values = {
-              name: account.name,
-              window: warning.row.label,
-              percent: Math.round(warning.row.remainingPercent ?? 0),
-              headline: warning.headline,
-            };
-            return (
-              <li key={`${account.key}-${warning.row.label}`}>
-                <PopoverClose
-                  render={
-                    <button
-                      type="button"
-                      className="flex w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left text-xs text-foreground outline-none hover:bg-accent focus-visible:bg-accent"
-                      onClick={() => onJump(account.key)}
-                      title={readAtMs !== undefined && quota.error ? t('accounts.stale.failed', { error: quota.error }) : undefined}
-                    />
-                  }
-                >
-                  {readAtMs !== undefined
-                    ? <History className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" aria-hidden="true" />
-                    : <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" aria-hidden="true" />}
-                  <span className="min-w-0">
-                    {readAtMs !== undefined
-                      ? t('accounts.capWarningStale', { ...values, time: formatWhen(readAtMs, { now }) })
-                      : t('accounts.capWarning', values)}
-                  </span>
-                </PopoverClose>
-              </li>
-            );
-          })}
-        </ul>
-      </PopoverPopup>
-    </Popover>
-  );
-}
-
-function HeadlineBlock({ provider, headline, warnings, count, loading, onJump }: {
-  provider: QuotaProvider;
-  headline: Headline;
-  warnings: CapWarning[];
-  count: number;
-  loading: boolean;
-  onJump: (key: string) => void;
-}) {
-  const { t } = useI18n();
-  const now = useQuotaClock();
-  const history = useLimitsHistory();
-  const reset = formatQuotaReset(headline.nextResetMs, headline.nextResetFallback, now);
-  const countdown = formatResetCountdown(headline.nextResetMs, now);
-  const animatedPercent = useAnimatedNumber(headline.percent, 1);
-  const percent = animatedPercent === null ? null : Math.round(animatedPercent);
-  const pace = headlinePace(headline, now);
-  const duration = headline.label ? windowDurationMs(headline.label) : null;
-  const stale = staleLimits(headline);
-  const paceLabel = t(pace.tone === 'error' ? 'accounts.pace.critical' : pace.tone === 'warning' ? 'accounts.pace.ahead' : pace.tone === 'success' ? 'accounts.pace.onTrack' : 'accounts.pace.unknown');
-  const ariaLabel = headline.segments
-    .map((segment) => (segment.percent === null
-      ? t('accounts.segment.unknown', { name: segment.account.name })
-      : t('accounts.segment.aria', { name: segment.account.name, percent: Math.round(segment.percent) })))
-    .join(', ');
-  // Accounts without a reading keep their slice, gathered at the far end so the empty track between reads as used.
-  // Turned-off accounts come after the ones in use, grayed out.
-  const slice = headline.total ? 100 / headline.total : 0;
-  const bar = [
-    ...headline.segments.filter((segment) => segment.percent !== null && !segment.off),
-    ...headline.segments.filter((segment) => segment.off),
-    ...headline.segments.filter((segment) => segment.percent === null),
-  ];
-  if (!headline.label) {
-    return (
-      <SettingsBlock className="text-sm text-muted-foreground">
-        {loading ? <span className="inline-flex items-center gap-2"><Spinner className="size-3.5" />{t('quota.querying')}</span> : t('accounts.headline.none')}
-      </SettingsBlock>
-    );
-  }
-  const pooled = t(count === 1 ? 'accounts.headline.pooled.one' : 'accounts.headline.pooled.other', { count });
-  return (
-    <SettingsBlock className="flex flex-col gap-2.5 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="flex items-baseline gap-1.5">
-            <span className={cn('text-2xl font-semibold leading-none tabular-nums tracking-tight', paceText[pace.tone], stale && 'opacity-60')}>
-              {percent === null ? '—' : `${percent}%`}
-            </span>
-            <span className="text-sm text-muted-foreground">{t('accounts.left')}</span>
-          </span>
-          {partialHeadline(headline) ? (
-            <span className="whitespace-nowrap text-xs text-muted-foreground" title={t('accounts.headline.reportingHint')}>
-              {t('accounts.headline.reporting', { reporting: headline.reporting, total: headline.total })}
-            </span>
-          ) : null}
-          {headline.off ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground" title={t('accounts.headline.offHint')}>
-              <PowerOff className="size-3.5" aria-hidden="true" />
-              {t(headline.off === 1 ? 'accounts.headline.off.one' : 'accounts.headline.off.other', { count: headline.off })}
-            </span>
-          ) : null}
-          {pace.tone === 'warning' || pace.tone === 'error' ? (
-            <span className={cn('inline-flex items-center gap-1 whitespace-nowrap text-xs', paceText[pace.tone])}>
-              <TriangleAlert className="size-3.5" aria-hidden="true" />
-              {paceLabel}
-            </span>
-          ) : null}
-          {stale ? (
-            <span
-              className="inline-flex max-w-full items-center gap-1 whitespace-nowrap text-xs text-warning-foreground"
-              title={stale.error ? t('accounts.stale.failed', { error: stale.error }) : undefined}
-            >
-              <History className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">{t(staleNoteKey(stale), { count: stale.accounts, time: formatWhen(stale.asOfMs, { now }) })}</span>
-            </span>
-          ) : null}
-          {warnings.length ? <CapWarningsChip warnings={warnings} onJump={onJump} /> : null}
-        </div>
-        <div className="flex min-w-0 items-center gap-3">
-          <LimitSparkline samples={history[provider] ?? []} now={now} tone={pace.tone} />
-          <Tooltip>
-            <TooltipTrigger render={<span className="min-w-0 cursor-default truncate text-xs" />}>
-              <span className="font-medium text-foreground">{headline.label}</span>
-              {countdown ? <span className="ms-1.5 tabular-nums text-muted-foreground">{t('accounts.resetsIn', { time: countdown })}</span> : null}
-            </TooltipTrigger>
-            <TooltipPopup>{reset ? `${pooled} · ${t('accounts.nextReset', { time: reset })}` : pooled}</TooltipPopup>
-          </Tooltip>
-        </div>
-      </div>
-      <div className="flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-input/60 dark:bg-input" role="img" aria-label={ariaLabel}>
-        {bar.map((segment, index) => {
-          const segmentReset = segment.row ? formatQuotaReset(segment.row.resetAtMs, segment.row.reset, now) : '';
-          const segmentPace = usagePace(segment.percent, segment.row?.resetAtMs, segment.row ? rowWindowMs(segment.row) : duration, now);
-          const account = segment.account as Account;
-          const segmentStale = isStaleQuota(account.quota);
-          const unknown = segment.percent === null;
-          return (
-            <Tooltip key={account.key ?? account.name}>
-              <TooltipTrigger
-                render={
-                  <span
-                    className={cn(
-                      'block h-full shrink-0 cursor-default transition-[width,filter,opacity] duration-500 ease-out first:rounded-l-full last:rounded-r-full hover:brightness-110',
-                      unknown ? unknownBar : segment.off ? offBar : paceBar[segmentPace.tone],
-                      unknown && bar[index - 1]?.percent !== null && 'ms-auto',
-                      !unknown && segmentStale && 'opacity-45',
-                      !unknown && segment.width <= 0 && 'invisible',
-                    )}
-                    style={{ width: `${unknown ? slice : segment.width}%` }}
-                  />
-                }
-              />
-              <TooltipPopup>
-                <span className="flex items-start gap-2">
-                  {account.profile ? <AccountAvatar profile={account.profile} size="sm" /> : null}
-                  {unknown ? (
-                    <span className="flex flex-col gap-0.5">
-                      <span className="font-medium">{t('accounts.segment.unknown', { name: account.name })}</span>
-                      <span className="text-muted-foreground">{t('accounts.segment.notCounted')}</span>
-                    </span>
-                  ) : (
-                    <span className="flex flex-col gap-0.5">
-                      <span className="font-medium">{t('accounts.segment.aria', { name: account.name, percent: Math.round(segment.percent ?? 0) })}</span>
-                      {segmentReset ? <span className="text-muted-foreground">{t('accounts.nextReset', { time: segmentReset })}</span> : null}
-                      {segment.off ? (
-                        <span className="text-muted-foreground">{t('accounts.segment.paused')}</span>
-                      ) : (
-                        <span className={cn(paceText[segmentPace.tone])}>
-                          {t(segmentPace.tone === 'error' ? 'accounts.pace.critical' : segmentPace.tone === 'warning' ? 'accounts.pace.ahead' : segmentPace.tone === 'success' ? 'accounts.pace.onTrack' : 'accounts.pace.unknown')}
-                        </span>
-                      )}
-                      {segmentStale && account.quota.fetchedAt ? (
-                        <span className="max-w-64 text-warning-foreground">
-                          {t('accounts.stale.asOf', { time: formatWhen(account.quota.fetchedAt, { now }) })}
-                          {account.quota.error ? ` · ${t('accounts.stale.failed', { error: account.quota.error })}` : ''}
-                        </span>
-                      ) : null}
-                    </span>
-                  )}
-                </span>
-              </TooltipPopup>
-            </Tooltip>
-          );
-        })}
-      </div>
-    </SettingsBlock>
-  );
-}
-
-/**
  * An account's banked resets (Claude) or manual resets (Codex) as a counter beside its name. Hovering or focusing it
  * opens the details, with Reset Quota; the counter takes the accent while a reset can be used now. Claude's come in
  * kinds that refill different limits, so each kind has its own line and its own button.
@@ -1131,6 +884,9 @@ function ResetCreditsChip({ quota, claude, blocked, onReset, note }: {
   );
 }
 
+/** A window this low or under stays in view on a folded account row, whichever window the pool is measured by. */
+const LOW_WINDOW_PERCENT = 20;
+
 function AccountRow({ account, columns, warnings, headline, flash = false, cap, availability, commands, reordering, onRefresh, onEdit, onReset, onExplain }: {
   account: Account;
   /** The provider's windows being shown, in order: each window keeps its column, so the accounts line up. */
@@ -1192,6 +948,15 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
       : quota.status === 'idle' ? t('accounts.status.idle') : '';
   const cellWarnings = new Map(warnings.map((warning) => [warning.row.label, warning.headline]));
   const grid = windowGridStyle(columns);
+  // Folded to the window the pool is measured by, and any other that needs a look: one running out before it, or low.
+  // The rest are a click away. Without the headline window among them there's nothing to fold to.
+  const [expanded, setExpanded] = useState(false);
+  const worthShowing = (row: QuotaRow) => row.label === headline || cellWarnings.has(row.label) || (row.remainingPercent ?? 100) <= LOW_WINDOW_PERCENT;
+  const foldable = rows.some((row) => row.label === headline) && rows.some((row) => !worthShowing(row));
+  const shown = !foldable || expanded ? rows
+    : [...rows.filter((row) => row.label === headline), ...rows.filter((row) => row.label !== headline && worthShowing(row))];
+  // Folded rows sit in the expanded grid's columns, the headline first, so its bar lines up across the accounts.
+  const place = shown === rows ? grid.cell : windowGridStyle(shown.map((row) => row.label)).cell;
   const header = (
     <div className="flex min-h-6 items-center gap-2.5">
       {reordering ? <GripVertical className="-ms-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
@@ -1206,6 +971,17 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
           <span className={cn('min-w-0 truncate', quota.status !== 'error' ? 'text-muted-foreground' : stale || freePlan ? 'text-warning-foreground' : 'text-error-foreground')} title={stale || freePlan ? quota.error : undefined}>
             {status}
           </span>
+        ) : null}
+        {!reordering && foldable ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? <ChevronDown className="size-3.5" aria-hidden="true" /> : <ChevronRight className="size-3.5" aria-hidden="true" />}
+            {expanded ? t('accounts.windows.fewer') : t(rows.length - shown.length === 1 ? 'accounts.windows.more.one' : 'accounts.windows.more.other', { count: rows.length - shown.length })}
+          </button>
         ) : null}
         {/* What the core says when it's anything but ready, or which models are resting. */}
         {!reordering && (availability.kind !== 'ready' || availability.models) ? (
@@ -1302,8 +1078,8 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
             )}
             style={grid.grid as CSSProperties}
           >
-            {rows.map((row) => {
-              const place = grid.cell(row.label);
+            {shown.map((row) => {
+              const cell = place(row.label);
               return (
                 <WindowRow
                   key={row.label}
@@ -1314,7 +1090,7 @@ function AccountRow({ account, columns, warnings, headline, flash = false, cap, 
                   now={now}
                   onExplain={onExplain}
                   className="@lg:col-start-(--window-column-narrow) @lg:row-start-(--window-row-narrow) @3xl:col-start-(--window-column) @3xl:row-start-(--window-row)"
-                  style={place as CSSProperties | undefined}
+                  style={cell as CSSProperties | undefined}
                 />
               );
             })}
